@@ -114,52 +114,59 @@ void kmain(void)
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
     /*
-     * Two Lua processes, at EL0, in separate address spaces, exchanging a
-     * Lua table over the microkernel's IPC. That is M4's definition of done.
+     * A ramfs server and two clients, each a process at EL0 in its own
+     * address space, talking the namespace protocol.
      *
-     * The kernel creates the endpoint and hands each of them a capability
-     * for it. Neither can name it any other way, and neither can reach
-     * anything else: what a process has is what it was given, which is
-     * design.md 4.3 with nothing else left to appeal to.
+     * The kernel plays init here, which is not where it belongs: `roadmap.md`
+     * has init and supervision in userland, and that needs a process able to
+     * start processes. Until there is a spawn syscall, the wiring is done
+     * from here, and it is the only part of this that is temporary.
+     *
+     * What is not temporary is the shape. Each process is handed exactly one
+     * capability and can name nothing else, and the two clients mount the
+     * same server under different names, which is the milestone's point:
+     * what a process has not mounted does not exist.
      */
     {
         extern const unsigned char init_image[];
         extern const unsigned long init_image_len;
-        struct process *server;
-        struct process *client;
+        size_t image_len = (size_t)init_image_len;
+        struct process *ramfs;
+        struct process *client_a;
+        struct process *client_b;
         cap_t ep = ipc_endpoint_create();
         unsigned i;
 
         if (ep < 0) {
-            panic("no endpoint for init");
+            panic("no endpoint for the ramfs");
         }
 
-        server = process_create("echo", init_image,
-                                (size_t)init_image_len, 1 /* server */);
-        client = process_create("init", init_image,
-                                (size_t)init_image_len, 0 /* client */);
+        ramfs    = process_create("ramfs", init_image, image_len, 1);
+        client_a = process_create("client-a", init_image, image_len, 0);
+        client_b = process_create("client-b", init_image, image_len, 2);
 
-        if (server == NULL || client == NULL) {
-            kputs("could not create the init processes\n");
+        if (ramfs == NULL || client_a == NULL || client_b == NULL) {
+            kputs("could not create the M5 processes\n");
         } else {
-            /*
-             * Each gets its own index for the same endpoint, and each gets
-             * it as capability zero because its table was empty. That is
-             * the whole convention: a process's first capability is what it
-             * was started for.
-             */
-            if (ipc_cap_grant(server->thread, ep) != 0
-                || ipc_cap_grant(client->thread, ep) != 0) {
-                panic("init capabilities did not land at index 0");
+            /* One capability each, granted before any of them can run. Each
+             * gets its own index for the same endpoint; the number means
+             * nothing outside the table it came from. */
+            if (ipc_cap_grant(ramfs->thread, ep) != 0
+                || ipc_cap_grant(client_a->thread, ep) != 0
+                || ipc_cap_grant(client_b->thread, ep) != 0) {
+                panic("capabilities did not land at index 0");
             }
 
-            process_start(server);
-            process_start(client);
+            process_start(ramfs);
+            process_start(client_a);
+            process_start(client_b);
 
-            for (i = 0; i < 8192 && !client->exited; i++) {
+            for (i = 0; i < 16384 && !(client_a->exited && client_b->exited); i++) {
                 thread_yield();
             }
 
+            /* Destroying the endpoint is what stops the server: its receive
+             * fails and it leaves its loop. */
             (void)ipc_endpoint_destroy(ep);
         }
     }

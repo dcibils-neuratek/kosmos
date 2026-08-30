@@ -121,8 +121,12 @@ static bool bench_ipc_roundtrip(struct bench_result *out)
     }
 
     ipc_server_ready = false;
-    server = thread_create("bench-echo", ipc_echo_server,
-                           (void *)(uintptr_t)IPC_ROUNDS);
+
+    /* Suspended until its capability is in place. Started before that, it
+     * reads whatever ipc_server_cap happened to hold, fails its receive and
+     * exits, and the benchmark deadlocks against a server that is gone. */
+    server = thread_create_suspended("bench-echo", ipc_echo_server,
+                                     (void *)(uintptr_t)IPC_ROUNDS);
     if (server == NULL) {
         return false;
     }
@@ -131,6 +135,8 @@ static bool bench_ipc_roundtrip(struct bench_result *out)
     if (ipc_server_cap < 0) {
         return false;
     }
+
+    thread_wake(server);
 
     /* Let it reach its first receive, so the measured loop is all steady
      * state and none of it is startup. */

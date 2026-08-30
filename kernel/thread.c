@@ -288,18 +288,17 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
     return t;
 }
 
-static void switch_to(struct thread *next)
+/*
+ * Hands the CPU to `next`, from `prev`.
+ *
+ * The one place a switch happens. thread_exit used to have its own copy of
+ * this and the two drifted: this one learned to switch the address space and
+ * that one did not, so a process exiting left TTBR0 on the kernel's tables
+ * and whichever process ran next did so with somebody else's memory
+ * underneath it. Duplicated control flow does not stay duplicated.
+ */
+static void switch_into(struct thread *prev, struct thread *next)
 {
-    struct thread *prev = current;
-
-    if (next == prev) {
-        return;
-    }
-
-    if (prev->state == THREAD_RUNNING) {
-        prev->state = THREAD_READY;
-    }
-
     next->state = THREAD_RUNNING;
     next->switches++;
     current = next;
@@ -315,6 +314,21 @@ static void switch_to(struct thread *next)
     }
 
     context_switch(&prev->ctx, &next->ctx);
+}
+
+static void switch_to(struct thread *next)
+{
+    struct thread *prev = current;
+
+    if (next == prev) {
+        return;
+    }
+
+    if (prev->state == THREAD_RUNNING) {
+        prev->state = THREAD_READY;
+    }
+
+    switch_into(prev, next);
 
     /*
      * Reached when this thread is scheduled again, which may be a long time
@@ -434,14 +448,7 @@ void thread_exit(void)
      * inherits them, guard pages and all. Handing them back would mean
      * re-mapping those guards only to unmap them again for the next thread.
      */
-    next->state = THREAD_RUNNING;
-    next->switches++;
-
-    {
-        struct thread *dying = current;
-        current = next;
-        context_switch(&dying->ctx, &next->ctx);
-    }
+    switch_into(current, next);
 
     panic("thread_exit: a dead thread was scheduled");
 }

@@ -678,11 +678,12 @@ static bool test_lua_runs_at_el0(void)
      * The init image: a real link of Lua, the libc and libm at a user
      * address, carried inside the kernel image and copied into a process.
      *
-     * It exercises arithmetic and floats, math.sqrt out of newlib's libm,
-     * coroutines, an error raised inside the VM and caught by pcall, the
-     * absence of io, os and debug, and the collector reclaiming memory on a
-     * heap it cannot grow. Any of those failing makes the chunk raise, which
-     * makes main return non-zero.
+     * Run in the role that needs no capabilities, because what is being
+     * checked is that the language works out here at all: arithmetic and
+     * floats, math.sqrt out of newlib's libm, coroutines, an error raised
+     * inside the VM and caught by pcall, the absence of io, os and debug, and
+     * the collector reclaiming memory on a heap it cannot grow. Any of them
+     * failing raises, which makes the chunk return non-zero.
      *
      * Its output goes to the console rather than into an assertion, because
      * what is being asserted is that all of it ran at EL0 and came back with
@@ -693,7 +694,7 @@ static bool test_lua_runs_at_el0(void)
     unsigned before = process_count();
 
     struct process *p = process_create("t-init", init_image,
-                                       (size_t)init_image_len, 0);
+                                       (size_t)init_image_len, 3 /* selftest */);
     unsigned i;
     int code;
 
@@ -790,6 +791,86 @@ static bool test_two_processes_exchange_a_lua_table(void)
     }
 
     return code == 0;
+}
+
+static bool test_the_same_server_under_two_names(void)
+{
+    /*
+     * The first half of M5's definition of done: mount the same server at two
+     * different paths in two different processes, and have each see only its
+     * own.
+     *
+     * Three processes and one endpoint. The ramfs serves; the two clients
+     * mount it under names of their own choosing and each checks that the
+     * other's name does not exist in its world. The clients assert as well as
+     * print, so a broken run comes back as a non-zero exit rather than as
+     * output nobody reads.
+     *
+     * `design.md` §2 is precise about the answer being "no such path" and not
+     * "permission denied", and that falls out of the mechanism rather than
+     * being arranged: resolution is a lookup, so an unmounted prefix matches
+     * nothing and there is nothing to deny.
+     */
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    size_t len = (size_t)init_image_len;
+    struct process *ramfs;
+    struct process *a;
+    struct process *b;
+    cap_t ep;
+    unsigned i;
+    bool ok;
+
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
+
+    ramfs = process_create("t-ramfs", init_image, len, 1);
+    a     = process_create("t-cli-a", init_image, len, 0);
+    b     = process_create("t-cli-b", init_image, len, 2);
+
+    if (ramfs == NULL || a == NULL || b == NULL) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    if (ipc_cap_grant(ramfs->thread, ep) != 0
+        || ipc_cap_grant(a->thread, ep) != 0
+        || ipc_cap_grant(b->thread, ep) != 0) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    process_start(ramfs);
+    process_start(a);
+    process_start(b);
+
+    for (i = 0; i < 16384 && !(a->exited && b->exited); i++) {
+        thread_yield();
+    }
+
+    ok = a->exited && b->exited && a->exit_code == 0 && b->exit_code == 0;
+
+    process_reap(a);
+    process_reap(b);
+
+    /* And stopping the server is the M3 trap, now reaching across an address
+     * space: destroying the endpoint fails its receive and it leaves its
+     * loop rather than waiting forever. */
+    (void)ipc_endpoint_destroy(ep);
+
+    for (i = 0; i < 1024 && !ramfs->exited; i++) {
+        thread_yield();
+    }
+
+    ok = ok && ramfs->exited;
+
+    if (ramfs->exited) {
+        process_reap(ramfs);
+    }
+
+    return ok;
 }
 
 static bool test_a_process_runs_at_el0(void)
@@ -1309,7 +1390,11 @@ static bool test_ipc_call_and_reply(void)
         return false;
     }
 
-    server = thread_create("echo", echo_server, (void *)(uintptr_t)1);
+    /* Suspended, because it reads server_cap and a thread is runnable the
+     * instant it exists. Started first, it reads whatever that global last
+     * held, fails its receive and exits, and the caller below then blocks
+     * against a server that is already gone. */
+    server = thread_create_suspended("echo", echo_server, (void *)(uintptr_t)1);
     if (server == NULL) {
         return false;
     }
@@ -1320,6 +1405,8 @@ static bool test_ipc_call_and_reply(void)
     if (server_cap < 0) {
         return false;
     }
+
+    thread_wake(server);
 
     msg.tag = 7;
     msg.length = 16;
@@ -1378,11 +1465,13 @@ static bool test_ipc_works_in_both_arrival_orders(void)
         return false;
     }
 
-    server = thread_create("echo2", echo_server, (void *)(uintptr_t)2);
+    server = thread_create_suspended("echo2", echo_server,
+                                     (void *)(uintptr_t)2);
     if (server == NULL) {
         return false;
     }
     server_cap = ipc_cap_grant(server, cap);
+    thread_wake(server);
 
     /* Sender first: the server has not run at all yet. */
     msg.tag = 1;
@@ -1446,7 +1535,7 @@ static bool test_destroying_an_endpoint_wakes_the_blocked(void)
         return false;
     }
 
-    caller = thread_create("caller", blocked_caller, NULL);
+    caller = thread_create_suspended("caller", blocked_caller, NULL);
     if (caller == NULL) {
         return false;
     }
@@ -1457,8 +1546,11 @@ static bool test_destroying_an_endpoint_wakes_the_blocked(void)
     }
 
     /* The thread was created before its capability index was known, so hand
-     * it over through the argument slot the entry function reads. */
+     * it over through the argument slot the entry function reads. Safe
+     * because it is suspended: started first, it would have read the old
+     * value before this line ran. */
     caller->ctx.x20 = (uint64_t)(uintptr_t)(intptr_t)caller_cap;
+    thread_wake(caller);
 
     /* Let it block. Nobody will ever receive. */
     for (i = 0; i < 4; i++) {
@@ -2775,6 +2867,7 @@ static const struct test tests[] = {
     { "el0: a process runs and exits",         test_a_process_runs_at_el0 },
     { "el0: Lua runs in a process",            test_lua_runs_at_el0 },
     { "el0: two processes swap a Lua table",   test_two_processes_exchange_a_lua_table },
+    { "ns: same server, two names, two views", test_the_same_server_under_two_names },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },

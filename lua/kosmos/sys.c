@@ -254,7 +254,13 @@ static int sys_spawn(lua_State *L)
         a->name[i] = '\0';
     }
 
-    t = thread_create(a->name, lua_thread_main, a);
+    /*
+     * Suspended, because a thread is runnable the instant it exists and
+     * preemption makes that instant real. One created and then granted its
+     * capabilities on the next line has already run, found an empty table,
+     * and gone.
+     */
+    t = thread_create_suspended(a->name, lua_thread_main, a);
 
     if (t == NULL) {
         free(a->source);
@@ -287,6 +293,9 @@ static int sys_spawn(lua_State *L)
 
         a->caps[a->ncaps++] = granted;
     }
+
+    /* Everything it was promised is in its table. Now it may run. */
+    thread_wake(t);
 
     lua_pushboolean(L, 1);
     return 1;
