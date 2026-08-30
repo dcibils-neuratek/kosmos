@@ -32,3 +32,18 @@ void kputu(unsigned long v)
         hal_putchar(buf[--i]);
     }
 }
+
+void kputx(unsigned long v, unsigned digits)
+{
+    static const char digit[] = "0123456789abcdef";
+
+    if (digits > 16) {
+        digits = 16;
+    }
+
+    /* Top nibble first, so no buffer is needed. */
+    while (digits > 0) {
+        digits--;
+        hal_putchar(digit[(v >> (digits * 4)) & 0xf]);
+    }
+}

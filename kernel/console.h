@@ -15,4 +15,9 @@ void kputs(const char *s);
  * libc arrives at M2. */
 void kputu(unsigned long v);
 
+/* Lower-case hex, zero-padded to exactly `digits` digits, no "0x" prefix.
+ * Fixed width on purpose: register dumps are read by scanning down a column,
+ * and a variable-width value ruins that. */
+void kputx(unsigned long v, unsigned digits);
+
 #endif /* KERNEL_CONSOLE_H */

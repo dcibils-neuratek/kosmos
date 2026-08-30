@@ -11,6 +11,8 @@ OBJDUMP := $(CROSS)objdump
 SIZE    := $(CROSS)size
 
 SRCS := boot/start.S \
+        arch/aarch64/vectors.S \
+        arch/aarch64/trap.c \
         hal/qemu-virt/uart.c \
         kernel/console.c \
         kernel/main.c

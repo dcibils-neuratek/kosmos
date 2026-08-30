@@ -5,6 +5,7 @@
 
 #include "hal.h"
 #include "console.h"
+#include "trap.h"
 
 #ifdef KOSMOS_TEST
 #include "test.h"
@@ -13,6 +14,10 @@
 void kmain(void)
 {
     hal_early_init();
+
+    /* Before anything else that could fault. Until this runs, VBAR_EL1 holds
+     * whatever the firmware left, and any exception is a jump into nothing. */
+    trap_init();
 
     /* The boot banner is itself part of M0's definition of done, and the
      * host runner checks for it. Printed before the tests so that a suite
