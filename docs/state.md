@@ -22,22 +22,20 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Working
 
-`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`. 24 tests.
+`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`. 42 tests.
 
 Boot output:
 
 ```
 Kosmos
-mem   512 MB, 131072 pages, 130929 free, 143 used by the kernel
+mem   512 MB, 131072 pages, 130923 free, 149 used by the kernel
 mmu   on
+heap  2047 KB at 0x0000000040099000
 timer 100 Hz
 tick  1
-tick  2
 ```
 
-M0: boot at EL1 on core 0 with the secondaries parked, PL011 output, and a host-side runner reading TAP over serial with the exit code set by the guest through semihosting. The runner streams and stops the moment it sees a panic.
-
-M1: a sixteen-entry exception vector with a handler that decodes ESR and names the faulting instruction and address; expected-fault support so tests can fault on purpose; a bitmap page allocator; an identity map with W^X, an unmapped page zero and an unmapped stack guard; GICv3 and the generic timer at 100 Hz.
+M0 and M1 in full. M2 in progress: everything Lua is compiled *against* exists and is tested — the freestanding libc, `setjmp`/`longjmp`, the maths, a heap, `snprintf` including floats. **Lua itself is not built yet.** Its source is in `lua/upstream/`, untouched.
 
 ## M0 — done
 
@@ -64,7 +62,27 @@ M1: a sixteen-entry exception vector with a handler that decodes ESR and names t
 - [x] GICv3: distributor, redistributor and the system-register CPU interface
 - [x] ARM generic timer at 100 Hz
 
+## M2 — where it stands
+
+- [x] Minimal freestanding libc: `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strcmp`, `strncmp`, `strcpy`, `strchr`
+- [x] `setjmp`/`longjmp`, saving the full AAPCS64 callee-saved set including `d8`–`d15`
+- [x] The maths: `fabs`, `trunc`, `floor`, `ceil`, `frexp`, `ldexp` ours; `pow`, `fmod`, `sqrt` and the transcendentals from newlib's `libm.a`
+- [x] A heap for Lua: first fit, coalescing both ways, over one contiguous 2 MB span from the page allocator
+- [x] `snprintf`, integers and floats
+- [x] Lua 5.4.8 in `lua/upstream/`, untouched
+- [ ] Lua compiled freestanding, with its allocator on the heap
+- [ ] A REPL over the UART — needs UART input, which `hal/` does not have yet: there is `hal_putchar` and no `hal_getchar`
+- [ ] `hal/pi1/` or `hal/pi5/` — blocked on cables
+
 ## Concrete next step
+
+Compile Lua's core plus the libraries worth having, and stand up a `lua_State` with `lua_newstate` pointing at the heap.
+
+**Which libraries are built is a security decision, not a build detail** (`design.md` §5.3). Out: `liolib` and `loslib`, because `io.open("/etc/passwd")` is semantically incoherent here; `loadlib`, which wants `dlopen`; and `ldblib`, because `debug.getupvalue` and `debug.setmetatable` break any abstraction. In: the core, `lauxlib`, `lbaselib`, `lcorolib`, `lstrlib`, `ltablib`, `lmathlib`, `lutf8lib`.
+
+**And `load` has to reject binary chunks.** `design.md` §5.3 forbids precompiled bytecode outright: the loader verifies nothing and gives arbitrary execution. That means passing mode `"t"` everywhere, not relying on the default `"bt"`.
+
+Then the REPL, which needs `hal_getchar` first.
 
 M2 splits cleanly in two, and only the second half is blocked on hardware.
 
