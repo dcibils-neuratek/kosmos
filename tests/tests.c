@@ -11,6 +11,9 @@
 #include "kernel.h"
 #include "hal.h"
 
+#include <string.h>
+#include <setjmp.h>
+
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
 extern char __bss_start[];
@@ -461,6 +464,210 @@ static bool test_timer_period_matches_the_rate(void)
         && elapsed < expected + tolerance;
 }
 
+/*
+ * M2: the freestanding libc.
+ */
+static bool test_memcpy_and_memcmp(void)
+{
+    char src[16] = "0123456789abcde";
+    char dst[16];
+
+    memset(dst, 0x5a, sizeof(dst));
+    memcpy(dst, src, sizeof(src));
+
+    return memcmp(dst, src, sizeof(src)) == 0;
+}
+
+static bool test_memset_fills_exactly(void)
+{
+    /* Guards on both sides, because the failure that matters is writing one
+     * byte too many, and a fill that is correct in the middle looks correct. */
+    unsigned char buf[16];
+
+    memset(buf, 0x00, sizeof(buf));
+    memset(buf + 4, 0xab, 8);
+
+    return buf[3] == 0x00 && buf[4] == 0xab
+        && buf[11] == 0xab && buf[12] == 0x00;
+}
+
+static bool test_memmove_handles_overlap(void)
+{
+    /*
+     * The whole reason memmove exists. Shifting up by one overlaps, and a
+     * forward copy reads bytes it has already written, smearing the first
+     * byte across the buffer. memcpy is allowed to do exactly that.
+     */
+    char buf[8] = { 1, 2, 3, 4, 5, 6, 7, 0 };
+
+    memmove(buf + 1, buf, 6);
+
+    return buf[0] == 1 && buf[1] == 1 && buf[2] == 2
+        && buf[3] == 3 && buf[6] == 6;
+}
+
+static bool test_string_functions(void)
+{
+    const char *s = "kosmos";
+
+    return strlen("") == 0
+        && strlen(s) == 6
+        && strcmp("a", "a") == 0
+        && strcmp("a", "b") < 0
+        && strcmp("b", "a") > 0
+        && strncmp("abcd", "abce", 3) == 0
+        && strncmp("abcd", "abce", 4) < 0
+        && strchr(s, 'm') == s + 3   /* k o s m */
+        && strchr(s, 'z') == NULL
+        && strchr(s, '\0') == s + 6;   /* the terminator is findable */
+}
+
+static bool test_fp_is_usable_at_el1(void)
+{
+    /*
+     * CPACR_EL1.FPEN resets to "trap everything", and setjmp saves d8 to
+     * d15. Without the enable in start.S, the first setjmp is an EC 0x07
+     * trap whose name says nothing about floating point unless you go
+     * looking. That is how it was found.
+     *
+     * Reading CPACR is not enough on its own, so this also executes an FP
+     * instruction. The arithmetic is in assembly because the kernel is built
+     * -mgeneral-regs-only and the compiler will not emit one.
+     */
+    uint64_t cpacr;
+    uint64_t bits;
+
+    __asm__ volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
+    if (((cpacr >> 20) & 3) != 3) {
+        return false;
+    }
+
+    __asm__ volatile(
+        "fmov d0, #1.0\n"
+        "fadd d0, d0, d0\n"
+        "fmov %0, d0\n"
+        : "=r"(bits) : : "d0");
+
+    return bits == 0x4000000000000000UL;    /* 2.0 as an IEEE-754 double */
+}
+
+/*
+ * setjmp and longjmp.
+ *
+ * The piece that has to be right the first time. Lua raises every error
+ * through it, so a mistake is invisible until the first error is raised,
+ * which can be weeks after this was written.
+ */
+static jmp_buf test_jmp;
+
+static void jump_back(int value)
+{
+    longjmp(test_jmp, value);
+}
+
+static bool test_setjmp_returns_zero_directly(void)
+{
+    return setjmp(test_jmp) == 0;
+}
+
+static bool test_longjmp_delivers_its_value(void)
+{
+    volatile int seen = -1;
+    int r = setjmp(test_jmp);
+
+    if (r == 0) {
+        jump_back(42);
+    }
+
+    seen = r;
+    return seen == 42;
+}
+
+static bool test_longjmp_turns_zero_into_one(void)
+{
+    /* The standard requires it, and Lua depends on it: setjmp has to be able
+     * to tell a direct call from an arrival. */
+    int r = setjmp(test_jmp);
+
+    if (r == 0) {
+        jump_back(0);
+    }
+
+    return r == 1;
+}
+
+static volatile unsigned long seed = 0x1000;
+
+static bool test_longjmp_restores_callee_saved_registers(void)
+{
+    /*
+     * Ten values live across the jump, taken from a volatile so the compiler
+     * cannot rematerialise them as constants. With that many it has to hold
+     * some in x19 to x28, which is exactly the set longjmp must restore. If
+     * it does not, they come back as whatever the deeper frame left there.
+     *
+     * This is the test that catches a jmp_buf whose offsets drifted from the
+     * assembly.
+     */
+    unsigned long a = seed + 1, b = seed + 2, c = seed + 3, d = seed + 4;
+    unsigned long e = seed + 5, f = seed + 6, g = seed + 7, h = seed + 8;
+    unsigned long i = seed + 9, j = seed + 10;
+    volatile bool jumped = false;
+
+    if (setjmp(test_jmp) == 0) {
+        jumped = true;
+        jump_back(1);
+    }
+
+    return jumped
+        && a == seed + 1 && b == seed + 2 && c == seed + 3 && d == seed + 4
+        && e == seed + 5 && f == seed + 6 && g == seed + 7 && h == seed + 8
+        && i == seed + 9 && j == seed + 10;
+}
+
+static void jump_from_a_deep_frame(void)
+{
+    /*
+     * A big frame rather than a recursive one. Recursion would say the same
+     * thing, but GCC refuses to compile it: the only non-recursive path ends
+     * in longjmp, which is noreturn, so it concludes the function never
+     * returns and reports infinite recursion. It is not wrong about what it
+     * can see. Four kilobytes moves sp far enough to prove the point.
+     */
+    volatile char pad[4096];
+
+    pad[0] = 1;
+    pad[sizeof(pad) - 1] = 2;
+
+    if (pad[0] + pad[sizeof(pad) - 1] == 3) {
+        longjmp(test_jmp, 9);
+    }
+}
+
+static bool test_longjmp_restores_the_stack_pointer(void)
+{
+    /*
+     * Jumping out of a deep call has to put sp back where setjmp saw it. If
+     * it does not, the stack keeps growing every time an error is raised,
+     * and Lua raises a lot of them: the symptom is a stack overflow after
+     * running fine for a while, which is the worst kind to chase.
+     */
+    volatile unsigned long before;
+    volatile unsigned long after;
+    int r;
+
+    __asm__ volatile("mov %0, sp" : "=r"(before));
+
+    r = setjmp(test_jmp);
+    if (r == 0) {
+        jump_from_a_deep_frame();
+    }
+
+    __asm__ volatile("mov %0, sp" : "=r"(after));
+
+    return r == 9 && after == before;
+}
+
 static const struct test tests[] = {
     { "boot: .bss is zeroed",                  test_bss_zeroed          },
     { "boot: .bss bounds are 16-byte aligned", test_bss_bounds_aligned  },
@@ -477,6 +684,16 @@ static const struct test tests[] = {
     { "mmu: kernel text is not writable",      test_kernel_text_is_not_writable },
     { "mmu: rodata is not writable",           test_rodata_is_not_writable },
     { "mmu: memory works through translation", test_memory_still_works_through_translation },
+    { "libc: memcpy and memcmp",               test_memcpy_and_memcmp },
+    { "libc: memset fills exactly its range",  test_memset_fills_exactly },
+    { "libc: memmove handles overlap",         test_memmove_handles_overlap },
+    { "libc: the string functions",            test_string_functions },
+    { "fp: EL1 may use FP and SIMD",           test_fp_is_usable_at_el1 },
+    { "libc: setjmp returns 0 when called",    test_setjmp_returns_zero_directly },
+    { "libc: longjmp delivers its value",      test_longjmp_delivers_its_value },
+    { "libc: longjmp turns 0 into 1",          test_longjmp_turns_zero_into_one },
+    { "libc: longjmp restores x19-x28",        test_longjmp_restores_callee_saved_registers },
+    { "libc: longjmp restores sp",             test_longjmp_restores_the_stack_pointer },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },

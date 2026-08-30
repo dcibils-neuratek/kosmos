@@ -19,9 +19,10 @@ SRCS := boot/start.S \
         hal/qemu-virt/gic.c \
         hal/qemu-virt/timer.c \
         kernel/console.c \
+        runtime/libc/string.c \
+        runtime/libc/setjmp.S \
         kernel/panic.c \
         kernel/pmm.c \
-        kernel/string.c \
         kernel/main.c
 
 # The test build is a separate image in a separate directory. Same sources
@@ -48,7 +49,7 @@ CFLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
           -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
           -mgeneral-regs-only \
           -O2 -g \
-          -Iarch/aarch64 -Ihal -Ikernel $(TESTDEFS)
+          -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include $(TESTDEFS)
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
