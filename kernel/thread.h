@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "context.h"
+#include "ipc.h"
 
 /*
  * Threads and the scheduler.
@@ -67,6 +68,33 @@ struct thread {
         uint64_t       key;
         unsigned long  quantum;
     } sched;
+
+    /*
+     * IPC state.
+     *
+     * `next` here is a separate link from `sched.next` and must stay
+     * separate. A thread blocked on an endpoint is in that endpoint's queue
+     * and *not* in the scheduler's, so one field could not hold both; using
+     * one would corrupt whichever queue was touched second, and it would do
+     * it silently.
+     */
+    struct {
+        struct message  msg;        /* the message in flight, either way */
+        struct thread  *next;       /* link in an endpoint's wait queue */
+        struct thread  *peer;       /* who sent to us, or who we sent to */
+        struct endpoint *waiting_on;/* so destroying an endpoint can find us */
+        int             status;     /* the result handed over on waking */
+    } ipc;
+
+    /*
+     * Capabilities, by index. A thread cannot name what it was not handed:
+     * there is no global table and no identifier to guess. At M4 this moves
+     * to the process, which is where design.md puts it.
+     */
+    struct {
+        struct endpoint *endpoint;
+        unsigned         generation;
+    } caps[CAPS_PER_THREAD];
 
     /* Kept so the stacks can be handed back, and so a fault inside a thread
      * can name which one it was. */

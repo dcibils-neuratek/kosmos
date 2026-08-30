@@ -1,0 +1,374 @@
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "ipc.h"
+#include "thread.h"
+#include "panic.h"
+
+#define ENDPOINT_MAX    32
+
+/*
+ * There is no explicit "what is this thread waiting for" field, and that is
+ * deliberate. Which of an endpoint's three queues a thread is on already
+ * answers it exactly, and a second representation of the same fact is a
+ * second thing to keep consistent with the first.
+ */
+
+struct endpoint {
+    bool in_use;
+
+    /*
+     * A generation number, bumped on every destroy.
+     *
+     * Slots are reused, so without this a capability outliving its endpoint
+     * would quietly start naming whatever was created next in the same slot.
+     * That is not a leak, it is a thread reaching something it was never
+     * handed, which is the exact property capabilities exist to prevent.
+     * With it, a stale capability fails as IPC_ERR_BAD_CAP.
+     */
+    unsigned generation;
+
+    /*
+     * Three queues, and the third is the one that is easy to forget.
+     *
+     * Senders and receivers waiting to meet are the obvious two. A sender
+     * whose message was already taken is waiting on the *receiver* rather
+     * than on the endpoint, and would be in neither, so destroying the
+     * endpoint would leave it blocked forever. The third list is what makes
+     * "destroying an endpoint wakes everything blocked on it" true rather
+     * than nearly true.
+     *
+     * **A thread is on exactly one of these at a time.** All three thread
+     * through the same `ipc.next` field, so putting a thread on two of them
+     * silently truncates whichever list was linked first. A sender moves
+     * from `senders` to `awaiting_reply` when its message is collected; it
+     * is never on both.
+     */
+    struct thread *senders;
+    struct thread *receivers;
+    struct thread *awaiting_reply;
+};
+
+static struct endpoint endpoints[ENDPOINT_MAX];
+
+/*
+ * Single core and cooperative, so none of the queue surgery below can be
+ * interrupted by anything that also touches it: the only interrupt handler
+ * that exists counts timer ticks. When an interrupt can wake a thread, or
+ * when SMP arrives at M6, every function here needs the endpoint locked for
+ * the whole operation. Marked rather than left to be discovered.
+ */
+
+static void queue_push(struct thread **head, struct thread *t)
+{
+    struct thread **p = head;
+
+    /* Appended rather than pushed, so waiting threads are served in the
+     * order they arrived. A stack here would starve whoever came first. */
+    while (*p != NULL) {
+        p = &(*p)->ipc.next;
+    }
+
+    t->ipc.next = NULL;
+    *p = t;
+}
+
+static struct thread *queue_pop(struct thread **head)
+{
+    struct thread *t = *head;
+
+    if (t == NULL) {
+        return NULL;
+    }
+
+    *head = t->ipc.next;
+    t->ipc.next = NULL;
+    return t;
+}
+
+static void queue_remove(struct thread **head, struct thread *t)
+{
+    struct thread **p = head;
+
+    while (*p != NULL) {
+        if (*p == t) {
+            *p = t->ipc.next;
+            t->ipc.next = NULL;
+            return;
+        }
+        p = &(*p)->ipc.next;
+    }
+}
+
+void ipc_init(void)
+{
+    unsigned i;
+
+    for (i = 0; i < ENDPOINT_MAX; i++) {
+        endpoints[i].in_use = false;
+        endpoints[i].senders = NULL;
+        endpoints[i].receivers = NULL;
+        endpoints[i].awaiting_reply = NULL;
+        /* generation is deliberately not reset: it only ever goes up. */
+    }
+}
+
+unsigned ipc_endpoints_in_use(void)
+{
+    unsigned n = 0;
+    unsigned i;
+
+    for (i = 0; i < ENDPOINT_MAX; i++) {
+        if (endpoints[i].in_use) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+/* The endpoint a capability index names, or NULL if it names nothing. This
+ * is the entire access check: a bounds test and a generation match. */
+static struct endpoint *resolve(struct thread *t, cap_t index)
+{
+    struct endpoint *ep;
+
+    if (index < 0 || index >= CAPS_PER_THREAD) {
+        return NULL;
+    }
+
+    ep = t->caps[index].endpoint;
+
+    if (ep == NULL || !ep->in_use) {
+        return NULL;
+    }
+
+    if (t->caps[index].generation != ep->generation) {
+        return NULL;    /* destroyed and the slot reused since */
+    }
+
+    return ep;
+}
+
+static cap_t install(struct thread *t, struct endpoint *ep)
+{
+    cap_t i;
+
+    for (i = 0; i < CAPS_PER_THREAD; i++) {
+        if (t->caps[i].endpoint == NULL) {
+            t->caps[i].endpoint = ep;
+            t->caps[i].generation = ep->generation;
+            return i;
+        }
+    }
+
+    return IPC_ERR_NO_SPACE;
+}
+
+cap_t ipc_endpoint_create(void)
+{
+    struct thread *self = thread_current();
+    unsigned i;
+
+    for (i = 0; i < ENDPOINT_MAX; i++) {
+        if (!endpoints[i].in_use) {
+            cap_t index;
+
+            endpoints[i].in_use = true;
+            endpoints[i].senders = NULL;
+            endpoints[i].receivers = NULL;
+            endpoints[i].awaiting_reply = NULL;
+
+            index = install(self, &endpoints[i]);
+
+            if (index < 0) {
+                endpoints[i].in_use = false;
+                return index;
+            }
+
+            return index;
+        }
+    }
+
+    return IPC_ERR_NO_SPACE;
+}
+
+cap_t ipc_cap_grant(struct thread *to, cap_t from_index)
+{
+    struct endpoint *ep = resolve(thread_current(), from_index);
+
+    if (ep == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    /* The index the recipient gets is unrelated to the one the granter used.
+     * An index is meaningful only inside the table it came from, which is
+     * what stops one from being guessed or forged elsewhere. */
+    return install(to, ep);
+}
+
+/* Wakes a thread out of an IPC wait with a result. */
+static void deliver(struct thread *t, int status)
+{
+    t->ipc.status = status;
+    t->ipc.waiting_on = NULL;
+    thread_wake(t);
+}
+
+int ipc_endpoint_destroy(cap_t index)
+{
+    struct thread *self = thread_current();
+    struct endpoint *ep = resolve(self, index);
+    struct thread *t;
+
+    if (ep == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    /*
+     * The trap roadmap.md names for this milestone. Everything blocked on
+     * this endpoint has to be woken with an error, or it waits forever for a
+     * server that no longer exists, and a server that cannot be restarted
+     * takes the design's whole recovery story with it.
+     */
+    while ((t = queue_pop(&ep->senders)) != NULL) {
+        deliver(t, IPC_ERR_GONE);
+    }
+
+    while ((t = queue_pop(&ep->receivers)) != NULL) {
+        deliver(t, IPC_ERR_GONE);
+    }
+
+    while ((t = queue_pop(&ep->awaiting_reply)) != NULL) {
+        deliver(t, IPC_ERR_GONE);
+    }
+
+    /*
+     * Bumped before the slot is freed, so every capability naming it is
+     * already stale by the time the slot can be handed out again.
+     */
+    ep->generation++;
+    ep->in_use = false;
+
+    /* The granter's own capability is cleared; the others go stale on their
+     * next use, which is what the generation check is for. */
+    self->caps[index].endpoint = NULL;
+
+    return IPC_OK;
+}
+
+int ipc_call(cap_t index, const struct message *msg, struct message *reply)
+{
+    struct thread *self = thread_current();
+    struct endpoint *ep = resolve(self, index);
+    struct thread *receiver;
+
+    if (ep == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    self->ipc.msg = *msg;
+
+    receiver = queue_pop(&ep->receivers);
+
+    if (receiver != NULL) {
+        /*
+         * Somebody is already waiting. Hand the message straight over rather
+         * than parking it anywhere: this is the rendezvous, and it is why
+         * there is no buffer in the kernel.
+         *
+         * The message is already gone, so this thread goes straight onto the
+         * reply queue and never touches the sender queue at all.
+         */
+        receiver->ipc.msg = *msg;
+        receiver->ipc.peer = self;
+        deliver(receiver, IPC_OK);
+        queue_push(&ep->awaiting_reply, self);
+    } else {
+        /*
+         * Nobody home. Wait to be collected, on the sender queue and only
+         * there. It moves to awaiting_reply in ipc_receive, when its message
+         * is actually taken. Being on both at once would corrupt them both,
+         * because they share the `ipc.next` link.
+         */
+        queue_push(&ep->senders, self);
+    }
+
+    /* Either way it is on a queue this endpoint can find, so destroying the
+     * endpoint reaches it. */
+    self->ipc.waiting_on = ep;
+    thread_block();
+
+    /* Woken: with a reply, or with an error because the endpoint died. */
+    if (self->ipc.status != IPC_OK) {
+        return self->ipc.status;
+    }
+
+    *reply = self->ipc.msg;
+    return IPC_OK;
+}
+
+int ipc_receive(cap_t index, struct message *msg, struct thread **sender)
+{
+    struct thread *self = thread_current();
+    struct endpoint *ep = resolve(self, index);
+    struct thread *s;
+
+    if (ep == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    s = queue_pop(&ep->senders);
+
+    if (s != NULL) {
+        /*
+         * A sender was already waiting. It stays blocked, but what it is
+         * waiting for has changed: it wanted a receiver and now it wants a
+         * reply, so it moves from one queue to the other. `queue_pop` above
+         * already took it off the sender queue.
+         */
+        *msg = s->ipc.msg;
+        *sender = s;
+        s->ipc.peer = self;
+        queue_push(&ep->awaiting_reply, s);
+        return IPC_OK;
+    }
+
+    queue_push(&ep->receivers, self);
+    self->ipc.waiting_on = ep;
+    thread_block();
+
+    if (self->ipc.status != IPC_OK) {
+        return self->ipc.status;
+    }
+
+    *msg = self->ipc.msg;
+    *sender = self->ipc.peer;
+    return IPC_OK;
+}
+
+int ipc_reply(struct thread *sender, const struct message *msg)
+{
+    struct endpoint *ep;
+
+    if (sender == NULL) {
+        return IPC_ERR_NO_PEER;
+    }
+
+    ep = sender->ipc.waiting_on;
+
+    if (ep == NULL) {
+        /* Not waiting for anything, so there is nothing to answer. Replying
+         * twice to the same sender lands here rather than corrupting it. */
+        return IPC_ERR_NO_PEER;
+    }
+
+    queue_remove(&ep->awaiting_reply, sender);
+
+    sender->ipc.msg = *msg;
+    deliver(sender, IPC_OK);
+
+    return IPC_OK;
+}

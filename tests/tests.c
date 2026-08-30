@@ -11,6 +11,7 @@
 #include "kernel.h"
 #include "thread.h"
 #include "sched.h"
+#include "ipc.h"
 #include "hal.h"
 
 #include <string.h>
@@ -475,13 +476,21 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
         return false;
     }
 
+    if (thread_count() != before + 1) {
+        return false;
+    }
+
     for (i = 0; i < 8; i++) {
         thread_yield();
     }
 
-    /* It ran, it returned, and the system is still here. The slot is not
-     * reclaimed, which is deliberate and recorded in thread_exit. */
-    return finished && thread_count() == before + 1;
+    /*
+     * It ran, it returned rather than falling off the end into whatever x30
+     * held, and its slot went back to being available. The count returning
+     * to where it started is what says thread_exit ran: a thread that fell
+     * through would still be counted as alive.
+     */
+    return finished && thread_count() == before;
 }
 
 /*
@@ -621,6 +630,321 @@ static bool test_thread_stacks_have_guard_pages(void)
     }
 
     return true;
+}
+
+/*
+ * M3: synchronous IPC.
+ */
+static volatile cap_t server_cap;
+static volatile int   server_result;
+static volatile bool  server_done;
+
+static void echo_server(void *arg)
+{
+    /*
+     * The shape every Kosmos server will have: receive, act, reply, repeat.
+     * This one answers with the request's words doubled, so a reply that
+     * arrives from the wrong place is visible rather than plausible.
+     */
+    unsigned rounds = (unsigned)(uintptr_t)arg;
+    unsigned i;
+
+    for (i = 0; i < rounds; i++) {
+        struct message msg;
+        struct message reply;
+        struct thread *sender;
+        unsigned w;
+
+        server_result = ipc_receive(server_cap, &msg, &sender);
+        if (server_result != IPC_OK) {
+            break;
+        }
+
+        reply.tag = msg.tag + 1;
+        for (w = 0; w < MSG_WORDS; w++) {
+            reply.word[w] = msg.word[w] * 2;
+        }
+
+        server_result = ipc_reply(sender, &reply);
+        if (server_result != IPC_OK) {
+            break;
+        }
+    }
+
+    server_done = true;
+}
+
+static bool test_ipc_call_and_reply(void)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    cap_t client_cap;
+    struct thread *server;
+    unsigned i;
+
+    server_done = false;
+    server_result = IPC_OK;
+
+    client_cap = ipc_endpoint_create();
+    if (client_cap < 0) {
+        return false;
+    }
+
+    server = thread_create("echo", echo_server, (void *)(uintptr_t)1);
+    if (server == NULL) {
+        return false;
+    }
+
+    /* The server gets its own index for the same endpoint. The two are
+     * unrelated on purpose: an index means nothing outside its own table. */
+    server_cap = ipc_cap_grant(server, client_cap);
+    if (server_cap < 0) {
+        return false;
+    }
+
+    msg.tag = 7;
+    for (i = 0; i < MSG_WORDS; i++) {
+        msg.word[i] = i + 1;
+    }
+
+    if (ipc_call(client_cap, &msg, &reply) != IPC_OK) {
+        return false;
+    }
+
+    if (reply.tag != 8) {
+        return false;
+    }
+
+    for (i = 0; i < MSG_WORDS; i++) {
+        if (reply.word[i] != (uint64_t)(i + 1) * 2) {
+            return false;
+        }
+    }
+
+    for (i = 0; i < 8 && !server_done; i++) {
+        thread_yield();
+    }
+
+    (void)ipc_endpoint_destroy(client_cap);
+    return server_done && server_result == IPC_OK;
+}
+
+static bool test_ipc_works_in_both_arrival_orders(void)
+{
+    /*
+     * Rendezvous has two paths and only one of them gets exercised by
+     * accident. Sender first means the message waits on the endpoint;
+     * receiver first means it is handed straight over. Both have to work,
+     * and the second is the one the fast path depends on.
+     *
+     * The first call in this test arrives before the server has ever run, so
+     * it takes the sender-first path. Yielding first lets the server reach
+     * its receive, so the second call takes the receiver-first path.
+     */
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    cap_t cap;
+    struct thread *server;
+    unsigned i;
+    bool ok;
+
+    server_done = false;
+    cap = ipc_endpoint_create();
+    if (cap < 0) {
+        return false;
+    }
+
+    server = thread_create("echo2", echo_server, (void *)(uintptr_t)2);
+    if (server == NULL) {
+        return false;
+    }
+    server_cap = ipc_cap_grant(server, cap);
+
+    /* Sender first: the server has not run at all yet. */
+    msg.tag = 1;
+    msg.word[0] = 10;
+    ok = (ipc_call(cap, &msg, &reply) == IPC_OK) && reply.word[0] == 20;
+
+    /* Receiver first: give the server a chance to be waiting. */
+    for (i = 0; i < 4; i++) {
+        thread_yield();
+    }
+
+    msg.tag = 2;
+    msg.word[0] = 30;
+    ok = ok && (ipc_call(cap, &msg, &reply) == IPC_OK) && reply.word[0] == 60;
+
+    for (i = 0; i < 8 && !server_done; i++) {
+        thread_yield();
+    }
+
+    (void)ipc_endpoint_destroy(cap);
+    return ok;
+}
+
+static volatile int blocked_result;
+static volatile bool blocked_returned;
+
+static void blocked_caller(void *arg)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    cap_t cap = (cap_t)(intptr_t)arg;
+
+    msg.tag = 1;
+    blocked_result = ipc_call(cap, &msg, &reply);
+    blocked_returned = true;
+}
+
+static bool test_destroying_an_endpoint_wakes_the_blocked(void)
+{
+    /*
+     * The trap roadmap.md names for this milestone, and the one that decides
+     * whether a server can ever be restarted.
+     *
+     * A thread blocked in a call on an endpoint that is then destroyed has
+     * to come back with an error. If it does not, it waits forever for a
+     * server that no longer exists, and every recovery story in design.md
+     * §10 rests on this working.
+     */
+    cap_t cap;
+    struct thread *caller;
+    cap_t caller_cap;
+    unsigned i;
+
+    blocked_returned = false;
+    blocked_result = IPC_OK;
+
+    cap = ipc_endpoint_create();
+    if (cap < 0) {
+        return false;
+    }
+
+    caller = thread_create("caller", blocked_caller, NULL);
+    if (caller == NULL) {
+        return false;
+    }
+
+    caller_cap = ipc_cap_grant(caller, cap);
+    if (caller_cap < 0) {
+        return false;
+    }
+
+    /* The thread was created before its capability index was known, so hand
+     * it over through the argument slot the entry function reads. */
+    caller->ctx.x20 = (uint64_t)(uintptr_t)(intptr_t)caller_cap;
+
+    /* Let it block. Nobody will ever receive. */
+    for (i = 0; i < 4; i++) {
+        thread_yield();
+    }
+
+    if (blocked_returned) {
+        return false;   /* it did not block at all */
+    }
+
+    if (ipc_endpoint_destroy(cap) != IPC_OK) {
+        return false;
+    }
+
+    for (i = 0; i < 8 && !blocked_returned; i++) {
+        thread_yield();
+    }
+
+    return blocked_returned && blocked_result == IPC_ERR_GONE;
+}
+
+static bool test_a_stale_capability_fails(void)
+{
+    /*
+     * Endpoint slots are reused. Without a generation number, a capability
+     * that outlived its endpoint would quietly start naming whatever was
+     * created next in the same slot, which is a thread reaching something it
+     * was never handed. That is the exact property capabilities exist to
+     * prevent, so it is worth an explicit test rather than trust.
+     */
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    cap_t first;
+    cap_t second;
+
+    first = ipc_endpoint_create();
+    if (first < 0) {
+        return false;
+    }
+
+    if (ipc_endpoint_destroy(first) != IPC_OK) {
+        return false;
+    }
+
+    /* Very likely the same slot, since it was just freed. */
+    second = ipc_endpoint_create();
+    if (second < 0) {
+        return false;
+    }
+
+    /*
+     * Plant a stale capability in a slot of its own rather than over the top
+     * of the live one, so the endpoint created above stays reachable and can
+     * be destroyed afterwards. Overwriting the live slot leaves an endpoint
+     * that nothing can name, which is a leak in the test rather than a
+     * finding about the kernel.
+     */
+    {
+        struct thread *self = thread_current();
+        cap_t spare = -1;
+        bool stale_rejected;
+        cap_t i;
+
+        for (i = 0; i < CAPS_PER_THREAD; i++) {
+            if (self->caps[i].endpoint == NULL) {
+                spare = i;
+                break;
+            }
+        }
+
+        if (spare < 0) {
+            return false;
+        }
+
+        /* The same endpoint, named with the generation it had before the
+         * destroy. That is precisely what a capability held across a
+         * server restart looks like. */
+        self->caps[spare].endpoint = self->caps[second].endpoint;
+        self->caps[spare].generation = self->caps[second].generation - 1;
+
+        stale_rejected = ipc_call(spare, &msg, &reply) == IPC_ERR_BAD_CAP;
+
+        self->caps[spare].endpoint = NULL;
+
+        return stale_rejected && ipc_endpoint_destroy(second) == IPC_OK;
+    }
+}
+
+static bool test_a_capability_index_out_of_range_fails(void)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+
+    return ipc_call(-1, &msg, &reply) == IPC_ERR_BAD_CAP
+        && ipc_call(CAPS_PER_THREAD, &msg, &reply) == IPC_ERR_BAD_CAP
+        && ipc_call(0, &msg, &reply) == IPC_ERR_BAD_CAP;   /* nothing installed */
+}
+
+static bool test_endpoints_are_reclaimed(void)
+{
+    unsigned before = ipc_endpoints_in_use();
+    cap_t cap = ipc_endpoint_create();
+
+    if (cap < 0 || ipc_endpoints_in_use() != before + 1) {
+        return false;
+    }
+
+    if (ipc_endpoint_destroy(cap) != IPC_OK) {
+        return false;
+    }
+
+    return ipc_endpoints_in_use() == before;
 }
 
 /*
@@ -1540,6 +1864,12 @@ static const struct test tests[] = {
     { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
+    { "ipc: call and reply",                   test_ipc_call_and_reply },
+    { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
+    { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },
+    { "ipc: a stale capability fails",         test_a_stale_capability_fails },
+    { "ipc: an out-of-range index fails",      test_a_capability_index_out_of_range_fails },
+    { "ipc: endpoints are reclaimed",          test_endpoints_are_reclaimed },
     { "mmu: translation is on",                test_mmu_is_on },
     { "mmu: a null dereference faults",        test_null_dereference_faults },
     { "mmu: the stack guard is unmapped",      test_stack_guard_page_is_unmapped },

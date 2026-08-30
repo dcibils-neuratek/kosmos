@@ -32,6 +32,7 @@ SRCS := boot/start.S \
         kernel/pmm.c \
         kernel/thread.c \
         kernel/sched_rr.c \
+        kernel/ipc.c \
         kernel/main.c \
         lua/kosmos/kosmos_lua.c \
         lua/kosmos/repl.c

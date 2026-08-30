@@ -15,6 +15,7 @@
 #include "kosmos_lua.h"
 #include "thread.h"
 #include "sched.h"
+#include "ipc.h"
 #include "panic.h"
 
 #ifdef KOSMOS_TEST
@@ -80,6 +81,7 @@ void kmain(void)
     }
 
     thread_init();
+    ipc_init();
     kputs("sched ");
     kputs(sched_current()->name);
     kputc('\n');

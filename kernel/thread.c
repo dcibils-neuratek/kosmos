@@ -47,13 +47,17 @@ struct thread *thread_current(void)
     return current;
 }
 
+/* Threads that could still run. A dead one is not counted: its slot is
+ * reusable and counting it would make the number mean "slots touched"
+ * rather than "threads alive". */
 unsigned thread_count(void)
 {
     unsigned n = 0;
     unsigned i;
 
     for (i = 0; i < THREAD_MAX; i++) {
-        if (threads[i].state != THREAD_UNUSED) {
+        if (threads[i].state != THREAD_UNUSED
+            && threads[i].state != THREAD_DEAD) {
             n++;
         }
     }
@@ -74,12 +78,34 @@ static void copy_name(char *dst, const char *src)
     dst[i] = '\0';
 }
 
+/*
+ * A free slot: never used, or used by a thread that has since exited.
+ *
+ * Recycling a dead thread's slot also recycles its stacks, and that is the
+ * point rather than a shortcut. They are already allocated with their guard
+ * pages already unmapped, which is exactly the state a new thread wants;
+ * handing them back to the page allocator would mean re-mapping those guards
+ * only to unmap them again.
+ *
+ * A dead thread is not standing on its stack any more. It stopped the moment
+ * thread_exit switched away, and it can never be scheduled again.
+ *
+ * Untouched slots are preferred so that reuse only starts once the pool is
+ * genuinely full, which keeps a use-after-exit bug visible for as long as
+ * possible rather than being masked by an immediate recycle.
+ */
 static struct thread *alloc_thread(void)
 {
     unsigned i;
 
     for (i = 0; i < THREAD_MAX; i++) {
         if (threads[i].state == THREAD_UNUSED) {
+            return &threads[i];
+        }
+    }
+
+    for (i = 0; i < THREAD_MAX; i++) {
+        if (threads[i].state == THREAD_DEAD) {
             return &threads[i];
         }
     }
@@ -97,6 +123,12 @@ static struct thread *alloc_thread(void)
  *
  * Returns the top, which is what a stack pointer wants.
  */
+/* The top of a stack allocated by alloc_stack, from its base. */
+static void *stack_top_of(void *base)
+{
+    return (char *)base + (THREAD_STACK_PAGES + 1) * PAGE_SIZE;
+}
+
 static void *alloc_stack(void **base_out)
 {
     void *base = pmm_alloc_contiguous(THREAD_STACK_PAGES + 1);
@@ -110,7 +142,7 @@ static void *alloc_stack(void **base_out)
     mmu_unmap_page((uintptr_t)base);
 
     *base_out = base;
-    return (char *)base + (THREAD_STACK_PAGES + 1) * PAGE_SIZE;
+    return stack_top_of(base);
 }
 
 void thread_init(void)
@@ -151,21 +183,40 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
         return NULL;
     }
 
-    stack_top = alloc_stack(&t->stack);
-    if (stack_top == NULL) {
-        return NULL;
-    }
+    if (t->stack != NULL) {
+        /* A recycled slot, with its stacks and their guard pages already in
+         * place. Only the top of each has to be recomputed. */
+        stack_top     = stack_top_of(t->stack);
+        exception_top = stack_top_of(t->exception_stack);
+    } else {
+        stack_top = alloc_stack(&t->stack);
+        if (stack_top == NULL) {
+            return NULL;
+        }
 
-    exception_top = alloc_stack(&t->exception_stack);
-    if (exception_top == NULL) {
-        /* The first stack is deliberately not handed back. Freeing it would
-         * mean re-mapping its guard page, and this path only happens when
-         * memory has already run out, where leaking four pages matters far
-         * less than a half-undone unmap. */
-        return NULL;
+        exception_top = alloc_stack(&t->exception_stack);
+        if (exception_top == NULL) {
+            /* The first stack is deliberately not handed back. Freeing it
+             * would mean re-mapping its guard page, and this path only
+             * happens when memory has already run out, where leaking four
+             * pages matters far less than a half-undone unmap. */
+            return NULL;
+        }
     }
 
     memset(&t->ctx, 0, sizeof(t->ctx));
+
+    /*
+     * Everything the previous occupant of this slot left behind.
+     *
+     * The capability table above all: a recycled thread inheriting the dead
+     * one's capabilities would reach endpoints it was never handed, which is
+     * the one thing capabilities exist to prevent. It would also be a
+     * particularly quiet bug, since everything would appear to work.
+     */
+    memset(t->caps, 0, sizeof(t->caps));
+    memset(&t->ipc, 0, sizeof(t->ipc));
+    memset(&t->sched, 0, sizeof(t->sched));
 
     /*
      * A context built by hand so the first `ret` in context_switch lands in
@@ -279,10 +330,9 @@ void thread_exit(void)
      * A dead thread is never enqueued again, so it leaves the policy's
      * structures by simply not going back in.
      *
-     * Its stacks stay allocated. It is still standing on one of them until
-     * the switch completes, and there is nothing yet that reaps a thread
-     * after the fact. THREAD_MAX slots is a bounded leak and reclaiming them
-     * belongs with process lifetimes at M4.
+     * Its stacks stay allocated, and stay with the slot: whoever reuses it
+     * inherits them, guard pages and all. Handing them back would mean
+     * re-mapping those guards only to unmap them again for the next thread.
      */
     next->state = THREAD_RUNNING;
     next->switches++;
