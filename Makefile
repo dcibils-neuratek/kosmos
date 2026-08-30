@@ -252,6 +252,7 @@ USER_SRCS := user/init/start.S \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \
+             $(GEN)/font_8x16.c \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
              $(LUA_SRCS) \
@@ -293,6 +294,12 @@ $(UBUILD)/%.S.o: %.S
 $(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< init_lua $@
+
+# The font, from the BDF the author ships to an array with one byte per
+# pixel row. Vendored unmodified for the same reason lua/upstream/ is.
+$(GEN)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bdf2c.py $< font_8x16 $@
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py
 	@mkdir -p $(dir $@)

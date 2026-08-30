@@ -34,7 +34,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-103 tests, five benchmarks, and 34 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+104 tests, five benchmarks, and 34 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
@@ -69,7 +69,7 @@ nil	no such path: /nowhere
 - [x] Explicit `free`, a `__gc` net, and telling the GC the real size
 - [x] The screen reachable from a process, as a surface
 - [ ] A backbuffer and damage tracking
-- [ ] An 8x16 bitmap font
+- [x] An 8x16 bitmap font
 - [ ] The app server in Lua: windows, decoration, stacking, focus
 - [ ] Input beyond the serial line
 - [ ] **Definition of done: drag a window with a hung app inside it, and have the window keep moving smoothly**
@@ -84,15 +84,21 @@ nil	no such path: /nowhere
 
 **Lua draws, and no line of it computes a pixel offset.** `gfx.surface{w=,h=}` is a userdata over flat bytes with `fill`, `span`, `blit`, `blend`, `get` and `set`; every pixel loop is in `user/lib/gfx.c` and every primitive clips rather than raising, because a window half off the edge of the screen is the normal case. `gfx.screen()` is the framebuffer as a surface, for the one process that was handed it.
 
+**There is text.** Spleen 8x16, BSD-2-Clause, vendored unmodified under `assets/fonts/` beside its licence and converted by `tools/bdf2c.py` into 96 glyphs of sixteen bytes — one byte per row, MSB leftmost, which is the VGA ROM layout and is what makes drawing a glyph a shift and a test rather than a lookup. `s:text(x, y, string, colour [, background])` returns the next x, so laying out a line needs no arithmetic about pixels in Lua.
+
+Two choices worth recording. **Linux's `font_8x16.c` was rejected**: it is the obvious thing to reach for, it is the same VGA font, and it is GPL — it would have made the kernel image GPL. And **the generated file prints each byte beside the row it draws**, because a shifted bit, a reversed row order or an off-by-one in the range are all obvious read pairwise and all subtle on a screen. Five of those were introduced deliberately and all five failed the tests.
+
+The tests compare rendered pixels against patterns written out by hand rather than against the array that drew them — comparing the output to its own input would pass just as happily with the bits reversed.
+
 **A pitch bug is invisible from inside the process, and that is the most useful thing found this session.** If `row_of` steps by `width * 4` instead of by the pitch, every read agrees with every write — the surface just has an unused gap at the end of each row — and *the whole suite passes, 103 of 103*. It was tried, not reasoned about. The only observer who disagrees is on the far side of the framebuffer, where the stride is 4160 and a row written 4096 bytes along lands sixteen pixels left.
 
 So the check for the rule this whole module exists to enforce cannot live in the guest. `make screenshot` grew a second phase: it waits for the shell prompt, types a `gfx.screen()` drawing of vertical bars, screendumps, and requires them to still be vertical. With the bug in place it reports the bar "found at x=184..189" instead of 200 — the drift, exactly.
 
 **Surfaces come from the process heap, so a full-screen one does not fit.** 1024x768 is 3.2 MB against a 2 MB heap, and `gfx.surface` says so rather than failing obscurely. That is a real limit and it has to be solved inside M6, not at M7: the app server's backbuffer is full-screen by definition. It needs pages from the kernel rather than from the Lua heap, which is the same mechanism M7's shared surfaces want.
 
-**The `serialize` benchmark moved +2.2%, and it is not the serialiser.** Every process now opens the `gfx` library, and the library table, the surface metatable and its methods are more objects on a 2 MB heap, so the collector paces differently through the measured loop. Measured rather than guessed: the same tree with the `luaL_requiref` for `gfx` commented out gives 1358.2, back inside the old range.
+**The `serialize` benchmark moved twice this session, and neither time was the serialiser.** +2.2% when `gfx` started being opened in every process, and +0.9% again when the font array joined it — 1364.9 to 1412.5, with `serialize.c` untouched throughout. Every process now opens the `gfx` library, and the library table, the surface metatable and its methods are more objects on a 2 MB heap, so the collector paces differently through the measured loop. Measured rather than guessed: the same tree with the `luaL_requiref` for `gfx` commented out gives 1358.2, back inside the old range.
 
-Worth knowing as a property of the metric — **`serialize` is sensitive to what else is in the process**, not only to the serialiser, and it will drift again every library that gets added. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was opened. `gc_pause_max` shifted by the same cause and only +0.09%, because a long collector step is dominated by the 3000-object heap the benchmark builds rather than by a handful of library tables.
+Worth knowing as a property of the metric — **`serialize` is sensitive to what else is in the process**, not only to the serialiser, and it drifts every time anything joins the user image. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was added. Making it independent of its process — a fixed GC pause setting and a forced collection before the loop — is a known improvement and is not done; it is written down here rather than left to be rediscovered the third time this happens. `gc_pause_max` shifted by the same cause and only +0.09%, because a long collector step is dominated by the 3000-object heap the benchmark builds rather than by a handful of library tables.
 
 **init says why it could not start something.** Its spawns used to be `if not x then sys.exit(1) end`, and the system died at boot in total silence — kernel output looking perfectly healthy, then nothing. That is exactly what happened the first time `SPAWN_SCREEN` was refused, and it cost a debugging cycle to find. init holds the console precisely so it can speak, and the moment it most needs to is when it cannot build the system.
 

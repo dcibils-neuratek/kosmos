@@ -47,6 +47,7 @@ local R_BLOCKED      = 23
 local R_GFX          = 24
 local R_GFX_BLEND    = 25
 local R_NO_SCREEN    = 26
+local R_TEXT         = 27
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -582,6 +583,88 @@ if role == R_NO_SCREEN then
   local s, err = gfx.screen()
   check(s == nil, "a process without the screen was given one")
   check(err ~= nil, "no reason was given for refusing the screen")
+  sys.exit(0)
+end
+
+if role == R_TEXT then
+  -- The font, checked pixel by pixel against patterns written out by hand.
+  --
+  -- Written out rather than read back from the array on purpose. Comparing
+  -- what was drawn against the same bytes that drew it would pass just as
+  -- happily with the bits reversed, the rows upside down, or the range off
+  -- by one. These come from the generated file's own comments, read by a
+  -- person, which makes them an independent statement about the same thing.
+  local s = gfx.surface { w = 32, h = 32 }
+
+  local FG, BG = 0xffffffff, 0xff000000
+
+  -- Draws `ch` at the origin and checks one row against a pattern.
+  local function row_is(ch, row, pattern, what)
+    s:fill(0, 0, 32, 32, BG)
+    s:text(0, 0, ch, FG)
+
+    for i = 1, #pattern do
+      local want = (pattern:sub(i, i) == "#") and FG or BG
+      local got = s:get(i - 1, row)
+      check(got == want,
+            what .. ": row " .. row .. " pixel " .. (i - 1) ..
+            " is " .. string.format("%08x", got) ..
+            ", expected " .. string.format("%08x", want) ..
+            " (" .. pattern .. ")")
+    end
+  end
+
+  -- 'A' from assets/fonts/spleen-8x16.bdf, rows 2 and 6.
+  row_is("A", 2, ".#####..", "A")
+  row_is("A", 3, "##...##.", "A")
+  row_is("A", 6, "#######.", "A")
+  row_is("A", 0, "........", "A")
+
+  -- '!' is narrow and centred, which catches a bit-order mistake that a
+  -- symmetric glyph would hide.
+  row_is("!", 2, "...##...", "!")
+
+  -- Anything outside 0x20..0x7e draws the box the font does not have,
+  -- rather than a space. A missing character should look missing.
+  row_is("\1", 2, ".######.", "the unknown glyph")
+  row_is("\1", 3, ".#....#.", "the unknown glyph")
+
+  -- The advance is the only number about the font a caller should need.
+  local x = s:text(0, 0, "hello", FG)
+  check(x == 5 * gfx.font.w, "text returned " .. x .. " for five characters")
+  check(gfx.font.w == 8 and gfx.font.h == 16,
+        "the font is " .. gfx.font.w .. "x" .. gfx.font.h)
+
+  -- Without a background, only set pixels are written: the rest shows
+  -- through. With one, the whole cell is written.
+  s:fill(0, 0, 32, 32, 0xff123456)
+  s:text(0, 0, "A", FG)
+  check(s:get(0, 2) == 0xff123456, "a transparent glyph filled its background")
+  s:text(0, 0, "A", FG, BG)
+  check(s:get(0, 2) == BG, "an opaque glyph did not fill its background")
+
+  -- Clipping, from every side. None of these may write outside the surface,
+  -- and the only way to see that from here is that nothing faults and the
+  -- pixels that should be untouched are.
+  s:fill(0, 0, 32, 32, BG)
+  s:text(-4, 0, "AAAA", FG)
+  s:text(28, 0, "AAAA", FG)
+  s:text(0, -8, "AAAA", FG)
+  s:text(0, 28, "AAAA", FG)
+  s:text(-1000, -1000, "far away", FG)
+  s:text(10000, 10000, "far away", FG)
+  check(s:get(31, 31) ~= nil, "the surface survived drawing off its edges")
+
+  -- A long string that starts off the left edge still lands correctly where
+  -- it becomes visible, which is the case the per-glyph skip could get wrong.
+  s:fill(0, 0, 32, 32, BG)
+  s:text(-16, 0, "xxA", FG)          -- the A is the third cell, so at x = 0
+  for i = 1, 8 do
+    local want = ((".#####.."):sub(i, i) == "#") and FG or BG
+    check(s:get(i - 1, 2) == want, "a string clipped on the left drew wrong")
+  end
+
+  s:free()
   sys.exit(0)
 end
 

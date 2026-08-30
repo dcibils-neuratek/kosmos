@@ -437,6 +437,110 @@ static int l_blend(lua_State *L)
     return 0;
 }
 
+/*
+ * Text.
+ *
+ * `roadmap.md` M6 wants an 8x16 bitmap font before `stb_truetype`, and this
+ * is it: Spleen 8x16, vendored unmodified under assets/fonts/ and turned
+ * into an array by tools/bdf2c.py at build time. BSD-2-Clause, and the
+ * notice travels in the generated file.
+ *
+ * A glyph is sixteen bytes, one per row, MSB leftmost - the VGA ROM layout,
+ * which is why drawing one is a shift and a test rather than a lookup.
+ *
+ * It is a primitive rather than a Lua loop for the reason everything else
+ * here is (`gfx.md` §19.2): a line of forty characters is five thousand
+ * pixels, and a screen of them is a hundred and thirty thousand. Lua decides
+ * what the string says and where it goes; C puts it there.
+ */
+extern const unsigned char font_8x16[];
+extern const unsigned long font_8x16_len;
+
+#define GLYPH_W     8
+#define GLYPH_H     16
+#define GLYPH_FIRST 0x20
+#define GLYPH_LAST  0x7e
+
+/* The rows of one character, or the box the font uses for anything it does
+ * not have. That glyph sits immediately after the range, which is what makes
+ * "outside the range" a bounds check and not a special case. */
+static const unsigned char *glyph_of(unsigned char c)
+{
+    unsigned index = (c >= GLYPH_FIRST && c <= GLYPH_LAST)
+                   ? (unsigned)(c - GLYPH_FIRST)
+                   : (unsigned)(GLYPH_LAST - GLYPH_FIRST + 1);
+
+    return font_8x16 + (size_t)index * GLYPH_H;
+}
+
+/*
+ * s:text(x, y, string, colour [, background])
+ *
+ * Returns the x the next character would start at, so a caller can lay out a
+ * line without knowing the cell width - which is the only number about the
+ * font that Lua should ever need, and it is better returned than published.
+ *
+ * Without a background only the set pixels are written, which is what
+ * drawing over a picture wants. With one, the whole cell is written, which is
+ * both what a terminal wants and considerably faster than filling first.
+ */
+static int l_text(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long x = (long)luaL_checkinteger(L, 2);
+    long y = (long)luaL_checkinteger(L, 3);
+    size_t len;
+    const char *text = luaL_checklstring(L, 4, &len);
+    uint32_t fg = (uint32_t)luaL_checkinteger(L, 5);
+    bool opaque = !lua_isnoneornil(L, 6);
+    uint32_t bg = opaque ? (uint32_t)luaL_checkinteger(L, 6) : 0;
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        const unsigned char *rows = glyph_of((unsigned char)text[i]);
+        long cx = x + (long)i * GLYPH_W;
+        long row;
+
+        /* Whole glyphs off either edge are skipped rather than clipped, which
+         * saves the inner loop on a long string that starts off-screen. The
+         * partly-visible ones still go through the per-pixel bounds check
+         * below. */
+        if (cx + GLYPH_W <= 0 || cx >= (long)s->width) {
+            continue;
+        }
+
+        for (row = 0; row < GLYPH_H; row++) {
+            long py = y + row;
+            unsigned bits = rows[row];
+            uint32_t *p;
+            long bit;
+
+            if (py < 0 || py >= (long)s->height) {
+                continue;
+            }
+
+            p = row_of(s, (unsigned)py);
+
+            for (bit = 0; bit < GLYPH_W; bit++) {
+                long px = cx + bit;
+
+                if (px < 0 || px >= (long)s->width) {
+                    continue;
+                }
+
+                if (bits & (0x80u >> bit)) {
+                    p[px] = fg;
+                } else if (opaque) {
+                    p[px] = bg;
+                }
+            }
+        }
+    }
+
+    lua_pushinteger(L, x + (lua_Integer)len * GLYPH_W);
+    return 1;
+}
+
 static int l_get(lua_State *L)
 {
     struct surface *s = check_surface(L, 1);
@@ -477,6 +581,7 @@ static const luaL_Reg surface_methods[] = {
     { "span",   l_span },
     { "blit",   l_blit },
     { "blend",  l_blend },
+    { "text",   l_text },
     { "get",    l_get },
     { "set",    l_set },
     { "free",   l_free },
@@ -535,6 +640,16 @@ static const luaL_Reg gfx_functions[] = {
 
 int luaopen_gfx(lua_State *L)
 {
+    /* The font is checked once, here, rather than trusted. It is generated,
+     * so a mismatch means the converter and this file disagree about the
+     * layout - and that produces a plausible wrong picture rather than a
+     * failure. */
+    if (font_8x16_len != (GLYPH_LAST - GLYPH_FIRST + 2) * GLYPH_H) {
+        return luaL_error(L, "the font is %d bytes and this expects %d",
+                          (int)font_8x16_len,
+                          (int)((GLYPH_LAST - GLYPH_FIRST + 2) * GLYPH_H));
+    }
+
     luaL_newmetatable(L, SURFACE_MT);
 
     lua_pushvalue(L, -1);
@@ -547,5 +662,18 @@ int luaopen_gfx(lua_State *L)
     lua_pop(L, 1);
 
     luaL_newlib(L, gfx_functions);
+
+    /*
+     * The cell size, because layout needs it and computing it from a string
+     * width would be Lua doing arithmetic about pixels. A table rather than
+     * two functions: it is a property of the font, not a question to ask.
+     */
+    lua_createtable(L, 0, 2);
+    lua_pushinteger(L, GLYPH_W);
+    lua_setfield(L, -2, "w");
+    lua_pushinteger(L, GLYPH_H);
+    lua_setfield(L, -2, "h");
+    lua_setfield(L, -2, "font");
+
     return 1;
 }

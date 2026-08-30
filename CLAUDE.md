@@ -75,6 +75,8 @@ These are not preferences. If a proposal violates one, the proposal is wrong.
 
 **Upstream Lua is not modified.** It lives in `lua/upstream/` exactly as shipped. Freestanding changes go in `lua/patches/` and are applied during the build.
 
+**Vendored data is not modified either, and carries its licence.** `assets/fonts/` holds the BDF the font's author ships, byte for byte, next to that font's licence text; `tools/bdf2c.py` converts it during the build. The rule is the same one `lua/upstream/` follows: what is in the tree should be what the author released, and everything done to it should be a build step somebody can read. Anything vendored records its licence beside it, and the generated file repeats the notice.
+
 ---
 
 ## Language split
@@ -162,6 +164,7 @@ boot/        assembly entry, linker script
 arch/        aarch64/
 hal/         qemu-virt/  (pi5/ and pi1/ arrive at milestone 2)
 kernel/      mmu, sched, ipc, caps, exceptions
+assets/      vendored data: fonts/ (BDF + its licence), converted at build time
 lua/         upstream/ + patches/
 runtime/     minimal libc, bindings, serializer
 servers/     Lua
