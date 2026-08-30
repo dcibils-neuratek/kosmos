@@ -101,6 +101,27 @@ trap_entry:
     bl      trap_handler
 
     /*
+     * Preemption happens here and nowhere else.
+     *
+     * It cannot be done inside trap_handler, because a context switch moves
+     * SP_EL1, and everything below this point reads the frame at `sp`. That
+     * frame has to belong to whichever thread is about to be resumed.
+     *
+     * The mechanism falls out of that. The switch saves SP_EL1 pointing into
+     * this function's own frame on the outgoing thread's exception stack, and
+     * loads the incoming thread's, which points into *its* copy of this same
+     * function, from when it was preempted. So the restore and eret below run
+     * on the incoming thread's trapframe, and the outgoing thread's stays
+     * untouched on its own stack until it is scheduled again.
+     *
+     * Control may not come back from this call at all. If the incoming
+     * thread has never run, the switch returns into thread_entry instead and
+     * everything below is simply not executed for it, which is correct: it
+     * has no frame to restore.
+     */
+    bl      thread_preempt_if_needed
+
+    /*
      * The handler may have moved elr, which is how an expected fault steps
      * past the instruction that caused it. Write both back before restoring
      * the general registers, because x0 and x1 are still needed as scratch.

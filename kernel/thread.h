@@ -15,12 +15,10 @@
  * allocator in the kernel and there will not be one. Running out of threads
  * is a `NULL` from `thread_create`, not a growing table.
  *
- * Scheduling is cooperative today. A thread runs until it calls
- * `thread_yield` or blocks, and blocking is what IPC does, which is what
- * drives every switch once there are servers. Timer preemption needs the
- * switch to happen inside the interrupt handler's epilogue rather than in C,
- * and that is a separate piece of work: the groundwork is here, in that each
- * thread already owns both of its stacks.
+ * Scheduling is preemptive. A thread yields, blocks, or is taken off the CPU
+ * by the timer when the policy says its turn is over. Blocking is what IPC
+ * does and is what drives most switches once there are servers; preemption is
+ * what stops a thread that does neither from owning the machine.
  *
  * *Which* thread runs next is not decided here. That is the policy, and it
  * lives behind `struct scheduler` in `sched.h`, so a different algorithm is
@@ -125,6 +123,24 @@ void thread_block(void);
 /* Puts a blocked thread back on the runqueue. Safe to call on a thread that
  * is already runnable. */
 void thread_wake(struct thread *t);
+
+/*
+ * One timer tick has elapsed. Asks the policy whether the running thread
+ * should be replaced and records the answer; it does not switch.
+ *
+ * Called from the interrupt handler, where switching is not allowed: the
+ * switch has to happen in the vector's epilogue, on a frame that belongs to
+ * whichever thread is about to be resumed.
+ */
+void thread_tick(void);
+
+/*
+ * Performs the switch thread_tick asked for, if it asked for one.
+ *
+ * Called only from the vector epilogue in vectors.S. Calling it from C would
+ * move SP_EL1 out from under whatever frame the caller is standing on.
+ */
+void thread_preempt_if_needed(void);
 
 /* Ends the calling thread. Never returns. Reached automatically when a
  * thread's entry function returns. */

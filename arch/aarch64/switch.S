@@ -71,25 +71,40 @@ context_switch:
      * SP_EL1 cannot be named from EL1. Its system register encoding is an
      * EL2 one, so `mrs x10, sp_el1` here is not a privileged access that
      * traps, it is an undefined instruction: the fault arrives as EC 0x00,
-     * "unknown reason", pointing at the mrs and explaining nothing. That is
-     * how this was found.
+     * "unknown reason", pointing at the mrs and explaining nothing.
      *
-     * The only way to reach it from EL1 is to make it the current stack
-     * pointer for a moment. Nothing between the two SPSel writes may touch
-     * the stack, which is why these are register moves and nothing else.
+     * The only way to reach either from EL1 is to make it the current stack
+     * pointer for a moment. Nothing between the SPSel writes may touch the
+     * stack, which is why these are register moves and nothing else, and why
+     * this whole function uses no stack of its own.
+     *
+     * Which one is current on entry is not fixed and must not be assumed. A
+     * thread that yields arrives on SP_EL0; a thread being preempted arrives
+     * from the vector's epilogue, where taking the exception already set
+     * SPSel to 1. Assuming SP_EL0 wrote SP_EL1 into both slots and left the
+     * wrong one selected, which produced a jump to an address that was
+     * never code.
      */
-    mov     x9, sp                  /* SP_EL0: SPSel is clear */
-    msr     spsel, #1
-    mov     x10, sp                 /* now `sp` names SP_EL1 */
+    mrs     x11, spsel
+    and     x11, x11, #1
+    str     x11, [x0, #CTX_SPSEL]
+
     msr     spsel, #0
+    mov     x9, sp                  /* SP_EL0, whichever we arrived on */
+    msr     spsel, #1
+    mov     x10, sp                 /* SP_EL1 */
     stp     x9, x10, [x0, #CTX_SP]
 
     /* From here nothing may touch the outgoing thread's stack again. */
     ldp     x9, x10, [x1, #CTX_SP]
+    msr     spsel, #0
     mov     sp, x9
     msr     spsel, #1
     mov     sp, x10
-    msr     spsel, #0
+
+    /* And select whichever the incoming thread was using. */
+    ldr     x11, [x1, #CTX_SPSEL]
+    msr     spsel, x11
 
     ldp     x19, x20, [x1, #CTX_X19]
     ldp     x21, x22, [x1, #CTX_X21]
@@ -124,6 +139,13 @@ context_switch:
  */
 .global thread_entry
 thread_entry:
+    /*
+     * Arrives already on SP_EL0 with interrupts enabled, because
+     * context_switch restored both from this thread's context and
+     * thread_create left both at zero. That matters most when a thread is
+     * started from inside the vector's epilogue, where SPSel is 1 and the
+     * eret that would have cleared it is never reached.
+     */
     mov     x0, x20
     blr     x19
 

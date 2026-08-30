@@ -1,23 +1,23 @@
 {
   "context_switch": {
-    "commit": "c45e058",
+    "commit": "ab3c512",
     "iterations": 200000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 5.937
+    "value": 6.375
   },
   "exception": {
-    "commit": "c45e058",
+    "commit": "ab3c512",
     "iterations": 20000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 6.437
+    "value": 7.125
   },
   "ipc_roundtrip": {
-    "commit": "c45e058",
+    "commit": "ab3c512",
     "iterations": 100000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 23.0
+    "value": 23.875
   }
 }

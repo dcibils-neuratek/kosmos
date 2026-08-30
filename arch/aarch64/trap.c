@@ -15,6 +15,7 @@
 #include "trap.h"
 #include "console.h"
 #include "hal.h"
+#include "thread.h"
 
 /* The table in vectors.S. */
 extern char vectors[];
@@ -226,6 +227,17 @@ void trap_handler(unsigned index, struct trapframe *tf)
      */
     if (index == 1) {
         hal_irq_handle();
+
+        /*
+         * The timer is the scheduler's clock, and it is the only interrupt
+         * source there is, so every IRQ is a tick. When there is a second
+         * source, hal_irq_handle has to say which one fired rather than this
+         * assuming.
+         *
+         * It only records what the policy wants. The switch itself happens
+         * in the epilogue, after this returns.
+         */
+        thread_tick();
         return;
     }
 

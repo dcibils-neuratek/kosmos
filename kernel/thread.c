@@ -31,6 +31,17 @@ static const struct scheduler *policy;
 
 static unsigned next_id = 1;
 
+/*
+ * Set by thread_tick inside the interrupt handler, acted on by
+ * thread_preempt_if_needed in the vector's epilogue.
+ *
+ * The two are separate because the handler is the wrong place to switch and
+ * the epilogue is the wrong place to make a policy decision. Splitting them
+ * is what lets the decision be a C function the policy owns and the switch be
+ * four instructions of assembly at a point where the stack is known.
+ */
+static volatile bool preempt_pending;
+
 void sched_use(const struct scheduler *p)
 {
     policy = p;
@@ -240,10 +251,14 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
     t->ctx.sp_el0 = (uint64_t)(uintptr_t)stack_top;
     t->ctx.sp_el1 = (uint64_t)(uintptr_t)exception_top;
 
-    /* A new thread starts with interrupts enabled. Zero is that, and the
-     * memset above already produced it, but leaving it implicit would make
-     * the first thread to start with them masked a mystery. */
+    /*
+     * A new thread starts on SP_EL0 with interrupts enabled. Both are zero
+     * and the memset already produced them, but leaving either implicit
+     * makes the first thread that starts on the wrong stack, or with
+     * interrupts masked, a mystery rather than a line to read.
+     */
     t->ctx.daif = 0;
+    t->ctx.spsel = 0;
 
     t->id = next_id++;
     t->switches = 0;
@@ -279,6 +294,53 @@ static void switch_to(struct thread *next)
      * later and from a different thread than the one it switched to. Nothing
      * below here may assume anything about `next`.
      */
+}
+
+void thread_tick(void)
+{
+    /* Before thread_init has run there is nothing to preempt, and the timer
+     * starts before the first thread exists. */
+    if (current == NULL || policy->tick == NULL) {
+        return;
+    }
+
+    if (policy->tick(current)) {
+        preempt_pending = true;
+    }
+}
+
+void thread_preempt_if_needed(void)
+{
+    struct thread *next;
+
+    if (!preempt_pending) {
+        return;
+    }
+
+    preempt_pending = false;
+
+    if (current == NULL) {
+        return;
+    }
+
+    /*
+     * Only a thread that is still runnable may be preempted. One that
+     * blocked inside the handler has already chosen its successor, and
+     * putting it back on the queue here would make it runnable again with
+     * nothing to wake it for.
+     */
+    if (current->state != THREAD_RUNNING) {
+        return;
+    }
+
+    next = policy->pick_next();
+
+    if (next == NULL) {
+        return;     /* nothing else wants the CPU */
+    }
+
+    policy->enqueue(current);
+    switch_to(next);
 }
 
 void thread_yield(void)

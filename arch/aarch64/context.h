@@ -19,6 +19,7 @@
 #define CTX_X29     80      /* x29, x30 */
 #define CTX_SP      96      /* sp_el0, sp_el1 */
 #define CTX_DAIF    112
+#define CTX_SPSEL   120
 #define CTX_D8      128
 #define CTX_D10     144
 #define CTX_D12     160
@@ -45,7 +46,17 @@ struct context {
      * silently re-enabled halfway through a critical section.
      */
     uint64_t daif;
-    uint64_t _pad;      /* keeps the FP pairs on 16-byte boundaries */
+
+    /*
+     * Which stack pointer this thread was using: 0 for SP_EL0, 1 for SP_EL1.
+     *
+     * It has to be saved because a switch can start from either. A thread
+     * that yields is on SP_EL0; a thread taken off the CPU by the timer is
+     * in the vector's epilogue, where the hardware set SPSel to 1 when it
+     * took the exception. Assuming either one corrupts the other, and it
+     * corrupts it by writing one stack pointer into both slots.
+     */
+    uint64_t spsel;
 
     uint64_t d8, d9, d10, d11, d12, d13, d14, d15;
 };
@@ -58,7 +69,8 @@ _Static_assert(offsetof(struct context, x25)    == CTX_X25, "CTX_X25");
 _Static_assert(offsetof(struct context, x27)    == CTX_X27, "CTX_X27");
 _Static_assert(offsetof(struct context, x29)    == CTX_X29, "CTX_X29");
 _Static_assert(offsetof(struct context, sp_el0) == CTX_SP,   "CTX_SP");
-_Static_assert(offsetof(struct context, daif)   == CTX_DAIF, "CTX_DAIF");
+_Static_assert(offsetof(struct context, daif)   == CTX_DAIF,  "CTX_DAIF");
+_Static_assert(offsetof(struct context, spsel)  == CTX_SPSEL, "CTX_SPSEL");
 _Static_assert(offsetof(struct context, d8)     == CTX_D8,  "CTX_D8");
 _Static_assert(offsetof(struct context, d10)    == CTX_D10, "CTX_D10");
 _Static_assert(offsetof(struct context, d12)    == CTX_D12, "CTX_D12");

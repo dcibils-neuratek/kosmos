@@ -633,6 +633,123 @@ static bool test_thread_stacks_have_guard_pages(void)
 }
 
 /*
+ * M3: preemption.
+ */
+
+/* Defined with the timer tests further down; used here to bound a wait by
+ * elapsed time rather than by a loop count, so a kernel without preemption
+ * fails quickly instead of hanging. */
+static uint64_t cntfrq(void);
+static uint64_t cntpct(void);
+
+static volatile bool          spinner_stop;
+static volatile unsigned long spinner_laps;
+
+static void spinner(void *arg)
+{
+    (void)arg;
+
+    /*
+     * Never yields, never blocks, never sleeps. Before preemption existed
+     * this thread would own the machine from the moment it was scheduled.
+     */
+    while (!spinner_stop) {
+        spinner_laps++;
+    }
+}
+
+static bool test_a_thread_that_never_yields_is_preempted(void)
+{
+    /*
+     * The point of preemption, and the only test that can distinguish it
+     * from cooperative scheduling: neither thread here yields.
+     *
+     * The main thread waits on the counter rather than on the scheduler, so
+     * the only way the spinner can run at all is if the timer takes the CPU
+     * away from this one. The wait is bounded by the counter so a kernel
+     * without preemption fails in a tenth of a second instead of hanging.
+     */
+    uint64_t deadline;
+    unsigned long before;
+    unsigned i;
+    bool ran;
+
+    spinner_stop = false;
+    spinner_laps = 0;
+
+    if (thread_create("spinner", spinner, NULL) == NULL) {
+        return false;
+    }
+
+    before = spinner_laps;
+    deadline = cntpct() + cntfrq() / 2;      /* half a second */
+
+    while (cntpct() < deadline && spinner_laps == before) {
+        /* Deliberately empty. Calling thread_yield here would hand the CPU
+         * over voluntarily and prove nothing. */
+    }
+
+    ran = spinner_laps > before;
+
+    spinner_stop = true;
+
+    /* Let it see the flag and exit. It is preempted back in on its own. */
+    deadline = cntpct() + cntfrq() / 2;
+    while (cntpct() < deadline) {
+        /* nothing */
+    }
+
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    return ran;
+}
+
+static bool test_preemption_does_not_lose_the_preempted_thread(void)
+{
+    /*
+     * A preempted thread has its trapframe on its own exception stack and
+     * resumes through the vector's epilogue rather than through
+     * context_switch's caller. If either stack were wrong, it would come
+     * back with a corrupted frame rather than not at all, so this checks
+     * that both threads keep counting.
+     */
+    uint64_t deadline;
+    unsigned long mine = 0;
+    unsigned long theirs;
+    unsigned i;
+
+    spinner_stop = false;
+    spinner_laps = 0;
+
+    if (thread_create("spinner2", spinner, NULL) == NULL) {
+        return false;
+    }
+
+    deadline = cntpct() + cntfrq() / 2;
+    while (cntpct() < deadline) {
+        mine++;
+    }
+
+    theirs = spinner_laps;
+    spinner_stop = true;
+
+    deadline = cntpct() + cntfrq() / 2;
+    while (cntpct() < deadline) {
+        /* nothing */
+    }
+
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    /* Both made progress, which means the CPU went back and forth rather
+     * than one thread being abandoned mid-switch. */
+    return mine > 0 && theirs > 0;
+}
+
+/*
  * M3: synchronous IPC.
  */
 static volatile cap_t server_cap;
@@ -1956,6 +2073,8 @@ static const struct test tests[] = {
     { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
+    { "sched: a spinning thread is preempted", test_a_thread_that_never_yields_is_preempted },
+    { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },
