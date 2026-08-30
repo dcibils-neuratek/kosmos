@@ -113,22 +113,54 @@ void kmain(void)
     /* wfi rather than a busy loop: it parks the core until an interrupt
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
-    /* init: the first Lua process, running at EL0 in its own address
-     * space, out of an image carried inside this one. */
+    /*
+     * Two Lua processes, at EL0, in separate address spaces, exchanging a
+     * Lua table over the microkernel's IPC. That is M4's definition of done.
+     *
+     * The kernel creates the endpoint and hands each of them a capability
+     * for it. Neither can name it any other way, and neither can reach
+     * anything else: what a process has is what it was given, which is
+     * design.md 4.3 with nothing else left to appeal to.
+     */
     {
         extern const unsigned char init_image[];
         extern const unsigned long init_image_len;
-        struct process *p;
+        struct process *server;
+        struct process *client;
+        cap_t ep = ipc_endpoint_create();
+        unsigned i;
 
-        p = process_create("init", init_image, (size_t)init_image_len);
+        if (ep < 0) {
+            panic("no endpoint for init");
+        }
 
-        if (p == NULL) {
-            kputs("could not create init\n");
+        server = process_create("echo", init_image,
+                                (size_t)init_image_len, 1 /* server */);
+        client = process_create("init", init_image,
+                                (size_t)init_image_len, 0 /* client */);
+
+        if (server == NULL || client == NULL) {
+            kputs("could not create the init processes\n");
         } else {
-            unsigned i;
-            for (i = 0; i < 4096 && !p->exited; i++) {
+            /*
+             * Each gets its own index for the same endpoint, and each gets
+             * it as capability zero because its table was empty. That is
+             * the whole convention: a process's first capability is what it
+             * was started for.
+             */
+            if (ipc_cap_grant(server->thread, ep) != 0
+                || ipc_cap_grant(client->thread, ep) != 0) {
+                panic("init capabilities did not land at index 0");
+            }
+
+            process_start(server);
+            process_start(client);
+
+            for (i = 0; i < 8192 && !client->exited; i++) {
                 thread_yield();
             }
+
+            (void)ipc_endpoint_destroy(ep);
         }
     }
 

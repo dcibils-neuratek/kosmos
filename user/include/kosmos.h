@@ -75,13 +75,22 @@ static inline void kosmos_yield(void)
     (void)sys0(SYS_YIELD);
 }
 
-/* The message the kernel moves. Has to match struct message exactly: the
- * syscall copies sizeof(struct message) bytes in each direction. */
-#define MSG_WORDS   8
+/*
+ * The message the kernel moves.
+ *
+ * Has to match kernel/ipc.h byte for byte: the syscall copies
+ * sizeof(struct message) in each direction, and a disagreement about the
+ * layout would be read as a disagreement about the contents. The two are one
+ * definition written twice, which is the sort of thing that should be
+ * checked rather than trusted - there is a _Static_assert on the size in
+ * user/lib/sys_user.c.
+ */
+#define MSG_BYTES   512
 
 struct message {
     uint64_t tag;
-    uint64_t word[MSG_WORDS];
+    uint32_t length;
+    uint8_t  data[MSG_BYTES];
 };
 
 static inline long kosmos_endpoint(void)

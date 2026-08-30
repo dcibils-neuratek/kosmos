@@ -61,6 +61,32 @@ static struct endpoint endpoints[ENDPOINT_MAX];
  * the whole operation. Marked rather than left to be discovered.
  */
 
+/*
+ * Copies a message, and only as much of it as there is.
+ *
+ * A round trip moves a message five times: into the sender's slot, across to
+ * the receiver, out to the receiver's buffer, back into the sender's slot as
+ * a reply, and out to the caller. Copying the whole 512-byte buffer each
+ * time rather than the bytes in use made the benchmark thirty-six times
+ * slower, from 23.9 ticks to 849.8, which is what a benchmark is for.
+ *
+ * The length is clamped rather than trusted. It arrives from a process, and
+ * the one field an attacker changes first is the one that says how much to
+ * copy.
+ */
+static void message_copy(struct message *dst, const struct message *src)
+{
+    uint32_t n = src->length;
+
+    if (n > MSG_BYTES) {
+        n = MSG_BYTES;
+    }
+
+    dst->tag = src->tag;
+    dst->length = n;
+    memcpy(dst->data, src->data, n);
+}
+
 static void queue_push(struct thread **head, struct thread *t)
 {
     struct thread **p = head;
@@ -269,7 +295,7 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
         return IPC_ERR_BAD_CAP;
     }
 
-    self->ipc.msg = *msg;
+    message_copy(&self->ipc.msg, msg);
 
     receiver = queue_pop(&ep->receivers);
 
@@ -282,7 +308,7 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          * The message is already gone, so this thread goes straight onto the
          * reply queue and never touches the sender queue at all.
          */
-        receiver->ipc.msg = *msg;
+        message_copy(&receiver->ipc.msg, msg);
         receiver->ipc.peer = self;
         deliver(receiver, IPC_OK);
         queue_push(&ep->awaiting_reply, self);
@@ -306,7 +332,7 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
         return self->ipc.status;
     }
 
-    *reply = self->ipc.msg;
+    message_copy(reply, &self->ipc.msg);
     return IPC_OK;
 }
 
@@ -329,7 +355,7 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender)
          * reply, so it moves from one queue to the other. `queue_pop` above
          * already took it off the sender queue.
          */
-        *msg = s->ipc.msg;
+        message_copy(msg, &s->ipc.msg);
         *sender = s;
         s->ipc.peer = self;
         queue_push(&ep->awaiting_reply, s);
@@ -344,7 +370,7 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender)
         return self->ipc.status;
     }
 
-    *msg = self->ipc.msg;
+    message_copy(msg, &self->ipc.msg);
     *sender = self->ipc.peer;
     return IPC_OK;
 }
@@ -367,7 +393,7 @@ int ipc_reply(struct thread *sender, const struct message *msg)
 
     queue_remove(&ep->awaiting_reply, sender);
 
-    sender->ipc.msg = *msg;
+    message_copy(&sender->ipc.msg, msg);
     deliver(sender, IPC_OK);
 
     return IPC_OK;

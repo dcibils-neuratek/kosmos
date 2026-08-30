@@ -49,6 +49,18 @@ struct thread;
 #define USER_IMAGE_MAGIC  0x534f4d534f4bUL
 #define USER_IMAGE_HEADER 16
 
+/*
+ * **Only `exited` and `exit_code` are safe to read once a process is
+ * running.** Everything else - the address space above all - is torn down by
+ * process_exit, and a process runs whenever the scheduler says so. Reading
+ * `space` after creating a process is reading a pointer another thread is
+ * entitled to have already freed.
+ *
+ * That was found by a test doing exactly that and faulting on a NULL
+ * address space once in five runs. The lock that would make this safe goes
+ * here; until there is one, anything inspecting a live process has to mask
+ * interrupts, which is what stops it being preempted mid-look.
+ */
 struct process {
     bool              in_use;
     unsigned          id;
@@ -63,6 +75,8 @@ struct process {
     size_t            image_page_count;
     void             *heap_pages;
     void             *stack_pages;
+
+    unsigned long     arg;      /* the one word it is told at entry */
 
     int               exit_code;
     bool              exited;
@@ -81,7 +95,18 @@ void process_init(void);
  * process gets its own copy so it can be given EL0 permissions without
  * handing them to anybody else.
  */
-struct process *process_create(const char *name, const void *image, size_t len);
+/*
+ * Builds a process but does not start it. Its capabilities are granted after
+ * this and before process_start, which is the only order that works: a
+ * runnable process runs, and a process that runs before it has been handed
+ * anything finds an empty capability table and exits.
+ */
+struct process *process_create(const char *name, const void *image,
+                               size_t len, unsigned long arg);
+
+/* Makes it runnable. Nothing may touch its address space afterwards without
+ * masking interrupts: from here it can exit at any moment. */
+void process_start(struct process *p);
 
 /* The process the current thread belongs to, or NULL in a kernel thread. */
 struct process *process_current(void);

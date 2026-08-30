@@ -10,6 +10,10 @@
 .global _start
 
 _start:
+    /* The boot word the kernel put in x0, kept safe across the loop below,
+     * which needs x0 and x1 for the addresses. */
+    mov     x19, x0
+
     /*
      * Zero .bss. The image is a flat binary and the linker script emits .bss
      * as zeroes, so this is already true; doing it anyway costs a handful of
@@ -26,6 +30,7 @@ _start:
     str     xzr, [x0], #8
     b       1b
 2:
+    mov     x0, x19
     bl      main
 
     /* main returned. Exit with whatever it gave back rather than falling

@@ -15,7 +15,14 @@
 .section .text
 .global enter_el0
 
-/* void enter_el0(uintptr_t entry, uintptr_t user_sp); */
+/*
+ * void enter_el0(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
+ *
+ * `arg` is the only thing a process is told, and it arrives in x0. Everything
+ * else it can reach is in its capability table, which is the point: what a
+ * process has is what it was handed, and one word of configuration does not
+ * change that.
+ */
 enter_el0:
     /*
      * Nothing may interrupt the transition.
@@ -63,7 +70,9 @@ enter_el0:
      * x0 to x30 would be visible to EL0, and a kernel pointer handed over by
      * accident is a leak that no page table catches.
      */
-    mov     x0,  xzr
+    /* x2 holds the boot word and has to survive the zeroing, so it is moved
+     * into place first and x0 is not cleared. */
+    mov     x0,  x2
     mov     x1,  xzr
     mov     x2,  xzr
     mov     x3,  xzr

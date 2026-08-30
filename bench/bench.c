@@ -29,6 +29,10 @@
 #include "ipc.h"
 #include "trap.h"
 #include "semihosting.h"
+#include "serialize.h"
+#include "kosmos_lua.h"
+#include "lua.h"
+#include "lauxlib.h"
 
 static inline uint64_t now(void)
 {
@@ -249,10 +253,131 @@ static bool bench_exception(struct bench_result *out)
 
 /* ------------------------------------------------------------------ */
 
+/*
+ * A typical message, packed and unpacked.
+ *
+ * `roadmap.md` asks for this at M4, and it is the cost `design.md` §1's
+ * thesis is paid for with: the protocol between servers is the data model of
+ * the language, and this is what that conversion costs per message. Every
+ * namespace read from M5 and every drawing command from M6 pays it twice.
+ *
+ * "Typical" is a small record with a tag, a couple of strings and a nested
+ * table, which is what a namespace operation looks like.
+ */
+#define SERIALIZE_ROUNDS    20000
+
+static const char typical_chunk[] =
+    "return { tag = 3, op = 'read', path = '/dev/temp', "
+    "         opts = { follow = true, limit = 64 } }";
+
+static bool bench_serialize(struct bench_result *out)
+{
+    lua_State *L = kosmos_lua_open();
+    struct message m;
+    uint64_t start;
+    uint64_t daif;
+    unsigned long i;
+
+    if (L == NULL) {
+        return false;
+    }
+
+    if (kosmos_lua_dostring(L, "=bench", typical_chunk) != LUA_OK) {
+        lua_close(L);
+        return false;
+    }
+
+    daif = irq_disable();
+    start = now();
+
+    for (i = 0; i < SERIALIZE_ROUNDS; i++) {
+        if (serialize_pack(L, -1, &m) != SERIALIZE_OK) {
+            irq_restore(daif);
+            lua_close(L);
+            return false;
+        }
+
+        if (serialize_unpack(L, &m) != SERIALIZE_OK) {
+            irq_restore(daif);
+            lua_close(L);
+            return false;
+        }
+
+        lua_pop(L, 1);      /* the unpacked copy */
+    }
+
+    out->total = now() - start;
+    irq_restore(daif);
+
+    out->iterations = SERIALIZE_ROUNDS;
+
+    lua_close(L);
+    return true;
+}
+
+/*
+ * The longest the collector stops for.
+ *
+ * `design.md` §5.2 calls this the project's recurring problem, and
+ * `testing.md` §18.5 is emphatic that it is the maximum that matters and not
+ * the average: a system averaging 8 ms a frame with a 40 ms spike every two
+ * seconds feels worse than one holding a steady 14 ms.
+ *
+ * Reported as the worst single step rather than as a rate, which is why
+ * iterations is one.
+ */
+#define GC_STEPS    2000
+
+static const char gc_setup[] =
+    "garbage = {} "
+    "for i = 1, 3000 do garbage[i] = { i, tostring(i), { i } } end "
+    "collectgarbage('setpause', 100)";
+
+static bool bench_gc_pause(struct bench_result *out)
+{
+    lua_State *L = kosmos_lua_open();
+    uint64_t worst = 0;
+    uint64_t daif;
+    unsigned long i;
+
+    if (L == NULL) {
+        return false;
+    }
+
+    if (kosmos_lua_dostring(L, "=gc", gc_setup) != LUA_OK) {
+        lua_close(L);
+        return false;
+    }
+
+    daif = irq_disable();
+
+    for (i = 0; i < GC_STEPS; i++) {
+        uint64_t start = now();
+        uint64_t took;
+
+        lua_gc(L, LUA_GCSTEP, 1);
+
+        took = now() - start;
+        if (took > worst) {
+            worst = took;
+        }
+    }
+
+    irq_restore(daif);
+
+    out->total = worst;
+    out->iterations = 1;
+
+    lua_close(L);
+    return true;
+}
+
 static const struct benchmark benchmarks[] = {
     { "ipc_roundtrip",   bench_ipc_roundtrip },
     { "context_switch",  bench_context_switch },
     { "exception",       bench_exception },
+    { "serialize",       bench_serialize },
+    { "gc_pause_max",    bench_gc_pause },
 };
 
 #define BENCH_COUNT (sizeof(benchmarks) / sizeof(benchmarks[0]))

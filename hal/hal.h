@@ -48,4 +48,15 @@ void hal_irq_handle(void);
 void hal_timer_init(unsigned hz);
 unsigned long hal_ticks(void);
 
+/*
+ * How many deadlines have been missed: the timer came due again before the
+ * previous interrupt was serviced, so the tick for it never happened.
+ *
+ * It means the system fell behind, and it is the difference between a tick
+ * count and a clock. Under load the two diverge, and anything measuring
+ * elapsed time from ticks is measuring something else. The counter is the
+ * clock; ticks are a heartbeat.
+ */
+unsigned long hal_ticks_missed(void);
+
 #endif /* HAL_H */

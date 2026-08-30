@@ -20,6 +20,13 @@
 #include "lauxlib.h"
 
 #include "kosmos.h"
+#include "serialize.h"
+
+/* The two definitions of struct message are one contract written twice, so
+ * the agreement is checked rather than assumed. A silent disagreement would
+ * be read as a disagreement about the contents. */
+_Static_assert(sizeof(struct message) == 8 + 4 + MSG_BYTES + 4,
+               "struct message must match kernel/ipc.h");
 
 static const char *ipc_error(long status)
 {
@@ -41,43 +48,44 @@ static int fail(lua_State *L, long status)
 }
 
 /*
- * A message is eight integers and a tag, exactly as in the kernel.
+ * A message carries a Lua value, and this is the only place that knows how.
  *
- * `design.md` §1's thesis is that the protocol between servers *is* the data
- * model of the language, which means this should carry a Lua table. It does
- * not yet: that needs the serialiser, which is the next thing built. What is
- * here is honest about being the floor rather than the ceiling.
+ * `design.md` §1: the protocol between servers *is* the data model of the
+ * userland language. A caller passes a table and a server receives a table;
+ * neither writes marshalling, because there is none to write.
  */
-static void table_to_message(lua_State *L, int index, struct message *m)
+static void push_message(lua_State *L, const struct message *m)
 {
-    unsigned i;
+    int rc = serialize_unpack(L, m);
 
-    memset(m, 0, sizeof(*m));
-    luaL_checktype(L, index, LUA_TTABLE);
-
-    lua_getfield(L, index, "tag");
-    m->tag = (uint64_t)luaL_optinteger(L, -1, 0);
-    lua_pop(L, 1);
-
-    for (i = 0; i < MSG_WORDS; i++) {
-        lua_rawgeti(L, index, (lua_Integer)(i + 1));
-        m->word[i] = (uint64_t)luaL_optinteger(L, -1, 0);
-        lua_pop(L, 1);
+    if (rc != SERIALIZE_OK) {
+        /* Malformed bytes are an error rather than a half-built table. The
+         * unpacker leaves the stack as it found it, so raising here is
+         * safe. */
+        luaL_error(L, "%s", serialize_error(rc));
     }
 }
 
-static void message_to_table(lua_State *L, const struct message *m)
+static void take_message(lua_State *L, int index, struct message *m)
 {
-    unsigned i;
+    int rc;
 
-    lua_newtable(L);
+    m->tag = 0;
+    m->length = 0;
 
-    lua_pushinteger(L, (lua_Integer)m->tag);
-    lua_setfield(L, -2, "tag");
+    /* A tag, if the value is a table with one. `design.md` §14 wants every
+     * message to say what it is; the kernel only insists the field exists,
+     * and what goes in it is between the two ends. */
+    if (lua_istable(L, index)) {
+        lua_getfield(L, index, "tag");
+        m->tag = (uint64_t)luaL_optinteger(L, -1, 0);
+        lua_pop(L, 1);
+    }
 
-    for (i = 0; i < MSG_WORDS; i++) {
-        lua_pushinteger(L, (lua_Integer)m->word[i]);
-        lua_rawseti(L, -2, (lua_Integer)(i + 1));
+    rc = serialize_pack(L, index, m);
+
+    if (rc != SERIALIZE_OK) {
+        luaL_error(L, "%s", serialize_error(rc));
     }
 }
 
@@ -122,14 +130,14 @@ static int l_call(lua_State *L)
     struct message reply;
     long status;
 
-    table_to_message(L, 2, &msg);
+    take_message(L, 2, &msg);
 
     status = kosmos_call(cap, &msg, &reply);
     if (status != 0) {
         return fail(L, status);
     }
 
-    message_to_table(L, &reply);
+    push_message(L, &reply);
     return 1;
 }
 
@@ -144,7 +152,7 @@ static int l_receive(lua_State *L)
         return fail(L, status);
     }
 
-    message_to_table(L, &msg);
+    push_message(L, &msg);
 
     /*
      * The sender comes back as a Lua integer here rather than as light
@@ -166,7 +174,7 @@ static int l_reply(lua_State *L)
     struct message msg;
     long status;
 
-    table_to_message(L, 2, &msg);
+    take_message(L, 2, &msg);
 
     status = kosmos_reply(sender, &msg);
     if (status != 0) {

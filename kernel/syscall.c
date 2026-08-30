@@ -28,6 +28,36 @@
 #include "trap.h"
 #include "console.h"
 
+/*
+ * Moving a message across the boundary, in each direction.
+ *
+ * Both copy only the bytes the message says it has, because copying all 512
+ * every time is what made the IPC round trip thirty-six times slower than it
+ * needed to be. Both clamp the length first: on the way in it came from a
+ * process, and on the way out it is about to be written into one.
+ */
+static void copy_message_in(struct message *dst, const struct message *src)
+{
+    uint32_t n = src->length;
+
+    if (n > MSG_BYTES) {
+        n = MSG_BYTES;
+    }
+
+    dst->tag = src->tag;
+    dst->length = n;
+    memcpy(dst->data, src->data, n);
+}
+
+static void copy_message_out(struct message *dst, const struct message *src)
+{
+    uint32_t n = (src->length > MSG_BYTES) ? MSG_BYTES : src->length;
+
+    dst->tag = src->tag;
+    dst->length = n;
+    memcpy(dst->data, src->data, n);
+}
+
 /* Longest a single write may be. Bounded because the process chooses the
  * length, and an unbounded one is an unbounded time with interrupts masked
  * inside a polled UART. */
@@ -78,8 +108,12 @@ static long sys_call(struct process *p, cap_t cap, uintptr_t msg_ptr,
      * running while its message is in flight, but a second thread in the
      * same address space would be, and the copy is what makes the message
      * the kernel acts on the one that was checked.
+     *
+     * Only the bytes in use, and the length is clamped first. It comes from
+     * the process, so it is the one field to distrust before anything is
+     * copied on the strength of it.
      */
-    memcpy(&msg, (const void *)msg_ptr, sizeof(msg));
+    copy_message_in(&msg, (const struct message *)msg_ptr);
 
     status = ipc_call(cap, &msg, &reply);
 
@@ -87,7 +121,7 @@ static long sys_call(struct process *p, cap_t cap, uintptr_t msg_ptr,
         return status;
     }
 
-    memcpy((void *)reply_ptr, &reply, sizeof(reply));
+    copy_message_out((struct message *)reply_ptr, &reply);
     return IPC_OK;
 }
 
@@ -109,7 +143,7 @@ static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
         return status;
     }
 
-    memcpy((void *)msg_ptr, &msg, sizeof(msg));
+    copy_message_out((struct message *)msg_ptr, &msg);
 
     /*
      * The sender goes back to EL0 as a kernel pointer, which is a leak: a
@@ -131,7 +165,7 @@ static long sys_reply(struct process *p, uintptr_t sender, uintptr_t msg_ptr)
         return SYS_ERR_FAULT;
     }
 
-    memcpy(&msg, (const void *)msg_ptr, sizeof(msg));
+    copy_message_in(&msg, (const struct message *)msg_ptr);
 
     /*
      * `sender` is whatever the process passed. ipc_reply checks that it is a

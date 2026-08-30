@@ -12,21 +12,11 @@
 #include "console.h"
 
 /* In arch/aarch64/el0.S. Does not return. */
-void enter_el0(uintptr_t entry, uintptr_t user_sp);
+void enter_el0(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
 
 static struct process processes[PROCESS_MAX];
 static unsigned next_id = 1;
 
-/*
- * Which process the running thread belongs to.
- *
- * A pointer per thread would be tidier and is what M5 will want once a
- * thread can outlive the call it is serving. One variable is enough while
- * there is one thread per process and no way to be in two at once, and it is
- * the sort of thing that is better added when something needs it than
- * designed against a user that does not exist.
- */
-static struct process *current_process;
 
 void process_init(void)
 {
@@ -35,13 +25,16 @@ void process_init(void)
     for (i = 0; i < PROCESS_MAX; i++) {
         processes[i].in_use = false;
     }
-
-    current_process = NULL;
 }
 
 struct process *process_current(void)
 {
-    return current_process;
+    /* Whichever process this thread is running. Not a global: with more than
+     * one process a global names whichever ran last, which is the wrong
+     * answer in exactly the situation the question is asked. */
+    struct thread *t = thread_current();
+
+    return (t != NULL) ? t->process : NULL;
 }
 
 unsigned process_count(void)
@@ -82,14 +75,19 @@ static void process_main(void *arg)
 {
     struct process *p = arg;
 
-    current_process = p;
+    thread_current()->process = p;
+
+    /* Recorded on the thread as well, because from here every switch has to
+     * carry it: the space belongs to the thread, not to whoever set it last. */
+    thread_current()->space = p->space;
     as_switch(p->space);
 
     /* Past the header, which is data rather than code. */
-    enter_el0(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP);
+    enter_el0(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP, p->arg);
 }
 
-struct process *process_create(const char *name, const void *image, size_t len)
+struct process *process_create(const char *name, const void *image,
+                               size_t len, unsigned long arg)
 {
     struct process *p = alloc_process();
     const uint64_t *header = image;
@@ -187,13 +185,14 @@ struct process *process_create(const char *name, const void *image, size_t len)
     p->in_use = true;
     p->exited = false;
     p->id = next_id++;
+    p->arg = arg;
 
     for (i = 0; i + 1 < PROCESS_NAME_MAX && name[i] != '\0'; i++) {
         p->name[i] = name[i];
     }
     p->name[i] = '\0';
 
-    p->thread = thread_create(p->name, process_main, p);
+    p->thread = thread_create_suspended(p->name, process_main, p);
 
     if (p->thread == NULL) {
         p->in_use = false;
@@ -221,6 +220,13 @@ fail:
     return NULL;
 }
 
+void process_start(struct process *p)
+{
+    if (p != NULL && p->thread != NULL) {
+        thread_wake(p->thread);
+    }
+}
+
 void process_exit(struct process *p, int code)
 {
     size_t i;
@@ -238,9 +244,10 @@ void process_exit(struct process *p, int code)
      * mapped in both, but the moment as_destroy frees the tables the running
      * translation regime would be describing freed pages.
      */
-    if (current_process == p) {
+    if (thread_current()->process == p) {
         as_switch(NULL);
-        current_process = NULL;
+        thread_current()->process = NULL;
+        thread_current()->space = NULL;
     }
 
     for (i = 0; i < USER_STACK_PAGES; i++) {

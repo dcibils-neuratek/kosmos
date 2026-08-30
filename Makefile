@@ -54,7 +54,8 @@ SRCS := boot/start.S \
         $(GEN)/init_bin.c \
         lua/kosmos/kosmos_lua.c \
         lua/kosmos/repl.c \
-        lua/kosmos/sys.c
+        lua/kosmos/sys.c \
+        lua/kosmos/serialize.c
 
 # Upstream Lua. The core, plus the libraries that are allowed to exist.
 #
@@ -141,7 +142,7 @@ $(BUILD)/runtime/libc/snprintf.c.o: CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/strtod.c.o:   CFLAGS := $(CFLAGS_FP)
 $(BUILD)/$(GEN)/init_bin.c.o:        CFLAGS := $(CFLAGS_BASE)
 $(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP) -Ilua/upstream
-$(BUILD)/bench/bench.c.o:            CFLAGS := $(CFLAGS_FP)
+$(BUILD)/bench/bench.c.o:            CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
@@ -178,6 +179,7 @@ $(LUA_OBJS): CFLAGS := $(CFLAGS_LUA_UPSTREAM)
 $(BUILD)/lua/kosmos/kosmos_lua.c.o: CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 $(BUILD)/lua/kosmos/repl.c.o:       CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 $(BUILD)/lua/kosmos/sys.c.o:        CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
+$(BUILD)/lua/kosmos/serialize.c.o:  CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 
 DEPS := $(OBJS:.o=.d)
 
@@ -210,6 +212,7 @@ USER_SRCS := user/init/start.S \
              user/init/main.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
+             lua/kosmos/serialize.c \
              $(USER_LIBC) \
              $(LUA_SRCS) \
              $(GEN)/init_lua.c
@@ -219,7 +222,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) \
+UCFLAGS := $(CFLAGS_BASE) -DKOSMOS_USER \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector

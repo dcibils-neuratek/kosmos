@@ -29,23 +29,31 @@ struct thread;
  */
 
 /*
- * A message is a fixed-size register-sized payload plus a tag.
+ * A message is a tag and a run of bytes.
  *
  * `design.md` §14 makes the tag mandatory: with no types in a system of tens
  * of thousands of lines of Lua, a message that does not say what it is
  * becomes a silent nil three layers down. The kernel does not interpret it,
  * it only insists it is there.
  *
- * Eight words because that is a cache line and change, and because anything
- * larger wants shared memory rather than a copy. The Lua table serialiser
- * that fills these arrives with userland at M4; the kernel moves bytes and
- * has no opinion about their shape.
+ * The bytes are a serialised Lua value, and **the kernel has no opinion
+ * about that at all**. It copies them. That is what makes `design.md` §1's
+ * thesis affordable: the protocol between servers can be the data model of
+ * the language precisely because the thing in the middle does not need to
+ * understand it. An IDL would have to.
+ *
+ * 512 bytes because a namespace read or a drawing command is tens of bytes
+ * and this leaves room to be wrong about that; anything genuinely large
+ * wants shared memory rather than a copy, and `gfx.md` §19.4 designs that
+ * path separately. The size is a real cost: it is copied on every send, and
+ * `bench/baselines.json` will say what it costs.
  */
-#define MSG_WORDS   8
+#define MSG_BYTES   512
 
 struct message {
     uint64_t tag;
-    uint64_t word[MSG_WORDS];
+    uint32_t length;            /* bytes of `data` in use */
+    uint8_t  data[MSG_BYTES];
 };
 
 /* Results. Negative is failure, so `if (ipc_call(...) < 0)` reads correctly. */
@@ -54,6 +62,8 @@ struct message {
 #define IPC_ERR_GONE       (-2)     /* the endpoint was destroyed while waiting */
 #define IPC_ERR_NO_PEER    (-3)     /* replying to a thread that is not waiting */
 #define IPC_ERR_NO_SPACE   (-4)     /* out of endpoints, or out of capability slots */
+#define IPC_ERR_TOO_BIG    (-5)     /* the value does not fit in a message */
+#define IPC_ERR_BAD_VALUE  (-6)     /* a value that cannot cross a boundary */
 
 /*
  * Capabilities are indices into a per-thread table, never global identifiers.

@@ -39,6 +39,9 @@ enum thread_state {
     THREAD_DEAD         /* returned from its entry function */
 };
 
+struct process;
+struct addrspace;
+
 struct thread {
     /* First, because switch.S reaches it through the thread pointer and a
      * zero offset is one instruction cheaper to think about. */
@@ -94,6 +97,32 @@ struct thread {
         unsigned         generation;
     } caps[CAPS_PER_THREAD];
 
+    /*
+     * The process this thread is running, or NULL in a kernel thread.
+     *
+     * Per thread and not a global, which was found the hard way. With one
+     * process a global was indistinguishable from correct; with two, whichever
+     * ran last owned it, so a syscall checked one process's pointers against
+     * the other's address space and an exception from EL0 arrived with no
+     * process at all.
+     */
+    struct process *process;
+
+    /*
+     * The address space this thread runs in, or NULL for the kernel's.
+     *
+     * Switched by switch_to, because it has to follow the thread. Setting
+     * TTBR0 once when a process starts leaves whichever process ran last
+     * owning the page tables, and the next one to be scheduled runs with
+     * somebody else's memory underneath it: its own code reads another
+     * process's data, and its own instructions are fetched from addresses
+     * that mean something different.
+     *
+     * Kept here rather than reached through `process` so thread.c does not
+     * have to know what a process is.
+     */
+    struct addrspace *space;
+
     /* Kept so the stacks can be handed back, and so a fault inside a thread
      * can name which one it was. */
     void *stack;
@@ -111,6 +140,17 @@ void thread_init(void);
 /* A new thread, ready to run. NULL when the pool is full or there are not
  * enough pages for its stacks. */
 struct thread *thread_create(const char *name, void (*entry)(void *), void *arg);
+
+/*
+ * The same, but not yet runnable. `thread_wake` starts it.
+ *
+ * For anything that is not fully built by the time thread_create returns. A
+ * thread is schedulable the instant it is created, and with preemption that
+ * instant is real: a process whose capabilities were granted on the next
+ * line had already run, found an empty table, and exited.
+ */
+struct thread *thread_create_suspended(const char *name,
+                                       void (*entry)(void *), void *arg);
 
 /* Gives up the CPU to the next runnable thread. Returns when this thread is
  * scheduled again. With nothing else runnable it returns immediately. */

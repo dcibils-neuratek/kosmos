@@ -36,6 +36,10 @@ static uint64_t deadline;
  * synchronisation is needed until SMP at M6. */
 static volatile unsigned long ticks;
 
+/* Deadlines that had already passed by the time the timer was rearmed. Each
+ * one is a tick that never happened. */
+static volatile unsigned long missed;
+
 static inline uint64_t read_cntfrq(void)
 {
     uint64_t hz;
@@ -85,6 +89,13 @@ static void arm_next(void)
      * is what makes this correct across the counter wrapping.
      */
     if ((int64_t)(deadline - now) <= 0) {
+        /*
+         * Counted rather than silently absorbed. Resynchronising is the
+         * right response to falling behind, but it breaks the relationship
+         * between the tick count and elapsed time, and something that
+         * quietly stops being true is worse than something that says so.
+         */
+        missed++;
         deadline = now + interval;
     }
 
@@ -129,4 +140,9 @@ void timer_interrupt(void)
 unsigned long hal_ticks(void)
 {
     return ticks;
+}
+
+unsigned long hal_ticks_missed(void)
+{
+    return missed;
 }

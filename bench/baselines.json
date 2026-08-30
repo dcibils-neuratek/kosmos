@@ -1,23 +1,40 @@
 {
   "context_switch": {
-    "commit": "ab3c512",
+    "commit": "a97b3f2",
     "iterations": 200000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 6.375
+    "value": 7.187
   },
   "exception": {
-    "commit": "ab3c512",
+    "commit": "a97b3f2",
     "iterations": 20000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 7.125
+    "value": 7.25
   },
-  "ipc_roundtrip": {
-    "commit": "ab3c512",
-    "iterations": 100000,
+  "gc_pause_max": {
+    "commit": "a97b3f2",
+    "iterations": 1,
+    "note": "The worst single collector step, not a rate. design.md 5.2 calls the maximum GC pause the project's recurring problem and testing.md 18.5 is explicit that the maximum is what matters, never the average.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 23.875
+    "value": 77861.0
+  },
+  "ipc_roundtrip": {
+    "commit": "a97b3f2",
+    "iterations": 100000,
+    "note": "A minimal message: the floor of the IPC path. Compare with `serialize`, which is what a message carrying a real Lua table costs on top.",
+    "tol": 0.02,
+    "unit": "counter ticks per operation, QEMU -icount shift=0",
+    "value": 27.062
+  },
+  "serialize": {
+    "commit": "a97b3f2",
+    "iterations": 20000,
+    "note": "5% rather than 2%: kosmos_lua_seed randomises string hashing per boot, so table iteration order and therefore the pack order differ run to run. Observed spread is about 0.6%. The randomisation is deliberate and worth more than a tighter bound on this one number.",
+    "tol": 0.05,
+    "unit": "counter ticks per operation, QEMU -icount shift=0",
+    "value": 1031.435
   }
 }

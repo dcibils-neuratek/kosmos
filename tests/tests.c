@@ -646,13 +646,15 @@ extern char user_bad_pointer_start[],  user_bad_pointer_end[];
  * on anything going wrong. The process is reaped, so the slot comes back. */
 static int run_user(const char *name, const char *start, const char *end)
 {
-    struct process *p = process_create(name, start, (size_t)(end - start));
+    struct process *p = process_create(name, start, (size_t)(end - start), 0);
     unsigned i;
     int code;
 
     if (p == NULL) {
         return -1000;
     }
+
+    process_start(p);
 
     /* Bounded, so a process that never exits fails the test rather than
      * hanging the suite. It is preempted, so yielding is not required for
@@ -691,13 +693,15 @@ static bool test_lua_runs_at_el0(void)
     unsigned before = process_count();
 
     struct process *p = process_create("t-init", init_image,
-                                       (size_t)init_image_len);
+                                       (size_t)init_image_len, 0);
     unsigned i;
     int code;
 
     if (p == NULL) {
         return false;
     }
+
+    process_start(p);
 
     for (i = 0; i < 4096 && !p->exited; i++) {
         thread_yield();
@@ -711,6 +715,81 @@ static bool test_lua_runs_at_el0(void)
     process_reap(p);
 
     return code == 0 && process_count() == before;
+}
+
+static bool test_two_processes_exchange_a_lua_table(void)
+{
+    /*
+     * M4's definition of done, in one test.
+     *
+     * Two processes at EL0, in separate address spaces, exchanging a Lua
+     * table over the microkernel's IPC. The same image runs as both; the
+     * kernel tells each which it is and hands each a capability for one
+     * endpoint, and neither can name anything else.
+     *
+     * The client checks what came back and exits non-zero if any of it is
+     * wrong: strings, integers that stayed integers, floats that stayed
+     * floats, a nested table, and a list. It also checks that a function and
+     * a cyclic table are refused rather than mangled.
+     */
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *server;
+    struct process *client;
+    cap_t ep;
+    unsigned i;
+    int code;
+
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
+
+    server = process_create("t-echo", init_image, (size_t)init_image_len, 1);
+    client = process_create("t-cli", init_image, (size_t)init_image_len, 0);
+
+    if (server == NULL || client == NULL) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    /* Granted before either can run. Capability zero by convention, because
+     * a fresh process's table is empty and this is the first thing in it. */
+    if (ipc_cap_grant(server->thread, ep) != 0
+        || ipc_cap_grant(client->thread, ep) != 0) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    process_start(server);
+    process_start(client);
+
+    for (i = 0; i < 8192 && !client->exited; i++) {
+        thread_yield();
+    }
+
+    if (!client->exited) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    code = client->exit_code;
+    process_reap(client);
+
+    /* Destroying the endpoint is what tells the server to stop: its receive
+     * fails and it leaves its loop. The same wake-the-blocked path M3 built,
+     * now reaching across an address space. */
+    (void)ipc_endpoint_destroy(ep);
+
+    for (i = 0; i < 512 && !server->exited; i++) {
+        thread_yield();
+    }
+
+    if (server->exited) {
+        process_reap(server);
+    }
+
+    return code == 0;
 }
 
 static bool test_a_process_runs_at_el0(void)
@@ -799,12 +878,28 @@ static bool test_processes_have_separate_address_spaces(void)
     bool ok;
     unsigned i;
 
+    /*
+     * Interrupts off for the inspection.
+     *
+     * Both processes are runnable the moment they are created, and
+     * preemption means either can run and exit before the next line here.
+     * process_exit frees the address space and NULLs the pointer, so reading
+     * `space` without masking is reading a pointer that is entitled to have
+     * been freed - which is exactly what it did, faulting on a NULL address
+     * space about one run in five.
+     *
+     * This is the "where a lock will go" case, standing in for a lock that
+     * does not exist yet. See the comment on struct process.
+     */
+    __asm__ volatile("msr daifset, #2" ::: "memory");
+
     a = process_create("t-sp-a", user_hello_start,
-                       (size_t)(user_hello_end - user_hello_start));
+                       (size_t)(user_hello_end - user_hello_start), 0);
     b = process_create("t-sp-b", user_hello_start,
-                       (size_t)(user_hello_end - user_hello_start));
+                       (size_t)(user_hello_end - user_hello_start), 0);
 
     if (a == NULL || b == NULL) {
+        __asm__ volatile("msr daifclr, #2" ::: "memory");
         return false;
     }
 
@@ -837,6 +932,17 @@ static bool test_processes_have_separate_address_spaces(void)
         uint64_t *above = as_page_entry(a->space, USER_STACK_TOP);
         ok = ok && (above == NULL || (*above & 1) == 0);
     }
+
+    /*
+     * Everything that had to be read before they could run has been read, so
+     * they can run now. Starting them explicitly is also why the masking
+     * above is belt and braces rather than the only thing holding this
+     * together.
+     */
+    process_start(a);
+    process_start(b);
+
+    __asm__ volatile("msr daifclr, #2" ::: "memory");
 
     for (i = 0; i < 200 && (!a->exited || !b->exited); i++) {
         thread_yield();
@@ -1162,16 +1268,20 @@ static void echo_server(void *arg)
         struct message msg;
         struct message reply;
         struct thread *sender;
-        unsigned w;
+        uint32_t w;
 
         server_result = ipc_receive(server_cap, &msg, &sender);
         if (server_result != IPC_OK) {
             break;
         }
 
+        /* Doubles every byte, which is nonsense as a payload and exactly
+         * right as a test: the kernel has no opinion about these bytes, so
+         * whatever comes back proves it moved them unchanged. */
         reply.tag = msg.tag + 1;
-        for (w = 0; w < MSG_WORDS; w++) {
-            reply.word[w] = msg.word[w] * 2;
+        reply.length = msg.length;
+        for (w = 0; w < msg.length; w++) {
+            reply.data[w] = (uint8_t)(msg.data[w] * 2);
         }
 
         server_result = ipc_reply(sender, &reply);
@@ -1212,8 +1322,9 @@ static bool test_ipc_call_and_reply(void)
     }
 
     msg.tag = 7;
-    for (i = 0; i < MSG_WORDS; i++) {
-        msg.word[i] = i + 1;
+    msg.length = 16;
+    for (i = 0; i < 16; i++) {
+        msg.data[i] = (uint8_t)(i + 1);
     }
 
     if (ipc_call(client_cap, &msg, &reply) != IPC_OK) {
@@ -1224,8 +1335,12 @@ static bool test_ipc_call_and_reply(void)
         return false;
     }
 
-    for (i = 0; i < MSG_WORDS; i++) {
-        if (reply.word[i] != (uint64_t)(i + 1) * 2) {
+    if (reply.length != 16) {
+        return false;
+    }
+
+    for (i = 0; i < 16; i++) {
+        if (reply.data[i] != (uint8_t)((i + 1) * 2)) {
             return false;
         }
     }
@@ -1271,8 +1386,9 @@ static bool test_ipc_works_in_both_arrival_orders(void)
 
     /* Sender first: the server has not run at all yet. */
     msg.tag = 1;
-    msg.word[0] = 10;
-    ok = (ipc_call(cap, &msg, &reply) == IPC_OK) && reply.word[0] == 20;
+    msg.length = 1;
+    msg.data[0] = 10;
+    ok = (ipc_call(cap, &msg, &reply) == IPC_OK) && reply.data[0] == 20;
 
     /* Receiver first: give the server a chance to be waiting. */
     for (i = 0; i < 4; i++) {
@@ -1280,8 +1396,9 @@ static bool test_ipc_works_in_both_arrival_orders(void)
     }
 
     msg.tag = 2;
-    msg.word[0] = 30;
-    ok = ok && (ipc_call(cap, &msg, &reply) == IPC_OK) && reply.word[0] == 60;
+    msg.length = 1;
+    msg.data[0] = 30;
+    ok = ok && (ipc_call(cap, &msg, &reply) == IPC_OK) && reply.data[0] == 60;
 
     for (i = 0; i < 8 && !server_done; i++) {
         thread_yield();
@@ -2114,6 +2231,60 @@ static bool test_destroying_an_endpoint_reaches_a_lua_server(void)
         "return true");
 }
 
+static bool test_a_lua_table_survives_ipc(void)
+{
+    /*
+     * The serialiser, through the only interface anyone uses it by.
+     *
+     * `design.md` §1's thesis is that the protocol between servers is the
+     * data model of the language, and this is what that means in practice:
+     * the server writes no marshalling, the client writes no marshalling,
+     * and what arrives is what was sent, including the integer/float
+     * distinction that Lua 5.4 makes and that a naive encoder loses.
+     */
+    return lua_says_true(
+        "local ep = sys.endpoint() "
+        "if not sys.spawn('t-echo2', [[ "
+        "  local cap = ... "
+        "  while true do "
+        "    local m, who = sys.receive(cap) "
+        "    if not m then break end "
+        "    sys.reply(who, m) "
+        "  end ]], ep) then sys.destroy(ep) return false end "
+        "local sent = { tag = 3, s = 'text', i = 7, f = 0.5, b = true, "
+        "               n = { deep = { 'a', 'b' } }, [10] = 'sparse' } "
+        "local got = sys.call(ep, sent) "
+        "sys.destroy(ep) "
+        "for _ = 1, 8 do sys.yield() end "
+        "return got ~= nil "
+        "  and got.s == 'text' "
+        "  and got.i == 7 and math.type(got.i) == 'integer' "
+        "  and got.f == 0.5 and math.type(got.f) == 'float' "
+        "  and got.b == true "
+        "  and got.n.deep[2] == 'b' "
+        "  and got[10] == 'sparse' "
+        "  and got.tag == 3");
+}
+
+static bool test_the_serialiser_refuses_what_cannot_cross(void)
+{
+    /*
+     * A function means nothing in a state that did not create it, and a
+     * cycle has no end. Both are refused rather than mangled, and the
+     * refusal is an error the caller sees rather than a truncated value it
+     * does not.
+     */
+    return lua_says_true(
+        "local ep = sys.endpoint() "
+        "local okf = pcall(function() return sys.call(ep, { f = print }) end) "
+        "local c = {} c.self = c "
+        "local okc = pcall(function() return sys.call(ep, c) end) "
+        "local big = {} for i = 1, 200 do big[i] = ('x'):rep(40) end "
+        "local okb = pcall(function() return sys.call(ep, big) end) "
+        "sys.destroy(ep) "
+        "return okf == false and okc == false and okb == false");
+}
+
 static bool test_lua_ipc_errors_are_reported(void)
 {
     return lua_says_true("local r, e = sys.call(99, {1}) "
@@ -2202,6 +2373,30 @@ static bool test_timer_ticks_advance(void)
     return false;
 }
 
+/*
+ * The tick count and the counter, read as one.
+ *
+ * Reading them as two statements is not enough: preemption can land between
+ * them, and then the two numbers describe moments that are a scheduling
+ * quantum apart. Masking for the two reads makes the pair atomic without
+ * masking for the measurement, which would stop the very ticks being
+ * counted.
+ */
+static void sample_clock(unsigned long *ticks, uint64_t *counter,
+                         unsigned long *missed)
+{
+    uint64_t daif;
+
+    __asm__ volatile("mrs %0, daif" : "=r"(daif));
+    __asm__ volatile("msr daifset, #2" ::: "memory");
+
+    *ticks = hal_ticks();
+    *counter = cntpct();
+    *missed = hal_ticks_missed();
+
+    __asm__ volatile("msr daif, %0" : : "r"(daif) : "memory");
+}
+
 static bool test_timer_period_matches_the_rate(void)
 {
     /*
@@ -2224,44 +2419,64 @@ static bool test_timer_period_matches_the_rate(void)
      * observed while still catching the bug this exists for, which was a
      * 27 percent drift.
      */
-    unsigned long k0;
-    unsigned long k1;
-    uint64_t t0;
-    uint64_t elapsed;
-    uint64_t expected;
-    uint64_t tolerance;
-
-    /* Start on a tick boundary so the first period is a whole one. */
-    k0 = hal_ticks();
-    while (hal_ticks() == k0) { }
-
-    k0 = hal_ticks();
-    t0 = cntpct();
-
-    while (hal_ticks() - k0 < 100) { }
-
-    elapsed = cntpct() - t0;
-    k1 = hal_ticks();
-
-    if (k1 <= k0) {
-        return false;
-    }
+    unsigned attempt;
 
     /*
-     * Divided by the ticks that actually elapsed rather than by the number
-     * this loop was waiting for. Since preemption arrived, the measuring
-     * thread can be taken off the CPU inside that loop and notice the last
-     * tick up to a whole quantum late, which on a short window is a large
-     * error in a measurement that is supposed to be about the timer.
-     * Sampling both ends together removes the observation error rather than
-     * budgeting for it.
+     * Measured only across a window where no deadline was missed.
+     *
+     * A missed deadline is a tick that never happened, so the tick count and
+     * elapsed time stop agreeing, and a measurement across such a window is
+     * measuring the load rather than the timer. That is not a flaw to widen
+     * the tolerance around: it is a different quantity.
+     *
+     * This showed up as roughly one run in fifteen coming out 6 to 10
+     * percent long, which is far outside anything the timer itself does and
+     * exactly what dropping one tick in a hundred looks like.
      */
-    expected  = (cntfrq() / TICK_HZ) * (k1 - k0);
-    tolerance = expected / 10;
+    for (attempt = 0; attempt < 8; attempt++) {
+        unsigned long k0, k1, m0, m1;
+        uint64_t t0, t1, elapsed, expected, tolerance;
 
-    return elapsed > expected - tolerance
-        && elapsed < expected + tolerance;
+        /* Start on a tick boundary so the first period is a whole one. */
+        k0 = hal_ticks();
+        while (hal_ticks() == k0) { }
+
+        sample_clock(&k0, &t0, &m0);
+
+        while (hal_ticks() - k0 < 100) { }
+
+        sample_clock(&k1, &t1, &m1);
+
+        if (m1 != m0 || k1 <= k0) {
+            continue;       /* the system fell behind; this window says nothing */
+        }
+
+        elapsed = t1 - t0;
+
+        /*
+         * Divided by the ticks that actually elapsed rather than by the
+         * number this loop waited for, so being descheduled inside the loop
+         * costs accuracy nowhere.
+         *
+         * Ten percent, and the number is measured rather than picked. On a
+         * clean window the observed error is 0 to 2 parts per thousand. It
+         * exists to catch the bug it was written for, which was a 27 percent
+         * drift from rearming the timer relative to now instead of relative
+         * to the previous deadline.
+         */
+        expected  = (cntfrq() / TICK_HZ) * (k1 - k0);
+        tolerance = expected / 10;
+
+        return elapsed > expected - tolerance
+            && elapsed < expected + tolerance;
+    }
+
+    /* Eight windows in a row with a missed deadline is not a measurement
+     * problem, it is the system failing to keep up with a 100 Hz timer. */
+    return false;
 }
+
+
 
 /*
  * M2: the freestanding libc.
@@ -2488,6 +2703,7 @@ static const struct test tests[] = {
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
     { "el0: a process runs and exits",         test_a_process_runs_at_el0 },
     { "el0: Lua runs in a process",            test_lua_runs_at_el0 },
+    { "el0: two processes swap a Lua table",   test_two_processes_exchange_a_lua_table },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },
@@ -2544,6 +2760,8 @@ static const struct test tests[] = {
     { "sys: the kernel is inspectable",        test_sys_reports_the_kernel },
     { "sys: a spawned Lua thread does IPC",    test_a_spawned_lua_thread_answers_over_ipc },
     { "sys: destroy reaches a Lua server",     test_destroying_an_endpoint_reaches_a_lua_server },
+    { "sys: a Lua table survives IPC",         test_a_lua_table_survives_ipc },
+    { "sys: the serialiser refuses the rest",  test_the_serialiser_refuses_what_cannot_cross },
     { "sys: IPC errors reach Lua",             test_lua_ipc_errors_are_reported },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },

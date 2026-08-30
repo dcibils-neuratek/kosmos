@@ -189,13 +189,16 @@ void thread_init(void)
     t->id = 0;
     strcpy(t->name, "boot");
     t->sched.next = NULL;   /* running, so not in the queue */
+    t->process = NULL;
+    t->space = NULL;
     t->stack = NULL;
     t->exception_stack = NULL;
 
     current = t;
 }
 
-struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
+struct thread *thread_create_suspended(const char *name,
+                                      void (*entry)(void *), void *arg)
 {
     struct thread *t = alloc_thread();
     void *stack_top;
@@ -237,6 +240,8 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
      * particularly quiet bug, since everything would appear to work.
      */
     memset(t->caps, 0, sizeof(t->caps));
+    t->process = NULL;
+    t->space = NULL;
     memset(&t->ipc, 0, sizeof(t->ipc));
     memset(&t->sched, 0, sizeof(t->sched));
 
@@ -265,8 +270,20 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
 
     copy_name(t->name, name);
 
-    t->state = THREAD_READY;
-    policy->enqueue(t);
+    /* Blocked rather than ready: the caller decides when it may run, which
+     * is what lets it finish building whatever the thread will need. */
+    t->state = THREAD_BLOCKED;
+
+    return t;
+}
+
+struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
+{
+    struct thread *t = thread_create_suspended(name, entry, arg);
+
+    if (t != NULL) {
+        thread_wake(t);
+    }
 
     return t;
 }
@@ -286,6 +303,16 @@ static void switch_to(struct thread *next)
     next->state = THREAD_RUNNING;
     next->switches++;
     current = next;
+
+    /*
+     * The address space follows the thread. Safe to do here, from kernel
+     * code, precisely because the kernel is mapped in every space: the
+     * instruction after this one is fetched through the new tables and finds
+     * itself where it was.
+     */
+    if (next->space != prev->space) {
+        as_switch(next->space);
+    }
 
     context_switch(&prev->ctx, &next->ctx);
 

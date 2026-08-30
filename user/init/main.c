@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "lua.h"
+#include "lauxlib.h"
 #include "kosmos.h"
 #include "kosmos_lua.h"
 
@@ -25,7 +26,7 @@ static void say(const char *s)
     (void)kosmos_write(s, strlen(s));
 }
 
-int main(void)
+int main(unsigned long arg)
 {
     lua_State *L;
     int status;
@@ -45,7 +46,18 @@ int main(void)
         return 1;
     }
 
-    status = kosmos_lua_dostring(L, "=init", (const char *)init_lua);
+    /*
+     * The boot word reaches the chunk as its `...`, the same way a spawned
+     * thread's capability does in the kernel's copy. A process is told one
+     * thing and handed a capability table; everything else it works out.
+     */
+    status = luaL_loadbufferx(L, (const char *)init_lua, init_lua_len,
+                              "=init", "t");
+
+    if (status == LUA_OK) {
+        lua_pushinteger(L, (lua_Integer)arg);
+        status = lua_pcall(L, 1, 0, 0);
+    }
 
     if (status != LUA_OK) {
         const char *msg = lua_tostring(L, -1);
