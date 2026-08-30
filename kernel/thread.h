@@ -131,6 +131,19 @@ void thread_wake(struct thread *t);
 void thread_exit(void) __attribute__((noreturn));
 
 struct thread *thread_current(void);
+
+/*
+ * The thread in slot `i`, or NULL when nothing there could still run.
+ *
+ * A dead thread is skipped, for the same reason `thread_count` does not
+ * count one: its slot is reusable, so listing it would be reporting a
+ * recyclable slot as an inhabitant. The two views have to agree, or a caller
+ * that uses both sees a system that contradicts itself.
+ *
+ * For inspection only. This is how `sys.threads` and, at M5, `/proc`
+ * enumerate them, and nothing may hold the pointer across a yield.
+ */
+const struct thread *thread_by_index(unsigned i);
 unsigned thread_count(void);
 
 #endif /* KERNEL_THREAD_H */

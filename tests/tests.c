@@ -1521,6 +1521,98 @@ static bool test_lua_garbage_collector_reclaims(void)
         "return peak > before * 2 and after < peak / 2");
 }
 
+/*
+ * M3: the kernel, reached from Lua.
+ */
+static bool test_sys_reports_the_kernel(void)
+{
+    return lua_says_true("return type(sys) == 'table'")
+        && lua_says_true("return sys.scheduler() == 'round-robin'")
+        && lua_says_true("local m = sys.memory() "
+                         "return m.pages_free > 0 and m.pages_free < m.pages_total "
+                         "and m.heap_used > 0 and m.heap_used < m.heap_size")
+        && lua_says_true("local t = sys.threads() "
+                         "if #t < 1 then return false end "
+                         "local running = 0 "
+                         "for _, th in ipairs(t) do "
+                         "  if th.current then running = running + 1 end "
+                         "  if type(th.name) ~= 'string' then return false end "
+                         "end "
+                         "return running == 1");
+}
+
+static bool test_a_spawned_lua_thread_answers_over_ipc(void)
+{
+    /*
+     * The whole of M3 in one assertion: two Lua states, each in its own
+     * kernel thread, exchanging messages through the microkernel's IPC.
+     *
+     * Separate states rather than one shared is not a convenience. A
+     * lua_State is not reentrant, so two kernel threads inside one would
+     * corrupt it. `design.md` §2's share-nothing userland is not a
+     * preference here, it is the only thing that works.
+     */
+    return lua_says_true(
+        "local ep = sys.endpoint() "
+        "local ok = sys.spawn('t-double', [[ "
+        "  local cap = ... "
+        "  while true do "
+        "    local m, who = sys.receive(cap) "
+        "    if not m then break end "
+        "    sys.reply(who, { m[1] * 2, tag = m.tag + 1 }) "
+        "  end ]], ep) "
+        "if not ok then sys.destroy(ep) return false end "
+        "local good = true "
+        "for i = 1, 5 do "
+        "  local r = sys.call(ep, { i, tag = i }) "
+        "  if not r or r[1] ~= i * 2 or r.tag ~= i + 1 then good = false end "
+        "end "
+        "sys.destroy(ep) "
+        "for _ = 1, 8 do sys.yield() end "
+        "return good");
+}
+
+static bool test_destroying_an_endpoint_reaches_a_lua_server(void)
+{
+    /*
+     * The milestone's trap, seen from the language rather than from C. A
+     * server blocked in receive has to come back with an error when its
+     * endpoint goes away, or it waits forever and can never be restarted.
+     *
+     * The server records what it saw in a capability it was also handed, so
+     * the answer comes back rather than being inferred from a thread state.
+     */
+    return lua_says_true(
+        "local ep = sys.endpoint() "
+        "if not sys.spawn('t-block', [[ "
+        "  local cap = ... "
+        "  local m, who = sys.receive(cap) "
+        "  if m ~= nil then error('receive should have failed') end ]], ep) "
+        "then sys.destroy(ep) return false end "
+        /* Let it reach the receive and block. */
+        "for _ = 1, 4 do sys.yield() end "
+        "local blocked = false "
+        "for _, t in ipairs(sys.threads()) do "
+        "  if t.name == 't-block' and t.state == 'blocked' then blocked = true end "
+        "end "
+        "if not blocked then sys.destroy(ep) return false end "
+        "sys.destroy(ep) "
+        "for _ = 1, 8 do sys.yield() end "
+        /* It woke, its receive failed, and it exited rather than hanging. */
+        "for _, t in ipairs(sys.threads()) do "
+        "  if t.name == 't-block' then return false end "
+        "end "
+        "return true");
+}
+
+static bool test_lua_ipc_errors_are_reported(void)
+{
+    return lua_says_true("local r, e = sys.call(99, {1}) "
+                         "return r == nil and e == 'no such capability'")
+        && lua_says_true("local r, e = sys.destroy(99) "
+                         "return r == nil and e ~= nil");
+}
+
 static bool test_lua_dangerous_libraries_are_absent(void)
 {
     /*
@@ -1905,6 +1997,10 @@ static const struct test tests[] = {
     { "lua: the collector reclaims memory",    test_lua_garbage_collector_reclaims },
     { "lua: io, os, debug are absent",         test_lua_dangerous_libraries_are_absent },
     { "lua: load refuses bytecode",            test_lua_refuses_bytecode },
+    { "sys: the kernel is inspectable",        test_sys_reports_the_kernel },
+    { "sys: a spawned Lua thread does IPC",    test_a_spawned_lua_thread_answers_over_ipc },
+    { "sys: destroy reaches a Lua server",     test_destroying_an_endpoint_reaches_a_lua_server },
+    { "sys: IPC errors reach Lua",             test_lua_ipc_errors_are_reported },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },

@@ -35,7 +35,8 @@ SRCS := boot/start.S \
         kernel/ipc.c \
         kernel/main.c \
         lua/kosmos/kosmos_lua.c \
-        lua/kosmos/repl.c
+        lua/kosmos/repl.c \
+        lua/kosmos/sys.c
 
 # Upstream Lua. The core, plus the libraries that are allowed to exist.
 #
@@ -157,6 +158,7 @@ LUA_OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(LUA_SRCS)))
 $(LUA_OBJS): CFLAGS := $(CFLAGS_LUA_UPSTREAM)
 $(BUILD)/lua/kosmos/kosmos_lua.c.o: CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 $(BUILD)/lua/kosmos/repl.c.o:       CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
+$(BUILD)/lua/kosmos/sys.c.o:        CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 
 DEPS := $(OBJS:.o=.d)
 

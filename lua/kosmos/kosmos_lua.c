@@ -14,6 +14,8 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
+int luaopen_sys(lua_State *L);
+
 #include "kosmos_lua.h"
 #include "console.h"
 #include "panic.h"
@@ -132,6 +134,17 @@ static const luaL_Reg kosmos_libs[] = {
     { LUA_STRLIBNAME, luaopen_string  },
     { LUA_MATHLIBNAME, luaopen_math   },
     { LUA_UTF8LIBNAME, luaopen_utf8   },
+
+    /*
+     * Not upstream. The kernel, reachable from the prompt.
+     *
+     * It is in every state including spawned ones, which is what lets a
+     * spawned thread be a server: it needs `receive` and `reply` as much as
+     * the REPL needs `call`. At M4 this becomes real syscalls and what a
+     * process may reach stops being a list here and starts being its
+     * namespace.
+     */
+    { "sys",           luaopen_sys     },
     { NULL, NULL }
 };
 

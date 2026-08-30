@@ -50,7 +50,25 @@ Kosmos Lua REPL. There is no way out, and nothing to go back to.
 4
 ```
 
-M0 and M1 in full. M2 under QEMU. M3's definition of done met.
+M0 and M1 in full. M2 under QEMU. M3's definition of done met, and the whole of it drivable from the prompt:
+
+```
+> ep = sys.endpoint()
+> sys.spawn("doubler", [[ local cap = ...
+    while true do
+      local m, who = sys.receive(cap)
+      if not m then break end
+      sys.reply(who, { m[1]*2 })
+    end ]], ep)
+> sys.call(ep, {21})[1]
+42
+> for _,t in ipairs(sys.threads()) do print(t.id, t.name, t.state) end
+0	boot	running
+1	doubler	blocked
+> sys.destroy(ep)          -- the blocked server wakes, its receive fails, it exits
+```
+
+Two `lua_State`s, in two kernel threads, over the microkernel's own IPC.
 
 ## M0 — done
 
@@ -100,12 +118,10 @@ M0 and M1 in full. M2 under QEMU. M3's definition of done met.
 - [x] A separate exception stack, so a stack overflow is readable rather than a double fault
 - [x] **Definition of done: 100,000 round trips, cost per round trip printed and baselined**
 - [ ] Address spaces: create, destroy, map pages
-- [ ] Syscalls exposed as Lua functions
+- [x] Syscalls exposed as Lua functions, as `sys`
 - [ ] Preemption. The `tick` hook exists and nothing acts on it
 
 **What is missing and why it is missing.**
-
-*Syscalls as Lua functions* is the cheap and useful one. Lua is in the kernel at M3, so exposing threads and IPC to it means driving the whole microkernel from the REPL, which is the first taste of the property `design.md` §9.1 is built around.
 
 *Address spaces* only earn their keep at M4, when there is something to run at EL0. Building them now means designing against a user of them that does not exist.
 
@@ -138,6 +154,10 @@ Decisions that came out of writing code go here. Format: date, what was decided,
 Design decisions (as opposed to implementation ones) go in the decision log in `README.md` and are propagated to `design.md` and `roadmap.md` in the same session.
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
+
+**2026-08-30 — `sys` is a preview of the interface, not the interface.** At M4 these become real syscalls across a privilege boundary, and at M5 the inspection half disappears into `/proc`, read through the namespace protocol like every other resource. `design.md` §9.5 is emphatic that there must not be a second way to reach it, so `sys.threads` and `sys.memory` are scheduled for deletion rather than for extension.
+
+**2026-08-30 — Every spawned Lua thread gets its own `lua_State`.** Not a design choice so much as the only thing that works: a `lua_State` is not reentrant, and two kernel threads inside one would corrupt it. `design.md` §2's share-nothing userland arrives early because the alternative does not run. They currently share one `malloc` heap; per-state heap limits are M4's problem.
 
 **2026-08-30 — The scheduling policy is behind an interface, not wired into the thread code.** `thread.c` owns the mechanism and `struct scheduler` owns which runnable thread runs next, so a different algorithm is a new file. Per-thread policy state is embedded in `struct thread` rather than reached through a pointer, because there is no allocator to hand a policy its own storage; the fields are named for what algorithms need generally rather than for round robin. A test installs a deliberately terrible LIFO policy and asserts both exact orderings, which is the only proof the seam is real.
 

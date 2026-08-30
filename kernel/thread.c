@@ -47,6 +47,17 @@ struct thread *thread_current(void)
     return current;
 }
 
+const struct thread *thread_by_index(unsigned i)
+{
+    if (i >= THREAD_MAX
+        || threads[i].state == THREAD_UNUSED
+        || threads[i].state == THREAD_DEAD) {
+        return NULL;
+    }
+
+    return &threads[i];
+}
+
 /* Threads that could still run. A dead one is not counted: its slot is
  * reusable and counting it would make the number mean "slots touched"
  * rather than "threads alive". */

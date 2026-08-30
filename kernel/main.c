@@ -96,15 +96,6 @@ void kmain(void)
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way into EL1. Now there is a handler and a source. */
     __asm__ volatile("msr daifclr, #2" ::: "memory");
-    {
-        uint64_t a, b;
-        volatile unsigned long spin = 0;
-        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(a));
-        while (spin < 200000) { spin++; }
-        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(b));
-        kputs("DETERMINISM "); kputu(b - a); kputs("\n");
-    }
-
     kputs("timer ");
     kputu(TICK_HZ);
     kputs(" Hz\n");
