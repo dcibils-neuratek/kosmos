@@ -4,23 +4,24 @@
  */
 
 #include "hal.h"
+#include "console.h"
 
-static void kputs(const char *s)
-{
-    for (; *s != '\0'; s++) {
-        /* A serial terminal needs both, or the next line starts wherever
-         * this one ended and the log becomes a staircase. */
-        if (*s == '\n') {
-            hal_putchar('\r');
-        }
-        hal_putchar(*s);
-    }
-}
+#ifdef KOSMOS_TEST
+#include "test.h"
+#endif
 
 void kmain(void)
 {
     hal_early_init();
+
+    /* The boot banner is itself part of M0's definition of done, and the
+     * host runner checks for it. Printed before the tests so that a suite
+     * that dies halfway still proves the UART came up. */
     kputs("Kosmos\n");
+
+#ifdef KOSMOS_TEST
+    tests_run();   /* never returns: exits the guest through semihosting */
+#endif
 
     /* wfi rather than a busy loop: it parks the core until an interrupt
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can

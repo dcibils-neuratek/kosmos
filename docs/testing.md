@@ -20,6 +20,10 @@ make test M=3    # only the tests up to milestone 3
 make bench       # runs the benchmarks and compares against baselines
 ```
 
+Of the three, only `make test` exists today. `M=` is pointless while there is
+one milestone's worth of tests, and `make bench` arrives with the first number
+worth recording, which is the IPC round trip at M3.
+
 The guest prints a TAP-style protocol over the UART:
 
 ```

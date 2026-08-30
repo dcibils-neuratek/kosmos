@@ -1,16 +1,33 @@
 # Kosmos
 #
 # make qemu     build and run under QEMU virt
-# make debug    the same, stopped, with a gdbserver on :1234
+# make test     run the suite under QEMU, exit code 0 or 1
+# make debug    the same as qemu, stopped, with a gdbserver on :1234
 # make clean
 
 CROSS   := aarch64-none-elf-
 CC      := $(CROSS)gcc
 OBJDUMP := $(CROSS)objdump
-GDB     := $(CROSS)gdb
+SIZE    := $(CROSS)size
 
-BUILD   := build
-TARGET  := $(BUILD)/kosmos.elf
+SRCS := boot/start.S \
+        hal/qemu-virt/uart.c \
+        kernel/console.c \
+        kernel/main.c
+
+# The test build is a separate image in a separate directory. Same sources
+# plus the suite, with KOSMOS_TEST defined, so the tests cost the normal
+# image nothing and the two never share a stale object file.
+ifdef TEST
+  BUILD    := build/test
+  SRCS     += tests/tests.c
+  TESTDEFS := -DKOSMOS_TEST -Itests
+else
+  BUILD    := build
+  TESTDEFS :=
+endif
+
+TARGET := $(BUILD)/kosmos.elf
 
 # Not to be changed without discussion. See CLAUDE.md.
 #
@@ -22,7 +39,7 @@ CFLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
           -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
           -mgeneral-regs-only \
           -O2 -g \
-          -Iarch/aarch64 -Ihal
+          -Iarch/aarch64 -Ihal -Ikernel $(TESTDEFS)
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
@@ -38,17 +55,13 @@ LDFLAGS := -T boot/kosmos.ld \
            -Wl,--no-warn-rwx-segments \
            -Wl,-Map,$(BUILD)/kosmos.map
 
-SRCS := boot/start.S \
-        hal/qemu-virt/uart.c \
-        kernel/main.c
-
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
 DEPS := $(OBJS:.o=.d)
 
 QEMU      := qemu-system-aarch64
 QEMUFLAGS := -M virt -cpu cortex-a72 -m 512M -nographic -kernel $(TARGET)
 
-.PHONY: all qemu debug disasm clean
+.PHONY: all qemu test debug disasm size clean
 
 all: $(TARGET)
 
@@ -68,6 +81,13 @@ $(BUILD)/%.S.o: %.S
 qemu: $(TARGET)
 	$(QEMU) $(QEMUFLAGS)
 
+# Recursive so the test image gets its own BUILD and its own flags. The
+# runner lives on the host and owns the QEMU line for tests, because it needs
+# semihosting and a timeout.
+test:
+	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
+	python3 tools/run_tests.py build/test/kosmos.elf
+
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234
 debug: $(TARGET)
@@ -76,7 +96,10 @@ debug: $(TARGET)
 disasm: $(TARGET)
 	$(OBJDUMP) -d $(TARGET)
 
+size: $(TARGET)
+	$(SIZE) $(TARGET)
+
 clean:
-	rm -rf $(BUILD)
+	rm -rf build
 
 -include $(DEPS)
