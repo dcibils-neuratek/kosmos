@@ -70,6 +70,13 @@ static inline long kosmos_write(const char *s, size_t len)
     return sys2(SYS_WRITE, (long)(uintptr_t)s, (long)len);
 }
 
+/* One byte from the console, or negative when nothing is waiting. Only the
+ * process that owns the console may ask; everything else is refused. */
+static inline long kosmos_getchar(void)
+{
+    return sys0(SYS_GETCHAR);
+}
+
 static inline void kosmos_yield(void)
 {
     (void)sys0(SYS_YIELD);

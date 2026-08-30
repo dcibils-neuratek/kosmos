@@ -654,6 +654,14 @@ static int run_user(const char *name, const char *start, const char *end)
         return -1000;
     }
 
+    /*
+     * These fixtures report by writing to the console, so they are given it.
+     * The console gate is what the shell runs into, and it is exactly the
+     * point: a process that was not handed the device cannot reach it. Here
+     * the device *is* how the fixture answers, so it gets one.
+     */
+    process_grant_console(p);
+
     process_start(p);
 
     /* Bounded, so a process that never exits fails the test rather than
@@ -791,6 +799,69 @@ static bool test_two_processes_exchange_a_lua_table(void)
     }
 
     return code == 0;
+}
+
+static bool test_only_the_console_owner_may_print(void)
+{
+    /*
+     * What makes the console server a server rather than a convention.
+     *
+     * The same fixture, run twice: once holding the console and once not.
+     * With it, the write reports the byte count it wrote. Without it, the
+     * syscall refuses before it looks at anything else, and the process
+     * exits with the code it uses to say so.
+     *
+     * If any process could print, nothing would depend on going through the
+     * console server, and the design would hold by agreement rather than
+     * because the machine says so. This is the difference, measured.
+     */
+    extern const unsigned char init_image[];    /* unused; keeps the shape */
+    struct process *p;
+    unsigned i;
+    int with_console;
+    int without;
+
+    (void)init_image;
+
+    /* With the console. `hello` exits 0 only if its write returned the
+     * length it asked for. */
+    p = process_create("t-con-y", user_hello_start,
+                       (size_t)(user_hello_end - user_hello_start), 0);
+    if (p == NULL) {
+        return false;
+    }
+    process_grant_console(p);
+    process_start(p);
+
+    for (i = 0; i < 200 && !p->exited; i++) {
+        thread_yield();
+    }
+    if (!p->exited) {
+        return false;
+    }
+    with_console = p->exit_code;
+    process_reap(p);
+
+    /* Without it. The same code, refused. */
+    p = process_create("t-con-n", user_hello_start,
+                       (size_t)(user_hello_end - user_hello_start), 0);
+    if (p == NULL) {
+        return false;
+    }
+    process_start(p);
+
+    for (i = 0; i < 200 && !p->exited; i++) {
+        thread_yield();
+    }
+    if (!p->exited) {
+        return false;
+    }
+    without = p->exit_code;
+    process_reap(p);
+
+    /* 1 is what hello exits with when the write did not return what it
+     * asked for, which is what being refused looks like from inside. */
+    return with_console == 0 && without == 1;
 }
 
 static bool test_the_same_server_under_two_names(void)
@@ -2868,6 +2939,7 @@ static const struct test tests[] = {
     { "el0: Lua runs in a process",            test_lua_runs_at_el0 },
     { "el0: two processes swap a Lua table",   test_two_processes_exchange_a_lua_table },
     { "ns: same server, two names, two views", test_the_same_server_under_two_names },
+    { "dev: only the owner may print",         test_only_the_console_owner_may_print },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },

@@ -78,6 +78,22 @@ struct process {
 
     unsigned long     arg;      /* the one word it is told at entry */
 
+    /*
+     * Whether this process may touch the serial port.
+     *
+     * A boolean standing in for a capability, and it is written down as such
+     * rather than dressed up. A device should be reached the way everything
+     * else is - by name, through a capability the process was handed - and
+     * that needs a capability that names a device rather than an endpoint.
+     * Until then this enforces the property that matters: exactly one
+     * process owns the console, and everything else has to ask it.
+     *
+     * Without it the console server is ceremony: any process could print, so
+     * nothing would depend on going through it, and the design would be
+     * demonstrated by convention rather than by the machine.
+     */
+    bool              owns_console;
+
     int               exit_code;
     bool              exited;
 };
@@ -103,6 +119,17 @@ void process_init(void);
  */
 struct process *process_create(const char *name, const void *image,
                                size_t len, unsigned long arg);
+
+/*
+ * Hands this process the serial port. Called before process_start, by
+ * whoever is playing init.
+ *
+ * Nothing stops two processes being given it, and nothing should have to:
+ * whoever hands out devices decides, and that is the whole of the model. In
+ * the running system exactly one process gets it, and their output would
+ * interleave if two did.
+ */
+void process_grant_console(struct process *p);
 
 /* Makes it runnable. Nothing may touch its address space afterwards without
  * masking interrupts: from here it can exit at any moment. */

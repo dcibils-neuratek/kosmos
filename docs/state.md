@@ -8,6 +8,8 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
+**M5 — Namespaces and servers.** The first half of its definition of done is met and the prompt is now a process. Hot reload and userland init are what remain.
+
 **M4 — Lua to userspace.** Its definition of done is met. Two of its listed pieces are not built; see below.
 
 **M3 — Microkernel. Done.**
@@ -30,36 +32,49 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-89 tests. Five benchmarks:
+93 tests. Five benchmarks. 471 KB of kernel image, which now carries the userland image inside it.
+
+**The prompt is a process.** What you type is read by the console server, sent to the shell over IPC, evaluated in the shell's own `lua_State`, and printed back the same way.
 
 ```
-context_switch            7.187
-exception                 7.250
-gc_pause_max          77861.000
-ipc_roundtrip            27.062
-serialize              1031.435
+Kosmos shell. A process, talking to servers.
+Try: fs.list("/data")   fs.read("/data/sensor")   2+2
+
+kosmos> 2+2
+4
+kosmos> fs.write("/data/sensor", { celsius = 47.2, unit = "C" })
+true	nil
+kosmos> fs.read("/data/sensor").celsius
+47.2
+kosmos> fs.list("/data")[1]
+sensor
+kosmos> sys.write("direct")
+-102
+kosmos> fs.read("/nowhere")
+nil	no such path: /nowhere
 ```
 
-`serialize` is forty times the bare round trip. The conversion dominates, not the IPC, which is worth knowing before anything is optimised.
+`sys.write` returning −102 is the point: the shell **cannot** print directly. Only the console server holds the serial port, and everything else has to ask it.
 
-```
-Kosmos
-mem   512 MB, 131072 pages, 130813 free, 259 used by the kernel
-mmu   on
-heap  2047 KB at 0x0000000040107000
-sched round-robin
-timer 100 Hz
-init: Lua Lua 5.4 at EL0, two processes
-init: tag     8
-init: echoed  kosmos  (a string, round trip)
-init: doubled 42  (integer stayed integer: integer)
-init: float   7.0  (float stayed float: float)
-init: nested  hello!
-init: list    1, 4, 9, 16
-init: sending a function -> false, that type cannot cross a boundary
-init: sending a cycle    -> false, value nests too deeply, or is cyclic
-init: done
-```
+## M5 — where it stands
+
+- [x] The protocol: `list`, `read`, `write`, `getattr`, `setattr`, over typed records
+- [x] Per-process namespaces: a mount table in the process, so what is not mounted does not exist
+- [x] Lua coroutines as the servers' concurrency layer
+- [x] Console server, owning the device
+- [x] ramfs
+- [x] Capability transfer over IPC, so userland can do its own mounting
+- [x] The Lua shell as a REPL against the system
+- [x] **Half the definition of done: the same server mounted at two paths in two processes, each seeing only its own**
+- [ ] Hot reload level 1 — the other half of the definition of done
+- [ ] Init and supervision in userland — needs a spawn syscall
+- [ ] Removing Lua from the kernel
+
+**The kernel is playing init**, which is the only temporary part of the arrangement. `roadmap.md` puts init in userland and that needs a process able to start processes.
+
+**Lua is out of the kernel's boot path but still compiled in**, because the test suite drives the kernel through it. Taking it out entirely means moving those tests to userland, which is its own piece of work rather than a line to delete.
+
+**Device access is a boolean, not a capability.** `process_grant_console` sets a flag, and the flag is checked by `sys.write` and `sys.getchar`. It enforces the property that matters — exactly one process owns the console and everything else asks it — but a device should be named the way everything else is, by a capability the process holds. That needs a capability that names a device rather than an endpoint.
 
 ## M4 — where it stands
 
@@ -130,6 +145,12 @@ Decisions that came out of writing code go here. Format: date, what was decided,
 Design decisions (as opposed to implementation ones) go in the decision log in `README.md` and are propagated to `design.md` and `roadmap.md` in the same session.
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
+
+**2026-08-30 — A capability travels out of band, never inside the serialised bytes.** An index means something only in the table it came from, so the kernel translates it on delivery and what arrives is the receiver's own index. Stored as index plus one, so that zero — which is what `{0}` gives — means none.
+
+**2026-08-30 — Anything that is "one per running thing" is stored on the running thing.** `current_process` and the address space were both global-shaped and both broke the moment there were two processes. The same shape appears again wherever a global is "enough for now".
+
+**2026-08-30 — A thread is runnable the instant it exists, and preemption makes that instant real.** Anything created and then configured on the next line has already run. `thread_create_suspended` exists for that, and the race was found three separate times before the habit stuck: once in processes, once in `sys.spawn`, and once in tests.
 
 **2026-08-30 — Isolation is the AP bits, not the address space layout.** Every kernel mapping is `AP=00` with PXN and UXN, so a process cannot touch kernel memory whether or not the kernel is mapped in its space. A process reading the kernel image gets a permission fault at level 3, not a translation fault, which is the difference stated as plainly as it can be.
 
@@ -205,7 +226,7 @@ Found the hard way: the first `setjmp` panicked with EC 0x07, whose name ("unhan
 | 2 | Lua in the kernel + second target | **in progress** |
 | 3 | Microkernel | **done** |
 | 4 | Lua to userspace | **definition of done met** |
-| 5 | Namespaces and servers | next |
+| 5 | Namespaces and servers | **in progress** |
 | 6 | Graphics and app server | |
 | 7 | Attributes, live queries, replicants | |
 | 8 | Own filesystem | |

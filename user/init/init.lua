@@ -17,6 +17,8 @@ local ROLE_CLIENT   = 0
 local ROLE_RAMFS    = 1
 local ROLE_CLIENT_B = 2
 local ROLE_SELFTEST = 3   -- needs no capability: checks the language itself
+local ROLE_CONSOLE  = 4
+local ROLE_SHELL    = 5
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -223,6 +225,141 @@ local function new_namespace()
 end
 
 --------------------------------------------------------------------------
+-- The console server.
+--
+-- It owns the serial port, and it is the only process that does: `sys.write`
+-- and `sys.getchar` are refused to everything else. That is what makes this
+-- a server rather than a convention - a client cannot decide to print
+-- directly, because the machine will not let it.
+--
+-- It serves two operations at one path. `write` puts a string; `read` waits
+-- for a line, echoing as it goes, which is where the line editing lives. A
+-- client that wants a line asks for one and blocks until there is one, and
+-- that blocking is free: synchronous IPC already parks the caller.
+--------------------------------------------------------------------------
+
+local function console_main(endpoint)
+  local function put(s) sys.write(s) end
+
+  serve(endpoint, {
+    write = function(req)
+      put(tostring(req.value))
+      return { ok = true }
+    end,
+
+    read = function(req)
+      local buf = {}
+
+      while true do
+        local c = sys.getchar()
+
+        if c == nil then
+          -- Nothing waiting. Yielding rather than spinning costs a
+          -- scheduling slot instead of the machine; there is no UART
+          -- interrupt to park on until the terminal at M6.
+          sys.yield()
+        elseif c == 10 or c == 13 then
+          put("\n")
+          return { ok = true, value = table.concat(buf) }
+        elseif c == 8 or c == 127 then
+          if #buf > 0 then
+            table.remove(buf)
+            -- Back up, overwrite, back up again: a serial terminal erases
+            -- nothing just because the cursor moved over it.
+            put("\b \b")
+          end
+        elseif c >= 32 and c < 127 then
+          buf[#buf + 1] = string.char(c)
+          put(string.char(c))
+        end
+        -- Anything else is dropped rather than echoed. An arrow key arrives
+        -- as three bytes of escape sequence, and the thing that understands
+        -- those is a terminal emulator, which is M6.
+      end
+    end,
+  })
+end
+
+--------------------------------------------------------------------------
+-- The shell.
+--
+-- A process like any other. It holds two capabilities and can name nothing
+-- else: the console, and a filesystem. It cannot print except by asking the
+-- console server, and it cannot read a file except by asking the ramfs.
+--
+-- design.md 9.1's Lisp Machine property in its first form: the system is
+-- modified from the same language it is written in, from a prompt, while it
+-- is running.
+--------------------------------------------------------------------------
+
+local function shell_main(console_cap, ramfs_cap)
+  local ns = new_namespace()
+  ns.mount("/dev/console", console_cap)
+  ns.mount("/data", ramfs_cap)
+
+  local function out(s) ns.write("/dev/console", s) end
+  local function readline() return ns.read("/dev/console") end
+
+  -- What a chunk typed at the prompt can see. `fs` is this process's own
+  -- namespace, so what the shell can reach is what the shell was given -
+  -- there is no privileged view to hand out.
+  local env = {
+    fs = ns,
+    print = function(...)
+      local parts = {}
+      for i = 1, select("#", ...) do
+        parts[#parts + 1] = tostring((select(i, ...)))
+      end
+      out(table.concat(parts, "\t") .. "\n")
+    end,
+  }
+  setmetatable(env, { __index = _G })
+
+  out("\nKosmos shell. A process, talking to servers.\n")
+  out("Try: fs.list(\"/data\")   fs.read(\"/data/sensor\")   2+2\n\n")
+
+  while true do
+    out("kosmos> ")
+
+    local input = readline()
+    if input == nil then return end          -- the console went away
+
+    if input ~= "" then
+      -- `2+2` is not a chunk, it is an expression. Every Lua prompt wraps
+      -- the line in `return` first and falls back to the line as written.
+      local chunk, err = load("return " .. input, "=stdin", "t", env)
+      if not chunk then
+        chunk, err = load(input, "=stdin", "t", env)
+      end
+
+      if not chunk then
+        out("error: " .. tostring(err) .. "\n")
+      else
+        local results = table.pack(pcall(chunk))
+        if not results[1] then
+          out("error: " .. tostring(results[2]) .. "\n")
+        else
+          for i = 2, results.n do
+            out(tostring(results[i]) .. (i < results.n and "\t" or "\n"))
+          end
+        end
+      end
+    end
+  end
+end
+
+--------------------------------------------------------------------------
+
+if role == ROLE_CONSOLE then
+  console_main(CAP)
+  return
+end
+
+if role == ROLE_SHELL then
+  -- Two capabilities, in the order the kernel granted them.
+  shell_main(0, 1)
+  return
+end
 
 if role == ROLE_SELFTEST then
   -- Lua itself, at EL0, on a heap it cannot grow. No capabilities and no

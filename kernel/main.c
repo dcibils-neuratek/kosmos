@@ -114,75 +114,72 @@ void kmain(void)
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
     /*
-     * A ramfs server and two clients, each a process at EL0 in its own
-     * address space, talking the namespace protocol.
+     * The system, as processes.
      *
-     * The kernel plays init here, which is not where it belongs: `roadmap.md`
-     * has init and supervision in userland, and that needs a process able to
-     * start processes. Until there is a spawn syscall, the wiring is done
-     * from here, and it is the only part of this that is temporary.
+     * A console server that owns the serial port, a ramfs, and a shell that
+     * holds a capability for each and can name nothing else. From here the
+     * prompt is a process: what you type is read by the console server,
+     * passed to the shell over IPC, evaluated in the shell's own lua_State,
+     * and printed back the same way.
      *
-     * What is not temporary is the shape. Each process is handed exactly one
-     * capability and can name nothing else, and the two clients mount the
-     * same server under different names, which is the milestone's point:
-     * what a process has not mounted does not exist.
+     * The kernel is playing init, which is not where `roadmap.md` puts it.
+     * That needs a process able to start processes, and there is no spawn
+     * syscall yet. It is the only part of this arrangement that is
+     * temporary; the shape of it is not.
      */
     {
         extern const unsigned char init_image[];
         extern const unsigned long init_image_len;
-        size_t image_len = (size_t)init_image_len;
+        size_t len = (size_t)init_image_len;
+        struct process *console;
         struct process *ramfs;
-        struct process *client_a;
-        struct process *client_b;
-        cap_t ep = ipc_endpoint_create();
-        unsigned i;
+        struct process *shell;
+        cap_t console_ep = ipc_endpoint_create();
+        cap_t ramfs_ep = ipc_endpoint_create();
 
-        if (ep < 0) {
-            panic("no endpoint for the ramfs");
+        if (console_ep < 0 || ramfs_ep < 0) {
+            panic("no endpoints for the servers");
         }
 
-        ramfs    = process_create("ramfs", init_image, image_len, 1);
-        client_a = process_create("client-a", init_image, image_len, 0);
-        client_b = process_create("client-b", init_image, image_len, 2);
+        console = process_create("console", init_image, len, 4);
+        ramfs   = process_create("ramfs",   init_image, len, 1);
+        shell   = process_create("shell",   init_image, len, 5);
 
-        if (ramfs == NULL || client_a == NULL || client_b == NULL) {
-            kputs("could not create the M5 processes\n");
-        } else {
-            /* One capability each, granted before any of them can run. Each
-             * gets its own index for the same endpoint; the number means
-             * nothing outside the table it came from. */
-            if (ipc_cap_grant(ramfs->thread, ep) != 0
-                || ipc_cap_grant(client_a->thread, ep) != 0
-                || ipc_cap_grant(client_b->thread, ep) != 0) {
-                panic("capabilities did not land at index 0");
-            }
-
-            process_start(ramfs);
-            process_start(client_a);
-            process_start(client_b);
-
-            for (i = 0; i < 16384 && !(client_a->exited && client_b->exited); i++) {
-                thread_yield();
-            }
-
-            /* Destroying the endpoint is what stops the server: its receive
-             * fails and it leaves its loop. */
-            (void)ipc_endpoint_destroy(ep);
+        if (console == NULL || ramfs == NULL || shell == NULL) {
+            panic("could not create the servers");
         }
+
+        /* The console server owns the serial port and nothing else does.
+         * Every other process, the shell included, has to ask it. */
+        process_grant_console(console);
+
+        if (ipc_cap_grant(console->thread, console_ep) != 0
+            || ipc_cap_grant(ramfs->thread, ramfs_ep) != 0) {
+            panic("a server's capability did not land at index 0");
+        }
+
+        /* The shell holds two, in the order it expects them. */
+        if (ipc_cap_grant(shell->thread, console_ep) != 0
+            || ipc_cap_grant(shell->thread, ramfs_ep) != 1) {
+            panic("the shell's capabilities did not land where expected");
+        }
+
+        process_start(console);
+        process_start(ramfs);
+        process_start(shell);
     }
 
-    {
-        struct lua_State *L = kosmos_lua_open();
-
-        if (L == NULL) {
-            panic("Lua could not start: the heap was too small");
-        }
-
-        kputs("lua   ");
-        kputs(kosmos_lua_version());
-        kputc('\n');
-
-        /* Never returns. Everything from here is typed at the prompt. */
-        repl_run(L);
+    /*
+     * Nothing left for this thread to do but keep the scheduler company.
+     *
+     * The kernel's own Lua and its REPL are gone from the boot path: the
+     * prompt lives in a process now. Lua is still compiled into the kernel
+     * because the test suite drives the kernel through it, and taking it out
+     * entirely means moving those tests into userland, which is its own
+     * piece of work rather than a line to delete here.
+     */
+    for (;;) {
+        thread_yield();
+        __asm__ volatile("wfi");
     }
 }

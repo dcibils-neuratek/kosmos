@@ -27,6 +27,7 @@
 #include "ipc.h"
 #include "trap.h"
 #include "console.h"
+#include "hal.h"
 
 /*
  * Moving a message across the boundary, in each direction.
@@ -69,6 +70,18 @@ static long sys_write(struct process *p, uintptr_t ptr, size_t len)
 {
     const char *s = (const char *)ptr;
     size_t i;
+
+    /*
+     * Only the process that owns the console. Everything else reaches it the
+     * way it reaches anything else: by asking whoever serves it.
+     *
+     * This is what stops the console server being ceremony. If any process
+     * could print, nothing would depend on going through it and the design
+     * would hold by convention rather than because the machine says so.
+     */
+    if (!p->owns_console) {
+        return SYS_ERR_DENIED;
+    }
 
     if (len > WRITE_MAX) {
         len = WRITE_MAX;
@@ -204,6 +217,23 @@ void syscall_dispatch(struct trapframe *tf)
 
     case SYS_WRITE:
         result = sys_write(p, tf->x[0], (size_t)tf->x[1]);
+        break;
+
+    case SYS_GETCHAR:
+        /*
+         * One byte, or SYS_NO_INPUT when none is waiting. Non-blocking,
+         * because the alternative is a syscall that parks a thread until the
+         * UART interrupts, and there is no UART interrupt yet: the receive
+         * path is polled until the terminal at M6 gives it a reason not to
+         * be. The console server yields between polls, which costs a
+         * scheduling slot rather than the machine.
+         */
+        if (!p->owns_console) {
+            result = SYS_ERR_DENIED;
+        } else {
+            int c = hal_getchar();
+            result = (c == HAL_NO_INPUT) ? SYS_NO_INPUT : (long)c;
+        }
         break;
 
     case SYS_YIELD:

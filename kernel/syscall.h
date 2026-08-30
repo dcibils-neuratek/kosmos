@@ -28,12 +28,15 @@
 #define SYS_CALL        4   /* (cap, msg, reply)      -> 0 or error    */
 #define SYS_RECEIVE     5   /* (cap, msg, &sender)    -> 0 or error    */
 #define SYS_REPLY       6   /* (sender, msg)          -> 0 or error    */
+#define SYS_GETCHAR     7   /* ()                     -> byte, or -1    */
 
-#define SYS_MAX         7
+#define SYS_MAX         8
 
 /* Errors are negative so `if (result < 0)` reads correctly on both sides. */
 #define SYS_ERR_BADCALL   (-100)    /* no such syscall number */
 #define SYS_ERR_FAULT     (-101)    /* a pointer the process may not touch */
+#define SYS_ERR_DENIED    (-102)    /* this process does not hold the device */
+#define SYS_NO_INPUT      (-103)    /* nothing waiting; not an error */
 
 /*
  * Everything above is plain preprocessor because user programs written in

@@ -105,6 +105,19 @@ static int l_write(lua_State *L)
     return 1;
 }
 
+static int l_getchar(lua_State *L)
+{
+    long c = kosmos_getchar();
+
+    if (c < 0) {
+        lua_pushnil(L);         /* nothing waiting, which is not an error */
+        return 1;
+    }
+
+    lua_pushinteger(L, (lua_Integer)c);
+    return 1;
+}
+
 static int l_exit(lua_State *L)
 {
     kosmos_exit((int)luaL_optinteger(L, 1, 0));
@@ -198,6 +211,7 @@ static int l_reply(lua_State *L)
 
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
+    { "getchar",  l_getchar },
     { "exit",     l_exit },
     { "yield",    l_yield },
     { "endpoint", l_endpoint },

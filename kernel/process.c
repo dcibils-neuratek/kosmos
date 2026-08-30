@@ -220,6 +220,13 @@ fail:
     return NULL;
 }
 
+void process_grant_console(struct process *p)
+{
+    if (p != NULL) {
+        p->owns_console = true;
+    }
+}
+
 void process_start(struct process *p)
 {
     if (p != NULL && p->thread != NULL) {
