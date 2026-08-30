@@ -73,6 +73,11 @@ void mmu_init(void);
 /* Whether SCTLR_EL1.M is set. */
 bool mmu_is_enabled(void);
 
+/* Removes the mapping for one page, splitting a 2 MB block first if the
+ * address is inside one. Used for guard pages under freshly allocated
+ * stacks, which land in the part of RAM mapped as blocks. */
+void mmu_unmap_page(uintptr_t va);
+
 /* The level 3 descriptor for a virtual address, or NULL when the address is
  * not described by a page-granular mapping. For tests and inspection. */
 uint64_t *mmu_page_entry(uintptr_t va);

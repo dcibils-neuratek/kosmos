@@ -1,0 +1,297 @@
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "thread.h"
+#include "pmm.h"
+#include "page.h"
+#include "panic.h"
+#include "console.h"
+#include "mmu.h"
+#include "sched.h"
+
+/*
+ * The pool. Statically declared and never grown, which removes a whole class
+ * of bug in one stroke: there is no allocation to fail halfway, no lifetime
+ * to get wrong, and a thread pointer is valid for as long as the kernel is.
+ */
+static struct thread threads[THREAD_MAX];
+
+/* The thread executing right now. Never NULL after thread_init. */
+static struct thread *current;
+
+/*
+ * The installed policy. One of them, for one CPU: the queue it keeps is a
+ * per-CPU structure in everything but name, and when SMP arrives at M6 it
+ * becomes one instance per core rather than being redesigned. CLAUDE.md asks
+ * for that shape from the start.
+ */
+static const struct scheduler *policy;
+
+static unsigned next_id = 1;
+
+void sched_use(const struct scheduler *p)
+{
+    policy = p;
+    policy->init();
+}
+
+const struct scheduler *sched_current(void)
+{
+    return policy;
+}
+
+struct thread *thread_current(void)
+{
+    return current;
+}
+
+unsigned thread_count(void)
+{
+    unsigned n = 0;
+    unsigned i;
+
+    for (i = 0; i < THREAD_MAX; i++) {
+        if (threads[i].state != THREAD_UNUSED) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+/* strncpy with the truncation made explicit and the terminator guaranteed,
+ * which is the part strncpy famously does not give you. */
+static void copy_name(char *dst, const char *src)
+{
+    size_t i;
+
+    for (i = 0; i + 1 < THREAD_NAME_MAX && src[i] != '\0'; i++) {
+        dst[i] = src[i];
+    }
+
+    dst[i] = '\0';
+}
+
+static struct thread *alloc_thread(void)
+{
+    unsigned i;
+
+    for (i = 0; i < THREAD_MAX; i++) {
+        if (threads[i].state == THREAD_UNUSED) {
+            return &threads[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * A stack, with an unmapped page underneath it.
+ *
+ * The guard is why this asks the allocator for one page more than it needs
+ * and then removes that page from the map. Without it a thread that
+ * overflows quietly writes into whatever the page allocator handed out
+ * before it, which is another thread's stack about as often as not.
+ *
+ * Returns the top, which is what a stack pointer wants.
+ */
+static void *alloc_stack(void **base_out)
+{
+    void *base = pmm_alloc_contiguous(THREAD_STACK_PAGES + 1);
+
+    if (base == NULL) {
+        return NULL;
+    }
+
+    /* The lowest page becomes the guard. Growing down, a thread reaches it
+     * before it reaches anything belonging to somebody else. */
+    mmu_unmap_page((uintptr_t)base);
+
+    *base_out = base;
+    return (char *)base + (THREAD_STACK_PAGES + 1) * PAGE_SIZE;
+}
+
+void thread_init(void)
+{
+    struct thread *t = &threads[0];
+
+    /* Round robin unless a test or a boot option already chose otherwise. */
+    if (policy == NULL) {
+        sched_use(&sched_round_robin);
+    }
+
+    /*
+     * Thread zero is not created, it is adopted: the code running right now
+     * becomes it. Its context is filled in the first time it is switched
+     * away from, so there is nothing to build here.
+     *
+     * Its stacks are the ones from the linker script rather than the page
+     * allocator, which is why they are recorded as NULL: nothing may ever
+     * hand them back.
+     */
+    t->state = THREAD_RUNNING;
+    t->id = 0;
+    strcpy(t->name, "boot");
+    t->sched.next = NULL;   /* running, so not in the queue */
+    t->stack = NULL;
+    t->exception_stack = NULL;
+
+    current = t;
+}
+
+struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
+{
+    struct thread *t = alloc_thread();
+    void *stack_top;
+    void *exception_top;
+
+    if (t == NULL) {
+        return NULL;
+    }
+
+    stack_top = alloc_stack(&t->stack);
+    if (stack_top == NULL) {
+        return NULL;
+    }
+
+    exception_top = alloc_stack(&t->exception_stack);
+    if (exception_top == NULL) {
+        /* The first stack is deliberately not handed back. Freeing it would
+         * mean re-mapping its guard page, and this path only happens when
+         * memory has already run out, where leaking four pages matters far
+         * less than a half-undone unmap. */
+        return NULL;
+    }
+
+    memset(&t->ctx, 0, sizeof(t->ctx));
+
+    /*
+     * A context built by hand so the first `ret` in context_switch lands in
+     * thread_entry, which reads the function out of x19 and its argument out
+     * of x20. The thread has never run, so there is nothing else to restore.
+     */
+    t->ctx.x19 = (uint64_t)(uintptr_t)entry;
+    t->ctx.x20 = (uint64_t)(uintptr_t)arg;
+    t->ctx.x30 = (uint64_t)(uintptr_t)thread_entry;
+    t->ctx.sp_el0 = (uint64_t)(uintptr_t)stack_top;
+    t->ctx.sp_el1 = (uint64_t)(uintptr_t)exception_top;
+
+    /* A new thread starts with interrupts enabled. Zero is that, and the
+     * memset above already produced it, but leaving it implicit would make
+     * the first thread to start with them masked a mystery. */
+    t->ctx.daif = 0;
+
+    t->id = next_id++;
+    t->switches = 0;
+
+    copy_name(t->name, name);
+
+    t->state = THREAD_READY;
+    policy->enqueue(t);
+
+    return t;
+}
+
+static void switch_to(struct thread *next)
+{
+    struct thread *prev = current;
+
+    if (next == prev) {
+        return;
+    }
+
+    if (prev->state == THREAD_RUNNING) {
+        prev->state = THREAD_READY;
+    }
+
+    next->state = THREAD_RUNNING;
+    next->switches++;
+    current = next;
+
+    context_switch(&prev->ctx, &next->ctx);
+
+    /*
+     * Reached when this thread is scheduled again, which may be a long time
+     * later and from a different thread than the one it switched to. Nothing
+     * below here may assume anything about `next`.
+     */
+}
+
+void thread_yield(void)
+{
+    /*
+     * Ask before offering. Picking first and enqueuing afterwards is what
+     * makes this a yield rather than a no-op: enqueuing the caller first
+     * would let a FIFO policy hand it straight back.
+     */
+    struct thread *next = policy->pick_next();
+
+    if (next == NULL) {
+        return;     /* nothing else wants the CPU */
+    }
+
+    policy->enqueue(current);
+    switch_to(next);
+}
+
+void thread_block(void)
+{
+    struct thread *next;
+
+    current->state = THREAD_BLOCKED;
+    next = policy->pick_next();
+
+    if (next == NULL) {
+        /*
+         * Everything is blocked and nothing can wake anybody, because
+         * waking happens in thread context and there is no thread left to
+         * run. Until there are interrupts that wake threads, this is a
+         * deadlock and saying so beats hanging.
+         */
+        panic("thread_block: every thread is blocked");
+    }
+
+    switch_to(next);
+}
+
+void thread_wake(struct thread *t)
+{
+    if (t->state == THREAD_BLOCKED) {
+        t->state = THREAD_READY;
+        policy->enqueue(t);
+    }
+}
+
+void thread_exit(void)
+{
+    struct thread *next;
+
+    current->state = THREAD_DEAD;
+    next = policy->pick_next();
+
+    if (next == NULL) {
+        panic("thread_exit: the last thread returned");
+    }
+
+    /*
+     * A dead thread is never enqueued again, so it leaves the policy's
+     * structures by simply not going back in.
+     *
+     * Its stacks stay allocated. It is still standing on one of them until
+     * the switch completes, and there is nothing yet that reaps a thread
+     * after the fact. THREAD_MAX slots is a bounded leak and reclaiming them
+     * belongs with process lifetimes at M4.
+     */
+    next->state = THREAD_RUNNING;
+    next->switches++;
+
+    {
+        struct thread *dying = current;
+        current = next;
+        context_switch(&dying->ctx, &next->ctx);
+    }
+
+    panic("thread_exit: a dead thread was scheduled");
+}

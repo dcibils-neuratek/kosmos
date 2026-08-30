@@ -13,6 +13,8 @@
 
 #include <stdlib.h>
 #include "kosmos_lua.h"
+#include "thread.h"
+#include "sched.h"
 #include "panic.h"
 
 #ifdef KOSMOS_TEST
@@ -76,6 +78,11 @@ void kmain(void)
         kputx((unsigned long)(unsigned long)heap, 16);
         kputs("\n");
     }
+
+    thread_init();
+    kputs("sched ");
+    kputs(sched_current()->name);
+    kputc('\n');
 
     hal_irq_init();
     hal_timer_init(TICK_HZ);

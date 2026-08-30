@@ -57,7 +57,47 @@ static uint64_t *alloc_table(void)
     return table;
 }
 
-/* The next level down, created on demand. */
+/*
+ * Replaces a 2 MB block with a table of 512 page descriptors covering the
+ * same range with the same attributes. The mapping does not change; only its
+ * granularity does.
+ *
+ * Needed because most of RAM is mapped in blocks, and a thread stack
+ * allocated out of it cannot have a guard page punched into it while the
+ * smallest thing describing that range is two megabytes.
+ */
+static uint64_t *split_block(uint64_t *entry)
+{
+    uint64_t *table = alloc_table();
+    uint64_t base = *entry & DESC_ADDR_MASK;
+    uint64_t attrs = *entry & ~(DESC_ADDR_MASK | 3);
+    unsigned i;
+
+    for (i = 0; i < ENTRIES_PER_TABLE; i++) {
+        table[i] = (base + (uint64_t)i * PAGE_SIZE) | attrs | DESC_PAGE;
+    }
+
+    /*
+     * The table has to be complete before the walker can be pointed at it,
+     * and `dsb ishst` is what guarantees the stores have landed rather than
+     * merely been ordered. Publishing a half-written table is a fault on an
+     * address that was mapped a moment ago.
+     */
+    __asm__ volatile("dsb ishst" ::: "memory");
+
+    *entry = (uint64_t)(uintptr_t)table | DESC_TABLE;
+
+    /* The old block descriptor may be cached in the TLB covering all 2 MB. */
+    __asm__ volatile("dsb ishst" ::: "memory");
+    __asm__ volatile("tlbi vmalle1" ::: "memory");
+    __asm__ volatile("dsb nsh" ::: "memory");
+    __asm__ volatile("isb" ::: "memory");
+
+    return table;
+}
+
+/* The next level down, created on demand, splitting a block if one is in the
+ * way. */
 static uint64_t *descend(uint64_t *table, unsigned index)
 {
     uint64_t *next;
@@ -69,11 +109,7 @@ static uint64_t *descend(uint64_t *table, unsigned index)
     }
 
     if ((table[index] & 3) != DESC_TABLE) {
-        /* Something already mapped this range as a block. Splitting it is
-         * possible but nothing here needs it, and silently ignoring the
-         * request would leave a mapping that does not match what was asked
-         * for. */
-        panic("mmu: a block already covers this range");
+        return split_block(&table[index]);
     }
 
     return (uint64_t *)(uintptr_t)(table[index] & DESC_ADDR_MASK);
@@ -125,6 +161,28 @@ uint64_t *mmu_page_entry(uintptr_t va)
     l3 = (uint64_t *)(uintptr_t)(l2[L2_INDEX(va)] & DESC_ADDR_MASK);
 
     return &l3[L3_INDEX(va)];
+}
+
+void mmu_unmap_page(uintptr_t va)
+{
+    /* descend rather than mmu_page_entry, because this is the caller that
+     * has to work on an address currently covered by a block: that is
+     * exactly what a guard page inside a freshly allocated stack is. */
+    uint64_t *l2 = descend(l1_table, (unsigned)L1_INDEX(va));
+    uint64_t *l3 = descend(l2, (unsigned)L2_INDEX(va));
+
+    l3[L3_INDEX(va)] = DESC_INVALID;
+
+    /*
+     * Invalidating by address rather than the whole TLB. `tlbi vaae1is`
+     * takes bits 55:12 of the address, which is why it is shifted. The `is`
+     * suffix broadcasts to the inner shareable domain, which costs nothing
+     * today with one core and is what SMP at M6 needs.
+     */
+    __asm__ volatile("dsb ishst" ::: "memory");
+    __asm__ volatile("tlbi vaae1is, %0" : : "r"(va >> 12) : "memory");
+    __asm__ volatile("dsb ish" ::: "memory");
+    __asm__ volatile("isb" ::: "memory");
 }
 
 static void enable(void)

@@ -14,6 +14,7 @@ SRCS := boot/start.S \
         arch/aarch64/vectors.S \
         arch/aarch64/trap.c \
         arch/aarch64/mmu.c \
+        arch/aarch64/switch.S \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \
         hal/qemu-virt/gic.c \
@@ -29,6 +30,8 @@ SRCS := boot/start.S \
         runtime/libc/strtod.c \
         kernel/panic.c \
         kernel/pmm.c \
+        kernel/thread.c \
+        kernel/sched_rr.c \
         kernel/main.c \
         lua/kosmos/kosmos_lua.c \
         lua/kosmos/repl.c

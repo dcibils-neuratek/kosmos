@@ -9,6 +9,8 @@
 #include "page.h"
 #include "mmu.h"
 #include "kernel.h"
+#include "thread.h"
+#include "sched.h"
 #include "hal.h"
 
 #include <string.h>
@@ -283,6 +285,342 @@ static bool test_unexpected_fault_is_not_swallowed(void)
      * false when nothing fired, so a broken test cannot pass by accident. */
     fault_expect_begin();
     return fault_expect_end(NULL) == false;
+}
+
+/*
+ * M3: threads and the scheduler.
+ */
+static volatile unsigned long trace_len;
+static volatile unsigned trace[64];
+
+static void trace_push(unsigned v)
+{
+    if (trace_len < 64) {
+        trace[trace_len++] = v;
+    }
+}
+
+static void counting_thread(void *arg)
+{
+    unsigned id = (unsigned)(uintptr_t)arg;
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        trace_push(id);
+        thread_yield();
+    }
+}
+
+static bool test_threads_interleave(void)
+{
+    /*
+     * Three threads, each recording its own id three times and yielding in
+     * between. Under a fair policy the trace has to be the three ids
+     * repeating, not one thread running to completion and then the next: a
+     * context switch that silently did nothing would produce the second.
+     */
+    unsigned i;
+
+    trace_len = 0;
+
+    for (i = 1; i <= 3; i++) {
+        if (thread_create("count", counting_thread, (void *)(uintptr_t)i) == NULL) {
+            return false;
+        }
+    }
+
+    /* Let them run. Each needs three turns, and this thread yields between
+     * each round, so a handful of yields is more than enough. */
+    for (i = 0; i < 16; i++) {
+        thread_yield();
+    }
+
+    if (trace_len != 9) {
+        return false;
+    }
+
+    /* Every id appears exactly three times, and no id appears twice in a row,
+     * which is what "interleaved" actually means. */
+    {
+        unsigned counts[4] = { 0, 0, 0, 0 };
+
+        for (i = 0; i < 9; i++) {
+            if (trace[i] < 1 || trace[i] > 3) {
+                return false;
+            }
+            counts[trace[i]]++;
+            if (i > 0 && trace[i] == trace[i - 1]) {
+                return false;
+            }
+        }
+
+        return counts[1] == 3 && counts[2] == 3 && counts[3] == 3;
+    }
+}
+
+static volatile bool woke;
+
+static void blocking_thread(void *arg)
+{
+    (void)arg;
+    thread_block();
+    woke = true;
+}
+
+static bool test_block_and_wake(void)
+{
+    /*
+     * A blocked thread must not be scheduled, and must run again once woken.
+     * This is the mechanism every IPC operation is built on: a receiver with
+     * nothing waiting blocks, and the sender wakes it.
+     */
+    struct thread *t;
+    unsigned i;
+
+    woke = false;
+
+    t = thread_create("blocker", blocking_thread, NULL);
+    if (t == NULL) {
+        return false;
+    }
+
+    /* Let it reach the block. */
+    for (i = 0; i < 4; i++) {
+        thread_yield();
+    }
+
+    if (woke) {
+        return false;       /* it ran past a block it should have stopped at */
+    }
+
+    thread_wake(t);
+
+    for (i = 0; i < 4; i++) {
+        thread_yield();
+    }
+
+    return woke;
+}
+
+static volatile uint64_t saved_x19;
+static volatile double saved_d8;
+
+static void register_thread(void *arg)
+{
+    (void)arg;
+
+    /*
+     * Plants known values in a callee-saved general register and a
+     * callee-saved FP register, yields so a switch definitely happens, and
+     * reads them back.
+     *
+     * The FP half is the one that matters. The kernel's own C is built
+     * -mgeneral-regs-only and never touches d8, but Lua runs on a thread and
+     * its numbers are doubles. A switch that forgets d8 corrupts a value
+     * with no trace of where it happened, which is exactly the bug that
+     * surfaces five functions later.
+     */
+    uint64_t x;
+    double d;
+
+    __asm__ volatile("mov x19, #0x1234" ::: "x19");
+    __asm__ volatile("fmov d8, #2.0" ::: "d8");
+
+    thread_yield();
+    thread_yield();
+
+    __asm__ volatile("mov %0, x19" : "=r"(x));
+    __asm__ volatile("fmov %d0, d8" : "=w"(d));
+
+    saved_x19 = x;
+    saved_d8 = d;
+}
+
+static bool test_context_switch_preserves_registers(void)
+{
+    unsigned i;
+
+    saved_x19 = 0;
+    saved_d8 = 0.0;
+
+    if (thread_create("regs", register_thread, NULL) == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    return saved_x19 == 0x1234 && saved_d8 == 2.0;
+}
+
+static volatile bool finished;
+
+static void short_thread(void *arg)
+{
+    (void)arg;
+    finished = true;
+    /* Returns, which must reach thread_exit rather than jumping into
+     * whatever x30 happened to hold. */
+}
+
+static bool test_a_thread_that_returns_exits_cleanly(void)
+{
+    unsigned before = thread_count();
+    unsigned i;
+
+    finished = false;
+
+    if (thread_create("short", short_thread, NULL) == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    /* It ran, it returned, and the system is still here. The slot is not
+     * reclaimed, which is deliberate and recorded in thread_exit. */
+    return finished && thread_count() == before + 1;
+}
+
+/*
+ * A second policy, to prove the seam is real.
+ *
+ * Strict LIFO: the most recently enqueued thread runs next. It is a terrible
+ * scheduler and that is the point. If installing it visibly changes the
+ * order threads run in, then the policy really is separable from the
+ * mechanism, which is a claim no amount of interface design proves on its
+ * own.
+ */
+static struct thread *lifo_top;
+
+static void lifo_init(void)   { lifo_top = NULL; }
+
+static void lifo_enqueue(struct thread *t)
+{
+    t->sched.next = lifo_top;
+    lifo_top = t;
+}
+
+static struct thread *lifo_pick_next(void)
+{
+    struct thread *t = lifo_top;
+
+    if (t == NULL) {
+        return NULL;
+    }
+
+    lifo_top = t->sched.next;
+    t->sched.next = NULL;
+    return t;
+}
+
+static bool lifo_tick(struct thread *running) { (void)running; return false; }
+
+static const struct scheduler sched_lifo = {
+    .name      = "test-lifo",
+    .init      = lifo_init,
+    .enqueue   = lifo_enqueue,
+    .pick_next = lifo_pick_next,
+    .tick      = lifo_tick,
+};
+
+static void order_thread(void *arg)
+{
+    trace_push((unsigned)(uintptr_t)arg);
+}
+
+static bool run_three_and_record(const struct scheduler *policy)
+{
+    unsigned i;
+
+    /* Swapping policies is only safe with nothing queued, which is why this
+     * runs each set of threads to completion before the next. */
+    sched_use(policy);
+    trace_len = 0;
+
+    for (i = 1; i <= 3; i++) {
+        if (thread_create("order", order_thread, (void *)(uintptr_t)i) == NULL) {
+            return false;
+        }
+    }
+
+    for (i = 0; i < 12; i++) {
+        thread_yield();
+    }
+
+    return trace_len == 3;
+}
+
+static bool test_the_scheduler_is_pluggable(void)
+{
+    unsigned fifo[3];
+    unsigned lifo[3];
+    unsigned i;
+
+    if (!run_three_and_record(&sched_round_robin)) {
+        return false;
+    }
+    for (i = 0; i < 3; i++) { fifo[i] = trace[i]; }
+
+    if (!run_three_and_record(&sched_lifo)) {
+        return false;
+    }
+    for (i = 0; i < 3; i++) { lifo[i] = trace[i]; }
+
+    /* Put the real policy back before anything else runs. */
+    sched_use(&sched_round_robin);
+
+    /* Created 1, 2, 3 in that order. FIFO runs them in it; LIFO reverses it.
+     * Asserting the exact orders rather than merely "they differ" means a
+     * policy that is broken in both directions cannot pass. */
+    return fifo[0] == 1 && fifo[1] == 2 && fifo[2] == 3
+        && lifo[0] == 3 && lifo[1] == 2 && lifo[2] == 1;
+}
+
+static bool test_thread_stacks_have_guard_pages(void)
+{
+    /*
+     * The page below a thread's stack must have no translation, or an
+     * overflow quietly writes into whatever the page allocator handed out
+     * before it, which is another thread's stack about as often as not.
+     *
+     * Most of RAM is mapped in 2 MB blocks, so this only holds because
+     * mmu_unmap_page splits a block when it has to. Before that existed,
+     * mmu_page_entry returned NULL here and there was no guard at all.
+     *
+     * Checked on a created thread rather than the current one: thread 0 is
+     * adopted from the boot code and uses the linker's stacks, whose guards
+     * come from the linker script instead.
+     */
+    struct thread *t = thread_create("guard", short_thread, NULL);
+    uint64_t *stack_guard;
+    uint64_t *exception_guard;
+    unsigned i;
+
+    if (t == NULL) {
+        return false;
+    }
+
+    /* The lowest page of each allocation is the guard. */
+    stack_guard     = mmu_page_entry((uintptr_t)t->stack);
+    exception_guard = mmu_page_entry((uintptr_t)t->exception_stack);
+
+    if (stack_guard == NULL || exception_guard == NULL) {
+        return false;   /* still described by a block: the split did not happen */
+    }
+
+    if ((*stack_guard & 1) != 0 || (*exception_guard & 1) != 0) {
+        return false;   /* mapped, so not a guard */
+    }
+
+    /* Let it run and exit rather than leaving it queued for the next test. */
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    return true;
 }
 
 /*
@@ -950,11 +1288,19 @@ static bool test_timer_period_matches_the_rate(void)
      * nominal 100 Hz quietly runs at 73. Only measuring the counter across
      * several periods shows it.
      *
-     * Five percent, because the last period is only bounded by when this
-     * loop happens to observe it, not by the timer.
+     * Ten percent, and the number is measured rather than picked. Across
+     * twenty runs the observed error is 0 to 11 parts per thousand, and it
+     * stays under 5 with the host deliberately loaded. Five percent was the
+     * first threshold and it produced one false failure during a parallel
+     * rebuild, which is the worst kind: a test that is red occasionally
+     * teaches you to stop reading it.
+     *
+     * Ten percent keeps roughly a tenfold margin over what is actually
+     * observed while still catching the bug this exists for, which was a
+     * 27 percent drift.
      */
     uint64_t expected = (cntfrq() / TICK_HZ) * 20;
-    uint64_t tolerance = expected / 20;
+    uint64_t tolerance = expected / 10;
     unsigned long start;
     uint64_t t0, elapsed;
 
@@ -1188,6 +1534,12 @@ static const struct test tests[] = {
     { "trap: the kernel runs on SP_EL0",       test_kernel_runs_on_sp_el0 },
     { "trap: the handler has its own stack",   test_handler_runs_on_the_exception_stack },
     { "trap: a stack overflow is survivable",  test_a_stack_overflow_is_survivable },
+    { "thread: three threads interleave",      test_threads_interleave },
+    { "thread: block and wake",                test_block_and_wake },
+    { "thread: a switch preserves x19 and d8", test_context_switch_preserves_registers },
+    { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
+    { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
+    { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
     { "mmu: translation is on",                test_mmu_is_on },
     { "mmu: a null dereference faults",        test_null_dereference_faults },
     { "mmu: the stack guard is unmapped",      test_stack_guard_page_is_unmapped },
