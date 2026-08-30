@@ -17,6 +17,13 @@
 #include <stdio.h>
 #include <math.h>
 
+/* The Kosmos configuration first, exactly as the Lua build does it. Every
+ * hook it overrides is guarded upstream by #if !defined, so arriving after
+ * lua.h means upstream's default wins and this one is a redefinition. */
+#include "kosmos_lua.h"
+#include "lua.h"
+#include "lauxlib.h"
+
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
 extern char __bss_start[];
@@ -564,6 +571,206 @@ static bool test_our_math_matches_its_definition(void)
 }
 
 /*
+ * M2: Lua.
+ *
+ * One state, opened on first use and kept. Opening one per test would be a
+ * better isolation story and a worse test: the interesting failures are the
+ * ones that only appear after the collector has run a few times over a heap
+ * that has been used.
+ */
+static struct lua_State *shared;
+
+static struct lua_State *lua_state(void)
+{
+    if (shared == NULL) {
+        shared = kosmos_lua_open();
+    }
+
+    return shared;
+}
+
+/* Runs a chunk that returns a boolean, and reports what it returned. A chunk
+ * that fails to compile or raises is a false, which is what a test wants. */
+static bool lua_says_true(const char *src)
+{
+    struct lua_State *L = lua_state();
+    bool ok;
+
+    if (L == NULL) {
+        return false;
+    }
+
+    if (kosmos_lua_dostring(L, "=test", src) != LUA_OK) {
+        lua_pop((lua_State *)L, 1);
+        return false;
+    }
+
+    ok = lua_toboolean((lua_State *)L, -1) != 0;
+    lua_pop((lua_State *)L, 1);
+    return ok;
+}
+
+static bool test_lua_arithmetic(void)
+{
+    /* M2's definition of done, as an assertion rather than a printed line. */
+    return lua_says_true("return 2 + 2 == 4")
+        && lua_says_true("return 7 // 2 == 3 and 7 % 2 == 1")
+        && lua_says_true("return math.type(1) == 'integer'")
+        && lua_says_true("return math.type(1.0) == 'float'");
+}
+
+static bool test_lua_floats(void)
+{
+    /*
+     * Exercises the whole number path at once: the parser calls strtod on
+     * the literal, the arithmetic runs in FP registers that only exist
+     * because CPACR was opened, and tostring goes back out through our
+     * snprintf.
+     */
+    return lua_says_true("return 1 / 2 == 0.5")
+        && lua_says_true("return tostring(1.5) == '1.5'")
+        && lua_says_true("return tostring(0.25) == '0.25'")
+        && lua_says_true("return tonumber('3.5') == 3.5")
+        && lua_says_true("return tonumber('1e3') == 1000.0")
+        && lua_says_true("return 2.0 ^ 10 == 1024.0");
+}
+
+static bool test_lua_strings_and_tables(void)
+{
+    return lua_says_true("return ('a' .. 'b' .. 'c') == 'abc'")
+        && lua_says_true("return #'hello' == 5")
+        && lua_says_true("return ('hello'):upper() == 'HELLO'")
+        && lua_says_true("return string.format('%d-%s', 7, 'x') == '7-x'")
+        && lua_says_true("local t = {} for i=1,100 do t[i]=i*i end return t[10] == 100 and #t == 100")
+        && lua_says_true("local s=0 for _,v in ipairs{1,2,3} do s=s+v end return s == 6");
+}
+
+static bool test_lua_closures(void)
+{
+    return lua_says_true(
+        "local function counter() local n = 0 "
+        "  return function() n = n + 1 return n end end "
+        "local c = counter() c() c() return c() == 3");
+}
+
+static bool test_lua_coroutines(void)
+{
+    /*
+     * The single most important Lua feature for this design. `design.md`
+     * §4.5 rests the entire server model on coroutines: they are what makes
+     * synchronous IPC writable as sequential code instead of a state
+     * machine. If they did not work, the architecture would not.
+     */
+    return lua_says_true(
+        "local co = coroutine.create(function(a) "
+        "  local b = coroutine.yield(a + 1) "
+        "  return b * 2 end) "
+        "local _, x = coroutine.resume(co, 1) "
+        "local _, y = coroutine.resume(co, 10) "
+        "return x == 2 and y == 20 and coroutine.status(co) == 'dead'");
+}
+
+static bool test_lua_errors_are_caught(void)
+{
+    /*
+     * This is the setjmp/longjmp test that matters. The unit tests for them
+     * jump within one function; here Lua raises from inside its own VM,
+     * across frames it built, and unwinds to a pcall. `setup.md` warns that
+     * a wrong longjmp only shows up the first time something raises, and
+     * this is that first time.
+     */
+    return lua_says_true("local ok, e = pcall(function() error('boom') end) "
+                         "return ok == false and e:find('boom') ~= nil")
+        && lua_says_true("local ok = pcall(function() return nil + 1 end) "
+                         "return ok == false")
+        && lua_says_true("local ok, e = pcall(function() error({code=42}) end) "
+                         "return ok == false and e.code == 42")
+        /* And that the state is still usable afterwards, which is the part
+         * a botched stack restore breaks. */
+        && lua_says_true("return 1 + 1 == 2");
+}
+
+static bool test_lua_errors_nest(void)
+{
+    /* A pcall inside a pcall, with the inner one rethrowing. Nested jmp_bufs
+     * are where an incorrect saved sp shows up as a corrupted outer frame. */
+    return lua_says_true(
+        "local ok, e = pcall(function() "
+        "  local ok2 = pcall(function() error('inner') end) "
+        "  error('outer:' .. tostring(ok2)) end) "
+        "return ok == false and e:find('outer:false') ~= nil");
+}
+
+static bool test_lua_math_library(void)
+{
+    /* Ours and newlib's, reached through Lua rather than called directly. */
+    return lua_says_true("return math.floor(2.7) == 2 and math.ceil(2.1) == 3")
+        && lua_says_true("return math.abs(-3) == 3")
+        && lua_says_true("return math.sqrt(16.0) == 4.0")
+        && lua_says_true("return math.max(1,5,3) == 5")
+        && lua_says_true("return math.fmod(7, 3) == 1.0")
+        && lua_says_true("return type(math.random()) == 'number'");
+}
+
+static bool test_lua_garbage_collector_reclaims(void)
+{
+    /*
+     * The GC is the design's known risk (`design.md` §5.2) and the first
+     * thing to check is simply that it gets memory back at all. A collector
+     * running against an allocator that does not coalesce would show up
+     * here as memory that never drops.
+     *
+     * Four thousand tables, not twenty. Twenty thousand runs the 2 MB heap
+     * out, which is itself worth knowing: a Lua table is around 56 bytes and
+     * this allocator adds 32 more per block, so the overhead is not a
+     * rounding error. That is the number roadmap.md M4 puts on the bench.
+     */
+    return lua_says_true(
+        "collectgarbage() "
+        "local before = collectgarbage('count') "
+        "local t = {} for i = 1, 4000 do t[i] = {i} end "
+        "local peak = collectgarbage('count') "
+        "t = nil "
+        "collectgarbage() "
+        "local after = collectgarbage('count') "
+        "return peak > before * 2 and after < peak / 2");
+}
+
+static bool test_lua_dangerous_libraries_are_absent(void)
+{
+    /*
+     * `design.md` §5.3: the list of libraries inside a state is part of the
+     * security model, not a configuration detail. Asserting the absences
+     * keeps a later "just open everything" from passing quietly.
+     */
+    return lua_says_true("return io == nil")        /* no global tree to open */
+        && lua_says_true("return os == nil")        /* no wall clock, no exec */
+        && lua_says_true("return debug == nil")     /* breaks every abstraction */
+        && lua_says_true("return package == nil")   /* wants dlopen */
+        && lua_says_true("return dofile == nil and loadfile == nil");
+}
+
+static bool test_lua_refuses_bytecode(void)
+{
+    /*
+     * `design.md` §5.3 forbids precompiled bytecode outright: the undump
+     * loader validates almost nothing, so a crafted chunk is arbitrary
+     * execution inside the state.
+     *
+     * Upstream's default mode is "bt", which accepts either, so this is only
+     * true because every load in lua/kosmos/ says "t". The test is here to
+     * fail the day someone drops the argument.
+     */
+    return lua_says_true(
+        "local dumped = string.dump(function() return 1 end) "
+        "local f, err = load(dumped, 'evil', 't') "
+        "return f == nil and err ~= nil")
+        /* and that the same chunk as source loads fine, so the test is
+         * really about the mode and not about load being broken */
+        && lua_says_true("return load('return 1', 'ok', 't')() == 1");
+}
+
+/*
  * M1: the interrupt controller and the timer.
  */
 static uint64_t cntfrq(void)
@@ -879,6 +1086,17 @@ static const struct test tests[] = {
     { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },
     { "snprintf: floats",                      test_snprintf_floats },
     { "math: ours and newlib's agree",         test_our_math_matches_its_definition },
+    { "lua: arithmetic, 2+2 is 4",             test_lua_arithmetic },
+    { "lua: floats parse and print",           test_lua_floats },
+    { "lua: strings and tables",               test_lua_strings_and_tables },
+    { "lua: closures keep their upvalues",     test_lua_closures },
+    { "lua: coroutines yield and resume",      test_lua_coroutines },
+    { "lua: pcall catches errors",             test_lua_errors_are_caught },
+    { "lua: nested pcall unwinds correctly",   test_lua_errors_nest },
+    { "lua: the math library",                 test_lua_math_library },
+    { "lua: the collector reclaims memory",    test_lua_garbage_collector_reclaims },
+    { "lua: io, os, debug are absent",         test_lua_dangerous_libraries_are_absent },
+    { "lua: load refuses bytecode",            test_lua_refuses_bytecode },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },

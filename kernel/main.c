@@ -12,6 +12,7 @@
 #include "kernel.h"
 
 #include <stdlib.h>
+#include "kosmos_lua.h"
 #include "panic.h"
 
 #ifdef KOSMOS_TEST
@@ -83,6 +84,17 @@ void kmain(void)
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way into EL1. Now there is a handler and a source. */
     __asm__ volatile("msr daifclr, #2" ::: "memory");
+    {
+        struct lua_State *L = kosmos_lua_open();
+
+        if (L == NULL) {
+            panic("Lua could not start: the heap was too small");
+        }
+
+        kosmos_lua_dostring(L, "=boot",
+            "print('lua   ' .. _VERSION .. ', 2+2 = ' .. (2 + 2))");
+    }
+
     kputs("timer ");
     kputu(TICK_HZ);
     kputs(" Hz\n");

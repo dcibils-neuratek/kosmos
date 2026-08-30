@@ -158,3 +158,84 @@ char *strchr(const char *s, int c)
         s++;
     }
 }
+
+char *strrchr(const char *s, int c)
+{
+    const char *found = NULL;
+    char target = (char)c;
+
+    for (;;) {
+        if (*s == target) {
+            found = s;
+        }
+        if (*s == '\0') {
+            return (char *)(uintptr_t)found;
+        }
+        s++;
+    }
+}
+
+/* Whether c is one of the bytes in set. The terminator is deliberately not a
+ * member: strspn("abc", "") must be 0, not 3. */
+static int in_set(char c, const char *set)
+{
+    for (; *set != '\0'; set++) {
+        if (*set == c) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+char *strpbrk(const char *s, const char *accept)
+{
+    for (; *s != '\0'; s++) {
+        if (in_set(*s, accept)) {
+            return (char *)(uintptr_t)s;
+        }
+    }
+
+    return NULL;
+}
+
+size_t strspn(const char *s, const char *accept)
+{
+    const char *p = s;
+
+    while (*p != '\0' && in_set(*p, accept)) {
+        p++;
+    }
+
+    return (size_t)(p - s);
+}
+
+size_t strcspn(const char *s, const char *reject)
+{
+    const char *p = s;
+
+    while (*p != '\0' && !in_set(*p, reject)) {
+        p++;
+    }
+
+    return (size_t)(p - s);
+}
+
+char *strstr(const char *haystack, const char *needle)
+{
+    size_t n = strlen(needle);
+
+    /* An empty needle matches at the start, which is what the standard says
+     * and what the loop below would otherwise get wrong. */
+    if (n == 0) {
+        return (char *)(uintptr_t)haystack;
+    }
+
+    for (; *haystack != '\0'; haystack++) {
+        if (strncmp(haystack, needle, n) == 0) {
+            return (char *)(uintptr_t)haystack;
+        }
+    }
+
+    return NULL;
+}

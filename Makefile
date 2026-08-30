@@ -25,9 +25,33 @@ SRCS := boot/start.S \
         runtime/libc/misc.c \
         runtime/libc/math.c \
         runtime/libc/snprintf.c \
+        runtime/libc/stdio.c \
+        runtime/libc/strtod.c \
         kernel/panic.c \
         kernel/pmm.c \
-        kernel/main.c
+        kernel/main.c \
+        lua/kosmos/kosmos_lua.c
+
+# Upstream Lua. The core, plus the libraries that are allowed to exist.
+#
+# What is missing is the point, and it is a security decision rather than a
+# build one (design.md 5.3): no liolib or loslib, because there is no global
+# tree to open a path in and no wall clock; no loadlib, which wants dlopen;
+# no ldblib, because debug.getupvalue breaks any abstraction built in Lua.
+# linit.c is out too, since it opens all of them; lua/kosmos/ opens ours.
+LUA_SRCS := \
+        lua/upstream/lapi.c     lua/upstream/lcode.c    lua/upstream/lctype.c \
+        lua/upstream/ldebug.c   lua/upstream/ldo.c      lua/upstream/ldump.c \
+        lua/upstream/lfunc.c    lua/upstream/lgc.c      lua/upstream/llex.c \
+        lua/upstream/lmem.c     lua/upstream/lobject.c  lua/upstream/lopcodes.c \
+        lua/upstream/lparser.c  lua/upstream/lstate.c   lua/upstream/lstring.c \
+        lua/upstream/ltable.c   lua/upstream/ltm.c      lua/upstream/lundump.c \
+        lua/upstream/lvm.c      lua/upstream/lzio.c \
+        lua/upstream/lauxlib.c  lua/upstream/lbaselib.c lua/upstream/lcorolib.c \
+        lua/upstream/lstrlib.c  lua/upstream/ltablib.c  lua/upstream/lmathlib.c \
+        lua/upstream/lutf8lib.c
+
+SRCS += $(LUA_SRCS)
 
 # The test build is a separate image in a separate directory. Same sources
 # plus the suite, with KOSMOS_TEST defined, so the tests cost the normal
@@ -52,7 +76,8 @@ TARGET := $(BUILD)/kosmos.elf
 CFLAGS_BASE := -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
-               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include $(TESTDEFS)
+               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Ilua/kosmos \
+               $(TESTDEFS)
 
 CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
 
@@ -69,9 +94,24 @@ CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
 # quietly dropped from the whole build.
 CFLAGS_FP := $(CFLAGS_BASE)
 
+# Lua, ours and upstream's alike, needs the Lua headers and the Kosmos
+# configuration forced in front of every translation unit. -include is what
+# lets `lua/upstream/` stay byte-for-byte what lua.org ships: every hook it
+# overrides is guarded upstream by #if !defined, so arriving first is enough
+# and `lua/patches/` stays empty.
+LUA_FLAGS := -Ilua/upstream -Ilua/kosmos -include lua/kosmos/kosmos_lua.h
+
+# Upstream is compiled without -Werror. It is not our code and its warnings
+# are not ours to fix: the alternative is either editing it, which setup.md
+# forbids for a good reason, or carrying a patch that has to be rebased on
+# every release. Our own files keep -Werror, Lua's included.
+CFLAGS_LUA_UPSTREAM := $(CFLAGS_FP) $(LUA_FLAGS) -Wno-error
+
+
 $(BUILD)/runtime/libc/math.c.o:     CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/snprintf.c.o: CFLAGS := $(CFLAGS_FP)
-$(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP)
+$(BUILD)/runtime/libc/strtod.c.o:   CFLAGS := $(CFLAGS_FP)
+$(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP) -Ilua/upstream
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
@@ -98,7 +138,15 @@ LDFLAGS := -T boot/kosmos.ld \
 # Its only demand is __errno, which the design wanted per-process anyway.
 LIBS := -lm
 
-OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
+OBJS     := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
+LUA_OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(LUA_SRCS)))
+
+# These have to come after LUA_OBJS is assigned: make expands the target
+# side of a rule as it reads it, and an empty variable there matches nothing
+# and fails silently.
+$(LUA_OBJS): CFLAGS := $(CFLAGS_LUA_UPSTREAM)
+$(BUILD)/lua/kosmos/kosmos_lua.c.o: CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
+
 DEPS := $(OBJS:.o=.d)
 
 QEMU      := qemu-system-aarch64

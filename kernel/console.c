@@ -1,13 +1,19 @@
 #include "console.h"
 #include "hal.h"
 
+void kputc(char c)
+{
+    if (c == '\n') {
+        hal_putchar('\r');
+    }
+
+    hal_putchar(c);
+}
+
 void kputs(const char *s)
 {
     for (; *s != '\0'; s++) {
-        if (*s == '\n') {
-            hal_putchar('\r');
-        }
-        hal_putchar(*s);
+        kputc(*s);
     }
 }
 

@@ -26,6 +26,13 @@ void  *calloc(size_t count, size_t size);
 void  *realloc(void *p, size_t n);
 void   free(void *p);
 
+/* Integer absolute value. Lua uses abs on line deltas in its debug info.
+ * abs(INT_MIN) is undefined in C and stays undefined here rather than being
+ * quietly given a wrong answer. */
+static inline int       abs(int n)            { return n < 0 ? -n : n; }
+static inline long      labs(long n)          { return n < 0 ? -n : n; }
+static inline long long llabs(long long n)    { return n < 0 ? -n : n; }
+
 void   abort(void) __attribute__((noreturn));
 void   exit(int status) __attribute__((noreturn));
 

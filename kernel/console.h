@@ -7,6 +7,11 @@
  * working when everything else in the system is already dead.
  */
 
+/* One character. A '\n' becomes "\r\n", because a serial terminal needs
+ * both. Everything else goes out as it is, including zero bytes: Lua strings
+ * may contain them and truncating there would silently lose data. */
+void kputc(char c);
+
 /* Writes the string as given. Does not append a newline. A '\n' is expanded
  * to "\r\n", because a serial terminal needs both. */
 void kputs(const char *s);

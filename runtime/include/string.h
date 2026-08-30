@@ -31,5 +31,18 @@ int     strcmp(const char *a, const char *b);
 int     strncmp(const char *a, const char *b, size_t n);
 char   *strcpy(char *dst, const char *src);
 char   *strchr(const char *s, int c);
+char   *strrchr(const char *s, int c);
+char   *strpbrk(const char *s, const char *accept);
+char   *strstr(const char *haystack, const char *needle);
+size_t  strspn(const char *s, const char *accept);
+size_t  strcspn(const char *s, const char *reject);
+
+/* The message for an errno value. There are two of them, both from libm. */
+char *strerror(int errnum);
+
+/* Locale-aware string comparison, which here is strcmp: there is one locale
+ * and it is C. Lua compares strings through this, so returning anything
+ * other than byte order would change what `<` means on strings. */
+static inline int strcoll(const char *a, const char *b) { return strcmp(a, b); }
 
 #endif /* STRING_H */
