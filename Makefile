@@ -15,6 +15,9 @@ SRCS := boot/start.S \
         arch/aarch64/trap.c \
         arch/aarch64/mmu.c \
         arch/aarch64/switch.S \
+        arch/aarch64/el0.S \
+        user/hello.S \
+        user/faulty.S \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \
         hal/qemu-virt/gic.c \
@@ -33,6 +36,8 @@ SRCS := boot/start.S \
         kernel/thread.c \
         kernel/sched_rr.c \
         kernel/ipc.c \
+        kernel/process.c \
+        kernel/syscall.c \
         kernel/main.c \
         lua/kosmos/kosmos_lua.c \
         lua/kosmos/repl.c \
@@ -86,7 +91,7 @@ TARGET := $(BUILD)/kosmos.elf
 CFLAGS_BASE := -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
-               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Ilua/kosmos \
+               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Ilua/kosmos -Iuser \
                $(TESTDEFS)
 
 CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only

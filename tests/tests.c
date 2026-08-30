@@ -12,6 +12,7 @@
 #include "thread.h"
 #include "sched.h"
 #include "ipc.h"
+#include "process.h"
 #include "hal.h"
 
 #include <string.h>
@@ -630,6 +631,178 @@ static bool test_thread_stacks_have_guard_pages(void)
     }
 
     return true;
+}
+
+/*
+ * M4: processes at EL0.
+ */
+extern char user_hello_start[],        user_hello_end[];
+extern char user_fault_null_start[],   user_fault_null_end[];
+extern char user_fault_kernel_start[], user_fault_kernel_end[];
+extern char user_fault_text_start[],   user_fault_text_end[];
+extern char user_bad_pointer_start[],  user_bad_pointer_end[];
+
+/* Runs a blob to completion and returns its exit code, or a large negative
+ * on anything going wrong. The process is reaped, so the slot comes back. */
+static int run_user(const char *name, const char *start, const char *end)
+{
+    struct process *p = process_create(name, start, (size_t)(end - start));
+    unsigned i;
+    int code;
+
+    if (p == NULL) {
+        return -1000;
+    }
+
+    /* Bounded, so a process that never exits fails the test rather than
+     * hanging the suite. It is preempted, so yielding is not required for
+     * it to make progress; this just waits. */
+    for (i = 0; i < 200 && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return -1001;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+    return code;
+}
+
+static bool test_a_process_runs_at_el0(void)
+{
+    /*
+     * It writes through a syscall, checks the byte count that came back, and
+     * exits 0 only if it matched. A process that never reached EL0, or whose
+     * syscall return value was dropped on the way home, exits non-zero.
+     */
+    return run_user("t-hello", user_hello_start, user_hello_end) == 0;
+}
+
+static bool test_a_null_dereference_kills_only_the_process(void)
+{
+    /*
+     * M4's definition of done. The process reads address zero, which has no
+     * translation in its address space any more than it does in the
+     * kernel's, and dies. This test running at all afterwards is the other
+     * half of the assertion.
+     */
+    unsigned before = process_count();
+    int code = run_user("t-null", user_fault_null_start, user_fault_null_end);
+
+    /* -1 is what the fault path exits with. 41 is what the program exits
+     * with if the fault never happened, which would mean address zero was
+     * readable. */
+    return code == -1 && process_count() == before;
+}
+
+static bool test_a_process_cannot_read_the_kernel(void)
+{
+    /*
+     * The isolation, stated as plainly as it can be. The address it reads is
+     * the kernel image, which is mapped in this process's own page tables,
+     * because there is no TTBR1 split and every space contains the kernel.
+     * It still cannot be touched, because those mappings are AP=00: EL1
+     * read/write, EL0 nothing.
+     *
+     * That is why the kernel living in TTBR0 is a layout decision and not a
+     * security one.
+     */
+    unsigned before = process_count();
+    int code = run_user("t-kern", user_fault_kernel_start,
+                        user_fault_kernel_end);
+
+    return code == -1 && process_count() == before;
+}
+
+static bool test_a_process_cannot_write_its_own_code(void)
+{
+    /* Mapped EL0 read-only and executable. A process able to rewrite its
+     * own text could defeat anything checked about it beforehand. */
+    unsigned before = process_count();
+    int code = run_user("t-text", user_fault_text_start, user_fault_text_end);
+
+    return code == -1 && process_count() == before;
+}
+
+static bool test_a_syscall_refuses_a_kernel_pointer(void)
+{
+    /*
+     * The one that must survive, and the one the hardware does not help
+     * with. The kernel would dereference that pointer at EL1, where the
+     * mapping is valid and privileged; nothing faults. Only the explicit
+     * check in the syscall path refuses it.
+     *
+     * Being told no is not the same as being killed: the process exits 0,
+     * having seen SYS_ERR_FAULT come back.
+     */
+    return run_user("t-badptr", user_bad_pointer_start,
+                    user_bad_pointer_end) == 0;
+}
+
+static bool test_processes_have_separate_address_spaces(void)
+{
+    /*
+     * Two processes, both mapping their code at USER_TEXT_VA, both reaching
+     * a different physical page. Checked from the kernel by walking each
+     * space rather than from inside them, since neither can see the other
+     * by construction, which is the point.
+     */
+    struct process *a;
+    struct process *b;
+    uint64_t *ea;
+    uint64_t *eb;
+    bool ok;
+    unsigned i;
+
+    a = process_create("t-sp-a", user_hello_start,
+                       (size_t)(user_hello_end - user_hello_start));
+    b = process_create("t-sp-b", user_hello_start,
+                       (size_t)(user_hello_end - user_hello_start));
+
+    if (a == NULL || b == NULL) {
+        return false;
+    }
+
+    ea = as_page_entry(a->space, USER_TEXT_VA);
+    eb = as_page_entry(b->space, USER_TEXT_VA);
+
+    ok = ea != NULL && eb != NULL
+      && (*ea & 1) != 0 && (*eb & 1) != 0
+      && (*ea & DESC_ADDR_MASK) != (*eb & DESC_ADDR_MASK);
+
+    /* Their stacks are different pages too, so nothing is shared by
+     * accident rather than only the thing that was checked first. */
+    {
+        uintptr_t stack_page = USER_STACK_TOP - PAGE_SIZE;
+        uint64_t *sa = as_page_entry(a->space, stack_page);
+        uint64_t *sb = as_page_entry(b->space, stack_page);
+
+        ok = ok && sa != NULL && sb != NULL
+                && (*sa & 1) != 0 && (*sb & 1) != 0
+                && (*sa & DESC_ADDR_MASK) != (*sb & DESC_ADDR_MASK);
+    }
+
+    /*
+     * And the page above the stack has no translation, so an overflow
+     * faults. as_page_entry returns where the descriptor *would* be, which
+     * is non-NULL as soon as the table exists, so the question to ask is
+     * whether the descriptor is valid rather than whether the pointer is.
+     */
+    {
+        uint64_t *above = as_page_entry(a->space, USER_STACK_TOP);
+        ok = ok && (above == NULL || (*above & 1) == 0);
+    }
+
+    for (i = 0; i < 200 && (!a->exited || !b->exited); i++) {
+        thread_yield();
+    }
+
+    ok = ok && a->exited && b->exited;
+    process_reap(a);
+    process_reap(b);
+    return ok;
 }
 
 /*
@@ -2270,6 +2443,12 @@ static const struct test tests[] = {
     { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
+    { "el0: a process runs and exits",         test_a_process_runs_at_el0 },
+    { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
+    { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
+    { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },
+    { "el0: a syscall refuses a kernel ptr",   test_a_syscall_refuses_a_kernel_pointer },
+    { "el0: separate address spaces",          test_processes_have_separate_address_spaces },
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },

@@ -16,6 +16,7 @@
 #include "thread.h"
 #include "sched.h"
 #include "ipc.h"
+#include "process.h"
 #include "panic.h"
 
 #ifdef KOSMOS_TEST
@@ -86,6 +87,7 @@ void kmain(void)
 
     thread_init();
     ipc_init();
+    process_init();
     kputs("sched ");
     kputs(sched_current()->name);
     kputc('\n');
@@ -111,6 +113,25 @@ void kmain(void)
     /* wfi rather than a busy loop: it parks the core until an interrupt
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
+    /* The first thing to run at EL0. */
+    {
+        extern char user_hello_start[], user_hello_end[];
+        struct process *p;
+
+        p = process_create("hello", user_hello_start,
+                           (size_t)(user_hello_end - user_hello_start));
+
+        if (p == NULL) {
+            kputs("could not create the first process\n");
+        } else {
+            /* Let it run to completion before the REPL takes the console. */
+            unsigned i;
+            for (i = 0; i < 64 && process_count() > 0; i++) {
+                thread_yield();
+            }
+        }
+    }
+
     {
         struct lua_State *L = kosmos_lua_open();
 

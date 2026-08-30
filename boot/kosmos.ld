@@ -39,6 +39,21 @@ SECTIONS
         __text_end = .;
     }
 
+    /*
+     * Code meant to run at EL0, kept apart from everything else.
+     *
+     * It is never mapped from here: a process gets a copy in pages of its
+     * own, so it can be given EL0 permissions without the kernel's image
+     * being given them too. This section exists so the blob is contiguous,
+     * page aligned, and has symbols marking its ends.
+     */
+    .user : ALIGN(PAGE_SIZE) {
+        __user_start = .;
+        KEEP(*(.user.text))
+        . = ALIGN(PAGE_SIZE);
+        __user_end = .;
+    }
+
     .rodata : ALIGN(PAGE_SIZE) {
         __rodata_start = .;
         *(.rodata .rodata.*)

@@ -16,6 +16,8 @@
 #include "console.h"
 #include "hal.h"
 #include "thread.h"
+#include "process.h"
+#include "syscall.h"
 
 /* The table in vectors.S. */
 extern char vectors[];
@@ -128,13 +130,14 @@ bool fault_expect_end(struct fault_info *out)
     return fired;
 }
 
-static void dump(unsigned index, const struct trapframe *tf)
+/* Everything after the first line, shared by the kernel's panic and the
+ * report a dying process gets. The two differ in what they say happened and
+ * in what follows; the registers are the same registers. */
+static void dump_body(unsigned index, const struct trapframe *tf)
 {
     unsigned ec  = (unsigned)ESR_EC(tf->esr);
     unsigned iss = (unsigned)ESR_ISS(tf->esr);
 
-    kputs("\nPANIC: ");
-    kputs(ec_name(ec));
     kputs("\n  vector  ");
     kputu(index);
     kputs("  ");
@@ -169,6 +172,13 @@ static void dump(unsigned index, const struct trapframe *tf)
     }
 
     kputs("\n");
+}
+
+static void dump(unsigned index, const struct trapframe *tf)
+{
+    kputs("\nPANIC: ");
+    kputs(ec_name((unsigned)ESR_EC(tf->esr)));
+    dump_body(index, tf);
 }
 
 void trap_handler(unsigned index, struct trapframe *tf)
@@ -250,6 +260,47 @@ void trap_handler(unsigned index, struct trapframe *tf)
      */
     if (index >= 4 && index <= 7) {
         kputs("\nPANIC: double fault - an exception inside the handler\n");
+    }
+
+    /*
+     * Everything from EL0: vectors 8 to 11.
+     *
+     * A syscall is the expected case. Anything else is a process doing
+     * something it may not, and the answer is to kill the process rather
+     * than the machine. That distinction is the whole point of a
+     * microkernel, and it is one line of code because the hardware already
+     * did the work.
+     */
+    if (index >= 8 && index <= 11) {
+        struct process *p = process_current();
+
+        if (index == 8 && ESR_EC(tf->esr) == EC_SVC64) {
+            syscall_dispatch(tf);
+            return;
+        }
+
+        if (index == 9) {
+            hal_irq_handle();
+            thread_tick();
+            return;
+        }
+
+        if (p != NULL) {
+            /*
+             * Reported before it is killed. A process dying silently is a
+             * process whose bug you never find, and the dump names the
+             * instruction and the address exactly as it does for the kernel.
+             */
+            kputs("\nprocess \"");
+            kputs(p->name);
+            kputs("\" died: ");
+            kputs(ec_name((unsigned)ESR_EC(tf->esr)));
+            dump_body(index, tf);
+
+            process_exit(p, -1);    /* never returns */
+        }
+
+        /* From EL0 with no process is a kernel bug, not a process one. */
     }
 
     dump(index, tf);

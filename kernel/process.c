@@ -1,0 +1,302 @@
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "process.h"
+#include "thread.h"
+#include "mmu.h"
+#include "page.h"
+#include "pmm.h"
+#include "panic.h"
+#include "console.h"
+
+/* In arch/aarch64/el0.S. Does not return. */
+void enter_el0(uintptr_t entry, uintptr_t user_sp);
+
+static struct process processes[PROCESS_MAX];
+static unsigned next_id = 1;
+
+/*
+ * Which process the running thread belongs to.
+ *
+ * A pointer per thread would be tidier and is what M5 will want once a
+ * thread can outlive the call it is serving. One variable is enough while
+ * there is one thread per process and no way to be in two at once, and it is
+ * the sort of thing that is better added when something needs it than
+ * designed against a user that does not exist.
+ */
+static struct process *current_process;
+
+void process_init(void)
+{
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        processes[i].in_use = false;
+    }
+
+    current_process = NULL;
+}
+
+struct process *process_current(void)
+{
+    return current_process;
+}
+
+unsigned process_count(void)
+{
+    unsigned n = 0;
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        if (processes[i].in_use && !processes[i].exited) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+static struct process *alloc_process(void)
+{
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        if (!processes[i].in_use) {
+            return &processes[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * The thread side of a process.
+ *
+ * Runs once, in kernel context, to install the address space and then hand
+ * the CPU to EL0. It never comes back: from the eret onwards this thread is
+ * the process, and every return into the kernel is an exception.
+ */
+static void process_main(void *arg)
+{
+    struct process *p = arg;
+
+    current_process = p;
+    as_switch(p->space);
+
+    enter_el0(USER_TEXT_VA, USER_STACK_TOP);
+}
+
+struct process *process_create(const char *name, const void *code, size_t len)
+{
+    struct process *p = alloc_process();
+    size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    size_t i;
+
+    if (p == NULL || pages == 0) {
+        return NULL;
+    }
+
+    memset(p, 0, sizeof(*p));
+
+    p->space = as_create();
+    if (p->space == NULL) {
+        return NULL;
+    }
+
+    /*
+     * The code is copied rather than mapped where it already is. The image's
+     * own pages belong to the kernel, are mapped EL1-only, and are shared by
+     * every process; giving them EL0 permissions would give them to
+     * everything at once. A copy is the only way one process can execute it
+     * and another not.
+     */
+    p->text_pages = pmm_alloc_contiguous(pages);
+    if (p->text_pages == NULL) {
+        as_destroy(p->space);
+        return NULL;
+    }
+    p->text_page_count = pages;
+
+    memcpy(p->text_pages, code, len);
+
+    /* Zero the tail of the last page rather than leaving whatever the
+     * previous owner had there, which the process would be able to read. */
+    memset((char *)p->text_pages + len, 0, pages * PAGE_SIZE - len);
+
+    p->stack_pages = pmm_alloc_contiguous(USER_STACK_PAGES);
+    if (p->stack_pages == NULL) {
+        pmm_free_page(p->text_pages);
+        as_destroy(p->space);
+        return NULL;
+    }
+
+    memset(p->stack_pages, 0, USER_STACK_PAGES * PAGE_SIZE);
+
+    if (as_map(p->space, USER_TEXT_VA, (uintptr_t)p->text_pages, pages,
+               MAP_USER_RX) != AS_OK) {
+        goto fail;
+    }
+
+    if (as_map(p->space, USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE,
+               (uintptr_t)p->stack_pages, USER_STACK_PAGES,
+               MAP_USER_RW) != AS_OK) {
+        goto fail;
+    }
+
+    p->in_use = true;
+    p->exited = false;
+    p->id = next_id++;
+
+    for (i = 0; i + 1 < PROCESS_NAME_MAX && name[i] != '\0'; i++) {
+        p->name[i] = name[i];
+    }
+    p->name[i] = '\0';
+
+    p->thread = thread_create(p->name, process_main, p);
+
+    if (p->thread == NULL) {
+        p->in_use = false;
+        goto fail;
+    }
+
+    return p;
+
+fail:
+    for (i = 0; i < USER_STACK_PAGES; i++) {
+        pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
+    }
+    for (i = 0; i < pages; i++) {
+        pmm_free_page((char *)p->text_pages + i * PAGE_SIZE);
+    }
+    as_destroy(p->space);
+    p->in_use = false;
+    return NULL;
+}
+
+void process_exit(struct process *p, int code)
+{
+    size_t i;
+
+    if (p == NULL || p->exited) {
+        return;
+    }
+
+    p->exit_code = code;
+    p->exited = true;
+
+    /*
+     * Back to the kernel's own address space before the process's is taken
+     * apart. The thread is still executing, and it is executing kernel code
+     * mapped in both, but the moment as_destroy frees the tables the running
+     * translation regime would be describing freed pages.
+     */
+    if (current_process == p) {
+        as_switch(NULL);
+        current_process = NULL;
+    }
+
+    for (i = 0; i < USER_STACK_PAGES; i++) {
+        pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
+    }
+
+    for (i = 0; i < p->text_page_count; i++) {
+        pmm_free_page((char *)p->text_pages + i * PAGE_SIZE);
+    }
+
+    as_destroy(p->space);
+
+    p->space = NULL;
+    p->thread = NULL;
+    p->text_pages = NULL;
+    p->stack_pages = NULL;
+
+    /*
+     * `in_use` stays set. Everything expensive is gone; what is left is the
+     * exit code, and the moment a process dies is exactly when somebody
+     * wants to know why. process_reap releases the slot.
+     */
+
+    /* Never returns. The thread's slot and stacks go back to the pool. */
+    thread_exit();
+}
+
+void process_reap(struct process *p)
+{
+    if (p == NULL || !p->in_use || !p->exited) {
+        return;
+    }
+
+    p->in_use = false;
+}
+
+/*
+ * Whether an address range belongs to the process.
+ *
+ * This is the check that stands between a syscall and an arbitrary read of
+ * kernel memory. A process handing over a kernel pointer is not caught by
+ * the MMU: the kernel dereferences it at EL1, where that mapping is valid
+ * and privileged. Nothing about the hardware notices; only this does.
+ *
+ * It walks the process's own page tables rather than comparing against a
+ * range, so it answers the question actually being asked, which is whether
+ * that address is mapped *for this process* with the permission needed.
+ */
+static bool range_ok(const struct process *p, uintptr_t va, size_t len,
+                     bool need_write)
+{
+    uintptr_t page;
+    uintptr_t last;
+
+    if (p == NULL || p->space == NULL) {
+        return false;
+    }
+
+    if (len == 0) {
+        return true;
+    }
+
+    /* Overflow would otherwise wrap a huge length into a small range and
+     * pass a check it should fail. */
+    if (va + len < va) {
+        return false;
+    }
+
+    last = va + len - 1;
+
+    for (page = va & ~(uintptr_t)PAGE_MASK;
+         page <= (last & ~(uintptr_t)PAGE_MASK);
+         page += PAGE_SIZE) {
+        uint64_t *entry = as_page_entry(p->space, page);
+        uint64_t ap;
+
+        if (entry == NULL || (*entry & 1) == 0) {
+            return false;       /* not mapped in this process */
+        }
+
+        ap = (*entry >> 6) & 3;
+
+        /* AP=01 is EL0 read/write; AP=11 is EL0 read-only. Anything else has
+         * no EL0 access at all, which means it is the kernel's. */
+        if (ap != 1 && ap != 3) {
+            return false;
+        }
+
+        if (need_write && ap != 1) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool process_may_read(const struct process *p, uintptr_t va, size_t len)
+{
+    return range_ok(p, va, len, false);
+}
+
+bool process_may_write(const struct process *p, uintptr_t va, size_t len)
+{
+    return range_ok(p, va, len, true);
+}

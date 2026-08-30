@@ -66,6 +66,28 @@
 #define MAP_TEXT    (ATTR_IDX(MAIR_IDX_NORMAL) | ATTR_AF | ATTR_SH_INNER | \
                      ATTR_AP_RO_EL1 | ATTR_UXN)   /* PXN clear: executable */
 
+/*
+ * And the two a process gets.
+ *
+ * The AP field is what isolation actually rests on. Everything above uses
+ * AP=00, meaning EL1 read/write and **no EL0 access at all**, so a process
+ * cannot touch kernel memory whether or not the kernel is mapped in its
+ * address space. That is why the kernel living in TTBR0 alongside processes
+ * is a layout decision rather than a security one.
+ *
+ * UXN is set on user data and PXN on user code, and the second matters more
+ * than it looks: without it the kernel could be tricked into executing bytes
+ * a process wrote. A page is executable by exactly one exception level.
+ */
+#define ATTR_AP_RW_EL0  (1UL << 6)      /* EL1 rw, EL0 rw */
+#define ATTR_AP_RO_EL0  (3UL << 6)      /* EL1 ro, EL0 ro */
+
+#define MAP_USER_RW (ATTR_IDX(MAIR_IDX_NORMAL) | ATTR_AF | ATTR_SH_INNER | \
+                     ATTR_AP_RW_EL0 | ATTR_PXN | ATTR_UXN)
+
+#define MAP_USER_RX (ATTR_IDX(MAIR_IDX_NORMAL) | ATTR_AF | ATTR_SH_INNER | \
+                     ATTR_AP_RO_EL0 | ATTR_PXN)   /* UXN clear: EL0 executes */
+
 /* Builds the identity map and turns translation on. Needs pmm_init first,
  * because the tables come out of the page allocator. */
 void mmu_init(void);
