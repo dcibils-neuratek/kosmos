@@ -21,7 +21,6 @@
 
 void kmain(void)
 {
-    unsigned long last_second = 0;
 
     hal_early_init();
 
@@ -84,17 +83,6 @@ void kmain(void)
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way into EL1. Now there is a handler and a source. */
     __asm__ volatile("msr daifclr, #2" ::: "memory");
-    {
-        struct lua_State *L = kosmos_lua_open();
-
-        if (L == NULL) {
-            panic("Lua could not start: the heap was too small");
-        }
-
-        kosmos_lua_dostring(L, "=boot",
-            "print('lua   ' .. _VERSION .. ', 2+2 = ' .. (2 + 2))");
-    }
-
     kputs("timer ");
     kputu(TICK_HZ);
     kputs(" Hz\n");
@@ -106,17 +94,18 @@ void kmain(void)
     /* wfi rather than a busy loop: it parks the core until an interrupt
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
-    for (;;) {
-        unsigned long second;
+    {
+        struct lua_State *L = kosmos_lua_open();
 
-        __asm__ volatile("wfi");
-
-        second = hal_ticks() / TICK_HZ;
-        if (second != last_second) {
-            last_second = second;
-            kputs("tick  ");
-            kputu(second);
-            kputs("\n");
+        if (L == NULL) {
+            panic("Lua could not start: the heap was too small");
         }
+
+        kputs("lua   ");
+        kputs(kosmos_lua_version());
+        kputc('\n');
+
+        /* Never returns. Everything from here is typed at the prompt. */
+        repl_run(L);
     }
 }

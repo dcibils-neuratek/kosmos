@@ -25,6 +25,7 @@
 #define UART_IMSC       (UART0_BASE + 0x38)   /* interrupt mask set/clear */
 #define UART_ICR        (UART0_BASE + 0x44)   /* interrupt clear */
 
+#define FR_RXFE         (1u << 4)             /* receive FIFO empty */
 #define FR_TXFF         (1u << 5)             /* transmit FIFO full */
 
 #define LCRH_FEN        (1u << 4)             /* enable FIFOs */
@@ -85,4 +86,20 @@ void hal_putchar(char c)
     }
 
     mmio_write32(UART_DR, (uint32_t)(unsigned char)c);
+}
+
+int hal_getchar(void)
+{
+    if (mmio_read32(UART_FR) & FR_RXFE) {
+        return HAL_NO_INPUT;
+    }
+
+    /*
+     * The low byte is the character; the bits above it are the receive error
+     * flags (break, parity, framing, overrun). Masking them off rather than
+     * checking them is deliberate for now: there is nothing useful to do
+     * about a framing error on a console except carry on, and reporting one
+     * would mean an error path with no handler.
+     */
+    return (int)(mmio_read32(UART_DR) & 0xff);
 }

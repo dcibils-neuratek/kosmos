@@ -22,6 +22,13 @@ void hal_early_init(void);
 /* One character out the serial port. Blocks until there is room. */
 void hal_putchar(char c);
 
+/* One character in, or HAL_NO_INPUT when none is waiting. Never blocks:
+ * a REPL has to stay responsive to a timer tick while it waits, and from M6
+ * input has to keep flowing while an application is busy drawing. */
+#define HAL_NO_INPUT    (-1)
+
+int hal_getchar(void);
+
 /* Where usable RAM is. One contiguous range is enough for every target so
  * far; a board with holes in its map would need a list, and that is the
  * moment to change this, not before. */

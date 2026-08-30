@@ -12,7 +12,9 @@ Last updated: 2026-08-30
 
 Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU **and** on real hardware.
 
-Blocked on hardware for the second half: the serial cables have not arrived. The freestanding libc and Lua itself can start under QEMU meanwhile.
+**The QEMU half is done.** The prompt runs Lua 5.4.8 with coroutines, closures, the string and math libraries, and errors caught by `pcall`.
+
+**The hardware half is blocked on cables** and is the only thing left in M2.
 
 **M0 and M1 are closed.**
 
@@ -22,20 +24,26 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Working
 
-`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`. 42 tests.
-
-Boot output:
+`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`. 53 tests. 221 KB of text.
 
 ```
 Kosmos
-mem   512 MB, 131072 pages, 130923 free, 149 used by the kernel
+mem   512 MB, 131072 pages, 130879 free, 193 used by the kernel
 mmu   on
-heap  2047 KB at 0x0000000040099000
+heap  2047 KB at 0x00000000400c5000
 timer 100 Hz
-tick  1
+lua   Lua 5.4.8
+
+Kosmos Lua REPL. There is no way out, and nothing to go back to.
+> 2+2
+4
+> math.sqrt(2)
+1.4142135623731
+> io
+nil
 ```
 
-M0 and M1 in full. M2 in progress: everything Lua is compiled *against* exists and is tested — the freestanding libc, `setjmp`/`longjmp`, the maths, a heap, `snprintf` including floats. **Lua itself is not built yet.** Its source is in `lua/upstream/`, untouched.
+M0 and M1 in full. M2 under QEMU: the freestanding libc, a heap, Lua 5.4.8 with the permitted libraries, and the REPL.
 
 ## M0 — done
 
@@ -70,21 +78,21 @@ M0 and M1 in full. M2 in progress: everything Lua is compiled *against* exists a
 - [x] A heap for Lua: first fit, coalescing both ways, over one contiguous 2 MB span from the page allocator
 - [x] `snprintf`, integers and floats
 - [x] Lua 5.4.8 in `lua/upstream/`, untouched
-- [ ] Lua compiled freestanding, with its allocator on the heap
-- [ ] A REPL over the UART — needs UART input, which `hal/` does not have yet: there is `hal_putchar` and no `hal_getchar`
-- [ ] `hal/pi1/` or `hal/pi5/` — blocked on cables
+- [x] Lua compiled freestanding, with its allocator on the heap
+- [x] `hal_getchar`, non-blocking
+- [x] A REPL over the UART
+- [ ] `hal/pi1/` or `hal/pi5/` — **blocked on cables, and all that is left of M2**
+- [ ] Adjust the HAL interface with two real implementations in front of it
 
 ## Concrete next step
 
-Compile Lua's core plus the libraries worth having, and stand up a `lua_State` with `lua_newstate` pointing at the heap.
+**M2 cannot be closed without a cable**, and its remaining half is the point of the milestone: the HAL takes its real shape once there are two implementations to compare, and `hal.md` is explicit that writing that interface against one target produces the shape of QEMU wearing generic names. Nothing is gained by guessing at it now.
 
-**Which libraries are built is a security decision, not a build detail** (`design.md` §5.3). Out: `liolib` and `loslib`, because `io.open("/etc/passwd")` is semantically incoherent here; `loadlib`, which wants `dlopen`; and `ldblib`, because `debug.getupvalue` and `debug.setmetatable` break any abstraction. In: the core, `lauxlib`, `lbaselib`, `lcorolib`, `lstrlib`, `ltablib`, `lmathlib`, `lutf8lib`.
+So the choice is between waiting and starting M3, whose work is all CPU-side and needs no hardware: address spaces, threads, a context switch, a round-robin scheduler, synchronous IPC, and a capability table.
 
-**And `load` has to reject binary chunks.** `design.md` §5.3 forbids precompiled bytecode outright: the loader verifies nothing and gives arbitrary execution. That means passing mode `"t"` everywhere, not relying on the default `"bt"`.
+**One thing from M1 has to be settled before M3's threads, not after.** An exception taken on an exhausted stack is currently a double fault, because the handler builds its frame on the stack that just overflowed. With one stack that is a hang; with a thread per stack it is a hang that is hard to attribute. The fix is a separate exception stack, and M3 is where it belongs.
 
-Then the REPL, which needs `hal_getchar` first.
-
-M2 splits cleanly in two, and only the second half is blocked on hardware.
+**And the FP question comes due at the same moment.** The context switch will not save FP state, and Lua's numbers are doubles. While Lua is on one thread that is fine. The moment it is not, this needs lazy FP save.
 
 **Under QEMU, now:** the minimal freestanding libc (`memcpy`, `memset`, `memmove`, `strlen`, `strcmp`, `strcpy`, `strchr`, `setjmp`/`longjmp`, a minimal `snprintf`, and the `math` functions Lua asks for), then upstream Lua 5.4 built freestanding with its allocator pointing at the page allocator, then a REPL over the UART.
 
@@ -125,6 +133,8 @@ Found the hard way: the first `setjmp` panicked with EC 0x07, whose name ("unhan
 **2026-08-30 — `README.md` and `CLAUDE.md` moved from `docs/` to the repository root.** Their links were written relative to the root (`docs/design.md`), so from inside `docs/` every one of them resolved to `docs/docs/...` and was broken. `CLAUDE.md` also has to be at the root for Claude Code to load it automatically.
 
 ## Known bugs
+
+**Characters typed before the prompt appears are lost.** The PL011's receive FIFO is sixteen bytes and nothing drains it until the REPL starts, so anything pasted into the terminal during boot overflows it silently. A person typing at a live prompt never sees this; it showed up feeding the REPL from a pipe. The fix is an interrupt-driven receive path with a ring buffer, which is worth doing when there is a real terminal at M6 and not before.
 
 **An exception taken while the stack is exhausted is a double fault.** The handler builds its frame on the stack that just overflowed, so it faults again inside the vector and the kernel hangs with no output. The guard page turns a silent overflow into a readable abort, which is the improvement; it does not survive one. The fix is a separate exception stack, and it belongs with the thread work at M3.
 

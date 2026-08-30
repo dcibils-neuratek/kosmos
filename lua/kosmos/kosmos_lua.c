@@ -188,6 +188,11 @@ static int at_panic(lua_State *L)
     panic("Lua called its panic function");
 }
 
+const char *kosmos_lua_version(void)
+{
+    return LUA_RELEASE;
+}
+
 lua_State *kosmos_lua_open(void)
 {
     lua_State *L = lua_newstate(kosmos_alloc, NULL);

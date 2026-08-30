@@ -84,4 +84,12 @@ struct lua_State *kosmos_lua_open(void);
 int kosmos_lua_dostring(struct lua_State *L, const char *chunkname,
                         const char *src);
 
+/* "Lua 5.4.8". A function rather than the LUA_RELEASE macro so the kernel
+ * can print it without including lua.h and inheriting all of Lua's
+ * configuration along with it. */
+const char *kosmos_lua_version(void);
+
+/* The prompt. Never returns: there is nothing to return to. */
+void repl_run(struct lua_State *L);
+
 #endif /* KOSMOS_LUA_H */
