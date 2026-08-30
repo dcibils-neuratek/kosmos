@@ -65,6 +65,10 @@ ifdef TEST
   BUILD    := build/test
   SRCS     += tests/tests.c
   TESTDEFS := -DKOSMOS_TEST -Itests
+else ifdef BENCH
+  BUILD    := build/bench
+  SRCS     += bench/bench.c
+  TESTDEFS := -DKOSMOS_BENCH -Ibench
 else
   BUILD    := build
   TESTDEFS :=
@@ -117,6 +121,7 @@ $(BUILD)/runtime/libc/math.c.o:     CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/snprintf.c.o: CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/strtod.c.o:   CFLAGS := $(CFLAGS_FP)
 $(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP) -Ilua/upstream
+$(BUILD)/bench/bench.c.o:            CFLAGS := $(CFLAGS_FP)
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
@@ -162,7 +167,7 @@ QEMU      := qemu-system-aarch64
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
              -kernel $(TARGET)
 
-.PHONY: all qemu test debug disasm size clean
+.PHONY: all qemu test bench debug disasm size clean
 
 all: $(TARGET)
 
@@ -188,6 +193,21 @@ qemu: $(TARGET)
 test:
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
+
+# Separate image again, and a separate runner: a benchmark needs QEMU's
+# -icount to be repeatable at all, and -icount makes everything several times
+# slower, so the test suite must not pay for it.
+bench:
+	@$(MAKE) --no-print-directory BENCH=1 build/bench/kosmos.elf
+	python3 tools/run_bench.py build/bench/kosmos.elf
+
+# Records the current numbers as the new baseline. By hand, never
+# automatically: testing.md 18.6 is explicit that a baseline which updates
+# itself detects nothing. Run it when a number moves on purpose, and say why
+# in the commit.
+bench-record:
+	@$(MAKE) --no-print-directory BENCH=1 build/bench/kosmos.elf
+	python3 tools/run_bench.py build/bench/kosmos.elf --record
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234

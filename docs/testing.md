@@ -20,9 +20,21 @@ make test M=3    # only the tests up to milestone 3
 make bench       # runs the benchmarks and compares against baselines
 ```
 
-Of the three, only `make test` exists today. `M=` is pointless while there is
-one milestone's worth of tests, and `make bench` arrives with the first number
-worth recording, which is the IPC round trip at M3.
+`make test` and `make bench` exist. `M=` is still pointless while the whole
+suite runs in under two seconds; it becomes worth having when it does not.
+
+`make bench` uses a separate image and a separate runner from `make test`,
+because `-icount` is what makes a measurement repeatable and it also makes
+QEMU several times slower. The tests must not pay for that.
+
+`make bench-record` writes the current numbers as the new baselines. By hand,
+never automatically, for the reason in §18.6.
+
+The determinism `-icount` buys is not theoretical. The same spin loop measures
+88187, 88687 and 89062 ticks across three ordinary runs, and 75001, 75000,
+75001 under `-icount`. With interrupts masked during the measurement as well,
+the benchmark numbers come out bit-identical run to run, which is why a 2%
+tolerance is generous rather than tight.
 
 The guest prints a TAP-style protocol over the UART:
 

@@ -22,6 +22,10 @@
 #include "test.h"
 #endif
 
+#ifdef KOSMOS_BENCH
+#include "bench.h"
+#endif
+
 void kmain(void)
 {
 
@@ -92,12 +96,25 @@ void kmain(void)
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way into EL1. Now there is a handler and a source. */
     __asm__ volatile("msr daifclr, #2" ::: "memory");
+    {
+        uint64_t a, b;
+        volatile unsigned long spin = 0;
+        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(a));
+        while (spin < 200000) { spin++; }
+        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(b));
+        kputs("DETERMINISM "); kputu(b - a); kputs("\n");
+    }
+
     kputs("timer ");
     kputu(TICK_HZ);
     kputs(" Hz\n");
 
 #ifdef KOSMOS_TEST
     tests_run();   /* never returns: exits the guest through semihosting */
+#endif
+
+#ifdef KOSMOS_BENCH
+    bench_run();   /* likewise */
 #endif
 
     /* wfi rather than a busy loop: it parks the core until an interrupt
