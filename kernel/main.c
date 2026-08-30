@@ -18,6 +18,7 @@
 #include "sched.h"
 #include "ipc.h"
 #include "process.h"
+#include "screen.h"
 #include "panic.h"
 
 #ifdef KOSMOS_TEST
@@ -154,6 +155,11 @@ void kmain(void)
         if (hal_fb_init(&fb)) {
             splash(&fb);
 
+            /* Remembered, because a process that is granted the screen needs
+             * these pages mapped and hal_fb_init cannot be asked again: it
+             * clears the framebuffer. */
+            screen_init(&fb);
+
             kputs("video ");
             kputu(fb.width);
             kputc('x');
@@ -224,6 +230,17 @@ void kmain(void)
         /* It holds the console so it can pass it on, and an endpoint for
          * each server, at the indices it expects them. */
         process_grant_console(init);
+
+        /*
+         * And the screen, for the same reason and with the same rule: a
+         * spawn refuses to hand on a device the parent does not hold, so
+         * init cannot give the shell a screen it was never given itself.
+         *
+         * Ignored when it fails. A machine booted without a display is a
+         * supported way to run, and init's job is to start the system rather
+         * than to insist on a monitor.
+         */
+        (void)process_grant_screen(init);
 
         if (ipc_cap_grant(init->thread, console_ep) != 0
             || ipc_cap_grant(init->thread, ramfs_ep) != 1) {

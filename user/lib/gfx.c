@@ -1,0 +1,551 @@
+/*
+ * `gfx`: surfaces, and the only place a pixel offset is ever computed.
+ *
+ * `gfx.md` §19.1 is the most important decision in that document and this
+ * file is it, made concrete: **Lua tables carry intent, never pixels.** A
+ * 1920x1080 image as a Lua table is 32 MB of TValue for 8 MB of picture, and
+ * the collector walks two million slots every cycle. No optimisation saves
+ * that; it is structural. So a surface is a userdata over flat bytes that
+ * the GC frees but never traverses.
+ *
+ * The second rule, §19.3: **no line of Lua may compute a pixel offset.**
+ * Anything doing `y * width + x` works under QEMU and produces a skewed
+ * image on real hardware, because the pitch is almost never width * 4 - this
+ * board's is 4160 for a 1024-pixel row precisely so that mistake surfaces
+ * here. Every primitive below takes coordinates and does its own arithmetic
+ * from `pitch`.
+ *
+ * The third, §19.2: **Lua decides what to draw, C draws it.** A Lua loop
+ * costs 20-50ns an iteration, which is fine for the thousand pixels of a
+ * line and unworkable for the two million of a full-screen filter. The
+ * primitive set is therefore small and composable and is not meant to grow
+ * much: fill, span, blit, blend, get, set. `map`, the escape hatch that
+ * applies a Lua function per pixel, is M7 and is deliberately slow - if
+ * something using it needs to be fast, that is the signal it has earned its
+ * own primitive.
+ *
+ * Colour in Lua is always logical 0xAARRGGBB. Surfaces are always that
+ * format, whatever the screen is; §19.3 says conversion to the device format
+ * happens once, in the final blit, so that a new target changes one file.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "lua.h"
+#include "lauxlib.h"
+
+#include "kosmos.h"
+
+#define SURFACE_MT  "kosmos.surface"
+
+/*
+ * Rows are aligned to a cache line.
+ *
+ * `gfx.md` §19.3: app surfaces are always the canonical format with the
+ * pitch aligned to 64 bytes. It costs a few bytes a row and it means a row
+ * never straddles a cache line it did not have to, which is the difference
+ * that shows up in the blitter once there is one to measure.
+ *
+ * It also means the pitch is not width * 4 for most widths, which keeps the
+ * discipline honest in the same way the framebuffer's padding does.
+ */
+#define ROW_ALIGN   64
+
+struct surface {
+    uint32_t *pixels;       /* NULL once freed; every method checks */
+    unsigned  width;
+    unsigned  height;
+    unsigned  pitch;        /* bytes per row, never assume width * 4 */
+    size_t    bytes;        /* what was allocated, for the GC accounting */
+    bool      owned;        /* false for the screen: not ours to free */
+};
+
+static struct surface *check_surface(lua_State *L, int index)
+{
+    struct surface *s = luaL_checkudata(L, index, SURFACE_MT);
+
+    /*
+     * `gfx.md` §19.6: after free the handle is invalid and using it raises a
+     * Lua error, never a segfault. That is the whole reason the pointer is
+     * nulled rather than the userdata being left to dangle.
+     */
+    if (s->pixels == NULL) {
+        luaL_error(L, "this surface has been freed");
+    }
+
+    return s;
+}
+
+/* The start of a row. The one place row arithmetic happens. */
+static uint32_t *row_of(const struct surface *s, unsigned y)
+{
+    return (uint32_t *)((uint8_t *)s->pixels + (size_t)y * s->pitch);
+}
+
+/*
+ * Clips a rectangle to a surface, in place.
+ *
+ * Clipping rather than raising, because a window half off the edge of the
+ * screen is the normal case and not an error. Returns false when nothing is
+ * left, so callers can return without a special case for an empty rectangle.
+ *
+ * The coordinates arrive as signed, because a negative origin is exactly
+ * what a partly-off-screen blit looks like, and the clip has to move the
+ * source origin by the same amount it moves the destination.
+ */
+static bool clip(const struct surface *s, long *x, long *y, long *w, long *h,
+                 long *sx, long *sy)
+{
+    if (*w <= 0 || *h <= 0) {
+        return false;
+    }
+
+    if (*x < 0) {
+        *w += *x;
+        if (sx != NULL) {
+            *sx -= *x;
+        }
+        *x = 0;
+    }
+
+    if (*y < 0) {
+        *h += *y;
+        if (sy != NULL) {
+            *sy -= *y;
+        }
+        *y = 0;
+    }
+
+    if (*x + *w > (long)s->width) {
+        *w = (long)s->width - *x;
+    }
+
+    if (*y + *h > (long)s->height) {
+        *h = (long)s->height - *y;
+    }
+
+    return *w > 0 && *h > 0;
+}
+
+/*
+ * (x * a) / 255, rounded, without a divide.
+ *
+ * The standard identity, and it is exact for every pair in 0..255 rather
+ * than close: there is a test that checks all 65,536 of them against the
+ * rounded quotient, because "exact" is the kind of claim that is repeated
+ * from memory and occasionally wrong.
+ */
+static inline uint32_t mul255(uint32_t x, uint32_t a)
+{
+    uint32_t t = x * a + 128u;
+    return (t + (t >> 8)) >> 8;
+}
+
+/* Source-over, with the source's own alpha scaled by a global one. */
+static inline uint32_t over(uint32_t src, uint32_t dst, uint32_t global)
+{
+    uint32_t a = mul255((src >> 24) & 0xffu, global);
+    uint32_t inv;
+
+    if (a == 0) {
+        return dst;
+    }
+
+    if (a == 255u) {
+        return (src & 0x00ffffffu) | 0xff000000u;
+    }
+
+    inv = 255u - a;
+
+    return 0xff000000u
+        | (mul255((src >> 16) & 0xffu, a) + mul255((dst >> 16) & 0xffu, inv)) << 16
+        | (mul255((src >>  8) & 0xffu, a) + mul255((dst >>  8) & 0xffu, inv)) <<  8
+        | (mul255((src      ) & 0xffu, a) + mul255((dst      ) & 0xffu, inv));
+}
+
+/* ------------------------------------------------------------------ */
+
+static int l_new(lua_State *L)
+{
+    lua_Integer width;
+    lua_Integer height;
+    struct surface *s;
+    unsigned pitch;
+    size_t bytes;
+    void *pixels;
+
+    /*
+     * A table rather than two arguments, as `gfx.md` writes it:
+     * gfx.surface{ w = 800, h = 600 }. Named because a surface will grow
+     * more fields (a format, a backing choice) and positional arguments do
+     * not survive that.
+     */
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    lua_getfield(L, 1, "w");
+    width = luaL_checkinteger(L, -1);
+    lua_getfield(L, 1, "h");
+    height = luaL_checkinteger(L, -1);
+    lua_pop(L, 2);
+
+    if (width <= 0 || height <= 0) {
+        return luaL_error(L, "a surface needs a positive width and height");
+    }
+
+    /* Bounded so the multiplication below cannot overflow before the
+     * allocation gets a chance to fail. Far above anything this system will
+     * ask for and far below where size_t wraps. */
+    if (width > 16384 || height > 16384) {
+        return luaL_error(L, "that surface is larger than this system allows");
+    }
+
+    pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
+    bytes = (size_t)pitch * (size_t)height;
+
+    pixels = malloc(bytes);
+
+    if (pixels == NULL) {
+        /*
+         * The heap a process gets is bounded on purpose - `design.md` §5.2
+         * wants it small so collections are short - and a full-screen
+         * surface does not fit in it. That is a real limit rather than a
+         * bug, and the message says so instead of leaving a caller to guess
+         * why 800x600 works and 1024x768 does not.
+         */
+        return luaL_error(L,
+            "no room for a %dx%d surface (%d KB); the process heap is %d KB",
+            (int)width, (int)height, (int)(bytes / 1024),
+            (int)(USER_HEAP_SIZE / 1024));
+    }
+
+    memset(pixels, 0, bytes);
+
+    s = lua_newuserdatauv(L, sizeof(*s), 0);
+    s->pixels = pixels;
+    s->width  = (unsigned)width;
+    s->height = (unsigned)height;
+    s->pitch  = pitch;
+    s->bytes  = bytes;
+    s->owned  = true;
+
+    luaL_setmetatable(L, SURFACE_MT);
+
+    /*
+     * `gfx.md` §19.6: the collector sees a forty-byte userdata and feels no
+     * pressure from the megabytes behind it, so a program can run the
+     * machine out of memory while `collectgarbage("count")` reports that the
+     * heap is nearly empty. Telling it the real size is what makes the
+     * finalizer below something other than theoretical.
+     */
+    lua_gc(L, LUA_GCSTEP, (int)(bytes / 1024));
+
+    return 1;
+}
+
+static int l_free(lua_State *L)
+{
+    struct surface *s = luaL_checkudata(L, 1, SURFACE_MT);
+
+    /* Idempotent, and not an error: freeing twice is what a cleanup path
+     * does when it cannot be sure. Using a freed surface is the error, and
+     * check_surface raises it. */
+    if (s->pixels != NULL && s->owned) {
+        free(s->pixels);
+    }
+
+    s->pixels = NULL;
+    return 0;
+}
+
+static int l_gc(lua_State *L)
+{
+    /*
+     * The safety net, not the expected path (`gfx.md` §19.6). Normal code
+     * calls free; this is what catches the surface that went out of scope
+     * in an error path.
+     */
+    struct surface *s = luaL_checkudata(L, 1, SURFACE_MT);
+
+    if (s->pixels != NULL && s->owned) {
+        free(s->pixels);
+        s->pixels = NULL;
+    }
+
+    return 0;
+}
+
+static int l_size(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+
+    lua_pushinteger(L, s->width);
+    lua_pushinteger(L, s->height);
+    return 2;
+}
+
+/*
+ * The pitch, exposed only so a test can assert it is not width * 4.
+ *
+ * Nothing that draws should ever want it: if a caller is reading this to do
+ * its own arithmetic, that is the bug this whole file exists to prevent.
+ */
+static int l_pitch(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+
+    lua_pushinteger(L, s->pitch);
+    return 1;
+}
+
+static int l_fill(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long x = (long)luaL_checkinteger(L, 2);
+    long y = (long)luaL_checkinteger(L, 3);
+    long w = (long)luaL_checkinteger(L, 4);
+    long h = (long)luaL_checkinteger(L, 5);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 6);
+    long row;
+
+    if (!clip(s, &x, &y, &w, &h, NULL, NULL)) {
+        return 0;
+    }
+
+    for (row = 0; row < h; row++) {
+        uint32_t *p = row_of(s, (unsigned)(y + row)) + x;
+        long i;
+
+        for (i = 0; i < w; i++) {
+            p[i] = colour;
+        }
+    }
+
+    return 0;
+}
+
+static int l_span(lua_State *L)
+{
+    /* One row. Separate from fill because a rasteriser emits spans and
+     * paying fill's outer loop for a single one is the sort of thing that
+     * shows up once there is a triangle to draw. */
+    struct surface *s = check_surface(L, 1);
+    long x   = (long)luaL_checkinteger(L, 2);
+    long y   = (long)luaL_checkinteger(L, 3);
+    long len = (long)luaL_checkinteger(L, 4);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 5);
+    long h = 1;
+    long i;
+    uint32_t *p;
+
+    if (!clip(s, &x, &y, &len, &h, NULL, NULL)) {
+        return 0;
+    }
+
+    p = row_of(s, (unsigned)y) + x;
+
+    for (i = 0; i < len; i++) {
+        p[i] = colour;
+    }
+
+    return 0;
+}
+
+/*
+ * dst:blit(src, sx, sy, w, h, dx, dy)
+ *
+ * The argument order is `gfx.md` §19.2's, and it reads as "take this
+ * rectangle of src and put it there": the destination is the receiver, so
+ * clipping is against the receiver, which is the surface that can actually
+ * be overrun.
+ */
+static int l_blit(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    struct surface *src = check_surface(L, 2);
+    long sx = (long)luaL_checkinteger(L, 3);
+    long sy = (long)luaL_checkinteger(L, 4);
+    long w  = (long)luaL_checkinteger(L, 5);
+    long h  = (long)luaL_checkinteger(L, 6);
+    long dx = (long)luaL_checkinteger(L, 7);
+    long dy = (long)luaL_checkinteger(L, 8);
+    long row;
+
+    /* Clipped against the source first, so a rectangle that runs off the
+     * edge of what is being copied from cannot read past it. The destination
+     * origin moves with it. */
+    if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
+        return 0;
+    }
+
+    if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
+        return 0;
+    }
+
+    for (row = 0; row < h; row++) {
+        const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
+        uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
+
+        /* memcpy rather than a loop: it is the same operation and the libc
+         * one is allowed to be clever about alignment. Copy, not move -
+         * blitting a surface onto itself overlapping is not supported and
+         * would need a direction choice. */
+        memcpy(dp, sp, (size_t)w * 4);
+    }
+
+    return 0;
+}
+
+static int l_blend(lua_State *L)
+{
+    struct surface *dst = check_surface(L, 1);
+    struct surface *src = check_surface(L, 2);
+    long sx = (long)luaL_checkinteger(L, 3);
+    long sy = (long)luaL_checkinteger(L, 4);
+    long w  = (long)luaL_checkinteger(L, 5);
+    long h  = (long)luaL_checkinteger(L, 6);
+    long dx = (long)luaL_checkinteger(L, 7);
+    long dy = (long)luaL_checkinteger(L, 8);
+    lua_Integer global = luaL_optinteger(L, 9, 255);
+    long row;
+
+    if (global < 0 || global > 255) {
+        return luaL_error(L, "alpha is 0 to 255, not %d", (int)global);
+    }
+
+    if (!clip(src, &sx, &sy, &w, &h, &dx, &dy)) {
+        return 0;
+    }
+
+    if (!clip(dst, &dx, &dy, &w, &h, &sx, &sy)) {
+        return 0;
+    }
+
+    for (row = 0; row < h; row++) {
+        const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
+        uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
+        long i;
+
+        for (i = 0; i < w; i++) {
+            dp[i] = over(sp[i], dp[i], (uint32_t)global);
+        }
+    }
+
+    return 0;
+}
+
+static int l_get(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+
+    /* Out of bounds is nil rather than an error or a clamped read. A single
+     * pixel is allowed to cross into Lua (`gfx.md` §19.1) and a caller
+     * sampling near an edge should not have to bounds-check first. */
+    if (x < 0 || y < 0 || x >= (lua_Integer)s->width || y >= (lua_Integer)s->height) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushinteger(L, row_of(s, (unsigned)y)[x]);
+    return 1;
+}
+
+static int l_set(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    lua_Integer x = luaL_checkinteger(L, 2);
+    lua_Integer y = luaL_checkinteger(L, 3);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 4);
+
+    if (x < 0 || y < 0 || x >= (lua_Integer)s->width || y >= (lua_Integer)s->height) {
+        return 0;               /* silently clipped, like every other write */
+    }
+
+    row_of(s, (unsigned)y)[x] = colour;
+    return 0;
+}
+
+static const luaL_Reg surface_methods[] = {
+    { "size",   l_size },
+    { "pitch",  l_pitch },
+    { "fill",   l_fill },
+    { "span",   l_span },
+    { "blit",   l_blit },
+    { "blend",  l_blend },
+    { "get",    l_get },
+    { "set",    l_set },
+    { "free",   l_free },
+    { NULL, NULL }
+};
+
+/*
+ * The screen, as a surface.
+ *
+ * Not owned and never freed: these are the board's pages, mapped into this
+ * process because it was handed the device. `free` is a no-op on it and the
+ * finalizer leaves it alone, because releasing them would mean unmapping the
+ * display out from under whatever draws next.
+ *
+ * It is the one surface that does not have the canonical pitch. The board
+ * chose 4160 bytes for a 1024-pixel row, and that number arrives here and is
+ * used; nothing recomputes it. `gfx.md` §19.3's rule that only the app
+ * server's backbuffer knows the device's real format is exactly this - and
+ * the conversion it talks about is the identity today, because XRGB8888 and
+ * the canonical 0xAARRGGBB have the same bytes and the display ignores the
+ * top one. When a board arrives whose format differs, this is the function
+ * that grows a conversion and nothing above it changes.
+ *
+ * nil rather than an error when this process does not hold the screen: a
+ * program asking whether it has one is asking a reasonable question, and
+ * every process but one gets no.
+ */
+static int l_screen(lua_State *L)
+{
+    struct screen_info info;
+    struct surface *s;
+
+    if (kosmos_screen(&info) < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "this process was not given the screen");
+        return 2;
+    }
+
+    s = lua_newuserdatauv(L, sizeof(*s), 0);
+    s->pixels = (uint32_t *)(uintptr_t)info.address;
+    s->width  = info.width;
+    s->height = info.height;
+    s->pitch  = info.pitch;
+    s->bytes  = 0;
+    s->owned  = false;
+
+    luaL_setmetatable(L, SURFACE_MT);
+    return 1;
+}
+
+static const luaL_Reg gfx_functions[] = {
+    { "surface", l_new },
+    { "screen",  l_screen },
+    { NULL, NULL }
+};
+
+int luaopen_gfx(lua_State *L)
+{
+    luaL_newmetatable(L, SURFACE_MT);
+
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");     /* methods are found on the metatable */
+
+    lua_pushcfunction(L, l_gc);
+    lua_setfield(L, -2, "__gc");
+
+    luaL_setfuncs(L, surface_methods, 0);
+    lua_pop(L, 1);
+
+    luaL_newlib(L, gfx_functions);
+    return 1;
+}

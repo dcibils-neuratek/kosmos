@@ -25,6 +25,7 @@ local ROLE_INIT     = 7   -- starts everything else, and outlives it
 local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
 
 local SPAWN_CONSOLE = 1
+local SPAWN_SCREEN  = 2
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -499,16 +500,45 @@ if role == ROLE_INIT then
   local CONSOLE_EP = 0
   local RAMFS_EP   = 1
 
-  local console = sys.spawn(ROLE_CONSOLE, { CONSOLE_EP }, SPAWN_CONSOLE)
-  if not console then sys.exit(1) end
+  -- **A failed spawn says which one and why.**
+  --
+  -- These used to be `if not x then sys.exit(1) end`, and the system would
+  -- die at boot in complete silence: no banner, no prompt, no message, with
+  -- the kernel's own output looking perfectly healthy above it. That cost a
+  -- debugging session the first time a spawn started being refused. init
+  -- holds the console at this point precisely so it can say things, and the
+  -- one moment it most needs to is when it cannot build the system.
+  local function start(what, role, caps, flags)
+    local id, err = sys.spawn(role, caps, flags)
 
-  local ramfs = sys.spawn(ROLE_RAMFS, { RAMFS_EP })
-  if not ramfs then sys.exit(1) end
+    if not id then
+      line("init: could not start " .. what .. ": " .. tostring(err))
+      sys.exit(1)
+    end
 
-  -- The shell gets both, in the order it expects them, and no device: it
-  -- prints by asking the console server, like everything else.
-  local shell = sys.spawn(ROLE_SHELL, { CONSOLE_EP, RAMFS_EP })
-  if not shell then sys.exit(1) end
+    return id
+  end
+
+  local console = start("the console server", ROLE_CONSOLE,
+                        { CONSOLE_EP }, SPAWN_CONSOLE)
+  local ramfs   = start("the ramfs", ROLE_RAMFS, { RAMFS_EP })
+
+  -- The shell gets both endpoints, in the order it expects them, and the
+  -- screen.
+  --
+  -- Temporary, and it is worth saying why rather than leaving it to look
+  -- like the design. The screen belongs to whichever process composes, and
+  -- that will be the app server. There is no app server yet, so it goes to
+  -- the shell - which means `gfx.screen()` works at the prompt and a person
+  -- can draw. When the app server arrives this line hands it there instead
+  -- and nothing else about the mechanism changes: init decides, the same way
+  -- it already decides who gets the console.
+  --
+  -- It does *not* get the console: it prints by asking the console server,
+  -- like everything else, and `sys.write` from the prompt returning -102 is
+  -- the demonstration.
+  local shell = start("the shell", ROLE_SHELL,
+                      { CONSOLE_EP, RAMFS_EP }, SPAWN_SCREEN)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.

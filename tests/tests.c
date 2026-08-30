@@ -2361,6 +2361,9 @@ static bool test_a_capability_can_be_passed_in_a_message(void)
 static bool test_a_capability_that_is_not_held_cannot_be_sent(void)
                                                        { return luatest_role(20); }
 static bool test_lua_ipc_errors_are_reported(void)     { return luatest_role(22); }
+static bool test_gfx_surfaces(void)                    { return luatest_role(24); }
+static bool test_gfx_alpha_is_exact(void)              { return luatest_role(25); }
+static bool test_a_process_without_the_screen(void)    { return luatest_role(26); }
 
 /*
  * The one role the process cannot drive on its own.
@@ -3070,6 +3073,9 @@ static const struct test tests[] = {
     { "fb: every row is writable",             test_the_framebuffer_is_writable_end_to_end },
     { "fb: the padding actually moves rows",   test_the_padding_is_real },
     { "fb: pmm never hands out its pages",     test_the_page_allocator_never_hands_out_the_framebuffer },
+    { "gfx: surfaces clip, free and honour pitch", test_gfx_surfaces },
+    { "gfx: the alpha multiply is exact",      test_gfx_alpha_is_exact },
+    { "gfx: no screen unless it was granted",  test_a_process_without_the_screen },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },

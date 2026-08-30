@@ -27,6 +27,7 @@
 #include "ipc.h"
 #include "trap.h"
 #include "console.h"
+#include "screen.h"
 #include "hal.h"
 
 /*
@@ -240,6 +241,12 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         return SYS_ERR_DENIED;
     }
 
+    /* And the same for the screen. A process cannot promote itself by
+     * spawning a child and asking it to draw. */
+    if ((flags & SPAWN_SCREEN) != 0 && !p->owns_screen) {
+        return SYS_ERR_DENIED;
+    }
+
     child = process_spawn(p, arg);
     if (child == NULL) {
         return SYS_ERR_NO_ROOM;
@@ -262,8 +269,55 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         process_grant_console(child);
     }
 
+    if ((flags & SPAWN_SCREEN) != 0 && !process_grant_screen(child)) {
+        /* Asked for a screen and could not be given one. It would run
+         * without something it was meant to have, which is well defined and
+         * useless. Abandoned rather than exited: it has not started. */
+        process_abandon(child);
+        return SYS_ERR_NO_ROOM;
+    }
+
     process_start(child);
     return (long)child->id;
+}
+
+/*
+ * Where the screen is, and how big.
+ *
+ * Reporting only. The mapping happened at spawn, when the parent granted the
+ * screen, so there is nothing to set up here and no live page table to
+ * modify - a process that holds the screen has held it since before it ran.
+ *
+ * The pitch is in the answer and the width is not enough on its own. It is
+ * padded, and a caller that multiplies width by four writes a sheared image.
+ * That is `gfx.md` §19.3's trap, and handing back the real number is the
+ * only way the other side can avoid it.
+ */
+static long sys_screen(struct process *p, uintptr_t out_ptr)
+{
+    struct screen_info info;
+    struct fb fb;
+
+    if (!p->owns_screen) {
+        return SYS_ERR_DENIED;
+    }
+
+    if (!screen_get(&fb)) {
+        return SYS_ERR_DENIED;
+    }
+
+    if (!process_may_write(p, out_ptr, sizeof(info))) {
+        return SYS_ERR_FAULT;
+    }
+
+    info.address  = USER_SCREEN_VA;
+    info.width    = fb.width;
+    info.height   = fb.height;
+    info.pitch    = fb.pitch;
+    info.reserved = 0;
+
+    *(struct screen_info *)out_ptr = info;
+    return 0;
 }
 
 void syscall_dispatch(struct trapframe *tf)
@@ -354,6 +408,10 @@ void syscall_dispatch(struct trapframe *tf)
 
     case SYS_SPAWN:
         result = sys_spawn(p, tf->x[0], tf->x[1], (size_t)tf->x[2], tf->x[3]);
+        break;
+
+    case SYS_SCREEN:
+        result = sys_screen(p, tf->x[0]);
         break;
 
     case SYS_WAIT: {

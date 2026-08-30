@@ -121,6 +121,7 @@ static const luaL_Reg libs[] = {
 
 /* Registered by user/lib/sys_user.c. */
 int luaopen_sys(lua_State *L);
+int luaopen_gfx(lua_State *L);
 
 static int at_panic(lua_State *L)
 {
@@ -163,6 +164,9 @@ lua_State *kosmos_lua_open(void)
     }
 
     luaL_requiref(L, "sys", luaopen_sys, 1);
+    lua_pop(L, 1);
+
+    luaL_requiref(L, "gfx", luaopen_gfx, 1);
     lua_pop(L, 1);
 
     /* dofile and loadfile come from luaopen_base and take a path. There is

@@ -46,8 +46,9 @@
 #define SYS_SPAWN       8   /* (arg, caps, ncaps, flags) -> child id     */
 #define SYS_WAIT        9   /* (&id)                  -> exit code       */
 #define SYS_TICKS      10   /* ()                     -> monotonic ticks  */
+#define SYS_SCREEN     11   /* (&info)                -> 0 or error       */
 
-#define SYS_MAX         11
+#define SYS_MAX         12
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -59,6 +60,31 @@
  * to child and never sideways.
  */
 #define SPAWN_CONSOLE   1u
+#define SPAWN_SCREEN    2u
+
+/*
+ * What SYS_SCREEN reports.
+ *
+ * The address is in the *caller's* address space, because the framebuffer is
+ * mapped into a process that holds the screen and nowhere else. A process
+ * without it never learns the number, which is the point: this is the whole
+ * of what the kernel says about pixels, and it says it only to the one
+ * process that was handed the device.
+ *
+ * The layout is written twice - here and in user/include/kosmos.h - for the
+ * same reason `struct message` is, and is checked the same way.
+ */
+#ifndef __ASSEMBLER__
+#include <stdint.h>
+
+struct screen_info {
+    uint64_t address;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;             /* bytes per row; never width * 4 */
+    uint32_t reserved;
+};
+#endif
 
 /* Errors are negative so `if (result < 0)` reads correctly on both sides. */
 #define SYS_ERR_BADCALL   (-100)    /* no such syscall number */

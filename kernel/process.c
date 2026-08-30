@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "process.h"
+#include "screen.h"
 #include "thread.h"
 #include "mmu.h"
 #include "page.h"
@@ -295,6 +296,41 @@ void process_grant_console(struct process *p)
     if (p != NULL) {
         p->owns_console = true;
     }
+}
+
+bool process_grant_screen(struct process *p)
+{
+    struct fb fb;
+    size_t bytes;
+    size_t pages;
+
+    if (p == NULL || !screen_get(&fb)) {
+        return false;
+    }
+
+    /*
+     * The same physical pages the board is scanning out, mapped a second
+     * time into this process. Not a copy: a linear framebuffer's whole
+     * value is that a store lands on the screen with nothing in between,
+     * and a copy would need three megabytes somewhere and a flush after
+     * every frame.
+     *
+     * Rounded up from pitch * height rather than from width * height * 4,
+     * because the pitch is padded and the last row runs to the end of its
+     * stride. Getting this wrong leaves the bottom row unmapped, and the
+     * fault would arrive on whatever happened to draw near the bottom of
+     * the screen rather than at the mapping.
+     */
+    bytes = (size_t)fb.pitch * fb.height;
+    pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    if (as_map(p->space, USER_SCREEN_VA, (uintptr_t)fb.pixels,
+               pages, MAP_USER_RW) != AS_OK) {
+        return false;
+    }
+
+    p->owns_screen = true;
+    return true;
 }
 
 void process_start(struct process *p)

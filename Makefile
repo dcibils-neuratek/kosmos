@@ -44,6 +44,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
         kernel/console.c \
+        kernel/screen.c \
         runtime/libc/string.c \
         runtime/libc/setjmp.S \
         kernel/panic.c \
@@ -250,6 +251,7 @@ USER_SRCS := user/init/start.S \
              user/init/main.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
+             user/lib/gfx.c \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
              $(LUA_SRCS) \

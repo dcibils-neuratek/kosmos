@@ -74,6 +74,10 @@ So the userdata holds `w`, `h`, `pitch`, `fmt` and `bytes_per_pixel`, and addres
 
 Practical corollary: **app surfaces never carry the framebuffer's format.** They are always the canonical format, with pitch aligned to a 64-byte cache line. Only the app server's backbuffer knows the device's real format. A new target changes exactly one file.
 
+**And a pitch bug is invisible from inside the process.** This is worth writing down because it was discovered by trying it. If `row_of` in `gfx.c` steps by `width * 4` instead of by the pitch, every read and every write agrees with every other one: the surface simply has an unused gap at the end of each row, and nothing inside the guest can tell. The whole suite passed, 103 of 103, with the bug in place.
+
+The only observer who disagrees is on the other side of the framebuffer, where the stride is 4160 and a row written 4096 bytes along lands sixteen pixels to the left. So the test for this rule cannot live in the guest at all — it is `make screenshot`, which drives the shell into drawing vertical bars through `gfx.screen()` and then asks QEMU whether they are still vertical. A rule that can only be checked from outside needs a check that lives outside.
+
 ---
 
 ## 19.4 Presentation: double buffering and an explicit commit
@@ -166,9 +170,9 @@ Eight steps, two IPC crossings, and not one of them carries a pixel inside a Lua
 
 | What | Milestone |
 |---|---|
-| `gfx.surface` as a userdata, in-process, not shared | 6 |
-| The C primitive set (`fill`, `blit`, `blend`, `span`, `get`/`set`) | 6 |
-| Explicit `free`, `__gc`, and telling the GC the real size | 6 |
+| `gfx.surface` as a userdata, in-process, not shared | 6 — **done** |
+| The C primitive set (`fill`, `blit`, `blend`, `span`, `get`/`set`) | 6 — **done** |
+| Explicit `free`, `__gc`, and telling the GC the real size | 6 — **done** |
 | Surface shared with the app server, double buffering and `commit` with damage | 7 |
 | Inner shareable attributes in the kernel for shared memory | 7 |
 | `map` with a Lua function | 7 |

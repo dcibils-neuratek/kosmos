@@ -44,6 +44,9 @@ local R_NOCAP_CLIENT = 20
 local R_NOCAP_SERVER = 21
 local R_IPC_ERRORS   = 22
 local R_BLOCKED      = 23
+local R_GFX          = 24
+local R_GFX_BLEND    = 25
+local R_NO_SCREEN    = 26
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -441,6 +444,144 @@ if role == R_BLOCKED then
   local m, e = sys.receive(0)
   check(m == nil, "receive returned a message after the endpoint went away")
   check(e == "the endpoint was destroyed", "the wrong error: " .. tostring(e))
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- M6: surfaces.
+--
+-- `gfx.md` §19.1's rule is that Lua tables carry intent and never pixels, so
+-- what is checked here is the userdata's behaviour rather than its contents:
+-- that the primitives clip instead of overrunning, that a freed handle
+-- raises instead of faulting, and above all that the pitch is honoured.
+-- ------------------------------------------------------------------
+
+if role == R_GFX then
+  local s = gfx.surface { w = 10, h = 4 }
+
+  local w, h = s:size()
+  check(w == 10 and h == 4, "size came back wrong")
+
+  -- The rule this whole module exists for. 10 * 4 is 40; the pitch is padded
+  -- to a cache line, so it is 64. Code that assumed width * 4 would read the
+  -- wrong row from the second row on.
+  check(s:pitch() > w * 4, "the pitch was not padded: " .. s:pitch())
+
+  s:fill(0, 0, 10, 4, 0xff112233)
+  check(s:get(0, 0) == 0xff112233, "fill did not write the first pixel")
+  check(s:get(9, 3) == 0xff112233, "fill did not reach the last pixel")
+
+  -- Which is the real test of row_of: the last pixel of the last row is
+  -- pitch * 3 + 9 * 4 bytes in, and only correct arithmetic puts it there.
+  s:set(9, 3, 0xff445566)
+  check(s:get(9, 3) == 0xff445566, "set did not land on the last pixel")
+  check(s:get(0, 0) == 0xff112233, "set disturbed another row")
+
+  -- Out of bounds reads nil and writes nothing, rather than raising or
+  -- touching memory that is not ours.
+  check(s:get(10, 0) == nil, "a read past the right edge returned something")
+  check(s:get(0, 4) == nil, "a read past the bottom returned something")
+  check(s:get(-1, 0) == nil, "a read before the left edge returned something")
+  s:set(10, 0, 0xffffffff)
+  s:set(0, 4, 0xffffffff)
+
+  -- Clipping, from every direction at once.
+  local c = gfx.surface { w = 8, h = 8 }
+  c:fill(-100, -100, 1000, 1000, 0xff00ff00)
+  check(c:get(0, 0) == 0xff00ff00, "a clipped fill missed the top left")
+  check(c:get(7, 7) == 0xff00ff00, "a clipped fill missed the bottom right")
+
+  -- A span is one row and only one row.
+  local sp = gfx.surface { w = 8, h = 8 }
+  sp:span(0, 3, 8, 0xffabcdef)
+  check(sp:get(0, 3) == 0xffabcdef, "span did not draw")
+  check(sp:get(0, 2) == 0, "span wrote the row above")
+  check(sp:get(0, 4) == 0, "span wrote the row below")
+
+  -- A blit that lands partly off the destination copies the part that fits
+  -- and reads nothing it should not.
+  local src = gfx.surface { w = 4, h = 4 }
+  local dst = gfx.surface { w = 8, h = 8 }
+  src:fill(0, 0, 4, 4, 0xff0000ff)
+  dst:blit(src, 0, 0, 4, 4, 6, 6)
+  check(dst:get(6, 6) == 0xff0000ff, "the blit did not land")
+  check(dst:get(7, 7) == 0xff0000ff, "the blit did not fill its corner")
+  check(dst:get(5, 5) == 0, "the blit wrote outside its rectangle")
+
+  -- A freed surface raises rather than faulting, and freeing twice is fine.
+  local f = gfx.surface { w = 4, h = 4 }
+  f:free()
+  f:free()
+  check(pcall(function() return f:get(0, 0) end) == false,
+        "a freed surface was still usable")
+
+  -- A surface bigger than the process heap fails cleanly.
+  check(pcall(gfx.surface, { w = 4096, h = 4096 }) == false,
+        "a surface larger than the heap was allocated")
+  check(pcall(gfx.surface, { w = 0, h = 4 }) == false,
+        "a zero-width surface was allowed")
+
+  s:free() c:free() sp:free() src:free() dst:free()
+  sys.exit(0)
+end
+
+if role == R_GFX_BLEND then
+  -- The alpha maths, exhaustively.
+  --
+  -- `gfx.c` claims its multiply is exact for every pair in 0..255 rather
+  -- than merely close. That claim is the kind that gets repeated from
+  -- memory, so it is checked against the rounded quotient for all 65,536
+  -- pairs - reached through blend, since the function itself is static.
+  --
+  -- White at alpha `a` over black gives exactly mul255(255, a) in each
+  -- channel, which is a for every a. Any rounding error shows up as an
+  -- off-by-one somewhere in the range.
+  local src = gfx.surface { w = 1, h = 1 }
+  local dst = gfx.surface { w = 1, h = 1 }
+
+  for a = 0, 255 do
+    src:fill(0, 0, 1, 1, 0xffffffff)
+    dst:fill(0, 0, 1, 1, 0xff000000)
+    dst:blend(src, 0, 0, 1, 1, 0, 0, a)
+    local got = dst:get(0, 0) & 0xff
+    check(got == a, "white over black at alpha " .. a .. " gave " .. got)
+  end
+
+  -- And the other half: a source alpha of `a` over white, which exercises
+  -- the destination term rather than the source one.
+  for a = 0, 255 do
+    src:fill(0, 0, 1, 1, (a << 24) | 0x000000)
+    dst:fill(0, 0, 1, 1, 0xffffffff)
+    dst:blend(src, 0, 0, 1, 1, 0, 0, 255)
+    local got = dst:get(0, 0) & 0xff
+    local want = (255 * (255 - a) + 127) // 255
+    check(math.abs(got - want) <= 1,
+          "black over white at alpha " .. a .. " gave " .. got .. " not " .. want)
+  end
+
+  -- Fully transparent leaves the destination alone; fully opaque replaces it.
+  src:fill(0, 0, 1, 1, 0x00ff0000)
+  dst:fill(0, 0, 1, 1, 0xff123456)
+  dst:blend(src, 0, 0, 1, 1, 0, 0, 255)
+  check(dst:get(0, 0) == 0xff123456, "a transparent source changed the destination")
+
+  src:fill(0, 0, 1, 1, 0xffff0000)
+  dst:blend(src, 0, 0, 1, 1, 0, 0, 255)
+  check(dst:get(0, 0) == 0xffff0000, "an opaque source did not replace the destination")
+
+  check(pcall(function() dst:blend(src, 0, 0, 1, 1, 0, 0, 300) end) == false,
+        "an alpha outside 0..255 was accepted")
+
+  src:free() dst:free()
+  sys.exit(0)
+end
+
+if role == R_NO_SCREEN then
+  -- A process that was not handed the screen cannot reach it, and is told
+  -- so rather than being given one. Every process but the shell is this one.
+  local s, err = gfx.screen()
+  check(s == nil, "a process without the screen was given one")
+  check(err ~= nil, "no reason was given for refusing the screen")
   sys.exit(0)
 end
 

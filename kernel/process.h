@@ -2,6 +2,10 @@
 #define KERNEL_PROCESS_H
 
 #include <stdbool.h>
+/* For USER_VA_BASE, which the address macros below expand to. A header
+ * whose macros do not compile on their own is a header that works only in
+ * the order it happens to be included. */
+#include "mmu.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,6 +42,17 @@ struct thread;
 #define USER_HEAP_PAGES  512                                /* 2 MB       */
 #define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* 0x82000000 */
 #define USER_STACK_PAGES 16                                 /* 64 KB      */
+
+/*
+ * Where the framebuffer lands in a process that holds the screen.
+ *
+ * Above the stack and nowhere near it. Three megabytes of it, mapped from
+ * the same physical pages the board is scanning out - not a copy, because a
+ * copy would need somewhere to put three megabytes and would then need
+ * flushing, and the whole point of a linear framebuffer is that there is
+ * nothing between the write and the screen.
+ */
+#define USER_SCREEN_VA   (USER_VA_BASE + 0x03000000UL)      /* 0x83000000 */
 
 /*
  * The image header. Sixteen bytes at the front: a magic number, then how
@@ -108,6 +123,15 @@ struct process {
      */
     bool              owns_console;
 
+    /*
+     * The screen. A boolean like the console and temporary for the same
+     * reason: a device should be named by a capability the process holds,
+     * and that needs a capability that names a device rather than an
+     * endpoint. Until then, whoever spawns decides, which is at least the
+     * right shape - authority flows from parent to child and never sideways.
+     */
+    bool              owns_screen;
+
     int               exit_code;
     bool              exited;
 };
@@ -144,6 +168,20 @@ struct process *process_create(const char *name, const void *image,
  * interleave if two did.
  */
 void process_grant_console(struct process *p);
+
+/*
+ * Hands a process the screen: marks it the owner and maps the framebuffer
+ * into its address space at USER_SCREEN_VA.
+ *
+ * Must be called before process_start, like every other capability - a
+ * process that is runnable is running, and one that starts before its
+ * mappings are in place faults on the first pixel.
+ *
+ * False when there is no display, or when the mapping did not fit. Not a
+ * panic: a machine booted without a screen is a supported way to run and the
+ * caller decides what to do about it.
+ */
+bool process_grant_screen(struct process *p);
 
 /* Makes it runnable. Nothing may touch its address space afterwards without
  * masking interrupts: from here it can exit at any moment. */

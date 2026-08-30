@@ -34,7 +34,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-100 tests, five benchmarks, and ten display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+103 tests, five benchmarks, and 34 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
@@ -65,7 +65,9 @@ nil	no such path: /nowhere
 - [x] A framebuffer under QEMU, via ramfb: 1024x768, XRGB8888
 - [x] `hal_fb_init` in the HAL, and a boot splash that proves the display at every boot
 - [x] `make screenshot`: boot, screendump through QEMU's monitor, check the picture
-- [ ] `gfx.surface` as a userdata over flat bytes, and the C primitive set
+- [x] `gfx.surface` as a userdata over flat bytes, and the C primitive set
+- [x] Explicit `free`, a `__gc` net, and telling the GC the real size
+- [x] The screen reachable from a process, as a surface
 - [ ] A backbuffer and damage tracking
 - [ ] An 8x16 bitmap font
 - [ ] The app server in Lua: windows, decoration, stacking, focus
@@ -79,6 +81,20 @@ nil	no such path: /nowhere
 **The stride is padded on purpose: 4160 bytes, not 4096.** ramfb lets the guest choose, so it could be the tidy value, and that is the reason not to. A framebuffer whose pitch equals `width * 4` lets every address calculation in the system be written wrong and still work — for months, until the first real board, where the firmware picks whatever alignment it likes and every one of them shears at once. Two tests assert the padding, so that removing it as an oddity fails loudly.
 
 **Two halves of the display are tested, and neither can prove the other.** `make test` proves what the kernel wrote into its own memory: that the framebuffer exists, is page aligned, is writable to the last row, and that the padded stride really moves rows. It cannot prove a pixel ever reached a screen — a wrong fourcc, a wrong stride in the ramfb config or a wrong address would leave all six passing and the display black. `make screenshot` asks QEMU instead, through the monitor, on the far side of everything this kernel controls. Both were made to fail on purpose before being trusted.
+
+**Lua draws, and no line of it computes a pixel offset.** `gfx.surface{w=,h=}` is a userdata over flat bytes with `fill`, `span`, `blit`, `blend`, `get` and `set`; every pixel loop is in `user/lib/gfx.c` and every primitive clips rather than raising, because a window half off the edge of the screen is the normal case. `gfx.screen()` is the framebuffer as a surface, for the one process that was handed it.
+
+**A pitch bug is invisible from inside the process, and that is the most useful thing found this session.** If `row_of` steps by `width * 4` instead of by the pitch, every read agrees with every write — the surface just has an unused gap at the end of each row — and *the whole suite passes, 103 of 103*. It was tried, not reasoned about. The only observer who disagrees is on the far side of the framebuffer, where the stride is 4160 and a row written 4096 bytes along lands sixteen pixels left.
+
+So the check for the rule this whole module exists to enforce cannot live in the guest. `make screenshot` grew a second phase: it waits for the shell prompt, types a `gfx.screen()` drawing of vertical bars, screendumps, and requires them to still be vertical. With the bug in place it reports the bar "found at x=184..189" instead of 200 — the drift, exactly.
+
+**Surfaces come from the process heap, so a full-screen one does not fit.** 1024x768 is 3.2 MB against a 2 MB heap, and `gfx.surface` says so rather than failing obscurely. That is a real limit and it has to be solved inside M6, not at M7: the app server's backbuffer is full-screen by definition. It needs pages from the kernel rather than from the Lua heap, which is the same mechanism M7's shared surfaces want.
+
+**The `serialize` benchmark moved +2.2%, and it is not the serialiser.** Every process now opens the `gfx` library, and the library table, the surface metatable and its methods are more objects on a 2 MB heap, so the collector paces differently through the measured loop. Measured rather than guessed: the same tree with the `luaL_requiref` for `gfx` commented out gives 1358.2, back inside the old range.
+
+Worth knowing as a property of the metric — **`serialize` is sensitive to what else is in the process**, not only to the serialiser, and it will drift again every library that gets added. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was opened. `gc_pause_max` shifted by the same cause and only +0.09%, because a long collector step is dominated by the 3000-object heap the benchmark builds rather than by a handful of library tables.
+
+**init says why it could not start something.** Its spawns used to be `if not x then sys.exit(1) end`, and the system died at boot in total silence — kernel output looking perfectly healthy, then nothing. That is exactly what happened the first time `SPAWN_SCREEN` was refused, and it cost a debugging cycle to find. init holds the console precisely so it can speak, and the moment it most needs to is when it cannot build the system.
 
 **The framebuffer is in its own linker section, after the stacks.** Three megabytes in `.bss` would sit before them and push both guard pages past the first 2 MB of RAM — the only part mapped a page at a time — and a guard page inside a 2 MB block cannot be punched out, so `mmu_init` would panic. `NOLOAD`, so the image file carries none of it; inside `__image_end`, so the page allocator counts the pages as the kernel's and never hands them out. There is a test for that last part, because the symptom otherwise is garbage on screen rather than anything that looks like an allocator bug.
 

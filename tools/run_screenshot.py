@@ -1,37 +1,40 @@
 #!/usr/bin/env python3
 """
-Host-side display check.
+Host-side display check, in two phases.
 
-`make test` proves the framebuffer from inside the guest: that it exists, is
-page aligned, is writable to the last row, and that the padded stride really
-moves rows. None of that proves a single pixel ever reaches a screen. The
-guest cannot prove that - it can only prove what it wrote into its own
-memory, and a wrong fourcc, a wrong stride in the ramfb config or a wrong
-address would all leave those tests passing and the display black or garbled.
+`make test` proves the framebuffer and the surfaces from inside the guest:
+that they exist, are the right shape, clip instead of overrunning, and that
+the alpha maths is exact. There is one property it structurally cannot reach.
 
-So this asks QEMU instead. It boots the image, waits for the guest to say it
-brought the display up, and takes a screendump through the monitor - which is
-QEMU's own view of the scanout, on the far side of everything this kernel
-controls. Then it checks the picture.
+**A pitch bug is invisible from inside.** If `row_of` in gfx.c stepped by
+`width * 4` instead of by the pitch, every read and every write would agree
+with each other and the whole suite would pass - the surface would simply
+have an unused gap at the end of each row. It was tried: replacing the pitch
+with `width * 4` passes 103 of 103 tests. The only observer who disagrees is
+the one on the other side of the framebuffer, where the stride is 4160 and a
+row written 4096 bytes along lands sixteen pixels to the left of where it
+belongs.
 
-What it checks, and why each one is the thing it is:
+So there are two phases here, and the second is the one that matters:
 
-  - **The geometry matches what the guest reported over serial.** Two
-    independent statements about the same thing, from opposite sides.
-  - **A square white border.** If anything computes an offset as width * 4
-    instead of using the pitch, the top and bottom edges still look right
-    and the left and right ones shear into diagonals.
-  - **Red, green and blue bars, in that order.** A wrong fourcc or channel
-    order reverses them, and reversed primaries are unmistakable where a
-    slightly-off colour is not.
-  - **A gradient that increases downward.** Rows landing where the pitch
-    says they should, along the whole height rather than at one point.
+  1. **The boot splash**, drawn by the kernel. Geometry against what the
+     guest reported over serial, a square white border, red/green/blue bars
+     in that order, and a gradient increasing downward.
+
+  2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
+     Vertical bars, which is the shape a pitch error destroys: each row would
+     shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
+     into a diagonal. The check reads each bar's x position at several
+     heights and requires them all to be the same.
 
 Usage: run_screenshot.py <image.elf> [--png OUT] [--timeout SECONDS]
 """
 
 import argparse
+import fcntl
 import os
+import select
+import socket
 import struct
 import subprocess
 import sys
@@ -52,90 +55,148 @@ QEMU_ARGS = [
     "-device", "ramfb",
 ]
 
-# What the kernel prints once hal_fb_init has succeeded. Waiting for it is
-# what stops the screendump racing the boot: without it the dump lands on
-# ramfb's own 640x480 placeholder and reports a black screen, which looks
-# exactly like a broken driver.
-READY = "video "
+READY = "video "            # printed once hal_fb_init has succeeded
+PROMPT = "kosmos>"          # printed once the shell is serving
+
+# The pattern phase two draws. Vertical bars on a black field, at x positions
+# a pitch error would smear: a wrong stride shifts each row sixteen pixels, so
+# a bar two pixels wide stops being a bar by the third row.
+BARS = [(200, 0x00ff4040), (500, 0x0040ff40), (800, 0x004040ff)]
+BAR_WIDTH = 6
+
+DRAW = (
+    "local s = gfx.screen() "
+    "local w, h = s:size() "
+    "s:fill(0, 0, w, h, 0xff000000) "
+    + " ".join(f"s:fill({x}, 0, {BAR_WIDTH}, h, 0xff{c:06x}) " for x, c in BARS)
+    + "return 'drawn'"
+)
 
 
 class Failure(Exception):
     """Something about the picture was wrong. The message is the report."""
 
 
-def boot_and_capture(image, timeout):
-    """Boot, wait for the display, and return (reported_line, ppm_bytes)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        serial = os.path.join(tmp, "serial.txt")
-        shot = os.path.join(tmp, "shot.ppm")
-        open(serial, "w").close()
+class Guest:
+    """A booted image, with its serial on pipes and its monitor on a socket.
+
+    Two channels because both are needed: the serial line to read what the
+    guest says and to type at its shell, and the monitor to ask QEMU for the
+    picture. They cannot share stdio.
+    """
+
+    def __init__(self, image, timeout):
+        self.timeout = timeout
+        self.dir = tempfile.TemporaryDirectory()
+        self.sockpath = os.path.join(self.dir.name, "monitor")
+        self.seen = ""
 
         try:
-            proc = subprocess.Popen(
+            self.proc = subprocess.Popen(
                 [QEMU, *QEMU_ARGS,
-                 "-serial", f"file:{serial}",
-                 "-monitor", "stdio",
+                 "-monitor", f"unix:{self.sockpath},server,nowait",
+                 "-serial", "stdio",
                  "-kernel", image],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, bufsize=1,
+                stderr=subprocess.DEVNULL, bufsize=0,
             )
         except FileNotFoundError:
             raise Failure(f"{QEMU} not found. See docs/setup.md.")
 
-        try:
-            deadline = time.monotonic() + timeout
-            line = None
+        # Bytes and non-blocking, not lines.
+        #
+        # The thing most worth waiting for is the shell prompt, and the shell
+        # prints "kosmos> " with no newline after it - so readline() blocks
+        # for ever on a guest that is sitting there perfectly happily waiting
+        # to be typed at. Reading whatever has arrived is the only way to see
+        # a prompt.
+        fd = self.proc.stdout.fileno()
+        fcntl.fcntl(fd, fcntl.F_SETFL,
+                    fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
-            while time.monotonic() < deadline:
-                for text in open(serial).read().splitlines():
-                    if text.startswith(READY):
-                        line = text
-                        break
-                if line is not None:
-                    break
-                if proc.poll() is not None:
-                    raise Failure("QEMU exited before the guest reported a display.")
-                time.sleep(0.2)
+        self.monitor = None
 
-            if line is None:
-                raise Failure(
-                    f"the guest never printed a \"{READY}\" line within {timeout}s. "
-                    "It either did not boot or hal_fb_init returned false."
-                )
+    def _read_available(self):
+        """Drain whatever the serial line has produced, without blocking."""
+        fd = self.proc.stdout.fileno()
 
-            if "none" in line:
-                raise Failure(
-                    f"the guest reported no display: {line!r}. "
-                    "ramfb was on the QEMU line, so fw_cfg or the etc/ramfb "
-                    "item is not being found."
-                )
+        while True:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if not ready:
+                return
 
-            proc.stdin.write(f"screendump {shot}\n")
-            proc.stdin.flush()
-
-            # The monitor is synchronous, but the file appears when the write
-            # completes rather than when the command is accepted.
-            for _ in range(50):
-                if os.path.exists(shot) and os.path.getsize(shot) > 0:
-                    break
-                time.sleep(0.1)
-            else:
-                raise Failure("the monitor never produced a screendump.")
-
-            time.sleep(0.2)
-            data = open(shot, "rb").read()
-        finally:
             try:
-                proc.stdin.write("quit\n")
-                proc.stdin.flush()
-            except Exception:
+                chunk = os.read(fd, 65536)
+            except BlockingIOError:
+                return
+
+            if not chunk:
+                return
+
+            self.seen += chunk.decode("utf-8", errors="replace")
+
+    def wait_for(self, text, what):
+        deadline = time.monotonic() + self.timeout
+
+        while time.monotonic() < deadline:
+            self._read_available()
+            if text in self.seen:
+                return
+            if self.proc.poll() is not None:
+                raise Failure(f"QEMU exited before {what}.")
+
+        raise Failure(
+            f"the guest never {what} within {self.timeout}s.\n"
+            f"--- what it did say ---\n{self.seen}"
+        )
+
+    def line_starting(self, prefix):
+        for text in self.seen.splitlines():
+            if text.startswith(prefix):
+                return text
+        return None
+
+    def type(self, text):
+        self.proc.stdin.write((text + "\n").encode())
+        self.proc.stdin.flush()
+
+    def _connect_monitor(self):
+        if self.monitor is None:
+            self.monitor = socket.socket(socket.AF_UNIX)
+            self.monitor.settimeout(self.timeout)
+            self.monitor.connect(self.sockpath)
+            time.sleep(0.3)
+            try:
+                self.monitor.recv(65536)        # the greeting
+            except socket.timeout:
                 pass
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
 
-        return line, data
+    def screendump(self):
+        self._connect_monitor()
+        path = os.path.join(self.dir.name, f"shot{time.monotonic_ns()}.ppm")
+
+        self.monitor.sendall(f"screendump {path}\n".encode())
+
+        for _ in range(int(self.timeout * 10)):
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                time.sleep(0.3)                 # let the write finish
+                return open(path, "rb").read()
+            time.sleep(0.1)
+
+        raise Failure("the monitor never produced a screendump.")
+
+    def close(self):
+        try:
+            if self.monitor is not None:
+                self.monitor.sendall(b"quit\n")
+                self.monitor.close()
+        except Exception:
+            pass
+        try:
+            self.proc.wait(timeout=5)
+        except Exception:
+            self.proc.kill()
+        self.dir.cleanup()
 
 
 def parse_ppm(data):
@@ -153,12 +214,19 @@ def parse_ppm(data):
     return width, height, parts[3]
 
 
-def check(reported, data):
+def pixel_reader(data):
     width, height, px = parse_ppm(data)
 
     def at(x, y):
         o = (y * width + x) * 3
         return tuple(px[o:o + 3])
+
+    return width, height, at
+
+
+def check_splash(reported, data):
+    """Phase one: what the kernel drew at boot."""
+    width, height, at = pixel_reader(data)
 
     # The guest's line reads: "video 1024x768, pitch 4160 bytes, at 0x..."
     geometry = reported.split()[1].rstrip(",")
@@ -173,21 +241,21 @@ def check(reported, data):
     third = width // 3
 
     checks = [
-        ("the top-left corner",            at(0, 0),                    white),
-        ("the top-right corner",           at(width - 1, 0),            white),
-        ("the bottom-left corner",         at(0, height - 1),           white),
-        ("the bottom-right corner",        at(width - 1, height - 1),   white),
-        ("the left edge at mid-height",    at(0, height // 2),          white),
-        ("the right edge at mid-height",   at(width - 1, height // 2),  white),
-        ("the first bar (red)",            at(third // 2, height // 2), (0xc0, 0x30, 0x30)),
-        ("the second bar (green)",         at(width // 2, height // 2), (0x30, 0xc0, 0x30)),
-        ("the third bar (blue)",           at(width - third // 2, height // 2), (0x30, 0x30, 0xc0)),
+        ("the top-left corner",          at(0, 0),                    white),
+        ("the top-right corner",         at(width - 1, 0),            white),
+        ("the bottom-left corner",       at(0, height - 1),           white),
+        ("the bottom-right corner",      at(width - 1, height - 1),   white),
+        ("the left edge at mid-height",  at(0, height // 2),          white),
+        ("the right edge at mid-height", at(width - 1, height // 2),  white),
+        ("the first bar (red)",          at(third // 2, height // 2), (0xc0, 0x30, 0x30)),
+        ("the second bar (green)",       at(width // 2, height // 2), (0x30, 0xc0, 0x30)),
+        ("the third bar (blue)",         at(width - third // 2, height // 2), (0x30, 0x30, 0xc0)),
     ]
 
     for name, got, want in checks:
         if got != want:
             raise Failure(
-                f"{name} is {got} and should be {want}.\n"
+                f"splash: {name} is {got} and should be {want}.\n"
                 "A sheared border means an offset computed as width * 4 "
                 "instead of the pitch; bars in the wrong order mean the "
                 "fourcc or the channel order is wrong."
@@ -196,11 +264,57 @@ def check(reported, data):
     ramp = [at(width // 2, y)[2] for y in (10, 100, 300, 700)]
     if not all(a < b for a, b in zip(ramp, ramp[1:])):
         raise Failure(
-            f"the gradient does not increase down the screen: {ramp}. "
+            f"splash: the gradient does not increase down the screen: {ramp}. "
             "Rows are not landing where the pitch says they should."
         )
 
-    return width, height, len(checks) + 1
+    return len(checks) + 1
+
+
+def check_bars(data):
+    """Phase two: what Lua drew, through gfx.screen().
+
+    This is the one no in-guest test can do. A surface that steps by
+    `width * 4` instead of by the pitch is perfectly self-consistent to
+    everything inside the guest, and produces bars that walk sideways by
+    sixteen pixels a row out here.
+    """
+    width, height, at = pixel_reader(data)
+    rows = [1, 5, 50, 200, 400, 600, height - 2]
+    checked = 0
+
+    for x, colour in BARS:
+        want = ((colour >> 16) & 0xff, (colour >> 8) & 0xff, colour & 0xff)
+
+        for y in rows:
+            got = at(x + BAR_WIDTH // 2, y)
+
+            if got != want:
+                # Say where it actually went; a shear has a signature.
+                found = [
+                    sx for sx in range(0, width)
+                    if at(sx, y) == want
+                ]
+                where = (f"found at x={found[0]}..{found[-1]}"
+                         if found else "not on this row at all")
+
+                raise Failure(
+                    f"the bar drawn at x={x} is {got} at (x={x}, y={y}), "
+                    f"expected {want}; {where}.\n"
+                    "A bar that moves sideways as y increases means a "
+                    "surface stepped by width * 4 instead of by the pitch. "
+                    f"This display's stride is padded, so the drift is "
+                    f"sixteen pixels per row."
+                )
+
+            checked += 1
+
+        # And that it really is a bar rather than a fill: black beside it.
+        if at(x - 4, height // 2) != (0, 0, 0):
+            raise Failure(f"the area left of the bar at x={x} is not black.")
+        checked += 1
+
+    return checked
 
 
 def write_png(path, data):
@@ -228,24 +342,51 @@ def write_png(path, data):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("image", help="the image to boot")
-    ap.add_argument("--png", help="also write the screenshot here, as a PNG")
+    ap.add_argument("--png", help="also write the Lua-drawn screen here")
     ap.add_argument("--timeout", type=float, default=30.0,
                     help="seconds to wait for the guest (default: 30)")
     args = ap.parse_args()
 
+    guest = None
+
     try:
-        reported, data = boot_and_capture(args.image, args.timeout)
-        width, height, count = check(reported, data)
+        guest = Guest(args.image, args.timeout)
+
+        guest.wait_for(READY, "reported a display")
+        reported = guest.line_starting(READY)
+
+        if "none" in reported:
+            raise Failure(
+                f"the guest reported no display: {reported!r}. "
+                "ramfb was on the QEMU line, so fw_cfg or the etc/ramfb "
+                "item is not being found."
+            )
+
+        splash_checks = check_splash(reported, guest.screendump())
+
+        guest.wait_for(PROMPT, "reached the shell prompt")
+        guest.type(DRAW)
+        guest.wait_for("drawn", "finished drawing")
+
+        drawn = guest.screendump()
+        bar_checks = check_bars(drawn)
+
+        if args.png:
+            write_png(args.png, drawn)
+            print(f"Wrote {args.png}.")
+
     except Failure as e:
         print(f"\nFAIL: {e}", file=sys.stderr)
         return 1
+    finally:
+        if guest is not None:
+            guest.close()
 
-    if args.png:
-        write_png(args.png, data)
-        print(f"Wrote {args.png}.")
-
+    total = splash_checks + bar_checks
     print(f"guest: {reported}")
-    print(f"\nPASS: {count}/{count} display checks at {width}x{height}.")
+    print(f"\nPASS: {total} display checks "
+          f"({splash_checks} on the kernel's splash, {bar_checks} on what "
+          f"Lua drew through gfx).")
     return 0
 
 

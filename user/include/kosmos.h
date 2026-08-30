@@ -123,6 +123,21 @@ static inline unsigned long kosmos_ticks(void)
 }
 
 /*
+ * Where the screen is in this process, and how big.
+ *
+ * `struct screen_info` comes from kernel/syscall.h, which this header
+ * already includes for the numbers: it is the ABI, so it belongs to both
+ * sides by definition and is written once rather than twice.
+ *
+ * Negative when this process was not handed the screen, which is the normal
+ * answer for every process but one.
+ */
+static inline long kosmos_screen(struct screen_info *out)
+{
+    return sys1(SYS_SCREEN, (long)(uintptr_t)out);
+}
+
+/*
  * The message the kernel moves.
  *
  * Has to match kernel/ipc.h byte for byte: the syscall copies
