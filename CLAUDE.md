@@ -1,0 +1,159 @@
+# Kosmos
+
+Microkernel OS with a Lua userland. AArch64.
+
+A personal learning project. There are no users, no compatibility to maintain, no deadline. **Correctness and simplicity always win over delivery speed.**
+
+**Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware (Pi 5, Pi 1) arrives at milestone 2, once the serial cables are here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
+
+- Design and the reasoning behind every decision: `docs/design.md`
+- Current state and next step: `docs/state.md` — **read it before proposing anything**
+- Milestones: `docs/roadmap.md`
+- Targets and HAL: `docs/hal.md`
+- UI kit and window manager: `docs/ui.md`
+- The path pixels take: `docs/gfx.md`
+- Measurement and regressions: `docs/testing.md`
+- BeOS lineage: `docs/beos.md`
+- Toolchain and build: `docs/setup.md`
+- Glossary: `docs/glossary.md`
+
+---
+
+## Language
+
+**Everything in this repository is written in English.** Documents, source code, comments, identifiers, commit messages, test names, log output, error strings. No exceptions, including in Lua code and in strings printed over the UART.
+
+---
+
+## Build
+
+```
+make qemu        # build and run under QEMU virt
+make test        # run the suite under QEMU, exit code 0 or 1
+make debug       # QEMU with a gdbserver on :1234
+make clean
+```
+
+Toolchain: `aarch64-none-elf-gcc`, `qemu-system-aarch64`.
+
+Mandatory flags, not to be changed without discussion:
+
+```
+-std=c11 -ffreestanding -nostdlib -nostartfiles
+-Wall -Wextra -Werror -fno-common -fno-strict-aliasing
+-mgeneral-regs-only
+```
+
+`-mgeneral-regs-only` is there because the kernel does not save FP/SIMD registers on a context switch. If something in the kernel needs a float, it is badly designed.
+
+---
+
+## Hard rules
+
+These are not preferences. If a proposal violates one, the proposal is wrong.
+
+**No dynamic allocator in the kernel.** Everything lives in statically declared fixed-size pools: an array of threads, of address spaces, of endpoints. There is no `malloc` or equivalent.
+
+**The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. No networking, no graphics, no filesystem, and no Lua inside it from milestone 4 onward.
+
+**Budget: 10k lines of kernel.** If something pushes past that, it goes to userland.
+
+**Compatibility inside a process yes, at system level never.** A libc that lives in the app's address space and whose I/O functions resolve against that process's namespace is fine and necessary. What is forbidden is a POSIX personality: `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, `unistd.h`, global file descriptors, or any path tree reachable without a namespace. If a port asks for one of those, patch the port. Detail: `errno` is per-process, never global. See `docs/design.md` §17.
+
+**MMIO only through `mmio_read32` / `mmio_write32`.** They carry the barriers inside. No loose `volatile`.
+
+**No precompiled Lua bytecode.** Source only. The bytecode loader verifies nothing and gives arbitrary execution.
+
+**Capabilities by index, never global IDs.** A syscall takes an index into the process's table. If a design needs to name something globally, the design is wrong.
+
+**Single-core until milestone 6.** But the code is written SMP-ready from now: no loose mutable globals, `TPIDR_EL1` as the pointer to the per-CPU struct, a per-CPU runqueue even with a single CPU.
+
+**No hardware addresses outside `hal/`.** Not one.
+
+**Upstream Lua is not modified.** It lives in `lua/upstream/` exactly as shipped. Freestanding changes go in `lua/patches/` and are applied during the build.
+
+---
+
+## Language split
+
+C is what touches hardware or defines the isolation boundary. Lua is everything else.
+
+The test: **if a bug there can corrupt another process, it is C. If it can only kill its own process, it is Lua.**
+
+**C:** the whole kernel, the Lua interpreter, the `lua_State` allocator, syscall bindings, the minimal libc, the table serializer for IPC. And only when measurement justifies it: the blitter, the font rasterizer, framebuffer drivers.
+
+**Lua:** the namespace server, filesystem servers, the entire app server including compositing, the shell, the REPL, init, supervision, every app, the whole UI kit.
+
+**Do not push things down to C "because it is faster" without a profile that justifies it.** Every time something is pushed to C, hot reload is lost, and hot reload is the reason for the entire design.
+
+The legitimate exception is pixel loops: never in Lua. Lua decides what gets drawn and where, the loop happens inside a surface, in C.
+
+---
+
+## `arch/` vs `hal/`
+
+A distinction that matters and is easy to blur:
+
+- **`arch/`** is "which CPU are you". Page tables, the exception vector, context switch, barriers. It is not abstracted across architectures, it is reimplemented.
+- **`hal/`** is "which peripheral do you have". UART, timer, interrupt controller, framebuffer. Common interface, one implementation per board.
+
+The HAL interface, minimal and nothing beyond this for now:
+
+```c
+void     hal_early_init(void);
+void     hal_putchar(char c);
+void     hal_fb_init(struct fb *out);
+void     hal_irq_init(void);
+void     hal_timer_init(uint32_t hz);
+uint64_t hal_ticks(void);
+```
+
+**Do not expand the HAL speculatively.** The right interface appears once there is a second real target, at milestone 2. Writing it now with a single target produces the shape of QEMU with generic names.
+
+---
+
+## How to work here
+
+**One milestone at a time.** See `docs/state.md`. Do not propose or implement things from future milestones even when they look obvious or cheap.
+
+**Small, verifiable scope.** "The exception vector with its 16-entry table and the sync handler" is good scope. "Implement the microkernel" is not.
+
+**Verify hardware addresses and offsets against the datasheet, not against memory.** If you do not have the datum, say so instead of inventing a plausible offset. This is the area where code that looks right and does not work is indistinguishable from code that does, until it runs.
+
+**Memory barriers: state which one and why.** Do not sprinkle `dsb sy` just in case.
+
+**Before writing new code, read what already exists.** The codebase is small and readable on purpose.
+
+**When something does not work, instrument over UART first.** A well-placed `printf` beats a hypothesis.
+
+**Every closed milestone leaves a permanent test.** The definition of done becomes a test that is never deleted. `make test` must pass before the next milestone starts. See `docs/testing.md`.
+
+**Pixels never go inside a Lua table.** A surface is a userdata over flat bytes. A Lua array holding 2M pixels makes the GC walk 2M slots per cycle and the system falls apart. See `gfx.md` §19.1.
+
+**Nothing in Lua computes a pixel offset.** The pitch is almost never `width * 4`. All address arithmetic happens inside the C primitives. See `gfx.md` §19.3.
+
+**QEMU numbers are not performance numbers.** They are for detecting regressions (with `-icount`, which is deterministic), not for knowing whether something is fast. The PMU is not faithfully emulated under QEMU. Do not optimize against QEMU.
+
+**At the end of a session, update `docs/state.md`.** Without that, the next session starts from zero.
+
+**When a design decision is taken, propagate it to the documents in the same session.** A decision that lives only in chat history is lost. The order: the row in the decision log in `README.md`, the explanation in the matching section of `docs/design.md` (or `ui.md` / `gfx.md` / `hal.md` depending on the topic), and the scope adjustment in `docs/roadmap.md` if it changes what has to be built. If a decision contradicts something already written, correct the old text instead of adding an exception next to it.
+
+---
+
+## Layout
+
+```
+boot/        assembly entry, linker script
+arch/        aarch64/
+hal/         qemu-virt/  (pi5/ and pi1/ arrive at milestone 2)
+kernel/      mmu, sched, ipc, caps, exceptions
+lua/         upstream/ + patches/
+runtime/     minimal libc, bindings, serializer
+servers/     Lua
+apps/        Lua
+lib/         Lua: ui, gfx
+tests/       guest-side tests (C until M2, Lua after that)
+bench/       benchmarks and baselines.json
+tools/       host-side test runner, scripts
+docs/
+```
