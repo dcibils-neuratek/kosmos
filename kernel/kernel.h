@@ -11,4 +11,12 @@
  */
 #define TICK_HZ     100
 
+/*
+ * How much memory Lua gets. `design.md` §5.2 asks for a bounded heap of
+ * roughly 2 MB per server, for a reason that matters: a small heap collects
+ * fast, and the GC pause is the number that decides whether the system
+ * stutters. A large shared heap would make that pause unbounded.
+ */
+#define LUA_HEAP_PAGES  512     /* 2 MB at a 4 KB granule */
+
 #endif /* KERNEL_KERNEL_H */

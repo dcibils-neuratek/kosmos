@@ -11,6 +11,9 @@
 #include "mmu.h"
 #include "kernel.h"
 
+#include <stdlib.h>
+#include "panic.h"
+
 #ifdef KOSMOS_TEST
 #include "test.h"
 #endif
@@ -51,6 +54,28 @@ void kmain(void)
      * translation at all. */
     mmu_init();
     kputs("mmu   on\n");
+
+    /*
+     * Lua's heap. One contiguous span taken from the page allocator once and
+     * sub-divided inside itself, which is what design.md 5.2 means by a
+     * lua_State with a heap limit. The kernel's own state stays in fixed
+     * pools; nothing in kernel/, arch/ or hal/ calls malloc.
+     */
+    {
+        void *heap = pmm_alloc_contiguous(LUA_HEAP_PAGES);
+
+        if (heap == NULL) {
+            panic("no room for the Lua heap");
+        }
+
+        heap_init(heap, LUA_HEAP_PAGES * PAGE_SIZE);
+
+        kputs("heap  ");
+        kputu(heap_size() / 1024);
+        kputs(" KB at 0x");
+        kputx((unsigned long)(unsigned long)heap, 16);
+        kputs("\n");
+    }
 
     hal_irq_init();
     hal_timer_init(TICK_HZ);

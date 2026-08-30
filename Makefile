@@ -21,6 +21,10 @@ SRCS := boot/start.S \
         kernel/console.c \
         runtime/libc/string.c \
         runtime/libc/setjmp.S \
+        runtime/libc/malloc.c \
+        runtime/libc/misc.c \
+        runtime/libc/math.c \
+        runtime/libc/snprintf.c \
         kernel/panic.c \
         kernel/pmm.c \
         kernel/main.c
@@ -45,11 +49,29 @@ TARGET := $(BUILD)/kosmos.elf
 # registers on a context switch. If something in the kernel needs a float,
 # it is badly designed, and this turns that into a compile error rather than
 # a corrupted register found three milestones later.
-CFLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
-          -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
-          -mgeneral-regs-only \
-          -O2 -g \
-          -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include $(TESTDEFS)
+CFLAGS_BASE := -std=c11 -ffreestanding -nostdlib -nostartfiles \
+               -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
+               -O2 -g \
+               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include $(TESTDEFS)
+
+CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
+
+# The exceptions, and why there are any.
+#
+# -mgeneral-regs-only exists because the kernel does not save FP/SIMD on a
+# context switch, so a float anywhere in it is a bug waiting for M3. That
+# reasoning covers kernel/, arch/ and hal/, and it still does.
+#
+# It cannot cover code whose entire job is floating point. math.c decomposes
+# doubles and snprintf.c turns them into digits, and from the next commit Lua
+# is here too, whose numbers are doubles. Those files get the same flags
+# minus that one, so the boundary is per file and visible rather than a flag
+# quietly dropped from the whole build.
+CFLAGS_FP := $(CFLAGS_BASE)
+
+$(BUILD)/runtime/libc/math.c.o:     CFLAGS := $(CFLAGS_FP)
+$(BUILD)/runtime/libc/snprintf.c.o: CFLAGS := $(CFLAGS_FP)
+$(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP)
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
@@ -70,6 +92,12 @@ LDFLAGS := -T boot/kosmos.ld \
            -Wl,--no-warn-rwx-segments \
            -Wl,-Map,$(BUILD)/kosmos.map
 
+# newlib's libm, for the maths that are numerical analysis rather than bit
+# manipulation: pow, fmod, sqrt and the transcendentals. The easy half is
+# ours, in runtime/libc/math.c. See math.h for where the line is and why.
+# Its only demand is __errno, which the design wanted per-process anyway.
+LIBS := -lm
+
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
 DEPS := $(OBJS:.o=.d)
 
@@ -86,7 +114,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS) boot/kosmos.ld
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
 
 $(BUILD)/%.c.o: %.c
 	@mkdir -p $(dir $@)

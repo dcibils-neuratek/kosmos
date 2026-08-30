@@ -124,6 +124,52 @@ void *pmm_alloc_page(void)
     return NULL;
 }
 
+void *pmm_alloc_contiguous(size_t count)
+{
+    size_t start;
+    size_t i;
+
+    if (count == 0) {
+        return NULL;
+    }
+
+    if (count == 1) {
+        return pmm_alloc_page();
+    }
+
+    /*
+     * A linear scan for a run of free bits. No cursor and no cleverness: this
+     * is called a handful of times at boot and never on a hot path, and a
+     * first-fit scan over a bitmap is the easiest thing to reason about when
+     * it goes wrong.
+     */
+    for (start = 0; start + count <= total; start++) {
+        if (!page_is_free(start)) {
+            continue;
+        }
+
+        for (i = 1; i < count; i++) {
+            if (!page_is_free(start + i)) {
+                break;
+            }
+        }
+
+        if (i < count) {
+            /* Resume past the page that broke the run, not at start + 1. */
+            start += i;
+            continue;
+        }
+
+        for (i = 0; i < count; i++) {
+            set_used(start + i);
+        }
+
+        return (void *)(ram_base + start * PAGE_SIZE);
+    }
+
+    return NULL;
+}
+
 void pmm_free_page(void *page)
 {
     uintptr_t addr = (uintptr_t)page;

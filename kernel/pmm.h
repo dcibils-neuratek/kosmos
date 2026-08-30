@@ -26,6 +26,15 @@ void pmm_init(void);
  * previous owner left; nothing is zeroed. */
 void *pmm_alloc_page(void);
 
+/* A run of `count` physically contiguous pages, or NULL. Needed by anything
+ * that has to be one span in physical memory: Lua's heap, and from M3 the
+ * per-thread kernel stacks.
+ *
+ * Freed one page at a time, like any other. The allocator does not remember
+ * that a run was a run, because nothing needs it to and remembering would
+ * mean a second data structure to keep consistent with the first. */
+void *pmm_alloc_contiguous(size_t count);
+
 /* Hands a page back. Panics on a misaligned address, an address outside RAM,
  * or a double free, because all three are programmer errors that would
  * otherwise corrupt the bitmap and surface much later. */

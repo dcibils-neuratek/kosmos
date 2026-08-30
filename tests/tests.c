@@ -13,6 +13,9 @@
 
 #include <string.h>
 #include <setjmp.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
 
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
@@ -387,6 +390,180 @@ static bool test_pmm_exhaustion_returns_null(void)
 }
 
 /*
+ * M2: the heap and snprintf.
+ */
+static bool test_heap_alloc_is_aligned_and_usable(void)
+{
+    /* 16 bytes, because a double and a long double both want it and Lua puts
+     * both inside its values. An 8-aligned heap works until something takes
+     * a 16-byte load across the boundary. */
+    void *a = malloc(1);
+    void *b = malloc(17);
+    void *c = malloc(4096);
+    bool ok = a != NULL && b != NULL && c != NULL
+           && ((uintptr_t)a % 16) == 0
+           && ((uintptr_t)b % 16) == 0
+           && ((uintptr_t)c % 16) == 0;
+
+    free(a); free(b); free(c);
+    return ok;
+}
+
+static bool test_heap_coalesces_in_both_directions(void)
+{
+    /*
+     * The property the whole allocator rests on. Three neighbours freed
+     * middle-last must end as one block, or the heap fills with holes that
+     * are physically adjacent and individually too small, and Lua's GC can
+     * never get memory back.
+     */
+    size_t before = heap_used();
+    void *a = malloc(2048);
+    void *b = malloc(2048);
+    void *c = malloc(2048);
+    void *big;
+    bool ok;
+
+    if (a == NULL || b == NULL || c == NULL) {
+        return false;
+    }
+
+    free(a);
+    free(c);
+    free(b);   /* last, so it has to merge with a free block on each side */
+
+    big = malloc(6000);
+    ok = big != NULL;
+    free(big);
+
+    return ok && heap_used() == before;
+}
+
+static bool test_heap_realloc_preserves_contents(void)
+{
+    unsigned char *p = malloc(64);
+    unsigned char *q;
+    bool ok = true;
+    int i;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < 64; i++) {
+        p[i] = (unsigned char)(i * 7);
+    }
+
+    q = realloc(p, 4096);
+    if (q == NULL) {
+        free(p);
+        return false;
+    }
+
+    for (i = 0; i < 64; i++) {
+        if (q[i] != (unsigned char)(i * 7)) {
+            ok = false;
+        }
+    }
+
+    free(q);
+    return ok;
+}
+
+static bool test_heap_exhaustion_returns_null(void)
+{
+    /* Bigger than the whole heap. Returning NULL rather than a pointer into
+     * nothing is what lets Lua's allocator report an out-of-memory error
+     * instead of corrupting the heap. */
+    void *p = malloc(heap_size() + 1);
+
+    if (p != NULL) {
+        free(p);
+        return false;
+    }
+
+    return true;
+}
+
+static bool str_is(const char *a, const char *b)
+{
+    return strcmp(a, b) == 0;
+}
+
+static bool test_snprintf_integers_and_strings(void)
+{
+    char b[64];
+
+    snprintf(b, sizeof(b), "%d", -42);            if (!str_is(b, "-42"))      return false;
+    snprintf(b, sizeof(b), "%5d|", 42);           if (!str_is(b, "   42|"))   return false;
+    snprintf(b, sizeof(b), "%-5d|", 42);          if (!str_is(b, "42   |"))   return false;
+    snprintf(b, sizeof(b), "%05d", 42);           if (!str_is(b, "00042"))    return false;
+    snprintf(b, sizeof(b), "%x", 0xdeadbeefu);    if (!str_is(b, "deadbeef")) return false;
+    snprintf(b, sizeof(b), "%s!", "hi");          if (!str_is(b, "hi!"))      return false;
+    snprintf(b, sizeof(b), "%.2s", "hello");      if (!str_is(b, "he"))       return false;
+    snprintf(b, sizeof(b), "%lld", 9223372036854775807LL);
+    if (!str_is(b, "9223372036854775807")) return false;
+
+    /* The one that overflows if the magnitude is taken by plain negation. */
+    snprintf(b, sizeof(b), "%lld", (long long)-9223372036854775807LL - 1);
+    return str_is(b, "-9223372036854775808");
+}
+
+static bool test_snprintf_truncates_and_reports_the_full_length(void)
+{
+    /* Returning what it would have needed is how a caller sizes a buffer,
+     * and writing the terminator inside the cap is what keeps the result a
+     * string. */
+    char b[5];
+    int n = snprintf(b, sizeof(b), "%s", "abcdefgh");
+
+    return n == 8 && str_is(b, "abcd");
+}
+
+static bool test_snprintf_floats(void)
+{
+    char b[64];
+
+    /* Lua's default number format is %.14g, so that is the one that matters. */
+    snprintf(b, sizeof(b), "%.14g", 1.5);      if (!str_is(b, "1.5"))    return false;
+    snprintf(b, sizeof(b), "%.14g", 100.0);    if (!str_is(b, "100"))    return false;
+    snprintf(b, sizeof(b), "%.14g", 0.5);      if (!str_is(b, "0.5"))    return false;
+    snprintf(b, sizeof(b), "%.14g", -0.25);    if (!str_is(b, "-0.25"))  return false;
+    snprintf(b, sizeof(b), "%.14g", 0.0);      if (!str_is(b, "0"))      return false;
+    snprintf(b, sizeof(b), "%.3f",  1.5);      if (!str_is(b, "1.500"))  return false;
+    snprintf(b, sizeof(b), "%.14g", 1e20);     if (!str_is(b, "1e+20"))  return false;
+    snprintf(b, sizeof(b), "%.14g", 1e-7);     if (!str_is(b, "1e-07"))  return false;
+
+    return true;
+}
+
+static bool test_our_math_matches_its_definition(void)
+{
+    int e = 999;
+    double m;
+
+    if (floor(2.7) != 2.0 || floor(-2.7) != -3.0) return false;
+    if (ceil(2.1)  != 3.0 || ceil(-2.1)  != -2.0) return false;
+    if (trunc(2.7) != 2.0 || trunc(-2.7) != -2.0) return false;
+    if (fabs(-3.5) != 3.5 || fabs(3.5)   != 3.5)  return false;
+
+    /* frexp returns a mantissa in [0.5, 1) and an exponent that rebuilds the
+     * value exactly. 8.0 is 0.5 * 2^4. */
+    m = frexp(8.0, &e);
+    if (m != 0.5 || e != 4) return false;
+
+    m = frexp(0.0, &e);
+    if (m != 0.0 || e != 0) return false;
+
+    if (ldexp(0.5, 4) != 8.0) return false;
+    if (ldexp(1.0, 0) != 1.0) return false;
+
+    /* And newlib's half, so a broken link shows up here rather than inside
+     * Lua's arithmetic. */
+    return pow(2.0, 10.0) == 1024.0 && fmod(7.0, 3.0) == 1.0;
+}
+
+/*
  * M1: the interrupt controller and the timer.
  */
 static uint64_t cntfrq(void)
@@ -694,6 +871,14 @@ static const struct test tests[] = {
     { "libc: longjmp turns 0 into 1",          test_longjmp_turns_zero_into_one },
     { "libc: longjmp restores x19-x28",        test_longjmp_restores_callee_saved_registers },
     { "libc: longjmp restores sp",             test_longjmp_restores_the_stack_pointer },
+    { "heap: allocations are 16-byte aligned", test_heap_alloc_is_aligned_and_usable },
+    { "heap: free coalesces both ways",        test_heap_coalesces_in_both_directions },
+    { "heap: realloc preserves contents",      test_heap_realloc_preserves_contents },
+    { "heap: exhaustion returns NULL",         test_heap_exhaustion_returns_null },
+    { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
+    { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },
+    { "snprintf: floats",                      test_snprintf_floats },
+    { "math: ours and newlib's agree",         test_our_math_matches_its_definition },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },
