@@ -17,6 +17,21 @@
 
 /* void enter_el0(uintptr_t entry, uintptr_t user_sp); */
 enter_el0:
+    /*
+     * Nothing may interrupt the transition.
+     *
+     * Between the SPSel write below and the eret, this runs at EL1 with
+     * SPSel set, which is the state the vector table reserves for an
+     * exception taken inside the handler. An interrupt arriving in that
+     * window lands in the wrong quarter of the table and is reported as a
+     * double fault, which is exactly what happened the first time this ran
+     * long enough for the timer to fire.
+     *
+     * Nothing is lost by masking: the eret restores PSTATE from SPSR_EL1,
+     * which is zero, so the process starts with interrupts enabled.
+     */
+    msr     daifset, #3
+
     msr     elr_el1, x0             /* where EL0 starts */
 
     /*

@@ -14,8 +14,29 @@
 
 .section .user.text, "ax"
 
+/*
+ * The image header every process image carries: a magic number, then how
+ * many bytes are read-only and executable. These blobs are entirely code and
+ * fit in a page, so the answer is always one page.
+ *
+ * Real images get theirs from the linker script, which knows where rodata
+ * ends. A hand-written blob has to say it by hand, and saying it is better
+ * than the kernel having a second path that skips the check.
+ */
+.macro IMAGE_HEADER
+    /* The alignment goes before the label rather than here. Padding emitted
+     * after the label would sit between it and the magic number, so the
+     * kernel would read zeroes where it expects the header and refuse the
+     * image. Only the blobs that happened to already be aligned worked. */
+    .quad   0x534f4d534f4b
+    .quad   0x1000
+.endm
+
+
+.balign 16
 .global user_hello_start
 user_hello_start:
+    IMAGE_HEADER
     adr     x0, message
     mov     x1, #(message_end - message)
     mov     x8, #SYS_WRITE

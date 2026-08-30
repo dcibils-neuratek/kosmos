@@ -670,6 +670,49 @@ static int run_user(const char *name, const char *start, const char *end)
     return code;
 }
 
+static bool test_lua_runs_at_el0(void)
+{
+    /*
+     * The init image: a real link of Lua, the libc and libm at a user
+     * address, carried inside the kernel image and copied into a process.
+     *
+     * It exercises arithmetic and floats, math.sqrt out of newlib's libm,
+     * coroutines, an error raised inside the VM and caught by pcall, the
+     * absence of io, os and debug, and the collector reclaiming memory on a
+     * heap it cannot grow. Any of those failing makes the chunk raise, which
+     * makes main return non-zero.
+     *
+     * Its output goes to the console rather than into an assertion, because
+     * what is being asserted is that all of it ran at EL0 and came back with
+     * a zero.
+     */
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned before = process_count();
+
+    struct process *p = process_create("t-init", init_image,
+                                       (size_t)init_image_len);
+    unsigned i;
+    int code;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < 4096 && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    return code == 0 && process_count() == before;
+}
+
 static bool test_a_process_runs_at_el0(void)
 {
     /*
@@ -2444,6 +2487,7 @@ static const struct test tests[] = {
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
     { "el0: a process runs and exits",         test_a_process_runs_at_el0 },
+    { "el0: Lua runs in a process",            test_lua_runs_at_el0 },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },

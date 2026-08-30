@@ -5,9 +5,21 @@
 # make debug    the same as qemu, stopped, with a gdbserver on :1234
 # make clean
 
+# Stated rather than left to fall out of rule order. Make takes the first
+# explicit target it sees as the default, and adding a rule above `all`
+# silently changes what a bare `make` builds.
+.DEFAULT_GOAL := all
+
 CROSS   := aarch64-none-elf-
 CC      := $(CROSS)gcc
 OBJDUMP := $(CROSS)objdump
+OBJCOPY := $(CROSS)objcopy
+
+# Where generated sources go. Defined here rather than beside the rules that
+# produce them, because SRCS below is a := assignment and expands it on the
+# spot; further down it would expand to nothing and the object would be
+# named build//init_bin.c.o.
+GEN := build/gen
 SIZE    := $(CROSS)size
 
 SRCS := boot/start.S \
@@ -39,6 +51,7 @@ SRCS := boot/start.S \
         kernel/process.c \
         kernel/syscall.c \
         kernel/main.c \
+        $(GEN)/init_bin.c \
         lua/kosmos/kosmos_lua.c \
         lua/kosmos/repl.c \
         lua/kosmos/sys.c
@@ -126,6 +139,7 @@ CFLAGS_LUA_UPSTREAM := $(CFLAGS_FP) $(LUA_FLAGS) -Wno-error
 $(BUILD)/runtime/libc/math.c.o:     CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/snprintf.c.o: CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/strtod.c.o:   CFLAGS := $(CFLAGS_FP)
+$(BUILD)/$(GEN)/init_bin.c.o:        CFLAGS := $(CFLAGS_BASE)
 $(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP) -Ilua/upstream
 $(BUILD)/bench/bench.c.o:            CFLAGS := $(CFLAGS_FP)
 
@@ -166,6 +180,77 @@ $(BUILD)/lua/kosmos/repl.c.o:       CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 $(BUILD)/lua/kosmos/sys.c.o:        CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
 
 DEPS := $(OBJS:.o=.d)
+
+# ------------------------------------------------------------------
+# The user side.
+#
+# A separate link, at a separate address, with a separate C library
+# instance. Sharing the sources and not the objects is the point: the same
+# libc is correct on both sides of the boundary and panic() means something
+# different on each, so it is compiled twice rather than linked once.
+#
+# A distinct top-level directory rather than build/user, because
+# build/user/x.c.o would also match the kernel's build/%.c.o pattern and
+# which rule won would depend on how make breaks ties.
+# ------------------------------------------------------------------
+
+UBUILD := build-user
+
+USER_LIBC := runtime/libc/string.c \
+             runtime/libc/malloc.c \
+             runtime/libc/math.c \
+             runtime/libc/snprintf.c \
+             runtime/libc/strtod.c \
+             runtime/libc/stdio.c \
+             runtime/libc/setjmp.S \
+             user/lib/misc_user.c \
+             user/lib/panic_user.c
+
+USER_SRCS := user/init/start.S \
+             user/init/main.c \
+             user/lib/lua_glue.c \
+             user/lib/sys_user.c \
+             $(USER_LIBC) \
+             $(LUA_SRCS) \
+             $(GEN)/init_lua.c
+
+USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))
+USER_DEPS := $(USER_OBJS:.o=.d)
+
+# -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
+# numbers are the ABI and belong to both sides of it by definition.
+UCFLAGS := $(CFLAGS_BASE) \
+           -Iuser/include -Ikernel -Iruntime/include \
+           -Ilua/upstream -Ilua/kosmos \
+           -fno-stack-protector
+
+ULDFLAGS := -T user/user.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
+            -Wl,-Map,$(UBUILD)/init.map
+
+$(UBUILD)/%.c.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -include lua/kosmos/kosmos_lua.h -MMD -MP -c $< -o $@
+
+$(UBUILD)/%.S.o: %.S
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -MMD -MP -c $< -o $@
+
+# The Lua source init runs, and then init itself, both carried inside the
+# kernel image because there is no filesystem to load them from until M8.
+$(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bin2c.py $< init_lua $@
+
+$(UBUILD)/init.elf: $(USER_OBJS) user/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(ULDFLAGS) $(USER_OBJS) -o $@ $(LIBS)
+
+$(UBUILD)/init.bin: $(UBUILD)/init.elf
+	$(OBJCOPY) -O binary $< $@
+
+$(GEN)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bin2c.py $< init_image $@
 
 QEMU      := qemu-system-aarch64
 # gic-version=3 is not the default. Plain `-M virt` gives a GICv2, and this
@@ -228,6 +313,7 @@ size: $(TARGET)
 	$(SIZE) $(TARGET)
 
 clean:
-	rm -rf build
+	rm -rf build build-user
 
 -include $(DEPS)
+-include $(USER_DEPS)

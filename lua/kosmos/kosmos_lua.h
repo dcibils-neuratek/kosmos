@@ -60,6 +60,21 @@ long kosmos_lua_time(long *out);
 #define time(t)     kosmos_lua_time(t)
 
 /*
+ * `ltablib.c` randomises its quicksort pivot for arrays over a hundred
+ * elements, and builds the randomness out of `clock()` and `time()`. It is
+ * guarded, so it can be replaced rather than having `clock()` exist to
+ * satisfy it.
+ *
+ * That guard was found by the user build failing to link. It was already a
+ * latent panic in the kernel's copy: `clock()` there stops the machine, so
+ * sorting a table of more than a hundred elements would have taken the
+ * system down the first time anyone did it. A link error on one side found a
+ * run-time fault on the other, which is the argument for building the same
+ * code two ways.
+ */
+#define l_randomizePivot()  (kosmos_lua_seed())
+
+/*
  * There is one locale and it is C. Upstream reads localeconv()->decimal_point
  * on every number parsed; this makes it a constant the compiler folds away,
  * and means locale.h is never actually called into.

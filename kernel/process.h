@@ -26,15 +26,28 @@ struct thread;
 #define PROCESS_NAME_MAX    16
 
 /*
- * Where a process's own memory starts, and how it is laid out.
+ * Where a process's own memory sits. Has to agree with user/include/kosmos.h
+ * and user/user.ld; they are two halves of one contract.
  *
- * Code at the bottom of the user region, then a gap, then the stack. The gap
- * is not decoration: it means a stack that grows past its guard runs into
- * nothing rather than into the code that is running.
+ * The gaps between the regions are the point. A stack that grows past its
+ * end, or a heap that runs off its top, lands in unmapped space and faults
+ * rather than in whatever happened to be next.
  */
-#define USER_TEXT_VA    USER_VA_BASE
-#define USER_STACK_TOP  (USER_VA_BASE + 0x00100000UL)   /* 1 MB above */
-#define USER_STACK_PAGES 4
+#define USER_TEXT_VA     USER_VA_BASE                       /* 0x80000000 */
+#define USER_HEAP_VA     (USER_VA_BASE + 0x01000000UL)      /* 0x81000000 */
+#define USER_HEAP_PAGES  512                                /* 2 MB       */
+#define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* 0x82000000 */
+#define USER_STACK_PAGES 16                                 /* 64 KB      */
+
+/*
+ * The image header. Sixteen bytes at the front: a magic number, then how
+ * many bytes are read-only and executable. Without the second field the
+ * kernel could only map an image one way, and one way that works for both
+ * code and data is writable and executable, which is W^X thrown away for
+ * want of a number.
+ */
+#define USER_IMAGE_MAGIC  0x534f4d534f4bUL
+#define USER_IMAGE_HEADER 16
 
 struct process {
     bool              in_use;
@@ -44,10 +57,11 @@ struct process {
     struct addrspace *space;
     struct thread    *thread;
 
-    /* Physical pages backing the image and the stack, so they can be
-     * returned when the process dies. */
-    void             *text_pages;
-    size_t            text_page_count;
+    /* The physical pages behind each region, so they can be returned when
+     * the process dies. */
+    void             *image_pages;
+    size_t            image_page_count;
+    void             *heap_pages;
     void             *stack_pages;
 
     int               exit_code;
@@ -67,7 +81,7 @@ void process_init(void);
  * process gets its own copy so it can be given EL0 permissions without
  * handing them to anybody else.
  */
-struct process *process_create(const char *name, const void *code, size_t len);
+struct process *process_create(const char *name, const void *image, size_t len);
 
 /* The process the current thread belongs to, or NULL in a kernel thread. */
 struct process *process_current(void);

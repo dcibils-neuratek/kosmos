@@ -85,16 +85,37 @@ static void process_main(void *arg)
     current_process = p;
     as_switch(p->space);
 
-    enter_el0(USER_TEXT_VA, USER_STACK_TOP);
+    /* Past the header, which is data rather than code. */
+    enter_el0(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP);
 }
 
-struct process *process_create(const char *name, const void *code, size_t len)
+struct process *process_create(const char *name, const void *image, size_t len)
 {
     struct process *p = alloc_process();
+    const uint64_t *header = image;
     size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    size_t rx_bytes;
+    size_t rx_pages;
     size_t i;
 
     if (p == NULL || pages == 0) {
+        return NULL;
+    }
+
+    /*
+     * The header is checked rather than trusted, even though the only image
+     * that exists is built alongside the kernel. A loader that assumes its
+     * input is well formed is a loader that will be wrong exactly once, and
+     * at M8 the images come off a disk.
+     */
+    if (len < USER_IMAGE_HEADER || header[0] != USER_IMAGE_MAGIC) {
+        return NULL;
+    }
+
+    rx_bytes = (size_t)header[1];
+    rx_pages = rx_bytes / PAGE_SIZE;
+
+    if ((rx_bytes & PAGE_MASK) != 0 || rx_pages == 0 || rx_pages > pages) {
         return NULL;
     }
 
@@ -106,36 +127,54 @@ struct process *process_create(const char *name, const void *code, size_t len)
     }
 
     /*
-     * The code is copied rather than mapped where it already is. The image's
-     * own pages belong to the kernel, are mapped EL1-only, and are shared by
-     * every process; giving them EL0 permissions would give them to
-     * everything at once. A copy is the only way one process can execute it
-     * and another not.
+     * Copied rather than mapped where it sits. The image's pages inside the
+     * kernel are the kernel's: EL1-only, and shared by every process. Giving
+     * them EL0 permissions would give them to everything at once, and two
+     * processes from the same image would share their writable data.
      */
-    p->text_pages = pmm_alloc_contiguous(pages);
-    if (p->text_pages == NULL) {
+    p->image_pages = pmm_alloc_contiguous(pages);
+    if (p->image_pages == NULL) {
         as_destroy(p->space);
         return NULL;
     }
-    p->text_page_count = pages;
+    p->image_page_count = pages;
 
-    memcpy(p->text_pages, code, len);
+    memcpy(p->image_pages, image, len);
 
-    /* Zero the tail of the last page rather than leaving whatever the
-     * previous owner had there, which the process would be able to read. */
-    memset((char *)p->text_pages + len, 0, pages * PAGE_SIZE - len);
+    /* The tail of the last page holds whatever the previous owner left,
+     * which this process would otherwise be able to read. */
+    memset((char *)p->image_pages + len, 0, pages * PAGE_SIZE - len);
 
+    p->heap_pages = pmm_alloc_contiguous(USER_HEAP_PAGES);
     p->stack_pages = pmm_alloc_contiguous(USER_STACK_PAGES);
-    if (p->stack_pages == NULL) {
-        pmm_free_page(p->text_pages);
-        as_destroy(p->space);
-        return NULL;
+
+    if (p->heap_pages == NULL || p->stack_pages == NULL) {
+        goto fail;
     }
 
+    memset(p->heap_pages, 0, USER_HEAP_PAGES * PAGE_SIZE);
     memset(p->stack_pages, 0, USER_STACK_PAGES * PAGE_SIZE);
 
-    if (as_map(p->space, USER_TEXT_VA, (uintptr_t)p->text_pages, pages,
-               MAP_USER_RX) != AS_OK) {
+    /*
+     * Three mappings and three different sets of permissions. Code is read
+     * only and executable; everything else is writable and never executable.
+     * A page is executable by exactly one exception level and writable by at
+     * most one purpose.
+     */
+    if (as_map(p->space, USER_TEXT_VA, (uintptr_t)p->image_pages,
+               rx_pages, MAP_USER_RX) != AS_OK) {
+        goto fail;
+    }
+
+    if (pages > rx_pages
+        && as_map(p->space, USER_TEXT_VA + rx_bytes,
+                  (uintptr_t)p->image_pages + rx_bytes,
+                  pages - rx_pages, MAP_USER_RW) != AS_OK) {
+        goto fail;
+    }
+
+    if (as_map(p->space, USER_HEAP_VA, (uintptr_t)p->heap_pages,
+               USER_HEAP_PAGES, MAP_USER_RW) != AS_OK) {
         goto fail;
     }
 
@@ -164,11 +203,18 @@ struct process *process_create(const char *name, const void *code, size_t len)
     return p;
 
 fail:
-    for (i = 0; i < USER_STACK_PAGES; i++) {
-        pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
+    if (p->stack_pages != NULL) {
+        for (i = 0; i < USER_STACK_PAGES; i++) {
+            pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
+        }
+    }
+    if (p->heap_pages != NULL) {
+        for (i = 0; i < USER_HEAP_PAGES; i++) {
+            pmm_free_page((char *)p->heap_pages + i * PAGE_SIZE);
+        }
     }
     for (i = 0; i < pages; i++) {
-        pmm_free_page((char *)p->text_pages + i * PAGE_SIZE);
+        pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
     as_destroy(p->space);
     p->in_use = false;
@@ -201,15 +247,20 @@ void process_exit(struct process *p, int code)
         pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
     }
 
-    for (i = 0; i < p->text_page_count; i++) {
-        pmm_free_page((char *)p->text_pages + i * PAGE_SIZE);
+    for (i = 0; i < USER_HEAP_PAGES; i++) {
+        pmm_free_page((char *)p->heap_pages + i * PAGE_SIZE);
+    }
+
+    for (i = 0; i < p->image_page_count; i++) {
+        pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
 
     as_destroy(p->space);
 
     p->space = NULL;
     p->thread = NULL;
-    p->text_pages = NULL;
+    p->image_pages = NULL;
+    p->heap_pages = NULL;
     p->stack_pages = NULL;
 
     /*

@@ -113,20 +113,20 @@ void kmain(void)
     /* wfi rather than a busy loop: it parks the core until an interrupt
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
-    /* The first thing to run at EL0. */
+    /* init: the first Lua process, running at EL0 in its own address
+     * space, out of an image carried inside this one. */
     {
-        extern char user_hello_start[], user_hello_end[];
+        extern const unsigned char init_image[];
+        extern const unsigned long init_image_len;
         struct process *p;
 
-        p = process_create("hello", user_hello_start,
-                           (size_t)(user_hello_end - user_hello_start));
+        p = process_create("init", init_image, (size_t)init_image_len);
 
         if (p == NULL) {
-            kputs("could not create the first process\n");
+            kputs("could not create init\n");
         } else {
-            /* Let it run to completion before the REPL takes the console. */
             unsigned i;
-            for (i = 0; i < 64 && process_count() > 0; i++) {
+            for (i = 0; i < 4096 && !p->exited; i++) {
                 thread_yield();
             }
         }

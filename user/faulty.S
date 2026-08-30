@@ -16,9 +16,26 @@
 
 .section .user.text, "ax"
 
+/*
+ * The image header every process image carries: a magic number, then how
+ * many bytes are read-only and executable. These blobs are entirely code and
+ * fit in a page, so the answer is always one page.
+ *
+ * Real images get theirs from the linker script, which knows where rodata
+ * ends. A hand-written blob has to say it by hand, and saying it is better
+ * than the kernel having a second path that skips the check.
+ */
+.macro IMAGE_HEADER
+    .quad   0x534f4d534f4b
+    .quad   0x1000
+.endm
+
+
 /* Dereferences address zero. The classic, and M4's definition of done. */
+.balign 16
 .global user_fault_null_start
 user_fault_null_start:
+    IMAGE_HEADER
     mov     x0, xzr
     ldr     x1, [x0]
 
@@ -39,8 +56,10 @@ user_fault_null_end:
  * the isolation: the page is right there in this process's own tables and
  * still cannot be touched.
  */
+.balign 16
 .global user_fault_kernel_start
 user_fault_kernel_start:
+    IMAGE_HEADER
     movz    x0, #0x4008, lsl #16
     ldr     x1, [x0]
 
@@ -56,8 +75,10 @@ user_fault_kernel_end:
  * Mapped EL0 read-only and executable. A process that could rewrite its own
  * text could defeat anything the kernel checked about it beforehand.
  */
+.balign 16
 .global user_fault_text_start
 user_fault_text_start:
+    IMAGE_HEADER
     adr     x0, user_fault_text_start
     mov     x1, #0
     str     x1, [x0]
@@ -76,8 +97,10 @@ user_fault_text_end:
  * the syscall path does. This one is expected to live, and to exit 0 only if
  * it was refused.
  */
+.balign 16
 .global user_bad_pointer_start
 user_bad_pointer_start:
+    IMAGE_HEADER
     movz    x0, #0x4008, lsl #16    /* a kernel address */
     mov     x1, #16                 /* a plausible length */
     mov     x8, #SYS_WRITE
