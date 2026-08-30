@@ -8,9 +8,9 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
-**M3 — Microkernel.** Its definition of done is met, and two of its listed pieces are not built. See below.
+**M3 — Microkernel. Done.**
 
-**M2 — Lua in the kernel + second target**
+**M2 — Lua in the kernel + second target**, whose remaining half is the second target and is blocked on cables.
 
 Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU **and** on real hardware.
 
@@ -109,7 +109,7 @@ Two `lua_State`s, in two kernel threads, over the microkernel's own IPC.
 - [ ] `hal/pi1/` or `hal/pi5/` — **blocked on cables, and all that is left of M2**
 - [ ] Adjust the HAL interface with two real implementations in front of it
 
-## M3 — where it stands
+## M3 — done
 
 - [x] Threads with their context, and a context switch in assembly
 - [x] Round-robin scheduler with a per-CPU runqueue, behind a pluggable `struct scheduler`
@@ -117,19 +117,23 @@ Two `lua_State`s, in two kernel threads, over the microkernel's own IPC.
 - [x] A per-thread capability table, indexed, with generation numbers
 - [x] A separate exception stack, so a stack overflow is readable rather than a double fault
 - [x] **Definition of done: 100,000 round trips, cost per round trip printed and baselined**
-- [ ] Address spaces: create, destroy, map pages
+- [x] Address spaces: create, destroy, map pages
 - [x] Syscalls exposed as Lua functions, as `sys`
-- [ ] Preemption. The `tick` hook exists and nothing acts on it
+- [x] Preemption, in the vector's epilogue
 
-**What is missing and why it is missing.**
+**One thing is deliberately temporary.** Every address space contains the kernel, because there is no TTBR1 split yet: the kernel is identity mapped through TTBR0 like everything else, so a space without it would fault on the instruction after the switch. A new space copies the kernel's top level and shares the tables below it, which is why user mappings are confined to virtual addresses at or above 2 GB and anything lower is refused rather than allowed to quietly edit the kernel's own map.
 
-*Address spaces* only earn their keep at M4, when there is something to run at EL0. Building them now means designing against a user of them that does not exist.
-
-*Preemption* needs the context switch to happen in the vector's epilogue rather than in C, because switching from inside a handler means the incoming thread's exception stack has to carry the frame its own interrupt built. Every thread already owns both of its stacks, which was the expensive part to retrofit; what remains is assembly in `vectors.S` and a policy that returns true from `tick`.
+At M4 that is replaced by the real arrangement: the kernel in TTBR1 at the top, TTBR0 belonging entirely to the process, and a space containing no kernel at all.
 
 ## Concrete next step
 
-Any of the three above, or M2's second target when a cable arrives.
+**M4, or M2's second target when a cable arrives.**
+
+M4 is the milestone `roadmap.md` calls the hardest in the project, and the one where the design gets tested: one `lua_State` per process with a bounded heap, the process running at EL0, syscall bindings validating capabilities, the Lua table serialiser for IPC, and Lua out of the kernel entirely.
+
+Two things from M3 are the ground it stands on and are already correct: every thread owns both of its stacks, and `struct context` saves `SPSel` and `DAIF`, which is what makes a switch work from either thread context or an exception epilogue.
+
+Two things will have to change rather than extend. The kernel has to move to TTBR1 so a process's address space contains no kernel. And `sys` becomes real syscalls across a privilege boundary, with the inspection half of it destined for `/proc` at M5.
 
 **M2 cannot be closed without a cable**, and its remaining half is the point of the milestone: the HAL takes its real shape once there are two implementations to compare, and `hal.md` is explicit that writing that interface against one target produces the shape of QEMU wearing generic names. Nothing is gained by guessing at it now.
 
@@ -154,6 +158,12 @@ Decisions that came out of writing code go here. Format: date, what was decided,
 Design decisions (as opposed to implementation ones) go in the decision log in `README.md` and are propagated to `design.md` and `roadmap.md` in the same session.
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
+
+**2026-08-30 — Preemption switches in the vector's epilogue, never in C.** A context switch moves `SP_EL1`, and everything after the switch reads the frame at `sp`, so that frame has to belong to the thread about to be resumed. Splitting the decision (`thread_tick`, in the handler, asking the policy) from the act (`thread_preempt_if_needed`, in the epilogue) is what lets the decision stay a C function the policy owns.
+
+**A consequence that cost an instruction abort at an address that was never code:** `context_switch` had assumed `SPSel` was 0. True for a thread that yields, false for one arriving from the epilogue where taking the exception already set it to 1. `SPSel` is now part of the saved context.
+
+**2026-08-30 — Every address space contains the kernel, and that is temporary.** There is no TTBR1 split, so a space without the kernel would fault on the instruction after the switch. A space copies the kernel's top level and shares the tables below, so user mappings are confined to 2 GB and above and anything lower is refused. M4 replaces this with the kernel in TTBR1.
 
 **2026-08-30 — `sys` is a preview of the interface, not the interface.** At M4 these become real syscalls across a privilege boundary, and at M5 the inspection half disappears into `/proc`, read through the namespace protocol like every other resource. `design.md` §9.5 is emphatic that there must not be a second way to reach it, so `sys.threads` and `sys.memory` are scheduled for deletion rather than for extension.
 
@@ -213,8 +223,8 @@ Found the hard way: the first `setjmp` panicked with EC 0x07, whose name ("unhan
 | 0 | Boot under QEMU | **done** |
 | 1 | MMU, exceptions, timer | **done** |
 | 2 | Lua in the kernel + second target | **in progress** |
-| 3 | Microkernel | |
-| 4 | Lua to userspace | |
+| 3 | Microkernel | **done** |
+| 4 | Lua to userspace | next |
 | 5 | Namespaces and servers | |
 | 6 | Graphics and app server | |
 | 7 | Attributes, live queries, replicants | |

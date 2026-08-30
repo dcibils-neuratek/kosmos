@@ -633,6 +633,182 @@ static bool test_thread_stacks_have_guard_pages(void)
 }
 
 /*
+ * M3: address spaces.
+ */
+extern char __text_start[];
+
+static bool test_a_new_space_contains_the_kernel(void)
+{
+    /*
+     * There is no TTBR1 split yet, so the kernel is identity mapped through
+     * TTBR0 like everything else. A space that did not contain it would
+     * fault on the instruction after the switch, and the handler would have
+     * no translation either. This checks the copy happened before anything
+     * relies on it.
+     */
+    struct addrspace *as = as_create();
+    uint64_t *there;
+    uint64_t *here;
+    bool ok;
+
+    if (as == NULL) {
+        return false;
+    }
+
+    there = as_page_entry(as, (uintptr_t)__text_start);
+    here  = mmu_page_entry((uintptr_t)__text_start);
+
+    /* The same descriptor, because the tables below the top level are
+     * shared rather than copied. */
+    ok = there != NULL && here != NULL && *there == *here;
+
+    as_destroy(as);
+    return ok;
+}
+
+static bool test_a_space_maps_and_unmaps(void)
+{
+    struct addrspace *as = as_create();
+    void *page;
+    uint64_t *entry;
+    bool ok;
+
+    if (as == NULL) {
+        return false;
+    }
+
+    page = pmm_alloc_page();
+    if (page == NULL) {
+        as_destroy(as);
+        return false;
+    }
+
+    ok = as_map(as, USER_VA_BASE, (uintptr_t)page, 1, MAP_RW) == AS_OK;
+
+    entry = as_page_entry(as, USER_VA_BASE);
+    ok = ok && entry != NULL
+            && (*entry & 1) != 0
+            && (*entry & DESC_ADDR_MASK) == (uintptr_t)page;
+
+    /* And the kernel's own map is untouched: this is a different space. */
+    ok = ok && mmu_page_entry(USER_VA_BASE) == NULL;
+
+    ok = ok && as_unmap(as, USER_VA_BASE, 1) == AS_OK;
+    entry = as_page_entry(as, USER_VA_BASE);
+    ok = ok && entry != NULL && (*entry & 1) == 0;
+
+    pmm_free_page(page);
+    as_destroy(as);
+    return ok;
+}
+
+static bool test_a_space_refuses_the_kernel_region(void)
+{
+    /*
+     * The check that makes the sharing safe. Below USER_VA_BASE a space
+     * resolves through tables it shares with the kernel, so a mapping there
+     * would appear in the kernel's own map and in every other space, and it
+     * would look like it had worked.
+     */
+    struct addrspace *as = as_create();
+    bool ok;
+
+    if (as == NULL) {
+        return false;
+    }
+
+    ok = as_map(as, 0x40000000UL, 0x40000000UL, 1, MAP_RW) == AS_ERR_RANGE
+      && as_map(as, 0x09000000UL, 0x09000000UL, 1, MAP_RW) == AS_ERR_RANGE
+      && as_map(as, USER_VA_BASE + 1, 0x40000000UL, 1, MAP_RW) == AS_ERR_ALIGN
+      && as_map(as, USER_VA_END, 0x40000000UL, 1, MAP_RW) == AS_ERR_RANGE;
+
+    as_destroy(as);
+    return ok;
+}
+
+static bool test_switching_to_a_space_makes_its_mapping_real(void)
+{
+    /*
+     * The test that proves the rest is not bookkeeping: switch to the space,
+     * write through the mapped address, switch back, and read the value
+     * through the identity map. Same physical page, two virtual addresses,
+     * and only one of them exists at a time.
+     */
+    struct addrspace *as = as_create();
+    volatile uint64_t *physical;
+    volatile uint64_t *mapped = (volatile uint64_t *)USER_VA_BASE;
+    void *page;
+    struct fault_info f;
+    bool ok;
+
+    if (as == NULL) {
+        return false;
+    }
+
+    page = pmm_alloc_page();
+    if (page == NULL) {
+        as_destroy(as);
+        return false;
+    }
+
+    physical = page;
+    *physical = 0;
+
+    if (as_map(as, USER_VA_BASE, (uintptr_t)page, 1, MAP_RW) != AS_OK) {
+        pmm_free_page(page);
+        as_destroy(as);
+        return false;
+    }
+
+    as_switch(as);
+    *mapped = 0xfeedfacecafebeefULL;
+    as_switch(NULL);
+
+    ok = *physical == 0xfeedfacecafebeefULL;
+
+    /* And back in the kernel's space that address has no translation. */
+    fault_expect_begin();
+    store_to(USER_VA_BASE, 1);
+    ok = ok && fault_expect_end(&f)
+            && is_translation_fault((unsigned)ESR_ISS(f.esr))
+            && f.far == USER_VA_BASE;
+
+    pmm_free_page(page);
+    as_destroy(as);
+    return ok;
+}
+
+static bool test_destroying_a_space_returns_its_pages(void)
+{
+    /*
+     * A space that leaked its tables would be invisible until something ran
+     * out of memory a long way away. Mapping across two level 2 boundaries
+     * makes it allocate several tables rather than one.
+     */
+    size_t before = pmm_free_pages();
+    struct addrspace *as = as_create();
+
+    if (as == NULL) {
+        return false;
+    }
+
+    if (as_map(as, USER_VA_BASE, 0x40000000UL, 1, MAP_RW) != AS_OK
+        || as_map(as, USER_VA_BASE + 0x200000UL, 0x40000000UL, 1, MAP_RW) != AS_OK
+        || as_map(as, USER_VA_BASE + 0x40000000UL, 0x40000000UL, 1, MAP_RW) != AS_OK) {
+        as_destroy(as);
+        return false;
+    }
+
+    if (pmm_free_pages() >= before) {
+        return false;   /* it allocated nothing, so there is nothing to test */
+    }
+
+    as_destroy(as);
+
+    return pmm_free_pages() == before;
+}
+
+/*
  * M3: preemption.
  */
 
@@ -1832,19 +2008,40 @@ static bool test_timer_period_matches_the_rate(void)
      * observed while still catching the bug this exists for, which was a
      * 27 percent drift.
      */
-    uint64_t expected = (cntfrq() / TICK_HZ) * 20;
-    uint64_t tolerance = expected / 10;
-    unsigned long start;
-    uint64_t t0, elapsed;
+    unsigned long k0;
+    unsigned long k1;
+    uint64_t t0;
+    uint64_t elapsed;
+    uint64_t expected;
+    uint64_t tolerance;
 
     /* Start on a tick boundary so the first period is a whole one. */
-    start = hal_ticks();
-    while (hal_ticks() == start) { }
+    k0 = hal_ticks();
+    while (hal_ticks() == k0) { }
 
+    k0 = hal_ticks();
     t0 = cntpct();
-    start = hal_ticks();
-    while (hal_ticks() - start < 20) { }
+
+    while (hal_ticks() - k0 < 100) { }
+
     elapsed = cntpct() - t0;
+    k1 = hal_ticks();
+
+    if (k1 <= k0) {
+        return false;
+    }
+
+    /*
+     * Divided by the ticks that actually elapsed rather than by the number
+     * this loop was waiting for. Since preemption arrived, the measuring
+     * thread can be taken off the CPU inside that loop and notice the last
+     * tick up to a whole quantum late, which on a short window is a large
+     * error in a measurement that is supposed to be about the timer.
+     * Sampling both ends together removes the observation error rather than
+     * budgeting for it.
+     */
+    expected  = (cntfrq() / TICK_HZ) * (k1 - k0);
+    tolerance = expected / 10;
 
     return elapsed > expected - tolerance
         && elapsed < expected + tolerance;
@@ -2073,6 +2270,11 @@ static const struct test tests[] = {
     { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },
     { "thread: stacks have guard pages",       test_thread_stacks_have_guard_pages },
+    { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
+    { "as: map and unmap",                     test_a_space_maps_and_unmaps },
+    { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "as: switching makes a mapping real",    test_switching_to_a_space_makes_its_mapping_real },
+    { "as: destroy returns its pages",         test_destroying_a_space_returns_its_pages },
     { "sched: a spinning thread is preempted", test_a_thread_that_never_yields_is_preempted },
     { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
     { "ipc: call and reply",                   test_ipc_call_and_reply },

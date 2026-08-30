@@ -37,7 +37,7 @@ extern char __exception_guard[];
 #define DEVICE_BASE     0x08000000UL
 #define DEVICE_END      0x40000000UL
 
-static uint64_t *l1_table;
+static uint64_t *kernel_l1;
 
 static uint64_t *alloc_table(void)
 {
@@ -115,12 +115,13 @@ static uint64_t *descend(uint64_t *table, unsigned index)
     return (uint64_t *)(uintptr_t)(table[index] & DESC_ADDR_MASK);
 }
 
-static void map_pages(uintptr_t va, uintptr_t pa, size_t count, uint64_t attrs)
+static void map_pages(uint64_t *root, uintptr_t va, uintptr_t pa, size_t count,
+                      uint64_t attrs)
 {
     size_t i;
 
     for (i = 0; i < count; i++) {
-        uint64_t *l2 = descend(l1_table, (unsigned)L1_INDEX(va));
+        uint64_t *l2 = descend(root, (unsigned)L1_INDEX(va));
         uint64_t *l3 = descend(l2, (unsigned)L2_INDEX(va));
 
         l3[L3_INDEX(va)] = (pa & DESC_ADDR_MASK) | attrs | DESC_PAGE;
@@ -130,13 +131,13 @@ static void map_pages(uintptr_t va, uintptr_t pa, size_t count, uint64_t attrs)
     }
 }
 
-static void map_blocks_2m(uintptr_t va, uintptr_t pa, size_t count,
-                          uint64_t attrs)
+static void map_blocks_2m(uint64_t *root, uintptr_t va, uintptr_t pa,
+                          size_t count, uint64_t attrs)
 {
     size_t i;
 
     for (i = 0; i < count; i++) {
-        uint64_t *l2 = descend(l1_table, (unsigned)L1_INDEX(va));
+        uint64_t *l2 = descend(root, (unsigned)L1_INDEX(va));
 
         l2[L2_INDEX(va)] = (pa & DESC_ADDR_MASK) | attrs | DESC_BLOCK;
 
@@ -145,15 +146,15 @@ static void map_blocks_2m(uintptr_t va, uintptr_t pa, size_t count,
     }
 }
 
-uint64_t *mmu_page_entry(uintptr_t va)
+static uint64_t *page_entry(uint64_t *root, uintptr_t va)
 {
     uint64_t *l2;
     uint64_t *l3;
 
-    if ((l1_table[L1_INDEX(va)] & 3) != DESC_TABLE) {
+    if ((root[L1_INDEX(va)] & 3) != DESC_TABLE) {
         return NULL;
     }
-    l2 = (uint64_t *)(uintptr_t)(l1_table[L1_INDEX(va)] & DESC_ADDR_MASK);
+    l2 = (uint64_t *)(uintptr_t)(root[L1_INDEX(va)] & DESC_ADDR_MASK);
 
     if ((l2[L2_INDEX(va)] & 3) != DESC_TABLE) {
         return NULL;    /* a 2 MB block, or nothing at all */
@@ -163,27 +164,42 @@ uint64_t *mmu_page_entry(uintptr_t va)
     return &l3[L3_INDEX(va)];
 }
 
-void mmu_unmap_page(uintptr_t va)
+uint64_t *mmu_page_entry(uintptr_t va)
 {
-    /* descend rather than mmu_page_entry, because this is the caller that
-     * has to work on an address currently covered by a block: that is
-     * exactly what a guard page inside a freshly allocated stack is. */
-    uint64_t *l2 = descend(l1_table, (unsigned)L1_INDEX(va));
-    uint64_t *l3 = descend(l2, (unsigned)L2_INDEX(va));
+    return page_entry(kernel_l1, va);
+}
 
-    l3[L3_INDEX(va)] = DESC_INVALID;
-
+/* Invalidates one page's translation everywhere it might be cached. */
+static void invalidate(uintptr_t va)
+{
     /*
-     * Invalidating by address rather than the whole TLB. `tlbi vaae1is`
-     * takes bits 55:12 of the address, which is why it is shifted. The `is`
-     * suffix broadcasts to the inner shareable domain, which costs nothing
-     * today with one core and is what SMP at M6 needs.
+     * `tlbi vaae1is` takes bits 55:12 of the address, which is why it is
+     * shifted. The `is` suffix broadcasts to the inner shareable domain,
+     * which costs nothing today with one core and is what SMP at M6 needs.
      */
     __asm__ volatile("dsb ishst" ::: "memory");
     __asm__ volatile("tlbi vaae1is, %0" : : "r"(va >> 12) : "memory");
     __asm__ volatile("dsb ish" ::: "memory");
     __asm__ volatile("isb" ::: "memory");
 }
+
+static void unmap_page(uint64_t *root, uintptr_t va)
+{
+    /* descend rather than page_entry, because this is the caller that has to
+     * work on an address currently covered by a block: that is exactly what
+     * a guard page inside a freshly allocated stack is. */
+    uint64_t *l2 = descend(root, (unsigned)L1_INDEX(va));
+    uint64_t *l3 = descend(l2, (unsigned)L2_INDEX(va));
+
+    l3[L3_INDEX(va)] = DESC_INVALID;
+    invalidate(va);
+}
+
+void mmu_unmap_page(uintptr_t va)
+{
+    unmap_page(kernel_l1, va);
+}
+
 
 static void enable(void)
 {
@@ -227,7 +243,7 @@ static void enable(void)
         "msr mair_el1, %0\n"
         "msr tcr_el1,  %1\n"
         "msr ttbr0_el1, %2\n"
-        : : "r"(mair), "r"(tcr), "r"((uint64_t)(uintptr_t)l1_table)
+        : : "r"(mair), "r"(tcr), "r"((uint64_t)(uintptr_t)kernel_l1)
         : "memory");
 
     /*
@@ -269,11 +285,11 @@ void mmu_init(void)
 
     hal_ram_range(&ram);
 
-    l1_table = alloc_table();
+    kernel_l1 = alloc_table();
 
     /* Devices, as 2 MB blocks. Nothing here is ever executed and nothing
      * here is cached. */
-    map_blocks_2m(DEVICE_BASE, DEVICE_BASE,
+    map_blocks_2m(kernel_l1, DEVICE_BASE, DEVICE_BASE,
                   (DEVICE_END - DEVICE_BASE) / BLOCK_2M, MAP_DEVICE);
 
     /*
@@ -282,12 +298,12 @@ void mmu_init(void)
      * section permissions and an unmapped guard page both need granularity
      * finer than a block.
      */
-    map_pages(ram.base, ram.base, BLOCK_2M / PAGE_SIZE, MAP_RW);
+    map_pages(kernel_l1, ram.base, ram.base, BLOCK_2M / PAGE_SIZE, MAP_RW);
 
     /* Everything above it is anonymous memory and gets blocks, which is 255
      * descriptors instead of 130,000 and 255 TLB entries instead of the
      * same. */
-    map_blocks_2m(ram.base + BLOCK_2M, ram.base + BLOCK_2M,
+    map_blocks_2m(kernel_l1, ram.base + BLOCK_2M, ram.base + BLOCK_2M,
                   (ram.size - BLOCK_2M) / BLOCK_2M, MAP_RW);
 
     /*
@@ -296,21 +312,21 @@ void mmu_init(void)
      * decides what is mapped and a separate one that decides what may be
      * done with it.
      */
-    map_pages(text_start, text_start,
+    map_pages(kernel_l1, text_start, text_start,
               ((uintptr_t)__text_end - text_start) / PAGE_SIZE, MAP_TEXT);
-    map_pages(rodata_start, rodata_start,
+    map_pages(kernel_l1, rodata_start, rodata_start,
               ((uintptr_t)__rodata_end - rodata_start) / PAGE_SIZE, MAP_RO);
 
     /* And punch out both stack guards. One below the kernel's stack, one
      * below the exception stack: a handler that overflows has to fault
      * rather than walk into whatever is underneath it. */
-    guard = mmu_page_entry((uintptr_t)__stack_guard);
+    guard = page_entry(kernel_l1, (uintptr_t)__stack_guard);
     if (guard == NULL) {
         panic("mmu: the stack guard is not page mapped");
     }
     *guard = DESC_INVALID;
 
-    guard = mmu_page_entry((uintptr_t)__exception_guard);
+    guard = page_entry(kernel_l1, (uintptr_t)__exception_guard);
     if (guard == NULL) {
         panic("mmu: the exception stack guard is not page mapped");
     }
@@ -324,4 +340,174 @@ bool mmu_is_enabled(void)
     uint64_t sctlr;
     __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
     return (sctlr & 1) != 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Address spaces                                                      */
+/* ------------------------------------------------------------------ */
+
+#define ADDRSPACE_MAX   16
+
+struct addrspace {
+    uint64_t *root;
+    bool      in_use;
+};
+
+/* A fixed pool, like everything else in the kernel. Running out is a NULL
+ * from as_create rather than a table that grows. */
+static struct addrspace spaces[ADDRSPACE_MAX];
+
+struct addrspace *as_create(void)
+{
+    unsigned i;
+
+    for (i = 0; i < ADDRSPACE_MAX; i++) {
+        if (spaces[i].in_use) {
+            continue;
+        }
+
+        spaces[i].root = pmm_alloc_page();
+        if (spaces[i].root == NULL) {
+            return NULL;
+        }
+
+        /*
+         * A copy of the kernel's top level, so the kernel is mapped here
+         * too. Without it the instruction after as_switch would have no
+         * translation, and the fault handler would have none either.
+         *
+         * The copy shares every table below it. That is what confines user
+         * mappings to slots the kernel does not use: writing into one it
+         * does would edit the kernel's own map, in every space at once.
+         */
+        for (unsigned e = 0; e < ENTRIES_PER_TABLE; e++) {
+            spaces[i].root[e] = kernel_l1[e];
+        }
+
+        spaces[i].in_use = true;
+        return &spaces[i];
+    }
+
+    return NULL;
+}
+
+static bool user_range(uintptr_t va, size_t pages)
+{
+    uintptr_t end = va + pages * PAGE_SIZE;
+
+    return va >= USER_VA_BASE && end > va && end <= USER_VA_END;
+}
+
+int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
+           uint64_t attrs)
+{
+    size_t i;
+
+    if ((va & PAGE_MASK) != 0 || (pa & PAGE_MASK) != 0) {
+        return AS_ERR_ALIGN;
+    }
+
+    if (!user_range(va, pages)) {
+        /*
+         * Refused rather than allowed to work. An address below
+         * USER_VA_BASE resolves through a table this space shares with the
+         * kernel, so the mapping would appear in every space and in the
+         * kernel's own, which is the opposite of what an address space is
+         * for. It would also look like it worked.
+         */
+        return AS_ERR_RANGE;
+    }
+
+    for (i = 0; i < pages; i++) {
+        uint64_t *l2 = descend(as->root, (unsigned)L1_INDEX(va));
+        uint64_t *l3 = descend(l2, (unsigned)L2_INDEX(va));
+
+        l3[L3_INDEX(va)] = (pa & DESC_ADDR_MASK) | attrs | DESC_PAGE;
+        invalidate(va);
+
+        va += PAGE_SIZE;
+        pa += PAGE_SIZE;
+    }
+
+    return AS_OK;
+}
+
+int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
+{
+    size_t i;
+
+    if ((va & PAGE_MASK) != 0) {
+        return AS_ERR_ALIGN;
+    }
+
+    if (!user_range(va, pages)) {
+        return AS_ERR_RANGE;
+    }
+
+    for (i = 0; i < pages; i++) {
+        unmap_page(as->root, va);
+        va += PAGE_SIZE;
+    }
+
+    return AS_OK;
+}
+
+uint64_t *as_page_entry(struct addrspace *as, uintptr_t va)
+{
+    return page_entry(as->root, va);
+}
+
+void as_switch(struct addrspace *as)
+{
+    uint64_t root = (uint64_t)(uintptr_t)((as != NULL) ? as->root : kernel_l1);
+
+    __asm__ volatile("msr ttbr0_el1, %0" : : "r"(root) : "memory");
+    __asm__ volatile("isb" ::: "memory");
+
+    /*
+     * The whole TLB, because there are no ASIDs yet: every entry in it
+     * belongs to the space being left. Tagging spaces with an ASID is what
+     * makes a switch cheap, and it is worth doing when there are processes
+     * switching often, which is M4.
+     */
+    __asm__ volatile("tlbi vmalle1" ::: "memory");
+    __asm__ volatile("dsb nsh" ::: "memory");
+    __asm__ volatile("isb" ::: "memory");
+}
+
+void as_destroy(struct addrspace *as)
+{
+    unsigned l1i;
+
+    if (as == NULL || !as->in_use) {
+        return;
+    }
+
+    /*
+     * Only the slots this space owns. Everything below USER_VA_BASE is the
+     * kernel's, borrowed rather than copied, and freeing it would hand the
+     * kernel's own page tables back to the allocator.
+     */
+    for (l1i = (unsigned)L1_INDEX(USER_VA_BASE); l1i < ENTRIES_PER_TABLE; l1i++) {
+        uint64_t *l2;
+        unsigned l2i;
+
+        if ((as->root[l1i] & 3) != DESC_TABLE) {
+            continue;
+        }
+
+        l2 = (uint64_t *)(uintptr_t)(as->root[l1i] & DESC_ADDR_MASK);
+
+        for (l2i = 0; l2i < ENTRIES_PER_TABLE; l2i++) {
+            if ((l2[l2i] & 3) == DESC_TABLE) {
+                pmm_free_page((void *)(uintptr_t)(l2[l2i] & DESC_ADDR_MASK));
+            }
+        }
+
+        pmm_free_page(l2);
+    }
+
+    pmm_free_page(as->root);
+    as->root = NULL;
+    as->in_use = false;
 }

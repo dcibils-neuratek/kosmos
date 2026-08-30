@@ -82,4 +82,68 @@ void mmu_unmap_page(uintptr_t va);
  * not described by a page-granular mapping. For tests and inspection. */
 uint64_t *mmu_page_entry(uintptr_t va);
 
+/*
+ * Address spaces.
+ *
+ * A space is a page table root and the mappings hanging off it. Creating
+ * one, adding pages to it, and switching to it is what a process will be
+ * built out of at M4; until there is something to run at EL0 it is a
+ * mechanism with tests and no users, which is the honest state to leave it
+ * in rather than pretending otherwise.
+ *
+ * **Every space contains the kernel.** There is no TTBR1 split yet: the
+ * kernel is identity mapped through TTBR0 like everything else, so a space
+ * that did not contain it would fault on the instruction after the switch.
+ * A new space therefore starts as a copy of the kernel's top level and adds
+ * to it.
+ *
+ * That copy shares the levels below it, which is why user mappings are
+ * confined to their own region: writing into a range the kernel already
+ * describes would edit the kernel's map through the shared table, in every
+ * space at once. The split is enforced rather than documented.
+ *
+ * At M4 this is replaced by the real arrangement, where the kernel lives in
+ * TTBR1 at the top of the address space and TTBR0 belongs entirely to the
+ * process. Then a space contains no kernel at all, which is the point.
+ */
+
+/*
+ * Where a space may map things: level 1 slot 2 upwards. The kernel occupies
+ * slots 0 and 1, being devices below 1 GB and RAM from 1 to 2 GB.
+ */
+#define USER_VA_BASE    0x80000000UL
+#define USER_VA_END     (512UL * 1024 * 1024 * 1024)    /* a 39-bit VA */
+
+struct addrspace;
+
+/* A new space containing the kernel and nothing else. NULL when the pool is
+ * full or there are no pages for the table. */
+struct addrspace *as_create(void);
+
+/* Frees the space and every table it allocated. Not the kernel's, which it
+ * only borrowed. Switching to a destroyed space is not detected, so do not. */
+void as_destroy(struct addrspace *as);
+
+/* Maps `pages` pages. Fails on a virtual address outside the user region,
+ * on a misaligned address, or when there are no pages for the tables. */
+int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
+           uint64_t attrs);
+
+/* Removes a mapping. The pages themselves are not freed: the space did not
+ * allocate them and does not know who did. */
+int as_unmap(struct addrspace *as, uintptr_t va, size_t pages);
+
+/* Makes this space the one TTBR0 describes. Passing NULL restores the
+ * kernel's. */
+void as_switch(struct addrspace *as);
+
+/* The level 3 descriptor for an address in this space, or NULL. For tests
+ * and inspection. */
+uint64_t *as_page_entry(struct addrspace *as, uintptr_t va);
+
+#define AS_OK           0
+#define AS_ERR_RANGE   (-1)     /* outside the user region */
+#define AS_ERR_ALIGN   (-2)     /* not page aligned */
+#define AS_ERR_NOMEM   (-3)
+
 #endif /* ARCH_AARCH64_MMU_H */
