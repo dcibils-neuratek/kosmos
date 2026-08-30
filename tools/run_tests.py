@@ -23,8 +23,10 @@ Usage: run_tests.py <image.elf> [--timeout SECONDS]
 
 import argparse
 import re
+import select
 import subprocess
 import sys
+import time
 
 QEMU = "qemu-system-aarch64"
 
@@ -40,6 +42,11 @@ QEMU_ARGS = [
 ]
 
 BANNER = "Kosmos"
+
+# What the kernel prints when it takes an exception it cannot recover from.
+# Seeing it means the run is over: the kernel halts, and waiting out the
+# timeout would only delay a result that is already known.
+PANIC = "PANIC:"
 
 PLAN_RE = re.compile(r"^1\.\.(\d+)\s*$")
 RESULT_RE = re.compile(r"^(not ok|ok)\s+(\d+)\s*-\s*(.*?)\s*$")
@@ -62,31 +69,76 @@ def fail(message):
 
 
 def run_qemu(image, timeout):
-    """Boot the image and return (stdout, exit_code)."""
+    """Boot the image and return (output, exit_code).
+
+    Read line by line rather than waiting for the process, so a kernel panic
+    ends the run immediately instead of burning the whole timeout. The kernel
+    halts after printing its dump, so without this every panic costs the full
+    wait and the output arrives long after it was useful.
+    """
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [QEMU, *QEMU_ARGS, "-kernel", image],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
-            timeout=timeout,
+            bufsize=1,
         )
     except FileNotFoundError:
         raise Failure(f"{QEMU} not found. See docs/setup.md.")
-    except subprocess.TimeoutExpired as e:
-        # The guest hung. Whatever it managed to print before that is the
-        # most useful thing on the screen, so it gets shown rather than
-        # swallowed.
-        partial = e.stdout or ""
-        if isinstance(partial, bytes):
-            partial = partial.decode(errors="replace")
-        sys.stdout.write(partial)
+
+    lines = []
+    panicked = False
+    deadline = time.monotonic() + timeout
+
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                sys.stdout.write("".join(lines))
+                raise Failure(
+                    f"the guest did not exit within {timeout}s.\n"
+                    "Either a test hung or semihosting never fired. There is "
+                    "no watchdog inside the guest until the timer lands at M1."
+                )
+
+            ready, _, _ = select.select([proc.stdout], [], [], remaining)
+            if not ready:
+                continue
+
+            line = proc.stdout.readline()
+            if line == "":
+                break                       # QEMU closed the pipe: it exited
+
+            lines.append(line)
+
+            if line.startswith(PANIC):
+                panicked = True
+                # Let the rest of the dump arrive; it is the useful part.
+                for _ in range(16):
+                    r, _, _ = select.select([proc.stdout], [], [], 0.5)
+                    if not r:
+                        break
+                    more = proc.stdout.readline()
+                    if more == "":
+                        break
+                    lines.append(more)
+                break
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+
+    output = "".join(lines)
+
+    if panicked:
+        sys.stdout.write(output)
         raise Failure(
-            f"the guest did not exit within {timeout}s.\n"
-            "Either a test hung or semihosting never fired. There is no "
-            "watchdog inside the guest until the timer lands at M1."
+            "the kernel panicked. The dump above says which instruction "
+            "faulted (elr) and on what address (far)."
         )
 
-    return proc.stdout, proc.returncode
+    return output, proc.returncode
 
 
 def parse_tap(output):
