@@ -35,7 +35,7 @@ Get a character out to the console. It sounds trivial and it is the step that st
 **What gets built**
 
 - Linker script: where `.text` starts, where `.bss` goes, where the stack goes
-- `boot/start.S`: check the core ID and park anything that is not core 0, drop from EL2 to EL1, set up the stack, zero `.bss`, jump to C
+- `boot/start.S`: check the core ID and park anything that is not core 0, read `CurrentEL` and drop to EL1 if it is higher, set up the stack, zero `.bss`, jump to C
 - `hal/qemu-virt/uart.c`: PL011, four registers
 - `kernel/main.c`: a `puts` and a `while(1)`
 - Makefile with `make qemu`, `make debug`, `make test`
@@ -43,7 +43,7 @@ Get a character out to the console. It sounds trivial and it is the step that st
 
 **Definition of done:** `make qemu` prints "Kosmos" in the terminal, and `make test` exits 0.
 
-**Traps:** a misaligned linker script makes `.bss` collide with the stack. QEMU `virt` starts at EL2 by default, not EL1. The secondary cores start too, and if you do not park them you will see the output four times.
+**Traps:** a misaligned linker script makes `.bss` collide with the stack. The entry exception level is not fixed: plain `-M virt` starts at EL1, `virtualization=on` at EL2, `secure=on` at EL3, and the Pi firmware hands off at EL2 — read `CurrentEL` rather than assuming either way. On hardware every core starts, and if you do not park the secondaries you see the output four times interleaved (under QEMU this only shows up with `-smp 4`, since the default is one core). And `sp` at reset is 0, so a C function called before the stack is set faults in its own prologue and hangs with no output whatsoever.
 
 ---
 

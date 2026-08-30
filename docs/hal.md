@@ -39,7 +39,15 @@ An abstraction written against a single target is always the shape of that targe
 
 Where everything gets written. PL011, GICv3 and virtio: standard, documented, and with the serial console going straight to your terminal.
 
-Detail: **it starts at EL2, not EL1.** You have to drop down explicitly.
+Detail: **which exception level you get depends on the options, so read `CurrentEL` instead of assuming.** Measured against QEMU 9.1.2:
+
+| Machine | Entry level |
+|---|---|
+| `-M virt` | EL1 |
+| `-M virt,virtualization=on` | EL2 |
+| `-M virt,secure=on` | EL3 |
+
+The plain `-M virt` this project develops against lands at EL1, so the drop is not exercised there. Real hardware is the case that needs it: the Pi firmware hands off at EL2. `boot/start.S` handles both and parks on anything else, and `virtualization=on` is the way to exercise the EL2 path under QEMU.
 
 The secondary cores start too. If you do not park them by checking the core ID in the entry code, you will see the output four times and not understand why.
 

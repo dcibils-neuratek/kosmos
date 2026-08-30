@@ -20,22 +20,27 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Working
 
-Nothing runs yet. What is verified is the ground under it:
+**`make qemu` prints "Kosmos".** Half of M0's definition of done; the other half is `make test` exiting 0, which needs the harness.
 
-- Toolchain and QEMU installed and exercised end to end
-- A throwaway freestanding image built with the mandatory flags, loaded at `0x40080000`, printing a character over the PL011 at `0x09000000` under QEMU `virt`
-- Repository structure, with `README.md` and `CLAUDE.md` at the root
+Verified, not assumed:
+
+- Clean build, no warnings, with the full mandatory flag set including `-mgeneral-regs-only`
+- The three boot paths exercised: `-M virt` (enters at EL1), `-M virt,virtualization=on` (enters at EL2 and takes the drop), and `-smp 4` (one "Kosmos", so the secondary cores really do park)
+- `HCR_EL2`, `SCTLR_EL1` and `SPSR_EL2` checked against the disassembly rather than against the source
+- `dmb oshst` present before every MMIO store, confirmed in the disassembly
+
+Image: 420 bytes of text, 16 KB of .bss (all of it the boot stack).
 
 ## M0 remaining
 
 - [x] `aarch64-none-elf-gcc` toolchain installed and verified (ARM GNU 14.2.Rel1)
 - [x] `qemu-system-aarch64` installed (9.1.2, MacPorts)
 - [x] Repository directory structure
-- [ ] Linker script
-- [ ] `boot/start.S`: core ID, EL2→EL1, stack, zero `.bss`, jump to C
-- [ ] `hal/qemu-virt/uart.c`: PL011
-- [ ] `kernel/main.c`
-- [ ] Makefile with `qemu`, `test`, `debug`, `clean`
+- [x] Linker script
+- [x] `boot/start.S`: core ID, `CurrentEL` drop to EL1, stack, zero `.bss`, jump to C
+- [x] `hal/qemu-virt/uart.c`: PL011
+- [x] `kernel/main.c`
+- [x] Makefile with `qemu`, `debug`, `clean` (`test` lands with the harness)
 - [ ] `tools/run_tests.py`: launches QEMU, reads TAP over serial, exit code
 - [ ] Guest exit via semihosting (`SYS_EXIT` through `HLT #0xF000`)
 

@@ -6,7 +6,7 @@ Written to be re-read six months from now without having to look anything up.
 
 ## AArch64 architecture
 
-**EL0 / EL1 / EL2 / EL3** — Exception Levels. ARMv8's privilege levels. EL0 is userland, EL1 the kernel, EL2 the hypervisor, EL3 the secure monitor. QEMU `virt` starts at EL2 and you have to drop to EL1 by hand.
+**EL0 / EL1 / EL2 / EL3** — Exception Levels. ARMv8's privilege levels. EL0 is userland, EL1 the kernel, EL2 the hypervisor, EL3 the secure monitor. Which level you are handed depends on the machine and its options: `-M virt` starts at EL1, `-M virt,virtualization=on` at EL2, `-M virt,secure=on` at EL3. The Pi firmware hands off at EL2. Read `CurrentEL` rather than assuming.
 
 **MMU** — Memory Management Unit. The hardware that translates virtual addresses to physical ones using the page tables you build.
 
