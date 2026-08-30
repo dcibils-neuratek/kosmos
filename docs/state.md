@@ -8,6 +8,8 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
+**M4 — Lua to userspace.** Its definition of done is met. Two of its listed pieces are not built; see below.
+
 **M3 — Microkernel. Done.**
 
 **M2 — Lua in the kernel + second target**, whose remaining half is the second target and is blocked on cables.
@@ -28,86 +30,56 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-68 tests. The benchmarks, bit-identical run to run under `-icount`:
+89 tests. Five benchmarks:
 
 ```
-context_switch            5.937
-exception                 6.437
-ipc_roundtrip            23.000
+context_switch            7.187
+exception                 7.250
+gc_pause_max          77861.000
+ipc_roundtrip            27.062
+serialize              1031.435
 ```
+
+`serialize` is forty times the bare round trip. The conversion dominates, not the IPC, which is worth knowing before anything is optimised.
 
 ```
 Kosmos
-mem   512 MB, 131072 pages, 130873 free, 199 used by the kernel
+mem   512 MB, 131072 pages, 130813 free, 259 used by the kernel
 mmu   on
-heap  2047 KB at 0x00000000400cb000
+heap  2047 KB at 0x0000000040107000
 sched round-robin
 timer 100 Hz
-lua   Lua 5.4.8
-
-Kosmos Lua REPL. There is no way out, and nothing to go back to.
-> 2+2
-4
+init: Lua Lua 5.4 at EL0, two processes
+init: tag     8
+init: echoed  kosmos  (a string, round trip)
+init: doubled 42  (integer stayed integer: integer)
+init: float   7.0  (float stayed float: float)
+init: nested  hello!
+init: list    1, 4, 9, 16
+init: sending a function -> false, that type cannot cross a boundary
+init: sending a cycle    -> false, value nests too deeply, or is cyclic
+init: done
 ```
 
-M0 and M1 in full. M2 under QEMU. M3's definition of done met, and the whole of it drivable from the prompt:
+## M4 — where it stands
 
-```
-> ep = sys.endpoint()
-> sys.spawn("doubler", [[ local cap = ...
-    while true do
-      local m, who = sys.receive(cap)
-      if not m then break end
-      sys.reply(who, { m[1]*2 })
-    end ]], ep)
-> sys.call(ep, {21})[1]
-42
-> for _,t in ipairs(sys.threads()) do print(t.id, t.name, t.state) end
-0	boot	running
-1	doubler	blocked
-> sys.destroy(ep)          -- the blocked server wakes, its receive fails, it exits
-```
+- [x] One `lua_State` per process, with a bounded heap (2 MB, mapped by the kernel and not growable)
+- [x] The process running at EL0, in its own address space
+- [x] Syscall bindings validating capabilities, and every pointer checked before it is touched
+- [x] The Lua table serialiser for IPC
+- [x] Deciding which Lua libraries exist inside a process
+- [x] Loading Lua code from an image embedded in the kernel
+- [x] **Definition of done: two processes at EL0, separate address spaces, exchanging a Lua table. And `*(nil)` kills only the process.**
+- [ ] Removing Lua from the kernel
+- [ ] Benchmarks: allocating and freeing a table; a syscall from Lua versus the same one from C
 
-Two `lua_State`s, in two kernel threads, over the microkernel's own IPC.
+**Why Lua is still in the kernel.** The REPL runs on it, and moving the REPL out means a process that owns the console, which is the console server, which is M5. Taking Lua out first would leave nothing to type at. It goes when the REPL does.
 
-## M0 — done
+**Two things are deliberately temporary, and both are recorded where they are written:**
 
-- [x] `aarch64-none-elf-gcc` toolchain installed and verified (ARM GNU 14.2.Rel1)
-- [x] `qemu-system-aarch64` installed (9.1.2, MacPorts)
-- [x] Repository directory structure
-- [x] Linker script
-- [x] `boot/start.S`: core ID, `CurrentEL` drop to EL1, stack, zero `.bss`, jump to C
-- [x] `hal/qemu-virt/uart.c`: PL011
-- [x] `kernel/main.c`
-- [x] Makefile with `qemu`, `test`, `debug`, `clean`
-- [x] `tools/run_tests.py`: launches QEMU, reads TAP over serial, exit code
-- [x] Guest exit via semihosting (`SYS_EXIT` through `HLT #0xF000`)
+*The kernel is in TTBR0, alongside every process.* `state.md` previously said M4 would move it to TTBR1. It does not, because that is a large refactor of boot, the linker script and every kernel pointer, and it is not what buys isolation. Isolation is the AP bits: every kernel mapping is `AP=00`, EL1 read/write and no EL0 access, with PXN and UXN set. A process faulting on the kernel image gets a **permission** fault, not a translation fault — the page is in its own tables and still untouchable. TTBR1 becomes worth doing when a process needs the whole low half.
 
-## M1 — done
-
-- [x] Exception vector, all sixteen entries
-- [x] A sync handler that prints ESR, ELR and FAR, with the fault decoded
-- [x] Expected-exception support, by stepping ELR rather than `setjmp`
-- [x] Physical page allocator: a bitmap over available RAM
-- [x] AArch64 page tables, 4 KB granule, identity map of the kernel
-- [x] MMU on, and it survives the jump
-- [x] Stack guard page
-- [x] GICv3: distributor, redistributor and the system-register CPU interface
-- [x] ARM generic timer at 100 Hz
-
-## M2 — where it stands
-
-- [x] Minimal freestanding libc: `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strcmp`, `strncmp`, `strcpy`, `strchr`
-- [x] `setjmp`/`longjmp`, saving the full AAPCS64 callee-saved set including `d8`–`d15`
-- [x] The maths: `fabs`, `trunc`, `floor`, `ceil`, `frexp`, `ldexp` ours; `pow`, `fmod`, `sqrt` and the transcendentals from newlib's `libm.a`
-- [x] A heap for Lua: first fit, coalescing both ways, over one contiguous 2 MB span from the page allocator
-- [x] `snprintf`, integers and floats
-- [x] Lua 5.4.8 in `lua/upstream/`, untouched
-- [x] Lua compiled freestanding, with its allocator on the heap
-- [x] `hal_getchar`, non-blocking
-- [x] A REPL over the UART
-- [ ] `hal/pi1/` or `hal/pi5/` — **blocked on cables, and all that is left of M2**
-- [ ] Adjust the HAL interface with two real implementations in front of it
+*The reply token is a raw kernel pointer.* `sys.receive` hands EL0 the address of a `struct thread`. It is safe only because `ipc_reply` checks the target is really waiting, and a value that is safe only because of what the callee checks is one audit away from not being safe. At M5 it becomes a capability index like everything else.
 
 ## M3 — done
 
@@ -158,6 +130,14 @@ Decisions that came out of writing code go here. Format: date, what was decided,
 Design decisions (as opposed to implementation ones) go in the decision log in `README.md` and are propagated to `design.md` and `roadmap.md` in the same session.
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
+
+**2026-08-30 — Isolation is the AP bits, not the address space layout.** Every kernel mapping is `AP=00` with PXN and UXN, so a process cannot touch kernel memory whether or not the kernel is mapped in its space. A process reading the kernel image gets a permission fault at level 3, not a translation fault, which is the difference stated as plainly as it can be.
+
+**2026-08-30 — The address space follows the thread, and the process pointer lives on the thread.** Both were global-shaped and both broke the moment there were two processes: whichever ran last owned TTBR0 and owned `current_process`, so one process ran with another's memory underneath it and its syscalls checked pointers against the wrong address space. Anything that is "one per running thing" has to be stored on the running thing.
+
+**2026-08-30 — A process is built before it is startable.** `process_create` leaves it suspended and `process_start` makes it runnable, because a runnable process runs: one created and granted its capabilities on the next line had already exited by then. Removing a race by construction beats masking interrupts around it.
+
+**2026-08-30 — Copy the length, never the buffer.** A round trip moves a message five times, and copying all 512 bytes regardless of use made it thirty-six times slower. The benchmark caught it on the first run, which is the entire argument for having had one since M3.
 
 **2026-08-30 — Preemption switches in the vector's epilogue, never in C.** A context switch moves `SP_EL1`, and everything after the switch reads the frame at `sp`, so that frame has to belong to the thread about to be resumed. Splitting the decision (`thread_tick`, in the handler, asking the policy) from the act (`thread_preempt_if_needed`, in the epilogue) is what lets the decision stay a C function the policy owns.
 
@@ -224,8 +204,8 @@ Found the hard way: the first `setjmp` panicked with EC 0x07, whose name ("unhan
 | 1 | MMU, exceptions, timer | **done** |
 | 2 | Lua in the kernel + second target | **in progress** |
 | 3 | Microkernel | **done** |
-| 4 | Lua to userspace | next |
-| 5 | Namespaces and servers | |
+| 4 | Lua to userspace | **definition of done met** |
+| 5 | Namespaces and servers | next |
 | 6 | Graphics and app server | |
 | 7 | Attributes, live queries, replicants | |
 | 8 | Own filesystem | |
