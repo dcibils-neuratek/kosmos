@@ -13,6 +13,7 @@ SIZE    := $(CROSS)size
 SRCS := boot/start.S \
         arch/aarch64/vectors.S \
         arch/aarch64/trap.c \
+        arch/aarch64/mmu.c \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \
         kernel/console.c \
@@ -50,12 +51,17 @@ CFLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
 #
-# --no-warn-rwx-segments: the whole image is one segment that is read, write
-# and execute, which is exactly right while there is no MMU to enforce
-# anything. M1 turns the MMU on and gives .text and .rodata their real
-# permissions, and the warning gets re-enabled then. Silenced rather than
-# tolerated, because a build that always prints a warning teaches you to
-# stop reading them.
+# --no-warn-rwx-segments: the image is one ELF segment marked read, write and
+# execute. The warning is aimed at userland binaries, where those flags are
+# what the loader enforces. Here nothing reads them: there is no loader, QEMU
+# copies the image in and jumps to it.
+#
+# The permissions that are real are the ones in the page tables, and since
+# M1 they are enforced: .text is read-only and executable, .rodata read-only
+# and never executable, everything else writable and never executable, with
+# tests that assert a write to each of the first two faults. Splitting the
+# ELF into matching segments would only make the file describe what the MMU
+# already does.
 LDFLAGS := -T boot/kosmos.ld \
            -Wl,--build-id=none \
            -Wl,--no-warn-rwx-segments \

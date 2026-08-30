@@ -8,6 +8,7 @@
 #include "trap.h"
 #include "pmm.h"
 #include "page.h"
+#include "mmu.h"
 
 #ifdef KOSMOS_TEST
 #include "test.h"
@@ -40,6 +41,13 @@ void kmain(void)
     kputs(" free, ");
     kputu(pmm_total_pages() - pmm_free_pages());
     kputs(" used by the kernel\n");
+
+    /* Translation on. Everything above ran with the MMU off, where every
+     * access is uncached Device memory. From here the kernel runs cached,
+     * .text is read-only, and address 0 and the stack guard have no
+     * translation at all. */
+    mmu_init();
+    kputs("mmu   on\n");
 
 #ifdef KOSMOS_TEST
     tests_run();   /* never returns: exits the guest through semihosting */

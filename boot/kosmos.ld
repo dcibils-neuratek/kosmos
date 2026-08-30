@@ -5,16 +5,24 @@
  * pages. 0x40080000 is the conventional load address for an aarch64 kernel
  * on this machine, and it leaves that region alone.
  *
- * The alignment here is not cosmetic. Two things depend on it:
+ * Sections are page aligned and bracketed by symbols so the MMU can give
+ * each one the permissions it should have: text executable and read-only,
+ * rodata read-only and never executable, everything else writable and never
+ * executable. Without the alignment those permissions cannot be expressed,
+ * because the smallest thing a page table can describe is a page.
  *
- *   - __bss_start and __bss_end are 16-byte aligned, so start.S can zero
- *     the section 16 bytes at a time with `stp` and no tail to handle.
- *   - The boot stack lives above __bss_end, so zeroing .bss cannot walk
- *     into the stack that has already been set up. That collision is the
- *     classic way this file goes wrong, and it fails silently.
+ * Two alignments carry real weight:
+ *
+ *   - __bss_start and __bss_end are 16-byte aligned, so start.S can zero the
+ *     section 16 bytes at a time with `stp` and no tail to handle.
+ *   - The boot stack sits above .bss behind an unmapped guard page, so
+ *     zeroing .bss cannot walk into a live stack and a stack overflow faults
+ *     instead of quietly eating whatever is underneath.
  */
 
 ENTRY(_start)
+
+PAGE_SIZE = 0x1000;
 
 SECTIONS
 {
@@ -22,17 +30,23 @@ SECTIONS
 
     __image_start = .;
 
-    .text : ALIGN(16) {
+    .text : ALIGN(PAGE_SIZE) {
+        __text_start = .;
         /* The reset vector has to be the first thing in the image. */
         KEEP(*(.text.boot))
         *(.text .text.*)
+        . = ALIGN(PAGE_SIZE);
+        __text_end = .;
     }
 
-    .rodata : ALIGN(16) {
+    .rodata : ALIGN(PAGE_SIZE) {
+        __rodata_start = .;
         *(.rodata .rodata.*)
+        . = ALIGN(PAGE_SIZE);
+        __rodata_end = .;
     }
 
-    .data : ALIGN(16) {
+    .data : ALIGN(PAGE_SIZE) {
         *(.data .data.*)
     }
 
@@ -40,19 +54,29 @@ SECTIONS
      * NOLOAD: .bss takes no space in the file. It is zeroed by start.S,
      * which is why it needs the two symbols below.
      */
-    .bss (NOLOAD) : ALIGN(16) {
+    .bss (NOLOAD) : ALIGN(PAGE_SIZE) {
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
         . = ALIGN(16);
         __bss_end = .;
 
-        /* The boot stack. 16 KB, above .bss and never zeroed by the loop. */
+        /*
+         * The stack guard. One page, deliberately left out of the page
+         * tables, so a stack overflow is a data abort naming the address
+         * instead of silent corruption of whatever sits below.
+         */
+        . = ALIGN(PAGE_SIZE);
+        __stack_guard = .;
+        . = . + PAGE_SIZE;
+
+        /* The boot stack. 16 KB. */
         __stack_bottom = .;
         . = . + 0x4000;
         __stack_top = .;
     }
 
+    . = ALIGN(PAGE_SIZE);
     __image_end = .;
 
     /DISCARD/ : {

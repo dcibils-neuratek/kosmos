@@ -7,6 +7,7 @@
 #include "trap.h"
 #include "pmm.h"
 #include "page.h"
+#include "mmu.h"
 
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
@@ -129,24 +130,54 @@ static bool test_execution_resumes_after_an_expected_fault(void)
     return reached == 1;
 }
 
-static bool test_data_abort_is_decoded(void)
+/*
+ * A store the compiler is not allowed to reason about.
+ *
+ * Writing `*(volatile int *)0 = 1` in C does not work. Dereferencing a null
+ * pointer is undefined behaviour, so GCC is entitled to assume it cannot
+ * happen: it emits the store and then treats everything after it as
+ * unreachable, appending a `brk`. The store faults, the handler steps elr
+ * past it, and execution lands on the brk. That is a second fault with the
+ * expectation already spent, and the kernel panics.
+ *
+ * Found exactly that way. In assembly the store is just a store.
+ */
+static void store_to(uintptr_t addr, uint32_t value)
 {
-    /*
-     * The only test that exercises the abort decoding path: exception class,
-     * direction, fault status code and far. An undefined instruction proves
-     * the vector works but carries none of that.
-     *
-     * An unaligned store is used because it faults with the MMU off. Every
-     * access is Device-nGnRnE while translation is disabled, and unaligned
-     * accesses to Device memory are architecturally required to fault.
-     */
-    static char buf[64];
-    volatile unsigned *unaligned = (volatile unsigned *)(void *)(buf + 1);
+    __asm__ volatile("str %w0, [%1]" : : "r"(value), "r"(addr) : "memory");
+}
+
+/* Any translation fault, whatever level it happened at. Which level depends
+ * on where the walk ran out of table, which is a detail of how the map was
+ * built rather than a property worth asserting on. */
+static bool is_translation_fault(unsigned iss)
+{
+    return (ISS_DABT_DFSC(iss) >> 2) == 1;
+}
+
+static bool is_permission_fault(unsigned iss)
+{
+    return (ISS_DABT_DFSC(iss) >> 2) == 3;
+}
+
+/*
+ * M1's definition of done, the half that matters most: a deliberate null
+ * dereference reports a readable data abort naming the address, instead of
+ * hanging.
+ *
+ * This replaces the unaligned-store test that stood here before the MMU
+ * existed. That one worked only because every access is Device memory while
+ * translation is off, and unaligned accesses to Device memory are required
+ * to fault. With the MMU on, RAM is Normal memory and the same store
+ * succeeds silently.
+ */
+static bool test_null_dereference_faults(void)
+{
     struct fault_info f;
     unsigned iss;
 
     fault_expect_begin();
-    *unaligned = 0xdeadbeefu;
+    store_to(0, 1);
 
     if (!fault_expect_end(&f)) {
         return false;
@@ -155,9 +186,79 @@ static bool test_data_abort_is_decoded(void)
     iss = (unsigned)ESR_ISS(f.esr);
 
     return ESR_EC(f.esr) == EC_DABT_SAME
-        && ISS_DABT_WNR(iss) == 1        /* it was a write */
-        && ISS_DABT_DFSC(iss) == 0x21    /* alignment fault */
-        && f.far == (uint64_t)(uintptr_t)unaligned;
+        && ISS_DABT_WNR(iss) == 1       /* it was a write */
+        && is_translation_fault(iss)
+        && f.far == 0;                  /* and it names the address */
+}
+
+static bool test_mmu_is_on(void)
+{
+    return mmu_is_enabled();
+}
+
+static bool test_stack_guard_page_is_unmapped(void)
+{
+    /*
+     * The page below the boot stack has no translation, so an overflow is an
+     * abort naming the address rather than silent corruption of .bss.
+     */
+    extern char __stack_guard[];
+    struct fault_info f;
+
+    fault_expect_begin();
+    store_to((uintptr_t)__stack_guard, 1);
+
+    return fault_expect_end(&f)
+        && is_translation_fault((unsigned)ESR_ISS(f.esr))
+        && f.far == (uint64_t)(uintptr_t)__stack_guard;
+}
+
+static bool test_kernel_text_is_not_writable(void)
+{
+    /* W^X in the kernel: .text is mapped read-only and executable. A write
+     * has to be a permission fault, not a translation fault, because the
+     * page is mapped. */
+    extern char __text_start[];
+    struct fault_info f;
+
+    fault_expect_begin();
+    store_to((uintptr_t)__text_start, 0);
+
+    return fault_expect_end(&f)
+        && is_permission_fault((unsigned)ESR_ISS(f.esr))
+        && f.far == (uint64_t)(uintptr_t)__text_start;
+}
+
+static bool test_rodata_is_not_writable(void)
+{
+    extern char __rodata_start[];
+    struct fault_info f;
+
+    fault_expect_begin();
+    store_to((uintptr_t)__rodata_start, 0);
+
+    return fault_expect_end(&f)
+        && is_permission_fault((unsigned)ESR_ISS(f.esr));
+}
+
+static bool test_memory_still_works_through_translation(void)
+{
+    /* Trivial on its face, and the thing that fails when MAIR, the shared
+     * attributes or the access flag are wrong: the map looks right and every
+     * access comes back as garbage or faults on first touch. */
+    volatile uint64_t *p = pmm_alloc_page();
+    bool ok;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    p[0] = 0xa5a5a5a5a5a5a5a5ULL;
+    p[511] = 0x5a5a5a5a5a5a5a5aULL;
+    ok = p[0] == 0xa5a5a5a5a5a5a5a5ULL && p[511] == 0x5a5a5a5a5a5a5a5aULL;
+
+    pmm_free_page((void *)p);
+    return ok;
 }
 
 static bool test_unexpected_fault_is_not_swallowed(void)
@@ -289,8 +390,13 @@ static const struct test tests[] = {
     { "trap: brk reports EC 0x3c",             test_brk_faults },
     { "trap: elr is the faulting instruction", test_elr_points_at_the_faulting_instruction },
     { "trap: execution resumes after a fault", test_execution_resumes_after_an_expected_fault },
-    { "trap: a data abort decodes correctly",  test_data_abort_is_decoded },
     { "trap: no fault means end() is false",   test_unexpected_fault_is_not_swallowed },
+    { "mmu: translation is on",                test_mmu_is_on },
+    { "mmu: a null dereference faults",        test_null_dereference_faults },
+    { "mmu: the stack guard is unmapped",      test_stack_guard_page_is_unmapped },
+    { "mmu: kernel text is not writable",      test_kernel_text_is_not_writable },
+    { "mmu: rodata is not writable",           test_rodata_is_not_writable },
+    { "mmu: memory works through translation", test_memory_still_works_through_translation },
     { "pmm: a page is aligned and in RAM",     test_pmm_alloc_is_page_aligned_and_in_ram },
     { "pmm: two allocations differ",           test_pmm_two_allocations_differ },
     { "pmm: the count tracks alloc and free",  test_pmm_count_tracks_alloc_and_free },
