@@ -21,6 +21,33 @@
 extern const unsigned char init_lua[];
 extern const unsigned long init_lua_len;
 
+#ifdef KOSMOS_TEST
+/*
+ * The second chunk, in the test image only.
+ *
+ * `user/tests/luatest.lua` holds the Lua tests that used to run inside the
+ * kernel. It is a separate chunk rather than more roles in init.lua because
+ * it must not reach the image that ships, and Lua source cannot be compiled
+ * out of a chunk the way C can.
+ *
+ * A boot word at or above LUATEST_BASE selects it. The bases do not overlap,
+ * so a role number can only mean one of the two.
+ */
+extern const unsigned char luatest_lua[];
+extern const unsigned long luatest_lua_len;
+
+#define LUATEST_BASE    1000UL
+#endif
+
+#ifdef KOSMOS_BENCH
+/* The same arrangement for the benchmark image. `user/tests/luabench.lua`
+ * measures what Lua costs, out here where Lua runs. */
+extern const unsigned char luabench_lua[];
+extern const unsigned long luabench_lua_len;
+
+#define LUABENCH_BASE   2000UL
+#endif
+
 static void say(const char *s)
 {
     (void)kosmos_write(s, strlen(s));
@@ -30,6 +57,10 @@ int main(unsigned long arg)
 {
     lua_State *L;
     int status;
+    const unsigned char *chunk;
+    unsigned long chunk_len;
+    const char *chunkname;
+    unsigned long base = 0;
 
     /*
      * The heap is memory the kernel mapped at a fixed address, not memory
@@ -47,21 +78,54 @@ int main(unsigned long arg)
     }
 
     /*
-     * The boot word reaches the chunk as its `...`, the same way a spawned
-     * thread's capability does in the kernel's copy. A process is told one
-     * thing and handed a capability table; everything else it works out.
+     * Which chunk, and which role within it.
+     *
+     * `base` is subtracted from the boot word rather than the chunk being
+     * told what it is, so a role number inside a chunk means the same thing
+     * whether it arrived from the kernel or from a sibling's spawn.
      */
-    status = luaL_loadbufferx(L, (const char *)init_lua, init_lua_len,
-                              "=init", "t");
+    chunk = init_lua;
+    chunk_len = init_lua_len;
+    chunkname = "=init";     /* the leading = is Lua's "this is not a file" */
+
+#ifdef KOSMOS_TEST
+    if (arg >= LUATEST_BASE) {
+        chunk = luatest_lua;
+        chunk_len = luatest_lua_len;
+        chunkname = "=luatest";
+        base = LUATEST_BASE;
+    }
+#endif
+
+#ifdef KOSMOS_BENCH
+    if (arg >= LUABENCH_BASE) {
+        chunk = luabench_lua;
+        chunk_len = luabench_lua_len;
+        chunkname = "=luabench";
+        base = LUABENCH_BASE;
+    }
+#endif
+
+    /*
+     * The boot word reaches the chunk as its `...`, the same way a spawned
+     * thread's capability did in the kernel's copy. A process is told one
+     * thing and handed a capability table; everything else it works out.
+     *
+     * The base goes with it, because a chunk that spawns a sibling has to
+     * put it back on to name a role in itself.
+     */
+    status = luaL_loadbufferx(L, (const char *)chunk, chunk_len, chunkname, "t");
 
     if (status == LUA_OK) {
-        lua_pushinteger(L, (lua_Integer)arg);
-        status = lua_pcall(L, 1, 0, 0);
+        lua_pushinteger(L, (lua_Integer)(arg - base));
+        lua_pushinteger(L, (lua_Integer)base);
+        status = lua_pcall(L, 2, 0, 0);
     }
 
     if (status != LUA_OK) {
         const char *msg = lua_tostring(L, -1);
-        say("init: ");
+        say(chunkname + 1);      /* past the = */
+        say(": ");
         say((msg != NULL) ? msg : "(no message)");
         say("\n");
         return 1;

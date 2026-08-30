@@ -11,8 +11,6 @@
 #include "mmu.h"
 #include "kernel.h"
 
-#include <stdlib.h>
-#include "kosmos_lua.h"
 #include "thread.h"
 #include "sched.h"
 #include "ipc.h"
@@ -64,27 +62,14 @@ void kmain(void)
     kputs("mmu   on\n");
 
     /*
-     * Lua's heap. One contiguous span taken from the page allocator once and
-     * sub-divided inside itself, which is what design.md 5.2 means by a
-     * lua_State with a heap limit. The kernel's own state stays in fixed
-     * pools; nothing in kernel/, arch/ or hal/ calls malloc.
+     * No heap.
+     *
+     * There was a 2 MB one here, taken from the page allocator for a
+     * `lua_State` the kernel opened. Neither exists any more: the kernel's
+     * own state lives in fixed pools, and nothing in kernel/, arch/ or hal/
+     * calls malloc. A process gets its heap mapped into its own address
+     * space, which is where a heap that can be exhausted belongs.
      */
-    {
-        void *heap = pmm_alloc_contiguous(LUA_HEAP_PAGES);
-
-        if (heap == NULL) {
-            panic("no room for the Lua heap");
-        }
-
-        heap_init(heap, LUA_HEAP_PAGES * PAGE_SIZE);
-
-        kputs("heap  ");
-        kputu(heap_size() / 1024);
-        kputs(" KB at 0x");
-        kputx((unsigned long)(unsigned long)heap, 16);
-        kputs("\n");
-    }
-
     thread_init();
     ipc_init();
     process_init();
@@ -160,11 +145,10 @@ void kmain(void)
     /*
      * Nothing left for this thread to do but keep the scheduler company.
      *
-     * The kernel's own Lua and its REPL are gone from the boot path: the
-     * prompt lives in a process now. Lua is still compiled into the kernel
-     * because the test suite drives the kernel through it, and taking it out
-     * entirely means moving those tests into userland, which is its own
-     * piece of work rather than a line to delete here.
+     * There is no Lua behind this line any more, and no REPL. Both were in
+     * the image long after the prompt moved into a process, kept there by a
+     * test suite that drove the kernel through an interpreter; the tests run
+     * at EL0 now and the interpreter went with them.
      */
     for (;;) {
         thread_yield();

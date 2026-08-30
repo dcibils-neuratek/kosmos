@@ -88,6 +88,8 @@ Compiled with `-DKOSMOS_TEST` so they take no space in the normal image.
 
 As soon as there is an interpreter, tests are written in Lua and the ergonomics change completely. The C self-tests freeze: the existing ones stay, new ones go in Lua.
 
+**They run at EL0, in a process.** From M5 the kernel has no interpreter, so a Lua test is `user/tests/luatest.lua` in a role of its own, started by a driver in `tests/tests.c` that turns its exit code into a TAP line. The plan, the numbering and the names stay on the C side; the assertions are out here, where Lua is. A failing assertion `error()`s, and `user/init/main.c` prints it — that line is not TAP, so the host runner ignores it and a human reading the output gets the reason.
+
 ```lua
 test("namespace: what is not mounted does not exist", function()
   local proc = spawn{ needs = { "/dev/clock" } }
@@ -143,7 +145,7 @@ Each milestone adds its metrics and none of them get removed afterwards.
 - Serializing and deserializing a typical message
 - Allocating and freeing a table
 - **Maximum GC pause.** Not the average. It is the number that decides whether the system stutters, and it will be the project's recurring problem.
-- Overhead of a syscall called from Lua versus the same one from C
+- Overhead of a syscall called from Lua versus the same one from C (still not built)
 
 ### Namespace and servers (M5)
 

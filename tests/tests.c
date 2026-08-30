@@ -21,13 +21,6 @@
 #include <stdio.h>
 #include <math.h>
 
-/* The Kosmos configuration first, exactly as the Lua build does it. Every
- * hook it overrides is guarded upstream by #if !defined, so arriving after
- * lua.h means upstream's default wins and this one is a redefinition. */
-#include "kosmos_lua.h"
-#include "lua.h"
-#include "lauxlib.h"
-
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
 extern char __bss_start[];
@@ -2269,420 +2262,182 @@ static bool test_our_math_matches_its_definition(void)
 }
 
 /*
- * M2: Lua.
+ * M2 and M3, from where Lua actually runs.
  *
- * One state, opened on first use and kept. Opening one per test would be a
- * better isolation story and a worse test: the interesting failures are the
- * ones that only appear after the collector has run a few times over a heap
- * that has been used.
+ * These were an embedded `lua_State` at EL1 and a `lua_says_true` helper
+ * that ran a chunk inside the kernel. The kernel has no Lua in it any more,
+ * so each one is a process now: `user/tests/luatest.lua` holds the
+ * assertions, one role per test, and what is left here is the driver that
+ * starts a role and reads its exit code.
+ *
+ * What is lost is a little directness - a failure says which role failed and
+ * prints the message, rather than being a C expression the debugger can stop
+ * on. What is gained is that the thing being tested is the thing that ships:
+ * the same interpreter, the same libc, the same page tables, reached through
+ * the same syscalls as the shell.
  */
-static struct lua_State *shared;
 
-static struct lua_State *lua_state(void)
-{
-    if (shared == NULL) {
-        shared = kosmos_lua_open();
-    }
-
-    return shared;
-}
-
-/* Runs a chunk that returns a boolean, and reports what it returned. A chunk
- * that fails to compile or raises is a false, which is what a test wants. */
-static bool lua_says_true(const char *src)
-{
-    struct lua_State *L = lua_state();
-    bool ok;
-
-    if (L == NULL) {
-        return false;
-    }
-
-    if (kosmos_lua_dostring(L, "=test", src) != LUA_OK) {
-        lua_pop((lua_State *)L, 1);
-        return false;
-    }
-
-    ok = lua_toboolean((lua_State *)L, -1) != 0;
-    lua_pop((lua_State *)L, 1);
-    return ok;
-}
-
-static bool test_lua_arithmetic(void)
-{
-    /* M2's definition of done, as an assertion rather than a printed line. */
-    return lua_says_true("return 2 + 2 == 4")
-        && lua_says_true("return 7 // 2 == 3 and 7 % 2 == 1")
-        && lua_says_true("return math.type(1) == 'integer'")
-        && lua_says_true("return math.type(1.0) == 'float'");
-}
-
-static bool test_lua_floats(void)
-{
-    /*
-     * Exercises the whole number path at once: the parser calls strtod on
-     * the literal, the arithmetic runs in FP registers that only exist
-     * because CPACR was opened, and tostring goes back out through our
-     * snprintf.
-     */
-    return lua_says_true("return 1 / 2 == 0.5")
-        && lua_says_true("return tostring(1.5) == '1.5'")
-        && lua_says_true("return tostring(0.25) == '0.25'")
-        && lua_says_true("return tonumber('3.5') == 3.5")
-        && lua_says_true("return tonumber('1e3') == 1000.0")
-        && lua_says_true("return 2.0 ^ 10 == 1024.0");
-}
-
-static bool test_lua_strings_and_tables(void)
-{
-    return lua_says_true("return ('a' .. 'b' .. 'c') == 'abc'")
-        && lua_says_true("return #'hello' == 5")
-        && lua_says_true("return ('hello'):upper() == 'HELLO'")
-        && lua_says_true("return string.format('%d-%s', 7, 'x') == '7-x'")
-        && lua_says_true("local t = {} for i=1,100 do t[i]=i*i end return t[10] == 100 and #t == 100")
-        && lua_says_true("local s=0 for _,v in ipairs{1,2,3} do s=s+v end return s == 6");
-}
-
-static bool test_lua_closures(void)
-{
-    return lua_says_true(
-        "local function counter() local n = 0 "
-        "  return function() n = n + 1 return n end end "
-        "local c = counter() c() c() return c() == 3");
-}
-
-static bool test_lua_coroutines(void)
-{
-    /*
-     * The single most important Lua feature for this design. `design.md`
-     * §4.5 rests the entire server model on coroutines: they are what makes
-     * synchronous IPC writable as sequential code instead of a state
-     * machine. If they did not work, the architecture would not.
-     */
-    return lua_says_true(
-        "local co = coroutine.create(function(a) "
-        "  local b = coroutine.yield(a + 1) "
-        "  return b * 2 end) "
-        "local _, x = coroutine.resume(co, 1) "
-        "local _, y = coroutine.resume(co, 10) "
-        "return x == 2 and y == 20 and coroutine.status(co) == 'dead'");
-}
-
-static bool test_lua_errors_are_caught(void)
-{
-    /*
-     * This is the setjmp/longjmp test that matters. The unit tests for them
-     * jump within one function; here Lua raises from inside its own VM,
-     * across frames it built, and unwinds to a pcall. `setup.md` warns that
-     * a wrong longjmp only shows up the first time something raises, and
-     * this is that first time.
-     */
-    return lua_says_true("local ok, e = pcall(function() error('boom') end) "
-                         "return ok == false and e:find('boom') ~= nil")
-        && lua_says_true("local ok = pcall(function() return nil + 1 end) "
-                         "return ok == false")
-        && lua_says_true("local ok, e = pcall(function() error({code=42}) end) "
-                         "return ok == false and e.code == 42")
-        /* And that the state is still usable afterwards, which is the part
-         * a botched stack restore breaks. */
-        && lua_says_true("return 1 + 1 == 2");
-}
-
-static bool test_lua_errors_nest(void)
-{
-    /* A pcall inside a pcall, with the inner one rethrowing. Nested jmp_bufs
-     * are where an incorrect saved sp shows up as a corrupted outer frame. */
-    return lua_says_true(
-        "local ok, e = pcall(function() "
-        "  local ok2 = pcall(function() error('inner') end) "
-        "  error('outer:' .. tostring(ok2)) end) "
-        "return ok == false and e:find('outer:false') ~= nil");
-}
-
-static bool test_lua_math_library(void)
-{
-    /* Ours and newlib's, reached through Lua rather than called directly. */
-    return lua_says_true("return math.floor(2.7) == 2 and math.ceil(2.1) == 3")
-        && lua_says_true("return math.abs(-3) == 3")
-        && lua_says_true("return math.sqrt(16.0) == 4.0")
-        && lua_says_true("return math.max(1,5,3) == 5")
-        && lua_says_true("return math.fmod(7, 3) == 1.0")
-        && lua_says_true("return type(math.random()) == 'number'");
-}
-
-static bool test_lua_garbage_collector_reclaims(void)
-{
-    /*
-     * The GC is the design's known risk (`design.md` §5.2) and the first
-     * thing to check is simply that it gets memory back at all. A collector
-     * running against an allocator that does not coalesce would show up
-     * here as memory that never drops.
-     *
-     * Four thousand tables, not twenty. Twenty thousand runs the 2 MB heap
-     * out, which is itself worth knowing: a Lua table is around 56 bytes and
-     * this allocator adds 32 more per block, so the overhead is not a
-     * rounding error. That is the number roadmap.md M4 puts on the bench.
-     */
-    return lua_says_true(
-        "collectgarbage() "
-        "local before = collectgarbage('count') "
-        "local t = {} for i = 1, 4000 do t[i] = {i} end "
-        "local peak = collectgarbage('count') "
-        "t = nil "
-        "collectgarbage() "
-        "local after = collectgarbage('count') "
-        "return peak > before * 2 and after < peak / 2");
-}
+/* Has to match LUATEST_BASE in user/init/main.c. A boot word at or above it
+ * selects the test chunk instead of init. */
+#define LUATEST_BASE    1000UL
 
 /*
- * M3: the kernel, reached from Lua.
+ * How long a role gets before it is called hung.
+ *
+ * Generous, because the heaviest of them allocates four thousand tables and
+ * collects them. It bounds a hang into a failed test rather than into the
+ * host runner's timeout, which is the difference between "this test broke"
+ * and "something broke".
  */
-static bool test_sys_reports_the_kernel(void)
-{
-    return lua_says_true("return type(sys) == 'table'")
-        && lua_says_true("return sys.scheduler() == 'round-robin'")
-        && lua_says_true("local m = sys.memory() "
-                         "return m.pages_free > 0 and m.pages_free < m.pages_total "
-                         "and m.heap_used > 0 and m.heap_used < m.heap_size")
-        && lua_says_true("local t = sys.threads() "
-                         "if #t < 1 then return false end "
-                         "local running = 0 "
-                         "for _, th in ipairs(t) do "
-                         "  if th.current then running = running + 1 end "
-                         "  if type(th.name) ~= 'string' then return false end "
-                         "end "
-                         "return running == 1");
-}
+#define LUATEST_SLICES  400000u
 
-static bool test_a_spawned_lua_thread_answers_over_ipc(void)
+static bool luatest_role(unsigned long role)
 {
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned before = process_count();
+    struct process *p;
+    unsigned i;
+    int code;
+
+    p = process_create("t-lua", init_image, (size_t)init_image_len,
+                       LUATEST_BASE + role);
+
+    if (p == NULL) {
+        return false;
+    }
+
     /*
-     * The whole of M3 in one assertion: two Lua states, each in its own
-     * kernel thread, exchanging messages through the microkernel's IPC.
+     * Given the console so that a failure says what it was. Nothing is
+     * printed on the way through; `user/init/main.c` prints only the error
+     * that unwound out of the chunk, and that line is not TAP, so the runner
+     * ignores it and a human reading the output gets the reason.
      *
-     * Separate states rather than one shared is not a convenience. A
-     * lua_State is not reentrant, so two kernel threads inside one would
-     * corrupt it. `design.md` §2's share-nothing userland is not a
-     * preference here, it is the only thing that works.
+     * Children spawned by the role are not given it, deliberately: a test
+     * that needs a server to print is a test that has stopped being about
+     * the server.
      */
-    return lua_says_true(
-        "local ep = sys.endpoint() "
-        "local ok = sys.spawn('t-double', [[ "
-        "  local cap = ... "
-        "  while true do "
-        "    local m, who = sys.receive(cap) "
-        "    if not m then break end "
-        "    sys.reply(who, { m[1] * 2, tag = m.tag + 1 }) "
-        "  end ]], ep) "
-        "if not ok then sys.destroy(ep) return false end "
-        "local good = true "
-        "for i = 1, 5 do "
-        "  local r = sys.call(ep, { i, tag = i }) "
-        "  if not r or r[1] ~= i * 2 or r.tag ~= i + 1 then good = false end "
-        "end "
-        "sys.destroy(ep) "
-        "for _ = 1, 8 do sys.yield() end "
-        "return good");
-}
+    process_grant_console(p);
+    process_start(p);
 
-static bool test_destroying_an_endpoint_reaches_a_lua_server(void)
-{
+    for (i = 0; i < LUATEST_SLICES && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
     /*
-     * The milestone's trap, seen from the language rather than from C. A
-     * server blocked in receive has to come back with an error when its
-     * endpoint goes away, or it waits forever and can never be restarted.
-     *
-     * The server records what it saw in a capability it was also handed, so
-     * the answer comes back rather than being inferred from a thread state.
+     * And that it left nothing behind. A role that spawns servers waits for
+     * every one of them, so the pool has to be back where it started; a
+     * server still sitting in a receive would show up here rather than as
+     * the next test failing to find a slot.
      */
-    return lua_says_true(
-        "local ep = sys.endpoint() "
-        "if not sys.spawn('t-block', [[ "
-        "  local cap = ... "
-        "  local m, who = sys.receive(cap) "
-        "  if m ~= nil then error('receive should have failed') end ]], ep) "
-        "then sys.destroy(ep) return false end "
-        /* Let it reach the receive and block. */
-        "for _ = 1, 4 do sys.yield() end "
-        "local blocked = false "
-        "for _, t in ipairs(sys.threads()) do "
-        "  if t.name == 't-block' and t.state == 'blocked' then blocked = true end "
-        "end "
-        "if not blocked then sys.destroy(ep) return false end "
-        "sys.destroy(ep) "
-        "for _ = 1, 8 do sys.yield() end "
-        /* It woke, its receive failed, and it exited rather than hanging. */
-        "for _, t in ipairs(sys.threads()) do "
-        "  if t.name == 't-block' then return false end "
-        "end "
-        "return true");
+    return code == 0 && process_count() == before;
 }
 
-static bool test_a_lua_table_survives_ipc(void)
-{
-    /*
-     * The serialiser, through the only interface anyone uses it by.
-     *
-     * `design.md` §1's thesis is that the protocol between servers is the
-     * data model of the language, and this is what that means in practice:
-     * the server writes no marshalling, the client writes no marshalling,
-     * and what arrives is what was sent, including the integer/float
-     * distinction that Lua 5.4 makes and that a naive encoder loses.
-     */
-    return lua_says_true(
-        "local ep = sys.endpoint() "
-        "if not sys.spawn('t-echo2', [[ "
-        "  local cap = ... "
-        "  while true do "
-        "    local m, who = sys.receive(cap) "
-        "    if not m then break end "
-        "    sys.reply(who, m) "
-        "  end ]], ep) then sys.destroy(ep) return false end "
-        "local sent = { tag = 3, s = 'text', i = 7, f = 0.5, b = true, "
-        "               n = { deep = { 'a', 'b' } }, [10] = 'sparse' } "
-        "local got = sys.call(ep, sent) "
-        "sys.destroy(ep) "
-        "for _ = 1, 8 do sys.yield() end "
-        "return got ~= nil "
-        "  and got.s == 'text' "
-        "  and got.i == 7 and math.type(got.i) == 'integer' "
-        "  and got.f == 0.5 and math.type(got.f) == 'float' "
-        "  and got.b == true "
-        "  and got.n.deep[2] == 'b' "
-        "  and got[10] == 'sparse' "
-        "  and got.tag == 3");
-}
+static bool test_lua_arithmetic(void)          { return luatest_role(0); }
+static bool test_lua_floats(void)              { return luatest_role(1); }
+static bool test_lua_strings_and_tables(void)  { return luatest_role(2); }
+static bool test_lua_closures(void)            { return luatest_role(3); }
+static bool test_lua_coroutines(void)          { return luatest_role(4); }
+static bool test_lua_errors_are_caught(void)   { return luatest_role(5); }
+static bool test_lua_errors_nest(void)         { return luatest_role(6); }
+static bool test_lua_math_library(void)        { return luatest_role(7); }
+static bool test_lua_gc_reclaims(void)         { return luatest_role(8); }
+static bool test_lua_dangerous_libs_absent(void) { return luatest_role(9); }
+static bool test_lua_refuses_bytecode(void)    { return luatest_role(10); }
 
+static bool test_a_process_answers_over_ipc(void)      { return luatest_role(11); }
+static bool test_a_lua_table_survives_ipc(void)        { return luatest_role(13); }
 static bool test_the_serialiser_refuses_what_cannot_cross(void)
-{
-    /*
-     * A function means nothing in a state that did not create it, and a
-     * cycle has no end. Both are refused rather than mangled, and the
-     * refusal is an error the caller sees rather than a truncated value it
-     * does not.
-     */
-    return lua_says_true(
-        "local ep = sys.endpoint() "
-        "local okf = pcall(function() return sys.call(ep, { f = print }) end) "
-        "local c = {} c.self = c "
-        "local okc = pcall(function() return sys.call(ep, c) end) "
-        "local big = {} for i = 1, 200 do big[i] = ('x'):rep(40) end "
-        "local okb = pcall(function() return sys.call(ep, big) end) "
-        "sys.destroy(ep) "
-        "return okf == false and okc == false and okb == false");
-}
-
+                                                       { return luatest_role(15); }
 static bool test_a_capability_can_be_passed_in_a_message(void)
-{
-    /*
-     * The primitive M5 rests on, and the one that moves mounting out of the
-     * kernel.
-     *
-     * Before this, only the kernel could hand out a capability, so only the
-     * kernel could decide what a process may reach. `design.md` §4.4 puts
-     * that decision in the namespace server: a process asks for a path and
-     * is handed a capability for whoever serves it. That is this, once.
-     *
-     * The test builds it end to end. A broker holds a capability for a
-     * second, private endpoint that the client cannot name. The client asks
-     * the broker for it, receives it as *its own* index, and then talks
-     * directly to the private service - which is exactly the shape a mount
-     * has.
-     */
-    return lua_says_true(
-        "local public  = sys.endpoint() "
-        "local private = sys.endpoint() "
-        /* The broker: hands out `private` to whoever asks on `public`. */
-        "if not sys.spawn('t-broker', [[ "
-        "  local pub, priv = ... "
-        "  local m, who = sys.receive(pub) "
-        "  if m then sys.reply(who, { granted = true }, priv) end "
-        "]], public, private) then return false end "
-        /* The private service, on its own endpoint. */
-        "if not sys.spawn('t-secret', [[ "
-        "  local cap = ... "
-        "  while true do "
-        "    local m, who = sys.receive(cap) "
-        "    if not m then break end "
-        "    sys.reply(who, { answer = m.ask .. ' answered' }) "
-        "  end ]], private) then return false end "
-        /* The client holds only `public`. It cannot name `private` at all. */
-        "local reply, got = sys.call(public, { please = true }) "
-        "if not reply or not reply.granted then return false end "
-        "if got == nil or got < 0 then return false end "
-        /* And now it can talk to a service it was never told the number of. */
-        "local answer = sys.call(got, { ask = 'question' }) "
-        "sys.destroy(public) sys.destroy(private) "
-        "for _ = 1, 8 do sys.yield() end "
-        "return answer ~= nil and answer.answer == 'question answered'");
-}
-
+                                                       { return luatest_role(16); }
 static bool test_a_capability_that_is_not_held_cannot_be_sent(void)
-{
-    /*
-     * A sender cannot pass what it does not hold, and cannot guess. The
-     * index is resolved against the sender's own table, so a number naming
-     * nothing arrives as nothing rather than as somebody else's endpoint.
-     *
-     * The failure is silent by design: the message still arrives, and the
-     * receiver finds no capability came with it. A send that failed outright
-     * would let a sender learn which numbers are valid by watching which
-     * sends succeed.
-     */
-    return lua_says_true(
-        "local ep = sys.endpoint() "
-        "if not sys.spawn('t-nocap', [[ "
-        "  local cap = ... "
-        "  local m, who = sys.receive(cap) "
-        "  if m then sys.reply(who, { saw = (m.n or 0) }) end "
-        "]], ep) then return false end "
-        /* 12 names nothing in this thread's table. */
-        "local reply, got = sys.call(ep, { n = 1 }, 12) "
-        "sys.destroy(ep) "
-        "for _ = 1, 8 do sys.yield() end "
-        "return reply ~= nil and (got == nil or got < 0)");
-}
+                                                       { return luatest_role(20); }
+static bool test_lua_ipc_errors_are_reported(void)     { return luatest_role(22); }
 
-static bool test_lua_ipc_errors_are_reported(void)
+/*
+ * The one role the process cannot drive on its own.
+ *
+ * `roadmap.md` calls this M3's trap: a server blocked in receive has to be
+ * woken with an error when its endpoint is destroyed, or it waits for ever
+ * and can never be restarted. There is no syscall that destroys an endpoint,
+ * and there should not be one yet, so the destruction happens here and what
+ * is checked is that the error crosses back out to EL0 and reaches Lua.
+ */
+static bool test_destroying_an_endpoint_reaches_a_process(void)
 {
-    return lua_says_true("local r, e = sys.call(99, {1}) "
-                         "return r == nil and e == 'no such capability'")
-        && lua_says_true("local r, e = sys.destroy(99) "
-                         "return r == nil and e ~= nil");
-}
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    unsigned before = process_count();
+    struct process *p;
+    cap_t ep;
+    unsigned i;
+    int code;
 
-static bool test_lua_dangerous_libraries_are_absent(void)
-{
-    /*
-     * `design.md` §5.3: the list of libraries inside a state is part of the
-     * security model, not a configuration detail. Asserting the absences
-     * keeps a later "just open everything" from passing quietly.
-     */
-    return lua_says_true("return io == nil")        /* no global tree to open */
-        && lua_says_true("return os == nil")        /* no wall clock, no exec */
-        && lua_says_true("return debug == nil")     /* breaks every abstraction */
-        && lua_says_true("return package == nil")   /* wants dlopen */
-        && lua_says_true("return dofile == nil and loadfile == nil");
-}
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
 
-static bool test_lua_refuses_bytecode(void)
-{
+    p = process_create("t-blocked", init_image, (size_t)init_image_len,
+                       LUATEST_BASE + 23);
+
+    if (p == NULL) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    /* Before it can run, which is the ordering that has bitten this codebase
+     * four separate times: a process that starts before its capabilities are
+     * in place finds an empty table. */
+    if (ipc_cap_grant(p->thread, ep) != 0) {
+        process_abandon(p);
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    process_grant_console(p);
+    process_start(p);
+
     /*
-     * `design.md` §5.3 forbids precompiled bytecode outright: the undump
-     * loader validates almost nothing, so a crafted chunk is arbitrary
-     * execution inside the state.
-     *
-     * Upstream's default mode is "bt", which accepts either, so this is only
-     * true because every load in lua/kosmos/ says "t". The test is here to
-     * fail the day someone drops the argument.
+     * Let it get as far as the receive and block. Bounded rather than
+     * waiting on a state, because "it is blocked" is what the test is about
+     * and inferring it from the thread would be checking the kernel's
+     * bookkeeping instead of its behaviour.
      */
-    return lua_says_true(
-        "local dumped = string.dump(function() return 1 end) "
-        "local f, err = load(dumped, 'evil', 't') "
-        "return f == nil and err ~= nil")
-        /* and that the same chunk as source loads fine, so the test is
-         * really about the mode and not about load being broken */
-        && lua_says_true("return load('return 1', 'ok', 't')() == 1");
+    for (i = 0; i < 20000 && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (p->exited) {
+        /* It came back before anything destroyed the endpoint, so whatever
+         * it returned says nothing about the wake-up. */
+        process_reap(p);
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    (void)ipc_endpoint_destroy(ep);
+
+    for (i = 0; i < 20000 && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    return code == 0 && process_count() == before;
 }
 
 /*
@@ -3116,17 +2871,16 @@ static const struct test tests[] = {
     { "lua: pcall catches errors",             test_lua_errors_are_caught },
     { "lua: nested pcall unwinds correctly",   test_lua_errors_nest },
     { "lua: the math library",                 test_lua_math_library },
-    { "lua: the collector reclaims memory",    test_lua_garbage_collector_reclaims },
-    { "lua: io, os, debug are absent",         test_lua_dangerous_libraries_are_absent },
+    { "lua: the collector reclaims memory",    test_lua_gc_reclaims },
+    { "lua: io, os, debug are absent",         test_lua_dangerous_libs_absent },
     { "lua: load refuses bytecode",            test_lua_refuses_bytecode },
-    { "sys: the kernel is inspectable",        test_sys_reports_the_kernel },
-    { "sys: a spawned Lua thread does IPC",    test_a_spawned_lua_thread_answers_over_ipc },
-    { "sys: destroy reaches a Lua server",     test_destroying_an_endpoint_reaches_a_lua_server },
-    { "sys: a Lua table survives IPC",         test_a_lua_table_survives_ipc },
-    { "sys: the serialiser refuses the rest",  test_the_serialiser_refuses_what_cannot_cross },
+    { "ipc: a process answers over IPC",       test_a_process_answers_over_ipc },
+    { "ipc: destroy reaches a process",        test_destroying_an_endpoint_reaches_a_process },
+    { "ipc: a Lua table survives IPC",         test_a_lua_table_survives_ipc },
+    { "ipc: the serialiser refuses the rest",  test_the_serialiser_refuses_what_cannot_cross },
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
-    { "sys: IPC errors reach Lua",             test_lua_ipc_errors_are_reported },
+    { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },
@@ -3140,9 +2894,33 @@ static const struct test tests[] = {
 
 #define TEST_COUNT (sizeof(tests) / sizeof(tests[0]))
 
+/*
+ * A heap, for the tests that are about the heap.
+ *
+ * The kernel has none. It allocated 2 MB once, for a `lua_State` it opened
+ * itself, and both went when Lua did; nothing in kernel/, arch/ or hal/
+ * calls malloc. `runtime/libc/malloc.c` is still ours and still needs unit
+ * tests, so the suite brings up a heap of its own and the shipping image
+ * pays nothing for it.
+ *
+ * Small on purpose. `test_heap_exhaustion_returns_null` asks for one byte
+ * more than the whole thing, and a 2 MB request would be a slower way of
+ * learning the same fact.
+ */
+#define TEST_HEAP_PAGES 64      /* 256 KB at a 4 KB granule */
+
 void tests_run(void)
 {
     unsigned failed = 0;
+    void *heap = pmm_alloc_contiguous(TEST_HEAP_PAGES);
+
+    if (heap == NULL) {
+        kputs("not ok 1 - the suite could not get a heap\n");
+        semihosting_exit(1);
+    }
+
+    heap_init(heap, TEST_HEAP_PAGES * PAGE_SIZE);
+
 
     /* TAP wants the plan before the results, so a truncated run is
      * detectable: the host counts what arrived against what was promised. */

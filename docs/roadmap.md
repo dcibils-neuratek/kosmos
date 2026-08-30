@@ -118,7 +118,7 @@ The benchmark suite also starts here: context switch, syscall entry and exit, pa
 - The process running at EL0
 - Syscall bindings as Lua functions, validating capabilities
 - The Lua table serializer for IPC
-- Removing Lua from the kernel
+- Removing Lua from the kernel (done: the kernel has no interpreter, and the Lua tests and benchmarks run at EL0)
 - Deciding which Lua libraries exist inside a process (part of the security model, not configuration)
 - Loading Lua code from a ramdisk embedded in the image
 

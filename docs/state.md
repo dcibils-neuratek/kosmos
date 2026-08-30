@@ -8,7 +8,7 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
-**M5 — Namespaces and servers.** Its definition of done is met, both halves. Userland init and taking Lua out of the kernel are what remain.
+**M5 — Namespaces and servers. Done.** Its definition of done is met, both halves, and the last item on the list — taking Lua out of the kernel — is done as well.
 
 **M4 — Lua to userspace.** Its definition of done is met. Two of its listed pieces are not built; see below.
 
@@ -32,7 +32,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-95 tests. Five benchmarks. 471 KB of kernel image, which now carries the userland image inside it.
+94 tests. Five benchmarks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code.
 
 **The prompt is a process.** What you type is read by the console server, sent to the shell over IPC, evaluated in the shell's own `lua_State`, and printed back the same way.
 
@@ -68,13 +68,23 @@ nil	no such path: /nowhere
 - [x] **Definition of done, both halves: the same server mounted at two paths in two processes, each seeing only its own; and the console server's code replaced while the shell was talking to it, without the shell noticing**
 - [x] Hot reload level 1: `load()` of new code while preserving state and clients
 - [x] Init and supervision in userland, on a spawn syscall
-- [ ] Removing Lua from the kernel
+- [x] Removing Lua from the kernel
 
 **The kernel starts init and nothing else.** init spawns the console server, the ramfs and the shell, passing on the capabilities it was given, and then waits. It cannot promote a child beyond itself: a spawn resolves every capability against the parent's own table, and passing on the console is refused unless the parent holds it.
 
 **Supervision is noticing, not restarting.** init waits and learns which child ended with what code. Restarting one is hot reload level 2, and `design.md` §10 deliberately leaves that until there is state worth recovering — the server would come back empty, and deciding where its state should have lived is the actual design question.
 
-**Lua is out of the kernel's boot path but still compiled in**, because the test suite drives the kernel through it. Taking it out entirely means moving those tests to userland, which is its own piece of work rather than a line to delete.
+**There is no Lua in the kernel.** Not in the boot path, not in the image, not in the source list. `CLAUDE.md` has said since the start that the kernel has none from M4 onward, and until this session that was simply untrue: the interpreter was 163,648 bytes of `.text` against 28,556 for the entire rest of the kernel, reachable from nothing, kept alive only because fifty test assertions drove the kernel through it.
+
+Those assertions live in `user/tests/luatest.lua` now, one role per test, and `tests/tests.c` starts a process and turns its exit code into a TAP line — so the plan, the numbering and the names all stayed where they were. The two benchmarks that opened a `lua_State` moved the same way, into `user/tests/luabench.lua`.
+
+What left with it: `malloc`, `math`, `snprintf`, `strtod`, `stdio` and `-lm`, every one of which was in the kernel for Lua and for nothing else. And the 2 MB heap `kmain` allocated for a `lua_State` it opened itself.
+
+**Kernel machine code went from 204,800 bytes of `.text` to 20,480.** The whole image is 348,168 bytes against 569,364, and 237,579 of what is left is the userland image carried inside it — payload, not kernel.
+
+Two fixture blobs went with it. `user/hello.S` and `user/faulty.S` are what the tests run at EL0 to check that a process exits and that a null dereference kills only it; nothing outside the suite referred to them, and they were 4 KB of the shipping image that no code path could reach.
+
+**What stays despite being unreachable in the shipping image:** `fault_expect_begin`/`_end` in `arch/aarch64/trap.c`, and `setjmp.S` under it. Only the tests and the benchmarks call them. Compiling them out would mean the trap handler that ships is not the trap handler that was tested, and that is a worse trade than a couple of hundred bytes and one predictable branch on a path that is already an exception.
 
 **Hot reload works because state and behaviour are separate things.** A server is a `state` table plus a factory that turns it into handlers, and `serve` takes the factory rather than the handlers. Anything captured in a closure built at startup is lost on reload; anything in `state` survives, because the new handlers are handed the same table. That is the whole mechanism, and getting it wrong is silent: the server keeps working and quietly forgets.
 
@@ -91,10 +101,8 @@ nil	no such path: /nowhere
 - [x] Deciding which Lua libraries exist inside a process
 - [x] Loading Lua code from an image embedded in the kernel
 - [x] **Definition of done: two processes at EL0, separate address spaces, exchanging a Lua table. And `*(nil)` kills only the process.**
-- [ ] Removing Lua from the kernel
+- [x] Removing Lua from the kernel — done at M5, see above
 - [ ] Benchmarks: allocating and freeing a table; a syscall from Lua versus the same one from C
-
-**Why Lua is still in the kernel.** The REPL runs on it, and moving the REPL out means a process that owns the console, which is the console server, which is M5. Taking Lua out first would leave nothing to type at. It goes when the REPL does.
 
 **Two things are deliberately temporary, and both are recorded where they are written:**
 
@@ -120,35 +128,58 @@ At M4 that is replaced by the real arrangement: the kernel in TTBR1 at the top, 
 
 ## Concrete next step
 
-**M4, or M2's second target when a cable arrives.**
+**M6 — graphics and the app server.** M5 is closed, so this is next, and `roadmap.md` names its definition of done: drag a window with a hung app inside it and have the window keep moving smoothly. That is the BeOS test, and it is the one that decides whether the system feels good.
 
-M4 is the milestone `roadmap.md` calls the hardest in the project, and the one where the design gets tested: one `lua_State` per process with a bounded heap, the process running at EL0, syscall bindings validating capabilities, the Lua table serialiser for IPC, and Lua out of the kernel entirely.
+What it needs first, in the order it needs it:
 
-Two things from M3 are the ground it stands on and are already correct: every thread owns both of its stacks, and `struct context` saves `SPSel` and `DAIF`, which is what makes a switch work from either thread context or an exception epilogue.
+- **virtio-gpu under QEMU.** There is no framebuffer today. Nothing in M0–M5 draws a pixel; the console is a UART.
+- **`gfx.surface` as userdata over flat bytes**, with the C primitive set (`fill`, `blit`, `blend`, `span`, `get`/`set`). `CLAUDE.md` is absolute that pixels never go into a Lua table and nothing in Lua computes a pixel offset — a Lua array holding 2M pixels makes the GC walk 2M slots per cycle. `gc_pause_max` is baselined and will say immediately if that rule is broken.
+- **A backbuffer in cached RAM with a dirty-rectangle blit.** An uncached framebuffer is 10–50× slower, and drawing straight into it is the mistake that kills the whole thing.
+- **The app server in Lua**, over the same IPC everything else already uses.
 
-Two things will have to change rather than extend. The kernel has to move to TTBR1 so a process's address space contains no kernel. And `sys` becomes real syscalls across a privilege boundary, with the inspection half of it destined for `/proc` at M5.
+**Two things this session's work bears on directly.** `sys.ticks()` exists now, so input latency can be measured from event to pixel with a timestamp at each end, which is what `testing.md` §18.5 asks for. And the app server will be chatty — a round trip per drawing command is the shape to avoid, and `ipc_roundtrip` at 30 ticks against `serialize` at 1,365 is the number that says how much a command costs to carry.
 
-**M2 cannot be closed without a cable**, and its remaining half is the point of the milestone: the HAL takes its real shape once there are two implementations to compare, and `hal.md` is explicit that writing that interface against one target produces the shape of QEMU wearing generic names. Nothing is gained by guessing at it now.
+**The FP question is still open and gets closer here.** The context switch does not save FP state. It has not mattered because only one thread at a time runs Lua, and Lua's numbers are doubles. A compositor with more than one drawing process makes it matter, and the fix is lazy FP save, which `roadmap.md` schedules at M10 for Doom.
 
-So the choice is between waiting and starting M3, whose work is all CPU-side and needs no hardware: address spaces, threads, a context switch, a round-robin scheduler, synchronous IPC, and a capability table.
+**M2 cannot be closed without a cable**, and its remaining half is the point of the milestone: the HAL takes its real shape once there are two implementations to compare, and `hal.md` is explicit that writing that interface against one target produces the shape of QEMU wearing generic names. Nothing is gained by guessing at it now. When a cable arrives: `hal/pi1/` or `hal/pi5/`, and then the HAL interface takes its real shape.
 
-**One thing from M1 has to be settled before M3's threads, not after.** An exception taken on an exhausted stack is currently a double fault, because the handler builds its frame on the stack that just overflowed. With one stack that is a hang; with a thread per stack it is a hang that is hard to attribute. The fix is a separate exception stack, and M3 is where it belongs.
-
-**And the FP question comes due at the same moment.** The context switch will not save FP state, and Lua's numbers are doubles. While Lua is on one thread that is fine. The moment it is not, this needs lazy FP save.
-
-**Under QEMU, now:** the minimal freestanding libc (`memcpy`, `memset`, `memmove`, `strlen`, `strcmp`, `strcpy`, `strchr`, `setjmp`/`longjmp`, a minimal `snprintf`, and the `math` functions Lua asks for), then upstream Lua 5.4 built freestanding with its allocator pointing at the page allocator, then a REPL over the UART.
-
-`memset` and `memcpy` already exist in `kernel/string.c`, written because GCC emits calls to them from a zeroing loop even under `-ffreestanding`. They are the kernel's own and deliberately naive; the userland libc is a separate thing.
-
-**`setjmp`/`longjmp` is the one that demands care.** Lua uses it for error handling, and getting it wrong produces a bug that only appears the first time something raises an error, long after it was written.
-
-**When a cable arrives:** `hal/pi1/` or `hal/pi5/`, and then the HAL interface takes its real shape with two implementations in front of it. Not before. Today's interface is the shape of QEMU with generic names, and that is fine until there is something to compare it against.
+**Two benchmarks `roadmap.md` asked for at M4 are still not built:** allocating and freeing a table, and the overhead of a syscall from Lua versus the same one from C. The second is more interesting than it was — `sys.ticks()` makes it measurable from inside a process, and it is the number that says what the EL0 boundary costs per crossing.
 
 ## Decisions taken while implementing
 
 Decisions that came out of writing code go here. Format: date, what was decided, why.
 
 Design decisions (as opposed to implementation ones) go in the decision log in `README.md` and are propagated to `design.md` and `roadmap.md` in the same session.
+
+**2026-08-30 — The kernel contains no Lua, and the tests for Lua run at EL0.**
+
+`CLAUDE.md` had said since the first commit that the kernel has no Lua in it from M4 onward. It was false for two milestones: the interpreter was 163,648 bytes of `.text` against 28,556 for everything else in the kernel, reachable from no code path, kept alive by fifty test assertions that drove the kernel through it.
+
+The tests were the whole of the reason, so the tests moved. `user/tests/luatest.lua` holds them, one role per test; `tests/tests.c` starts a process in a role and turns its exit code into a TAP line, which keeps the plan, the numbering and the names on the C side where they were. Same names, same count, one boundary further out.
+
+What this bought is not speed — it was dead code, and the three benchmarks that touch no Lua are unchanged to three decimals. It bought the complexity budget back. `CLAUDE.md` allows 10k lines of kernel; the kernel's own source is 5,610, and Lua was another ~30,000 lines of C at EL1, where any bug in it is a kernel bug.
+
+**Kernel machine code: `.text` 204,800 bytes to 20,480. Exactly ten times smaller.** Measured by building the previous commit in a worktree rather than remembered; an earlier note in this session said 192,204, which was the sum of symbol sizes out of the map and missed alignment.
+
+**2026-08-30 — What left with Lua: `malloc`, `math`, `snprintf`, `strtod`, `stdio`, and `-lm`.** Every one of them was in the kernel for Lua and for nothing else — nothing in `kernel/`, `arch/` or `hal/` allocates or touches a float, and `-mgeneral-regs-only` has been turning the second into a compile error all along. Only `string.c` and `setjmp.S` are left, the latter because `trap.c` builds its fault-expectation mechanism on it. The test image links the rest back for its own unit tests of them, and brings up a 256 KB heap of its own to do it.
+
+**2026-08-30 — A monotonic counter is a syscall; the wall clock stays a capability.** `SYS_TICKS` reads `CNTPCT_EL0`. `design.md` §4.4 makes `/dev/clock` something a process is handed or is not, and that does not change: what a program wants is a date, and a date comes from a server. But the server has to read the counter from somewhere, and a tick is the kind of thing that genuinely cannot be a message — it has to be sampled where the code being timed runs, or the sample measures the sampling.
+
+It also retired a weakness that was written down and not fixed: a process could not read the counter at all, so Lua's string-hash seed at EL0 came off a stack address, and two processes from the same image start at the same address and so got the same seed.
+
+**2026-08-30 — A benchmark harness that waits for a process must block, not spin.** The two Lua benchmarks are processes now, and the kernel side blocks in `ipc_receive` rather than yielding in a loop until the process exits. A spin would leave the harness thread runnable for the whole measurement, so every timer tick would switch into it and charge its work to the number being measured.
+
+**And the reply has to be a value.** Replying with a zero-length message is not replying with nothing — it is replying with something that is not a serialisable Lua value, so the caller raises, the process dies, and the harness waits for ever on a sender that no longer exists. That is a hang rather than a failure, and it is what the first version of this did. The reply is now the request, echoed back.
+
+**2026-08-30 — Recording a baseline no longer throws away its note.** `run_bench.py --record` carried `tol` across and rebuilt everything else, which silently dropped the `note` field — the part that says what a number means and why, and the part that is expensive to work out twice. Found while recording the baselines this change moved.
+
+**2026-08-30 — Two of the five benchmarks changed what they measure, and the numbers are not comparable across the change.**
+
+`context_switch`, `exception` and `ipc_roundtrip` are identical to three decimals, which is the evidence that the kernel itself did not change.
+
+`gc_pause_max` moved 77,860 to 78,130, +0.3%. A collector step costs the same at EL0 as it did at EL1, which is the direct answer to whether the move cost performance: the interpreter's own work does not care what privilege level it runs at. Interrupts are now live inside the measured window, because a process cannot mask them — and for a pause metric that is more honest rather than less, since a pause the user feels includes the tick that landed in it.
+
+`serialize` moved 1,037.6 to 1,364.9, +31%. Not a slowdown of the serialiser: `sys.pack` returns a Lua string where the C version wrote into a `struct message` and never touched the heap. Measured rather than assumed — an allocate-and-copy of a string that size through one Lua-to-C call costs 164 ticks against a 325-tick increase, so the allocation is about half of it and the rest is the second crossing and the copy back into a message on the way in. What it now measures is what a caller out here actually pays.
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
 

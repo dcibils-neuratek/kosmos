@@ -1,16 +1,13 @@
 /*
  * Lua's environment inside a process.
  *
- * The same job `lua/kosmos/kosmos_lua.c` does for the kernel's copy, done on
- * the other side of the boundary. It is separate rather than shared because
- * almost nothing carries across: output is a syscall rather than a UART
+ * The kernel had a copy of this once, in `lua/kosmos/kosmos_lua.c`, for the
+ * `lua_State` it opened itself. This is the only one left. That it was ever
+ * two files rather than one shared one is the point: almost nothing carries
+ * across a privilege boundary. Output is a syscall rather than a UART
  * register, the allocator is this process's own heap rather than a shared
- * one, and there is no panic() to fall back on because a process that cannot
- * continue exits instead of stopping the machine.
- *
- * The kernel's copy is temporary. Once the REPL moves out here there is no
- * reason for Lua to be in the kernel at all, which is what `roadmap.md` M4
- * means by removing it.
+ * one, and there is no panic() to fall back on, because a process that
+ * cannot continue exits instead of stopping the machine.
  */
 
 #include <stdarg.h>
@@ -51,17 +48,21 @@ void kosmos_lua_writeerror(const char *fmt, ...)
 long kosmos_lua_time(long *out)
 {
     /*
-     * A process has no clock and cannot read the counter: CNTPCT_EL0 is
-     * readable from EL0 only if the kernel enables it, and it deliberately
-     * has not. Lua wants this for hash seeding, so it gets an address off
-     * its own stack, which differs between processes and boots for the same
-     * reason ASLR would have given upstream something.
+     * The counter, through SYS_TICKS. Not a wall clock, and Lua does not
+     * need one: it wants this to seed string hashing, and what that wants is
+     * a number that differs between states.
      *
-     * It is weak, and the honest fix is a syscall that hands out randomness
-     * from wherever the system eventually gets it. Nothing untrusted reaches
-     * a Lua state yet, so it is not urgent, but it is not good either.
+     * This used to be an address off this function's own stack, because a
+     * process could not read CNTPCT_EL0 at all. That was weak in the way
+     * that matters - two processes from the same image start at the same
+     * address and so got the same seed. Mixing in the counter fixes it,
+     * since two processes never reach here on the same tick.
+     *
+     * Still not a defence against an attacker who can choose keys and time
+     * the boot. Nothing untrusted reaches a Lua state yet; when something
+     * does, this wants real randomness rather than a clock.
      */
-    long here = (long)(uintptr_t)&out;
+    long here = (long)(uintptr_t)&out ^ (long)kosmos_ticks();
 
     if (out != NULL) {
         *out = here;

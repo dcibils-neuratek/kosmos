@@ -1,12 +1,13 @@
 /*
  * `sys`, from inside a process.
  *
- * The same names the kernel's copy offers, over syscalls instead of direct
- * calls. A Lua program written against one runs against the other, which is
- * the property that will let servers move out of the kernel one at a time
- * rather than all at once.
+ * The only one there is. The kernel had a copy of this table once, over
+ * direct calls rather than syscalls, and servers were kernel threads; both
+ * are gone, and the names that survived the move are the ones that could be
+ * expressed as a syscall. That the two were interchangeable for a milestone
+ * is what let the servers walk out one at a time instead of all at once.
  *
- * The inspection half is missing, and deliberately. `sys.threads` and
+ * The inspection half did not survive, and deliberately. `sys.threads` and
  * `sys.memory` read kernel state, and a process has no business reading it
  * directly: at M5 that is `/proc`, reached through the namespace like any
  * other resource, and reached only by a process that was handed it.
@@ -188,6 +189,19 @@ static int l_yield(lua_State *L)
     return 0;
 }
 
+/*
+ * How long something took, in counter ticks.
+ *
+ * A Lua integer is 64 bits, so the counter fits without losing a bit, and
+ * the difference between two of these is the only thing anybody should use
+ * it for. It is not a date: `design.md` §4.4 makes that a capability.
+ */
+static int l_ticks(lua_State *L)
+{
+    lua_pushinteger(L, (lua_Integer)kosmos_ticks());
+    return 1;
+}
+
 static int l_endpoint(lua_State *L)
 {
     long cap = kosmos_endpoint();
@@ -266,6 +280,79 @@ static int l_reply(lua_State *L)
     return 1;
 }
 
+/*
+ * A value, as bytes, without sending it anywhere.
+ *
+ * The same serialiser a message uses, on its own. Two reasons it is exposed
+ * rather than staying an internal detail of `sys.call`:
+ *
+ *   - a value has to be storable and not only sendable. At M8 `fs.write`
+ *     with a table is this operation with a different destination, and it
+ *     should not have to invent a second encoding to get there.
+ *   - it is what a benchmark can hold still. The cost of the serialiser is
+ *     `design.md` §1's thesis priced in ticks, and pricing it through a
+ *     round trip would be measuring the IPC path instead.
+ *
+ * Bounded by a message, because a message is the buffer it writes into. A
+ * value larger than one is refused rather than truncated.
+ */
+static int l_pack(lua_State *L)
+{
+    struct message m;
+    int rc;
+
+    luaL_checkany(L, 1);
+
+    m.tag = 0;
+    m.cap_plus_one = 0;
+    m.length = 0;
+
+    rc = serialize_pack(L, 1, &m);
+
+    if (rc != SERIALIZE_OK) {
+        lua_pushnil(L);
+        lua_pushstring(L, serialize_error(rc));
+        return 2;
+    }
+
+    lua_pushlstring(L, (const char *)m.data, m.length);
+    return 1;
+}
+
+static int l_unpack(lua_State *L)
+{
+    size_t len;
+    const char *s = luaL_checklstring(L, 1, &len);
+    struct message m;
+    int rc;
+
+    if (len > MSG_BYTES) {
+        lua_pushnil(L);
+        lua_pushstring(L, "longer than a message");
+        return 2;
+    }
+
+    /*
+     * Into a message rather than read in place, because serialize_unpack
+     * takes one. The copy is what the caller would pay anyway if this had
+     * come off a wire, and it keeps one definition of the reader.
+     */
+    m.tag = 0;
+    m.cap_plus_one = 0;
+    m.length = (uint32_t)len;
+    memcpy(m.data, s, len);
+
+    rc = serialize_unpack(L, &m);
+
+    if (rc != SERIALIZE_OK) {
+        lua_pushnil(L);
+        lua_pushstring(L, serialize_error(rc));
+        return 2;
+    }
+
+    return 1;
+}
+
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "getchar",  l_getchar },
@@ -273,10 +360,13 @@ static const luaL_Reg sys_functions[] = {
     { "wait",     l_wait },
     { "exit",     l_exit },
     { "yield",    l_yield },
+    { "ticks",    l_ticks },
     { "endpoint", l_endpoint },
     { "call",     l_call },
     { "receive",  l_receive },
     { "reply",    l_reply },
+    { "pack",     l_pack },
+    { "unpack",   l_unpack },
     { NULL, NULL }
 };
 

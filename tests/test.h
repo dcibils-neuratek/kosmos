@@ -4,12 +4,14 @@
 #include <stdbool.h>
 
 /*
- * The C self-test layer, for M0 through M3. Before Lua exists there is no
- * other option: an array of functions returning bool, run at the end of
- * boot, printed as TAP over the serial line.
+ * The C self-test layer: an array of functions returning bool, run at the
+ * end of boot and printed as TAP over the serial line.
  *
- * It freezes at M2. Once there is an interpreter, new tests are written in
- * Lua and the ones already here stay where they are.
+ * What belongs here is what can only be checked from inside the kernel -
+ * registers, page tables, the scheduler, the state of a thread. Anything
+ * about Lua is a process now: `user/tests/luatest.lua` holds the assertions
+ * and the driver on this side turns an exit code into a TAP line, so the
+ * plan, the numbering and the names all stay in one place.
  *
  * Only built into the image when KOSMOS_TEST is defined, so it costs the
  * normal build nothing.

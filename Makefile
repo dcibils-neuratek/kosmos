@@ -15,12 +15,19 @@ CC      := $(CROSS)gcc
 OBJDUMP := $(CROSS)objdump
 OBJCOPY := $(CROSS)objcopy
 
+SIZE    := $(CROSS)size
+
+# Which of the three images is being built. The test and bench builds each
+# carry a Lua chunk the shipping one must not, so their user images are
+# different binaries and cannot share a directory or a generated .c with it -
+# `make` and `make test` would trade stale ones back and forth.
+VARIANT := $(if $(TEST),-test,$(if $(BENCH),-bench))
+
 # Where generated sources go. Defined here rather than beside the rules that
 # produce them, because SRCS below is a := assignment and expands it on the
 # spot; further down it would expand to nothing and the object would be
 # named build//init_bin.c.o.
-GEN := build/gen
-SIZE    := $(CROSS)size
+GEN := build/gen$(VARIANT)
 
 SRCS := boot/start.S \
         arch/aarch64/vectors.S \
@@ -28,8 +35,6 @@ SRCS := boot/start.S \
         arch/aarch64/mmu.c \
         arch/aarch64/switch.S \
         arch/aarch64/el0.S \
-        user/hello.S \
-        user/faulty.S \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \
         hal/qemu-virt/gic.c \
@@ -37,12 +42,6 @@ SRCS := boot/start.S \
         kernel/console.c \
         runtime/libc/string.c \
         runtime/libc/setjmp.S \
-        runtime/libc/malloc.c \
-        runtime/libc/misc.c \
-        runtime/libc/math.c \
-        runtime/libc/snprintf.c \
-        runtime/libc/stdio.c \
-        runtime/libc/strtod.c \
         kernel/panic.c \
         kernel/pmm.c \
         kernel/thread.c \
@@ -51,19 +50,46 @@ SRCS := boot/start.S \
         kernel/process.c \
         kernel/syscall.c \
         kernel/main.c \
-        $(GEN)/init_bin.c \
-        lua/kosmos/kosmos_lua.c \
-        lua/kosmos/repl.c \
-        lua/kosmos/sys.c \
-        lua/kosmos/serialize.c
+        $(GEN)/init_bin.c
 
-# Upstream Lua. The core, plus the libraries that are allowed to exist.
+# What is not in that list, and why.
+#
+# **No Lua.** `CLAUDE.md` has said since the start that the kernel has none
+# inside it from M4 onward, and until this commit that was simply untrue: the
+# interpreter was most of the image, reachable from no code path, kept alive
+# only because the tests drove the kernel through it. Those tests run at EL0
+# now, where Lua does, and .text went from 204,800 bytes to 20,480.
+#
+# **No malloc, no math, no snprintf, no strtod, no stdio.** Every one of them
+# was here for Lua. Nothing in kernel/, arch/ or hal/ allocates - the kernel's
+# state is fixed pools - and a float anywhere in it is a bug that
+# -mgeneral-regs-only turns into a compile error. The test image links them
+# back for its own unit tests, which is where they are exercised.
+#
+# **No -lm**, for the same reason, and it goes back only in the test build.
+#
+# **No user/hello.S or user/faulty.S.** Those are the fixture blobs the tests
+# run at EL0 to check that a process exits, that a null dereference kills only
+# it, and that a syscall refuses a kernel pointer. Nothing outside the suite
+# refers to them, so they were 4 KB of the shipping image that no code path
+# could reach.
+#
+# What stays despite being unreachable in the shipping image is
+# `fault_expect_begin`/`_end` in arch/aarch64/trap.c, and setjmp.S under it.
+# Only the tests and the benchmarks call them. Compiling them out would mean
+# the trap handler that ships is not the trap handler that was tested, and
+# that is a worse trade than a couple of hundred bytes and one predictable
+# branch on a path that is already an exception.
+
+# Upstream Lua, for the user image. The core, plus the libraries that are
+# allowed to exist.
 #
 # What is missing is the point, and it is a security decision rather than a
 # build one (design.md 5.3): no liolib or loslib, because there is no global
 # tree to open a path in and no wall clock; no loadlib, which wants dlopen;
 # no ldblib, because debug.getupvalue breaks any abstraction built in Lua.
-# linit.c is out too, since it opens all of them; lua/kosmos/ opens ours.
+# linit.c is out too, since it opens all of them; user/lib/lua_glue.c opens
+# ours.
 LUA_SRCS := \
         lua/upstream/lapi.c     lua/upstream/lcode.c    lua/upstream/lctype.c \
         lua/upstream/ldebug.c   lua/upstream/ldo.c      lua/upstream/ldump.c \
@@ -76,22 +102,31 @@ LUA_SRCS := \
         lua/upstream/lstrlib.c  lua/upstream/ltablib.c  lua/upstream/lmathlib.c \
         lua/upstream/lutf8lib.c
 
-SRCS += $(LUA_SRCS)
-
 # The test build is a separate image in a separate directory. Same sources
 # plus the suite, with KOSMOS_TEST defined, so the tests cost the normal
 # image nothing and the two never share a stale object file.
 ifdef TEST
-  BUILD    := build/test
-  SRCS     += tests/tests.c
-  TESTDEFS := -DKOSMOS_TEST -Itests
+  BUILD     := build/test
+  SRCS      += tests/tests.c
+  # The EL0 fixture blobs, which only the suite runs.
+  SRCS      += user/hello.S user/faulty.S
+  # The libc the kernel no longer links, because the unit tests for it are
+  # here and they call it directly. The shipping image needs none of it.
+  SRCS      += runtime/libc/malloc.c runtime/libc/misc.c \
+               runtime/libc/math.c runtime/libc/snprintf.c \
+               runtime/libc/strtod.c
+  TESTDEFS  := -DKOSMOS_TEST -Itests
+  # The user side needs the define too: main.c grows a chunk to dispatch to.
+  UTESTDEFS := -DKOSMOS_TEST
 else ifdef BENCH
-  BUILD    := build/bench
-  SRCS     += bench/bench.c
-  TESTDEFS := -DKOSMOS_BENCH -Ibench
+  BUILD     := build/bench
+  SRCS      += bench/bench.c
+  TESTDEFS  := -DKOSMOS_BENCH -Ibench
+  UTESTDEFS := -DKOSMOS_BENCH
 else
-  BUILD    := build
-  TESTDEFS :=
+  BUILD     := build
+  TESTDEFS  :=
+  UTESTDEFS :=
 endif
 
 TARGET := $(BUILD)/kosmos.elf
@@ -105,7 +140,7 @@ TARGET := $(BUILD)/kosmos.elf
 CFLAGS_BASE := -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
-               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Ilua/kosmos -Iuser \
+               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Iuser \
                $(TESTDEFS)
 
 CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
@@ -127,7 +162,8 @@ CFLAGS_FP := $(CFLAGS_BASE)
 # configuration forced in front of every translation unit. -include is what
 # lets `lua/upstream/` stay byte-for-byte what lua.org ships: every hook it
 # overrides is guarded upstream by #if !defined, so arriving first is enough
-# and `lua/patches/` stays empty.
+# and `lua/patches/` stays empty. Used by the user link only; the kernel does
+# not compile a line of it.
 LUA_FLAGS := -Ilua/upstream -Ilua/kosmos -include lua/kosmos/kosmos_lua.h
 
 # Upstream is compiled without -Werror. It is not our code and its warnings
@@ -141,8 +177,9 @@ $(BUILD)/runtime/libc/math.c.o:     CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/snprintf.c.o: CFLAGS := $(CFLAGS_FP)
 $(BUILD)/runtime/libc/strtod.c.o:   CFLAGS := $(CFLAGS_FP)
 $(BUILD)/$(GEN)/init_bin.c.o:        CFLAGS := $(CFLAGS_BASE)
-$(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP) -Ilua/upstream
-$(BUILD)/bench/bench.c.o:            CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
+# tests.c keeps the FP flags: it asserts on doubles, and one of its tests is
+# that FP is usable at EL1 at all.
+$(BUILD)/tests/tests.c.o:            CFLAGS := $(CFLAGS_FP)
 
 # --build-id=none keeps a .note section out of an image that has no loader
 # to read it.
@@ -169,18 +206,12 @@ LDFLAGS := -T boot/kosmos.ld \
 # Its only demand is __errno, which the design wanted per-process anyway.
 LIBS := -lm
 
-OBJS     := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
-LUA_OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(LUA_SRCS)))
+# The kernel links none of it. It has no floats by construction, and the one
+# caller it used to have was Lua. The test image gets it back because the
+# unit tests for our half check it against newlib's.
+KLIBS := $(if $(TEST),-lm)
 
-# These have to come after LUA_OBJS is assigned: make expands the target
-# side of a rule as it reads it, and an empty variable there matches nothing
-# and fails silently.
-$(LUA_OBJS): CFLAGS := $(CFLAGS_LUA_UPSTREAM)
-$(BUILD)/lua/kosmos/kosmos_lua.c.o: CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
-$(BUILD)/lua/kosmos/repl.c.o:       CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
-$(BUILD)/lua/kosmos/sys.c.o:        CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
-$(BUILD)/lua/kosmos/serialize.c.o:  CFLAGS := $(CFLAGS_FP) $(LUA_FLAGS)
-
+OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
 DEPS := $(OBJS:.o=.d)
 
 # ------------------------------------------------------------------
@@ -196,7 +227,10 @@ DEPS := $(OBJS:.o=.d)
 # which rule won would depend on how make breaks ties.
 # ------------------------------------------------------------------
 
-UBUILD := build-user
+# Varies with the image for the same reason GEN does: the test and bench
+# init.bin files are different binaries, and sharing a directory would mean
+# sharing objects compiled with different flags.
+UBUILD := build-user$(VARIANT)
 
 USER_LIBC := runtime/libc/string.c \
              runtime/libc/malloc.c \
@@ -217,12 +251,22 @@ USER_SRCS := user/init/start.S \
              $(LUA_SRCS) \
              $(GEN)/init_lua.c
 
+# The Lua tests and the Lua benchmarks, each in one image only. Both used to
+# run inside the kernel against a lua_State it carried; they run out here now,
+# because out here is where Lua is.
+ifdef TEST
+USER_SRCS += $(GEN)/luatest_lua.c
+endif
+ifdef BENCH
+USER_SRCS += $(GEN)/luabench_lua.c
+endif
+
 USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))
 USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector
@@ -243,6 +287,14 @@ $(UBUILD)/%.S.o: %.S
 $(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< init_lua $@
+
+$(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bin2c.py $< luatest_lua $@
+
+$(GEN)/luabench_lua.c: user/tests/luabench.lua tools/bin2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bin2c.py $< luabench_lua $@
 
 $(UBUILD)/init.elf: $(USER_OBJS) user/user.ld
 	@mkdir -p $(dir $@)
@@ -268,7 +320,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS) boot/kosmos.ld
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(KLIBS)
 
 $(BUILD)/%.c.o: %.c
 	@mkdir -p $(dir $@)
@@ -316,7 +368,7 @@ size: $(TARGET)
 	$(SIZE) $(TARGET)
 
 clean:
-	rm -rf build build-user
+	rm -rf build build-user build-user-test build-user-bench
 
 -include $(DEPS)
 -include $(USER_DEPS)

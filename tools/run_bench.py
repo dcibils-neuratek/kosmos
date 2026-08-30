@@ -127,7 +127,7 @@ def record(results):
 
     for name, (value, iterations) in sorted(results.items()):
         previous = existing.get(name, {})
-        out[name] = {
+        entry = {
             "value": value,
             "iterations": iterations,
             # Two percent, per testing.md 18.6: under -icount the noise is
@@ -136,6 +136,18 @@ def record(results):
             "commit": commit,
             "unit": "counter ticks per operation, QEMU -icount shift=0",
         }
+
+        # The note says what the number means and why it is what it is, and
+        # it is the part that is expensive to work out again. Carried across
+        # rather than rewritten, because this used to drop it: recording a
+        # baseline threw away the explanation of the one before it, and the
+        # next reader would have found a bare number with no argument
+        # attached. Wrong notes are edited by hand, in the commit that moved
+        # the number.
+        if "note" in previous:
+            entry["note"] = previous["note"]
+
+        out[name] = entry
 
     with open(BASELINES, "w") as f:
         json.dump(out, f, indent=2, sort_keys=True)

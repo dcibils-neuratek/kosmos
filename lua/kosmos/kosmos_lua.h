@@ -4,6 +4,11 @@
 /*
  * How Lua is configured for Kosmos, without editing a line of it.
  *
+ * This is a header for the *user* build and nothing else. The kernel had a
+ * copy of Lua once and does not any more, so `lua/kosmos/` is down to this
+ * file and the serialiser; the functions declared below are implemented in
+ * `user/lib/lua_glue.c`.
+ *
  * Forced in front of every Lua translation unit with -include, so these
  * definitions land before luaconf.h and lauxlib.h get to supply their own.
  * Every hook below is guarded upstream by #if !defined, which is what makes
@@ -46,10 +51,10 @@ unsigned int kosmos_lua_seed(void);
  * lmathlib.c seeds its random generator with `time(NULL)` directly, with no
  * hook to override, so this redirects the call itself.
  *
- * The system's own `time()` panics, and should: there is no wall clock in
- * the kernel, and returning a plausible wrong number is worse than stopping.
+ * The system's own `time()` panics, and should: there is no wall clock
+ * anywhere, and returning a plausible wrong number is worse than stopping.
  * But Lua is not asking what time it is, it is asking for something that
- * differs between boots, and the cycle counter answers that honestly.
+ * differs between states, and the monotonic counter answers that honestly.
  *
  * The redirection applies only to Lua's translation units, because this
  * header is forced in front of those and nothing else. Anything outside Lua
@@ -99,12 +104,9 @@ struct lua_State *kosmos_lua_open(void);
 int kosmos_lua_dostring(struct lua_State *L, const char *chunkname,
                         const char *src);
 
-/* "Lua 5.4.8". A function rather than the LUA_RELEASE macro so the kernel
- * can print it without including lua.h and inheriting all of Lua's
- * configuration along with it. */
+/* "Lua 5.4.8". A function rather than the LUA_RELEASE macro, so a caller can
+ * print it without including lua.h and inheriting all of Lua's configuration
+ * along with it. */
 const char *kosmos_lua_version(void);
-
-/* The prompt. Never returns: there is nothing to return to. */
-void repl_run(struct lua_State *L);
 
 #endif /* KOSMOS_LUA_H */

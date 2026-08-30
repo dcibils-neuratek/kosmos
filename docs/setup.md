@@ -117,7 +117,7 @@ On screen you see the system. In the terminal you have the full log — scrollab
 ```
 lua/upstream/     Lua 5.4.x exactly as shipped, untouched
 lua/patches/      the freestanding changes, applied during the build
-lua/kosmos/       our own bindings
+lua/kosmos/       the build configuration and the table serialiser, for the user image
 ```
 
 **Never edit `upstream/` directly.** When a new version comes out, you update without fighting your own changes. Ten minutes now, a week at milestone 4.

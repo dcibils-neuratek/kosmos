@@ -312,6 +312,30 @@ void syscall_dispatch(struct trapframe *tf)
         result = 0;
         break;
 
+    case SYS_TICKS: {
+        /*
+         * The physical counter, straight out of the register.
+         *
+         * Not a wall clock and not pretending to be one: it counts from
+         * whenever the machine started, at CNTFRQ_EL0 Hz, and says nothing
+         * about what time it is. A date is `/dev/clock`'s job.
+         *
+         * No permission check. It is not authority - every process can
+         * already time itself by counting yields, only worse - and a
+         * benchmark or a frame loop that has to ask for the clock is a
+         * benchmark that measures the asking.
+         *
+         * isb first, or the read can be reordered ahead of whatever the
+         * caller was timing. The read is cheap; the barrier is the part
+         * that makes the answer mean anything.
+         */
+        uint64_t t;
+        __asm__ volatile("isb" ::: "memory");
+        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(t));
+        result = (long)t;
+        break;
+    }
+
     case SYS_ENDPOINT:
         result = ipc_endpoint_create();
         break;

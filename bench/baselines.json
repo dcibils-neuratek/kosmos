@@ -1,39 +1,41 @@
 {
   "context_switch": {
-    "commit": "52860b8",
+    "commit": "8a635d9",
     "iterations": 200000,
+    "note": "One of the three that touch no Lua. Together with `exception` and `ipc_roundtrip` they are the control group: all three were identical to three decimals across taking the interpreter out of the kernel, which is the evidence that the kernel itself did not change.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
     "value": 7.187
   },
   "exception": {
-    "commit": "52860b8",
+    "commit": "8a635d9",
     "iterations": 20000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
     "value": 7.25
   },
   "gc_pause_max": {
-    "commit": "52860b8",
+    "commit": "8a635d9",
     "iterations": 1,
+    "note": "The worst single collector step, measured in a process. Five runs of the recorded build gave 78129 or 78130 - a one-tick range - so the 2% tolerance is enormous headroom here. Moved from 77860, where it ran inside the kernel with interrupts masked. That is +0.3%, and it is the answer to whether leaving EL1 cost the interpreter anything: it did not. Interrupts are live inside the window now, because a process cannot mask them, and for a pause metric that is more honest rather than less - a pause the user feels includes the tick that landed in it.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 77860.0
+    "value": 78129.0
   },
   "ipc_roundtrip": {
-    "commit": "52860b8",
+    "commit": "8a635d9",
     "iterations": 100000,
-    "note": "A minimal message: the floor of the IPC path, including the capability translation every delivery now performs. Compare with `serialize`, which is what carrying a real Lua table costs on top - about forty times more.",
+    "note": "A minimal message: the floor of the IPC path, including the capability translation every delivery now performs. Compare with `serialize`, which is what carrying a real Lua table costs on top - about forty-five times more.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
     "value": 30.0
   },
   "serialize": {
-    "commit": "52860b8",
+    "commit": "8a635d9",
     "iterations": 20000,
-    "note": "Best of five lua_States. Lua randomises string hashing per state, so collision patterns and therefore cost differ every boot: measured across ten runs the spread of a single state is 6.9%. Taking the best of several brings it to 0.55%, which is what makes a 2% tolerance mean anything. The earlier note here claimed 0.6% from three samples and was simply wrong.",
+    "note": "Best of five processes within a run, because Lua randomises string hashing per state and each of the five has its own; taking the best is the usual answer to noise that only ever adds. Seven runs of the recorded build spanned 1355.7 to 1365.6, a 0.73% range, which is what makes a 2% tolerance mean anything. The recorded value sits near the top of that range, so the effective detection threshold is about 2.7% above the observed minimum. Moved from 1037.623, where it measured serialize_pack and serialize_unpack called from C inside the kernel. It measures sys.pack and sys.unpack from a process now - where the serialiser actually runs - and that allocates a Lua string per round where the C version wrote into a struct message and never touched the heap. Measured rather than assumed: an allocate-and-copy of a string that size through one Lua-to-C call costs 164 ticks against the 325-tick increase, so the allocation is about half of it and the rest is the second crossing and the copy back into a message on the way in. The two numbers are not comparable.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 1037.623
+    "value": 1364.864
   }
 }

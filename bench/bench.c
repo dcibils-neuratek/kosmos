@@ -29,10 +29,7 @@
 #include "ipc.h"
 #include "trap.h"
 #include "semihosting.h"
-#include "serialize.h"
-#include "kosmos_lua.h"
-#include "lua.h"
-#include "lauxlib.h"
+#include "process.h"
 
 static inline uint64_t now(void)
 {
@@ -260,155 +257,125 @@ static bool bench_exception(struct bench_result *out)
 /* ------------------------------------------------------------------ */
 
 /*
- * A typical message, packed and unpacked.
+ * A typical message, packed and unpacked, and the longest the collector
+ * stops for.
  *
- * `roadmap.md` asks for this at M4, and it is the cost `design.md` §1's
- * thesis is paid for with: the protocol between servers is the data model of
- * the language, and this is what that conversion costs per message. Every
- * namespace read from M5 and every drawing command from M6 pays it twice.
+ * `roadmap.md` asks for both at M4. The first is the cost `design.md` §1's
+ * thesis is paid for with - the protocol between servers is the data model
+ * of the language, and this is what that conversion costs per message, twice
+ * for every namespace read from M5 and every drawing command from M6. The
+ * second is what `design.md` §5.2 calls this project's recurring problem.
  *
- * "Typical" is a small record with a tag, a couple of strings and a nested
- * table, which is what a namespace operation looks like.
+ * Both used to open a `lua_State` inside the kernel. There is none to open
+ * any more, so each is a process: `user/tests/luabench.lua` does the
+ * measuring and hands the number back, and what is left here is the harness
+ * that starts it and blocks until it reports.
+ *
+ * Blocking is the part that matters. A bounded spin waiting for the process
+ * to exit would leave this thread in the run queue for the whole
+ * measurement, and every timer tick would switch into it and charge its
+ * work to the number being measured. A rendezvous receive takes this thread
+ * out of the queue entirely, so what is being measured is the only thing
+ * runnable.
+ *
+ * The one failure mode this shape has: a process that dies before reporting
+ * leaves this thread blocked and the run hangs until the host's timeout. The
+ * Lua side reports on every path it has, so reaching that means a fault -
+ * which is a kernel bug and wants looking at rather than timing out politely.
  */
-#define SERIALIZE_ROUNDS    20000
 
-static const char typical_chunk[] =
-    "return { tag = 3, op = 'read', path = '/dev/temp', "
-    "         opts = { follow = true, limit = 64 } }";
+/* Has to match LUABENCH_BASE in user/init/main.c. */
+#define LUABENCH_BASE   2000UL
 
-/*
- * Reported as the best of several states, not one.
- *
- * Lua randomises string hashing per state, so table iteration order and the
- * collision patterns underneath it differ every boot, and the cost with it.
- * Measured across ten runs the spread is 6.9%, which is far too wide for a
- * 2% tolerance and far too wide to widen the tolerance around: a threshold
- * of 15% would stop detecting anything worth detecting.
- *
- * The minimum across several seeds is the cost with the least unlucky
- * layout, and it is stable because the best case is. Taking the best rather
- * than the mean is the usual answer to noise that only ever adds.
- *
- * Note what is not done: the seed is not fixed for the benchmark. That would
- * measure an image that behaves differently from the one that runs.
- */
-#define SERIALIZE_STATES    5
-
-static bool bench_serialize_once(uint64_t *ticks)
+static bool bench_in_a_process(unsigned long role, struct bench_result *out)
 {
-    lua_State *L = kosmos_lua_open();
-    struct message m;
-    uint64_t start;
-    uint64_t daif;
-    unsigned long i;
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct message msg;
+    struct thread *sender = NULL;
+    struct process *p;
+    cap_t ep;
+    unsigned i;
 
-    if (L == NULL) {
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
         return false;
     }
 
-    if (kosmos_lua_dostring(L, "=bench", typical_chunk) != LUA_OK) {
-        lua_close(L);
+    p = process_create("bench", init_image, (size_t)init_image_len,
+                       LUABENCH_BASE + role);
+
+    if (p == NULL) {
+        (void)ipc_endpoint_destroy(ep);
         return false;
     }
 
-    daif = irq_disable();
-    start = now();
-
-    for (i = 0; i < SERIALIZE_ROUNDS; i++) {
-        if (serialize_pack(L, -1, &m) != SERIALIZE_OK
-            || serialize_unpack(L, &m) != SERIALIZE_OK) {
-            irq_restore(daif);
-            lua_close(L);
-            return false;
-        }
-
-        lua_pop(L, 1);      /* the unpacked copy */
+    /* Before it runs, not after. A process that starts before its
+     * capabilities are in place finds an empty table. */
+    if (ipc_cap_grant(p->thread, ep) != 0) {
+        process_abandon(p);
+        (void)ipc_endpoint_destroy(ep);
+        return false;
     }
 
-    *ticks = now() - start;
-    irq_restore(daif);
+    /* So that a failure says what it was instead of arriving as a zero. */
+    process_grant_console(p);
+    process_start(p);
 
-    lua_close(L);
-    return true;
+    /*
+     * Total first, then iterations, in the tag of each.
+     *
+     * The tag is a raw 64-bit field the kernel copies without looking at.
+     * The body is a serialised Lua value and there is nothing on this side
+     * that can read one - which is the whole point of the commit this
+     * arrived in. Two exchanges rather than two fields, so neither side
+     * holds a count the other could drift from.
+     *
+     * **The reply is the request, sent back unchanged.** Not a nicety: a
+     * reply is unpacked into a Lua value on arrival, and an empty message is
+     * not a value. Replying with a zero-length one raises inside the caller,
+     * which ends the process, which leaves the next receive here waiting for
+     * a sender that no longer exists - a hang rather than a failure, and the
+     * first version of this function did exactly that. Echoing what came in
+     * is the one reply this side can build without a lua_State.
+     */
+    if (ipc_receive(ep, &msg, &sender) != IPC_OK) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    out->total = msg.tag;
+    (void)ipc_reply(sender, &msg);
+
+    if (ipc_receive(ep, &msg, &sender) != IPC_OK) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    out->iterations = (unsigned long)msg.tag;
+    (void)ipc_reply(sender, &msg);
+
+    for (i = 0; i < 100000 && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (p->exited) {
+        process_reap(p);
+    }
+
+    (void)ipc_endpoint_destroy(ep);
+
+    return out->total > 0 && out->iterations > 0;
 }
 
 static bool bench_serialize(struct bench_result *out)
 {
-    uint64_t best = 0;
-    unsigned i;
-
-    for (i = 0; i < SERIALIZE_STATES; i++) {
-        uint64_t ticks;
-
-        if (!bench_serialize_once(&ticks)) {
-            return false;
-        }
-
-        if (i == 0 || ticks < best) {
-            best = ticks;
-        }
-    }
-
-    out->total = best;
-    out->iterations = SERIALIZE_ROUNDS;
-    return true;
+    return bench_in_a_process(0, out);
 }
-
-/*
- * The longest the collector stops for.
- *
- * `design.md` §5.2 calls this the project's recurring problem, and
- * `testing.md` §18.5 is emphatic that it is the maximum that matters and not
- * the average: a system averaging 8 ms a frame with a 40 ms spike every two
- * seconds feels worse than one holding a steady 14 ms.
- *
- * Reported as the worst single step rather than as a rate, which is why
- * iterations is one.
- */
-#define GC_STEPS    2000
-
-static const char gc_setup[] =
-    "garbage = {} "
-    "for i = 1, 3000 do garbage[i] = { i, tostring(i), { i } } end "
-    "collectgarbage('setpause', 100)";
 
 static bool bench_gc_pause(struct bench_result *out)
 {
-    lua_State *L = kosmos_lua_open();
-    uint64_t worst = 0;
-    uint64_t daif;
-    unsigned long i;
-
-    if (L == NULL) {
-        return false;
-    }
-
-    if (kosmos_lua_dostring(L, "=gc", gc_setup) != LUA_OK) {
-        lua_close(L);
-        return false;
-    }
-
-    daif = irq_disable();
-
-    for (i = 0; i < GC_STEPS; i++) {
-        uint64_t start = now();
-        uint64_t took;
-
-        lua_gc(L, LUA_GCSTEP, 1);
-
-        took = now() - start;
-        if (took > worst) {
-            worst = took;
-        }
-    }
-
-    irq_restore(daif);
-
-    out->total = worst;
-    out->iterations = 1;
-
-    lua_close(L);
-    return true;
+    return bench_in_a_process(2, out);
 }
 
 static const struct benchmark benchmarks[] = {

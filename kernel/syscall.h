@@ -14,6 +14,20 @@
  * convention already puts them, which means a syscall stub is a `mov` and an
  * `svc` rather than a shuffle.
  *
+ * SYS_TICKS is the one that looks out of place, and is not. `design.md` §4.4
+ * makes the *clock* a capability - `/dev/clock`, asked for by name, handed
+ * over or not - and that stays true: what a program wants is a date, and a
+ * date comes from a server. But the server has to read the counter from
+ * somewhere, and a monotonic tick is the kind of thing that genuinely cannot
+ * be a message: it has to be sampled where the code being timed runs, or the
+ * sample measures the sampling. So the raw counter is a syscall and the wall
+ * clock stays a capability, which is the same split the design already makes
+ * between entering the kernel and everything else.
+ *
+ * It also retires a weakness. Without it a process cannot read CNTPCT_EL0 at
+ * all, and Lua's string-hash seed at EL0 came off a stack address for want of
+ * anything better.
+ *
  * These are not the interface Kosmos ends up with. `design.md` §4.4 has
  * processes reaching resources by name through a namespace, and at M5 most of
  * what is here becomes `list`, `read` and `write` against a path. What
@@ -31,8 +45,9 @@
 #define SYS_GETCHAR     7   /* ()                     -> byte, or -1    */
 #define SYS_SPAWN       8   /* (arg, caps, ncaps, flags) -> child id     */
 #define SYS_WAIT        9   /* (&id)                  -> exit code       */
+#define SYS_TICKS      10   /* ()                     -> monotonic ticks  */
 
-#define SYS_MAX         10
+#define SYS_MAX         11
 
 /*
  * What a spawn may hand its child beyond capabilities.

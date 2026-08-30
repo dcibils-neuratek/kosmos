@@ -111,6 +111,18 @@ static inline void kosmos_yield(void)
 }
 
 /*
+ * The monotonic counter, in CNTFRQ_EL0 ticks.
+ *
+ * Not a date. It counts from whenever the machine started and is only good
+ * for measuring how long something took; `design.md` §4.4's `/dev/clock` is
+ * where a date comes from, and it is a capability rather than this.
+ */
+static inline unsigned long kosmos_ticks(void)
+{
+    return (unsigned long)sys0(SYS_TICKS);
+}
+
+/*
  * The message the kernel moves.
  *
  * Has to match kernel/ipc.h byte for byte: the syscall copies
