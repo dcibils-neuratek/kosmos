@@ -29,14 +29,29 @@
 #define SYS_RECEIVE     5   /* (cap, msg, &sender)    -> 0 or error    */
 #define SYS_REPLY       6   /* (sender, msg)          -> 0 or error    */
 #define SYS_GETCHAR     7   /* ()                     -> byte, or -1    */
+#define SYS_SPAWN       8   /* (arg, caps, ncaps, flags) -> child id     */
+#define SYS_WAIT        9   /* (&id)                  -> exit code       */
 
-#define SYS_MAX         8
+#define SYS_MAX         10
+
+/*
+ * What a spawn may hand its child beyond capabilities.
+ *
+ * A flag rather than a capability, for the same reason `owns_console` is a
+ * boolean: a device should be named by a capability the process holds, and
+ * that needs a capability that names a device. Until then, whoever spawns
+ * decides, which is at least the right shape - authority flows from parent
+ * to child and never sideways.
+ */
+#define SPAWN_CONSOLE   1u
 
 /* Errors are negative so `if (result < 0)` reads correctly on both sides. */
 #define SYS_ERR_BADCALL   (-100)    /* no such syscall number */
 #define SYS_ERR_FAULT     (-101)    /* a pointer the process may not touch */
 #define SYS_ERR_DENIED    (-102)    /* this process does not hold the device */
 #define SYS_NO_INPUT      (-103)    /* nothing waiting; not an error */
+#define SYS_ERR_NO_CHILD  (-104)    /* nothing to wait for */
+#define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
 
 /*
  * Everything above is plain preprocessor because user programs written in

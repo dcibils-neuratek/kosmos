@@ -118,6 +118,63 @@ static int l_getchar(lua_State *L)
     return 1;
 }
 
+static int l_spawn(lua_State *L)
+{
+    unsigned long arg = (unsigned long)luaL_checkinteger(L, 1);
+    unsigned long flags = (unsigned long)luaL_optinteger(L, 3, 0);
+    int caps[16];
+    unsigned long n = 0;
+    long id;
+
+    /* Capabilities as an array, in the order the child will see them. */
+    if (!lua_isnoneornil(L, 2)) {
+        lua_Integer count;
+
+        luaL_checktype(L, 2, LUA_TTABLE);
+        count = (lua_Integer)lua_rawlen(L, 2);
+
+        if (count > 16) {
+            lua_pushnil(L);
+            lua_pushstring(L, "too many capabilities");
+            return 2;
+        }
+
+        for (n = 0; n < (unsigned long)count; n++) {
+            lua_rawgeti(L, 2, (lua_Integer)(n + 1));
+            caps[n] = (int)luaL_checkinteger(L, -1);
+            lua_pop(L, 1);
+        }
+    }
+
+    id = kosmos_spawn(arg, caps, n, flags);
+
+    if (id < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, (id == -102) ? "this process does not hold that device"
+                                       : "could not spawn");
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)id);
+    return 1;
+}
+
+static int l_wait(lua_State *L)
+{
+    uint64_t id = 0;
+    long code = kosmos_wait(&id);
+
+    if (code < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no children");
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)id);
+    lua_pushinteger(L, (lua_Integer)code);
+    return 2;
+}
+
 static int l_exit(lua_State *L)
 {
     kosmos_exit((int)luaL_optinteger(L, 1, 0));
@@ -212,6 +269,8 @@ static int l_reply(lua_State *L)
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "getchar",  l_getchar },
+    { "spawn",    l_spawn },
+    { "wait",     l_wait },
     { "exit",     l_exit },
     { "yield",    l_yield },
     { "endpoint", l_endpoint },

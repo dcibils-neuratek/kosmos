@@ -32,7 +32,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-94 tests. Five benchmarks. 471 KB of kernel image, which now carries the userland image inside it.
+95 tests. Five benchmarks. 471 KB of kernel image, which now carries the userland image inside it.
 
 **The prompt is a process.** What you type is read by the console server, sent to the shell over IPC, evaluated in the shell's own `lua_State`, and printed back the same way.
 
@@ -67,10 +67,12 @@ nil	no such path: /nowhere
 - [x] The Lua shell as a REPL against the system
 - [x] **Definition of done, both halves: the same server mounted at two paths in two processes, each seeing only its own; and the console server's code replaced while the shell was talking to it, without the shell noticing**
 - [x] Hot reload level 1: `load()` of new code while preserving state and clients
-- [ ] Init and supervision in userland — needs a spawn syscall
+- [x] Init and supervision in userland, on a spawn syscall
 - [ ] Removing Lua from the kernel
 
-**The kernel is playing init**, which is the only temporary part of the arrangement. `roadmap.md` puts init in userland and that needs a process able to start processes.
+**The kernel starts init and nothing else.** init spawns the console server, the ramfs and the shell, passing on the capabilities it was given, and then waits. It cannot promote a child beyond itself: a spawn resolves every capability against the parent's own table, and passing on the console is refused unless the parent holds it.
+
+**Supervision is noticing, not restarting.** init waits and learns which child ended with what code. Restarting one is hot reload level 2, and `design.md` §10 deliberately leaves that until there is state worth recovering — the server would come back empty, and deciding where its state should have lived is the actual design question.
 
 **Lua is out of the kernel's boot path but still compiled in**, because the test suite drives the kernel through it. Taking it out entirely means moving those tests to userland, which is its own piece of work rather than a line to delete.
 

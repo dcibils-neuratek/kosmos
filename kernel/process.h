@@ -79,6 +79,20 @@ struct process {
     unsigned long     arg;      /* the one word it is told at entry */
 
     /*
+     * The image this process was made from, so it can make another like
+     * itself. One image exists today and the kernel could keep it in a
+     * global; recording it per process is what makes a second image a
+     * change to whoever loads them rather than to spawn.
+     */
+    const void       *image;
+    size_t            image_len;
+
+    /* Who spawned it, and the thread of theirs waiting for it to end. A
+     * process with no parent was started by whoever is playing init. */
+    struct process   *parent;
+    struct thread    *waiter;
+
+    /*
      * Whether this process may touch the serial port.
      *
      * A boolean standing in for a capability, and it is written down as such
@@ -139,9 +153,14 @@ void process_start(struct process *p);
 struct process *process_current(void);
 
 /*
- * Ends a process: unmaps and frees everything it owned, and ends its thread.
- * Called from the syscall path on exit, and from the fault path when a
- * process does something it may not. Never returns if it is the caller's own.
+ * Ends the *calling* process: unmaps and frees everything it owned, and ends
+ * its thread. Never returns.
+ *
+ * It is only ever correct for the process the current thread is running.
+ * Calling it on another one would end the caller's thread rather than the
+ * target's, which is a mistake that reads as cleanup and behaves as suicide.
+ * To discard a process that was built and never started, use
+ * process_abandon.
  *
  * The slot itself survives, holding the exit code, until somebody reaps it.
  * Everything expensive is already gone by then, so what is left is a few
@@ -150,6 +169,31 @@ struct process *process_current(void);
  * is exactly when somebody wants to look.
  */
 void process_exit(struct process *p, int code);
+
+/*
+ * A child of `parent`, from the same image, with `arg` as its boot word.
+ * Not started: the caller grants its capabilities first, exactly as the
+ * kernel does for its own.
+ */
+struct process *process_spawn(struct process *parent, unsigned long arg);
+
+/*
+ * Waits for any exited child. Blocks until one has.
+ *
+ * Returns its exit code and fills `*id`, or a negative result when the
+ * caller has no children at all. The child is reaped, so a supervisor that
+ * waits in a loop does not have to remember to.
+ */
+int process_wait(struct process *parent, unsigned *id);
+
+/*
+ * Discards a process that was created and never started.
+ *
+ * The counterpart to process_exit, for the caller cleaning up after
+ * something that has not run: it frees the same memory without ending
+ * anybody's thread.
+ */
+void process_abandon(struct process *p);
 
 /* Releases an exited process's slot. Until this, `exited` and `exit_code`
  * can be read. Reaping a process that has not exited does nothing. */

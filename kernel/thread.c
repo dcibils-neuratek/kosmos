@@ -429,6 +429,18 @@ void thread_wake(struct thread *t)
     }
 }
 
+void thread_abandon(struct thread *t)
+{
+    if (t == NULL || t == current || t->state != THREAD_BLOCKED) {
+        panic("thread_abandon: not an unstarted thread");
+    }
+
+    /* Dead rather than unused, so the slot is recycled with its stacks
+     * still allocated and their guard pages still unmapped, which is what
+     * alloc_thread expects to find. */
+    t->state = THREAD_DEAD;
+}
+
 void thread_exit(void)
 {
     struct thread *next;

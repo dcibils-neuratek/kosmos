@@ -114,59 +114,47 @@ void kmain(void)
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
     /*
-     * The system, as processes.
+     * Start init, and nothing else.
      *
-     * A console server that owns the serial port, a ramfs, and a shell that
-     * holds a capability for each and can name nothing else. From here the
-     * prompt is a process: what you type is read by the console server,
-     * passed to the shell over IPC, evaluated in the shell's own lua_State,
-     * and printed back the same way.
+     * The kernel used to create the console server, the ramfs and the shell,
+     * and wire their capabilities together. That was init's job being done
+     * in the wrong place, and `roadmap.md` says so. Now the kernel makes one
+     * process, hands it the console and an endpoint per server it is
+     * expected to start, and stops.
      *
-     * The kernel is playing init, which is not where `roadmap.md` puts it.
-     * That needs a process able to start processes, and there is no spawn
-     * syscall yet. It is the only part of this arrangement that is
-     * temporary; the shape of it is not.
+     * What init can do is bounded by what it was given. It cannot promote a
+     * child beyond itself: a spawn resolves every capability against the
+     * parent's own table, and passing on the console is refused unless the
+     * parent holds it.
      */
     {
         extern const unsigned char init_image[];
         extern const unsigned long init_image_len;
-        size_t len = (size_t)init_image_len;
-        struct process *console;
-        struct process *ramfs;
-        struct process *shell;
+        struct process *init;
         cap_t console_ep = ipc_endpoint_create();
         cap_t ramfs_ep = ipc_endpoint_create();
 
         if (console_ep < 0 || ramfs_ep < 0) {
-            panic("no endpoints for the servers");
+            panic("no endpoints for init");
         }
 
-        console = process_create("console", init_image, len, 4);
-        ramfs   = process_create("ramfs",   init_image, len, 1);
-        shell   = process_create("shell",   init_image, len, 5);
+        init = process_create("init", init_image,
+                              (size_t)init_image_len, 7 /* init */);
 
-        if (console == NULL || ramfs == NULL || shell == NULL) {
-            panic("could not create the servers");
+        if (init == NULL) {
+            panic("could not create init");
         }
 
-        /* The console server owns the serial port and nothing else does.
-         * Every other process, the shell included, has to ask it. */
-        process_grant_console(console);
+        /* It holds the console so it can pass it on, and an endpoint for
+         * each server, at the indices it expects them. */
+        process_grant_console(init);
 
-        if (ipc_cap_grant(console->thread, console_ep) != 0
-            || ipc_cap_grant(ramfs->thread, ramfs_ep) != 0) {
-            panic("a server's capability did not land at index 0");
+        if (ipc_cap_grant(init->thread, console_ep) != 0
+            || ipc_cap_grant(init->thread, ramfs_ep) != 1) {
+            panic("init's capabilities did not land where expected");
         }
 
-        /* The shell holds two, in the order it expects them. */
-        if (ipc_cap_grant(shell->thread, console_ep) != 0
-            || ipc_cap_grant(shell->thread, ramfs_ep) != 1) {
-            panic("the shell's capabilities did not land where expected");
-        }
-
-        process_start(console);
-        process_start(ramfs);
-        process_start(shell);
+        process_start(init);
     }
 
     /*

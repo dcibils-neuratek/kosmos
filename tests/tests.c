@@ -801,6 +801,56 @@ static bool test_two_processes_exchange_a_lua_table(void)
     return code == 0;
 }
 
+static bool test_a_process_can_spawn_and_wait(void)
+{
+    /*
+     * init in userland needs two things: a process able to start processes,
+     * and one able to notice when they end. This checks both, and the one
+     * property that makes them safe.
+     *
+     * A parent cannot promote a child beyond itself. Every capability in a
+     * spawn is resolved against the parent's own table, and passing on the
+     * console is refused unless the parent holds it - otherwise any process
+     * could promote itself by spawning a child and asking it to print.
+     *
+     * The test process is deliberately *not* given the console, so its own
+     * report goes nowhere; what it says is its exit code.
+     */
+    extern const unsigned char init_image[];
+    extern const unsigned long init_image_len;
+    struct process *p;
+    unsigned i;
+    int code;
+
+    p = process_create("t-spawn", init_image,
+                       (size_t)init_image_len, 8 /* spawntest */);
+    if (p == NULL) {
+        return false;
+    }
+
+    process_start(p);
+
+    for (i = 0; i < 16384 && !p->exited; i++) {
+        thread_yield();
+    }
+
+    if (!p->exited) {
+        return false;
+    }
+
+    code = p->exit_code;
+    process_reap(p);
+
+    /*
+     * Distinct codes per check, because this fixture cannot print: it
+     * deliberately does not hold the console, since the last thing it checks
+     * is that it cannot get one. 10 spawn failed, 11 wrong child, 12 the
+     * child failed, 13 wait invented a child, 14 it handed out a console it
+     * does not hold.
+     */
+    return code == 0;
+}
+
 static bool test_a_server_reloads_without_the_client_noticing(void)
 {
     /*
@@ -3014,6 +3064,7 @@ static const struct test tests[] = {
     { "el0: two processes swap a Lua table",   test_two_processes_exchange_a_lua_table },
     { "ns: same server, two names, two views", test_the_same_server_under_two_names },
     { "dev: only the owner may print",         test_only_the_console_owner_may_print },
+    { "spawn: a child runs and is waited for", test_a_process_can_spawn_and_wait },
     { "reload: code replaced, state kept",     test_a_server_reloads_without_the_client_noticing },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },

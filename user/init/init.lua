@@ -20,6 +20,11 @@ local ROLE_SELFTEST = 3   -- needs no capability: checks the language itself
 local ROLE_CONSOLE  = 4
 local ROLE_SHELL    = 5
 local ROLE_RELOAD   = 6   -- checks hot reload against a live server
+local ROLE_INIT     = 7   -- starts everything else, and outlives it
+
+local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
+
+local SPAWN_CONSOLE = 1
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -440,6 +445,87 @@ local function shell_main(console_cap, ramfs_cap)
 end
 
 --------------------------------------------------------------------------
+
+if role == ROLE_SPAWNTEST then
+  -- What a process may hand a child, and what it may not.
+  --
+  -- It reports by exit code rather than by writing, because it deliberately
+  -- does not hold the console: the point of the last check is that it cannot
+  -- get one. A fixture that needs the console to say why it failed cannot
+  -- test not having the console.
+  local function check(c, code) if not c then sys.exit(code) end end
+
+  -- A child of its own image, with no capabilities at all. It runs the
+  -- selftest, which needs none, and ends.
+  local id = sys.spawn(ROLE_SELFTEST, {})
+  check(id ~= nil, 10)                      -- spawn failed
+
+  local waited, code = sys.wait()
+  check(waited == id, 11)                   -- wait returned the wrong child
+  check(code == 0, 12)                      -- the child itself failed
+
+  -- Nothing left to wait for, and saying so beats blocking forever.
+  local none = sys.wait()
+  check(none == nil, 13)                    -- wait invented a child
+
+  -- And the property worth having: this process does not own the console,
+  -- so it cannot give one away. Otherwise any process could promote itself
+  -- by spawning a child and asking it to print.
+  local promoted = sys.spawn(ROLE_SELFTEST, {}, SPAWN_CONSOLE)
+  check(promoted == nil, 14)                -- it handed out a console it lacked
+
+  sys.exit(0)
+end
+
+if role == ROLE_INIT then
+  --------------------------------------------------------------------------
+  -- init.
+  --
+  -- The kernel used to do this: create the servers, wire up their
+  -- capabilities, start them. It is a process now, and the kernel's job ends
+  -- at starting this one.
+  --
+  -- What it can do is bounded by what it holds. It was given the console and
+  -- an endpoint for each server it is expected to start, and it passes those
+  -- on; it cannot promote a child beyond itself, because a spawn resolves
+  -- every capability against the parent's own table and refuses to hand out
+  -- a device the parent does not hold.
+  --
+  -- Supervision is design.md 10's criticality hierarchy in its first form:
+  -- init waits, and when a server ends it says so. Restarting one is level 2
+  -- and needs somewhere for its state to have lived, which is a decision
+  -- design.md deliberately leaves until there is state worth recovering.
+  --------------------------------------------------------------------------
+  local CONSOLE_EP = 0
+  local RAMFS_EP   = 1
+
+  local console = sys.spawn(ROLE_CONSOLE, { CONSOLE_EP }, SPAWN_CONSOLE)
+  if not console then sys.exit(1) end
+
+  local ramfs = sys.spawn(ROLE_RAMFS, { RAMFS_EP })
+  if not ramfs then sys.exit(1) end
+
+  -- The shell gets both, in the order it expects them, and no device: it
+  -- prints by asking the console server, like everything else.
+  local shell = sys.spawn(ROLE_SHELL, { CONSOLE_EP, RAMFS_EP })
+  if not shell then sys.exit(1) end
+
+  -- And now it does what an init does, which is outlive everything and
+  -- notice when something ends.
+  while true do
+    local id, code = sys.wait()
+    if not id then
+      -- Nothing left. On a real system this is the moment to panic or to
+      -- restart something; here there is nobody left to tell.
+      sys.exit(0)
+    end
+
+    -- It cannot say so itself: it does not own the console and the console
+    -- server may well be the thing that just died. Recorded rather than
+    -- printed, which is the honest shape until there is a log server.
+    local _ = { id = id, code = code }
+  end
+end
 
 if role == ROLE_RELOAD then
   -- M5's other half: reload a server's code while a client is connected,

@@ -77,6 +77,34 @@ static inline long kosmos_getchar(void)
     return sys0(SYS_GETCHAR);
 }
 
+/*
+ * Makes another process from this one's image.
+ *
+ * `caps` are indices in *this* process's table; the child gets its own, in
+ * the same order. A parent cannot pass what it does not hold. Returns the
+ * child's id, or negative.
+ */
+static inline long kosmos_spawn(unsigned long arg, const int *caps,
+                                unsigned long ncaps, unsigned long flags)
+{
+    register long x8 __asm__("x8") = SYS_SPAWN;
+    register long x0 __asm__("x0") = (long)arg;
+    register long x1 __asm__("x1") = (long)(uintptr_t)caps;
+    register long x2 __asm__("x2") = (long)ncaps;
+    register long x3 __asm__("x3") = (long)flags;
+    __asm__ volatile("svc #0"
+                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3)
+                     : "memory", "cc");
+    return x0;
+}
+
+/* Blocks until any child ends, and returns its exit code. Negative when
+ * there are no children left to wait for. */
+static inline long kosmos_wait(uint64_t *id)
+{
+    return sys1(SYS_WAIT, (long)(uintptr_t)id);
+}
+
 static inline void kosmos_yield(void)
 {
     (void)sys0(SYS_YIELD);

@@ -186,6 +186,8 @@ struct process *process_create(const char *name, const void *image,
     p->exited = false;
     p->id = next_id++;
     p->arg = arg;
+    p->image = image;
+    p->image_len = len;
 
     for (i = 0; i + 1 < PROCESS_NAME_MAX && name[i] != '\0'; i++) {
         p->name[i] = name[i];
@@ -220,6 +222,74 @@ fail:
     return NULL;
 }
 
+struct process *process_spawn(struct process *parent, unsigned long arg)
+{
+    struct process *child;
+
+    if (parent == NULL || parent->image == NULL) {
+        return NULL;
+    }
+
+    child = process_create(parent->name, parent->image, parent->image_len, arg);
+
+    if (child != NULL) {
+        child->parent = parent;
+    }
+
+    return child;
+}
+
+int process_wait(struct process *parent, unsigned *id)
+{
+    unsigned i;
+
+    if (parent == NULL) {
+        return -1;
+    }
+
+    for (;;) {
+        bool any = false;
+
+        for (i = 0; i < PROCESS_MAX; i++) {
+            struct process *c = &processes[i];
+
+            if (!c->in_use || c->parent != parent) {
+                continue;
+            }
+
+            if (c->exited) {
+                int code = c->exit_code;
+
+                if (id != NULL) {
+                    *id = c->id;
+                }
+
+                /* Reaped here, so a supervisor looping on wait does not have
+                 * to remember to, and so the same child is not reported
+                 * twice. */
+                process_reap(c);
+                return code;
+            }
+
+            any = true;
+        }
+
+        if (!any) {
+            return -1;      /* nothing left to wait for */
+        }
+
+        /*
+         * Park until a child ends. Recorded on the parent so process_exit
+         * knows who to wake; without it this would have to poll, and a
+         * supervisor that polls is a supervisor that burns a core doing
+         * nothing.
+         */
+        parent->waiter = thread_current();
+        thread_block();
+        parent->waiter = NULL;
+    }
+}
+
 void process_grant_console(struct process *p)
 {
     if (p != NULL) {
@@ -234,28 +304,11 @@ void process_start(struct process *p)
     }
 }
 
-void process_exit(struct process *p, int code)
+/* Frees the memory a process owns. Shared by exiting and abandoning, which
+ * differ only in whose thread ends. */
+static void release_memory(struct process *p)
 {
     size_t i;
-
-    if (p == NULL || p->exited) {
-        return;
-    }
-
-    p->exit_code = code;
-    p->exited = true;
-
-    /*
-     * Back to the kernel's own address space before the process's is taken
-     * apart. The thread is still executing, and it is executing kernel code
-     * mapped in both, but the moment as_destroy frees the tables the running
-     * translation regime would be describing freed pages.
-     */
-    if (thread_current()->process == p) {
-        as_switch(NULL);
-        thread_current()->process = NULL;
-        thread_current()->space = NULL;
-    }
 
     for (i = 0; i < USER_STACK_PAGES; i++) {
         pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
@@ -272,10 +325,63 @@ void process_exit(struct process *p, int code)
     as_destroy(p->space);
 
     p->space = NULL;
-    p->thread = NULL;
     p->image_pages = NULL;
     p->heap_pages = NULL;
     p->stack_pages = NULL;
+}
+
+void process_abandon(struct process *p)
+{
+    if (p == NULL || !p->in_use) {
+        return;
+    }
+
+    if (p->thread != NULL) {
+        thread_abandon(p->thread);
+        p->thread = NULL;
+    }
+
+    release_memory(p);
+    p->in_use = false;
+}
+
+void process_exit(struct process *p, int code)
+{
+
+    if (p == NULL || p->exited) {
+        return;
+    }
+
+    if (thread_current()->process != p) {
+        /*
+         * Ending somebody else's process here would end *this* thread, not
+         * theirs: the thread_exit at the bottom is unconditional and has to
+         * be, because that is what exiting means. Saying so is better than
+         * the alternative, which reads as cleanup and behaves as suicide.
+         */
+        panic("process_exit: only the running process may exit");
+    }
+
+    p->exit_code = code;
+    p->exited = true;
+
+    /* Whoever is waiting for this one, if anyone is. */
+    if (p->parent != NULL && p->parent->waiter != NULL) {
+        thread_wake(p->parent->waiter);
+    }
+
+    /*
+     * Back to the kernel's own address space before the process's is taken
+     * apart. The thread is still executing, and it is executing kernel code
+     * mapped in both, but the moment as_destroy frees the tables the running
+     * translation regime would be describing freed pages.
+     */
+    as_switch(NULL);
+    thread_current()->process = NULL;
+    thread_current()->space = NULL;
+
+    release_memory(p);
+    p->thread = NULL;
 
     /*
      * `in_use` stays set. Everything expensive is gone; what is left is the

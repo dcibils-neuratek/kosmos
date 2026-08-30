@@ -203,6 +203,69 @@ static long sys_reply(struct process *p, uintptr_t sender, uintptr_t msg_ptr)
     return ipc_reply((struct thread *)sender, &msg);
 }
 
+/*
+ * Spawn: a process makes another like itself.
+ *
+ * The child gets the parent's image, a boot word, and whatever capabilities
+ * the parent chose to pass. Nothing else. Authority flows from parent to
+ * child and never sideways, which is what makes an init that starts servers
+ * the same kind of thing as a shell that starts a program.
+ *
+ * Every capability is resolved against the *parent's* table, so a parent
+ * cannot hand over what it does not hold, and the child's indices are its
+ * own, in the order they were given.
+ */
+static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
+                      size_t ncaps, unsigned long flags)
+{
+    struct process *child;
+    size_t i;
+
+    if (ncaps > CAPS_PER_THREAD) {
+        return SYS_ERR_NO_ROOM;
+    }
+
+    if (ncaps > 0 && !process_may_read(p, caps_ptr, ncaps * sizeof(int32_t))) {
+        return SYS_ERR_FAULT;
+    }
+
+    /*
+     * Checked before anything is built. A parent can only pass on the
+     * console if it holds it, or any process could promote itself by
+     * spawning a child and asking it to print. Refusing here rather than
+     * after means the refusal costs nothing and there is no half-built
+     * process to unpick.
+     */
+    if ((flags & SPAWN_CONSOLE) != 0 && !p->owns_console) {
+        return SYS_ERR_DENIED;
+    }
+
+    child = process_spawn(p, arg);
+    if (child == NULL) {
+        return SYS_ERR_NO_ROOM;
+    }
+
+    for (i = 0; i < ncaps; i++) {
+        cap_t from = (cap_t)((const int32_t *)caps_ptr)[i];
+
+        if (ipc_cap_grant(child->thread, from) < 0) {
+            /* It would run without something it was meant to have, which is
+             * a well defined and useless state. Abandoned rather than
+             * exited: it has not started, and process_exit would end the
+             * caller's thread instead of its own. */
+            process_abandon(child);
+            return SYS_ERR_NO_ROOM;
+        }
+    }
+
+    if ((flags & SPAWN_CONSOLE) != 0) {
+        process_grant_console(child);
+    }
+
+    process_start(child);
+    return (long)child->id;
+}
+
 void syscall_dispatch(struct trapframe *tf)
 {
     struct process *p = process_current();
@@ -264,6 +327,29 @@ void syscall_dispatch(struct trapframe *tf)
     case SYS_REPLY:
         result = sys_reply(p, tf->x[0], tf->x[1]);
         break;
+
+    case SYS_SPAWN:
+        result = sys_spawn(p, tf->x[0], tf->x[1], (size_t)tf->x[2], tf->x[3]);
+        break;
+
+    case SYS_WAIT: {
+        unsigned id = 0;
+        uintptr_t id_ptr = tf->x[0];
+
+        if (id_ptr != 0 && !process_may_write(p, id_ptr, sizeof(uint64_t))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        result = process_wait(p, &id);
+
+        if (result < 0) {
+            result = SYS_ERR_NO_CHILD;
+        } else if (id_ptr != 0) {
+            *(uint64_t *)id_ptr = (uint64_t)id;
+        }
+        break;
+    }
 
     default:
         /* An unknown number is an error, not a panic. A process must not be

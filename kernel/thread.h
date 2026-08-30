@@ -182,6 +182,16 @@ void thread_tick(void);
  */
 void thread_preempt_if_needed(void);
 
+/*
+ * Releases a thread that was created suspended and never started.
+ *
+ * Not thread_exit: that ends the *calling* thread, which is the right thing
+ * when a thread finishes and precisely the wrong thing when somebody is
+ * cleaning up after a thread that never ran. The slot and its stacks go back
+ * to the pool the same way an exited thread's do.
+ */
+void thread_abandon(struct thread *t);
+
 /* Ends the calling thread. Never returns. Reached automatically when a
  * thread's entry function returns. */
 void thread_exit(void) __attribute__((noreturn));
