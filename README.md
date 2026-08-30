@@ -138,6 +138,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |
 | Aug 2026 | Entity files: nodes with no content, only attributes (from BeOS People) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | The filesystem is not a relational database. BeOS tried it through DR8 and pulled it for complexity and performance | beos.md §17.1, roadmap.md M8 |
+| Aug 2026 | The kernel contains no Lua. Its tests and benchmarks moved to EL0 | state.md, CLAUDE.md |
+| Aug 2026 | A monotonic counter is a syscall (SYS_TICKS); the wall clock stays a capability | design.md §4.4, syscall.h |
+| Aug 2026 | ramfb before virtio-gpu. `hal_fb_init` is "ask the firmware for a linear framebuffer", which is ramfb and the Pi mailbox both; virtio-gpu comes second and is what grows a `hal_fb_flush` | hal.md, roadmap.md M6 |
+| Aug 2026 | The QEMU framebuffer's stride is padded on purpose, so code that assumes `width * 4` breaks here rather than on real hardware | gfx.md §19.3, hal/qemu-virt/fb.c |
 | Aug 2026 | The project is renamed Kosmos (previously Komo) | all docs |
 | Aug 2026 | Pixels never live in Lua tables. A surface is a userdata over flat bytes; tables carry intent | gfx.md §19.1 |
 | Aug 2026 | No line of Lua computes a pixel offset. Pitch and format live in the handle, the arithmetic happens only in C | gfx.md §19.3 |

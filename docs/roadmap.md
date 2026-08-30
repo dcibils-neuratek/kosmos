@@ -153,7 +153,7 @@ The original design starts here. From this point there is far less reference mat
 
 **What gets built**
 
-- virtio-gpu under QEMU, mailbox on the Pi
+- ramfb under QEMU (**done**), then virtio-gpu, and the mailbox on the Pi. ramfb first because `hal_fb_init` is "ask the firmware for a linear framebuffer" and that is ramfb and the Pi mailbox both — virtio-gpu is the one that needs an explicit flush, so it is the target that earns the interface a `hal_fb_flush`, with two implementations in front of it instead of one. Everything above the HAL is identical either way. What ramfb does not give: dirty rectangles and a vblank, because QEMU rescans the whole buffer on its own schedule
 - Backbuffer in cached RAM, dirty-rectangle blit to the framebuffer
 - An 8x16 bitmap font first, `stb_truetype` afterwards
 - Alpha-blending blitter in C

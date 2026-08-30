@@ -3,6 +3,9 @@
  * zeroed, running at EL1 on core 0.
  */
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "hal.h"
 #include "console.h"
 #include "trap.h"
@@ -24,6 +27,66 @@
 #ifdef KOSMOS_BENCH
 #include "bench.h"
 #endif
+
+/*
+ * The boot splash.
+ *
+ * The display's counterpart to the "mem 512 MB" line above: proof at every
+ * boot that the device came up, in a form a person can check at a glance.
+ * All real drawing moves to userland at the next step, and this stays,
+ * because a system that prints its RAM size and says nothing about its
+ * screen is harder to debug than one that does both.
+ *
+ * Deliberately shaped so that the two ways this can be subtly wrong are
+ * obvious rather than plausible:
+ *
+ *   - **A two-pixel white border.** If the pitch is wrong - if anything
+ *     computed an offset as width * 4 instead of using it - the top and
+ *     bottom edges still look right and the left and right ones shear into
+ *     diagonals. Nothing else in a test pattern shows that as clearly.
+ *   - **Red, green and blue bars, in that order, left to right.** If the
+ *     channel order or the fourcc is wrong they come out reversed, and a
+ *     blue-first pattern is unmistakable where a slightly-off colour is not.
+ *
+ * The row pointer is recomputed from `pitch` each line, which is the same
+ * discipline `gfx.md` §19.3 demands of every primitive that comes after it.
+ */
+static void splash(const struct fb *fb)
+{
+    unsigned y;
+
+    for (y = 0; y < fb->height; y++) {
+        volatile uint32_t *row =
+            (volatile uint32_t *)((volatile uint8_t *)fb->pixels
+                                  + (size_t)y * fb->pitch);
+        unsigned x;
+
+        for (x = 0; x < fb->width; x++) {
+            uint32_t colour;
+
+            if (x < 2 || y < 2 || x + 2 >= fb->width || y + 2 >= fb->height) {
+                colour = 0x00ffffffu;                   /* the border */
+            } else if (y >= fb->height / 3 && y < (fb->height * 2) / 3) {
+                unsigned third = fb->width / 3;
+
+                if (x < third) {
+                    colour = 0x00c03030u;               /* red   */
+                } else if (x < third * 2) {
+                    colour = 0x0030c030u;               /* green */
+                } else {
+                    colour = 0x003030c0u;               /* blue  */
+                }
+            } else {
+                /* A vertical ramp, so a row written to the wrong place
+                 * breaks the gradient visibly. */
+                uint32_t v = (y * 255u) / fb->height;
+                colour = (v / 3) << 16 | (v / 3) << 8 | v;
+            }
+
+            row[x] = colour;
+        }
+    }
+}
 
 void kmain(void)
 {
@@ -76,6 +139,34 @@ void kmain(void)
     kputs("sched ");
     kputs(sched_current()->name);
     kputc('\n');
+
+    /*
+     * The display, if there is one.
+     *
+     * False is not an error. `make test` boots without `-device ramfb` and
+     * the Pi has no display attached to it yet, and a system that cannot
+     * come up without a screen is a system that cannot be debugged over a
+     * serial cable.
+     */
+    {
+        struct fb fb;
+
+        if (hal_fb_init(&fb)) {
+            splash(&fb);
+
+            kputs("video ");
+            kputu(fb.width);
+            kputc('x');
+            kputu(fb.height);
+            kputs(", pitch ");
+            kputu(fb.pitch);
+            kputs(" bytes, at 0x");
+            kputx((unsigned long)(uintptr_t)fb.pixels, 16);
+            kputc('\n');
+        } else {
+            kputs("video none, serial only\n");
+        }
+    }
 
     hal_irq_init();
     hal_timer_init(TICK_HZ);

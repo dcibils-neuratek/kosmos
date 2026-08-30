@@ -1,7 +1,9 @@
 # Kosmos
 #
-# make qemu     build and run under QEMU virt
+# make qemu     build and run under QEMU virt, with a window
+# make serial   the same, serial only, no window
 # make test     run the suite under QEMU, exit code 0 or 1
+# make screenshot  boot, screendump, and check the picture QEMU scans out
 # make debug    the same as qemu, stopped, with a gdbserver on :1234
 # make clean
 
@@ -39,6 +41,8 @@ SRCS := boot/start.S \
         hal/qemu-virt/memory.c \
         hal/qemu-virt/gic.c \
         hal/qemu-virt/timer.c \
+        hal/qemu-virt/fwcfg.c \
+        hal/qemu-virt/fb.c \
         kernel/console.c \
         runtime/libc/string.c \
         runtime/libc/setjmp.S \
@@ -311,10 +315,27 @@ QEMU      := qemu-system-aarch64
 # gic-version=3 is not the default. Plain `-M virt` gives a GICv2, and this
 # kernel's interrupt controller code is GICv3: it would find no
 # redistributor and no interrupt would ever arrive.
-QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
+#
+# -device ramfb is the display. It is a device rather than machine state, so
+# a machine started without it simply has no screen, which is a case the
+# kernel handles and `make test` exercises.
+#
+# -display cocoa opens a window; -serial mon:stdio keeps the serial console
+# and the QEMU monitor in the terminal, which is where the shell lives. The
+# two together are why this is no longer -nographic: that flag means "no
+# window", and a window is now the point.
+#
+# Ctrl-A x still quits, from the terminal.
+QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
+             -device ramfb -display cocoa -serial mon:stdio \
              -kernel $(TARGET)
 
-.PHONY: all qemu test bench debug disasm size clean
+# The same machine with no screen, for when the window is in the way or the
+# terminal is all there is - over ssh, for instance.
+QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
+                    -kernel $(TARGET)
+
+.PHONY: all qemu serial test screenshot bench bench-record debug disasm size clean
 
 all: $(TARGET)
 
@@ -334,12 +355,26 @@ $(BUILD)/%.S.o: %.S
 qemu: $(TARGET)
 	$(QEMU) $(QEMUFLAGS)
 
+# No window. The same system, serial only, which is how it ran until M6 and
+# how it will run on a board with a cable and no monitor.
+serial: $(TARGET)
+	$(QEMU) $(QEMUFLAGS_SERIAL)
+
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
 test:
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
+
+# The display, checked from outside the guest.
+#
+# Not part of `make test`, because it is a second boot and it asks QEMU
+# rather than the kernel. The suite proves what the kernel wrote into its own
+# memory; this proves the picture QEMU is scanning out of it, which is the
+# half no test inside the guest can reach.
+screenshot: $(TARGET)
+	python3 tools/run_screenshot.py $(TARGET) --png build/screenshot.png
 
 # Separate image again, and a separate runner: a benchmark needs QEMU's
 # -icount to be repeatable at all, and -icount makes everything several times

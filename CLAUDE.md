@@ -28,8 +28,11 @@ A personal learning project. There are no users, no compatibility to maintain, n
 ## Build
 
 ```
-make qemu        # build and run under QEMU virt
+make qemu        # build and run under QEMU virt, in a window
+make serial      # the same, serial only, no window
 make test        # run the suite under QEMU, exit code 0 or 1
+make screenshot  # boot, screendump, and check the picture QEMU scans out
+make bench       # the benchmarks, under -icount
 make debug       # QEMU with a gdbserver on :1234
 make clean
 ```
@@ -97,18 +100,30 @@ A distinction that matters and is easy to blur:
 - **`arch/`** is "which CPU are you". Page tables, the exception vector, context switch, barriers. It is not abstracted across architectures, it is reimplemented.
 - **`hal/`** is "which peripheral do you have". UART, timer, interrupt controller, framebuffer. Common interface, one implementation per board.
 
-The HAL interface, minimal and nothing beyond this for now:
+The HAL interface as it actually stands. Every entry arrived with the milestone that needed it and none of it was written ahead of a caller:
 
 ```c
-void     hal_early_init(void);
-void     hal_putchar(char c);
-void     hal_fb_init(struct fb *out);
-void     hal_irq_init(void);
-void     hal_timer_init(uint32_t hz);
-uint64_t hal_ticks(void);
+void          hal_early_init(void);
+
+void          hal_putchar(char c);          /* M0 */
+int           hal_getchar(void);            /* M5, non-blocking */
+void          hal_ram_range(struct memrange *out);
+
+void          hal_irq_init(void);           /* M1 */
+void          hal_irq_handle(void);         /* called from the IRQ vector */
+
+void          hal_timer_init(unsigned hz);  /* M1 */
+unsigned long hal_ticks(void);
+unsigned long hal_ticks_missed(void);       /* deadlines that came and went */
+
+bool          hal_fb_init(struct fb *out);  /* M6; false when there is no screen */
 ```
 
+`hal/hal.h` is the authority. If this list and that file disagree, that file is right and this one is stale — say so.
+
 **Do not expand the HAL speculatively.** The right interface appears once there is a second real target, at milestone 2. Writing it now with a single target produces the shape of QEMU with generic names.
+
+`hal_fb_init` is deliberately "ask the firmware for a linear framebuffer, and let it choose where the pixels live", because that is the one operation QEMU's ramfb and the Pi's mailbox both perform. virtio-gpu does not fit it — it needs an explicit flush after drawing — and that is precisely why adding virtio-gpu is what will grow the interface a `hal_fb_flush`, with two implementations in front of it rather than one.
 
 ---
 

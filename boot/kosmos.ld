@@ -109,6 +109,27 @@ SECTIONS
         __exception_stack_top = .;
     }
 
+    /*
+     * The framebuffer, and why it is here rather than in .bss.
+     *
+     * It is three megabytes. Put in .bss it would sit before the stacks and
+     * push both guard pages past the first 2 MB of RAM - and the first 2 MB
+     * is the only part mapped a page at a time. A guard page inside a 2 MB
+     * block cannot be punched out, so `mmu_init` would panic. Putting it
+     * last means adding or resizing it moves nothing that matters.
+     *
+     * NOLOAD, so it costs the image file nothing. It is inside __image_end,
+     * so the page allocator counts it as the kernel's and never hands it
+     * out. And it is not between __bss_start and __bss_end, so start.S does
+     * not zero it; hal_fb_init does, once, and only if there is a display.
+     */
+    .framebuffer (NOLOAD) : ALIGN(PAGE_SIZE) {
+        __framebuffer_start = .;
+        *(.framebuffer)
+        . = ALIGN(PAGE_SIZE);
+        __framebuffer_end = .;
+    }
+
     . = ALIGN(PAGE_SIZE);
     __image_end = .;
 

@@ -37,6 +37,9 @@ QEMU_ARGS = [
     "-cpu", "cortex-a72",
     "-m", "512M",
     "-nographic",
+    # The display. Without it hal_fb_init reports there is none, and the
+    # framebuffer tests would pass by being skipped rather than by working.
+    "-device", "ramfb",
     # Without this the guest cannot set the exit code and `hlt #0xf000`
     # becomes an undefined instruction trap into a vector that does not
     # exist yet.

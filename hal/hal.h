@@ -1,6 +1,9 @@
 #ifndef HAL_H
 #define HAL_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 /*
  * What the board provides. One implementation per board, under hal/<board>/.
  *
@@ -9,11 +12,14 @@
  * implementations, because pushing out a character is pushing out a
  * character on any board.
  *
- * Deliberately only what M0 needs. The framebuffer, the interrupt
- * controller, the timer and the tick counter arrive with the milestone that
- * needs them, and the interface takes its real shape at M2, once there is a
- * second target to compare against. An interface written against a single
- * target is that target's shape wearing generic names.
+ * Deliberately only what has been needed. Each of these arrived with the
+ * milestone that needed it - the interrupt controller and the timer at M1,
+ * the display at M6 - and none of it was written ahead of a caller.
+ *
+ * It still takes its real shape at M2's second half, once there is a second
+ * target to compare against. An interface written against a single target is
+ * that target's shape wearing generic names, and everything below is written
+ * knowing that.
  */
 
 /* The minimum required to have output. Called before anything else. */
@@ -58,5 +64,44 @@ unsigned long hal_ticks(void);
  * clock; ticks are a heartbeat.
  */
 unsigned long hal_ticks_missed(void);
+
+/*
+ * The display.
+ *
+ * A linear framebuffer and nothing else. What is above this line is the app
+ * server's problem, and `gfx.md` is emphatic that it stays that way: the
+ * kernel does not know what a window is, and the board does not know what a
+ * pixel means beyond its format.
+ *
+ * `pitch` is bytes per row and is **not** width * 4. Under QEMU this board
+ * chooses the stride itself and deliberately pads it, because a display that
+ * hands back exactly width * 4 lets every address calculation in the system
+ * be written wrong and still work - right up until the first real board,
+ * where the pitch is whatever the firmware felt like. `gfx.md` §19.3 puts
+ * this at the top of its list of traps.
+ *
+ * One format, XRGB8888: a uint32_t per pixel, 0x00RRGGBB. Not negotiable
+ * from up here. When a board arrives that cannot do it, that is the moment
+ * the interface grows a format field, and not before.
+ */
+struct fb {
+    volatile uint32_t *pixels;
+    unsigned width;
+    unsigned height;
+    unsigned pitch;             /* bytes per row; never assume width * 4 */
+};
+
+/*
+ * Brings the display up and describes it. False when there is none, which
+ * is not an error: a serial-only boot is a legitimate way to run, and the
+ * system has to keep working without a screen.
+ *
+ * The board decides where the pixels live, because that is the one thing the
+ * two targets disagree about. Under QEMU the guest points ramfb at memory it
+ * chose; on the Pi the firmware answers the mailbox with an address it chose.
+ * A caller that supplied the memory would be right on one board and wrong on
+ * the other.
+ */
+bool hal_fb_init(struct fb *out);
 
 #endif /* HAL_H */

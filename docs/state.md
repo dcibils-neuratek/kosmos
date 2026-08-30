@@ -8,6 +8,8 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
+**M6 — Graphics and the app server. Started.** There is a framebuffer and there are pixels on it. Nothing above the HAL yet: no surfaces, no blitter, no font, no app server.
+
 **M5 — Namespaces and servers. Done.** Its definition of done is met, both halves, and the last item on the list — taking Lua out of the kernel — is done as well.
 
 **M4 — Lua to userspace.** Its definition of done is met. Two of its listed pieces are not built; see below.
@@ -32,7 +34,9 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-94 tests. Five benchmarks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code.
+100 tests, five benchmarks, and ten display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+
+`make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
 **The prompt is a process.** What you type is read by the console server, sent to the shell over IPC, evaluated in the shell's own `lua_State`, and printed back the same way.
 
@@ -55,6 +59,28 @@ nil	no such path: /nowhere
 ```
 
 `sys.write` returning −102 is the point: the shell **cannot** print directly. Only the console server holds the serial port, and everything else has to ask it.
+
+## M6 — where it stands
+
+- [x] A framebuffer under QEMU, via ramfb: 1024x768, XRGB8888
+- [x] `hal_fb_init` in the HAL, and a boot splash that proves the display at every boot
+- [x] `make screenshot`: boot, screendump through QEMU's monitor, check the picture
+- [ ] `gfx.surface` as a userdata over flat bytes, and the C primitive set
+- [ ] A backbuffer and damage tracking
+- [ ] An 8x16 bitmap font
+- [ ] The app server in Lua: windows, decoration, stacking, focus
+- [ ] Input beyond the serial line
+- [ ] **Definition of done: drag a window with a hung app inside it, and have the window keep moving smoothly**
+
+**ramfb, not virtio-gpu, and the order is deliberate.** `hal_fb_init` is "ask the firmware for a linear framebuffer, and let it say where the pixels are", which is exactly what QEMU's ramfb and the Pi's mailbox both do. virtio-gpu is the odd one out — it needs an explicit `RESOURCE_FLUSH` after drawing — so it is the target that will earn the interface a `hal_fb_flush`, with two implementations in front of it rather than one. That is `hal.md`'s own argument applied to the display. It also cost about a hundred lines against the eight hundred that PCI enumeration plus virtqueues plus the virtio-gpu command set would have cost before a single pixel appeared, and everything above the HAL is identical either way.
+
+**What ramfb does not give:** dirty rectangles and a vblank. QEMU rescans the whole buffer on its own schedule, so damage tracking in the compositor still saves the drawing but cannot save the scanout. Under emulation neither is the bottleneck. virtio-gpu is where both come back.
+
+**The stride is padded on purpose: 4160 bytes, not 4096.** ramfb lets the guest choose, so it could be the tidy value, and that is the reason not to. A framebuffer whose pitch equals `width * 4` lets every address calculation in the system be written wrong and still work — for months, until the first real board, where the firmware picks whatever alignment it likes and every one of them shears at once. Two tests assert the padding, so that removing it as an oddity fails loudly.
+
+**Two halves of the display are tested, and neither can prove the other.** `make test` proves what the kernel wrote into its own memory: that the framebuffer exists, is page aligned, is writable to the last row, and that the padded stride really moves rows. It cannot prove a pixel ever reached a screen — a wrong fourcc, a wrong stride in the ramfb config or a wrong address would leave all six passing and the display black. `make screenshot` asks QEMU instead, through the monitor, on the far side of everything this kernel controls. Both were made to fail on purpose before being trusted.
+
+**The framebuffer is in its own linker section, after the stacks.** Three megabytes in `.bss` would sit before them and push both guard pages past the first 2 MB of RAM — the only part mapped a page at a time — and a guard page inside a 2 MB block cannot be punched out, so `mmu_init` would panic. `NOLOAD`, so the image file carries none of it; inside `__image_end`, so the page allocator counts the pages as the kernel's and never hands them out. There is a test for that last part, because the symptom otherwise is garbage on screen rather than anything that looks like an allocator bug.
 
 ## M5 — where it stands
 

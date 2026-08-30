@@ -2441,6 +2441,189 @@ static bool test_destroying_an_endpoint_reaches_a_process(void)
 }
 
 /*
+ * M6: the display.
+ *
+ * `hal_fb_init` is idempotent - it rewrites the same config for the same
+ * static buffer - so a test may call it to get the descriptor. The suite
+ * runs with `-device ramfb`, deliberately: without it these would all pass
+ * by being skipped, which is the failure mode a test about a device most
+ * easily hides behind.
+ */
+static bool fb_get(struct fb *out)
+{
+    return hal_fb_init(out);
+}
+
+static bool test_the_display_comes_up(void)
+{
+    struct fb fb;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    return fb.pixels != NULL && fb.width > 0 && fb.height > 0;
+}
+
+static bool test_the_pitch_is_not_the_width(void)
+{
+    /*
+     * The one that has to fail loudly if somebody tidies it away.
+     *
+     * `gfx.md` §19.3: the pitch is almost never width * 4, and code that
+     * assumes it is works perfectly on a display where it happens to be
+     * true. This board pads the stride on purpose so that assumption breaks
+     * here rather than on the first real hardware, and this test is what
+     * stops the padding being removed as an oddity.
+     */
+    struct fb fb;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    return fb.pitch > fb.width * 4;
+}
+
+static bool test_the_framebuffer_is_page_aligned_and_in_ram(void)
+{
+    /*
+     * QEMU is handed the physical address, and a process will one day have
+     * this mapped into its own space. Both want pages.
+     */
+    struct fb fb;
+    struct memrange ram;
+    uintptr_t base;
+    size_t bytes;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    hal_ram_range(&ram);
+    base  = (uintptr_t)fb.pixels;
+    bytes = (size_t)fb.pitch * fb.height;
+
+    return (base % PAGE_SIZE) == 0
+        && base >= ram.base
+        && base + bytes <= ram.base + ram.size;
+}
+
+static bool test_the_framebuffer_is_writable_end_to_end(void)
+{
+    /*
+     * Every row, at both ends, through the pitch. A mapping that covers the
+     * first page and not the last would pass a test that only touched pixel
+     * zero, and three megabytes is more than one 2 MB block.
+     */
+    struct fb fb;
+    unsigned y;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    for (y = 0; y < fb.height; y++) {
+        volatile uint32_t *row =
+            (volatile uint32_t *)((volatile uint8_t *)fb.pixels
+                                  + (size_t)y * fb.pitch);
+
+        row[0]            = 0x00abcdefu ^ y;
+        row[fb.width - 1] = 0x00fedcbau ^ y;
+    }
+
+    for (y = 0; y < fb.height; y++) {
+        volatile uint32_t *row =
+            (volatile uint32_t *)((volatile uint8_t *)fb.pixels
+                                  + (size_t)y * fb.pitch);
+
+        if (row[0] != (0x00abcdefu ^ y) || row[fb.width - 1] != (0x00fedcbau ^ y)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool test_the_padding_is_real(void)
+{
+    /*
+     * The trap, proven rather than asserted.
+     *
+     * `test_the_pitch_is_not_the_width` says the numbers differ. This says
+     * the difference *matters*: a pixel written where the pitch puts it is
+     * not where width * 4 arithmetic would look for it, so code that makes
+     * that assumption reads the wrong pixel rather than getting away with
+     * it.
+     *
+     * That is the whole reason this board pads its stride, and this is the
+     * test that fails if somebody decides the padding was an oddity and
+     * removes it.
+     */
+    struct fb fb;
+    volatile uint8_t *base;
+    volatile uint32_t *by_pitch;
+    volatile uint32_t *by_width;
+    unsigned row = 100;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    base     = (volatile uint8_t *)fb.pixels;
+    by_pitch = (volatile uint32_t *)(base + (size_t)row * fb.pitch);
+    by_width = (volatile uint32_t *)(base + (size_t)row * fb.width * 4);
+
+    by_pitch[0] = 0x00c0ffeeu;
+    by_width[0] = 0x00badcabu;
+
+    /* Two different addresses, so the second write cannot have landed on
+     * the first. If the stride were width * 4 they would be the same
+     * pointer and this would read back 0x00badcab. */
+    return by_pitch[0] == 0x00c0ffeeu;
+}
+
+static bool test_the_page_allocator_never_hands_out_the_framebuffer(void)
+{
+    /*
+     * The framebuffer lives inside __image_end, so the allocator counts its
+     * pages as the kernel's. If that ever stopped being true, a process
+     * would be handed memory QEMU is scanning out, and the symptom would be
+     * garbage on screen rather than anything that looks like a bug in the
+     * allocator.
+     */
+    struct fb fb;
+    uintptr_t base;
+    size_t bytes;
+    unsigned i;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    base  = (uintptr_t)fb.pixels;
+    bytes = (size_t)fb.pitch * fb.height;
+
+    for (i = 0; i < 64; i++) {
+        void *p = pmm_alloc_page();
+        uintptr_t a = (uintptr_t)p;
+
+        if (p == NULL) {
+            return false;
+        }
+
+        if (a >= base && a < base + bytes) {
+            pmm_free_page(p);
+            return false;
+        }
+
+        pmm_free_page(p);
+    }
+
+    return true;
+}
+
+/*
  * M1: the interrupt controller and the timer.
  */
 static uint64_t cntfrq(void)
@@ -2881,6 +3064,12 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "fb: the display comes up",              test_the_display_comes_up },
+    { "fb: the pitch is not width * 4",        test_the_pitch_is_not_the_width },
+    { "fb: page aligned and inside RAM",       test_the_framebuffer_is_page_aligned_and_in_ram },
+    { "fb: every row is writable",             test_the_framebuffer_is_writable_end_to_end },
+    { "fb: the padding actually moves rows",   test_the_padding_is_real },
+    { "fb: pmm never hands out its pages",     test_the_page_allocator_never_hands_out_the_framebuffer },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },
