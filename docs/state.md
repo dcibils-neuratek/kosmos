@@ -8,6 +8,8 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
+**M3 — Microkernel.** Its definition of done is met, and two of its listed pieces are not built. See below.
+
 **M2 — Lua in the kernel + second target**
 
 Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU **and** on real hardware.
@@ -24,26 +26,31 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Working
 
-`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`. 53 tests. 221 KB of text.
+`make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
+
+68 tests. The benchmarks, bit-identical run to run under `-icount`:
+
+```
+context_switch            5.937
+exception                 6.437
+ipc_roundtrip            23.000
+```
 
 ```
 Kosmos
-mem   512 MB, 131072 pages, 130879 free, 193 used by the kernel
+mem   512 MB, 131072 pages, 130873 free, 199 used by the kernel
 mmu   on
-heap  2047 KB at 0x00000000400c5000
+heap  2047 KB at 0x00000000400cb000
+sched round-robin
 timer 100 Hz
 lua   Lua 5.4.8
 
 Kosmos Lua REPL. There is no way out, and nothing to go back to.
 > 2+2
 4
-> math.sqrt(2)
-1.4142135623731
-> io
-nil
 ```
 
-M0 and M1 in full. M2 under QEMU: the freestanding libc, a heap, Lua 5.4.8 with the permitted libraries, and the REPL.
+M0 and M1 in full. M2 under QEMU. M3's definition of done met.
 
 ## M0 — done
 
@@ -84,7 +91,29 @@ M0 and M1 in full. M2 under QEMU: the freestanding libc, a heap, Lua 5.4.8 with 
 - [ ] `hal/pi1/` or `hal/pi5/` — **blocked on cables, and all that is left of M2**
 - [ ] Adjust the HAL interface with two real implementations in front of it
 
+## M3 — where it stands
+
+- [x] Threads with their context, and a context switch in assembly
+- [x] Round-robin scheduler with a per-CPU runqueue, behind a pluggable `struct scheduler`
+- [x] Synchronous IPC: rendezvous, call, receive, reply
+- [x] A per-thread capability table, indexed, with generation numbers
+- [x] A separate exception stack, so a stack overflow is readable rather than a double fault
+- [x] **Definition of done: 100,000 round trips, cost per round trip printed and baselined**
+- [ ] Address spaces: create, destroy, map pages
+- [ ] Syscalls exposed as Lua functions
+- [ ] Preemption. The `tick` hook exists and nothing acts on it
+
+**What is missing and why it is missing.**
+
+*Syscalls as Lua functions* is the cheap and useful one. Lua is in the kernel at M3, so exposing threads and IPC to it means driving the whole microkernel from the REPL, which is the first taste of the property `design.md` §9.1 is built around.
+
+*Address spaces* only earn their keep at M4, when there is something to run at EL0. Building them now means designing against a user of them that does not exist.
+
+*Preemption* needs the context switch to happen in the vector's epilogue rather than in C, because switching from inside a handler means the incoming thread's exception stack has to carry the frame its own interrupt built. Every thread already owns both of its stacks, which was the expensive part to retrofit; what remains is assembly in `vectors.S` and a policy that returns true from `tick`.
+
 ## Concrete next step
+
+Any of the three above, or M2's second target when a cable arrives.
 
 **M2 cannot be closed without a cable**, and its remaining half is the point of the milestone: the HAL takes its real shape once there are two implementations to compare, and `hal.md` is explicit that writing that interface against one target produces the shape of QEMU wearing generic names. Nothing is gained by guessing at it now.
 
@@ -109,6 +138,16 @@ Decisions that came out of writing code go here. Format: date, what was decided,
 Design decisions (as opposed to implementation ones) go in the decision log in `README.md` and are propagated to `design.md` and `roadmap.md` in the same session.
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
+
+**2026-08-30 — The scheduling policy is behind an interface, not wired into the thread code.** `thread.c` owns the mechanism and `struct scheduler` owns which runnable thread runs next, so a different algorithm is a new file. Per-thread policy state is embedded in `struct thread` rather than reached through a pointer, because there is no allocator to hand a policy its own storage; the fields are named for what algorithms need generally rather than for round robin. A test installs a deliberately terrible LIFO policy and asserts both exact orderings, which is the only proof the seam is real.
+
+**2026-08-30 — Kernel threads run on SP_EL0 and take exceptions on SP_EL1.** Taking an exception always sets `SPSel`, so the hardware hands the handler a different stack with no code to switch it. That is what makes a stack overflow readable rather than a double fault, and it makes a double fault name itself: a fault in ordinary code lands in the first quarter of the vector table and one inside the handler lands in the second.
+
+**A consequence that cost time:** `SP_EL1` cannot be named from EL1, because its system-register encoding is an EL2 one. `mrs x10, sp_el1` there is not a trap, it is an undefined instruction, and it arrives as EC 0x00 "unknown reason" explaining nothing. Reaching it means making it the current stack pointer briefly with `SPSel`, which in turn means the context switch has to mask interrupts.
+
+**2026-08-30 — A thread is on exactly one IPC queue at a time.** All three of an endpoint's queues thread through the same link field, so a thread on two of them silently truncates one. Written as a warning in a comment and then done anyway; the symptom appeared three tests away from the cause.
+
+**2026-08-30 — Dead threads release their slot, and their stacks go with it.** The stacks are already allocated with their guard pages already unmapped, which is the state a new thread wants. A recycled slot has its capability table cleared: inheriting the dead thread's capabilities would let a new thread reach endpoints it was never handed, and everything would appear to work.
 
 **2026-08-30 — FP and SIMD are enabled at EL1, and the kernel's own C still is not allowed to use them.** `CPACR_EL1.FPEN` resets to trapping every FP access at EL0 and EL1 alike. Two things need them: `setjmp`/`longjmp` save `d8`–`d15` because AAPCS64 makes them callee-saved, and Lua's numbers are doubles. Neither is optional, so the trap has to go. `-mgeneral-regs-only` stays on every C file, so the kernel still cannot emit an FP instruction by accident; the flag restricts code generation, not what hand-written assembly may save.
 
