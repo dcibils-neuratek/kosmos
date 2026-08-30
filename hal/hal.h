@@ -22,4 +22,14 @@ void hal_early_init(void);
 /* One character out the serial port. Blocks until there is room. */
 void hal_putchar(char c);
 
+/* Where usable RAM is. One contiguous range is enough for every target so
+ * far; a board with holes in its map would need a list, and that is the
+ * moment to change this, not before. */
+struct memrange {
+    unsigned long base;
+    unsigned long size;
+};
+
+void hal_ram_range(struct memrange *out);
+
 #endif /* HAL_H */

@@ -5,6 +5,8 @@
 #include "console.h"
 #include "semihosting.h"
 #include "trap.h"
+#include "pmm.h"
+#include "page.h"
 
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
@@ -167,6 +169,117 @@ static bool test_unexpected_fault_is_not_swallowed(void)
     return fault_expect_end(NULL) == false;
 }
 
+/*
+ * M1: the physical page allocator.
+ *
+ * The panic paths (a misaligned free, an out-of-range free, a double free)
+ * are deliberately untested. They halt the kernel by design, which is the
+ * right behaviour for a programmer error and the wrong thing to assert on
+ * from inside the kernel being tested. Turning them into return codes just
+ * to make them testable would invite callers to ignore them.
+ */
+static bool test_pmm_alloc_is_page_aligned_and_in_ram(void)
+{
+    void *p = pmm_alloc_page();
+    bool ok;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    ok = ((uintptr_t)p & PAGE_MASK) == 0;
+    pmm_free_page(p);
+    return ok;
+}
+
+static bool test_pmm_two_allocations_differ(void)
+{
+    void *a = pmm_alloc_page();
+    void *b = pmm_alloc_page();
+    bool ok = a != NULL && b != NULL && a != b;
+
+    if (a != NULL) { pmm_free_page(a); }
+    if (b != NULL) { pmm_free_page(b); }
+    return ok;
+}
+
+static bool test_pmm_count_tracks_alloc_and_free(void)
+{
+    size_t before = pmm_free_pages();
+    void *p = pmm_alloc_page();
+
+    if (p == NULL || pmm_free_pages() != before - 1) {
+        return false;
+    }
+
+    pmm_free_page(p);
+    return pmm_free_pages() == before;
+}
+
+static bool test_pmm_page_is_writable(void)
+{
+    volatile uint64_t *p = pmm_alloc_page();
+    bool ok;
+
+    if (p == NULL) {
+        return false;
+    }
+
+    /* Both ends, so a page handed out with the wrong size shows up here
+     * rather than as corruption of whatever lives next to it. */
+    p[0] = 0x0123456789abcdefULL;
+    p[PAGE_SIZE / sizeof(uint64_t) - 1] = 0xfedcba9876543210ULL;
+
+    ok = p[0] == 0x0123456789abcdefULL
+      && p[PAGE_SIZE / sizeof(uint64_t) - 1] == 0xfedcba9876543210ULL;
+
+    pmm_free_page((void *)p);
+    return ok;
+}
+
+static bool test_pmm_kernel_pages_are_not_free(void)
+{
+    /* The image and the bitmap are inside RAM but must never be handed out.
+     * If they were, the count would equal the total. */
+    return pmm_free_pages() < pmm_total_pages();
+}
+
+static bool test_pmm_exhaustion_returns_null(void)
+{
+    /*
+     * Allocates every remaining page, checks the count reaches zero and the
+     * next call returns NULL, then gives them all back.
+     *
+     * The pages are threaded into a list through their own first eight
+     * bytes, which is the only way to remember 130,000 addresses without
+     * somewhere to put them. It also proves every page handed out is
+     * genuinely writable.
+     */
+    size_t before = pmm_free_pages();
+    size_t taken = 0;
+    void *head = NULL;
+    void *p;
+    bool ok;
+
+    while ((p = pmm_alloc_page()) != NULL) {
+        *(void **)p = head;
+        head = p;
+        taken++;
+    }
+
+    ok = (taken == before)
+      && (pmm_free_pages() == 0)
+      && (pmm_alloc_page() == NULL);
+
+    while (head != NULL) {
+        void *next = *(void **)head;
+        pmm_free_page(head);
+        head = next;
+    }
+
+    return ok && pmm_free_pages() == before;
+}
+
 static const struct test tests[] = {
     { "boot: .bss is zeroed",                  test_bss_zeroed          },
     { "boot: .bss bounds are 16-byte aligned", test_bss_bounds_aligned  },
@@ -178,6 +291,12 @@ static const struct test tests[] = {
     { "trap: execution resumes after a fault", test_execution_resumes_after_an_expected_fault },
     { "trap: a data abort decodes correctly",  test_data_abort_is_decoded },
     { "trap: no fault means end() is false",   test_unexpected_fault_is_not_swallowed },
+    { "pmm: a page is aligned and in RAM",     test_pmm_alloc_is_page_aligned_and_in_ram },
+    { "pmm: two allocations differ",           test_pmm_two_allocations_differ },
+    { "pmm: the count tracks alloc and free",  test_pmm_count_tracks_alloc_and_free },
+    { "pmm: a page is writable end to end",    test_pmm_page_is_writable },
+    { "pmm: kernel pages are never free",      test_pmm_kernel_pages_are_not_free },
+    { "pmm: exhaustion returns NULL",          test_pmm_exhaustion_returns_null },
 };
 
 #define TEST_COUNT (sizeof(tests) / sizeof(tests[0]))

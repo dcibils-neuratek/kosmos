@@ -14,7 +14,11 @@ SRCS := boot/start.S \
         arch/aarch64/vectors.S \
         arch/aarch64/trap.c \
         hal/qemu-virt/uart.c \
+        hal/qemu-virt/memory.c \
         kernel/console.c \
+        kernel/panic.c \
+        kernel/pmm.c \
+        kernel/string.c \
         kernel/main.c
 
 # The test build is a separate image in a separate directory. Same sources
