@@ -66,12 +66,19 @@ static void push_message(lua_State *L, const struct message *m)
     }
 }
 
-static void take_message(lua_State *L, int index, struct message *m)
+/*
+ * A capability travels alongside the value, never inside it. See the kernel's
+ * copy: an index means something only in the table it came from.
+ */
+static void take_message(lua_State *L, int index, struct message *m,
+                         int cap_arg)
 {
     int rc;
+    long c = (long)luaL_optinteger(L, cap_arg, -1);
 
     m->tag = 0;
     m->length = 0;
+    m->cap_plus_one = (c >= 0) ? (uint32_t)(c + 1) : 0u;
 
     /* A tag, if the value is a table with one. `design.md` §14 wants every
      * message to say what it is; the kernel only insists the field exists,
@@ -130,7 +137,7 @@ static int l_call(lua_State *L)
     struct message reply;
     long status;
 
-    take_message(L, 2, &msg);
+    take_message(L, 2, &msg, 3);
 
     status = kosmos_call(cap, &msg, &reply);
     if (status != 0) {
@@ -138,7 +145,9 @@ static int l_call(lua_State *L)
     }
 
     push_message(L, &reply);
-    return 1;
+    lua_pushinteger(L, (lua_Integer)((reply.cap_plus_one == 0)
+                                     ? -1 : (long)reply.cap_plus_one - 1));
+    return 2;
 }
 
 static int l_receive(lua_State *L)
@@ -165,7 +174,9 @@ static int l_receive(lua_State *L)
      * M5, and then this is an index like any other.
      */
     lua_pushinteger(L, (lua_Integer)sender);
-    return 2;
+    lua_pushinteger(L, (lua_Integer)((msg.cap_plus_one == 0)
+                                     ? -1 : (long)msg.cap_plus_one - 1));
+    return 3;
 }
 
 static int l_reply(lua_State *L)
@@ -174,7 +185,7 @@ static int l_reply(lua_State *L)
     struct message msg;
     long status;
 
-    take_message(L, 2, &msg);
+    take_message(L, 2, &msg, 3);
 
     status = kosmos_reply(sender, &msg);
     if (status != 0) {

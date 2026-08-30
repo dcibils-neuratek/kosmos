@@ -52,9 +52,52 @@ struct thread;
 
 struct message {
     uint64_t tag;
+
+    /*
+     * A capability travelling with the message.
+     *
+     * Out of band rather than inside the serialised bytes, and it has to be:
+     * a capability is an index into the *sender's* table and means nothing in
+     * the receiver's. The kernel translates it on delivery, so what arrives
+     * is the receiver's own index for the same endpoint. Serialising it as
+     * data would send a number that names something else on the other side.
+     *
+     * This is what lets userland do its own mounting. Without it only the
+     * kernel can hand out capabilities, so only the kernel decides what a
+     * process may reach, and `design.md` §4.4 puts that decision in the
+     * namespace server, which passes on what it holds.
+     *
+     * **Stored as index plus one, so that zero means none.** `struct message
+     * m = {0}` is how every message in this codebase is written, and a field
+     * whose safe value is not zero is a field that will be wrong at whichever
+     * construction site was written in a hurry. With -1 for none, a zeroed
+     * message would have quietly transferred the sender's capability 0 on
+     * every send.
+     */
+    uint32_t cap_plus_one;
+
     uint32_t length;            /* bytes of `data` in use */
     uint8_t  data[MSG_BYTES];
 };
+
+/*
+ * A capability is an index into a per-thread table, never a global
+ * identifier. `design.md` §4.3: a thread cannot name what it was not handed.
+ * Declared here rather than below because the helpers under it need the type.
+ */
+typedef int cap_t;
+
+/* The two ends of the +1 encoding, so nothing else has to know about it. */
+static inline void message_set_cap(struct message *m, cap_t c)
+{
+    m->cap_plus_one = (c >= 0) ? (uint32_t)(c + 1) : 0u;
+}
+
+/* The capability that came with the message, or negative for none. */
+static inline cap_t message_get_cap(const struct message *m)
+{
+    return (m->cap_plus_one == 0) ? -1 : (cap_t)(m->cap_plus_one - 1);
+}
 
 /* Results. Negative is failure, so `if (ipc_call(...) < 0)` reads correctly. */
 #define IPC_OK              0
@@ -66,17 +109,13 @@ struct message {
 #define IPC_ERR_BAD_VALUE  (-6)     /* a value that cannot cross a boundary */
 
 /*
- * Capabilities are indices into a per-thread table, never global identifiers.
+ * How many capabilities a thread may hold.
  *
- * `design.md` §4.3: a thread cannot name what it was not handed. There is no
- * global table to enumerate and no identifier to guess, so the check on every
- * operation is a bounds check rather than a permission lookup. At M4 the
- * table moves from the thread to the process, which is where the design puts
- * it; nothing about the interface changes.
+ * There is no global table to enumerate and no identifier to guess, so the
+ * check on every operation is a bounds check rather than a permission
+ * lookup.
  */
 #define CAPS_PER_THREAD     16
-
-typedef int cap_t;
 
 /* Prepares the endpoint pool. Called once, before any thread uses IPC. */
 void ipc_init(void);

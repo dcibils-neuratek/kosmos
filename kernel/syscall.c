@@ -45,6 +45,7 @@ static void copy_message_in(struct message *dst, const struct message *src)
     }
 
     dst->tag = src->tag;
+    dst->cap_plus_one = src->cap_plus_one;
     dst->length = n;
     memcpy(dst->data, src->data, n);
 }
@@ -54,6 +55,7 @@ static void copy_message_out(struct message *dst, const struct message *src)
     uint32_t n = (src->length > MSG_BYTES) ? MSG_BYTES : src->length;
 
     dst->tag = src->tag;
+    dst->cap_plus_one = src->cap_plus_one;
     dst->length = n;
     memcpy(dst->data, src->data, n);
 }

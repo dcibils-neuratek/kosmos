@@ -270,7 +270,25 @@ static const char typical_chunk[] =
     "return { tag = 3, op = 'read', path = '/dev/temp', "
     "         opts = { follow = true, limit = 64 } }";
 
-static bool bench_serialize(struct bench_result *out)
+/*
+ * Reported as the best of several states, not one.
+ *
+ * Lua randomises string hashing per state, so table iteration order and the
+ * collision patterns underneath it differ every boot, and the cost with it.
+ * Measured across ten runs the spread is 6.9%, which is far too wide for a
+ * 2% tolerance and far too wide to widen the tolerance around: a threshold
+ * of 15% would stop detecting anything worth detecting.
+ *
+ * The minimum across several seeds is the cost with the least unlucky
+ * layout, and it is stable because the best case is. Taking the best rather
+ * than the mean is the usual answer to noise that only ever adds.
+ *
+ * Note what is not done: the seed is not fixed for the benchmark. That would
+ * measure an image that behaves differently from the one that runs.
+ */
+#define SERIALIZE_STATES    5
+
+static bool bench_serialize_once(uint64_t *ticks)
 {
     lua_State *L = kosmos_lua_open();
     struct message m;
@@ -291,13 +309,8 @@ static bool bench_serialize(struct bench_result *out)
     start = now();
 
     for (i = 0; i < SERIALIZE_ROUNDS; i++) {
-        if (serialize_pack(L, -1, &m) != SERIALIZE_OK) {
-            irq_restore(daif);
-            lua_close(L);
-            return false;
-        }
-
-        if (serialize_unpack(L, &m) != SERIALIZE_OK) {
+        if (serialize_pack(L, -1, &m) != SERIALIZE_OK
+            || serialize_unpack(L, &m) != SERIALIZE_OK) {
             irq_restore(daif);
             lua_close(L);
             return false;
@@ -306,12 +319,32 @@ static bool bench_serialize(struct bench_result *out)
         lua_pop(L, 1);      /* the unpacked copy */
     }
 
-    out->total = now() - start;
+    *ticks = now() - start;
     irq_restore(daif);
 
-    out->iterations = SERIALIZE_ROUNDS;
-
     lua_close(L);
+    return true;
+}
+
+static bool bench_serialize(struct bench_result *out)
+{
+    uint64_t best = 0;
+    unsigned i;
+
+    for (i = 0; i < SERIALIZE_STATES; i++) {
+        uint64_t ticks;
+
+        if (!bench_serialize_once(&ticks)) {
+            return false;
+        }
+
+        if (i == 0 || ticks < best) {
+            best = ticks;
+        }
+    }
+
+    out->total = best;
+    out->iterations = SERIALIZE_ROUNDS;
     return true;
 }
 

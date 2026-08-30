@@ -1,40 +1,39 @@
 {
   "context_switch": {
-    "commit": "a97b3f2",
+    "commit": "52860b8",
     "iterations": 200000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
     "value": 7.187
   },
   "exception": {
-    "commit": "a97b3f2",
+    "commit": "52860b8",
     "iterations": 20000,
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
     "value": 7.25
   },
   "gc_pause_max": {
-    "commit": "a97b3f2",
+    "commit": "52860b8",
     "iterations": 1,
-    "note": "The worst single collector step, not a rate. design.md 5.2 calls the maximum GC pause the project's recurring problem and testing.md 18.5 is explicit that the maximum is what matters, never the average.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 77861.0
+    "value": 77860.0
   },
   "ipc_roundtrip": {
-    "commit": "a97b3f2",
+    "commit": "52860b8",
     "iterations": 100000,
-    "note": "A minimal message: the floor of the IPC path. Compare with `serialize`, which is what a message carrying a real Lua table costs on top.",
+    "note": "A minimal message: the floor of the IPC path, including the capability translation every delivery now performs. Compare with `serialize`, which is what carrying a real Lua table costs on top - about forty times more.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 27.062
+    "value": 30.0
   },
   "serialize": {
-    "commit": "a97b3f2",
+    "commit": "52860b8",
     "iterations": 20000,
-    "note": "5% rather than 2%: kosmos_lua_seed randomises string hashing per boot, so table iteration order and therefore the pack order differ run to run. Observed spread is about 0.6%. The randomisation is deliberate and worth more than a tighter bound on this one number.",
-    "tol": 0.05,
+    "note": "Best of five lua_States. Lua randomises string hashing per state, so collision patterns and therefore cost differ every boot: measured across ten runs the spread of a single state is 6.9%. Taking the best of several brings it to 0.55%, which is what makes a 2% tolerance mean anything. The earlier note here claimed 0.6% from three samples and was simply wrong.",
+    "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 1031.435
+    "value": 1037.623
   }
 }

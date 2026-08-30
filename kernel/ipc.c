@@ -74,6 +74,9 @@ static struct endpoint endpoints[ENDPOINT_MAX];
  * the one field an attacker changes first is the one that says how much to
  * copy.
  */
+static struct endpoint *resolve(struct thread *t, cap_t index);
+static cap_t install(struct thread *t, struct endpoint *ep);
+
 static void message_copy(struct message *dst, const struct message *src)
 {
     uint32_t n = src->length;
@@ -83,8 +86,43 @@ static void message_copy(struct message *dst, const struct message *src)
     }
 
     dst->tag = src->tag;
+    dst->cap_plus_one = src->cap_plus_one;
     dst->length = n;
     memcpy(dst->data, src->data, n);
+}
+
+/*
+ * Delivers a message from one thread to another, translating any capability
+ * travelling with it.
+ *
+ * The translation is the whole point and it happens exactly once, here. An
+ * index means something only inside the table it came from, so the sender's
+ * number is resolved against the sender's table and installed in the
+ * receiver's, and what arrives is the receiver's own index for the same
+ * endpoint. A sender cannot pass a capability it does not hold, because
+ * resolve refuses; and it cannot guess one, because there is no number that
+ * names anything it was not given.
+ *
+ * A transfer that cannot be completed - a bad index, or a full table on the
+ * far side - arrives as MSG_NO_CAP rather than failing the send. The message
+ * is still a message; the receiver checks whether the capability it expected
+ * came with it, exactly as it checks any other field.
+ */
+static void message_deliver(struct thread *to, struct thread *from,
+                            const struct message *src, struct message *dst)
+{
+    cap_t sending = message_get_cap(src);
+
+    message_copy(dst, src);
+    message_set_cap(dst, -1);
+
+    if (sending >= 0) {
+        struct endpoint *ep = resolve(from, sending);
+
+        if (ep != NULL) {
+            message_set_cap(dst, install(to, ep));
+        }
+    }
 }
 
 static void queue_push(struct thread **head, struct thread *t)
@@ -308,7 +346,7 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          * The message is already gone, so this thread goes straight onto the
          * reply queue and never touches the sender queue at all.
          */
-        message_copy(&receiver->ipc.msg, msg);
+        message_deliver(receiver, self, msg, &receiver->ipc.msg);
         receiver->ipc.peer = self;
         deliver(receiver, IPC_OK);
         queue_push(&ep->awaiting_reply, self);
@@ -355,7 +393,7 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender)
          * reply, so it moves from one queue to the other. `queue_pop` above
          * already took it off the sender queue.
          */
-        message_copy(msg, &s->ipc.msg);
+        message_deliver(self, s, &s->ipc.msg, msg);
         *sender = s;
         s->ipc.peer = self;
         queue_push(&ep->awaiting_reply, s);
@@ -393,7 +431,7 @@ int ipc_reply(struct thread *sender, const struct message *msg)
 
     queue_remove(&ep->awaiting_reply, sender);
 
-    message_copy(&sender->ipc.msg, msg);
+    message_deliver(sender, thread_current(), msg, &sender->ipc.msg);
     deliver(sender, IPC_OK);
 
     return IPC_OK;

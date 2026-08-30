@@ -2285,6 +2285,77 @@ static bool test_the_serialiser_refuses_what_cannot_cross(void)
         "return okf == false and okc == false and okb == false");
 }
 
+static bool test_a_capability_can_be_passed_in_a_message(void)
+{
+    /*
+     * The primitive M5 rests on, and the one that moves mounting out of the
+     * kernel.
+     *
+     * Before this, only the kernel could hand out a capability, so only the
+     * kernel could decide what a process may reach. `design.md` §4.4 puts
+     * that decision in the namespace server: a process asks for a path and
+     * is handed a capability for whoever serves it. That is this, once.
+     *
+     * The test builds it end to end. A broker holds a capability for a
+     * second, private endpoint that the client cannot name. The client asks
+     * the broker for it, receives it as *its own* index, and then talks
+     * directly to the private service - which is exactly the shape a mount
+     * has.
+     */
+    return lua_says_true(
+        "local public  = sys.endpoint() "
+        "local private = sys.endpoint() "
+        /* The broker: hands out `private` to whoever asks on `public`. */
+        "if not sys.spawn('t-broker', [[ "
+        "  local pub, priv = ... "
+        "  local m, who = sys.receive(pub) "
+        "  if m then sys.reply(who, { granted = true }, priv) end "
+        "]], public, private) then return false end "
+        /* The private service, on its own endpoint. */
+        "if not sys.spawn('t-secret', [[ "
+        "  local cap = ... "
+        "  while true do "
+        "    local m, who = sys.receive(cap) "
+        "    if not m then break end "
+        "    sys.reply(who, { answer = m.ask .. ' answered' }) "
+        "  end ]], private) then return false end "
+        /* The client holds only `public`. It cannot name `private` at all. */
+        "local reply, got = sys.call(public, { please = true }) "
+        "if not reply or not reply.granted then return false end "
+        "if got == nil or got < 0 then return false end "
+        /* And now it can talk to a service it was never told the number of. */
+        "local answer = sys.call(got, { ask = 'question' }) "
+        "sys.destroy(public) sys.destroy(private) "
+        "for _ = 1, 8 do sys.yield() end "
+        "return answer ~= nil and answer.answer == 'question answered'");
+}
+
+static bool test_a_capability_that_is_not_held_cannot_be_sent(void)
+{
+    /*
+     * A sender cannot pass what it does not hold, and cannot guess. The
+     * index is resolved against the sender's own table, so a number naming
+     * nothing arrives as nothing rather than as somebody else's endpoint.
+     *
+     * The failure is silent by design: the message still arrives, and the
+     * receiver finds no capability came with it. A send that failed outright
+     * would let a sender learn which numbers are valid by watching which
+     * sends succeed.
+     */
+    return lua_says_true(
+        "local ep = sys.endpoint() "
+        "if not sys.spawn('t-nocap', [[ "
+        "  local cap = ... "
+        "  local m, who = sys.receive(cap) "
+        "  if m then sys.reply(who, { saw = (m.n or 0) }) end "
+        "]], ep) then return false end "
+        /* 12 names nothing in this thread's table. */
+        "local reply, got = sys.call(ep, { n = 1 }, 12) "
+        "sys.destroy(ep) "
+        "for _ = 1, 8 do sys.yield() end "
+        "return reply ~= nil and (got == nil or got < 0)");
+}
+
 static bool test_lua_ipc_errors_are_reported(void)
 {
     return lua_says_true("local r, e = sys.call(99, {1}) "
@@ -2762,6 +2833,8 @@ static const struct test tests[] = {
     { "sys: destroy reaches a Lua server",     test_destroying_an_endpoint_reaches_a_lua_server },
     { "sys: a Lua table survives IPC",         test_a_lua_table_survives_ipc },
     { "sys: the serialiser refuses the rest",  test_the_serialiser_refuses_what_cannot_cross },
+    { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
+    { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "sys: IPC errors reach Lua",             test_lua_ipc_errors_are_reported },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },

@@ -89,6 +89,7 @@ static inline void kosmos_yield(void)
 
 struct message {
     uint64_t tag;
+    uint32_t cap_plus_one;      /* a capability travelling with it, +1 */
     uint32_t length;
     uint8_t  data[MSG_BYTES];
 };

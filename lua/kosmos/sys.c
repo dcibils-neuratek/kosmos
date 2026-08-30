@@ -146,10 +146,22 @@ static int sys_yield(lua_State *L)
  * the parent's heap: it is a Lua string over there, and the parent's
  * collector is free to reclaim it the moment the call returns.
  */
+/*
+ * What a spawned thread is handed: its source, and the capabilities it was
+ * given, in the order they were granted.
+ *
+ * Several rather than one, because a process needs several. A server needs
+ * the endpoint it listens on; a client needs the one it talks to and the
+ * console it prints to. Granting one and making the rest arrive later means
+ * a window where the thread is running and cannot do its job.
+ */
+#define SPAWN_CAPS_MAX  8
+
 struct spawn_args {
-    char  *source;
-    cap_t  cap;         /* the child's own index, or negative for none */
-    char   name[THREAD_NAME_MAX];
+    char   *source;
+    cap_t   caps[SPAWN_CAPS_MAX];   /* the child's own indices */
+    unsigned ncaps;
+    char    name[THREAD_NAME_MAX];
 };
 
 static void lua_thread_main(void *arg)
@@ -164,11 +176,17 @@ static void lua_thread_main(void *arg)
                                       a->name, "t");
 
         if (status == LUA_OK) {
-            /* The chunk's `...` is its capability index, which is the only
-             * thing it is handed and therefore the only thing it can reach.
-             * That is the capability model, expressed as an argument. */
-            lua_pushinteger(L, (lua_Integer)a->cap);
-            status = lua_pcall(L, 1, 0, 0);
+            /* The chunk's `...` is its capabilities, in the order they were
+             * granted, and they are the only things it was handed and
+             * therefore the only things it can reach. That is the capability
+             * model, expressed as arguments. */
+            unsigned i;
+
+            for (i = 0; i < a->ncaps; i++) {
+                lua_pushinteger(L, (lua_Integer)a->caps[i]);
+            }
+
+            status = lua_pcall(L, (int)a->ncaps, 0, 0);
         }
 
         if (status != LUA_OK) {
@@ -192,9 +210,20 @@ static int sys_spawn(lua_State *L)
     const char *name = luaL_checkstring(L, 1);
     size_t len;
     const char *source = luaL_checklstring(L, 2, &len);
-    cap_t share = (cap_t)luaL_optinteger(L, 3, -1);
+    int nshare = lua_gettop(L) - 2;
     struct spawn_args *a;
     struct thread *t;
+    int i;
+
+    if (nshare < 0) {
+        nshare = 0;
+    }
+
+    if (nshare > SPAWN_CAPS_MAX) {
+        lua_pushnil(L);
+        lua_pushstring(L, "too many capabilities");
+        return 2;
+    }
 
     a = malloc(sizeof(*a));
     if (a == NULL) {
@@ -213,7 +242,7 @@ static int sys_spawn(lua_State *L)
 
     memcpy(a->source, source, len);
     a->source[len] = '\0';
-    a->cap = -1;
+    a->ncaps = 0;
 
     /* Truncated rather than rejected: a name is for reading in `sys.threads`
      * and nothing depends on it being complete. */
@@ -235,28 +264,28 @@ static int sys_spawn(lua_State *L)
         return 2;
     }
 
-    if (share >= 0) {
-        /*
-         * The child's index is not the parent's, and cannot be. An index
-         * means something only inside the table it came from, which is what
-         * stops one being guessed or forged somewhere else.
-         */
-        a->cap = ipc_cap_grant(t, share);
+    /*
+     * Granted after the thread exists, because a child's index is only
+     * meaningful once there is a table to put it in, and before it runs,
+     * because a thread that runs first finds an empty table. Nothing has to
+     * be re-plumbed: the thread was handed the pointer, not a copy.
+     *
+     * Each index is the child's own and unrelated to the parent's. An index
+     * means something only inside the table it came from, which is what
+     * stops one being guessed or forged somewhere else.
+     */
+    for (i = 0; i < nshare; i++) {
+        cap_t granted = ipc_cap_grant(t, (cap_t)luaL_checkinteger(L, 3 + i));
 
-        if (a->cap < 0) {
-            /* The thread exists and will run with no capability at all,
-             * which is a well-defined and useless state, so say so rather
-             * than leave it to be discovered. */
+        if (granted < 0) {
+            /* The thread exists and would run without something it was meant
+             * to have, which is a well-defined and useless state. */
             lua_pushnil(L);
-            lua_pushstring(L, "could not grant the capability");
+            lua_pushstring(L, "could not grant a capability");
             return 2;
         }
 
-        /*
-         * Filled in after thread_create because the child's index is only
-         * known once the thread exists. Nothing has to be re-plumbed: the
-         * thread was handed the pointer, not a copy, and it has not run yet.
-         */
+        a->caps[a->ncaps++] = granted;
     }
 
     lua_pushboolean(L, 1);
@@ -286,12 +315,22 @@ static void push_message(lua_State *L, const struct message *m)
     }
 }
 
-static void take_message(lua_State *L, int index, struct message *m)
+/*
+ * A capability travels alongside the value, never inside it.
+ *
+ * An index means something only in the table it came from, so a capability
+ * serialised as data would arrive as a number naming something else. It is
+ * passed as its own argument and comes back as its own return value, which
+ * also makes it visible at every call site that one is being handed over.
+ */
+static void take_message(lua_State *L, int index, struct message *m,
+                         int cap_arg)
 {
     int rc;
 
     m->tag = 0;
     m->length = 0;
+    message_set_cap(m, (cap_t)luaL_optinteger(L, cap_arg, -1));
 
     /* A tag, if the value is a table with one. `design.md` §14 wants every
      * message to say what it is; the kernel only insists the field exists,
@@ -359,7 +398,7 @@ static int sys_call(lua_State *L)
     struct message reply;
     int status;
 
-    take_message(L, 2, &msg);
+    take_message(L, 2, &msg, 3);
 
     /* Blocks this kernel thread until the far side answers, which is the
      * point: a client that has to poll is not synchronous IPC. */
@@ -370,7 +409,8 @@ static int sys_call(lua_State *L)
     }
 
     push_message(L, &reply);
-    return 1;
+    lua_pushinteger(L, (lua_Integer)message_get_cap(&reply));
+    return 2;
 }
 
 static int sys_receive(lua_State *L)
@@ -393,7 +433,8 @@ static int sys_receive(lua_State *L)
      * at by arithmetic.
      */
     lua_pushlightuserdata(L, sender);
-    return 2;
+    lua_pushinteger(L, (lua_Integer)message_get_cap(&msg));
+    return 3;
 }
 
 static int sys_reply(lua_State *L)
@@ -405,7 +446,7 @@ static int sys_reply(lua_State *L)
     luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
     sender = lua_touserdata(L, 1);
 
-    take_message(L, 2, &msg);
+    take_message(L, 2, &msg, 3);
 
     status = ipc_reply(sender, &msg);
 
