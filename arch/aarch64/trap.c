@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <setjmp.h>
+
 #include "trap.h"
 #include "console.h"
 #include "hal.h"
@@ -93,6 +95,7 @@ static bool is_abort(unsigned ec)
 static struct {
     bool armed;
     bool fired;
+    unsigned long *unwind_to;   /* NULL means step past it instead */
     struct fault_info info;
 } expected;
 
@@ -100,6 +103,14 @@ void fault_expect_begin(void)
 {
     expected.armed = true;
     expected.fired = false;
+    expected.unwind_to = NULL;
+}
+
+void fault_expect_unwind(jmp_buf env)
+{
+    expected.armed = true;
+    expected.fired = false;
+    expected.unwind_to = env;
 }
 
 bool fault_expect_end(struct fault_info *out)
@@ -112,6 +123,7 @@ bool fault_expect_end(struct fault_info *out)
 
     expected.armed = false;
     expected.fired = false;
+    expected.unwind_to = NULL;
     return fired;
 }
 
@@ -171,24 +183,61 @@ void trap_handler(unsigned index, struct trapframe *tf)
      */
     bool synchronous = (index == 0 || index == 4 || index == 8 || index == 12);
 
+    /*
+     * Where the handler itself is running. The stack overflow test asserts
+     * this is the exception stack and not the thread's, which is the only
+     * direct evidence that the two are actually separate.
+     */
+    uint64_t handler_sp;
+    __asm__ volatile("mov %0, sp" : "=r"(handler_sp));
+
     if (expected.armed && !expected.fired && synchronous) {
         expected.fired     = true;
         expected.info.esr  = tf->esr;
         expected.info.far  = tf->far;
         expected.info.elr  = tf->elr;
+        expected.info.handler_sp = handler_sp;
+
+        if (expected.unwind_to != NULL) {
+            /*
+             * Return into longjmp rather than into the faulting code. The
+             * eret restores x0 and x1 from the frame and jumps to elr, so
+             * setting all three is a complete call: longjmp(env, 1), running
+             * on SP_EL0 with SPSel back to 0 where it belongs.
+             *
+             * SP_EL0 is left where the fault found it, which may be inside
+             * the guard page. That is safe because longjmp touches no stack
+             * at all: it only loads from the buffer and then sets sp.
+             */
+            tf->x[0] = (uint64_t)(uintptr_t)expected.unwind_to;
+            tf->x[1] = 1;
+            tf->elr  = (uint64_t)(uintptr_t)&longjmp;
+            return;
+        }
+
         tf->elr += 4;
         return;
     }
 
     /*
-     * An IRQ. Vector 5 is the only one that can deliver one today: the
-     * kernel runs at EL1h, so interrupts taken from it land in the
-     * "current EL, SP_ELx" group. Vector 9 joins it when userland arrives
-     * at M4.
+     * An IRQ. Vector 1, because the kernel runs on SP_EL0: an exception
+     * taken while SPSel is 0 lands in the "current EL, SP_EL0" quarter.
+     * Vector 9 joins it when userland arrives at M4.
      */
-    if (index == 5) {
+    if (index == 1) {
         hal_irq_handle();
         return;
+    }
+
+    /*
+     * Vectors 4 through 7 are exceptions taken while SPSel was already 1,
+     * which means inside the handler. Nothing else runs there, so this is a
+     * fault in the fault path and the state is not to be trusted. Saying so
+     * is worth more than the dump that follows, because the dump describes
+     * the second fault and the interesting one was the first.
+     */
+    if (index >= 4 && index <= 7) {
+        kputs("\nPANIC: double fault - an exception inside the handler\n");
     }
 
     dump(index, tf);

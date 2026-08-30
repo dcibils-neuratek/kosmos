@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <setjmp.h>
 
 struct trapframe {
     uint64_t x[31];     /* x0 through x30 */
@@ -87,9 +88,29 @@ struct fault_info {
     uint64_t esr;
     uint64_t far;
     uint64_t elr;
+    uint64_t handler_sp;    /* which stack the handler itself ran on */
 };
 
 void fault_expect_begin(void);
+
+/*
+ * The other recovery, for faults you cannot simply step over.
+ *
+ * Stepping ELR past the offending instruction works for a single deliberate
+ * access. It is useless for a stack overflow, where resuming would just
+ * recurse into the guard page again. This unwinds instead: the fault arrives,
+ * and control resumes at the matching `setjmp` with a return value of 1.
+ *
+ * It is what `testing.md` §18.2 asked for and could not have before, because
+ * there was no `setjmp` until the libc arrived at M2.
+ *
+ * The handler does not call `longjmp` itself, and cannot. It runs with SPSel
+ * set to 1, so `longjmp` would write the thread's stack pointer into SP_EL1
+ * and return without ever issuing the `eret`, leaving the exception
+ * unfinished. What it does instead is rewrite the trapframe so the `eret`
+ * itself lands in `longjmp` with the right arguments, back on SP_EL0.
+ */
+void fault_expect_unwind(jmp_buf env);
 
 /* Disarms, and returns whether a fault actually fired. Fills *out when it
  * did; *out is untouched otherwise. */

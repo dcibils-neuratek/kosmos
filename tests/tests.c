@@ -286,6 +286,129 @@ static bool test_unexpected_fault_is_not_swallowed(void)
 }
 
 /*
+ * M3: the exception stack.
+ */
+extern char __exception_stack_bottom[], __exception_stack_top[];
+extern char __stack_bottom[], __stack_top[];
+
+static bool test_kernel_runs_on_sp_el0(void)
+{
+    /* SPSel bit 0: 0 means SP_EL0 is the current stack pointer. The whole
+     * separation rests on this being 0 in ordinary code. */
+    uint64_t spsel;
+    __asm__ volatile("mrs %0, spsel" : "=r"(spsel));
+    return (spsel & 1) == 0;
+}
+
+static bool test_handler_runs_on_the_exception_stack(void)
+{
+    /*
+     * Direct evidence that the two stacks are actually separate, rather than
+     * the code merely looking as though it set them up that way.
+     */
+    struct fault_info f;
+
+    fault_expect_begin();
+    __asm__ volatile("udf #0");
+
+    if (!fault_expect_end(&f)) {
+        return false;
+    }
+
+    return f.handler_sp > (uint64_t)(uintptr_t)__exception_stack_bottom
+        && f.handler_sp <= (uint64_t)(uintptr_t)__exception_stack_top;
+}
+
+static volatile int recursion_guard;
+
+/*
+ * GCC is right that this never returns, and that is the point: it is
+ * terminated by a hardware fault, which no amount of static analysis can
+ * see. The warning is correct and the code is deliberate, so it is silenced
+ * here and nowhere else.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+
+static uint64_t burn_stack(uint64_t depth)
+{
+    /*
+     * Recurses until the stack runs into its guard page. The volatile
+     * counter and the returned sum are there so the compiler cannot turn
+     * this into a loop or prove anything about where it ends: it has to
+     * actually build a frame each time.
+     */
+    volatile uint64_t pad[16];
+    uint64_t i;
+    uint64_t sum = depth;
+
+    recursion_guard++;
+
+    for (i = 0; i < 16; i++) {
+        pad[i] = depth + i;
+    }
+
+    sum += burn_stack(depth + 1);
+
+    for (i = 0; i < 16; i++) {
+        sum += pad[i];
+    }
+
+    return sum;
+}
+
+#pragma GCC diagnostic pop
+
+static bool test_a_stack_overflow_is_survivable(void)
+{
+    /*
+     * The reason the exception stack exists, tested end to end.
+     *
+     * Before this, an overflow was a double fault: the handler built its
+     * 288-byte frame on the stack that had just run out, faulted again inside
+     * the vector, and the kernel hung with nothing printed. Now the fault
+     * lands on a different stack, is recognised, and unwinds back here.
+     *
+     * Stepping ELR would be no use: resuming the faulting instruction just
+     * recurses into the guard page again. This is what fault_expect_unwind is
+     * for, and it is the case testing.md §18.2 had in mind.
+     */
+    jmp_buf recover;
+    volatile bool unwound = false;
+    volatile uint64_t sp_after;
+
+    recursion_guard = 0;
+
+    if (setjmp(recover) == 0) {
+        fault_expect_unwind(recover);
+        (void)burn_stack(0);
+        /* Unreachable: the recursion cannot return. */
+    } else {
+        unwound = true;
+    }
+
+    if (!fault_expect_end(NULL)) {
+        return false;
+    }
+
+    /* And the stack pointer is back where setjmp saw it, not thousands of
+     * frames down where the fault happened. */
+    __asm__ volatile("mov %0, sp" : "=r"(sp_after));
+
+    /*
+     * The depth bound is deliberately loose. How many frames fit in 16 KB
+     * depends on what the compiler decided this function's frame should be,
+     * and that is not the property under test: what matters is that it
+     * really recursed and consumed a stack rather than faulting immediately.
+     * It happens to reach exactly 100, which is about 163 bytes a frame.
+     */
+    return unwound
+        && recursion_guard > 10
+        && sp_after > (uint64_t)(uintptr_t)__stack_bottom
+        && sp_after <= (uint64_t)(uintptr_t)__stack_top;
+}
+
+/*
  * M1: the physical page allocator.
  *
  * The panic paths (a misaligned free, an out-of-range free, a double free)
@@ -1062,6 +1185,9 @@ static const struct test tests[] = {
     { "trap: elr is the faulting instruction", test_elr_points_at_the_faulting_instruction },
     { "trap: execution resumes after a fault", test_execution_resumes_after_an_expected_fault },
     { "trap: no fault means end() is false",   test_unexpected_fault_is_not_swallowed },
+    { "trap: the kernel runs on SP_EL0",       test_kernel_runs_on_sp_el0 },
+    { "trap: the handler has its own stack",   test_handler_runs_on_the_exception_stack },
+    { "trap: a stack overflow is survivable",  test_a_stack_overflow_is_survivable },
     { "mmu: translation is on",                test_mmu_is_on },
     { "mmu: a null dereference faults",        test_null_dereference_faults },
     { "mmu: the stack guard is unmapped",      test_stack_guard_page_is_unmapped },

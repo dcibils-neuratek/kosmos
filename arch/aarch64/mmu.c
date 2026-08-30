@@ -12,6 +12,7 @@
 extern char __text_start[], __text_end[];
 extern char __rodata_start[], __rodata_end[];
 extern char __stack_guard[];
+extern char __exception_guard[];
 
 #define ENTRIES_PER_TABLE   512
 #define BLOCK_2M            (2UL * 1024 * 1024)
@@ -242,10 +243,18 @@ void mmu_init(void)
     map_pages(rodata_start, rodata_start,
               ((uintptr_t)__rodata_end - rodata_start) / PAGE_SIZE, MAP_RO);
 
-    /* And punch out the stack guard. */
+    /* And punch out both stack guards. One below the kernel's stack, one
+     * below the exception stack: a handler that overflows has to fault
+     * rather than walk into whatever is underneath it. */
     guard = mmu_page_entry((uintptr_t)__stack_guard);
     if (guard == NULL) {
         panic("mmu: the stack guard is not page mapped");
+    }
+    *guard = DESC_INVALID;
+
+    guard = mmu_page_entry((uintptr_t)__exception_guard);
+    if (guard == NULL) {
+        panic("mmu: the exception stack guard is not page mapped");
     }
     *guard = DESC_INVALID;
 

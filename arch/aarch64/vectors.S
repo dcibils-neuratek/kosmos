@@ -8,10 +8,17 @@
  *
  * The four groups, in the order the architecture fixes:
  *
- *   0x000  current EL, SP_EL0     cannot happen: the kernel runs at EL1h
- *   0x200  current EL, SP_ELx     where every kernel fault lands today
+ *   0x000  current EL, SP_EL0     where every kernel fault lands
+ *   0x200  current EL, SP_ELx     a fault inside the handler: a double fault
  *   0x400  lower EL, AArch64      userland, from M4
  *   0x600  lower EL, AArch32      never: nothing in Kosmos is AArch32
+ *
+ * The first two are that way round because the kernel runs on SP_EL0 and the
+ * handler on SP_EL1. Taking an exception always sets SPSel to 1, so a fault
+ * in ordinary code is taken with SPSel still 0 and lands in the first
+ * quarter, while a fault inside the handler is taken with SPSel already 1 and
+ * lands in the second. Which entry fired is therefore the answer to whether
+ * this is a fault or a fault in the fault path.
  *
  * Each entry only makes room for the frame, saves x0 and x1, puts its own
  * index in x0 and branches. 128 bytes is not enough for the whole save
@@ -74,9 +81,13 @@ trap_entry:
     stp     x28, x29, [sp, #224]
     str     x30,      [sp, #240]
 
-    /* The sp the interrupted code had, which is this one before the frame
-     * was carved out of it. */
-    add     x1, sp, #TF_SIZE
+    /*
+     * The sp the interrupted code had, which is SP_EL0 rather than this one.
+     * The kernel runs on SP_EL0 and the handler is on SP_EL1, so `sp` here is
+     * the exception stack and reporting it would name the wrong thing. This
+     * is the value a stack overflow dump has to show.
+     */
+    mrs     x1, sp_el0
     mrs     x2, elr_el1
     mrs     x3, spsr_el1
     mrs     x4, esr_el1

@@ -70,10 +70,28 @@ SECTIONS
         __stack_guard = .;
         . = . + PAGE_SIZE;
 
-        /* The boot stack. 16 KB. */
+        /* The boot stack, on SP_EL0. 16 KB. */
         __stack_bottom = .;
         . = . + 0x4000;
         __stack_top = .;
+
+        /*
+         * The exception stack, on SP_EL1, with its own guard page.
+         *
+         * It has to be a different stack from the one being interrupted. The
+         * handler builds a 288-byte frame the moment it is entered, so if it
+         * ran on the thread's stack, an exception caused by that stack being
+         * exhausted would fault again inside the vector. That is a double
+         * fault: the kernel hangs with nothing printed, which is the exact
+         * failure the whole exception dump exists to eliminate.
+         */
+        . = ALIGN(PAGE_SIZE);
+        __exception_guard = .;
+        . = . + PAGE_SIZE;
+
+        __exception_stack_bottom = .;
+        . = . + 0x4000;
+        __exception_stack_top = .;
     }
 
     . = ALIGN(PAGE_SIZE);

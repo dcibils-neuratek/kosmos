@@ -99,8 +99,31 @@ at_el1:
     msr     cpacr_el1, x0
     isb
 
-    /* The stack, before anything can possibly need it. adrp/add rather than
-     * `ldr =sym` so there is no literal pool to place in the boot section. */
+    /*
+     * Two stacks, and which register holds which is the whole point.
+     *
+     * EL1 has two stack pointers, SP_EL0 and SP_EL1, and SPSel chooses
+     * between them. Taking an exception always sets SPSel to 1. So if the
+     * kernel runs on SP_EL0, the handler is handed SP_EL1 by the hardware,
+     * with no code to switch anything: a stack overflow faults, and the
+     * handler that reports it runs somewhere else and survives to report it.
+     *
+     * It also makes a double fault legible rather than silent. An exception
+     * taken while SPSel is 0 lands in the "current EL, SP_EL0" quarter of the
+     * vector table; one taken inside the handler, where SPSel is already 1,
+     * lands in the "current EL, SP_ELx" quarter. The dump names the vector,
+     * so the two are told apart by which entry fired.
+     *
+     * We arrive here with SPSel already 1, so this first write is SP_EL1.
+     */
+    adrp    x0, __exception_stack_top
+    add     x0, x0, :lo12:__exception_stack_top
+    mov     sp, x0
+
+    /* Now switch to SP_EL0 and give it the kernel's own stack. adrp/add
+     * rather than `ldr =sym` so there is no literal pool in the boot
+     * section. */
+    msr     spsel, #0
     adrp    x0, __stack_top
     add     x0, x0, :lo12:__stack_top
     mov     sp, x0
