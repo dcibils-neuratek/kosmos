@@ -8,13 +8,13 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
-**M1 — MMU, exceptions, timer**
+**M2 — Lua in the kernel + second target**
 
-Definition of done: the timer prints one tick per second, and a deliberate `*(volatile int*)0 = 1` prints a readable data abort with the causing address instead of hanging.
+Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU **and** on real hardware.
 
-The second half matters more than the first. An exception handler that says what happened and where is the tool used for the entire rest of the project.
+Blocked on hardware for the second half: the serial cables have not arrived. The freestanding libc and Lua itself can start under QEMU meanwhile.
 
-**M0 is closed.** `make qemu` prints "Kosmos" and `make test` exits 0.
+**M0 and M1 are closed.**
 
 ## Active target
 
@@ -22,9 +22,22 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Working
 
-`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`.
+`make qemu`, `make test`, `make debug`, `make disasm`, `make size`, `make clean`. 24 tests.
 
-M0 in full: boot at EL1 on core 0 with the secondaries parked, PL011 output, and a host-side test runner reading TAP over the serial line with the exit code set by the guest through semihosting. 620 bytes of text, 16 KB of .bss (all of it the boot stack). Four tests passing.
+Boot output:
+
+```
+Kosmos
+mem   512 MB, 131072 pages, 130929 free, 143 used by the kernel
+mmu   on
+timer 100 Hz
+tick  1
+tick  2
+```
+
+M0: boot at EL1 on core 0 with the secondaries parked, PL011 output, and a host-side runner reading TAP over serial with the exit code set by the guest through semihosting. The runner streams and stops the moment it sees a panic.
+
+M1: a sixteen-entry exception vector with a handler that decodes ESR and names the faulting instruction and address; expected-fault support so tests can fault on purpose; a bitmap page allocator; an identity map with W^X, an unmapped page zero and an unmapped stack guard; GICv3 and the generic timer at 100 Hz.
 
 ## M0 — done
 
@@ -39,16 +52,29 @@ M0 in full: boot at EL1 on core 0 with the secondaries parked, PL011 output, and
 - [x] `tools/run_tests.py`: launches QEMU, reads TAP over serial, exit code
 - [x] Guest exit via semihosting (`SYS_EXIT` through `HLT #0xF000`)
 
+## M1 — done
+
+- [x] Exception vector, all sixteen entries
+- [x] A sync handler that prints ESR, ELR and FAR, with the fault decoded
+- [x] Expected-exception support, by stepping ELR rather than `setjmp`
+- [x] Physical page allocator: a bitmap over available RAM
+- [x] AArch64 page tables, 4 KB granule, identity map of the kernel
+- [x] MMU on, and it survives the jump
+- [x] Stack guard page
+- [x] GICv3: distributor, redistributor and the system-register CPU interface
+- [x] ARM generic timer at 100 Hz
+
 ## Concrete next step
 
-M1, in this order: the physical page allocator (a bitmap over available RAM), then the exception vector, then the MMU, then the timer.
+M2 splits cleanly in two, and only the second half is blocked on hardware.
 
-**The exception vector goes before the MMU on purpose.** Turning the MMU on is the step most likely to fault, and doing it without a handler that prints ESR, ELR and FAR means debugging a silent hang. Doing it with one means reading a message that says which instruction faulted on what address.
+**Under QEMU, now:** the minimal freestanding libc (`memcpy`, `memset`, `memmove`, `strlen`, `strcmp`, `strcpy`, `strchr`, `setjmp`/`longjmp`, a minimal `snprintf`, and the `math` functions Lua asks for), then upstream Lua 5.4 built freestanding with its allocator pointing at the page allocator, then a REPL over the UART.
 
-Two things to get right while writing the vector, because retrofitting them is worse:
+`memset` and `memcpy` already exist in `kernel/string.c`, written because GCC emits calls to them from a zeroing loop even under `-ffreestanding`. They are the kernel's own and deliberately naive; the userland libc is a separate thing.
 
-- **Expected-exception support.** A flag plus `setjmp` so a test can fault on purpose, record it, and carry on. Several M1 tests need it and `testing.md` §18.2 calls it out.
-- **The 16 entries.** Not just the one that is being used.
+**`setjmp`/`longjmp` is the one that demands care.** Lua uses it for error handling, and getting it wrong produces a bug that only appears the first time something raises an error, long after it was written.
+
+**When a cable arrives:** `hal/pi1/` or `hal/pi5/`, and then the HAL interface takes its real shape with two implementations in front of it. Not before. Today's interface is the shape of QEMU with generic names, and that is fine until there is something to compare it against.
 
 ## Decisions taken while implementing
 
@@ -58,6 +84,14 @@ Design decisions (as opposed to implementation ones) go in the decision log in `
 
 **2026-08-30 — The toolchain is the official ARM GNU 14.2.Rel1 `aarch64-none-elf`, unpacked under `~/toolchains`.** The Homebrew recipe `setup.md` used to recommend (`aarch64-unknown-linux-gnu`) targets Linux and brings glibc and Linux start files, which is what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces differently named binaries. `setup.md` corrected in the same session. Homebrew is not installed on this machine and MacPorts has no `aarch64-elf-gcc` port, so the ARM tarball was the only path that lands on the documented binary names.
 
+**2026-08-30 — QEMU `virt` defaults to a GICv2; Kosmos drives a GICv3 and passes `gic-version=3`.** Read out of QEMU's own device tree rather than assumed, after the same documents turned out to be wrong about the entry exception level. The flag is on the QEMU line in the Makefile and in `tools/run_tests.py`, and the two have to stay in agreement. `hal.md` corrected, including the claim about the Pi 5's GIC, which is now marked as an open question instead of an assumption.
+
+**2026-08-30 — The timer rearms from the previous deadline (CVAL), never from the current time (TVAL).** TVAL sets the comparator to "now plus interval", where "now" is when the handler runs, so every period absorbs the cost of taking the interrupt and the error accumulates. Under QEMU that cost is about 195,000 counter ticks, roughly 3 ms against a 10 ms period, and a nominal 100 Hz ran at 73: eight ticks in eleven seconds of wall clock. Measured, not reasoned about. There is a test that fails if it is ever changed back, and the "ticks advance" test passes with the bug, which is why the second one exists.
+
+**2026-08-30 — A null dereference cannot be written in C.** GCC is entitled to assume undefined behaviour never happens, so it emits the store and then treats the rest of the function as unreachable, appending a `brk`. The store faults, the handler steps ELR past it, and execution lands on the `brk`: a second fault with the expectation already spent, and a panic. Every deliberate fault in the tests goes through an inline-assembly store.
+
+**2026-08-30 — Expected faults recover by stepping ELR, not by `setjmp`.** There is no `setjmp` until the libc arrives at M2, and every A64 instruction is four bytes, so the arithmetic is exact. Only synchronous exceptions are recoverable this way: an IRQ did not come from the instruction at ELR.
+
 **2026-08-30 — On AArch64, `SYS_EXIT` takes a pointer, not a status.** `x1` holds the address of a two-field block: the reason code (`ADP_Stopped_ApplicationExit`, `0x20026`) and then the exit status. Passing the status directly in `x1` is the AArch32 form; it assembles, it runs, and QEMU exits 0 no matter what the guest meant. A harness that always reports success is worse than no harness, so the failure paths were exercised rather than assumed: a failing test, a hanging test, a missing banner, a build error, and QEMU's exit code on its own. All five produce a non-zero exit.
 
 **2026-08-30 — The test image is a separate build under `build/test/`.** Same sources plus `tests/`, with `-DKOSMOS_TEST`. Two directories rather than one so the normal image never carries test code and the two cannot share a stale object file.
@@ -65,6 +99,8 @@ Design decisions (as opposed to implementation ones) go in the decision log in `
 **2026-08-30 — `README.md` and `CLAUDE.md` moved from `docs/` to the repository root.** Their links were written relative to the root (`docs/design.md`), so from inside `docs/` every one of them resolved to `docs/docs/...` and was broken. `CLAUDE.md` also has to be at the root for Claude Code to load it automatically.
 
 ## Known bugs
+
+**An exception taken while the stack is exhausted is a double fault.** The handler builds its frame on the stack that just overflowed, so it faults again inside the vector and the kernel hangs with no output. The guard page turns a silent overflow into a readable abort, which is the improvement; it does not survive one. The fix is a separate exception stack, and it belongs with the thread work at M3.
 
 **A minimal `kmain` with no stack faults silently.** Found while smoke-testing the toolchain. On QEMU `virt` the reset value of `sp` is 0, so any function prologue touching the stack writes to unmapped memory, takes an exception with no vector installed, and hangs with no output. It is not a bug in the system, it is the reason `boot/start.S` sets `sp` before branching to C. Recorded because the failure mode is a silent hang, which is indistinguishable from twenty other causes.
 
@@ -80,8 +116,8 @@ Design decisions (as opposed to implementation ones) go in the decision log in `
 | # | Milestone | Status |
 |---|---|---|
 | 0 | Boot under QEMU | **done** |
-| 1 | MMU, exceptions, timer | **in progress** |
-| 2 | Lua in the kernel + second target | |
+| 1 | MMU, exceptions, timer | **done** |
+| 2 | Lua in the kernel + second target | **in progress** |
 | 3 | Microkernel | |
 | 4 | Lua to userspace | |
 | 5 | Namespaces and servers | |

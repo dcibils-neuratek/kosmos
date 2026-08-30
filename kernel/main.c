@@ -9,6 +9,7 @@
 #include "pmm.h"
 #include "page.h"
 #include "mmu.h"
+#include "kernel.h"
 
 #ifdef KOSMOS_TEST
 #include "test.h"
@@ -16,6 +17,8 @@
 
 void kmain(void)
 {
+    unsigned long last_second = 0;
+
     hal_early_init();
 
     /* Before anything else that could fault. Until this runs, VBAR_EL1 holds
@@ -49,6 +52,16 @@ void kmain(void)
     mmu_init();
     kputs("mmu   on\n");
 
+    hal_irq_init();
+    hal_timer_init(TICK_HZ);
+
+    /* Nothing has been able to interrupt this core since start.S masked
+     * everything on the way into EL1. Now there is a handler and a source. */
+    __asm__ volatile("msr daifclr, #2" ::: "memory");
+    kputs("timer ");
+    kputu(TICK_HZ);
+    kputs(" Hz\n");
+
 #ifdef KOSMOS_TEST
     tests_run();   /* never returns: exits the guest through semihosting */
 #endif
@@ -57,6 +70,16 @@ void kmain(void)
      * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
      * wake it yet, which is exactly right for M0. */
     for (;;) {
+        unsigned long second;
+
         __asm__ volatile("wfi");
+
+        second = hal_ticks() / TICK_HZ;
+        if (second != last_second) {
+            last_second = second;
+            kputs("tick  ");
+            kputu(second);
+            kputs("\n");
+        }
     }
 }

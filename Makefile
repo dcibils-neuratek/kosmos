@@ -16,6 +16,8 @@ SRCS := boot/start.S \
         arch/aarch64/mmu.c \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \
+        hal/qemu-virt/gic.c \
+        hal/qemu-virt/timer.c \
         kernel/console.c \
         kernel/panic.c \
         kernel/pmm.c \
@@ -71,7 +73,11 @@ OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
 DEPS := $(OBJS:.o=.d)
 
 QEMU      := qemu-system-aarch64
-QEMUFLAGS := -M virt -cpu cortex-a72 -m 512M -nographic -kernel $(TARGET)
+# gic-version=3 is not the default. Plain `-M virt` gives a GICv2, and this
+# kernel's interrupt controller code is GICv3: it would find no
+# redistributor and no interrupt would ever arrive.
+QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
+             -kernel $(TARGET)
 
 .PHONY: all qemu test debug disasm size clean
 

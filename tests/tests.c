@@ -8,6 +8,8 @@
 #include "pmm.h"
 #include "page.h"
 #include "mmu.h"
+#include "kernel.h"
+#include "hal.h"
 
 /* Defined by the linker script. Declared as arrays so taking the address is
  * the address, with no accidental dereference. */
@@ -381,6 +383,84 @@ static bool test_pmm_exhaustion_returns_null(void)
     return ok && pmm_free_pages() == before;
 }
 
+/*
+ * M1: the interrupt controller and the timer.
+ */
+static uint64_t cntfrq(void)
+{
+    uint64_t hz;
+    __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(hz));
+    return hz;
+}
+
+static uint64_t cntpct(void)
+{
+    uint64_t now;
+    __asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
+    return now;
+}
+
+static bool test_irqs_are_unmasked(void)
+{
+    /* DAIF bit 7 is the I mask. start.S enters EL1 with everything masked;
+     * kmain clears it once there is a handler and a source. */
+    uint64_t daif;
+    __asm__ volatile("mrs %0, daif" : "=r"(daif));
+    return (daif & (1UL << 7)) == 0;
+}
+
+static bool test_timer_ticks_advance(void)
+{
+    /*
+     * Bounded by the counter rather than by a loop count, so a dead timer
+     * fails in a tenth of a second instead of hanging until the host gives
+     * up. Ten periods is a generous window for one interrupt.
+     */
+    unsigned long start = hal_ticks();
+    uint64_t begin = cntpct();
+    uint64_t limit = cntfrq() / 10;
+
+    while (cntpct() - begin < limit) {
+        if (hal_ticks() != start) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool test_timer_period_matches_the_rate(void)
+{
+    /*
+     * The test that would have caught the drift.
+     *
+     * Rearming the timer from "now" rather than from the previous deadline
+     * folds the cost of taking the interrupt into every period. Nothing else
+     * here notices: ticks still advance, the count is still exact, and a
+     * nominal 100 Hz quietly runs at 73. Only measuring the counter across
+     * several periods shows it.
+     *
+     * Five percent, because the last period is only bounded by when this
+     * loop happens to observe it, not by the timer.
+     */
+    uint64_t expected = (cntfrq() / TICK_HZ) * 20;
+    uint64_t tolerance = expected / 20;
+    unsigned long start;
+    uint64_t t0, elapsed;
+
+    /* Start on a tick boundary so the first period is a whole one. */
+    start = hal_ticks();
+    while (hal_ticks() == start) { }
+
+    t0 = cntpct();
+    start = hal_ticks();
+    while (hal_ticks() - start < 20) { }
+    elapsed = cntpct() - t0;
+
+    return elapsed > expected - tolerance
+        && elapsed < expected + tolerance;
+}
+
 static const struct test tests[] = {
     { "boot: .bss is zeroed",                  test_bss_zeroed          },
     { "boot: .bss bounds are 16-byte aligned", test_bss_bounds_aligned  },
@@ -397,6 +477,9 @@ static const struct test tests[] = {
     { "mmu: kernel text is not writable",      test_kernel_text_is_not_writable },
     { "mmu: rodata is not writable",           test_rodata_is_not_writable },
     { "mmu: memory works through translation", test_memory_still_works_through_translation },
+    { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
+    { "timer: ticks advance",                  test_timer_ticks_advance },
+    { "timer: the period matches the rate",    test_timer_period_matches_the_rate },
     { "pmm: a page is aligned and in RAM",     test_pmm_alloc_is_page_aligned_and_in_ram },
     { "pmm: two allocations differ",           test_pmm_two_allocations_differ },
     { "pmm: the count tracks alloc and free",  test_pmm_count_tracks_alloc_and_free },

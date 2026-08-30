@@ -37,7 +37,24 @@ An abstraction written against a single target is always the shape of that targe
 
 ### QEMU `virt` aarch64 — the development target
 
-Where everything gets written. PL011, GICv3 and virtio: standard, documented, and with the serial console going straight to your terminal.
+Where everything gets written. PL011, GIC and virtio: standard, documented, and with the serial console going straight to your terminal.
+
+**The GIC version is not the default.** `-M virt` gives a **GICv2** (`arm,cortex-a15-gic` in its device tree, distributor at `0x08000000` and a memory-mapped CPU interface at `0x08010000`). GICv3 has to be asked for:
+
+```
+-M virt,gic-version=3
+```
+
+which moves the redistributors to `0x080a0000` and puts the CPU interface in system registers instead of MMIO. Kosmos drives a GICv3, so that flag is on the QEMU line in the Makefile and in `tools/run_tests.py`, and booting the image on a plain `-M virt` finds no redistributor and never receives an interrupt.
+
+The fastest way to settle a question like this is to ask QEMU rather than to remember:
+
+```
+qemu-system-aarch64 -M virt -machine dumpdtb=virt.dtb
+dtc -I dtb -O dts virt.dtb
+```
+
+The device tree also gives the RAM size and the timer's interrupt numbers.
 
 Detail: **which exception level you get depends on the options, so read `CurrentEL` instead of assuming.** Measured against QEMU 9.1.2:
 
@@ -86,6 +103,7 @@ Known traps:
 - **BGRA channel order**, not RGBA.
 - **The framebuffer is mapped uncached.** Writing directly to it is 10-50x slower than to RAM. Always a cached backbuffer and a blit of the dirty rectangle at the end.
 - **The Pi 5's MMIO addresses differ from the Pi 4's.** There is a lot of stale material floating around. Verify against the BCM2712 datasheet.
+- **Which GIC the BCM2712 has is unverified.** Written down here as an open question rather than an assumption: QEMU's default turned out not to be the version these documents assumed, and the same guess about the Pi would cost a day. Settle it against the datasheet before writing a line of `hal/pi5/`.
 - The framebuffer mailbox interface changed from the Pi 4.
 - All four cores start at once and the firmware leaves them in a spin loop waiting for an address in a mailbox.
 

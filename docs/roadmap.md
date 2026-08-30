@@ -56,7 +56,7 @@ Get a character out to the console. It sounds trivial and it is the step that st
 - Turn the MMU on and survive the jump
 - Exception vector: the 16-entry table
 - A sync exception handler that prints ESR, ELR and FAR
-- GICv3: distributor and redistributor, enable one IRQ
+- GICv3: distributor and redistributor, enable one IRQ. **`-M virt` defaults to GICv2; v3 needs `gic-version=3`.** See `hal.md`
 - ARM generic timer, ticking at 100Hz
 - Stack guard page
 - **Expected-exception support in the handler:** a flag plus `setjmp` so a test can cause a fault on purpose, record it and continue. It has to be anticipated when the vector is written; retrofitting it later is worse. See `testing.md` §18.2

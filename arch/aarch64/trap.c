@@ -12,6 +12,7 @@
 
 #include "trap.h"
 #include "console.h"
+#include "hal.h"
 
 /* The table in vectors.S. */
 extern char vectors[];
@@ -176,6 +177,17 @@ void trap_handler(unsigned index, struct trapframe *tf)
         expected.info.far  = tf->far;
         expected.info.elr  = tf->elr;
         tf->elr += 4;
+        return;
+    }
+
+    /*
+     * An IRQ. Vector 5 is the only one that can deliver one today: the
+     * kernel runs at EL1h, so interrupts taken from it land in the
+     * "current EL, SP_ELx" group. Vector 9 joins it when userland arrives
+     * at M4.
+     */
+    if (index == 5) {
+        hal_irq_handle();
         return;
     }
 

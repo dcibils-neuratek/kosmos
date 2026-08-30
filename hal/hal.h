@@ -32,4 +32,13 @@ struct memrange {
 
 void hal_ram_range(struct memrange *out);
 
+/* The interrupt controller. hal_irq_handle() is called from the IRQ vector:
+ * it acknowledges, services and signals end-of-interrupt. */
+void hal_irq_init(void);
+void hal_irq_handle(void);
+
+/* The tick source. hal_timer_init needs hal_irq_init first. */
+void hal_timer_init(unsigned hz);
+unsigned long hal_ticks(void);
+
 #endif /* HAL_H */

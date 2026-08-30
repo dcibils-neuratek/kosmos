@@ -31,7 +31,9 @@ import time
 QEMU = "qemu-system-aarch64"
 
 QEMU_ARGS = [
-    "-M", "virt",
+    # Not the default: plain `-M virt` gives a GICv2 and this kernel drives a
+    # GICv3. It has to match the Makefile's line.
+    "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
     "-m", "512M",
     "-nographic",
