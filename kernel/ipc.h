@@ -42,13 +42,18 @@ struct thread;
  * the language precisely because the thing in the middle does not need to
  * understand it. An IDL would have to.
  *
- * 512 bytes because a namespace read or a drawing command is tens of bytes
- * and this leaves room to be wrong about that; anything genuinely large
- * wants shared memory rather than a copy, and `gfx.md` §19.4 designs that
- * path separately. The size is a real cost: it is copied on every send, and
- * `bench/baselines.json` will say what it costs.
+ * 2 KB. A namespace read or a drawing command is tens of bytes, and 512 was
+ * enough for those and not for the thing that turned out to matter: hot
+ * reload sends a server's source, and a server is more than 512 bytes of
+ * Lua. Anything genuinely large still wants shared memory rather than a
+ * copy, and `gfx.md` §19.4 designs that path separately.
+ *
+ * The size costs memory rather than time, because only `length` bytes are
+ * ever copied. What it does cost is stack: a syscall holding two of these
+ * would put 4 KB on a 16 KB exception stack, which is why `sys_call` uses
+ * one buffer for the request and the reply.
  */
-#define MSG_BYTES   512
+#define MSG_BYTES   2048
 
 struct message {
     uint64_t tag;

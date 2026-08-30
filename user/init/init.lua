@@ -19,6 +19,7 @@ local ROLE_CLIENT_B = 2
 local ROLE_SELFTEST = 3   -- needs no capability: checks the language itself
 local ROLE_CONSOLE  = 4
 local ROLE_SHELL    = 5
+local ROLE_RELOAD   = 6   -- checks hot reload against a live server
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -36,37 +37,83 @@ local function line(s) sys.write(s .. "\n") end
 --------------------------------------------------------------------------
 
 --------------------------------------------------------------------------
--- A server: receive, dispatch, reply, repeat.
+-- A server: receive, dispatch, reply, repeat. And reload.
 --
 -- Each request runs in a coroutine. Today that buys error isolation - a
 -- handler that raises kills its own request and not the server - and it is
 -- also the shape design.md 4.5 wants: every `receive` is a yield, so server
 -- code is written sequentially over synchronous IPC instead of as a state
 -- machine.
+--
+-- **The state is a table and the behaviour is a function of it.** That
+-- separation is the whole of hot reload, and it is why `serve` takes a
+-- factory rather than a table of handlers. Anything captured in a closure
+-- built at startup is lost when the code is replaced; anything in `state`
+-- survives, because the new handlers are handed the same table.
+--
+-- design.md 10 calls this level 1: the process never died and the clients
+-- never knew. Level 2, where a supervisor restarts a server that actually
+-- died and clients reconnect through the namespace, is a different problem
+-- and comes after there is something to supervise.
 --------------------------------------------------------------------------
 
-local function serve(endpoint, handlers)
+local function serve(endpoint, state, make_handlers)
+  local handlers = make_handlers(state)
+
+  local function reload(source)
+    -- Loaded, then run, then installed, in that order and each checked. A
+    -- server that half-reloads is worse than one that refuses to: the
+    -- client is told no and the old code is still serving.
+    local chunk, err = load(source, "=reload", "t")
+    if not chunk then return { ok = false, error = "reload: " .. tostring(err) } end
+
+    local ok, factory = pcall(chunk)
+    if not ok then return { ok = false, error = "reload: " .. tostring(factory) } end
+    if type(factory) ~= "function" then
+      return { ok = false, error = "reload: the chunk did not return a factory" }
+    end
+
+    local built
+    ok, built = pcall(factory, state)
+    if not ok then return { ok = false, error = "reload: " .. tostring(built) } end
+    if type(built) ~= "table" then
+      return { ok = false, error = "reload: the factory did not return handlers" }
+    end
+
+    -- The same `state` table the old handlers were built around. Nothing is
+    -- copied and nothing is migrated: it is the same table, and the new code
+    -- simply keeps using it.
+    handlers = built
+    state.reloads = (state.reloads or 0) + 1
+    return { ok = true, reloads = state.reloads }
+  end
+
   while true do
     local request, sender = sys.receive(endpoint)
     if not request then return end          -- the endpoint went away
 
-    local handler = handlers[request.type]
     local reply
 
-    if not handler then
-      reply = { ok = false, error = "no such operation: " ..
-                tostring(request.type) }
+    if request.type == "reload" then
+      reply = reload(request.source)
     else
-      local co = coroutine.create(handler)
-      local ok, result = coroutine.resume(co, request)
+      local handler = handlers[request.type]
 
-      if not ok then
-        -- A handler that raised. The client is told, and the server keeps
-        -- serving, which is the entire reason each request gets its own
-        -- coroutine rather than being called directly.
-        reply = { ok = false, error = tostring(result) }
+      if not handler then
+        reply = { ok = false, error = "no such operation: " ..
+                  tostring(request.type) }
       else
-        reply = result
+        local co = coroutine.create(handler)
+        local ok, result = coroutine.resume(co, request)
+
+        if not ok then
+          -- A handler that raised. The client is told, and the server keeps
+          -- serving, which is the entire reason each request gets its own
+          -- coroutine rather than being called directly.
+          reply = { ok = false, error = tostring(result) }
+        else
+          reply = result
+        end
       end
     end
 
@@ -88,11 +135,14 @@ local function split(path)
   return parts
 end
 
-local function ramfs_main(endpoint)
-  local root = { children = {}, attrs = { kind = "directory" } }
+--
+-- The state is the tree; the behaviour is everything below. Reloading
+-- replaces the second and keeps the first, which is what makes a filesystem
+-- server something you can fix while it is holding your files.
 
+local function ramfs_handlers(state)
   local function find(path, create)
-    local node = root
+    local node = state.root
     for _, name in ipairs(split(path)) do
       if not node.children then return nil end
       local child = node.children[name]
@@ -106,7 +156,7 @@ local function ramfs_main(endpoint)
     return node
   end
 
-  serve(endpoint, {
+  return {
     list = function(req)
       local node = find(req.path)
       if not node then return { ok = false, error = "no such path" } end
@@ -133,6 +183,7 @@ local function ramfs_main(endpoint)
       node.value = req.value
       node.children = nil                   -- it holds data now
       node.attrs.size = (type(req.value) == "string") and #req.value or 1
+      state.writes = (state.writes or 0) + 1
       return { ok = true }
     end,
 
@@ -147,7 +198,16 @@ local function ramfs_main(endpoint)
       for k, v in pairs(req.attrs) do node.attrs[k] = v end
       return { ok = true }
     end,
-  })
+  }
+end
+
+local function ramfs_main(endpoint)
+  local state = {
+    root = { children = {}, attrs = { kind = "directory" } },
+    writes = 0,
+  }
+
+  serve(endpoint, state, ramfs_handlers)
 end
 
 --------------------------------------------------------------------------
@@ -221,6 +281,22 @@ local function new_namespace()
     return r and r.attrs, e
   end
 
+  function ns.stat(path)
+    local r, e = request("stat", path)
+    return r and r.value, e
+  end
+
+  -- Replaces the code of whatever serves this path, keeping its state.
+  --
+  -- An operation like any other, reached by name like any other, which is
+  -- the point: there is no separate management channel and no privileged
+  -- back door. A process can reload a server exactly when it holds a
+  -- capability for it, and not otherwise.
+  function ns.reload(path, source)
+    local r, e = request("reload", path, { source = source })
+    return r and r.reloads or nil, e
+  end
+
   return ns
 end
 
@@ -238,12 +314,12 @@ end
 -- that blocking is free: synchronous IPC already parks the caller.
 --------------------------------------------------------------------------
 
-local function console_main(endpoint)
-  local function put(s) sys.write(s) end
-
-  serve(endpoint, {
+local function console_handlers(state)
+  return {
     write = function(req)
-      put(tostring(req.value))
+      local text = tostring(req.value)
+      state.bytes = state.bytes + #text
+      sys.write(text)
       return { ok = true }
     end,
 
@@ -259,25 +335,40 @@ local function console_main(endpoint)
           -- interrupt to park on until the terminal at M6.
           sys.yield()
         elseif c == 10 or c == 13 then
-          put("\n")
+          sys.write("\n")
+          state.lines = state.lines + 1
           return { ok = true, value = table.concat(buf) }
         elseif c == 8 or c == 127 then
           if #buf > 0 then
             table.remove(buf)
             -- Back up, overwrite, back up again: a serial terminal erases
             -- nothing just because the cursor moved over it.
-            put("\b \b")
+            sys.write("\b \b")
           end
         elseif c >= 32 and c < 127 then
           buf[#buf + 1] = string.char(c)
-          put(string.char(c))
+          sys.write(string.char(c))
         end
         -- Anything else is dropped rather than echoed. An arrow key arrives
         -- as three bytes of escape sequence, and the thing that understands
         -- those is a terminal emulator, which is M6.
       end
     end,
-  })
+
+    stat = function(req)
+      -- What it has done, out of the state table. It survives a reload,
+      -- which is how you can see that the state and the code are separate
+      -- things.
+      return { ok = true, value = {
+        bytes = state.bytes, lines = state.lines,
+        reloads = state.reloads or 0,
+      } }
+    end,
+  }
+end
+
+local function console_main(endpoint)
+  serve(endpoint, { bytes = 0, lines = 0 }, console_handlers)
 end
 
 --------------------------------------------------------------------------
@@ -349,6 +440,82 @@ local function shell_main(console_cap, ramfs_cap)
 end
 
 --------------------------------------------------------------------------
+
+if role == ROLE_RELOAD then
+  -- M5's other half: reload a server's code while a client is connected,
+  -- without the client noticing.
+  --
+  -- "Without noticing" is precise. This process holds one capability and
+  -- never reconnects: the same endpoint, the same server process, the same
+  -- table of files. What changes underneath it is the code.
+  local function check(c, what) if not c then error("reload: " .. what) end end
+
+  local fs = new_namespace()
+  fs.mount("/fs", CAP)
+
+  check(fs.write("/fs/note", "before"), "the first write failed")
+  check(fs.read("/fs/note") == "before", "the first read came back wrong")
+
+  -- New behaviour, same state. `read` now shouts; everything else is as it
+  -- was. The tree is not passed in or copied - the factory is handed the
+  -- state table the old handlers were already using.
+  local source = [[
+    return function(state)
+      local function find(path)
+        local node = state.root
+        for name in path:gmatch("[^/]+") do
+          if not node.children then return nil end
+          node = node.children[name]
+          if not node then return nil end
+        end
+        return node
+      end
+
+      return {
+        read = function(req)
+          local node = find(req.path)
+          if not node or node.value == nil then
+            return { ok = false, error = "no such path" }
+          end
+          return { ok = true, value = tostring(node.value):upper() }
+        end,
+
+        stat = function(req)
+          return { ok = true, value = {
+            writes = state.writes, reloads = state.reloads or 0,
+          } }
+        end,
+      }
+    end
+  ]]
+
+  local reloads, err = fs.reload("/fs", source)
+  check(reloads == 1, "reload failed: " .. tostring(err))
+
+  -- The file is still there, which is the state surviving.
+  -- It comes back shouting, which is the code having been replaced.
+  check(fs.read("/fs/note") == "BEFORE", "state and code did not both survive")
+
+  -- The counter the old code kept is the counter the new code reads.
+  local stat = fs.stat("/fs")
+  check(stat ~= nil and stat.writes == 1, "the write counter did not survive")
+  check(stat.reloads == 1, "the reload was not counted")
+
+  -- And an operation the new code dropped is gone, which is proof the
+  -- handlers really were replaced rather than added to.
+  local ok = fs.write("/fs/other", "x")
+  check(ok == false, "an operation the new code does not have still worked")
+
+  -- A reload that does not compile is refused, and the server keeps
+  -- serving the code it already had. Half-reloading would be worse than
+  -- not reloading.
+  local bad, berr = fs.reload("/fs", "this is not lua")
+  check(bad == nil and berr:find("reload") ~= nil, "a broken reload was accepted")
+  check(fs.read("/fs/note") == "BEFORE", "a refused reload broke the server")
+
+  line("reload: state survived, code replaced, bad reload refused")
+  return
+end
 
 if role == ROLE_CONSOLE then
   console_main(CAP)

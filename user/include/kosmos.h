@@ -92,7 +92,7 @@ static inline void kosmos_yield(void)
  * checked rather than trusted - there is a _Static_assert on the size in
  * user/lib/sys_user.c.
  */
-#define MSG_BYTES   512
+#define MSG_BYTES   2048
 
 struct message {
     uint64_t tag;

@@ -108,12 +108,20 @@ static long sys_write(struct process *p, uintptr_t ptr, size_t len)
 static long sys_call(struct process *p, cap_t cap, uintptr_t msg_ptr,
                      uintptr_t reply_ptr)
 {
-    struct message msg;
-    struct message reply;
+    /*
+     * One buffer for both directions.
+     *
+     * Two would be clearer and would put 4 KB on a 16 KB exception stack.
+     * ipc_call copies the request into the calling thread's own slot before
+     * it blocks and fills the reply in afterwards, so the request is already
+     * gone from here by the time the reply arrives and the two never need to
+     * exist at once.
+     */
+    struct message m;
     int status;
 
-    if (!process_may_read(p, msg_ptr, sizeof(msg))
-        || !process_may_write(p, reply_ptr, sizeof(reply))) {
+    if (!process_may_read(p, msg_ptr, sizeof(m))
+        || !process_may_write(p, reply_ptr, sizeof(m))) {
         return SYS_ERR_FAULT;
     }
 
@@ -128,15 +136,15 @@ static long sys_call(struct process *p, cap_t cap, uintptr_t msg_ptr,
      * the process, so it is the one field to distrust before anything is
      * copied on the strength of it.
      */
-    copy_message_in(&msg, (const struct message *)msg_ptr);
+    copy_message_in(&m, (const struct message *)msg_ptr);
 
-    status = ipc_call(cap, &msg, &reply);
+    status = ipc_call(cap, &m, &m);
 
     if (status != IPC_OK) {
         return status;
     }
 
-    copy_message_out((struct message *)reply_ptr, &reply);
+    copy_message_out((struct message *)reply_ptr, &m);
     return IPC_OK;
 }
 

@@ -8,7 +8,7 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
-**M5 — Namespaces and servers.** The first half of its definition of done is met and the prompt is now a process. Hot reload and userland init are what remain.
+**M5 — Namespaces and servers.** Its definition of done is met, both halves. Userland init and taking Lua out of the kernel are what remain.
 
 **M4 — Lua to userspace.** Its definition of done is met. Two of its listed pieces are not built; see below.
 
@@ -32,7 +32,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-93 tests. Five benchmarks. 471 KB of kernel image, which now carries the userland image inside it.
+94 tests. Five benchmarks. 471 KB of kernel image, which now carries the userland image inside it.
 
 **The prompt is a process.** What you type is read by the console server, sent to the shell over IPC, evaluated in the shell's own `lua_State`, and printed back the same way.
 
@@ -65,14 +65,18 @@ nil	no such path: /nowhere
 - [x] ramfs
 - [x] Capability transfer over IPC, so userland can do its own mounting
 - [x] The Lua shell as a REPL against the system
-- [x] **Half the definition of done: the same server mounted at two paths in two processes, each seeing only its own**
-- [ ] Hot reload level 1 — the other half of the definition of done
+- [x] **Definition of done, both halves: the same server mounted at two paths in two processes, each seeing only its own; and the console server's code replaced while the shell was talking to it, without the shell noticing**
+- [x] Hot reload level 1: `load()` of new code while preserving state and clients
 - [ ] Init and supervision in userland — needs a spawn syscall
 - [ ] Removing Lua from the kernel
 
 **The kernel is playing init**, which is the only temporary part of the arrangement. `roadmap.md` puts init in userland and that needs a process able to start processes.
 
 **Lua is out of the kernel's boot path but still compiled in**, because the test suite drives the kernel through it. Taking it out entirely means moving those tests to userland, which is its own piece of work rather than a line to delete.
+
+**Hot reload works because state and behaviour are separate things.** A server is a `state` table plus a factory that turns it into handlers, and `serve` takes the factory rather than the handlers. Anything captured in a closure built at startup is lost on reload; anything in `state` survives, because the new handlers are handed the same table. That is the whole mechanism, and getting it wrong is silent: the server keeps working and quietly forgets.
+
+**A reload that does not compile is refused with the old code still serving.** Load, run, and install, in that order, each checked. A server that half-reloads is worse than one that refuses.
 
 **Device access is a boolean, not a capability.** `process_grant_console` sets a flag, and the flag is checked by `sys.write` and `sys.getchar`. It enforces the property that matters — exactly one process owns the console and everything else asks it — but a device should be named the way everything else is, by a capability the process holds. That needs a capability that names a device rather than an endpoint.
 
