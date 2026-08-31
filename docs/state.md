@@ -105,6 +105,24 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 input plumbing; the selection has to move a row. It passes standalone every
 time, and it passed two full runs out of the last four.
 
+**Sharpened 2026-08-31, and it is wider than this one phase.** Six runs that
+day failed three times, at *three different* phases: Control-C out of
+`plasma`, the Down arrow twice, and Control-C out of the window manager.
+Every one of them is the same sentence - an input the harness sent did not
+arrive - and they are not one mechanism: the arrow goes through the monitor
+socket and virtio-input, and Control-C goes down the serial line. So
+whatever this is, it is not the monitor backlog on its own, and naming it
+"the arrow key phase" was wrong. It is *input delivered while the guest is
+busy*, by either road.
+
+One thing changed that day which is worth holding against it rather than
+forgetting: the context switch got 36% slower when it started saving the
+whole FP register file, and IPC 17%. That would not create a race, but it
+would change the odds of one that was already there. Nothing has been
+measured either way, and repetition is not the way to measure it - the way
+is to timestamp the send and the guest's receipt and find which side loses
+it.
+
 What has been ruled out, so nobody repeats it:
 
 - **Not the arrow keys themselves.** They were genuinely broken - see below
