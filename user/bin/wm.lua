@@ -34,16 +34,39 @@ local KEY_ESC    = 27
 local KEY_CTRL_C = 3
 local KEY_PREFIX = 23      -- Control-W
 
-local DESKTOP    = 0xff1c2530
+local theme = use("/lib/theme.lua")
+
 local TAB_H      = 20
 local BORDER     = 2
-
 local CLOSE_W    = 12             -- the close box at the left of a tab
-local FOCUSED    = 0xffffc700     -- the BeOS yellow, near enough
-local UNFOCUSED  = 0xffb8b8b8
-local FRAME      = 0xff2b3440
-local STAMP_FG   = 0xff3d4a58     -- readable, and not competing with a window
-local TITLE_FG   = 0xff101010
+
+-- The decoration reads the palette at the moment it draws rather than
+-- copying it into constants here, which is what lets the theme change
+-- without restarting anything. See `theme.lua`: the palette table is
+-- mutated in place and never replaced, so these functions see the change.
+local function desktop_colour()  return theme.desktop end
+local function focused_colour()  return theme.tab end
+local function idle_colour()     return theme.tab_idle end
+local function title_colour()    return theme.tab_text end
+local function stamp_colour()    return theme.stamp end
+
+--------------------------------------------------------------------------
+-- What was chosen last time.
+--
+-- Read once at startup from the disk, if there is one. A machine with no
+-- filesystem gets the default palette and says nothing about it - the
+-- appearance of the desktop is not a reason to fail to start one.
+--------------------------------------------------------------------------
+local SETTINGS = "/home/.appearance"
+
+local function load_appearance()
+  local saved = fs.read(SETTINGS)
+
+  if type(saved) ~= "table" then return end
+
+  if saved.palette then theme.apply(saved.palette) end
+  if saved.desktop then theme.override { desktop = saved.desktop } end
+end
 
 local screen = gfx.screen()
 
@@ -77,6 +100,12 @@ local back = gfx.surface{ w = W, h = H }
 -- from, and a panic takes the screen back regardless.
 --
 sys.screen_take(true)
+
+-- Whatever appearance was chosen last time, before the first pixel is
+-- drawn. After `screen_take` because a failure to read it must not stop the
+-- desktop starting, and before compositing because otherwise the first
+-- frame is the default palette and the second is the chosen one.
+load_appearance()
 
 local ep = sys.endpoint()
 
@@ -155,11 +184,6 @@ end
 
 local function damage_window(win)
   add_damage(frame_of(win))
-end
-
-local function tab_width(win)
-  return math.min(win.w + BORDER * 2,
-                  #win.title * gfx.font.w + 16 + CLOSE_W)
 end
 
 --------------------------------------------------------------------------
@@ -329,13 +353,13 @@ end
 --------------------------------------------------------------------------
 
 local function compose_rect(r)
-  back:fill(r.x, r.y, r.w, r.h, DESKTOP)
+  back:fill(r.x, r.y, r.w, r.h, desktop_colour())
 
   -- What is running, bottom right, on the desktop and under everything
   -- else. Drawn as part of the composite rather than once at startup, so a
   -- window dragged over it and away again leaves it intact.
   back:text(W - #stamp * gfx.font.w - 10, H - gfx.font.h - 8, stamp,
-            STAMP_FG, DESKTOP)
+            stamp_colour(), desktop_colour())
 
   for i = 1, #windows do
     local win = windows[i]
@@ -356,27 +380,37 @@ local function compose_rect(r)
     --
     if fx < r.x + r.w and fx + fw > r.x
        and fy < r.y + r.h and fy + fh > r.y then
-      local tab = focused and FOCUSED or UNFOCUSED
+      local tab = focused and focused_colour() or idle_colour()
 
-      back:fill(fx, fy, fw, fh, FRAME)
-
-      -- The BeOS tab: as wide as its title and no wider, so the titles of
-      -- several stacked windows are all readable at once. It is the most
-      -- recognisable decision in the whole look and it is a functional one.
-      local tw = tab_width(win)
-
-      back:fill(fx, fy, tw, TAB_H, tab)
+      -- The whole decoration in one colour: the bar across the top and the
+      -- border all the way round, yellow when this window has the focus and
+      -- grey when it does not.
+      --
+      -- **This is where Kosmos stops copying BeOS**, and the departure is
+      -- deliberate. A BeOS tab is as wide as its title so that several
+      -- stacked windows show their titles at once - the most recognisable
+      -- decision in that whole look, and a functional one. Kosmos does not
+      -- stack windows, so the narrow tab bought nothing here and cost the
+      -- one thing a border can do for free: say which window is listening,
+      -- from the corner of your eye, without reading anything.
+      --
+      -- It also makes the picture agree with the behaviour. Dragging has
+      -- always been the full width of the frame - the hit test below is
+      -- `ny < fy + TAB_H` and knows nothing about the title's length - so
+      -- the narrow tab was drawing a handle smaller than the one you could
+      -- actually grab.
+      back:fill(fx, fy, fw, fh, tab)
 
       -- The close box, at the left of the tab where BeOS put it. A square
       -- outline rather than a cross: at this size a cross is four grey
       -- pixels and a smudge.
       local bx, by = fx + 4, fy + (TAB_H - 8) // 2
 
-      back:fill(bx, by, 8, 8, TITLE_FG)
+      back:fill(bx, by, 8, 8, title_colour())
       back:fill(bx + 1, by + 1, 6, 6, tab)
 
       back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
-                TITLE_FG, tab)
+                title_colour(), tab)
 
       -- And the contents, clipped to the intersection. The window's own
       -- surface is the source, so the source rectangle moves with the clip:
@@ -430,6 +464,18 @@ end
 local function raise(win)
   if windows[#windows] == win then return end
 
+  -- The window *losing* the focus is damaged as well as the one gaining it.
+  --
+  -- Its decoration is about to be drawn in a different colour, and this
+  -- compositor only repaints what is damaged - so without this the old
+  -- window keeps the focused colour until something else happens to cover
+  -- it. Two windows both looking focused, which is the one thing the colour
+  -- is there to tell you.
+  --
+  -- It was always wrong and was easy to miss while the tab was as narrow as
+  -- its title. Painting the whole border made it obvious.
+  local losing = windows[#windows]
+
   for i, w_ in ipairs(windows) do
     if w_ == win then
       table.remove(windows, i)
@@ -439,6 +485,10 @@ local function raise(win)
 
   windows[#windows + 1] = win
   damage_window(win)
+
+  if losing then
+    damage_window(losing)
+  end
 end
 
 local handlers = {}
@@ -520,9 +570,18 @@ handlers.open = function(req, who, cap)
   pending_pid = nil
 
   next_handle = next_handle + 1
+
+  -- The window that had the focus loses it to this one, and has to be
+  -- repainted to say so. Same reason as `raise`: only damage is redrawn.
+  local losing = windows[#windows]
+
   windows[#windows + 1] = win
   by_handle[win.handle] = win
   damage_window(win)
+
+  if losing then
+    damage_window(losing)
+  end
 
   return { ok = true, window = win.handle, w = w_, h = h_ }
 end
@@ -798,6 +857,43 @@ local function post(win, event)
     -- process that everything else on the screen depends on.
     table.remove(win.events, 1)
   end
+end
+
+--------------------------------------------------------------------------
+-- The appearance of everything.
+--
+-- One request changes the palette and the desktop colour, repaints the
+-- whole screen, and tells every window so its widgets are redrawn in the
+-- new colours too. `ui.lua` mutates its own palette table in place when it
+-- gets that event, so a running application changes appearance without
+-- restarting and without knowing this happened.
+--
+-- The window manager is where this lives because it is the one process
+-- that already talks to every window. A settings *server* would be the
+-- other answer and is more machinery than one palette needs.
+--------------------------------------------------------------------------
+handlers.theme = function(req)
+  if req.palette then
+    local ok, err = theme.apply(req.palette)
+
+    if not ok then
+      return { ok = false, error = tostring(err) }
+    end
+  end
+
+  -- The desktop colour is chosen separately from the palette it sits with,
+  -- so a light theme over a dark desktop is a thing somebody can have.
+  if req.desktop then
+    theme.override { desktop = req.desktop }
+  end
+
+  for _, win in ipairs(windows) do
+    post(win, { type = "theme", palette = theme.name, desktop = theme.desktop })
+  end
+
+  add_damage(0, 0, W, H)
+
+  return { ok = true, palette = theme.name, desktop = theme.desktop }
 end
 
 local function to_focused(c)

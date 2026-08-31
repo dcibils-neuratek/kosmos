@@ -87,8 +87,8 @@ end
 local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 20 }
 
 function view:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.sunken)
-  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+  g:fill(0, 0, self.w, self.h, "sunken")
+  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or "line")
 
   local rows = (self.h - 6) // gfx.font.h
   local columns = (self.w - 8) // gfx.font.w
@@ -101,23 +101,23 @@ function view:draw(g)
   end
 
   for i, line in ipairs(shown) do
-    g:text(4, 3 + (i - 1) * gfx.font.h, line:sub(1, columns), theme.text,
-           theme.sunken)
+    g:text(4, 3 + (i - 1) * gfx.font.h, line:sub(1, columns), "text",
+           "sunken")
   end
 
   local y = 3 + #shown * gfx.font.h
   local prompt = "> " .. input
 
-  g:text(4, y, prompt:sub(1, columns), theme.good, theme.sunken)
+  g:text(4, y, prompt:sub(1, columns), "good", "sunken")
 
   if busy then
     g:text(self.w - 12 * gfx.font.w, 3, "running " .. busy,
-           theme.text_dim, theme.sunken)
+           "text_dim", "sunken")
   end
 
   if self.focused then
     local cx = 4 + math.min(#prompt, columns) * gfx.font.w
-    g:fill(cx, y, gfx.font.w, gfx.font.h, theme.ring)
+    g:fill(cx, y, gfx.font.w, gfx.font.h, "ring")
   end
 end
 

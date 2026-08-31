@@ -58,19 +58,19 @@ local function meter(spec)
     if frac < 0 then frac = 0 end
     if frac > 1 then frac = 1 end
 
-    g:text(0, 0, self.label, theme.text_dim)
+    g:text(0, 0, self.label, "text_dim")
 
     local right = text or (tostring(value) .. " of " .. tostring(of))
-    g:text(self.w - #right * gfx.font.w, 0, right, theme.text)
+    g:text(self.w - #right * gfx.font.w, 0, right, "text")
 
     local top = gfx.font.h + 4
-    g:fill(0, top, self.w, 10, theme.sunken)
-    g:frame(0, top, self.w, 10, theme.line)
+    g:fill(0, top, self.w, 10, "sunken")
+    g:frame(0, top, self.w, 10, "line")
 
     local filled = (self.w - 2) * frac // 1
 
     if filled > 0 then
-      g:fill(1, top + 1, filled, 8, colour or theme.accent)
+      g:fill(1, top + 1, filled, 8, colour or "accent")
     end
   end
 
@@ -109,7 +109,7 @@ add("endpoints", function()
          ("%d of %d"):format(state.endpoints, state.endpoints_max)
 end)
 
-local uptime = ui.label{ x = 14, y = H - 26, text = "", color = theme.text_dim }
+local uptime = ui.label{ x = 14, y = H - 26, text = "", color = "text_dim" }
 win:add(uptime)
 
 --------------------------------------------------------------------------

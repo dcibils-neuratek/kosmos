@@ -35,14 +35,14 @@ local hz = cpu.counter_hz or 62500000
 local banner = ui.view{ x = 16, y = 14, w = 230, h = 54 }
 
 function banner:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.sunken)
-  g:frame(0, 0, self.w, self.h, theme.line)
+  g:fill(0, 0, self.w, self.h, "sunken")
+  g:frame(0, 0, self.w, self.h, "line")
 
   -- Two words, two colours, the way the BeOS logo split Be and OS.
-  g:text(14, 18, "Kosm", theme.text, theme.sunken)
-  g:text(14 + 4 * gfx.font.w, 18, "OS", theme.tab, theme.sunken)
-  g:text(14 + 7 * gfx.font.w, 22, "  " .. b.version, theme.text_dim,
-         theme.sunken)
+  g:text(14, 18, "Kosm", "text", "sunken")
+  g:text(14 + 4 * gfx.font.w, 18, "OS", "tab", "sunken")
+  g:text(14 + 7 * gfx.font.w, 22, "  " .. b.version, "text_dim",
+         "sunken")
 end
 
 win:add(banner)
@@ -55,9 +55,9 @@ local facts = {}
 local y = 82
 
 local function fact(label, value)
-  win:add(ui.label{ x = 16, y = y, text = label, color = theme.text })
+  win:add(ui.label{ x = 16, y = y, text = label, color = "text" })
   local v = ui.label{ x = 16, y = y + 16, text = value,
-                      color = theme.text_dim }
+                      color = "text_dim" }
   win:add(v)
   facts[label] = v
   y = y + 42
@@ -78,7 +78,7 @@ fact("Memory:", ("%d MB, %d free"):format(mem.total_mb or 0,
 
 win:add(ui.label{ x = 270, y = H - 26,
                   text = "drag or use the arrows to read on",
-                  color = theme.line })
+                  color = "line" })
 
 win:add(ui.text{
   x = 270, y = 14, w = W - 286, h = H - 48,

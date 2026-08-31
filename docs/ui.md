@@ -276,7 +276,7 @@ here and what it means:
 
 | BeOS did | Kosmos does | Why |
 |---|---|---|
-| Tab as wide as its title | The same | Functional, not decorative: the titles of several stacked windows stay readable at once. It is the one visual decision worth copying exactly |
+| Tab as wide as its title | **Departed from.** The bar spans the window and the border takes its colour: yellow when focused, grey when not | Copied at first, and it was right about *why* BeOS does it — several stacked windows keep their titles readable. Kosmos does not stack windows, so it bought nothing here and cost what a border gives for free: which window is listening, seen from the corner of the eye without reading. It also made the picture disagree with the behaviour, since dragging was always the full width of the frame |
 | `#FFCC00` tab yellow, hard-edged | A warmer amber on a dark desktop | Keeps the "the focused one is the yellow one" reading, drops the 1998 palette |
 | Light grey chrome, bevelled | Dark, flat, one-pixel separators | A bevel says "this is a raised physical control", which stopped being a useful lie once everyone knew what a button was |
 | Every control chamfered | Weight and spacing do the work | Fewer pixels spent saying what a thing is, more spent on what it contains |
@@ -287,7 +287,44 @@ it fresh.**
 
 ---
 
-## 16.9 What we do not copy from BeOS
+## 16.9 Themes, and colours that are named rather than captured
+
+There are two palettes - `dark`, which is what Kosmos looked like first, and
+`light`, which is the 1998 one on purpose. `appearance` switches between
+them and picks the desktop colour, and the choice is written to
+`/home/.appearance` and read back at startup.
+
+**The palette table is mutated in place, never replaced.** Every widget
+reads `theme.text` at the moment it draws, so changing the fields of the one
+table changes what the next repaint looks like across all of them, with
+nothing subscribing to anything. Swapping in a new table would leave every
+existing reference pointing at the old one and the theme would change only
+for windows opened afterwards.
+
+**A colour may be a number or the name of one in the palette**, and a name
+is resolved on every draw:
+
+```lua
+ui.label{ text = "Widgets", color = "text_dim" }   -- follows the theme
+ui.label{ text = "Widgets", color = 0xffc9d1d9 }   -- exactly that colour
+```
+
+The distinction is not academic and cost a debugging round. `color =
+theme.text_dim` reads the palette *once*, at construction, and freezes that
+number - so a window followed a theme change while the labels inside it did
+not, and the light theme had near-invisible headings still holding the dark
+palette's near-white. A number still means exactly that number, which is
+what an application wants when it is drawing something that is not part of
+the theme at all.
+
+The window manager reads the palette through accessors for the same reason,
+and one of them found a second instance of the same bug: `window.background`
+was resolved at creation, so a window's *body* kept its old colour while
+every widget in it changed.
+
+---
+
+## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.
 

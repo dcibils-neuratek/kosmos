@@ -32,12 +32,12 @@ local status = ui.label{ x = 12, y = H - 26,
                          text = (type(existing) == "string")
                                 and ("opened " .. path)
                                 or (path .. " is new"),
-                         color = theme.text_dim }
+                         color = "text_dim" }
 
 local text = ui.editor{ x = 12, y = 36, w = W - 24, h = H - 96,
                         text = (type(existing) == "string") and existing or "" }
 
-win:add(ui.label{ x = 12, y = 14, text = path, color = theme.text })
+win:add(ui.label{ x = 12, y = 14, text = path, color = "text" })
 win:add(text)
 
 local function save()
@@ -55,7 +55,7 @@ win:add(ui.button{ x = 12, y = H - 56, text = "Save", on_click = save })
 
 win:add(ui.label{ x = 90, y = H - 48,
                   text = "or Control-S.  Then `run " .. path .. "`",
-                  color = theme.line })
+                  color = "line" })
 
 win:add(status)
 

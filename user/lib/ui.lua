@@ -47,6 +47,31 @@ local GW, GH = gfx.font.w, gfx.font.h
 --------------------------------------------------------------------------
 
 local gc = {}
+
+--------------------------------------------------------------------------
+-- A colour, resolved at the moment it is drawn.
+--
+-- Widgets take colours as either a number or the *name* of one in the
+-- palette, and a name is looked up on every draw. That is what makes an
+-- application follow a theme change.
+--
+-- The distinction matters because the obvious thing does not work:
+-- `ui.label{ color = theme.text }` reads the palette once, at
+-- construction, and freezes that number. The window then follows a theme
+-- change while the label inside it does not - which is how a light theme
+-- ended up with near-invisible headings, because they were still holding
+-- the dark palette's near-white.
+--
+-- So: `ui.label{ color = "text_dim" }`, and the widget asks the palette
+-- when it draws. A number still works and still means exactly that colour,
+-- which is what an application wants when it is drawing something that is
+-- not part of the theme at all.
+--------------------------------------------------------------------------
+local function shade(c)
+  if type(c) == "string" then return theme[c] end
+  return c
+end
+
 gc.__index = gc
 
 local function new_gc()
@@ -83,6 +108,7 @@ function gc:pop(saved)
 end
 
 function gc:fill(x, y, w, h, color)
+  color = shade(color)
   local ax, ay = self.ox + x, self.oy + y
 
   -- Clipped here so the command that leaves is already inside the view. A
@@ -100,6 +126,7 @@ function gc:fill(x, y, w, h, color)
 end
 
 function gc:text(x, y, s, color, bg)
+  color, bg = shade(color), shade(bg)
   local ax, ay = self.ox + x, self.oy + y
 
   if ay + GH <= self.cy or ay >= self.cy + self.ch then return end
@@ -128,6 +155,7 @@ end
 
 -- A one-pixel frame, which is what this kit uses instead of a bevel.
 function gc:frame(x, y, w, h, color)
+  color = shade(color)
   self:fill(x, y, w, 1, color)
   self:fill(x, y + h - 1, w, 1, color)
   self:fill(x, y, 1, h, color)
@@ -294,7 +322,7 @@ function ui.label(spec)
 
   function v:draw(g)
     g:text(0, 0, tostring(self.text or ""),
-           self.color or theme.text, self.bg)
+           shade(self.color) or theme.text, shade(self.bg))
   end
 
   return v
@@ -1250,7 +1278,13 @@ function ui.window(spec)
   local w = setmetatable({
     handle = reply.window,
     root = ui.view{ x = 0, y = 0, w = reply.w, h = reply.h },
-    background = spec.background or theme.window,
+    -- Nil unless the application asked for a particular colour, so that
+    -- `paint` can fall back to the palette *at the moment it draws*.
+    -- Resolving it here instead captured the colour once, at creation, and
+    -- a window then kept its original background through a theme change
+    -- while every widget inside it followed - which looks like the theme
+    -- half worked, and is the one thing that was wrong when it did.
+    background = spec.background,
     focus = 1,
     running = true,
     title = spec.title or "window",
@@ -1481,7 +1515,7 @@ function window:paint()
 
   g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
                         w = self.root.w, h = self.root.h,
-                        color = self.background }
+                        color = self.background or theme.window }
 
   self.root:paint(g)
 
@@ -1682,6 +1716,25 @@ function window:run()
         if self.running then self:close() end
 
         return
+      elseif ev.type == "theme" then
+        --
+        -- The desktop changed its appearance and every window is being told.
+        --
+        -- The palette table is *mutated*, never replaced: every widget
+        -- above reads `theme.text` at the moment it draws, so changing the
+        -- fields of the one table changes what the next repaint looks like
+        -- across all of them. Swapping in a new table would leave every
+        -- one of those references pointing at the old one, and the theme
+        -- would change only for windows opened afterwards.
+        --
+        -- The application is told nothing and does nothing. That is the
+        -- point: an application that had to know about themes would be an
+        -- application that could get them wrong.
+        --
+        if ev.palette then theme.apply(ev.palette) end
+        if ev.desktop then theme.override { desktop = ev.desktop } end
+
+        changed = true
       elseif ev.type == "mouse" then
         if dispatch_mouse(self, ev) then changed = true end
       elseif ev.type == "key" then

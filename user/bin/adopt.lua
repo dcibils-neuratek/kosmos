@@ -40,7 +40,7 @@ until sys.ticks() > until_
 
 if type(description) ~= "table" then
   win:add(ui.label{ x = 12, y = 40, text = "nothing was offered",
-                    color = ui.theme.bad })
+                    color = "bad" })
   win:run()
   return
 end
@@ -52,7 +52,7 @@ local view, why = ui.replicant{ x = 12, y = 40, w = 276, h = 40,
 
 if not view then
   win:add(ui.label{ x = 12, y = 40, text = tostring(why),
-                    color = ui.theme.bad })
+                    color = "bad" })
   win:run()
   return
 end
@@ -75,11 +75,11 @@ win:add(ui.label{ x = 12, y = 92,
                   text = "/dev/cpu, which it declared:  "
                          .. (inside.declared and "reached" or "MISSING"),
                   color = inside.declared and ui.theme.text_dim
-                                          or ui.theme.bad })
+                                          or "bad" })
 
 win:add(ui.label{ x = 12, y = 108,
                   text = "/data, which it did not:  "
                          .. (inside.escaped and "REACHED IT" or "no such path"),
-                  color = inside.escaped and ui.theme.bad or ui.theme.good })
+                  color = inside.escaped and ui.theme.bad or "good" })
 
 win:run()

@@ -44,7 +44,7 @@ end
 
 win:add(ui.label{ x = 12, y = 10, text = "a replicant lives here" })
 win:add(ui.label{ x = 12, y = 26, text = "and is offered in /data",
-                  color = ui.theme.text_dim })
+                  color = "text_dim" })
 
 local view, why = ui.replicant{ x = 12, y = 52, w = 236, h = 40,
                                 source = description.source,

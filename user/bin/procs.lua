@@ -40,8 +40,8 @@ local selected = 1
 local table_view = ui.view{ x = 12, y = 44, w = W - 24, h = H - 90 }
 
 function table_view:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.sunken)
-  g:frame(0, 0, self.w, self.h, theme.line)
+  g:fill(0, 0, self.w, self.h, "sunken")
+  g:frame(0, 0, self.w, self.h, "line")
 
   local visible = (self.h - 6) // ROW
 
@@ -65,18 +65,18 @@ function table_view:draw(g)
     local bar_x = 190
     local bar_w = self.w - bar_x - 60
 
-    g:fill(bar_x, y + 3, bar_w, ROW - 6, theme.window)
+    g:fill(bar_x, y + 3, bar_w, ROW - 6, "window")
 
     local filled = bar_w * r.pct // 100
 
     if filled > 0 then
       g:fill(bar_x, y + 3, filled, ROW - 6,
-             (r.pct > 60) and theme.bad or theme.good)
+             (r.pct > 60) and theme.bad or "good")
     end
 
     local right = r.exited and "gone" or ("%d%%"):format(r.pct)
     g:text(self.w - #right * gfx.font.w - 8, y + 2, right,
-           on and theme.text_on or theme.text_dim, bg)
+           on and theme.text_on or "text_dim", bg)
   end
 end
 
@@ -105,10 +105,10 @@ end
 
 win:add(table_view)
 
-local heading = ui.label{ x = 12, y = 12, text = "", color = theme.text }
+local heading = ui.label{ x = 12, y = 12, text = "", color = "text" }
 win:add(heading)
 
-local note = ui.label{ x = 12, y = 16, text = "", color = theme.text_dim }
+local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
 
 --------------------------------------------------------------------------
 -- Ending one.

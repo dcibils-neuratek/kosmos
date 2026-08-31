@@ -113,9 +113,9 @@ if not win then
 end
 
 local status = ui.label{ x = 10, y = H - 22, text = "",
-                         color = theme.text_dim }
+                         color = "text_dim" }
 
-win:add(ui.label{ x = 10, y = 8, text = "Running", color = theme.text })
+win:add(ui.label{ x = 10, y = 8, text = "Running", color = "text" })
 
 local handles = {}
 
@@ -134,7 +134,7 @@ local running = ui.list{
 win:add(running)
 
 win:add(ui.label{ x = 10, y = 26 + running_h + 6, text = "Applications",
-                  color = theme.text })
+                  color = "text" })
 
 local apps = ui.list{
   x = 10, y = 26 + running_h + 26, w = W - 20, h = apps_h,

@@ -33,7 +33,7 @@ end
 local picture = ui.image{ x = 10, y = 30, w = W - 20, h = H - 66,
                           asset = name }
 
-win:add(ui.label{ x = 10, y = 10, text = name, color = theme.text })
+win:add(ui.label{ x = 10, y = 10, text = name, color = "text" })
 win:add(picture)
 
 local size = (picture.image_w > 0)
@@ -41,7 +41,7 @@ local size = (picture.image_w > 0)
                                                  picture.image_h)
              or "not carried in the image"
 
-win:add(ui.label{ x = 10, y = H - 26, text = size, color = theme.text_dim })
+win:add(ui.label{ x = 10, y = H - 26, text = size, color = "text_dim" })
 
 --
 -- What else there is, so the list is discoverable from inside the system
@@ -56,7 +56,7 @@ end
 if #others > 0 then
   win:add(ui.label{ x = 240, y = H - 26,
                     text = "also: " .. table.concat(others, "  "),
-                    color = theme.line })
+                    color = "line" })
 end
 
 win:run()

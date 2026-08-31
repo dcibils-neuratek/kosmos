@@ -31,10 +31,10 @@ end
 local view = ui.text{ x = 10, y = 30, w = W - 20, h = H - 66, blocks = {} }
 
 win:add(ui.label{ x = 10, y = 10, text = "what this machine has printed",
-                  color = theme.text })
+                  color = "text" })
 win:add(view)
 
-local note = ui.label{ x = 10, y = H - 26, text = "", color = theme.text_dim }
+local note = ui.label{ x = 10, y = H - 26, text = "", color = "text_dim" }
 win:add(note)
 
 --------------------------------------------------------------------------

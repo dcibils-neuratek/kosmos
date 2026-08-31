@@ -26,16 +26,16 @@ end
 
 local status = ui.label{ x = 16, y = 296,
                          text = "click, or Tab and Enter",
-                         color = theme.text_dim }
+                         color = "text_dim" }
 
 local function say(text)
   status.text = text
 end
 
-win:add(ui.label{ x = 16, y = 14, text = "Widgets", color = theme.text })
+win:add(ui.label{ x = 16, y = 14, text = "Widgets", color = "text" })
 win:add(ui.label{ x = 16, y = 32,
                   text = "BeOS's vocabulary, this system's finish",
-                  color = theme.text_dim })
+                  color = "text_dim" })
 
 win:add(ui.button{ x = 16, y = 60, text = "Press me",
                    on_click = function() say("the button was pressed") end })
@@ -62,16 +62,16 @@ win:add(ui.list{ x = 16, y = 172, w = 240, h = 112,
 local panel = win:add(ui.view{ x = 276, y = 60, w = 168, h = 224 })
 
 function panel:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.raised)
-  g:frame(0, 0, self.w, self.h, theme.line)
-  g:text(8, 8, "a nested view", theme.text)
-  g:text(8, 28, "its children are clipped to it,", theme.text_dim)
-  g:text(8, 44, "and draw in its coordinates", theme.text_dim)
+  g:fill(0, 0, self.w, self.h, "raised")
+  g:frame(0, 0, self.w, self.h, "line")
+  g:text(8, 8, "a nested view", "text")
+  g:text(8, 28, "its children are clipped to it,", "text_dim")
+  g:text(8, 44, "and draw in its coordinates", "text_dim")
 end
 
 panel:add(ui.label{ x = 8, y = 76,
                     text = "this label is far wider than the panel holding it",
-                    color = theme.good })
+                    color = "good" })
 
 win:add(status)
 win:run()

@@ -975,9 +975,10 @@ TAB = (0xff, 0xc7, 0x00)
 def tab_width(width, height, px):
     """How wide the widest run of tab colour on screen is, in pixels.
 
-    The tab is as wide as its title and no wider - the one BeOS decision
-    copied exactly - so its width *is* the title's length, which makes it
-    the thing to measure when checking that a rename reached the window.
+    It used to be that the tab was as wide as its title and no wider, so
+    this measured the title's length. It does not any more - the decoration
+    is one colour across the whole frame - so this now measures the widest
+    *window*, which is still what several checks want.
     """
     widest = 0
 
@@ -996,6 +997,23 @@ def tab_width(width, height, px):
                 run = 0
 
     return widest
+
+
+def tab_top(width, height, px):
+    """The first row holding the focused window's decoration, or None.
+
+    The top of the tab, which is where a title is drawn a few rows below.
+    Searched from the top of the screen so that the frontmost window wins
+    when several overlap.
+    """
+    for y in range(height):
+        for x in range(0, width, 2):
+            at = (y * width + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == TAB:
+                return y
+
+    return None
 
 
 def check_scripting(guest):
@@ -1019,18 +1037,50 @@ def check_scripting(guest):
     and there is one reader; until then, the honest arrangement is that the
     window manager has the keyboard while it runs.
 
-    Checked by consequence rather than by reply. The tab is exactly as wide
-    as its title, so a longer title has to make a wider tab. A property
-    store that accepted the write and told nobody would pass a read-back and
-    fail this.
+    Checked by consequence rather than by reply: a property store that
+    accepted the write and told nobody would pass a read-back and fail this.
+
+    **The consequence used to be the tab getting wider**, because a tab was
+    exactly as wide as its title. Kosmos departed from that - the decoration
+    is now one colour across the whole frame, see `ui.md` - so the width
+    says nothing any more and the check would pass whatever the title said.
+
+    What it measures instead is the *title text itself*: the pixels along
+    the tab where the title is drawn, before and after. A rename changes
+    them and nothing else on that row does. That is a weaker signal than a
+    width in one way - it cannot say the new title is longer - and a
+    stronger one in another, since a store that wrote the right length and
+    the wrong text would have passed the old check.
     """
+
+    def title_row(width, height, px):
+        """The pixels of the tab's title row, as bytes.
+
+        One row through the middle of the tab, from past the close box to
+        the width the title could reach. Compared for difference, not
+        matched against an expected picture: what has to be true is that
+        renaming changed what is drawn there.
+        """
+        top = tab_top(width, height, px)
+
+        if top is None:
+            return None
+
+        y = top + 10                       # inside the tab, on the glyphs
+        row = []
+
+        for x in range(0, min(width, 700)):
+            at = (y * width + x) * 3
+            row.append(px[at:at + 3])
+
+        return b"".join(bytes(v) for v in row)
     guest.type("wm gallery")
     time.sleep(6)
 
     width, height, px = parse_ppm(guest.screendump())
-    before = tab_width(width, height, px)
+    before = title_row(width, height, px)
 
-    if before == 0:
+    if before is None:
         raise Failure(
             "no window tab on screen after `wm gallery`, so there is "
             "nothing here to rename."
@@ -1045,17 +1095,17 @@ def check_scripting(guest):
     time.sleep(9)
 
     width, height, px = parse_ppm(guest.screendump())
-    after = tab_width(width, height, px)
+    after = title_row(width, height, px)
 
-    if after == 0:
+    if after is None:
         raise Failure("no tab on screen at all after the second start.")
 
-    if after <= before:
+    if after == before:
         raise Failure(
-            f"the tab is {after}px wide and was {before}px before anything "
-            "renamed it. A longer title has to make a wider tab: either the "
-            "registry did not hand over the window's endpoint, or the "
-            "property was stored somewhere that is not the window."
+            "the title drawn on the tab is identical before and after "
+            "something renamed the window. Either the registry did not hand "
+            "over the window's endpoint, or the property was stored "
+            "somewhere that is not the window."
         )
 
     # And hand the screen back for the phase after this one.
@@ -1212,6 +1262,11 @@ def _strip(px, width, x0, y0, w, h):
 
 
 # The unfocused tab, 0xb8b8b8. With the focused one that is every window.
+# An unfocused window's decoration. **Must match `theme.tab_idle` in the
+# default palette** - the harness runs in the dark one. When the theme moved
+# into a palette table this silently became a different grey, every
+# unfocused window stopped being counted, and the Deskbar check failed
+# saying nothing had launched. It had launched; it could not be seen.
 TAB_IDLE = (0xb8, 0xb8, 0xb8)
 
 
