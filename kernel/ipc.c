@@ -165,6 +165,50 @@ static void queue_remove(struct thread **head, struct thread *t)
     }
 }
 
+/*
+ * Takes a thread out of whatever it was waiting for.
+ *
+ * For killing. A thread blocked in IPC is not running, so it cannot notice
+ * that it has been killed; waking it without unlinking it would leave a
+ * pointer to it in an endpoint's queue, and that queue would later hand out
+ * a thread that no longer exists.
+ *
+ * `waiting_on` records the endpoint in every one of the three blocking
+ * paths, and `queue_remove` is safe on a queue that does not contain the
+ * thread - so removing from all three is both correct and simpler than
+ * remembering which one it is on.
+ *
+ * Clearing `waiting_on` is what makes a later reply to this thread fail
+ * cleanly: `ipc_reply` refuses a sender that is not waiting for anything.
+ * That is not a complete answer - a replier holds a raw thread pointer, so
+ * once this slot is reused a stale reply could reach the thread that
+ * inherits it - and it is the same leak `sys_receive` already records
+ * against handing thread pointers to EL0. Killing makes it reachable rather
+ * than introducing it.
+ */
+void ipc_abort(struct thread *t)
+{
+    struct endpoint *ep;
+
+    if (t == NULL) {
+        return;
+    }
+
+    ep = t->ipc.waiting_on;
+
+    if (ep == NULL) {
+        return;                     /* not blocked on an endpoint */
+    }
+
+    queue_remove(&ep->senders, t);
+    queue_remove(&ep->receivers, t);
+    queue_remove(&ep->awaiting_reply, t);
+
+    t->ipc.waiting_on = NULL;
+    t->ipc.status = IPC_ERR_GONE;
+    thread_wake(t);
+}
+
 void ipc_init(void)
 {
     unsigned i;

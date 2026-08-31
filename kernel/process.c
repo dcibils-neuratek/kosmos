@@ -7,6 +7,7 @@
 #include "screen.h"
 #include "syscall.h"
 #include "thread.h"
+#include "ipc.h"
 #include "mmu.h"
 #include "page.h"
 #include "pmm.h"
@@ -438,6 +439,55 @@ bool process_grant_screen(struct process *p)
 
     p->owns_screen = true;
     return true;
+}
+
+/*
+ * Ends a child.
+ *
+ * Marks and unblocks; the process dies on its own next entry into the
+ * kernel. It cannot be torn down from here, because the teardown ends with
+ * the thread that performs it and this is not that thread - `process_exit`
+ * says so with a panic rather than behaving like cleanup and acting like
+ * suicide.
+ */
+int process_kill(struct process *parent, unsigned id)
+{
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        struct process *c = &processes[i];
+
+        if (!c->in_use || c->parent != parent || c->id != id) {
+            continue;
+        }
+
+        if (c->exited) {
+            return 0;               /* already gone; nothing to do */
+        }
+
+        c->killed = true;
+
+        /*
+         * A thread waiting on an endpoint is not running, so it cannot
+         * notice the flag. Unblocking it here is what makes the kill take
+         * effect on a process that is not spinning - it resumes, its IPC
+         * call fails, and the check on the way back to EL0 ends it.
+         */
+        if (c->thread != NULL) {
+            ipc_abort(c->thread);
+        }
+
+        return 0;
+    }
+
+    return -1;
+}
+
+bool process_should_die(void)
+{
+    struct process *p = thread_current()->process;
+
+    return p != NULL && p->killed && !p->exited;
 }
 
 void process_start(struct process *p)

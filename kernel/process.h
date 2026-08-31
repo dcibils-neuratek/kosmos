@@ -207,6 +207,21 @@ struct process {
 
     int               exit_code;
     bool              exited;
+
+    /*
+     * Somebody has ended this process; it has not noticed yet.
+     *
+     * A process cannot be torn down from another thread's context -
+     * `process_exit` panics if it is not the running one, and it has to,
+     * because the teardown ends with the thread that calls it. So a kill
+     * marks, and the process dies on its own next entry into the kernel:
+     * a syscall, or the timer interrupt, whichever comes first.
+     *
+     * That bounds the wait at one timer period even for a process that has
+     * stopped making syscalls entirely, which is exactly the case a kill is
+     * for - `/bin/spin.lua` is an EL0 loop that yields to nothing.
+     */
+    bool              killed;
 };
 
 /* Prepares the pool. Once, before any process exists. */
@@ -303,6 +318,20 @@ struct process *process_spawn(struct process *parent, unsigned long arg);
  * processes it spawned needs to stop without being told it has none.
  */
 int process_wait(struct process *parent, unsigned *id, bool nonblocking);
+
+/*
+ * Ends a child. Returns 0, or an error when `id` is not this process's
+ * child.
+ *
+ * Only a parent may, which is the same authority `process_wait` already
+ * implies and needs no new one: a process that started something may end it,
+ * and nothing else may. It does not take effect here - see `killed`.
+ */
+int process_kill(struct process *parent, unsigned id);
+
+/* Whether the running process has been killed and should now exit. Asked on
+ * the way out of the kernel, which is the only safe moment. */
+bool process_should_die(void);
 
 /*
  * Discards a process that was created and never started.

@@ -249,6 +249,13 @@ static inline long kosmos_receive(long cap, struct message *msg,
                 (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
+/* Ends a child. Takes effect at that process's next entry into the kernel,
+ * which is at most one timer period away. */
+static inline long kosmos_kill(unsigned long id)
+{
+    return sys1(SYS_KILL, (long)id);
+}
+
 /* Takes the screen from the kernel console, or gives it back. */
 static inline long kosmos_screen_take(int take)
 {

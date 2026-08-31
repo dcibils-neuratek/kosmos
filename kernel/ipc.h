@@ -139,6 +139,10 @@ static inline cap_t message_get_cap(const struct message *m)
 /* Prepares the endpoint pool. Called once, before any thread uses IPC. */
 void ipc_init(void);
 
+/* Unblocks a thread and unlinks it from whatever queue it was on.
+ * For killing: a blocked thread cannot notice anything by itself. */
+void ipc_abort(struct thread *t);
+
 /*
  * A new endpoint, with a capability to it installed in the calling thread.
  * Returns the index, or a negative error.

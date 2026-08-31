@@ -46,6 +46,26 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A process can be ended from outside.** `SYS_KILL`, for a parent, which
+  is the authority `wait` already implies. It marks and unblocks; the
+  process dies at its own next entry into the kernel, which is at most one
+  timer period away even for a program that has stopped making syscalls.
+  Windows have a BeOS close box: the application is asked, and ended a
+  second later if it never listened.
+- **A Deskbar**, a graphical monitor, a version stamp on the desktop.
+- **Applications block instead of polling.** The window manager parks a
+  `poll` until there is an event or the caller's deadline - the same parked
+  reply a live query uses.
+
+**The processor meter reads about ninety per cent with an idle desktop, and
+it is right.** The window manager polls the keyboard and the tablet in a
+loop, because neither device has an interrupt wired up, so one thread is
+permanently runnable and the idle thread never gets a turn. Parking the
+applications' polls took that from one spinner per window down to exactly
+one, which is most of the work and none of the number: one spinner is
+enough to keep a single core busy. **The fix is interrupt-driven input**,
+which is the next thing worth doing to this system.
+
 - **The Deskbar.** `wm` on its own starts a desktop with a panel top right:
   every window on screen, and every program that declared itself an
   application. Click one to start it; click a running one to raise it.

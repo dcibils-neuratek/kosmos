@@ -181,6 +181,25 @@ static void dump(unsigned index, const struct trapframe *tf)
     dump_body(index, tf);
 }
 
+/*
+ * A process that has been killed ends here, on its way back to EL0.
+ *
+ * Not where the kill was asked for: tearing a process down ends with the
+ * thread doing it, so it has to be that process's own thread, in its own
+ * context. Both places this is called from are exactly that - a syscall
+ * about to return, and a timer interrupt taken from EL0 - and between them
+ * they bound the delay at one timer period even for a process that has
+ * stopped making syscalls, which is the case a kill exists for.
+ *
+ * `process_exit` does not return.
+ */
+static void die_if_killed(void)
+{
+    if (process_should_die()) {
+        process_exit(thread_current()->process, -1);
+    }
+}
+
 void trap_handler(unsigned index, struct trapframe *tf)
 {
     /*
@@ -277,6 +296,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
 
         if (index == 8 && ESR_EC(tf->esr) == EC_SVC64) {
             syscall_dispatch(tf);
+            die_if_killed();
             return;
         }
 
@@ -284,6 +304,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
             hal_irq_handle();
             thread_tick();
             console_tick();
+            die_if_killed();
             return;
         }
 

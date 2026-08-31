@@ -38,9 +38,11 @@ local DESKTOP    = 0xff1c2530
 local TAB_H      = 20
 local BORDER     = 2
 
+local CLOSE_W    = 12             -- the close box at the left of a tab
 local FOCUSED    = 0xffffc700     -- the BeOS yellow, near enough
 local UNFOCUSED  = 0xffb8b8b8
 local FRAME      = 0xff2b3440
+local STAMP_FG   = 0xff3d4a58     -- readable, and not competing with a window
 local TITLE_FG   = 0xff101010
 
 local screen = gfx.screen()
@@ -83,12 +85,51 @@ if not ep then
   return
 end
 
+-- Which build this is, in the corner. `sys.build()` is compiled in by the
+-- Makefile from the commit, so it identifies the source that produced the
+-- image rather than the moment it was linked.
+local b = sys.build()
+-- ASCII only. The font is the 8x16 one from `assets/`, which has glyphs for
+-- 0x20 to 0x7e and a box for everything else - so a middot separator came
+-- out as a row of boxes, which is the font saying exactly what it should.
+local stamp = ("%s %s  |  %s  |  %s  |  %s")
+              :format(b.name, b.version, b.build, b.date, b.platform)
+
 --------------------------------------------------------------------------
 -- Windows, back to front. The last one is on top and has the focus.
 --------------------------------------------------------------------------
 
 local windows = {}
 local by_handle = {}
+local pending_pid = nil
+
+--------------------------------------------------------------------------
+-- Applications that are waiting for something to happen.
+--
+-- `poll` used to answer immediately, always, with an empty list when there
+-- was nothing - so every application span: ask, get nothing, yield, ask
+-- again, for ever. A desktop with four windows open had five threads that
+-- were permanently runnable and a processor meter that read ninety-six per
+-- cent with nothing happening. The meter was right.
+--
+-- Now the reply is parked. An application asks and is not answered until
+-- there is an event for it or its own deadline arrives, so it is blocked
+-- rather than running - not scheduled, not costing anything. It is the same
+-- mechanism the filesystem uses for a live query, and for the same reason:
+-- waiting is not the same as asking repeatedly.
+--
+-- This process still spins, because it polls a keyboard and a tablet that
+-- have no interrupt wired up yet. One spinner instead of one per window is
+-- the whole of what this buys, and it is most of it.
+--------------------------------------------------------------------------
+
+local DEFER = { "deferred" }
+local waiting = {}
+
+-- How long a poll waits when the caller does not say. Long enough to be a
+-- block rather than a poll, short enough that a bug here shows up as a
+-- sluggish window rather than a dead one.
+local POLL_DEFAULT = 0
 local next_handle = 1
 local damage = {}
 local running = true
@@ -112,7 +153,8 @@ local function damage_window(win)
 end
 
 local function tab_width(win)
-  return math.min(win.w + BORDER * 2, #win.title * gfx.font.w + 16)
+  return math.min(win.w + BORDER * 2,
+                  #win.title * gfx.font.w + 16 + CLOSE_W)
 end
 
 --------------------------------------------------------------------------
@@ -237,6 +279,12 @@ end
 local function compose_rect(r)
   back:fill(r.x, r.y, r.w, r.h, DESKTOP)
 
+  -- What is running, bottom right, on the desktop and under everything
+  -- else. Drawn as part of the composite rather than once at startup, so a
+  -- window dragged over it and away again leaves it intact.
+  back:text(W - #stamp * gfx.font.w - 10, H - gfx.font.h - 8, stamp,
+            STAMP_FG, DESKTOP)
+
   for i = 1, #windows do
     local win = windows[i]
     local focused = (i == #windows)
@@ -251,9 +299,19 @@ local function compose_rect(r)
     -- several stacked windows are all readable at once. It is the most
     -- recognisable decision in the whole look and it is a functional one.
     local tw = tab_width(win)
-    back:fill(fx, fy, tw, TAB_H, focused and FOCUSED or UNFOCUSED)
-    back:text(fx + 8, fy + (TAB_H - gfx.font.h) // 2, win.title,
-              TITLE_FG, focused and FOCUSED or UNFOCUSED)
+    local tab = focused and FOCUSED or UNFOCUSED
+
+    back:fill(fx, fy, tw, TAB_H, tab)
+
+    -- The close box, at the left of the tab where BeOS put it. A square
+    -- outline rather than a cross: at this size a cross is four grey pixels
+    -- and a smudge.
+    local bx, by = fx + 4, fy + (TAB_H - 8) // 2
+    back:fill(bx, by, 8, 8, TITLE_FG)
+    back:fill(bx + 1, by + 1, 6, 6, tab)
+
+    back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
+              TITLE_FG, tab)
 
     back:blit(win.surface, 0, 0, win.w, win.h, win.x, win.y)
   end
@@ -316,6 +374,10 @@ handlers.open = function(req)
 
   win.surface:fill(0, 0, w_, h_, 0xff202020)
 
+  -- Whoever was launched most recently, if this is their first window.
+  win.pid = pending_pid
+  pending_pid = nil
+
   next_handle = next_handle + 1
   windows[#windows + 1] = win
   by_handle[win.handle] = win
@@ -374,12 +436,18 @@ handlers.launch = function(req)
   end
 
   local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
-  local ok, err = run(path, req.args or "", true, { ["/dev/wm"] = ep })
+  local ok, err, id = run(path, req.args or "", true, { ["/dev/wm"] = ep })
 
   if not ok then
     return { ok = false, error = tostring(err) }
   end
 
+  -- Remembered so that the *next* window to open can be tied to it. There
+  -- is nothing better available: a window arrives in a message and a
+  -- message does not say which process sent it - the sender is a thread
+  -- pointer, and the thread that opens a window is the one this started.
+  -- Good enough to end what was just launched, and honestly not more.
+  pending_pid = id
   return { ok = true }
 end
 
@@ -445,13 +513,51 @@ handlers.move = function(req)
   return { ok = true }
 end
 
-handlers.poll = function(req)
-  local win = by_handle[req.window]
-  if not win then return { ok = false, error = "no such window" } end
-
+local function events_for(win)
   local out = win.events
   win.events = {}
   return { ok = true, events = out }
+end
+
+handlers.poll = function(req, who)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  if #win.events > 0 then
+    return events_for(win)
+  end
+
+  -- Nothing yet. Hold the answer rather than sending an empty one.
+  local wait = tonumber(req.wait) or POLL_DEFAULT
+
+  waiting[#waiting + 1] = {
+    who = who, win = win, deadline = sys.ticks() + wait,
+  }
+
+  return DEFER
+end
+
+--
+-- Answer everyone whose window has something, or whose wait is over.
+--
+local function answer_waiting()
+  local now = sys.ticks()
+  local still = {}
+
+  for _, w in ipairs(waiting) do
+    if by_handle[w.win.handle] == nil then
+      -- Its window closed underneath it. An empty answer, so the
+      -- application's loop notices and leaves rather than hanging on a
+      -- reply nobody is going to send.
+      pcall(sys.reply, w.who, { ok = true, events = {} })
+    elseif #w.win.events > 0 or now >= w.deadline then
+      pcall(sys.reply, w.who, events_for(w.win))
+    else
+      still[#still + 1] = w
+    end
+  end
+
+  waiting = still
 end
 
 handlers.close = function(req)
@@ -518,6 +624,52 @@ end
 -- than in the console because the console has no idea what a window is.
 --------------------------------------------------------------------------
 
+--------------------------------------------------------------------------
+-- Closing, and ending what will not close.
+--
+-- Two steps, because they are two different things. Asking a window to
+-- close is a message: an application that is listening saves what it was
+-- doing and goes, which is the only version that can ever be correct.
+-- Ending the process is what happens when nobody is listening, and it
+-- cannot be polite because there is nobody to be polite to.
+--
+-- The grace period is what separates them. A second is far longer than a
+-- healthy application needs to notice a message - a window polls its
+-- events every pass - and short enough that a wedged one does not sit
+-- there being clicked at.
+--
+-- The kernel does the ending, and only for a child: `sys.kill` is the
+-- authority a parent already has by being able to wait for one. This
+-- process started these programs, so this process may end them, and
+-- nothing else may.
+--------------------------------------------------------------------------
+
+local close_grace = 0
+
+do
+  local cpu = fs.read("/dev/cpu")
+  close_grace = (cpu and cpu.counter_hz or 62500000)
+end
+
+local function collect_closing()
+  local now = sys.ticks()
+
+  for i = #windows, 1, -1 do
+    local win = windows[i]
+
+    if win.closing and now > win.closing then
+      -- It had its chance. Take the window off the screen first, so the
+      -- desktop is usable the instant this is decided, and then end the
+      -- process behind it.
+      handlers.close{ window = win.handle }
+
+      if win.pid then
+        sys.kill(win.pid)
+      end
+    end
+  end
+end
+
 -- Which window is under a point, front to back, decoration included.
 local function window_at(x, y)
   for i = #windows, 1, -1 do
@@ -583,7 +735,20 @@ local function pointer_pass()
       raise(win)
 
       if ny < fy + TAB_H then
-        dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
+        if nx < fx + 4 + CLOSE_W then
+          --
+          -- The close box. Asked first, taken by force second.
+          --
+          -- The window is told, and a window that is listening tidies up
+          -- and goes. One that is not listening - the whole point of this
+          -- desktop being able to survive one - never answers, so the
+          -- request is remembered and collected on a later pass.
+          --
+          win.closing = sys.ticks() + close_grace
+          post(win, { type = "close" })
+        else
+          dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
+        end
       else
         grabbed = win
         post(win, { type = "mouse", action = "press",
@@ -747,10 +912,13 @@ for entry in wanted:gmatch("[^,]+") do
     name = name or entry
 
     local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
-    local ok, err = run(path, argument or "", true, { ["/dev/wm"] = ep })
+    local ok, err, id = run(path, argument or "", true,
+                            { ["/dev/wm"] = ep })
 
     if not ok then
       print(("wm: could not start %s: %s"):format(path, tostring(err)))
+    else
+      pending_pid = id
     end
   end
 end
@@ -781,18 +949,40 @@ while running do
     if not handler then
       reply = { ok = false, error = "no such operation: " .. tostring(req.type) }
     else
-      local ok, result = pcall(handler, req)
+      local ok, result = pcall(handler, req, who)
       reply = ok and result or { ok = false, error = tostring(result) }
     end
 
-    pcall(sys.reply, who, reply)
+    -- A handler that took responsibility for its own answer, which `poll`
+    -- does when there is nothing to report yet.
+    if reply ~= DEFER then
+      pcall(sys.reply, who, reply)
+    end
   end
 
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
   pointer_pass()
 
-  -- 4. The picture, cursor included.
+  -- 4. Anybody who has been waiting long enough, or now has something.
+  answer_waiting()
+
+  -- 5. Anything that was asked to close and did not, and the slots of
+  -- anything that has already gone.
+  collect_closing()
+
+  --
+  -- A process that has exited keeps its slot until somebody collects its
+  -- exit code, which is what makes an exit code readable at all. Nobody was
+  -- collecting these: closing two applications left two processes in the
+  -- table for ever, and a desktop is exactly the thing that starts and ends
+  -- programs all day.
+  --
+  -- Non-blocking, so a desktop with nothing to collect does not stop.
+  --
+  while sys.wait(true) do end
+
+  -- 6. The picture, cursor included.
   compose()
 
   sys.yield()

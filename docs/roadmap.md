@@ -174,10 +174,20 @@ one of which never replies again, and the hung one's window is dragged by
 its title bar with the mouse. There is a display check that does exactly
 that, driving a virtio tablet through QMP.
 
-**Still open in M6:** row and column containers, a scroll widget, the
-Terminal with its VT100 emulation, virtio-gpu as the second `hal_fb_*`
-implementation, the compositor benchmarks (blitter throughput, frame
-compose, damage versus full redraw, input latency), and SMP.
+**Still open in M6:** **interrupt-driven input** (see below), row and column
+containers, a scroll widget, the Terminal with its VT100 emulation,
+virtio-gpu as the second `hal_fb_*` implementation, the compositor
+benchmarks (blitter throughput, frame compose, damage versus full redraw,
+input latency), and SMP.
+
+**Interrupt-driven input is the one that matters most now.** The keyboard
+and the tablet are polled, so the window manager runs a loop that is always
+runnable, so the machine never idles and the processor meter reads ninety
+per cent on an empty desktop. It is not a measurement error - the core
+really is busy. Applications already block, because the compositor parks
+their event polls; the compositor cannot, until asking for input is
+something a thread can block on. That means wiring the virtio-mmio
+interrupt through the GIC and adding a wait that a thread can sleep in.
 
 The Terminal is the one that matters most, and not only as an application:
 the kernel console and the window manager currently draw on one framebuffer,

@@ -211,6 +211,11 @@ function view:resize(w, h)
 end
 
 function view:paint(g)
+  -- A view whose size depends on what it is about to draw gets to say so
+  -- first, because the clip below is its size and is applied before the
+  -- drawing happens.
+  if self.measure then self:measure() end
+
   local saved = g:push(self.x, self.y, self.w, self.h)
 
   if self.draw then self:draw(g) end
@@ -265,7 +270,27 @@ end
 function ui.label(spec)
   local v = ui.view(spec)
   v.h = v.h > 0 and v.h or GH
-  v.w = v.w > 0 and v.w or (#tostring(v.text or "") * GW)
+
+  --
+  -- A label with no width given is as wide as its text - *currently*, not
+  -- as it was when it was made.
+  --
+  -- Sizing it once at construction is the obvious thing and it is wrong in
+  -- a way that is very quiet: a label created empty and filled in later gets
+  -- a width of zero, and a view is clipped to its own width, so it never
+  -- draws anything again. Two status lines in this system were blank for
+  -- exactly that reason and neither looked like a bug - they looked like
+  -- nothing had happened yet.
+  --
+  v.fixed_width = (spec.w or 0) > 0
+
+  function v:measure()
+    if not self.fixed_width then
+      self.w = #tostring(self.text or "") * GW
+    end
+  end
+
+  v:measure()
 
   function v:draw(g)
     g:text(0, 0, tostring(self.text or ""),
@@ -844,7 +869,10 @@ function window:add(child)
     -- manager in messages about a clock that changes once a second.
     if not self.tick_every or self.tick_every == 0 then
       local cpu = fs.read("/dev/cpu")
-      self.tick_every = (cpu and cpu.counter_hz or 62500000) // 2
+      -- Once a second. Anything that ticks here is showing a number a
+      -- person reads - a clock, a meter - and a person cannot read two a
+      -- second, so redrawing twice as often is twice the work for nothing.
+      self.tick_every = (cpu and cpu.counter_hz or 62500000)
     end
   end
 
@@ -995,7 +1023,24 @@ function window:run()
   self:paint()
 
   while self.running do
-    local reply = fs.send("/dev/wm", { type = "poll", window = self.handle })
+    --
+    -- How long this window is prepared to wait.
+    --
+    -- The window manager holds the answer until something happens or this
+    -- runs out, so between events the process is blocked rather than
+    -- running. Asking with no wait at all - which is what this used to do -
+    -- meant every window span for ever, and a desktop with four of them
+    -- open sat at ninety-six per cent doing nothing.
+    --
+    local wait = self.tick_every or 0
+
+    if wait <= 0 then
+      local cpu = fs.read("/dev/cpu")
+      wait = (cpu and cpu.counter_hz or 62500000) // 4
+    end
+
+    local reply = fs.send("/dev/wm", { type = "poll", window = self.handle,
+                                       wait = wait })
 
     --
     -- The window manager went away, which is the ordinary end of an
@@ -1016,7 +1061,19 @@ function window:run()
     local changed = serve_properties(self)
 
     for _, ev in ipairs(reply.events) do
-      if ev.type == "mouse" then
+      if ev.type == "close" then
+        --
+        -- The desktop asking, not telling. An application that gets this
+        -- far has a second to leave; one that never reads its events is
+        -- ended instead, which is the only thing that works on something
+        -- that has stopped listening.
+        --
+        if self.on_close then self.on_close(self) end
+
+        if self.running then self:close() end
+
+        return
+      elseif ev.type == "mouse" then
         if dispatch_mouse(self, ev) then changed = true end
       elseif ev.type == "key" then
         local c = ev.code

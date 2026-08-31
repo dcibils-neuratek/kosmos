@@ -507,8 +507,52 @@ static int l_processes(lua_State *L)
  *
  * There is no disk. Until M8 this is where a program lives.
  */
+extern const char kosmos_name[];
+extern const char kosmos_version[];
+extern const char kosmos_build[];
+extern const char kosmos_date[];
+extern const char kosmos_platform[];
+
 extern const char programs_lua[];
 extern const char libraries_lua[];
+
+/*
+ * What this build calls itself.
+ *
+ * Strings compiled in by the Makefile rather than anything the kernel
+ * knows, because a version is a property of the source that produced the
+ * image and not of the machine it runs on - `sys.info()` is for the
+ * machine, and mixing the two would mean a kernel struct carrying text.
+ */
+static int l_build(lua_State *L)
+{
+    lua_createtable(L, 0, 5);
+
+#define PUTS(k, v) do { lua_pushstring(L, (v)); \
+                        lua_setfield(L, -2, (k)); } while (0)
+
+    PUTS("name", kosmos_name);
+    PUTS("version", kosmos_version);
+    PUTS("build", kosmos_build);
+    PUTS("date", kosmos_date);
+    PUTS("platform", kosmos_platform);
+
+#undef PUTS
+
+    return 1;
+}
+
+static int l_kill(lua_State *L)
+{
+    long status = kosmos_kill((unsigned long)luaL_checkinteger(L, 1));
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
 
 static int l_screen_take(lua_State *L)
 {
@@ -577,6 +621,8 @@ static const luaL_Reg sys_functions[] = {
     { "name",     l_setname },
     { "processes", l_processes },
     { "pointer",  l_pointer },
+    { "build",    l_build },
+    { "kill",     l_kill },
     { "screen_take", l_screen_take },
     { "programs", l_programs },
     { "libraries", l_libraries },

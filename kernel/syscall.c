@@ -659,6 +659,17 @@ void syscall_dispatch(struct trapframe *tf)
         }
         break;
 
+    case SYS_KILL:
+        /*
+         * Only a parent may end a child, which is the authority
+         * `process_wait` already implies. Nothing new is granted: a process
+         * that started something may end it, and holding a capability to
+         * somebody is not the same as being allowed to kill them.
+         */
+        result = (process_kill(p, (unsigned)tf->x[0]) == 0)
+                 ? 0 : SYS_ERR_NO_CHILD;
+        break;
+
     case SYS_YIELD:
         thread_yield();
         result = 0;

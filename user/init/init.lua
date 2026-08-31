@@ -2786,7 +2786,10 @@ if role == ROLE_RUNNER then
     sys.destroy(ep)
 
     if not reply then return false, "no answer" end
-    return reply.ok, reply.error
+
+    -- The child's id as well as whether it started. Whoever launched
+    -- something is the only one who may end it, and cannot without this.
+    return reply.ok, reply.error, id
   end
 
   local env = {

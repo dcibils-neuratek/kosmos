@@ -160,6 +160,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | A window's damage waits until its drawing is complete, so a frame is never seen half-redrawn | ui.md §16.7 |
 | Aug 2026 | A program declares it draws with `-- kosmos: application`; the store reports it. The launcher does not guess by reading source | init.lua binfs |
 | Aug 2026 | The Deskbar lists the desktop's windows, not the `/app` registry: a window with no registration is still a window | deskbar.lua |
+| Aug 2026 | A kill marks and unblocks; the process dies at its own next entry into the kernel, because teardown ends with the thread that performs it | process.c, trap.c |
+| Aug 2026 | Only a parent may end a child - the authority `wait` already implies, and no new one | syscall.c |
+| Aug 2026 | A close box asks first and ends second: an application that listens leaves tidily, one that does not is ended a second later | wm.lua |
+| Aug 2026 | A label with no width given measures itself before every paint, not once when it was made | ui.md, ui.lua |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |
