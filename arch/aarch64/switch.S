@@ -9,6 +9,8 @@
  *   x19 to x28    the callee-saved general registers
  *   x29, x30      frame pointer and link register
  *   d8 to d15     the callee-saved halves of the FP registers
+ *   v0 to v31     and then all of them, plus fpcr and fpsr, because this is
+ *                 also where a *preempted* thread is switched away
  *
  * The FP half is not optional and this is where it comes due. The kernel's
  * own C is built -mgeneral-regs-only and never touches them, but Lua runs on
@@ -66,6 +68,39 @@ context_switch:
     stp     d14, d15, [x0, #CTX_D14]
 
     /*
+     * And the whole file, because this is also where a preempted thread is
+     * switched away and a preempted thread has live values everywhere. See
+     * the comment on CTX_Q0 in context.h for why the callee-saved half above
+     * is not enough and why here is the right place.
+     *
+     * x12 rather than an immediate offset: the q forms of stp reach 1008
+     * bytes at most and the later pairs are past it once the general
+     * registers are in front.
+     */
+    add     x12, x0, #CTX_Q0
+    stp     q0,  q1,  [x12, #0]
+    stp     q2,  q3,  [x12, #32]
+    stp     q4,  q5,  [x12, #64]
+    stp     q6,  q7,  [x12, #96]
+    stp     q8,  q9,  [x12, #128]
+    stp     q10, q11, [x12, #160]
+    stp     q12, q13, [x12, #192]
+    stp     q14, q15, [x12, #224]
+    stp     q16, q17, [x12, #256]
+    stp     q18, q19, [x12, #288]
+    stp     q20, q21, [x12, #320]
+    stp     q22, q23, [x12, #352]
+    stp     q24, q25, [x12, #384]
+    stp     q26, q27, [x12, #416]
+    stp     q28, q29, [x12, #448]
+    stp     q30, q31, [x12, #480]
+
+    mrs     x9,  fpcr
+    mrs     x10, fpsr
+    add     x13, x0, #CTX_FPCR      /* past what an stp offset can reach */
+    stp     x9,  x10, [x13]
+
+    /*
      * Both stack pointers, and the awkward part.
      *
      * SP_EL1 cannot be named from EL1. Its system register encoding is an
@@ -117,6 +152,29 @@ context_switch:
     ldp     d10, d11, [x1, #CTX_D10]
     ldp     d12, d13, [x1, #CTX_D12]
     ldp     d14, d15, [x1, #CTX_D14]
+
+    add     x13, x1, #CTX_FPCR
+    ldp     x9,  x10, [x13]
+    msr     fpcr, x9
+    msr     fpsr, x10
+
+    add     x12, x1, #CTX_Q0
+    ldp     q0,  q1,  [x12, #0]
+    ldp     q2,  q3,  [x12, #32]
+    ldp     q4,  q5,  [x12, #64]
+    ldp     q6,  q7,  [x12, #96]
+    ldp     q8,  q9,  [x12, #128]
+    ldp     q10, q11, [x12, #160]
+    ldp     q12, q13, [x12, #192]
+    ldp     q14, q15, [x12, #224]
+    ldp     q16, q17, [x12, #256]
+    ldp     q18, q19, [x12, #288]
+    ldp     q20, q21, [x12, #320]
+    ldp     q22, q23, [x12, #352]
+    ldp     q24, q25, [x12, #384]
+    ldp     q26, q27, [x12, #416]
+    ldp     q28, q29, [x12, #448]
+    ldp     q30, q31, [x12, #480]
 
     /* The mask the incoming thread was running under, not the outgoing one's. */
     ldr     x9, [x1, #CTX_DAIF]

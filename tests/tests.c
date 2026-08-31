@@ -2997,6 +2997,99 @@ static bool test_string_functions(void)
         && strchr(s, '\0') == s + 6;   /* the terminator is findable */
 }
 
+/*
+ * Does a preemption preserve the whole FP register file?
+ *
+ * `context_switch` saves d8 to d15, which is the callee-saved set and the
+ * right answer for a thread that *called* it: the compiler already spilled
+ * everything else. A preempted thread did not call anything. It was
+ * interrupted between two instructions, possibly with a live d0, and the
+ * exception entry saves no FP state at all - so if the thread scheduled
+ * next uses d0, the first thread comes back with the second one's value.
+ *
+ * Written as two threads that each hold a known value in d0 across a spin
+ * long enough to be preempted, because a statistical version of this in Lua
+ * proves nothing: Lua keeps its locals on its own stack in memory, so the
+ * window where a double is live in a hardware register is a few
+ * instructions per opcode and a test that misses it looks like a pass.
+ *
+ * The spin is inside the asm block on purpose. A loop in C around it would
+ * be a call boundary, where the ABI says d0 is dead anyway and the bug
+ * cannot show.
+ */
+static volatile unsigned fp_preempt_checks;
+static volatile unsigned fp_preempt_wrong;
+static volatile unsigned fp_preempt_switches;
+
+static void fp_spinner(void *arg)
+{
+    unsigned long want = (unsigned long)(uintptr_t)arg;
+    unsigned last = thread_current()->switches;
+    unsigned i;
+
+    for (i = 0; i < 240u; i++) {
+        unsigned long got;
+
+        /* Two nested loops, so one spin is longer than a timer period.
+         * A shorter one finishes inside a quantum, is never preempted, and
+         * passes without testing anything - which is what the first version
+         * of this did, and the switch counter below is here so it cannot
+         * happen again quietly. */
+        __asm__ volatile(
+            "fmov   d0, %1\n"
+            "mov    x10, #24\n"
+            "1:\n"
+            "mov    x9, #0xffff\n"
+            "2:\n"
+            "subs   x9, x9, #1\n"
+            "b.ne   2b\n"
+            "subs   x10, x10, #1\n"
+            "b.ne   1b\n"
+            "fmov   %0, d0\n"
+            : "=r"(got)
+            : "r"(want)
+            : "d0", "x9", "x10", "cc");
+
+        {
+            /* Summed over both threads rather than assigned, which is what
+             * the first version did - and with two threads writing one slot
+             * it reported whichever finished last instead of the total. */
+            unsigned now = thread_current()->switches;
+
+            fp_preempt_switches += now - last;
+            last = now;
+        }
+
+        fp_preempt_checks++;
+
+        if (got != want) {
+            fp_preempt_wrong++;
+        }
+    }
+}
+
+static bool test_fp_survives_a_preemption(void)
+{
+    unsigned i;
+
+    fp_preempt_checks = 0;
+    fp_preempt_wrong  = 0;
+
+    /* Two different bit patterns, so a thread that comes back with the
+     * other one's value is unmistakable rather than merely unlikely. */
+    if (thread_create("fp-a", fp_spinner, (void *)0x3ff0000000000000UL) == NULL
+     || thread_create("fp-b", fp_spinner, (void *)0x4000000000000000UL) == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < 200000u && fp_preempt_checks < 480u; i++) {
+        thread_yield();
+    }
+
+    return fp_preempt_checks >= 480u && fp_preempt_switches >= 4u
+           && fp_preempt_wrong == 0;
+}
+
 static bool test_fp_is_usable_at_el1(void)
 {
     /*
@@ -3199,6 +3292,7 @@ static const struct test tests[] = {
     { "libc: memmove handles overlap",         test_memmove_handles_overlap },
     { "libc: the string functions",            test_string_functions },
     { "fp: EL1 may use FP and SIMD",           test_fp_is_usable_at_el1 },
+    { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
     { "libc: setjmp returns 0 when called",    test_setjmp_returns_zero_directly },
     { "libc: longjmp delivers its value",      test_longjmp_delivers_its_value },
     { "libc: longjmp turns 0 into 1",          test_longjmp_turns_zero_into_one },
