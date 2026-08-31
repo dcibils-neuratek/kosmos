@@ -5,3 +5,7 @@ build/
 *.bin
 *.map
 .DS_Store
+
+# Except the released images, which are the point of that directory: an
+# image somebody can download and run without a toolchain.
+!builds/*.elf

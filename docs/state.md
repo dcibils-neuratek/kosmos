@@ -60,21 +60,24 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Known bad
 
-**One display check is intermittent and not root-caused.** `check_widgets`
-clicks the gallery's list and sends a down arrow; the selection has to move
-one row. It passes every time on its own - traced, with the bytes 27, 91, 66
-arriving at the window manager and the bar moving - and fails perhaps one
-run in three inside the full fifteen-phase sequence. Twenty-five seconds of
-waiting does not help, so the key is not arriving late, it is not arriving.
+**(fixed) The arrow keys did nothing on a real keyboard.** This was written
+up here as an intermittent test, which it was not: it was a real bug, and
+the person using the system found it in ten seconds by pressing Down.
 
-What is different in a full run is that other things are still alive:
-`check_status_bar` leaves `monitor 30 &` running, and `monitor` polls the
-console for Control-C, which drains the same queue the desktop reads. That
-is the obvious suspect and it is not proven - the drained bytes are stashed
-for the next reader rather than dropped, so on inspection it should work.
+An arrow over a serial line is three bytes - escape, '[', a letter - because
+that is what a terminal sends. On a keyboard it is a single keycode with no
+character at all, and the driver's keymap has one byte per code, so
+`keymap_plain[108]` was zero and the key produced nothing. Arrows worked
+over the cable and did nothing in the window.
 
-**Until this is understood, `make screenshot` cannot be trusted as a gate.**
-`make test` (109 tests) is unaffected and passes every run.
+It hid because **every automated check typed over the serial line**, which
+is the one path that already worked. The driver now turns those keys into
+the sequence a terminal would have sent, so everything above it sees one
+input language rather than two, and the widget check presses real keys
+through QEMU's input plumbing.
+
+The lesson is the one this project keeps relearning: a test that exercises a
+different path from the user is a test that agrees with you.
 
 **The display harness is flaky.** Two different phases have failed on two
 consecutive full runs and both pass on their own. It is the harness, not the

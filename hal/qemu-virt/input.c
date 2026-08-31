@@ -135,6 +135,29 @@ struct virtio_input_event {
 #define ABS_Y           0x01
 #define BTN_LEFT        0x110
 #define BTN_RIGHT       0x111
+/*
+ * The keys that are not characters.
+ *
+ * A keymap has one byte per keycode, and an arrow is not one byte: over a
+ * serial line it arrives as escape, '[', and a letter, because that is what
+ * a terminal sends. On a real keyboard it is a single keycode with no
+ * character at all - so with a keymap alone, `keymap_plain[108]` is zero,
+ * the key produces nothing, and arrows work over the cable and do nothing
+ * in the window.
+ *
+ * That is exactly what happened, and it hid for a while: every automated
+ * check types over the serial line, where arrows had always worked.
+ */
+#define KEY_HOME        102
+#define KEY_UP          103
+#define KEY_PAGEUP      104
+#define KEY_LEFT        105
+#define KEY_RIGHT       106
+#define KEY_END         107
+#define KEY_DOWN        108
+#define KEY_PAGEDOWN    109
+#define KEY_DELETE      111
+
 #define KEY_LEFTCTRL    29
 #define KEY_LEFTSHIFT   42
 #define KEY_RIGHTSHIFT  54
@@ -217,6 +240,54 @@ static struct vinput tablet;
  * virtqueue that survives until somebody reads it.
  */
 static volatile bool input_arrived;
+
+/*
+ * Bytes waiting to come out of `hal_getchar`, most recent last.
+ *
+ * One keypress can be more than one character. Every key that is not a
+ * character is turned into the escape sequence a terminal would have sent
+ * for it, so that everything above this layer sees one input language
+ * rather than two - the shell's line editor, the window manager and the
+ * widget kit all already understand `ESC [ A`, because that is what arrives
+ * over the cable.
+ *
+ * Translating here rather than above is what keeps that true. The
+ * alternative is a second set of key codes that only exist on a real
+ * keyboard, and then every consumer has to know about both.
+ */
+static char     pending[8];
+static unsigned pending_len;
+static unsigned pending_at;
+
+static void queue(const char *s)
+{
+    unsigned n = 0;
+
+    while (s[n] != '\0' && n < sizeof(pending)) {
+        pending[n] = s[n];
+        n++;
+    }
+
+    pending_len = n;
+    pending_at = 0;
+}
+
+/* The escape sequence for a key that is not a character, or NULL. */
+static const char *sequence_for(unsigned code)
+{
+    switch (code) {
+    case KEY_UP:       return "\x1b[A";
+    case KEY_DOWN:     return "\x1b[B";
+    case KEY_RIGHT:    return "\x1b[C";
+    case KEY_LEFT:     return "\x1b[D";
+    case KEY_HOME:     return "\x1b[H";
+    case KEY_END:      return "\x1b[F";
+    case KEY_PAGEUP:   return "\x1b[5~";
+    case KEY_PAGEDOWN: return "\x1b[6~";
+    case KEY_DELETE:   return "\x1b[3~";
+    default:           return NULL;
+    }
+}
 
 /* Modifier state, which belongs to the keyboard and to nothing else. */
 static bool      shift;
@@ -707,6 +778,12 @@ bool hal_pointer_poll(struct pointer_state *out)
 
 int keyboard_getchar(void)
 {
+    /* Whatever the last key still owes. An arrow is three bytes and they
+     * leave one at a time, in order, like any other input. */
+    if (pending_at < pending_len) {
+        return (unsigned char)pending[pending_at++];
+    }
+
     if (!keyboard.present) {
         return -1;
     }
@@ -751,6 +828,19 @@ int keyboard_getchar(void)
 
         if (event.value == 0) {
             continue;               /* a release of an ordinary key */
+        }
+
+        /*
+         * A key with no character of its own. Turned into the sequence a
+         * terminal would have sent, and handed out a byte at a time.
+         */
+        {
+            const char *sequence = sequence_for(event.code);
+
+            if (sequence != NULL) {
+                queue(sequence);
+                return (unsigned char)pending[pending_at++];
+            }
         }
 
         c = shift ? keymap_shift[event.code] : keymap_plain[event.code];

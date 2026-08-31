@@ -864,8 +864,20 @@ def check_widgets(guest):
     # how long a keystroke takes to show up depends on where in that second
     # it arrived. Watching for the result removes the guess.
     #
+    #
+    # Real key presses, through QEMU's input plumbing into the virtio
+    # keyboard - not escape sequences down the serial line.
+    #
+    # This is the difference that hid a real bug. An arrow over a cable is
+    # three bytes because that is what a terminal sends; on a keyboard it is
+    # a single keycode with no character at all, and the driver's keymap has
+    # one byte per code, so `keymap_plain[108]` was zero and arrows produced
+    # nothing. They worked over serial and did nothing in the window, and
+    # every check here typed over serial.
+    #
     for step in (1, 2):
-        send(b"\x1b[B", 0.2)
+        guest.sendkey("down")
+        time.sleep(0.2)
 
         #
         # Twenty-five seconds, which sounds absurd for a keystroke and is
