@@ -163,7 +163,14 @@ static int l_spawn(lua_State *L)
 static int l_wait(lua_State *L)
 {
     uint64_t id = 0;
-    long code = kosmos_wait(&id);
+    int nonblocking = lua_toboolean(L, 1);
+    long code = kosmos_wait(&id, nonblocking);
+
+    if (code == -106) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no child ready");
+        return 2;
+    }
 
     if (code < 0) {
         lua_pushnil(L);
@@ -395,6 +402,7 @@ static int l_info(lua_State *L)
     SET("threads_used",     info.threads_used);
     SET("threads_total",    info.threads_total);
     SET("processes_used",   info.processes_used);
+    SET("processes_held",   info.processes_held);
     SET("processes_total",  info.processes_total);
     SET("endpoints_used",   info.endpoints_used);
     SET("endpoints_total",  info.endpoints_total);
@@ -417,6 +425,63 @@ static int l_info(lua_State *L)
     return 1;
 }
 
+static int l_setname(lua_State *L)
+{
+    size_t len;
+    const char *name = luaL_checklstring(L, 1, &len);
+
+    lua_pushboolean(L, kosmos_setname(name, len) == 0);
+    return 1;
+}
+
+/*
+ * Every process, as a list of tables.
+ *
+ * Raw again: an id, a name the process chose, a state number, ticks that
+ * only rise. What a name means and which layer it belongs to is decided by
+ * whoever asked - the kernel has no opinion about whether something is a
+ * server or an app, and should not acquire one.
+ */
+static int l_processes(lua_State *L)
+{
+    struct proc_info table[32];
+    long n = kosmos_proctable(table, 32);
+    long i;
+
+    if (n < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "the kernel would not say");
+        return 2;
+    }
+
+    lua_createtable(L, (int)n, 0);
+
+    for (i = 0; i < n; i++) {
+        lua_createtable(L, 0, 9);
+
+#define SETI(k, v) do { lua_pushinteger(L, (lua_Integer)(v)); \
+                        lua_setfield(L, -2, k); } while (0)
+        SETI("id",        table[i].id);
+        SETI("state",     table[i].state);
+        SETI("exit_code", table[i].exit_code);
+        SETI("ticks",     table[i].ticks);
+        SETI("pages",     table[i].pages);
+        SETI("caps",      table[i].caps);
+        SETI("owns",      table[i].owns);
+#undef SETI
+
+        lua_pushboolean(L, table[i].exited != 0);
+        lua_setfield(L, -2, "exited");
+
+        lua_pushstring(L, table[i].name);
+        lua_setfield(L, -2, "name");
+
+        lua_rawseti(L, -2, (lua_Integer)(i + 1));
+    }
+
+    return 1;
+}
+
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "getchar",  l_getchar },
@@ -426,6 +491,8 @@ static const luaL_Reg sys_functions[] = {
     { "yield",    l_yield },
     { "ticks",    l_ticks },
     { "info",     l_info },
+    { "name",     l_setname },
+    { "processes", l_processes },
     { "endpoint", l_endpoint },
     { "call",     l_call },
     { "receive",  l_receive },

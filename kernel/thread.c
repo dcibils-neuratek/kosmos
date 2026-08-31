@@ -364,6 +364,23 @@ void thread_set_idle(struct thread *t)
     idle_thread = t;
 }
 
+unsigned thread_cap_count(const struct thread *t)
+{
+    unsigned i, n = 0;
+
+    if (t == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < CAPS_PER_THREAD; i++) {
+        if (t->caps[i].endpoint != NULL) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
 void thread_load(unsigned long *idle, unsigned long *busy)
 {
     *idle = idle_ticks;
@@ -383,6 +400,12 @@ void thread_tick(void)
     } else {
         busy_ticks++;
     }
+
+    /* And to the thread itself, which is what makes a per-process figure
+     * possible. One increment on the interrupt path; the alternative is
+     * reading the counter on every context switch, which is the hottest
+     * path in the kernel. */
+    current->ticks++;
 
     if (policy->tick(current)) {
         preempt_pending = true;

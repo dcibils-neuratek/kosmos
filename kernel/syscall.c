@@ -371,6 +371,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.threads_used     = thread_count();
     info.threads_total    = THREAD_MAX;
     info.processes_used   = process_count();
+    info.processes_held   = process_slots_used();
     info.processes_total  = PROCESS_MAX;
     info.endpoints_used   = ipc_endpoints_in_use();
     info.endpoints_total  = ENDPOINT_MAX;
@@ -409,6 +410,157 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
 
     *(struct sysinfo *)out_ptr = info;
     return 0;
+}
+
+/*
+ * Pages, for the things that do not fit on a heap.
+ *
+ * A surface is the case this exists for: `gfx.md` §19.1 puts pixels in flat
+ * bytes behind a userdata, and a full-screen one is 3.2 MB against a 2 MB
+ * process heap that is small on purpose. So a process can ask the kernel for
+ * pages directly, and they are its own - mapped only into its address space,
+ * counted against its own budget, and returned when it exits whether or not
+ * it remembered to unmap them.
+ *
+ * Not contiguous. Each page is allocated on its own and mapped where the
+ * bump pointer says, because the CPU reaches them through the MMU and does
+ * not care, and demanding four hundred contiguous pages of a bitmap
+ * allocator is how an allocation fails on a machine with plenty free.
+ *
+ * The one caller that *would* care is a device reading the memory itself,
+ * and when a shared surface has to be handed to a GPU that is the moment
+ * this needs a contiguous variant - not before.
+ */
+static long sys_map(struct process *p, size_t pages)
+{
+    uintptr_t base;
+    size_t i;
+
+    if (pages == 0) {
+        return SYS_ERR_NO_ROOM;
+    }
+
+    if (pages > USER_MAP_PAGES_MAX
+        || p->mapped_pages + pages > USER_MAP_PAGES_MAX) {
+        return SYS_ERR_NO_ROOM;
+    }
+
+    base = p->next_map;
+
+    for (i = 0; i < pages; i++) {
+        void *page = pmm_alloc_page();
+
+        if (page == NULL) {
+            break;
+        }
+
+        /* Zeroed before the process can see it. A fresh page holding
+         * whatever the last owner left is how one process reads another's
+         * memory without either of them doing anything wrong. */
+        memset(page, 0, PAGE_SIZE);
+
+        if (as_map(p->space, base + i * PAGE_SIZE, (uintptr_t)page,
+                   1, MAP_USER_RW) != AS_OK) {
+            pmm_free_page(page);
+            break;
+        }
+    }
+
+    if (i < pages) {
+        /* Unwound rather than left half done. A partial mapping the caller
+         * was told nothing about is worse than no mapping. */
+        size_t j;
+
+        for (j = 0; j < i; j++) {
+            uintptr_t va = base + j * PAGE_SIZE;
+            uint64_t *entry = as_page_entry(p->space, va);
+
+            if (entry != NULL && (*entry & DESC_VALID) != 0) {
+                void *page = (void *)(uintptr_t)(*entry & DESC_ADDR_MASK);
+
+                (void)as_unmap(p->space, va, 1);
+                pmm_free_page(page);
+            }
+        }
+
+        return SYS_ERR_NO_ROOM;
+    }
+
+    p->next_map      = base + pages * PAGE_SIZE;
+    p->mapped_pages += pages;
+
+    return (long)base;
+}
+
+static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
+{
+    size_t i;
+    size_t freed = 0;
+
+    /*
+     * Only inside the region SYS_MAP hands out, and only what is actually
+     * mapped. A process cannot use this to unmap its own code, its stack or
+     * the screen: those are outside the range, and the check is the range
+     * rather than a list of what is special.
+     */
+    if ((va & (PAGE_SIZE - 1)) != 0) {
+        return SYS_ERR_FAULT;
+    }
+
+    if (va < USER_MAP_VA || pages == 0
+        || va + pages * PAGE_SIZE > p->next_map) {
+        return SYS_ERR_FAULT;
+    }
+
+    for (i = 0; i < pages; i++) {
+        uintptr_t at = va + i * PAGE_SIZE;
+        uint64_t *entry = as_page_entry(p->space, at);
+
+        if (entry == NULL || (*entry & DESC_VALID) == 0) {
+            continue;           /* already gone; unmapping twice is not an error */
+        }
+
+        {
+            void *page = (void *)(uintptr_t)(*entry & DESC_ADDR_MASK);
+
+            (void)as_unmap(p->space, at, 1);
+            pmm_free_page(page);
+            freed++;
+        }
+    }
+
+    p->mapped_pages -= (freed < p->mapped_pages) ? freed : p->mapped_pages;
+
+    /* The address is not reused. See USER_MAP_VA: reclaiming it would need
+     * an allocator, and there is 512 GB of it. */
+    return 0;
+}
+
+static long sys_setname(struct process *p, uintptr_t ptr, size_t len)
+{
+    if (len > 64) {
+        len = 64;
+    }
+
+    if (len > 0 && !process_may_read(p, ptr, len)) {
+        return SYS_ERR_FAULT;
+    }
+
+    process_set_name(p, (const char *)ptr, len);
+    return 0;
+}
+
+static long sys_proctable(struct process *p, uintptr_t out_ptr, size_t max)
+{
+    if (max == 0 || max > PROCESS_MAX) {
+        max = PROCESS_MAX;
+    }
+
+    if (!process_may_write(p, out_ptr, max * sizeof(struct proc_info))) {
+        return SYS_ERR_FAULT;
+    }
+
+    return (long)process_table((struct proc_info *)out_ptr, (unsigned)max);
 }
 
 void syscall_dispatch(struct trapframe *tf)
@@ -509,7 +661,28 @@ void syscall_dispatch(struct trapframe *tf)
         result = sys_sysinfo(p, tf->x[0]);
         break;
 
+    case SYS_MAP:
+        result = sys_map(p, (size_t)tf->x[0]);
+        break;
+
+    case SYS_UNMAP:
+        result = sys_unmap(p, tf->x[0], (size_t)tf->x[1]);
+        break;
+
+    case SYS_SETNAME:
+        result = sys_setname(p, tf->x[0], (size_t)tf->x[1]);
+        break;
+
+    case SYS_PROCTABLE:
+        result = sys_proctable(p, tf->x[0], (size_t)tf->x[1]);
+        break;
+
     case SYS_WAIT: {
+        /*
+         * x1 bit 0 asks not to block. A shell draining the processes it
+         * spawned must not stop at the prompt for ten seconds because one
+         * of them is still running.
+         */
         unsigned id = 0;
         uintptr_t id_ptr = tf->x[0];
 
@@ -518,9 +691,11 @@ void syscall_dispatch(struct trapframe *tf)
             break;
         }
 
-        result = process_wait(p, &id);
+        result = process_wait(p, &id, (tf->x[1] & 1u) != 0);
 
-        if (result < 0) {
+        if (result == -2) {
+            result = SYS_NO_CHILD_READY;
+        } else if (result < 0) {
             result = SYS_ERR_NO_CHILD;
         } else if (id_ptr != 0) {
             *(uint64_t *)id_ptr = (uint64_t)id;

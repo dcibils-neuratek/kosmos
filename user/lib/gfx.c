@@ -60,7 +60,8 @@ struct surface {
     unsigned  width;
     unsigned  height;
     unsigned  pitch;        /* bytes per row, never assume width * 4 */
-    size_t    bytes;        /* what was allocated, for the GC accounting */
+    size_t    bytes;        /* what was mapped, for the GC accounting */
+    size_t    pages;        /* what to hand back; 0 for the screen */
     bool      owned;        /* false for the screen: not ours to free */
 };
 
@@ -176,6 +177,8 @@ static int l_new(lua_State *L)
     struct surface *s;
     unsigned pitch;
     size_t bytes;
+    size_t pages;
+    long mapped;
     void *pixels;
 
     /*
@@ -206,23 +209,30 @@ static int l_new(lua_State *L)
     pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
     bytes = (size_t)pitch * (size_t)height;
 
-    pixels = malloc(bytes);
+    /*
+     * Pages from the kernel, not the heap.
+     *
+     * The heap is 2 MB and deliberately so: `design.md` §5.2 wants
+     * collections short, and the maximum GC pause is what decides whether
+     * the system stutters. A full-screen surface is 3.2 MB and a
+     * compositor's backbuffer is full-screen by definition, so putting
+     * pixels there would mean choosing between a heap too big to collect
+     * quickly and a compositor that cannot exist.
+     *
+     * They also do not belong there for a second reason: the collector would
+     * be walking around several megabytes it can neither move nor look
+     * inside, and every collection would be that much slower for nothing.
+     */
+    pages = (bytes + KOSMOS_PAGE_SIZE - 1) / KOSMOS_PAGE_SIZE;
+    mapped = kosmos_map(pages);
 
-    if (pixels == NULL) {
-        /*
-         * The heap a process gets is bounded on purpose - `design.md` §5.2
-         * wants it small so collections are short - and a full-screen
-         * surface does not fit in it. That is a real limit rather than a
-         * bug, and the message says so instead of leaving a caller to guess
-         * why 800x600 works and 1024x768 does not.
-         */
+    if (mapped < 0) {
         return luaL_error(L,
-            "no room for a %dx%d surface (%d KB); the process heap is %d KB",
-            (int)width, (int)height, (int)(bytes / 1024),
-            (int)(USER_HEAP_SIZE / 1024));
+            "no room for a %dx%d surface (%d KB): the kernel refused %d pages",
+            (int)width, (int)height, (int)(bytes / 1024), (int)pages);
     }
 
-    memset(pixels, 0, bytes);
+    pixels = (void *)(uintptr_t)mapped;      /* the kernel zeroed it */
 
     s = lua_newuserdatauv(L, sizeof(*s), 0);
     s->pixels = pixels;
@@ -230,6 +240,7 @@ static int l_new(lua_State *L)
     s->height = (unsigned)height;
     s->pitch  = pitch;
     s->bytes  = bytes;
+    s->pages  = pages;
     s->owned  = true;
 
     luaL_setmetatable(L, SURFACE_MT);
@@ -254,7 +265,7 @@ static int l_free(lua_State *L)
      * does when it cannot be sure. Using a freed surface is the error, and
      * check_surface raises it. */
     if (s->pixels != NULL && s->owned) {
-        free(s->pixels);
+        (void)kosmos_unmap((uintptr_t)s->pixels, s->pages);
     }
 
     s->pixels = NULL;
@@ -271,7 +282,7 @@ static int l_gc(lua_State *L)
     struct surface *s = luaL_checkudata(L, 1, SURFACE_MT);
 
     if (s->pixels != NULL && s->owned) {
-        free(s->pixels);
+        (void)kosmos_unmap((uintptr_t)s->pixels, s->pages);
         s->pixels = NULL;
     }
 
@@ -626,6 +637,7 @@ static int l_screen(lua_State *L)
     s->height = info.height;
     s->pitch  = info.pitch;
     s->bytes  = 0;
+    s->pages  = 0;
     s->owned  = false;
 
     luaL_setmetatable(L, SURFACE_MT);

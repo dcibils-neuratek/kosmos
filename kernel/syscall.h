@@ -48,8 +48,12 @@
 #define SYS_TICKS      10   /* ()                     -> monotonic ticks  */
 #define SYS_SCREEN     11   /* (&info)                -> 0 or error       */
 #define SYS_SYSINFO    12   /* (&info)                -> 0 or error       */
+#define SYS_MAP        13   /* (pages)                -> address or error  */
+#define SYS_UNMAP      14   /* (address, pages)       -> 0 or error       */
+#define SYS_SETNAME    15   /* (ptr, len)             -> 0 or error       */
+#define SYS_PROCTABLE  16   /* (&entries, max)        -> count or error   */
 
-#define SYS_MAX         13
+#define SYS_MAX         17
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -105,6 +109,31 @@ struct screen_info {
  * through - and, unlike that one, nothing is lost by another process using
  * it directly.
  */
+/*
+ * One process, as SYS_PROCTABLE reports it.
+ *
+ * `design.md` §9.5 wants this reached through `/proc` in the namespace
+ * eventually, like everything else. It is a syscall today for the same
+ * reason SYS_SYSINFO is: something has to be the door a server goes
+ * through, and there is not yet a server to be the one.
+ *
+ * The kernel names nothing here and interprets nothing. A process says what
+ * it is with SYS_SETNAME; what a name *means* - which layer it belongs to,
+ * whether it is a server or an app - is decided in Lua, where the tables
+ * that decide such things belong.
+ */
+struct proc_info {
+    uint32_t id;
+    uint32_t state;             /* the thread's: ready, running, blocked */
+    uint32_t exited;
+    int32_t  exit_code;
+    uint64_t ticks;             /* timer ticks charged to it, only rising */
+    uint32_t pages;             /* pages it holds through SYS_MAP */
+    uint32_t caps;              /* capabilities in its table */
+    uint32_t owns;              /* bit 0 the console, bit 1 the screen */
+    char     name[16];
+};
+
 struct sysinfo {
     /* The processor, raw. arch/aarch64/cpu.c decodes the same values for
      * the boot log; userland decodes them again for /dev/cpu, because the
@@ -128,7 +157,8 @@ struct sysinfo {
      * processes" says nothing without "of 8". */
     uint32_t threads_used;
     uint32_t threads_total;
-    uint32_t processes_used;
+    uint32_t processes_used;    /* running */
+    uint32_t processes_held;    /* slots occupied, including unreaped exits */
     uint32_t processes_total;
     uint32_t endpoints_used;
     uint32_t endpoints_total;
@@ -160,6 +190,7 @@ struct sysinfo {
 #define SYS_ERR_DENIED    (-102)    /* this process does not hold the device */
 #define SYS_NO_INPUT      (-103)    /* nothing waiting; not an error */
 #define SYS_ERR_NO_CHILD  (-104)    /* nothing to wait for */
+#define SYS_NO_CHILD_READY (-106)   /* children, but none has exited yet */
 #define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
 
 /*

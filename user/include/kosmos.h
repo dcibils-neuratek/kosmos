@@ -98,11 +98,16 @@ static inline long kosmos_spawn(unsigned long arg, const int *caps,
     return x0;
 }
 
-/* Blocks until any child ends, and returns its exit code. Negative when
- * there are no children left to wait for. */
-static inline long kosmos_wait(uint64_t *id)
+/*
+ * Blocks until any child ends, and returns its exit code. Negative when
+ * there are no children left to wait for.
+ *
+ * `nonblocking` returns SYS_NO_CHILD_READY instead of waiting when children
+ * exist but none has exited - which is what draining them looks like.
+ */
+static inline long kosmos_wait(uint64_t *id, int nonblocking)
 {
-    return sys1(SYS_WAIT, (long)(uintptr_t)id);
+    return sys2(SYS_WAIT, (long)(uintptr_t)id, nonblocking ? 1 : 0);
 }
 
 static inline void kosmos_yield(void)
@@ -146,6 +151,42 @@ static inline long kosmos_sysinfo(struct sysinfo *out)
 {
     return sys1(SYS_SYSINFO, (long)(uintptr_t)out);
 }
+
+/*
+ * Pages of this process's own, for the things that do not fit on its heap.
+ *
+ * The heap is 2 MB and deliberately so; a full-screen surface is 3.2 MB.
+ * These come straight from the kernel, zeroed, mapped only here, and are
+ * returned when this process exits whether or not it remembers to unmap
+ * them. Negative on refusal - there is a per-process budget, because one
+ * process asking for everything is the failure this stops.
+ */
+static inline long kosmos_map(unsigned long pages)
+{
+    return sys1(SYS_MAP, (long)pages);
+}
+
+static inline long kosmos_unmap(unsigned long address, unsigned long pages)
+{
+    return sys2(SYS_UNMAP, (long)address, (long)pages);
+}
+
+/* A process says what it is. The kernel names nothing: a spawned child
+ * inherits its parent's name, so without this every process is "init". */
+static inline long kosmos_setname(const char *name, unsigned long len)
+{
+    return sys2(SYS_SETNAME, (long)(uintptr_t)name, (long)len);
+}
+
+/* Every process, into `out`. Returns how many were written. */
+static inline long kosmos_proctable(struct proc_info *out, unsigned long max)
+{
+    return sys2(SYS_PROCTABLE, (long)(uintptr_t)out, (long)max);
+}
+
+/* The granule those come in. Has to match PAGE_SIZE in the kernel; it is the
+ * unit the syscall counts in. */
+#define KOSMOS_PAGE_SIZE    4096UL
 
 /*
  * The message the kernel moves.

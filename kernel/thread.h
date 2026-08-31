@@ -85,6 +85,11 @@ struct thread {
     unsigned id;
     char name[THREAD_NAME_MAX];
 
+    /* Timer ticks charged to this thread. Only rises; a percentage is the
+     * difference between two readings, for the same reason the machine-wide
+     * figure is. */
+    unsigned long ticks;
+
     /*
      * Scheduler-private. The installed policy owns every field here and
      * nothing else may read or write them.
@@ -220,6 +225,10 @@ void thread_set_idle(struct thread *t);
  * that can mean "recently".
  */
 void thread_load(unsigned long *idle, unsigned long *busy);
+
+/* How many capabilities a thread holds. What a process may reach is exactly
+ * this many things, and no others. */
+unsigned thread_cap_count(const struct thread *t);
 
 /*
  * Performs the switch thread_tick asked for, if it asked for one.

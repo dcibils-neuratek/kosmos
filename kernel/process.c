@@ -5,6 +5,7 @@
 
 #include "process.h"
 #include "screen.h"
+#include "syscall.h"
 #include "thread.h"
 #include "mmu.h"
 #include "page.h"
@@ -45,6 +46,96 @@ unsigned process_count(void)
 
     for (i = 0; i < PROCESS_MAX; i++) {
         if (processes[i].in_use && !processes[i].exited) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+/*
+ * Slots occupied, which is not the same as processes running.
+ *
+ * A process that has exited keeps its slot until somebody waits for it -
+ * that is what makes an exit code readable after the fact. `process_count`
+ * deliberately does not count those, and reporting only that number was a
+ * bug of exactly the kind ADDRSPACE_MAX was: spawning failed at twenty-six
+ * while every report said five of thirty-two were in use, because twenty-one
+ * slots were held by processes nobody had waited for and nothing counted
+ * them.
+ *
+ * So both numbers are reported now. A pool that says fewer are in use than
+ * are occupied is a pool that will run out for reasons nobody can see.
+ */
+/*
+ * Every process, as a table. See `struct proc_info`.
+ *
+ * The kernel fills in what it knows and interprets none of it: a name is
+ * whatever the process called itself, and what that name *means* is decided
+ * where the tables live, in Lua.
+ */
+unsigned process_table(struct proc_info *out, unsigned max)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < PROCESS_MAX && n < max; i++) {
+        struct process *p = &processes[i];
+
+        if (!p->in_use) {
+            continue;
+        }
+
+        out[n].id        = p->id;
+        out[n].state     = (p->thread != NULL) ? (uint32_t)p->thread->state : 0;
+        out[n].exited    = p->exited ? 1u : 0u;
+        out[n].exit_code = (int32_t)p->exit_code;
+        out[n].ticks     = (p->thread != NULL) ? p->thread->ticks : 0;
+        out[n].pages     = (uint32_t)p->mapped_pages;
+        out[n].caps      = thread_cap_count(p->thread);
+        out[n].owns      = (p->owns_console ? 1u : 0u)
+                         | (p->owns_screen ? 2u : 0u);
+
+        memcpy(out[n].name, p->name, sizeof(out[n].name) - 1);
+        out[n].name[sizeof(out[n].name) - 1] = '\0';
+
+        n++;
+    }
+
+    return n;
+}
+
+/* A process says what it is. The kernel does not name anything: a spawned
+ * child inherits its parent's name, which made every process in the system
+ * "init" until this existed. */
+void process_set_name(struct process *p, const char *name, size_t len)
+{
+    size_t i;
+
+    if (p == NULL) {
+        return;
+    }
+
+    if (len > sizeof(p->name) - 1) {
+        len = sizeof(p->name) - 1;
+    }
+
+    for (i = 0; i < len; i++) {
+        /* Printable only. A name reaches a screen and a log, and a control
+         * character in one of those is a mess somebody has to debug. */
+        char c = name[i];
+        p->name[i] = (c >= 0x20 && c < 0x7f) ? c : '?';
+    }
+
+    p->name[len] = '\0';
+}
+
+unsigned process_slots_used(void)
+{
+    unsigned n = 0;
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        if (processes[i].in_use) {
             n++;
         }
     }
@@ -172,6 +263,9 @@ struct process *process_create(const char *name, const void *image,
         goto fail;
     }
 
+    p->next_map     = USER_MAP_VA;
+    p->mapped_pages = 0;
+
     if (as_map(p->space, USER_HEAP_VA, (uintptr_t)p->heap_pages,
                USER_HEAP_PAGES, MAP_USER_RW) != AS_OK) {
         goto fail;
@@ -240,7 +334,7 @@ struct process *process_spawn(struct process *parent, unsigned long arg)
     return child;
 }
 
-int process_wait(struct process *parent, unsigned *id)
+int process_wait(struct process *parent, unsigned *id, bool nonblocking)
 {
     unsigned i;
 
@@ -285,6 +379,14 @@ int process_wait(struct process *parent, unsigned *id)
          * supervisor that polls is a supervisor that burns a core doing
          * nothing.
          */
+        /* Asked not to block, and nothing has exited yet. Nought children
+         * *ready*, which is a different answer from no children at all and
+         * has to be distinguishable: a caller draining zombies must be able
+         * to stop without being told its children have gone. */
+        if (nonblocking) {
+            return -2;
+        }
+
         parent->waiter = thread_current();
         thread_block();
         parent->waiter = NULL;
@@ -345,6 +447,7 @@ void process_start(struct process *p)
 static void release_memory(struct process *p)
 {
     size_t i;
+    uintptr_t va;
 
     for (i = 0; i < USER_STACK_PAGES; i++) {
         pmm_free_page((char *)p->stack_pages + i * PAGE_SIZE);
@@ -357,6 +460,30 @@ static void release_memory(struct process *p)
     for (i = 0; i < p->image_page_count; i++) {
         pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
+
+    /*
+     * And whatever it mapped with SYS_MAP and never unmapped.
+     *
+     * There is no list of those: they were allocated a page at a time and
+     * the only record is in the page tables, so the way to find them is to
+     * walk the range the bump pointer covers and free whatever is still
+     * mapped. `as_destroy` will not do it - it says so - because it did not
+     * allocate them and does not know who did.
+     *
+     * Without this a process that exits holding a surface leaks it, and the
+     * leak is invisible: the pages are gone from the free count and nothing
+     * points at them.
+     */
+    for (va = USER_MAP_VA; va < p->next_map; va += PAGE_SIZE) {
+        uint64_t *entry = as_page_entry(p->space, va);
+
+        if (entry != NULL && (*entry & DESC_VALID) != 0) {
+            pmm_free_page((void *)(uintptr_t)(*entry & DESC_ADDR_MASK));
+        }
+    }
+
+    p->next_map     = USER_MAP_VA;
+    p->mapped_pages = 0;
 
     as_destroy(p->space);
 

@@ -79,6 +79,35 @@ struct thread;
 #define USER_SCREEN_VA   (USER_VA_BASE + 0x03000000UL)      /* 0x83000000 */
 
 /*
+ * Where SYS_MAP puts pages a process asks for, growing upward.
+ *
+ * A surface does not fit in the heap and must not: the heap is 2 MB on
+ * purpose, because `design.md` §5.2 wants collections short and the maximum
+ * GC pause is what decides whether the system stutters. A full-screen
+ * surface is 3.2 MB, and a compositor's backbuffer is full-screen by
+ * definition. Putting them on the Lua heap would mean either a heap too
+ * large to collect quickly or a compositor that cannot exist.
+ *
+ * The address is bumped and never reused. There is 512 GB of address space
+ * below the 39-bit limit and a surface is a few megabytes, so a process
+ * would have to allocate a hundred thousand of them to run out of *space*
+ * while the pages themselves are returned and reused normally. Tracking
+ * freed ranges to reuse addresses would need an allocator, which is the
+ * thing this kernel does not have.
+ */
+#define USER_MAP_VA      (USER_VA_BASE + 0x04000000UL)      /* 0x84000000 */
+
+/*
+ * How much a process may map this way, in pages.
+ *
+ * 16 MB. Enough for a double-buffered full-screen surface with room over,
+ * and small enough that thirty-two processes asking for all of it is 512 MB
+ * - which is all the RAM there is, so this is the number that stops one
+ * process starving the rest rather than a number chosen to be comfortable.
+ */
+#define USER_MAP_PAGES_MAX  4096
+
+/*
  * The image header. Sixteen bytes at the front: a magic number, then how
  * many bytes are read-only and executable. Without the second field the
  * kernel could only map an image one way, and one way that works for both
@@ -155,6 +184,15 @@ struct process {
      * right shape - authority flows from parent to child and never sideways.
      */
     bool              owns_screen;
+
+    /*
+     * Pages this process asked for with SYS_MAP: where the next one goes,
+     * and how many it holds. The count is both the budget and what
+     * `release_memory` walks to give them back - a process that exits
+     * without unmapping must not leak them.
+     */
+    uintptr_t         next_map;
+    size_t            mapped_pages;
 
     int               exit_code;
     bool              exited;
@@ -246,7 +284,14 @@ struct process *process_spawn(struct process *parent, unsigned long arg);
  * caller has no children at all. The child is reaped, so a supervisor that
  * waits in a loop does not have to remember to.
  */
-int process_wait(struct process *parent, unsigned *id);
+/*
+ * Waits for a child and returns its exit code, reaping it.
+ *
+ * `nonblocking` makes it return -2 when children exist but none has exited,
+ * which is distinct from -1 for no children at all. A shell draining the
+ * processes it spawned needs to stop without being told it has none.
+ */
+int process_wait(struct process *parent, unsigned *id, bool nonblocking);
 
 /*
  * Discards a process that was created and never started.
@@ -262,6 +307,21 @@ void process_abandon(struct process *p);
 void process_reap(struct process *p);
 
 unsigned process_count(void);
+
+/* Slots occupied, including processes that have exited and not been waited
+ * for. Always at least process_count(); the difference is what has not been
+ * reaped, and it is what actually runs the pool out. */
+unsigned process_slots_used(void);
+
+struct proc_info;
+
+/* Fills `out` with up to `max` entries, one per occupied slot, and returns
+ * how many. */
+unsigned process_table(struct proc_info *out, unsigned max);
+
+/* A process says what it is. Truncated to fit and stripped of anything
+ * unprintable. */
+void process_set_name(struct process *p, const char *name, size_t len);
 
 /*
  * Whether a process may read, or write, `len` bytes at `va`.

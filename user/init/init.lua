@@ -24,6 +24,9 @@ local ROLE_INIT     = 7   -- starts everything else, and outlives it
 
 local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
 local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
+local ROLE_BURN      = 10 -- spins for a while, so the CPU meter has something
+                          -- to show. There is no way to kill a process, so it
+                          -- stops on its own rather than looping for ever.
 
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
@@ -619,6 +622,8 @@ local function devices_main(endpoint)
   serve(endpoint, {}, devices_handlers)
 end
 
+local BURN_ROLE = ROLE_BURN
+
 local function shell_main(console_cap, ramfs_cap, devices_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
@@ -730,8 +735,9 @@ Colours are 0xAARRGGBB. Everything clips rather than complaining, so
 drawing off the edge is fine. Every pixel loop runs in C - Lua decides
 what to draw and where, and never computes an address.
 
-Offscreen surfaces come out of the 2 MB process heap, so a full-screen
-one does not fit yet. That limit is real and is the next thing to fix.
+Surfaces come from the kernel, not from this process's 2 MB heap: a
+full-screen one is 3.2 MB and the heap is small on purpose, so that
+collections stay short. `ps` counts them under `mapped`.
 ]=]
 
   topics.sys = [=[
@@ -827,6 +833,16 @@ A gradient, 256 fills, each a C pixel loop:
 
   local s = gfx.screen() for i=0,255 do s:fill(80+i*3, 560, 3, 80, 0xff000000 + i*0x010101) end
 
+Make the machine busy and watch it:
+
+  monitor on         a status bar along the bottom of the screen
+  benchmark 4        four processes spinning for ten seconds (or `spin 4`)
+  monitor watch      redraw it live while they run
+
+`benchmark` spawns processes that deliberately do not yield, so the scheduler
+has to preempt them - which is what makes the meter read what a real
+workload would rather than what a polite one does.
+
 Time something, in counter ticks:
 
   local a = sys.ticks() for i=1,200000 do end return sys.ticks() - a
@@ -921,6 +937,24 @@ your filesystem back.
   end
 
   local monitor_on = false
+
+  --
+  -- Collects the processes this shell spawned and has finished with.
+  --
+  -- A process that exits keeps its slot until somebody waits for it: that is
+  -- what makes an exit code readable afterwards. init reaps its own
+  -- children; nobody was reaping the shell's, so spawning from the prompt
+  -- filled the pool with slots that `ps` did not even count. Spawning
+  -- twenty-six processes failed while every report said five were in use.
+  --
+  -- Non-blocking, which is why SYS_WAIT grew a flag: a blocking drain at the
+  -- prompt would sit there for the ten seconds a `benchmark` takes.
+  local function reap()
+    for _ = 1, 32 do
+      local id = sys.wait(true)
+      if not id then return end
+    end
+  end
 
   --------------------------------------------------------------------------
   -- Commands.
@@ -1109,6 +1143,134 @@ your filesystem back.
     out(name .. " defined; run it as /" .. name .. "\n")
   end
 
+  -- Not `load`, which was the first choice and was wrong: `load` is a Lua
+  -- standard function, so the collision rule quite correctly sent the bare
+  -- word to Lua and the command was reachable only as /load. A command that
+  -- always needs its slash has a badly chosen name.
+  --------------------------------------------------------------------------
+  -- htop, as this system's shape rather than as a process list.
+  --
+  -- What is worth seeing about Kosmos is not that there are five processes.
+  -- It is that there are only two layers, that the lower one is twenty
+  -- kilobytes and knows nothing about files or windows, and that every
+  -- process in the upper one can reach exactly the things in its capability
+  -- table and nothing else. So the columns are CAPS and OWNS, and the
+  -- kernel gets a box of its own.
+  --------------------------------------------------------------------------
+  local LAYER = {
+    init = "supervisor", console = "server", ramfs = "server",
+    devices = "server",  shell   = "shell",  burn  = "app",
+  }
+
+  local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
+
+  -- Previous tick readings, so a percentage can mean "since the last look".
+  local last_proc, last_total, last_busy_total = {}, nil, 0
+  local last_proc_seeded = false
+
+  local function meter(pct, width)
+    local filled = (pct * width) // 100
+    return "[" .. string.rep("|", filled) .. string.rep(".", width - filled) .. "]"
+  end
+
+  local function draw_htop()
+    local m = describe_machine()
+    local procs = sys.processes()
+    if not m or not procs then out("the kernel would not say\n") return end
+
+    local total = m.kernel.idle_ticks + m.kernel.busy_ticks
+    local elapsed = last_total and (total - last_total) or nil
+
+    local cpu = 0
+    if elapsed and elapsed > 0 then
+      local busy_before = last_total and last_busy_total or 0
+      cpu = ((m.kernel.busy_ticks - busy_before) * 100) // elapsed
+    end
+
+    local used_mb = m.memory.total_mb - m.memory.free_mb
+
+    out(string.format("\nKOSMOS%sup %ds\n\n",
+        string.rep(" ", 54), sys.ticks() // m.cpu.counter_hz))
+
+    out(string.format("  CPU  %s %3d%%    %s %s x%d\n",
+        meter(cpu, 22), cpu, m.cpu.implementer, m.cpu.part, m.cpu.cores))
+    out(string.format("  MEM  %s %d / %d MB\n",
+        meter((used_mb * 100) // m.memory.total_mb, 22),
+        used_mb, m.memory.total_mb))
+    out(string.format("  POOLS  threads %d/%d   processes %d/%d   spaces %d/%d   endpoints %d/%d\n",
+        m.kernel.threads, m.kernel.threads_max,
+        m.kernel.processes, m.kernel.processes_max,
+        m.kernel.spaces, m.kernel.spaces_max,
+        m.kernel.endpoints, m.kernel.endpoints_max))
+
+    out("\n  EL1  the kernel\n")
+    out("       threads . address spaces . IPC . capabilities\n")
+    out("       It does not know what a file is, what a window is, or what\n")
+    out("       Lua is. Everything below this line asks it for those.\n")
+
+    out("\n  EL0  every process, in an address space of its own\n\n")
+    out("   PID  NAME       LAYER       CPU%  CAPS  OWNS            STATE\n")
+
+    for _, x in ipairs(procs) do
+      local pct = 0
+      local before = last_proc[x.id]
+
+      if before and elapsed and elapsed > 0 then
+        pct = ((x.ticks - before) * 100) // elapsed
+      end
+
+      last_proc[x.id] = x.ticks
+
+      local owns = {}
+      if x.owns & 1 ~= 0 then owns[#owns + 1] = "console" end
+      if x.owns & 2 ~= 0 then owns[#owns + 1] = "screen" end
+
+      out(string.format("  %4d  %-10s %-11s %3d%%  %4d  %-15s %s\n",
+          x.id, x.name, LAYER[x.name] or "app", pct, x.caps,
+          #owns > 0 and table.concat(owns, "+") or "-",
+          x.exited and ("exited " .. x.exit_code) or (STATE[x.state] or "?")))
+    end
+
+    last_total = total
+    last_busy_total = m.kernel.busy_ticks
+  end
+
+  commands.htop = function(arg)
+    if arg == "watch" then
+      for _ = 1, 20 do
+        commands.clear()
+        draw_htop()
+        for _ = 1, 60 do sys.yield() end
+      end
+      return
+    end
+
+    draw_htop()
+
+    if not last_proc_seeded then
+      out("\n  (percentages are since the last look, so run it twice)\n")
+      last_proc_seeded = true
+    end
+  end
+
+  commands.benchmark = function(arg)
+    local n = tonumber(arg) or 1
+
+    if n < 1 or n > 8 then
+      out("usage: benchmark [1-8]   that many busy processes, 10 seconds\n")
+      return
+    end
+
+    for _ = 1, n do
+      local id, err = sys.spawn(BURN_ROLE, {})
+      if not id then out("benchmark: " .. tostring(err) .. "\n") return end
+    end
+
+    out(string.format("%d process%s burning for 10 seconds.\n",
+                      n, n == 1 and "" or "es"))
+    out("Watch it with `monitor watch`, or run `ps` twice.\n")
+  end
+
   commands.clear = function()
     -- Fifty newlines, because neither sink understands an escape sequence:
     -- the serial side is whatever terminal you are in, and the screen side
@@ -1294,6 +1456,9 @@ your filesystem back.
   -- Shipped so that the listing is reachable under the word most people try.
   aliases.aliases = "alias"
 
+  -- And a shorter word for the thing you type while watching the meter.
+  aliases.spin = "benchmark"
+
   local help = setmetatable({}, {
     __tostring = function() return topics.overview end,
     __call = function(_, what)
@@ -1378,6 +1543,7 @@ your filesystem back.
       if dispatch then
         local ok, err = pcall(commands[name], rest)
         if not ok then out("error: " .. tostring(err) .. "\n") end
+        reap()
         if monitor_on then draw_monitor() end
         goto next_line
       end
@@ -1408,6 +1574,7 @@ your filesystem back.
         end
       end
 
+      reap()
       if monitor_on then draw_monitor() end
     end
 
@@ -1449,6 +1616,7 @@ if role == ROLE_SPAWNTEST then
 end
 
 if role == ROLE_INIT then
+  sys.name("init")
   --------------------------------------------------------------------------
   -- init.
   --
@@ -1625,11 +1793,13 @@ if role == ROLE_RELOAD then
 end
 
 if role == ROLE_CONSOLE then
+  sys.name("console")
   console_main(CAP)
   return
 end
 
 if role == ROLE_SHELL then
+  sys.name("shell")
   -- Three capabilities, in the order init granted them.
   shell_main(0, 1, 2)
   return
@@ -1676,12 +1846,28 @@ if role == ROLE_SELFTEST then
 end
 
 if role == ROLE_RAMFS then
+  sys.name("ramfs")
   ramfs_main(CAP)
   return
 end
 
 if role == ROLE_DEVICES then
+  sys.name("devices")
   devices_main(CAP)
+  return
+end
+
+if role == ROLE_BURN then
+  sys.name("burn")
+  -- Ten seconds of doing nothing, busily.
+  --
+  -- Deliberately *not* yielding: the point is to be a thread the scheduler
+  -- has to preempt rather than one that hands the core back, which is what
+  -- makes the meter read what a real workload would.
+  local hz = sys.info().counter_hz
+  local until_ = sys.ticks() + hz * 10
+
+  while sys.ticks() < until_ do end
   return
 end
 
