@@ -15,6 +15,45 @@ Two boards with the same CPU share `arch/` and differ in `hal/`. QEMU virt and t
 ---
 
 
+
+## The display size, and changing it
+
+`make FB=1920x1080` builds for that size. It is a compile-time constant
+because there is no allocator: the pixels are a static array in a NOLOAD
+section, so a bigger screen costs memory and nothing in the image file.
+
+Nothing above the HAL needs telling. The console works out its rows and
+columns from the geometry it is handed, `gfx.screen()` reports what the
+kernel reports, and the window manager scales the pointer against the size
+it was given - which is exactly why `hal_pointer_poll` hands out the
+device's own range rather than screen coordinates.
+
+**Changing it while the machine runs is a different question**, and worth
+writing down before somebody assumes it follows for free. ramfb makes the
+device side easy: the guest owns the configuration, so a new width, height
+and stride written back through fw_cfg is a mode change, and QEMU resizes
+its window. Three things do not follow:
+
+- **The buffer is one fixed size.** A runtime mode would have to be capped
+  at a maximum chosen at build time, and the array sized for that maximum
+  rather than for the mode in use.
+- **Everything holding geometry is holding a copy.** The console has its
+  rows and columns, the window manager has a backbuffer that is a surface of
+  a particular size, and every process that called `gfx.screen()` has a
+  mapping of a particular length. A mode change is a message all of them
+  have to be able to receive, which is a protocol that does not exist.
+- **virtio-gpu does not work this way at all.** It is the target that earns
+  the HAL a `hal_fb_flush`, and it is also the one where a mode set is a
+  command to the device rather than a write to a config blob. Designing the
+  runtime interface against ramfb alone would produce the shape of ramfb
+  with a general name - the exact mistake `CLAUDE.md` warns about for the
+  HAL as a whole.
+
+So: build-time now, and the runtime version is worth doing after virtio-gpu
+rather than before it, when there are two implementations to design against
+instead of one.
+
+
 ## Two devices that are the same device
 
 The keyboard and the tablet are both virtio-input. Both answer to device id

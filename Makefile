@@ -30,6 +30,14 @@ VARIANT := $(if $(TEST),-test,$(if $(BENCH),-bench))
 # produce them, because SRCS below is a := assignment and expands it on the
 # spot; further down it would expand to nothing and the object would be
 # named build//init_bin.c.o.
+# The display size, as `make FB=1920x1080`. The framebuffer is a static
+# array so this is a compile-time constant, and it is NOLOAD so a bigger one
+# costs memory and not image.
+ifdef FB
+FB_FLAGS := -DFB_WIDTH=$(firstword $(subst x, ,$(FB))) \
+            -DFB_HEIGHT=$(word 2,$(subst x, ,$(FB)))
+endif
+
 GEN := build/gen$(VARIANT)
 
 # The host-side Lua checks. Up here for the same reason GEN is: the rules
@@ -167,6 +175,7 @@ CFLAGS_BASE := -std=c11 -ffreestanding -nostdlib -nostartfiles \
                $(TESTDEFS)
 
 CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
+CFLAGS += $(FB_FLAGS)
 
 # The exceptions, and why there are any.
 #

@@ -43,9 +43,28 @@
  * array, so their size has to be a constant. Asking ramfb what size the
  * window is would be asking the wrong question anyway - with ramfb the guest
  * chooses, and QEMU makes a window that size.
+ *
+ * Overridable from the command line, because "fixed at build time" should
+ * not mean "fixed in a source file":
+ *
+ *     make FB=1920x1080 qemu
+ *
+ * Nothing above this cares. The console works out its rows and columns from
+ * what it is handed, `gfx.screen()` reports what the kernel reports, and the
+ * window manager scales the pointer against the size it was told - so the
+ * only thing a bigger screen costs is the memory for it, and that memory is
+ * NOLOAD and does not enter the image file.
+ *
+ * Changing it while the machine runs is a different question and a real one;
+ * see `hal.md`.
  */
+#ifndef FB_WIDTH
 #define FB_WIDTH    1024
+#endif
+
+#ifndef FB_HEIGHT
 #define FB_HEIGHT   768
+#endif
 
 /*
  * **The stride is deliberately not width * 4.**

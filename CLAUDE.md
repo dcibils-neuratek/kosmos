@@ -30,6 +30,7 @@ A personal learning project. There are no users, no compatibility to maintain, n
 
 ```
 make qemu        # build and run under QEMU virt, in a window
+make FB=1920x1080 qemu   # the same, at that display size
 make serial      # the same, serial only, no window
 make test        # run the suite under QEMU, exit code 0 or 1
 make screenshot  # boot, screendump, and check the picture QEMU scans out
