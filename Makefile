@@ -51,6 +51,7 @@ endif
 # machine that has nothing to do still has nothing to do.
 VERSION := 0.6
 
+
 GEN := build/gen$(VARIANT)
 
 # The host-side Lua checks. Up here for the same reason GEN is: the rules
@@ -292,9 +293,12 @@ USER_SRCS := user/init/start.S \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \
+             user/lib/png.c \
+             runtime/upstream/puff/puff.c \
              $(GEN)/font_8x16.c \
              $(GEN)/programs.c \
              $(GEN)/version.c \
+             $(GEN)/assets.c \
              $(GEN)/libraries.c \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
@@ -317,6 +321,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
 UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER \
+           -Iruntime/upstream/puff \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector
@@ -368,6 +373,13 @@ $(FB_FILE):
 
 $(BUILD)/hal/qemu-virt/fb.c.o: CFLAGS += $(FB_FLAGS)
 $(BUILD)/hal/qemu-virt/fb.c.o: $(FB_FILE)
+
+# Upstream code is compiled without -Werror, the same allowance lua/upstream
+# gets: its warnings are not ours to fix and patching them would mean the
+# tree no longer holding what the author released.
+$(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -Wno-error -MMD -MP -c $< -o $@
 
 $(UBUILD)/%.c.o: %.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
@@ -441,6 +453,13 @@ check-lua: $(HOSTDIR)/lua.ok
 KOSMOS_BUILD := $(shell git describe --always --dirty 2>/dev/null || echo "no-git")
 KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
                         2>/dev/null || echo "unknown")
+
+# The pictures in assets/images/, as a C table. Binary, so unlike programs
+# and libraries these cannot travel as Lua source: a PNG contains every byte
+# value there is, including the ones that would end a Lua long string early.
+$(GEN)/assets.c: assets/images/test-pattern.png tools/assets2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/assets2c.py assets_table $@ assets/images/test-pattern.png
 
 $(GEN)/version.c: FORCE
 	@mkdir -p $(dir $@)

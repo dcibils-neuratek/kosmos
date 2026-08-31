@@ -1575,6 +1575,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- mount: the names under it appear and disappear with the programs.
   ns.mount_registry("/app", app_cap)
 
+
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
 

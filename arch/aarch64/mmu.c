@@ -13,6 +13,7 @@ extern char __text_start[], __text_end[];
 extern char __rodata_start[], __rodata_end[];
 extern char __stack_guard[];
 extern char __exception_guard[];
+extern char __framebuffer_start[];
 
 #define ENTRIES_PER_TABLE   512
 #define BLOCK_2M            (2UL * 1024 * 1024)
@@ -278,6 +279,7 @@ static void enable(void)
 
 void mmu_init(void)
 {
+    uintptr_t fine_end;
     struct memrange ram;
     uintptr_t text_start   = (uintptr_t)__text_start;
     uintptr_t rodata_start = (uintptr_t)__rodata_start;
@@ -293,18 +295,34 @@ void mmu_init(void)
                   (DEVICE_END - DEVICE_BASE) / BLOCK_2M, MAP_DEVICE);
 
     /*
-     * The first 2 MB of RAM holds the kernel image, the page allocator's
-     * bitmap and the boot stack, so it is mapped a page at a time: per
-     * section permissions and an unmapped guard page both need granularity
-     * finer than a block.
+     * The bottom of RAM holds the kernel image, the page allocator's bitmap
+     * and both stacks, and is mapped a page at a time: per section
+     * permissions and an unmapped guard page both need granularity finer
+     * than a block.
+     *
+     * **How far up is decided by the image, not by a constant.** It was the
+     * first 2 MB, which was true until the image grew past it - and what
+     * happens then is that the stack guards land in a 2 MB block, `page_entry`
+     * cannot find a page descriptor for them, and the machine panics during
+     * `mmu_init` with a message about a stack guard. The cause is somewhere
+     * else entirely: something was added to the image.
+     *
+     * `__framebuffer_start` is the end of everything that needs fine
+     * mapping - the framebuffer above it is three megabytes that only ever
+     * wants to be writable - so the fine region runs to the 2 MB boundary
+     * at or above it, and grows by itself the next time the image does.
      */
-    map_pages(kernel_l1, ram.base, ram.base, BLOCK_2M / PAGE_SIZE, MAP_RW);
+    fine_end = ((uintptr_t)__framebuffer_start + BLOCK_2M - 1)
+               & ~(uintptr_t)(BLOCK_2M - 1);
 
-    /* Everything above it is anonymous memory and gets blocks, which is 255
-     * descriptors instead of 130,000 and 255 TLB entries instead of the
-     * same. */
-    map_blocks_2m(kernel_l1, ram.base + BLOCK_2M, ram.base + BLOCK_2M,
-                  (ram.size - BLOCK_2M) / BLOCK_2M, MAP_RW);
+    map_pages(kernel_l1, ram.base, ram.base,
+              (fine_end - ram.base) / PAGE_SIZE, MAP_RW);
+
+    /* Everything above it is anonymous memory and gets blocks, which is a
+     * couple of hundred descriptors instead of 130,000 and a couple of
+     * hundred TLB entries instead of the same. */
+    map_blocks_2m(kernel_l1, fine_end, fine_end,
+                  (ram.base + ram.size - fine_end) / BLOCK_2M, MAP_RW);
 
     /*
      * Now narrow the two regions that should not be writable. Done as a
@@ -486,6 +504,26 @@ int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
     }
 
     return AS_OK;
+}
+
+/*
+ * The physical address behind a mapped virtual one, or zero.
+ *
+ * For handing a device a pointer into a *process's* memory. Everything else
+ * in this kernel that talks to a device passes a kernel buffer, and the
+ * kernel is identity mapped, so the question never came up - which is
+ * exactly why it is worth a function with a name rather than an assumption
+ * at one call site.
+ */
+uintptr_t as_physical(struct addrspace *as, uintptr_t va)
+{
+    uint64_t *entry = as_page_entry(as, va);
+
+    if (entry == NULL || (*entry & 3) != 3) {
+        return 0;                   /* not a valid page descriptor */
+    }
+
+    return (uintptr_t)((*entry & 0x0000fffffffff000UL) | (va & 0xfff));
 }
 
 uint64_t *as_page_entry(struct addrspace *as, uintptr_t va)

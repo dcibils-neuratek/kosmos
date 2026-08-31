@@ -249,6 +249,12 @@ and not in the index.
 
 ## M8 — Own filesystem
 
+**Now the next milestone**, pulled forward, because things that should not
+be in the kernel image keep ending up there. The attempt to avoid that with
+QEMU's fw_cfg is written up under "what was tried" below.
+
+
+
 FAT32 is enough to boot and it is horrible: no attributes, no journaling.
 
 **What gets built**
@@ -259,6 +265,29 @@ FAT32 is enough to boot and it is horrible: no attributes, no journaling.
 - Format and fsck tools
 
 **What does NOT get built:** a relational database underneath the filesystem. BeOS tried it through DR8 and pulled it at DR9 because maintaining it was hideously complex and cost too much performance. They lost very little functionality replacing it with a filesystem *shaped like* a database. It is the most useful warning that project left behind. See `beos.md` §17.1
+
+**What was tried, and why it is not the answer.** QEMU's fw_cfg can hand
+files to a guest at boot - `-fw_cfg name=opt/kosmos/x.png,file=x.png` - and
+it worked for small ones. Two walls, and both say the same thing:
+
+1. **fw_cfg cannot seek.** Selecting an item resets its offset, so reading
+   the two hundredth page means re-reading the first hundred and ninety
+   nine. A megabyte in four-kilobyte pages is about a hundred megabytes of
+   DMA.
+2. **A megabyte will not fit through a Lua string.** `fs.read` accumulates
+   one and a process's heap is 2 MB by design, so a 936 KB picture gives
+   `error: not enough memory`.
+
+The second is the interesting one, and the filesystem has to answer it: a
+`read` that returns bytes cannot be how a large file is delivered. Mapping
+pages is what `gfx.surface` and `sys.share` already do, and it is what the
+filesystem's read of a large file should do too.
+
+fw_cfg is a *configuration* channel and behaved exactly like one being made
+to carry files. It was removed rather than left half-working.
+
+**What it needs first:** a block device. virtio-blk, which is the same shape
+as the virtio-input work - a virtqueue, a feature negotiation, an interrupt.
 
 **Definition of done:** cut power to the Pi during a write and have the filesystem mount clean on the way back.
 

@@ -180,6 +180,78 @@ bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size)
     return false;
 }
 
+/*
+ * The nth file the firmware is carrying, by position rather than by name.
+ *
+ * `fwcfg_find` answers "is there one called this", which is what a driver
+ * wants: ramfb knows the name of the thing it needs. This answers "what is
+ * there at all", which is what a *file server* wants, because the whole
+ * point of it is to serve files nobody compiled a name for.
+ *
+ * The walk is the same one and for the same reason: selecting the directory
+ * resets its offset and each read advances it, so entries arrive one at a
+ * time and a kernel with no allocator never needs room for all of them.
+ */
+bool fwcfg_entry(unsigned index, char *name, size_t name_len,
+                 uint16_t *select, uint32_t *size)
+{
+    struct fwcfg_file entry;
+    uint32_t count;
+    uint32_t i;
+
+    if (!fwcfg_dma(DMA_SELECT | (FWCFG_FILE_DIR << 16) | DMA_READ,
+                   &count, sizeof(count))) {
+        return false;
+    }
+
+    count = __builtin_bswap32(count);
+
+    if (index >= count) {
+        return false;
+    }
+
+    for (i = 0; i <= index; i++) {
+        if (!fwcfg_dma(DMA_READ, &entry, sizeof(entry))) {
+            return false;
+        }
+    }
+
+    entry.name[sizeof(entry.name) - 1] = '\0';
+
+    if (name != NULL && name_len > 0) {
+        size_t n = 0;
+
+        while (n + 1 < name_len && entry.name[n] != '\0') {
+            name[n] = entry.name[n];
+            n++;
+        }
+
+        name[n] = '\0';
+    }
+
+    *select = __builtin_bswap16(entry.select);
+    *size   = __builtin_bswap32(entry.size);
+    return true;
+}
+
+/*
+ * An item's bytes, into memory the caller provides.
+ *
+ * Selecting resets the offset, so this reads from the start every time and
+ * is safe to call twice. `length` is what the caller has room for and is
+ * not checked against the item's size here - the caller asked the directory
+ * how big it was and is the one that can do something about the answer.
+ */
+bool fwcfg_read(uint16_t select, void *buffer, uint32_t length)
+{
+    if (length == 0) {
+        return true;
+    }
+
+    return fwcfg_dma(DMA_SELECT | ((uint32_t)select << 16) | DMA_READ,
+                     buffer, length);
+}
+
 bool fwcfg_write(uint16_t select, const void *data, uint32_t length)
 {
     /*

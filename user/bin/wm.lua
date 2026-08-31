@@ -103,6 +103,11 @@ local windows = {}
 local by_handle = {}
 local pending_pid = nil
 
+-- Decoded pictures, by asset name. `false` means it was tried and would not
+-- decode, which is remembered so a broken image is not re-decoded every
+-- frame for the life of the desktop.
+local image_cache = {}
+
 --------------------------------------------------------------------------
 -- Applications that are waiting for something to happen.
 --
@@ -182,6 +187,40 @@ local ops = {
 
   blend = function(s, o)
     s:blend(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0)
+  end,
+
+  --
+  -- A picture, named rather than carried.
+  --
+  -- Every other command carries what it draws. This one cannot: a decoded
+  -- image is megabytes and a message is two kilobytes, so a surface can no
+  -- more travel in one than a window's contents can.
+  --
+  -- So the application sends a *name* and this process loads it. That is
+  -- not a workaround, it is the same rule as everywhere else here - the
+  -- compositor owns the pixels, which is why a hung application still has a
+  -- window - applied to pictures. An application says what it wants drawn;
+  -- it never holds what is drawn.
+  --
+  -- Decoded once, on first use, and kept. A photograph is four megabytes
+  -- and several hundred milliseconds of inflate; doing that per frame would
+  -- be a slideshow.
+  --
+  image = function(s, o)
+    local picture = image_cache[o.asset]
+
+    if picture == nil then
+      local bytes = sys.asset(tostring(o.asset))
+      local ok, decoded = bytes and pcall(gfx.png, bytes)
+
+      picture = (ok and decoded) or false     -- false: tried, and no
+      image_cache[o.asset] = picture
+    end
+
+    if not picture then return end
+
+    s:blit(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
+           o.x or 0, o.y or 0)
   end,
 }
 
@@ -288,32 +327,58 @@ local function compose_rect(r)
   for i = 1, #windows do
     local win = windows[i]
     local focused = (i == #windows)
-
-    -- The frame, then the tab, then the contents. Drawn whole and clipped
-    -- by the surface primitives rather than intersected here: the clip is
-    -- in C, exact, and already tested.
     local fx, fy, fw, fh = frame_of(win)
-    back:fill(fx, fy, fw, fh, FRAME)
 
-    -- The BeOS tab: as wide as its title and no wider, so the titles of
-    -- several stacked windows are all readable at once. It is the most
-    -- recognisable decision in the whole look and it is a functional one.
-    local tw = tab_width(win)
-    local tab = focused and FOCUSED or UNFOCUSED
+    --
+    -- Windows that this rectangle does not touch are skipped, and the ones
+    -- it does touch are drawn only where it touches them.
+    --
+    -- This is what makes dragging cost the same with eight windows open as
+    -- with one. Without it every damage rectangle redrew every window in
+    -- full - the primitives clip to the *backbuffer*, not to the rectangle
+    -- being composed - so moving one window re-blitted the entire desktop
+    -- twice per step, once for where it was and once for where it now is.
+    -- What that feels like is a drag that gets heavier as you open things,
+    -- which is exactly what it was.
+    --
+    if fx < r.x + r.w and fx + fw > r.x
+       and fy < r.y + r.h and fy + fh > r.y then
+      local tab = focused and FOCUSED or UNFOCUSED
 
-    back:fill(fx, fy, tw, TAB_H, tab)
+      back:fill(fx, fy, fw, fh, FRAME)
 
-    -- The close box, at the left of the tab where BeOS put it. A square
-    -- outline rather than a cross: at this size a cross is four grey pixels
-    -- and a smudge.
-    local bx, by = fx + 4, fy + (TAB_H - 8) // 2
-    back:fill(bx, by, 8, 8, TITLE_FG)
-    back:fill(bx + 1, by + 1, 6, 6, tab)
+      -- The BeOS tab: as wide as its title and no wider, so the titles of
+      -- several stacked windows are all readable at once. It is the most
+      -- recognisable decision in the whole look and it is a functional one.
+      local tw = tab_width(win)
 
-    back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
-              TITLE_FG, tab)
+      back:fill(fx, fy, tw, TAB_H, tab)
 
-    back:blit(win.surface, 0, 0, win.w, win.h, win.x, win.y)
+      -- The close box, at the left of the tab where BeOS put it. A square
+      -- outline rather than a cross: at this size a cross is four grey
+      -- pixels and a smudge.
+      local bx, by = fx + 4, fy + (TAB_H - 8) // 2
+
+      back:fill(bx, by, 8, 8, TITLE_FG)
+      back:fill(bx + 1, by + 1, 6, 6, tab)
+
+      back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
+                TITLE_FG, tab)
+
+      -- And the contents, clipped to the intersection. The window's own
+      -- surface is the source, so the source rectangle moves with the clip:
+      -- reading from 0,0 and drawing at the clipped position would slide
+      -- the picture inside its own frame.
+      local x0 = (win.x > r.x) and win.x or r.x
+      local y0 = (win.y > r.y) and win.y or r.y
+      local x1 = math.min(win.x + win.w, r.x + r.w)
+      local y1 = math.min(win.y + win.h, r.y + r.h)
+
+      if x1 > x0 and y1 > y0 then
+        back:blit(win.surface, x0 - win.x, y0 - win.y,
+                  x1 - x0, y1 - y0, x0, y0)
+      end
+    end
   end
 
   -- Last, so it is on top of everything, and before the blit, so what
@@ -484,6 +549,33 @@ handlers.raise = function(req)
 
   raise(win)
   return { ok = true }
+end
+
+--
+-- How big a picture is, so an application can lay out around it.
+--
+-- Asked of this process because this process is the one that has it. An
+-- application that could decode it itself would have the pixels, which is
+-- the thing the whole design is arranged to prevent.
+--
+handlers.image_size = function(req)
+  local name = tostring(req.asset or "")
+  local picture = image_cache[name]
+
+  if picture == nil then
+    local bytes = sys.asset(name)
+    local ok, decoded = bytes and pcall(gfx.png, bytes)
+
+    picture = (ok and decoded) or false
+    image_cache[name] = picture
+  end
+
+  if not picture then
+    return { ok = false, error = "no such picture, or it would not decode" }
+  end
+
+  local w_, h_ = picture:size()
+  return { ok = true, w = w_, h = h_ }
 end
 
 handlers.retitle = function(req)

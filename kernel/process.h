@@ -271,6 +271,7 @@ void process_grant_console(struct process *p);
  */
 bool process_grant_screen(struct process *p);
 
+
 /* Makes it runnable. Nothing may touch its address space afterwards without
  * masking interrupts: from here it can exit at any moment. */
 void process_start(struct process *p);

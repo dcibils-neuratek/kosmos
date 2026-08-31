@@ -2,6 +2,7 @@
 #define HAL_QEMU_VIRT_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -62,6 +63,14 @@ bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size);
 /* Writes an item whole. The DMA interface is the only one that can: writes
  * through the data register were removed in QEMU 2.4. */
 bool fwcfg_write(uint16_t select, const void *data, uint32_t length);
+
+/* The nth file the firmware carries, for a server that has to serve what it
+ * was not told the name of. False when there is no nth. */
+bool fwcfg_entry(unsigned index, char *name, size_t name_len,
+                 uint16_t *select, uint32_t *size);
+
+/* An item's bytes, into memory the caller provides. */
+bool fwcfg_read(uint16_t select, void *buffer, uint32_t length);
 
 /*
  * The keyboard: virtio-input over virtio-mmio. See keyboard.c, which also

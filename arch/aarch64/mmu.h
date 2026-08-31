@@ -171,6 +171,10 @@ void as_switch(struct addrspace *as);
  * and inspection. */
 uint64_t *as_page_entry(struct addrspace *as, uintptr_t va);
 
+/* The physical address behind a mapped virtual one, or zero. For handing a
+ * device a pointer into a process's memory. */
+uintptr_t as_physical(struct addrspace *as, uintptr_t va);
+
 #define AS_OK           0
 #define AS_ERR_RANGE   (-1)     /* outside the user region */
 #define AS_ERR_ALIGN   (-2)     /* not page aligned */

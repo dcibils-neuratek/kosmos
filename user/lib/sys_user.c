@@ -507,6 +507,14 @@ static int l_processes(lua_State *L)
  *
  * There is no disk. Until M8 this is where a program lives.
  */
+struct kosmos_asset {
+    const char          *name;
+    const unsigned char *bytes;
+    size_t               length;
+};
+
+extern const struct kosmos_asset assets_table[];
+
 extern const char kosmos_name[];
 extern const char kosmos_version[];
 extern const char kosmos_build[];
@@ -517,13 +525,46 @@ extern const char programs_lua[];
 extern const char libraries_lua[];
 
 /*
- * What this build calls itself.
+ * `sys.asset("name.png")` - a file carried inside the image.
  *
- * Strings compiled in by the Makefile rather than anything the kernel
- * knows, because a version is a property of the source that produced the
- * image and not of the machine it runs on - `sys.info()` is for the
- * machine, and mixing the two would mean a kernel struct carrying text.
+ * Only small ones. This was going to be how every picture arrived and it is
+ * not: a photograph compiled into the kernel is one the page tables have to
+ * be arranged around, and this system found that out by panicking in
+ * `mmu_init` when a megabyte of JPEG-sized PNG showed up and pushed the
+ * stack guards out of the page-mapped region.
+ *
+ * What is left is the test pattern, fifteen hundred bytes, so the decoder
+ * has something to decode before there is a filesystem to read from.
  */
+static int l_asset(lua_State *L)
+{
+    const char *want = luaL_optstring(L, 1, NULL);
+    int i;
+
+    if (want == NULL) {
+        lua_newtable(L);
+
+        for (i = 0; assets_table[i].name != NULL; i++) {
+            lua_pushstring(L, assets_table[i].name);
+            lua_rawseti(L, -2, i + 1);
+        }
+
+        return 1;
+    }
+
+    for (i = 0; assets_table[i].name != NULL; i++) {
+        if (strcmp(assets_table[i].name, want) == 0) {
+            lua_pushlstring(L, (const char *)assets_table[i].bytes,
+                            assets_table[i].length);
+            return 1;
+        }
+    }
+
+    lua_pushnil(L);
+    lua_pushfstring(L, "no asset called %s", want);
+    return 2;
+}
+
 static int l_build(lua_State *L)
 {
     lua_createtable(L, 0, 5);
@@ -639,6 +680,7 @@ static const luaL_Reg sys_functions[] = {
     { "name",     l_setname },
     { "processes", l_processes },
     { "pointer",  l_pointer },
+    { "asset",    l_asset },
     { "build",    l_build },
     { "wait_input", l_wait_input },
     { "kill",     l_kill },

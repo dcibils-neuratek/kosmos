@@ -547,6 +547,111 @@ function ui.list(spec)
 end
 
 --
+-- A picture.
+--
+--   ui.image{ x =, y =, w =, h =, asset = "test-pattern.png" }
+--
+-- The picture is *named*, not carried. A decoded image is megabytes and a
+-- message is two kilobytes, so the window manager loads it and this asks
+-- how big it is - which is the same division as everything else here: the
+-- compositor owns pixels, an application says what it wants drawn.
+--
+-- Bigger than its box is normal - a photograph is - so it pans rather than
+-- scaling. There is no scaler, and a nearest-neighbour one written in Lua
+-- would be exactly the per-pixel loop `gfx.md` 19.2 forbids. When one
+-- arrives it will be a `gfx` primitive and this widget will use it.
+--
+function ui.image(spec)
+  local v = ui.view(spec)
+
+  v.focusable = true
+  v.ox = 0
+  v.oy = 0
+
+  local iw, ih = 0, 0
+  local size = v.asset and fs.send("/dev/wm", { type = "image_size",
+                                               asset = v.asset })
+
+  if size then
+    iw, ih = size.w, size.h
+  end
+
+  v.image_w, v.image_h = iw, ih
+
+  local function clamp(self)
+    local most_x = iw - self.w
+    local most_y = ih - self.h
+
+    if most_x < 0 then most_x = 0 end
+    if most_y < 0 then most_y = 0 end
+
+    if self.ox > most_x then self.ox = most_x end
+    if self.oy > most_y then self.oy = most_y end
+    if self.ox < 0 then self.ox = 0 end
+    if self.oy < 0 then self.oy = 0 end
+  end
+
+  function v:draw(g)
+    g:fill(0, 0, self.w, self.h, theme.sunken)
+
+    if self.image_w == 0 then
+      g:text(6, 6, "no picture called " .. tostring(self.asset), theme.bad)
+      return
+    end
+
+    --
+    -- Straight to the window manager as one command, with the source
+    -- rectangle in it: a picture is one blit however big it is, and
+    -- chopping it into pieces here would put every piece through a message.
+    --
+    -- Clipped by hand rather than by the graphics context, because the
+    -- context clips *commands* and this one carries its own source
+    -- rectangle - so the thing to clip is where it reads from.
+    --
+    local ax, ay = g.ox, g.oy
+    local x0 = (ax > g.cx) and ax or g.cx
+    local y0 = (ay > g.cy) and ay or g.cy
+    local x1 = math.min(ax + self.w, g.cx + g.cw)
+    local y1 = math.min(ay + self.h, g.cy + g.ch)
+
+    if x1 <= x0 or y1 <= y0 then return end
+
+    g.ops[#g.ops + 1] = {
+      op = "image", asset = self.asset,
+      sx = self.ox + (x0 - ax), sy = self.oy + (y0 - ay),
+      w = x1 - x0, h = y1 - y0,
+      x = x0, y = y0,
+    }
+  end
+
+  function v:mouse(action, x, y)
+    if action == "press" then
+      self.from_x, self.from_y = x, y
+      self.was_x, self.was_y = self.ox, self.oy
+    elseif action == "move" and self.from_x then
+      self.ox = self.was_x - (x - self.from_x)
+      self.oy = self.was_y - (y - self.from_y)
+      clamp(self)
+    end
+
+    return true
+  end
+
+  function v:key(c)
+    local step = 32
+
+    if c == -1 then self.oy = self.oy - step; clamp(self); return true end
+    if c == -2 then self.oy = self.oy + step; clamp(self); return true end
+    if c == -3 then self.ox = self.ox + step; clamp(self); return true end
+    if c == -4 then self.ox = self.ox - step; clamp(self); return true end
+
+    return false
+  end
+
+  return v
+end
+
+--
 -- A block of text that wraps, in a few styles.
 --
 --   ui.text{ x =, y =, w =, h =, blocks = {

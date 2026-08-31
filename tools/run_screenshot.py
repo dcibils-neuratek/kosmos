@@ -137,6 +137,7 @@ QEMU_ARGS = [
     "-global", "virtio-mmio.force-legacy=false",
     "-device", "virtio-keyboard-device",
     "-device", "virtio-tablet-device",
+
 ]
 
 PROMPT = "kosmos>"          # printed once the shell is serving

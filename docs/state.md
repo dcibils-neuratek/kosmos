@@ -46,6 +46,38 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **PNG.** `gfx.png(bytes)` decodes into a surface, using `puff` - zlib's own
+  reference inflate - vendored under `runtime/upstream/`. `ui.image` and the
+  `photo` app draw one. The picture is *named*, not carried: an application
+  sends `{op="image", asset=...}` and the compositor decodes it, because a
+  decoded image is megabytes and a message is two kilobytes.
+- **The compositor clips each window to the damage rectangle.** It redrew
+  every window in full for every rectangle, so dragging got heavier with
+  every window opened. That was the jerkiness.
+- **The fine-mapped low region follows the image size** instead of being a
+  hardcoded 2 MB. Adding a megabyte to the image used to panic in
+  `mmu_init` about a stack guard, which is nowhere near the cause.
+
+## Known bad
+
+**The display harness is flaky.** Two different phases have failed on two
+consecutive full runs and both pass on their own. It is the harness, not the
+system: applications now block for up to a second between events, so how
+long a keystroke takes to show up depends on where in that second it landed,
+and several phases still sleep a fixed time and then look. `check_widgets`
+was already converted to wait-for-the-result and the rest have not been.
+
+**Nothing should be pushed until that is fixed.** A suite that fails
+differently each run tells you nothing, and the first thing it will hide is
+a real regression.
+
+**A file cannot be more than about a megabyte.** `fs.read` accumulates into
+a Lua string and a process's heap is 2 MB by design (`design.md` 5.2, to
+keep collections short). Reading a 936 KB PNG through `/share` gave
+`error: not enough memory`. This is what killed the fw_cfg experiment and it
+is the constraint the real filesystem has to answer - probably by mapping
+pages rather than by returning strings.
+
 - **Three apps.** `procs`, BeOS's ProcessController - every process with a
   bar beside it, busiest first. `about`, the About box, with the machine
   down the left and what the system is down the right. `sysmon`, the
