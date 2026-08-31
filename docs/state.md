@@ -46,6 +46,20 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The Deskbar.** `wm` on its own starts a desktop with a panel top right:
+  every window on screen, and every program that declared itself an
+  application. Click one to start it; click a running one to raise it.
+  It asks the window manager what is on screen rather than asking `/app`
+  what registered, because a program that opens a window directly has one
+  and no registration.
+- **The cursor is composited** rather than drawn on the screen after the
+  fact, and a window's drawing is damaged only once it is complete. Both
+  were flicker: the first showed as the cursor blinking on every click, the
+  second as a window seen half-redrawn.
+- **`make FB=1920x1080` now rebuilds.** It did not: make compares
+  timestamps and knows nothing about the command line, so it said "Nothing
+  to be done" and ran the old image at the old size.
+
 - **Clicks reach the widgets.** A press on a title bar is the window
   manager's; a press anywhere else is forwarded to the application in that
   window's coordinates, and the kit routes it to the view under it. Click to
@@ -125,7 +139,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 53 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 55 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

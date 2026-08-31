@@ -1,7 +1,7 @@
 -- The window manager: windows, decoration, stacking, focus, and the
 -- compositor underneath them.
 --
---   wm                    an empty desktop
+--   wm                    the Deskbar, and nothing else yet
 --   wm hello-win          start /bin/hello-win.lua in a window
 --   wm hello-win,stuck    two applications, one of which hangs
 --   wm gallery,setprop:/app/gallery/title=hello
@@ -144,6 +144,89 @@ local ops = {
 }
 
 --------------------------------------------------------------------------
+-- The pointer.
+--
+-- The tablet reports absolute position in a range of its own - 0 to 32767
+-- on this machine, whatever the display is - so the scaling happens here,
+-- where the size of the screen is known. The kernel passes the range out
+-- undecoded for exactly this reason.
+--
+-- Absolute rather than relative is the right kind of device for a virtual
+-- machine: there is no acceleration curve to agree on with the host, so the
+-- guest cursor cannot drift away from the real one.
+--
+-- The cursor is composited like everything else: drawn into the backbuffer
+-- after the windows, so the blit that reaches the screen already has it.
+--
+-- It was drawn straight onto the screen after the composite, which is
+-- cheaper and wrong. Every repaint blits the finished region over the
+-- cursor and then puts it back on the next line - and QEMU scans out on its
+-- own schedule, so it can sample between those two. What that looks like is
+-- the cursor flickering on every click, once on the press and once on the
+-- release, because each of those repaints the window it is sitting on.
+--
+-- Moving it costs two rectangles of damage instead of one: where it was, so
+-- it is erased, and where it is, so it is drawn. That is the price of the
+-- frame being whole.
+--------------------------------------------------------------------------
+
+local CURSOR_W, CURSOR_H = 10, 16
+
+-- An arrow. Two colours so it stays visible on a light window and on the
+-- dark desktop: white body, dark outline.
+local CURSOR = {
+  "X.........",
+  "XX........",
+  "XoX.......",
+  "XooX......",
+  "XoooX.....",
+  "XooooX....",
+  "XoooooX...",
+  "XooooooX..",
+  "XoooooooX.",
+  "XooooooooX",
+  "XoooooXXXX",
+  "XooXooX...",
+  "XoX.XooX..",
+  "XX..XooX..",
+  "X....XooX.",
+  "......XX..",
+}
+
+local pointer_x, pointer_y = 0, 0
+local buttons = 0
+local dragging = nil          -- { win, dx, dy } while a title bar is held
+local grabbed = nil           -- the window a press landed in, until release
+
+-- Into the backbuffer, clipped by the surface primitives like anything
+-- else. A run of identical pixels at a time rather than one fill per pixel:
+-- the arrow is ten columns wide and mostly runs.
+local function draw_cursor()
+  for row = 0, CURSOR_H - 1 do
+    local line = CURSOR[row + 1]
+    local col = 0
+
+    while col < CURSOR_W do
+      local ch = line:sub(col + 1, col + 1)
+
+      if ch == "." then
+        col = col + 1
+      else
+        local run = 1
+
+        while line:sub(col + run + 1, col + run + 1) == ch do
+          run = run + 1
+        end
+
+        back:fill(pointer_x + col, pointer_y + row, run, 1,
+                  (ch == "X") and 0xff000000 or 0xffffffff)
+        col = col + run
+      end
+    end
+  end
+end
+
+--------------------------------------------------------------------------
 -- Compositing.
 --
 -- One rectangle at a time: desktop, then every window that overlaps it,
@@ -174,6 +257,10 @@ local function compose_rect(r)
 
     back:blit(win.surface, 0, 0, win.w, win.h, win.x, win.y)
   end
+
+  -- Last, so it is on top of everything, and before the blit, so what
+  -- reaches the screen is a frame with a cursor in it.
+  draw_cursor()
 
   screen:blit(back, r.x, r.y, r.w, r.h, r.x, r.y)
 end
@@ -246,7 +333,88 @@ handlers.draw = function(req)
     if fn then fn(win.surface, o) end
   end
 
-  damage_window(win)
+  --
+  -- `more` means the application has not finished this frame.
+  --
+  -- A window's drawing does not fit in one message, so it arrives in
+  -- several - and damaging after each one composited the window
+  -- half-redrawn. What that looks like is a flicker on every click: the
+  -- first message clears the background and the widgets arrive over the
+  -- following two, and the screen is scanned out somewhere in the middle.
+  --
+  -- The surface is written either way. Only the *damage* waits, so what
+  -- reaches the screen is one complete frame rather than three partial
+  -- ones. That is what a backbuffer is for, applied one level up: an
+  -- application composes off-screen and says when it is done.
+  --
+  if not req.more then
+    damage_window(win)
+  end
+
+  return { ok = true }
+end
+
+--
+-- Start a program, in a window, from inside the desktop.
+--
+-- The window manager does this rather than the application asking for it,
+-- and the reason is capabilities: launching means handing the new process
+-- an endpoint to this one, and the only process that holds that endpoint is
+-- this one. A launcher that could do it itself would have to be given the
+-- desktop's own door, and then every application that could reach the
+-- launcher could reach that too.
+--
+-- So the Deskbar asks. It can name a program and nothing else.
+--
+handlers.launch = function(req)
+  local name = tostring(req.program or "")
+
+  if name == "" or name:match("[^%w%-_./]") then
+    return { ok = false, error = "not a program name: " .. name }
+  end
+
+  local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+  local ok, err = run(path, req.args or "", true, { ["/dev/wm"] = ep })
+
+  if not ok then
+    return { ok = false, error = tostring(err) }
+  end
+
+  return { ok = true }
+end
+
+--
+-- Every window on the desktop, back to front.
+--
+-- The Deskbar asks this rather than asking /app, and the difference matters:
+-- /app holds applications that registered, which means the ones that used
+-- `ui.window`. A program that opens a window by talking to this process
+-- directly - as the first two demonstrations here do, because they were
+-- written before there was a kit - has a window on screen and no
+-- registration anywhere.
+--
+-- What belongs in a list of what is running is what is on the screen, and
+-- this process is the only one that knows that.
+--
+handlers.windows = function(req)
+  local out = {}
+
+  for i, win in ipairs(windows) do
+    out[i] = { handle = win.handle, title = win.title,
+               focused = (i == #windows) or nil }
+  end
+
+  return { ok = true, windows = out }
+end
+
+--
+-- Bring one to the front. What clicking a name in the Deskbar does.
+--
+handlers.raise = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  raise(win)
   return { ok = true }
 end
 
@@ -350,72 +518,6 @@ end
 -- than in the console because the console has no idea what a window is.
 --------------------------------------------------------------------------
 
---------------------------------------------------------------------------
--- The pointer.
---
--- The tablet reports absolute position in a range of its own - 0 to 32767
--- on this machine, whatever the display is - so the scaling happens here,
--- where the size of the screen is known. The kernel passes the range out
--- undecoded for exactly this reason.
---
--- Absolute rather than relative is the right kind of device for a virtual
--- machine: there is no acceleration curve to agree on with the host, so the
--- guest cursor cannot drift away from the real one.
---
--- The cursor is drawn onto the screen *after* the composite, not into the
--- backbuffer. It is not part of the scene - nothing is ever drawn on top of
--- it and it must not be scrolled or blitted with anything - so putting it
--- in the backbuffer would mean every window redraw fighting it. What that
--- costs is one rectangle of damage where it used to be, which is the
--- cheapest possible way to erase it.
---------------------------------------------------------------------------
-
-local CURSOR_W, CURSOR_H = 10, 16
-
--- An arrow. Two colours so it stays visible on a light window and on the
--- dark desktop: white body, dark outline.
-local CURSOR = {
-  "X.........",
-  "XX........",
-  "XoX.......",
-  "XooX......",
-  "XoooX.....",
-  "XooooX....",
-  "XoooooX...",
-  "XooooooX..",
-  "XoooooooX.",
-  "XooooooooX",
-  "XoooooXXXX",
-  "XooXooX...",
-  "XoX.XooX..",
-  "XX..XooX..",
-  "X....XooX.",
-  "......XX..",
-}
-
-local pointer_x, pointer_y = 0, 0
-local drawn_x, drawn_y = -1, -1
-local buttons = 0
-local dragging = nil          -- { win, dx, dy } while a title bar is held
-local grabbed = nil           -- the window a press landed in, until release
-
-local function draw_cursor()
-  for row = 0, CURSOR_H - 1 do
-    local line = CURSOR[row + 1]
-
-    for col = 0, CURSOR_W - 1 do
-      local ch = line:sub(col + 1, col + 1)
-
-      if ch ~= "." then
-        screen:fill(pointer_x + col, pointer_y + row, 1, 1,
-                    (ch == "X") and 0xff000000 or 0xffffffff)
-      end
-    end
-  end
-
-  drawn_x, drawn_y = pointer_x, pointer_y
-end
-
 -- Which window is under a point, front to back, decoration included.
 local function window_at(x, y)
   for i = #windows, 1, -1 do
@@ -449,13 +551,11 @@ local function pointer_pass()
   local moved_this_pass = (nx ~= pointer_x or ny ~= pointer_y)
 
   if moved_this_pass then
-    -- Where it was has to be repainted from the backbuffer; where it is now
-    -- gets the arrow after the composite.
-    if drawn_x >= 0 then
-      add_damage(drawn_x, drawn_y, CURSOR_W, CURSOR_H)
-    end
-
+    -- Both rectangles: where it was, so it is erased, and where it is going,
+    -- so it is drawn. Both are composited, so neither is ever half-done.
+    add_damage(pointer_x, pointer_y, CURSOR_W, CURSOR_H)
     pointer_x, pointer_y = nx, ny
+    add_damage(pointer_x, pointer_y, CURSOR_W, CURSOR_H)
   end
 
   --------------------------------------------------------------------------
@@ -630,7 +730,16 @@ end
 -- started here can be given something to work on - `wm gallery,setprop:...`
 -- - without this having to understand a shell's quoting rules, which it is
 -- not and should not become.
-for entry in tostring(args or ""):gmatch("[^,]+") do
+--
+-- With nothing asked for, the Deskbar. A desktop with no way to start
+-- anything is a desktop you can only look at, and every other system starts
+-- something for the same reason.
+--
+local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
+
+if wanted == "" then wanted = "deskbar" end
+
+for entry in wanted:gmatch("[^,]+") do
   entry = entry:match("^%s*(.-)%s*$")
 
   if entry ~= "" then
@@ -683,9 +792,8 @@ while running do
   -- drag can move one, and both are damage that this pass should draw.
   pointer_pass()
 
-  -- 4. The picture, and then the cursor on top of it.
+  -- 4. The picture, cursor included.
   compose()
-  draw_cursor()
 
   sys.yield()
 end

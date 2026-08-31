@@ -80,6 +80,10 @@ So there are two phases here, and the second is the one that matters:
      nothing. A button that fires on the press passes the first two and
      fails this.
 
+ 13. **The Deskbar.** A bare `wm` starts it and nothing else; clicking an
+     application in its list has to put a second window on screen. Counted
+     by tabs, since every window has exactly one.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -1073,6 +1077,110 @@ def _strip(px, width, x0, y0, w, h):
     return bytes(out)
 
 
+# The unfocused tab, 0xb8b8b8. With the focused one that is every window.
+TAB_IDLE = (0xb8, 0xb8, 0xb8)
+
+
+def count_windows(width, height, px):
+    """How many windows are on screen, counted by their tabs.
+
+    A tab is as wide as its title and every window has exactly one, so
+    counting bands of tab colour counts windows - and it does not depend on
+    knowing where any of them was put.
+    """
+    bands = 0
+    inside = False
+
+    for y in range(0, height, 2):
+        found = False
+
+        for x in range(0, width, 2):
+            at = (y * width + x) * 3
+            pixel = (px[at], px[at + 1], px[at + 2])
+
+            if pixel == TAB or pixel == TAB_IDLE:
+                found = True
+                break
+
+        if found and not inside:
+            bands += 1
+
+        inside = found
+
+    return bands
+
+
+def check_deskbar(guest):
+    """A desktop you can start things from.
+
+    `wm` with nothing asked for starts the Deskbar, top right, which lists
+    every window on the desktop and every program that declared itself an
+    application. Clicking one of those launches it.
+
+    Checked by counting tabs rather than by reading the lists: every window
+    has exactly one tab, as wide as its title, so the count is the number of
+    windows and does not depend on knowing where anything was placed.
+
+    The Deskbar asks the window manager what is on screen rather than asking
+    /app what registered. The difference is real: a program that opens a
+    window by talking to the desktop directly - which the two oldest
+    demonstrations here do - has a window and no registration, and would be
+    missing from a list built the other way.
+    """
+    guest.type("wm")
+    time.sleep(8)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = count_windows(width, height, px)
+
+    if before != 1:
+        raise Failure(
+            f"expected the Deskbar and nothing else after a bare `wm`, and "
+            f"counted {before} windows."
+        )
+
+    # The Deskbar is placed at the right edge by deskbar.lua, and its
+    # Applications list starts at (10, 170) inside it.
+    dx, dy = width - 210 - 12, 34
+
+    guest.mouse_to(*_to_tablet(dx + 70, dy + 170 + 2 + 8, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(6)
+
+    width, height, px = parse_ppm(guest.screendump())
+    after = count_windows(width, height, px)
+
+    if after <= before:
+        raise Failure(
+            f"clicking an application in the Deskbar started nothing: "
+            f"{before} window(s) before and {after} after. Either the launch "
+            "request is not reaching the window manager, or the program it "
+            "named is not marked `-- kosmos: application` and so is not in "
+            "the list at all."
+        )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from the desktop.")
+
+    return 2
+
+
 def check_clicks(guest):
     """The widgets, driven with the pointer.
 
@@ -1549,6 +1657,7 @@ def main():
         editor_checks = check_editor(guest)
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
+        deskbar_checks = check_deskbar(guest)
         click_checks = check_clicks(guest)
         graphical_checks = check_graphical_mode(guest)
         replicant_checks = check_replicants(guest)
@@ -1568,7 +1677,7 @@ def main():
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
-             + graphical_checks + click_checks)
+             + graphical_checks + click_checks + deskbar_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1584,7 +1693,8 @@ def main():
           f"{replicant_checks} on a replicant moved between processes, "
           f"{graphical_checks} on the console staying off the screen while "
           f"something else owns it, "
-          f"{click_checks} on the widgets under the pointer).")
+          f"{click_checks} on the widgets under the pointer, "
+          f"{deskbar_checks} on starting an application from the Deskbar).")
     return 0
 
 

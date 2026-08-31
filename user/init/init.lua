@@ -1302,7 +1302,24 @@ local function binfs_handlers(state)
       local source = name and state.programs[name]
 
       if not source then return { ok = false, error = "no such program" } end
-      return { ok = true, attrs = { size = #source, kind = "program" } }
+
+      --
+      -- Whether it draws.
+      --
+      -- A program declares it, on its first line, with `-- kosmos:
+      -- application`. Guessing instead - looking for `ui.window` in the
+      -- source, say - would be a store deciding what a program is by
+      -- reading it, and would be wrong the first time somebody wrote the
+      -- name in a comment.
+      --
+      -- Worked out when the store loads, not per request: it is a property
+      -- of source that cannot change while the system runs, because /bin is
+      -- in the image.
+      --
+      return { ok = true, attrs = {
+        size = #source,
+        kind = state.windowed[name] and "application" or "program",
+      } }
     end,
 
     write = function(req)
@@ -1325,7 +1342,17 @@ local function binfs_main(endpoint, source, what)
   local chunk, err = load(source, "=" .. what, "t")
   if not chunk then error(what .. ": " .. tostring(err)) end
 
-  serve(endpoint, { programs = chunk() }, binfs_handlers)
+  local programs = chunk()
+  local windowed = {}
+
+  for name, source in pairs(programs) do
+    if source:match("^[^\n]*kosmos:%s*application") then
+      windowed[name] = true
+    end
+  end
+
+  serve(endpoint, { programs = programs, windowed = windowed },
+        binfs_handlers)
 end
 
 --------------------------------------------------------------------------

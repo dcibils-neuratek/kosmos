@@ -192,6 +192,25 @@ taken is the one applications want least.
 
 **Compositing.** Damage tracking over the list of dirty rectangles, a backbuffer in cached RAM, one blit to the framebuffer synchronized with vblank. If an app did not respond in time, compose with its previous command list and move on. Never block.
 
+Two things that turned out to be the same rule, both found as flicker on a
+real machine rather than in any test here:
+
+**The cursor is part of the composite.** Drawing it onto the screen after
+the blit is cheaper and wrong - every repaint blits the finished region over
+it and puts it back on the next line, and the display is scanned out on its
+own schedule, so it can be sampled in between. What that looks like is the
+cursor blinking on every click, once on the press and once on the release,
+because each of those repaints the window under it. Moving it costs two
+rectangles of damage instead of one: where it was and where it is going.
+
+**A window's damage waits until its drawing is finished.** A window's
+commands do not fit in one message, so they arrive in several, and damaging
+after each one composited the window half-drawn - the first message clears
+the background and the widgets arrive over the following two. The surface is
+written either way; only the damage waits. That is what a backbuffer is for,
+applied one level up: an application composes off-screen and says when it is
+done.
+
 ---
 
 ## 16.8 Replicants

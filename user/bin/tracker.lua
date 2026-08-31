@@ -1,3 +1,4 @@
+-- kosmos: application
 -- Adopts whatever replicant was left in /data, and runs it.
 --
 --   wm clock,tracker

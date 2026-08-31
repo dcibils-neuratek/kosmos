@@ -244,6 +244,7 @@ LIBS := -lm
 KLIBS := $(if $(TEST),-lm)
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
+
 DEPS := $(OBJS:.o=.d)
 
 # ------------------------------------------------------------------
@@ -310,11 +311,32 @@ UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER \
 ULDFLAGS := -T user/user.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
             -Wl,-Map,$(UBUILD)/init.map
 
-$(UBUILD)/%.c.o: %.c
+# ------------------------------------------------------------------
+# Rebuild when the *flags* change, not only when a file does.
+#
+# make compares timestamps and knows nothing about the command line. So
+# `make FB=1920x1080` after an ordinary build said "Nothing to be done" and
+# then ran the old image at the old size - silently, with the change
+# apparently applied and visibly not working. That is the worst shape a
+# build bug can take, and it cost an evening once.
+#
+# The fix is a file holding the flags, rewritten only when they differ, that
+# every object depends on. Written with `$(file ...)` at parse time rather
+# than in a recipe, because it has to be up to date before make decides what
+# is out of date.
+# ------------------------------------------------------------------
+FLAGS_NOW := $(CFLAGS) | $(UCFLAGS)
+FLAGS_FILE := $(BUILD)/flags
+
+$(shell mkdir -p $(BUILD) $(UBUILD))
+$(shell [ "$$(cat $(FLAGS_FILE) 2>/dev/null)" = '$(FLAGS_NOW)' ] \
+        || printf '%s' '$(FLAGS_NOW)' > $(FLAGS_FILE))
+
+$(UBUILD)/%.c.o: %.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -include lua/kosmos/kosmos_lua.h -MMD -MP -c $< -o $@
 
-$(UBUILD)/%.S.o: %.S
+$(UBUILD)/%.S.o: %.S $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -MMD -MP -c $< -o $@
 
@@ -446,11 +468,11 @@ $(TARGET): $(OBJS) boot/kosmos.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(KLIBS)
 
-$(BUILD)/%.c.o: %.c
+$(BUILD)/%.c.o: %.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD)/%.S.o: %.S
+$(BUILD)/%.S.o: %.S $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 

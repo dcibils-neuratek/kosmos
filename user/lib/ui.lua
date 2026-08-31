@@ -895,8 +895,15 @@ function window:paint()
       batch[#batch + 1] = g.ops[j]
     end
 
+    -- The window manager holds the damage back until the last batch, so the
+    -- screen never shows this frame half-drawn. Without it every repaint
+    -- flickered: the first message clears the background and the widgets
+    -- arrive in the next two.
+    local last = (i + BATCH) > #g.ops
+
     local ok = fs.send("/dev/wm", { type = "draw", window = self.handle,
-                                    ops = batch })
+                                    ops = batch,
+                                    more = (not last) or nil })
 
     if not ok then
       -- The window manager went away, which is not this program's fault

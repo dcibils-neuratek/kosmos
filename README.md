@@ -156,6 +156,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | A process that owns the screen takes it from the kernel console, which falls back to the serial line. A panic takes it back | kernel/console.c, architecture.md |
 | Aug 2026 | A press grabs, at both layers: the window it landed in, and the view inside that window, until the release | ui.md §16.7 |
 | Aug 2026 | Hover is not forwarded to applications; movement is, but only while a button is held | ui.md §16.7 |
+| Aug 2026 | The cursor is part of the composite, not drawn over it afterwards | ui.md §16.7 |
+| Aug 2026 | A window's damage waits until its drawing is complete, so a frame is never seen half-redrawn | ui.md §16.7 |
+| Aug 2026 | A program declares it draws with `-- kosmos: application`; the store reports it. The launcher does not guess by reading source | init.lua binfs |
+| Aug 2026 | The Deskbar lists the desktop's windows, not the `/app` registry: a window with no registration is still a window | deskbar.lua |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |

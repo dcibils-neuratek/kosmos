@@ -1,3 +1,4 @@
+-- kosmos: application
 -- A window with a clock in it, and an offer to give the clock away.
 --
 --   wm clock
