@@ -2,6 +2,7 @@
 --
 --   wm gallery
 --
+--   click          focus and operate a control
 --   Tab            move the focus
 --   Enter / Space  activate
 --   arrows         move in a list
@@ -22,7 +23,8 @@ if not win then
   return
 end
 
-local status = ui.label{ x = 16, y = 296, text = "Tab to move, Enter to act",
+local status = ui.label{ x = 16, y = 296,
+                         text = "click, or Tab and Enter",
                          color = theme.text_dim }
 
 local function say(text)

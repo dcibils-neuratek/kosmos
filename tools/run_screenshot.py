@@ -75,6 +75,11 @@ So there are two phases here, and the second is the one that matters:
      to reach the serial line and not the display. One printed line used to
      scroll every window up sixteen pixels.
 
+ 12. **The widgets, clicked.** A button, a list row, and the one that
+     matters: pressing a button and sliding off before letting go must do
+     nothing. A button that fires on the press passes the first two and
+     fails this.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -1057,6 +1062,122 @@ def _to_tablet(x, y, width, height):
     return x * 32767 // (width - 1), y * 32767 // (height - 1)
 
 
+def _strip(px, width, x0, y0, w, h):
+    """A rectangle of the screen, as bytes, for comparing against itself."""
+    out = bytearray()
+
+    for y in range(y0, y0 + h):
+        at = (y * width + x0) * 3
+        out += px[at:at + w * 3]
+
+    return bytes(out)
+
+
+def check_clicks(guest):
+    """The widgets, driven with the pointer.
+
+    The gallery opens at a known place, so its controls are at known places.
+    This clicks a button, then a list row, and checks each by what changed on
+    screen rather than by anything the program said.
+
+    The third check is the one worth having. A button fires on the *release*
+    and only if the pointer is still on it, so pressing one and sliding away
+    before letting go does nothing - which every graphical system since the
+    Macintosh has allowed and which a button that fires on the press takes
+    away. It is also the reason the window manager forwards movement while a
+    button is held, and the only part of this that a naive implementation
+    gets wrong while looking perfectly correct.
+    """
+    guest.type("wm gallery")
+    time.sleep(7)
+
+    width, height, px = parse_ppm(guest.screendump())
+
+    # The window is opened at x=60, y=90 by gallery.lua, and its controls
+    # are placed at fixed offsets inside it.
+    wx, wy = 60, 90
+    status = (wx + 12, wy + 296, 380, 16)
+    park = (wx + 300, wy + 280)          # somewhere with nothing on it
+
+    def click(x, y, release_at=None):
+        guest.mouse_to(*_to_tablet(x, y, width, height))
+        time.sleep(0.35)
+        guest.mouse_button(True)
+        time.sleep(0.35)
+
+        if release_at is not None:
+            guest.mouse_to(*_to_tablet(release_at[0], release_at[1],
+                                       width, height))
+            time.sleep(0.35)
+
+        guest.mouse_button(False)
+        time.sleep(0.6)
+
+    def screen_now():
+        guest.mouse_to(*_to_tablet(park[0], park[1], width, height))
+        time.sleep(0.6)
+        return parse_ppm(guest.screendump())[2]
+
+    before = _strip(screen_now(), width, *status)
+
+    # 1. The second button, which sets a different message.
+    click(wx + 150 + 30, wy + 60 + 13)
+    after_click = _strip(screen_now(), width, *status)
+
+    if after_click == before:
+        raise Failure(
+            "clicking a button changed nothing. Either the window manager is "
+            "not forwarding the press, or the kit is not routing it to the "
+            "view under it."
+        )
+
+    # 2. A list row, checked by where the selection bar lands.
+    _, _, px = parse_ppm(guest.screendump())
+    bar_before = find_colour_anywhere(width, height, px, SELECTED)
+
+    click(wx + 16 + 60, wy + 172 + 2 + 16 * 3 + 8)
+
+    _, _, px = parse_ppm(guest.screendump())
+    bar_after = find_colour_anywhere(width, height, px, SELECTED)
+
+    if bar_after is None or bar_after[1] <= bar_before[1]:
+        raise Failure(
+            f"clicking the fourth row of the list did not move the selection "
+            f"({bar_before} then {bar_after})."
+        )
+
+    # 3. Pressed, slid off, released: nothing may happen.
+    settled = _strip(screen_now(), width, *status)
+
+    click(wx + 16 + 50, wy + 60 + 13, release_at=(wx + 380, wy + 60))
+    escaped = _strip(screen_now(), width, *status)
+
+    if escaped != settled:
+        raise Failure(
+            "a button fired after the pointer was dragged off it before the "
+            "release. It must fire on the release and only while the pointer "
+            "is still on it."
+        )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after clicking.")
+
+    return 3
+
+
 def check_graphical_mode(guest):
     """While something owns the screen, the console must not print on it.
 
@@ -1428,6 +1549,7 @@ def main():
         editor_checks = check_editor(guest)
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
+        click_checks = check_clicks(guest)
         graphical_checks = check_graphical_mode(guest)
         replicant_checks = check_replicants(guest)
         wm_checks = check_window_manager(guest)
@@ -1446,7 +1568,7 @@ def main():
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
-             + graphical_checks)
+             + graphical_checks + click_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1461,7 +1583,8 @@ def main():
           f"{script_checks} on scripting a running application, "
           f"{replicant_checks} on a replicant moved between processes, "
           f"{graphical_checks} on the console staying off the screen while "
-          f"something else owns it).")
+          f"something else owns it, "
+          f"{click_checks} on the widgets under the pointer).")
     return 0
 
 

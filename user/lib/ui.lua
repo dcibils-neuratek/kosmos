@@ -222,6 +222,25 @@ function view:paint(g)
   g:pop(saved)
 end
 
+--
+-- The deepest view containing a point, and that point in its coordinates.
+--
+-- Backwards through the children, because they are drawn in order and a
+-- later one is on top: the thing you can see is the thing you hit. A view
+-- with no children returns itself, so a panel is hit where its label is not.
+--
+function view:hit(x, y)
+  for i = #self.children, 1, -1 do
+    local c = self.children[i]
+
+    if x >= c.x and x < c.x + c.w and y >= c.y and y < c.y + c.h then
+      return c:hit(x - c.x, y - c.y)
+    end
+  end
+
+  return self, x, y
+end
+
 -- Depth first, in tree order, which is the order Tab moves in.
 function view:focusables(out)
   out = out or {}
@@ -281,6 +300,32 @@ function ui.button(spec)
     return false
   end
 
+  --
+  -- Pressed on the way down, fired on the way up, and only if the pointer
+  -- is still on the button.
+  --
+  -- That is not decoration. Every graphical system since the Macintosh has
+  -- let you press a button, think better of it, slide off and release - and
+  -- a button that fires on the press takes that away. It is the reason the
+  -- window manager forwards movement while a button is held.
+  --
+  function v:mouse(action, x, y)
+    local inside = x >= 0 and x < self.w and y >= 0 and y < self.h
+
+    if action == "press" then
+      self.pressed = true
+    elseif action == "move" then
+      self.pressed = inside
+    elseif action == "release" then
+      local fire = self.pressed and inside
+      self.pressed = false
+
+      if fire and self.on_click then self.on_click(self) end
+    end
+
+    return true
+  end
+
   return v
 end
 
@@ -310,6 +355,16 @@ function ui.checkbox(spec)
       return true
     end
     return false
+  end
+
+  function v:mouse(action, x, y)
+    if action == "release" and x >= 0 and x < self.w
+       and y >= 0 and y < self.h then
+      self.checked = not self.checked
+      if self.on_change then self.on_change(self, self.checked) end
+    end
+
+    return true
   end
 
   return v
@@ -362,6 +417,20 @@ function ui.field(spec)
     end
 
     return false
+  end
+
+  -- The caret where the click was, clamped to the end of the text: clicking
+  -- past the last character puts it after the last character, which is what
+  -- every text field does and what nobody notices until it does not.
+  function v:mouse(action, x, y)
+    if action == "press" then
+      local col = (x - 4) // GW
+
+      if col < 0 then col = 0 end
+      self.caret = math.min(col + 1, #self.text + 1)
+    end
+
+    return true
   end
 
   return v
@@ -423,6 +492,30 @@ function ui.list(spec)
     end
 
     return false
+  end
+
+  --
+  -- Press picks the row, release on that same row chooses it.
+  --
+  -- Two steps rather than one so that pressing on the wrong row and sliding
+  -- to the right one before letting go does what you meant, which is the
+  -- same bargain the button makes.
+  --
+  function v:mouse(action, x, y)
+    local row = (y - 2) // GH
+    local n = self.top + row
+
+    if row < 0 or n > #self.items then return true end
+
+    if action == "press" or action == "move" then
+      self.selected = n
+    elseif action == "release" and n == self.selected then
+      if self.on_select then
+        self.on_select(self, self.items[n], n)
+      end
+    end
+
+    return true
   end
 
   return v
@@ -844,6 +937,51 @@ local function dispatch(self, c)
   return false
 end
 
+--
+-- One mouse event, to the view under it.
+--
+-- The press decides who gets everything until the release, mirroring the
+-- grab the window manager keeps on the window: without it, sliding off a
+-- button before letting go would deliver the release to whatever the
+-- pointer had wandered onto, and both widgets would be half-operated.
+--
+-- A press also moves the focus, so clicking a control and then typing does
+-- what it looks like it should. That is the one place clicking and Tab have
+-- to agree.
+--
+local function dispatch_mouse(self, ev)
+  if ev.action == "press" then
+    local target, lx, ly = self.root:hit(ev.x, ev.y)
+
+    self.grab = nil
+
+    if target and target.mouse then
+      self.grab = { view = target, dx = ev.x - lx, dy = ev.y - ly }
+    end
+
+    if target and target.focusable then
+      for i, v in ipairs(self.root:focusables()) do
+        if v == target then
+          self.focus = i
+          break
+        end
+      end
+    end
+  end
+
+  local g = self.grab
+
+  if not g then return false end
+
+  local handled = g.view:mouse(ev.action, ev.x - g.dx, ev.y - g.dy)
+
+  if ev.action == "release" then
+    self.grab = nil
+  end
+
+  return handled and true or false
+end
+
 function window:run()
   local escape = 0
 
@@ -871,7 +1009,9 @@ function window:run()
     local changed = serve_properties(self)
 
     for _, ev in ipairs(reply.events) do
-      if ev.type == "key" then
+      if ev.type == "mouse" then
+        if dispatch_mouse(self, ev) then changed = true end
+      elseif ev.type == "key" then
         local c = ev.code
 
         -- The three bytes of an arrow, turned into one code the widgets can

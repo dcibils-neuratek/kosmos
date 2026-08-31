@@ -170,6 +170,23 @@ than being one.
     Control-W then Tab         focus the next window
     Control-W then Control-W   a literal Control-W to the application
 
+The pointer divides the same way. A press on a title bar is the window
+manager's - raise and drag. A press anywhere else is the application's, and
+is forwarded in that window's own coordinates, on the same queue as a key
+and collected the same way. The compositor never calls an application, and a
+click is not an exception to that.
+
+**A press grabs.** Everything until the release goes to the window the press
+landed in, and inside that window to the view the press landed in, even after
+the pointer has left. Without it, releasing outside would deliver the release
+to whatever happened to be underneath and leave two controls half-operated.
+
+**Hover is not sent.** Every movement would be a message, an application
+would poll a queue full of them, and the whole path would run at the rate the
+pointer moves rather than at the rate anything changes. Movement *is* sent
+while a button is held, because that is what a control needs to un-press when
+you slide off it.
+
 One key out of the application's vocabulary instead of five, and the one
 taken is the one applications want least.
 
@@ -273,7 +290,7 @@ it fresh.**
 | View tree with clipping and nested coordinates | 6 | **done** - `lib/ui.lua`, clipped in the graphics context so a view cannot draw outside itself |
 | Multiple windows, tabs, stacking, focus, drag | 6 | **done**, except that dragging is with the keyboard: there is no pointer device yet |
 | Follow modes and row/column containers | 6 | follow modes **done**; containers not started |
-| Basic widgets: button, list, text, scroll | 6 | label, button, checkbox, field and list **done**; scroll not started |
+| Basic widgets: button, list, text, scroll | 6 | label, button, checkbox, field and list **done**, keyboard and pointer both; scroll not started |
 | Workspaces | 7 |
 | Stack and tile | 7 |
 | Replicants | 7 |

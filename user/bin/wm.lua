@@ -310,12 +310,10 @@ end
 -- Queued and not delivered: delivering would mean calling the application,
 -- and calling it is what this process must never do.
 --
-local function to_focused(c)
-  local win = focused_window()
-
+local function post(win, event)
   if not win then return end
 
-  win.events[#win.events + 1] = { type = "key", code = c }
+  win.events[#win.events + 1] = event
 
   if #win.events > 64 then
     -- An application that has stopped collecting its events is not going to
@@ -323,6 +321,10 @@ local function to_focused(c)
     -- process that everything else on the screen depends on.
     table.remove(win.events, 1)
   end
+end
+
+local function to_focused(c)
+  post(focused_window(), { type = "key", code = c })
 end
 
 --------------------------------------------------------------------------
@@ -395,6 +397,7 @@ local pointer_x, pointer_y = 0, 0
 local drawn_x, drawn_y = -1, -1
 local buttons = 0
 local dragging = nil          -- { win, dx, dy } while a title bar is held
+local grabbed = nil           -- the window a press landed in, until release
 
 local function draw_cursor()
   for row = 0, CURSOR_H - 1 do
@@ -443,7 +446,9 @@ local function pointer_pass()
   local was_down = (buttons & 1) ~= 0
   local is_down = (p.buttons & 1) ~= 0
 
-  if nx ~= pointer_x or ny ~= pointer_y then
+  local moved_this_pass = (nx ~= pointer_x or ny ~= pointer_y)
+
+  if moved_this_pass then
     -- Where it was has to be repainted from the backbuffer; where it is now
     -- gets the arrow after the composite.
     if drawn_x >= 0 then
@@ -453,11 +458,25 @@ local function pointer_pass()
     pointer_x, pointer_y = nx, ny
   end
 
+  --------------------------------------------------------------------------
+  -- What a press means depends on where it lands.
+  --
+  --   the title bar    the window manager's: raise and drag
+  --   the contents     the application's: forwarded, in that window's own
+  --                    coordinates
+  --
+  -- Forwarded and not delivered, like a key: it goes on the window's queue
+  -- and the application collects it whenever it gets round to asking. This
+  -- process never calls an application, which is the whole reason a hung one
+  -- cannot freeze the desktop - and a click is not an exception to that.
+  --
+  -- A press grabs. Everything until the release goes to the window the press
+  -- landed in, even after the pointer has left it, because that is what lets
+  -- a button un-press when you slide off it and a drag keep working past the
+  -- edge. Without a grab, releasing outside would deliver the release to
+  -- whatever happened to be underneath.
+  --------------------------------------------------------------------------
   if is_down and not was_down then
-    --
-    -- A press. Raise whatever is under it, and if that was the title bar,
-    -- start a drag.
-    --
     local win, fx, fy = window_at(nx, ny)
 
     if win then
@@ -465,15 +484,39 @@ local function pointer_pass()
 
       if ny < fy + TAB_H then
         dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
+      else
+        grabbed = win
+        post(win, { type = "mouse", action = "press",
+                    x = nx - win.x, y = ny - win.y })
       end
     end
   elseif not is_down and was_down then
+    if grabbed then
+      post(grabbed, { type = "mouse", action = "release",
+                      x = nx - grabbed.x, y = ny - grabbed.y })
+      grabbed = nil
+    end
+
     dragging = nil
   end
 
   if dragging and is_down then
     handlers.move{ window = dragging.win.handle,
                    x = nx - dragging.dx, y = ny - dragging.dy }
+  end
+
+  --
+  -- Movement, only while something is held.
+  --
+  -- Hover is not sent, and that is a decision rather than an omission. Every
+  -- movement would be a message, an application would poll a queue full of
+  -- them, and the whole path from here to a widget would run at the rate the
+  -- pointer moves rather than at the rate anything changes. What a button
+  -- needs to un-press when you slide off it is drag, and this is drag.
+  --
+  if grabbed and is_down and moved_this_pass then
+    post(grabbed, { type = "mouse", action = "move",
+                    x = nx - grabbed.x, y = ny - grabbed.y })
   end
 
   buttons = p.buttons

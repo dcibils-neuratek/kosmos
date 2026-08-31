@@ -46,6 +46,12 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Clicks reach the widgets.** A press on a title bar is the window
+  manager's; a press anywhere else is forwarded to the application in that
+  window's coordinates, and the kit routes it to the view under it. Click to
+  focus, click a list row, tick a checkbox, put the caret in a field. A
+  button fires on the release and only if the pointer is still on it.
+
 - **Graphical mode.** A process that owns the screen takes it from the
   kernel console with `sys.screen_take(true)`, and until it gives it back
   the console writes to the serial line only. `wm` and `edit` both do it.
@@ -119,7 +125,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 50 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 53 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
