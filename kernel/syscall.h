@@ -54,8 +54,9 @@
 #define SYS_PROCTABLE  16   /* (&entries, max)        -> count or error   */
 #define SYS_ENDPOINT_DESTROY 17 /* (cap)              -> 0 or error       */
 #define SYS_POINTER    18   /* (&state)               -> 0 or error       */
+#define SYS_SCREEN_TAKE 19  /* (take)                 -> 0 or error       */
 
-#define SYS_MAX         19
+#define SYS_MAX         20
 
 /*
  * What a spawn may hand its child beyond capabilities.

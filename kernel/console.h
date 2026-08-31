@@ -56,6 +56,16 @@ void console_progress(unsigned done, unsigned total);
  * A no-op with no screen, and cheap enough for the interrupt path: it counts
  * to twenty-five and, twice a second, fills one 8x16 cell.
  */
+/*
+ * Whether this console may draw on the screen.
+ *
+ * A compositor takes it; the console falls back to the serial line, which
+ * has always had everything anyway. Resuming clears and starts from the top,
+ * because there is no scrollback to restore.
+ */
+void console_screen_suspend(void);
+void console_screen_resume(void);
+
 void console_tick(void);
 
 #endif /* KERNEL_CONSOLE_H */

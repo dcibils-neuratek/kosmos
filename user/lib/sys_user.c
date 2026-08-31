@@ -510,6 +510,18 @@ static int l_processes(lua_State *L)
 extern const char programs_lua[];
 extern const char libraries_lua[];
 
+static int l_screen_take(lua_State *L)
+{
+    long status = kosmos_screen_take(lua_toboolean(L, 1));
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_pointer(lua_State *L)
 {
     struct pointer_info info;
@@ -565,6 +577,7 @@ static const luaL_Reg sys_functions[] = {
     { "name",     l_setname },
     { "processes", l_processes },
     { "pointer",  l_pointer },
+    { "screen_take", l_screen_take },
     { "programs", l_programs },
     { "libraries", l_libraries },
     { "endpoint", l_endpoint },

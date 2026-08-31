@@ -12,12 +12,12 @@ Last updated: 2026-08-31
 surface type, a blitter, an 8x16 font, a screen console with a scroll region
 and a blinking cursor, a keyboard, and a shell that runs programs from `/bin`.
 
-Known and not yet fixed: the kernel console and the window manager both
-draw on one framebuffer, so printing a line scrolls the whole screen and
-drags a window's pixels with it. It is cosmetic and it is exactly what the
-Terminal app removes - once the shell is a window there is one writer. The
-same arrangement is why the window manager cannot usefully be run detached:
-two processes would be draining one keyboard.
+Known and not yet fixed: the window manager cannot usefully be run detached,
+because it and the shell's line editor would both be draining one keyboard
+and whichever asks first wins. The Terminal app is the answer - once the
+shell is a window there is one reader. The framebuffer half of that problem
+is already solved: a process that owns the screen takes it, and the console
+stops drawing.
 
 Still missing, and the next things to build: **a backbuffer with damage
 tracking**, and then **the app server** on top of it. Today a program draws
@@ -45,6 +45,13 @@ Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU
 QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
+
+- **Graphical mode.** A process that owns the screen takes it from the
+  kernel console with `sys.screen_take(true)`, and until it gives it back
+  the console writes to the serial line only. `wm` and `edit` both do it.
+  Nothing is silenced - the cable has everything, which is where a machine
+  running a window manager is debugged from - and a panic takes the screen
+  back regardless of who holds it.
 
 - **A mouse.** `hal/qemu-virt/input.c` drives two virtio-input devices - a
   keyboard and a tablet - told apart by asking each whether it has absolute
@@ -112,7 +119,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 48 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 50 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

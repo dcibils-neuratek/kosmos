@@ -61,6 +61,41 @@ static struct fb   screen;
 static bool        attached;
 
 /*
+ * Set while something else owns the screen.
+ *
+ * The kernel console and a compositor cannot both draw on one framebuffer.
+ * They were both doing it: printing a line scrolled the whole screen, which
+ * dragged a window's pixels up sixteen rows and left a copy of its title bar
+ * behind. It looked like a windowing bug and was not - the console's scroll
+ * moves every pixel on the display, because as far as it knows every pixel
+ * is text.
+ *
+ * So a process that has taken the screen says so, and from then until it
+ * gives it back this console writes to the serial line and nowhere else.
+ * Nothing is lost: the cable has always had everything, and a system that
+ * can only be debugged through the thing that is currently broken is not
+ * one that can be debugged.
+ *
+ * A panic clears this. Whatever is on the screen matters less than the
+ * reason the machine stopped.
+ */
+static bool        suspended;
+
+/*
+ * One question, asked in one place.
+ *
+ * There were four separate tests of `attached` scattered through this file
+ * and adding `suspended` meant finding all of them. Three were found; the
+ * fourth was `kputc`, which is the one that actually prints, so a window
+ * manager could take the screen and the console would carry on writing over
+ * it. The symptom looked exactly like the bug being fixed.
+ */
+static bool can_draw(void)
+{
+    return attached && !suspended;
+}
+
+/*
  * What was printed before there was a screen.
  *
  * The display cannot be the first thing brought up: it needs the MMU on
@@ -131,7 +166,7 @@ static void fill_rect(unsigned x, unsigned y, unsigned w, unsigned h,
 
 static void draw_cursor(bool on)
 {
-    if (!attached) {
+    if (!can_draw()) {
         return;
     }
 
@@ -243,9 +278,39 @@ static void screen_putc(char c)
     cx++;
 }
 
+/*
+ * Hands the screen to somebody else, or takes it back.
+ *
+ * Taking it back repaints: the console has no scrollback, so there is
+ * nothing to restore and the honest thing is a clear screen with the cursor
+ * at the top. What was there belonged to whoever just gave it up.
+ */
+void console_screen_suspend(void)
+{
+    suspended = true;
+}
+
+void console_screen_resume(void)
+{
+    if (!suspended) {
+        return;
+    }
+
+    suspended = false;
+
+    if (!attached) {
+        return;
+    }
+
+    fill_rect(0, 0, screen.width, screen.height, bg);
+    cx = 0;
+    cy = 0;
+    cursor_shown = false;
+}
+
 void console_tick(void)
 {
-    if (!attached) {
+    if (!can_draw()) {
         return;
     }
 
@@ -344,7 +409,7 @@ void console_progress(unsigned done, unsigned total)
 {
     unsigned y, h, margin, w, filled;
 
-    if (!attached || total == 0) {
+    if (!can_draw() || total == 0) {
         return;
     }
 
@@ -373,7 +438,7 @@ void kputc(char c)
 
     hal_putchar(c);
 
-    if (attached) {
+    if (can_draw()) {
         if (c == '\n') {
             screen_putc('\r');
         }

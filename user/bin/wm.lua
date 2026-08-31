@@ -61,6 +61,21 @@ local W, H = screen:size()
 -- drawing into it directly is the mistake that costs 10-50x.
 local back = gfx.surface{ w = W, h = H }
 
+--
+-- The screen is this process's now.
+--
+-- Until this call the kernel console is also drawing here, and the two
+-- cannot share: printing one line scrolls the whole display, which drags
+-- every window up sixteen pixels and leaves a copy of its tab behind. It
+-- reads as a compositor bug and is not - the console's scroll moves every
+-- pixel, because as far as it knows every pixel is text.
+--
+-- Nothing stops being reported. The console keeps writing to the serial
+-- line, which is where a system with a window manager on it is debugged
+-- from, and a panic takes the screen back regardless.
+--
+sys.screen_take(true)
+
 local ep = sys.endpoint()
 
 if not ep then
@@ -632,7 +647,10 @@ while running do
   sys.yield()
 end
 
-screen:fill(0, 0, W, H, 0xff0d1117)
+-- Given back, which repaints: the console has no scrollback, so it starts
+-- again from the top rather than restoring something nobody kept.
+sys.screen_take(false)
+
 back:free()
 
 for _, win in ipairs(windows) do

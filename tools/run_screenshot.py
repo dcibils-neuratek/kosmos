@@ -70,6 +70,11 @@ So there are two phases here, and the second is the one that matters:
      reading differently, and the line reporting what the replicant's
      restricted namespace actually answered must be the green one.
 
+ 11. **The console staying off the screen** while a compositor owns it. A
+     program prints a paragraph while the window manager is running; it has
+     to reach the serial line and not the display. One printed line used to
+     scroll every window up sixteen pixels.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -1052,6 +1057,114 @@ def _to_tablet(x, y, width, height):
     return x * 32767 // (width - 1), y * 32767 // (height - 1)
 
 
+def check_graphical_mode(guest):
+    """While something owns the screen, the console must not print on it.
+
+    `wm gallery,say:...` starts a window manager with two programs: one opens
+    a window, and the other waits and then prints six lines to the console.
+    Those lines must reach the serial line and must not reach the display.
+
+    They cannot share. The console's scroll moves every pixel there is,
+    because as far as it knows every pixel is text - so one printed line
+    dragged every window up sixteen rows and left a copy of its title bar
+    behind. It read as a compositor bug and was not.
+
+    The console is not silenced, only kept off the framebuffer. Everything
+    still goes down the cable, which is where a machine running a window
+    manager is debugged from - and a panic takes the screen back regardless
+    of who holds it, because the reason the machine stopped matters more
+    than what was being drawn.
+
+    `say` waits before printing, and that is the whole reason it exists.
+    This check has to photograph the screen before the output and again
+    after it, and every other program here prints the moment it starts - so
+    the first photograph already contained the answer. Written first with
+    `hello`, it passed with the bug deliberately put back, twice, in two
+    different shapes.
+    """
+    mark = len(guest.seen)
+    guest.type("wm gallery,say:6 while the window manager owns the screen")
+
+    #
+    # The baseline is taken once a window tab is on screen, not after a
+    # fixed wait.
+    #
+    # A fixed wait was wrong in a way that only showed up in a full run: the
+    # window manager has to load two programs out of /bin before it composes
+    # anything, and until it does the console is still printing the command
+    # that started it. The baseline caught that half-drawn, the comparison
+    # found the difference, and the phase failed with the code perfectly
+    # correct. Standalone it passed every time.
+    #
+    deadline = time.monotonic() + 30
+
+    while time.monotonic() < deadline:
+        width, height, before = parse_ppm(guest.screendump())
+
+        if tab_width(width, height, before) > 0:
+            break
+
+        time.sleep(0.5)
+    else:
+        raise Failure(
+            "no window appeared, so the window manager never took the "
+            "screen and there is nothing here to check."
+        )
+
+    # And a moment past that, so the first composite is finished.
+    time.sleep(1.5)
+    width, height, before = parse_ppm(guest.screendump())
+
+    deadline = time.monotonic() + 40
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if "6: while the window manager" in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "the program that prints never printed, so this phase proves "
+            "nothing about where its output went.\n"
+            f"--- what arrived ---\n{guest.seen[mark:]}"
+        )
+
+    time.sleep(2)
+    _, _, after = parse_ppm(guest.screendump())
+
+    for y in range(height):
+        row = y * width * 3
+
+        if before[row:row + width * 3] != after[row:row + width * 3]:
+            raise Failure(
+                f"row {y} of the screen changed while a program printed six "
+                "lines and the window manager owned the display. The console "
+                "is still drawing on the framebuffer - check that every path "
+                "through kernel/console.c asks can_draw() and not just "
+                "`attached`."
+            )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back.")
+
+    return 2
+
+
 def check_window_manager(guest):
     """This milestone's definition of done: BeOS's test.
 
@@ -1315,6 +1428,7 @@ def main():
         editor_checks = check_editor(guest)
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
+        graphical_checks = check_graphical_mode(guest)
         replicant_checks = check_replicants(guest)
         wm_checks = check_window_manager(guest)
 
@@ -1331,7 +1445,8 @@ def main():
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
-             + widget_checks + script_checks + replicant_checks)
+             + widget_checks + script_checks + replicant_checks
+             + graphical_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1344,7 +1459,9 @@ def main():
           f"program, "
           f"{widget_checks} on the widget kit, "
           f"{script_checks} on scripting a running application, "
-          f"{replicant_checks} on a replicant moved between processes).")
+          f"{replicant_checks} on a replicant moved between processes, "
+          f"{graphical_checks} on the console staying off the screen while "
+          f"something else owns it).")
     return 0
 
 

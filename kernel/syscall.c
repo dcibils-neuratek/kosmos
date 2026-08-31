@@ -635,6 +635,30 @@ void syscall_dispatch(struct trapframe *tf)
         break;
     }
 
+    case SYS_SCREEN_TAKE:
+        /*
+         * "I am drawing the whole screen now; stop printing on it."
+         *
+         * Only the process that holds the screen may say it, which is the
+         * same test SYS_SCREEN uses - a process that cannot draw has no
+         * business deciding who else may.
+         *
+         * The kernel console keeps writing to the serial line either way.
+         * Suspending it is about pixels, not about output: everything still
+         * reaches the cable, which is what a system is debugged through.
+         */
+        if (!p->owns_screen) {
+            result = SYS_ERR_DENIED;
+        } else {
+            if (tf->x[0] != 0) {
+                console_screen_suspend();
+            } else {
+                console_screen_resume();
+            }
+            result = 0;
+        }
+        break;
+
     case SYS_YIELD:
         thread_yield();
         result = 0;

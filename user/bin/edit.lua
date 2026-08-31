@@ -56,6 +56,11 @@ local COLS = (W // GW) - GUTTER_COLS
 -- same reason the window manager has one.
 local back = gfx.surface{ w = W, h = H }
 
+-- The whole screen, so the console must stop printing on it. Same reason as
+-- the window manager: two writers on one framebuffer, and the console's
+-- scroll moves every pixel there is.
+sys.screen_take(true)
+
 --------------------------------------------------------------------------
 -- The text.
 --------------------------------------------------------------------------
@@ -275,7 +280,7 @@ while running do
   sys.yield()
 end
 
-screen:fill(0, 0, W, H, BG)
+sys.screen_take(false)
 back:free()
 
 if dirty then

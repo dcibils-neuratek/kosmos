@@ -249,6 +249,12 @@ static inline long kosmos_receive(long cap, struct message *msg,
                 (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
+/* Takes the screen from the kernel console, or gives it back. */
+static inline long kosmos_screen_take(int take)
+{
+    return sys1(SYS_SCREEN_TAKE, take ? 1 : 0);
+}
+
 static inline long kosmos_pointer(struct pointer_info *out)
 {
     return sys1(SYS_POINTER, (long)(uintptr_t)out);
