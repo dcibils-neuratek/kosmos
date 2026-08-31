@@ -776,8 +776,21 @@ handlers.move = function(req)
   -- The old place has to be repainted as well as the new one, or the window
   -- leaves a copy of itself behind.
   damage_window(win)
-  win.x = math.min(math.max(tonumber(req.x) or win.x, BORDER), W - win.w - BORDER)
-  win.y = math.min(math.max(tonumber(req.y) or win.y, TAB_H), H - win.h - BORDER)
+  -- A window may hang off the edge, as long as enough of it stays to grab.
+  --
+  -- Clamping it entirely inside the screen is the obvious thing and it is
+  -- wrong: every desktop lets you push a window aside to see what is under
+  -- it, and a window that stops dead at the edge cannot be pushed anywhere.
+  --
+  -- What must not happen is losing it. So the tab may not go above the top -
+  -- it is the only handle - and KEEP pixels of the window stay on screen in
+  -- every other direction, which is always enough of the tab to catch.
+  local KEEP = 48
+
+  win.x = math.min(math.max(tonumber(req.x) or win.x, KEEP - win.w),
+                   W - KEEP)
+  win.y = math.min(math.max(tonumber(req.y) or win.y, TAB_H),
+                   H - KEEP)
   damage_window(win)
 
   return { ok = true }

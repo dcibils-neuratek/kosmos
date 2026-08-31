@@ -25,6 +25,20 @@ if #entries == 0 then
   return
 end
 
+-- Built whole, then printed once.
+--
+-- Printing a line at a time is a round trip per line: `print` reaches the
+-- console server over IPC, and when the console is a Terminal window that
+-- window has to wake to take it. A listing of thirty files was thirty of
+-- those, which is what made `ls` arrive one line at a time slowly enough
+-- to watch.
+--
+-- The `getattr` per entry is still a round trip each, and that one is
+-- inherent to the protocol as it stands: `list` returns names, and the size
+-- and kind live on the node. Making `list` able to answer with attributes
+-- is the real fix and belongs in the protocol rather than here.
+local out = {}
+
 for _, entry in ipairs(entries) do
   local child = (path == "/" and "/" or path .. "/") .. entry
   local attrs = fs.getattr(child)
@@ -42,5 +56,7 @@ for _, entry in ipairs(entries) do
     what = ""
   end
 
-  print(("  %-16s %s"):format(entry, what))
+  out[#out + 1] = ("  %-16s %s"):format(entry, what)
 end
+
+print(table.concat(out, "\n"))

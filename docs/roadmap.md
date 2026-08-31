@@ -37,6 +37,22 @@ buy nothing.
 
 ### Later, and not yet scheduled
 
+**The shell needs to be one.** It has `cd`, `pwd`, `ls`, `cat`, aliases and
+Lua evaluation, and the Terminal now has the builtins that have to live in
+the process that owns the working directory. What it does not have is the
+rest of what makes a shell useful: pipes, redirection, globbing, history, a
+prompt that says something, `cp`, `mv`, `rm`, `find`, `grep`. None of it is
+hard and all of it is worth doing once the filesystem underneath it is
+finished, because most of those commands are questions about a filesystem.
+
+**`list` should be able to answer with attributes.** `ls` costs one round
+trip per entry to ask for a size and a kind, which is the protocol's shape
+rather than the program's fault. A `list` that can return what it already
+knows would turn a listing of thirty files from thirty-one messages into
+one.
+
+
+
 **Process memory is committed up front, and mostly unused.** Every process
 gets 2 MB of heap and 64 KB of stack allocated and zeroed at creation
 whether it uses them or not, plus a private 577 KB copy of the image. With

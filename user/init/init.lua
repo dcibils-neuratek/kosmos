@@ -918,6 +918,25 @@ local function new_namespace()
   end
 
   function ns.getattr(path)
+    -- A mount point is a directory, and only this table knows it.
+    --
+    -- `/bin` is a name in this process's mount table; the server behind it
+    -- knows what it holds and nothing about where it was attached, so
+    -- asking it about the empty path gets whatever that server thinks an
+    -- empty path is - which is why `ls /` marked `data` a directory and not
+    -- `bin`, `dev`, `lib` or `home`. Same reasoning as `ns.list` combining
+    -- what the server said with what is mounted below: the shape of the
+    -- tree is the namespace's answer to give.
+    for _, m in ipairs(mounts) do
+      if m.prefix == path then
+        local r = request("getattr", path)
+        local attrs = r and r.attrs or {}
+
+        attrs.kind = "directory"
+        return attrs
+      end
+    end
+
     local r, e = request("getattr", path)
     return r and r.attrs, e
   end
@@ -3189,7 +3208,10 @@ if role == ROLE_RUNNER then
   -- than it holds. `shares` names capabilities out of this process's own
   -- table, and the kernel refuses an index this process does not have.
   --
-  local function launch(path, argument, detach, shares)
+  -- `where` is the directory the child starts in. Without it a program run
+  -- from a Terminal always started at the Terminal's *parent's* cwd, so
+  -- `cd` moved the prompt and nothing that ran from it.
+  local function launch(path, argument, detach, shares, where)
     local ep = sys.endpoint()
     if not ep then return false, "no endpoint" end
 
@@ -3215,7 +3237,7 @@ if role == ROLE_RUNNER then
     end
 
     local reply = sys.call(ep, {
-      path = path, args = argument or "", cwd = req.cwd or "/",
+      path = path, args = argument or "", cwd = where or req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7,

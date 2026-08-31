@@ -32,6 +32,11 @@
 --------------------------------------------------------------------------
 
 local ui = use("/lib/ui.lua")
+
+-- Where this window is. A shell's working directory belongs to the shell,
+-- never to a server: a server is always told a whole path and knows nothing
+-- about where anybody thinks they are.
+local cwd = "/home"
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -139,6 +144,58 @@ local function launch(text)
 
   if not name then return end
 
+  --------------------------------------------------------------------------
+  -- Built in, because they change *this* process.
+  --
+  -- `cd` was the thing that made the Terminal look like a shell and not be
+  -- one: it ran programs out of /bin, and a program cannot change its
+  -- parent's working directory - so `cd` could only ever have been a
+  -- builtin, and its absence gave "cd: no such program", which is true and
+  -- unhelpful.
+  --
+  -- The rest are here for the same reason: they are about where you are,
+  -- which is a fact this window owns.
+  --------------------------------------------------------------------------
+  local function resolve(p)
+    if not p or p == "" then return cwd end
+    if p:sub(1, 1) == "/" then return p end
+    if p == "." then return cwd end
+
+    if p == ".." then
+      return cwd:match("^(.*)/[^/]+$") or "/"
+    end
+
+    return (cwd == "/" and "/" or cwd .. "/") .. p
+  end
+
+  if name == "cd" then
+    local target = resolve(rest:match("^%s*(%S*)"))
+
+    -- Asked rather than assumed: a path is a directory exactly when
+    -- whoever serves it will list it, which is the only definition that
+    -- means anything across four different servers.
+    local entries, why = fs.list(target)
+
+    if not entries then
+      emit("cd: " .. target .. ": " .. tostring(why) .. "\n")
+    else
+      cwd = target
+      emit(cwd .. "\n")
+    end
+
+    return
+  end
+
+  if name == "pwd" then
+    emit(cwd .. "\n")
+    return
+  end
+
+  if name == "clear" then
+    lines = { "" }
+    return
+  end
+
   if name == "help" then
     local names = fs.list("/bin") or {}
     local out = {}
@@ -164,7 +221,7 @@ local function launch(text)
   -- detached and `busy` says so, and the child's output arrives as `write`
   -- messages while it runs.
   --
-  local ok, why = run(path, rest, true, { ["/dev/console"] = ep })
+  local ok, why = run(path, rest, true, { ["/dev/console"] = ep }, cwd)
 
   if ok then
     busy = name
