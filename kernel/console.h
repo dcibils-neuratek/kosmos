@@ -2,10 +2,18 @@
 #define KERNEL_CONSOLE_H
 
 /*
- * The kernel's only output. Sits directly on hal_putchar, because until M1
- * there is no interrupt controller and no buffering: output has to keep
- * working when everything else in the system is already dead.
+ * The kernel's output. Sits directly on hal_putchar, because until M1 there
+ * is no interrupt controller and no buffering: output has to keep working
+ * when everything else in the system is already dead.
+ *
+ * From M6 it also goes to the screen when there is one, which is why
+ * `console_attach_screen` exists. See console.c for why forty lines of glyph
+ * blitting in the kernel is not the graphics subsystem CLAUDE.md forbids:
+ * `panic()` writes through here, and on a board with no serial cable a panic
+ * that prints into the void is the same as a machine that does not work.
  */
+
+struct fb;
 
 /* One character. A '\n' becomes "\r\n", because a serial terminal needs
  * both. Everything else goes out as it is, including zero bytes: Lua strings
@@ -24,5 +32,21 @@ void kputu(unsigned long v);
  * Fixed width on purpose: register dumps are read by scanning down a column,
  * and a variable-width value ruins that. */
 void kputx(unsigned long v, unsigned digits);
+
+/*
+ * Sends everything printed from here on to the screen as well. Clears it,
+ * puts the cursor at the top, and writes `title` there - on the screen only,
+ * because the serial line has already had one. Called once, after the board
+ * reports a display.
+ */
+void console_attach_screen(const struct fb *fb, const char *title);
+
+/* The colour of subsequent text on the screen, as 0xAARRGGBB. The serial
+ * side has no opinion and ignores it. */
+void console_colour(unsigned long foreground);
+
+/* The boot progress bar, in the rows at the bottom that text never scrolls
+ * through. A no-op with no screen. */
+void console_progress(unsigned done, unsigned total);
 
 #endif /* KERNEL_CONSOLE_H */

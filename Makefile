@@ -45,6 +45,8 @@ SRCS := boot/start.S \
         hal/qemu-virt/fb.c \
         kernel/console.c \
         kernel/screen.c \
+        kernel/boot.c \
+        $(GEN)/font_8x16.c \
         runtime/libc/string.c \
         runtime/libc/setjmp.S \
         kernel/panic.c \

@@ -17,9 +17,12 @@ belongs.
 
 So there are two phases here, and the second is the one that matters:
 
-  1. **The boot splash**, drawn by the kernel. Geometry against what the
-     guest reported over serial, a square white border, red/green/blue bars
-     in that order, and a gradient increasing downward.
+  1. **The boot screen**, drawn by the kernel: its ten narrated stages and
+     the progress bar under them. Geometry against what the guest reported
+     over serial, the banner and the body text present, and the bar full -
+     a bar stuck short of the end means BOOT_STAGES and the number of stages
+     actually announced disagree. The bar's green also covers the channel
+     order, since a wrong fourcc turns it blue.
 
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
@@ -32,6 +35,7 @@ Usage: run_screenshot.py <image.elf> [--png OUT] [--timeout SECONDS]
 
 import argparse
 import fcntl
+import re
 import os
 import select
 import socket
@@ -55,8 +59,13 @@ QEMU_ARGS = [
     "-device", "ramfb",
 ]
 
-READY = "video "            # printed once hal_fb_init has succeeded
 PROMPT = "kosmos>"          # printed once the shell is serving
+
+# The kernel's display stage prints its geometry as part of narrating the
+# boot. Matched rather than a dedicated marker line, because a marker that
+# exists only for a test is a line somebody deletes while tidying and nobody
+# notices until the test fails for an unrelated-looking reason.
+GEOMETRY = re.compile(r"(\d+)x(\d+), 32-bit colour")
 
 # The pattern phase two draws. Vertical bars on a black field, at x positions
 # a pitch error would smear: a wrong stride shifts each row sixteen pixels, so
@@ -224,12 +233,27 @@ def pixel_reader(data):
     return width, height, at
 
 
-def check_splash(reported, data):
-    """Phase one: what the kernel drew at boot."""
+def find_colour(at, want, x0, y0, x1, y1):
+    """Whether `want` appears anywhere in a region. Returns a sample point."""
+    for y in range(y0, y1, 2):
+        for x in range(x0, x1, 2):
+            if at(x, y) == want:
+                return (x, y)
+    return None
+
+
+def check_boot_screen(geometry, data):
+    """Phase one: what the kernel drew while booting.
+
+    The kernel narrates its ten stages onto the framebuffer through the same
+    console that writes to the serial port, and fills a progress bar at the
+    bottom as they complete. Both are checked, and between them they cover
+    the two things only an outside observer can see: that the geometry the
+    guest reported is the geometry QEMU is scanning out, and that the channel
+    order is right - a wrong fourcc turns the bar's green into blue.
+    """
     width, height, at = pixel_reader(data)
 
-    # The guest's line reads: "video 1024x768, pitch 4160 bytes, at 0x..."
-    geometry = reported.split()[1].rstrip(",")
     if geometry != f"{width}x{height}":
         raise Failure(
             f"the guest reported {geometry} and QEMU is scanning out "
@@ -237,38 +261,69 @@ def check_splash(reported, data):
             "disagree about the geometry."
         )
 
-    white = (255, 255, 255)
-    third = width // 3
+    checks = 1
 
-    checks = [
-        ("the top-left corner",          at(0, 0),                    white),
-        ("the top-right corner",         at(width - 1, 0),            white),
-        ("the bottom-left corner",       at(0, height - 1),           white),
-        ("the bottom-right corner",      at(width - 1, height - 1),   white),
-        ("the left edge at mid-height",  at(0, height // 2),          white),
-        ("the right edge at mid-height", at(width - 1, height // 2),  white),
-        ("the first bar (red)",          at(third // 2, height // 2), (0xc0, 0x30, 0x30)),
-        ("the second bar (green)",       at(width // 2, height // 2), (0x30, 0xc0, 0x30)),
-        ("the third bar (blue)",         at(width - third // 2, height // 2), (0x30, 0x30, 0xc0)),
-    ]
+    # The console's own colours, from kernel/console.c and kernel/boot.c.
+    background = (0x0d, 0x11, 0x17)
+    title      = (0x58, 0xa6, 0xff)
+    bar_fill   = (0x3f, 0xb9, 0x50)
 
-    for name, got, want in checks:
-        if got != want:
-            raise Failure(
-                f"splash: {name} is {got} and should be {want}.\n"
-                "A sheared border means an offset computed as width * 4 "
-                "instead of the pitch; bars in the wrong order mean the "
-                "fourcc or the channel order is wrong."
-            )
-
-    ramp = [at(width // 2, y)[2] for y in (10, 100, 300, 700)]
-    if not all(a < b for a, b in zip(ramp, ramp[1:])):
+    got = at(width - 4, height // 2)
+    if got != background:
+        why = ("that is the same three bytes reversed, so the fourcc or the "
+               "channel order is wrong"
+               if tuple(reversed(got)) == background
+               else "the console did not clear the screen")
         raise Failure(
-            f"splash: the gradient does not increase down the screen: {ramp}. "
-            "Rows are not landing where the pitch says they should."
+            f"the background is {got} and should be {background}: {why}."
         )
+    checks += 1
 
-    return len(checks) + 1
+    # The banner, in blue, on the first text row.
+    if find_colour(at, title, 0, 0, 200, 16) is None:
+        raise Failure(
+            "no blue title pixels on the first row. Either the console never "
+            "attached to the screen or the channel order is wrong."
+        )
+    checks += 1
+
+    # Body text, in the rows below it. Any pixel lighter than the background
+    # will do: this is "something was written", not "what was written".
+    lit = 0
+    for y in range(32, 300, 3):
+        for x in range(0, width, 3):
+            if at(x, y) != background:
+                lit += 1
+    if lit < 200:
+        raise Failure(
+            f"only {lit} lit pixels where the boot log should be. The kernel "
+            "narrated its stages to the serial port and not to the screen."
+        )
+    checks += 1
+
+    # The progress bar, full. It is in the rows the text never scrolls
+    # through, and by the time the shell is up every stage has completed - a
+    # bar stuck short of the end means BOOT_STAGES and the number of
+    # boot_stage calls disagree.
+    bar = find_colour(at, bar_fill, 0, height - 48, width, height)
+    if bar is None:
+        raise Failure(
+            f"the progress bar's fill colour {bar_fill} is nowhere in the "
+            "bottom of the screen. Either it was never drawn, or the "
+            "channel order is wrong and it came out blue."
+        )
+    checks += 1
+
+    _, bar_y = bar
+    if at(width - 20, bar_y) != bar_fill:
+        raise Failure(
+            f"the progress bar is not full at the right-hand end: "
+            f"{at(width - 20, bar_y)} rather than {bar_fill}. BOOT_STAGES "
+            "and the number of stages actually announced disagree."
+        )
+    checks += 1
+
+    return checks
 
 
 def check_bars(data):
@@ -352,19 +407,23 @@ def main():
     try:
         guest = Guest(args.image, args.timeout)
 
-        guest.wait_for(READY, "reported a display")
-        reported = guest.line_starting(READY)
+        # The prompt, not the display stage: the progress bar is only full
+        # once every stage has run, and the point of checking it is that it
+        # reaches the end.
+        guest.wait_for(PROMPT, "reached the shell prompt")
 
-        if "none" in reported:
+        found = GEOMETRY.search(guest.seen)
+        if found is None:
             raise Failure(
-                f"the guest reported no display: {reported!r}. "
-                "ramfb was on the QEMU line, so fw_cfg or the etc/ramfb "
-                "item is not being found."
+                "the guest never reported a display geometry. ramfb was on "
+                "the QEMU line, so either fw_cfg is not finding the etc/ramfb "
+                "item or the display stage stopped printing its size.\n"
+                f"--- what it did say ---\n{guest.seen}"
             )
 
-        splash_checks = check_splash(reported, guest.screendump())
+        reported = f"{found.group(1)}x{found.group(2)}"
+        splash_checks = check_boot_screen(reported, guest.screendump())
 
-        guest.wait_for(PROMPT, "reached the shell prompt")
         guest.type(DRAW)
         guest.wait_for("drawn", "finished drawing")
 
@@ -383,9 +442,9 @@ def main():
             guest.close()
 
     total = splash_checks + bar_checks
-    print(f"guest: {reported}")
+    print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
-          f"({splash_checks} on the kernel's splash, {bar_checks} on what "
+          f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
           f"Lua drew through gfx).")
     return 0
 

@@ -14,6 +14,7 @@
 #include "ipc.h"
 #include "process.h"
 #include "hal.h"
+#include "boot.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -2587,6 +2588,21 @@ static bool test_the_padding_is_real(void)
     return by_pitch[0] == 0x00c0ffeeu;
 }
 
+static bool test_the_boot_announced_every_stage(void)
+{
+    /*
+     * BOOT_STAGES is a constant and the calls to boot_stage are scattered
+     * through kmain, so the two can drift - and the only symptom is a
+     * progress bar that stops at four fifths and stays there, which reads as
+     * "something hung" rather than as "somebody added a stage".
+     *
+     * The suite runs after the last of them, so by now the two must agree
+     * exactly. Too few means a stage was added without changing the
+     * constant; too many means one was removed.
+     */
+    return boot_stages_done() == BOOT_STAGES;
+}
+
 static bool test_the_page_allocator_never_hands_out_the_framebuffer(void)
 {
     /*
@@ -3068,6 +3084,7 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
     { "fb: the pitch is not width * 4",        test_the_pitch_is_not_the_width },
     { "fb: page aligned and inside RAM",       test_the_framebuffer_is_page_aligned_and_in_ram },

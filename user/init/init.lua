@@ -397,11 +397,152 @@ local function shell_main(console_cap, ramfs_cap)
   local function out(s) ns.write("/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
 
+  --------------------------------------------------------------------------
+  -- help
+  --
+  -- A table rather than a function, with __tostring and __call, so that both
+  -- `help` and `help("gfx")` do something sensible. The shell prints the
+  -- result of what you type through tostring, so a bare `help` renders the
+  -- overview without the parentheses that every newcomer forgets.
+  --------------------------------------------------------------------------
+  local topics = {}
+
+  topics.overview = [=[
+Kosmos - a microkernel with a Lua userland.
+
+You are typing at a *process*. What you type is read by the console
+server, sent to the shell over IPC, evaluated in the shell's own
+lua_State, and the answer comes back the same way. Three processes,
+two address spaces, to print one number.
+
+  2 + 2
+  ("hello"):upper()
+
+What the shell can reach is exactly what it was handed - there is no
+global anything. Try `sys.write("direct")`: it returns -102, because
+the shell does not own the console and has to ask.
+
+  help("fs")     files, through this process's namespace
+  help("gfx")    surfaces, the screen, and text
+  help("sys")    what a process can ask the kernel for
+  help("demos")  things worth typing
+]=]
+
+  topics.fs = [=[
+fs - this process's namespace, not a global filesystem.
+
+`fs` is a mount table living in the shell. A path that matches no
+mount does not exist; that is not a permission check, there is simply
+nothing there to deny.
+
+  fs.list("/data")                     -> a table of names
+  fs.read("/data/sensor")              -> whatever was written
+  fs.write("/data/x", { n = 1 })       -> true
+  fs.getattr("/data/x")                -> { size = ... }
+  fs.read("/nowhere")                  -> nil, "no such path: /nowhere"
+
+Values are Lua values, not bytes. A read gives you back the table you
+wrote, integers still integers and floats still floats.
+
+  fs.reload(path, source)   replaces a running server's code
+
+See help("demos") for a hot reload you can watch happen.
+]=]
+
+  topics.gfx = [=[
+gfx - surfaces, and the only place a pixel offset is computed.
+
+  gfx.screen()             the framebuffer, as a surface
+  gfx.surface{ w=, h= }    an offscreen one, from this process's heap
+  gfx.font                 { w = 8, h = 16 }, the bitmap font's cell
+
+On a surface:
+
+  s:size()                        -> width, height
+  s:fill(x, y, w, h, colour)
+  s:span(x, y, len, colour)
+  s:text(x, y, string, fg [, bg]) -> the x the next character starts at
+  s:blit(src, sx, sy, w, h, dx, dy)
+  s:blend(src, sx, sy, w, h, dx, dy [, alpha])
+  s:get(x, y) / s:set(x, y, colour)
+  s:free()
+
+Colours are 0xAARRGGBB. Everything clips rather than complaining, so
+drawing off the edge is fine. Every pixel loop runs in C - Lua decides
+what to draw and where, and never computes an address.
+
+Offscreen surfaces come out of the 2 MB process heap, so a full-screen
+one does not fit yet. That limit is real and is the next thing to fix.
+]=]
+
+  topics.sys = [=[
+sys - the syscalls, all twelve of them.
+
+  sys.ticks()              the monotonic counter; time things with it
+  sys.write(s)             refused here: the shell does not own the console
+  sys.pack(v)/unpack(s)    a Lua value as bytes, and back
+  sys.spawn(role, caps)    another process from this same image
+  sys.wait()               -> id, exit code
+  sys.endpoint()           a new IPC endpoint
+  sys.call(cap, table)     send and wait for the reply
+  sys.receive/reply        the other side of it
+  sys.yield(), sys.exit(n)
+
+A capability is an index into this process's own table. There are no
+global names: you cannot reach what you were not handed, and you
+cannot guess a number to get it.
+
+  sys.call(99, {})         -> nil, "no such capability"
+]=]
+
+  topics.demos = [=[
+Things worth typing.
+
+Draw on the screen:
+
+  local s = gfx.screen() s:fill(80, 300, 400, 200, 0xff1f6feb)
+  local s = gfx.screen() s:text(80, 520, "hello", 0xff7ee787)
+
+A gradient, 256 fills, each a C pixel loop:
+
+  local s = gfx.screen() for i=0,255 do s:fill(80+i*3, 560, 3, 80, 0xff000000 + i*0x010101) end
+
+Time something, in counter ticks:
+
+  local a = sys.ticks() for i=1,200000 do end return sys.ticks() - a
+
+The serialiser, which is how every message travels:
+
+  #sys.pack({ hello = "world", n = 7 })
+  sys.unpack(sys.pack({ deep = { "a", "b" } })).deep[2]
+  sys.pack(print)            -> refused: a function cannot cross
+
+Replace a running server's code, while it is holding your files:
+
+  fs.write("/data/a", "one")
+  fs.reload("/data", "return function(s) return { read = function(r) return { ok = true, value = 'REPLACED, writes so far: ' .. tostring(s.writes) } end } end")
+  fs.read("/data/a")
+
+The counter in that answer was incremented by the code you just
+deleted: the behaviour changed and the state survived. Reboot to get
+your filesystem back.
+]=]
+
+  local help = setmetatable({}, {
+    __tostring = function() return topics.overview end,
+    __call = function(_, what)
+      return topics[what or "overview"]
+          or ("no help for " .. tostring(what) ..
+              "; try fs, gfx, sys or demos")
+    end,
+  })
+
   -- What a chunk typed at the prompt can see. `fs` is this process's own
   -- namespace, so what the shell can reach is what the shell was given -
   -- there is no privileged view to hand out.
   local env = {
     fs = ns,
+    help = help,
     print = function(...)
       local parts = {}
       for i = 1, select("#", ...) do
@@ -413,7 +554,7 @@ local function shell_main(console_cap, ramfs_cap)
   setmetatable(env, { __index = _G })
 
   out("\nKosmos shell. A process, talking to servers.\n")
-  out("Try: fs.list(\"/data\")   fs.read(\"/data/sensor\")   2+2\n\n")
+  out("Type `help` for what there is, or `help(\"demos\")` for things to try.\n\n")
 
   while true do
     out("kosmos> ")
@@ -508,6 +649,9 @@ if role == ROLE_INIT then
   -- debugging session the first time a spawn started being refused. init
   -- holds the console at this point precisely so it can say things, and the
   -- one moment it most needs to is when it cannot build the system.
+  -- Which child is which, so a death can be named rather than numbered.
+  local names = {}
+
   local function start(what, role, caps, flags)
     local id, err = sys.spawn(role, caps, flags)
 
@@ -516,6 +660,7 @@ if role == ROLE_INIT then
       sys.exit(1)
     end
 
+    names[id] = what
     return id
   end
 
@@ -550,10 +695,25 @@ if role == ROLE_INIT then
       sys.exit(0)
     end
 
-    -- It cannot say so itself: it does not own the console and the console
-    -- server may well be the thing that just died. Recorded rather than
-    -- printed, which is the honest shape until there is a log server.
-    local _ = { id = id, code = code }
+    -- **Said out loud.**
+    --
+    -- This used to be recorded into a local and dropped, on the reasoning
+    -- that the console server might be the thing that just died. That is
+    -- true and it is still no reason to say nothing: a process that dies
+    -- takes its own error message with it, because it prints by asking the
+    -- console server and a dead process asks nothing. init is the only one
+    -- left who knows, and a system where a server can vanish in silence is
+    -- a system that lies to you.
+    --
+    -- It found this the first time it mattered: the shell died on a bad
+    -- edit and the only symptom was a prompt that never answered.
+    local what = names[id] or ("process " .. tostring(id))
+
+    if code == 0 then
+      line("init: " .. what .. " exited cleanly")
+    else
+      line("init: " .. what .. " died with code " .. tostring(code))
+    end
   end
 end
 

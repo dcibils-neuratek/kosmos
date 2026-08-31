@@ -19,6 +19,7 @@
 #include "ipc.h"
 #include "process.h"
 #include "screen.h"
+#include "boot.h"
 #include "panic.h"
 
 #ifdef KOSMOS_TEST
@@ -29,150 +30,108 @@
 #include "bench.h"
 #endif
 
-/*
- * The boot splash.
- *
- * The display's counterpart to the "mem 512 MB" line above: proof at every
- * boot that the device came up, in a form a person can check at a glance.
- * All real drawing moves to userland at the next step, and this stays,
- * because a system that prints its RAM size and says nothing about its
- * screen is harder to debug than one that does both.
- *
- * Deliberately shaped so that the two ways this can be subtly wrong are
- * obvious rather than plausible:
- *
- *   - **A two-pixel white border.** If the pitch is wrong - if anything
- *     computed an offset as width * 4 instead of using it - the top and
- *     bottom edges still look right and the left and right ones shear into
- *     diagonals. Nothing else in a test pattern shows that as clearly.
- *   - **Red, green and blue bars, in that order, left to right.** If the
- *     channel order or the fourcc is wrong they come out reversed, and a
- *     blue-first pattern is unmistakable where a slightly-off colour is not.
- *
- * The row pointer is recomputed from `pitch` each line, which is the same
- * discipline `gfx.md` §19.3 demands of every primitive that comes after it.
- */
-static void splash(const struct fb *fb)
-{
-    unsigned y;
-
-    for (y = 0; y < fb->height; y++) {
-        volatile uint32_t *row =
-            (volatile uint32_t *)((volatile uint8_t *)fb->pixels
-                                  + (size_t)y * fb->pitch);
-        unsigned x;
-
-        for (x = 0; x < fb->width; x++) {
-            uint32_t colour;
-
-            if (x < 2 || y < 2 || x + 2 >= fb->width || y + 2 >= fb->height) {
-                colour = 0x00ffffffu;                   /* the border */
-            } else if (y >= fb->height / 3 && y < (fb->height * 2) / 3) {
-                unsigned third = fb->width / 3;
-
-                if (x < third) {
-                    colour = 0x00c03030u;               /* red   */
-                } else if (x < third * 2) {
-                    colour = 0x0030c030u;               /* green */
-                } else {
-                    colour = 0x003030c0u;               /* blue  */
-                }
-            } else {
-                /* A vertical ramp, so a row written to the wrong place
-                 * breaks the gradient visibly. */
-                uint32_t v = (y * 255u) / fb->height;
-                colour = (v / 3) << 16 | (v / 3) << 8 | v;
-            }
-
-            row[x] = colour;
-        }
-    }
-}
-
 void kmain(void)
 {
+    struct fb fb;
+    bool have_display;
 
+    /*
+     * The boot, out loud.
+     *
+     * Ten stages, each announced before it happens and each followed by the
+     * numbers that make it worth watching. This is a system built to be
+     * learned from, and almost everything interesting about it happens
+     * between the reset vector and the prompt - a boot that prints four
+     * lines and drops you at a shell has hidden the entire subject.
+     *
+     * The order below is not arrangeable. Each stage needs the one above it:
+     * there is no output before the UART, no fault report before the vector
+     * table, no page tables before an allocator to build them from, and no
+     * process before there are threads to run it on.
+     */
     hal_early_init();
+    kputs("\nKosmos\n\n");
+    boot_stage("serial port");
+    boot_detail("PL011 at 0x09000000, polled; the only way out until M6");
 
     /* Before anything else that could fault. Until this runs, VBAR_EL1 holds
      * whatever the firmware left, and any exception is a jump into nothing. */
     trap_init();
+    boot_stage("exception vectors");
+    boot_detail("16 entries at VBAR_EL1; a fault now reports itself");
 
-    /* The boot banner is itself part of M0's definition of done, and the
-     * host runner checks for it. Printed before the tests so that a suite
-     * that dies halfway still proves the UART came up. */
     pmm_init();
-
-    kputs("Kosmos\n");
-
-    /* The one line worth printing at every boot. A wrong RAM size or a
-     * bitmap that swallowed the wrong range shows up here as a number that
-     * looks off, rather than as a fault somewhere else much later. */
-    kputs("mem   ");
+    boot_stage("physical memory");
+    kputs("       ");
     kputu(pmm_total_pages() * (PAGE_SIZE / 1024) / 1024);
-    kputs(" MB, ");
+    kputs(" MB in ");
     kputu(pmm_total_pages());
-    kputs(" pages, ");
-    kputu(pmm_free_pages());
-    kputs(" free, ");
+    kputs(" pages of 4 KB, ");
     kputu(pmm_total_pages() - pmm_free_pages());
-    kputs(" used by the kernel\n");
+    kputs(" already the kernel's\n");
 
     /* Translation on. Everything above ran with the MMU off, where every
      * access is uncached Device memory. From here the kernel runs cached,
      * .text is read-only, and address 0 and the stack guard have no
      * translation at all. */
     mmu_init();
-    kputs("mmu   on\n");
-
-    /*
-     * No heap.
-     *
-     * There was a 2 MB one here, taken from the page allocator for a
-     * `lua_State` the kernel opened. Neither exists any more: the kernel's
-     * own state lives in fixed pools, and nothing in kernel/, arch/ or hal/
-     * calls malloc. A process gets its heap mapped into its own address
-     * space, which is where a heap that can be exhausted belongs.
-     */
-    thread_init();
-    ipc_init();
-    process_init();
-    kputs("sched ");
-    kputs(sched_current()->name);
-    kputc('\n');
+    boot_stage("virtual memory");
+    boot_detail("4 KB pages, 39-bit addresses; .text read-only, page 0 unmapped");
 
     /*
      * The display, if there is one.
      *
      * False is not an error. `make test` boots without `-device ramfb` and
-     * the Pi has no display attached to it yet, and a system that cannot
-     * come up without a screen is a system that cannot be debugged over a
-     * serial cable.
+     * a board may have no monitor attached, and a system that cannot come up
+     * without a screen is a system that cannot be debugged over a cable.
      */
-    {
-        struct fb fb;
+    have_display = hal_fb_init(&fb);
 
-        if (hal_fb_init(&fb)) {
-            splash(&fb);
+    if (have_display) {
+        /* Remembered, because a process granted the screen needs these pages
+         * mapped and hal_fb_init cannot be asked again: it clears the
+         * framebuffer. */
+        screen_init(&fb);
 
-            /* Remembered, because a process that is granted the screen needs
-             * these pages mapped and hal_fb_init cannot be asked again: it
-             * clears the framebuffer. */
-            screen_init(&fb);
-
-            kputs("video ");
-            kputu(fb.width);
-            kputc('x');
-            kputu(fb.height);
-            kputs(", pitch ");
-            kputu(fb.pitch);
-            kputs(" bytes, at 0x");
-            kputx((unsigned long)(uintptr_t)fb.pixels, 16);
-            kputc('\n');
-        } else {
-            kputs("video none, serial only\n");
-        }
+        /*
+         * And from here the kernel's own output goes to both. Everything
+         * already printed above went to the serial port alone, which is why
+         * the screen starts at this line rather than at the first - the
+         * alternative is buffering the boot log to replay it, and a buffer
+         * that exists only to make the start look tidy is a buffer that can
+         * overflow during a panic.
+         */
+        console_attach_screen(&fb, "Kosmos");
+        console_progress(boot_stages_done(), BOOT_STAGES);
     }
+
+    boot_stage("display");
+
+    if (have_display) {
+        kputs("       ");
+        kputu(fb.width);
+        kputc('x');
+        kputu(fb.height);
+        kputs(", 32-bit colour, ");
+        kputu(fb.pitch);
+        kputs(" bytes a row (not ");
+        kputu(fb.width * 4);
+        kputs(": the stride is padded)\n");
+    } else {
+        boot_detail("none; serial only");
+    }
+
+    thread_init();
+    boot_stage("threads");
+    boot_detail("a fixed pool, each with two stacks and a guard page below");
+
+    ipc_init();
+    boot_stage("IPC and capabilities");
+    boot_detail("synchronous rendezvous; a capability is an index, never a name");
+
+    process_init();
+    boot_stage("processes");
+    boot_detail("address spaces at EL0; the kernel is mapped and untouchable");
 
     hal_irq_init();
     hal_timer_init(TICK_HZ);
@@ -180,21 +139,41 @@ void kmain(void)
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way into EL1. Now there is a handler and a source. */
     __asm__ volatile("msr daifclr, #2" ::: "memory");
-    kputs("timer ");
-    kputu(TICK_HZ);
-    kputs(" Hz\n");
 
+    boot_stage("timer and interrupts");
+    kputs("       ");
+    kputu(TICK_HZ);
+    kputs(" Hz, GICv3; preemption starts here, in the vector's epilogue\n");
+
+    kputs("       scheduler: ");
+    kputs(sched_current()->name);
+    kputc('\n');
+
+    boot_stage("userland");
+
+    /*
+     * In the test and bench images, the suite *is* the userland: it runs
+     * here instead of init and never comes back.
+     *
+     * These two calls were silently deleted by a careless rewrite of this
+     * function, and the symptom was not a failure - it was `make test`
+     * apparently hanging, because the image booted perfectly into a shell
+     * while the host runner sat waiting for a TAP plan that was never
+     * coming. The second time a slice-based edit has quietly dropped lines
+     * from the middle of something.
+     */
 #ifdef KOSMOS_TEST
-    tests_run();   /* never returns: exits the guest through semihosting */
+    boot_detail("the test suite, which stands in for init in this image");
+    tests_run();        /* never returns: exits the guest through semihosting */
 #endif
 
 #ifdef KOSMOS_BENCH
-    bench_run();   /* likewise */
+    boot_detail("the benchmarks, which stand in for init in this image");
+    bench_run();        /* likewise */
 #endif
 
-    /* wfi rather than a busy loop: it parks the core until an interrupt
-     * arrives instead of pinning a host CPU at 100% under QEMU. Nothing can
-     * wake it yet, which is exactly right for M0. */
+    boot_detail("init, which starts everything else and outlives it");
+
     /*
      * Start init, and nothing else.
      *

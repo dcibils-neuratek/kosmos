@@ -145,6 +145,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | A pitch bug is invisible from inside the process: reads and writes stay consistent with each other. The test for it lives outside the guest, in `make screenshot` | gfx.md §19.3, tools/run_screenshot.py |
 | Aug 2026 | The screen is a boolean on the process, like the console, and init hands it on. Today to the shell; at the app server, to that instead | state.md, kernel/process.h |
 | Aug 2026 | Spleen 8x16 as the bitmap font, BSD-2-Clause, vendored unmodified under `assets/fonts/` and converted at build time. Linux's `font_8x16.c` rejected: it is GPL and would infect the image | gfx.md, assets/fonts/ |
+| Aug 2026 | The kernel console can write to the screen. Not a graphics subsystem: forty lines of glyph blitting, so that `panic()` reaches a display on a board with no serial cable | kernel/console.c, CLAUDE.md |
+| Aug 2026 | The boot narrates itself in ten numbered stages with a progress bar, because what happens between the reset vector and a prompt is most of what there is to learn here | kernel/boot.h, state.md |
 | Aug 2026 | The project is renamed Kosmos (previously Komo) | all docs |
 | Aug 2026 | Pixels never live in Lua tables. A surface is a userdata over flat bytes; tables carry intent | gfx.md §19.1 |
 | Aug 2026 | No line of Lua computes a pixel offset. Pitch and format live in the handle, the arithmetic happens only in C | gfx.md §19.3 |
