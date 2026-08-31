@@ -93,13 +93,26 @@ function ticker:tick()
 
   view.blocks = blocks
 
-  -- Stuck to the bottom, which is where a log is read from. `content` is
-  -- what the last draw measured, so this follows the text rather than
-  -- guessing how tall it became.
-  view.scroll = math.max(0, (view.content or 0) - view.h + 8)
+  -- Stuck to the bottom, which is where a log is read from.
+  --
+  -- A number far larger than any log rather than `content - h`: `content`
+  -- is what the *last* draw measured, so using it lands one refresh behind
+  -- whenever the log grew - and the widget clamps an over-large scroll to
+  -- the real bottom on the way past. Asking for further than the end and
+  -- being corrected is exactly right here, and it needs no idea of how tall
+  -- the text became.
+
+  view.scroll = 1 << 30
 
   note.text = ("%d bytes, %d lines"):format(#text, #blocks)
 end
 
 win:add(ticker)
+
+-- Twice a second rather than the kit's default. `window:add` sets a clock
+-- the first time anything ticks, sized for a wall clock that changes once a
+-- second; a log is watched rather than glanced at, and the difference
+-- between one refresh a second and two is the difference between reading
+-- output and waiting for it.
+win.tick_every = (fs.read("/dev/cpu").counter_hz or 62500000) // 2
 win:run()

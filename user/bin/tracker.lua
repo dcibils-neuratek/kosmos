@@ -28,6 +28,7 @@
 
 local ui    = use("/lib/ui.lua")
 local files = use("/lib/files.lua")
+local types = use("/lib/filetypes.lua")
 local theme = ui.theme
 
 local W, H = 560, 400
@@ -148,7 +149,8 @@ function rows:draw(g)
     g:text(COLUMNS[2].x, y,
            (e.kind == "directory") and "--" or tostring(e.size), fg, bg)
     g:text(COLUMNS[3].x, y,
-           (e.kind == "directory") and "folder" or "file", fg, bg)
+           (e.kind == "directory") and "folder"
+           or (types.kind_of(e.name) or "file"), fg, bg)
   end
 end
 
@@ -162,14 +164,24 @@ local function open_selected()
   if e.kind == "directory" then
     show(files.join(where, e.name))
   else
-    -- Handing a file to the editor is a launch, which the desktop does.
-    -- Tracker does not need to know what an editor is, only that opening a
-    -- file is somebody else's job.
-    local ok, why = fs.send("/dev/wm", { type = "launch",
-                                         program = "editor",
-                                         args = files.join(where, e.name) })
+    -- Which program opens it is `/lib/filetypes.lua`'s answer, not
+    -- Tracker's. Tracker does not need to know what an editor is - only
+    -- that opening a file is somebody else's job and that something knows
+    -- whose.
+    local full = files.join(where, e.name)
+    local opener = types.opener(full)
 
-    status.text = ok and ("opened " .. e.name .. " in the editor")
+    if not opener then
+      status.text = e.name .. ": nothing claims a ."
+                    .. tostring(types.kind_of(full) or "?") .. " file"
+      return
+    end
+
+    local ok, why = fs.send("/dev/wm", { type = "launch",
+                                         program = opener,
+                                         args = full })
+
+    status.text = ok and ("opened " .. e.name .. " in " .. opener)
                   or ("could not open it: " .. tostring(why))
   end
 end

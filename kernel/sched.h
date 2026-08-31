@@ -58,12 +58,12 @@ struct scheduler {
      * One timer tick has elapsed while `running` was on the CPU. Returns
      * true when the policy wants it replaced.
      *
-     * Nothing acts on that answer yet: switching threads from inside an
-     * interrupt handler needs the switch to happen in the vector's epilogue
-     * rather than in C, which is its own piece of work. The hook is here
-     * because a preemptive policy is unwritable without it, and because
-     * every thread already owns both of its stacks, which is the part that
-     * would have been expensive to retrofit.
+     * This *is* acted on. `thread_tick` records the answer and the vector's
+     * epilogue calls `thread_preempt_if_needed`, which does the switch -
+     * the switch cannot happen in C inside the handler, because it moves
+     * SP_EL1 and everything below that point reads the trap frame at `sp`.
+     * The comment here used to say nothing acted on it, which stopped being
+     * true when preemption landed and was not corrected at the time.
      */
     bool (*tick)(struct thread *running);
 };
