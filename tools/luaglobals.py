@@ -50,7 +50,12 @@ ENVIRONMENTS = {
 
     # A program in /bin gets an environment built by the runner.
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
-                  "interrupted"},
+                  "interrupted", "use"},
+
+    # A library is loaded into the environment of whoever asked for it, so it
+    # sees the same names a program does - minus `args`, which belongs to the
+    # program and not to what it loaded.
+    "user/lib/": {"sys", "gfx", "fs", "cwd", "run", "interrupted", "use"},
 }
 
 

@@ -26,6 +26,7 @@ local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
 local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
 local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
+local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
 
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
@@ -1177,17 +1178,23 @@ local function binfs_handlers(state)
 
     write = function(req)
       return { ok = false,
-               error = "/bin is in the image and cannot be written" }
+               error = "this is in the image and cannot be written" }
     end,
   }
 end
 
-local function binfs_main(endpoint)
+--
+-- One server, two stores. `/bin` and `/lib` differ only in which table of
+-- source they were handed - the protocol, the chunking and the refusal to
+-- be written are identical, because "read-only source carried in the image"
+-- is the same thing in both cases.
+--
+local function binfs_main(endpoint, source, what)
   -- Loaded once, here, rather than on every request. A syntax error in a
   -- program is a syntax error in this chunk and shows up at boot, which is
   -- when somebody can do something about it.
-  local chunk, err = load(sys.programs(), "=programs", "t")
-  if not chunk then error("binfs: " .. tostring(err)) end
+  local chunk, err = load(source, "=" .. what, "t")
+  if not chunk then error(what .. ": " .. tostring(err)) end
 
   serve(endpoint, { programs = chunk() }, binfs_handlers)
 end
@@ -1252,7 +1259,8 @@ end
 
 local RUNNER_ROLE = ROLE_RUNNER
 
-local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap)
+local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
+                          lib_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
   ns.mount("/data", ramfs_cap)
@@ -1266,6 +1274,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap)
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
   ns.mount("/bin", bin_cap)
+
+  -- And what programs load rather than run. Separate from /bin so that `ls
+  -- /bin` lists things you can type and nothing else.
+  ns.mount("/lib", lib_cap)
 
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -1748,7 +1760,8 @@ your filesystem back.
     if not ep then return false, "no endpoint for the program" end
 
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
-                                        bin_cap, devices_cap }, SPAWN_SCREEN)
+                                        bin_cap, devices_cap, lib_cap },
+                         SPAWN_SCREEN)
 
     if not id then
       sys.destroy(ep)
@@ -1758,7 +1771,7 @@ your filesystem back.
     local reply = sys.call(ep, {
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
-      console = 1, data = 2, bin = 3, devices = 4,
+      console = 1, data = 2, bin = 3, devices = 4, lib = 5,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -2155,6 +2168,19 @@ if role == ROLE_INIT then
   local DEVICES_EP = 2
   local BINFS_EP   = 3
 
+  --
+  -- The kernel hands init four endpoints and no more, so the fifth is made
+  -- here. That is the right place for it: the kernel's four are the ones it
+  -- needs in order to hand the system over, and every server invented after
+  -- that is init's business and not the kernel's.
+  --
+  local LIBFS_EP = sys.endpoint()
+
+  if not LIBFS_EP then
+    line("init: no endpoint for the library store")
+    sys.exit(1)
+  end
+
   -- **A failed spawn says which one and why.**
   --
   -- These used to be `if not x then sys.exit(1) end`, and the system would
@@ -2183,6 +2209,7 @@ if role == ROLE_INIT then
   local ramfs   = start("the ramfs", ROLE_RAMFS, { RAMFS_EP })
   local devices = start("the device server", ROLE_DEVICES, { DEVICES_EP })
   local binfs   = start("the program store", ROLE_BINFS, { BINFS_EP })
+  local libfs   = start("the library store", ROLE_LIBFS, { LIBFS_EP })
 
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
@@ -2199,7 +2226,7 @@ if role == ROLE_INIT then
   -- like everything else, and `sys.write` from the prompt returning -102 is
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
-                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP },
+                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP },
                       SPAWN_SCREEN)
 
   -- And now it does what an init does, which is outlive everything and
@@ -2319,7 +2346,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- Four capabilities, in the order init granted them.
-  shell_main(0, 1, 2, 3)
+  shell_main(0, 1, 2, 3, 4)
   return
 end
 
@@ -2375,9 +2402,14 @@ if role == ROLE_DEVICES then
   return
 end
 
+if role == ROLE_LIBFS then
+  sys.name("libfs")
+  binfs_main(CAP, sys.libraries(), "libraries")
+end
+
 if role == ROLE_BINFS then
   sys.name("binfs")
-  binfs_main(CAP)
+  binfs_main(CAP, sys.programs(), "programs")
   return
 end
 
@@ -2419,6 +2451,7 @@ if role == ROLE_RUNNER then
   if req.data    then ns.mount("/data",        req.data)    end
   if req.bin     then ns.mount("/bin",         req.bin)     end
   if req.devices then ns.mount("/dev",         req.devices) end
+  if req.lib     then ns.mount("/lib",         req.lib)     end
 
   -- Whatever the parent shared, at the indices it said. A program that was
   -- started by another program can be handed things the shell never had.
@@ -2465,7 +2498,8 @@ if role == ROLE_RUNNER then
     -- The four the runner always passes, then whatever is being shared.
     -- Order is the contract: the child is told which index each landed at,
     -- because a capability table is indexed and never named.
-    local caps = { ep, req.console, req.data, req.bin, req.devices }
+    local caps = { ep, req.console, req.data, req.bin, req.devices,
+                   req.lib }
     local mounts = {}
 
     if shares then
@@ -2485,7 +2519,7 @@ if role == ROLE_RUNNER then
     local reply = sys.call(ep, {
       path = path, args = argument or "", cwd = req.cwd or "/",
       detach = detach and true or false,
-      console = 1, data = 2, bin = 3, devices = 4,
+      console = 1, data = 2, bin = 3, devices = 4, lib = 5,
       mounts = (#mounts > 0) and mounts or nil,
     })
 
@@ -2535,6 +2569,51 @@ if role == ROLE_RUNNER then
       out(table.concat(parts, "\t") .. "\n")
     end,
   }
+  --------------------------------------------------------------------------
+  -- `use("/lib/ui.lua")` - a library, loaded into this program's world.
+  --
+  -- Not `require`. There is no package path, no search, no C loader and no
+  -- global module table: a library is a file in this process's namespace,
+  -- and a program that was not given /lib does not have one. That is the
+  -- same sentence as everywhere else in this system, applied to code.
+  --
+  -- The library is loaded with *this program's* environment, so it sees the
+  -- same `fs`, `gfx` and `sys` the program does and cannot reach anything
+  -- the program could not. A library is not more privileged than its
+  -- caller; it is the caller, spelled in another file.
+  --
+  -- Cached per process, so `use` twice is one read and one compile, and two
+  -- callers in the same program share one instance of whatever it returns.
+  --------------------------------------------------------------------------
+  local loaded = {}
+
+  env.use = function(path)
+    if loaded[path] ~= nil then
+      return loaded[path]
+    end
+
+    local source, err = ns.read(path)
+
+    if not source then
+      error(("use: %s: %s"):format(path, tostring(err)), 2)
+    end
+
+    local chunk, why = load(source, "=" .. path, "t", env)
+
+    if not chunk then
+      error(("use: %s: %s"):format(path, tostring(why)), 2)
+    end
+
+    local value = chunk()
+
+    -- A library that returns nothing still counts as loaded, or every call
+    -- after the first would run it again.
+    if value == nil then value = true end
+
+    loaded[path] = value
+    return value
+  end
+
   setmetatable(env, { __index = _G })
 
   local path = req.path

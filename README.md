@@ -145,6 +145,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | A live query is a parked reply, not a callback: a server that calls a client can be blocked by one | design.md §7, roadmap.md M7 |
 | Aug 2026 | The UI kit takes BeOS's structure and not its skin: copy a decision about behaviour, decide a decision about shading fresh | ui.md §16.8b |
 | Aug 2026 | An editor early, before the UI kit: nothing else lets the machine change itself without a rebuild | roadmap.md, recorded goals |
+| Aug 2026 | The window manager reserves one key and it introduces a command, rather than reserving Tab and the arrows | ui.md §16.7 |
+| Aug 2026 | A library is a file in the namespace, loaded into the caller's environment. No package path, no module table | ui.md, init.lua `use` |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |

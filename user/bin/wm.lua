@@ -30,6 +30,7 @@
 local KEY_TAB    = 9
 local KEY_ESC    = 27
 local KEY_CTRL_C = 3
+local KEY_PREFIX = 23      -- Control-W
 
 local DESKTOP    = 0xff1c2530
 local TAB_H      = 20
@@ -273,6 +274,27 @@ handlers.close = function(req)
   return { ok = true }
 end
 
+--
+-- Everything the window manager did not claim goes to the window with the
+-- focus, as an event it can collect whenever it gets round to asking.
+-- Queued and not delivered: delivering would mean calling the application,
+-- and calling it is what this process must never do.
+--
+local function to_focused(c)
+  local win = focused_window()
+
+  if not win then return end
+
+  win.events[#win.events + 1] = { type = "key", code = c }
+
+  if #win.events > 64 then
+    -- An application that has stopped collecting its events is not going to
+    -- start. Dropping the oldest is better than growing without limit in a
+    -- process that everything else on the screen depends on.
+    table.remove(win.events, 1)
+  end
+end
+
 --------------------------------------------------------------------------
 -- Input.
 --
@@ -282,10 +304,13 @@ end
 --
 -- Until there is a pointer device the keyboard does the dragging:
 --
---   Tab            focus the next window
---   arrow keys     move the focused window
---   Escape         send a close event to the focused window
---   Control-C      give the screen back
+--   Control-W then an arrow    move the focused window
+--   Control-W then Tab         focus the next window
+--   Control-W then Control-W   a literal Control-W to the application
+--   Control-C                  give the screen back
+--
+-- Everything else belongs to the application. See `prefixed` below for why
+-- there is a prefix key at all rather than a handful of reserved ones.
 --
 -- Arrows arrive as three bytes - escape, [, then A to D - which is the one
 -- piece of terminal grammar this has to know, and it knows it here rather
@@ -293,6 +318,7 @@ end
 --------------------------------------------------------------------------
 
 local STEP = 16
+local prefix = false
 local pending_escape = {}
 
 local function move_focused(dx, dy)
@@ -301,32 +327,73 @@ local function move_focused(dx, dy)
   handlers.move{ window = win.handle, x = win.x + dx, y = win.y + dy }
 end
 
-local function key(c)
-  if c == KEY_CTRL_C then
-    running = false
-    return
-  end
+--
+-- A prefix key, rather than a set of reserved ones.
+--
+-- The first version took Tab for "next window" and the arrows for "move the
+-- window". Both were wrong, and the gallery showed it in one screenshot:
+-- Tab is how every user interface ever built moves between controls, and
+-- the arrows are how every list is used. A window manager that keeps them
+-- has decided that no application may have a second control.
+--
+-- There are no modifiers to escape into. A virtio keyboard gives Control
+-- plus a letter and nothing else - no Alt, no Super, and Control plus an
+-- arrow is a terminal escape sequence this system does not speak. So this
+-- takes the approach screen and tmux took for exactly the same reason:
+-- **one** key is reserved, and it introduces a command rather than being
+-- one.
+--
+--   Control-W then an arrow    move the focused window
+--   Control-W then Tab         focus the next window
+--   Control-W then Control-W   send a literal Control-W to the application
+--
+-- One key out of the application's vocabulary instead of five, and the one
+-- taken is the one applications want least.
+--
+local function prefixed(c)
+  prefix = false
 
   if c == KEY_TAB then
     if #windows > 1 then raise(windows[1]) end
     return
   end
 
-  -- An arrow key: ESC [ A. Collected across calls because the three bytes
-  -- do not necessarily arrive in the same drain.
-  if c == KEY_ESC then
-    pending_escape = { KEY_ESC }
+  if c == KEY_PREFIX then
+    to_focused(KEY_PREFIX)
     return
   end
 
-  if #pending_escape == 1 then
-    if c == 91 then                     -- '['
-      pending_escape[2] = c
+  if c == KEY_ESC then
+    -- An arrow after the prefix. The escape belongs to the sequence, not to
+    -- the application, so the prefix stays on until the sequence finishes.
+    prefix = true
+    pending_escape = { KEY_ESC }
+    return
+  end
+end
+
+local function key(c)
+  if c == KEY_CTRL_C then
+    running = false
+    return
+  end
+
+  -- Halfway through an escape sequence that began after the prefix.
+  if #pending_escape > 0 then
+    if #pending_escape == 1 then
+      if c == 91 then                                   -- '['
+        pending_escape[2] = c
+        return
+      end
+
+      pending_escape = {}
+      prefix = false
+      to_focused(c)
       return
     end
+
     pending_escape = {}
-  elseif #pending_escape == 2 then
-    pending_escape = {}
+    prefix = false
 
     if c == 65 then move_focused(0, -STEP) return end   -- A, up
     if c == 66 then move_focused(0,  STEP) return end   -- B, down
@@ -335,22 +402,17 @@ local function key(c)
     return
   end
 
-  -- Everything else goes to the window with the focus, as an event it can
-  -- collect whenever it gets round to asking. Queued and not delivered:
-  -- delivering would mean calling the application, and calling it is what
-  -- this process must never do.
-  local win = focused_window()
-
-  if win then
-    win.events[#win.events + 1] = { type = "key", code = c }
-
-    if #win.events > 64 then
-      -- An application that has stopped collecting its events is not going
-      -- to start. Dropping the oldest is better than growing without limit
-      -- in a process that everything else on the screen depends on.
-      table.remove(win.events, 1)
-    end
+  if prefix then
+    prefixed(c)
+    return
   end
+
+  if c == KEY_PREFIX then
+    prefix = true
+    return
+  end
+
+  to_focused(c)
 end
 
 --------------------------------------------------------------------------

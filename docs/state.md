@@ -39,6 +39,17 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The UI kit.** `lib/ui.lua`: a view tree with nested coordinates and real
+  clipping, follow modes, and widgets - label, button, checkbox, field,
+  list. `wm gallery` shows all of them. Drawing produces commands, never
+  pixels, so a view's list can be resent without re-running its handler.
+- **`/lib` and `use()`.** A library is a file in the process's namespace,
+  loaded into the caller's own environment. No package path, no search, no
+  global module table: a program that was not given /lib has none.
+- **The window manager reserves one key**, Control-W, and it introduces a
+  command. It used to take Tab and the arrows, which the gallery showed to
+  be untenable in one screenshot.
+
 - **`edit`, a screen editor.** The machine can write and run its own Lua
   without a rebuild. `edit /data/x.lua`, Control-S, Control-Q, then
   `run /data/x.lua`.
@@ -74,7 +85,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 41 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 43 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

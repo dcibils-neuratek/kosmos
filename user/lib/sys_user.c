@@ -508,10 +508,17 @@ static int l_processes(lua_State *L)
  * There is no disk. Until M8 this is where a program lives.
  */
 extern const char programs_lua[];
+extern const char libraries_lua[];
 
 static int l_programs(lua_State *L)
 {
     lua_pushstring(L, programs_lua);
+    return 1;
+}
+
+static int l_libraries(lua_State *L)
+{
+    lua_pushstring(L, libraries_lua);
     return 1;
 }
 
@@ -527,6 +534,7 @@ static const luaL_Reg sys_functions[] = {
     { "name",     l_setname },
     { "processes", l_processes },
     { "programs", l_programs },
+    { "libraries", l_libraries },
     { "endpoint", l_endpoint },
     { "destroy",  l_destroy },
     { "call",     l_call },

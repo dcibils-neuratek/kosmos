@@ -662,6 +662,92 @@ def find_colour_anywhere(width, height, px, want):
     return None
 
 
+# The list selection in the gallery, 0x1f6feb, which is the accent colour.
+SELECTED = (0x1f, 0x6f, 0xeb)
+
+
+def check_widgets(guest):
+    """The UI kit, driven from the keyboard.
+
+    Opens the gallery under the window manager and works every control:
+    presses a button, ticks a checkbox, types into a field, moves a list
+    with the arrows and selects. Then reads the status label back off the
+    screen - by finding the list's selection bar, which only lands where it
+    lands if the arrows arrived.
+
+    This is the phase that caught the design error worth having. The window
+    manager originally took Tab for "next window" and the arrows for "move
+    the window", and with the gallery on screen it was immediately obvious
+    that a manager holding those keys has decided no application may have a
+    second control. There is one reserved key now and it introduces a
+    command.
+
+    Before the window-drag phase, which needs the desktop to itself.
+    """
+    guest.type("wm gallery")
+    time.sleep(6)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = find_colour_anywhere(width, height, px, SELECTED)
+
+    if before is None:
+        raise Failure(
+            "the gallery's list has no selection bar on screen, so either "
+            "the window never opened or the kit did not draw it."
+        )
+
+    def send(data, wait=0.4):
+        guest.proc.stdin.write(data)
+        guest.proc.stdin.flush()
+        time.sleep(wait)
+
+    send(b"\t\t")            # past both buttons, to the checkbox
+    send(b" ")                # tick it
+    send(b"\t")               # to the field
+    send(b" edited")
+    send(b"\t")               # to the list
+    send(b"\x1b[B\x1b[B")     # down twice
+    send(b"\r", 1.5)
+
+    width, height, px = parse_ppm(guest.screendump())
+    after = find_colour_anywhere(width, height, px, SELECTED)
+
+    if after is None:
+        raise Failure("the list's selection bar vanished while it was used.")
+
+    rows = (after[1] - before[1]) / 16.0
+
+    if abs(rows - 2) > 0.5:
+        raise Failure(
+            f"two down arrows moved the list's selection {rows:.1f} rows "
+            f"rather than 2 ({before} then {after}). Either Tab is not "
+            "reaching the application - the window manager used to swallow "
+            "it - or the arrows are not."
+        )
+
+    # Hand the screen back, or the next phase types its command at a shell
+    # that is still blocked waiting for this window manager to finish.
+    mark = len(guest.seen)
+    send(b"\x03", 2.0)
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "Control-C did not get the screen back from the window manager, "
+            "so the shell is still waiting for it."
+        )
+
+    return 2
+
+
 def check_window_manager(guest):
     """This milestone's definition of done: BeOS's test.
 
@@ -694,12 +780,14 @@ def check_window_manager(guest):
             "it could not hand /dev/wm to the applications it started."
         )
 
-    # Ten steps left. An arrow key is three bytes, and these go down the
-    # serial line rather than through sendkey because QEMU's `sendkey left`
-    # produces a keycode the console does not translate - the arrow grammar
-    # this system understands is the terminal one.
+    # Ten steps left. Control-W first every time: the window manager takes
+    # one key and it introduces a command, so a bare arrow belongs to the
+    # application and never to the manager. An arrow is three bytes, and
+    # these go down the serial line rather than through sendkey because
+    # QEMU's `sendkey left` produces a keycode the console does not
+    # translate - the arrow grammar this system understands is a terminal's.
     for _ in range(10):
-        guest.proc.stdin.write(b"\x1b[D")
+        guest.proc.stdin.write(b"\x17\x1b[D")
         guest.proc.stdin.flush()
         time.sleep(0.12)
 
@@ -914,6 +1002,7 @@ def main():
         stop_checks = check_interrupt(guest)
         bar_updates = check_status_bar(guest)
         editor_checks = check_editor(guest)
+        widget_checks = check_widgets(guest)
         wm_checks = check_window_manager(guest)
 
         if args.png:
@@ -928,7 +1017,8 @@ def main():
             guest.close()
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
-             + stop_checks + wm_checks + latency_checks + editor_checks)
+             + stop_checks + wm_checks + latency_checks + editor_checks
+             + widget_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -938,7 +1028,8 @@ def main():
           f"{wm_checks} on dragging a hung application's window, "
           f"{latency_checks} on scheduling latency, "
           f"{editor_checks} on the machine writing and running its own "
-          f"program).")
+          f"program, "
+          f"{widget_checks} on the widget kit).")
     return 0
 
 

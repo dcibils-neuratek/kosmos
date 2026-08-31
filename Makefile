@@ -43,7 +43,7 @@ LUA_HOST_SRCS := $(filter-out lua/upstream/lua.c lua/upstream/luac.c \
                               lua/upstream/linit.c, $(wildcard lua/upstream/*.c))
 
 LUA_FILES := user/init/init.lua $(wildcard user/bin/*.lua) \
-             $(wildcard user/tests/*.lua)
+             $(wildcard user/lib/*.lua) $(wildcard user/tests/*.lua)
 
 SRCS := boot/start.S \
         arch/aarch64/vectors.S \
@@ -272,6 +272,7 @@ USER_SRCS := user/init/start.S \
              user/lib/gfx.c \
              $(GEN)/font_8x16.c \
              $(GEN)/programs.c \
+             $(GEN)/libraries.c \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
              $(LUA_SRCS) \
@@ -366,6 +367,14 @@ check-lua: $(HOSTDIR)/lua.ok
 $(GEN)/programs.c: $(wildcard user/bin/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(wildcard user/bin/*.lua)
+
+# The libraries in user/lib/, the same way and for the same reason. A
+# separate store rather than a directory inside /bin, because a program is
+# something you run and a library is something you load, and a `/bin` that
+# lists both is a `/bin` where `ls` lies about what you can type.
+$(GEN)/libraries.c: $(wildcard user/lib/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
+	@mkdir -p $(dir $@)
+	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)

@@ -153,6 +153,26 @@ Responsibilities, all in Lua except the blit:
 
 **Input.** Highest-priority thread, always. Non-negotiable. If an app hangs while drawing, dragging its window still works.
 
+**And the window manager reserves exactly one key.** The first version took
+Tab for "next window" and the arrows for "move the window", which was wrong
+and took one screenshot of the widget gallery to see: Tab is how every user
+interface moves between controls and the arrows are how every list is used,
+so a manager holding them has decided no application may have a second
+control.
+
+There are no modifiers to escape into - a virtio keyboard gives Control plus
+a letter, no Alt, no Super, and Control-arrow is a terminal escape sequence
+this system does not speak. So it takes the approach `screen` and `tmux` took
+for the same reason: one key is reserved and it *introduces* a command rather
+than being one.
+
+    Control-W then an arrow    move the focused window
+    Control-W then Tab         focus the next window
+    Control-W then Control-W   a literal Control-W to the application
+
+One key out of the application's vocabulary instead of five, and the one
+taken is the one applications want least.
+
 **Compositing.** Damage tracking over the list of dirty rectangles, a backbuffer in cached RAM, one blit to the framebuffer synchronized with vblank. If an app did not respond in time, compose with its previous command list and move on. Never block.
 
 ---
@@ -232,13 +252,13 @@ it fresh.**
 
 ## 16.10 Build order
 
-| What | Milestone |
-|---|---|
-| A single window, no decoration, one view, draw and key | 6 |
-| View tree with clipping and nested coordinates | 6 |
-| Multiple windows, tabs, stacking, focus, drag | 6 |
-| Follow modes and row/column containers | 6 |
-| Basic widgets: button, list, text, scroll | 6 |
+| What | Milestone | State |
+|---|---|---|
+| A single window, no decoration, one view, draw and key | 6 | **done** |
+| View tree with clipping and nested coordinates | 6 | **done** - `lib/ui.lua`, clipped in the graphics context so a view cannot draw outside itself |
+| Multiple windows, tabs, stacking, focus, drag | 6 | **done**, except that dragging is with the keyboard: there is no pointer device yet |
+| Follow modes and row/column containers | 6 | follow modes **done**; containers not started |
+| Basic widgets: button, list, text, scroll | 6 | label, button, checkbox, field and list **done**; scroll not started |
 | Workspaces | 7 |
 | Stack and tile | 7 |
 | Replicants | 7 |
