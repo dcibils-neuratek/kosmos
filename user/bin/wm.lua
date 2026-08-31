@@ -684,9 +684,7 @@ local function window_at(x, y)
   return nil
 end
 
-local function pointer_pass()
-  local p = fs.pointer("/dev/console")
-
+local function pointer_pass(p)
   if not p then return end
 
   local range_x = (p.max_x - p.min_x)
@@ -929,11 +927,29 @@ end
 
 add_damage(0, 0, W, H)
 
-while running do
-  -- 1. Input, always first.
-  local keys = fs.keys("/dev/console") or {}
+--
+-- How long a pass is allowed to sleep for, in *scheduler* ticks.
+--
+-- One of them, so this loop wakes a hundred times a second when nothing is
+-- happening. An input interrupt cuts the sleep short, so this is not the
+-- latency of a keystroke - it is only how often an idle desktop wakes up to
+-- find there is still nothing to do.
+--
+-- Scheduler ticks and not the counter `sys.ticks()` returns. They differ by
+-- a factor of six hundred thousand here, and passing one for the other asks
+-- for a sleep of several hours - which looks exactly like the desktop
+-- having hung, because it has.
+--
+local PASS = 1
 
-  for _, c in ipairs(keys) do
+while running do
+  -- 1. Input, always first - and this is where the pass sleeps if there is
+  -- none. One call for keys and the pointer together, because the console
+  -- has to be asked anyway and two round trips to learn nothing is one
+  -- more than necessary.
+  local input = fs.wait_input("/dev/console", PASS) or {}
+
+  for _, c in ipairs(input.keys or {}) do
     key(c)
   end
 
@@ -962,7 +978,7 @@ while running do
 
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
-  pointer_pass()
+  pointer_pass(input.pointer)
 
   -- 4. Anybody who has been waiting long enough, or now has something.
   answer_waiting()
@@ -984,8 +1000,6 @@ while running do
 
   -- 6. The picture, cursor included.
   compose()
-
-  sys.yield()
 end
 
 -- Given back, which repaints: the console has no scrollback, so it starts

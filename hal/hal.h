@@ -152,4 +152,18 @@ bool hal_pointer_init(void);
  */
 bool hal_pointer_poll(struct pointer_state *out);
 
+/*
+ * Has an input device raised an interrupt since this was last asked?
+ *
+ * Not "what happened" - the events are in the device's own queue and are
+ * read by whoever wants them, in a thread, in its own time. This is only the
+ * fact that there is something, which is what a sleeper needs in order to
+ * stop sleeping. Reading it clears it.
+ */
+bool hal_input_pending(void);
+
+/* The same question without clearing it, for the interrupt path - which
+ * wakes the sleeper but must leave the fact for the sleeper to read. */
+bool hal_input_pending_peek(void);
+
 #endif /* HAL_H */

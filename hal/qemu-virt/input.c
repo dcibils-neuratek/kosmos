@@ -47,7 +47,6 @@
 /* From the device tree: 32 windows, 0x200 apart, starting here. */
 #define VIRTIO_MMIO_BASE    0x0a000000UL
 #define VIRTIO_MMIO_STRIDE  0x200UL
-#define VIRTIO_MMIO_COUNT   32
 
 /* include/standard-headers/linux/virtio_mmio.h */
 #define REG_MAGIC               0x000
@@ -199,6 +198,7 @@ struct vqueue {
  */
 struct vinput {
     uintptr_t base;                 /* the window it was found in */
+    unsigned  slot;                 /* which one, for its interrupt */
     bool      present;
     uint16_t  last_used;            /* how far through the used ring we are */
 
@@ -208,6 +208,15 @@ struct vinput {
 
 static struct vinput keyboard;
 static struct vinput tablet;
+
+/*
+ * Set by an interrupt, cleared by whoever was waiting.
+ *
+ * A flag rather than a queue: everything above this wants to know "is there
+ * anything", not "what exactly", and the events themselves are already in a
+ * virtqueue that survives until somebody reads it.
+ */
+static volatile bool input_arrived;
 
 /* Modifier state, which belongs to the keyboard and to nothing else. */
 static bool      shift;
@@ -408,6 +417,7 @@ static bool claim(struct vinput *v, bool want_absolute)
         }
 
         v->base = base;
+        v->slot = i;
 
         /*
          * The bring-up sequence, in the order the specification requires.
@@ -494,6 +504,14 @@ static bool claim(struct vinput *v, bool want_absolute)
         publish();
         reg_write(v, REG_QUEUE_NOTIFY, 0);
 
+        /*
+         * And its interrupt. Until this, every reader of this device had to
+         * come back and ask - which is what a window manager polling a
+         * keyboard in a loop is, and why an idle desktop kept a core at a
+         * hundred per cent.
+         */
+        gic_enable_spi(VIRTIO_INTID_BASE + v->slot);
+
         v->present = true;
         return true;
     }
@@ -532,6 +550,39 @@ static bool next_event(struct vinput *v, struct virtio_input_event *out)
     reg_write(v, REG_QUEUE_NOTIFY, 0);
 
     return true;
+}
+
+/*
+ * A device has events waiting.
+ *
+ * The interrupt is acknowledged here and nothing is decoded: reading the
+ * queue happens in whatever thread asked for input, in its own time, and
+ * doing it in the handler would mean the keymap and the cursor state being
+ * touched from an interrupt.
+ *
+ * What this is *for* is the wakeup. A thread sleeping for input is asleep
+ * with a deadline; this drops the deadline to now, so the key is noticed at
+ * interrupt speed rather than at the end of whatever the sleeper asked for.
+ */
+void input_interrupt(unsigned slot)
+{
+    struct vinput *v = NULL;
+
+    if (keyboard.present && keyboard.slot == slot) {
+        v = &keyboard;
+    } else if (tablet.present && tablet.slot == slot) {
+        v = &tablet;
+    }
+
+    if (v == NULL) {
+        return;
+    }
+
+    /* The device raised it; the device is told it was seen. Without the ack
+     * the status bit stays set and the interrupt fires for ever. */
+    reg_write(v, REG_INTERRUPT_ACK, reg_read(v, REG_INTERRUPT_STATUS));
+
+    input_arrived = true;
 }
 
 bool hal_keyboard_init(void)
@@ -583,6 +634,19 @@ bool hal_pointer_init(void)
     cursor.moved = true;
 
     return true;
+}
+
+bool hal_input_pending_peek(void)
+{
+    return input_arrived;
+}
+
+bool hal_input_pending(void)
+{
+    bool pending = input_arrived;
+
+    input_arrived = false;
+    return pending;
 }
 
 bool hal_pointer_poll(struct pointer_state *out)

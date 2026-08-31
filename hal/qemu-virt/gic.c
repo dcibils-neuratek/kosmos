@@ -28,6 +28,20 @@
 #define GICD_CTLR           (GICD_BASE + 0x0000)
 
 /*
+ * The distributor's per-interrupt arrays, for SPIs.
+ *
+ * A PPI is private to a core and lives in that core's redistributor; an SPI
+ * is shared and lives here. Same three things to set - group, priority,
+ * enable - in registers of the same shape, indexed from INTID 0 even though
+ * the first thirty-two entries are the redistributor's business and
+ * writing them here does nothing.
+ */
+#define GICD_IGROUPR        (GICD_BASE + 0x0080)
+#define GICD_ISENABLER      (GICD_BASE + 0x0100)
+#define GICD_IPRIORITYR     (GICD_BASE + 0x0400)
+#define GICD_IROUTER        (GICD_BASE + 0x6000)
+
+/*
  * The redistributor is two 64 KB frames per core: RD_base, then SGI_base.
  * Everything to do with an individual PPI lives in the second one. Looking
  * for GICR_ISENABLER0 in the first frame is a long afternoon.
@@ -121,6 +135,38 @@ void gic_enable_ppi(unsigned intid)
     mmio_write32(GICR_ISENABLER0, (uint32_t)1 << intid);
 }
 
+/*
+ * A shared interrupt, routed to this core.
+ *
+ * Three registers and one that is easy to forget: with affinity routing on -
+ * and `GICD_CTLR_ARE` is set in `hal_irq_init` - an SPI goes nowhere until
+ * GICD_IROUTER says which core it is for. The symptom of leaving it out is a
+ * device that is enabled, raises its interrupt, and is never taken.
+ */
+void gic_enable_spi(unsigned intid)
+{
+    unsigned word = intid / 32;
+    unsigned bit = intid % 32;
+    uint32_t group;
+
+    group = mmio_read32(GICD_IGROUPR + word * 4);
+    group |= (uint32_t)1 << bit;
+    mmio_write32(GICD_IGROUPR + word * 4, group);   /* Group 1, non-secure */
+
+    /* One byte of priority per INTID. 0 is the highest, and the timer has
+     * it too - nothing here needs an ordering between them. */
+    mmio_write32(GICD_IPRIORITYR + (intid & ~3u),
+                 (uint32_t)0 << ((intid & 3u) * 8));
+
+    /* Affinity 0.0.0.0, which is the only core there is. Bit 31 clear means
+     * "this exact affinity" rather than "any core that can take it". */
+    mmio_write32(GICD_IROUTER + intid * 8, 0);
+    mmio_write32(GICD_IROUTER + intid * 8 + 4, 0);
+
+    /* Write-one-to-set: a read-modify-write would race with the GIC. */
+    mmio_write32(GICD_ISENABLER + word * 4, (uint32_t)1 << bit);
+}
+
 unsigned gic_acknowledge(void)
 {
     uint64_t intid;
@@ -152,12 +198,20 @@ void hal_irq_handle(void)
 
     if (intid == TIMER_INTID) {
         timer_interrupt();
+    } else if (intid >= VIRTIO_INTID_BASE
+               && intid < VIRTIO_INTID_BASE + VIRTIO_MMIO_COUNT) {
+        /*
+         * A virtio-mmio device. Which one is the INTID minus the base, and
+         * the input driver is the only thing that has any: `virt` maps slot
+         * i to SPI 16 + i, and a GIC interrupt ID for an SPI is 32 + the SPI
+         * number.
+         */
+        input_interrupt(intid - VIRTIO_INTID_BASE);
     }
 
     /*
-     * Anything else is signalled complete and dropped. There is exactly one
-     * source wired up; a registry of handlers is for when there are several,
-     * which is M11.
+     * Anything else is signalled complete and dropped. A registry of
+     * handlers is for when there are more kinds than this, which is M11.
      */
     gic_end_of_interrupt(intid);
 }

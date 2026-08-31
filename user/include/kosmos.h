@@ -249,6 +249,18 @@ static inline long kosmos_receive(long cap, struct message *msg,
                 (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
+/*
+ * Sleeps until input arrives or `ticks` scheduler ticks have passed.
+ *
+ * Scheduler ticks, at TICK_HZ, and not the counter `kosmos_ticks` returns -
+ * the two differ by a factor of six hundred thousand on this machine, and
+ * the wrong one is a sleep of several hours that reads as a hang.
+ */
+static inline long kosmos_wait_input(unsigned long ticks)
+{
+    return sys1(SYS_WAIT_INPUT, (long)ticks);
+}
+
 /* Ends a child. Takes effect at that process's next entry into the kernel,
  * which is at most one timer period away. */
 static inline long kosmos_kill(unsigned long id)

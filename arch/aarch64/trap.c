@@ -302,6 +302,18 @@ void trap_handler(unsigned index, struct trapframe *tf)
 
         if (index == 9) {
             hal_irq_handle();
+
+            /*
+             * An input interrupt is a reason for somebody to stop sleeping,
+             * and the only thing that knows a thread asked to sleep is the
+             * scheduler. Waking every sleeper is right rather than lazy:
+             * only the reader of input ever sleeps on it, because only it is
+             * allowed to ask.
+             */
+            if (hal_input_pending_peek()) {
+                thread_wake_sleepers_now();
+            }
+
             thread_tick();
             console_tick();
             die_if_killed();

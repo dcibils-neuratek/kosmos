@@ -17,6 +17,25 @@
 /* Routes an interrupt to this CPU at the highest priority and enables it. */
 void gic_enable_ppi(unsigned intid);
 
+/* A shared interrupt, routed to this core. */
+void gic_enable_spi(unsigned intid);
+
+/*
+ * Where the virtio-mmio interrupts land.
+ *
+ * `virt` maps mmio slot i to SPI 16 + i (hw/arm/virt.c, a15irqmap), and a
+ * GIC interrupt ID for an SPI is 32 + the SPI number. So slot i is INTID
+ * 48 + i, and the driver that owns a slot knows which one it took.
+ */
+#define VIRTIO_INTID_BASE   48
+
+/* How many mmio windows `virt` lays out, and so how many INTIDs follow the
+ * base. The driver that scans them uses the same number. */
+#define VIRTIO_MMIO_COUNT   32
+
+/* One of the input devices has events waiting. `slot` is which window. */
+void input_interrupt(unsigned slot);
+
 /* The interrupt to service, or 1023 when there is none. */
 unsigned gic_acknowledge(void);
 void     gic_end_of_interrupt(unsigned intid);

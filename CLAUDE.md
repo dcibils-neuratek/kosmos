@@ -81,6 +81,17 @@ These are not preferences. If a proposal violates one, the proposal is wrong.
 
 ---
 
+## app or program
+
+- **program**: console-based. Prints, reads lines, run by name at the prompt.
+- **app**: graphical. Opens a window, driven with the pointer, listed in the
+  Deskbar, and marked `-- kosmos: application` on its first line.
+
+Graphical is the intended way to use this system. "Let us build an app"
+means a window, every time.
+
+---
+
 ## Language split
 
 C is what touches hardware or defines the isolation boundary. Lua is everything else.

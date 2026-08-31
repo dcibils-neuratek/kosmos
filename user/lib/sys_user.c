@@ -542,6 +542,24 @@ static int l_build(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.wait_input(ticks)` - scheduler ticks, not the counter.
+ *
+ * The one place in this binding where the unit is not the one `sys.ticks()`
+ * hands out, because it is the only clock that can interrupt a sleep.
+ */
+static int l_wait_input(lua_State *L)
+{
+    long status = kosmos_wait_input((unsigned long)luaL_checkinteger(L, 1));
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_kill(lua_State *L)
 {
     long status = kosmos_kill((unsigned long)luaL_checkinteger(L, 1));
@@ -622,6 +640,7 @@ static const luaL_Reg sys_functions[] = {
     { "processes", l_processes },
     { "pointer",  l_pointer },
     { "build",    l_build },
+    { "wait_input", l_wait_input },
     { "kill",     l_kill },
     { "screen_take", l_screen_take },
     { "programs", l_programs },

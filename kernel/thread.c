@@ -7,6 +7,7 @@
 #include "pmm.h"
 #include "page.h"
 #include "panic.h"
+#include "hal.h"
 #include "console.h"
 #include "mmu.h"
 #include "sched.h"
@@ -401,6 +402,11 @@ void thread_tick(void)
         busy_ticks++;
     }
 
+    /* Before the policy is asked anything, so a thread whose deadline has
+     * arrived is runnable when the decision is made rather than one tick
+     * later. */
+    thread_wake_sleepers();
+
     /* And to the thread itself, which is what makes a per-process figure
      * possible. One increment on the interrupt path; the alternative is
      * reading the counter on every context switch, which is the hottest
@@ -492,6 +498,57 @@ void thread_block(void)
     }
 
     switch_to(next);
+}
+
+/*
+ * Sleeping, and waking the sleepers.
+ *
+ * A deadline on the thread and a scan on the tick, rather than a sorted
+ * queue: there are forty-eight slots, the scan is forty-eight comparisons a
+ * hundred times a second, and a sorted structure would be more code to get
+ * wrong than the thing it saves. If the pool ever grows enough for this to
+ * matter, `sched.key` is already there for a deadline-ordered queue and this
+ * is the function to replace.
+ */
+void thread_sleep_until(unsigned long deadline)
+{
+    if (deadline <= hal_ticks()) {
+        return;
+    }
+
+    current->wake_at = deadline;
+    thread_block();
+    current->wake_at = 0;
+}
+
+void thread_wake_sleepers(void)
+{
+    unsigned long now = hal_ticks();
+    unsigned i;
+
+    for (i = 0; i < THREAD_MAX; i++) {
+        struct thread *t = &threads[i];
+
+        if (t->state == THREAD_BLOCKED && t->wake_at != 0
+            && now >= t->wake_at) {
+            t->wake_at = 0;
+            thread_wake(t);
+        }
+    }
+}
+
+void thread_wake_sleepers_now(void)
+{
+    unsigned i;
+
+    for (i = 0; i < THREAD_MAX; i++) {
+        struct thread *t = &threads[i];
+
+        if (t->state == THREAD_BLOCKED && t->wake_at != 0) {
+            t->wake_at = 0;
+            thread_wake(t);
+        }
+    }
 }
 
 void thread_wake(struct thread *t)

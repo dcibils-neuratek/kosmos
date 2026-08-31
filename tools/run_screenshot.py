@@ -84,6 +84,11 @@ So there are two phases here, and the second is the one that matters:
      application in its list has to put a second window on screen. Counted
      by tabs, since every window has exactly one.
 
+ 14. **An idle desktop is idle.** The processor meter has to be green and
+     nearly empty. Everything used to poll, and one thread that never blocks
+     keeps a core at a hundred per cent - the meter was right, which is why
+     this reads the meter rather than trusting it.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -791,7 +796,29 @@ def check_widgets(guest):
     send(b" ")                # tick it
     send(b"\t")               # to the field
     send(b" edited")
-    send(b"\t")               # to the list
+
+    #
+    # The list is focused by clicking it, not by tabbing to it.
+    #
+    # Tabbing there worked and was occasionally a row short in a long run,
+    # because it depends on this phase's idea of the focus order matching
+    # the gallery's - five controls, in the order they were added, with the
+    # focus starting on the first. Any of those changing makes this phase
+    # fail somewhere unrelated to what it is about.
+    #
+    # A click puts the focus where the click is. Tab is still being tested,
+    # by everything above this line.
+    #
+    guest.mouse_to(*_to_tablet(60 + 16 + 60, 90 + 172 + 8, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(0.6)
+
+    width, height, px = parse_ppm(guest.screendump())
+    bar_before = find_colour_anywhere(width, height, px, SELECTED)
+
     send(b"\x1b[B\x1b[B")     # down twice
     send(b"\r", 1.5)
 
@@ -801,14 +828,14 @@ def check_widgets(guest):
     if after is None:
         raise Failure("the list's selection bar vanished while it was used.")
 
-    rows = (after[1] - before[1]) / 16.0
+    rows = (after[1] - bar_before[1]) / 16.0
 
     if abs(rows - 2) > 0.5:
         raise Failure(
             f"two down arrows moved the list's selection {rows:.1f} rows "
-            f"rather than 2 ({before} then {after}). Either Tab is not "
-            "reaching the application - the window manager used to swallow "
-            "it - or the arrows are not."
+            f"rather than 2 ({bar_before} then {after}). The list had been "
+            "clicked, so it had the focus; the arrows are not arriving, or "
+            "not both of them."
         )
 
     # Hand the screen back, or the next phase types its command at a shell
@@ -1108,6 +1135,84 @@ def count_windows(width, height, px):
         inside = found
 
     return bands
+
+
+def check_idle(guest):
+    """An idle desktop is idle.
+
+    Starts the monitor under the window manager, leaves it alone, and looks
+    at the processor meter: `sysmon` fills the bar red above eighty per cent
+    and green below, so a busy machine has a red run three hundred pixels
+    long and an idle one has no red at all.
+
+    Measured as the longest run of red rather than by counting coloured
+    pixels. Counting was the first version and it was wrong in the direction
+    that matters: at one per cent the green fill is three pixels wide, a scan
+    that steps by two can miss it entirely, and the phase then fails on a
+    machine that is behaving perfectly.
+
+    This is the regression check for the thing that made it true, which is
+    that nothing polls any more. The desktop used to ask the console for
+    keys, get none, yield and ask again; every window did the same to the
+    desktop; and a machine with four windows open had five threads that were
+    permanently runnable. The meter read ninety-six per cent on an empty
+    desktop and was telling the truth.
+    """
+    guest.type("wm sysmon")
+    time.sleep(16)
+
+    width, height, px = parse_ppm(guest.screendump())
+
+    if count_windows(width, height, px) < 1:
+        raise Failure(
+            "the monitor did not open a window, so there is no meter to "
+            "read here."
+        )
+
+    longest = 0
+
+    for y in range(height):
+        run = 0
+
+        for x in range(width):
+            at = (y * width + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == (0xda, 0x36, 0x33):
+                run += 1
+
+                if run > longest:
+                    longest = run
+            else:
+                run = 0
+
+    # The bar is a little over three hundred pixels wide, so a busy meter is
+    # a run of that order. Forty is far above any red incidental to the
+    # window and far below a meter that is filling up.
+    if longest > 40:
+        raise Failure(
+            f"the processor meter has a red run {longest} pixels long on an "
+            "idle desktop. Something is polling: the meter is not wrong, a "
+            "thread that never blocks keeps the core busy and the idle "
+            "thread never gets a turn."
+        )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from the desktop.")
+
+    return 1
 
 
 def check_deskbar(guest):
@@ -1657,6 +1762,7 @@ def main():
         editor_checks = check_editor(guest)
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
+        idle_checks = check_idle(guest)
         deskbar_checks = check_deskbar(guest)
         click_checks = check_clicks(guest)
         graphical_checks = check_graphical_mode(guest)
@@ -1677,7 +1783,8 @@ def main():
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
-             + graphical_checks + click_checks + deskbar_checks)
+             + graphical_checks + click_checks + deskbar_checks
+             + idle_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1694,7 +1801,8 @@ def main():
           f"{graphical_checks} on the console staying off the screen while "
           f"something else owns it, "
           f"{click_checks} on the widgets under the pointer, "
-          f"{deskbar_checks} on starting an application from the Deskbar).")
+          f"{deskbar_checks} on starting an application from the Deskbar, "
+          f"{idle_checks} on an idle desktop being idle).")
     return 0
 
 

@@ -57,14 +57,12 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
   `poll` until there is an event or the caller's deadline - the same parked
   reply a live query uses.
 
-**The processor meter reads about ninety per cent with an idle desktop, and
-it is right.** The window manager polls the keyboard and the tablet in a
-loop, because neither device has an interrupt wired up, so one thread is
-permanently runnable and the idle thread never gets a turn. Parking the
-applications' polls took that from one spinner per window down to exactly
-one, which is most of the work and none of the number: one spinner is
-enough to keep a single core busy. **The fix is interrupt-driven input**,
-which is the next thing worth doing to this system.
+**An idle desktop now idles: one per cent, down from ninety-six.** The
+virtio input devices raise interrupts, `SYS_WAIT_INPUT` lets the one process
+allowed to read input sleep until there is some, and the interrupt cuts that
+sleep short - so a key is still noticed at interrupt speed. Applications
+were already blocking, because the compositor parks their event polls.
+There is a display check that reads the meter.
 
 - **The Deskbar.** `wm` on its own starts a desktop with a panel top right:
   every window on screen, and every program that declared itself an
@@ -159,7 +157,7 @@ which is the next thing worth doing to this system.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 55 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 56 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

@@ -1019,6 +1019,15 @@ local function new_namespace()
   --
   -- Where the pointer is, if the machine has one.
   --
+  --
+  -- Keys and the pointer in one exchange, sleeping if there is nothing.
+  --
+  function ns.wait_input(path, ticks)
+    local r, e = request("wait", path, { ticks = ticks })
+    if not r then return nil, e end
+    return r.value
+  end
+
   function ns.pointer(path)
     local r, e = request("pointer", path)
     if not r then return nil, e end
@@ -1157,6 +1166,46 @@ local function console_handlers(state)
       end
 
       return { ok = true, value = out }
+    end,
+
+    wait = function(req)
+      --
+      -- Everything the desktop needs, and a sleep if there is nothing.
+      --
+      -- One call rather than three, and blocking rather than polling. The
+      -- window manager used to ask for keys, ask for the pointer, get
+      -- nothing, yield, and go round again - which is a thread that is
+      -- always runnable, which is a core at a hundred per cent for ever on
+      -- an idle desktop. It sleeps in here now, and an input interrupt cuts
+      -- the sleep short, so a key is noticed at interrupt speed and an idle
+      -- machine is idle.
+      --
+      -- This process is the only one the kernel will let sleep on input,
+      -- for the same reason it is the only one that may read it: input has
+      -- one reader.
+      --
+      -- The cost is that the console is not answering anyone else while it
+      -- is asleep. That is bounded by whatever the caller asked for - one
+      -- tick, in practice - and it is why this is a separate operation
+      -- rather than something `keys` started doing.
+      --
+      local keys = state.typed
+      state.typed = {}
+
+      while true do
+        local c = sys.getchar()
+        if c == nil then break end
+        if c == 3 then state.interrupts = state.interrupts + 1 end
+        keys[#keys + 1] = c
+      end
+
+      local where = sys.pointer()
+
+      if #keys == 0 then
+        sys.wait_input(tonumber(req.ticks) or 0)
+      end
+
+      return { ok = true, value = { keys = keys, pointer = where } }
     end,
 
     pointer = function(req)

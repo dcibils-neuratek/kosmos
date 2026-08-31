@@ -164,6 +164,9 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | Only a parent may end a child - the authority `wait` already implies, and no new one | syscall.c |
 | Aug 2026 | A close box asks first and ends second: an application that listens leaves tidily, one that does not is ended a second later | wm.lua |
 | Aug 2026 | A label with no width given measures itself before every paint, not once when it was made | ui.md, ui.lua |
+| Aug 2026 | Input interrupts wake a sleeper; they decode nothing. The queue is read in a thread, in its own time | hal/qemu-virt/input.c |
+| Aug 2026 | A sleep is against the scheduler's clock, not the counter: only one of them interrupts | syscall.c, thread.c |
+| Aug 2026 | "app" is graphical and "program" is console, and they are not interchangeable | glossary.md |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |

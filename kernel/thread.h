@@ -110,6 +110,20 @@ struct thread {
     } sched;
 
     /*
+     * When this thread asked to be woken, in counter ticks, or zero.
+     *
+     * A thread that has nothing to do should not be running, and until now
+     * there was no way for it to say so: everything here polled. The window
+     * manager cannot block on a message, because the thing it is mostly
+     * waiting for is a key, and a key is not a message - so it looped, and
+     * one thread that never stops being runnable is enough to keep a core
+     * at a hundred per cent for ever.
+     *
+     * Checked on the timer tick, which is the only clock there is.
+     */
+    unsigned long     wake_at;
+
+    /*
      * IPC state.
      *
      * `next` here is a separate link from `sched.next` and must stay
@@ -202,6 +216,20 @@ bool thread_any_ready(void);
 /* Takes the current thread off the runqueue and switches away. It will not
  * run again until something calls thread_wake on it. */
 void thread_block(void);
+
+/*
+ * Blocks until `deadline` (a value of hal_ticks) or until something else
+ * wakes this thread, whichever comes first. A deadline already past
+ * returns at once.
+ */
+void thread_sleep_until(unsigned long deadline);
+
+/* Wakes every sleeper whose deadline has arrived. Called from the tick. */
+void thread_wake_sleepers(void);
+
+/* Wakes every sleeper regardless of deadline. For an interrupt that is the
+ * thing they were waiting for. */
+void thread_wake_sleepers_now(void);
 
 /* Puts a blocked thread back on the runqueue. Safe to call on a thread that
  * is already runnable. */

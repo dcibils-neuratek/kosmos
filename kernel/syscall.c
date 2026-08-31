@@ -670,6 +670,50 @@ void syscall_dispatch(struct trapframe *tf)
                  ? 0 : SYS_ERR_NO_CHILD;
         break;
 
+    case SYS_WAIT_INPUT:
+        /*
+         * Sleep until a key or the pointer moves, or until `ticks` have
+         * passed, whichever is first.
+         *
+         * The whole point of this system call is *not* running. Everything
+         * above this used to poll - the window manager asked the console for
+         * keys, got none, yielded, and asked again - and one thread that is
+         * always runnable keeps a core at a hundred per cent for ever, with
+         * a processor meter that reads ninety per cent on an empty desktop
+         * and is telling the truth.
+         *
+         * Restricted to the console owner exactly as `getchar` and the
+         * pointer are, and for the same reason: input has one reader.
+         *
+         * The pending flag is checked before sleeping. An interrupt that
+         * arrived between the last read and this call would otherwise be
+         * slept through, which is the classic way to build a race that shows
+         * up as one lost keystroke in a hundred.
+         */
+        if (!p->owns_console) {
+            result = SYS_ERR_DENIED;
+        } else if (hal_input_pending()) {
+            result = 0;
+        } else {
+            /*
+             * **Timer ticks, not counter ticks.**
+             *
+             * There are two clocks here and they differ by a factor of six
+             * hundred thousand. `SYS_TICKS` hands out the physical counter,
+             * which runs at CNTFRQ_EL0 - 62.5 MHz on this machine - and is
+             * what every program uses for measuring. `hal_ticks` counts
+             * scheduler ticks, at TICK_HZ, and is the only clock a sleep can
+             * be against because it is the only one that interrupts.
+             *
+             * Passing one where the other was meant asks for a sleep of
+             * ten thousand seconds and looks exactly like a hang. It was
+             * written that way first.
+             */
+            thread_sleep_until(hal_ticks() + (unsigned long)tf->x[0]);
+            result = 0;
+        }
+        break;
+
     case SYS_YIELD:
         thread_yield();
         result = 0;

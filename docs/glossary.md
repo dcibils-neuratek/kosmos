@@ -32,6 +32,23 @@ Written to be re-read six months from now without having to look anything up.
 
 ---
 
+
+## app, program
+
+Two words for two things, and they are not interchangeable here.
+
+A **program** is console-based: it prints, it reads lines, it lives in
+`/bin` and you type its name at the prompt. `ls`, `cat`, `htop`, `qbench`.
+
+An **app** is graphical: it opens a window, it is driven with the pointer
+and the keyboard, and it appears in the Deskbar. It says so on its first
+line with `-- kosmos: application`, which is how the program store knows to
+list it.
+
+Graphical is the intended way to use this system. When something here says
+"let us build an app", it means a window.
+
+
 ## Microkernel and IPC
 
 **Microkernel** — A design where the kernel does the minimum (threads, memory, IPC) and everything else (drivers, filesystem, networking) runs in userland processes. The opposite is monolithic, where all of that lives inside the kernel.

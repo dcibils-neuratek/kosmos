@@ -350,6 +350,8 @@ shape what gets built rather than arriving as a surprise late.
 | **A text editor good enough to write Lua in** | M7's app list, and started early - `/bin/edit.lua` | Nothing. It is the first thing that makes the machine able to change itself without a rebuild, which is the point of the whole design |
 | **Lightweight games in Lua** | M9's neighbourhood | The UI kit's input path and a surface a program can draw into fast. The blitter is there; what is missing is a frame loop with a known cost |
 | **An HTTP server for personal pages** | M11 drivers, then a stack | A network driver at EL0 like every other driver, then TCP/IP in Lua with the packet loop in C. See §"drivers are processes" in architecture.md - a network card is exactly the case that argues for it |
+| **A markdown viewer**, for manuals and tutorials in the system itself | M7's app list | A text view that can hold a paragraph and a few styles. The parser is Lua and small; the part that does not exist is a view that wraps text |
+| **A software 3D demo** - a teapot in a window | M9 | Nothing about the design forbids it, and it is worth saying why, because it looks like it does. The rule is that *pixel loops* live in C and that no line of Lua computes a pixel offset - not that a program may not produce an image. A triangle rasteriser is exactly the kind of primitive `gfx` is meant to grow: Lua decides where the vertices are, C fills the spans, and the result is a surface the app sends to the compositor like any other drawing. What is missing is the rasteriser, not permission |
 
 The HTTP server is worth stating as a target rather than a wish, because it
 decides an argument that would otherwise be had abstractly: a network stack
