@@ -42,6 +42,11 @@ So there are two phases here, and the second is the one that matters:
      other side of a cable, so Control-C worked over serial long before it
      did anything in the window - and that a running program is told.
 
+  6. **A hung application's window, dragged.** This milestone's definition
+     of done, which is BeOS's: `wm hello-win,stuck` puts two applications on
+     screen, one of which never replies again, and the hung one's window has
+     to keep moving. Last, because the window manager takes the whole screen.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -623,6 +628,96 @@ def check_interrupt(guest):
     return 2
 
 
+# The hung application's title bar, 0xda3633. Looked for by colour rather
+# than by position, because the whole point of the phase below is that the
+# position changes.
+HUNG_TITLE = (0xda, 0x36, 0x33)
+
+
+def find_colour_anywhere(width, height, px, want):
+    """Where the first pixel of this colour is, scanning top to bottom.
+
+    Every other pixel, both ways: the thing being looked for is a title bar
+    three hundred pixels wide and twenty-eight tall, so a step of two cannot
+    miss it and the scan is four times cheaper.
+    """
+    for y in range(0, height, 2):
+        for x in range(0, width, 2):
+            at = (y * width + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == want:
+                return x, y
+
+    return None
+
+
+def check_window_manager(guest):
+    """This milestone's definition of done: BeOS's test.
+
+    `wm hello-win,stuck` starts two applications in windows. One of them
+    answers and one of them is an infinite loop that never replies again.
+    Moving the hung one's window has to work anyway.
+
+    That is not a question about speed, it is a question about who owns the
+    pixels. An application here owns none: it sends a list of drawing
+    commands and the window manager renders them into a surface it keeps. So
+    a hung application changes nothing - its contents were never in its
+    address space, and the manager takes every request with a non-blocking
+    receive, so there is nowhere for it to wait.
+
+    The window that gets moved is deliberately the hung one. Moving the
+    other would prove nothing: it answers.
+
+    This phase runs last because the window manager takes the whole screen.
+    """
+    guest.type("wm hello-win,stuck")
+    time.sleep(5)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = find_colour_anywhere(width, height, px, HUNG_TITLE)
+
+    if before is None:
+        raise Failure(
+            "the hung application's window is not on screen at all, so "
+            "there is nothing here to drag. Either `wm` did not start, or "
+            "it could not hand /dev/wm to the applications it started."
+        )
+
+    # Ten steps left. An arrow key is three bytes, and these go down the
+    # serial line rather than through sendkey because QEMU's `sendkey left`
+    # produces a keycode the console does not translate - the arrow grammar
+    # this system understands is the terminal one.
+    for _ in range(10):
+        guest.proc.stdin.write(b"\x1b[D")
+        guest.proc.stdin.flush()
+        time.sleep(0.12)
+
+    time.sleep(1.5)
+    width, height, px = parse_ppm(guest.screendump())
+    after = find_colour_anywhere(width, height, px, HUNG_TITLE)
+
+    if after is None:
+        raise Failure(
+            f"the hung window was at {before} and is now nowhere on screen. "
+            "Moving it did not move it, it lost it."
+        )
+
+    if after[0] >= before[0]:
+        raise Failure(
+            f"the hung application's window did not move: {before} then "
+            f"{after}. Something in the compositor is waiting for an "
+            "application, which is the one thing it must never do."
+        )
+
+    if after[1] != before[1]:
+        raise Failure(
+            f"the window moved vertically as well as horizontally: {before} "
+            f"then {after}. Ten left arrows should change x and nothing else."
+        )
+
+    return 3
+
+
 def write_png(path, data):
     """The screendump, as something a person can open."""
     width, height, px = parse_ppm(data)
@@ -685,6 +780,7 @@ def main():
 
         stop_checks = check_interrupt(guest)
         bar_updates = check_status_bar(guest)
+        wm_checks = check_window_manager(guest)
 
         if args.png:
             write_png(args.png, drawn)
@@ -698,13 +794,14 @@ def main():
             guest.close()
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
-             + stop_checks)
+             + stop_checks + wm_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
           f"Lua drew through gfx, {key_checks} on the keyboard, "
           f"{bar_updates} on a detached program still drawing, "
-          f"{stop_checks} on Control-C stopping it).")
+          f"{stop_checks} on Control-C stopping it, "
+          f"{wm_checks} on dragging a hung application's window).")
     return 0
 
 

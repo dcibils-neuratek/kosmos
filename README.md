@@ -136,6 +136,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | Target order: QEMU → Pi 1 → Pi 5 → Jetson → G4. Mac Pro 2013 rejected (no serial) | hal.md |
 | Aug 2026 | Doom as the project's verifiable goal | roadmap.md M10 |
 | Aug 2026 | The POSIX line: a libc inside the process yes, a POSIX personality no | design.md §17 |
+| Aug 2026 | A server pumps while it waits: `ipc_receive` takes a non-blocking flag, rather than a second thread inside a server | design.md §7, architecture.md §2 |
+| Aug 2026 | Who gets Control-C is decided by who is reading the keyboard: foreground program, else the line editor. Background is left alone | architecture.md §3 |
+| Aug 2026 | Interruption is cooperative and stays that way until a process can be ended from outside | roadmap.md M6 |
+| Aug 2026 | A program hands capabilities to its children under names: `run(path, args, detach, shares)` | ui.md §16.7, architecture.md §2 |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |

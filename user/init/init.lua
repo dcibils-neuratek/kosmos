@@ -581,6 +581,44 @@ local function new_namespace()
   -- Was the interrupt key pressed? Only the console answers this, and only
   -- because it is the one process allowed to read the keyboard.
   --
+  --
+  -- A message to whatever is mounted at `path`, and its answer.
+  --
+  -- Every operation above is this with a fixed verb. This is the one for a
+  -- server whose vocabulary the namespace has never heard of - the window
+  -- manager, say, which speaks of windows and damage and not of files.
+  --
+  -- It is not a hole in anything. A namespace maps names onto endpoints,
+  -- and sending to an endpoint is what an endpoint is for; the authority is
+  -- still exactly the mount table, and a path that is not in it is still a
+  -- path that does not exist.
+  --
+  function ns.send(path, message)
+    local capability, rest = resolve(path)
+
+    if not capability then
+      return nil, "no such path: " .. path
+    end
+
+    local req = { path = rest }
+    for k, v in pairs(message) do req[k] = v end
+
+    local reply, err = sys.call(capability, req)
+    if not reply then return nil, err end
+    if not reply.ok then return nil, reply.error end
+    return reply
+  end
+
+  --
+  -- Every key typed since the last call. Only the console can answer this,
+  -- and only a program that has taken over the screen should be asking.
+  --
+  function ns.keys(path)
+    local r, e = request("keys", path)
+    if not r then return nil, e end
+    return r.value or {}
+  end
+
   function ns.interrupted(path)
     local r, e = request("poll", path)
     if not r then return nil, e end
@@ -690,6 +728,29 @@ local function console_handlers(state)
         -- as three bytes of escape sequence, and the thing that understands
         -- those is a terminal emulator, which is M6.
       end
+    end,
+
+    keys = function(req)
+      --
+      -- Every byte typed since the last time somebody asked, as an array.
+      --
+      -- `poll` above answers a yes-or-no question and keeps what it saw for
+      -- the line editor. This one is for a program that *is* the line
+      -- editor for as long as it runs - the window manager - and wants the
+      -- keys themselves. The stash goes with them, or a character typed
+      -- just before it started would be delivered to the shell afterwards.
+      --
+      local out = state.typed
+      state.typed = {}
+
+      while true do
+        local c = sys.getchar()
+        if c == nil then break end
+        if c == 3 then state.interrupts = state.interrupts + 1 end
+        out[#out + 1] = c
+      end
+
+      return { ok = true, value = out }
     end,
 
     poll = function(req)
@@ -2063,6 +2124,14 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/bin",         req.bin)     end
   if req.devices then ns.mount("/dev",         req.devices) end
 
+  -- Whatever the parent shared, at the indices it said. A program that was
+  -- started by another program can be handed things the shell never had.
+  if req.mounts then
+    for _, m in ipairs(req.mounts) do
+      ns.mount(m.path, m.index)
+    end
+  end
+
   local function out(s) write_text(ns, "/dev/console", s) end
 
   --
@@ -2079,13 +2148,38 @@ if role == ROLE_RUNNER then
   -- it, so the launcher is not held for the ten seconds the work takes.
   -- Without it the answer comes back when the program is finished, which is
   -- what a command line wants.
-  local function launch(path, argument, detach)
+  --
+  -- `shares` hands the child capabilities this program holds, each under a
+  -- name in the child's namespace: run(path, args, detach, { ["/dev/wm"] = c }).
+  --
+  -- This is how a program becomes a server for its own children. The window
+  -- manager needs it: it makes an endpoint, starts applications, and each
+  -- one finds it at a path - without any of them being able to name it any
+  -- other way, and without the shell that started the manager knowing that
+  -- endpoint exists at all.
+  --
+  -- The rule is the same one as everywhere: a program can pass on no more
+  -- than it holds. `shares` names capabilities out of this process's own
+  -- table, and the kernel refuses an index this process does not have.
+  --
+  local function launch(path, argument, detach, shares)
     local ep = sys.endpoint()
     if not ep then return false, "no endpoint" end
 
-    local id = sys.spawn(RUNNER_ROLE,
-                         { ep, req.console, req.data, req.bin, req.devices },
-                         SPAWN_SCREEN)
+    -- The four the runner always passes, then whatever is being shared.
+    -- Order is the contract: the child is told which index each landed at,
+    -- because a capability table is indexed and never named.
+    local caps = { ep, req.console, req.data, req.bin, req.devices }
+    local mounts = {}
+
+    if shares then
+      for path_, cap in pairs(shares) do
+        caps[#caps + 1] = cap
+        mounts[#mounts + 1] = { path = path_, index = #caps - 1 }
+      end
+    end
+
+    local id = sys.spawn(RUNNER_ROLE, caps, SPAWN_SCREEN)
 
     if not id then
       sys.destroy(ep)
@@ -2096,6 +2190,7 @@ if role == ROLE_RUNNER then
       path = path, args = argument or "", cwd = req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4,
+      mounts = (#mounts > 0) and mounts or nil,
     })
 
     -- Destroyed either way. It was a private channel for one message and

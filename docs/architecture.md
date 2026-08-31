@@ -44,6 +44,16 @@ shell rather than underneath it.
        .   +--------+--------+--------+--------+--------+--------+      .
        .   |  htop  |  cat   |   ls   | monitor| hello  |benchmark      .
        .   +--------+--------+--------+--------+--------+--------+      .
+       .                                                                .
+       .   +--------+  the window manager. Applications send it lists   .
+       .   |   wm   |  of drawing commands; it owns every pixel they    .
+       .   +--------+  ask for, which is why a hung one still has a     .
+       .      ^   ^    window that moves.                               .
+       .      |   |                                                     .
+       .   +------+ +--------+                                          .
+       .   |hello-| | stuck  |  started by wm, each handed /dev/wm and   .
+       .   | win  | |        |  nothing else it did not already have     .
+       .   +------+ +--------+                                          .
        .        ^                                                       .
        .        | spawned, each in a space of its own                    .
        .   +---------+                                                  .
@@ -286,6 +296,12 @@ rather than accommodated, and it is the deliberate price of the rest.
 during development - it tried to reply with a message larger than 2,048 bytes
 - the shell printed an error and carried on. Nothing else noticed.
 
+**A hung application does not hang the screen.** `wm hello-win,stuck` puts
+two applications on screen, one of which stops replying for ever. Its window
+still shows what it drew and still moves, because its pixels were never in
+its address space and nothing in the compositor ever waits for it. That is
+this milestone's definition of done and there is a display check for it.
+
 **A server can be replaced while the system runs.** That is level-1 hot
 reload, and it is the reason the userland is Lua at all. Every time something
 is pushed down into C to make it faster, that is what is being spent.
@@ -305,10 +321,18 @@ were a fact.
 
 - **Drivers are still in the kernel.** See §2. This is the largest gap
   between the diagram in `design.md` and the diagram at the top of this file.
-- **There is no app server and no window manager.** M6, in progress. Today a
-  program that draws gets the whole screen.
-- **There is no backbuffer.** Drawing goes straight at the scanned-out
-  framebuffer, so a slow draw is visible as it happens.
+- **There is no pointer.** The window manager exists and its windows move,
+  but with the arrow keys: QEMU's `virt` has a virtio keyboard attached and
+  no tablet, and dragging with a mouse needs a second virtio-input driver.
+- **A window has no view tree and no widgets.** An application draws by
+  sending a flat list of commands. The view tree, follow modes and the
+  widget set are the rest of M6.
+- **A process cannot be ended from outside.** Control-C works by asking:
+  a program that polls can be stopped and one that does not cannot -
+  `/bin/spin.lua` is the standing counterexample. `process_exit` panics if
+  it is not the running process, and a real kill has to unlink the target
+  from three IPC queues and settle what happens to whoever holds a reply
+  handle for it.
 - **There is no filesystem on a disk.** `/data` is RAM and `/bin` is compiled
   into the image. M8.
 - **Single core.** The code is written SMP-ready - per-CPU runqueue,
