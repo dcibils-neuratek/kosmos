@@ -55,19 +55,14 @@ void kmain(void)
     hal_early_init();
     kputs("\nKosmos\n\n");
     boot_stage("serial port");
-    boot_why("Somewhere to report from. Nothing above this line can say that");
-    boot_why("it failed, so it goes first and stays simple: no interrupts, no");
-    boot_why("buffering, just a status bit and a data register.");
+    boot_why("Somewhere to report from, before anything else can fail.");
     boot_fact("PL011 UART at 0x09000000, polled");
 
     /* Before anything else that could fault. Until this runs, VBAR_EL1 holds
      * whatever the firmware left, and any exception is a jump into nothing. */
     trap_init();
     boot_stage("exception vectors");
-    boot_why("Where the processor jumps when something goes wrong. Until VBAR_EL1");
-    boot_why("points at real code, a fault jumps into whatever the firmware left");
-    boot_why("behind - so a bug before this line is a silent hang, and after it");
-    boot_why("is a dump saying which instruction and which address.");
+    boot_why("Until VBAR_EL1 points at real code, a fault is a silent hang.");
     boot_fact("16 entries at VBAR_EL1, four instructions each");
 
     /*
@@ -80,9 +75,7 @@ void kmain(void)
      */
     cpu_identify(&cpu);
     boot_stage("processor");
-    boot_why("Asking the core who it is. Every AArch64 part must implement these");
-    boot_why("registers, so this needs no board knowledge and works anywhere -");
-    boot_why("and on the first boot of new hardware it is the line that matters.");
+    boot_why("Asking the core who it is, out of registers every part must have.");
 
     boot_fact_begin();
     kputs(cpu.implementer_name);
@@ -97,25 +90,20 @@ void kmain(void)
     kputc(')');
     boot_fact_end();
 
+    /* One line, not two. `cpu` at the prompt has the longer version,
+     * including why the counter is not the core clock. */
     boot_fact_begin();
     kputu(cpu_pa_bits(&cpu));
     kputs("-bit physical addresses, ");
     kputu(cpu_dcache_line(&cpu));
-    kputs("-byte cache lines");
-    boot_fact_end();
-
-    boot_fact_begin();
-    kputs("counter at ");
+    kputs("-byte cache lines, ");
     kputu(cpu.counter_hz / 1000000);
-    kputs(" MHz - not the core clock; AArch64 has no way to read that");
+    kputs(" MHz counter");
     boot_fact_end();
 
     pmm_init();
     boot_stage("physical memory");
-    boot_why("A bitmap with one bit per page of RAM: the allocator everything");
-    boot_why("else is built on. It has to exist before page tables, because a");
-    boot_why("page table is itself made of pages. Its own bitmap goes directly");
-    boot_why("after the kernel image and then marks itself used.");
+    boot_why("A bitmap of every page: page tables are themselves made of pages.");
 
     boot_fact_begin();
     kputu(pmm_total_pages() * (PAGE_SIZE / 1024) / 1024);
@@ -137,15 +125,9 @@ void kmain(void)
      * translation at all. */
     mmu_init();
     boot_stage("virtual memory");
-    boot_why("Translation on. Everything above ran with the MMU off, where every");
-    boot_why("access is uncached and nothing is protected. From here the kernel");
-    boot_why("runs cached, its code is read-only even to itself, and the pages");
-    boot_why("that should not be touched have no translation at all - so a null");
-    boot_why("dereference and a stack overflow both become faults with addresses");
-    boot_why("rather than silent corruption.");
-    boot_fact("4 KB granule, 39-bit addresses, TTBR0");
-    boot_fact(".text read-only, .rodata never executable, page 0 unmapped");
-    boot_fact("a guard page under each stack, deliberately absent from the map");
+    boot_why("Translation on; from here the kernel's own code is read-only.");
+    boot_fact("4 KB granule, 39-bit addresses, .text read-only");
+    boot_fact("page 0 and the stack guards unmapped, so both faults name themselves");
 
     /*
      * The display, if there is one.
@@ -175,11 +157,7 @@ void kmain(void)
     }
 
     boot_stage("display");
-    boot_why("Asking the firmware for a linear framebuffer. Under QEMU that is");
-    boot_why("ramfb, reached through fw_cfg: the guest hands over an address, a");
-    boot_why("format and a size, and the emulator scans that memory out. The Pi");
-    boot_why("mailbox is the same conversation with a different messenger, which");
-    boot_why("is why the HAL call is shaped this way.");
+    boot_why("Asking the firmware for a linear framebuffer, the way the Pi will.");
 
     if (have_display) {
         boot_fact_begin();
@@ -193,20 +171,14 @@ void kmain(void)
         kputu(fb.pitch);
         kputs(" bytes a row, not ");
         kputu(fb.width * 4);
-        kputs(" - the stride is padded on purpose, so that code");
+        kputs(": padded, so width * 4 shears here and not later");
         boot_fact_end();
-
-        boot_fact("   assuming width * 4 shears here rather than on real hardware");
     } else {
         boot_fact("none attached; the serial line is the only console");
     }
 
     boot_stage("keyboard");
-    boot_why("This machine has no PS/2 port, so a real key comes over virtio.");
-    boot_why("Thirty-two fixed windows in the memory map, each with a magic");
-    boot_why("number and a device id at the top of it: discovery is reading two");
-    boot_why("registers thirty-two times. No PCI bus to walk, which is what makes");
-    boot_why("this a short driver - and the same transport gives the GPU next.");
+    boot_why("Scanning thirty-two virtio windows; no PCI bus to walk.");
 
     if (hal_keyboard_init()) {
         boot_fact("virtio-input found, negotiated and polled like the serial line");
@@ -216,11 +188,7 @@ void kmain(void)
 
     thread_init();
     boot_stage("threads");
-    boot_why("A fixed pool, because the kernel has no allocator: running out is");
-    boot_why("an error at a known limit rather than a failure at an unknown one.");
-    boot_why("Each thread owns two stacks - one for its own code and one the");
-    boot_why("processor switches to on an exception - because a fault caused by");
-    boot_why("an exhausted stack must not build its report on that same stack.");
+    boot_why("A fixed pool; two stacks each, so a stack overflow can report itself.");
 
     boot_fact_begin();
     kputu(THREAD_MAX);
@@ -229,11 +197,7 @@ void kmain(void)
 
     ipc_init();
     boot_stage("IPC and capabilities");
-    boot_why("How processes talk, and the only way they can. A send blocks until");
-    boot_why("a receiver takes it, so the kernel buffers nothing and there is no");
-    boot_why("queue to size or overflow. What a process may reach is whatever is");
-    boot_why("in its own capability table - an index, never a global name, so");
-    boot_why("there is nothing to guess and nothing to enumerate.");
+    boot_why("How processes talk, and the only way they can. Nothing is buffered.");
 
     boot_fact_begin();
     kputu(ENDPOINT_MAX);
@@ -244,10 +208,7 @@ void kmain(void)
 
     process_init();
     boot_stage("processes");
-    boot_why("A process is an address space plus a thread at EL0. The kernel is");
-    boot_why("mapped into every one of them and reachable from none: the page");
-    boot_why("table entries say EL1-only, so a process reading kernel memory");
-    boot_why("takes a permission fault rather than finding nothing there.");
+    boot_why("An address space and a thread at EL0; the kernel is mapped, not reachable.");
 
     boot_fact_begin();
     kputu(PROCESS_MAX);
@@ -262,28 +223,16 @@ void kmain(void)
     __asm__ volatile("msr daifclr, #2" ::: "memory");
 
     boot_stage("timer and interrupts");
-    boot_why("The heartbeat. Until now a thread that never yielded would run for");
-    boot_why("ever; from here the timer interrupts the core and the scheduler");
-    boot_why("gets to change its mind. The switch happens in the exception");
-    boot_why("vector's last instructions rather than in C, because the frame");
-    boot_why("being restored has to belong to the thread about to resume.");
+    boot_why("The heartbeat: from here a thread that never yields is interrupted.");
 
     boot_fact_begin();
     kputu(TICK_HZ);
-    kputs(" Hz off the generic timer, delivered through a GICv3");
-    boot_fact_end();
-
-    boot_fact_begin();
-    kputs("scheduler: ");
+    kputs(" Hz off the generic timer through a GICv3, scheduling ");
     kputs(sched_current()->name);
-    kputs(" - the policy is behind an interface, so another is a new file");
     boot_fact_end();
 
     boot_stage("userland");
-    boot_why("The kernel's job ends here. It starts one process and stops: init");
-    boot_why("creates the console server, the filesystem and the shell, and hands");
-    boot_why("each exactly the capabilities it needs. Nothing below this line");
-    boot_why("knows what a file is, what a window is, or what Lua is.");
+    boot_why("The kernel's job ends here: it starts one process and stops.");
 
     /*
      * In the test and bench images, the suite *is* the userland: it runs

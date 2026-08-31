@@ -366,9 +366,62 @@ local function new_namespace()
     return reply
   end
 
+  --
+  -- The names that exist under `path` because something is *mounted* there.
+  --
+  -- This is the one question no server can answer. A server knows what it
+  -- holds; only the namespace knows what has been attached to it and where,
+  -- and the mount table lives in this process and nowhere else. Without it
+  -- `/` is not a directory at all - there is no server for it, so listing it
+  -- returns "no such path" while `/data` and `/dev` both plainly exist.
+  --
+  -- Only the immediate child: with `/dev/console` mounted, `/` contains
+  -- `dev` and not `dev/console`, which is what a directory means.
+  local function mounted_under(path)
+    local prefix = (path == "/") and "/" or (path .. "/")
+    local seen, names = {}, {}
+
+    for _, m in ipairs(mounts) do
+      if m.prefix ~= path and m.prefix:sub(1, #prefix) == prefix then
+        local child = m.prefix:sub(#prefix + 1):match("^([^/]+)")
+
+        if child and not seen[child] then
+          seen[child] = true
+          names[#names + 1] = child
+        end
+      end
+    end
+
+    return names
+  end
+
   function ns.list(path)
     local r, e = request("list", path)
-    return r and r.entries, e
+    local entries = r and r.entries
+    local attached = mounted_under(path)
+
+    -- Whatever the server said, plus whatever is mounted below it. Both are
+    -- true: `/dev` holds cpu and memory because the device server says so,
+    -- and it holds `console` because something else was attached there.
+    if entries then
+      local seen = {}
+      for _, n in ipairs(entries) do seen[n] = true end
+      for _, n in ipairs(attached) do
+        if not seen[n] then entries[#entries + 1] = n end
+      end
+      table.sort(entries)
+      return entries
+    end
+
+    -- No server for this path. If something is mounted below it, it is a
+    -- directory made entirely of mount points - which is exactly what `/`
+    -- is - and if nothing is, the error the server gave stands.
+    if #attached > 0 then
+      table.sort(attached)
+      return attached
+    end
+
+    return nil, e
   end
 
   function ns.read(path)

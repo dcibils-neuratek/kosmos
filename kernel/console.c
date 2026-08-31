@@ -155,6 +155,27 @@ static void screen_putc(char c)
         return;
     }
 
+    /*
+     * Backspace moves the cursor and draws nothing.
+     *
+     * It is not a printable character, so without this it fell through to
+     * draw_glyph, landed outside 0x20..0x7e and came out as the font's box
+     * for "no such glyph" - so every correction while typing left a row of
+     * boxes on screen while the serial line, which has understood \b since
+     * teletypes, looked perfectly fine.
+     *
+     * Erasing is not this character's job: the console server sends
+     * "\b \b", and the space in the middle is what clears the cell. Doing
+     * it here as well would erase the character *before* the one being
+     * deleted.
+     */
+    if (c == '\b') {
+        if (cx > 0) {
+            cx--;
+        }
+        return;
+    }
+
     if (c != '\n' && cx >= cols) {
         c = '\n';                   /* wrap, then draw the character below */
     }
