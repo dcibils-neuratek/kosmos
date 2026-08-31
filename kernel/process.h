@@ -194,6 +194,17 @@ struct process {
     uintptr_t         next_map;
     size_t            mapped_pages;
 
+    /*
+     * Timer ticks this process was charged, kept here as well as on its
+     * thread because the thread goes when the process exits and the number
+     * does not stop being true.
+     *
+     * Reporting the thread's directly meant an exited process read as zero
+     * ticks, and anything computing a delta against an earlier reading got
+     * a negative percentage - which is how `htop` came to show -939%.
+     */
+    unsigned long     ticks;
+
     int               exit_code;
     bool              exited;
 };

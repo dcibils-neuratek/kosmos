@@ -119,9 +119,11 @@ struct virtio_input_event {
 
 /* input-event-codes.h */
 #define EV_KEY          0x01
+#define KEY_LEFTCTRL    29
 #define KEY_LEFTSHIFT   42
 #define KEY_RIGHTSHIFT  54
 #define KEY_CAPSLOCK    58
+#define KEY_RIGHTCTRL   97
 
 /*
  * The split virtqueue.
@@ -169,6 +171,7 @@ static uintptr_t device;            /* the window this keyboard is in */
 static bool      present;
 static uint16_t  last_used;         /* how far through the used ring we are */
 static bool      shift;
+static bool      ctrl;
 static bool      caps;
 
 /*
@@ -453,6 +456,11 @@ int keyboard_getchar(void)
             continue;
         }
 
+        if (event.code == KEY_LEFTCTRL || event.code == KEY_RIGHTCTRL) {
+            ctrl = (event.value != 0);
+            continue;
+        }
+
         if (event.code == KEY_CAPSLOCK) {
             if (event.value == 1) {
                 caps = !caps;
@@ -479,6 +487,32 @@ int keyboard_getchar(void)
             if (plain >= 'a' && plain <= 'z') {
                 c = shift ? plain : keymap_shift[event.code];
             }
+        }
+
+        /*
+         * Control turns a letter into the control character it names: C
+         * becomes 3, D becomes 4, and so on down the first 32 codes. That
+         * mapping is not a convention somebody chose here - it is what the
+         * ASCII table is arranged for, which is why clearing bit 6 of the
+         * upper-case letter is the whole of it.
+         *
+         * Only letters. Control-1 is not a character, and inventing one
+         * would put a byte on the wire that no program is expecting.
+         *
+         * The serial line already does this, because the terminal on the
+         * other end does it before the byte ever arrives. Without these ten
+         * lines Control-C works over the cable and does nothing in the
+         * window, which is the kind of difference that gets blamed on the
+         * program rather than on the driver.
+         */
+        if (ctrl) {
+            unsigned char plain = keymap_plain[event.code];
+
+            if (plain >= 'a' && plain <= 'z') {
+                return (int)((plain - 'a') + 1);
+            }
+
+            continue;               /* control-anything-else says nothing */
         }
 
         if (c != 0) {

@@ -89,7 +89,12 @@ unsigned process_table(struct proc_info *out, unsigned max)
         out[n].state     = (p->thread != NULL) ? (uint32_t)p->thread->state : 0;
         out[n].exited    = p->exited ? 1u : 0u;
         out[n].exit_code = (int32_t)p->exit_code;
-        out[n].ticks     = (p->thread != NULL) ? p->thread->ticks : 0;
+        /* From the thread while it exists, from the process afterwards. */
+        if (p->thread != NULL) {
+            p->ticks = p->thread->ticks;
+        }
+
+        out[n].ticks = p->ticks;
         out[n].pages     = (uint32_t)p->mapped_pages;
         out[n].caps      = thread_cap_count(p->thread);
         out[n].owns      = (p->owns_console ? 1u : 0u)
@@ -446,6 +451,11 @@ void process_start(struct process *p)
  * differ only in whose thread ends. */
 static void release_memory(struct process *p)
 {
+    /* Before the thread is gone, so the figure outlives it. */
+    if (p->thread != NULL) {
+        p->ticks = p->thread->ticks;
+    }
+
     size_t i;
     uintptr_t va;
 

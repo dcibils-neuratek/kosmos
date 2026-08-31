@@ -4,7 +4,9 @@ A microkernel desktop operating system with a userland written entirely in Lua.
 
 A personal learning project. No users to serve, no compatibility to maintain, no deadline. That is precisely what makes it possible to take decisions a commercial OS cannot take.
 
-Status: **stage 0, booting under QEMU.** See [docs/state.md](docs/state.md).
+Status: **M6, graphics.** A framebuffer, a shell on the screen, and programs
+in `/bin`. See [docs/state.md](docs/state.md), and
+[docs/architecture.md](docs/architecture.md) for how the layers fit together.
 
 ---
 
@@ -66,6 +68,7 @@ If something collides with one of these, the feature gets cut, not the principle
 
 | Document | What it answers |
 |---|---|
+| [docs/architecture.md](docs/architecture.md) | **The layers, and one command traced through all of them.** The place to start. |
 | [docs/design.md](docs/design.md) | What Kosmos is and **why every decision is the way it is**. The central document. |
 | [docs/ui.md](docs/ui.md) | UI kit and window manager. BeOS lineage with the corrections the design allows. |
 | [docs/beos.md](docs/beos.md) | The BeOS lineage: what is inherited, what is corrected, and where Kosmos departs on purpose. |

@@ -40,7 +40,7 @@
 #define SYS_YIELD       2   /* ()                                      */
 #define SYS_ENDPOINT    3   /* ()                     -> cap or error  */
 #define SYS_CALL        4   /* (cap, msg, reply)      -> 0 or error    */
-#define SYS_RECEIVE     5   /* (cap, msg, &sender)    -> 0 or error    */
+#define SYS_RECEIVE     5   /* (cap, msg, &sender, flags) -> 0 or error */
 #define SYS_REPLY       6   /* (sender, msg)          -> 0 or error    */
 #define SYS_GETCHAR     7   /* ()                     -> byte, or -1    */
 #define SYS_SPAWN       8   /* (arg, caps, ncaps, flags) -> child id     */
@@ -192,6 +192,7 @@ struct sysinfo {
 #define SYS_NO_INPUT      (-103)    /* nothing waiting; not an error */
 #define SYS_ERR_NO_CHILD  (-104)    /* nothing to wait for */
 #define SYS_NO_CHILD_READY (-106)   /* children, but none has exited yet */
+#define SYS_NO_MESSAGE    (-107)    /* nothing to receive, and not blocking */
 #define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
 
 /*

@@ -1540,7 +1540,7 @@ static void echo_server(void *arg)
         struct thread *sender;
         uint32_t w;
 
-        server_result = ipc_receive(server_cap, &msg, &sender);
+        server_result = ipc_receive(server_cap, &msg, &sender, false);
         if (server_result != IPC_OK) {
             break;
         }
@@ -1836,6 +1836,35 @@ static bool test_a_capability_index_out_of_range_fails(void)
     return ipc_call(-1, &msg, &reply) == IPC_ERR_BAD_CAP
         && ipc_call(CAPS_PER_THREAD, &msg, &reply) == IPC_ERR_BAD_CAP
         && ipc_call(0, &msg, &reply) == IPC_ERR_BAD_CAP;   /* nothing installed */
+}
+
+/*
+ * A non-blocking receive on an empty endpoint.
+ *
+ * The whole point of the flag is that this call *returns*, so the test is
+ * that reaching the line after it happens at all. There is no way to assert
+ * "did not block" directly: ignoring the flag parks this thread on an
+ * endpoint nobody will ever send to, and what comes out is a panic from the
+ * scheduler with nothing left to run - not a failed assertion.
+ *
+ * Worth knowing when this one breaks: a panic here, with the test count
+ * stopping around this number, is this test.
+ */
+static bool test_a_nonblocking_receive_returns_empty(void)
+{
+    cap_t cap = ipc_endpoint_create();
+    struct message msg;
+    struct thread *sender = NULL;
+    int status;
+
+    if (cap < 0) {
+        return false;
+    }
+
+    status = ipc_receive(cap, &msg, &sender, true);
+    ipc_endpoint_destroy(cap);
+
+    return status == IPC_NO_MESSAGE;
 }
 
 static bool test_endpoints_are_reclaimed(void)
@@ -3095,6 +3124,7 @@ static const struct test tests[] = {
     { "ipc: a stale capability fails",         test_a_stale_capability_fails },
     { "ipc: an out-of-range index fails",      test_a_capability_index_out_of_range_fails },
     { "ipc: endpoints are reclaimed",          test_endpoints_are_reclaimed },
+    { "ipc: a non-blocking receive returns",   test_a_nonblocking_receive_returns_empty },
     { "mmu: translation is on",                test_mmu_is_on },
     { "mmu: a null dereference faults",        test_null_dereference_faults },
     { "mmu: the stack guard is unmapped",      test_stack_guard_page_is_unmapped },

@@ -373,7 +373,8 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
     return IPC_OK;
 }
 
-int ipc_receive(cap_t index, struct message *msg, struct thread **sender)
+int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
+                bool nonblocking)
 {
     struct thread *self = thread_current();
     struct endpoint *ep = resolve(self, index);
@@ -397,6 +398,22 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender)
         s->ipc.peer = self;
         queue_push(&ep->awaiting_reply, s);
         return IPC_OK;
+    }
+
+    if (nonblocking) {
+        /*
+         * A server that has something else to do cannot afford to park here.
+         * The console is the case that forced this: it blocks inside `read`
+         * waiting for a line, and while it is blocked it is answering
+         * nobody - so a program that runs for a while and wants to ask
+         * whether Control-C was pressed waits for a line that only arrives
+         * when somebody types one.
+         *
+         * With this it can pump: serve whatever has arrived, then go back to
+         * waiting. The alternative was a second thread in the server, and
+         * there are no threads inside a process.
+         */
+        return IPC_NO_MESSAGE;
     }
 
     queue_push(&ep->receivers, self);

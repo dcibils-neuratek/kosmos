@@ -41,9 +41,12 @@ local function sample()
   return { idle = k.idle_ticks, busy = k.busy_ticks, procs = by_pid }
 end
 
+-- Returns false if Control-C was pressed while waiting, so the caller can
+-- stop between rounds rather than only between screens.
 local function pause(ticks)
   local until_ = sys.ticks() + ticks
   while sys.ticks() < until_ do sys.yield() end
+  return not interrupted()
 end
 
 local function report(before, after)
@@ -98,8 +101,9 @@ local hz = fs.read("/dev/cpu").counter_hz
 
 for i = 1, rounds do
   local before = sample()
-  pause(hz // 2)
+
+  if not pause(hz // 2) then break end
   report(before, sample())
 
-  if i < rounds then pause(hz // 2) end
+  if i < rounds and not pause(hz // 2) then break end
 end

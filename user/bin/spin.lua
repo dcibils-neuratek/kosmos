@@ -7,9 +7,15 @@
 --   spin        ten seconds
 --   spin 3      three
 --
--- There is no way to kill a process yet, so it stops on its own rather
--- than looping for ever. That is a real limitation and this is written
--- around it rather than pretending otherwise.
+-- It stops on its own rather than looping for ever, and it is the one
+-- program here that Control-C does not stop. That is not an oversight, it
+-- is the same fact from the other side: interruption is cooperative, a
+-- process is stopped by asking whether it should be, and asking is an IPC
+-- round trip - which is precisely the yield this program exists not to do.
+--
+-- So it is the counterexample. `monitor` and `htop` stop when you ask; this
+-- one runs its ten seconds. Stopping it would need a way to end a process
+-- from outside, which the kernel does not have.
 
 local seconds = tonumber(args) or 10
 local hz = fs.read("/dev/cpu").counter_hz

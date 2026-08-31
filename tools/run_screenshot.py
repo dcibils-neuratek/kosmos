@@ -28,6 +28,20 @@ So there are two phases here, and the second is the one that matters:
      virtio-input device - a path that shares nothing with the serial line
      everything else here types over.
 
+  4. **A detached program still drawing.** `monitor 30 &` redraws the
+     reserved rows once a second from a process of its own, and whether it
+     does is invisible over serial - it draws on the framebuffer and says
+     nothing. Two pictures 3.3 seconds apart, and the reserved rows have to
+     differ by more than one glyph cell. The 0.3 is not decoration: the
+     cursor blinks twice a second, so a whole number of seconds catches it in
+     the same phase and reports a static screen on a moving one.
+
+  5. **Control-C from the keyboard, stopping that program.** The same rows,
+     which must go still. Two things this proves and serial cannot: that the
+     driver turns Control plus C into byte 3 - the terminal does that on the
+     other side of a cable, so Control-C worked over serial long before it
+     did anything in the window - and that a running program is told.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -51,6 +65,14 @@ import time
 import zlib
 
 QEMU = "qemu-system-aarch64"
+
+# Has to agree with kernel/console.c: RESERVED_ROWS rows of GLYPH_H,
+# at the bottom, which the kernel keeps out of the scroll region and
+# `monitor` draws its one line of text into.
+GLYPH_W = 8
+GLYPH_H = 16
+RESERVED_PX = 2 * GLYPH_H
+
 
 # Has to agree with the Makefile's line, except for the display: a window is
 # not wanted here, and `-display none` still gives ramfb a surface to scan
@@ -464,6 +486,143 @@ def check_keyboard(guest):
     return 2
 
 
+def _band_changed(width, height, a, b):
+    """Did anything in the reserved rows differ between two pictures?
+
+    Only those rows, and that is what makes both phases below sound. The
+    kernel console keeps its cursor inside the scroll region - `rows` is
+    already RESERVED_ROWS short - so nothing else in the system draws there.
+    """
+    for y in range(height - RESERVED_PX, height):
+        row = y * width * 3
+
+        if a[row:row + width * 3] != b[row:row + width * 3]:
+            return True
+
+    return False
+
+
+def check_status_bar(guest):
+    """A detached program still runs, and its drawing still reaches the screen.
+
+    `monitor` redraws the reserved rows once a second from a process of its
+    own. Every earlier version of it did not: one drew a single time, one
+    redrew only after each typed command, and one counted yields rather than
+    seconds - and all three look identical from the serial line, because they
+    draw on the framebuffer and say nothing. So it is checked from outside.
+
+    Only the reserved rows are looked at, and that is what makes the check
+    sound. The kernel console keeps its cursor inside the scroll region -
+    `rows` is already RESERVED_ROWS short - so nothing else in the system
+    draws below that line. Any pixel that changes there changed because a
+    detached process drew it.
+
+    Scanning the whole screen instead would not work, and the reason is worth
+    recording: the cursor blinks twice a second, so on a whole number of
+    seconds it is caught in the same phase and contributes nothing, while on
+    any other interval it looks exactly like a program drawing. Two pictures
+    3.0 seconds apart reported a completely static screen on a system where
+    two separate things were moving. 3.3 here for the same reason - it is not
+    aligned to the blink or to the monitor's own second.
+    """
+    guest.type("monitor 30 &")
+    time.sleep(2.5)
+
+    width, height, before = parse_ppm(guest.screendump())
+    time.sleep(3.3)
+    _, _, after = parse_ppm(guest.screendump())
+
+    if not _band_changed(width, height, before, after):
+        raise Failure(
+            "nothing in the bottom {0} rows changed in 3.3 seconds with "
+            "`monitor 30 &` running. Nothing but a detached program draws "
+            "there, so either the trailing & is not detaching, or the "
+            "program is not redrawing on a clock of its own.".format(
+                RESERVED_PX // GLYPH_H)
+        )
+
+    return 1
+
+
+def check_interrupt(guest):
+    """Control-C, from the keyboard, stopping a program in the foreground.
+
+    `monitor 30` without a trailing `&` holds the shell for thirty seconds
+    while redrawing the reserved rows once a second. Control-C has to end it
+    early, and both halves are checked: the rows go still, and the prompt
+    comes back.
+
+    Foreground on purpose. Who receives the interrupt is decided by who is
+    reading the keyboard, and that turns out to be the right rule by itself:
+
+      * a program in the foreground - the shell is parked in `wait`, not
+        reading, so the console hands byte 3 to whoever asks for it, which
+        is the program.
+      * nothing running - the console is inside `read` for the shell, takes
+        the byte itself, and abandons the line, which is what Control-C does
+        at a prompt.
+      * a program in the background - the shell is at the prompt, so the
+        line editor takes it and the background program carries on. Which
+        is also correct, and is why this phase does not use `&`.
+
+    Three separate things have to work, and none is visible over serial:
+    the driver has to turn a Control press and a C press into byte 3 (the
+    terminal does that on the other side of a cable, so Control-C worked
+    over serial long before it did anything in the window), the console
+    server has to hand it to a program that asks, and the program has to act.
+    """
+    guest.type("monitor 30")
+    time.sleep(2.5)
+
+    width, height, before = parse_ppm(guest.screendump())
+    time.sleep(1.6)
+    _, _, during = parse_ppm(guest.screendump())
+
+    if not _band_changed(width, height, before, during):
+        raise Failure(
+            "a foreground `monitor 30` was not drawing at all, so there is "
+            "nothing here for Control-C to stop. Check the status bar phase "
+            "first - this one cannot mean anything until that passes."
+        )
+
+    mark = len(guest.seen)
+    guest.sendkey("ctrl-c")
+    time.sleep(2.5)                  # the poll is once a second, plus the wipe
+
+    _, _, after_stop = parse_ppm(guest.screendump())
+    time.sleep(3.3)
+    _, _, later = parse_ppm(guest.screendump())
+
+    if _band_changed(width, height, after_stop, later):
+        raise Failure(
+            "the reserved rows were still changing 2.5 seconds after "
+            "ctrl-c, so `monitor` did not stop. Either the keyboard is not "
+            "producing byte 3 for Control-C, or the console server is not "
+            "reporting it, or the program is not asking."
+        )
+
+    # And the shell has to be usable again. A program that stopped drawing
+    # but never returned would pass the check above and leave the system
+    # exactly as stuck as before.
+    guest.type("")
+    deadline = time.monotonic() + 10
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if PROMPT in guest.seen[mark:]:
+            break
+        time.sleep(0.2)
+    else:
+        raise Failure(
+            "the reserved rows went still after ctrl-c but the prompt never "
+            "came back, so the shell is still waiting for a program that "
+            "stopped drawing.\n"
+            f"--- since the interrupt ---\n{guest.seen[mark:]}"
+        )
+
+    return 2
+
+
 def write_png(path, data):
     """The screendump, as something a person can open."""
     width, height, px = parse_ppm(data)
@@ -524,6 +683,9 @@ def main():
 
         key_checks = check_keyboard(guest)
 
+        stop_checks = check_interrupt(guest)
+        bar_updates = check_status_bar(guest)
+
         if args.png:
             write_png(args.png, drawn)
             print(f"Wrote {args.png}.")
@@ -535,11 +697,14 @@ def main():
         if guest is not None:
             guest.close()
 
-    total = splash_checks + bar_checks + key_checks
+    total = (splash_checks + bar_checks + key_checks + bar_updates
+             + stop_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
-          f"Lua drew through gfx, {key_checks} on the keyboard).")
+          f"Lua drew through gfx, {key_checks} on the keyboard, "
+          f"{bar_updates} on a detached program still drawing, "
+          f"{stop_checks} on Control-C stopping it).")
     return 0
 
 

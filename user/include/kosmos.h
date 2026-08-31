@@ -55,6 +55,19 @@ static inline long sys3(long n, long a, long b, long c)
     return x0;
 }
 
+static inline long sys4(long n, long a, long b, long c, long d)
+{
+    register long x8 __asm__("x8") = n;
+    register long x0 __asm__("x0") = a;
+    register long x1 __asm__("x1") = b;
+    register long x2 __asm__("x2") = c;
+    register long x3 __asm__("x3") = d;
+    __asm__ volatile("svc #0"
+                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3)
+                     : "memory", "cc");
+    return x0;
+}
+
 __attribute__((noreturn))
 static inline void kosmos_exit(int code)
 {
@@ -227,11 +240,13 @@ static inline long kosmos_call(long cap, const struct message *msg,
     return sys3(SYS_CALL, cap, (long)(uintptr_t)msg, (long)(uintptr_t)reply);
 }
 
+/* `nonblocking` returns SYS_NO_MESSAGE rather than parking when nobody is
+ * waiting - for a server that has something else to be getting on with. */
 static inline long kosmos_receive(long cap, struct message *msg,
-                                  uint64_t *sender)
+                                  uint64_t *sender, int nonblocking)
 {
-    return sys3(SYS_RECEIVE, cap, (long)(uintptr_t)msg,
-                (long)(uintptr_t)sender);
+    return sys4(SYS_RECEIVE, cap, (long)(uintptr_t)msg,
+                (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
 static inline long kosmos_reply(uint64_t sender, const struct message *msg)

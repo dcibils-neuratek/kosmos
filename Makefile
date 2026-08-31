@@ -4,6 +4,7 @@
 # make serial   the same, serial only, no window
 # make test     run the suite under QEMU, exit code 0 or 1
 # make screenshot  boot, screendump, and check the picture QEMU scans out
+# make check-lua   parse every .lua file and check the globals it reads
 # make debug    the same as qemu, stopped, with a gdbserver on :1234
 # make clean
 
@@ -30,6 +31,19 @@ VARIANT := $(if $(TEST),-test,$(if $(BENCH),-bench))
 # spot; further down it would expand to nothing and the object would be
 # named build//init_bin.c.o.
 GEN := build/gen$(VARIANT)
+
+# The host-side Lua checks. Up here for the same reason GEN is: the rules
+# that use them are read further down, and a target line is expanded when
+# make reads it, so a variable defined below would be empty there.
+HOST_CC := cc
+HOSTDIR := build/host
+
+# The library, without the two mains and without linit's open-everything.
+LUA_HOST_SRCS := $(filter-out lua/upstream/lua.c lua/upstream/luac.c \
+                              lua/upstream/linit.c, $(wildcard lua/upstream/*.c))
+
+LUA_FILES := user/init/init.lua $(wildcard user/bin/*.lua) \
+             $(wildcard user/tests/*.lua)
 
 SRCS := boot/start.S \
         arch/aarch64/vectors.S \
@@ -296,7 +310,7 @@ $(UBUILD)/%.S.o: %.S
 
 # The Lua source init runs, and then init itself, both carried inside the
 # kernel image because there is no filesystem to load them from until M8.
-$(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py
+$(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< init_lua $@
 
@@ -306,17 +320,58 @@ $(GEN)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/bdf2c.py $< font_8x16 $@
 
+# ------------------------------------------------------------------
+# The Lua in this repository, checked before it is embedded.
+#
+# Everything written in Lua here is loaded at run time inside the guest, so a
+# mistake in it is not a build failure: it is a process that dies at boot, or
+# a shell that vanishes the moment somebody types the word that reaches the
+# broken line. Those are expensive, because a dead process cannot say why it
+# died - it prints by asking the console server.
+#
+# Two checks, built from lua/upstream/ with the host compiler so the parser
+# is exactly the one that will run the code:
+#
+#   luacheck    it parses
+#   luaglobals  every global it reads will actually be there
+#
+# The second is the one that earns its place. A name that used to be a local
+# and is not any more compiles perfectly happily - it is a global, and
+# globals may be nil - and fails much later somewhere unhelpful. That has
+# cost four separate debugging sessions in this project.
+# ------------------------------------------------------------------
+
+# -w because upstream's warnings are not ours to fix, the same reasoning the
+# target build uses.
+$(HOSTDIR)/luacheck: tools/luacheck.c $(LUA_HOST_SRCS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
+
+$(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
+
+# A stamp rather than a phony target: the generated sources depend on this,
+# and a phony one would rebuild them on every make.
+$(HOSTDIR)/lua.ok: $(LUA_FILES) $(HOSTDIR)/luacheck $(HOSTDIR)/luac tools/luaglobals.py
+	@$(HOSTDIR)/luacheck $(LUA_FILES)
+	@python3 tools/luaglobals.py $(HOSTDIR)/luac $(LUA_FILES)
+	@touch $@
+
+.PHONY: check-lua
+check-lua: $(HOSTDIR)/lua.ok
+
 # The programs in user/bin/, as Lua source the /bin server serves. There is
 # no disk until M8, so a program reaches the system by being in the image.
-$(GEN)/programs.c: $(wildcard user/bin/*.lua) tools/progs2c.py
+$(GEN)/programs.c: $(wildcard user/bin/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/progs2c.py programs_lua $@ $(wildcard user/bin/*.lua)
 
-$(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py
+$(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< luatest_lua $@
 
-$(GEN)/luabench_lua.c: user/tests/luabench.lua tools/bin2c.py
+$(GEN)/luabench_lua.c: user/tests/luabench.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
 	python3 tools/bin2c.py $< luabench_lua $@
 

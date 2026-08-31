@@ -33,6 +33,39 @@ local SPAWN_SCREEN  = 2
 local function line(s) sys.write(s .. "\n") end
 
 --------------------------------------------------------------------------
+-- Text on its way to the console, in pieces if it has to be.
+--
+-- A message is 2048 bytes. `ns.read` already assembles a value that spans
+-- several; this is the other direction, and it was missing - `cat` on a
+-- four-kilobyte program read it back perfectly and then died trying to
+-- print it.
+--
+-- Splitting belongs here and not in `ns.write`, because a console is a
+-- stream and a file is not: two writes to /dev/console are one line after
+-- another, and two writes to /data/notes are the second replacing the
+-- first. Only the caller knows which it meant.
+--------------------------------------------------------------------------
+local CONSOLE_CHUNK = 1400
+
+local function write_text(ns, path, text)
+  if #text <= CONSOLE_CHUNK then
+    return ns.write(path, text)
+  end
+
+  local at = 1
+
+  while at <= #text do
+    local piece = text:sub(at, at + CONSOLE_CHUNK - 1)
+    local ok, err = ns.write(path, piece)
+
+    if not ok then return nil, err end
+    at = at + #piece
+  end
+
+  return true
+end
+
+--------------------------------------------------------------------------
 -- What the machine is.
 --
 -- `sys.info()` hands back raw ID registers and pool counts and decodes
@@ -194,10 +227,11 @@ local function serve(endpoint, state, make_handlers)
     return { ok = true, reloads = state.reloads }
   end
 
-  while true do
-    local request, sender = sys.receive(endpoint)
-    if not request then return end          -- the endpoint went away
-
+  --
+  -- One request, answered. Pulled out of the loop below because a handler
+  -- that has to wait needs to be able to do this too - see `state.pump`.
+  --
+  local function answer(request, sender)
     local reply
 
     if request.type == "reload" then
@@ -241,6 +275,40 @@ local function serve(endpoint, state, make_handlers)
       pcall(sys.reply, sender,
             { ok = false, error = "the answer does not fit in a message" })
     end
+  end
+
+  --------------------------------------------------------------------------
+  -- For a handler that has to wait.
+  --
+  -- A server is one thread, so a handler that blocks blocks the server, and
+  -- everyone else waits for something that has nothing to do with them. The
+  -- console is where this stopped being theoretical: it blocks inside `read`
+  -- until somebody types a line, and while it is blocked it answers nobody -
+  -- so a status bar asking once a second whether Control-C was pressed was
+  -- waiting on a keystroke that would only arrive if you stopped waiting for
+  -- the status bar.
+  --
+  -- So a waiting handler calls this instead of only yielding: whatever has
+  -- arrived gets answered, and then the wait continues. Non-blocking, so an
+  -- empty queue costs one syscall and returns.
+  --
+  -- The alternative was a second thread inside the server, and there are no
+  -- threads inside a process - which is not a limitation to work around
+  -- here. One thread is why a handler never races another handler, and that
+  -- is worth more than what it costs.
+  --------------------------------------------------------------------------
+  function state.pump()
+    while true do
+      local request, sender = sys.receive(endpoint, true)
+      if not request then return end
+      answer(request, sender)
+    end
+  end
+
+  while true do
+    local request, sender = sys.receive(endpoint)
+    if not request then return end          -- the endpoint went away
+    answer(request, sender)
   end
 end
 
@@ -509,6 +577,16 @@ local function new_namespace()
   -- the point: there is no separate management channel and no privileged
   -- back door. A process can reload a server exactly when it holds a
   -- capability for it, and not otherwise.
+  --
+  -- Was the interrupt key pressed? Only the console answers this, and only
+  -- because it is the one process allowed to read the keyboard.
+  --
+  function ns.interrupted(path)
+    local r, e = request("poll", path)
+    if not r then return nil, e end
+    return r.value and true or false
+  end
+
   function ns.reload(path, source)
     local r, e = request("reload", path, { source = source })
     return r and r.reloads or nil, e
@@ -525,10 +603,19 @@ end
 -- a server rather than a convention - a client cannot decide to print
 -- directly, because the machine will not let it.
 --
--- It serves two operations at one path. `write` puts a string; `read` waits
--- for a line, echoing as it goes, which is where the line editing lives. A
--- client that wants a line asks for one and blocks until there is one, and
--- that blocking is free: synchronous IPC already parks the caller.
+-- It serves three operations at one path. `write` puts a string; `read`
+-- waits for a line, echoing as it goes, which is where the line editing
+-- lives. A client that wants a line asks for one and blocks until there is
+-- one, and that blocking is free: synchronous IPC already parks the caller.
+--
+-- `poll` is the odd one, and it is here because this is the only process
+-- that may call `sys.getchar`. A program that runs for a while - a status
+-- bar, a benchmark - has no other way to find out that Control-C was
+-- pressed, because the keyboard is not its to read. So it asks.
+--
+-- Anything `poll` takes off the keyboard that is not the interrupt is kept,
+-- not dropped: typing while a program runs and losing the characters when
+-- it ends would be worse than not polling at all.
 --------------------------------------------------------------------------
 
 local function console_handlers(state)
@@ -541,20 +628,53 @@ local function console_handlers(state)
     end,
 
     read = function(req)
+      --
+      -- Only one reader at a time. `pump` below can deliver another `read`
+      -- while this one is waiting, and two handlers both consuming keys
+      -- would split the line between them. Saying no is right rather than
+      -- merely safe: there is one keyboard, and a second client asking for
+      -- a line is a bug in that client.
+      --
+      if state.reading then
+        return { ok = false, error = "the console already has a reader" }
+      end
+
+      state.reading = true
       local buf = {}
 
+      -- Whatever `poll` took off the keyboard while a program was running,
+      -- in the order it arrived, before anything new.
+      local function next_byte()
+        if #state.typed > 0 then
+          return table.remove(state.typed, 1)
+        end
+        return sys.getchar()
+      end
+
       while true do
-        local c = sys.getchar()
+        local c = next_byte()
 
         if c == nil then
-          -- Nothing waiting. Yielding rather than spinning costs a
-          -- scheduling slot instead of the machine; there is no UART
-          -- interrupt to park on until the terminal at M6.
+          -- Nothing waiting. Serve whoever else has asked for something -
+          -- this is the handler that would otherwise make the whole server
+          -- unavailable for as long as nobody types - and then yield.
+          -- Yielding rather than spinning costs a scheduling slot instead of
+          -- the machine; there is no UART interrupt to park on yet.
+          state.pump()
           sys.yield()
         elseif c == 10 or c == 13 then
           sys.write("\n")
           state.lines = state.lines + 1
+          state.reading = false
           return { ok = true, value = table.concat(buf) }
+        elseif c == 3 then
+          -- Control-C at the prompt abandons the line, as it does in every
+          -- other shell. An empty line back, which the shell already knows
+          -- how to do nothing with.
+          sys.write("^C\n")
+          state.interrupts = state.interrupts + 1
+          state.reading = false
+          return { ok = true, value = "" }
         elseif c == 8 or c == 127 then
           if #buf > 0 then
             table.remove(buf)
@@ -572,12 +692,40 @@ local function console_handlers(state)
       end
     end,
 
+    poll = function(req)
+      --
+      -- Was Control-C pressed? Everything else typed is kept for `read`.
+      --
+      -- This drains rather than reading one byte, because the answer has to
+      -- be about everything typed since the last question. Reading one byte
+      -- a second would find the interrupt a second late for every character
+      -- typed ahead of it.
+      --
+      local seen = false
+
+      while true do
+        local c = sys.getchar()
+
+        if c == nil then
+          break
+        elseif c == 3 then
+          seen = true
+          state.interrupts = state.interrupts + 1
+        else
+          state.typed[#state.typed + 1] = c
+        end
+      end
+
+      return { ok = true, value = seen }
+    end,
+
     stat = function(req)
       -- What it has done, out of the state table. It survives a reload,
       -- which is how you can see that the state and the code are separate
       -- things.
       return { ok = true, value = {
         bytes = state.bytes, lines = state.lines,
+        interrupts = state.interrupts,
         reloads = state.reloads or 0,
       } }
     end,
@@ -585,7 +733,9 @@ local function console_handlers(state)
 end
 
 local function console_main(endpoint)
-  serve(endpoint, { bytes = 0, lines = 0 }, console_handlers)
+  serve(endpoint, { bytes = 0, lines = 0, interrupts = 0, typed = {},
+          reading = false },
+        console_handlers)
 end
 
 --------------------------------------------------------------------------
@@ -760,7 +910,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap)
   -- its own like everything else.
   ns.mount("/bin", bin_cap)
 
-  local function out(s) ns.write("/dev/console", s) end
+  local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
 
   --------------------------------------------------------------------------
@@ -815,7 +965,7 @@ fs - this process's namespace, not a global filesystem.
 
 At the prompt:
 
-  ls [path]      list; pwd, cd <path> to move around
+  ls [path]      a program in /bin; pwd and cd are the shell's own
   cat <path>     a program in /bin: reads one thing and prints it
   /commands      everything the shell answers to
 
@@ -1039,47 +1189,16 @@ your filesystem back.
     return "[" .. string.rep("#", filled) .. string.rep(".", width - filled) .. "]"
   end
 
-  local function draw_monitor()
-    local screen = gfx.screen()
-    if not screen then return "there is no screen" end
-
-    local m = describe_machine()
-    if not m then return "the kernel would not say" end
-
-    local w, h = screen:size()
-    local top = h - RESERVED_ROWS * gfx.font.h
-
-    local pct = cpu_usage(m.kernel)
-    local meter = pct and string.format("%s %3d%%", bar(pct, 10), pct)
-                       or "[..........]   --"
-
-    local text = string.format(
-      " %s x%d  cpu %s   %d/%d thr   %d/%d proc   %d/%d MB   up %ds",
-      m.cpu.part, m.cpu.cores, meter,
-      m.kernel.threads, m.kernel.threads_max,
-      m.kernel.processes, m.kernel.processes_max,
-      m.memory.total_mb - m.memory.free_mb, m.memory.total_mb,
-      sys.ticks() // m.cpu.counter_hz)
-
-    screen:fill(0, top, w, h - top, 0xff161b22)
-    screen:fill(0, top, w, 1, 0xff30363d)
-    screen:text(4, top + gfx.font.h // 2, text, 0xff7ee787, 0xff161b22)
-    return nil
-  end
-
-  local monitor_on = false
-
   --
   -- Collects the processes this shell spawned and has finished with.
   --
   -- A process that exits keeps its slot until somebody waits for it: that is
   -- what makes an exit code readable afterwards. init reaps its own
   -- children; nobody was reaping the shell's, so spawning from the prompt
-  -- filled the pool with slots that `ps` did not even count. Spawning
-  -- twenty-six processes failed while every report said five were in use.
+  -- filled the pool with slots that `ps` did not even count.
   --
   -- Non-blocking, which is why SYS_WAIT grew a flag: a blocking drain at the
-  -- prompt would sit there for the ten seconds a `benchmark` takes.
+  -- prompt would sit there for as long as a detached program takes.
   local function reap()
     for _ = 1, 32 do
       local id = sys.wait(true)
@@ -1182,30 +1301,6 @@ your filesystem back.
     out(cwd .. "\n")
   end
 
-  commands.ls = function(arg)
-    local target = resolve(arg)
-    local entries, err = ns.list(target)
-
-    if not entries then
-      out("ls: " .. target .. ": " .. tostring(err) .. "\n")
-      return
-    end
-
-    if #entries == 0 then
-      out("(empty)\n")
-      return
-    end
-
-    for _, name in ipairs(entries) do
-      local attrs = ns.getattr(target == "/" and ("/" .. name)
-                                             or (target .. "/" .. name))
-      local size = attrs and attrs.size
-
-      out(string.format("  %-16s %s\n", name,
-                        size and (size .. " bytes") or ""))
-    end
-  end
-
   --------------------------------------------------------------------------
   -- Commands that are Lua programs.
   --
@@ -1261,6 +1356,15 @@ your filesystem back.
     out(name .. " defined; run it as /" .. name .. "\n")
   end
 
+  -- A trailing `&` detaches, as it does in every other shell: the program
+  -- is started rather than run, and the prompt comes straight back. That is
+  -- what a status bar wants and what a `cat` never does.
+  local function split_detach(argument)
+    local without = argument:match("^(.-)%s*&%s*$")
+    if without then return without, true end
+    return argument, false
+  end
+
   --------------------------------------------------------------------------
   -- Running a program.
   --
@@ -1272,7 +1376,7 @@ your filesystem back.
   -- no inherited environment, no global tree: the program gets exactly the
   -- capabilities named here and can pass on no more than it holds.
   --------------------------------------------------------------------------
-  local function run_program(name, argument)
+  local function run_program(name, argument, detach)
     local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
 
     -- Asked about rather than read. The shell does not need the program;
@@ -1296,13 +1400,17 @@ your filesystem back.
 
     local reply = sys.call(ep, {
       path = path, args = argument or "", cwd = cwd,
+      detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
     -- leaving them behind is how a pool runs out for reasons nobody sees.
     sys.destroy(ep)
-    sys.wait()
+
+    -- A detached program is still running; waiting for it would be exactly
+    -- what detaching was for. The next command's reap collects it.
+    if not detach then sys.wait() end
 
     if not reply then return false, "the program did not answer" end
     if not reply.ok then return false, reply.error end
@@ -1318,7 +1426,8 @@ your filesystem back.
     end
 
     local name, rest = arg:match("^(%S+)%s*(.*)$")
-    local ok, err = run_program(name, rest)
+    local argument, detach = split_detach(rest)
+    local ok, err = run_program(name, argument, detach)
 
     if not ok then out("run: " .. tostring(err) .. "\n") end
   end
@@ -1421,50 +1530,6 @@ your filesystem back.
     out("is an error at a known limit rather than a failure at an unknown one.\n")
   end
 
-  commands.monitor = function(arg)
-    if arg == "off" then
-      monitor_on = false
-      out("monitor off\n")
-      return
-    end
-
-    if arg == "watch" then
-      --
-      -- Once a second, on the clock.
-      --
-      -- This used to count forty yields between redraws, which is not a
-      -- rate at all: on an idle machine a yield returns immediately, so it
-      -- spun as fast as the scheduler would let it, and under load it
-      -- slowed to whatever was left. A monitor whose sampling rate depends
-      -- on what it is measuring is measuring itself.
-      --
-      -- Blocking and bounded on purpose: there is no way to interrupt it,
-      -- so it stops after thirty seconds on its own.
-      local hz = sys.info().counter_hz
-
-      for _ = 1, 30 do
-        local err = draw_monitor()
-        if err then out(err .. "\n") return end
-
-        local until_ = sys.ticks() + hz
-        while sys.ticks() < until_ do sys.yield() end
-      end
-      return
-    end
-
-    local err = draw_monitor()
-    if err then out(err .. "\n") return end
-
-    if arg == "on" then
-      monitor_on = true
-      out("monitor on: the bar refreshes after every command\n")
-    end
-  end
-
-  -- `alias` with nothing after it lists them, which is the discoverable
-  -- half; `aliases` is the same command under the name people reach for
-  -- first. It is itself an alias, defined below, which is a small joke and
-  -- also the shortest way to say what an alias is.
   commands.alias = function(arg)
     if arg == "" then
       local names = {}
@@ -1608,7 +1673,6 @@ your filesystem back.
         local ok, err = pcall(commands[name], rest)
         if not ok then out("error: " .. tostring(err) .. "\n") end
         reap()
-        if monitor_on then draw_monitor() end
         goto next_line
       end
 
@@ -1636,7 +1700,8 @@ your filesystem back.
           -- which is already isolated in its own process - took the shell
           -- down with it, and the shell cannot print its own last words
           -- because it prints by asking the console server.
-          local started, ok, err = pcall(run_program, word, rest)
+          local argument, detach = split_detach(rest)
+          local started, ok, err = pcall(run_program, word, argument, detach)
 
           if not started then
             out("run: " .. tostring(ok) .. "\n")
@@ -1644,8 +1709,7 @@ your filesystem back.
             out("run: " .. tostring(err) .. "\n")
           end
           reap()
-          if monitor_on then draw_monitor() end
-          goto next_line
+            goto next_line
         end
       end
 
@@ -1670,7 +1734,6 @@ your filesystem back.
       end
 
       reap()
-      if monitor_on then draw_monitor() end
     end
 
     ::next_line::
@@ -1972,10 +2035,9 @@ if role == ROLE_RUNNER then
   -- no inherited environment and no global tree - a program that was not
   -- given the screen simply cannot draw.
   --
-  -- The source arrives in a message rather than being read from a file by
-  -- this process, because the shell has already read it and passing bytes
-  -- it already holds is cheaper than handing over the capability to fetch
-  -- them again. It is the same mechanism hot reload uses.
+  -- What arrives in the message is the *path*, and this process fetches the
+  -- source itself through the namespace built below. Why it is that way
+  -- rather than the other is spelt out where the namespace is built.
   --------------------------------------------------------------------------
   sys.name("run")
 
@@ -2001,7 +2063,7 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/bin",         req.bin)     end
   if req.devices then ns.mount("/dev",         req.devices) end
 
-  local function out(s) ns.write("/dev/console", s) end
+  local function out(s) write_text(ns, "/dev/console", s) end
 
   --
   -- A program can start a program.
@@ -2055,6 +2117,25 @@ if role == ROLE_RUNNER then
     -- resolve a relative path needs it, and nothing else does.
     cwd = req.cwd or "/",
     run = launch,
+
+    --
+    -- Control-C, for a program that runs long enough to need interrupting.
+    --
+    -- Cooperative, and that is not a shortcut being papered over: there is
+    -- no way to stop a process from outside yet. `process_exit` is suicide
+    -- by construction - it panics if it is not the running process - and a
+    -- kill would have to unlink the target from three IPC queues and settle
+    -- what happens to whoever is holding a reply handle for it. That is its
+    -- own piece of work, written up in roadmap.md, not something to bolt on
+    -- here.
+    --
+    -- So this is what it says it is: a program that asks can be stopped, and
+    -- a program that never asks cannot. A program given no console always
+    -- gets false, which is right - it cannot be typed at either.
+    --
+    interrupted = function()
+      return ns.interrupted("/dev/console") == true
+    end,
     print = function(...)
       local parts = {}
       for i = 1, select("#", ...) do

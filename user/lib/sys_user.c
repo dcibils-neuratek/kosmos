@@ -259,7 +259,8 @@ static int l_receive(lua_State *L)
     long cap = (long)luaL_checkinteger(L, 1);
     struct message msg;
     uint64_t sender = 0;
-    long status = kosmos_receive(cap, &msg, &sender);
+    int nonblocking = lua_toboolean(L, 2);
+    long status = kosmos_receive(cap, &msg, &sender, nonblocking);
 
     if (status != 0) {
         return fail(L, status);

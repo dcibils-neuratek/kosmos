@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""
+Every global the Lua in this repository reads, checked against what will
+actually be there.
+
+`luacheck` catches syntax. This catches the mistake that has cost four
+debugging sessions and is not a syntax error at all: a name that used to be
+a local and is not any more. Lua compiles a read of an undefined name
+perfectly happily - it is a global, and globals may be nil - so the failure
+arrives later, at run time, as `attempt to call a nil value (global 'reap')`,
+in a process that cannot tell you because it prints by asking the console
+server and a dead process asks nothing.
+
+The most recent one was exactly that: an edit removed the block a local was
+defined in and left three calls to it, and the symptom was a shell that
+vanished the moment anybody typed a program name.
+
+How it works: `luac -l -p` lists the bytecode, and every read of a global
+appears as `_ENV "name"`. Anything not in the environment that file will run
+in is reported. It is a small, exact check - it says nothing about whether a
+*field* exists, only whether the name at the root of the expression will.
+"""
+
+import re
+import subprocess
+import sys
+
+GLOBAL = re.compile(r'_ENV "([A-Za-z_][A-Za-z0-9_]*)"')
+
+# What upstream Lua puts in a fresh state, minus what this system removes.
+# `dofile` and `loadfile` are deliberately absent: `kosmos_lua_open` sets
+# them to nil, because there is no path to open.
+LUA = {
+    "_G", "_VERSION", "assert", "collectgarbage", "coroutine", "error",
+    "getmetatable", "ipairs", "load", "math", "next", "pairs", "pcall",
+    "print", "rawequal", "rawget", "rawlen", "rawset", "select",
+    "setmetatable", "string", "table", "tonumber", "tostring", "type",
+    "utf8", "xpcall",
+}
+
+# Absent on purpose, and read on purpose: `luatest.lua` asserts they are nil,
+# which is a read. Naming them here rather than widening LUA keeps the
+# distinction between "this exists" and "this is checked for absence".
+ABSENT = {"io", "os", "debug", "package", "dofile", "loadfile", "require"}
+
+# What each kind of file runs with, on top of the above.
+ENVIRONMENTS = {
+    # The image's own chunks: a fresh state with `sys` and `gfx` opened.
+    "default": {"sys", "gfx"},
+
+    # A program in /bin gets an environment built by the runner.
+    "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
+                  "interrupted"},
+}
+
+
+def environment_for(path):
+    allowed = set(LUA) | set(ABSENT) | ENVIRONMENTS["default"]
+
+    for prefix, extra in ENVIRONMENTS.items():
+        if prefix != "default" and prefix in path:
+            allowed |= extra
+
+    return allowed
+
+
+def check(luac, path):
+    try:
+        listing = subprocess.run([luac, "-l", "-p", path],
+                                 capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"{path}: {e.stderr.strip()}", file=sys.stderr)
+        return 1
+
+    allowed = environment_for(path)
+    unknown = sorted({m for m in GLOBAL.findall(listing.stdout)} - allowed)
+
+    if not unknown:
+        return 0
+
+    print(f"{path}: reads {len(unknown)} name(s) that will not be there:",
+          file=sys.stderr)
+
+    for name in unknown:
+        print(f"    {name}", file=sys.stderr)
+
+    print("  Either it should be a local and the definition was lost, or the "
+          "environment\n  this file runs in needs to say it provides it "
+          "(tools/luaglobals.py).", file=sys.stderr)
+
+    return 1
+
+
+def main():
+    if len(sys.argv) < 3:
+        raise SystemExit("usage: luaglobals.py <luac> <file.lua>...")
+
+    luac, files = sys.argv[1], sys.argv[2:]
+    failures = sum(check(luac, path) for path in files)
+
+    if failures:
+        raise SystemExit(1)
+
+    print(f"luaglobals: {len(files)} file(s), every global accounted for")
+
+
+if __name__ == "__main__":
+    main()

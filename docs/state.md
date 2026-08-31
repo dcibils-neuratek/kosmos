@@ -8,7 +8,14 @@ Last updated: 2026-08-30
 
 ## Current milestone
 
-**M6 — Graphics and the app server. Started.** There is a framebuffer and there are pixels on it. Nothing above the HAL yet: no surfaces, no blitter, no font, no app server.
+**M6 — Graphics and the app server. In progress.** There is a framebuffer, a
+surface type, a blitter, an 8x16 font, a screen console with a scroll region
+and a blinking cursor, a keyboard, and a shell that runs programs from `/bin`.
+
+Still missing, and the next things to build: **a backbuffer with damage
+tracking**, and then **the app server** on top of it. Today a program draws
+straight at the scanned-out framebuffer, so a slow draw is visible as it
+happens and two programs drawing at once would fight.
 
 **M5 — Namespaces and servers. Done.** Its definition of done is met, both halves, and the last item on the list — taking Lua out of the kernel — is done as well.
 
@@ -30,11 +37,26 @@ Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU
 
 QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
+## Recently done
+
+- **`/bin` is a real program directory.** `htop`, `cat`, `ls`, `monitor`,
+  `hello`, `benchmark`, `spin`. Typing a name that is not already a Lua name
+  runs the program; a trailing `&` detaches it.
+- **`monitor` redraws on its own clock**, once a second, from a detached
+  process. Every earlier version did not, and none of them could be told
+  apart over serial - so there is now a display check for it.
+- **The Lua is checked at build time.** `tools/luacheck.c` parses every file
+  and `tools/luaglobals.py` compares the globals each one reads against the
+  environment it will run in. That second one exists because a lost `local`
+  has killed a server four separate times, and it catches exactly that.
+- **`docs/architecture.md`**, the layer diagram and one command traced from
+  the keypress to the pixels.
+
 ## Working
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-107 tests, five benchmarks, and 32 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+107 tests, five benchmarks, and 33 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

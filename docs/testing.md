@@ -10,6 +10,28 @@ Each one needs its own mechanism. A single "performance" number answers none of 
 
 ---
 
+
+## The display, from outside the guest
+
+`tools/run_screenshot.py` boots QEMU, asks its monitor for the picture being
+scanned out, and inspects it. It exists because some properties are
+structurally invisible from inside the guest:
+
+| phase | what it catches |
+| ----- | --------------- |
+| the boot screen | geometry, the banner, the progress bar reaching the end (a short bar means BOOT_STAGES disagrees with the stages actually announced), and the channel order - a wrong fourcc turns the green bar blue |
+| bars drawn from Lua | a pitch bug. Replacing the pitch with `width * 4` passes 103 of 103 in-guest tests, because every read and every write agree with each other. Only an observer on the other side of the framebuffer disagrees |
+| real key events | injected through QEMU's input plumbing into virtio-input, a path sharing nothing with the serial line everything else types over |
+| a detached program still drawing | `monitor 30 &` has to keep redrawing the reserved rows on a clock of its own. Three earlier versions did not, and none of them could be told apart over serial |
+
+The last one has a trap worth remembering. The first version of the check took
+two pictures 3.0 seconds apart and reported a completely static screen - on a
+system where both the cursor and the status bar were moving. The cursor blinks
+twice a second, so any whole number of seconds catches it in the same phase.
+Sampling intervals aligned to something the system does are how a test comes
+back green about a screen it never really looked at.
+
+
 ## 18.1 The harness
 
 **The runner lives on the host, the tests run in the guest, serial is the channel.**

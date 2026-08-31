@@ -112,6 +112,7 @@ static inline cap_t message_get_cap(const struct message *m)
 #define IPC_ERR_NO_SPACE   (-4)     /* out of endpoints, or out of capability slots */
 #define IPC_ERR_TOO_BIG    (-5)     /* the value does not fit in a message */
 #define IPC_ERR_BAD_VALUE  (-6)     /* a value that cannot cross a boundary */
+#define IPC_NO_MESSAGE     (-7)     /* nobody was waiting, and blocking was refused */
 
 /*
  * How many capabilities a thread may hold.
@@ -173,7 +174,8 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply);
  * holding whoever sent it, which is the token `ipc_reply` needs; it is not a
  * capability and cannot be stored or passed on.
  */
-int ipc_receive(cap_t index, struct message *msg, struct thread **sender);
+int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
+                bool nonblocking);
 
 /* Answer a sender obtained from ipc_receive, unblocking it. */
 int ipc_reply(struct thread *sender, const struct message *msg);

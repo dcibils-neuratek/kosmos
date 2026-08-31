@@ -154,7 +154,7 @@ static long sys_call(struct process *p, cap_t cap, uintptr_t msg_ptr,
 }
 
 static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
-                        uintptr_t sender_ptr)
+                        uintptr_t sender_ptr, bool nonblocking)
 {
     struct message msg;
     struct thread *sender = NULL;
@@ -165,7 +165,7 @@ static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
         return SYS_ERR_FAULT;
     }
 
-    status = ipc_receive(cap, &msg, &sender);
+    status = ipc_receive(cap, &msg, &sender, nonblocking);
 
     if (status != IPC_OK) {
         return status;
@@ -659,7 +659,9 @@ void syscall_dispatch(struct trapframe *tf)
         break;
 
     case SYS_RECEIVE:
-        result = sys_receive(p, (cap_t)tf->x[0], tf->x[1], tf->x[2]);
+        /* x3 bit 0 asks not to block, the same way SYS_WAIT's x1 does. */
+        result = sys_receive(p, (cap_t)tf->x[0], tf->x[1], tf->x[2],
+                             (tf->x[3] & 1u) != 0);
         break;
 
     case SYS_REPLY:
