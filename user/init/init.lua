@@ -23,11 +23,108 @@ local ROLE_RELOAD   = 6   -- checks hot reload against a live server
 local ROLE_INIT     = 7   -- starts everything else, and outlives it
 
 local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
+local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
 
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
 
 local function line(s) sys.write(s .. "\n") end
+
+--------------------------------------------------------------------------
+-- What the machine is.
+--
+-- `sys.info()` hands back raw ID registers and pool counts and decodes
+-- nothing, deliberately: decoding a MIDR is a table lookup, and tables
+-- belong up here. A processor the kernel has never heard of gets described
+-- properly without the kernel changing, which is the same division of
+-- labour design.md 1 draws everywhere else.
+--
+-- The numbers below are from arch/arm64/include/asm/cputype.h and
+-- arch/arm64/tools/sysreg, the same sources the kernel's own decode used.
+--------------------------------------------------------------------------
+
+local IMPLEMENTERS = {
+  [0x41] = "ARM",      [0x42] = "Broadcom", [0x43] = "Cavium",
+  [0x46] = "Fujitsu",  [0x48] = "HiSilicon", [0x4e] = "NVIDIA",
+  [0x50] = "APM",      [0x51] = "Qualcomm", [0x61] = "Apple",
+  [0x6d] = "Microsoft", [0xc0] = "Ampere",
+}
+
+local ARM_PARTS = {
+  [0xb76] = "ARM1176JZF-S", [0xc07] = "Cortex-A7",  [0xc08] = "Cortex-A8",
+  [0xc09] = "Cortex-A9",    [0xd03] = "Cortex-A53", [0xd05] = "Cortex-A55",
+  [0xd07] = "Cortex-A57",   [0xd08] = "Cortex-A72", [0xd09] = "Cortex-A73",
+  [0xd0a] = "Cortex-A75",   [0xd0b] = "Cortex-A76", [0xd0c] = "Neoverse-N1",
+  [0xd0d] = "Cortex-A77",   [0xd41] = "Cortex-A78",
+}
+
+-- ID_AA64MMFR0_EL1.PARANGE [3:0] is a table, not a formula.
+local PA_BITS = { [0]=32, 36, 40, 42, 44, 48, 52, 56 }
+
+local function describe_machine()
+  local i = sys.info()
+  if not i then return nil end
+
+  local impl = (i.midr >> 24) & 0xff
+  local part = (i.midr >> 4) & 0xfff
+
+  local m = { raw = i }
+
+  m.cpu = {
+    implementer = IMPLEMENTERS[impl] or string.format("0x%02x", impl),
+    part        = (impl == 0x41 and ARM_PARTS[part])
+                  or string.format("part 0x%03x", part),
+    revision    = string.format("r%dp%d", (i.midr >> 20) & 0xf, i.midr & 0xf),
+    midr        = i.midr,
+    cores       = i.cpus,
+    -- CTR_EL0 DminLine [19:16] is log2 of the line in *words*, not bytes.
+    cache_line  = 4 << ((i.ctr >> 16) & 0xf),
+    pa_bits     = PA_BITS[i.mmfr0 & 0xf] or 0,
+    counter_hz  = i.counter_hz,
+    -- ID_AA64ISAR0_EL1: AES [7:4], SHA1 [11:8], SHA2 [15:12], CRC32 [19:16],
+    -- atomics [23:20]. Non-zero means present.
+    aes         = ((i.isar0 >> 4) & 0xf) ~= 0,
+    sha1        = ((i.isar0 >> 8) & 0xf) ~= 0,
+    sha2        = ((i.isar0 >> 12) & 0xf) ~= 0,
+    crc32       = ((i.isar0 >> 16) & 0xf) ~= 0,
+    atomics     = ((i.isar0 >> 20) & 0xf) ~= 0,
+    -- ID_AA64PFR0_EL1: FP [19:16], AdvSIMD [23:20]. 0xf means absent.
+    fp          = ((i.pfr0 >> 16) & 0xf) ~= 0xf,
+    simd        = ((i.pfr0 >> 20) & 0xf) ~= 0xf,
+    el          = i.current_el,
+  }
+
+  m.memory = {
+    total_mb    = i.pages_total * i.page_size // (1024 * 1024),
+    free_mb     = i.pages_free  * i.page_size // (1024 * 1024),
+    pages_total = i.pages_total,
+    pages_free  = i.pages_free,
+    page_size   = i.page_size,
+    base        = i.ram_base,
+  }
+
+  m.kernel = {
+    idle_ticks = i.idle_ticks,    busy_ticks    = i.busy_ticks,
+    threads   = i.threads_used,   threads_max   = i.threads_total,
+    processes = i.processes_used, processes_max = i.processes_total,
+    endpoints = i.endpoints_used, endpoints_max = i.endpoints_total,
+    tick_hz   = i.tick_hz,
+  }
+
+  if i.screen_width > 0 then
+    m.screen = { width = i.screen_width, height = i.screen_height,
+                 pitch = i.screen_pitch }
+  end
+
+  if i.has_keyboard ~= 0 then
+    m.keyboard = { transport = "virtio-input over virtio-mmio" }
+  end
+
+  m.console = { transport = "PL011 UART, polled" }
+  m.timer   = { hz = i.tick_hz, counter_hz = i.counter_hz }
+
+  return m
+end
 
 --------------------------------------------------------------------------
 -- The protocol
@@ -188,7 +285,10 @@ local function ramfs_handlers(state)
       local node = find(req.path, true)
       node.value = req.value
       node.children = nil                   -- it holds data now
-      node.attrs.size = (type(req.value) == "string") and #req.value or 1
+      -- A size, for the things that have one. A table has a shape rather
+      -- than a length, and reporting 1 for it - which this used to - makes
+      -- `ls` say "1 bytes" about a record with four fields.
+      node.attrs.size = (type(req.value) == "string") and #req.value or nil
       state.writes = (state.writes or 0) + 1
       return { ok = true }
     end,
@@ -389,10 +489,92 @@ end
 -- is running.
 --------------------------------------------------------------------------
 
-local function shell_main(console_cap, ramfs_cap)
+--------------------------------------------------------------------------
+-- The devices server: /dev.
+--
+-- Every device the machine was found to have, reachable the way everything
+-- else is - by name, through a namespace, over the same list/read protocol
+-- the filesystem uses. `fs.list("/dev")` is not a special command; it is the
+-- same request the ramfs answers, sent somewhere else.
+--
+-- It is the only thing that calls `sys.info()`, exactly as the console
+-- server is the only thing that calls `sys.write`. The difference is that
+-- nothing is lost if another process calls it: an inventory is not
+-- authority.
+--
+-- Read fresh on every request rather than cached at startup, because half of
+-- it is live: threads and processes and free pages change, and a /dev that
+-- answered with the numbers from boot would be worse than useless.
+--------------------------------------------------------------------------
+
+local function devices_handlers(state)
+  local function inventory()
+    local m = describe_machine()
+    if not m then return nil end
+
+    -- The order is the order `list` returns, so a listing is reproducible.
+    --
+    -- **`console` is not in it, and that is the point.** The machine has one
+    -- and this server knows about it, but `/dev/console` is mounted to the
+    -- console *server* - longest prefix wins - so a read of that path goes
+    -- somewhere else entirely and means "give me a line of input". Listing a
+    -- name this server does not answer for would be a lie, and an expensive
+    -- one: the first version listed it, the `devices` command dutifully read
+    -- every name it was given, and the console server answered by swallowing
+    -- the next thing typed at the prompt.
+    return m, { "cpu", "memory", "kernel", "timer", "screen", "keyboard" }
+  end
+
+  return {
+    list = function(req)
+      local m, order = inventory()
+      if not m then return { ok = false, error = "the kernel would not say" } end
+
+      local names = {}
+      for _, name in ipairs(order) do
+        if m[name] then names[#names + 1] = name end
+      end
+
+      state.lists = (state.lists or 0) + 1
+      return { ok = true, entries = names }
+    end,
+
+    read = function(req)
+      local m = inventory()
+      if not m then return { ok = false, error = "the kernel would not say" } end
+
+      -- "/cpu" and "cpu" and "/dev/cpu" all mean the same node. The mount
+      -- prefix is stripped before it gets here; the leading slash is not.
+      local name = req.path:match("([^/]+)$")
+      local node = name and m[name]
+
+      if not node then
+        return { ok = false, error = "no such device" }
+      end
+
+      return { ok = true, value = node }
+    end,
+
+    getattr = function(req)
+      return { ok = true, attrs = { kind = "device" } }
+    end,
+  }
+end
+
+local function devices_main(endpoint)
+  serve(endpoint, {}, devices_handlers)
+end
+
+local function shell_main(console_cap, ramfs_cap, devices_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
   ns.mount("/data", ramfs_cap)
+
+  -- Longest prefix wins, so /dev/console keeps going to the console server
+  -- while everything else under /dev goes to the device server. Two servers
+  -- under one directory, and neither knows about the other - which is what a
+  -- per-process mount table buys.
+  ns.mount("/dev", devices_cap)
 
   local function out(s) ns.write("/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -422,14 +604,37 @@ What the shell can reach is exactly what it was handed - there is no
 global anything. Try `sys.write("direct")`: it returns -102, because
 the shell does not own the console and has to ask.
 
-  help("fs")     files, through this process's namespace
-  help("gfx")    surfaces, the screen, and text
-  help("sys")    what a process can ask the kernel for
-  help("demos")  things worth typing
+The prompt takes commands as well as Lua. `/commands` lists them.
+
+  devices              a command
+  /devices             the same command, said explicitly
+  fs.list("/dev")      the same thing, as a program
+
+**A leading slash always means a command.** Without one, a bare word is
+only treated as a command when it does not also name something in Lua -
+so `devices` works, and if you ever alias `print` or `type` you will have
+to say `/print`. A shell where `type` sometimes means a command and
+sometimes means the function is a shell you cannot write anything in.
+
+  help fs        files, through this process's namespace
+  help gfx       surfaces, the screen, and text
+  help sys       what a process can ask the kernel for
+  help dev       what hardware was found, and the status bar
+  help demos     things worth typing
 ]=]
 
   topics.fs = [=[
 fs - this process's namespace, not a global filesystem.
+
+At the prompt:
+
+  ls [path]      list; pwd, cd <path> to move around
+  cat <path>     read one thing and print it
+  /commands      everything the shell answers to
+
+The working directory lives in the shell and nowhere else. A server is
+always told a whole path and knows nothing about where you think you
+are - which is what keeps `fs.read` the same operation for everybody.
 
 `fs` is a mount table living in the shell. A path that matches no
 mount does not exist; that is not a permission check, there is simply
@@ -495,6 +700,67 @@ cannot guess a number to get it.
   sys.call(99, {})         -> nil, "no such capability"
 ]=]
 
+  topics.dev = [=[
+What this machine is, and what was found on it.
+
+  devices        every device, one line each
+  cpu            the processor, decoded from its own ID registers
+  mem            RAM, and how much of it the kernel has
+  ps             threads, processes and endpoints, used of total
+
+All four read /dev, which is a *server* reached through the namespace -
+the same list/read protocol the filesystem answers, sent somewhere else.
+Nothing here is a special case in the shell:
+
+  fs.list("/dev")
+  fs.read("/dev/cpu").part
+  fs.read("/dev/memory").free_mb
+
+The kernel decodes none of it. `sys.info()` hands back raw ID registers
+and pool counts, and the tables that turn 0x410fd083 into "Cortex-A72"
+live up here in Lua - so a processor the kernel has never heard of gets
+described properly without the kernel changing.
+
+The status bar:
+
+  monitor        draw it once, along the bottom of the screen
+  monitor on     redraw it after every command
+  monitor watch  keep redrawing for a while (blocks the prompt)
+  monitor off
+
+It draws in the rows the kernel console reserves for its boot progress
+bar and never scrolls text through. Two writers on one framebuffer with
+no compositor, which works only because the regions cannot overlap - and
+is exactly the arrangement a compositor exists to stop needing.
+
+Aliases:
+
+  alias                list every alias
+  aliases              the same thing, under the name people try first
+  alias ll devices     make one
+  alias m=monitor      either spelling works
+
+**And a command can be a Lua program.** `alias` points one word at
+another; `def` compiles a line of Lua and gives it a name, so anything
+you can type here can become a command:
+
+  def hot = local d = fs.read("/data/sensor")
+            return d.celsius > 40 and "hot" or "cold"
+  /hot
+
+The argument string arrives as `...`, so a program can take one:
+
+  def count = local n = 0
+              for _ in ipairs(fs.list(...)) do n = n + 1 end
+              return n .. " under " .. ...
+  /count /dev
+
+It is compiled when you define it, so a syntax error is reported then
+rather than the first time somebody runs it, and it is compiled into the
+same environment as the prompt - so it reaches exactly what you reach.
+Definitions live in the shell's memory and go when it does.
+]=]
+
   topics.demos = [=[
 Things worth typing.
 
@@ -528,6 +794,451 @@ deleted: the behaviour changed and the state survived. Reboot to get
 your filesystem back.
 ]=]
 
+  --------------------------------------------------------------------------
+  -- The status bar.
+  --
+  -- Drawn into the rows at the bottom of the screen that the kernel console
+  -- reserves for its progress bar and never scrolls text through - see
+  -- RESERVED_ROWS in kernel/console.c. Two writers on one framebuffer with
+  -- no compositor works here only because the regions are disjoint by
+  -- construction, and that is exactly the arrangement a compositor exists to
+  -- stop needing. It is honest for a status line and would not be for
+  -- anything that moved.
+  --------------------------------------------------------------------------
+  local RESERVED_ROWS = 3
+
+  --
+  -- Usage is the difference between two readings, never one.
+  --
+  -- The kernel counts ticks charged to the idle thread and ticks charged to
+  -- everything else, both only rising. A single reading says what fraction
+  -- of *all time since boot* was busy, which after a minute of sitting at a
+  -- prompt is a number that never moves again. Two readings say what has
+  -- happened since the last look, which is the question actually being
+  -- asked.
+  local last_idle, last_busy = nil, nil
+
+  local function cpu_usage(k)
+    local idle, busy = k.idle_ticks, k.busy_ticks
+    local pct
+
+    if last_idle then
+      local di, db = idle - last_idle, busy - last_busy
+      if di + db > 0 then pct = (db * 100) // (di + db) end
+    end
+
+    last_idle, last_busy = idle, busy
+    return pct
+  end
+
+  local function bar(pct, width)
+    -- A meter that is readable at a glance and needs no glyphs the font
+    -- might not have.
+    local filled = (pct * width) // 100
+    return "[" .. string.rep("#", filled) .. string.rep(".", width - filled) .. "]"
+  end
+
+  local function draw_monitor()
+    local screen = gfx.screen()
+    if not screen then return "there is no screen" end
+
+    local m = describe_machine()
+    if not m then return "the kernel would not say" end
+
+    local w, h = screen:size()
+    local top = h - RESERVED_ROWS * gfx.font.h
+
+    local pct = cpu_usage(m.kernel)
+    local meter = pct and string.format("%s %3d%%", bar(pct, 10), pct)
+                       or "[..........]   --"
+
+    local text = string.format(
+      " %s x%d  cpu %s   %d/%d thr   %d/%d proc   %d/%d MB   up %ds",
+      m.cpu.part, m.cpu.cores, meter,
+      m.kernel.threads, m.kernel.threads_max,
+      m.kernel.processes, m.kernel.processes_max,
+      m.memory.total_mb - m.memory.free_mb, m.memory.total_mb,
+      sys.ticks() // m.cpu.counter_hz)
+
+    screen:fill(0, top, w, h - top, 0xff161b22)
+    screen:fill(0, top, w, 1, 0xff30363d)
+    screen:text(4, top + 4, text, 0xff7ee787, 0xff161b22)
+    return nil
+  end
+
+  local monitor_on = false
+
+  --------------------------------------------------------------------------
+  -- Commands.
+  --
+  -- The prompt is a Lua REPL and stays one; this is a layer in front of it so
+  -- that the common things are words rather than programs. A line is treated
+  -- as a command when its first word names one **and the rest contains no
+  -- Lua punctuation** - so `help` and `help gfx` are commands while
+  -- `help("gfx")` is an expression, and both work.
+  --
+  -- Aliases are a table from word to word, which is all an alias needs to be.
+  --------------------------------------------------------------------------
+  local commands = {}
+  local aliases = {}
+
+  -- The words Lua will not let you use as a name, plus everything already
+  -- in scope. A command whose name collides with either is reachable only
+  -- as `/name`; see the dispatcher below for why.
+  local KEYWORDS = {
+    ["and"]=true, ["break"]=true, ["do"]=true, ["else"]=true, ["elseif"]=true,
+    ["end"]=true, ["false"]=true, ["for"]=true, ["function"]=true,
+    ["goto"]=true, ["if"]=true, ["in"]=true, ["local"]=true, ["nil"]=true,
+    ["not"]=true, ["or"]=true, ["repeat"]=true, ["return"]=true,
+    ["then"]=true, ["true"]=true, ["until"]=true, ["while"]=true,
+  }
+
+  local env
+
+  local function shadows_lua(word)
+    return KEYWORDS[word] or (env ~= nil and env[word] ~= nil)
+  end
+
+  local function fmt_bytes(pages, size)
+    return string.format("%d MB", pages * size // (1024 * 1024))
+  end
+
+  --------------------------------------------------------------------------
+  -- A working directory, and the commands that use one.
+  --
+  -- It lives in the shell, not in the kernel and not in a server, because it
+  -- is the shell's idea: a convenience for a person typing. A server is told
+  -- a whole path, always, and knows nothing about where anybody thinks they
+  -- are. That is what keeps `fs.read` the same operation whoever calls it.
+  --------------------------------------------------------------------------
+  local cwd = "/"
+
+  local function resolve(path)
+    if path == nil or path == "" then return cwd end
+    if path:sub(1, 1) == "/" then return path end
+    if cwd == "/" then return "/" .. path end
+    return cwd .. "/" .. path
+  end
+
+  -- A value, printed so a person can read it. Tables are what servers
+  -- return, so this has to handle them rather than saying "table: 0x...".
+  local function show(value, indent)
+    indent = indent or ""
+
+    if type(value) ~= "table" then
+      return tostring(value)
+    end
+
+    local keys = {}
+    for k in pairs(value) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+
+    local parts = {}
+    for _, k in ipairs(keys) do
+      parts[#parts + 1] = string.format("%s  %s = %s", indent, tostring(k),
+                                        show(value[k], indent .. "  "))
+    end
+
+    return "{\n" .. table.concat(parts, "\n") .. "\n" .. indent .. "}"
+  end
+
+  commands.pwd = function()
+    out(cwd .. "\n")
+  end
+
+  commands.cd = function(arg)
+    local target = resolve(arg ~= "" and arg or "/")
+
+    -- Checked by asking. There is no directory object to look up: a path is
+    -- a directory exactly when whoever serves it will list it, which is the
+    -- only definition that means anything across three different servers.
+    local entries, err = ns.list(target)
+
+    if not entries then
+      out("cd: " .. target .. ": " .. tostring(err) .. "\n")
+      return
+    end
+
+    cwd = target
+    out(cwd .. "\n")
+  end
+
+  commands.ls = function(arg)
+    local target = resolve(arg)
+    local entries, err = ns.list(target)
+
+    if not entries then
+      out("ls: " .. target .. ": " .. tostring(err) .. "\n")
+      return
+    end
+
+    if #entries == 0 then
+      out("(empty)\n")
+      return
+    end
+
+    for _, name in ipairs(entries) do
+      local attrs = ns.getattr(target == "/" and ("/" .. name)
+                                             or (target .. "/" .. name))
+      local size = attrs and attrs.size
+
+      out(string.format("  %-16s %s\n", name,
+                        size and (size .. " bytes") or ""))
+    end
+  end
+
+  commands.cat = function(arg)
+    if arg == "" then out("usage: cat <path>\n") return end
+
+    local value, err = ns.read(resolve(arg))
+
+    if value == nil then
+      out("cat: " .. resolve(arg) .. ": " .. tostring(err) .. "\n")
+      return
+    end
+
+    out(show(value) .. "\n")
+  end
+
+  --------------------------------------------------------------------------
+  -- Commands that are Lua programs.
+  --
+  -- `alias` points one word at another. `def` is the more useful half: it
+  -- compiles a line of Lua into a command, so anything you can write at this
+  -- prompt can be given a name and a place in `/commands`.
+  --
+  --   def ls2 = for _, n in ipairs(fs.list(...)) do print(n) end
+  --   /ls2 /data
+  --
+  -- The argument string arrives as `...`, so a program can take one. It is
+  -- compiled once, when defined, so a syntax error is reported then rather
+  -- than the first time somebody runs it - and it is compiled into the same
+  -- environment the prompt uses, so it can reach exactly what you can.
+  --------------------------------------------------------------------------
+  commands.def = function(arg)
+    local name, source = arg:match("^([%w_%-]+)%s*=%s*(.+)$")
+
+    if not name then
+      name, source = arg:match("^([%w_%-]+)%s+(.+)$")
+    end
+
+    if not name or not source then
+      out("usage: def <name> <lua>   or   def <name> = <lua>\n")
+      out("the argument string arrives as ...\n")
+      return
+    end
+
+    -- No preamble. A chunk loaded by `load` is already a vararg function, so
+    -- `...` inside the source is the argument string with nothing added -
+    -- the first version wrote `local ... = ...` in front, which is not legal
+    -- Lua at all and failed at definition time for every program.
+    local chunk, err = load(source, "=" .. name, "t", env)
+
+    if not chunk then
+      out("def: " .. tostring(err) .. "\n")
+      return
+    end
+
+    commands[name] = function(rest)
+      local results = table.pack(pcall(chunk, rest))
+
+      if not results[1] then
+        out("error: " .. tostring(results[2]) .. "\n")
+        return
+      end
+
+      for i = 2, results.n do
+        out(tostring(results[i]) .. (i < results.n and "\t" or "\n"))
+      end
+    end
+
+    out(name .. " defined; run it as /" .. name .. "\n")
+  end
+
+  commands.clear = function()
+    -- Fifty newlines, because neither sink understands an escape sequence:
+    -- the serial side is whatever terminal you are in, and the screen side
+    -- is forty lines of glyph blitting with no notion of a cursor address.
+    out(string.rep("\n", 50))
+  end
+
+  commands.devices = function()
+    local names = ns.list("/dev")
+    if not names then return end
+
+    out("Devices found on this machine. Each is a node in /dev, read the\n")
+    out("same way a file is - fs.read(\"/dev/cpu\") is the same request the\n")
+    out("filesystem answers, sent to a different server.\n\n")
+
+    -- Named here rather than listed by the device server, because it is not
+    -- the device server that answers for it.
+    out("  /dev/console    PL011 UART, polled - served by the console\n")
+    out("                  server, not by /dev: a read of it is a line of\n")
+    out("                  input, not a description\n")
+
+    for _, name in ipairs(names) do
+      local d = ns.read("/dev/" .. name)
+      local summary = ""
+
+      if name == "cpu" then
+        summary = string.format("%s %s %s, %d core%s",
+          d.implementer, d.part, d.revision, d.cores, d.cores == 1 and "" or "s")
+      elseif name == "memory" then
+        summary = string.format("%d MB, %d MB free", d.total_mb, d.free_mb)
+      elseif name == "kernel" then
+        summary = string.format("%d threads, %d processes, %d endpoints",
+          d.threads, d.processes, d.endpoints)
+      elseif name == "screen" then
+        summary = string.format("%dx%d, %d bytes a row", d.width, d.height, d.pitch)
+      elseif name == "keyboard" then
+        summary = d.transport
+      elseif name == "timer" then
+        summary = string.format("%d Hz tick, %d MHz counter",
+          d.hz, d.counter_hz // 1000000)
+      end
+
+      out(string.format("  /dev/%-10s %s\n", name, summary))
+    end
+  end
+
+  commands.cpu = function()
+    local c = ns.read("/dev/cpu")
+    if not c then return end
+
+    out(string.format("%s %s %s\n", c.implementer, c.part, c.revision))
+    out(string.format("  MIDR_EL1      0x%08x\n", c.midr))
+    out(string.format("  cores         %d  (SMP is not on yet)\n", c.cores))
+    out(string.format("  running at    EL%d\n", c.el))
+    out(string.format("  addresses     %d-bit physical\n", c.pa_bits))
+    out(string.format("  cache line    %d bytes\n", c.cache_line))
+    out(string.format("  counter       %d MHz  (not the core clock: AArch64\n",
+                      c.counter_hz // 1000000))
+    out( "                has no architectural way to read that)\n")
+
+    local has = {}
+    for _, f in ipairs({ "fp", "simd", "aes", "sha1", "sha2", "crc32", "atomics" }) do
+      if c[f] then has[#has + 1] = f end
+    end
+    out("  features      " .. table.concat(has, " ") .. "\n")
+  end
+
+  commands.mem = function()
+    local m = ns.read("/dev/memory")
+    if not m then return end
+    out(string.format("%d MB of RAM at 0x%x, in %d pages of %d KB\n",
+        m.total_mb, m.base, m.pages_total, m.page_size // 1024))
+    out(string.format("  %s used, %s free\n",
+        fmt_bytes(m.pages_total - m.pages_free, m.page_size),
+        fmt_bytes(m.pages_free, m.page_size)))
+  end
+
+  commands.ps = function()
+    local k = ns.read("/dev/kernel")
+    if not k then return end
+    out(string.format("threads    %d of %d\n", k.threads, k.threads_max))
+    out(string.format("processes  %d of %d\n", k.processes, k.processes_max))
+    out(string.format("endpoints  %d of %d\n", k.endpoints, k.endpoints_max))
+
+    local pct = cpu_usage(k)
+    if pct then
+      out(string.format("\ncpu        %s %d%% busy since the last look\n",
+                        bar(pct, 20), pct))
+    else
+      out("\ncpu        no reading yet: usage is the difference between two,\n")
+      out("           so the first `ps` only starts the clock\n")
+    end
+
+    out("\nFixed pools, because the kernel has no allocator: running out\n")
+    out("is an error at a known limit rather than a failure at an unknown one.\n")
+  end
+
+  commands.monitor = function(arg)
+    if arg == "off" then
+      monitor_on = false
+      out("monitor off\n")
+      return
+    end
+
+    if arg == "watch" then
+      -- Blocking on purpose and bounded on purpose: there is no way to
+      -- interrupt it, so it stops on its own.
+      for _ = 1, 200 do
+        local err = draw_monitor()
+        if err then out(err .. "\n") return end
+        for _ = 1, 40 do sys.yield() end
+      end
+      return
+    end
+
+    local err = draw_monitor()
+    if err then out(err .. "\n") return end
+
+    if arg == "on" then
+      monitor_on = true
+      out("monitor on: the bar refreshes after every command\n")
+    end
+  end
+
+  -- `alias` with nothing after it lists them, which is the discoverable
+  -- half; `aliases` is the same command under the name people reach for
+  -- first. It is itself an alias, defined below, which is a small joke and
+  -- also the shortest way to say what an alias is.
+  commands.alias = function(arg)
+    if arg == "" then
+      local names = {}
+      for k in pairs(aliases) do names[#names + 1] = k end
+      table.sort(names)
+      if #names == 0 then
+        out("No aliases yet. Make one:\n\n")
+        out("  alias ll devices\n")
+        out("  alias m=monitor\n")
+        return
+      end
+
+      for _, k in ipairs(names) do
+        out(string.format("  %-12s -> %s\n", k, aliases[k]))
+      end
+      return
+    end
+
+    -- Either spelling. `%S+` cannot be used for the name: it is greedy, so
+    -- on `m=monitor` it swallows the whole thing and leaves no target - which
+    -- is precisely the spelling this command's own usage line promises.
+    local name, target = arg:match("^([%w_%-]+)%s*=%s*(%S+)$")
+
+    if not name then
+      name, target = arg:match("^([%w_%-]+)%s+(%S+)$")
+    end
+
+    if not name or not target then
+      out("usage: alias <name> <command>   or   alias <name>=<command>\n")
+      return
+    end
+
+    if not commands[target] and not aliases[target] then
+      out("there is no command called " .. target .. "\n")
+      return
+    end
+
+    aliases[name] = target
+    out(name .. " -> " .. target .. "\n")
+  end
+
+  commands.commands = function()
+    local names = {}
+    for k in pairs(commands) do names[#names + 1] = k end
+    table.sort(names)
+    out("  " .. table.concat(names, "  ") .. "\n")
+    out("\nAnything that is not one of these is evaluated as Lua. A leading\n")
+    out("slash always means a command: /ps runs the command even if `ps`\n")
+    out("has been given a meaning in Lua.\n")
+    out("`alias` on its own lists the aliases; `alias <name> <command>`\n")
+    out("makes one.\n")
+  end
+
+  -- Shipped so that the listing is reachable under the word most people try.
+  aliases.aliases = "alias"
+
   local help = setmetatable({}, {
     __tostring = function() return topics.overview end,
     __call = function(_, what)
@@ -540,7 +1251,12 @@ your filesystem back.
   -- What a chunk typed at the prompt can see. `fs` is this process's own
   -- namespace, so what the shell can reach is what the shell was given -
   -- there is no privileged view to hand out.
-  local env = {
+  commands.help = function(arg)
+    out((topics[arg ~= "" and arg or "overview"]
+         or ("no help for " .. arg .. "; try fs, gfx, sys, dev or demos\n")))
+  end
+
+  env = {
     fs = ns,
     help = help,
     print = function(...)
@@ -554,7 +1270,8 @@ your filesystem back.
   setmetatable(env, { __index = _G })
 
   out("\nKosmos shell. A process, talking to servers.\n")
-  out("Type `help` for what there is, or `help(\"demos\")` for things to try.\n\n")
+  out("Type `help` for what there is, `commands` for what you can type,\n")
+  out("or `devices` for what this machine turned out to be.\n\n")
 
   while true do
     out("kosmos> ")
@@ -563,6 +1280,59 @@ your filesystem back.
     if input == nil then return end          -- the console went away
 
     if input ~= "" then
+      --------------------------------------------------------------------
+      -- A command, or a program?
+      --
+      -- The first word names a command, and what follows it does not *start*
+      -- with something that would make the line a Lua expression: that is a
+      -- command. Anything else is Lua.
+      --
+      -- Looking only at the first character is the whole trick, and the
+      -- first version got it wrong by testing the entire rest for
+      -- punctuation. `help("gfx")` and `help = 3` are Lua because the rest
+      -- begins with `(` and `=`; `help gfx` is a command. But
+      -- `alias m=monitor` is *also* a command, and rejecting it because an
+      -- equals sign appears somewhere in the middle broke a spelling this
+      -- shell's own help had already promised.
+      --------------------------------------------------------------------
+      local slashed = input:match("^/(.*)$")
+      local word, rest = (slashed or input):match("^([%a][%w_%-]*)%s*(.*)$")
+      local name = word and (aliases[word] or word)
+
+      local dispatch = false
+
+      if name and commands[name] then
+        if slashed then
+          -- The explicit form. Always a command, whatever the name collides
+          -- with, which is the point of having it.
+          dispatch = true
+        elseif rest:match("^[=%(%.%:%[%,]") then
+          dispatch = false            -- `help("gfx")`, `help = 3`
+        elseif shadows_lua(word) then
+          -- The bare word also names something in Lua, so it stays Lua and
+          -- the slash is how you mean the command. Refusing to guess is the
+          -- whole reason `/` exists: a shell where `type` sometimes means a
+          -- command and sometimes means the function is a shell you cannot
+          -- write anything in.
+          dispatch = false
+        else
+          dispatch = true
+        end
+      end
+
+      if dispatch then
+        local ok, err = pcall(commands[name], rest)
+        if not ok then out("error: " .. tostring(err) .. "\n") end
+        if monitor_on then draw_monitor() end
+        goto next_line
+      end
+
+      if slashed then
+        out("no command called " .. tostring(word) ..
+            "; `/commands` lists them\n")
+        goto next_line
+      end
+
       -- `2+2` is not a chunk, it is an expression. Every Lua prompt wraps
       -- the line in `return` first and falls back to the line as written.
       local chunk, err = load("return " .. input, "=stdin", "t", env)
@@ -582,7 +1352,11 @@ your filesystem back.
           end
         end
       end
+
+      if monitor_on then draw_monitor() end
     end
+
+    ::next_line::
   end
 end
 
@@ -640,6 +1414,7 @@ if role == ROLE_INIT then
   --------------------------------------------------------------------------
   local CONSOLE_EP = 0
   local RAMFS_EP   = 1
+  local DEVICES_EP = 2
 
   -- **A failed spawn says which one and why.**
   --
@@ -667,6 +1442,7 @@ if role == ROLE_INIT then
   local console = start("the console server", ROLE_CONSOLE,
                         { CONSOLE_EP }, SPAWN_CONSOLE)
   local ramfs   = start("the ramfs", ROLE_RAMFS, { RAMFS_EP })
+  local devices = start("the device server", ROLE_DEVICES, { DEVICES_EP })
 
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
@@ -683,7 +1459,7 @@ if role == ROLE_INIT then
   -- like everything else, and `sys.write` from the prompt returning -102 is
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
-                      { CONSOLE_EP, RAMFS_EP }, SPAWN_SCREEN)
+                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP }, SPAWN_SCREEN)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.
@@ -799,8 +1575,8 @@ if role == ROLE_CONSOLE then
 end
 
 if role == ROLE_SHELL then
-  -- Two capabilities, in the order the kernel granted them.
-  shell_main(0, 1)
+  -- Three capabilities, in the order init granted them.
+  shell_main(0, 1, 2)
   return
 end
 
@@ -846,6 +1622,11 @@ end
 
 if role == ROLE_RAMFS then
   ramfs_main(CAP)
+  return
+end
+
+if role == ROLE_DEVICES then
+  devices_main(CAP)
   return
 end
 

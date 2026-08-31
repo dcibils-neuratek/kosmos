@@ -337,12 +337,51 @@ static void switch_to(struct thread *next)
      */
 }
 
+/*
+ * How busy the machine is.
+ *
+ * Sampled rather than accumulated: at every timer tick, whichever thread was
+ * running gets the tick charged to it - to `idle` if it was the one that has
+ * nothing to do, and to `busy` otherwise. A hundred samples a second is
+ * plenty to say what fraction of the time the machine is working, and it
+ * costs one comparison on the interrupt path.
+ *
+ * Accumulating real elapsed time per thread would be more precise and would
+ * mean reading the counter twice on every context switch, which is a cost
+ * paid on the hottest path in the kernel to answer a question nobody asks
+ * more than once a second.
+ *
+ * Both counters only ever rise. Whoever wants a percentage takes two
+ * readings and divides the difference, which is also the only way to get a
+ * number that means "recently" rather than "since boot".
+ */
+static struct thread   *idle_thread;
+static unsigned long    idle_ticks;
+static unsigned long    busy_ticks;
+
+void thread_set_idle(struct thread *t)
+{
+    idle_thread = t;
+}
+
+void thread_load(unsigned long *idle, unsigned long *busy)
+{
+    *idle = idle_ticks;
+    *busy = busy_ticks;
+}
+
 void thread_tick(void)
 {
     /* Before thread_init has run there is nothing to preempt, and the timer
      * starts before the first thread exists. */
     if (current == NULL || policy->tick == NULL) {
         return;
+    }
+
+    if (current == idle_thread) {
+        idle_ticks++;
+    } else {
+        busy_ticks++;
     }
 
     if (policy->tick(current)) {

@@ -7,7 +7,6 @@
 #include "thread.h"
 #include "panic.h"
 
-#define ENDPOINT_MAX    32
 
 /*
  * There is no explicit "what is this thread waiting for" field, and that is

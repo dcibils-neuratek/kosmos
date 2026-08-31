@@ -47,8 +47,9 @@
 #define SYS_WAIT        9   /* (&id)                  -> exit code       */
 #define SYS_TICKS      10   /* ()                     -> monotonic ticks  */
 #define SYS_SCREEN     11   /* (&info)                -> 0 or error       */
+#define SYS_SYSINFO    12   /* (&info)                -> 0 or error       */
 
-#define SYS_MAX         12
+#define SYS_MAX         13
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -83,6 +84,71 @@ struct screen_info {
     uint32_t height;
     uint32_t pitch;             /* bytes per row; never width * 4 */
     uint32_t reserved;
+};
+
+/*
+ * What SYS_SYSINFO reports: the machine, and how much of it is in use.
+ *
+ * **The raw ID registers travel with the decoded numbers**, deliberately.
+ * Decoding them is a table lookup and tables belong in Lua, not in the
+ * kernel - `design.md` §1's whole argument is that policy goes up and
+ * mechanism stays down. So the kernel reads registers and counts pools, and
+ * userland decides what any of it means and how to say it.
+ *
+ * Not gated. A hardware inventory is not authority: it says nothing a
+ * process could not learn by other means and grants nothing. It is the same
+ * category as SYS_TICKS.
+ *
+ * The intended way to read this is `/dev`, through the namespace, the way
+ * everything else is reached. This syscall is the door the device server
+ * goes through, exactly as SYS_WRITE is the door the console server goes
+ * through - and, unlike that one, nothing is lost by another process using
+ * it directly.
+ */
+struct sysinfo {
+    /* The processor, raw. arch/aarch64/cpu.c decodes the same values for
+     * the boot log; userland decodes them again for /dev/cpu, because the
+     * two want different amounts of detail and neither should constrain the
+     * other. */
+    uint64_t midr;
+    uint64_t mpidr;
+    uint64_t ctr;
+    uint64_t pfr0;
+    uint64_t isar0;
+    uint64_t mmfr0;
+    uint64_t counter_hz;
+
+    /* Memory, in pages of PAGE_SIZE. */
+    uint64_t ram_base;
+    uint64_t ram_size;
+    uint32_t pages_total;
+    uint32_t pages_free;
+
+    /* The fixed pools, and how full they are. Both halves matter: "3
+     * processes" says nothing without "of 8". */
+    uint32_t threads_used;
+    uint32_t threads_total;
+    uint32_t processes_used;
+    uint32_t processes_total;
+    uint32_t endpoints_used;
+    uint32_t endpoints_total;
+
+    /* Devices. Zero width means there is no display. */
+    uint32_t screen_width;
+    uint32_t screen_height;
+    uint32_t screen_pitch;
+    uint32_t has_keyboard;
+
+    /* Ticks charged to the idle thread and to everything else, since boot.
+     * Both only rise; a percentage is the difference between two readings,
+     * which is the only kind that can mean "recently" rather than "ever". */
+    uint64_t idle_ticks;
+    uint64_t busy_ticks;
+
+    uint32_t cpus;              /* cores the kernel is scheduling on */
+    uint32_t tick_hz;
+    uint32_t current_el;
+    uint32_t page_size;
 };
 #endif
 

@@ -138,6 +138,16 @@ static inline long kosmos_screen(struct screen_info *out)
 }
 
 /*
+ * The machine, and how much of it is in use. See `struct sysinfo` in
+ * kernel/syscall.h: raw ID registers plus pool counts, decoded by whoever
+ * asked rather than by the kernel.
+ */
+static inline long kosmos_sysinfo(struct sysinfo *out)
+{
+    return sys1(SYS_SYSINFO, (long)(uintptr_t)out);
+}
+
+/*
  * The message the kernel moves.
  *
  * Has to match kernel/ipc.h byte for byte: the syscall copies

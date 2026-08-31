@@ -35,6 +35,7 @@ SRCS := boot/start.S \
         arch/aarch64/vectors.S \
         arch/aarch64/trap.c \
         arch/aarch64/mmu.c \
+        arch/aarch64/cpu.c \
         arch/aarch64/switch.S \
         arch/aarch64/el0.S \
         hal/qemu-virt/uart.c \

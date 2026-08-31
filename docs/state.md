@@ -86,6 +86,30 @@ nil	no such path: /nowhere
 
 **Lua draws, and no line of it computes a pixel offset.** `gfx.surface{w=,h=}` is a userdata over flat bytes with `fill`, `span`, `blit`, `blend`, `get` and `set`; every pixel loop is in `user/lib/gfx.c` and every primitive clips rather than raising, because a window half off the edge of the screen is the normal case. `gfx.screen()` is the framebuffer as a surface, for the one process that was handed it.
 
+**The boot log says what each stage is *for*.** Twelve stages, each with a few lines of why it exists and where it sits in the order, then the facts it found. A log that prints "physical memory" and a number teaches nothing to somebody who does not already know why an operating system needs a page allocator before it can build a page table. The point of this system is to be read.
+
+Consequence worth knowing: the log is now longer than the screen, so it scrolls and the screen shows the end. The serial line has all of it. A `dmesg` that keeps the whole thing and a command to page through it is the obvious next thing and is not built.
+
+**The processor identifies itself**, in `arch/aarch64/cpu.c` — which is the most literal possible reading of what `arch/` is for. MIDR, the cache geometry, the physical address range and the ISA feature bits, all out of registers the architecture requires every AArch64 core to implement, so it needs no board knowledge and works on the first boot of new hardware. Part numbers from `arch/arm64/include/asm/cputype.h`, field positions from `arch/arm64/tools/sysreg` — Linux's machine-readable register description, not memory. **The raw registers are printed beside the decode**, everywhere, because a table of part numbers goes stale the moment a part ships that is not in it and a reader who can see `MIDR_EL1` can look it up.
+
+**`/dev` is a server**, reached through the namespace over the same `list`/`read` protocol the filesystem answers. `fs.read("/dev/cpu")` is not a special case anywhere; it is an ordinary request sent somewhere else. `SYS_SYSINFO` hands back **raw** ID registers and pool counts and decodes nothing — the tables that turn `0x410fd083` into "Cortex-A72" live in Lua, so a processor the kernel has never heard of is described properly without the kernel changing.
+
+**The device server does not list `console`, and that is the point.** The machine has one, but `/dev/console` is mounted to the console *server* — longest prefix wins — so a read of that path means "give me a line of input". The first version listed it anyway; the `devices` command dutifully read every name it was given, and the console server answered by swallowing the next thing typed at the prompt. Listing a name you do not answer for is a lie, and that is what it costs.
+
+**A command can be a Lua program.** `alias` points one word at another; `def` compiles a line of Lua and gives it a name, argument string arriving as `...`. It is compiled at definition time, into the same environment as the prompt, so a syntax error is reported when you write it and it reaches exactly what you reach. That is the shape the idea deserved: an alias that is only a second name for a command is a convenience, and a command that is a program is a way to extend the system from inside it.
+
+**`ls`, `cd`, `pwd`, `cat`, and a working directory that lives in the shell.** Not in the kernel and not in a server: a server is always told a whole path and knows nothing about where anybody thinks they are, which is what keeps `fs.read` the same operation for every caller. And "is this a directory" is answered by asking whether whoever serves it will list it — the only definition that means anything across three different servers.
+
+**A leading slash always means a command**, and that came out of a question worth recording: aliases and Lua names can collide. `/ps` is unambiguous; a bare `ps` is treated as a command only when it does not also name something in Lua. So `type` gives you Lua's function and `/type` runs the alias you gave that name. Refusing to guess is the point — a shell where `type` sometimes means a command and sometimes means the function is a shell you cannot write anything in.
+
+**CPU usage is the difference between two readings, never one.** The kernel charges every timer tick to the idle thread or to everything else, and both counters only rise. A single reading says what fraction of *all time since boot* was busy, which after a minute at a prompt is a number that never moves again. `ps` says so on the first call rather than printing a meaningless 0%.
+
+Sampling at the tick rather than accumulating real time per thread is deliberate: accumulating would mean reading the counter twice on every context switch — a cost on the hottest path in the kernel to answer a question nobody asks more than once a second.
+
+**The shell takes commands as well as Lua**, with aliases. A line is a command when its first word names one *and the rest has no Lua punctuation in it* — so `help` and `help gfx` are commands while `help("gfx")` stays an expression. Both work, which matters because the parentheses are simultaneously what people forget and what they reach for.
+
+**A status bar, in the rows the kernel console reserves.** Two writers on one framebuffer with no compositor, which is only honest because the regions cannot overlap by construction — and is exactly the arrangement a compositor exists to stop needing.
+
 **There is a keyboard.** virtio-input over virtio-mmio, in `hal/qemu-virt/keyboard.c`. mmio rather than pci is what makes it three hundred lines instead of nine hundred: `virt` has 32 fixed windows at 0xa000000, stride 0x200, and the whole of discovery is reading two registers thirty-two times. No PCI bus, no ECAM walk, no capability list.
 
 **It is not a new HAL call.** A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. The console server, the shell and every process reading a line are unchanged by the keyboard existing — which is the property that says the HAL boundary was drawn in the right place.

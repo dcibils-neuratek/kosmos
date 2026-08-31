@@ -74,7 +74,12 @@ PROMPT = "kosmos>"          # printed once the shell is serving
 # boot. Matched rather than a dedicated marker line, because a marker that
 # exists only for a test is a line somebody deletes while tidying and nobody
 # notices until the test fails for an unrelated-looking reason.
-GEOMETRY = re.compile(r"(\d+)x(\d+), 32-bit colour")
+#
+# Kept loose for the same reason it has already broken twice: it matched
+# "video 1024x768" until the boot log was rewritten, then "32-bit colour"
+# until that line said XRGB instead. The geometry is the part that is really
+# being asked for; everything after it is prose and prose changes.
+GEOMETRY = re.compile(r"(\d+)x(\d+), 32-bit")
 
 # The pattern phase two draws. Vertical bars on a black field, at x positions
 # a pitch error would smear: a wrong stride shifts each row sixteen pixels, so
@@ -302,11 +307,17 @@ def check_boot_screen(geometry, data):
         )
     checks += 1
 
-    # The banner, in blue, on the first text row.
-    if find_colour(at, title, 0, 0, 200, 16) is None:
+    # Blue text somewhere in the log: the banner if it is still on screen,
+    # and the [n/12] on every stage line regardless.
+    #
+    # Not "on the first row" any more. The boot narration outgrew the screen
+    # when every stage started explaining what it is for, so it scrolls and
+    # the banner is gone by the time the prompt appears - which is correct
+    # behaviour and used to fail this check.
+    if find_colour(at, title, 0, 0, 200, 400) is None:
         raise Failure(
-            "no blue title pixels on the first row. Either the console never "
-            "attached to the screen or the channel order is wrong."
+            "no blue pixels anywhere in the boot log. Either the console "
+            "never attached to the screen or the channel order is wrong."
         )
     checks += 1
 

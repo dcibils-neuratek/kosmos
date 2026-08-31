@@ -175,6 +175,19 @@ void thread_wake(struct thread *t);
 void thread_tick(void);
 
 /*
+ * Names the thread that runs when there is nothing to do, so that the tick
+ * can tell working from waiting. Called once, by kmain, about itself.
+ */
+void thread_set_idle(struct thread *t);
+
+/*
+ * Ticks spent idle and ticks spent working, since boot. Both only rise: a
+ * percentage is the difference between two readings, which is the only kind
+ * that can mean "recently".
+ */
+void thread_load(unsigned long *idle, unsigned long *busy);
+
+/*
  * Performs the switch thread_tick asked for, if it asked for one.
  *
  * Called only from the vector epilogue in vectors.S. Calling it from C would

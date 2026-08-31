@@ -28,13 +28,32 @@ void boot_stage(const char *what)
     console_progress(done, BOOT_STAGES);
 }
 
-void boot_detail(const char *text)
+void boot_why(const char *text)
 {
     console_colour(0xff8b949e);
     kputs("       ");
     kputs(text);
     kputc('\n');
     console_colour(0xffc9d1d9);
+}
+
+void boot_fact_begin(void)
+{
+    console_colour(0xff7ee787);
+    kputs("       -> ");
+}
+
+void boot_fact_end(void)
+{
+    kputc('\n');
+    console_colour(0xffc9d1d9);
+}
+
+void boot_fact(const char *text)
+{
+    boot_fact_begin();
+    kputs(text);
+    boot_fact_end();
 }
 
 unsigned boot_stages_done(void)

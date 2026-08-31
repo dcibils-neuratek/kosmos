@@ -122,6 +122,11 @@ static inline cap_t message_get_cap(const struct message *m)
  */
 #define CAPS_PER_THREAD     16
 
+/* How many endpoints exist. Here rather than only in ipc.c because
+ * SYS_SYSINFO reports "in use, of this many", and half of that pair is
+ * useless without the other. */
+#define ENDPOINT_MAX        32
+
 /* Prepares the endpoint pool. Called once, before any thread uses IPC. */
 void ipc_init(void);
 

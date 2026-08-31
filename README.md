@@ -149,6 +149,12 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | The boot narrates itself in ten numbered stages with a progress bar, because what happens between the reset vector and a prompt is most of what there is to learn here | kernel/boot.h, state.md |
 | Aug 2026 | Keyboard input is virtio-input over virtio-**mmio**, not virtio-pci: no bus to enumerate and no capability list to parse, and the same transport gives virtio-gpu next | hal/qemu-virt/keyboard.c |
 | Aug 2026 | A keyboard is not a new HAL call. It is another source for `hal_getchar`, so nothing above the HAL changes because one exists | CLAUDE.md, hal/hal.h |
+| Aug 2026 | `SYS_SYSINFO` reports raw ID registers and pool counts; the kernel decodes none of it. The tables that name a processor live in Lua | kernel/syscall.h, user/init/init.lua |
+| Aug 2026 | Hardware is inventoried at `/dev`, a server reached through the namespace, not a shell built-in | user/init/init.lua |
+| Aug 2026 | The shell dispatches bare-word commands before falling through to Lua, and supports aliases. A leading `/` always means a command; a bare word does not when it collides with a Lua name | user/init/init.lua |
+| Aug 2026 | CPU usage is sampled at the timer tick as idle-vs-busy, and reported as the difference between two readings | kernel/thread.c |
+| Aug 2026 | `def` compiles a line of Lua into a named command; the shell is extensible from inside itself | user/init/init.lua |
+| Aug 2026 | The working directory is the shell's idea alone. Servers are always told whole paths | user/init/init.lua |
 | Aug 2026 | The project is renamed Kosmos (previously Komo) | all docs |
 | Aug 2026 | Pixels never live in Lua tables. A surface is a userdata over flat bytes; tables carry intent | gfx.md §19.1 |
 | Aug 2026 | No line of Lua computes a pixel offset. Pitch and format live in the handle, the arithmetic happens only in C | gfx.md §19.3 |

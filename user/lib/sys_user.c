@@ -353,6 +353,68 @@ static int l_unpack(lua_State *L)
     return 1;
 }
 
+/*
+ * The machine, as a table.
+ *
+ * Straight out of the syscall with no interpretation: raw ID registers, pool
+ * counts, device geometry. What any of it *means* is decided in Lua, in
+ * `init.lua`'s device server, because decoding a MIDR is a table lookup and
+ * tables belong up here - a processor this kernel has never heard of gets
+ * described properly without the kernel changing.
+ */
+static int l_info(lua_State *L)
+{
+    struct sysinfo info;
+
+    if (kosmos_sysinfo(&info) < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "the kernel refused to describe itself");
+        return 2;
+    }
+
+    lua_createtable(L, 0, 24);
+
+#define SET(name, value) \
+    do { lua_pushinteger(L, (lua_Integer)(value)); \
+         lua_setfield(L, -2, name); } while (0)
+
+    SET("midr",             info.midr);
+    SET("mpidr",            info.mpidr);
+    SET("ctr",              info.ctr);
+    SET("pfr0",             info.pfr0);
+    SET("isar0",            info.isar0);
+    SET("mmfr0",            info.mmfr0);
+    SET("counter_hz",       info.counter_hz);
+
+    SET("ram_base",         info.ram_base);
+    SET("ram_size",         info.ram_size);
+    SET("pages_total",      info.pages_total);
+    SET("pages_free",       info.pages_free);
+    SET("page_size",        info.page_size);
+
+    SET("threads_used",     info.threads_used);
+    SET("threads_total",    info.threads_total);
+    SET("processes_used",   info.processes_used);
+    SET("processes_total",  info.processes_total);
+    SET("endpoints_used",   info.endpoints_used);
+    SET("endpoints_total",  info.endpoints_total);
+
+    SET("screen_width",     info.screen_width);
+    SET("screen_height",    info.screen_height);
+    SET("screen_pitch",     info.screen_pitch);
+    SET("has_keyboard",     info.has_keyboard);
+
+    SET("idle_ticks",       info.idle_ticks);
+    SET("busy_ticks",       info.busy_ticks);
+    SET("cpus",             info.cpus);
+    SET("tick_hz",          info.tick_hz);
+    SET("current_el",       info.current_el);
+
+#undef SET
+
+    return 1;
+}
+
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "getchar",  l_getchar },
@@ -361,6 +423,7 @@ static const luaL_Reg sys_functions[] = {
     { "exit",     l_exit },
     { "yield",    l_yield },
     { "ticks",    l_ticks },
+    { "info",     l_info },
     { "endpoint", l_endpoint },
     { "call",     l_call },
     { "receive",  l_receive },

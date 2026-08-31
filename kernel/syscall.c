@@ -28,6 +28,10 @@
 #include "trap.h"
 #include "console.h"
 #include "screen.h"
+#include "cpu.h"
+#include "pmm.h"
+#include "page.h"
+#include "kernel.h"
 #include "hal.h"
 
 /*
@@ -320,6 +324,91 @@ static long sys_screen(struct process *p, uintptr_t out_ptr)
     return 0;
 }
 
+/*
+ * The machine, and how much of it is in use.
+ *
+ * Reads registers and counts pools. It decodes nothing: the raw ID registers
+ * go out as they were read, and what they mean is userland's problem - which
+ * is the same division `design.md` §1 draws everywhere else, and it means a
+ * new processor needs no kernel change to be described properly.
+ */
+static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
+{
+    struct sysinfo info;
+    struct cpu_info cpu;
+    struct memrange ram;
+    struct fb fb;
+    uint64_t el;
+
+    if (!process_may_write(p, out_ptr, sizeof(info))) {
+        return SYS_ERR_FAULT;
+    }
+
+    cpu_identify(&cpu);
+    hal_ram_range(&ram);
+
+    info.midr       = cpu.midr;
+    info.mpidr      = cpu.mpidr;
+    info.ctr        = cpu.ctr;
+    info.pfr0       = cpu.pfr0;
+    info.isar0      = cpu.isar0;
+    info.mmfr0      = cpu.mmfr0;
+    info.counter_hz = cpu.counter_hz;
+
+    info.ram_base    = ram.base;
+    info.ram_size    = ram.size;
+    info.pages_total = (uint32_t)pmm_total_pages();
+    info.pages_free  = (uint32_t)pmm_free_pages();
+
+    {
+        unsigned long idle, busy;
+
+        thread_load(&idle, &busy);
+        info.idle_ticks = idle;
+        info.busy_ticks = busy;
+    }
+
+    info.threads_used     = thread_count();
+    info.threads_total    = THREAD_MAX;
+    info.processes_used   = process_count();
+    info.processes_total  = PROCESS_MAX;
+    info.endpoints_used   = ipc_endpoints_in_use();
+    info.endpoints_total  = ENDPOINT_MAX;
+
+    if (screen_get(&fb)) {
+        info.screen_width  = fb.width;
+        info.screen_height = fb.height;
+        info.screen_pitch  = fb.pitch;
+    } else {
+        info.screen_width  = 0;
+        info.screen_height = 0;
+        info.screen_pitch  = 0;
+    }
+
+    /*
+     * Through hal_keyboard_init, which is idempotent and returns whether
+     * there is one. Not through the board's own header: `CLAUDE.md` puts no
+     * hardware knowledge outside hal/, and a kernel file that includes
+     * hal/qemu-virt/qemu-virt.h has quietly made the kernel board-specific.
+     * The first draft of this did exactly that and would not compile, which
+     * is the include path doing its job.
+     */
+    info.has_keyboard = hal_keyboard_init() ? 1u : 0u;
+
+    /* One, and it will stay one until M7. `CLAUDE.md` has the code written
+     * SMP-ready from the start, but written ready and actually running on
+     * more than one core are different claims and this reports the second. */
+    info.cpus       = 1;
+    info.tick_hz    = TICK_HZ;
+    info.page_size  = PAGE_SIZE;
+
+    __asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
+    info.current_el = (uint32_t)((el >> 2) & 3);
+
+    *(struct sysinfo *)out_ptr = info;
+    return 0;
+}
+
 void syscall_dispatch(struct trapframe *tf)
 {
     struct process *p = process_current();
@@ -412,6 +501,10 @@ void syscall_dispatch(struct trapframe *tf)
 
     case SYS_SCREEN:
         result = sys_screen(p, tf->x[0]);
+        break;
+
+    case SYS_SYSINFO:
+        result = sys_sysinfo(p, tf->x[0]);
         break;
 
     case SYS_WAIT: {
