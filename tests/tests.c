@@ -2248,6 +2248,37 @@ static bool test_snprintf_truncates_and_reports_the_full_length(void)
     return n == 8 && str_is(b, "abcd");
 }
 
+/*
+ * A float in a column.
+ *
+ * `format_double` applied no width at all, which nothing failed over: every
+ * table of numbers any program printed simply ran together, and that reads
+ * as somebody's formatting choice rather than as a missing feature. It was
+ * found by looking at a benchmark's output and wondering why the columns
+ * were not columns.
+ */
+static bool test_snprintf_float_width(void)
+{
+    char b[64];
+
+    snprintf(b, sizeof(b), "%8.2f|",  1.5);    if (!str_is(b, "    1.50|")) return false;
+    snprintf(b, sizeof(b), "%-8.2f|", 1.5);    if (!str_is(b, "1.50    |")) return false;
+    snprintf(b, sizeof(b), "%8.0f|",  42.0);   if (!str_is(b, "      42|")) return false;
+    snprintf(b, sizeof(b), "%-8.0f|", 42.0);   if (!str_is(b, "42      |")) return false;
+
+    /* Narrower than the number: the width is a minimum, never a limit. */
+    snprintf(b, sizeof(b), "%2.2f|",  1234.5); if (!str_is(b, "1234.50|")) return false;
+
+    /* Zero padding goes after the sign. */
+    snprintf(b, sizeof(b), "%08.2f|", -3.5);   if (!str_is(b, "-0003.50|")) return false;
+    snprintf(b, sizeof(b), "%08.2f|",  3.5);   if (!str_is(b, "00003.50|")) return false;
+
+    /* And %g, which is the one Lua reaches for. */
+    snprintf(b, sizeof(b), "%10.14g|", 1.5);   if (!str_is(b, "       1.5|")) return false;
+
+    return true;
+}
+
 static bool test_snprintf_floats(void)
 {
     char b[64];
@@ -3148,6 +3179,7 @@ static const struct test tests[] = {
     { "snprintf: integers and strings",        test_snprintf_integers_and_strings },
     { "snprintf: truncates, reports full len", test_snprintf_truncates_and_reports_the_full_length },
     { "snprintf: floats",                      test_snprintf_floats },
+    { "snprintf: a float padded to a width",   test_snprintf_float_width },
     { "math: ours and newlib's agree",         test_our_math_matches_its_definition },
     { "lua: arithmetic, 2+2 is 4",             test_lua_arithmetic },
     { "lua: floats parse and print",           test_lua_floats },

@@ -196,6 +196,20 @@ end
 -- and comes after there is something to supervise.
 --------------------------------------------------------------------------
 
+--
+-- A handler returns this when it is not answering yet.
+--
+-- Live queries need it: a watcher's call is parked until something it is
+-- watching changes, which may be minutes later or never. The client is
+-- blocked in that call the whole time and that is the point - it is waiting
+-- without asking, which is the difference between a live query and a poll.
+--
+-- A sentinel and not `nil`, because `nil` is what a handler returns when
+-- somebody forgot a `return`, and the failure that produces - a client
+-- blocked for ever on a reply nobody is going to send - is far too quiet.
+--
+local DEFER = { "deferred" }
+
 local function serve(endpoint, state, make_handlers)
   local handlers = make_handlers(state)
 
@@ -244,7 +258,7 @@ local function serve(endpoint, state, make_handlers)
                   tostring(request.type) }
       else
         local co = coroutine.create(handler)
-        local ok, result = coroutine.resume(co, request)
+        local ok, result = coroutine.resume(co, request, sender)
 
         if not ok then
           -- A handler that raised. The client is told, and the server keeps
@@ -269,6 +283,12 @@ local function serve(endpoint, state, make_handlers)
     --
     -- Now the failure reaches whoever asked, which is the one place that can
     -- do anything about it.
+    -- The handler said it would answer later, and holds `sender` to do it
+    -- with. Nothing to send now.
+    if reply == DEFER then
+      return
+    end
+
     local sent = pcall(sys.reply, sender, reply)
 
     if not sent then
@@ -331,19 +351,165 @@ end
 -- replaces the second and keeps the first, which is what makes a filesystem
 -- server something you can fix while it is holding your files.
 
+--------------------------------------------------------------------------
+-- Attributes, the index over them, and live queries.
+--
+-- `beos.md` 17.2 and roadmap M7. The BeOS idea: a file is a named thing
+-- with typed attributes, the filesystem indexes those attributes, and a
+-- query over them is as cheap as opening one file. Entity files - nodes
+-- with attributes and no content at all - fall straight out of it.
+--
+-- The index is the whole claim. Without it a query is a walk, and a walk
+-- costs more the more files there are, which is exactly the thing BeOS was
+-- built to avoid and the thing the benchmark for this milestone measures.
+-- `bench/` has it, and what it has to show is a flat line.
+--
+-- Structure: index[attribute][value] is the set of paths that have it.
+-- Values are keyed by `tostring`, so 3 and "3" share a bucket - which is
+-- wrong in general and right here, where an attribute has one type and the
+-- alternative is a typed key nobody would ever look up.
+--------------------------------------------------------------------------
+
 local function ramfs_handlers(state)
+  local function unindex(path, attrs)
+    for name, value in pairs(attrs or {}) do
+      local bucket = state.index[name]
+
+      if bucket then
+        local by_value = bucket[tostring(value)]
+        if by_value then by_value[path] = nil end
+      end
+    end
+  end
+
+  local function reindex(path, attrs)
+    for name, value in pairs(attrs or {}) do
+      local bucket = state.index[name]
+
+      if not bucket then
+        bucket = {}
+        state.index[name] = bucket
+      end
+
+      local key = tostring(value)
+      local by_value = bucket[key]
+
+      if not by_value then
+        by_value = {}
+        bucket[key] = by_value
+      end
+
+      by_value[path] = true
+    end
+  end
+
+  --
+  -- Everything matching `where`, as a sorted list of paths.
+  --
+  -- The first term is looked up in the index and the rest filter what came
+  -- back, so the cost is the size of the *answer* and not the size of the
+  -- filesystem. Which term goes first is whichever `pairs` hands over
+  -- first, and that is a real limitation rather than a subtlety: with two
+  -- terms of very different selectivity the wrong one first costs more.
+  -- Choosing needs per-value counts, and counting is M8's problem.
+  --
+  local function evaluate(where)
+    local first_name, first_value = next(where or {})
+
+    if first_name == nil then
+      return {}
+    end
+
+    local bucket = state.index[first_name]
+    local candidates = bucket and bucket[tostring(first_value)]
+
+    if not candidates then
+      return {}
+    end
+
+    local out = {}
+
+    for path in pairs(candidates) do
+      local node = state.nodes[path]
+      local keep = node ~= nil
+
+      if keep then
+        for name, value in pairs(where) do
+          if tostring(node.attrs[name]) ~= tostring(value) then
+            keep = false
+            break
+          end
+        end
+      end
+
+      if keep then out[#out + 1] = path end
+    end
+
+    table.sort(out)
+    return out
+  end
+
+  local function same(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+      if a[i] ~= b[i] then return false end
+    end
+    return true
+  end
+
+  --
+  -- Something changed. Every watcher whose answer is now different gets the
+  -- reply it has been parked on since it asked.
+  --
+  -- Re-evaluated rather than worked out incrementally, because a watcher's
+  -- predicate can involve attributes the write never touched. Correct
+  -- first; the number of watchers is small and the cost of each is the size
+  -- of its own answer.
+  --
+  local function notify()
+    local still = {}
+
+    for _, w in ipairs(state.watchers) do
+      local now = evaluate(w.where)
+
+      if same(now, w.last) then
+        still[#still + 1] = w
+      else
+        pcall(sys.reply, w.who, { ok = true, paths = now })
+      end
+    end
+
+    state.watchers = still
+  end
+
   local function find(path, create)
     local node = state.root
+
     for _, name in ipairs(split(path)) do
-      if not node.children then return nil end
+      --
+      -- A node with no children is either a file or a directory nobody has
+      -- put anything in yet, and on the way to creating something the two
+      -- are the same case: make the table and carry on. Without this, any
+      -- path more than one deep failed to be created - `find` returned nil
+      -- and the caller indexed it - which is to say `/data/a/b` was not a
+      -- writable path and `/data/b` was.
+      --
+      if not node.children then
+        if not create then return nil end
+        node.children = {}
+      end
+
       local child = node.children[name]
+
       if not child then
         if not create then return nil end
         child = { attrs = {} }
         node.children[name] = child
       end
+
       node = child
     end
+
     return node
   end
 
@@ -373,11 +539,18 @@ local function ramfs_handlers(state)
       local node = find(req.path, true)
       node.value = req.value
       node.children = nil                   -- it holds data now
+      state.nodes[req.path] = node
       -- A size, for the things that have one. A table has a shape rather
       -- than a length, and reporting 1 for it - which this used to - makes
       -- `ls` say "1 bytes" about a record with four fields.
+      unindex(req.path, node.attrs)
       node.attrs.size = (type(req.value) == "string") and #req.value or nil
+      reindex(req.path, node.attrs)
       state.writes = (state.writes or 0) + 1
+
+      -- After the node is what it is going to be, so a watcher woken here
+      -- sees the write it was waiting for and not the state before it.
+      notify()
       return { ok = true }
     end,
 
@@ -389,8 +562,56 @@ local function ramfs_handlers(state)
 
     setattr = function(req)
       local node = find(req.path, true)
+      state.nodes[req.path] = node
+
+      unindex(req.path, node.attrs)
       for k, v in pairs(req.attrs) do node.attrs[k] = v end
+      reindex(req.path, node.attrs)
+
+      notify()
       return { ok = true }
+    end,
+
+    --
+    -- Everything matching, now.
+    --
+    query = function(req)
+      return { ok = true, paths = evaluate(req.where) }
+    end,
+
+    --
+    -- Everything matching, when it changes.
+    --
+    -- The caller is blocked in this call until the answer is different from
+    -- what it sent as `known`. That is the whole of "live": one outstanding
+    -- call, no timer, no repeated question, and the process asking is not
+    -- running while it waits.
+    --
+    -- It is answered immediately if the answer is *already* different, which
+    -- is what stops a watcher missing a change that happened between its
+    -- last reply and its next call.
+    --
+    watch = function(req, who)
+      local known = req.known or {}
+      local now = evaluate(req.where)
+
+      if not same(now, known) then
+        return { ok = true, paths = now }
+      end
+
+      state.watchers[#state.watchers + 1] = {
+        who = who, where = req.where, last = now,
+      }
+
+      return DEFER
+    end,
+
+    --
+    -- How many watchers are parked. For the tests, which otherwise have to
+    -- prove a negative about a process that is doing nothing.
+    --
+    watchers = function(req)
+      return { ok = true, value = #state.watchers }
     end,
   }
 end
@@ -399,6 +620,17 @@ local function ramfs_main(endpoint)
   local state = {
     root = { children = {}, attrs = { kind = "directory" } },
     writes = 0,
+
+    -- Every node that has ever been written or given an attribute, by path.
+    -- The tree answers "what is under here"; this answers "what is at this
+    -- path" without walking, which is what a query result needs.
+    nodes = {},
+
+    -- index[attribute][value] -> set of paths.
+    index = {},
+
+    -- Calls that have not been answered yet.
+    watchers = {},
   }
 
   serve(endpoint, state, ramfs_handlers)
@@ -431,7 +663,7 @@ local function new_namespace()
     for _, m in ipairs(mounts) do
       if path == m.prefix or path:sub(1, #m.prefix + 1) == m.prefix .. "/" then
         local rest = path:sub(#m.prefix + 1)
-        return m.cap, (rest == "" and "/" or rest)
+        return m.cap, (rest == "" and "/" or rest), m.prefix
       end
     end
     return nil
@@ -581,6 +813,70 @@ local function new_namespace()
   -- Was the interrupt key pressed? Only the console answers this, and only
   -- because it is the one process allowed to read the keyboard.
   --
+  --
+  -- Everything under `path` whose attributes match, now.
+  --
+  --
+  -- Answers come back in the server's own names and go out in this
+  -- process's. A server has no idea where it is mounted - it cannot, that
+  -- is the point of a namespace - so putting the prefix back on is the
+  -- namespace's job, here, and not something every caller repeats.
+  --
+  local function localise(paths, prefix)
+    local out = {}
+
+    for i, p in ipairs(paths or {}) do
+      out[i] = (p == "/") and prefix or (prefix .. p)
+    end
+
+    return out
+  end
+
+  function ns.query(path, where)
+    local _, _, prefix = resolve(path)
+    local r, e = request("query", path, { where = where })
+    if not r then return nil, e end
+    return localise(r.paths, prefix)
+  end
+
+  --
+  -- The same question, answered when the answer changes.
+  --
+  -- This blocks. That is the feature: the process asking is not running, not
+  -- polling and not on a timer, and it wakes when something it cares about
+  -- happened. Pass the answer you already have as `known`.
+  --
+  function ns.watch(path, where, known)
+    local capability, rest, prefix = resolve(path)
+
+    if not capability then
+      return nil, "no such path: " .. path
+    end
+
+    -- `known` goes back in the server's names, or it never matches what the
+    -- server computed and every watch returns at once.
+    local server_known = {}
+
+    for i, p in ipairs(known or {}) do
+      server_known[i] = (p:sub(1, #prefix) == prefix)
+                        and (p:sub(#prefix + 1)) or p
+      if server_known[i] == "" then server_known[i] = "/" end
+    end
+
+    local r, e = request("watch", path, { where = where, known = server_known })
+    if not r then return nil, e end
+    return localise(r.paths, prefix)
+  end
+
+  --
+  -- Attributes: what a node is, as opposed to what is in it.
+  --
+  function ns.setattr(path, attrs)
+    local r, e = request("setattr", path, { attrs = attrs })
+    if not r then return nil, e end
+    return true
+  end
+
   --
   -- A message to whatever is mounted at `path`, and its answer.
   --

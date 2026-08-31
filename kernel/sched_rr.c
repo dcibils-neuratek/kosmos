@@ -78,6 +78,11 @@ static struct thread *rr_pick_next(void)
     return t;
 }
 
+static bool rr_ready(void)
+{
+    return head != NULL;
+}
+
 static bool rr_tick(struct thread *running)
 {
     if (running->sched.quantum > 0) {
@@ -98,5 +103,6 @@ const struct scheduler sched_round_robin = {
     .init      = rr_init,
     .enqueue   = rr_enqueue,
     .pick_next = rr_pick_next,
+    .ready     = rr_ready,
     .tick      = rr_tick,
 };

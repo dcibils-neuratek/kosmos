@@ -39,6 +39,20 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The scheduler was costing every yield a timer period.** The idle loop
+  slept with runnable threads in the queue. A yield went from 10 ms to
+  0.04 ms and an IPC round trip from 20 ms to 0.8 ms - about a thousandfold,
+  system-wide, on something no benchmark could see. See `testing.md`.
+- **The window manager.** `wm hello-win,stuck`: two applications, one hung,
+  and the hung one's window still moves. That is M6's definition of done.
+  Backbuffer, damage tracking, BeOS tabs, stacking, focus.
+- **Attributes, an index over them, and live queries.** `attr`, `find`,
+  `watch`. A watcher blocks in one call and the filesystem parks the reply
+  until the answer changes - no timer, no repeated question. `qbench` shows
+  the query cost flat against sixteen times the nodes.
+- **Control-C**, and the non-blocking receive a single-threaded server needed
+  in order to answer it.
+
 - **`/bin` is a real program directory.** `htop`, `cat`, `ls`, `monitor`,
   `hello`, `benchmark`, `spin`. Typing a name that is not already a Lua name
   runs the program; a trailing `&` detaches it.
@@ -56,7 +70,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-107 tests, five benchmarks, and 33 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 39 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

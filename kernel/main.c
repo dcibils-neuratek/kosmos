@@ -334,7 +334,45 @@ void kmain(void)
     thread_set_idle(thread_current());
 
     for (;;) {
-        thread_yield();
-        __asm__ volatile("wfi");
+        /*
+         * Yield when somebody wants the CPU, sleep only when nobody does.
+         *
+         * This used to be an unconditional `thread_yield(); wfi;`, and the
+         * cost of that was not visible from anywhere: a thread that yielded
+         * switched here, this thread resumed *inside* thread_yield, returned
+         * from it, and went straight to sleep - with the other thread sitting
+         * in the runqueue, runnable, waiting for the next timer interrupt to
+         * wake this one up again.
+         *
+         * So every yield cost a whole timer period, and an IPC round trip
+         * cost two: ten and twenty milliseconds at 100 Hz. A round trip
+         * whose own cost is around thirty counter ticks was taking one and a
+         * quarter million of them, and nothing said so - the system was
+         * simply, uniformly, a thousand times slower than it should be, in a
+         * way no benchmark of a single operation could see.
+         */
+        if (thread_any_ready()) {
+            thread_yield();
+            continue;
+        }
+
+        /*
+         * Nothing to run. Interrupts masked across the check and the sleep,
+         * because an interrupt landing between them would make a thread
+         * runnable and then this would sleep through until the next tick -
+         * the same bug in miniature.
+         *
+         * `wfi` still wakes on a pending interrupt with PSTATE.I set: masking
+         * stops the exception being *taken*, not the wakeup. So this sleeps
+         * until something happens and then unmasks, which is the point at
+         * which the handler runs.
+         */
+        __asm__ volatile("msr daifset, #2" ::: "memory");
+
+        if (!thread_any_ready()) {
+            __asm__ volatile("wfi");
+        }
+
+        __asm__ volatile("msr daifclr, #2" ::: "memory");
     }
 }

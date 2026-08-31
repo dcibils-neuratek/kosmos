@@ -47,6 +47,12 @@ So there are two phases here, and the second is the one that matters:
      screen, one of which never replies again, and the hung one's window has
      to keep moving. Last, because the window manager takes the whole screen.
 
+  7. **Scheduling latency**, which is not about the display at all and is
+     here because this is the only harness that boots the shipping image and
+     drives its shell. `make test` cannot ask it: during the suite the
+     kernel's first thread is running the suite, so it never reaches the
+     idle loop whose behaviour is the whole question.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -718,6 +724,49 @@ def check_window_manager(guest):
     return 3
 
 
+def check_latency(guest):
+    """A yield is not paced by the timer, and neither is an IPC round trip.
+
+    Not a display check, and here anyway, because this is the only harness
+    that boots the *shipping* image and drives its shell. `make test` cannot
+    ask this question: during the test suite the kernel's first thread is
+    running the suite and never reaches the idle loop, so a yield with an
+    empty runqueue returns instantly and the answer is always yes.
+
+    A test was written in luatest.lua that did exactly that. It passed with
+    the bug deliberately put back, which is worse than having no test, and
+    this replaced it.
+
+    The program judges itself; this reads the verdict. `latency.lua` carries
+    the explanation of what it is watching for and why nothing else saw it.
+    """
+    mark = len(guest.seen)
+    guest.type("latency")
+
+    deadline = time.monotonic() + 30
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if "PASS:" in guest.seen[mark:] or "FAIL:" in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "`latency` never reported.\n"
+            f"--- what it did say ---\n{guest.seen[mark:]}"
+        )
+
+    said = guest.seen[mark:]
+
+    if "FAIL:" in said:
+        detail = said[said.index("FAIL:"):].split("\n")[0]
+        raise Failure(f"scheduling latency: {detail}")
+
+    return 1
+
+
 def write_png(path, data):
     """The screendump, as something a person can open."""
     width, height, px = parse_ppm(data)
@@ -778,6 +827,7 @@ def main():
 
         key_checks = check_keyboard(guest)
 
+        latency_checks = check_latency(guest)
         stop_checks = check_interrupt(guest)
         bar_updates = check_status_bar(guest)
         wm_checks = check_window_manager(guest)
@@ -794,14 +844,15 @@ def main():
             guest.close()
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
-             + stop_checks + wm_checks)
+             + stop_checks + wm_checks + latency_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
           f"Lua drew through gfx, {key_checks} on the keyboard, "
           f"{bar_updates} on a detached program still drawing, "
           f"{stop_checks} on Control-C stopping it, "
-          f"{wm_checks} on dragging a hung application's window).")
+          f"{wm_checks} on dragging a hung application's window, "
+          f"{latency_checks} on scheduling latency).")
     return 0
 
 

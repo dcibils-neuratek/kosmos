@@ -90,7 +90,7 @@ static void ipc_echo_server(void *arg)
         struct message msg;
         struct thread *sender;
 
-        if (ipc_receive(ipc_server_cap, &msg, &sender) != IPC_OK) {
+        if (ipc_receive(ipc_server_cap, &msg, &sender, false) != IPC_OK) {
             return;
         }
 
@@ -339,7 +339,7 @@ static bool bench_in_a_process(unsigned long role, struct bench_result *out)
      * first version of this function did exactly that. Echoing what came in
      * is the one reply this side can build without a lua_State.
      */
-    if (ipc_receive(ep, &msg, &sender) != IPC_OK) {
+    if (ipc_receive(ep, &msg, &sender, false) != IPC_OK) {
         (void)ipc_endpoint_destroy(ep);
         return false;
     }
@@ -347,7 +347,7 @@ static bool bench_in_a_process(unsigned long role, struct bench_result *out)
     out->total = msg.tag;
     (void)ipc_reply(sender, &msg);
 
-    if (ipc_receive(ep, &msg, &sender) != IPC_OK) {
+    if (ipc_receive(ep, &msg, &sender, false) != IPC_OK) {
         (void)ipc_endpoint_destroy(ep);
         return false;
     }

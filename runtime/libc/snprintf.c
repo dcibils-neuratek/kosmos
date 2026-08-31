@@ -271,8 +271,70 @@ static void emit_fixed(struct out *o, const struct decimal *d, int frac,
     emit_str(o, tmp, n);
 }
 
+/*
+ * The width of a field is applied *around* the digits, and the digits of a
+ * float are produced by a chain of layouts that emit as they go - so there
+ * is no length to pad against until they are done.
+ *
+ * The answer is to run that chain into a buffer on the stack first, then
+ * emit it padded like every other conversion. A `struct out` over a local
+ * array is exactly the same interface the real one has, which is why this
+ * costs one function and no changes to the layouts.
+ *
+ * This was missing entirely: `%f` ignored its width, and had done since the
+ * file was written, while the comment at the top said width was supported.
+ * Nothing failed - every column of numbers in every program was simply run
+ * together, which reads as a formatting choice rather than as a bug.
+ *
+ * The buffer is sized for the widest thing the layouts can produce: sign,
+ * MAX_DIGITS of integer part, a point, MAX_DIGITS of fraction, and an
+ * exponent. Overflowing it is not a memory error - `emit` counts past the
+ * end and writes nothing - it would truncate, so it is sized not to.
+ */
+static void format_double_digits(struct out *o, const struct spec *sp,
+                                 double v, char conv);
+
 static void format_double(struct out *o, const struct spec *sp, double v,
                           char conv)
+{
+    char scratch[MAX_DIGITS * 2 + 32];
+    struct out inner = { scratch, sizeof scratch, 0 };
+    struct spec bare = *sp;
+    size_t len;
+
+    bare.width = 0;
+    bare.zero = false;
+
+    format_double_digits(&inner, &bare, v, conv);
+
+    len = (inner.written < sizeof scratch) ? inner.written
+                                           : sizeof scratch - 1;
+
+    /*
+     * Zero padding goes after the sign and not before it: -00003.5, never
+     * 000-3.5. That is the one place where padding a float is not simply
+     * padding a string.
+     */
+    if (sp->left) {
+        emit_str(o, scratch, len);
+        pad(o, sp, len, ' ');
+        return;
+    }
+
+    if (sp->zero && len > 0
+        && (scratch[0] == '-' || scratch[0] == '+' || scratch[0] == ' ')) {
+        emit(o, scratch[0]);
+        pad(o, sp, len, '0');
+        emit_str(o, scratch + 1, len - 1);
+        return;
+    }
+
+    pad(o, sp, len, sp->zero ? '0' : ' ');
+    emit_str(o, scratch, len);
+}
+
+static void format_double_digits(struct out *o, const struct spec *sp,
+                                 double v, char conv)
 {
     struct decimal d;
     const char *sign = "";

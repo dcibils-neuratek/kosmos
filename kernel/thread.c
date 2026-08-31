@@ -446,6 +446,17 @@ void thread_preempt_if_needed(void)
     switch_to(next);
 }
 
+/*
+ * Is there another thread that wants the CPU?
+ *
+ * Only the idle loop asks. See the comment on `ready` in sched.h for what
+ * happens when the answer is not consulted.
+ */
+bool thread_any_ready(void)
+{
+    return policy->ready != NULL && policy->ready();
+}
+
 void thread_yield(void)
 {
     /*

@@ -42,6 +42,19 @@ struct scheduler {
     struct thread *(*pick_next)(void);
 
     /*
+     * Is anybody waiting for a turn?
+     *
+     * `pick_next` answers this too, but answering it that way takes the
+     * thread off the queue, and the one caller that needs to *ask* is the
+     * idle loop - which wants to know whether it may sleep, not to run
+     * something. Getting this wrong is expensive in a way that is invisible:
+     * an idle thread that executes `wfi` while a thread is runnable makes
+     * every yield cost a whole timer period, and every IPC round trip two
+     * of them. That was twenty milliseconds a message here.
+     */
+    bool (*ready)(void);
+
+    /*
      * One timer tick has elapsed while `running` was on the CPU. Returns
      * true when the policy wants it replaced.
      *

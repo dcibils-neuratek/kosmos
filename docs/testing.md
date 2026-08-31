@@ -11,6 +11,56 @@ Each one needs its own mechanism. A single "performance" number answers none of 
 ---
 
 
+
+## The blind spot a benchmark suite has by construction
+
+`bench/` measures operations. It cannot measure the system the operations
+run in, and the difference is not academic.
+
+The idle thread's loop was `thread_yield(); wfi;` unconditionally. A thread
+that yielded switched to idle, idle returned from its own yield, and slept -
+with a runnable thread sitting in the queue - until the next timer interrupt.
+Every yield cost a full timer period and every IPC round trip cost two: ten
+and twenty milliseconds at 100 Hz, on paths whose own cost is around thirty
+counter ticks.
+
+The whole system was roughly a thousand times slower than it should be, and
+every number in `bench/` was green. `ipc_roundtrip` measures two threads that
+are both runnable, so it never goes near the idle thread; it read 30.000
+ticks before the fix and 30.312 after. `context_switch` and `exception` were
+identical to three decimal places.
+
+It was found by measuring something else. A query benchmark came out at
+twenty milliseconds a call, which is far too slow to be a hash lookup, and
+the first thing to do with a number like that is to measure the floor
+underneath it - a yield, and a round trip that does nothing. Both were exactly
+one and exactly two timer periods, and a measurement that lands on a round
+multiple of the clock is never about the work.
+
+Two lessons, and the second is the one that generalises:
+
+**A benchmark of an operation says nothing about the machine it runs on.**
+Latency between operations needs its own measurement, and `bench/` had none.
+`user/bin/latency.lua` is that measurement now, and the display harness
+reads its verdict.
+
+**Where a test can run decides what it can see.** The obvious place for this
+was `make test`, and a test was written there - it passed with the bug
+deliberately put back. During the suite the kernel's first thread is running
+the suite, so it never reaches the idle loop, and a yield with an empty
+runqueue returns instantly. A test that cannot fail is worse than no test,
+because it is also a claim. It was deleted and moved to the harness that
+boots the shipping image.
+
+**And measure the floor before believing a slope.** The query benchmark then
+came out sloped, 1.8x across sixteen times the nodes, and said so - wrongly.
+The slope was in the round trip carrying the query, not the query: a
+filesystem with eight hundred more nodes is a process with a much larger live
+heap, and every allocation pays a share of collecting it. A control at each
+size - one `getattr`, which touches no index - rises by the same amount, and
+what is left after subtracting it is flat.
+
+
 ## The display, from outside the guest
 
 `tools/run_screenshot.py` boots QEMU, asks its monitor for the picture being

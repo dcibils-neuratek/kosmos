@@ -195,6 +195,10 @@ struct thread *thread_create_suspended(const char *name,
  * scheduled again. With nothing else runnable it returns immediately. */
 void thread_yield(void);
 
+/* Whether any thread other than the running one is waiting for a turn.
+ * For the idle loop, which must not sleep while one is. */
+bool thread_any_ready(void);
+
 /* Takes the current thread off the runqueue and switches away. It will not
  * run again until something calls thread_wake on it. */
 void thread_block(void);
