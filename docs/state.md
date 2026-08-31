@@ -46,6 +46,13 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A Terminal.** `wm terminal`: type a program's name and it runs *in the
+  window*, with its output going there instead of to the machine's console.
+  It is a console server - it speaks the same `write` and `read` that
+  `/dev/console` speaks and hands itself to its children under that name -
+  which is the design working rather than a trick played on it. No program
+  knows or can ask what is behind `/dev/console`.
+
 - **PNG.** `gfx.png(bytes)` decodes into a surface, using `puff` - zlib's own
   reference inflate - vendored under `runtime/upstream/`. `ui.image` and the
   `photo` app draw one. The picture is *named*, not carried: an application
@@ -59,6 +66,30 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
   `mmu_init` about a stack guard, which is nowhere near the cause.
 
 ## Known bad
+
+**One display phase fails about one run in three, and I do not know why.**
+`check_widgets` clicks the gallery's list and presses Down through QEMU's
+input plumbing; the selection has to move a row. It passes standalone every
+time, and it passed two full runs out of the last four.
+
+What has been ruled out, so nobody repeats it:
+
+- **Not the arrow keys themselves.** They were genuinely broken - see below
+  - and that is fixed and confirmed by hand. The phase failed before and
+  after, so it is something else.
+- **Not latency.** Twenty-five seconds of waiting does not help.
+- **Not the shared monitor socket**, though that was worth fixing: `sendkey`
+  and `screendump` share one connection and neither read their replies, so
+  a backlog built up. Draining it made no difference to the failure rate.
+
+What has not been ruled out: something in the preceding phases leaving the
+console or the desktop in a state this one does not expect. Every phase runs
+against the same boot.
+
+**`make test` (109 tests) is unaffected and passes every run.** The display
+harness should be treated as informative rather than as a gate until this is
+understood, and the honest way to understand it is probably to make each
+phase boot its own guest.
 
 **(fixed) The arrow keys did nothing on a real keyboard.** This was written
 up here as an intermittent test, which it was not: it was a real bug, and

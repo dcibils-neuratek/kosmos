@@ -6,6 +6,35 @@ The rule: a milestone does not start until the previous one meets its criterion.
 
 ---
 
+## The numbers are names, not an order
+
+A milestone here is a *name for a body of work*, and the number is part of
+the name. M8 is "own filesystem" whatever else happens; it does not become
+M9 because something overtook it.
+
+They were written in the order they seemed likely to happen and that order
+has already changed twice - interrupt-driven input arrived inside M6 because
+an idle desktop sitting at ninety per cent made it urgent, and the
+filesystem is being deferred past three smaller pieces that unblock more.
+Renumbering to match would break every cross-reference in six documents to
+buy nothing.
+
+**The order being worked in now**, which is not the numbering:
+
+1. **The Terminal** (M6's list). Small, and it removes two structural
+   problems rather than adding a feature: the kernel console and the
+   compositor share one framebuffer, and the desktop cannot run detached
+   because it and the shell's line editor drain one keyboard. Both go away
+   when the shell is a window.
+2. **Shared-memory surfaces** (M7's list, `gfx.md` 19.4). What every
+   graphics-heavy thing after it depends on, and the honest answer to
+   "how would a video player work".
+3. **The 3D soft engine** (M9). Fun, visible, and the right way to decide
+   what belongs in C: write it in Lua, measure, and move only the part that
+   is slow.
+4. **M8, the filesystem.** The biggest, and the one that benefits most from
+   not being rushed.
+
 ## Overview
 
 | # | Milestone | Difficulty | Notes |

@@ -670,7 +670,28 @@ local function new_namespace()
   local ns = {}
 
   function ns.mount(prefix, capability)
+    --
+    -- Mounting over a prefix replaces what was there.
+    --
+    -- Without this, two mounts at the same path both sit in the table and
+    -- which one answers depends on how `table.sort` happens to order two
+    -- equal keys - and Lua's sort is not stable, so it can differ between
+    -- runs of the same program.
+    --
+    -- The case that needs it is a terminal: it hands its child a
+    -- `/dev/console` of its own, and the child's runner has already mounted
+    -- the real one there. The child must get exactly one console and it
+    -- must be the terminal's.
+    --
+    for i, m in ipairs(mounts) do
+      if m.prefix == prefix then
+        table.remove(mounts, i)
+        break
+      end
+    end
+
     mounts[#mounts + 1] = { prefix = prefix, cap = capability }
+
     -- Longest prefix first, so /a/b wins over /a regardless of mount order.
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
   end
@@ -2760,8 +2781,12 @@ if role == ROLE_RUNNER then
   if req.lib     then ns.mount("/lib",         req.lib)     end
   if req.app     then ns.mount_registry("/app", req.app)    end
 
-  -- Whatever the parent shared, at the indices it said. A program that was
-  -- started by another program can be handed things the shell never had.
+  -- Whatever the parent shared, at the indices it said, and *after* the
+  -- defaults so that a parent can replace one. A program that was started
+  -- by another program can be handed things the shell never had - and can
+  -- be handed a different version of something it would have had anyway,
+  -- which is how a terminal gives its child a console that draws into a
+  -- window.
   if req.mounts then
     for _, m in ipairs(req.mounts) do
       ns.mount(m.path, m.index)

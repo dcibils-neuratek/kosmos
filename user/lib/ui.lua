@@ -1555,6 +1555,17 @@ function window:run()
     -- that already happened.
     local changed = serve_properties(self)
 
+    --
+    -- For a window that is also a server.
+    --
+    -- The terminal is one: it answers `write` for the programs it runs, and
+    -- it has to do that every pass rather than on the tick, or a program
+    -- that prints a screenful would deliver one line a second.
+    --
+    if self.on_frame and self:on_frame() then
+      changed = true
+    end
+
     for _, ev in ipairs(reply.events) do
       if ev.type == "close" then
         --

@@ -331,11 +331,38 @@ class Guest:
         serial line touches.
         """
         self._connect_monitor()
+        self._drain_monitor()
         self.monitor.sendall(f"sendkey {key}\n".encode())
-        time.sleep(0.25)
+        time.sleep(0.35)
+        self._drain_monitor()
+
+    def _drain_monitor(self):
+        """Empties whatever the monitor has said and nobody read.
+
+        `sendkey` and `screendump` share one socket, and neither of them
+        reads the prompt and echo that come back. The unread bytes pile up,
+        and a `sendkey` issued after a few hundred screendumps can be lost
+        in the backlog - which looks exactly like a key that did not arrive,
+        intermittently, only in long runs.
+
+        Non-blocking: there is usually nothing, and waiting for something
+        that is not coming would stall every key press.
+        """
+        self.monitor.setblocking(False)
+
+        try:
+            while True:
+                if not self.monitor.recv(65536):
+                    break
+        except (BlockingIOError, socket.timeout, OSError):
+            pass
+        finally:
+            self.monitor.setblocking(True)
+            self.monitor.settimeout(self.timeout)
 
     def screendump(self):
         self._connect_monitor()
+        self._drain_monitor()
         path = os.path.join(self.dir.name, f"shot{time.monotonic_ns()}.ppm")
 
         self.monitor.sendall(f"screendump {path}\n".encode())
@@ -1290,6 +1317,87 @@ def check_idle(guest):
     return 1
 
 
+def check_terminal(guest):
+    """A program runs inside a window, and prints into it.
+
+    `wm terminal`, click into it, type `hello`, and the program's output has
+    to appear *in the window*. It also must not appear on the machine's
+    console, which is checked by the graphical-mode phase separately.
+
+    What this proves is the design rather than a feature. The terminal is a
+    console server: it speaks the same `write` and `read` a `/dev/console`
+    speaks, and hands itself to its children under that name. No program
+    knows or can ask what is behind `/dev/console` - a name resolves to a
+    capability and nothing has a global meaning - so a terminal is a
+    process that answers three verbs and passes itself on.
+
+    Checked by ink rather than by reading text: `hello` prints a paragraph,
+    so a window that ran it has far more drawn in it than one that did not.
+    """
+    guest.type("wm terminal")
+    time.sleep(9)
+
+    width, height, px = parse_ppm(guest.screendump())
+
+    # The window is opened at 90,70 by terminal.lua. Count the pixels that
+    # are neither its background nor its frame, well below the banner.
+    x0, y0, w, h = 100, 140, 600, 300
+
+    def ink(pixels):
+        n = 0
+        base = pixels[((y0 + h - 4) * width + x0 + 4) * 3:
+                      ((y0 + h - 4) * width + x0 + 4) * 3 + 3]
+
+        for y in range(y0, y0 + h, 2):
+            for x in range(x0, x0 + w, 2):
+                at = (y * width + x) * 3
+
+                if pixels[at:at + 3] != base:
+                    n += 1
+
+        return n
+
+    before = ink(px)
+
+    guest.mouse_to(*_to_tablet(300, 200, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(0.6)
+
+    for ch in "hello\n":
+        guest.proc.stdin.write(ch.encode())
+        guest.proc.stdin.flush()
+        time.sleep(0.08)
+
+    settle(guest,
+           lambda w_, h_, px_: True if ink(px_) > before + 200 else None,
+           "typing `hello` into the terminal put nothing in its window. "
+           "Either the program did not start, or its `write` is not "
+           "reaching this terminal - which would mean the child got the "
+           "machine's console instead of the one it was handed.",
+           seconds=25)
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from the terminal.")
+
+    return 1
+
+
 def check_deskbar(guest):
     """A desktop you can start things from.
 
@@ -1839,6 +1947,7 @@ def main():
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
         idle_checks = check_idle(guest)
+        terminal_checks = check_terminal(guest)
         deskbar_checks = check_deskbar(guest)
         click_checks = check_clicks(guest)
         graphical_checks = check_graphical_mode(guest)
@@ -1860,7 +1969,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + idle_checks)
+             + idle_checks + terminal_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1878,7 +1987,8 @@ def main():
           f"something else owns it, "
           f"{click_checks} on the widgets under the pointer, "
           f"{deskbar_checks} on starting an application from the Deskbar, "
-          f"{idle_checks} on an idle desktop being idle).")
+          f"{idle_checks} on an idle desktop being idle, "
+          f"{terminal_checks} on a program printing into a terminal window).")
     return 0
 
 
