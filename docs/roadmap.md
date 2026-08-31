@@ -169,6 +169,26 @@ The original design starts here. From this point there is far less reference mat
 
 That is the BeOS test and the one that determines whether the system feels good or not.
 
+**Met, with one thing named rather than glossed.** `wm hello-win,stuck`
+puts two applications on screen, one of which never replies again, and the
+hung one's window still moves - there is a display check for it. The moving
+is done with the keyboard, because there is no pointer device yet: adding
+one means restructuring the virtio-input driver for two instances and
+reading config space to tell a keyboard from a tablet. Nothing about the
+compositor changes when it arrives; the window manager already routes input
+by focus.
+
+**Still open in M6:** row and column containers, a scroll widget, the
+Terminal with its VT100 emulation, virtio-gpu as the second `hal_fb_*`
+implementation, the compositor benchmarks (blitter throughput, frame
+compose, damage versus full redraw, input latency), and SMP.
+
+The Terminal is the one that matters most, and not only as an application:
+the kernel console and the window manager currently draw on one framebuffer,
+so printing a line scrolls a window's pixels, and the window manager cannot
+usefully run detached because it and the shell's line editor would be
+draining one keyboard. Both disappear when the shell is a window.
+
 **Also:** `gfx.surface` as a userdata over flat bytes, the C primitive set (`fill`, `blit`, `blend`, `span`, `get`/`set`), and surface lifetime management (explicit `free`, a `__gc` net, telling the GC the real size). See `gfx.md`. Pixels do not go into Lua tables, and that rule has no exception.
 
 **Benchmarks added:** blitter throughput in MB/s, time to compose a typical frame, damage tracking overhead versus full redraw, and **input latency measured from event to pixel** (a timestamp on the event and another on the flip). Everything is recorded by maximum and p99, never by average. See `testing.md` §18.5.
@@ -195,6 +215,29 @@ The BeOS part, and what almost nobody replicated.
 - Apps: Tracker, Deskbar, Text editor, Clock, Log viewer, Paint, Preferences
 
 **Definition of done:** an open query over a directory, and another process writes a file that matches the predicate, and the view updates on its own without polling. And drag the desktop clock into a Tracker window, and have it keep working with the capabilities it declared. And from the REPL, change Paint's brush color with an `fs.write` into its namespace, without Paint having any scripting code.
+
+**All three are met**, with the dragging replaced by the same transfer done
+without a pointer:
+
+1. **The live query.** `watch kind=note &`, then `attr /data/x kind=note`
+   from the prompt, and the watcher reports. It is blocked in one call the
+   whole time - no timer, no repeated question - because the filesystem
+   parks the reply until the answer changes. A server that called back into
+   a client could be blocked by that client.
+2. **The replicant.** `wm clock,tracker`: one application publishes a view
+   as source, state and a `needs` list; another adopts it and runs it, with
+   only what it declared. It is handed over through /data rather than
+   dragged, because dragging is what a pointer is for.
+3. **The scripting.** `setprop /app/gallery/title=...` renames a running
+   window, and `gallery.lua` contains no scripting code - it called
+   `ui.window`.
+
+**Still open in M7:** workspaces, stack and tile, entity files as a named
+idea (attributes already do the work), shared-memory surfaces, and the
+applications - Tracker proper, Deskbar, a log viewer, Paint, Preferences.
+The query benchmark exists and comes out flat; `qbench` measures a control
+at every size, without which it reported a slope that was in the round trip
+and not in the index.
 
 ---
 
