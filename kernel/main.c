@@ -329,6 +329,18 @@ void kmain(void)
          */
         (void)process_grant_screen(init);
 
+        /*
+         * And the disk, on the same terms. Ignored when it fails for the
+         * same reason as the screen: a machine with no drive attached is a
+         * supported way to run, and the disk server started without one
+         * answers "there is no disk" perfectly well.
+         *
+         * Init does not touch a sector. It holds this so it can hand it to
+         * exactly one child - the whole of the model is that authority
+         * arrives from a parent and never from asking.
+         */
+        (void)process_grant_disk(init);
+
         /* At the indices init expects them, and checked rather than assumed:
          * a capability that lands one slot over is a server talking to the
          * wrong endpoint, which fails in a way that looks like a protocol

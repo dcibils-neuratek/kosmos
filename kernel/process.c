@@ -99,7 +99,8 @@ unsigned process_table(struct proc_info *out, unsigned max)
         out[n].pages     = (uint32_t)p->mapped_pages;
         out[n].caps      = thread_cap_count(p->thread);
         out[n].owns      = (p->owns_console ? 1u : 0u)
-                         | (p->owns_screen ? 2u : 0u);
+                         | (p->owns_screen ? 2u : 0u)
+                         | (p->owns_disk ? 4u : 0u);
 
         memcpy(out[n].name, p->name, sizeof(out[n].name) - 1);
         out[n].name[sizeof(out[n].name) - 1] = '\0';
@@ -405,6 +406,18 @@ void process_grant_console(struct process *p)
     if (p != NULL) {
         p->owns_console = true;
     }
+}
+
+bool process_grant_disk(struct process *p)
+{
+    struct blkdev dev;
+
+    if (p == NULL || !hal_blk_init(&dev)) {
+        return false;
+    }
+
+    p->owns_disk = true;
+    return true;
 }
 
 bool process_grant_screen(struct process *p)

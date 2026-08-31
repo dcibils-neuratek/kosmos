@@ -28,9 +28,16 @@ local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
 local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
+local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
 
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
+
+-- The disk. The strongest grant there is - raw sectors are every file on the
+-- machine whatever any namespace says - so exactly one process gets it and
+-- everything else asks that process. Same shape as the console and the
+-- screen, and the reason is stronger.
+local SPAWN_DISK    = 4
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -1566,6 +1573,119 @@ local function devices_handlers(state)
   }
 end
 
+--------------------------------------------------------------------------
+-- The disk server.
+--
+-- The only process holding SPAWN_DISK. Everything that wants the block
+-- device comes through here, which is what makes "raw sectors" an authority
+-- somebody was given rather than something any program can reach.
+--
+-- It serves two names and no more, because at this milestone there are only
+-- two questions:
+--
+--   /disk/super    read: what the superblock says, or why there is none
+--   /disk/format   write: format it, erasing everything
+--
+-- Both are the ordinary protocol - `read` and `write` over typed records -
+-- rather than operations invented for the occasion. When the real
+-- filesystem lands it answers `list`, `read` and `write` for actual paths
+-- and these two stay as what they are: a way to look at, and to lay down,
+-- the structure underneath.
+--
+-- Block *contents* deliberately do not travel through here. A message is
+-- 2048 bytes and a block is 4096, and the answer to "how do I move a
+-- megabyte" is never "in smaller messages" - design.md 8.4 has that as
+-- mapped pages. What crosses this boundary is small tables.
+--------------------------------------------------------------------------
+
+local function diskfs_handlers(state)
+  local kfs = state.kfs
+
+  return {
+    list = function(req)
+      return { ok = true, entries = { "super", "format" } }
+    end,
+
+    read = function(req)
+      local name = req.path:match("([^/]+)$")
+
+      if name == "super" then
+        local disk, why = sys.disk()
+
+        if not disk then
+          return { ok = false, error = tostring(why) }
+        end
+
+        local sb, err = kfs.mount()
+
+        if not sb then
+          -- Not an error. A disk with no filesystem on it is a normal
+          -- state and the thing `mkfs` exists to change; reporting it as a
+          -- failure would make "there is nothing here yet" look like a
+          -- fault.
+          return { ok = true, value = { sectors = disk.sectors,
+                                        sector_size = disk.sector_size,
+                                        bytes = disk.bytes,
+                                        formatted = false,
+                                        why = tostring(err) } }
+        end
+
+        sb.sectors     = disk.sectors
+        sb.sector_size = disk.sector_size
+        sb.bytes       = disk.bytes
+        sb.formatted   = true
+        sb.free_blocks = sb.blocks - sb.data_at
+
+        return { ok = true, value = sb }
+      end
+
+      return { ok = false, error = "no such name" }
+    end,
+
+    write = function(req)
+      local name = req.path:match("([^/]+)$")
+
+      if name ~= "format" then
+        return { ok = false, error = "no such name" }
+      end
+
+      -- The confirmation is checked here rather than only in `mkfs`,
+      -- because this is the boundary. A program that reaches this path is
+      -- asking to erase the disk, and "it asked nicely" has to be part of
+      -- the request rather than a habit of one caller.
+      if req.value ~= "yes, erase it" then
+        return { ok = false,
+                 error = "a format must say `yes, erase it`" }
+      end
+
+      local disk, why = sys.disk()
+
+      if not disk then
+        return { ok = false, error = tostring(why) }
+      end
+
+      local sb, err = kfs.mkfs(disk.sectors, sys.ticks())
+
+      if not sb then
+        return { ok = false, error = tostring(err) }
+      end
+
+      state.formats = (state.formats or 0) + 1
+      return { ok = true, value = sb }
+    end,
+
+    getattr = function(req)
+      return { ok = true, attrs = { kind = "device" } }
+    end,
+  }
+end
+
+local function diskfs_main(endpoint)
+  local kfs = assert(load(sys.libraries(), "libraries"))()["kfs.lua"]
+
+  serve(endpoint, { kfs = assert(load(kfs, "kfs.lua"))() }, diskfs_handlers)
+end
+
 local function devices_main(endpoint)
   serve(endpoint, {}, devices_handlers)
 end
@@ -1573,7 +1693,7 @@ end
 local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
-                          lib_cap, app_cap)
+                          lib_cap, app_cap, disk_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
   ns.mount("/data", ramfs_cap)
@@ -1596,6 +1716,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- mount: the names under it appear and disappear with the programs.
   ns.mount_registry("/app", app_cap)
 
+  -- The block device, through the one process that holds it. What is under
+  -- here is structure - a superblock, and the way to lay one down - not
+  -- files; files arrive when there is a filesystem to serve them.
+  ns.mount("/disk", disk_cap)
 
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -2079,7 +2203,7 @@ your filesystem back.
 
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
-                                        app_cap },
+                                        app_cap, disk_cap },
                          SPAWN_SCREEN)
 
     if not id then
@@ -2091,6 +2215,7 @@ your filesystem back.
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
+      disk = 7,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -2495,6 +2620,7 @@ if role == ROLE_INIT then
   --
   local LIBFS_EP = sys.endpoint()
   local APPFS_EP = sys.endpoint()
+  local DISKFS_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -2532,6 +2658,14 @@ if role == ROLE_INIT then
   local libfs   = start("the library store", ROLE_LIBFS, { LIBFS_EP })
   local appfs   = start("the app registry", ROLE_APPFS, { APPFS_EP })
 
+  -- The disk, to one process and no other.
+  --
+  -- Started even when there is no block device: it answers "there is no
+  -- disk" perfectly well, and a machine that boots differently depending on
+  -- whether a drive is attached is a machine with two boot paths to test.
+  local diskfs  = start("the disk server", ROLE_DISKFS, { DISKFS_EP },
+                        SPAWN_DISK)
+
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
   --
@@ -2548,7 +2682,7 @@ if role == ROLE_INIT then
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
-                        APPFS_EP },
+                        APPFS_EP, DISKFS_EP },
                       SPAWN_SCREEN)
 
   -- And now it does what an init does, which is outlive everything and
@@ -2667,8 +2801,8 @@ end
 
 if role == ROLE_SHELL then
   sys.name("shell")
-  -- Four capabilities, in the order init granted them.
-  shell_main(0, 1, 2, 3, 4, 5)
+  -- The capabilities init granted, in the order it granted them.
+  shell_main(0, 1, 2, 3, 4, 5, 6)
   return
 end
 
@@ -2729,6 +2863,12 @@ if role == ROLE_APPFS then
   appfs_main(CAP)
 end
 
+if role == ROLE_DISKFS then
+  sys.name("diskfs")
+  diskfs_main(CAP)
+  return
+end
+
 if role == ROLE_LIBFS then
   sys.name("libfs")
   binfs_main(CAP, sys.libraries(), "libraries")
@@ -2780,6 +2920,7 @@ if role == ROLE_RUNNER then
   if req.devices then ns.mount("/dev",         req.devices) end
   if req.lib     then ns.mount("/lib",         req.lib)     end
   if req.app     then ns.mount_registry("/app", req.app)    end
+  if req.disk    then ns.mount("/disk",        req.disk)    end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -2831,7 +2972,7 @@ if role == ROLE_RUNNER then
     -- Order is the contract: the child is told which index each landed at,
     -- because a capability table is indexed and never named.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
-                   req.lib, req.app }
+                   req.lib, req.app, req.disk }
     local mounts = {}
 
     if shares then
@@ -2852,6 +2993,7 @@ if role == ROLE_RUNNER then
       path = path, args = argument or "", cwd = req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
+      disk = 7,
       mounts = (#mounts > 0) and mounts or nil,
     })
 

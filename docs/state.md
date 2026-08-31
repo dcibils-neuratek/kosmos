@@ -46,6 +46,15 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The disk is real, and what is written to it survives.** `mkfs --yes`
+  formats, and a machine that has never seen the disk before finds a
+  filesystem on it. virtio-blk in the HAL, three syscalls behind the
+  strongest grant in the system, a disk server that is the only process
+  holding it, and `kfs.lua` - the format, borrowed from ext2's skeleton with
+  BFS's semantics and extents instead of indirect blocks. `make disktest`
+  boots the machine twice against one image, because the question cannot be
+  asked inside one boot.
+
 - **A software 3D renderer.** `wm cube3d`: a solid, shaded, rotating cube at
   about 42 fps, drawn into a surface shared with the compositor. The split
   is the point - `surface:triangle` is the only new C, because it runs once
@@ -545,6 +554,18 @@ Two fixture blobs went with it. `user/hello.S` and `user/faulty.S` are what the 
 At M4 that is replaced by the real arrangement: the kernel in TTBR1 at the top, TTBR0 belonging entirely to the process, and a space containing no kernel at all.
 
 ## Decisions taken while implementing (this session)
+
+**2026-08-31 — The disk goes to one process, and everything else asks it.** Raw sectors are every file on the machine whatever any namespace says, which makes `SPAWN_DISK` a stronger grant than the screen - the screen can only draw. So the kernel hands it to init, init hands it to exactly one child, and `mkfs` and `diskinfo` are ordinary programs that reach `/disk/super` and `/disk/format` through their namespace and cannot touch a sector.
+
+Doing it the other way was tried first and refused itself: granting the runner `SPAWN_DISK` would have given it to every program, which is ambient authority with extra steps. The version that works is the shape `/dev`, `/bin` and `/lib` already have.
+
+Block *contents* deliberately do not cross that boundary. A message is 2048 bytes and a block is 4096.
+
+**2026-08-31 — The format is borrowed, not invented.** ext2's skeleton without its block groups, which exist to keep inodes near data on a spinning disk and buy nothing on an SD card. ext3's journal, whose space is reserved from the start so turning it on does not move the data blocks. BFS's attribute semantics. Extents instead of indirect blocks. Written with `string.pack`, so the format string beside the field names is the specification - and bounds-checked, which a C struct read off a disk is not. A corrupt superblock is exactly the hostile input a filesystem has to survive, and `<I4I4I8` also cannot acquire padding on the way to the Pi.
+
+**2026-08-31 — The superblock is written last, and that is the ordering rather than a detail.** A format interrupted before it leaves a disk that says it is not a filesystem, which is true. Interrupted after, it would leave one that claims to be and is not.
+
+**2026-08-31 — `readline` cannot be used to wait for this system's prompt.** `kosmos>` has no trailing newline, so `select` reports the pipe ready and the read then blocks for ever waiting for a line ending that only arrives when something else is printed. It cost an hour in a new harness, and `run_screenshot.py` had already solved it by reading raw bytes - which is worth knowing before writing the third one.
 
 **2026-08-31 — A preempted thread needs the whole FP register file, and the switch is the place to save it.** `context_switch` saved `d8`-`d15`: the callee-saved set, and the correct answer for a thread that called it, because the compiler has already spilled the rest. A preempted thread called nothing. Two kernel threads holding a known value in `d0` across a spin longer than a quantum lost it on **14 preemptions out of 14**; after the fix, 0 out of 14.
 

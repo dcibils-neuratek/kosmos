@@ -557,7 +557,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     -device virtio-blk-device,drive=disk \
                     -kernel $(TARGET)
 
-.PHONY: all qemu serial test screenshot bench bench-record debug disasm size clean dist release disk
+.PHONY: all qemu serial test disktest screenshot bench bench-record debug disasm size clean dist release disk
 
 # An empty disk. Made when it is missing and never overwritten by accident:
 # `make disk` after deleting it is a deliberate act, and a build that
@@ -569,6 +569,16 @@ $(DISK):
 	@echo "$@: $(DISK_MB) MB, empty"
 
 disk: $(DISK)
+
+# Does what was written survive the power going off?
+#
+# A separate harness because that question cannot be asked inside one boot.
+# It boots the machine twice against one image: the first run formats, the
+# second is a machine that has never seen a disk and has to find a
+# filesystem there. Everything else about M8 would pass with a filesystem
+# that quietly forgot everything.
+disktest: $(TARGET)
+	python3 tools/run_disk.py $(TARGET)
 
 all: $(TARGET)
 

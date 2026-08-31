@@ -574,6 +574,93 @@ static int l_asset(lua_State *L)
  * in order, which is what the serial line has and the screen does not.
  */
 /*
+ * `sys.disk()` - what block device there is, if any.
+ * `sys.disk_read(sector, bytes)` - those bytes, as a string.
+ * `sys.disk_write(sector, string)` - it, at that sector.
+ *
+ * Bytes as a Lua string rather than a surface or a userdata, because a
+ * filesystem block is kilobytes and its contents are structure, not pixels
+ * - `string.unpack` is exactly the right tool for reading a superblock and
+ * is already here. The rule in `gfx.md` is about pixel *loops*; there is no
+ * loop here, and a 4 KB string on a 2 MB heap is nothing.
+ *
+ * A large *file* is a different question and gets a different answer - a
+ * mapped region, see design.md 8.4 - because that is megabytes.
+ */
+/* One filesystem block per call, which is what the kernel's bounce buffer
+ * holds. Named here so the two sides cannot drift apart silently. */
+#define DISK_MAX_READ  4096
+
+static int l_disk(lua_State *L)
+{
+    struct diskinfo info;
+
+    if (kosmos_disk_info(&info) != 0 || info.sectors == 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "there is no disk");
+        return 2;
+    }
+
+    lua_newtable(L);
+
+    lua_pushinteger(L, (lua_Integer)info.sectors);
+    lua_setfield(L, -2, "sectors");
+    lua_pushinteger(L, (lua_Integer)info.sector_size);
+    lua_setfield(L, -2, "sector_size");
+    lua_pushinteger(L, (lua_Integer)(info.sectors * info.sector_size));
+    lua_setfield(L, -2, "bytes");
+
+    return 1;
+}
+
+static int l_disk_read(lua_State *L)
+{
+    lua_Integer sector = luaL_checkinteger(L, 1);
+    lua_Integer bytes  = luaL_checkinteger(L, 2);
+    luaL_Buffer b;
+    char *out;
+    long got;
+
+    if (bytes <= 0 || bytes > DISK_MAX_READ) {
+        return fail(L, SYS_ERR_FAULT);
+    }
+
+    out = luaL_buffinitsize(L, &b, (size_t)bytes);
+    got = kosmos_disk_read((unsigned long)sector, out, (unsigned long)bytes);
+
+    if (got < 0) {
+        luaL_pushresultsize(&b, 0);
+        lua_pop(L, 1);
+        return fail(L, got);
+    }
+
+    luaL_pushresultsize(&b, (size_t)got);
+    return 1;
+}
+
+static int l_disk_write(lua_State *L)
+{
+    lua_Integer sector = luaL_checkinteger(L, 1);
+    size_t len;
+    const char *data = luaL_checklstring(L, 2, &len);
+    long wrote;
+
+    if (len == 0 || len > DISK_MAX_READ) {
+        return fail(L, SYS_ERR_FAULT);
+    }
+
+    wrote = kosmos_disk_write((unsigned long)sector, data,
+                              (unsigned long)len);
+
+    if (wrote < 0) {
+        return fail(L, wrote);
+    }
+
+    lua_pushinteger(L, wrote);
+    return 1;
+}
+
+/*
  * `sys.memory(pages)` - a region two processes can share.
  * `sys.memory_map(cap)` - it, in this process's address space.
  * `sys.memory_size(cap)` - how many pages it is.
@@ -775,6 +862,9 @@ static const luaL_Reg sys_functions[] = {
     { "memory",      l_memory },
     { "memory_map",  l_memory_map },
     { "memory_size", l_memory_size },
+    { "disk",        l_disk },
+    { "disk_read",   l_disk_read },
+    { "disk_write",  l_disk_write },
     { "log",      l_log },
     { "build",    l_build },
     { "wait_input", l_wait_input },

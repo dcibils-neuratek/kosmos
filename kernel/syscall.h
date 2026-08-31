@@ -62,7 +62,11 @@
 #define SYS_MEM_MAP    24   /* (cap)                  -> address or error   */
 #define SYS_MEM_SIZE   25   /* (cap)                  -> pages or error     */
 
-#define SYS_MAX         26
+#define SYS_DISK_INFO  26   /* (out struct)           -> 0 or error         */
+#define SYS_DISK_READ  27   /* (sector, buf, bytes)   -> bytes or error     */
+#define SYS_DISK_WRITE 28   /* (sector, buf, bytes)   -> bytes or error     */
+
+#define SYS_MAX         29
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -75,6 +79,17 @@
  */
 #define SPAWN_CONSOLE   1u
 #define SPAWN_SCREEN    2u
+
+/*
+ * The disk, handed on the same way and for the same reason.
+ *
+ * A process that can read raw sectors can read every file on the machine
+ * whatever any namespace says, so this is the most powerful grant there is -
+ * more than the screen, which can only draw. Exactly one process gets it:
+ * the filesystem server. Everything else reaches the disk by asking that
+ * server, which is what makes a namespace mean anything.
+ */
+#define SPAWN_DISK      4u
 
 
 
@@ -208,6 +223,20 @@ struct sysinfo {
     uint32_t current_el;
     uint32_t page_size;
 };
+
+/*
+ * What SYS_DISK_INFO answers.
+ *
+ * `sectors` is zero when there is no disk, which is a supported way to run:
+ * the machine boots, and the filesystem server says it has nothing to mount
+ * rather than the kernel refusing to start.
+ */
+struct diskinfo {
+    uint64_t sectors;
+    uint32_t sector_size;
+    uint32_t reserved;
+};
+
 #endif
 
 /* Errors are negative so `if (result < 0)` reads correctly on both sides. */

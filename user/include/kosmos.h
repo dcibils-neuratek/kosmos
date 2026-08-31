@@ -272,6 +272,30 @@ static inline long kosmos_mem_size(long cap)
     return sys1(SYS_MEM_SIZE, cap);
 }
 
+/*
+ * The disk, in sectors.
+ *
+ * `kosmos_disk_info` is readable by anybody: it says whether there is a
+ * device and how big, which is not authority over it. The other two need
+ * the grant, and exactly one process has it.
+ */
+static inline long kosmos_disk_info(struct diskinfo *out)
+{
+    return sys1(SYS_DISK_INFO, (unsigned long)(uintptr_t)out);
+}
+
+static inline long kosmos_disk_read(unsigned long sector, void *buf,
+                                    unsigned long bytes)
+{
+    return sys3(SYS_DISK_READ, sector, (unsigned long)(uintptr_t)buf, bytes);
+}
+
+static inline long kosmos_disk_write(unsigned long sector, const void *buf,
+                                     unsigned long bytes)
+{
+    return sys3(SYS_DISK_WRITE, sector, (unsigned long)(uintptr_t)buf, bytes);
+}
+
 /* The most recent bytes this machine printed, kernel and processes alike. */
 static inline long kosmos_log(char *out, unsigned long max)
 {

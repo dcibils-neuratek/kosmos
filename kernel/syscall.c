@@ -248,6 +248,10 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
 
     /* And the same for the screen. A process cannot promote itself by
      * spawning a child and asking it to draw. */
+    if ((flags & SPAWN_DISK) != 0 && !p->owns_disk) {
+        return SYS_ERR_DENIED;
+    }
+
     if ((flags & SPAWN_SCREEN) != 0 && !p->owns_screen) {
         return SYS_ERR_DENIED;
     }
@@ -272,6 +276,11 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
 
     if ((flags & SPAWN_CONSOLE) != 0) {
         process_grant_console(child);
+    }
+
+    if ((flags & SPAWN_DISK) != 0 && !process_grant_disk(child)) {
+        process_abandon(child);
+        return SYS_ERR_NO_ROOM;
     }
 
     if ((flags & SPAWN_SCREEN) != 0 && !process_grant_screen(child)) {
@@ -323,6 +332,62 @@ static long sys_screen(struct process *p, uintptr_t out_ptr)
 
     *(struct screen_info *)out_ptr = info;
     return 0;
+}
+
+/*
+ * Raw sectors, for the one process that serves the filesystem.
+ *
+ * Through a bounce buffer, and that is not laziness. The device is handed a
+ * *physical* address, and a process's buffer is a user virtual one whose
+ * pages need not be contiguous - so passing it straight through would be
+ * the same bug the fw_cfg work hit, where the kernel being identity mapped
+ * made a virtual address look like it worked until it was somebody else's.
+ * The copy also means the device never writes into a process's address
+ * space directly, which is one fewer thing to be careful about.
+ *
+ * One filesystem block per call. A Lua caller that wants more loops, and a
+ * fixed buffer is what `CLAUDE.md` asks for anyway - there is no allocator
+ * here to size one against the request.
+ */
+#define DISK_CHUNK  4096u
+
+static _Alignas(16) uint8_t disk_bounce[DISK_CHUNK];
+
+static long sys_disk(struct process *p, bool writing, uint64_t sector,
+                     uintptr_t buf, size_t bytes)
+{
+    if (!p->owns_disk) {
+        return SYS_ERR_DENIED;
+    }
+
+    if (bytes == 0 || bytes > DISK_CHUNK
+        || (bytes % HAL_BLK_SECTOR) != 0) {
+        return SYS_ERR_FAULT;
+    }
+
+    if (writing) {
+        if (!process_may_read(p, buf, bytes)) {
+            return SYS_ERR_FAULT;
+        }
+
+        memcpy(disk_bounce, (const void *)buf, bytes);
+
+        if (!hal_blk_write(sector, disk_bounce, (uint32_t)bytes)) {
+            return SYS_ERR_FAULT;
+        }
+    } else {
+        if (!process_may_write(p, buf, bytes)) {
+            return SYS_ERR_FAULT;
+        }
+
+        if (!hal_blk_read(sector, disk_bounce, (uint32_t)bytes)) {
+            return SYS_ERR_FAULT;
+        }
+
+        memcpy((void *)buf, disk_bounce, bytes);
+    }
+
+    return (long)bytes;
 }
 
 /*
@@ -850,6 +915,43 @@ void syscall_dispatch(struct trapframe *tf)
         result = (m == NULL) ? SYS_ERR_DENIED : (long)m->pages;
         break;
     }
+
+    case SYS_DISK_INFO: {
+        struct diskinfo info;
+        struct blkdev dev;
+
+        if (!process_may_write(p, (uintptr_t)tf->x[0], sizeof(info))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        /* Readable without holding the disk. It says whether there is one
+         * and how big it is, which is not authority over it - and init has
+         * to be able to ask before deciding whether to start a filesystem
+         * server at all. */
+        if (hal_blk_init(&dev)) {
+            info.sectors     = dev.sectors;
+            info.sector_size = dev.sector_size;
+        } else {
+            info.sectors     = 0;
+            info.sector_size = 0;
+        }
+
+        info.reserved = 0;
+        *(struct diskinfo *)(uintptr_t)tf->x[0] = info;
+        result = 0;
+        break;
+    }
+
+    case SYS_DISK_READ:
+        result = sys_disk(p, false, tf->x[0], (uintptr_t)tf->x[1],
+                          (size_t)tf->x[2]);
+        break;
+
+    case SYS_DISK_WRITE:
+        result = sys_disk(p, true, tf->x[0], (uintptr_t)tf->x[1],
+                          (size_t)tf->x[2]);
+        break;
 
     case SYS_YIELD:
         thread_yield();

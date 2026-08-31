@@ -228,6 +228,10 @@ struct process {
      */
     bool              owns_screen;
 
+    /* Raw sectors. The strongest grant in the system - it is every file on
+     * the machine, under every namespace - so it goes to one process. */
+    bool              owns_disk;
+
     /*
      * Pages this process asked for with SYS_MAP: where the next one goes,
      * and how many it holds. The count is both the budget and what
@@ -322,6 +326,16 @@ void process_grant_console(struct process *p);
  * caller decides what to do about it.
  */
 bool process_grant_screen(struct process *p);
+
+/*
+ * Hands a process the disk. Like the console and unlike the screen, there is
+ * nothing to map: the sectors are reached through syscalls, so this is a
+ * flag and no more.
+ *
+ * False when there is no block device, which the caller is expected to
+ * survive rather than treat as fatal.
+ */
+bool process_grant_disk(struct process *p);
 
 
 /* Makes it runnable. Nothing may touch its address space afterwards without
