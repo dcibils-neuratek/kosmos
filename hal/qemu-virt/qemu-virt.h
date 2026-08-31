@@ -31,8 +31,15 @@ void gic_enable_spi(unsigned intid);
 #define VIRTIO_INTID_BASE   48
 
 /* How many mmio windows `virt` lays out, and so how many INTIDs follow the
- * base. The driver that scans them uses the same number. */
+ * base. Every driver that scans them uses the same number.
+ *
+ * The windows themselves, from the device tree. Here rather than in a
+ * driver because there is more than one driver now - input and block - and
+ * a hardware address written down twice is a hardware address that can
+ * disagree with itself. */
 #define VIRTIO_MMIO_COUNT   32
+#define VIRTIO_MMIO_BASE    0x0a000000UL
+#define VIRTIO_MMIO_STRIDE  0x200UL
 
 /* One of the input devices has events waiting. `slot` is which window. */
 void input_interrupt(unsigned slot);

@@ -2448,6 +2448,117 @@ static bool test_gfx_text(void)                        { return luatest_role(27)
  * region leaked its pages every time a window opened, which is the failure
  * that has no symptom until the machine runs out.
  */
+/*
+ * The block device.
+ *
+ * Everything about virtio-blk in this kernel was written against the
+ * specification from knowledge rather than from a copy of `virtio_blk.h`,
+ * which is not on the machine it was written on. That makes these tests
+ * load-bearing in a way most are not: they are not confirming a design, they
+ * are establishing that the request header's field offsets, the descriptor
+ * chain's direction flags and the unit the sector is counted in are all
+ * right.
+ *
+ * A write followed by a read is what does it. Every one of those details
+ * lies on the path between the two, and no combination of wrong ones
+ * produces the bytes that went in.
+ */
+static uint8_t blk_out[HAL_BLK_SECTOR];
+static uint8_t blk_in[HAL_BLK_SECTOR];
+
+static bool test_block_device_is_present(void)
+{
+    struct blkdev dev;
+
+    if (!hal_blk_init(&dev)) {
+        return false;
+    }
+
+    /* The runner attaches a 1 MB disk. Not an exact figure here, because
+     * the test should not fail when that changes - only that the capacity
+     * is a real number and the sector size is what virtio counts in. */
+    return dev.sectors > 0 && dev.sector_size == HAL_BLK_SECTOR;
+}
+
+static bool test_block_write_then_read(void)
+{
+    unsigned i;
+
+    /* A pattern where every byte depends on its position, so a read that
+     * lands on the wrong sector, or is short, or is offset by a few bytes,
+     * fails rather than matching by luck. A constant fill would pass all
+     * three of those. */
+    for (i = 0; i < HAL_BLK_SECTOR; i++) {
+        blk_out[i] = (uint8_t)(i * 7 + 13);
+        blk_in[i]  = 0;
+    }
+
+    if (!hal_blk_write(1, blk_out, HAL_BLK_SECTOR)) {
+        return false;
+    }
+
+    if (!hal_blk_read(1, blk_in, HAL_BLK_SECTOR)) {
+        return false;
+    }
+
+    for (i = 0; i < HAL_BLK_SECTOR; i++) {
+        if (blk_in[i] != blk_out[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool test_block_sectors_are_distinct(void)
+{
+    unsigned i;
+
+    /*
+     * Sector 2 is not sector 1.
+     *
+     * The check that catches the sector field being ignored, or being
+     * counted in the wrong unit. Without it a driver that always addresses
+     * sector 0 passes the test above perfectly: it writes the pattern
+     * somewhere and reads it back from the same somewhere.
+     */
+    for (i = 0; i < HAL_BLK_SECTOR; i++) {
+        blk_out[i] = 0xa5;
+    }
+
+    if (!hal_blk_write(2, blk_out, HAL_BLK_SECTOR)) {
+        return false;
+    }
+
+    if (!hal_blk_read(1, blk_in, HAL_BLK_SECTOR)) {
+        return false;
+    }
+
+    /* Sector 1 still holds what the previous test put there. */
+    for (i = 0; i < HAL_BLK_SECTOR; i++) {
+        if (blk_in[i] != (uint8_t)(i * 7 + 13)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool test_block_refuses_past_the_end(void)
+{
+    struct blkdev dev;
+
+    if (!hal_blk_init(&dev)) {
+        return false;
+    }
+
+    /* Reading past the disk must be refused here rather than handed to the
+     * device, which is entitled to do anything with it. */
+    return !hal_blk_read(dev.sectors, blk_in, HAL_BLK_SECTOR)
+        && !hal_blk_read(dev.sectors - 1, blk_in, HAL_BLK_SECTOR * 2)
+        && !hal_blk_read(0, blk_in, HAL_BLK_SECTOR / 2);  /* not whole sectors */
+}
+
 static bool test_gfx_triangles(void)                   { return luatest_role(30); }
 static bool test_g3d_orientation(void)                 { return luatest_role(31); }
 
@@ -3328,6 +3439,10 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "blk: the disk is there",                test_block_device_is_present },
+    { "blk: a sector reads back what was written", test_block_write_then_read },
+    { "blk: sectors are addressed, not ignored", test_block_sectors_are_distinct },
+    { "blk: past the end is refused",          test_block_refuses_past_the_end },
     { "gfx: triangles fill and meet",          test_gfx_triangles },
     { "3d: the near faces are the drawn ones", test_g3d_orientation },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },

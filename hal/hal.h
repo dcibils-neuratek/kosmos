@@ -167,4 +167,29 @@ bool hal_input_pending(void);
  * wakes the sleeper but must leave the fact for the sleeper to read. */
 bool hal_input_pending_peek(void);
 
+/*
+ * A block device.
+ *
+ * The one piece of hardware the filesystem needs. Sectors are 512 bytes
+ * because that is the unit virtio counts in, whatever the underlying device
+ * reports - the filesystem's own block size is a separate and larger
+ * number, and conflating the two is how a driver ends up reading the wrong
+ * place on a disk that calls its blocks 4096.
+ *
+ * Synchronous, and the byte count must be a whole number of sectors. They
+ * return false for a device that is not there, for a request past the end of
+ * it, and for an error from it. The caller cannot tell those apart and does
+ * not need to: all three mean the bytes are not there.
+ */
+#define HAL_BLK_SECTOR  512u
+
+struct blkdev {
+    uint64_t sectors;               /* how many, of HAL_BLK_SECTOR each */
+    uint32_t sector_size;
+};
+
+bool hal_blk_init(struct blkdev *out);      /* M8; false when there is none */
+bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes);
+bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes);
+
 #endif /* HAL_H */

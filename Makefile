@@ -81,6 +81,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
         hal/qemu-virt/input.c \
+             hal/qemu-virt/blk.c \
         kernel/console.c \
         kernel/screen.c \
         kernel/boot.c \
@@ -529,10 +530,20 @@ QEMU      := qemu-system-aarch64
 # a different ring layout reached through QUEUE_PFN, which modern structures
 # read as garbage. Linux passes the same thing. Without it the keyboard is
 # found, correctly refused, and the boot says there is none.
+#
+# The disk. Kept between runs rather than made fresh, because the point of
+# it is that what was written is still there next time - which is the whole
+# of M8. `make disk` remakes it when it needs to be empty again.
+#
+DISK      := build/kosmos.img
+DISK_MB   := 64
+
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
+             -drive file=$(DISK),format=raw,if=none,id=disk \
+             -device virtio-blk-device,drive=disk \
              -display cocoa -serial mon:stdio \
              -kernel $(TARGET)
 
@@ -541,9 +552,23 @@ QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
 # No window, and therefore no keyboard: with -display none QEMU has nowhere
 # to take key presses from, so the virtio device would sit there empty.
 QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
+                    -global virtio-mmio.force-legacy=false \
+                    -drive file=$(DISK),format=raw,if=none,id=disk \
+                    -device virtio-blk-device,drive=disk \
                     -kernel $(TARGET)
 
-.PHONY: all qemu serial test screenshot bench bench-record debug disasm size clean dist release
+.PHONY: all qemu serial test screenshot bench bench-record debug disasm size clean dist release disk
+
+# An empty disk. Made when it is missing and never overwritten by accident:
+# `make disk` after deleting it is a deliberate act, and a build that
+# silently reformatted the disk would be a build that eats the filesystem it
+# is meant to be testing.
+$(DISK):
+	@mkdir -p $(dir $@)
+	@dd if=/dev/zero of=$@ bs=1m count=$(DISK_MB) 2>/dev/null
+	@echo "$@: $(DISK_MB) MB, empty"
+
+disk: $(DISK)
 
 all: $(TARGET)
 
@@ -619,12 +644,12 @@ release: $(TARGET)
 	@ls -l builds/
 
 # Ctrl-A then x to quit QEMU.
-qemu: $(TARGET)
+qemu: $(TARGET) $(DISK)
 	$(QEMU) $(QEMUFLAGS)
 
 # No window. The same system, serial only, which is how it ran until M6 and
 # how it will run on a board with a cable and no monitor.
-serial: $(TARGET)
+serial: $(TARGET) $(DISK)
 	$(QEMU) $(QEMUFLAGS_SERIAL)
 
 # Recursive so the test image gets its own BUILD and its own flags. The

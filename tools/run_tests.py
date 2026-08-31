@@ -24,7 +24,9 @@ Usage: run_tests.py <image.elf> [--timeout SECONDS]
 import argparse
 import re
 import select
+import os
 import subprocess
+import tempfile
 import sys
 import time
 
@@ -50,6 +52,21 @@ QEMU_ARGS = [
     # exist yet.
     "-semihosting-config", "enable=on,target=native",
 ]
+
+# A disk for the block-device tests, made fresh for every run.
+#
+# Fresh because the tests write to it: a disk carried between runs would let
+# a test pass on what the previous run left, which is the same failure as a
+# test that never wrote anything. It is small because nothing here needs
+# more - the filesystem's own image is a separate thing and comes later.
+DISK_SECTORS = 2048         # 1 MB, in 512-byte sectors
+
+
+def disk_args(path):
+    return [
+        "-drive", f"file={path},format=raw,if=none,id=testdisk",
+        "-device", "virtio-blk-device,drive=testdisk",
+    ]
 
 BANNER = "Kosmos"
 
@@ -86,15 +103,20 @@ def run_qemu(image, timeout):
     halts after printing its dump, so without this every panic costs the full
     wait and the output arrives long after it was useful.
     """
+    disk = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
+    disk.truncate(DISK_SECTORS * 512)
+    disk.close()
+
     try:
         proc = subprocess.Popen(
-            [QEMU, *QEMU_ARGS, "-kernel", image],
+            [QEMU, *QEMU_ARGS, *disk_args(disk.name), "-kernel", image],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
         )
     except FileNotFoundError:
+        os.unlink(disk.name)
         raise Failure(f"{QEMU} not found. See docs/setup.md.")
 
     lines = []
@@ -138,6 +160,7 @@ def run_qemu(image, timeout):
         if proc.poll() is None:
             proc.kill()
         proc.wait()
+        os.unlink(disk.name)
 
     output = "".join(lines)
 

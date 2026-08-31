@@ -44,10 +44,6 @@
 #include "hal.h"
 #include "qemu-virt.h"
 
-/* From the device tree: 32 windows, 0x200 apart, starting here. */
-#define VIRTIO_MMIO_BASE    0x0a000000UL
-#define VIRTIO_MMIO_STRIDE  0x200UL
-
 /* include/standard-headers/linux/virtio_mmio.h */
 #define REG_MAGIC               0x000
 #define REG_VERSION             0x004
