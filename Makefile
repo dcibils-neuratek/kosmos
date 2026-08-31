@@ -451,7 +451,14 @@ check-lua: $(HOSTDIR)/lua.ok
 # timestamp taken at build time would relink on every make and tell you
 # nothing you did not already know; the commit is the thing that identifies
 # what is running.
-KOSMOS_BUILD := $(shell git describe --always --dirty 2>/dev/null || echo "no-git")
+# The commit, and whether the *sources* differ from it.
+#
+# `builds/` is excluded on purpose. Publishing an image starts by deleting
+# the previous one, which dirties the tree before this is evaluated, so
+# `make release` stamped every image it built "-dirty" while the source it
+# was built from was clean. The name is a claim about the source.
+KOSMOS_DIRTY := $(shell git status --porcelain -- . ':!builds' 2>/dev/null | head -1)
+KOSMOS_BUILD := $(shell git describe --always 2>/dev/null || echo "no-git")$(if $(KOSMOS_DIRTY),-dirty,)
 KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
                         2>/dev/null || echo "unknown")
 
