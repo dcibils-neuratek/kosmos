@@ -48,10 +48,11 @@ local frames = 0
 local started = sys.ticks()
 
 --
--- A colour that moves. Integer arithmetic on purpose: the kernel is built
--- with -mgeneral-regs-only and does not save FP registers on a context
--- switch, and while a *process* may use them, staying integer here keeps
--- the demo honest about what the system actually guarantees.
+-- A colour that moves. Integer arithmetic, though no longer because it has
+-- to be: the context switch saves the whole FP register file now, so a
+-- process may use doubles freely and `cube3d` does. Integer here because a
+-- colour ramp is integer arithmetic and reaching for a double to compute
+-- one would be the affectation, not the discipline.
 --
 local function band_colour(i, t)
   local a = (i * 7 + t * 3) % 512

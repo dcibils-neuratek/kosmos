@@ -1397,6 +1397,91 @@ def check_direct(guest):
     return 2
 
 
+def check_3d(guest):
+    """A solid object, rendered in software, into a shared surface.
+
+    The check that says the renderer works and not merely that it runs.
+    Three things, and the middle one is the one that would be missed by
+    looking at a screenshot and nodding:
+
+      * the window holds face colours from the cube's palette, so triangles
+        were actually filled;
+      * **no more than three of the six faces appear at once**, because a
+        cube cannot show a fourth. Back-face culling is one comparison - the
+        sign of a cross product - and getting it backwards draws the far
+        faces instead of the near ones, which still looks like a cube, still
+        rotates, and is wrong. The face count is what tells the two apart;
+      * it changes between two pictures, so it is rotating rather than
+        showing one pose.
+
+    The colours come from `g3d.cube` in user/lib/g3d.lua. If that palette
+    changes this has to change with it, which is the price of checking
+    something specific instead of "there are several colours".
+    """
+    FACES = {
+        (0x3a, 0x5f, 0x8f), (0x5a, 0x7f, 0xbf), (0x2a, 0x4f, 0x7f),
+        (0x6a, 0x8f, 0xcf), (0x4a, 0x6f, 0x9f), (0x7a, 0x9f, 0xdf),
+    }
+
+    guest.type("wm cube3d")
+    time.sleep(12)
+
+    # The window is opened at 180,100 and is 400x320.
+    x0, y0, x1, y1 = 190, 140, 570, 400
+
+    def faces_on_screen():
+        width, height, px = parse_ppm(guest.screendump())
+        seen = set()
+
+        for y in range(y0, y1, 3):
+            for x in range(x0, x1, 3):
+                at = (y * width + x) * 3
+                seen.add(tuple(px[at:at + 3]))
+
+        return seen & FACES, px, width
+
+    first, before, width = faces_on_screen()
+
+    if not first:
+        raise Failure(
+            "the cube window has none of the cube's face colours in it, so "
+            "no triangle was filled. Either the shared surface never "
+            "arrived or surface:triangle drew nothing."
+        )
+
+    if len(first) > 3:
+        raise Failure(
+            f"{len(first)} of the cube's six faces are visible at once, and "
+            "a cube can show three. The back-face test has the wrong sign, "
+            "so the far faces are being drawn instead of the near ones - "
+            "which still looks like a rotating cube from across the room."
+        )
+
+    time.sleep(2)
+    _, after, _ = faces_on_screen()
+
+    if after == before:
+        raise Failure("the cube is not rotating; every frame is the same.")
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from cube3d.")
+
+    return 3
+
+
 def check_terminal(guest):
     """A program runs inside a window, and prints into it.
 
@@ -2028,6 +2113,7 @@ def main():
         script_checks = check_scripting(guest)
         idle_checks = check_idle(guest)
         direct_checks = check_direct(guest)
+        three_d_checks = check_3d(guest)
         terminal_checks = check_terminal(guest)
         deskbar_checks = check_deskbar(guest)
         click_checks = check_clicks(guest)
@@ -2050,7 +2136,8 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + idle_checks + terminal_checks + direct_checks)
+             + idle_checks + terminal_checks + direct_checks
+             + three_d_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -2070,7 +2157,8 @@ def main():
           f"{deskbar_checks} on starting an application from the Deskbar, "
           f"{idle_checks} on an idle desktop being idle, "
           f"{terminal_checks} on a program printing into a terminal window, "
-          f"{direct_checks} on an application drawing its own pixels).")
+          f"{direct_checks} on an application drawing its own pixels, "
+          f"{three_d_checks} on a software-rendered solid).")
     return 0
 
 

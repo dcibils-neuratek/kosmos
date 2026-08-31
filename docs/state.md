@@ -46,6 +46,19 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A software 3D renderer.** `wm cube3d`: a solid, shaded, rotating cube at
+  about 42 fps, drawn into a surface shared with the compositor. The split
+  is the point - `surface:triangle` is the only new C, because it runs once
+  per pixel; the matrices, the projection, the back-face test and the depth
+  sort are all Lua in `/lib/g3d.lua`, because they run once per vertex. A
+  cube is 12 triangles and tens of thousands of pixels, which is why that is
+  not a close call.
+
+- **Preemption preserves the whole FP register file.** The switch saved
+  `d8`-`d15`, which is right for a thread that *called* it and wrong for one
+  interrupted between two instructions. Silent wrong numbers, never a crash.
+  A software renderer would have been the first thing to hit it constantly.
+
 - **Shared-memory surfaces.** `sys.memory(pages)` makes a region, the
   capability travels in an ordinary message, and both sides map the same
   pages. An application draws straight into the surface the compositor
@@ -514,6 +527,20 @@ Two fixture blobs went with it. `user/hello.S` and `user/faulty.S` are what the 
 At M4 that is replaced by the real arrangement: the kernel in TTBR1 at the top, TTBR0 belonging entirely to the process, and a space containing no kernel at all.
 
 ## Decisions taken while implementing (this session)
+
+**2026-08-31 — A preempted thread needs the whole FP register file, and the switch is the place to save it.** `context_switch` saved `d8`-`d15`: the callee-saved set, and the correct answer for a thread that called it, because the compiler has already spilled the rest. A preempted thread called nothing. Two kernel threads holding a known value in `d0` across a spin longer than a quantum lost it on **14 preemptions out of 14**; after the fix, 0 out of 14.
+
+Saved in the switch rather than on the exception path, because the kernel's own C is `-mgeneral-regs-only` and cannot touch an FP register - so by the time the switch runs the values are still exactly what the interrupted thread left, and a switch is far rarer than an exception. Full 128-bit `q` registers plus `fpcr`/`fpsr`: userland is not built `-mgeneral-regs-only`, so saving only what Lua's arithmetic obviously needs would be the same bug one layer down.
+
+It costs `context_switch` 7.187 -> 9.812 and `ipc_roundtrip` 31.001 -> 36.251, both recorded rather than hidden. Lazy FP save is on the roadmap at M10 to get it back, with the caveat that it wins on switches between threads that do not touch FP and nearly every thread here runs Lua.
+
+**The first version of that test passed with the bug.** Its spin was shorter than a 100 ms quantum, so it was never actually preempted. It now asserts the preemptions happened, and the same lesson as the arrow keys applies: a test that does not exercise the path is a test that agrees with you.
+
+**2026-08-31 — Face winding is computed, not written by hand.** The first `g3d.cube` had four of its six faces wound the wrong way. On screen that is a cube showing *four* faces at once, which a cube cannot do - and the version where all six are backwards shows three, rotates, shades correctly, and is inside out. Neither is visible in a screenshot.
+
+So `g3d.orient` derives it: for each triangle the right-handed normal either points toward the centre of the mesh or away, and those are exactly the two windings. The faces list only has to name the right corners. Exact for a convex mesh centred on the origin, which is stated where it is defined, because a teapot is neither.
+
+The test that pins it is not the display check. A display check sees three faces whether the near ones or the far ones are drawn; the Lua test puts the cube in a known pose and asserts *which* face is in the middle of the picture, then turns it half a turn and asserts the opposite one is. Reverting the cull sign makes it report the far face's colour by name.
 
 **2026-08-31 — A shared region is mapped in its own address window, because a range is what says who frees the pages.** Shared regions went into the window `SYS_MAP` hands out. A process frees everything still mapped in that window when it exits, on the grounds that it allocated it - so two processes mapping one region freed its pages twice, and the second one panicked the machine with `pmm_free_page: double free`. Opening `plasma` and pressing Control-C was enough.
 

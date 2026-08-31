@@ -50,6 +50,8 @@ local R_NO_SCREEN    = 26
 local R_TEXT         = 27
 local R_SHARE_MAIN   = 28
 local R_SHARE_PEER   = 29
+local R_TRIANGLE     = 30
+local R_G3D          = 31
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -750,6 +752,154 @@ if role == R_SHARE_PEER then
 
   -- Exits still holding the region mapped, on purpose. A peer that tidied up
   -- first would not exercise the path that broke.
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- The triangle rasteriser.
+--
+-- The primitive the 3D engine rests on, and the one whose mistakes are
+-- invisible in a screenshot: a seam between two faces is one column of
+-- background pixels, and at 30 frames a second it reads as flicker rather
+-- than as a gap.
+
+if role == R_TRIANGLE then
+  local BG, FG = 0xff000000, 0xffffffff
+  local s = gfx.surface { w = 16, h = 16 }
+
+  -- Inside and outside. A right triangle with the square corner at the
+  -- origin: near that corner is in, the far corner is not.
+  s:fill(0, 0, 16, 16, BG)
+  s:triangle(0, 0, 16, 0, 0, 16, FG)
+  check(s:get(1, 1) == FG, "a point inside the triangle was not filled")
+  check(s:get(14, 14) == BG, "a point outside the triangle was filled")
+
+  -- Two triangles making a quad cover it exactly: no seam down the
+  -- diagonal, and no row or column missed at the edges. This is the check
+  -- that says the fill rule is pixel centres and not something that happens
+  -- to look right for one triangle.
+  s:fill(0, 0, 16, 16, BG)
+  s:triangle(0, 0, 16, 0, 16, 16, FG)
+  s:triangle(0, 0, 16, 16, 0, 16, FG)
+
+  for y = 0, 15 do
+    for x = 0, 15 do
+      check(s:get(x, y) == FG,
+            ("the quad has a hole at %d,%d"):format(x, y))
+    end
+  end
+
+  -- Degenerate: three collinear points have no area and must draw nothing
+  -- rather than divide by a zero height.
+  s:fill(0, 0, 16, 16, BG)
+  s:triangle(0, 8, 8, 8, 15, 8, FG)
+  check(s:get(8, 8) == BG, "a triangle with no height drew something")
+
+  -- Entirely off each edge, and far larger than the surface. None of these
+  -- may write outside it; the only way to see that from here is that
+  -- nothing faults and the surface survives.
+  s:triangle(-100, -100, -50, -100, -100, -50, FG)
+  s:triangle(100, 100, 150, 100, 100, 150, FG)
+  s:triangle(-1000, -1000, 1000, -1000, 0, 1000, FG)
+  check(s:get(15, 15) ~= nil, "the surface did not survive a huge triangle")
+
+  -- A vertex left of the screen: the span has to start at column 0, not at
+  -- whatever truncation toward zero produces for a negative edge.
+  s:fill(0, 0, 16, 16, BG)
+  s:triangle(-8, 0, 8, 0, 8, 16, FG)
+  check(s:get(0, 1) == FG, "a triangle crossing the left edge left a gap")
+
+  s:free()
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- The 3D engine's orientation.
+--
+-- Which faces of a solid you can see is the one thing about a renderer that
+-- looks right while being exactly wrong. Cull with the sign the wrong way
+-- round and you draw the *far* faces: still a cube, still rotating, still
+-- shaded, and inside out. Nothing in a screenshot says so.
+--
+-- So this pins it down with a known pose and a known answer. The camera is
+-- on the -z axis, the cube is not rotated, and the face at z = -h is
+-- therefore the one filling the middle of the picture. Turn it half a turn
+-- and the opposite face must be there instead.
+--
+-- The face-count check catches the other half of the same problem: windings
+-- that disagree with each other rather than all being backwards. A cube
+-- shows three faces at most, and the first version of `g3d.cube` had four
+-- of the six wound the wrong way and showed four.
+
+if role == R_G3D then
+  -- `use` belongs to the program runner and this chunk is not a program, so
+  -- the library is loaded from the same table `/lib` serves. It needs
+  -- nothing but `math`, which every Lua state has.
+  -- `sys.libraries` hands back the *source of a chunk* that returns the
+  -- table, which is the same shape `sys.programs` has and the same reason:
+  -- what the image carries is Lua text, not a built table.
+  local libs = assert(load(sys.libraries(), "libraries"))()
+  local source = libs["g3d.lua"]
+  check(source, "the image does not carry g3d.lua")
+
+  local g3d = assert(load(source, "g3d.lua"))()
+
+  local NEAR = 0xff3a5f8f       -- g3d.cube's z = -h face
+  local FAR  = 0xff5a7fbf       -- and z = +h
+  local BG   = 0xff000000
+  local N    = 64
+
+  local s = gfx.surface { w = N, h = N }
+  local mesh = g3d.cube(1.6)
+  local scratch = g3d.scratch()
+
+  local view_proj = g3d.multiply(
+    g3d.look_at({ 0, 0, -4.5 }, { 0, 0, 0 }, { 0, 1, 0 }),
+    g3d.perspective(math.pi / 4, 1, 0.1, 100))
+
+  local function draw(model)
+    s:fill(0, 0, N, N, BG)
+    g3d.render(s, mesh, g3d.multiply(model, view_proj), N, N, scratch)
+  end
+
+  local function faces_shown()
+    local seen = {}
+    local n = 0
+
+    for y = 0, N - 1, 2 do
+      for x = 0, N - 1, 2 do
+        local c = s:get(x, y)
+
+        if c ~= BG and not seen[c] then
+          seen[c] = true
+          n = n + 1
+        end
+      end
+    end
+
+    return n
+  end
+
+  draw(g3d.identity())
+  check(s:get(N // 2, N // 2) == NEAR,
+        ("the face toward the camera is not the one drawn: got %08x, want %08x")
+        :format(s:get(N // 2, N // 2), NEAR))
+  check(faces_shown() == 1,
+        "head on, a cube shows one face and this showed " .. faces_shown())
+
+  -- Half a turn: the far face is now the near one.
+  draw(g3d.rotation_y(math.pi))
+  check(s:get(N // 2, N // 2) == FAR,
+        "after half a turn the opposite face is not the one facing the camera")
+
+  -- And at an angle, three at most - never four.
+  draw(g3d.multiply(g3d.rotation_x(0.6), g3d.rotation_y(0.7)))
+  local n = faces_shown()
+  check(n >= 2 and n <= 3,
+        ("a cube turned to a corner shows two or three faces, not %d - the "
+         .. "windings disagree with each other"):format(n))
+
+  s:free()
   sys.exit(0)
 end
 

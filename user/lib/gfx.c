@@ -340,6 +340,129 @@ static int l_fill(lua_State *L)
     return 0;
 }
 
+/*
+ * A filled triangle.
+ *
+ * The one primitive the 3D engine needs that the others could not fake. A
+ * rasteriser written in Lua would compute a pixel offset per pixel, which is
+ * the rule `CLAUDE.md` states twice and the reason `l_span` above exists.
+ * Everything the engine decides - where the vertices are, which faces to
+ * draw, what colour each one is - stays in Lua. This fills the pixels.
+ *
+ * Doubles rather than fixed point. Userland is not built
+ * -mgeneral-regs-only, the vertices arrive from Lua as doubles already, and
+ * converting them to fixed point to avoid a cost that has not been measured
+ * is the optimisation `CLAUDE.md` asks for a profile before.
+ *
+ * The fill rule is pixel centres: a pixel belongs to the triangle when its
+ * centre does. Two triangles sharing an edge therefore meet without a seam
+ * and without drawing the shared column twice, which matters as soon as a
+ * mesh has more than one face and shows up as flickering along the joins.
+ */
+static long ifloor(double v)
+{
+    long i = (long)v;
+
+    /* Truncation goes toward zero, which is not the floor for negatives -
+     * and a vertex left of the screen is the normal case, not an error. */
+    return (v < (double)i) ? i - 1 : i;
+}
+
+static void fill_span(struct surface *s, long y, double xa, double xb,
+                      uint32_t colour)
+{
+    long x0, x1;
+    uint32_t *p;
+
+    if (xa > xb) {
+        double t = xa; xa = xb; xb = t;
+    }
+
+    /* Centres again: the first centre at or right of xa, the last one left
+     * of xb. `ceil(v)` is `-floor(-v)`; there is no libm here. */
+    x0 = -ifloor(-(xa - 0.5));
+    x1 = -ifloor(-(xb - 0.5)) - 1;
+
+    if (x0 < 0) {
+        x0 = 0;
+    }
+
+    if (x1 >= (long)s->width) {
+        x1 = (long)s->width - 1;
+    }
+
+    if (x1 < x0) {
+        return;
+    }
+
+    p = row_of(s, (unsigned)y);
+
+    for (; x0 <= x1; x0++) {
+        p[x0] = colour;
+    }
+}
+
+static int l_triangle(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    double vx[3], vy[3];
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 8);
+    unsigned a = 0, b = 1, c = 2, t;
+    long y, y_first, y_last;
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        vx[i] = (double)luaL_checknumber(L, 2 + i * 2);
+        vy[i] = (double)luaL_checknumber(L, 3 + i * 2);
+    }
+
+    /* Sorted by y, as indices, so the coordinates are not copied around. */
+    if (vy[a] > vy[b]) { t = a; a = b; b = t; }
+    if (vy[b] > vy[c]) { t = b; b = c; c = t; }
+    if (vy[a] > vy[b]) { t = a; a = b; b = t; }
+
+    if (vy[c] - vy[a] <= 0.0) {
+        return 0;               /* zero height: nothing to fill */
+    }
+
+    y_first = -ifloor(-(vy[a] - 0.5));
+    y_last  = -ifloor(-(vy[c] - 0.5)) - 1;
+
+    if (y_first < 0) {
+        y_first = 0;
+    }
+
+    if (y_last >= (long)s->height) {
+        y_last = (long)s->height - 1;
+    }
+
+    for (y = y_first; y <= y_last; y++) {
+        double cy = (double)y + 0.5;
+        double xl, xs;
+
+        /* The long edge, a to c, is present for every row. */
+        xl = vx[a] + (vx[c] - vx[a]) * (cy - vy[a]) / (vy[c] - vy[a]);
+
+        if (cy < vy[b]) {
+            if (vy[b] - vy[a] <= 0.0) {
+                continue;       /* flat top: this half does not exist */
+            }
+
+            xs = vx[a] + (vx[b] - vx[a]) * (cy - vy[a]) / (vy[b] - vy[a]);
+        } else {
+            if (vy[c] - vy[b] <= 0.0) {
+                continue;       /* flat bottom, likewise */
+            }
+
+            xs = vx[b] + (vx[c] - vx[b]) * (cy - vy[b]) / (vy[c] - vy[b]);
+        }
+
+        fill_span(s, y, xl, xs, colour);
+    }
+
+    return 0;
+}
+
 static int l_span(lua_State *L)
 {
     /* One row. Separate from fill because a rasteriser emits spans and
@@ -592,6 +715,7 @@ static const luaL_Reg surface_methods[] = {
     { "pitch",  l_pitch },
     { "fill",   l_fill },
     { "span",   l_span },
+    { "triangle", l_triangle },
     { "blit",   l_blit },
     { "blend",  l_blend },
     { "text",   l_text },

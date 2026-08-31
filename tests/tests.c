@@ -2448,6 +2448,9 @@ static bool test_gfx_text(void)                        { return luatest_role(27)
  * region leaked its pages every time a window opened, which is the failure
  * that has no symptom until the machine runs out.
  */
+static bool test_gfx_triangles(void)                   { return luatest_role(30); }
+static bool test_g3d_orientation(void)                 { return luatest_role(31); }
+
 static bool test_shared_memory_is_freed_once(void)
 {
     size_t before = pmm_free_pages();
@@ -3325,6 +3328,8 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "gfx: triangles fill and meet",          test_gfx_triangles },
+    { "3d: the near faces are the drawn ones", test_g3d_orientation },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
