@@ -2428,6 +2428,38 @@ static bool test_a_process_without_the_screen(void)    { return luatest_role(26)
 static bool test_gfx_text(void)                        { return luatest_role(27); }
 
 /*
+ * Shared memory: two processes on one set of pages, and the pages back
+ * afterwards.
+ *
+ * The page count is the whole point of doing this here rather than inside
+ * the role. A region's pages are freed when the last capability to it is
+ * dropped, and the last capability is dropped when the last of the two
+ * processes is reaped - so nothing running inside either of them can see
+ * the number that matters. From out here both are gone.
+ *
+ * What it catches, in the form it caught it: shared regions used to be
+ * mapped in the window `SYS_MAP` hands out, whose pages a process frees on
+ * the way out because it allocated them. Two processes mapping one region
+ * freed its pages twice. The panic was the lucky outcome - the pages could
+ * as easily have been handed to somebody else while the other process was
+ * still drawing into them.
+ *
+ * An equality, not a bound. "No worse than before" would pass while a
+ * region leaked its pages every time a window opened, which is the failure
+ * that has no symptom until the machine runs out.
+ */
+static bool test_shared_memory_is_freed_once(void)
+{
+    size_t before = pmm_free_pages();
+
+    if (!luatest_role(28)) {
+        return false;
+    }
+
+    return pmm_free_pages() == before;
+}
+
+/*
  * The one role the process cannot drive on its own.
  *
  * `roadmap.md` calls this M3's trap: a server blocked in receive has to be
@@ -3199,6 +3231,7 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },

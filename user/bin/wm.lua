@@ -388,7 +388,15 @@ local function compose_rect(r)
       local y1 = math.min(win.y + win.h, r.y + r.h)
 
       if x1 > x0 and y1 > y0 then
-        back:blit(win.surface, x0 - win.x, y0 - win.y,
+        -- Whichever buffer the application is not drawing into, or the
+        -- surface this process owns for an ordinary window.
+        local from = win.surface
+
+        if win.shared then
+          from = win.shared[win.shared.live]
+        end
+
+        back:blit(from, x0 - win.x, y0 - win.y,
                   x1 - x0, y1 - y0, x0, y0)
       end
     end
@@ -435,7 +443,36 @@ end
 
 local handlers = {}
 
-handlers.open = function(req)
+--------------------------------------------------------------------------
+-- A window whose pixels the application draws itself.
+--
+-- `gfx.md` 19.4. Everything else here sends drawing *commands* and this
+-- process owns every pixel, which is what lets a hung application keep a
+-- window. That is right for a window of widgets and wrong for a video
+-- frame or a rendered scene, where the pixels change wholesale thirty
+-- times a second and describing them costs more than copying them.
+--
+-- So an application may hand over a region of memory instead. It draws into
+-- that region with the same C primitives everything else uses, and says
+-- when it is finished.
+--
+-- **Two buffers and an index, because there are no locks.** If the
+-- application wrote the buffer while this process read it there would be
+-- tearing and nothing to prevent it - `design.md` 6 has no locks and is not
+-- getting any. So the region holds two, the application draws into the one
+-- that is not being shown, and `commit` swaps which is which. Neither side
+-- ever touches the buffer the other is using.
+--
+-- **Damage is part of the commit, not a separate call.** Without it this
+-- process would have to blit the whole surface every frame, which is the
+-- cost the whole arrangement exists to avoid. Making it a field of the
+-- message rather than another message makes it hard to forget.
+--
+-- **An application that never commits is composed from its last frame.**
+-- The hung-window property is unchanged: nothing here waits.
+--------------------------------------------------------------------------
+
+handlers.open = function(req, who, cap)
   local w_ = math.min(math.max(tonumber(req.w) or 320, 32), W - 8)
   local h_ = math.min(math.max(tonumber(req.h) or 200, 32), H - TAB_H - 8)
 
@@ -451,6 +488,32 @@ handlers.open = function(req)
   }
 
   win.surface:fill(0, 0, w_, h_, 0xff202020)
+
+  --
+  -- A shared region came with the request, so this window's contents are
+  -- the application's own memory rather than a surface this process draws
+  -- into. Two buffers in one region, and `live` says which one is being
+  -- shown - `gfx.md` 19.4.
+  --
+  if cap and cap >= 0 then
+    local at, why = sys.memory_map(cap)
+
+    if at then
+      local bytes = gfx.bytes(w_, h_)
+
+      win.shared = {
+        cap = cap,
+        [1] = gfx.wrap{ at = at, w = w_, h = h_ },
+        [2] = gfx.wrap{ at = at + bytes, w = w_, h = h_ },
+        live = 1,
+      }
+    else
+      -- Said rather than silently ignored. A window that quietly refuses a
+      -- shared surface is a window that opens, stays blank, and gives the
+      -- application no idea why - which is how this arrived the first time.
+      print("wm: could not map a shared surface: " .. tostring(why))
+    end
+  end
 
   -- Whoever was launched most recently, if this is their first window.
   win.pid = pending_pid
@@ -595,6 +658,35 @@ handlers.image_size = function(req)
 
   local w_, h_ = picture:size()
   return { ok = true, w = w_, h = h_ }
+end
+
+--
+-- The application has finished a frame.
+--
+-- Swaps which buffer is shown and damages what it said changed. Nothing is
+-- copied: the compositor simply reads the other one from now on.
+--
+handlers.commit = function(req)
+  local win = by_handle[req.window]
+
+  if not win or not win.shared then
+    return { ok = false, error = "that window does not have a shared surface" }
+  end
+
+  win.shared.live = (win.shared.live == 1) and 2 or 1
+
+  local x = math.max(0, math.floor(tonumber(req.x) or 0))
+  local y = math.max(0, math.floor(tonumber(req.y) or 0))
+  local w_ = math.min(win.w - x, math.floor(tonumber(req.w) or win.w))
+  local h_ = math.min(win.h - y, math.floor(tonumber(req.h) or win.h))
+
+  if w_ > 0 and h_ > 0 then
+    add_damage(win.x + x, win.y + y, w_, h_)
+  end
+
+  -- The buffer the application should draw into next: the one this process
+  -- has just stopped showing.
+  return { ok = true, draw_into = win.shared.live == 1 and 2 or 1 }
 end
 
 handlers.retitle = function(req)
@@ -1067,7 +1159,14 @@ while running do
   -- 2. Whatever the applications have asked for, and not one message more
   -- than has already arrived.
   while true do
-    local req, who = sys.receive(ep, true)
+    --
+    -- The third value is a capability that came *with* the request, at
+    -- whatever index the kernel put it in this process's table. Only `open`
+    -- uses it, to receive the shared region a direct window draws into -
+    -- and forgetting to take it here is exactly how that arrived as a
+    -- window that opened and stayed blank.
+    --
+    local req, who, cap = sys.receive(ep, true)
     if not req then break end
 
     local handler = handlers[req.type]
@@ -1076,7 +1175,7 @@ while running do
     if not handler then
       reply = { ok = false, error = "no such operation: " .. tostring(req.type) }
     else
-      local ok, result = pcall(handler, req, who)
+      local ok, result = pcall(handler, req, who, cap)
       reply = ok and result or { ok = false, error = tostring(result) }
     end
 

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 struct thread;
+struct memobj;
 
 /*
  * Synchronous IPC, and the capability table that names it.
@@ -142,6 +143,14 @@ void ipc_init(void);
 /* Unblocks a thread and unlinks it from whatever queue it was on.
  * For killing: a blocked thread cannot notice anything by itself. */
 void ipc_abort(struct thread *t);
+
+/* Capabilities to shared memory: the same two operations endpoints have. */
+struct memobj *ipc_resolve_memory(struct thread *t, cap_t index);
+cap_t ipc_install_memory(struct thread *t, struct memobj *m);
+
+/* Drops everything a thread holds. Only memory needs it - an endpoint
+ * capability going stale is harmless, a region's pages are not. */
+void ipc_caps_release(struct thread *t);
 
 /*
  * A new endpoint, with a capability to it installed in the calling thread.

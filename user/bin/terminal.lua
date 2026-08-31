@@ -204,6 +204,17 @@ end
 
 --------------------------------------------------------------------------
 
+--
+-- This window answers its children, so it cannot sleep a second between
+-- passes: a program's `write` blocks until this loop gets to it, and `ls`
+-- came out one line a second because of exactly that.
+--
+-- One scheduler tick. Input is still interrupt-driven and arrives sooner
+-- than that; this is only the ceiling on how long a program waits to be
+-- answered.
+--
+win.poll_wait = 1
+
 win:add(view)
 
 function win:on_key(c)

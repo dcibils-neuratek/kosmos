@@ -270,6 +270,7 @@ struct process *process_create(const char *name, const void *image,
     }
 
     p->next_map     = USER_MAP_VA;
+    p->next_share   = USER_SHARE_VA;
     p->mapped_pages = 0;
 
     if (as_map(p->space, USER_HEAP_VA, (uintptr_t)p->heap_pages,
@@ -543,6 +544,7 @@ static void release_memory(struct process *p)
     }
 
     p->next_map     = USER_MAP_VA;
+    p->next_share   = USER_SHARE_VA;
     p->mapped_pages = 0;
 
     as_destroy(p->space);
@@ -602,6 +604,14 @@ void process_exit(struct process *p, int code)
     as_switch(NULL);
     thread_current()->process = NULL;
     thread_current()->space = NULL;
+
+    /*
+     * Capabilities before memory. A shared region's pages come back only
+     * when the last capability naming it is dropped, and this thread's are
+     * about to stop existing - so a process that exits holding one would
+     * leak it for the life of the machine.
+     */
+    ipc_caps_release(thread_current());
 
     release_memory(p);
     p->thread = NULL;

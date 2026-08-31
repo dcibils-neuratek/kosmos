@@ -1317,6 +1317,86 @@ def check_idle(guest):
     return 1
 
 
+def check_direct(guest):
+    """An application drawing its own pixels, into memory both sides map.
+
+    `gfx.md` 19.4, working. `plasma` opens a window with `direct = true`,
+    which allocates a region big enough for two copies of the surface, sends
+    the *capability* to it in the open message, and from then on writes
+    pixels rather than sending commands. `commit` swaps which buffer is
+    shown and says what changed.
+
+    Two things are checked, and the second is the point:
+
+      * the window has colour in it, so the compositor really is reading
+        the application's memory - nothing was copied and no drawing
+        command was sent;
+      * it *changes* between two pictures, so the buffers are being swapped
+        rather than one being shown for ever.
+
+    A single frame would pass the first check on its own, which is why the
+    second exists: the failure this guards against is a commit that damages
+    the right rectangle and never actually swaps.
+    """
+    guest.type("wm plasma")
+    time.sleep(12)
+
+    width, height, before = parse_ppm(guest.screendump())
+
+    # The window is opened at 140,120 and is 420x300.
+    x0, y0, w, h = 150, 140, 400, 260
+
+    def sample(px):
+        out = []
+
+        for y in range(y0, y0 + h, 8):
+            for x in range(x0, x0 + w, 8):
+                at = (y * width + x) * 3
+                out.append(px[at:at + 3])
+
+        return out
+
+    first = sample(before)
+    distinct = len(set(first))
+
+    if distinct < 8:
+        raise Failure(
+            f"the plasma window has only {distinct} distinct colours in it, "
+            "so the compositor is not reading the application's memory. "
+            "Either the shared region never reached it - the capability "
+            "travels in the open message and is easy to drop - or the "
+            "commit is not swapping."
+        )
+
+    time.sleep(2)
+    _, _, after = parse_ppm(guest.screendump())
+
+    if sample(after) == first:
+        raise Failure(
+            "the plasma window is not changing. The application is drawing "
+            "and committing, so the buffers are not being swapped: the "
+            "compositor is showing one of the two for ever."
+        )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from plasma.")
+
+    return 2
+
+
 def check_terminal(guest):
     """A program runs inside a window, and prints into it.
 
@@ -1947,6 +2027,7 @@ def main():
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
         idle_checks = check_idle(guest)
+        direct_checks = check_direct(guest)
         terminal_checks = check_terminal(guest)
         deskbar_checks = check_deskbar(guest)
         click_checks = check_clicks(guest)
@@ -1969,7 +2050,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + idle_checks + terminal_checks)
+             + idle_checks + terminal_checks + direct_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1988,7 +2069,8 @@ def main():
           f"{click_checks} on the widgets under the pointer, "
           f"{deskbar_checks} on starting an application from the Deskbar, "
           f"{idle_checks} on an idle desktop being idle, "
-          f"{terminal_checks} on a program printing into a terminal window).")
+          f"{terminal_checks} on a program printing into a terminal window, "
+          f"{direct_checks} on an application drawing its own pixels).")
     return 0
 
 

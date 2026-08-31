@@ -200,6 +200,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | Presentation via double buffering and an explicit `commit` with mandatory damage. No locks | gfx.md §19.4 |
 | Aug 2026 | Shared memory mapped inner shareable, no manual `DC` per frame | gfx.md §19.5 |
 | Aug 2026 | Surfaces need an explicit `free` plus a `__gc` safety net, and the GC must be told the real size | gfx.md §19.6 |
+| Aug 2026 | A shared region maps in its own address window, so no exit path frees pages it does not own | gfx.md §19.8 |
+| Aug 2026 | A capability slot carries a kind; one index space for endpoints and memory both | design.md §4.4, state.md |
 | Aug 2026 | Test harness from M0: host-side runner, TAP over serial, exit code via semihosting | testing.md §18.1, roadmap.md M0 |
 | Aug 2026 | QEMU with `-icount` for regressions (deterministic), PMU on hardware for budget. They measure different things | testing.md §18.3 |
 | Aug 2026 | Anything with a frame budget is measured by max and p99, never by average | testing.md §18.5 |

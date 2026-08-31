@@ -622,6 +622,94 @@ static const luaL_Reg surface_methods[] = {
  * program asking whether it has one is asking a reasonable question, and
  * every process but one gets no.
  */
+/*
+ * `gfx.wrap{ at = address, w = , h = }` - a surface over memory somebody
+ * else also has.
+ *
+ * The other half of `sys.memory`. The kernel hands back an address; this
+ * turns it into a surface, and from then on it behaves exactly like any
+ * other - the same `fill`, `blit`, `text` and the same pitch arithmetic, all
+ * of it in C, with no line of Lua computing a pixel offset.
+ *
+ * `owned` is false: these pages belong to the region, not to this surface,
+ * and the region belongs to whoever holds capabilities to it. Freeing the
+ * surface must not free them, or one process could pull the memory out from
+ * under another - which is the whole hazard of sharing and the reason this
+ * flag already existed for the screen.
+ *
+ * The address is not checked, and cannot usefully be: it is a number from
+ * the kernel, and a program that passes a different one has written past its
+ * own mapping, which is a fault it takes itself. That is the same bargain
+ * `gfx.screen` makes.
+ */
+static int l_wrap(lua_State *L)
+{
+    lua_Integer at, width, height;
+    struct surface *s;
+    unsigned pitch;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    lua_getfield(L, 1, "at");
+    at = luaL_checkinteger(L, -1);
+    lua_getfield(L, 1, "w");
+    width = luaL_checkinteger(L, -1);
+    lua_getfield(L, 1, "h");
+    height = luaL_checkinteger(L, -1);
+    lua_pop(L, 3);
+
+    if (at == 0 || width <= 0 || height <= 0) {
+        return luaL_error(L, "gfx.wrap needs an address and a size");
+    }
+
+    if (width > 16384 || height > 16384) {
+        return luaL_error(L, "that surface is larger than this system allows");
+    }
+
+    /*
+     * The same padded pitch a created surface gets, so that a wrapped one
+     * and an allocated one are the same shape and a caller cannot tell them
+     * apart - which is what lets the compositor treat both alike.
+     */
+    pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
+
+    s = lua_newuserdatauv(L, sizeof(*s), 0);
+    s->pixels = (uint32_t *)(uintptr_t)at;
+    s->width  = (unsigned)width;
+    s->height = (unsigned)height;
+    s->pitch  = pitch;
+    s->bytes  = (size_t)pitch * (size_t)height;
+    s->pages  = 0;
+    s->owned  = false;          /* the region's, not ours */
+
+    luaL_setmetatable(L, SURFACE_MT);
+    return 1;
+}
+
+/*
+ * How many bytes a surface of this size needs, so a caller can ask the
+ * kernel for the right number of pages.
+ *
+ * Here rather than in Lua because it is pitch arithmetic, and `gfx.md` 19.3
+ * is that no line of Lua computes a pixel offset - including the one that
+ * works out how many there are.
+ */
+static int l_surface_bytes(lua_State *L)
+{
+    lua_Integer width = luaL_checkinteger(L, 1);
+    lua_Integer height = luaL_checkinteger(L, 2);
+    unsigned pitch;
+
+    if (width <= 0 || height <= 0) {
+        return luaL_error(L, "a surface needs a positive width and height");
+    }
+
+    pitch = (unsigned)(((width * 4) + (ROW_ALIGN - 1)) & ~(long)(ROW_ALIGN - 1));
+
+    lua_pushinteger(L, (lua_Integer)((size_t)pitch * (size_t)height));
+    return 1;
+}
+
 static int l_screen(lua_State *L)
 {
     struct screen_info info;
@@ -648,6 +736,8 @@ static int l_screen(lua_State *L)
 
 static const luaL_Reg gfx_functions[] = {
     { "surface", l_new },
+    { "wrap",    l_wrap },
+    { "bytes",   l_surface_bytes },
     { "screen",  l_screen },
     { NULL, NULL }
 };

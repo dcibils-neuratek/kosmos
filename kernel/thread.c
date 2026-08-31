@@ -374,7 +374,7 @@ unsigned thread_cap_count(const struct thread *t)
     }
 
     for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].endpoint != NULL) {
+        if (t->caps[i].kind != CAP_NONE) {
             n++;
         }
     }

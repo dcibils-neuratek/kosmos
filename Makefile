@@ -92,6 +92,7 @@ SRCS := boot/start.S \
         kernel/thread.c \
         kernel/sched_rr.c \
         kernel/ipc.c \
+        kernel/memobj.c \
         kernel/process.c \
         kernel/syscall.c \
         kernel/main.c \
@@ -581,11 +582,33 @@ dist: $(TARGET)
 # and the font are inside it. A copy of this file and `run-kosmos.sh` are
 # the whole of what has to travel.
 #
+#
+# One image per display size.
+#
+# The framebuffer is a static array, so its size is a compile-time constant
+# and a different size is a different image. That is a consequence of having
+# no allocator rather than a choice, and it costs one recompile of one file
+# and a relink each - the flag is on that file's own compile line, so
+# nothing else rebuilds.
+#
+# Changing it while the machine runs is a different question and is written
+# up in hal.md: every process that called `gfx.screen()` is holding a
+# mapping of a particular length, and a mode change is a protocol none of
+# them speak yet.
+#
+RELEASE_SIZES := 1024x768 1280x800 1920x1080
+
 release: $(TARGET)
 	@mkdir -p builds
-	@cp $(TARGET) builds/kosmos-$(VERSION)-$(KOSMOS_BUILD).elf
+	@for size in $(RELEASE_SIZES); do \
+	    rm -f $(BUILD)/hal/qemu-virt/fb.c.o $(TARGET); \
+	    $(MAKE) --no-print-directory FB=$$size $(TARGET) >/dev/null; \
+	    cp $(TARGET) builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size.elf; \
+	    echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size.elf"; \
+	done
+	@rm -f $(BUILD)/hal/qemu-virt/fb.c.o $(TARGET)
+	@$(MAKE) --no-print-directory $(TARGET) >/dev/null
 	@cp run-kosmos.sh builds/run-kosmos.sh
-	@echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD).elf"
 	@ls -l builds/
 
 # Ctrl-A then x to quit QEMU.

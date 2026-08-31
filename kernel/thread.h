@@ -59,6 +59,12 @@
  * is room for a process to have more than one thread, which nothing does yet
  * and the app server will.
  */
+struct memobj;
+
+#define CAP_NONE      0
+#define CAP_ENDPOINT  1
+#define CAP_MEMORY    2
+
 #define THREAD_MAX          48
 #define THREAD_NAME_MAX     16
 
@@ -145,8 +151,21 @@ struct thread {
      * there is no global table and no identifier to guess. At M4 this moves
      * to the process, which is where design.md puts it.
      */
+    /*
+     * A capability names one of two kinds of thing now: an endpoint, or a
+     * region of memory two processes share. The kind is stored rather than
+     * inferred, so a slot holding one can never be read as the other -
+     * which is the mistake a union without a tag invites and which would be
+     * a process handing out a pointer to somebody's pixels as a place to
+     * send messages.
+     *
+     * The generation is checked for both, against the same hazard: a slot
+     * whose object was destroyed and replaced.
+     */
     struct {
+        unsigned char    kind;      /* CAP_NONE, CAP_ENDPOINT, CAP_MEMORY */
         struct endpoint *endpoint;
+        struct memobj   *memory;
         unsigned         generation;
     } caps[CAPS_PER_THREAD];
 

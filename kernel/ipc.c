@@ -5,6 +5,7 @@
 
 #include "ipc.h"
 #include "thread.h"
+#include "memobj.h"
 #include "panic.h"
 
 
@@ -120,6 +121,23 @@ static void message_deliver(struct thread *to, struct thread *from,
 
         if (ep != NULL) {
             message_set_cap(dst, install(to, ep));
+        } else {
+            /*
+             * Or a region of memory, which travels exactly the same way and
+             * for exactly the same reason: an index means something only
+             * inside the table it came from, so it is resolved against the
+             * sender's and installed in the receiver's.
+             *
+             * This is what makes a shared surface shareable without a global
+             * name for it. The compositor creates the region and sends the
+             * capability; the application receives its own index for the
+             * same pages and can map them. Nobody else can name them.
+             */
+            struct memobj *m = ipc_resolve_memory(from, sending);
+
+            if (m != NULL) {
+                message_set_cap(dst, ipc_install_memory(to, m));
+            }
         }
     }
 }
@@ -246,6 +264,10 @@ static struct endpoint *resolve(struct thread *t, cap_t index)
         return NULL;
     }
 
+    if (t->caps[index].kind != CAP_ENDPOINT) {
+        return NULL;            /* empty, or a region of memory */
+    }
+
     ep = t->caps[index].endpoint;
 
     if (ep == NULL || !ep->in_use) {
@@ -264,14 +286,94 @@ static cap_t install(struct thread *t, struct endpoint *ep)
     cap_t i;
 
     for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].endpoint == NULL) {
+        if (t->caps[i].kind == CAP_NONE) {
+            t->caps[i].kind = CAP_ENDPOINT;
             t->caps[i].endpoint = ep;
+            t->caps[i].memory = NULL;
             t->caps[i].generation = ep->generation;
             return i;
         }
     }
 
     return IPC_ERR_NO_SPACE;
+}
+
+/*
+ * The same two operations for a region of memory.
+ *
+ * Deliberately not one pair of functions with a kind argument: the two
+ * kinds have nothing in common except the table they live in, and a shared
+ * `resolve` would return something the caller has to test the type of
+ * anyway - which is where a capability of one kind gets used as the other.
+ */
+struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
+{
+    struct memobj *m;
+
+    if (index < 0 || index >= CAPS_PER_THREAD) {
+        return NULL;
+    }
+
+    if (t->caps[index].kind != CAP_MEMORY) {
+        return NULL;
+    }
+
+    m = t->caps[index].memory;
+
+    if (m == NULL || !m->in_use) {
+        return NULL;
+    }
+
+    if (t->caps[index].generation != m->generation) {
+        return NULL;    /* freed and the slot reused since */
+    }
+
+    return m;
+}
+
+cap_t ipc_install_memory(struct thread *t, struct memobj *m)
+{
+    cap_t i;
+
+    for (i = 0; i < CAPS_PER_THREAD; i++) {
+        if (t->caps[i].kind == CAP_NONE) {
+            t->caps[i].kind = CAP_MEMORY;
+            t->caps[i].endpoint = NULL;
+            t->caps[i].memory = m;
+            t->caps[i].generation = m->generation;
+            memobj_ref(m);
+            return i;
+        }
+    }
+
+    return IPC_ERR_NO_SPACE;
+}
+
+/*
+ * Everything a thread holds, released.
+ *
+ * Only memory needs this. An endpoint capability going stale is harmless -
+ * the generation check catches it - but a region's pages are only freed
+ * when the last capability to it is dropped, so a thread that ends without
+ * dropping its own leaks them for the life of the machine.
+ */
+void ipc_caps_release(struct thread *t)
+{
+    cap_t i;
+
+    if (t == NULL) {
+        return;
+    }
+
+    for (i = 0; i < CAPS_PER_THREAD; i++) {
+        if (t->caps[i].kind == CAP_MEMORY) {
+            memobj_unref(t->caps[i].memory);
+        }
+
+        t->caps[i].kind = CAP_NONE;
+        t->caps[i].endpoint = NULL;
+        t->caps[i].memory = NULL;
+    }
 }
 
 cap_t ipc_endpoint_create(void)
@@ -361,6 +463,7 @@ int ipc_endpoint_destroy(cap_t index)
 
     /* The granter's own capability is cleared; the others go stale on their
      * next use, which is what the generation check is for. */
+    self->caps[index].kind = CAP_NONE;
     self->caps[index].endpoint = NULL;
 
     return IPC_OK;

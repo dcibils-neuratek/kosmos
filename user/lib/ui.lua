@@ -1198,12 +1198,50 @@ end
 function ui.window(spec)
   spec = spec or {}
 
+  --
+  -- `direct = true` asks for a window whose pixels this process draws
+  -- itself, into memory both it and the compositor can see.
+  --
+  -- `gfx.md` 19.4. The ordinary path sends drawing commands and the
+  -- compositor owns every pixel, which is what lets a hung application keep
+  -- a window. This is for the cases where that is the wrong trade - a video
+  -- frame, a rendered scene - where the whole surface changes every frame
+  -- and describing it costs more than copying it.
+  --
+  -- Two buffers in one region: this process draws into the one the
+  -- compositor is not showing, and `commit` swaps them. No locks, because
+  -- neither side ever touches the buffer the other is using.
+  --
+  local shared_cap = nil
+  local region = nil
+
+  if spec.direct then
+    local w_ = spec.w or 400
+    local h_ = spec.h or 240
+    local bytes = gfx.bytes(w_, h_)
+    local pages = (bytes * 2 + 4095) // 4096
+
+    shared_cap = sys.memory(pages)
+
+    if shared_cap then
+      local at = sys.memory_map(shared_cap)
+
+      if at then
+        region = {
+          [1] = gfx.wrap{ at = at, w = w_, h = h_ },
+          [2] = gfx.wrap{ at = at + bytes, w = w_, h = h_ },
+          draw_into = 2,
+        }
+      end
+    end
+  end
+
   local reply, err = fs.send("/dev/wm", {
     type = "open",
     title = spec.title or "window",
     w = spec.w or 400, h = spec.h or 240,
     x = spec.x, y = spec.y,
-  })
+  }, shared_cap)
 
   if not reply then
     return nil, err
@@ -1220,6 +1258,7 @@ function ui.window(spec)
     y = spec.y or 0,
     properties = {},
     dirty = false,
+    region = region,
     ticking = {},
     tick_every = spec.tick_every or 0,
   }, window)
@@ -1272,6 +1311,48 @@ end
 -- A property. `set` may be nil, and then it is read-only - which is the
 -- honest answer for `width` while windows cannot be resized.
 --
+--
+-- The buffer to draw into, for a window opened with `direct = true`.
+--
+-- Never the one being shown. Asking for it again after a `commit` gives the
+-- other one, which is the whole of the double buffering as far as an
+-- application is concerned.
+--
+function window:surface()
+  if not self.region then return nil end
+
+  return self.region[self.region.draw_into]
+end
+
+--
+-- This frame is finished; show it.
+--
+-- The damage rectangle is not optional in spirit - without one the
+-- compositor has to blit the whole surface, which is the cost this whole
+-- arrangement exists to avoid. Omitting it means "all of it" and is there
+-- for the first frame, not for every frame.
+--
+function window:commit(damage)
+  if not self.region then return false end
+
+  damage = damage or { x = 0, y = 0, w = self.root.w, h = self.root.h }
+
+  local reply = fs.send("/dev/wm", {
+    type = "commit", window = self.handle,
+    x = damage.x, y = damage.y, w = damage.w, h = damage.h,
+  })
+
+  if not reply then
+    self.running = false
+    return false
+  end
+
+  self.region.draw_into = reply.draw_into or
+                          ((self.region.draw_into == 1) and 2 or 1)
+
+  return true
+end
+
 function window:publish(name, get, set)
   self.properties[name] = { get = get, set = set }
 end
@@ -1386,6 +1467,13 @@ local function apply_focus(self)
 end
 
 function window:paint()
+  --
+  -- A window whose pixels the application draws has nothing to send. Its
+  -- views, if it has any, would be drawing into the compositor's copy -
+  -- which is not the one on screen.
+  --
+  if self.region then return end
+
   apply_focus(self)
 
   local g = new_gc()
@@ -1527,7 +1615,22 @@ function window:run()
     -- meant every window span for ever, and a desktop with four of them
     -- open sat at ninety-six per cent doing nothing.
     --
-    local wait = self.tick_every or 0
+    --
+    -- How long this window is prepared to wait.
+    --
+    -- A window with nothing to do sleeps until its next tick, which is a
+    -- second, and the machine idles. A window that is also a *server* -
+    -- the terminal - cannot: every `write` from a program it is running
+    -- blocks in `sys.call` until this loop wakes up and answers, so a
+    -- second of sleep is a second per line of output. `ls` came out one
+    -- line at a time, which is not slow, it is a window answering its
+    -- children once a second.
+    --
+    -- `poll_wait` is in scheduler ticks and overrides that. It is not the
+    -- default because it is a real cost: a window that wakes a hundred
+    -- times a second is a window that is running a hundred times a second.
+    --
+    local wait = self.poll_wait or self.tick_every or 0
 
     if wait <= 0 then
       local cpu = fs.read("/dev/cpu")

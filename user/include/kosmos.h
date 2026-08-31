@@ -249,6 +249,29 @@ static inline long kosmos_receive(long cap, struct message *msg,
                 (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
+/*
+ * A region of memory two processes can share, named by a capability.
+ *
+ * Create, then send the capability in a message; the far side maps it. The
+ * kernel translates the index exactly as it does for an endpoint, so what
+ * arrives is the receiver's own name for the same pages and nobody else can
+ * refer to them.
+ */
+static inline long kosmos_mem_create(unsigned long pages)
+{
+    return sys1(SYS_MEM_CREATE, (long)pages);
+}
+
+static inline long kosmos_mem_map(long cap)
+{
+    return sys1(SYS_MEM_MAP, cap);
+}
+
+static inline long kosmos_mem_size(long cap)
+{
+    return sys1(SYS_MEM_SIZE, cap);
+}
+
 /* The most recent bytes this machine printed, kernel and processes alike. */
 static inline long kosmos_log(char *out, unsigned long max)
 {

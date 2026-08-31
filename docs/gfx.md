@@ -157,7 +157,44 @@ Eight steps, two IPC crossings, and not one of them carries a pixel inside a Lua
 
 ---
 
-## 19.8 What is left open
+## 19.8 Who frees a shared surface's pages
+
+A region is a kernel object with a reference count, reached through a
+capability like everything else. Its pages go back when the last capability
+to it is dropped - not when a process that mapped it exits.
+
+That last sentence is the whole section, and getting it wrong is the bug
+this was written after. A process frees, on its way out, every page still
+mapped in the window `SYS_MAP` hands out: those pages were allocated a page
+at a time and the page tables are the only record of them, so walking the
+range is the only way to find them. Put a shared region in that window and
+the exit walk frees pages the process does not own. Two processes mapping
+one region free its pages twice. `plasma` plus Control-C panicked the
+machine with `pmm_free_page: double free`, and the quieter half - `SYS_UNMAP`
+returning a region's pages to the allocator while the other process is still
+drawing into them - had no symptom at all.
+
+**So the rule is an address range, and not a flag on a page.** A shared
+region maps at `USER_SHARE_VA`, a window nothing frees by walking. The two
+pieces of code that free pages by walking a range are each bounded by the
+window whose pages they own, and `as_destroy` does what it always did: tears
+down the page tables and leaves the pages alone.
+
+Two consequences worth stating, because both are easy to get backwards:
+
+- **Both bump pointers need a ceiling.** Neither reuses an address, so a
+  process that maps and unmaps for long enough walks upward until it reaches
+  the next window - and then the exit walk, bounded by the pointer rather
+  than by the window, frees a region's pages after all.
+
+- **Shared pages are charged once, to whoever created the region.** Charging
+  them again to everybody who maps it means a compositor and an application
+  sharing one surface pay for it twice, and the second one to ask is refused
+  memory that is already allocated.
+
+---
+
+## 19.9 What is left open
 
 - **Undo in Paint.** Copying the whole surface per operation does not scale. The sensible approach is tile-based undo with copy-on-write, but it is not designed and it is not needed until M7.
 - **Scaling and rotation.** Not in the primitive set. They get added when a case appears, not before.
@@ -166,7 +203,7 @@ Eight steps, two IPC crossings, and not one of them carries a pixel inside a Lua
 
 ---
 
-## 19.9 Build order
+## 19.10 Build order
 
 | What | Milestone |
 |---|---|

@@ -2,9 +2,14 @@
 #
 # Runs Kosmos under QEMU on macOS.
 #
-#   ./run-kosmos.sh            a window, with the shell on this terminal
-#   ./run-kosmos.sh -serial    no window, serial only
-#   ./run-kosmos.sh path.elf   a particular image
+#   ./run-kosmos.sh                 a window, with the shell on this terminal
+#   ./run-kosmos.sh -r 1920x1080    at that size, if a build of it is here
+#   ./run-kosmos.sh -serial         no window, serial only
+#   ./run-kosmos.sh path.elf        a particular image
+#
+# The display size is baked into the image: the framebuffer is a static
+# array, so a different size is a different build. `-r` picks the one that
+# was built for it. `./run-kosmos.sh -r list` says which are here.
 #
 # In the window, type `wm` for the desktop. Control-C gives the screen back
 # to the shell; Control-A then X quits QEMU.
@@ -30,16 +35,59 @@
 #
 set -eu
 
-image="build/kosmos.elf"
+here=$(dirname "$0")
+image=""
 serial_only="no"
+size=""
+want_size="no"
 
 for arg in "$@"; do
+    if [ "$want_size" = "yes" ]; then
+        size="$arg"
+        want_size="no"
+        continue
+    fi
+
     case "$arg" in
         -serial) serial_only="yes" ;;
+        -r)      want_size="yes" ;;
         -*)      echo "unknown option: $arg" >&2; exit 2 ;;
         *)       image="$arg" ;;
     esac
 done
+
+# `-r list`: what sizes are available here.
+if [ "$size" = "list" ]; then
+    echo "images beside this script:"
+    for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf; do
+        [ -f "$f" ] && echo "  $(basename "$f")"
+    done
+    exit 0
+fi
+
+if [ -z "$image" ]; then
+    if [ -n "$size" ]; then
+        # The newest build for that size, wherever the images are.
+        for dir in "$here" "$here/builds" "build"; do
+            for f in "$dir"/kosmos-*-"$size".elf; do
+                [ -f "$f" ] && image="$f"
+            done
+        done
+
+        if [ -z "$image" ]; then
+            echo "no image built for $size." >&2
+            echo "Available:" >&2
+            "$0" -r list >&2
+            echo "Build one with: make FB=$size" >&2
+            exit 1
+        fi
+    else
+        for candidate in "$here/build/kosmos.elf" "build/kosmos.elf" \
+                         "$here/kosmos.elf"; do
+            [ -f "$candidate" ] && image="$candidate" && break
+        done
+    fi
+fi
 
 if ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
     echo "qemu-system-aarch64 is not on PATH." >&2
@@ -47,7 +95,7 @@ if ! command -v qemu-system-aarch64 >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ ! -f "$image" ]; then
+if [ -z "$image" ] || [ ! -f "$image" ]; then
     echo "no image at $image" >&2
     echo "Build one with \`make\`, or pass a path: ./run-kosmos.sh kosmos.elf" >&2
     exit 1

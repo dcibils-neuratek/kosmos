@@ -46,6 +46,26 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Shared-memory surfaces.** `sys.memory(pages)` makes a region, the
+  capability travels in an ordinary message, and both sides map the same
+  pages. An application draws straight into the surface the compositor
+  composites from, so a frame costs one `commit` instead of a message per
+  drawing command: `plasma` runs at 42-60 fps. The rules still hold - the
+  pixels are behind `gfx.wrap`, so nothing in Lua ever holds one or computes
+  its offset.
+
+- **The Terminal serves its children without sleeping on them.** A window
+  that is somebody's console cannot poll once a second: every child `write`
+  blocks in `sys.call` until the window next wakes, so `ls` arrived at one
+  line per second. `ui` has a `poll_wait` a window can lower; the Terminal
+  sets it to one tick.
+
+- **`make release` builds one image per resolution.** `builds/` carries a
+  suffixed ELF for each of 1024x768, 1280x800 and 1920x1080, and
+  `run-kosmos.sh -r WxH` picks one (`-r list` says which exist). Verified by
+  booting all three and reading the geometry they report, which is how the
+  first version was caught building the same image three times.
+
 - **A Terminal.** `wm terminal`: type a program's name and it runs *in the
   window*, with its output going there instead of to the machine's console.
   It is a console server - it speaks the same `write` and `read` that
@@ -492,6 +512,22 @@ Two fixture blobs went with it. `user/hello.S` and `user/faulty.S` are what the 
 **One thing is deliberately temporary.** Every address space contains the kernel, because there is no TTBR1 split yet: the kernel is identity mapped through TTBR0 like everything else, so a space without it would fault on the instruction after the switch. A new space copies the kernel's top level and shares the tables below it, which is why user mappings are confined to virtual addresses at or above 2 GB and anything lower is refused rather than allowed to quietly edit the kernel's own map.
 
 At M4 that is replaced by the real arrangement: the kernel in TTBR1 at the top, TTBR0 belonging entirely to the process, and a space containing no kernel at all.
+
+## Decisions taken while implementing (this session)
+
+**2026-08-31 — A shared region is mapped in its own address window, because a range is what says who frees the pages.** Shared regions went into the window `SYS_MAP` hands out. A process frees everything still mapped in that window when it exits, on the grounds that it allocated it - so two processes mapping one region freed its pages twice, and the second one panicked the machine with `pmm_free_page: double free`. Opening `plasma` and pressing Control-C was enough.
+
+The panic was the lucky half. The quiet half is that `SYS_UNMAP` would have let a process hand a region's pages back to the allocator while the other process was still drawing into them: a use-after-free with no symptom at all until the pages were handed to somebody else.
+
+The fix is a second window, `USER_SHARE_VA`, and not a per-page owner flag. The two pieces of code that free pages by walking a range are now bounded by the window whose pages they own, and the check is where the addresses come from rather than a bit they carry. Both windows have a ceiling now as well: neither pointer reuses an address, so without one the `SYS_MAP` pointer would eventually walk into the shared window and bring the same bug back by a longer road.
+
+Shared pages are also not charged against the mapper's budget. They are charged to whoever created the region; charging them again to everybody who maps it would mean a compositor and an application sharing one surface pay for it twice.
+
+There is a permanent test, and the page count is checked from C rather than from inside either process - the number only becomes true once both have been reaped, and neither of them is around to look. It fails by panicking when the fix is reverted, which is how it was confirmed to test anything.
+
+**2026-08-31 — A capability slot with a kind costs one tick per round trip, and that is the price of the design.** `ipc_roundtrip` went 30.000 to 31.001. A slot used to hold an endpoint and nothing else, so `resolve` went straight to the pointer; it holds either an endpoint or a region now, so every resolve loads the tag first and a round trip resolves twice. `context_switch` and `exception` did not move at all across the same change, which is what says the cost is in the lookup and not in the path around it. The alternative - a second table with a second index space - is the global-name design this kernel does not have. Baseline raised, with the reason in it.
+
+`serialize` moved 1412.5 to 1450.6 in the same change, and its baseline note had already predicted the shape of it: the benchmark is sensitive to what else is in the process, and this added four bindings to every one of them.
 
 ## Concrete next step
 

@@ -25,6 +25,7 @@
 #include "process.h"
 #include "thread.h"
 #include "ipc.h"
+#include "memobj.h"
 #include "trap.h"
 #include "console.h"
 #include "screen.h"
@@ -445,6 +446,12 @@ static long sys_map(struct process *p, size_t pages)
         return SYS_ERR_NO_ROOM;
     }
 
+    /* The addresses are never reused, so this is what stops a process that
+     * maps and unmaps for long enough from walking into the next window. */
+    if (p->next_map + pages * PAGE_SIZE > USER_MAP_END) {
+        return SYS_ERR_NO_ROOM;
+    }
+
     base = p->next_map;
 
     for (i = 0; i < pages; i++) {
@@ -740,6 +747,107 @@ void syscall_dispatch(struct trapframe *tf)
         }
 
         result = (long)console_log((char *)tf->x[0], max);
+        break;
+    }
+
+    case SYS_MEM_CREATE: {
+        /*
+         * A region two processes can share, and a capability naming it.
+         *
+         * No permission check, and none is needed: this allocates the
+         * caller's own memory and hands it a name only the caller holds.
+         * The authority is in the *passing* - a region reaches a second
+         * process only by somebody sending the capability - and that is
+         * checked where every other capability transfer is, in
+         * `message_deliver`.
+         *
+         * Not mapped here. Creating and mapping are separate because the
+         * process that creates a region is often not the one that draws
+         * into it, and a create that also mapped would put pages in the
+         * address space of a process that only wanted to hand them on.
+         */
+        struct memobj *m = memobj_create((size_t)tf->x[0]);
+
+        if (m == NULL) {
+            result = SYS_ERR_NO_ROOM;
+            break;
+        }
+
+        result = ipc_install_memory(thread_current(), m);
+
+        if (result < 0) {
+            memobj_unref(m);            /* the create's own reference */
+            result = SYS_ERR_NO_ROOM;
+            break;
+        }
+
+        /* `install` took a reference of its own; the create's is spent. */
+        memobj_unref(m);
+        break;
+    }
+
+    case SYS_MEM_MAP: {
+        /*
+         * The region into this process's address space.
+         *
+         * At the same place any other mapping goes, and counted against the
+         * same limit, so a process cannot map its way past what it is
+         * allowed to have by asking for regions instead of pages.
+         */
+        struct memobj *m = ipc_resolve_memory(thread_current(),
+                                              (cap_t)tf->x[0]);
+        uintptr_t base;
+        size_t i;
+
+        if (m == NULL) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        /*
+         * Bounded by address, not by the SYS_MAP budget. Those pages are
+         * charged to whoever created the region; charging them again to
+         * everybody who maps it would mean a compositor and an app sharing
+         * one surface pay for it twice, and the second one to ask would be
+         * refused memory that is already allocated.
+         */
+        if (p->next_share + m->pages * PAGE_SIZE > USER_SHARE_END) {
+            result = SYS_ERR_NO_ROOM;
+            break;
+        }
+
+        base = p->next_share;
+
+        for (i = 0; i < m->pages; i++) {
+            if (as_map(p->space, base + i * PAGE_SIZE,
+                       (uintptr_t)m->base + i * PAGE_SIZE,
+                       1, MAP_USER_RW) != AS_OK) {
+                break;
+            }
+        }
+
+        if (i < m->pages) {
+            size_t j;
+
+            for (j = 0; j < i; j++) {
+                as_unmap(p->space, base + j * PAGE_SIZE, 1);
+            }
+
+            result = SYS_ERR_NO_ROOM;
+            break;
+        }
+
+        p->next_share += m->pages * PAGE_SIZE;
+
+        result = (long)base;
+        break;
+    }
+
+    case SYS_MEM_SIZE: {
+        struct memobj *m = ipc_resolve_memory(thread_current(),
+                                              (cap_t)tf->x[0]);
+
+        result = (m == NULL) ? SYS_ERR_DENIED : (long)m->pages;
         break;
     }
 

@@ -88,12 +88,12 @@ struct thread;
  * definition. Putting them on the Lua heap would mean either a heap too
  * large to collect quickly or a compositor that cannot exist.
  *
- * The address is bumped and never reused. There is 512 GB of address space
- * below the 39-bit limit and a surface is a few megabytes, so a process
- * would have to allocate a hundred thousand of them to run out of *space*
- * while the pages themselves are returned and reused normally. Tracking
- * freed ranges to reuse addresses would need an allocator, which is the
- * thing this kernel does not have.
+ * The address is bumped and never reused, up to `USER_MAP_END`. There is
+ * 512 GB of address space below the 39-bit limit and a surface is a few
+ * megabytes, so a process would have to allocate tens of thousands of them
+ * to run out of *space* while the pages themselves are returned and reused
+ * normally. Tracking freed ranges to reuse addresses would need an
+ * allocator, which is the thing this kernel does not have.
  */
 #define USER_MAP_VA      (USER_VA_BASE + 0x04000000UL)      /* 0x84000000 */
 
@@ -106,6 +106,49 @@ struct thread;
  * process starving the rest rather than a number chosen to be comfortable.
  */
 #define USER_MAP_PAGES_MAX  4096
+
+/*
+ * Where a shared region lands, and deliberately not in the window above.
+ *
+ * The two windows differ in who owns the pages, which is the whole reason
+ * they cannot be one window. A page in the SYS_MAP window was allocated by
+ * this process and belongs to it, so `release_memory` walks that range on
+ * the way out and hands back whatever is still mapped, and `SYS_UNMAP`
+ * lets the process do the same by hand. A page in *this* window belongs to
+ * a `memobj` that some other process may also have mapped, and is freed
+ * only when the last capability to it is dropped.
+ *
+ * Sharing one window makes the exit path free pages it does not own: two
+ * processes mapping one region both free its pages, and the second one
+ * panics the machine with a double free. That is how this was found. The
+ * quieter half of the same bug is worse - `SYS_UNMAP` would let a process
+ * hand a region's pages back to the allocator while the other process is
+ * still drawing into them, which is a use-after-free reachable from Lua.
+ *
+ * So the rule is a range and not a flag: the ranges say who frees what, and
+ * the two pieces of code that free pages by walking a range are bounded by
+ * the window whose pages they own. `as_destroy` still tears the page tables
+ * down, which is all that has to happen here - the mapping goes, the pages
+ * stay, and `memobj_unref` decides their fate.
+ */
+#define USER_SHARE_VA    (USER_VA_BASE + 0x100000000UL)     /* 0x180000000 */
+
+/*
+ * Where each bump pointer has to stop.
+ *
+ * Neither address is reused, so both walk upwards for the life of the
+ * process, and a process that maps and unmaps in a loop walks a long way.
+ * Without a ceiling the SYS_MAP pointer eventually reaches the shared
+ * window and starts handing out addresses that belong to it - and then the
+ * exit walk, bounded by `next_map`, frees a region's pages after all, which
+ * is the bug this window was added to prevent, arriving by a longer road.
+ *
+ * 4 GB each. A surface is a few megabytes, so this is tens of thousands of
+ * them before a long-lived process is told no; the 39-bit address space is
+ * 512 GB, so the room costs nothing.
+ */
+#define USER_MAP_END     (USER_VA_BASE + 0x100000000UL)     /* 0x180000000 */
+#define USER_SHARE_END   (USER_VA_BASE + 0x200000000UL)     /* 0x280000000 */
 
 /*
  * The image header. Sixteen bytes at the front: a magic number, then how
@@ -193,6 +236,15 @@ struct process {
      */
     uintptr_t         next_map;
     size_t            mapped_pages;
+
+    /*
+     * The same for shared regions, in the window that says the pages are
+     * not this process's to free. Counted separately as well as mapped
+     * separately: a region's pages are already charged to whoever created
+     * it, and charging every process that maps it would mean two processes
+     * sharing one surface pay for it twice.
+     */
+    uintptr_t         next_share;
 
     /*
      * Timer ticks this process was charged, kept here as well as on its

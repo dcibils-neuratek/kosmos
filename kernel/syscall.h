@@ -58,8 +58,11 @@
 #define SYS_KILL       20   /* (id)                   -> 0 or error       */
 #define SYS_WAIT_INPUT 21   /* (timer ticks)          -> 0                 */
 #define SYS_LOG        22   /* (buffer, max)          -> bytes or error    */
+#define SYS_MEM_CREATE 23   /* (pages)                -> cap or error       */
+#define SYS_MEM_MAP    24   /* (cap)                  -> address or error   */
+#define SYS_MEM_SIZE   25   /* (cap)                  -> pages or error     */
 
-#define SYS_MAX         23
+#define SYS_MAX         26
 
 /*
  * What a spawn may hand its child beyond capabilities.

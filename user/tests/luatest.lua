@@ -48,6 +48,8 @@ local R_GFX          = 24
 local R_GFX_BLEND    = 25
 local R_NO_SCREEN    = 26
 local R_TEXT         = 27
+local R_SHARE_MAIN   = 28
+local R_SHARE_PEER   = 29
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -665,6 +667,89 @@ if role == R_TEXT then
   end
 
   s:free()
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- Shared memory.
+--
+-- Two processes, one set of pages. What is being checked is both halves of
+-- that: that a write on one side is visible on the other - which is the
+-- feature - and that the pages go back exactly once when both sides are
+-- gone, which is the invariant that broke.
+--
+-- It broke because a shared region used to be mapped in the same address
+-- window `sys.map` hands out, and a process exiting frees everything still
+-- mapped in that window on the grounds that it allocated it. Two processes
+-- mapping one region therefore freed its pages twice, and the machine
+-- panicked on the second. The quiet version of the same bug was worse: the
+-- first process to exit handed the pages back to the allocator while the
+-- second was still drawing into them.
+--
+-- The C side of this test is what watches the page count, because the count
+-- can only be right once both processes have been reaped and neither of
+-- them is around to look. See `test_shared_memory_is_freed_once`.
+
+if role == R_SHARE_MAIN then
+  local PAGES = 4
+  local W, H = 16, 16               -- 1 KB of the region; the rest is spare
+
+  local cap, err = sys.memory(PAGES)
+  check(cap, "memory: " .. tostring(err))
+  check(sys.memory_size(cap) == PAGES, "the region is not the size asked for")
+
+  local at, why = sys.memory_map(cap)
+  check(at, "memory_map: " .. tostring(why))
+
+  local mine = gfx.wrap{ at = at, w = W, h = H }
+
+  -- Zeroed on creation, and it matters: this region is about to be handed to
+  -- another process, so whatever the last owner left in it must be gone.
+  check(mine:get(0, 0) == 0, "a fresh region was not zeroed")
+
+  mine:fill(0, 0, W, H, 0xff112233)
+
+  local ep = sys.endpoint()
+  local peer = spawn(R_SHARE_PEER, { ep })
+
+  -- The peer needs the region as well as the endpoint, and a capability
+  -- travels in a message rather than in the spawn.
+  local reply = sys.call(ep, { tag = 1 }, cap)
+  check(reply and reply.saw == 0xff112233,
+        "the peer did not see what this process wrote")
+
+  -- And back the other way, into the same pages.
+  check(mine:get(1, 1) == 0xff445566,
+        "this process did not see what the peer wrote")
+
+  sys.call(ep, { tag = STOP })
+  wait_all(1)
+  check(peer, "the peer never started")
+
+  sys.exit(0)
+end
+
+if role == R_SHARE_PEER then
+  local ep = 0                      -- the one capability it was spawned with
+
+  while true do
+    local msg, who, cap = sys.receive(ep)
+
+    if msg.tag == STOP then
+      sys.reply(who, {})
+      break
+    end
+
+    local at = sys.memory_map(cap)
+    local theirs = gfx.wrap{ at = at, w = 16, h = 16 }
+    local saw = theirs:get(0, 0)
+
+    theirs:fill(1, 1, 1, 1, 0xff445566)
+    sys.reply(who, { saw = saw })
+  end
+
+  -- Exits still holding the region mapped, on purpose. A peer that tidied up
+  -- first would not exercise the path that broke.
   sys.exit(0)
 end
 

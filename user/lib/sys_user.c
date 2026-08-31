@@ -573,6 +573,53 @@ static int l_asset(lua_State *L)
  * the console server and the console server calls `sys.write`. One place,
  * in order, which is what the serial line has and the screen does not.
  */
+/*
+ * `sys.memory(pages)` - a region two processes can share.
+ * `sys.memory_map(cap)` - it, in this process's address space.
+ * `sys.memory_size(cap)` - how many pages it is.
+ *
+ * The capability is an ordinary one: `sys.call(ep, msg, cap)` sends it and
+ * the far side receives its own index for the same pages. What it maps to
+ * is an address, which is deliberately not something Lua can do anything
+ * with - `gfx.wrap` turns it into a surface, and every pixel that touches
+ * it does so from C.
+ */
+static int l_memory(lua_State *L)
+{
+    long cap = kosmos_mem_create((unsigned long)luaL_checkinteger(L, 1));
+
+    if (cap < 0) {
+        return fail(L, cap);
+    }
+
+    lua_pushinteger(L, (lua_Integer)cap);
+    return 1;
+}
+
+static int l_memory_map(lua_State *L)
+{
+    long at = kosmos_mem_map((long)luaL_checkinteger(L, 1));
+
+    if (at < 0) {
+        return fail(L, at);
+    }
+
+    lua_pushinteger(L, (lua_Integer)at);
+    return 1;
+}
+
+static int l_memory_size(lua_State *L)
+{
+    long pages = kosmos_mem_size((long)luaL_checkinteger(L, 1));
+
+    if (pages < 0) {
+        return fail(L, pages);
+    }
+
+    lua_pushinteger(L, (lua_Integer)pages);
+    return 1;
+}
+
 static int l_log(lua_State *L)
 {
     luaL_Buffer b;
@@ -725,6 +772,9 @@ static const luaL_Reg sys_functions[] = {
     { "processes", l_processes },
     { "pointer",  l_pointer },
     { "asset",    l_asset },
+    { "memory",      l_memory },
+    { "memory_map",  l_memory_map },
+    { "memory_size", l_memory_size },
     { "log",      l_log },
     { "build",    l_build },
     { "wait_input", l_wait_input },
