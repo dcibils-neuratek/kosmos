@@ -28,7 +28,19 @@ end
 for _, entry in ipairs(entries) do
   local child = (path == "/" and "/" or path .. "/") .. entry
   local attrs = fs.getattr(child)
-  local size = attrs and attrs.size
 
-  print(("  %-16s %s"):format(entry, size and (size .. " bytes") or ""))
+  -- A directory says so rather than reporting the size of the entries it
+  -- happens to hold. That number is true and it is not what anybody asking
+  -- means, which is the definition of a misleading answer.
+  local what
+
+  if attrs and attrs.kind == "directory" then
+    what = "<dir>"
+  elseif attrs and attrs.size then
+    what = attrs.size .. " bytes"
+  else
+    what = ""
+  end
+
+  print(("  %-16s %s"):format(entry, what))
 end

@@ -12,7 +12,14 @@
 -- that something exists is not being able to reach it.
 
 local ui = use("/lib/ui.lua")
-local theme = use("/lib/theme.lua")
+-- The *kit's* palette, not a copy of it.
+--
+-- `use` runs the chunk again and hands back a different table, and only the
+-- one `ui.lua` holds is the one it mutates when the desktop changes theme.
+-- An application that loaded its own kept the colours it started with while
+-- every widget around it changed - which is exactly what Monitor, Processes,
+-- Photo and the Terminal did.
+local theme = ui.theme
 
 local W, H = 420, 340
 local ROW = gfx.font.h + 4

@@ -115,6 +115,8 @@ def main():
             "diskinfo",
             "mkfs --yes",
             "save notes.txt written before the reboot",
+            "mkdir /home/papers",
+            "save papers/deep.txt inside a directory",
             "ls /home",
         ])
 
@@ -153,8 +155,9 @@ def main():
         checks += 1
 
         # ---- second boot: a machine that has never seen this disk --------
-        second = boot(image, disk, ["diskinfo", "ls /home",
-                                    "cat /home/notes.txt"])
+        second = boot(image, disk, ["diskinfo", "ls /home", "ls /home/papers",
+                                    "cat /home/notes.txt",
+                                    "cat /home/papers/deep.txt"])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -186,7 +189,24 @@ def main():
 
         checks += 1
 
-        if "written before the reboot" not in second.split("cat ")[-1]:
+        if "papers" not in second.split("ls /home")[1]:
+            raise Failure(
+                "the directory is gone after the reboot.\n" + second
+            )
+
+        checks += 1
+
+        if "inside a directory" not in second:
+            raise Failure(
+                "a file inside a directory did not survive the reboot. The "
+                "root directory came back and the one below it did not, "
+                "which means a directory's own data blocks are not being "
+                "written the way the root's are.\n" + second
+            )
+
+        checks += 1
+
+        if "written before the reboot" not in second.split("cat ")[1]:
             raise Failure(
                 "the file is listed after the reboot but its contents did "
                 "not come back. The directory entry survived and the data "

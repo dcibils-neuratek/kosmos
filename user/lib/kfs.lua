@@ -509,34 +509,115 @@ function kfs.write_dir(sb, number, node, entries)
   return kfs.write_file(sb, number, node, table.concat(parts))
 end
 
-function kfs.lookup(sb, name)
-  local root, err = kfs.read_inode(sb, kfs.ROOT_INODE)
+--------------------------------------------------------------------------
+-- Paths.
+--
+-- A directory is an inode with a different `kind`, and its contents are the
+-- same entries the root has always held - so walking a path is the same
+-- lookup repeated, and nothing about the format had to change to allow it.
+-- That was the point of storing a directory as an ordinary file.
+--
+-- No `.` or `..`. A path is resolved from the root every time, so there is
+-- nothing for them to be relative to down here; the shell has a working
+-- directory and resolves it before asking. Adding them to the *format*
+-- would mean two entries in every directory whose only job is to be
+-- believed, and fsck would then have to check they still are.
+--------------------------------------------------------------------------
 
-  if not root then return nil, err end
+local function split(path)
+  local parts = {}
 
-  local entries, derr = kfs.read_dir(sb, root)
+  for part in tostring(path or ""):gmatch("[^/]+") do
+    if part == "." or part == ".." then
+      return nil, "a path may not contain . or .."
+    end
 
-  if not entries then return nil, derr end
+    parts[#parts + 1] = part
+  end
+
+  return parts
+end
+
+-- One name inside one directory.
+local function entry_in(sb, dir_node, name)
+  local entries, err = kfs.read_dir(sb, dir_node)
+
+  if not entries then return nil, err end
 
   for _, e in ipairs(entries) do
-    if e.name == name then
-      local node, ierr = kfs.read_inode(sb, e.inode)
-      if not node then return nil, ierr end
-      return e.inode, node
-    end
+    if e.name == name then return e.inode end
   end
 
   return nil, "no such file"
 end
 
-function kfs.list(sb)
-  local root, err = kfs.read_inode(sb, kfs.ROOT_INODE)
+-- Walks `count` components and returns where it arrived.
+local function walk(sb, parts, count)
+  local number = kfs.ROOT_INODE
+  local node, err = kfs.read_inode(sb, number)
 
-  if not root then return nil, err end
+  if not node then return nil, err end
 
-  local entries, derr = kfs.read_dir(sb, root)
+  for i = 1, count do
+    if node.kind ~= kfs.KIND_DIR then
+      return nil, parts[i - 1] .. " is not a directory"
+    end
 
-  if not entries then return nil, derr end
+    local found, ferr = entry_in(sb, node, parts[i])
+
+    if not found then return nil, ferr end
+
+    number = found
+    node, err = kfs.read_inode(sb, number)
+
+    if not node then return nil, err end
+  end
+
+  return number, node
+end
+
+-- What is at this path.
+function kfs.find(sb, path)
+  local parts, err = split(path)
+
+  if not parts then return nil, err end
+
+  return walk(sb, parts, #parts)
+end
+
+-- The directory that would hold it, and the name it would have there.
+function kfs.parent_of(sb, path)
+  local parts, err = split(path)
+
+  if not parts then return nil, err end
+
+  if #parts == 0 then
+    return nil, "the root has no parent"
+  end
+
+  local number, node = walk(sb, parts, #parts - 1)
+
+  if not number then return nil, node end
+
+  if node.kind ~= kfs.KIND_DIR then
+    return nil, "not a directory"
+  end
+
+  return number, node, parts[#parts]
+end
+
+function kfs.list(sb, path)
+  local number, node = kfs.find(sb, path)
+
+  if not number then return nil, node end
+
+  if node.kind ~= kfs.KIND_DIR then
+    return nil, "not a directory"
+  end
+
+  local entries, err = kfs.read_dir(sb, node)
+
+  if not entries then return nil, err end
 
   local names = {}
 
@@ -548,44 +629,93 @@ function kfs.list(sb)
   return names
 end
 
-function kfs.store(sb, name, data, now)
-  local number, node = kfs.lookup(sb, name)
+-- Adds a name to a directory, or replaces where it points.
+local function link(sb, dir_number, dir_node, name, inode)
+  local entries, err = kfs.read_dir(sb, dir_node)
 
-  if not number then
-    -- New. The inode first, then the directory entry, and that ordering is
-    -- deliberate: interrupted between the two it leaves an allocated inode
-    -- nothing points at, which `fsck` can reclaim. The other order leaves a
-    -- directory entry pointing at an inode that is not a file, which is a
-    -- corrupt directory.
-    local err
-    number, err = kfs.alloc_inode(sb)
+  if not entries then return nil, err end
 
-    if not number then return nil, err end
-
-    node = { kind = kfs.KIND_FILE, links = 1, size = 0, mtime = now or 0,
-             attrs = 0, extents = {} }
-
-    local ok, werr = kfs.write_file(sb, number, node, data)
-    if not ok then return nil, werr end
-
-    local root = kfs.read_inode(sb, kfs.ROOT_INODE)
-    if not root then return nil, "reading the root" end
-
-    local entries, derr = kfs.read_dir(sb, root)
-    if not entries then return nil, derr end
-
-    entries[#entries + 1] = { inode = number, name = name }
-
-    local dok, dwerr = kfs.write_dir(sb, kfs.ROOT_INODE, root, entries)
-    if not dok then return nil, dwerr end
-
-    return number
+  for _, e in ipairs(entries) do
+    if e.name == name then
+      e.inode = inode
+      return kfs.write_dir(sb, dir_number, dir_node, entries)
+    end
   end
 
-  node.mtime = now or node.mtime
+  entries[#entries + 1] = { inode = inode, name = name }
+  return kfs.write_dir(sb, dir_number, dir_node, entries)
+end
+
+function kfs.mkdir(sb, path, now)
+  local dir_number, dir_node, name = kfs.parent_of(sb, path)
+
+  if not dir_number then return nil, dir_node end
+
+  if entry_in(sb, dir_node, name) then
+    return nil, "that name is taken"
+  end
+
+  local number, err = kfs.alloc_inode(sb)
+
+  if not number then return nil, err end
+
+  -- Two links: the entry about to be made in its parent, and the one it
+  -- would have to itself if this format had a `.` - which it does not, so
+  -- the count is the convention rather than a thing to walk.
+  local node = { kind = kfs.KIND_DIR, links = 2, size = 0,
+                 mtime = now or 0, attrs = 0, extents = {} }
+
+  local ok, werr = kfs.write_inode(sb, number, node)
+
+  if not ok then return nil, werr end
+
+  return link(sb, dir_number, dir_node, name, number)
+end
+
+function kfs.store(sb, path, data, now)
+  local dir_number, dir_node, name = kfs.parent_of(sb, path)
+
+  if not dir_number then return nil, dir_node end
+
+  local existing = entry_in(sb, dir_node, name)
+
+  if existing then
+    local node, err = kfs.read_inode(sb, existing)
+
+    if not node then return nil, err end
+
+    if node.kind == kfs.KIND_DIR then
+      return nil, "that is a directory"
+    end
+
+    node.mtime = now or node.mtime
+
+    local ok, werr = kfs.write_file(sb, existing, node, data)
+
+    if not ok then return nil, werr end
+
+    return existing
+  end
+
+  -- New. The inode and its contents first, then the entry in its parent,
+  -- and that ordering is the design: interrupted between the two it leaves
+  -- an allocated inode nothing points at, which `fsck` can reclaim. The
+  -- other order leaves a directory entry pointing at an inode that is not a
+  -- file, which is a corrupt directory.
+  local number, err = kfs.alloc_inode(sb)
+
+  if not number then return nil, err end
+
+  local node = { kind = kfs.KIND_FILE, links = 1, size = 0, mtime = now or 0,
+                 attrs = 0, extents = {} }
 
   local ok, werr = kfs.write_file(sb, number, node, data)
+
   if not ok then return nil, werr end
+
+  local lok, lerr = link(sb, dir_number, dir_node, name, number)
+
+  if not lok then return nil, lerr end
 
   return number
 end

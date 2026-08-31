@@ -583,7 +583,15 @@ handlers.open = function(req, who, cap)
     damage_window(losing)
   end
 
-  return { ok = true, window = win.handle, w = w_, h = h_ }
+  -- The appearance in force, in the reply that creates the window.
+  --
+  -- An application loads `theme.lua`, which defaults to dark, and had no
+  -- way to learn that the desktop is currently light - so every new window
+  -- opened dark and only became light when somebody changed the theme
+  -- *again*. Telling it here rather than posting an event means it knows
+  -- before its first paint, so there is no flash of the wrong colours.
+  return { ok = true, window = win.handle, w = w_, h = h_,
+           palette = theme.name, desktop = theme.desktop }
 end
 
 handlers.draw = function(req)

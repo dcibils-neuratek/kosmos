@@ -255,6 +255,24 @@ function view:paint(g)
   g:pop(saved)
 end
 
+-- A view is clickable when it says what to do about it.
+--
+-- `dispatch_mouse` grabs whatever the hit test lands on *if it has a
+-- `mouse`*, so without this a plain view built with an `on_click` was never
+-- grabbed and its handler never ran. A grid of colour swatches is exactly
+-- that, and clicking one did nothing at all.
+--
+-- The coordinates are the view's own, so a swatch grid can work out which
+-- swatch was hit without knowing where it sits on screen.
+function view:mouse(action, x, y)
+  if action == "press" and self.on_click then
+    self.on_click(self, x, y)
+    return true
+  end
+
+  return false
+end
+
 --
 -- The deepest view containing a point, and that point in its coordinates.
 --
@@ -1274,6 +1292,12 @@ function ui.window(spec)
   if not reply then
     return nil, err
   end
+
+  -- Whatever the desktop looks like right now, before the first paint. The
+  -- palette is mutated in place as always, so every widget this window is
+  -- about to build reads the right colours from the start.
+  if reply.palette then theme.apply(reply.palette) end
+  if reply.desktop then theme.override { desktop = reply.desktop } end
 
   local w = setmetatable({
     handle = reply.window,

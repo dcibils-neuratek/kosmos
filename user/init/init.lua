@@ -1667,7 +1667,7 @@ local function diskfs_handlers(state)
         return { ok = false, error = "there is no filesystem here" }
       end
 
-      local names, err = kfs.list(sb)
+      local names, err = kfs.list(sb, req.path or "/")
 
       if not names then
         return { ok = false, error = tostring(err) }
@@ -1693,10 +1693,14 @@ local function diskfs_handlers(state)
         return { ok = false, error = "that is the directory itself" }
       end
 
-      local number, node = kfs.lookup(sb, name)
+      local number, node = kfs.find(sb, req.path)
 
       if not number then
-        return { ok = false, error = "no such file" }
+        return { ok = false, error = tostring(node) }
+      end
+
+      if node.kind == kfs.KIND_DIR then
+        return { ok = false, error = "that is a directory" }
       end
 
       local data, err = kfs.read_file(sb, node)
@@ -1756,17 +1760,40 @@ local function diskfs_handlers(state)
         return { ok = false, error = "that name is reserved" }
       end
 
-      if name:sub(1, 1) == "." then
-        return { ok = false, error = "names may not begin with a dot" }
-      end
+      -- A leading dot is ordinary. It was refused for a while, on the
+      -- grounds that the two reserved names have one - and the first thing
+      -- that broke was the desktop's own settings file, `.appearance`,
+      -- which could then be written by nothing at all. Reserving two names
+      -- reserves two names; it does not reserve a punctuation mark.
 
-      local number, err = kfs.store(sb, name, req.value or "", sys.ticks())
+      local number, err = kfs.store(sb, req.path, req.value or "",
+                                    sys.ticks())
 
       if not number then
         return { ok = false, error = tostring(err) }
       end
 
       state.writes = (state.writes or 0) + 1
+      return { ok = true }
+    end,
+
+    -- Not one of the five the protocol names, and deliberately so: making a
+    -- directory is a real filesystem operation and this protocol is ours.
+    -- It is reachable as `fs.send(path, { type = "mkdir" })` without the
+    -- namespace client needing to know it exists.
+    mkdir = function(req)
+      local sb = mounted()
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      local ok, err = kfs.mkdir(sb, req.path, sys.ticks())
+
+      if not ok then
+        return { ok = false, error = tostring(err) }
+      end
+
       return { ok = true }
     end,
 
@@ -1782,10 +1809,10 @@ local function diskfs_handlers(state)
         return { ok = false, error = "there is no filesystem here" }
       end
 
-      local number, node = kfs.lookup(sb, name)
+      local number, node = kfs.find(sb, req.path)
 
       if not number then
-        return { ok = false, error = "no such file" }
+        return { ok = false, error = tostring(node) }
       end
 
       return { ok = true, attrs = {
