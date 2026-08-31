@@ -720,6 +720,69 @@ function kfs.store(sb, path, data, now)
   return number
 end
 
+-- Removes a name, and the file it named if nothing else names it.
+--
+-- The directory entry goes *first*, and that ordering is the mirror of the
+-- one `store` uses. Interrupted after the entry is gone, the inode and its
+-- blocks are unreachable and `fsck` reclaims them - a leak, which is
+-- recoverable. The other order leaves a directory entry pointing at an
+-- inode that has been freed and whose blocks may already belong to another
+-- file, which is not.
+--
+-- A directory has to be empty. Removing a full one means walking it, and a
+-- walk that fails halfway leaves a tree in a state nothing described - that
+-- is a transaction, and it belongs after the journal rather than before it.
+function kfs.unlink(sb, path)
+  local dir_number, dir_node, name = kfs.parent_of(sb, path)
+
+  if not dir_number then return nil, dir_node end
+
+  local entries, err = kfs.read_dir(sb, dir_node)
+
+  if not entries then return nil, err end
+
+  local at, victim
+
+  for i, e in ipairs(entries) do
+    if e.name == name then
+      at, victim = i, e.inode
+      break
+    end
+  end
+
+  if not at then return nil, "no such file" end
+
+  local node, ierr = kfs.read_inode(sb, victim)
+
+  if not node then return nil, ierr end
+
+  if node.kind == kfs.KIND_DIR then
+    local inside = kfs.read_dir(sb, node)
+
+    if inside and #inside > 0 then
+      return nil, "the directory is not empty"
+    end
+  end
+
+  table.remove(entries, at)
+
+  local ok, derr = kfs.write_dir(sb, dir_number, dir_node, entries)
+
+  if not ok then return nil, derr end
+
+  -- Now unreachable, so what follows can be interrupted without hurting
+  -- anything that is still named.
+  for _, e in ipairs(node.extents) do
+    for i = 0, e.count - 1 do
+      kfs.free_block(sb, e.start + i)
+    end
+  end
+
+  return kfs.write_inode(sb, victim, { kind = kfs.KIND_FREE, links = 0,
+                                       size = 0, mtime = 0, attrs = 0,
+                                       extents = {} })
+end
+
 --------------------------------------------------------------------------
 -- Formatting.
 --

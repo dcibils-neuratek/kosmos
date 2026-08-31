@@ -42,7 +42,7 @@ local status = ui.label{ x = 12, y = H - 26,
                                 or (path .. " is new"),
                          color = "text_dim" }
 
-local text = ui.editor{ x = 12, y = 36, w = W - 24, h = H - 96,
+local text = ui.editor{ x = 12, y = 62, w = W - 24, h = H - 96,
                         text = (type(existing) == "string") and existing or "" }
 
 local where = ui.label{ x = 12, y = 14, text = path, color = "text" }
@@ -60,7 +60,35 @@ local function save()
   end
 end
 
-win:add(ui.button{ x = 12, y = H - 56, text = "Save", on_click = save })
+win:add(ui.button{ x = 12, y = 30, w = 60, h = 24, text = "Save",
+                   on_click = save })
+
+-- Write a program here, run it here.
+--
+-- The desktop's own `launch`, with an absolute path instead of a program
+-- name - the window manager already accepts one, because that is how `wm
+-- tracker:/bin` works, so running a file somebody just wrote needs nothing
+-- new anywhere.
+--
+-- It saves first, and that is not a convenience. Running the file while the
+-- buffer holds something else means the thing that ran is not the thing on
+-- screen, and every confusing minute that follows comes from there.
+win:add(ui.button{
+  x = 246, y = 30, w = 56, h = 24, text = "Run",
+  on_click = function()
+    if not path:match("%.lua$") then
+      status.text = "only a .lua file can be run"
+      return
+    end
+
+    save()
+
+    local ok, why = fs.send("/dev/wm", { type = "launch", program = path })
+
+    status.text = ok and ("running " .. path)
+                  or ("could not run it: " .. tostring(why))
+  end,
+})
 
 -- Somewhere else, chosen from a list rather than typed blind.
 --
@@ -69,8 +97,36 @@ win:add(ui.button{ x = 12, y = H - 56, text = "Save", on_click = save })
 -- window stops reading events until the panel closes. Its pixels stay on
 -- screen the whole time because the window manager owns them, which is the
 -- same property that lets a hung application keep its window.
+-- Somewhere else, chosen from a list.
+--
+-- The same panel the Save button opens, in its reading mode: a directory is
+-- entered and a *file* is chosen, where saving takes a name instead.
 win:add(ui.button{
-  x = 92, y = H - 56, w = 90, text = "Save as",
+  x = 176, y = 30, w = 62, h = 24, text = "Open",
+  on_click = function()
+    local chooser = panel.open{
+      start = path:match("^(.*)/") or "/home",
+      on_choose = function(chosen)
+        local body, why = fs.read(chosen)
+
+        if not body then
+          status.text = "could not open " .. chosen .. ": " .. tostring(why)
+          return
+        end
+
+        path = chosen
+        where.text = path
+        text:set(body)
+        status.text = ("opened %s, %d lines"):format(path, #text.lines)
+      end,
+    }
+
+    if chooser then chooser:run() end
+  end,
+})
+
+win:add(ui.button{
+  x = 80, y = 30, w = 88, h = 24, text = "Save as",
   on_click = function()
     local chooser = panel.save{
       start = path:match("^(.*)/") or "/home",
@@ -86,9 +142,6 @@ win:add(ui.button{
   end,
 })
 
-win:add(ui.label{ x = 90, y = H - 48,
-                  text = "or Control-S.  Then `run " .. path .. "`",
-                  color = "line" })
 
 win:add(status)
 

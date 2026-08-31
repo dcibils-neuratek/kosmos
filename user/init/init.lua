@@ -1610,6 +1610,12 @@ end
 -- creates a name starting with one, and `store` refuses to.
 local RESERVED = { [".super"] = true, [".format"] = true }
 
+-- What marks a file as holding a serialised value rather than bytes.
+--
+-- Four bytes that no text file starts with: a NUL first, so anything that
+-- reads this as text stops immediately rather than showing the rest.
+local TABLE_MARK = "\0KTV"
+
 local function diskfs_handlers(state)
   local kfs = state.kfs
 
@@ -1709,6 +1715,20 @@ local function diskfs_handlers(state)
         return { ok = false, error = tostring(err) }
       end
 
+      -- A value that was stored as one comes back as one, and in a single
+      -- reply: a table is small by construction here, because anything
+      -- large is a file and files are bytes.
+      if data:sub(1, #TABLE_MARK) == TABLE_MARK then
+        local value, perr = sys.unpack(data:sub(#TABLE_MARK + 1))
+
+        if value == nil then
+          return { ok = false, error = "stored value is damaged: "
+                                       .. tostring(perr) }
+        end
+
+        return { ok = true, value = value }
+      end
+
       -- Chunked, because a message is 2048 bytes and a file is not. The
       -- namespace's `read` already knows how to ask for the rest - it sends
       -- an offset and looks at `more` - so a large file needs nothing new
@@ -1766,14 +1786,62 @@ local function diskfs_handlers(state)
       -- which could then be written by nothing at all. Reserving two names
       -- reserves two names; it does not reserve a punctuation mark.
 
-      local number, err = kfs.store(sb, req.path, req.value or "",
-                                    sys.ticks())
+      -- A disk holds bytes, and the protocol carries values.
+      --
+      -- The ramfs stores whatever it was given, because it is memory and a
+      -- table is a thing memory can hold. A disk cannot, and the first
+      -- version handed the table straight to `store`, where `#data` on a
+      -- table with no array part is zero - so `.appearance` was written as
+      -- a nought-byte file, no error was raised anywhere, and the setting
+      -- appeared to save and came back empty.
+      --
+      -- So a table is serialised, with a marker in front so that reading
+      -- knows to undo it. `sys.pack` is the same serialiser a message uses,
+      -- which is the point: there is one encoding for a value in this
+      -- system and this is it.
+      local body = req.value or ""
+
+      if type(body) == "table" then
+        local packed, perr = sys.pack(body)
+
+        if not packed then
+          return { ok = false, error = "cannot store that: " .. tostring(perr) }
+        end
+
+        body = TABLE_MARK .. packed
+      elseif type(body) ~= "string" then
+        body = tostring(body)
+      end
+
+      local number, err = kfs.store(sb, req.path, body, sys.ticks())
 
       if not number then
         return { ok = false, error = tostring(err) }
       end
 
       state.writes = (state.writes or 0) + 1
+      return { ok = true }
+    end,
+
+    delete = function(req)
+      local sb = mounted()
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      local name = req.path:match("([^/]+)$")
+
+      if not name or RESERVED[name] then
+        return { ok = false, error = "that name is reserved" }
+      end
+
+      local ok, err = kfs.unlink(sb, req.path)
+
+      if not ok then
+        return { ok = false, error = tostring(err) }
+      end
+
       return { ok = true }
     end,
 

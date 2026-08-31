@@ -516,6 +516,7 @@ struct kosmos_asset {
 extern const struct kosmos_asset assets_table[];
 
 extern const char kosmos_name[];
+extern const char kernel_name[];
 extern const char kosmos_version[];
 extern const char kosmos_build[];
 extern const char kosmos_date[];
@@ -751,6 +752,12 @@ static int l_build(lua_State *L)
                         lua_setfield(L, -2, (k)); } while (0)
 
     PUTS("name", kosmos_name);
+
+    /* The kernel's own name, separately. Kosmos is the operating system -
+     * servers, a desktop, a userland - and Nebula is the microkernel under
+     * it. They were one name for a long time, which made "the kernel does
+     * not know what a file is" harder to say than it needed to be. */
+    PUTS("kernel", kernel_name);
     PUTS("version", kosmos_version);
     PUTS("build", kosmos_build);
     PUTS("date", kosmos_date);

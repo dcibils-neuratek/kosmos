@@ -44,7 +44,7 @@ local selected = 1
 -- list that changes would be a lot of work to look identical.
 --------------------------------------------------------------------------
 
-local table_view = ui.view{ x = 12, y = 44, w = W - 24, h = H - 90 }
+local table_view = ui.view{ x = 12, y = 70, w = W - 24, h = H - 116 }
 
 function table_view:draw(g)
   g:fill(0, 0, self.w, self.h, "sunken")
@@ -127,8 +127,11 @@ local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
 -- it should be.
 --------------------------------------------------------------------------
 
+-- In the bar at the top, with the path and the heading, rather than under
+-- the list. `ui.md` 16.10: the verbs go next to the noun, and the bottom
+-- edge is where a window's size is least certain.
 win:add(ui.button{
-  x = 12, y = H - 38, text = "End",
+  x = 12, y = 38, w = 60, h = 24, text = "End",
   on_click = function()
     local r = rows[selected]
 

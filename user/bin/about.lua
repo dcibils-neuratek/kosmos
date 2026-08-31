@@ -74,7 +74,8 @@ fact("Platform:", b.platform)
 fact("Processor:", ("%s, %d core%s"):format(cpu.part or "unknown",
                                             cpu.cores or 1,
                                             (cpu.cores == 1) and "" or "s"))
-fact("Kernel:", ("%s, built %s"):format(b.build, b.date))
+fact("Kernel:", ("%s %s, %s"):format(b.kernel or "Nebula", b.version,
+                                     b.build))
 fact("Running:", "just started")
 fact("Memory:", ("%d MB, %d free"):format(mem.total_mb or 0,
                                           mem.free_mb or 0))

@@ -633,6 +633,29 @@ function ui.editor(spec)
     return table.concat(self.lines, "\n") .. "\n"
   end
 
+  -- The other direction, so an editor can be given a different file without
+  -- being rebuilt. Splitting is the same three lines the constructor uses,
+  -- and having them in one place is why this is a method rather than
+  -- something every caller writes out.
+  function v:set(body)
+    self.lines = {}
+
+    for line in (tostring(body or "") .. "\n"):gmatch("([^\n]*)\n") do
+      self.lines[#self.lines + 1] = line
+    end
+
+    if #self.lines > 1 and self.lines[#self.lines] == "" then
+      self.lines[#self.lines] = nil
+    end
+
+    if #self.lines == 0 then self.lines[1] = "" end
+
+    -- Back to the top, because the cursor was somewhere in a file that is
+    -- no longer open and would otherwise sit past the end of this one.
+    self.cy, self.cx, self.top = 1, 1, 1
+    self.dirty = false
+  end
+
   local function rows(self)
     return (self.h - 4) // GH
   end

@@ -117,6 +117,7 @@ def main():
             "save notes.txt written before the reboot",
             "mkdir /home/papers",
             "save papers/deep.txt inside a directory",
+            'fs.write("/home/kept", { palette = "light", n = 42 })',
             "ls /home",
         ])
 
@@ -157,7 +158,10 @@ def main():
         # ---- second boot: a machine that has never seen this disk --------
         second = boot(image, disk, ["diskinfo", "ls /home", "ls /home/papers",
                                     "cat /home/notes.txt",
-                                    "cat /home/papers/deep.txt"])
+                                    "cat /home/papers/deep.txt",
+                                    'local t = fs.read("/home/kept"); '
+                                    'print("kept:", type(t), t and t.palette, '
+                                    't and t.n)'])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -212,6 +216,21 @@ def main():
                 "not come back. The directory entry survived and the data "
                 "blocks did not.\n" + second
             )
+
+        checks += 1
+
+        # A *value* stored as one has to come back as one. The disk holds
+        # bytes, so a table is serialised on the way down - and the first
+        # version did not do that, wrote a nought-byte file, raised nothing,
+        # and the desktop's own settings silently never saved.
+        if "kept:\ttable\tlight\t42" not in second.replace("  ", "\t"):
+            if "kept: table light 42" not in " ".join(second.split()):
+                raise Failure(
+                    "a table written to the disk did not come back as a "
+                    "table with its fields. Either it was stored as bytes "
+                    "and never decoded, or it was stored as nothing at "
+                    "all.\n" + second
+                )
 
         checks += 1
 

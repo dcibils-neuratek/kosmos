@@ -170,3 +170,10 @@ Graphical is the intended way to use this system. When something here says
 **Hot reload level 2** — A server dies and a supervisor relaunches it; clients reconnect through the namespace.
 
 **doomgeneric** — The Doom port that separated the engine from the platform. Five functions to implement.
+
+**Nebula** — the microkernel. Threads, address spaces, IPC, capabilities, and
+nothing else. What `kernel/`, `arch/` and `hal/` build into.
+
+**Kosmos** — the operating system: Nebula plus the servers, the namespace, the
+desktop and the applications. What somebody uses.
+

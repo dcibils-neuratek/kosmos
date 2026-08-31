@@ -2,6 +2,17 @@
 
 Microkernel OS with a Lua userland. AArch64.
 
+**Two names, and they are not interchangeable.** *Kosmos* is the operating
+system: the servers, the namespace, the desktop, the applications, the
+userland. *Nebula* is the microkernel it runs on - threads, address spaces,
+IPC, capabilities, and nothing else. Almost everything in these documents
+that says "the kernel" means Nebula, and almost everything that says "the
+system" means Kosmos.
+
+**Versions are `major.minor.revision`, in the `VERSION` file.** A revision
+per push, a minor per milestone, and a major when we decide something was
+big enough to be one. `make bump`, `make bump-minor`, `make bump-major`.
+
 A personal learning project. There are no users, no compatibility to maintain, no deadline. **Correctness and simplicity always win over delivery speed.**
 
 **Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware (Pi 5, Pi 1) arrives at milestone 2, once the serial cables are here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
