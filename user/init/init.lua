@@ -2926,6 +2926,17 @@ if role == ROLE_RUNNER then
   setmetatable(env, { __index = _G })
 
   local path = req.path
+
+  --
+  -- Named after what it is running.
+  --
+  -- Every one of these called itself "run", so `ps` and the process app
+  -- showed a column of identical names and the only way to tell two
+  -- applications apart was their id. The name is what a process table is
+  -- for.
+  --
+  sys.name((path:match("([^/]+)%.lua$") or path:match("([^/]+)$") or "run"))
+
   local source, read_err = ns.read(path)
 
   if not source then

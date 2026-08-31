@@ -46,6 +46,18 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Three apps.** `procs`, BeOS's ProcessController - every process with a
+  bar beside it, busiest first. `about`, the About box, with the machine
+  down the left and what the system is down the right. `sysmon`, the
+  meters. All in `/bin`, all in the Deskbar.
+- **A wrapping text view** in the kit, with a few styles and scrolling.
+  Written for the About box; it is also most of what a markdown viewer
+  needs.
+- **The Deskbar sizes itself** to the number of applications. It was two
+  fixed lists of seven rows, chosen when there were five.
+- **A runner is named after what it runs.** They were all called "run", so
+  `ps` and the process app showed a column of identical names.
+
 - **A process can be ended from outside.** `SYS_KILL`, for a parent, which
   is the authority `wait` already implies. It marks and unblocks; the
   process dies at its own next entry into the kernel, which is at most one

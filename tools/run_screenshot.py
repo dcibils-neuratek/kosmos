@@ -819,23 +819,43 @@ def check_widgets(guest):
     width, height, px = parse_ppm(guest.screendump())
     bar_before = find_colour_anywhere(width, height, px, SELECTED)
 
-    send(b"\x1b[B\x1b[B")     # down twice
-    send(b"\r", 1.5)
+    #
+    # One arrow at a time, and *waited for* rather than slept after.
+    #
+    # A fixed pause here was flaky in a full run and never standalone, which
+    # is the signature of a harness that is racing rather than a system that
+    # is broken: an application blocks for up to a second between events, so
+    # how long a keystroke takes to show up depends on where in that second
+    # it arrived. Watching for the result removes the guess.
+    #
+    for step in (1, 2):
+        send(b"\x1b[B", 0.2)
 
-    width, height, px = parse_ppm(guest.screendump())
-    after = find_colour_anywhere(width, height, px, SELECTED)
+        deadline = time.monotonic() + 10
 
-    if after is None:
-        raise Failure("the list's selection bar vanished while it was used.")
+        while time.monotonic() < deadline:
+            width, height, px = parse_ppm(guest.screendump())
+            after = find_colour_anywhere(width, height, px, SELECTED)
+
+            if after is not None and after[1] - bar_before[1] >= step * 16:
+                break
+
+            time.sleep(0.3)
+        else:
+            raise Failure(
+                f"down arrow {step} never moved the list's selection "
+                f"({bar_before} then {after}). The list had been clicked, so "
+                "it had the focus; the key is not arriving."
+            )
+
+    send(b"\r", 1.0)
 
     rows = (after[1] - bar_before[1]) / 16.0
 
     if abs(rows - 2) > 0.5:
         raise Failure(
             f"two down arrows moved the list's selection {rows:.1f} rows "
-            f"rather than 2 ({bar_before} then {after}). The list had been "
-            "clicked, so it had the focus; the arrows are not arriving, or "
-            "not both of them."
+            f"rather than 2 ({bar_before} then {after})."
         )
 
     # Hand the screen back, or the next phase types its command at a shell

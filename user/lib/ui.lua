@@ -546,6 +546,154 @@ function ui.list(spec)
   return v
 end
 
+--
+-- A block of text that wraps, in a few styles.
+--
+--   ui.text{ x =, y =, w =, h =, blocks = {
+--     { style = "title", text = "Kosmos" },
+--     { style = "body",  text = "a long paragraph ..." },
+--   } }
+--
+-- Styles rather than a markup language, and a short list of them rather
+-- than a general one: this exists because two applications wanted a
+-- paragraph that fits its box, and the moment it grows a parser it stops
+-- being a widget and becomes a document viewer. That is a different thing
+-- and it can be built on this.
+--
+-- Wrapping is on words, and a word longer than the line is broken rather
+-- than allowed to run off the edge - which the clip would hide, so the
+-- symptom would be text silently missing rather than text that looks
+-- wrong.
+--
+function ui.text(spec)
+  local v = ui.view(spec)
+
+  v.blocks = v.blocks or {}
+  v.scroll = 0
+  v.content = 0
+  v.focusable = true
+
+  local STYLES = {
+    title  = { colour = theme.text,     gap = 6, under = true },
+    head   = { colour = theme.text,     gap = 6 },
+    body   = { colour = theme.text_dim, gap = 2 },
+    accent = { colour = theme.good,     gap = 2 },
+  }
+
+  -- One string into as many lines as it takes.
+  local function wrap(text, columns)
+    local lines = {}
+    local line = ""
+
+    for word in tostring(text):gmatch("%S+") do
+      while #word > columns do
+        if line ~= "" then lines[#lines + 1] = line; line = "" end
+        lines[#lines + 1] = word:sub(1, columns)
+        word = word:sub(columns + 1)
+      end
+
+      if line == "" then
+        line = word
+      elseif #line + 1 + #word <= columns then
+        line = line .. " " .. word
+      else
+        lines[#lines + 1] = line
+        line = word
+      end
+    end
+
+    if line ~= "" then lines[#lines + 1] = line end
+    if #lines == 0 then lines[1] = "" end
+
+    return lines
+  end
+
+  function v:draw(g)
+    local columns = (self.w - 8) // GW
+
+    if columns < 1 then return end
+
+    local y = 4 - self.scroll
+
+    for _, b in ipairs(self.blocks) do
+      local style = STYLES[b.style or "body"] or STYLES.body
+
+      for _, line in ipairs(wrap(b.text, columns)) do
+        -- Only what is inside. The clip would hide the rest anyway; not
+        -- emitting it keeps a long document from becoming a long message.
+        if y > -GH and y < self.h then
+          g:text(4, y, line, style.colour)
+        end
+
+        y = y + GH
+      end
+
+      if style.under then
+        if y > -2 and y < self.h then
+          g:fill(4, y - 2, self.w - 8, 1, theme.line)
+        end
+        y = y + 4
+      end
+
+      y = y + style.gap
+    end
+
+    -- How tall the whole thing is, discovered by drawing it. Kept so that
+    -- scrolling can stop at the bottom rather than running off into
+    -- nothing, which is what an unclamped scroll does and what makes a
+    -- document look like it has been lost.
+    self.content = y + self.scroll
+  end
+
+  --
+  -- Scrolling. Arrows a line, page keys a screen, and dragging inside it
+  -- moves with the pointer - which is what a document does everywhere and
+  -- is three lines here because the pointer already grabs.
+  --
+  local function clamp(self)
+    local most = self.content - self.h + 8
+
+    if most < 0 then most = 0 end
+    if self.scroll > most then self.scroll = most end
+    if self.scroll < 0 then self.scroll = 0 end
+  end
+
+  function v:key(c)
+    if c == -1 then self.scroll = self.scroll - GH; clamp(self); return true end
+    if c == -2 then self.scroll = self.scroll + GH; clamp(self); return true end
+
+    -- Space and backspace, which is how every document reader has paged
+    -- since before there were mice.
+    if c == 32 then
+      self.scroll = self.scroll + self.h - GH
+      clamp(self)
+      return true
+    end
+
+    if c == 8 or c == 127 then
+      self.scroll = self.scroll - self.h + GH
+      clamp(self)
+      return true
+    end
+
+    return false
+  end
+
+  function v:mouse(action, x, y)
+    if action == "press" then
+      self.drag_from = y
+      self.drag_scroll = self.scroll
+    elseif action == "move" and self.drag_from then
+      self.scroll = self.drag_scroll + (self.drag_from - y)
+      clamp(self)
+    end
+
+    return true
+  end
+
+  return v
+end
+
 --------------------------------------------------------------------------
 -- Replicants.
 --

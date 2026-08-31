@@ -40,25 +40,15 @@
 local ui = use("/lib/ui.lua")
 local theme = use("/lib/theme.lua")
 
-local W, H = 210, 320
-
 local screen = gfx.screen()
-local sw = screen and select(1, screen:size()) or 1024
+local sw, sh = 1024, 768
 
-local win, err = ui.window{ title = "Tracker", w = W, h = H,
-                            x = sw - W - 12, y = 34 }
-
-if not win then
-  print("deskbar: " .. tostring(err))
-  return
-end
+if screen then sw, sh = screen:size() end
 
 
 --------------------------------------------------------------------------
 -- What can be started.
 --------------------------------------------------------------------------
-
-local status = ui.label{ x = 10, y = H - 22, text = "", color = theme.text_dim }
 
 local launchable = {}
 
@@ -80,12 +70,50 @@ do
   table.sort(launchable)
 end
 
+--------------------------------------------------------------------------
+-- Sized to what there is, not to what there was.
+--
+-- This was two fixed lists of seven rows, chosen when there were five
+-- applications. There are more now and there will be more again, and a
+-- launcher that cannot show you everything it can launch is a launcher with
+-- a bug in it. So the applications list is as tall as the list of
+-- applications, and the window is as tall as that needs - clamped to the
+-- screen, after which the list scrolls, which it already knew how to do.
+--------------------------------------------------------------------------
+
+local ROW = gfx.font.h
+local W = 210
+
+local RUNNING_ROWS = 6
+local app_rows = math.max(#launchable, 3)
+
+local running_h = RUNNING_ROWS * ROW + 6
+local apps_h = app_rows * ROW + 6
+
+local H = 26 + running_h + 26 + apps_h + 34
+
+if H > sh - 60 then
+  apps_h = apps_h - (H - (sh - 60))
+  H = sh - 60
+end
+
+local win, err = ui.window{ title = "Tracker", w = W, h = H,
+                            x = sw - W - 12, y = 34 }
+
+if not win then
+  print("deskbar: " .. tostring(err))
+  return
+end
+
+local status = ui.label{ x = 10, y = H - 22, text = "",
+                         color = theme.text_dim }
+
 win:add(ui.label{ x = 10, y = 8, text = "Running", color = theme.text })
 
 local handles = {}
 
 local running = ui.list{
-  x = 10, y = 26, w = W - 20, h = 118, items = {},
+  x = 10, y = 26, w = W - 20, h = running_h, items = {},
   on_select = function(_, _, index)
     local handle = handles[index]
 
@@ -98,10 +126,12 @@ local running = ui.list{
 
 win:add(running)
 
-win:add(ui.label{ x = 10, y = 152, text = "Applications", color = theme.text })
+win:add(ui.label{ x = 10, y = 26 + running_h + 6, text = "Applications",
+                  color = theme.text })
 
 local apps = ui.list{
-  x = 10, y = 170, w = W - 20, h = 118, items = launchable,
+  x = 10, y = 26 + running_h + 26, w = W - 20, h = apps_h,
+  items = launchable,
   on_select = function(_, name)
     if not name then return end
 
