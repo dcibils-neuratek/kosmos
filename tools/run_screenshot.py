@@ -64,6 +64,12 @@ So there are two phases here, and the second is the one that matters:
      property store that accepted the write and told nobody would pass a
      read-back and fail this.
 
+ 10. **A replicant moved between processes.** One application publishes a
+     view as source, state and a `needs` list; another, which has never
+     heard of clocks, adopts it and runs it. Both clocks must be ticking and
+     reading differently, and the line reporting what the replicant's
+     restricted namespace actually answered must be the green one.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -864,6 +870,118 @@ def check_scripting(guest):
     return 2
 
 
+# A replicant's text, theme.good.
+GREEN = (0x3f, 0xb9, 0x50)
+
+
+def green_bands(width, height, px):
+    """The distinct horizontal bands containing replicant-green pixels."""
+    bands = []
+
+    for y in range(0, height, 2):
+        found = False
+
+        for x in range(0, width, 2):
+            at = (y * width + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == GREEN:
+                found = True
+                break
+
+        if found:
+            if bands and y - bands[-1][1] <= 6:
+                bands[-1][1] = y
+            else:
+                bands.append([y, y])
+
+    return bands
+
+
+def check_replicants(guest):
+    """A view moved between processes, still running, with what it declared.
+
+    roadmap.md M7's second definition of done, minus the dragging - there is
+    no pointer yet, so `clock` offers the replicant through /data and
+    `tracker` picks it up. The mechanism is the whole of it either way; the
+    pointer is the part that is missing.
+
+    `wm clock,tracker` starts two applications in two address spaces. The
+    first publishes a description - source, state, and a `needs` list - and
+    shows the clock. The second has never heard of clocks: it reads the
+    description and instantiates it. Both must then be ticking, with
+    different state, which is what makes it a replicant rather than a
+    picture of one.
+
+    Two things are checked, both by what reaches the screen:
+
+      * two green clocks, in two different windows, and both changing.
+        `tracker` re-runs the same source with its own state, so the two
+        read differently and neither is a copy of the other's pixels.
+      * `tracker` also prints what the replicant's restricted namespace
+        actually answers - it tries /dev/cpu, which was declared, and /data,
+        which was not - so the sandbox line on screen is a measurement and
+        not a claim. That line is green only when the refusal happened.
+    """
+    guest.type("wm clock,tracker")
+    time.sleep(12)
+
+    width, height, before = parse_ppm(guest.screendump())
+    bands = green_bands(width, height, before)
+
+    if len(bands) < 3:
+        raise Failure(
+            f"expected three bands of replicant green - a clock in each of "
+            f"two windows and the sandbox result - and found {len(bands)}. "
+            "Either the replicant did not load in one of them, or the "
+            "restricted namespace let /data through, which turns that line "
+            "red."
+        )
+
+    time.sleep(3)
+    _, _, after = parse_ppm(guest.screendump())
+
+    ticking = 0
+
+    for top, bottom in bands:
+        changed = False
+
+        for y in range(top, min(bottom + 2, height)):
+            row = y * width * 3
+
+            if before[row:row + width * 3] != after[row:row + width * 3]:
+                changed = True
+                break
+
+        if changed:
+            ticking += 1
+
+    if ticking < 2:
+        raise Failure(
+            f"only {ticking} of the replicants changed in three seconds. A "
+            "replicant that was adopted but is not running is a picture of "
+            "a clock."
+        )
+
+    # Hand the screen back.
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after the clocks.")
+
+    return 3
+
+
 def check_window_manager(guest):
     """This milestone's definition of done: BeOS's test.
 
@@ -1120,6 +1238,7 @@ def main():
         editor_checks = check_editor(guest)
         widget_checks = check_widgets(guest)
         script_checks = check_scripting(guest)
+        replicant_checks = check_replicants(guest)
         wm_checks = check_window_manager(guest)
 
         if args.png:
@@ -1135,7 +1254,7 @@ def main():
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
-             + widget_checks + script_checks)
+             + widget_checks + script_checks + replicant_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1147,7 +1266,8 @@ def main():
           f"{editor_checks} on the machine writing and running its own "
           f"program, "
           f"{widget_checks} on the widget kit, "
-          f"{script_checks} on scripting a running application).")
+          f"{script_checks} on scripting a running application, "
+          f"{replicant_checks} on a replicant moved between processes).")
     return 0
 
 

@@ -202,6 +202,21 @@ A replicant that asks for `/dev/clock` cannot read your files. In BeOS a replica
 
 This is the intersection of the system's three ideas: the Lisp Machine live image makes the code transportable, seL4 capabilities make it safe, and the BeOS idea gives it its purpose.
 
+**The honest limit, now that it is built.** A replicant runs *inside* its
+host's process, so the restriction is one the language enforces and not one
+the kernel does: the address space is the host's, and Lua is what stands
+between them. That is strictly more than BeOS offered - which was nothing,
+since a replicant there was native code with the full run of its host - and
+strictly less than a separate process would be. Something needing the
+stronger guarantee should be an application in a window, which is a
+different thing wanting a different mechanism.
+
+And the evidence has to come from inside. The first version had the *host*
+build the same restricted namespace and probe that, which measures the
+function rather than the environment: opening the sandbox in `ui.replicant`
+left the probe reporting a refusal exactly as before. The replicant tries
+both paths itself now and leaves the answers where the host can read them.
+
 ---
 
 ## 16.8b The look: BeOS's structure, not BeOS's skin

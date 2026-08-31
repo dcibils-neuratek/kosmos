@@ -59,7 +59,29 @@ ENVIRONMENTS = {
 }
 
 
+# Some files do not run in a Lua state at all. A replicant is loaded by its
+# host into an environment built by hand from a `needs` list, so it has no
+# `print`, no `assert`, no `sys` - and checking it against the ordinary base
+# would let a replicant using `print` through, to fail in somebody else's
+# window at run time.
+#
+# So this is an *exact* set and not an addition to one. It has to match
+# `ui.replicant` in user/lib/ui.lua; when that list changes, this one does.
+EXACT = {
+    "-replicant.lua": {
+        "gfx", "fs", "ticks", "theme",
+        "math", "string", "table",
+        "tostring", "tonumber", "ipairs", "pairs", "select",
+        "type", "error", "pcall",
+    },
+}
+
+
 def environment_for(path):
+    for suffix, exact in EXACT.items():
+        if path.endswith(suffix):
+            return set(exact)
+
     allowed = set(LUA) | set(ABSENT) | ENVIRONMENTS["default"]
 
     for prefix, extra in ENVIRONMENTS.items():

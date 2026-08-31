@@ -46,6 +46,13 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Replicants** - M7's second definition of done, minus the dragging.
+  `wm clock,tracker`: one application publishes a view as source, state and
+  a `needs` list, and another, which has never heard of clocks, adopts it
+  and runs it. Both tick, with different state. The replicant reports from
+  *inside* its own environment what it could reach, which is the only
+  honest place to ask.
+
 - **The scripting architecture** - M7's third definition of done. An
   application registers with `/app` and answers for its own properties
   because it called `ui.window`, not because it has any scripting code:
@@ -99,7 +106,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 45 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 48 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

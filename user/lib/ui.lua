@@ -429,6 +429,146 @@ function ui.list(spec)
 end
 
 --------------------------------------------------------------------------
+-- Replicants.
+--
+-- `ui.md` 16.8, and the most BeOS thing here. In BeOS you could drag a view
+-- out of one application and drop it into another and it kept working - a
+-- clock, a CPU meter, a mini player. It was implemented with `BArchivable`
+-- and by loading a binary add-on into the destination process, which was
+-- fragile and an enormous attack surface: the thing you dropped was native
+-- code with the full run of its host.
+--
+-- Here a view is Lua source plus a state table plus a list of what it needs,
+-- and all three are ordinary values that cross a boundary the way any value
+-- does:
+--
+--   { source = "...the view's code...",
+--     state  = { format = "24h" },
+--     needs  = { "/dev/cpu" } }
+--
+-- The host loads the source into an environment built from `needs` and
+-- nothing else. A replicant that asked for /dev/cpu cannot read your files -
+-- not because it is checked when it tries, but because there is no name in
+-- its world that reaches them.
+--
+-- **The honest limit.** A replicant runs *inside* its host's process, so
+-- this is a restriction in the language and not one the kernel enforces:
+-- the address space is the host's, and Lua is what stands between them. It
+-- is strictly more than BeOS offered - which was nothing - and strictly less
+-- than a separate process would be. Something that needs the stronger
+-- guarantee should be an application in a window, which is a different
+-- thing wanting a different mechanism.
+--------------------------------------------------------------------------
+
+--
+-- A namespace with exactly the paths `needs` asked for.
+--
+-- Prefix matching, so "/dev/cpu" grants that node and anything under it and
+-- nothing beside it: "/dev/cpuboard" does not match, because the test is on
+-- a path component and not on a string.
+--
+function ui.restricted(needs)
+  local allowed = {}
+
+  for _, path in ipairs(needs or {}) do
+    allowed[#allowed + 1] = path
+  end
+
+  local function permitted(path)
+    for _, prefix in ipairs(allowed) do
+      if path == prefix or path:sub(1, #prefix + 1) == prefix .. "/" then
+        return true
+      end
+    end
+    return false
+  end
+
+  local function guard(fn)
+    return function(path, ...)
+      if not permitted(path) then
+        -- The same sentence the namespace itself gives, and for the same
+        -- reason: nothing was denied, there is simply no such path here.
+        return nil, "no such path: " .. tostring(path)
+      end
+      return fn(path, ...)
+    end
+  end
+
+  return {
+    read    = guard(fs.read),
+    list    = guard(fs.list),
+    getattr = guard(fs.getattr),
+    query   = guard(fs.query),
+  }
+end
+
+--
+-- A view built from one of those descriptions.
+--
+-- The source must return a factory: a function taking the state table and
+-- returning something with a `draw(self, gc)`. Optionally a `tick(self)`,
+-- called once a pass, which is how a clock is a clock.
+--
+function ui.replicant(spec)
+  local v = ui.view{ x = spec.x or 0, y = spec.y or 0,
+                     w = spec.w or 160, h = spec.h or 40 }
+
+  -- What a replicant may see. Deliberately small and deliberately explicit:
+  -- adding to this list is granting something to every replicant that will
+  -- ever run, so it is a list and not a metatable onto _G.
+  local env = {
+    gfx = { font = gfx.font },
+    fs = ui.restricted(spec.needs),
+    ticks = sys.ticks,
+    theme = theme,
+
+    math = math, string = string, table = table,
+    tostring = tostring, tonumber = tonumber,
+    ipairs = ipairs, pairs = pairs, select = select,
+    type = type, error = error, pcall = pcall,
+  }
+
+  local chunk, err = load(spec.source, "=replicant", "t", env)
+
+  if not chunk then
+    return nil, "replicant: " .. tostring(err)
+  end
+
+  local ok, factory = pcall(chunk)
+
+  if not ok or type(factory) ~= "function" then
+    return nil, "replicant: the source did not return a factory"
+  end
+
+  local made
+  ok, made = pcall(factory, spec.state or {})
+
+  if not ok or type(made) ~= "table" or type(made.draw) ~= "function" then
+    return nil, "replicant: the factory did not produce a view"
+  end
+
+  v.instance = made
+
+  function v:draw(g)
+    -- Its failure is its own. A replicant that raises stops drawing and
+    -- leaves everything around it alone, which is the property that makes
+    -- dropping a stranger's view into your window a reasonable thing to do.
+    local drew, why = pcall(made.draw, made, g, self.w, self.h)
+
+    if not drew then
+      g:fill(0, 0, self.w, self.h, theme.sunken)
+      g:text(2, 2, "replicant: " .. tostring(why):sub(1, 40), theme.bad)
+    end
+  end
+
+  function v:tick()
+    if made.tick then pcall(made.tick, made) end
+  end
+
+  return v
+end
+
+--------------------------------------------------------------------------
 -- A window: the root view, the conversation with the window manager, and
 -- the properties it publishes.
 --
@@ -481,6 +621,8 @@ function ui.window(spec)
     y = spec.y or 0,
     properties = {},
     dirty = false,
+    ticking = {},
+    tick_every = spec.tick_every or 0,
   }, window)
 
   --
@@ -596,7 +738,24 @@ local function serve_properties(self)
 end
 
 function window:add(child)
-  return self.root:add(child)
+  local added = self.root:add(child)
+
+  if type(child) == "table" and child.tick then
+    self.ticking = self.ticking or {}
+    self.ticking[#self.ticking + 1] = child
+
+    -- Half a second, in counter ticks. Read the first time a window has
+    -- anything that ticks at all, so an ordinary window never asks /dev/cpu
+    -- a question it has no use for. Without this the default was "every
+    -- pass", which is a full repaint per yield and would drown the window
+    -- manager in messages about a clock that changes once a second.
+    if not self.tick_every or self.tick_every == 0 then
+      local cpu = fs.read("/dev/cpu")
+      self.tick_every = (cpu and cpu.counter_hz or 62500000) // 2
+    end
+  end
+
+  return added
 end
 
 function window:close()
@@ -729,6 +888,21 @@ function window:run()
         end
 
         if c and dispatch(self, c) then changed = true end
+      end
+    end
+
+    -- A replicant with a `tick` is something that changes on its own - a
+    -- clock is the archetype - so the window repaints on a slow clock of its
+    -- own rather than only when a key arrives.
+    if self.ticking and #self.ticking > 0 then
+      local now = sys.ticks()
+
+      if now - (self.last_tick or 0) > self.tick_every then
+        self.last_tick = now
+
+        for _, r in ipairs(self.ticking) do r:tick() end
+
+        changed = true
       end
     end
 
