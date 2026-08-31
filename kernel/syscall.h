@@ -52,8 +52,9 @@
 #define SYS_UNMAP      14   /* (address, pages)       -> 0 or error       */
 #define SYS_SETNAME    15   /* (ptr, len)             -> 0 or error       */
 #define SYS_PROCTABLE  16   /* (&entries, max)        -> count or error   */
+#define SYS_ENDPOINT_DESTROY 17 /* (cap)              -> 0 or error       */
 
-#define SYS_MAX         17
+#define SYS_MAX         18
 
 /*
  * What a spawn may hand its child beyond capabilities.

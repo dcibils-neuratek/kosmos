@@ -221,6 +221,19 @@ static int l_endpoint(lua_State *L)
     return 1;
 }
 
+static int l_destroy(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    long status = kosmos_endpoint_destroy(cap);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_call(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
@@ -514,6 +527,7 @@ static const luaL_Reg sys_functions[] = {
     { "processes", l_processes },
     { "programs", l_programs },
     { "endpoint", l_endpoint },
+    { "destroy",  l_destroy },
     { "call",     l_call },
     { "receive",  l_receive },
     { "reply",    l_reply },

@@ -40,11 +40,15 @@ extern const unsigned char font_8x16[];
 #define GLYPH_LAST  0x7e
 
 /*
- * The bottom of the screen belongs to the progress bar, so the text above it
- * can scroll without touching it. Three rows: one of margin, one of bar, one
- * of margin.
+ * The bottom of the screen belongs to the boot progress bar, and afterwards
+ * to whatever userland puts there - the shell's status line lives in the
+ * same rows. Text never scrolls through them, which is the whole point: two
+ * writers on one framebuffer with no compositor between them works only
+ * because these rows are nobody else's.
+ *
+ * Two rows. Three was a band; this is a line.
  */
-#define RESERVED_ROWS   3
+#define RESERVED_ROWS   2
 
 /*
  * Written before there is a second thread and read by one thread thereafter.
@@ -347,7 +351,7 @@ void console_progress(unsigned done, unsigned total)
     /* In the reserved rows at the bottom, so scrolling text never disturbs
      * it and it never has to be redrawn from scratch. */
     margin = GLYPH_W * 2;
-    y = (rows * GLYPH_H) + GLYPH_H;
+    y = (rows * GLYPH_H) + GLYPH_H / 2;
     h = GLYPH_H / 2;
     w = screen.width - margin * 2;
 

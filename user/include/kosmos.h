@@ -212,6 +212,15 @@ static inline long kosmos_endpoint(void)
     return sys0(SYS_ENDPOINT);
 }
 
+/*
+ * Destroys an endpoint and wakes everything blocked on it with an error.
+ * Only one this process holds: the index is resolved against its own table.
+ */
+static inline long kosmos_endpoint_destroy(long cap)
+{
+    return sys1(SYS_ENDPOINT_DESTROY, cap);
+}
+
 static inline long kosmos_call(long cap, const struct message *msg,
                                struct message *reply)
 {

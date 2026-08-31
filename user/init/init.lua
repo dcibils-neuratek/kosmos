@@ -24,9 +24,6 @@ local ROLE_INIT     = 7   -- starts everything else, and outlives it
 
 local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
 local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
-local ROLE_BURN      = 10 -- spins for a while, so the CPU meter has something
-                          -- to show. There is no way to kill a process, so it
-                          -- stops on its own rather than looping for ever.
 local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 
@@ -746,7 +743,6 @@ local function devices_main(endpoint)
   serve(endpoint, {}, devices_handlers)
 end
 
-local BURN_ROLE = ROLE_BURN
 local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap)
@@ -820,7 +816,7 @@ fs - this process's namespace, not a global filesystem.
 At the prompt:
 
   ls [path]      list; pwd, cd <path> to move around
-  cat <path>     read one thing and print it
+  cat <path>     a program in /bin: reads one thing and prints it
   /commands      everything the shell answers to
 
 The working directory lives in the shell and nowhere else. A server is
@@ -1007,7 +1003,10 @@ your filesystem back.
   -- stop needing. It is honest for a status line and would not be for
   -- anything that moved.
   --------------------------------------------------------------------------
-  local RESERVED_ROWS = 3
+  -- Matches RESERVED_ROWS in kernel/console.c: the rows at the bottom that
+  -- text never scrolls through. Two, so the bar is a single line of text
+  -- with a rule above it rather than a band.
+  local RESERVED_ROWS = 2
 
   --
   -- Usage is the difference between two readings, never one.
@@ -1064,7 +1063,7 @@ your filesystem back.
 
     screen:fill(0, top, w, h - top, 0xff161b22)
     screen:fill(0, top, w, 1, 0xff30363d)
-    screen:text(4, top + 4, text, 0xff7ee787, 0xff161b22)
+    screen:text(4, top + gfx.font.h // 2, text, 0xff7ee787, 0xff161b22)
     return nil
   end
 
@@ -1207,19 +1206,6 @@ your filesystem back.
     end
   end
 
-  commands.cat = function(arg)
-    if arg == "" then out("usage: cat <path>\n") return end
-
-    local value, err = ns.read(resolve(arg))
-
-    if value == nil then
-      out("cat: " .. resolve(arg) .. ": " .. tostring(err) .. "\n")
-      return
-    end
-
-    out(show(value) .. "\n")
-  end
-
   --------------------------------------------------------------------------
   -- Commands that are Lua programs.
   --
@@ -1275,27 +1261,22 @@ your filesystem back.
     out(name .. " defined; run it as /" .. name .. "\n")
   end
 
-  -- Not `load`, which was the first choice and was wrong: `load` is a Lua
-  -- standard function, so the collision rule quite correctly sent the bare
-  -- word to Lua and the command was reachable only as /load. A command that
-  -- always needs its slash has a badly chosen name.
   --------------------------------------------------------------------------
   -- Running a program.
   --
-  -- The shell reads the source and hands it to a process of its own, along
-  -- with the capabilities it chose to pass on. That is what `exec` is here:
-  -- no path search, no inherited environment, no ambient authority. A
-  -- program reaches exactly what it was given.
+  -- The shell reads nothing: it asks whether the program exists, spawns a
+  -- process, and tells it the path. That process has /bin too, and fetching
+  -- the source is its business - so the bytes cross the boundary once.
   --
-  -- The call blocks until the program finishes, which is what a command
-  -- line wants. A program that should outlive the prompt is a different
-  -- thing and will want a different verb.
+  -- This is what exec looks like with no ambient authority. No path search,
+  -- no inherited environment, no global tree: the program gets exactly the
+  -- capabilities named here and can pass on no more than it holds.
   --------------------------------------------------------------------------
   local function run_program(name, argument)
     local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
 
     -- Asked about rather than read. The shell does not need the program;
-    -- the process that will run it does, and it has /bin too.
+    -- the process that will run it does.
     local attrs, err = ns.getattr(path)
 
     if not attrs then
@@ -1305,20 +1286,23 @@ your filesystem back.
     local ep = sys.endpoint()
     if not ep then return false, "no endpoint for the program" end
 
-    -- The screen goes too, so a program can draw. Every capability here is
-    -- one the shell holds: a spawn resolves against the parent's own table,
-    -- so this cannot hand out more than it has.
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap }, SPAWN_SCREEN)
 
-    if not id then return false, "could not start a process for it" end
+    if not id then
+      sys.destroy(ep)
+      return false, "could not start a process for it"
+    end
 
     local reply = sys.call(ep, {
-      path = path, args = argument or "",
+      path = path, args = argument or "", cwd = cwd,
       console = 1, data = 2, bin = 3, devices = 4,
     })
 
-    sys.wait()          -- it is finished; collect it
+    -- A private channel for one message. There are ninety-six of them, and
+    -- leaving them behind is how a pool runs out for reasons nobody sees.
+    sys.destroy(ep)
+    sys.wait()
 
     if not reply then return false, "the program did not answer" end
     if not reply.ok then return false, reply.error end
@@ -1337,24 +1321,6 @@ your filesystem back.
     local ok, err = run_program(name, rest)
 
     if not ok then out("run: " .. tostring(err) .. "\n") end
-  end
-
-  commands.benchmark = function(arg)
-    local n = tonumber(arg) or 1
-
-    if n < 1 or n > 8 then
-      out("usage: benchmark [1-8]   that many busy processes, 10 seconds\n")
-      return
-    end
-
-    for _ = 1, n do
-      local id, err = sys.spawn(BURN_ROLE, {})
-      if not id then out("benchmark: " .. tostring(err) .. "\n") return end
-    end
-
-    out(string.format("%d process%s burning for 10 seconds.\n",
-                      n, n == 1 and "" or "es"))
-    out("Watch it with `monitor watch`, or run `ps` twice.\n")
   end
 
   commands.clear = function()
@@ -1463,12 +1429,25 @@ your filesystem back.
     end
 
     if arg == "watch" then
-      -- Blocking on purpose and bounded on purpose: there is no way to
-      -- interrupt it, so it stops on its own.
-      for _ = 1, 200 do
+      --
+      -- Once a second, on the clock.
+      --
+      -- This used to count forty yields between redraws, which is not a
+      -- rate at all: on an idle machine a yield returns immediately, so it
+      -- spun as fast as the scheduler would let it, and under load it
+      -- slowed to whatever was left. A monitor whose sampling rate depends
+      -- on what it is measuring is measuring itself.
+      --
+      -- Blocking and bounded on purpose: there is no way to interrupt it,
+      -- so it stops after thirty seconds on its own.
+      local hz = sys.info().counter_hz
+
+      for _ = 1, 30 do
         local err = draw_monitor()
         if err then out(err .. "\n") return end
-        for _ = 1, 40 do sys.yield() end
+
+        local until_ = sys.ticks() + hz
+        while sys.ticks() < until_ do sys.yield() end
       end
       return
     end
@@ -1542,8 +1521,7 @@ your filesystem back.
   -- Shipped so that the listing is reachable under the word most people try.
   aliases.aliases = "alias"
 
-  -- And a shorter word for the thing you type while watching the meter.
-  aliases.spin = "benchmark"
+
 
   local help = setmetatable({}, {
     __tostring = function() return topics.overview end,
@@ -1653,8 +1631,18 @@ your filesystem back.
         local exists = ns.getattr("/bin/" .. word .. ".lua")
 
         if exists then
-          local ok, err = run_program(word, rest)
-          if not ok then out("run: " .. tostring(err) .. "\n") end
+          -- pcall, like the command path above. Without it a program that
+          -- fails to *start* - as opposed to one that fails while running,
+          -- which is already isolated in its own process - took the shell
+          -- down with it, and the shell cannot print its own last words
+          -- because it prints by asking the console server.
+          local started, ok, err = pcall(run_program, word, rest)
+
+          if not started then
+            out("run: " .. tostring(ok) .. "\n")
+          elseif not ok then
+            out("run: " .. tostring(err) .. "\n")
+          end
           reap()
           if monitor_on then draw_monitor() end
           goto next_line
@@ -2015,9 +2003,58 @@ if role == ROLE_RUNNER then
 
   local function out(s) ns.write("/dev/console", s) end
 
+  --
+  -- A program can start a program.
+  --
+  -- The shell does it by spawning one of these and naming a path; a program
+  -- has no way to, because the runner's role number is init's business and
+  -- not a program's. So the runner - which *is* one, and knows the number -
+  -- offers it, along with the capabilities it was given. A program can pass
+  -- on no more than it holds, which is the same rule as everywhere else.
+  --
+  -- `detach` is the difference between `run` and `benchmark`: with it the
+  -- child answers as soon as it has been told what to run, and gets on with
+  -- it, so the launcher is not held for the ten seconds the work takes.
+  -- Without it the answer comes back when the program is finished, which is
+  -- what a command line wants.
+  local function launch(path, argument, detach)
+    local ep = sys.endpoint()
+    if not ep then return false, "no endpoint" end
+
+    local id = sys.spawn(RUNNER_ROLE,
+                         { ep, req.console, req.data, req.bin, req.devices },
+                         SPAWN_SCREEN)
+
+    if not id then
+      sys.destroy(ep)
+      return false, "no process"
+    end
+
+    local reply = sys.call(ep, {
+      path = path, args = argument or "", cwd = req.cwd or "/",
+      detach = detach and true or false,
+      console = 1, data = 2, bin = 3, devices = 4,
+    })
+
+    -- Destroyed either way. It was a private channel for one message and
+    -- there are only ninety-six of them; leaving it is how the pool runs
+    -- out for reasons nobody can see.
+    sys.destroy(ep)
+
+    if not reply then return false, "no answer" end
+    return reply.ok, reply.error
+  end
+
   local env = {
     fs = ns,
     args = req.args or "",
+
+    -- Where the caller thought it was. The working directory is the
+    -- shell's idea and servers know nothing about it, so it travels with
+    -- the request rather than being asked for: a program that wants to
+    -- resolve a relative path needs it, and nothing else does.
+    cwd = req.cwd or "/",
+    run = launch,
     print = function(...)
       local parts = {}
       for i = 1, select("#", ...) do
@@ -2043,6 +2080,15 @@ if role == ROLE_RUNNER then
     return
   end
 
+  -- Detached: answer now, work afterwards. The caller wanted it started,
+  -- not finished, and holding it until the program ends would make
+  -- "start four of these" mean "run four of these one at a time".
+  if req.detach then
+    sys.reply(who, { ok = true })
+    pcall(chunk)
+    return
+  end
+
   -- pcall, so a program that raises reports it instead of taking this
   -- process down without a word. It is its own process either way; this
   -- just means the shell hears why.
@@ -2052,19 +2098,6 @@ if role == ROLE_RUNNER then
   return
 end
 
-if role == ROLE_BURN then
-  sys.name("burn")
-  -- Ten seconds of doing nothing, busily.
-  --
-  -- Deliberately *not* yielding: the point is to be a thread the scheduler
-  -- has to preempt rather than one that hands the core back, which is what
-  -- makes the meter read what a real workload would.
-  local hz = sys.info().counter_hz
-  local until_ = sys.ticks() + hz * 10
-
-  while sys.ticks() < until_ do end
-  return
-end
 
 -- A client. The name it mounts the filesystem under is its own business,
 -- and is the whole demonstration: the same server, two processes, two

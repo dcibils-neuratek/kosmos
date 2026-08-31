@@ -100,6 +100,23 @@ The first version of this used four to six lines a stage and was worse, not bett
 
 **A command can be a Lua program.** `alias` points one word at another; `def` compiles a line of Lua and gives it a name, argument string arriving as `...`. It is compiled at definition time, into the same environment as the prompt, so a syntax error is reported when you write it and it reaches exactly what you reach. That is the shape the idea deserved: an alias that is only a second name for a command is a convenience, and a command that is a program is a way to extend the system from inside it.
 
+**Programs launch programs, and the shell has stopped being where they live.**
+
+    kosmos> ls /bin
+      benchmark.lua  cat.lua  hello.lua  htop.lua  spin.lua
+
+`benchmark` and `cat` were shell commands and are programs now. `benchmark` launches `spin` — a program in /bin starting another program in /bin, with no special case anywhere: `run` is a function the runner hands its program, and it can pass on no more capabilities than it holds itself.
+
+**`detach` is the difference between `run` and `benchmark`.** Detached, the child answers as soon as it has been told what to run and gets on with it, so "start four of these" does not mean "run four of these one at a time". Undetached, the answer comes when the program is finished, which is what a command line wants.
+
+**The endpoint leak is closed.** `SYS_ENDPOINT_DESTROY` exposes what the kernel could already do and nothing could ask for: every program run consumed one of ninety-six for ever. No permission check beyond the capability itself — the index resolves against the caller's own table, so a process can only destroy one it was given.
+
+**The working directory travels with a program.** It is the shell's idea and no server knows about it, so it goes in the request rather than being asked for. `cd /data` then `cat notes` works, and `cat` is a program that has never heard of the shell.
+
+**A slice-based edit silently deleted `run_program` for the third time.** The first cost nine test functions, the second cost `tests_run()` and looked like a hang, and this one left the shell calling a function that no longer existed — which killed the shell, silently, because the shell prints by asking the console server. It is written down here three times now; the rule is narrow anchors, and I keep not following it.
+
+That failure did surface a real bug worth keeping: the bare-word program path was not wrapped in `pcall` the way the command path is, so a program that failed to *start* took the shell down. A program that fails while *running* was always isolated — it is its own process — but starting one happens in the shell.
+
 **There is a `/bin`, and programs run in processes of their own.**
 
     kosmos> ls /bin
@@ -116,8 +133,6 @@ The first version of this used four to six lines a stage and was worse, not bett
 **Reads can now span messages.** `MSG_BYTES` stayed at 2048 rather than growing, because `struct thread` embeds a message — every thread would pay — and `sys_call` keeps one on a 16 KB exception stack. A server holding something large answers with `more = true` and honours `offset`; one that does not ignores the field, as every existing server does.
 
 **And `serve` no longer dies when a reply will not fit.** `sys.reply` raises on a value that does not serialise, and that call is *outside* the coroutine that isolates a handler — so the first time `/bin` was asked for a program bigger than a message, the program store died and the client saw only that its request never came back. The failure now reaches whoever asked.
-
-**Known gap: `run` leaks an endpoint.** There is no syscall to destroy one — `ipc_endpoint_destroy` exists in the kernel and is not exposed — so every program run consumes one of 96 permanently. About ninety runs before a reboot is needed.
 
 **The pools were raised, and doing it found a limit nothing could see.** Threads 16 to 48, processes 8 to 32, endpoints 32 to 96. Raising the first two changed nothing: spawning still failed at eleven processes, with every pool the system could report showing plenty free — 16 of 32 processes, 17 of 48 threads, 469 MB.
 

@@ -637,6 +637,23 @@ void syscall_dispatch(struct trapframe *tf)
         result = ipc_endpoint_create();
         break;
 
+    case SYS_ENDPOINT_DESTROY:
+        /*
+         * The other half of SYS_ENDPOINT, which was missing.
+         *
+         * Endpoints are a pool of 96 and every program launched consumed
+         * one for ever, because the kernel could destroy them and nothing
+         * could ask it to. Ninety runs and the system was out.
+         *
+         * No permission check beyond the capability itself: the index is
+         * resolved against this thread's own table, so a process can only
+         * destroy an endpoint it was given, and everything blocked on it is
+         * woken with an error rather than left waiting - which is the
+         * behaviour M3 built and tested.
+         */
+        result = ipc_endpoint_destroy((cap_t)tf->x[0]);
+        break;
+
     case SYS_CALL:
         result = sys_call(p, (cap_t)tf->x[0], tf->x[1], tf->x[2]);
         break;
