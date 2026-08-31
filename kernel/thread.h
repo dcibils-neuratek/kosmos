@@ -25,6 +25,37 @@
  * a new file rather than an edit to this one.
  */
 
+/*
+ * How many threads there can be, ever.
+ *
+ * A fixed pool because `CLAUDE.md` forbids an allocator in the kernel, and
+ * the reason that rule is worth having is visible here: running out is an
+ * error at a known limit, reported at the one call that asks for a thread,
+ * rather than a failure at an unknown one somewhere later. There is no
+ * fragmentation, nothing to audit, and no path where the kernel is halfway
+ * through something when memory runs out.
+ *
+ * **Sixteen is a number, not a derivation.** It was chosen at M3 when the
+ * system had three threads and has never been revisited; this comment exists
+ * because it was the only constant in this file without one. What it costs,
+ * measured rather than estimated:
+ *
+ *   struct thread   2,640 bytes of .bss per slot, always, whether or not
+ *                   anything uses it. Sixteen of them is 41 KB.
+ *   its stacks      40 KB of RAM per *live* thread - two stacks of four
+ *                   pages, each with a guard page allocated and then
+ *                   unmapped - taken from the page allocator at creation
+ *                   and given back when the thread dies.
+ *
+ * So the pool is cheap and the threads are not, which is the right way round
+ * for a limit: raising this costs 2.6 KB and nothing else until something
+ * actually runs.
+ *
+ * **It is not the limit that binds.** Every process has a thread and
+ * PROCESS_MAX is 8, so nine threads is the practical ceiling today - the
+ * boot thread and one per process. The number to raise when the app server
+ * arrives is that one, and this one after it.
+ */
 #define THREAD_MAX          16
 #define THREAD_NAME_MAX     16
 
