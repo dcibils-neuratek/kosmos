@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
 
 ---
 
@@ -39,6 +39,10 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **`edit`, a screen editor.** The machine can write and run its own Lua
+  without a rebuild. `edit /data/x.lua`, Control-S, Control-Q, then
+  `run /data/x.lua`.
+
 - **The scheduler was costing every yield a timer period.** The idle loop
   slept with runnable threads in the queue. A yield went from 10 ms to
   0.04 ms and an IPC round trip from 20 ms to 0.8 ms - about a thousandfold,
@@ -70,7 +74,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 39 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 41 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
