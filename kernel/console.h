@@ -49,4 +49,13 @@ void console_colour(unsigned long foreground);
  * through. A no-op with no screen. */
 void console_progress(unsigned done, unsigned total);
 
+/*
+ * Blinks the cursor. Called from the timer tick, because it is the one thing
+ * on the screen that has to change without anybody printing.
+ *
+ * A no-op with no screen, and cheap enough for the interrupt path: it counts
+ * to twenty-five and, twice a second, fills one 8x16 cell.
+ */
+void console_tick(void);
+
 #endif /* KERNEL_CONSOLE_H */

@@ -132,6 +132,8 @@ struct sysinfo {
     uint32_t processes_total;
     uint32_t endpoints_used;
     uint32_t endpoints_total;
+    uint32_t spaces_used;
+    uint32_t spaces_total;
 
     /* Devices. Zero width means there is no display. */
     uint32_t screen_width;

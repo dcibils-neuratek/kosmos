@@ -108,6 +108,7 @@ local function describe_machine()
     threads   = i.threads_used,   threads_max   = i.threads_total,
     processes = i.processes_used, processes_max = i.processes_total,
     endpoints = i.endpoints_used, endpoints_max = i.endpoints_total,
+    spaces    = i.spaces_used,    spaces_max    = i.spaces_total,
     tick_hz   = i.tick_hz,
   }
 
@@ -1139,8 +1140,8 @@ your filesystem back.
       elseif name == "memory" then
         summary = string.format("%d MB, %d MB free", d.total_mb, d.free_mb)
       elseif name == "kernel" then
-        summary = string.format("%d threads, %d processes, %d endpoints",
-          d.threads, d.processes, d.endpoints)
+        summary = string.format("%d threads, %d processes, %d spaces",
+          d.threads, d.processes, d.spaces)
       elseif name == "screen" then
         summary = string.format("%dx%d, %d bytes a row", d.width, d.height, d.pitch)
       elseif name == "keyboard" then
@@ -1191,6 +1192,7 @@ your filesystem back.
     out(string.format("threads    %d of %d\n", k.threads, k.threads_max))
     out(string.format("processes  %d of %d\n", k.processes, k.processes_max))
     out(string.format("endpoints  %d of %d\n", k.endpoints, k.endpoints_max))
+    out(string.format("spaces     %d of %d\n", k.spaces, k.spaces_max))
 
     local pct = cpu_usage(k)
     if pct then

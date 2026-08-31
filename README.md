@@ -156,6 +156,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | `def` compiles a line of Lua into a named command; the shell is extensible from inside itself | user/init/init.lua |
 | Aug 2026 | The working directory is the shell's idea alone. Servers are always told whole paths | user/init/init.lua |
 | Aug 2026 | A listing is the server's entries plus whatever is mounted below the path. Only the namespace knows the second half, which is what makes `/` a directory | user/init/init.lua |
+| Aug 2026 | Every fixed pool must be countable and reported. `ADDRSPACE_MAX` was the real limit on processes for a while and no report mentioned it | arch/aarch64/mmu.c, kernel/syscall.h |
 | Aug 2026 | The project is renamed Kosmos (previously Komo) | all docs |
 | Aug 2026 | Pixels never live in Lua tables. A surface is a userdata over flat bytes; tables carry intent | gfx.md §19.1 |
 | Aug 2026 | No line of Lua computes a pixel offset. Pitch and format live in the handle, the arithmetic happens only in C | gfx.md §19.3 |

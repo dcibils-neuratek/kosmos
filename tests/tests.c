@@ -2588,6 +2588,40 @@ static bool test_the_padding_is_real(void)
     return by_pitch[0] == 0x00c0ffeeu;
 }
 
+static bool test_enough_address_spaces_for_every_process(void)
+{
+    /*
+     * ADDRSPACE_MAX lives in arch/aarch64/mmu.c and PROCESS_MAX in
+     * kernel/process.h, and nothing can check the two against each other at
+     * compile time: `arch/` is "which CPU are you" and must not include a
+     * kernel header to find out how many processes there are.
+     *
+     * So they are checked here, by creating as many spaces as there can be
+     * processes. Every process has exactly one, so a shortfall means a spawn
+     * that fails for no reason any report can explain - which is precisely
+     * what happened: the pools said 16 of 32 processes and 17 of 48 threads
+     * with 469 MB free, and the spawn still refused.
+     */
+    struct addrspace *made[PROCESS_MAX];
+    unsigned i;
+    bool ok = true;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        made[i] = as_create();
+
+        if (made[i] == NULL) {
+            ok = false;
+            break;
+        }
+    }
+
+    while (i > 0) {
+        as_destroy(made[--i]);
+    }
+
+    return ok;
+}
+
 static bool test_the_keyboard_came_up(void)
 {
     /*
@@ -3103,6 +3137,7 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },

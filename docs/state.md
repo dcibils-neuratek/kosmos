@@ -34,7 +34,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-106 tests, five benchmarks, and 32 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+107 tests, five benchmarks, and 32 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
@@ -99,6 +99,16 @@ The first version of this used four to six lines a stage and was worse, not bett
 **The device server does not list `console`, and that is the point.** The machine has one, but `/dev/console` is mounted to the console *server* — longest prefix wins — so a read of that path means "give me a line of input". The first version listed it anyway; the `devices` command dutifully read every name it was given, and the console server answered by swallowing the next thing typed at the prompt. Listing a name you do not answer for is a lie, and that is what it costs.
 
 **A command can be a Lua program.** `alias` points one word at another; `def` compiles a line of Lua and gives it a name, argument string arriving as `...`. It is compiled at definition time, into the same environment as the prompt, so a syntax error is reported when you write it and it reaches exactly what you reach. That is the shape the idea deserved: an alias that is only a second name for a command is a convenience, and a command that is a program is a way to extend the system from inside it.
+
+**The pools were raised, and doing it found a limit nothing could see.** Threads 16 to 48, processes 8 to 32, endpoints 32 to 96. Raising the first two changed nothing: spawning still failed at eleven processes, with every pool the system could report showing plenty free — 16 of 32 processes, 17 of 48 threads, 469 MB.
+
+The real ceiling was **`ADDRSPACE_MAX` in `arch/aarch64/mmu.c`**, a third pool nothing counted and no report mentioned. A limit nothing counts is a limit nobody can find. It is 32 now, `as_count()`/`as_total()` exist, `SYS_SYSINFO` reports them and `ps` prints them; the same spawn loop reaches 27. And because `arch/` must not include a kernel header to learn `PROCESS_MAX`, the two are tied together by a test that creates that many address spaces and fails if any is refused.
+
+Costs, measured: 134 KB of `.bss` for all three pools, up from 44 KB. A process is ~2.3 MB of RAM when it exists, dominated by its 2 MB heap — the same 2 MB that stops a full-screen surface fitting. Both get solved by the same change.
+
+**Known gap found while testing this:** processes spawned from the shell are never reaped, because the shell never calls `sys.wait`. init reaps its own children; nobody reaps the shell's. They hold their slots as zombies until reboot.
+
+**A blinking cursor**, driven from the timer tick — the one thing on the screen that has to change without anybody printing. Every path that writes a cell hides it first, so the block is never left sitting on top of a character somebody just printed, and it follows `cx`/`cy` rather than remembering where it was, so scrolling does not leave a second cursor behind.
 
 **The namespace has a root now, and it is the one thing no server can answer.** `ls /` used to say "no such path" while `/data` and `/dev` both plainly existed — because nothing is mounted at `/`, and a path with no server behind it does not resolve. A server knows what it holds; only the namespace knows what has been *attached* to it and where, and that table lives in the process.
 

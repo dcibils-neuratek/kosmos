@@ -346,7 +346,23 @@ bool mmu_is_enabled(void)
 /* Address spaces                                                      */
 /* ------------------------------------------------------------------ */
 
-#define ADDRSPACE_MAX   16
+/*
+ * How many address spaces there can be, which is how many processes there
+ * can be - each gets exactly one.
+ *
+ * **This has to be at least PROCESS_MAX, and it is not checked here.** It
+ * cannot be: `arch/` is "which CPU are you" and must not include a kernel
+ * header, so this file cannot see that constant. The two are tied together
+ * by a test instead - `as: PROCESS_MAX spaces can exist` creates that many
+ * and fails if any is refused.
+ *
+ * That test exists because of what happened without it. This was 16 while
+ * PROCESS_MAX went to 32, and the effect was a spawn that failed at eleven
+ * processes with "could not spawn" while every pool the system could report
+ * showed plenty free: 16 of 32 processes, 17 of 48 threads, 469 MB. A limit
+ * nothing counts is a limit nobody can find.
+ */
+#define ADDRSPACE_MAX   32
 
 struct addrspace {
     uint64_t *root;
@@ -356,6 +372,26 @@ struct addrspace {
 /* A fixed pool, like everything else in the kernel. Running out is a NULL
  * from as_create rather than a table that grows. */
 static struct addrspace spaces[ADDRSPACE_MAX];
+
+/* How many are in use, and how many there are. Reported through SYS_SYSINFO
+ * for one reason: see the comment on ADDRSPACE_MAX. */
+unsigned as_count(void)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < ADDRSPACE_MAX; i++) {
+        if (spaces[i].in_use) {
+            n++;
+        }
+    }
+
+    return n;
+}
+
+unsigned as_total(void)
+{
+    return ADDRSPACE_MAX;
+}
 
 struct addrspace *as_create(void)
 {

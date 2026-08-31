@@ -86,6 +86,24 @@ static unsigned    cx, cy;          /* the cursor, in cells */
 static uint32_t    fg = 0xffc9d1d9;
 static uint32_t    bg = 0xff0d1117;
 
+/*
+ * The cursor.
+ *
+ * A block drawn over the cell the next character will land in, toggled from
+ * the timer tick. It is the one thing on this screen that has to change
+ * without anybody printing, which is why it is driven from the tick rather
+ * than from kputc.
+ *
+ * `shown` is what makes it safe to draw text underneath it: every path that
+ * writes a cell hides it first, so the block is never left behind as a
+ * square of background over a character somebody just printed.
+ */
+#define CURSOR_TICKS    25          /* at 100 Hz, twice a second */
+
+static bool         cursor_shown;
+static unsigned     cursor_x, cursor_y;
+static unsigned     cursor_phase;
+
 static uint32_t *pixel_row(unsigned y)
 {
     return (uint32_t *)(void *)((uint8_t *)(void *)screen.pixels
@@ -104,6 +122,29 @@ static void fill_rect(unsigned x, unsigned y, unsigned w, unsigned h,
         for (i = 0; i < w; i++) {
             p[i] = colour;
         }
+    }
+}
+
+static void draw_cursor(bool on)
+{
+    if (!attached) {
+        return;
+    }
+
+    /* The whole cell, inverted, rather than an underline: it is legible at
+     * this size and it does not depend on the glyph underneath it. */
+    fill_rect(cursor_x * GLYPH_W, cursor_y * GLYPH_H, GLYPH_W, GLYPH_H,
+              on ? fg : bg);
+    cursor_shown = on;
+}
+
+/* Takes the cursor off the screen before anything is drawn where it is.
+ * Without this, printing while it happens to be showing leaves a solid block
+ * sitting on top of the character. */
+static void hide_cursor(void)
+{
+    if (cursor_shown) {
+        draw_cursor(false);
     }
 }
 
@@ -150,6 +191,8 @@ static void scroll(void)
 
 static void screen_putc(char c)
 {
+    hide_cursor();
+
     if (c == '\r') {
         cx = 0;
         return;
@@ -194,6 +237,32 @@ static void screen_putc(char c)
 
     draw_glyph(cx, cy, c);
     cx++;
+}
+
+void console_tick(void)
+{
+    if (!attached) {
+        return;
+    }
+
+    /*
+     * Follows the cursor rather than remembering where it was: text may have
+     * been printed, or scrolled, since the last tick, and a block left at the
+     * old position would be a second cursor that never goes away.
+     */
+    if (cursor_x != cx || cursor_y != cy) {
+        hide_cursor();
+        cursor_x = cx;
+        cursor_y = cy;
+        cursor_phase = 0;
+    }
+
+    cursor_phase++;
+
+    if (cursor_phase >= CURSOR_TICKS) {
+        cursor_phase = 0;
+        draw_cursor(!cursor_shown);
+    }
 }
 
 /* Straight to the screen, bypassing the serial port. Only for text the

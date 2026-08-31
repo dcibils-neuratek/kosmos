@@ -26,7 +26,31 @@ struct thread;
  * than a new mechanism, and nothing needs it yet.
  */
 
-#define PROCESS_MAX         8
+/*
+ * How many processes there can be, ever.
+ *
+ * Eight until M6, which was enough for init, three servers and a shell with
+ * two to spare. The app server needs more than that on its own: a compositor
+ * and a window manager, then a terminal, an inspector and whatever is being
+ * looked at. Thirty-two leaves room to run out of something more interesting
+ * than slots.
+ *
+ * The cost is not the slot, which is 128 bytes of .bss. It is what a process
+ * is made of, and that is charged only when one exists:
+ *
+ *   image     a private copy, so it can be mapped read-only and executable
+ *             without the original being. About 240 KB today.
+ *   heap      2 MB, fixed, because `design.md` §5.2 wants a bounded one: a
+ *             small heap collects quickly and the maximum GC pause is what
+ *             decides whether the system stutters.
+ *   stack     64 KB.
+ *
+ * So roughly 2.3 MB a process, and thirty-two of them would be 74 MB of the
+ * 512 this machine has. That is a real number rather than a comfortable one,
+ * and it is the heap that dominates - which is the same 2 MB that stops a
+ * full-screen surface fitting in one. Both get solved by the same change.
+ */
+#define PROCESS_MAX         32
 #define PROCESS_NAME_MAX    16
 
 /*

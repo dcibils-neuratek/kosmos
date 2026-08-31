@@ -35,28 +35,31 @@
  * fragmentation, nothing to audit, and no path where the kernel is halfway
  * through something when memory runs out.
  *
- * **Sixteen is a number, not a derivation.** It was chosen at M3 when the
- * system had three threads and has never been revisited; this comment exists
- * because it was the only constant in this file without one. What it costs,
- * measured rather than estimated:
+ * Sixteen until M6, which was a number and not a derivation: chosen at M3
+ * when the system had three threads and never revisited. Forty-eight now,
+ * and this is where the sizing is written down.
  *
- *   struct thread   2,640 bytes of .bss per slot, always, whether or not
- *                   anything uses it. Sixteen of them is 41 KB.
+ * What a slot costs, measured rather than estimated:
+ *
+ *   struct thread   2,640 bytes of .bss per slot, always, used or not. Most
+ *                   of it is the 2 KB `struct message` embedded below: a
+ *                   thread's message in flight lives on the thread, so the
+ *                   kernel never has to allocate one.
  *   its stacks      40 KB of RAM per *live* thread - two stacks of four
  *                   pages, each with a guard page allocated and then
  *                   unmapped - taken from the page allocator at creation
  *                   and given back when the thread dies.
  *
  * So the pool is cheap and the threads are not, which is the right way round
- * for a limit: raising this costs 2.6 KB and nothing else until something
- * actually runs.
+ * for a limit: forty-eight slots is 127 KB of .bss and nothing more until
+ * something actually runs.
  *
- * **It is not the limit that binds.** Every process has a thread and
- * PROCESS_MAX is 8, so nine threads is the practical ceiling today - the
- * boot thread and one per process. The number to raise when the app server
- * arrives is that one, and this one after it.
+ * **Why forty-eight.** Every process has a thread and PROCESS_MAX is 32, so
+ * thirty-three is the floor: the boot thread and one per process. The rest
+ * is room for a process to have more than one thread, which nothing does yet
+ * and the app server will.
  */
-#define THREAD_MAX          16
+#define THREAD_MAX          48
 #define THREAD_NAME_MAX     16
 
 /* 16 KB each, matching the boot stack, plus a guard page below each. */

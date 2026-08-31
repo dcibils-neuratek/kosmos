@@ -248,6 +248,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
          * in the epilogue, after this returns.
          */
         thread_tick();
+        console_tick();
         return;
     }
 
@@ -282,6 +283,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
         if (index == 9) {
             hal_irq_handle();
             thread_tick();
+            console_tick();
             return;
         }
 

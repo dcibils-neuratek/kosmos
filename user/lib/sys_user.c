@@ -398,6 +398,8 @@ static int l_info(lua_State *L)
     SET("processes_total",  info.processes_total);
     SET("endpoints_used",   info.endpoints_used);
     SET("endpoints_total",  info.endpoints_total);
+    SET("spaces_used",      info.spaces_used);
+    SET("spaces_total",     info.spaces_total);
 
     SET("screen_width",     info.screen_width);
     SET("screen_height",    info.screen_height);

@@ -122,10 +122,18 @@ static inline cap_t message_get_cap(const struct message *m)
  */
 #define CAPS_PER_THREAD     16
 
-/* How many endpoints exist. Here rather than only in ipc.c because
+/*
+ * How many endpoints exist. Here rather than only in ipc.c because
  * SYS_SYSINFO reports "in use, of this many", and half of that pair is
- * useless without the other. */
-#define ENDPOINT_MAX        32
+ * useless without the other.
+ *
+ * Raised with the process pool, because they are spent together: a server
+ * needs one to be reachable at, and a client that brokers a private
+ * connection needs another. Thirty-two was one per process and change;
+ * ninety-six is three apiece, which is what a system where processes hand
+ * each other capabilities actually uses.
+ */
+#define ENDPOINT_MAX        96
 
 /* Prepares the endpoint pool. Called once, before any thread uses IPC. */
 void ipc_init(void);

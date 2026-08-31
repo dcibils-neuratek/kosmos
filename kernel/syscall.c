@@ -374,6 +374,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.processes_total  = PROCESS_MAX;
     info.endpoints_used   = ipc_endpoints_in_use();
     info.endpoints_total  = ENDPOINT_MAX;
+    info.spaces_used      = as_count();
+    info.spaces_total     = as_total();
 
     if (screen_get(&fb)) {
         info.screen_width  = fb.width;

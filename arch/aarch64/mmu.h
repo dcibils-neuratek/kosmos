@@ -133,6 +133,14 @@ uint64_t *mmu_page_entry(uintptr_t va);
  * Where a space may map things: level 1 slot 2 upwards. The kernel occupies
  * slots 0 and 1, being devices below 1 GB and RAM from 1 to 2 GB.
  */
+/*
+ * Address spaces in use, and how many there can be. Exposed because a pool
+ * that nothing counts is a limit nobody can find: this one was the real
+ * ceiling on processes for a while and no report mentioned it.
+ */
+unsigned as_count(void);
+unsigned as_total(void);
+
 #define USER_VA_BASE    0x80000000UL
 #define USER_VA_END     (512UL * 1024 * 1024 * 1024)    /* a 39-bit VA */
 
