@@ -1,6 +1,8 @@
 #ifndef KERNEL_CONSOLE_H
 #define KERNEL_CONSOLE_H
 
+#include <stddef.h>
+
 /*
  * The kernel's output. Sits directly on hal_putchar, because until M1 there
  * is no interrupt controller and no buffering: output has to keep working
@@ -65,6 +67,15 @@ void console_progress(unsigned done, unsigned total);
  */
 void console_screen_suspend(void);
 void console_screen_resume(void);
+
+/*
+ * The most recent bytes this console printed, into a caller's buffer.
+ *
+ * Everything goes through `kputc`, including every process's output - a
+ * process prints by asking the console server and the console server calls
+ * `sys.write` - so this is one place with all of it, in order.
+ */
+size_t console_log(char *out, size_t max);
 
 void console_tick(void);
 

@@ -57,8 +57,9 @@
 #define SYS_SCREEN_TAKE 19  /* (take)                 -> 0 or error       */
 #define SYS_KILL       20   /* (id)                   -> 0 or error       */
 #define SYS_WAIT_INPUT 21   /* (timer ticks)          -> 0                 */
+#define SYS_LOG        22   /* (buffer, max)          -> bytes or error    */
 
-#define SYS_MAX         22
+#define SYS_MAX         23
 
 /*
  * What a spawn may hand its child beyond capabilities.

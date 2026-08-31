@@ -210,10 +210,23 @@ local ops = {
     local picture = image_cache[o.asset]
 
     if picture == nil then
-      local bytes = sys.asset(tostring(o.asset))
-      local ok, decoded = bytes and pcall(gfx.png, bytes)
+      --
+      -- `local ok, decoded = bytes and pcall(...)` is what this was, and it
+      -- is wrong in a way Lua does not warn about: `and` truncates a
+      -- multi-value expression to one value, so `ok` got pcall's first
+      -- return and `decoded` got nothing. The picture decoded perfectly and
+      -- was thrown away, and the window said there was no such picture.
+      --
+      picture = false
 
-      picture = (ok and decoded) or false     -- false: tried, and no
+      local bytes = sys.asset(tostring(o.asset))
+
+      if bytes then
+        local ok, decoded = pcall(gfx.png, bytes)
+
+        if ok then picture = decoded end
+      end
+
       image_cache[o.asset] = picture
     end
 
@@ -563,10 +576,16 @@ handlers.image_size = function(req)
   local picture = image_cache[name]
 
   if picture == nil then
-    local bytes = sys.asset(name)
-    local ok, decoded = bytes and pcall(gfx.png, bytes)
+    picture = false
 
-    picture = (ok and decoded) or false
+    local bytes = sys.asset(name)
+
+    if bytes then
+      local ok, decoded = pcall(gfx.png, bytes)
+
+      if ok then picture = decoded end
+    end
+
     image_cache[name] = picture
   end
 

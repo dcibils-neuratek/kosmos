@@ -249,6 +249,12 @@ static inline long kosmos_receive(long cap, struct message *msg,
                 (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
+/* The most recent bytes this machine printed, kernel and processes alike. */
+static inline long kosmos_log(char *out, unsigned long max)
+{
+    return sys2(SYS_LOG, (long)(uintptr_t)out, (long)max);
+}
+
 /*
  * Sleeps until input arrives or `ticks` scheduler ticks have passed.
  *

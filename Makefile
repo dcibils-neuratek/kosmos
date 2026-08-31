@@ -535,7 +535,7 @@ QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
 QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     -kernel $(TARGET)
 
-.PHONY: all qemu serial test screenshot bench bench-record debug disasm size clean
+.PHONY: all qemu serial test screenshot bench bench-record debug disasm size clean dist release
 
 all: $(TARGET)
 
@@ -550,6 +550,43 @@ $(BUILD)/%.c.o: %.c $(FLAGS_FILE)
 $(BUILD)/%.S.o: %.S $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+#
+# Everything needed to run this somewhere else, in one directory.
+#
+# The image is self-contained: the userland, the interpreter, every program
+# and the font are inside it, so there is nothing to install and nothing to
+# mount. What the other machine needs is a copy of QEMU and the right
+# command line - and the command line is the part worth carrying, because
+# `-global virtio-mmio.force-legacy=false` is not something anybody guesses
+# and without it the keyboard and the pointer are silently absent.
+#
+dist: $(TARGET)
+	@rm -rf build/dist && mkdir -p build/dist
+	@cp $(TARGET) build/dist/kosmos.elf
+	@sed 's|^image="build/kosmos.elf"|image="$$(dirname "$$0")/kosmos.elf"|' \
+	    run-kosmos.sh > build/dist/run-kosmos.sh
+	@chmod +x build/dist/run-kosmos.sh
+	@echo "build/dist: kosmos.elf and run-kosmos.sh - copy the directory anywhere"
+	@ls -l build/dist
+
+#
+# A build somebody can download and run, kept in the repository.
+#
+# Named by version and commit, so several can sit side by side and it is
+# always clear which one is being run - and so that "it worked in the one
+# from Tuesday" is a thing that can be checked rather than remembered.
+#
+# The image is self-contained: the userland, the interpreter, every program
+# and the font are inside it. A copy of this file and `run-kosmos.sh` are
+# the whole of what has to travel.
+#
+release: $(TARGET)
+	@mkdir -p builds
+	@cp $(TARGET) builds/kosmos-$(VERSION)-$(KOSMOS_BUILD).elf
+	@cp run-kosmos.sh builds/run-kosmos.sh
+	@echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD).elf"
+	@ls -l builds/
 
 # Ctrl-A then x to quit QEMU.
 qemu: $(TARGET)

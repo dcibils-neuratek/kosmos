@@ -714,6 +714,35 @@ void syscall_dispatch(struct trapframe *tf)
         }
         break;
 
+    case SYS_LOG: {
+        /*
+         * What this machine has printed, kernel and processes together.
+         *
+         * No permission check, and that is a decision rather than an
+         * oversight: this is what was already printed to a serial line
+         * anybody watching could read, and to a screen anybody looking at
+         * could see. Making it a capability would protect nothing and would
+         * mean a log viewer had to be privileged, which is the wrong shape
+         * for a thing whose whole job is to be looked at.
+         *
+         * If output ever carries something that should not be shared, the
+         * fix is not to print it.
+         */
+        size_t max = (size_t)tf->x[1];
+
+        if (max > 16384) {
+            max = 16384;
+        }
+
+        if (!process_may_write(p, tf->x[0], max)) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        result = (long)console_log((char *)tf->x[0], max);
+        break;
+    }
+
     case SYS_YIELD:
         thread_yield();
         result = 0;

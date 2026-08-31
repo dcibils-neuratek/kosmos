@@ -66,6 +66,30 @@ SECTIONS
         __bss_end = .;
     }
 
+    /*
+     * One word with contents, after .bss, so the flat binary actually
+     * covers it.
+     *
+     * The comment above says .bss is emitted as zeroes rather than left
+     * NOLOAD, and the intent was right, but a section made only of `*(.bss)`
+     * is still NOBITS - so objcopy skipped it and the flat binary stopped
+     * short of the last global. The kernel maps the image by its *file*
+     * length, so those globals were simply not mapped.
+     *
+     * Nothing failed for a long time because a Lua process keeps almost
+     * everything on its heap and had only a few hundred bytes of .bss, all
+     * of which happened to fall inside the last mapped page. Adding an
+     * eight-kilobyte buffer to sys_user.c pushed one past the end, and what
+     * came out was a data abort in init at an address one byte beyond the
+     * mapping - which says nothing at all about the cause.
+     *
+     * A word of real content forces the gap before it to be emitted too, so
+     * the file is as long as the memory image and the two cannot drift.
+     */
+    .image_tail : {
+        LONG(0x534f4d4b)            /* "KMOS", so it is recognisable */
+    }
+
     . = ALIGN(4096);
     __image_end = .;
 

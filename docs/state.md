@@ -60,6 +60,22 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Known bad
 
+**One display check is intermittent and not root-caused.** `check_widgets`
+clicks the gallery's list and sends a down arrow; the selection has to move
+one row. It passes every time on its own - traced, with the bytes 27, 91, 66
+arriving at the window manager and the bar moving - and fails perhaps one
+run in three inside the full fifteen-phase sequence. Twenty-five seconds of
+waiting does not help, so the key is not arriving late, it is not arriving.
+
+What is different in a full run is that other things are still alive:
+`check_status_bar` leaves `monitor 30 &` running, and `monitor` polls the
+console for Control-C, which drains the same queue the desktop reads. That
+is the obvious suspect and it is not proven - the drained bytes are stashed
+for the next reader rather than dropped, so on inspection it should work.
+
+**Until this is understood, `make screenshot` cannot be trusted as a gate.**
+`make test` (109 tests) is unaffected and passes every run.
+
 **The display harness is flaky.** Two different phases have failed on two
 consecutive full runs and both pass on their own. It is the harness, not the
 system: applications now block for up to a second between events, so how

@@ -565,6 +565,50 @@ static int l_asset(lua_State *L)
     return 2;
 }
 
+/*
+ * `sys.log([bytes])` - what this machine has printed, most recent last.
+ *
+ * The kernel keeps a ring of everything that went through `kputc`, which is
+ * its own output *and* every process's, because a process prints by asking
+ * the console server and the console server calls `sys.write`. One place,
+ * in order, which is what the serial line has and the screen does not.
+ */
+static int l_log(lua_State *L)
+{
+    luaL_Buffer b;
+    long want = (long)luaL_optinteger(L, 1, 8192);
+    char *space;
+    long n;
+
+    if (want > 16384) { want = 16384; }
+    if (want < 0)     { want = 0; }
+
+    /*
+     * The Lua heap, not a static buffer.
+     *
+     * A `static char[8192]` here lives in the image, and the image is not
+     * writable as far as the kernel is concerned - `process_may_write`
+     * refuses it - so the syscall returned a fault, `sys.log` raised, and
+     * the application died leaving its window behind, which the compositor
+     * owns and kept drawing. A window with nothing in it and no error
+     * anywhere.
+     *
+     * `luaL_Buffer` puts it on the heap, which is writable and which the
+     * collector already accounts for.
+     */
+    space = luaL_buffinitsize(L, &b, (size_t)want);
+    n = kosmos_log(space, (unsigned long)want);
+
+    if (n < 0) {
+        luaL_pushresultsize(&b, 0);
+        lua_pop(L, 1);
+        return fail(L, n);
+    }
+
+    luaL_pushresultsize(&b, (size_t)n);
+    return 1;
+}
+
 static int l_build(lua_State *L)
 {
     lua_createtable(L, 0, 5);
@@ -681,6 +725,7 @@ static const luaL_Reg sys_functions[] = {
     { "processes", l_processes },
     { "pointer",  l_pointer },
     { "asset",    l_asset },
+    { "log",      l_log },
     { "build",    l_build },
     { "wait_input", l_wait_input },
     { "kill",     l_kill },

@@ -400,6 +400,41 @@ def find_colour(at, want, x0, y0, x1, y1):
     return None
 
 
+def settle(guest, predicate, what, seconds=20):
+    """Waits for the screen to satisfy `predicate`, and returns the picture.
+
+    `predicate(width, height, pixels)` returns the thing being waited for, or
+    None. The last picture taken is passed to the failure message so it can
+    say what it did see.
+
+    This exists because the obvious thing - do something, sleep, look - is
+    wrong here in a way that only shows up in a full run. An application
+    blocks for up to a second between events, so how long a click takes to
+    reach the screen depends on where in that second it landed; a fixed
+    sleep is a bet on that, and a suite of bets fails somewhere different
+    every time. Two consecutive full runs failed in two different phases,
+    both of which passed alone, which is the shape of a racing harness
+    rather than a broken system.
+
+    Waiting for the result instead makes the phases say what they mean: not
+    "half a second later the bar had moved" but "the bar moved".
+    """
+    deadline = time.monotonic() + seconds
+    width = height = 0
+    px = b""
+
+    while time.monotonic() < deadline:
+        width, height, px = parse_ppm(guest.screendump())
+        found = predicate(width, height, px)
+
+        if found is not None:
+            return found
+
+        time.sleep(0.3)
+
+    raise Failure(f"waited {seconds}s and {what}")
+
+
 def check_boot_screen(geometry, data):
     """Phase one: what the kernel drew while booting.
 
@@ -832,7 +867,14 @@ def check_widgets(guest):
     for step in (1, 2):
         send(b"\x1b[B", 0.2)
 
-        deadline = time.monotonic() + 10
+        #
+        # Twenty-five seconds, which sounds absurd for a keystroke and is
+        # not: another process may be polling the console for Control-C
+        # between this one and the desktop, and the desktop itself sleeps a
+        # tick a pass. Ten seconds was enough almost always, which is the
+        # worst amount to be enough.
+        #
+        deadline = time.monotonic() + 25
 
         while time.monotonic() < deadline:
             width, height, px = parse_ppm(guest.screendump())
@@ -1274,12 +1316,17 @@ def check_deskbar(guest):
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
-    time.sleep(6)
 
-    width, height, px = parse_ppm(guest.screendump())
-    after = count_windows(width, height, px)
+    after = settle(
+        guest,
+        lambda w, h, px: (lambda n: n if n > before else None)(
+            count_windows(w, h, px)),
+        f"clicking an application in the Deskbar started nothing: there was "
+        f"{before} window and there still is. Either the launch request is "
+        "not reaching the window manager, or the program it named is not "
+        "marked `-- kosmos: application` and so is not in the list at all.")
 
-    if after <= before:
+    if False:
         raise Failure(
             f"clicking an application in the Deskbar started nothing: "
             f"{before} window(s) before and {after} after. Either the launch "
@@ -1356,14 +1403,12 @@ def check_clicks(guest):
 
     # 1. The second button, which sets a different message.
     click(wx + 150 + 30, wy + 60 + 13)
-    after_click = _strip(screen_now(), width, *status)
 
-    if after_click == before:
-        raise Failure(
-            "clicking a button changed nothing. Either the window manager is "
-            "not forwarding the press, or the kit is not routing it to the "
-            "view under it."
-        )
+    settle(guest,
+           lambda w, h, px: True if _strip(px, w, *status) != before else None,
+           "clicking a button changed nothing on screen. Either the window "
+           "manager is not forwarding the press, or the kit is not routing "
+           "it to the view under it.")
 
     # 2. A list row, checked by where the selection bar lands.
     _, _, px = parse_ppm(guest.screendump())
@@ -1371,14 +1416,12 @@ def check_clicks(guest):
 
     click(wx + 16 + 60, wy + 172 + 2 + 16 * 3 + 8)
 
-    _, _, px = parse_ppm(guest.screendump())
-    bar_after = find_colour_anywhere(width, height, px, SELECTED)
-
-    if bar_after is None or bar_after[1] <= bar_before[1]:
-        raise Failure(
-            f"clicking the fourth row of the list did not move the selection "
-            f"({bar_before} then {bar_after})."
-        )
+    settle(guest,
+           lambda w, h, px: (lambda at: at if at is not None
+                             and at[1] > bar_before[1] else None)(
+                                 find_colour_anywhere(w, h, px, SELECTED)),
+           f"clicking the fourth row of the list did not move the selection "
+           f"from {bar_before}.")
 
     # 3. Pressed, slid off, released: nothing may happen.
     settled = _strip(screen_now(), width, *status)

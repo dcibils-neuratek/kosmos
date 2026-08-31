@@ -547,6 +547,207 @@ function ui.list(spec)
 end
 
 --
+-- Editable text, over several lines.
+--
+--   ui.editor{ x =, y =, w =, h =, text = "..." }
+--
+-- An array of lines and a cursor, which is what a text editor is until it
+-- is a good one. No undo, no selection, no syntax colouring: each is worth
+-- having and none is worth delaying the thing that lets the machine change
+-- itself without a rebuild.
+--
+-- The full-screen `edit` came first and is still there; this is the same
+-- idea as a view, so it can sit in a window beside anything else. What it
+-- gains by being a widget is that the window manager owns its pixels, so
+-- an editor that hangs is a window you can still move.
+--
+function ui.editor(spec)
+  local v = ui.view(spec)
+
+  v.focusable = true
+  v.lines = {}
+  v.cy = 1
+  v.cx = 1
+  v.top = 1
+  v.dirty = false
+
+  for line in ((spec.text or "") .. "\n"):gmatch("([^\n]*)\n") do
+    v.lines[#v.lines + 1] = line
+  end
+
+  if #v.lines > 1 and v.lines[#v.lines] == "" then
+    v.lines[#v.lines] = nil
+  end
+
+  if #v.lines == 0 then v.lines[1] = "" end
+
+  local GUTTER = 5              -- four digits and a space
+
+  function v:content()
+    return table.concat(self.lines, "\n") .. "\n"
+  end
+
+  local function rows(self)
+    return (self.h - 4) // GH
+  end
+
+  local function scroll_into_view(self)
+    if self.cy < self.top then self.top = self.cy end
+
+    if self.cy > self.top + rows(self) - 1 then
+      self.top = self.cy - rows(self) + 1
+    end
+
+    if self.top < 1 then self.top = 1 end
+  end
+
+  local function clamp(self)
+    if self.cy < 1 then self.cy = 1 end
+    if self.cy > #self.lines then self.cy = #self.lines end
+    if self.cx < 1 then self.cx = 1 end
+    if self.cx > #self.lines[self.cy] + 1 then
+      self.cx = #self.lines[self.cy] + 1
+    end
+  end
+
+  function v:draw(g)
+    scroll_into_view(self)
+
+    g:fill(0, 0, self.w, self.h, theme.sunken)
+    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+
+    local columns = (self.w - 4) // GW - GUTTER
+
+    for row = 0, rows(self) - 1 do
+      local n = self.top + row
+      local line = self.lines[n]
+
+      if line then
+        local y = 2 + row * GH
+
+        g:text(2, y, ("%4d "):format(n), theme.line, theme.sunken)
+        g:text(2 + GUTTER * GW, y, line:sub(1, columns), theme.text,
+               theme.sunken)
+      end
+    end
+
+    -- The cursor as a block on the character it is on, which is what makes
+    -- the column obvious in indented code.
+    if self.focused and self.cy >= self.top
+       and self.cy <= self.top + rows(self) - 1 then
+      local px = 2 + (GUTTER + math.min(self.cx, columns + 1) - 1) * GW
+      local py = 2 + (self.cy - self.top) * GH
+      local under = self.lines[self.cy]:sub(self.cx, self.cx)
+
+      g:fill(px, py, GW, GH, theme.ring)
+
+      if under ~= "" then
+        g:text(px, py, under, theme.sunken, theme.ring)
+      end
+    end
+  end
+
+  function v:key(c)
+    local line = self.lines[self.cy]
+
+    if c == -1 then self.cy = self.cy - 1; clamp(self); return true end
+    if c == -2 then self.cy = self.cy + 1; clamp(self); return true end
+
+    if c == -4 then                                     -- left
+      if self.cx == 1 then
+        if self.cy > 1 then
+          self.cy = self.cy - 1
+          self.cx = #self.lines[self.cy] + 1
+        end
+      else
+        self.cx = self.cx - 1
+      end
+      return true
+    end
+
+    if c == -3 then                                     -- right
+      if self.cx > #line then
+        if self.cy < #self.lines then
+          self.cy = self.cy + 1
+          self.cx = 1
+        end
+      else
+        self.cx = self.cx + 1
+      end
+      return true
+    end
+
+    if c == 1 then self.cx = 1 return true end          -- ^A
+    if c == 5 then self.cx = #line + 1 return true end  -- ^E
+
+    if c == 10 or c == 13 then                          -- Enter
+      local rest = line:sub(self.cx)
+
+      self.lines[self.cy] = line:sub(1, self.cx - 1)
+      table.insert(self.lines, self.cy + 1, rest)
+      self.cy = self.cy + 1
+      self.cx = 1
+      self.dirty = true
+      return true
+    end
+
+    if c == 8 or c == 127 then                          -- Backspace
+      if self.cx > 1 then
+        self.lines[self.cy] = line:sub(1, self.cx - 2) .. line:sub(self.cx)
+        self.cx = self.cx - 1
+        self.dirty = true
+      elseif self.cy > 1 then
+        -- Joining onto the end of the line above, which is where the
+        -- cursor has to land or the join is invisible.
+        local above = self.lines[self.cy - 1]
+
+        self.cx = #above + 1
+        self.lines[self.cy - 1] = above .. line
+        table.remove(self.lines, self.cy)
+        self.cy = self.cy - 1
+        self.dirty = true
+      end
+      return true
+    end
+
+    if c == 9 then c = 32 end                           -- Tab: a space
+
+    if c >= 32 and c < 127 then
+      self.lines[self.cy] = line:sub(1, self.cx - 1) .. string.char(c)
+                            .. line:sub(self.cx)
+      self.cx = self.cx + 1
+      self.dirty = true
+      return true
+    end
+
+    return false
+  end
+
+  --
+  -- Clicking puts the cursor where the click was, clamped to the end of
+  -- that line - which is what every editor does and what nobody notices
+  -- until it does not.
+  --
+  function v:mouse(action, x, y)
+    if action == "press" or action == "move" then
+      local row = (y - 2) // GH
+
+      self.cy = self.top + row
+      clamp(self)
+
+      local col = (x - 2) // GW - GUTTER
+
+      if col < 0 then col = 0 end
+      self.cx = math.min(col + 1, #self.lines[self.cy] + 1)
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--
 -- A picture.
 --
 --   ui.image{ x =, y =, w =, h =, asset = "test-pattern.png" }
@@ -960,12 +1161,39 @@ end
 local window = {}
 window.__index = window
 
--- How many commands go in one message.
 --
--- A message is 2048 bytes and a command is a small table, so a full window
--- is several messages. Batched rather than made to fit: a limit that a
--- slightly busier window silently crosses is a limit that will be crossed.
-local BATCH = 16
+-- How much of a message a batch of commands may fill.
+--
+-- **By size, not by count.** This was sixteen commands per message, which
+-- is fine for a window of buttons and wrong for a window of text: sixteen
+-- `text` commands carrying seventy-character log lines is over two
+-- kilobytes, the send raises, and the application dies mid-repaint. What
+-- that looks like is a window that draws once and then stops, with no error
+-- anywhere - the compositor owns the pixels, so the window stays exactly as
+-- it was.
+--
+-- 1400 of the 2048 leaves room for the message's own keys and the
+-- serialiser's framing. The estimate below is deliberately generous for the
+-- same reason: being wrong in the cheap direction costs an extra message,
+-- and being wrong in the other direction costs the application.
+--
+local BATCH_BYTES = 1200
+
+local function op_cost(o)
+  --
+  -- Deliberately generous. A `text` command carries five keys and their
+  -- values - the verb, two coordinates, a colour and usually a background -
+  -- and every one of them costs a name and a tag in the message as well as
+  -- its own bytes. Guessing low here does not cost a message, it costs the
+  -- application: the send raises and the window stops repainting, with the
+  -- pixels still on screen because the compositor owns them.
+  --
+  local cost = 96
+
+  if o.s then cost = cost + #o.s end
+
+  return cost
+end
 
 function ui.window(spec)
   spec = spec or {}
@@ -1169,18 +1397,32 @@ function window:paint()
 
   self.root:paint(g)
 
-  for i = 1, #g.ops, BATCH do
-    local batch = {}
+  local at = 1
 
-    for j = i, math.min(i + BATCH - 1, #g.ops) do
-      batch[#batch + 1] = g.ops[j]
+  while at <= #g.ops do
+    local batch = {}
+    local bytes = 0
+
+    while at <= #g.ops do
+      local cost = op_cost(g.ops[at])
+
+      -- Always at least one, so a single enormous command is sent on its
+      -- own and refused by the serialiser with its own message rather than
+      -- looping here for ever.
+      if #batch > 0 and bytes + cost > BATCH_BYTES then
+        break
+      end
+
+      batch[#batch + 1] = g.ops[at]
+      bytes = bytes + cost
+      at = at + 1
     end
 
     -- The window manager holds the damage back until the last batch, so the
     -- screen never shows this frame half-drawn. Without it every repaint
     -- flickered: the first message clears the background and the widgets
     -- arrive in the next two.
-    local last = (i + BATCH) > #g.ops
+    local last = at > #g.ops
 
     local ok = fs.send("/dev/wm", { type = "draw", window = self.handle,
                                     ops = batch,

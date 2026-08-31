@@ -82,6 +82,27 @@ static bool        attached;
 static bool        suspended;
 
 /*
+ * Everything this console has ever printed, most recent first out.
+ *
+ * A ring, because the alternative is deciding in advance how much of a
+ * boot is worth keeping and being wrong. Sixteen kilobytes is a few hundred
+ * lines: enough to hold a whole boot and the last minute of whatever
+ * happened after it, and small enough to sit in .bss without anybody
+ * noticing.
+ *
+ * Everything goes through `kputc` - the kernel's own messages and every
+ * `sys.write` from every process, because a process prints by asking the
+ * console server and the console server calls `sys.write` - so this is one
+ * place with all of it, in order, which is exactly what a log viewer needs
+ * and what neither the serial line nor the screen can give it after the
+ * fact.
+ */
+#define LOG_BYTES 16384
+
+static char          logbuf[LOG_BYTES];
+static unsigned long logged;            /* total ever written */
+
+/*
  * One question, asked in one place.
  *
  * There were four separate tests of `attached` scattered through this file
@@ -430,8 +451,39 @@ void console_progress(unsigned done, unsigned total)
     fill_rect(margin, y, filled, h, 0xff3fb950);            /* the fill   */
 }
 
+/*
+ * The most recent bytes, into a caller's buffer. Returns how many.
+ *
+ * Most recent rather than oldest: a viewer wants the end of the log, and
+ * handing it the beginning would mean it had to read the whole thing to
+ * find out what just happened.
+ */
+size_t console_log(char *out, size_t max)
+{
+    unsigned long available = (logged < LOG_BYTES) ? logged : LOG_BYTES;
+    unsigned long start;
+    size_t n;
+
+    if (max > available) {
+        max = (size_t)available;
+    }
+
+    start = logged - max;
+
+    for (n = 0; n < max; n++) {
+        out[n] = logbuf[(start + n) % LOG_BYTES];
+    }
+
+    return n;
+}
+
 void kputc(char c)
 {
+    /* Before anything decides where it goes: the log is what was printed,
+     * not what happened to reach a screen. */
+    logbuf[logged % LOG_BYTES] = c;
+    logged++;
+
     if (c == '\n') {
         hal_putchar('\r');
     }
