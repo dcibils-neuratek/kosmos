@@ -27,6 +27,7 @@ local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
 local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
 local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
+local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
 
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
@@ -246,7 +247,11 @@ local function serve(endpoint, state, make_handlers)
   -- One request, answered. Pulled out of the loop below because a handler
   -- that has to wait needs to be able to do this too - see `state.pump`.
   --
-  local function answer(request, sender)
+  -- `cap` is a capability that came *with* the request, at whatever index
+  -- the kernel put it in this process's table. Most handlers ignore it; the
+  -- registry below is the one that needs it, because registering is exactly
+  -- handing over an endpoint.
+  local function answer(request, sender, cap)
     local reply
 
     if request.type == "reload" then
@@ -259,7 +264,7 @@ local function serve(endpoint, state, make_handlers)
                   tostring(request.type) }
       else
         local co = coroutine.create(handler)
-        local ok, result = coroutine.resume(co, request, sender)
+        local ok, result = coroutine.resume(co, request, sender, cap)
 
         if not ok then
           -- A handler that raised. The client is told, and the server keeps
@@ -290,7 +295,17 @@ local function serve(endpoint, state, make_handlers)
       return
     end
 
-    local sent = pcall(sys.reply, sender, reply)
+    -- A reply may carry a capability. `send_cap` is taken out rather than
+    -- serialised: the number in it is an index in *this* process's table
+    -- and would mean something else entirely in the caller's.
+    local passing = nil
+
+    if type(reply) == "table" and reply.send_cap then
+      passing = reply.send_cap
+      reply.send_cap = nil
+    end
+
+    local sent = pcall(sys.reply, sender, reply, passing)
 
     if not sent then
       pcall(sys.reply, sender,
@@ -320,16 +335,16 @@ local function serve(endpoint, state, make_handlers)
   --------------------------------------------------------------------------
   function state.pump()
     while true do
-      local request, sender = sys.receive(endpoint, true)
+      local request, sender, cap = sys.receive(endpoint, true)
       if not request then return end
-      answer(request, sender)
+      answer(request, sender, cap)
     end
   end
 
   while true do
-    local request, sender = sys.receive(endpoint)
+    local request, sender, cap = sys.receive(endpoint)
     if not request then return end          -- the endpoint went away
-    answer(request, sender)
+    answer(request, sender, cap)
   end
 end
 
@@ -660,7 +675,38 @@ local function new_namespace()
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
   end
 
-  local function resolve(path)
+  --
+  -- Directories whose children are looked up when they are first used.
+  --
+  -- `/app` is one: an application registers itself while it runs, so what is
+  -- under there changes as programs come and go and cannot be mounted ahead
+  -- of time. Asking the registry for a name and mounting what comes back is
+  -- how that is done without a global tree - the answer is a capability, and
+  -- what a capability is for is being held.
+  --
+  -- The registry is not asked to *forward*. It hands over the endpoint and
+  -- steps out of the way, so a hung application blocks whoever chose to talk
+  -- to it and nobody else. A registry that forwarded would be a single
+  -- process every application could stop.
+  --
+  local autos = {}
+
+  local function lookup_into(prefix, cap, path)
+    local name = path:sub(#prefix + 2):match("^([^/]+)")
+
+    if not name then return nil end
+
+    local reply, got = sys.call(cap, { type = "lookup", name = name })
+
+    if not reply or not reply.ok or not got or got < 0 then
+      return nil
+    end
+
+    ns.mount(prefix .. "/" .. name, got)
+    return true
+  end
+
+  local function match(path)
     for _, m in ipairs(mounts) do
       if path == m.prefix or path:sub(1, #m.prefix + 1) == m.prefix .. "/" then
         local rest = path:sub(#m.prefix + 1)
@@ -668,6 +714,55 @@ local function new_namespace()
       end
     end
     return nil
+  end
+
+  local function resolve(path)
+    --
+    -- A registry is asked *before* the answer is taken, not after it fails.
+    --
+    -- The first version only looked a name up when nothing matched, and
+    -- nothing ever failed to match: `/app` is mounted, so `/app/gallery` hit
+    -- the registry itself with `/gallery` left over, and the registry was
+    -- asked to read a property it has never heard of. The symptom was a
+    -- clean, wrong answer - "no such operation: write" from a directory.
+    --
+    -- So: if the deepest thing matching is a registry and there is more path
+    -- after it, look the child up. The mount that produces is longer, so the
+    -- ordinary longest-prefix rule picks it from then on and this costs one
+    -- exchange the first time and nothing afterwards.
+    --
+    local cap, rest, prefix = match(path)
+
+    for _, a in ipairs(autos) do
+      if prefix == a.prefix and rest ~= "/" then
+        if lookup_into(a.prefix, a.cap, path) then
+          return match(path)
+        end
+      end
+    end
+
+    if cap then return cap, rest, prefix end
+
+    -- Nothing matched at all. Still worth asking, for a registry mounted
+    -- somewhere this path only partly overlaps.
+    for _, a in ipairs(autos) do
+      if path:sub(1, #a.prefix + 1) == a.prefix .. "/" then
+        if lookup_into(a.prefix, a.cap, path) then
+          return match(path)
+        end
+      end
+    end
+
+    return nil
+  end
+
+  --
+  -- Mounts `capability` at `prefix`, and says that names under it are to be
+  -- looked up rather than known in advance.
+  --
+  function ns.mount_registry(prefix, capability)
+    ns.mount(prefix, capability)
+    autos[#autos + 1] = { prefix = prefix, cap = capability }
   end
 
   local function request(op, path, extra)
@@ -890,7 +985,12 @@ local function new_namespace()
   -- still exactly the mount table, and a path that is not in it is still a
   -- path that does not exist.
   --
-  function ns.send(path, message)
+  -- `pass` is a capability of this process's to hand over with the message,
+  -- which is what registering with a directory is: giving it a way to reach
+  -- you. It goes as a third argument rather than inside the table, because
+  -- an index means something different on each side and only the kernel can
+  -- translate it.
+  function ns.send(path, message, pass)
     local capability, rest = resolve(path)
 
     if not capability then
@@ -900,7 +1000,7 @@ local function new_namespace()
     local req = { path = rest }
     for k, v in pairs(message) do req[k] = v end
 
-    local reply, err = sys.call(capability, req)
+    local reply, err = sys.call(capability, req, pass)
     if not reply then return nil, err end
     if not reply.ok then return nil, reply.error end
     return reply
@@ -1199,6 +1299,93 @@ local function binfs_main(endpoint, source, what)
   serve(endpoint, { programs = chunk() }, binfs_handlers)
 end
 
+--------------------------------------------------------------------------
+-- /app: the registry of what is running and what it exposes.
+--
+-- `beos.md` 17.2 and roadmap M7's scripting architecture. Every application
+-- publishes its own properties as nodes in its own namespace, and this is
+-- the directory that says which name belongs to which endpoint. So from the
+-- shell:
+--
+--   apps                            what is running
+--   cat /app/gallery/title          read a property
+--   write /app/gallery/title hi     change one
+--
+-- and the application in question contains no scripting code at all. It
+-- called `ui.window`, and `ui.window` publishes the window's properties the
+-- way it publishes anything else. That is the whole point: in BeOS an
+-- application was scriptable because its author used the framework, not
+-- because they wrote support for it.
+--
+-- **This registry hands out capabilities; it does not forward.** `lookup`
+-- returns the application's endpoint and the caller mounts it, so talking to
+-- a slow application is between the caller and that application. A registry
+-- that forwarded would be one process that any application could stop, and
+-- it would be holding every other application's door.
+--------------------------------------------------------------------------
+
+local function appfs_handlers(state)
+  return {
+    register = function(req, who, cap)
+      if not cap or cap < 0 then
+        return { ok = false, error = "register: no endpoint came with that" }
+      end
+
+      local name = tostring(req.name or "?")
+
+      -- A second application of the same name gets a number, rather than
+      -- replacing the first: two clocks are two clocks.
+      if state.apps[name] then
+        local n = 2
+        while state.apps[name .. n] do n = n + 1 end
+        name = name .. n
+      end
+
+      state.apps[name] = cap
+      state.order[#state.order + 1] = name
+
+      return { ok = true, name = name }
+    end,
+
+    lookup = function(req)
+      local cap = state.apps[tostring(req.name or "")]
+
+      if not cap then
+        return { ok = false, error = "no such application" }
+      end
+
+      -- The endpoint itself, for the caller to mount and hold.
+      return { ok = true, send_cap = cap }
+    end,
+
+    list = function(req)
+      local names = {}
+
+      for _, name in ipairs(state.order) do
+        if state.apps[name] then names[#names + 1] = name end
+      end
+
+      table.sort(names)
+      return { ok = true, entries = names }
+    end,
+
+    unregister = function(req)
+      local name = tostring(req.name or "")
+
+      if state.apps[name] then
+        sys.destroy(state.apps[name])
+        state.apps[name] = nil
+      end
+
+      return { ok = true }
+    end,
+  }
+end
+
+local function appfs_main(endpoint)
+  serve(endpoint, { apps = {}, order = {} }, appfs_handlers)
+end
+
 local function devices_handlers(state)
   local function inventory()
     local m = describe_machine()
@@ -1260,7 +1447,7 @@ end
 local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
-                          lib_cap)
+                          lib_cap, app_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
   ns.mount("/data", ramfs_cap)
@@ -1278,6 +1465,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- And what programs load rather than run. Separate from /bin so that `ls
   -- /bin` lists things you can type and nothing else.
   ns.mount("/lib", lib_cap)
+
+  -- What is running, and what each one exposes. A registry rather than a
+  -- mount: the names under it appear and disappear with the programs.
+  ns.mount_registry("/app", app_cap)
 
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -1760,7 +1951,8 @@ your filesystem back.
     if not ep then return false, "no endpoint for the program" end
 
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
-                                        bin_cap, devices_cap, lib_cap },
+                                        bin_cap, devices_cap, lib_cap,
+                                        app_cap },
                          SPAWN_SCREEN)
 
     if not id then
@@ -1771,7 +1963,7 @@ your filesystem back.
     local reply = sys.call(ep, {
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
-      console = 1, data = 2, bin = 3, devices = 4, lib = 5,
+      console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -2175,9 +2367,10 @@ if role == ROLE_INIT then
   -- that is init's business and not the kernel's.
   --
   local LIBFS_EP = sys.endpoint()
+  local APPFS_EP = sys.endpoint()
 
-  if not LIBFS_EP then
-    line("init: no endpoint for the library store")
+  if not LIBFS_EP or not APPFS_EP then
+    line("init: no endpoint for the library store or the app registry")
     sys.exit(1)
   end
 
@@ -2210,6 +2403,7 @@ if role == ROLE_INIT then
   local devices = start("the device server", ROLE_DEVICES, { DEVICES_EP })
   local binfs   = start("the program store", ROLE_BINFS, { BINFS_EP })
   local libfs   = start("the library store", ROLE_LIBFS, { LIBFS_EP })
+  local appfs   = start("the app registry", ROLE_APPFS, { APPFS_EP })
 
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
@@ -2226,7 +2420,8 @@ if role == ROLE_INIT then
   -- like everything else, and `sys.write` from the prompt returning -102 is
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
-                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP },
+                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
+                        APPFS_EP },
                       SPAWN_SCREEN)
 
   -- And now it does what an init does, which is outlive everything and
@@ -2346,7 +2541,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- Four capabilities, in the order init granted them.
-  shell_main(0, 1, 2, 3, 4)
+  shell_main(0, 1, 2, 3, 4, 5)
   return
 end
 
@@ -2402,6 +2597,11 @@ if role == ROLE_DEVICES then
   return
 end
 
+if role == ROLE_APPFS then
+  sys.name("appfs")
+  appfs_main(CAP)
+end
+
 if role == ROLE_LIBFS then
   sys.name("libfs")
   binfs_main(CAP, sys.libraries(), "libraries")
@@ -2452,6 +2652,7 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/bin",         req.bin)     end
   if req.devices then ns.mount("/dev",         req.devices) end
   if req.lib     then ns.mount("/lib",         req.lib)     end
+  if req.app     then ns.mount_registry("/app", req.app)    end
 
   -- Whatever the parent shared, at the indices it said. A program that was
   -- started by another program can be handed things the shell never had.
@@ -2499,7 +2700,7 @@ if role == ROLE_RUNNER then
     -- Order is the contract: the child is told which index each landed at,
     -- because a capability table is indexed and never named.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
-                   req.lib }
+                   req.lib, req.app }
     local mounts = {}
 
     if shares then
@@ -2519,7 +2720,7 @@ if role == ROLE_RUNNER then
     local reply = sys.call(ep, {
       path = path, args = argument or "", cwd = req.cwd or "/",
       detach = detach and true or false,
-      console = 1, data = 2, bin = 3, devices = 4, lib = 5,
+      console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       mounts = (#mounts > 0) and mounts or nil,
     })
 

@@ -429,7 +429,21 @@ function ui.list(spec)
 end
 
 --------------------------------------------------------------------------
--- A window: the root view, plus the conversation with the window manager.
+-- A window: the root view, the conversation with the window manager, and
+-- the properties it publishes.
+--
+-- The publishing is the part worth explaining. `roadmap.md` M7 asks that an
+-- application be manipulable from the shell "without its author having done
+-- anything", and this is where that is paid for: a window registers itself
+-- with /app and answers reads and writes for its own properties. An
+-- application that calls `ui.window` is scriptable; one that does not, is
+-- not. Nobody writes scripting code either way.
+--
+-- In BeOS this was the same bargain and it worked for the same reason - an
+-- application was scriptable because its author used BApplication, not
+-- because they supported scripting. The difference here is that the
+-- properties are a namespace rather than a message hierarchy, so the shell
+-- needs no special verb: `cat /app/gallery/title` is the ordinary read.
 --------------------------------------------------------------------------
 
 local window = {}
@@ -462,9 +476,123 @@ function ui.window(spec)
     background = spec.background or theme.window,
     focus = 1,
     running = true,
+    title = spec.title or "window",
+    x = spec.x or 0,
+    y = spec.y or 0,
+    properties = {},
+    dirty = false,
   }, window)
 
+  --
+  -- What every window exposes, before the application adds anything.
+  --
+  -- A getter and a setter, so a property is a live view of the thing and
+  -- not a copy that drifts. Writing `title` really renames the window,
+  -- because the setter is what renaming is.
+  --
+  w:publish("title",
+            function() return w.title end,
+            function(v)
+              w.title = tostring(v)
+              fs.send("/dev/wm", { type = "retitle", window = w.handle,
+                                   title = w.title })
+            end)
+
+  w:publish("x", function() return w.x end,
+                 function(v) w:move(tonumber(v) or w.x, w.y) end)
+  w:publish("y", function() return w.y end,
+                 function(v) w:move(w.x, tonumber(v) or w.y) end)
+  w:publish("width",  function() return w.root.w end)
+  w:publish("height", function() return w.root.h end)
+
+  -- Whatever the application declared, the same way, with no ceremony:
+  -- ui.window{ ..., properties = { brush = { get = ..., set = ... } } }
+  for name, p in pairs(spec.properties or {}) do
+    w:publish(name, p.get, p.set)
+  end
+
+  local ep = sys.endpoint()
+
+  if ep then
+    local registered = fs.send("/app", { type = "register",
+                                         name = spec.title or "app" }, ep)
+    if registered then
+      w.control = ep
+      w.name = registered.name
+    else
+      sys.destroy(ep)
+    end
+  end
+
   return w
+end
+
+--
+-- A property. `set` may be nil, and then it is read-only - which is the
+-- honest answer for `width` while windows cannot be resized.
+--
+function window:publish(name, get, set)
+  self.properties[name] = { get = get, set = set }
+end
+
+function window:move(x, y)
+  self.x, self.y = x, y
+  fs.send("/dev/wm", { type = "move", window = self.handle, x = x, y = y })
+end
+
+--
+-- One request from the shell, or from anything else holding this window's
+-- endpoint. Non-blocking, drained every pass of the loop below, so a slow
+-- reader cannot slow the interface down.
+--
+local function serve_properties(self)
+  if not self.control then return false end
+
+  local changed = false
+
+  while true do
+    local req, who = sys.receive(self.control, true)
+
+    if not req then return changed end
+
+    local name = tostring(req.path or ""):match("([^/]+)$")
+    local p = name and self.properties[name]
+    local reply
+
+    if req.type == "list" then
+      local names = {}
+      for key in pairs(self.properties) do names[#names + 1] = key end
+      table.sort(names)
+      reply = { ok = true, entries = names }
+
+    elseif not p then
+      reply = { ok = false, error = "no such property" }
+
+    elseif req.type == "read" then
+      reply = { ok = true, value = tostring(p.get()) }
+
+    elseif req.type == "getattr" then
+      reply = { ok = true, attrs = { kind = "property",
+                                     size = #tostring(p.get()),
+                                     writable = p.set ~= nil } }
+
+    elseif req.type == "write" then
+      if not p.set then
+        reply = { ok = false, error = name .. " is read-only" }
+      else
+        -- A trailing newline is what `write` from a shell sends and never
+        -- what a property means.
+        local ok, err = pcall(p.set, (tostring(req.value):gsub("\n$", "")))
+        reply = ok and { ok = true } or { ok = false, error = tostring(err) }
+        changed = true
+      end
+
+    else
+      reply = { ok = false, error = "no such operation on a property" }
+    end
+
+    pcall(sys.reply, who, reply)
+  end
 end
 
 function window:add(child)
@@ -472,8 +600,18 @@ function window:add(child)
 end
 
 function window:close()
+  if self.closed then return end
+
+  self.closed = true
   self.running = false
+
   fs.send("/dev/wm", { type = "close", window = self.handle })
+
+  if self.control then
+    fs.send("/app", { type = "unregister", name = self.name })
+    sys.destroy(self.control)
+    self.control = nil
+  end
 end
 
 local function apply_focus(self)
@@ -555,9 +693,23 @@ function window:run()
   while self.running do
     local reply = fs.send("/dev/wm", { type = "poll", window = self.handle })
 
-    if not reply then return end
+    --
+    -- The window manager went away, which is the ordinary end of an
+    -- application here: Control-C stops the manager and everything it
+    -- started stops with it.
+    --
+    -- Leaving by `return` was wrong and took a while to show itself. The
+    -- registration in /app outlived the process, so the *next* run of the
+    -- same program registered as "gallery2" and anything written to
+    -- /app/gallery went to an endpoint whose process no longer existed.
+    -- Nothing failed loudly; the name was simply taken by a ghost.
+    --
+    if not reply then break end
 
-    local changed = false
+    -- Whoever is scripting this window, before its own events: a property
+    -- write is somebody asking for something and an event is something
+    -- that already happened.
+    local changed = serve_properties(self)
 
     for _, ev in ipairs(reply.events) do
       if ev.type == "key" then
@@ -584,6 +736,11 @@ function window:run()
 
     sys.yield()
   end
+
+  -- However the loop ended. `close` tells the window manager and the
+  -- registry, and both calls are harmless if the thing being told is
+  -- already gone.
+  self:close()
 end
 
 return ui

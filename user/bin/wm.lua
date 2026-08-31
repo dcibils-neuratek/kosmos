@@ -2,8 +2,10 @@
 -- compositor underneath them.
 --
 --   wm                    an empty desktop
---   wm hello              start /bin/hello-win.lua in a window
---   wm hello,hello,stuck  three applications, one of which hangs
+--   wm hello-win          start /bin/hello-win.lua in a window
+--   wm hello-win,stuck    two applications, one of which hangs
+--   wm gallery,setprop:/app/gallery/title=hello
+--                         and one that changes the other's title
 --
 -- Control-C gives the screen back to the shell.
 --
@@ -233,6 +235,19 @@ handlers.draw = function(req)
   return { ok = true }
 end
 
+handlers.retitle = function(req)
+  local win = by_handle[req.window]
+  if not win then return { ok = false, error = "no such window" } end
+
+  -- Both the old tab and the new one: a shorter title leaves the tail of
+  -- the longer one behind, and the tab is as wide as its text.
+  damage_window(win)
+  win.title = tostring(req.title or win.title)
+  damage_window(win)
+
+  return { ok = true }
+end
+
 handlers.move = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -421,12 +436,23 @@ end
 -- cannot pass it anywhere this process did not.
 --------------------------------------------------------------------------
 
-for name in tostring(args or ""):gmatch("[^,%s]+") do
-  local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
-  local ok, err = run(path, "", true, { ["/dev/wm"] = ep })
+-- `name` or `name:arguments`, comma separated. The colon is so a program
+-- started here can be given something to work on - `wm gallery,setprop:...`
+-- - without this having to understand a shell's quoting rules, which it is
+-- not and should not become.
+for entry in tostring(args or ""):gmatch("[^,]+") do
+  entry = entry:match("^%s*(.-)%s*$")
 
-  if not ok then
-    print(("wm: could not start %s: %s"):format(path, tostring(err)))
+  if entry ~= "" then
+    local name, argument = entry:match("^([^:]+):(.*)$")
+    name = name or entry
+
+    local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+    local ok, err = run(path, argument or "", true, { ["/dev/wm"] = ep })
+
+    if not ok then
+      print(("wm: could not start %s: %s"):format(path, tostring(err)))
+    end
   end
 end
 

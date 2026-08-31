@@ -58,6 +58,12 @@ So there are two phases here, and the second is the one that matters:
      once that it is the closest thing here to a statement that the system
      works.
 
+  9. **An application scripted from the shell**, with no scripting code in
+     it: `fs.write("/app/gallery/title", ...)` has to widen the window's tab,
+     which is as wide as its title. Checked by consequence, not by reply - a
+     property store that accepted the write and told nobody would pass a
+     read-back and fail this.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -748,6 +754,116 @@ def check_widgets(guest):
     return 2
 
 
+# The focused window's tab, 0xffc700.
+TAB = (0xff, 0xc7, 0x00)
+
+
+def tab_width(width, height, px):
+    """How wide the widest run of tab colour on screen is, in pixels.
+
+    The tab is as wide as its title and no wider - the one BeOS decision
+    copied exactly - so its width *is* the title's length, which makes it
+    the thing to measure when checking that a rename reached the window.
+    """
+    widest = 0
+
+    for y in range(0, height, 2):
+        run = 0
+
+        for x in range(width):
+            at = (y * width + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == TAB:
+                run += 1
+
+                if run > widest:
+                    widest = run
+            else:
+                run = 0
+
+    return widest
+
+
+def check_scripting(guest):
+    """An application scripted by another, with no scripting code in either.
+
+    roadmap.md M7's third definition of done. `gallery.lua` contains not one
+    line about properties: it calls `ui.window`, and `ui.window` registers
+    the window with /app and answers for its properties. `setprop` is a
+    general four-line program that writes a path. Neither knows about the
+    other.
+
+    `wm gallery,setprop:/app/gallery/title=renamed by another process`
+    starts both, each in its own address space, each handed /dev/wm and
+    /app and nothing else.
+
+    Foreground, and that is not incidental. A window manager reads the
+    keyboard, and so does the shell's line editor, so running one detached
+    means two processes draining one input queue and whichever asks first
+    wins. Doing this from the prompt worked and then did not, depending on
+    timing. The real answer is the Terminal app, where the shell is a window
+    and there is one reader; until then, the honest arrangement is that the
+    window manager has the keyboard while it runs.
+
+    Checked by consequence rather than by reply. The tab is exactly as wide
+    as its title, so a longer title has to make a wider tab. A property
+    store that accepted the write and told nobody would pass a read-back and
+    fail this.
+    """
+    guest.type("wm gallery")
+    time.sleep(6)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = tab_width(width, height, px)
+
+    if before == 0:
+        raise Failure(
+            "no window tab on screen after `wm gallery`, so there is "
+            "nothing here to rename."
+        )
+
+    # Back to the shell, then start both together.
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+    time.sleep(2)
+
+    guest.type("wm gallery,setprop:/app/gallery/title=renamed by another one")
+    time.sleep(9)
+
+    width, height, px = parse_ppm(guest.screendump())
+    after = tab_width(width, height, px)
+
+    if after == 0:
+        raise Failure("no tab on screen at all after the second start.")
+
+    if after <= before:
+        raise Failure(
+            f"the tab is {after}px wide and was {before}px before anything "
+            "renamed it. A longer title has to make a wider tab: either the "
+            "registry did not hand over the window's endpoint, or the "
+            "property was stored somewhere that is not the window."
+        )
+
+    # And hand the screen back for the phase after this one.
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after scripting.")
+
+    return 2
+
+
 def check_window_manager(guest):
     """This milestone's definition of done: BeOS's test.
 
@@ -1003,6 +1119,7 @@ def main():
         bar_updates = check_status_bar(guest)
         editor_checks = check_editor(guest)
         widget_checks = check_widgets(guest)
+        script_checks = check_scripting(guest)
         wm_checks = check_window_manager(guest)
 
         if args.png:
@@ -1018,7 +1135,7 @@ def main():
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
-             + widget_checks)
+             + widget_checks + script_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -1029,7 +1146,8 @@ def main():
           f"{latency_checks} on scheduling latency, "
           f"{editor_checks} on the machine writing and running its own "
           f"program, "
-          f"{widget_checks} on the widget kit).")
+          f"{widget_checks} on the widget kit, "
+          f"{script_checks} on scripting a running application).")
     return 0
 
 

@@ -12,6 +12,13 @@ Last updated: 2026-08-31
 surface type, a blitter, an 8x16 font, a screen console with a scroll region
 and a blinking cursor, a keyboard, and a shell that runs programs from `/bin`.
 
+Known and not yet fixed: the kernel console and the window manager both
+draw on one framebuffer, so printing a line scrolls the whole screen and
+drags a window's pixels with it. It is cosmetic and it is exactly what the
+Terminal app removes - once the shell is a window there is one writer. The
+same arrangement is why the window manager cannot usefully be run detached:
+two processes would be draining one keyboard.
+
 Still missing, and the next things to build: **a backbuffer with damage
 tracking**, and then **the app server** on top of it. Today a program draws
 straight at the scanned-out framebuffer, so a slow draw is visible as it
@@ -38,6 +45,13 @@ Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU
 QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
+
+- **The scripting architecture** - M7's third definition of done. An
+  application registers with `/app` and answers for its own properties
+  because it called `ui.window`, not because it has any scripting code:
+  `apps`, `apps gallery`, and `setprop /app/gallery/title=...` renames a
+  running window. The registry hands out capabilities and never forwards, so
+  one slow application cannot hold everyone else's door.
 
 - **The UI kit.** `lib/ui.lua`: a view tree with nested coordinates and real
   clipping, follow modes, and widgets - label, button, checkbox, field,
@@ -85,7 +99,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-109 tests, five benchmarks, and 43 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+109 tests, five benchmarks, and 45 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 

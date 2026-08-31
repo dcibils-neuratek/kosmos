@@ -147,6 +147,9 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | An editor early, before the UI kit: nothing else lets the machine change itself without a rebuild | roadmap.md, recorded goals |
 | Aug 2026 | The window manager reserves one key and it introduces a command, rather than reserving Tab and the arrows | ui.md §16.7 |
 | Aug 2026 | A library is a file in the namespace, loaded into the caller's environment. No package path, no module table | ui.md, init.lua `use` |
+| Aug 2026 | An app is scriptable because it used `ui.window`, not because it wrote scripting code | roadmap.md M7, ui.md §16.7 |
+| Aug 2026 | The `/app` registry hands out capabilities and never forwards: a forwarding registry is one process any app could stop | init.lua, architecture.md §2 |
+| Aug 2026 | A directory whose children are looked up on demand (`mount_registry`), so a namespace can hold things that come and go | init.lua `resolve` |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |
