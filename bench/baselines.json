@@ -1,6 +1,6 @@
 {
   "context_switch": {
-    "commit": "PENDING",
+    "commit": "3ac953a",
     "iterations": 200000,
     "note": "One of the three that touch no Lua. Together with `exception` and `ipc_roundtrip` they are the control group. 7.187 -> 9.812 (+36.5%) when the switch started saving the whole FP and SIMD register file instead of the callee-saved half. That is not an optimisation that was lost, it is a correctness bug that was fixed: a preempted thread was interrupted between two instructions with live values in v0-v7 and v16-v31, the exception entry saves no FP state, and the next thread overwrote them. `test_fp_survives_a_preemption` corrupted d0 on 14 preemptions out of 14 before the fix and 0 out of 14 after.\\n\\nThe cost is 32 q-register pairs plus fpcr and fpsr, about 2.6 counter ticks. Lazy FP save - trap on first use after a switch and only then move the file - is the way to get it back, and roadmap.md schedules it at M10. It may buy less here than it would elsewhere: lazy save wins on switches between threads that do not touch FP, and in this system nearly every thread runs Lua, whose numbers are doubles. Measure before assuming it helps.",
     "tol": 0.02,
@@ -23,7 +23,7 @@
     "value": 78221.0
   },
   "ipc_roundtrip": {
-    "commit": "PENDING",
+    "commit": "3ac953a",
     "iterations": 100000,
     "note": "A minimal message: the floor of the IPC path, including the capability translation every delivery performs. Compare with `serialize`, which is what carrying a real Lua table costs on top - about forty-seven times more. 30.000 -> 31.001 when a capability slot gained a kind. A slot used to hold an endpoint and nothing else, so `resolve` could go straight to the pointer; it holds either an endpoint or a region of memory now, so every resolve loads the tag and compares it first, and a round trip resolves twice. That is the price of two kinds in one table and it is not avoidable while indices stay the only way to name anything - the alternative is a second table with a second index space, which is the global-name design this kernel does not have. 31.001 -> 36.251 when the context switch started saving the whole FP register file; a round trip switches twice, so it pays that cost twice. See `context_switch` for why that is not negotiable. Measured, not estimated: each of these numbers held to three decimals across consecutive builds. `context_switch` and `exception` did not move at all across the same change, which is what says the cost is in the capability lookup and not in the path around it.",
     "tol": 0.02,
