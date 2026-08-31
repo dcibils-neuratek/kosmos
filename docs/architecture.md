@@ -138,9 +138,13 @@ they move out.
 ### `kernel/` - threads, address spaces, IPC, capabilities
 
 And nothing else. No files, no network, no graphics beyond the boot screen, no
-Lua since M5. About 4,900 lines; with `arch/` and `boot/` the whole kernel is
-7,018 lines against a budget of 10,000. (Those counts include comments, and
-this codebase has a great many.)
+Lua since M5.
+
+With `arch/`, `hal/` and `boot/` the whole kernel is 5150 lines of code against
+a budget of 10,000 — and 11096 lines in the file, because it is more than half
+comments. The budget counts the first number, and `make size` prints both:
+what it exists to catch is something creeping *in*, not somebody explaining
+what is already there.
 
 There is **no allocator**. Every kernel object lives in a statically declared
 pool with a fixed size:

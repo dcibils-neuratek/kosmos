@@ -24,7 +24,7 @@ IPC messages are Lua tables. Namespace nodes serve Lua tables. A server is a cor
 
 Seven non-negotiable decisions. If something collides with one of them, the feature gets cut, not the principle.
 
-**The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. If it goes past 10k lines, something crept in.
+**The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. If it goes past 10k lines of code — comments and blank lines excluded, which `make size` counts for you — something crept in.
 
 **What a process has not mounted does not exist.** Not permission denied — no such path. The namespace is the mechanism by which resources are reached, not a permission layer on top of them.
 

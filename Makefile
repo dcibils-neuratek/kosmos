@@ -702,7 +702,9 @@ disasm: $(TARGET)
 	$(OBJDUMP) -d $(TARGET)
 
 size: $(TARGET)
-	$(SIZE) $(TARGET)
+	@$(SIZE) $(TARGET)
+	@echo
+	@python3 tools/kernel_size.py
 
 clean:
 	rm -rf build build-user build-user-test build-user-bench
