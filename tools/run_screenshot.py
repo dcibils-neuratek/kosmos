@@ -467,6 +467,29 @@ def settle(guest, predicate, what, seconds=20):
     raise Failure(f"waited {seconds}s and {what}")
 
 
+def started(guest, windows=1, seconds=25):
+    """Waits until `windows` window(s) are on screen, and returns the picture.
+
+    Replaces the `guest.type("wm ...")` then `time.sleep(12)` that every
+    phase used to open with. `settle`'s own docstring says why that was
+    wrong - an application blocks for up to a second between events, so how
+    long a start takes to reach the screen depends on where in that second
+    it landed, and a suite of such bets fails somewhere different each run.
+    The sleeps were also sized for the slowest machine anybody had run this
+    on, which is what made a green run take twenty minutes.
+
+    Waiting for the window to *be there* is both faster and steadier: it
+    returns as soon as it is true, and it says what it was waiting for when
+    it never becomes true.
+    """
+    return settle(
+        guest,
+        lambda w, h, px: (lambda n: n if n >= windows else None)(
+            count_windows(w, h, px)),
+        f"waited {seconds}s and {windows} window(s) never appeared.",
+        seconds=seconds)
+
+
 def check_boot_screen(geometry, data):
     """Phase one: what the kernel drew while booting.
 
@@ -844,7 +867,7 @@ def check_widgets(guest):
     Before the window-drag phase, which needs the desktop to itself.
     """
     guest.type("wm gallery")
-    time.sleep(6)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
     before = find_colour_anywhere(width, height, px, SELECTED)
@@ -1075,7 +1098,7 @@ def check_scripting(guest):
 
         return b"".join(bytes(v) for v in row)
     guest.type("wm gallery")
-    time.sleep(6)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
     before = title_row(width, height, px)
@@ -1092,7 +1115,7 @@ def check_scripting(guest):
     time.sleep(2)
 
     guest.type("wm gallery,setprop:/app/gallery/title=renamed by another one")
-    time.sleep(9)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
     after = title_row(width, height, px)
@@ -1181,7 +1204,7 @@ def check_replicants(guest):
         not a claim. That line is green only when the refusal happened.
     """
     guest.type("wm clock,adopt")
-    time.sleep(12)
+    started(guest)
 
     width, height, before = parse_ppm(guest.screendump())
     bands = green_bands(width, height, before)
@@ -1271,32 +1294,76 @@ TAB_IDLE = (0xb8, 0xb8, 0xb8)
 
 
 def count_windows(width, height, px):
-    """How many windows are on screen, counted by their tabs.
+    """How many windows are on screen, counted by their title bars.
 
-    A tab is as wide as its title and every window has exactly one, so
-    counting bands of tab colour counts windows - and it does not depend on
-    knowing where any of them was put.
+    **Not by rows containing tab colour**, which is what this did until the
+    decoration became one colour across the whole frame. A window's *border*
+    is now that colour too, for the window's whole height, so any two windows
+    that overlap vertically produce one unbroken band of rows and the count
+    said 1 when there were plainly 2. That is what made the Deskbar check
+    fail while the click it was testing worked perfectly.
+
+    So: a title bar is a *long horizontal run* of tab colour and a border is
+    a two-pixel one. Runs shorter than MIN are ignored, and a run that
+    overlaps one on the row above is the same window continuing rather than
+    a new one.
     """
-    bands = 0
-    inside = False
+    MIN = 40                    # wider than a border, narrower than any tab
+
+    def runs_in(y):
+        out = []
+        run_from = None
+
+        for x in range(width):
+            at = (y * width + x) * 3
+            hit = (px[at], px[at + 1], px[at + 2]) in (TAB, TAB_IDLE)
+
+            if hit and run_from is None:
+                run_from = x
+            elif not hit and run_from is not None:
+                if x - run_from >= MIN:
+                    out.append((run_from, x))
+                run_from = None
+
+        if run_from is not None and width - run_from >= MIN:
+            out.append((run_from, width))
+
+        return out
+
+    # A title bar is not a solid block: the close box and the title's own
+    # glyphs are drawn *on* it in another colour, so on those rows the run is
+    # chopped into pieces too short to count. Requiring a run on the
+    # immediately preceding row therefore made one window look like several
+    # starting over and over.
+    #
+    # So a run continues a window it overlaps that was seen recently, where
+    # recently is a little more than a tab is tall. Below the tab there is
+    # nothing but a two-pixel border, which never reaches MIN, so a window's
+    # entry expires and the next window down is counted as its own.
+    MEMORY = 30
+
+    # And a title bar is *tall*. The bottom border of a window is a
+    # full-width horizontal run of the same colour, so counting every long
+    # run counted each window twice - once for its tab and once for the
+    # line underneath it. A tab is TAB_H (20px) deep and a border is two, so
+    # requiring a cluster to survive a few sampled rows tells them apart.
+    DEEP = 3
+
+    clusters = []                       # [x0, x1, last_y, rows]
 
     for y in range(0, height, 2):
-        found = False
+        for a0, a1 in runs_in(y):
+            for c in clusters:
+                if a0 < c[1] and c[0] < a1 and y - c[2] <= MEMORY:
+                    c[0], c[1] = min(a0, c[0]), max(a1, c[1])
+                    c[2], c[3] = y, c[3] + 1
+                    break
+            else:
+                clusters.append([a0, a1, y, 1])
 
-        for x in range(0, width, 2):
-            at = (y * width + x) * 3
-            pixel = (px[at], px[at + 1], px[at + 2])
+    windows = sum(1 for c in clusters if c[3] >= DEEP)
 
-            if pixel == TAB or pixel == TAB_IDLE:
-                found = True
-                break
-
-        if found and not inside:
-            bands += 1
-
-        inside = found
-
-    return bands
+    return windows
 
 
 def check_idle(guest):
@@ -1321,7 +1388,7 @@ def check_idle(guest):
     desktop and was telling the truth.
     """
     guest.type("wm sysmon")
-    time.sleep(16)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
 
@@ -1399,7 +1466,7 @@ def check_direct(guest):
     the right rectangle and never actually swaps.
     """
     guest.type("wm plasma")
-    time.sleep(12)
+    started(guest)
 
     width, height, before = parse_ppm(guest.screendump())
 
@@ -1484,7 +1551,7 @@ def check_3d(guest):
     }
 
     guest.type("wm cube3d")
-    time.sleep(12)
+    started(guest)
 
     # The window is opened at 180,100 and is 400x320.
     x0, y0, x1, y1 = 190, 140, 570, 400
@@ -1560,7 +1627,7 @@ def check_terminal(guest):
     so a window that ran it has far more drawn in it than one that did not.
     """
     guest.type("wm terminal")
-    time.sleep(9)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
 
@@ -1641,7 +1708,7 @@ def check_deskbar(guest):
     missing from a list built the other way.
     """
     guest.type("wm")
-    time.sleep(8)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
     before = count_windows(width, height, px)
@@ -1715,7 +1782,7 @@ def check_clicks(guest):
     gets wrong while looking perfectly correct.
     """
     guest.type("wm gallery")
-    time.sleep(7)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
 
@@ -1928,7 +1995,7 @@ def check_window_manager(guest):
     This phase runs last because the window manager takes the whole screen.
     """
     guest.type("wm hello-win,stuck")
-    time.sleep(5)
+    started(guest)
 
     width, height, px = parse_ppm(guest.screendump())
     before = find_colour_anywhere(width, height, px, HUNG_TITLE)

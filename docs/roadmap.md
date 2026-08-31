@@ -131,7 +131,7 @@ Two things together because the second target verifies the earlier work.
 - Minimal freestanding libc: `memcpy`, `memset`, `memmove`, `strlen`, `strcmp`, `strcpy`, `strchr`, `setjmp`/`longjmp`, a minimal `snprintf`, the `math` functions Lua asks for. Scope and the POSIX line in `design.md` §17
 - Upstream Lua 5.4 compiled freestanding, with the allocator pointing at the page allocator
 - A REPL over UART
-- `hal/pi1/` or `hal/pi5/`, depending on which cable arrives first
+- `hal/pi5/`, or `arch/armv6/` **and** `hal/pi1/` — which is not the same size of job, and `hal.md` says why: the Pi 1 is ARMv6 and 32-bit, so it is a second *architecture*, not a second board. Writing it as "the pi1 HAL" here was wrong and made the cheaper-sounding option the bigger one
 - Adjust the HAL interface with two real implementations in front of you
 
 **Definition of done:** a `>` prompt over serial where `2+2` returns `4`, under QEMU **and** on real hardware.

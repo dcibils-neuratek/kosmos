@@ -13,7 +13,8 @@
 -- editor that hangs is a window you can still drag out of the way - and it
 -- sits beside everything else instead of taking the display.
 
-local ui = use("/lib/ui.lua")
+local ui    = use("/lib/ui.lua")
+local panel = use("/lib/panel.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -44,7 +45,8 @@ local status = ui.label{ x = 12, y = H - 26,
 local text = ui.editor{ x = 12, y = 36, w = W - 24, h = H - 96,
                         text = (type(existing) == "string") and existing or "" }
 
-win:add(ui.label{ x = 12, y = 14, text = path, color = "text" })
+local where = ui.label{ x = 12, y = 14, text = path, color = "text" }
+win:add(where)
 win:add(text)
 
 local function save()
@@ -59,6 +61,30 @@ local function save()
 end
 
 win:add(ui.button{ x = 12, y = H - 56, text = "Save", on_click = save })
+
+-- Somewhere else, chosen from a list rather than typed blind.
+--
+-- The panel is *modal by construction* rather than by a flag: opening it
+-- from inside this window's own event loop nests a second loop, so this
+-- window stops reading events until the panel closes. Its pixels stay on
+-- screen the whole time because the window manager owns them, which is the
+-- same property that lets a hung application keep its window.
+win:add(ui.button{
+  x = 92, y = H - 56, w = 90, text = "Save as",
+  on_click = function()
+    local chooser = panel.save{
+      start = path:match("^(.*)/") or "/home",
+      name  = path:match("([^/]+)$") or "untitled.lua",
+      on_choose = function(chosen)
+        path = chosen
+        where.text = path
+        save()
+      end,
+    }
+
+    if chooser then chooser:run() end
+  end,
+})
 
 win:add(ui.label{ x = 90, y = H - 48,
                   text = "or Control-S.  Then `run " .. path .. "`",
