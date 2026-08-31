@@ -322,6 +322,23 @@ Live queries are the part of BeOS nobody replicated and that neither macOS nor L
 
 FAT32 at first, because the Pi's firmware needs it to boot. An own filesystem with native attributes and indexes is stage 8, and that is where this part becomes real.
 
+### 8.3 What is in memory and what is on disk
+
+All of the above works today and none of it is persistent. The attributes are real, the index is real, and `watch` really does park a caller's reply until the result set changes. They live in the ramfs server's own tables.
+
+The division M8 introduces is therefore narrower than it looks:
+
+- **On disk**: the tree, the file contents, and the attributes. Everything a filesystem must not lose.
+- **In memory, rebuilt at mount**: the index. It is derivable from the attributes, and derivable state that is also stored is state that can disagree with itself - which on a filesystem means a query returning a file that is not there. Rebuilding costs a scan and removes both the B+tree and the class of bug where the index and the truth drift apart.
+
+That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while a mount scan is cheaper than the complexity it avoids, and stops holding at a file count this system is nowhere near.
+
+### 8.4 A large file is mapped, not copied
+
+`read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.
+
+So a large read returns a **memory capability** instead: the server puts the file's pages in a region, the capability travels in the reply, and the client maps it. The pages exist once and both processes address them. It is the same primitive shared surfaces use, and for the same reason - a message is 2048 bytes, and the answer to "how do I move a megabyte" is never "in smaller messages".
+
 ---
 
 ## 9. Applications

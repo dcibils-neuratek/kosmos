@@ -286,12 +286,60 @@ QEMU's fw_cfg is written up under "what was tried" below.
 
 FAT32 is enough to boot and it is horrible: no attributes, no journaling.
 
+**What is already built, and is not this milestone.** The protocol -
+`list`, `read`, `write`, `getattr`, `setattr` - is done and proven, the
+namespace and mount table are done, and **attributes, the index over them
+and live queries all work**: `attr`, `find` and `watch`, with a watcher
+parked in a blocked call until the answer changes. `/data` is a real
+server answering the real protocol. What is missing is that it is in
+memory.
+
+So this milestone adds exactly one thing: **persistence**. That is worth
+stating plainly, because it means the on-disk format already has a
+specification - it has to hold the node model the ramfs proved, and
+nothing more.
+
 **What gets built**
 
 - An own format with native typed attributes
 - **Name, size and modification date always indexed**, for every file, without anyone declaring them. It is what BFS did and it is why a query by name was fast regardless of how many files there were. Other attributes get indexed when declared
 - Journaling, with writes batched into the journal before going to their final location. Beyond protecting the structure, **it improves performance**: disks are good at writing large blocks, and writing 100K costs almost the same as writing 1K
 - Format and fsck tools
+
+**Three decisions taken before any of it was written.**
+
+*The block driver goes in the kernel HAL*, beside virtio-input, and the
+filesystem server reads blocks through a syscall. A driver in userland is
+the claim this project makes and it is the right long-term answer, but it
+needs MMIO mapped into a process and interrupts delivered to one, neither
+of which exists - and building both here would make this milestone about
+driver infrastructure instead of about the filesystem. It moves out when
+there is a second driver to shape the interface, which is what `hal.md`
+already says about writing an interface against one implementation.
+
+*The indices are rebuilt at mount, not stored on disk.* BFS kept them as
+on-disk B+trees because it had hundreds of thousands of files. This has
+hundreds. A journaled B+tree with split and merge is the largest and most
+error-prone component in the whole milestone, and dropping it costs a scan
+of the attributes at mount into the same `index[attribute][value] -> paths`
+the ramfs already builds. It is the DR8 warning below applied one level
+down: the trap is building the general machine before there is a load that
+needs it. When mount time hurts, that is the moment to persist them, with a
+measurement saying so.
+
+*Files first, the journal second.* `/data` surviving a reboot without a
+journal is a real checkpoint and a shorter road to one. The format is laid
+out with the journal's space reserved from the start so nothing has to move
+later.
+
+**How a large file is delivered, which the two walls below made urgent.** A
+`read` that returns bytes cannot carry one, and the mechanism that can now
+exists: `sys.memory` makes a region, the capability travels in the reply,
+and the client maps it. Same move as a shared surface - the file's pages
+exist once and both processes see them. Small reads stay strings; this is
+for the case that used to fail. The ceiling is `MEMOBJ_MAX`, sixteen
+regions, so it is a handful of large files at once rather than an arbitrary
+number.
 
 **What does NOT get built:** a relational database underneath the filesystem. BeOS tried it through DR8 and pulled it at DR9 because maintaining it was hideously complex and cost too much performance. They lost very little functionality replacing it with a filesystem *shaped like* a database. It is the most useful warning that project left behind. See `beos.md` §17.1
 
