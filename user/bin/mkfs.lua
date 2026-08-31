@@ -12,10 +12,15 @@
 -- travels with the request, so the check lives at the boundary rather than
 -- in the habits of one caller.
 
-local sb, err = fs.read("/disk/super")
+local sb, err = fs.read("/home/.super")
 
 if not sb then
   print("mkfs: " .. tostring(err))
+  return
+end
+
+if not sb.present then
+  print("mkfs: no disk attached (" .. tostring(sb.why) .. ")")
   return
 end
 
@@ -35,7 +40,7 @@ if args:match("^%s*(%S*)") ~= "--yes" then
   return
 end
 
-local made, why = fs.write("/disk/format", "yes, erase it")
+local made, why = fs.write("/home/.format", "yes, erase it")
 
 if not made then
   print("mkfs: " .. tostring(why))

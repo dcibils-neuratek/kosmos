@@ -1,7 +1,12 @@
 -- kosmos: application
 -- Adopts whatever replicant was left in /data, and runs it.
 --
---   wm clock,tracker
+-- Called `tracker` until it was pointed out that Tracker is BeOS's *file
+-- manager* and this is nothing of the kind. Adopting a replicant is what
+-- Tracker did on the desktop, which is where the name came from and why it
+-- was wrong: it named the borrowed behaviour rather than the program.
+--
+--   wm clock,adopt
 --
 -- This program knows nothing about clocks. It reads a description - source,
 -- state, and a list of what that source may reach - and instantiates it. In
@@ -12,10 +17,10 @@
 
 local ui = use("/lib/ui.lua")
 
-local win = ui.window{ title = "tracker", w = 300, h = 150, x = 420, y = 260 }
+local win = ui.window{ title = "Adopt", w = 300, h = 150, x = 420, y = 260 }
 
 if not win then
-  print("tracker: no window")
+  print("adopt: no window")
   return
 end
 

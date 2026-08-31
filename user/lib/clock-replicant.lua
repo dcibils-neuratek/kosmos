@@ -21,7 +21,7 @@ return function(state)
   -- What this can actually reach, tried from in here.
   --
   -- The host cannot answer this on the replicant's behalf. It tried once:
-  -- `tracker` built the same restricted namespace and probed that, which
+  -- `adopt` built the same restricted namespace and probed that, which
   -- measured the function rather than the environment - open the sandbox in
   -- `ui.replicant` and the probe went on happily reporting a refusal.
   --

@@ -229,6 +229,368 @@ function kfs.write_block(n, bytes)
 end
 
 --------------------------------------------------------------------------
+-- The block bitmap.
+--
+-- One bit per block, set when the block is in use. Read and written a block
+-- at a time rather than held in memory: the bitmap for a large disk is
+-- bigger than a process's heap, and a filesystem that only works on small
+-- disks is a filesystem that fails the first time it matters.
+--------------------------------------------------------------------------
+
+local function bitmap_position(sb, block)
+  local bit_index  = block
+  local byte_index = bit_index // 8
+  local within     = bit_index % 8
+
+  return sb.bitmap_at + byte_index // kfs.BLOCK,
+         byte_index % kfs.BLOCK,
+         within
+end
+
+function kfs.block_used(sb, block)
+  local at, byte, bit = bitmap_position(sb, block)
+  local bytes = kfs.read_block(at)
+
+  if not bytes then return nil, "reading the bitmap" end
+
+  return (bytes:byte(byte + 1) & (1 << bit)) ~= 0
+end
+
+local function bitmap_set(sb, block, used)
+  local at, byte, bit = bitmap_position(sb, block)
+  local bytes = kfs.read_block(at)
+
+  if not bytes then return nil, "reading the bitmap" end
+
+  local v = bytes:byte(byte + 1)
+
+  if used then v = v | (1 << bit) else v = v & ~(1 << bit) end
+
+  -- Rebuilt around the one byte that changed. A whole block for one bit is
+  -- what a journal exists to make cheap; without one, correctness first.
+  local out = bytes:sub(1, byte) .. string.char(v & 0xff)
+              .. bytes:sub(byte + 2)
+
+  return kfs.write_block(at, out)
+end
+
+-- The first free block, or nil. A linear scan from the first data block,
+-- byte at a time so that a full byte is skipped in one test - which is the
+-- difference between scanning a 64 MB disk in thousands of steps and in
+-- hundreds of thousands.
+function kfs.alloc_block(sb)
+  for at = 0, sb.bitmap_blocks - 1 do
+    local bytes = kfs.read_block(sb.bitmap_at + at)
+
+    if not bytes then return nil, "reading the bitmap" end
+
+    for byte = 0, kfs.BLOCK - 1 do
+      local v = bytes:byte(byte + 1)
+
+      if v ~= 0xff then
+        for bit = 0, 7 do
+          if (v & (1 << bit)) == 0 then
+            local block = (at * kfs.BLOCK + byte) * 8 + bit
+
+            if block >= sb.blocks then
+              return nil, "the disk is full"
+            end
+
+            local ok, err = bitmap_set(sb, block, true)
+            if not ok then return nil, err end
+
+            return block
+          end
+        end
+      end
+    end
+  end
+
+  return nil, "the disk is full"
+end
+
+function kfs.free_block(sb, block)
+  return bitmap_set(sb, block, false)
+end
+
+--------------------------------------------------------------------------
+-- The inode table.
+--------------------------------------------------------------------------
+
+local function inode_position(sb, number)
+  local per_block = kfs.BLOCK // kfs.INODE_SIZE
+
+  return sb.inodes_at + number // per_block,
+         (number % per_block) * kfs.INODE_SIZE
+end
+
+function kfs.read_inode(sb, number)
+  if number < 0 or number >= sb.inode_count then
+    return nil, "no such inode"
+  end
+
+  local at, offset = inode_position(sb, number)
+  local bytes = kfs.read_block(at)
+
+  if not bytes then return nil, "reading an inode" end
+
+  return kfs.unpack_inode(bytes, offset + 1)
+end
+
+function kfs.write_inode(sb, number, node)
+  if number < 0 or number >= sb.inode_count then
+    return nil, "no such inode"
+  end
+
+  local at, offset = inode_position(sb, number)
+  local bytes = kfs.read_block(at)
+
+  if not bytes then return nil, "reading an inode" end
+
+  local packed = kfs.pack_inode(node)
+  local out = bytes:sub(1, offset) .. packed
+              .. bytes:sub(offset + kfs.INODE_SIZE + 1)
+
+  return kfs.write_block(at, out)
+end
+
+function kfs.alloc_inode(sb)
+  -- From 2: 0 means "none" and 1 is the root, both fixed at format time.
+  for n = 2, sb.inode_count - 1 do
+    local node = kfs.read_inode(sb, n)
+
+    if node and node.kind == kfs.KIND_FREE then
+      return n
+    end
+  end
+
+  return nil, "no inodes left"
+end
+
+--------------------------------------------------------------------------
+-- File contents.
+--
+-- An extent is a run of consecutive blocks. Allocating one at a time and
+-- extending the last extent when the block happens to follow it means a
+-- file written in one go on a fresh disk is a single extent, and a
+-- fragmented one costs an entry per fragment - up to twelve, after which
+-- the file cannot grow. That limit is real and is checked rather than
+-- silently truncating.
+--------------------------------------------------------------------------
+
+function kfs.read_file(sb, node)
+  local parts = {}
+  local left = node.size
+
+  for _, e in ipairs(node.extents) do
+    for i = 0, e.count - 1 do
+      if left <= 0 then break end
+
+      local bytes = kfs.read_block(e.start + i)
+      if not bytes then return nil, "reading a file" end
+
+      parts[#parts + 1] = (left < kfs.BLOCK) and bytes:sub(1, left) or bytes
+      left = left - kfs.BLOCK
+    end
+  end
+
+  return table.concat(parts)
+end
+
+local function release(sb, node)
+  for _, e in ipairs(node.extents) do
+    for i = 0, e.count - 1 do
+      kfs.free_block(sb, e.start + i)
+    end
+  end
+
+  node.extents = {}
+  node.size = 0
+end
+
+function kfs.write_file(sb, number, node, data)
+  -- Rewritten whole rather than in place. Overwriting a file with a shorter
+  -- one has to release the blocks it no longer needs, and the version that
+  -- kept them was a leak that only showed up as a disk filling with nothing
+  -- on it.
+  release(sb, node)
+
+  local blocks = (#data + kfs.BLOCK - 1) // kfs.BLOCK
+
+  for i = 0, blocks - 1 do
+    local block, err = kfs.alloc_block(sb)
+
+    if not block then
+      release(sb, node)
+      return nil, err
+    end
+
+    local chunk = data:sub(i * kfs.BLOCK + 1, (i + 1) * kfs.BLOCK)
+    local ok, werr = kfs.write_block(block, chunk)
+
+    if not ok then
+      release(sb, node)
+      return nil, werr
+    end
+
+    local last = node.extents[#node.extents]
+
+    if last and last.start + last.count == block then
+      last.count = last.count + 1        -- it follows: extend, do not add
+    elseif #node.extents >= kfs.EXTENTS then
+      release(sb, node)
+      return nil, "the file is too fragmented for " .. kfs.EXTENTS
+                  .. " extents"
+    else
+      node.extents[#node.extents + 1] = { start = block, count = 1 }
+    end
+  end
+
+  node.size = #data
+
+  return kfs.write_inode(sb, number, node)
+end
+
+--------------------------------------------------------------------------
+-- Directories.
+--
+-- A directory is an ordinary file whose contents are entries, which is
+-- ext2's arrangement and the reason a directory needs no special case
+-- anywhere else: it is read, written and allocated by the code above.
+--
+-- One entry is an inode number, a name length and the name. No padding and
+-- no alignment: the whole thing is parsed sequentially and nothing seeks
+-- into the middle of it.
+--
+-- **Only the root, at this milestone.** Nested directories need a path walk
+-- and a `mkdir`, and adding them is the next step rather than this one. The
+-- format already carries what they need - a directory inode is a kind, not
+-- a special place - so nothing here has to change to allow them.
+--------------------------------------------------------------------------
+
+local ENTRY = "<I4s1"          -- inode, then the name with a length byte
+
+function kfs.read_dir(sb, node)
+  local bytes, err = kfs.read_file(sb, node)
+
+  if not bytes then return nil, err end
+
+  local entries, at = {}, 1
+
+  while at <= #bytes do
+    local inode, name
+    local ok, result = pcall(function()
+      inode, name, at = string.unpack(ENTRY, bytes, at)
+    end)
+
+    if not ok then
+      return nil, "a directory entry is malformed"
+    end
+
+    if inode ~= 0 then
+      entries[#entries + 1] = { inode = inode, name = name }
+    end
+  end
+
+  return entries
+end
+
+function kfs.write_dir(sb, number, node, entries)
+  local parts = {}
+
+  for _, e in ipairs(entries) do
+    if #e.name > 255 then
+      return nil, "a name longer than 255 bytes"
+    end
+
+    parts[#parts + 1] = string.pack(ENTRY, e.inode, e.name)
+  end
+
+  return kfs.write_file(sb, number, node, table.concat(parts))
+end
+
+function kfs.lookup(sb, name)
+  local root, err = kfs.read_inode(sb, kfs.ROOT_INODE)
+
+  if not root then return nil, err end
+
+  local entries, derr = kfs.read_dir(sb, root)
+
+  if not entries then return nil, derr end
+
+  for _, e in ipairs(entries) do
+    if e.name == name then
+      local node, ierr = kfs.read_inode(sb, e.inode)
+      if not node then return nil, ierr end
+      return e.inode, node
+    end
+  end
+
+  return nil, "no such file"
+end
+
+function kfs.list(sb)
+  local root, err = kfs.read_inode(sb, kfs.ROOT_INODE)
+
+  if not root then return nil, err end
+
+  local entries, derr = kfs.read_dir(sb, root)
+
+  if not entries then return nil, derr end
+
+  local names = {}
+
+  for _, e in ipairs(entries) do
+    names[#names + 1] = e.name
+  end
+
+  table.sort(names)
+  return names
+end
+
+function kfs.store(sb, name, data, now)
+  local number, node = kfs.lookup(sb, name)
+
+  if not number then
+    -- New. The inode first, then the directory entry, and that ordering is
+    -- deliberate: interrupted between the two it leaves an allocated inode
+    -- nothing points at, which `fsck` can reclaim. The other order leaves a
+    -- directory entry pointing at an inode that is not a file, which is a
+    -- corrupt directory.
+    local err
+    number, err = kfs.alloc_inode(sb)
+
+    if not number then return nil, err end
+
+    node = { kind = kfs.KIND_FILE, links = 1, size = 0, mtime = now or 0,
+             attrs = 0, extents = {} }
+
+    local ok, werr = kfs.write_file(sb, number, node, data)
+    if not ok then return nil, werr end
+
+    local root = kfs.read_inode(sb, kfs.ROOT_INODE)
+    if not root then return nil, "reading the root" end
+
+    local entries, derr = kfs.read_dir(sb, root)
+    if not entries then return nil, derr end
+
+    entries[#entries + 1] = { inode = number, name = name }
+
+    local dok, dwerr = kfs.write_dir(sb, kfs.ROOT_INODE, root, entries)
+    if not dok then return nil, dwerr end
+
+    return number
+  end
+
+  node.mtime = now or node.mtime
+
+  local ok, werr = kfs.write_file(sb, number, node, data)
+  if not ok then return nil, werr end
+
+  return number
+end
+
+--------------------------------------------------------------------------
 -- Formatting.
 --
 -- Writes a superblock, an empty bitmap with the metadata marked used, and

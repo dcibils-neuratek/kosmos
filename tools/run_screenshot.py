@@ -125,6 +125,11 @@ RESERVED_PX = 2 * GLYPH_H
 # Has to agree with the Makefile's line, except for the display: a window is
 # not wanted here, and `-display none` still gives ramfb a surface to scan
 # out and the monitor something to dump.
+# **No disk, deliberately.** `run_tests.py` attaches one and this does not,
+# so between them both machines are exercised: one that has a drive and one
+# that does not. That is not a spare detail - adding the disk server broke
+# booting without a drive, init exited, and this harness is what found it.
+# If a disk is ever added here, that coverage has to move somewhere else.
 QEMU_ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
@@ -1105,10 +1110,10 @@ def check_replicants(guest):
 
     roadmap.md M7's second definition of done, minus the dragging - there is
     no pointer yet, so `clock` offers the replicant through /data and
-    `tracker` picks it up. The mechanism is the whole of it either way; the
+    `adopt` picks it up. The mechanism is the whole of it either way; the
     pointer is the part that is missing.
 
-    `wm clock,tracker` starts two applications in two address spaces. The
+    `wm clock,adopt` starts two applications in two address spaces. The
     first publishes a description - source, state, and a `needs` list - and
     shows the clock. The second has never heard of clocks: it reads the
     description and instantiates it. Both must then be ticking, with
@@ -1118,14 +1123,14 @@ def check_replicants(guest):
     Two things are checked, both by what reaches the screen:
 
       * two green clocks, in two different windows, and both changing.
-        `tracker` re-runs the same source with its own state, so the two
+        `adopt` re-runs the same source with its own state, so the two
         read differently and neither is a copy of the other's pixels.
-      * `tracker` also prints what the replicant's restricted namespace
+      * `adopt` also prints what the replicant's restricted namespace
         actually answers - it tries /dev/cpu, which was declared, and /data,
         which was not - so the sandbox line on screen is a measurement and
         not a claim. That line is green only when the refusal happened.
     """
-    guest.type("wm clock,tracker")
+    guest.type("wm clock,adopt")
     time.sleep(12)
 
     width, height, before = parse_ppm(guest.screendump())
@@ -2103,23 +2108,35 @@ def main():
         drawn = guest.screendump()
         bar_checks = check_bars(drawn)
 
-        key_checks = check_keyboard(guest)
+        # Each phase timed, because "the harness is slow" is not something
+        # to guess about. The number that matters is which phase, not the
+        # total: a phase that waits a fixed twelve seconds and a phase that
+        # takes twelve seconds of screendumps need different fixes.
+        phase_times = []
 
-        latency_checks = check_latency(guest)
-        stop_checks = check_interrupt(guest)
-        bar_updates = check_status_bar(guest)
-        editor_checks = check_editor(guest)
-        widget_checks = check_widgets(guest)
-        script_checks = check_scripting(guest)
-        idle_checks = check_idle(guest)
-        direct_checks = check_direct(guest)
-        three_d_checks = check_3d(guest)
-        terminal_checks = check_terminal(guest)
-        deskbar_checks = check_deskbar(guest)
-        click_checks = check_clicks(guest)
-        graphical_checks = check_graphical_mode(guest)
-        replicant_checks = check_replicants(guest)
-        wm_checks = check_window_manager(guest)
+        def phase(name, fn):
+            began = time.monotonic()
+            result = fn(guest)
+            phase_times.append((time.monotonic() - began, name))
+            return result
+
+        key_checks = phase("keyboard", check_keyboard)
+
+        latency_checks = phase("latency", check_latency)
+        stop_checks = phase("interrupt", check_interrupt)
+        bar_updates = phase("status_bar", check_status_bar)
+        editor_checks = phase("editor", check_editor)
+        widget_checks = phase("widgets", check_widgets)
+        script_checks = phase("scripting", check_scripting)
+        idle_checks = phase("idle", check_idle)
+        direct_checks = phase("direct", check_direct)
+        three_d_checks = phase("3d", check_3d)
+        terminal_checks = phase("terminal", check_terminal)
+        deskbar_checks = phase("deskbar", check_deskbar)
+        click_checks = phase("clicks", check_clicks)
+        graphical_checks = phase("graphical", check_graphical_mode)
+        replicant_checks = phase("replicants", check_replicants)
+        wm_checks = phase("window_manager", check_window_manager)
 
         if args.png:
             write_png(args.png, drawn)
@@ -2138,6 +2155,11 @@ def main():
              + graphical_checks + click_checks + deskbar_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks)
+    print("\nwhere the time went:")
+    for seconds, name in sorted(phase_times, reverse=True):
+        print(f"  {seconds:6.1f}s  {name}")
+    print(f"  {sum(t for t, _ in phase_times):6.1f}s  in phases")
+
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "

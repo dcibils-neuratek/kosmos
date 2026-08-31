@@ -1598,84 +1598,206 @@ end
 -- mapped pages. What crosses this boundary is small tables.
 --------------------------------------------------------------------------
 
+-- Reserved at the root of the filesystem, and the only two names that are.
+--
+-- A filesystem has to be able to say what it is and to be laid down, and
+-- both are questions about the *disk* rather than about a file on it. They
+-- live here as names because the protocol this system has is paths - adding
+-- two operations to it so that one server could be asked two questions
+-- would be a bigger change than reserving two names.
+--
+-- The dot is what keeps them from colliding with an ordinary file: nothing
+-- creates a name starting with one, and `store` refuses to.
+local RESERVED = { [".super"] = true, [".format"] = true }
+
 local function diskfs_handlers(state)
   local kfs = state.kfs
 
+  -- The superblock, read once at mount and kept.
+  --
+  -- Not re-read per request: it does not change except at format, and a
+  -- filesystem that read block 0 before every operation would double the
+  -- I/O of the whole system to learn something it already knew.
+  local function mounted()
+    if state.sb then return state.sb end
+
+    local sb = kfs.mount()
+    state.sb = sb
+    return sb
+  end
+
+  local function describe()
+    local disk, why = sys.disk()
+
+    if not disk then
+      -- The same fields, zeroed. A reply whose *shape* depends on whether
+      -- there is a disk makes every caller test for the absent case
+      -- separately, and the one that forgets crashes on a machine that
+      -- happens not to have a drive - which is exactly what happened.
+      return { sectors = 0, sector_size = 0, bytes = 0,
+               formatted = false, present = false, why = tostring(why) }
+    end
+
+    local sb = mounted()
+
+    if not sb then
+      return { sectors = disk.sectors, sector_size = disk.sector_size,
+               bytes = disk.bytes, formatted = false, present = true,
+               why = "not a kosmos filesystem" }
+    end
+
+    local out = {}
+    for k, v in pairs(sb) do out[k] = v end
+
+    out.sectors     = disk.sectors
+    out.sector_size = disk.sector_size
+    out.bytes       = disk.bytes
+    out.formatted   = true
+    out.present     = true
+    out.free_blocks = sb.blocks - sb.data_at
+
+    return out
+  end
+
   return {
     list = function(req)
-      return { ok = true, entries = { "super", "format" } }
+      local sb = mounted()
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      local names, err = kfs.list(sb)
+
+      if not names then
+        return { ok = false, error = tostring(err) }
+      end
+
+      return { ok = true, entries = names }
     end,
 
     read = function(req)
       local name = req.path:match("([^/]+)$")
 
-      if name == "super" then
+      if name == ".super" or req.path == "/.super" then
+        return { ok = true, value = describe() }
+      end
+
+      local sb = mounted()
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      if not name then
+        return { ok = false, error = "that is the directory itself" }
+      end
+
+      local number, node = kfs.lookup(sb, name)
+
+      if not number then
+        return { ok = false, error = "no such file" }
+      end
+
+      local data, err = kfs.read_file(sb, node)
+
+      if not data then
+        return { ok = false, error = tostring(err) }
+      end
+
+      -- Chunked, because a message is 2048 bytes and a file is not. The
+      -- namespace's `read` already knows how to ask for the rest - it sends
+      -- an offset and looks at `more` - so a large file needs nothing new
+      -- from the caller. design.md 8.4 replaces this with mapped pages when
+      -- the file is large enough for the round trips to matter.
+      local CHUNK = 1024
+      local offset = req.offset or 0
+      local piece = data:sub(offset + 1, offset + CHUNK)
+
+      return { ok = true, value = piece,
+               more = (offset + #piece) < #data }
+    end,
+
+    write = function(req)
+      local name = req.path:match("([^/]+)$")
+
+      if name == ".format" then
+        -- Checked here rather than only in `mkfs`, because this is the
+        -- boundary. A program reaching this path is asking to erase the
+        -- disk, and "it asked nicely" has to be part of the request rather
+        -- than a habit of one caller.
+        if req.value ~= "yes, erase it" then
+          return { ok = false, error = "a format must say `yes, erase it`" }
+        end
+
         local disk, why = sys.disk()
 
         if not disk then
           return { ok = false, error = tostring(why) }
         end
 
-        local sb, err = kfs.mount()
+        local sb, err = kfs.mkfs(disk.sectors, sys.ticks())
 
         if not sb then
-          -- Not an error. A disk with no filesystem on it is a normal
-          -- state and the thing `mkfs` exists to change; reporting it as a
-          -- failure would make "there is nothing here yet" look like a
-          -- fault.
-          return { ok = true, value = { sectors = disk.sectors,
-                                        sector_size = disk.sector_size,
-                                        bytes = disk.bytes,
-                                        formatted = false,
-                                        why = tostring(err) } }
+          return { ok = false, error = tostring(err) }
         end
 
-        sb.sectors     = disk.sectors
-        sb.sector_size = disk.sector_size
-        sb.bytes       = disk.bytes
-        sb.formatted   = true
-        sb.free_blocks = sb.blocks - sb.data_at
-
+        state.sb = sb           -- what is mounted is what was just written
         return { ok = true, value = sb }
       end
 
-      return { ok = false, error = "no such name" }
-    end,
-
-    write = function(req)
-      local name = req.path:match("([^/]+)$")
-
-      if name ~= "format" then
-        return { ok = false, error = "no such name" }
-      end
-
-      -- The confirmation is checked here rather than only in `mkfs`,
-      -- because this is the boundary. A program that reaches this path is
-      -- asking to erase the disk, and "it asked nicely" has to be part of
-      -- the request rather than a habit of one caller.
-      if req.value ~= "yes, erase it" then
-        return { ok = false,
-                 error = "a format must say `yes, erase it`" }
-      end
-
-      local disk, why = sys.disk()
-
-      if not disk then
-        return { ok = false, error = tostring(why) }
-      end
-
-      local sb, err = kfs.mkfs(disk.sectors, sys.ticks())
+      local sb = mounted()
 
       if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      if not name or RESERVED[name] then
+        return { ok = false, error = "that name is reserved" }
+      end
+
+      if name:sub(1, 1) == "." then
+        return { ok = false, error = "names may not begin with a dot" }
+      end
+
+      local number, err = kfs.store(sb, name, req.value or "", sys.ticks())
+
+      if not number then
         return { ok = false, error = tostring(err) }
       end
 
-      state.formats = (state.formats or 0) + 1
-      return { ok = true, value = sb }
+      state.writes = (state.writes or 0) + 1
+      return { ok = true }
     end,
 
     getattr = function(req)
-      return { ok = true, attrs = { kind = "device" } }
+      local name = req.path:match("([^/]+)$")
+      local sb = mounted()
+
+      if not name or RESERVED[name] then
+        return { ok = true, attrs = { kind = "device" } }
+      end
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      local number, node = kfs.lookup(sb, name)
+
+      if not number then
+        return { ok = false, error = "no such file" }
+      end
+
+      return { ok = true, attrs = {
+        kind  = (node.kind == kfs.KIND_DIR) and "directory" or "file",
+        size  = node.size,
+        mtime = node.mtime,
+        -- How the file is laid out on the disk. Not something a filesystem
+        -- usually tells you, and worth telling here: this is a machine for
+        -- learning how one works, and "one extent" versus "nine" is the
+        -- whole of what fragmentation means.
+        extents = #node.extents,
+      } }
     end,
   }
 end
@@ -1716,10 +1838,11 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- mount: the names under it appear and disappear with the programs.
   ns.mount_registry("/app", app_cap)
 
-  -- The block device, through the one process that holds it. What is under
-  -- here is structure - a superblock, and the way to lay one down - not
-  -- files; files arrive when there is a filesystem to serve them.
-  ns.mount("/disk", disk_cap)
+  -- Files, on the disk, surviving the power going off. design.md 8.1 names
+  -- this as where user data lives, and the two reserved names at its root -
+  -- `.super` and `.format` - are how the disk underneath it is asked about
+  -- and laid down.
+  ns.mount("/home", disk_cap)
 
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -2660,11 +2783,18 @@ if role == ROLE_INIT then
 
   -- The disk, to one process and no other.
   --
-  -- Started even when there is no block device: it answers "there is no
-  -- disk" perfectly well, and a machine that boots differently depending on
-  -- whether a drive is attached is a machine with two boot paths to test.
+  -- The grant is asked for only when there is something to grant. A machine
+  -- with no drive is a supported way to run - it is how every display test
+  -- runs - and the first version of this asked unconditionally, so the
+  -- spawn was refused, `start` did what it is supposed to do about a server
+  -- that will not start, and the whole system died at boot on any machine
+  -- without a disk.
+  --
+  -- The server itself starts either way and answers "there is no disk",
+  -- which is what keeps this from being two boot paths: what differs is one
+  -- flag, not whether a process exists.
   local diskfs  = start("the disk server", ROLE_DISKFS, { DISKFS_EP },
-                        SPAWN_DISK)
+                        sys.disk() and SPAWN_DISK or 0)
 
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
@@ -2920,7 +3050,7 @@ if role == ROLE_RUNNER then
   if req.devices then ns.mount("/dev",         req.devices) end
   if req.lib     then ns.mount("/lib",         req.lib)     end
   if req.app     then ns.mount_registry("/app", req.app)    end
-  if req.disk    then ns.mount("/disk",        req.disk)    end
+  if req.disk    then ns.mount("/home",        req.disk)    end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started

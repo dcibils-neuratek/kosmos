@@ -35,6 +35,32 @@ buy nothing.
 4. **M8, the filesystem.** The biggest, and the one that benefits most from
    not being rushed.
 
+### Later, and not yet scheduled
+
+**Process memory is committed up front, and mostly unused.** Every process
+gets 2 MB of heap and 64 KB of stack allocated and zeroed at creation
+whether it uses them or not, plus a private 577 KB copy of the image. With
+fourteen processes that is about 37 MB of the 512 MB, and most of the heap
+is empty.
+
+Two separate things to fix, and the cheaper one first:
+
+- **The image is copied per process and need not be.** Its code pages are
+  already mapped read-only and executable - W^X is enforced and the image
+  header says how many bytes are read-only - so every process could map one
+  shared copy. That is 145 pages once instead of 145 pages fourteen times,
+  and it does not touch share-nothing, which is about mutable state.
+- **The heap is committed rather than grown.** Growing it on demand means
+  faulting a page in when it is touched, which means a fault handler that
+  allocates - and that is a real change to the kernel rather than a tidy-up.
+
+Neither is urgent and neither should be done to make a number smaller. The
+signal to watch is `pages_free` in `sysmon`; when process count starts
+pushing it, the shared image is the first thing to reach for because the
+groundwork is already there.
+
+---
+
 ## Overview
 
 | # | Milestone | Difficulty | Notes |
@@ -259,7 +285,7 @@ without a pointer:
    whole time - no timer, no repeated question - because the filesystem
    parks the reply until the answer changes. A server that called back into
    a client could be blocked by that client.
-2. **The replicant.** `wm clock,tracker`: one application publishes a view
+2. **The replicant.** `wm clock,adopt`: one application publishes a view
    as source, state and a `needs` list; another adopts it and runs it, with
    only what it declared. It is handed over through /data rather than
    dragged, because dragging is what a pointer is for.

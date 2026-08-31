@@ -2,7 +2,7 @@
 -- A window with a clock in it, and an offer to give the clock away.
 --
 --   wm clock
---   wm clock,tracker        and something that adopts it
+--   wm clock,adopt        and something that adopts it
 --
 -- The clock is a replicant: source, state, and a list of what it needs. It
 -- is published into /data so that another process can pick it up - in BeOS

@@ -141,6 +141,31 @@ static bool can_draw(void)
 static char        early[EARLY_BYTES];
 static unsigned    early_len;
 static bool        early_lost;
+
+/*
+ * The colours that went with those characters, as runs.
+ *
+ * Everything printed before the display exists is buffered and replayed on
+ * to it when it arrives, and the first version of that replayed in one flat
+ * grey - so the first five boot stages were colourless on screen and
+ * coloured over the serial line, which is the first thing anybody sees and
+ * looks like a bug in the boot log.
+ *
+ * A run list rather than escape codes in the text. The comment that used to
+ * be here called the alternative "an escape language inside a boot log", and
+ * it was right to refuse that: this is a colour and a length, appended only
+ * when the colour actually changes, and the replay walks it. Sixteen runs is
+ * more than the boot log uses; past that the tail replays in the last colour,
+ * which is a worse picture and never a wrong one.
+ */
+#define EARLY_RUNS  32
+
+static struct {
+    unsigned long colour;
+    unsigned      len;
+} early_run[EARLY_RUNS];
+
+static unsigned early_runs;
 static unsigned    cols, rows;      /* the text area, in cells */
 static unsigned    cx, cy;          /* the cursor, in cells */
 static uint32_t    fg = 0xffc9d1d9;
@@ -408,13 +433,30 @@ void console_attach_screen(const struct fb *fb, const char *title)
     }
 
     /*
-     * In one colour, because the buffer holds characters and not the colour
-     * changes that went with them. Recording those would mean an escape
-     * language inside a boot log, which is a lot of machinery to make four
-     * lines match six.
+     * In the colours it was printed in, walking the run list beside the
+     * text. Without this the stages that ran before there was a display are
+     * grey on screen and coloured on the serial line, which is the same log
+     * looking like two different logs.
      */
-    console_colour(0xffc9d1d9);
-    replay(early);
+    {
+        const char *at = early;
+        unsigned i;
+
+        for (i = 0; i < early_runs && i < EARLY_RUNS; i++) {
+            unsigned n = early_run[i].len;
+
+            console_colour(early_run[i].colour);
+
+            while (n-- > 0 && *at != '\0') {
+                screen_putc(*at++);
+            }
+        }
+
+        /* Whatever ran past the last run, which happens only if the boot log
+         * changed more colours than there are runs. */
+        console_colour(0xffc9d1d9);
+        replay(at);
+    }
 
     /* Nothing writes to it again, and saying so here is what makes it safe
      * for panic() to run through this file. */
@@ -423,6 +465,17 @@ void console_attach_screen(const struct fb *fb, const char *title)
 
 void console_colour(unsigned long foreground)
 {
+    /* A new run in the early buffer, so the replay can put this colour back.
+     * Opened even when nothing is printed in it: an empty run costs one slot
+     * and reasoning about "was anything printed since" costs more. */
+    if (early_len < EARLY_BYTES - 1 && early_runs < EARLY_RUNS
+        && (early_runs == 0
+            || early_run[early_runs - 1].colour != foreground)) {
+        early_run[early_runs].colour = foreground;
+        early_run[early_runs].len = 0;
+        early_runs++;
+    }
+
     fg = (uint32_t)foreground;
 }
 
@@ -505,6 +558,12 @@ void kputc(char c)
     if (early_len < EARLY_BYTES - 1) {
         early[early_len++] = c;
         early[early_len] = '\0';
+
+        /* Charged to the run in force. A new run is opened by
+         * console_colour; this only ever extends the last one. */
+        if (early_runs > 0) {
+            early_run[early_runs - 1].len++;
+        }
     } else {
         early_lost = true;
     }

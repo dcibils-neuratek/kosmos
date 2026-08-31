@@ -81,10 +81,11 @@ SRCS := boot/start.S \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
         hal/qemu-virt/input.c \
-             hal/qemu-virt/blk.c \
+        hal/qemu-virt/blk.c \
         kernel/console.c \
         kernel/screen.c \
         kernel/boot.c \
+        $(GEN)/version.c \
         $(GEN)/font_8x16.c \
         runtime/libc/string.c \
         runtime/libc/setjmp.S \

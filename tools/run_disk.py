@@ -110,8 +110,13 @@ def main():
     checks = 0
 
     try:
-        # ---- first boot: there is nothing, then there is -----------------
-        first = boot(image, disk, ["diskinfo", "mkfs --yes"])
+        # ---- first boot: there is nothing, then there is, then a file ----
+        first = boot(image, disk, [
+            "diskinfo",
+            "mkfs --yes",
+            "save notes.txt written before the reboot",
+            "ls /home",
+        ])
 
         if "filesystem: none" not in first:
             raise Failure(
@@ -128,8 +133,28 @@ def main():
 
         checks += 1
 
+        if "saved notes.txt" not in first:
+            raise Failure("the file was not written.\n" + first)
+
+        checks += 1
+
+        if "read back: written before the reboot" not in first:
+            raise Failure(
+                "the file did not read back as what was written, in the same "
+                "boot that wrote it. That is the filesystem, not "
+                "persistence.\n" + first
+            )
+
+        checks += 1
+
+        if "notes.txt" not in first.split("ls /home")[-1]:
+            raise Failure("the file is not in the directory listing.\n" + first)
+
+        checks += 1
+
         # ---- second boot: a machine that has never seen this disk --------
-        second = boot(image, disk, ["diskinfo"])
+        second = boot(image, disk, ["diskinfo", "ls /home",
+                                    "cat /home/notes.txt"])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -150,6 +175,25 @@ def main():
                 )
 
             checks += 1
+
+        if "notes.txt" not in second.split("ls /home")[-1]:
+            raise Failure(
+                "the file is not in the directory listing after the reboot. "
+                "The superblock survived and the directory did not, which "
+                "means the root inode or its data blocks were not written.\n"
+                + second
+            )
+
+        checks += 1
+
+        if "written before the reboot" not in second.split("cat ")[-1]:
+            raise Failure(
+                "the file is listed after the reboot but its contents did "
+                "not come back. The directory entry survived and the data "
+                "blocks did not.\n" + second
+            )
+
+        checks += 1
 
         print(second.strip())
         print(f"\nPASS: {checks} disk checks across two boots of one image.")

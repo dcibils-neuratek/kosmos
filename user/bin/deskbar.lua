@@ -5,9 +5,16 @@
 --   wm deskbar          the same, said out loud
 --
 -- Top right, because that is where BeOS put it and because it is the one
--- corner a window is least likely to want. It lists itself first - BeOS
--- called that entry Tracker - then every application that has registered,
--- in the order they started.
+-- corner a window is least likely to want. It lists itself first, then every
+-- application that has registered, in the order they started.
+--
+-- **This window used to be titled "Tracker", and that was wrong.** In BeOS
+-- the two are different programs doing different jobs: the Deskbar is this -
+-- what is running and what can be started - and Tracker is the file
+-- manager. Tracker appears in the Deskbar's list because it is always
+-- running, which is presumably how the name ended up on this window. There
+-- is no Tracker in Kosmos yet; when there is, it will be a file manager and
+-- it will appear in the list below like anything else.
 --
 --------------------------------------------------------------------------
 -- Where the two lists come from, and why neither is a list this program
@@ -97,7 +104,7 @@ if H > sh - 60 then
   H = sh - 60
 end
 
-local win, err = ui.window{ title = "Tracker", w = W, h = H,
+local win, err = ui.window{ title = "Deskbar", w = W, h = H,
                             x = sw - W - 12, y = 34 }
 
 if not win then

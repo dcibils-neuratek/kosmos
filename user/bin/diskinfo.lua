@@ -8,10 +8,15 @@
 -- Its real job is to be what proves a format survived a reboot: run
 -- `mkfs --yes`, restart the machine, run this.
 
-local sb, err = fs.read("/disk/super")
+local sb, err = fs.read("/home/.super")
 
 if not sb then
   print("diskinfo: " .. tostring(err))
+  return
+end
+
+if not sb.present then
+  print("disk: none attached (" .. tostring(sb.why) .. ")")
   return
 end
 

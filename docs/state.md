@@ -252,7 +252,7 @@ There is a display check that reads the meter.
   definition of done is now literal rather than done with arrow keys.
 
 - **Replicants** - M7's second definition of done, minus the dragging.
-  `wm clock,tracker`: one application publishes a view as source, state and
+  `wm clock,adopt`: one application publishes a view as source, state and
   a `needs` list, and another, which has never heard of clocks, adopts it
   and runs it. Both tick, with different state. The replicant reports from
   *inside* its own environment what it could reach, which is the only
