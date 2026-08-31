@@ -207,7 +207,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | M8: virtio-blk in the kernel HAL, moving to userland when a second driver shapes the interface | roadmap.md M8 |
 | Aug 2026 | M8: attribute indices are rebuilt at mount, not stored on disk | design.md §8.3, roadmap.md M8 |
 | Aug 2026 | M8: a large file is delivered as mapped pages, never as a string | design.md §8.4 |
-| Aug 2026 | The 10k kernel budget counts code, not comments; `make size` measures it | CLAUDE.md, tools/kernel_size.py |
+| Aug 2026 | The 10k kernel figure is a smoke alarm, not a rule; what the kernel may *contain* is the rule | CLAUDE.md, design.md §2 |
 | Aug 2026 | Test harness from M0: host-side runner, TAP over serial, exit code via semihosting | testing.md §18.1, roadmap.md M0 |
 | Aug 2026 | QEMU with `-icount` for regressions (deterministic), PMU on hardware for budget. They measure different things | testing.md §18.3 |
 | Aug 2026 | Anything with a frame budget is measured by max and p99, never by average | testing.md §18.5 |

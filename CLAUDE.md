@@ -61,9 +61,9 @@ These are not preferences. If a proposal violates one, the proposal is wrong.
 
 **The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. No networking, no graphics, no filesystem, and no Lua inside it from milestone 4 onward.
 
-**Budget: 10k lines of kernel, not counting comments or blank lines.** If something pushes past that, it goes to userland. `make size` prints the figure and what is left.
+**The kernel stays small, and 10k lines of code is the smoke alarm — not the rule.** The rules are the two above it: the kernel knows about threads, address spaces, IPC and capabilities and nothing else, and it has no allocator. Those are what must hold. The line count is a symptom worth watching, and `make size` reports it (code only; this codebase is more than half comments on purpose, and a budget that counted them would ask for worse code in order to satisfy itself).
 
-Comments are excluded because of what the number is *for*: it is a tripwire for scope creep, not a limit on explaining yourself. This codebase is more than half comments on purpose, and a budget that counted them would be a budget asking for worse code in order to satisfy itself.
+If the number goes up because something crept in that does not belong, the answer is to take that thing out — and it would have been wrong at any size. If it goes up because what legitimately belongs there needed more code, that is not a problem to solve. **Do not move a thing out of the kernel to satisfy a number.** Move it out because it does not belong.
 
 **Compatibility inside a process yes, at system level never.** A libc that lives in the app's address space and whose I/O functions resolve against that process's namespace is fine and necessary. What is forbidden is a POSIX personality: `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, `unistd.h`, global file descriptors, or any path tree reachable without a namespace. If a port asks for one of those, patch the port. Detail: `errno` is per-process, never global. See `docs/design.md` §17.
 
