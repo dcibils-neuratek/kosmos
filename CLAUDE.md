@@ -53,9 +53,26 @@ Mandatory flags, not to be changed without discussion:
 
 ---
 
-## Hard rules
+## Principles
 
-These are not preferences. If a proposal violates one, the proposal is wrong.
+**This is a learning project, and these are principles rather than laws.**
+They are the positions this system has taken and the reasons it took them,
+and they are load-bearing: most of what makes Kosmos interesting follows
+from them, and the temptation to break one is usually the moment before
+learning why it was there.
+
+So the bar for departing from one is not "never". It is: say which principle
+is in the way, say what it is costing, and decide it deliberately. What is
+not allowed is drift — quietly working around a principle, or violating one
+without noticing.
+
+And a principle that turns out to be wrong gets *changed*, here, with the
+reasoning recorded. That has already happened more than once. What must not
+happen is a principle that is still written down and no longer true.
+
+Practically, for me: do not answer a proposal by citing one of these as
+though it settled the matter. Say what the principle is protecting and
+whether that applies here. If it does not, say so.
 
 **No dynamic allocator in the kernel.** Everything lives in statically declared fixed-size pools: an array of threads, of address spaces, of endpoints. There is no `malloc` or equivalent.
 
