@@ -53,8 +53,9 @@
 #define SYS_SETNAME    15   /* (ptr, len)             -> 0 or error       */
 #define SYS_PROCTABLE  16   /* (&entries, max)        -> count or error   */
 #define SYS_ENDPOINT_DESTROY 17 /* (cap)              -> 0 or error       */
+#define SYS_POINTER    18   /* (&state)               -> 0 or error       */
 
-#define SYS_MAX         18
+#define SYS_MAX         19
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -133,6 +134,21 @@ struct proc_info {
     uint32_t caps;              /* capabilities in its table */
     uint32_t owns;              /* bit 0 the console, bit 1 the screen */
     char     name[16];
+};
+
+/*
+ * Where the pointer is, as the device reports it.
+ *
+ * Undecoded, like `sysinfo`: the range travels with the position so that
+ * whoever knows the size of the screen does the scaling. A kernel that
+ * scaled would have to know which screen, and it does not.
+ */
+struct pointer_info {
+    uint32_t x, y;
+    uint32_t min_x, max_x;
+    uint32_t min_y, max_y;
+    uint32_t buttons;
+    uint32_t moved;
 };
 
 struct sysinfo {

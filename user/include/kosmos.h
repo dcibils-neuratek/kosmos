@@ -249,6 +249,11 @@ static inline long kosmos_receive(long cap, struct message *msg,
                 (long)(uintptr_t)sender, nonblocking ? 1 : 0);
 }
 
+static inline long kosmos_pointer(struct pointer_info *out)
+{
+    return sys1(SYS_POINTER, (long)(uintptr_t)out);
+}
+
 static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 {
     return sys2(SYS_REPLY, (long)sender, (long)(uintptr_t)msg);

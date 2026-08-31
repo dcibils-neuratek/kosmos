@@ -1016,6 +1016,15 @@ local function new_namespace()
     return r.value or {}
   end
 
+  --
+  -- Where the pointer is, if the machine has one.
+  --
+  function ns.pointer(path)
+    local r, e = request("pointer", path)
+    if not r then return nil, e end
+    return r.value
+  end
+
   function ns.interrupted(path)
     local r, e = request("poll", path)
     if not r then return nil, e end
@@ -1148,6 +1157,26 @@ local function console_handlers(state)
       end
 
       return { ok = true, value = out }
+    end,
+
+    pointer = function(req)
+      --
+      -- Where the pointer is. Here for the same reason `keys` is: this is
+      -- the only process the kernel will answer about input at all, because
+      -- input has one reader and two pollers would each take events the
+      -- other never sees.
+      --
+      -- Passed through untouched, range and all. The console has no more
+      -- idea how big the screen is than the kernel does; the window manager
+      -- does, and scaling is its business.
+      --
+      local where, err = sys.pointer()
+
+      if not where then
+        return { ok = false, error = tostring(err) }
+      end
+
+      return { ok = true, value = where }
     end,
 
     poll = function(req)

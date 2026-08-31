@@ -121,9 +121,15 @@ unsigned long hal_ticks_missed(void);       /* deadlines that came and went */
 
 bool          hal_fb_init(struct fb *out);  /* M6; false when there is no screen */
 bool          hal_keyboard_init(void);      /* M6; false when there is none  */
+bool          hal_pointer_init(void);       /* M6; false when there is none  */
+bool          hal_pointer_poll(struct pointer_state *out);
 ```
 
 There is deliberately no `hal_keyboard_getchar`. A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. Nothing above the HAL changes because a keyboard exists.
+
+The pointer *does* get its own pair, and the difference is the point: a character can come from any of several sources and be the same character, so merging them costs nothing. A position cannot. It has exactly one source, and merging two would mean choosing between them - a choice that does not exist until there is a board with two pointing devices.
+
+`hal_pointer_poll` reports in the **device's own units, with the range beside them**, and does not scale to the screen. Same division as `sysinfo` and its raw ID registers: this layer says what the hardware said. Only the window manager knows how big the screen is, so only the window manager can scale.
 
 `hal/hal.h` is the authority. If this list and that file disagree, that file is right and this one is stale — say so.
 

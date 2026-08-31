@@ -169,14 +169,10 @@ The original design starts here. From this point there is far less reference mat
 
 That is the BeOS test and the one that determines whether the system feels good or not.
 
-**Met, with one thing named rather than glossed.** `wm hello-win,stuck`
-puts two applications on screen, one of which never replies again, and the
-hung one's window still moves - there is a display check for it. The moving
-is done with the keyboard, because there is no pointer device yet: adding
-one means restructuring the virtio-input driver for two instances and
-reading config space to tell a keyboard from a tablet. Nothing about the
-compositor changes when it arrives; the window manager already routes input
-by focus.
+**Met, literally.** `wm hello-win,stuck` puts two applications on screen,
+one of which never replies again, and the hung one's window is dragged by
+its title bar with the mouse. There is a display check that does exactly
+that, driving a virtio tablet through QMP.
 
 **Still open in M6:** row and column containers, a scroll widget, the
 Terminal with its VT100 emulation, virtio-gpu as the second `hal_fb_*`

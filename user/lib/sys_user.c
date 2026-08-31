@@ -510,6 +510,37 @@ static int l_processes(lua_State *L)
 extern const char programs_lua[];
 extern const char libraries_lua[];
 
+static int l_pointer(lua_State *L)
+{
+    struct pointer_info info;
+    long status = kosmos_pointer(&info);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+#define PUT(name, value) do {                       \
+        lua_pushinteger(L, (lua_Integer)(value));   \
+        lua_setfield(L, -2, (name));                \
+    } while (0)
+
+    lua_createtable(L, 0, 8);
+    PUT("x", info.x);
+    PUT("y", info.y);
+    PUT("min_x", info.min_x);
+    PUT("max_x", info.max_x);
+    PUT("min_y", info.min_y);
+    PUT("max_y", info.max_y);
+    PUT("buttons", info.buttons);
+
+#undef PUT
+
+    lua_pushboolean(L, info.moved != 0);
+    lua_setfield(L, -2, "moved");
+
+    return 1;
+}
+
 static int l_programs(lua_State *L)
 {
     lua_pushstring(L, programs_lua);
@@ -533,6 +564,7 @@ static const luaL_Reg sys_functions[] = {
     { "info",     l_info },
     { "name",     l_setname },
     { "processes", l_processes },
+    { "pointer",  l_pointer },
     { "programs", l_programs },
     { "libraries", l_libraries },
     { "endpoint", l_endpoint },

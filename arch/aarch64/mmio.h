@@ -45,4 +45,27 @@ static inline uint32_t mmio_read32(uintptr_t addr)
     return value;
 }
 
+/*
+ * The same, a byte at a time.
+ *
+ * Only one thing needs this: a virtio device's configuration space, whose
+ * first three fields are single bytes - a selector, a sub-selector and a
+ * length - and which is how a driver asks a device what it is. Reading that
+ * as a 32-bit word would work by accident on this machine and stop working
+ * on one that decodes the access width, which devices are allowed to do.
+ */
+
+static inline void mmio_write8(uintptr_t addr, uint8_t value)
+{
+    __asm__ volatile("dmb oshst" ::: "memory");
+    *(volatile uint8_t *)addr = value;
+}
+
+static inline uint8_t mmio_read8(uintptr_t addr)
+{
+    uint8_t value = *(volatile uint8_t *)addr;
+    __asm__ volatile("dmb oshld" ::: "memory");
+    return value;
+}
+
 #endif /* ARCH_AARCH64_MMIO_H */

@@ -604,6 +604,37 @@ void syscall_dispatch(struct trapframe *tf)
         }
         break;
 
+    case SYS_POINTER: {
+        /*
+         * Guarded exactly as SYS_GETCHAR is, and for the same reason: input
+         * has one reader. A second process polling the tablet would take
+         * events the first never sees, and the two would disagree about
+         * where the pointer is with nothing to say which was right.
+         */
+        struct pointer_state state;
+
+        if (!p->owns_console) {
+            result = SYS_ERR_DENIED;
+        } else if (!process_may_write(p, tf->x[0], sizeof(struct pointer_info))) {
+            result = SYS_ERR_FAULT;
+        } else if (!hal_pointer_poll(&state)) {
+            result = SYS_ERR_DENIED;    /* there is no pointer on this board */
+        } else {
+            struct pointer_info *out = (struct pointer_info *)tf->x[0];
+
+            out->x       = state.x;
+            out->y       = state.y;
+            out->min_x   = state.min_x;
+            out->max_x   = state.max_x;
+            out->min_y   = state.min_y;
+            out->max_y   = state.max_y;
+            out->buttons = state.buttons;
+            out->moved   = state.moved;
+            result = 0;
+        }
+        break;
+    }
+
     case SYS_YIELD:
         thread_yield();
         result = 0;

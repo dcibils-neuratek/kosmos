@@ -14,6 +14,39 @@ Two boards with the same CPU share `arch/` and differ in `hal/`. QEMU virt and t
 
 ---
 
+
+## Two devices that are the same device
+
+The keyboard and the tablet are both virtio-input. Both answer to device id
+18. Nothing in the MMIO register window distinguishes them, so a driver that
+scans for "the input device" finds whichever window comes first and calls it
+a keyboard.
+
+Telling them apart means asking each one what kinds of event it can produce:
+write `VIRTIO_INPUT_CFG_EV_BITS` into the selector and `EV_ABS` into the
+sub-selector, then read the length that comes back. Non-zero means the device
+has absolute axes to describe, and a keyboard has none.
+
+Two consequences worth knowing before touching `hal/qemu-virt/input.c`:
+
+**Configuration space is bytes.** The first three fields of a virtio config
+space are single bytes - selector, sub-selector, length - and reading them
+as one 32-bit access works here and is allowed to fail on a device that
+decodes the access width. `mmio_read8`/`mmio_write8` exist for this and for
+nothing else.
+
+**The probe costs a partial bring-up.** Configuration space is read after the
+device has been told a driver is present, so a window holding the wrong kind
+of device has been reset and acknowledged and then left alone. That is
+harmless - claiming it later starts with another reset - and it is the price
+of the two devices being indistinguishable from outside.
+
+The file is instance-based for the same reason. It held one set of globals
+when there was one device; the ring, the buffers and the position in the used
+ring now belong to a `struct vinput`, because two devices of the same kind
+cannot share them.
+
+
 ## The interface
 
 Minimal on purpose. **Do not expand it speculatively.**

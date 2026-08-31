@@ -177,13 +177,34 @@ void kmain(void)
         boot_fact("none attached; the serial line is the only console");
     }
 
-    boot_stage("keyboard");
+    boot_stage("input devices");
     boot_why("Scanning thirty-two virtio windows; no PCI bus to walk.");
 
     if (hal_keyboard_init()) {
-        boot_fact("virtio-input found, negotiated and polled like the serial line");
+        boot_fact("keyboard: virtio-input, negotiated and polled like the serial line");
     } else {
-        boot_fact("none found; input comes over the serial line");
+        boot_fact("no keyboard; input comes over the serial line");
+    }
+
+    /*
+     * The tablet is the same kind of device as the keyboard - both answer to
+     * virtio's input id - so the only way to tell them apart is to ask each
+     * one whether it has absolute axes. Which is why this is one stage and
+     * not two: it is one scan.
+     */
+    if (hal_pointer_init()) {
+        struct pointer_state where;
+
+        boot_fact_begin();
+        kputs("pointer: virtio-input with absolute axes, reporting 0..");
+
+        if (hal_pointer_poll(&where)) {
+            kputu(where.max_x);
+        }
+
+        boot_fact_end();
+    } else {
+        boot_fact("no pointer; windows are moved with the keyboard");
     }
 
     thread_init();

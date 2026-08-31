@@ -58,7 +58,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/timer.c \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
-        hal/qemu-virt/keyboard.c \
+        hal/qemu-virt/input.c \
         kernel/console.c \
         kernel/screen.c \
         kernel/boot.c \
@@ -418,6 +418,7 @@ QEMU      := qemu-system-aarch64
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
+             -device virtio-tablet-device \
              -display cocoa -serial mon:stdio \
              -kernel $(TARGET)
 

@@ -81,6 +81,7 @@ Usage: run_screenshot.py <image.elf> [--png OUT] [--timeout SECONDS]
 
 import argparse
 import fcntl
+import json
 import re
 import os
 import select
@@ -116,6 +117,7 @@ QEMU_ARGS = [
     # refuses those.
     "-global", "virtio-mmio.force-legacy=false",
     "-device", "virtio-keyboard-device",
+    "-device", "virtio-tablet-device",
 ]
 
 PROMPT = "kosmos>"          # printed once the shell is serving
@@ -162,12 +164,14 @@ class Guest:
         self.timeout = timeout
         self.dir = tempfile.TemporaryDirectory()
         self.sockpath = os.path.join(self.dir.name, "monitor")
+        self.qmppath = os.path.join(self.dir.name, "qmp")
         self.seen = ""
 
         try:
             self.proc = subprocess.Popen(
                 [QEMU, *QEMU_ARGS,
                  "-monitor", f"unix:{self.sockpath},server,nowait",
+                 "-qmp", f"unix:{self.qmppath},server,nowait",
                  "-serial", "stdio",
                  "-kernel", image],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -188,6 +192,7 @@ class Guest:
                     fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
         self.monitor = None
+        self.qmp = None
 
     def _read_available(self):
         """Drain whatever the serial line has produced, without blocking."""
@@ -244,6 +249,57 @@ class Guest:
             except socket.timeout:
                 pass
 
+    def _connect_qmp(self):
+        """The other monitor.
+
+        Key presses go through the human monitor's `sendkey`, which is enough
+        for a keyboard. A pointer is not: `mouse_move` there sends *relative*
+        deltas to whichever device QEMU thinks is current, and a tablet
+        reports absolute position - so the two never meet and nothing moves.
+
+        `input-send-event` on the QMP socket is the one that speaks the same
+        language as the device: an absolute value on a named axis, in the
+        same 0..32767 range the tablet itself reports.
+        """
+        if self.qmp is not None:
+            return
+
+        self.qmp = socket.socket(socket.AF_UNIX)
+        self.qmp.settimeout(self.timeout)
+        self.qmp.connect(self.qmppath)
+        self.qmp.recv(65536)                        # the greeting
+
+        self.qmp.sendall(b'{"execute":"qmp_capabilities"}\n')
+        self.qmp.recv(65536)                        # its answer
+
+    def _qmp(self, command, arguments):
+        self._connect_qmp()
+        self.qmp.sendall(
+            (json.dumps({"execute": command, "arguments": arguments}) + "\n")
+            .encode())
+
+        # The reply, plus whatever asynchronous events arrive with it. Not
+        # parsed: this is a test harness and the only interesting failure -
+        # QEMU refusing the command - shows up as the guest not moving.
+        time.sleep(0.15)
+
+        try:
+            self.qmp.recv(65536)
+        except socket.timeout:
+            pass
+
+    def mouse_to(self, x, y):
+        """Absolute position, in the tablet's own 0..32767 range."""
+        self._qmp("input-send-event", {"events": [
+            {"type": "abs", "data": {"axis": "x", "value": int(x)}},
+            {"type": "abs", "data": {"axis": "y", "value": int(y)}},
+        ]})
+
+    def mouse_button(self, down, button="left"):
+        self._qmp("input-send-event", {"events": [
+            {"type": "btn", "data": {"down": bool(down), "button": button}},
+        ]})
+
     def sendkey(self, key):
         """One key press and release, through QEMU's own input plumbing.
 
@@ -274,6 +330,10 @@ class Guest:
 
     def close(self):
         try:
+            if self.qmp is not None:
+                self.qmp.close()
+                self.qmp = None
+
             if self.monitor is not None:
                 self.monitor.sendall(b"quit\n")
                 self.monitor.close()
@@ -982,12 +1042,22 @@ def check_replicants(guest):
     return 3
 
 
+def _to_tablet(x, y, width, height):
+    """Screen pixels to the tablet's own units.
+
+    The device reports 0..32767 on both axes whatever the display is, which
+    is why the range travels with the position all the way from the HAL: the
+    only place that knows how big the screen is, is the place doing this.
+    """
+    return x * 32767 // (width - 1), y * 32767 // (height - 1)
+
+
 def check_window_manager(guest):
     """This milestone's definition of done: BeOS's test.
 
     `wm hello-win,stuck` starts two applications in windows. One of them
     answers and one of them is an infinite loop that never replies again.
-    Moving the hung one's window has to work anyway.
+    Dragging the hung one's window by its title bar has to work anyway.
 
     That is not a question about speed, it is a question about who owns the
     pixels. An application here owns none: it sends a list of drawing
@@ -1014,18 +1084,30 @@ def check_window_manager(guest):
             "it could not hand /dev/wm to the applications it started."
         )
 
-    # Ten steps left. Control-W first every time: the window manager takes
-    # one key and it introduces a command, so a bare arrow belongs to the
-    # application and never to the manager. An arrow is three bytes, and
-    # these go down the serial line rather than through sendkey because
-    # QEMU's `sendkey left` produces a keycode the console does not
-    # translate - the arrow grammar this system understands is a terminal's.
-    for _ in range(10):
-        guest.proc.stdin.write(b"\x17\x1b[D")
-        guest.proc.stdin.flush()
-        time.sleep(0.12)
+    # Dragged by its title bar, with the mouse, which is what the milestone
+    # actually asks for. The keyboard path still exists - Control-W then an
+    # arrow - and is checked by the widget phase using the same window
+    # manager; this is the one that matters.
+    #
+    # The events go through QMP's `input-send-event` rather than the human
+    # monitor's `mouse_move`, because that one sends *relative* deltas and
+    # this device reports absolute position. They never meet, and the
+    # symptom is a cursor that never moves.
+    tab_x, tab_y = before[0] + 40, before[1] - 10
 
+    guest.mouse_to(*_to_tablet(tab_x, tab_y, width, height))
+    time.sleep(0.5)
+    guest.mouse_button(True)
+    time.sleep(0.4)
+
+    for step in range(1, 9):
+        guest.mouse_to(*_to_tablet(tab_x - step * 30, tab_y + step * 12,
+                                   width, height))
+        time.sleep(0.25)
+
+    guest.mouse_button(False)
     time.sleep(1.5)
+
     width, height, px = parse_ppm(guest.screendump())
     after = find_colour_anywhere(width, height, px, HUNG_TITLE)
 
@@ -1035,17 +1117,12 @@ def check_window_manager(guest):
             "Moving it did not move it, it lost it."
         )
 
-    if after[0] >= before[0]:
+    if after[0] >= before[0] or after[1] <= before[1]:
         raise Failure(
-            f"the hung application's window did not move: {before} then "
-            f"{after}. Something in the compositor is waiting for an "
-            "application, which is the one thing it must never do."
-        )
-
-    if after[1] != before[1]:
-        raise Failure(
-            f"the window moved vertically as well as horizontally: {before} "
-            f"then {after}. Ten left arrows should change x and nothing else."
+            f"the hung application's window did not follow the pointer: "
+            f"{before} then {after}, and the drag went left and down. "
+            "Either the compositor is waiting for an application - the one "
+            "thing it must never do - or the button press never reached it."
         )
 
     return 3

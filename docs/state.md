@@ -46,6 +46,12 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A mouse.** `hal/qemu-virt/input.c` drives two virtio-input devices - a
+  keyboard and a tablet - told apart by asking each whether it has absolute
+  axes, since both answer to the same device id. The window manager draws a
+  cursor, raises a window on click, and drags one by its title bar. M6's
+  definition of done is now literal rather than done with arrow keys.
+
 - **Replicants** - M7's second definition of done, minus the dragging.
   `wm clock,tracker`: one application publishes a view as source, state and
   a `needs` list, and another, which has never heard of clocks, adopts it

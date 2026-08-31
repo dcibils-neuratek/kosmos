@@ -319,6 +319,7 @@ end
 --
 -- Until there is a pointer device the keyboard does the dragging:
 --
+--   the pointer               click to raise, drag a title bar to move
 --   Control-W then an arrow    move the focused window
 --   Control-W then Tab         focus the next window
 --   Control-W then Control-W   a literal Control-W to the application
@@ -331,6 +332,137 @@ end
 -- piece of terminal grammar this has to know, and it knows it here rather
 -- than in the console because the console has no idea what a window is.
 --------------------------------------------------------------------------
+
+--------------------------------------------------------------------------
+-- The pointer.
+--
+-- The tablet reports absolute position in a range of its own - 0 to 32767
+-- on this machine, whatever the display is - so the scaling happens here,
+-- where the size of the screen is known. The kernel passes the range out
+-- undecoded for exactly this reason.
+--
+-- Absolute rather than relative is the right kind of device for a virtual
+-- machine: there is no acceleration curve to agree on with the host, so the
+-- guest cursor cannot drift away from the real one.
+--
+-- The cursor is drawn onto the screen *after* the composite, not into the
+-- backbuffer. It is not part of the scene - nothing is ever drawn on top of
+-- it and it must not be scrolled or blitted with anything - so putting it
+-- in the backbuffer would mean every window redraw fighting it. What that
+-- costs is one rectangle of damage where it used to be, which is the
+-- cheapest possible way to erase it.
+--------------------------------------------------------------------------
+
+local CURSOR_W, CURSOR_H = 10, 16
+
+-- An arrow. Two colours so it stays visible on a light window and on the
+-- dark desktop: white body, dark outline.
+local CURSOR = {
+  "X.........",
+  "XX........",
+  "XoX.......",
+  "XooX......",
+  "XoooX.....",
+  "XooooX....",
+  "XoooooX...",
+  "XooooooX..",
+  "XoooooooX.",
+  "XooooooooX",
+  "XoooooXXXX",
+  "XooXooX...",
+  "XoX.XooX..",
+  "XX..XooX..",
+  "X....XooX.",
+  "......XX..",
+}
+
+local pointer_x, pointer_y = 0, 0
+local drawn_x, drawn_y = -1, -1
+local buttons = 0
+local dragging = nil          -- { win, dx, dy } while a title bar is held
+
+local function draw_cursor()
+  for row = 0, CURSOR_H - 1 do
+    local line = CURSOR[row + 1]
+
+    for col = 0, CURSOR_W - 1 do
+      local ch = line:sub(col + 1, col + 1)
+
+      if ch ~= "." then
+        screen:fill(pointer_x + col, pointer_y + row, 1, 1,
+                    (ch == "X") and 0xff000000 or 0xffffffff)
+      end
+    end
+  end
+
+  drawn_x, drawn_y = pointer_x, pointer_y
+end
+
+-- Which window is under a point, front to back, decoration included.
+local function window_at(x, y)
+  for i = #windows, 1, -1 do
+    local win = windows[i]
+    local fx, fy, fw, fh = frame_of(win)
+
+    if x >= fx and x < fx + fw and y >= fy and y < fy + fh then
+      return win, fx, fy
+    end
+  end
+
+  return nil
+end
+
+local function pointer_pass()
+  local p = fs.pointer("/dev/console")
+
+  if not p then return end
+
+  local range_x = (p.max_x - p.min_x)
+  local range_y = (p.max_y - p.min_y)
+
+  if range_x <= 0 or range_y <= 0 then return end
+
+  local nx = (p.x - p.min_x) * (W - 1) // range_x
+  local ny = (p.y - p.min_y) * (H - 1) // range_y
+
+  local was_down = (buttons & 1) ~= 0
+  local is_down = (p.buttons & 1) ~= 0
+
+  if nx ~= pointer_x or ny ~= pointer_y then
+    -- Where it was has to be repainted from the backbuffer; where it is now
+    -- gets the arrow after the composite.
+    if drawn_x >= 0 then
+      add_damage(drawn_x, drawn_y, CURSOR_W, CURSOR_H)
+    end
+
+    pointer_x, pointer_y = nx, ny
+  end
+
+  if is_down and not was_down then
+    --
+    -- A press. Raise whatever is under it, and if that was the title bar,
+    -- start a drag.
+    --
+    local win, fx, fy = window_at(nx, ny)
+
+    if win then
+      raise(win)
+
+      if ny < fy + TAB_H then
+        dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
+      end
+    end
+  elseif not is_down and was_down then
+    dragging = nil
+  end
+
+  if dragging and is_down then
+    handlers.move{ window = dragging.win.handle,
+                   x = nx - dragging.dx, y = ny - dragging.dy }
+  end
+
+  buttons = p.buttons
+end
 
 local STEP = 16
 local prefix = false
@@ -489,8 +621,13 @@ while running do
     pcall(sys.reply, who, reply)
   end
 
-  -- 3. The picture.
+  -- 3. The pointer, before the picture: a click can raise a window and a
+  -- drag can move one, and both are damage that this pass should draw.
+  pointer_pass()
+
+  -- 4. The picture, and then the cursor on top of it.
   compose()
+  draw_cursor()
 
   sys.yield()
 end

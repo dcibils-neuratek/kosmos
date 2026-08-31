@@ -321,9 +321,10 @@ were a fact.
 
 - **Drivers are still in the kernel.** See §2. This is the largest gap
   between the diagram in `design.md` and the diagram at the top of this file.
-- **There is no pointer.** The window manager exists and its windows move,
-  but with the arrow keys: QEMU's `virt` has a virtio keyboard attached and
-  no tablet, and dragging with a mouse needs a second virtio-input driver.
+- **The console and the window manager share one framebuffer**, so printing
+  a line scrolls a window's pixels, and the window manager cannot usefully
+  run detached because it and the shell's line editor would both be draining
+  one keyboard. Both go away when the shell is a window.
 - **A window has no view tree and no widgets.** An application draws by
   sending a flat list of commands. The view tree, follow modes and the
   widget set are the rest of M6.

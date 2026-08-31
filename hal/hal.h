@@ -116,4 +116,40 @@ bool hal_fb_init(struct fb *out);
  */
 bool hal_keyboard_init(void);
 
+/*
+ * Where the pointer is, in the device's own units.
+ *
+ * Undecoded on purpose. An absolute pointing device reports in a range of
+ * its own choosing - QEMU's tablet is 0 to 32767 on both axes whatever the
+ * display happens to be - and the range travels with the position so that
+ * whoever knows how big the screen is can do the scaling. The same division
+ * `hal_ram_range` and `sysinfo` draw: this layer says what the hardware
+ * said, and what it means belongs further up.
+ */
+struct pointer_state {
+    uint32_t x, y;
+    uint32_t min_x, max_x;
+    uint32_t min_y, max_y;
+    uint32_t buttons;               /* bit 0 left, bit 1 right */
+    uint32_t moved;                 /* something happened since the last look */
+};
+
+/*
+ * Brings up a pointing device, if the board has one. False is not an error,
+ * exactly as with the keyboard: a machine with a serial cable and no mouse
+ * is a legitimate way to run this system and always will be.
+ *
+ * There is no `hal_pointer_getchar` equivalent - no merging of sources -
+ * because unlike characters, a position has only one place it can come from.
+ * A second pointing device would be a second thing to choose between, and
+ * that choice does not exist until there is a board with two.
+ */
+bool hal_pointer_init(void);
+
+/*
+ * The current position and buttons. False when there is no pointer at all;
+ * `moved` distinguishes "nothing has happened" from "it is still there".
+ */
+bool hal_pointer_poll(struct pointer_state *out);
+
 #endif /* HAL_H */
