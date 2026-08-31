@@ -291,6 +291,25 @@ No sockets, no `select`, no descriptors. The same protocol as reading a file. An
 
 ---
 
+## Recorded goals
+
+Things asked for that are not milestones of their own. Written down so they
+shape what gets built rather than arriving as a surprise late.
+
+| Goal | Where it lands | What it needs first |
+|---|---|---|
+| **A text editor good enough to write Lua in** | M7's app list, and started early - `/bin/edit.lua` | Nothing. It is the first thing that makes the machine able to change itself without a rebuild, which is the point of the whole design |
+| **Lightweight games in Lua** | M9's neighbourhood | The UI kit's input path and a surface a program can draw into fast. The blitter is there; what is missing is a frame loop with a known cost |
+| **An HTTP server for personal pages** | M11 drivers, then a stack | A network driver at EL0 like every other driver, then TCP/IP in Lua with the packet loop in C. See §"drivers are processes" in architecture.md - a network card is exactly the case that argues for it |
+
+The HTTP server is worth stating as a target rather than a wish, because it
+decides an argument that would otherwise be had abstractly: a network stack
+is the first thing in this system with a hard latency budget that is not the
+display's, and it is the second consumer of the driver model. One driver
+proves nothing about a driver interface.
+
+---
+
 ## What to do when you get stuck
 
 Every milestone has a point where something does not work and you do not know why. It is normal and it is half the learning.

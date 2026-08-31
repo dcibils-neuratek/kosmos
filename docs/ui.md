@@ -184,6 +184,38 @@ This is the intersection of the system's three ideas: the Lisp Machine live imag
 
 ---
 
+## 16.8b The look: BeOS's structure, not BeOS's skin
+
+Decided deliberately, because "BeOS-style" can mean two very different
+things and only one of them is worth having.
+
+**Take the structure.** The widget vocabulary, the tab that is only as wide
+as its title, follow modes instead of a constraint solver, click to focus,
+stack and tile, the replicant. These are decisions that were right in 1998
+and are still right, and reinventing them would be work spent arriving back
+where BeOS already was.
+
+**Do not take the skin.** The specific 1998 surface - the grey bevels, the
+two-pixel light-and-dark chamfer on every button, the exact yellow - is a
+period costume. Copying it makes the system look like a museum piece and,
+worse, like a clone rather than a descendant.
+
+So: the same bones, a different finish. Concretely, what is already chosen
+here and what it means:
+
+| BeOS did | Kosmos does | Why |
+|---|---|---|
+| Tab as wide as its title | The same | Functional, not decorative: the titles of several stacked windows stay readable at once. It is the one visual decision worth copying exactly |
+| `#FFCC00` tab yellow, hard-edged | A warmer amber on a dark desktop | Keeps the "the focused one is the yellow one" reading, drops the 1998 palette |
+| Light grey chrome, bevelled | Dark, flat, one-pixel separators | A bevel says "this is a raised physical control", which stopped being a useful lie once everyone knew what a button was |
+| Every control chamfered | Weight and spacing do the work | Fewer pixels spent saying what a thing is, more spent on what it contains |
+
+The rule for anything not in that table: **if the BeOS decision is about how
+something behaves, copy it. If it is about how something is shaded, decide
+it fresh.**
+
+---
+
 ## 16.9 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

@@ -53,6 +53,11 @@ So there are two phases here, and the second is the one that matters:
      kernel's first thread is running the suite, so it never reaches the
      idle loop whose behaviour is the whole question.
 
+  8. **The machine writing its own program.** Four lines typed into `edit`,
+     saved, and run from the shell. It depends on so many separate things at
+     once that it is the closest thing here to a statement that the system
+     works.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -767,6 +772,84 @@ def check_latency(guest):
     return 1
 
 
+def check_editor(guest):
+    """The machine writes and runs its own program.
+
+    Types four lines into `edit`, saves with Control-S, quits with
+    Control-Q, and runs the file from the shell. The answer has to be 15.
+
+    The strongest end-to-end statement this harness makes, because of how
+    many separate things it depends on: the console draining raw keys to a
+    program that has taken the screen, the editor's line handling, `fs.write`
+    into a server, the file surviving the editor exiting, and the shell
+    running a path outside /bin. Any one of them broken and there is no 15.
+
+    Before the window manager phase, which takes the screen for good.
+    """
+    guest.type("edit /data/sum.lua")
+    time.sleep(3)
+
+    program = (
+        "-- written on the machine itself\n"
+        "local n = 0\n"
+        "for i = 1, 5 do n = n + i end\n"
+        "print(\"the sum is \" .. n)\n"
+    )
+
+    for ch in program:
+        guest.proc.stdin.write(ch.encode())
+        guest.proc.stdin.flush()
+        time.sleep(0.02)
+
+    time.sleep(1)
+
+    width, height, px = parse_ppm(guest.screendump())
+    blank = all(px[i] == px[0] for i in range(0, width * 3 * 40, 3))
+
+    if blank:
+        raise Failure(
+            "nothing was drawn in the editor's first forty rows. The keys "
+            "are not reaching it, or it is not redrawing when they do."
+        )
+
+    guest.proc.stdin.write(b"\x13")     # Control-S
+    guest.proc.stdin.flush()
+    time.sleep(1.5)
+
+    guest.proc.stdin.write(b"\x11")     # Control-Q
+    guest.proc.stdin.flush()
+    time.sleep(1.5)
+
+    mark = len(guest.seen)
+    guest.type("run /data/sum.lua")
+
+    deadline = time.monotonic() + 20
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if "the sum is" in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "the program typed into the editor did not run.\n"
+            f"--- what came back ---\n{guest.seen[mark:]}"
+        )
+
+    said = guest.seen[mark:]
+
+    if "the sum is 15" not in said:
+        line = said[said.index("the sum is"):].split("\n")[0]
+        raise Failure(
+            f"the editor saved something, and it was not what was typed: "
+            f"it printed {line!r} rather than 'the sum is 15'."
+        )
+
+    return 2
+
+
 def write_png(path, data):
     """The screendump, as something a person can open."""
     width, height, px = parse_ppm(data)
@@ -830,6 +913,7 @@ def main():
         latency_checks = check_latency(guest)
         stop_checks = check_interrupt(guest)
         bar_updates = check_status_bar(guest)
+        editor_checks = check_editor(guest)
         wm_checks = check_window_manager(guest)
 
         if args.png:
@@ -844,7 +928,7 @@ def main():
             guest.close()
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
-             + stop_checks + wm_checks + latency_checks)
+             + stop_checks + wm_checks + latency_checks + editor_checks)
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
@@ -852,7 +936,9 @@ def main():
           f"{bar_updates} on a detached program still drawing, "
           f"{stop_checks} on Control-C stopping it, "
           f"{wm_checks} on dragging a hung application's window, "
-          f"{latency_checks} on scheduling latency).")
+          f"{latency_checks} on scheduling latency, "
+          f"{editor_checks} on the machine writing and running its own "
+          f"program).")
     return 0
 
 

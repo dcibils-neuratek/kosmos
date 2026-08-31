@@ -143,6 +143,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | The idle thread yields when anything is runnable and sleeps only when nothing is. Every yield used to cost a timer period | testing.md, kernel/main.c |
 | Aug 2026 | Latency between operations is measured separately from operations. `bench/` is structurally blind to it | testing.md |
 | Aug 2026 | A live query is a parked reply, not a callback: a server that calls a client can be blocked by one | design.md §7, roadmap.md M7 |
+| Aug 2026 | The UI kit takes BeOS's structure and not its skin: copy a decision about behaviour, decide a decision about shading fresh | ui.md §16.8b |
+| Aug 2026 | An editor early, before the UI kit: nothing else lets the machine change itself without a rebuild | roadmap.md, recorded goals |
 | Aug 2026 | SSH client as M12, with monocypher ported | roadmap.md M12 |
 | Aug 2026 | Scripting architecture: every app exposes its hooks as nodes in its own namespace (from BeOS hooks) | beos.md §17.2, roadmap.md M7 |
 | Aug 2026 | Name, size and modification date are always indexed; everything else when declared (from BFS) | beos.md §17.2, roadmap.md M8 |
