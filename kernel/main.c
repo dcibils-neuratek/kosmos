@@ -278,8 +278,9 @@ void kmain(void)
         cap_t console_ep = ipc_endpoint_create();
         cap_t ramfs_ep = ipc_endpoint_create();
         cap_t devices_ep = ipc_endpoint_create();
+        cap_t binfs_ep = ipc_endpoint_create();
 
-        if (console_ep < 0 || ramfs_ep < 0 || devices_ep < 0) {
+        if (console_ep < 0 || ramfs_ep < 0 || devices_ep < 0 || binfs_ep < 0) {
             panic("no endpoints for init");
         }
 
@@ -311,7 +312,8 @@ void kmain(void)
          * bug rather than a wiring one. */
         if (ipc_cap_grant(init->thread, console_ep) != 0
             || ipc_cap_grant(init->thread, ramfs_ep) != 1
-            || ipc_cap_grant(init->thread, devices_ep) != 2) {
+            || ipc_cap_grant(init->thread, devices_ep) != 2
+            || ipc_cap_grant(init->thread, binfs_ep) != 3) {
             panic("init's capabilities did not land where expected");
         }
 

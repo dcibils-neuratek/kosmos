@@ -100,6 +100,25 @@ The first version of this used four to six lines a stage and was worse, not bett
 
 **A command can be a Lua program.** `alias` points one word at another; `def` compiles a line of Lua and gives it a name, argument string arriving as `...`. It is compiled at definition time, into the same environment as the prompt, so a syntax error is reported when you write it and it reaches exactly what you reach. That is the shape the idea deserved: an alias that is only a second name for a command is a convenience, and a command that is a program is a way to extend the system from inside it.
 
+**There is a `/bin`, and programs run in processes of their own.**
+
+    kosmos> ls /bin
+      hello.lua        704 bytes
+      htop.lua        3890 bytes
+    kosmos> htop
+
+`htop` is a Lua program in `user/bin/`, carried in the image because there is no disk until M8, served by a read-only `/bin` server, and run by a `runner` process that gets the capabilities the shell chose to hand it. It shows itself in its own process table.
+
+**This is what `exec` looks like with no ambient authority.** No path search, no inherited environment, no global tree: a program reaches exactly what it was given. A bare word runs a program only if it does not already name something in Lua — the same rule the command dispatcher uses — so nothing installed in `/bin` can shadow the language.
+
+**The shell sends a name, not the source.** The first version sent the program in the message and could not: a program is several kilobytes and `MSG_BYTES` is 2048. Sending the name is better than making it fit — the shell no longer reads a program in order to start one, and the bytes cross the boundary once instead of twice.
+
+**Reads can now span messages.** `MSG_BYTES` stayed at 2048 rather than growing, because `struct thread` embeds a message — every thread would pay — and `sys_call` keeps one on a 16 KB exception stack. A server holding something large answers with `more = true` and honours `offset`; one that does not ignores the field, as every existing server does.
+
+**And `serve` no longer dies when a reply will not fit.** `sys.reply` raises on a value that does not serialise, and that call is *outside* the coroutine that isolates a handler — so the first time `/bin` was asked for a program bigger than a message, the program store died and the client saw only that its request never came back. The failure now reaches whoever asked.
+
+**Known gap: `run` leaks an endpoint.** There is no syscall to destroy one — `ipc_endpoint_destroy` exists in the kernel and is not exposed — so every program run consumes one of 96 permanently. About ninety runs before a reboot is needed.
+
 **The pools were raised, and doing it found a limit nothing could see.** Threads 16 to 48, processes 8 to 32, endpoints 32 to 96. Raising the first two changed nothing: spawning still failed at eleven processes, with every pool the system could report showing plenty free — 16 of 32 processes, 17 of 48 threads, 469 MB.
 
 The real ceiling was **`ADDRSPACE_MAX` in `arch/aarch64/mmu.c`**, a third pool nothing counted and no report mentioned. A limit nothing counts is a limit nobody can find. It is 32 now, `as_count()`/`as_total()` exist, `SYS_SYSINFO` reports them and `ps` prints them; the same spawn loop reaches 27. And because `arch/` must not include a kernel header to learn `PROCESS_MAX`, the two are tied together by a test that creates that many address spaces and fails if any is refused.

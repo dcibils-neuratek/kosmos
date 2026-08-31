@@ -257,6 +257,7 @@ USER_SRCS := user/init/start.S \
              user/lib/sys_user.c \
              user/lib/gfx.c \
              $(GEN)/font_8x16.c \
+             $(GEN)/programs.c \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
              $(LUA_SRCS) \
@@ -304,6 +305,12 @@ $(GEN)/init_lua.c: user/init/init.lua tools/bin2c.py
 $(GEN)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/bdf2c.py $< font_8x16 $@
+
+# The programs in user/bin/, as Lua source the /bin server serves. There is
+# no disk until M8, so a program reaches the system by being in the image.
+$(GEN)/programs.c: $(wildcard user/bin/*.lua) tools/progs2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/progs2c.py programs_lua $@ $(wildcard user/bin/*.lua)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py
 	@mkdir -p $(dir $@)

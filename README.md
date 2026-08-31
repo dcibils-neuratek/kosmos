@@ -157,6 +157,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | The working directory is the shell's idea alone. Servers are always told whole paths | user/init/init.lua |
 | Aug 2026 | A listing is the server's entries plus whatever is mounted below the path. Only the namespace knows the second half, which is what makes `/` a directory | user/init/init.lua |
 | Aug 2026 | Every fixed pool must be countable and reported. `ADDRSPACE_MAX` was the real limit on processes for a while and no report mentioned it | arch/aarch64/mmu.c, kernel/syscall.h |
+| Aug 2026 | Programs live in `/bin`, served read-only from the image, and run in a process of their own with the capabilities the shell chose. No path search, no inherited environment | user/bin/, user/init/init.lua |
+| Aug 2026 | A read may span messages (`more`/`offset`) rather than growing `MSG_BYTES`: every thread embeds a message, so raising it is paid for by all of them | user/init/init.lua |
 | Aug 2026 | The project is renamed Kosmos (previously Komo) | all docs |
 | Aug 2026 | Pixels never live in Lua tables. A surface is a userdata over flat bytes; tables carry intent | gfx.md §19.1 |
 | Aug 2026 | No line of Lua computes a pixel offset. Pitch and format live in the handle, the arithmetic happens only in C | gfx.md §19.3 |

@@ -482,6 +482,25 @@ static int l_processes(lua_State *L)
     return 1;
 }
 
+/*
+ * The programs carried in this image, as Lua source for a chunk that
+ * returns a table of name to source.
+ *
+ * **Not a syscall.** It is data in the image, reached through this table
+ * because that is where a process looks for things it did not bring with
+ * it. Only the /bin server calls it, which is deliberate: the string is a
+ * few kilobytes and every state that asked for it would keep a copy.
+ *
+ * There is no disk. Until M8 this is where a program lives.
+ */
+extern const char programs_lua[];
+
+static int l_programs(lua_State *L)
+{
+    lua_pushstring(L, programs_lua);
+    return 1;
+}
+
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "getchar",  l_getchar },
@@ -493,6 +512,7 @@ static const luaL_Reg sys_functions[] = {
     { "info",     l_info },
     { "name",     l_setname },
     { "processes", l_processes },
+    { "programs", l_programs },
     { "endpoint", l_endpoint },
     { "call",     l_call },
     { "receive",  l_receive },

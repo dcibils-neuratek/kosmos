@@ -27,6 +27,8 @@ local ROLE_DEVICES   = 9  -- serves /dev: what hardware was found
 local ROLE_BURN      = 10 -- spins for a while, so the CPU meter has something
                           -- to show. There is no way to kill a process, so it
                           -- stops on its own rather than looping for ever.
+local ROLE_BINFS     = 11 -- serves /bin: the programs carried in the image
+local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
@@ -224,7 +226,24 @@ local function serve(endpoint, state, make_handlers)
       end
     end
 
-    sys.reply(sender, reply)
+    --
+    -- A reply that will not fit is still a reply.
+    --
+    -- `sys.reply` raises when the value does not serialise, and this call is
+    -- outside the coroutine that isolates a handler - so a handler returning
+    -- something too large took the whole server down. That is exactly what
+    -- happened the first time /bin was asked for a program bigger than a
+    -- message: the program store died, and the client saw only that its
+    -- request never came back.
+    --
+    -- Now the failure reaches whoever asked, which is the one place that can
+    -- do anything about it.
+    local sent = pcall(sys.reply, sender, reply)
+
+    if not sent then
+      pcall(sys.reply, sender,
+            { ok = false, error = "the answer does not fit in a message" })
+    end
   end
 end
 
@@ -399,6 +418,18 @@ local function new_namespace()
     return names
   end
 
+  -- Everything mounted, as a list of prefixes.
+  --
+  -- The honest answer to "what can this process reach", and a process
+  -- asking that is asking about itself: the table is in here and nowhere
+  -- else, so nothing outside can answer it.
+  function ns.mounts()
+    local out = {}
+    for _, m in ipairs(mounts) do out[#out + 1] = m.prefix end
+    table.sort(out)
+    return out
+  end
+
   function ns.list(path)
     local r, e = request("list", path)
     local entries = r and r.entries
@@ -428,10 +459,36 @@ local function new_namespace()
     return nil, e
   end
 
+  --
+  -- A value larger than a message, in pieces.
+  --
+  -- MSG_BYTES is 2048 and a program is several kilobytes of Lua, so a read
+  -- has to be able to span messages. Raising the message size was the other
+  -- option and is the wrong one: `struct thread` embeds one, so every thread
+  -- would pay for it, and `sys_call` keeps one on a 16 KB exception stack.
+  --
+  -- A server holding something large answers with `more = true` and honours
+  -- `offset`. One that does not ignores the field and returns everything,
+  -- which is what every server here did before this existed and still does.
   function ns.read(path)
     local r, e = request("read", path)
     if not r then return nil, e end
-    return r.value
+    if not r.more then return r.value end
+
+    local parts = { r.value }
+    local offset = #r.value
+
+    while true do
+      local n, err = request("read", path, { offset = offset })
+      if not n then return nil, err end
+
+      parts[#parts + 1] = n.value
+      offset = offset + #n.value
+
+      if not n.more then break end
+    end
+
+    return table.concat(parts)
   end
 
   function ns.write(path, value)
@@ -564,6 +621,73 @@ end
 -- answered with the numbers from boot would be worse than useless.
 --------------------------------------------------------------------------
 
+--------------------------------------------------------------------------
+-- /bin: the programs this image carries.
+--
+-- Read-only, and that is not a limitation being apologised for. The
+-- programs are compiled into the image because there is no disk until M8,
+-- so a write that appeared to work would vanish at the next boot - which is
+-- worse than being told no.
+--
+-- It is an ordinary server answering the ordinary protocol. `ls /bin` and
+-- `cat /bin/htop.lua` are the same requests the filesystem answers, sent
+-- somewhere else, and nothing in the shell knows /bin is special.
+--------------------------------------------------------------------------
+
+local function binfs_handlers(state)
+  return {
+    list = function(req)
+      local names = {}
+      for name in pairs(state.programs) do names[#names + 1] = name end
+      table.sort(names)
+      return { ok = true, entries = names }
+    end,
+
+    read = function(req)
+      local name = req.path:match("([^/]+)$")
+      local source = name and state.programs[name]
+
+      if not source then
+        return { ok = false, error = "no such program" }
+      end
+
+      -- A thousand bytes at a time, which leaves room in a 2048-byte
+      -- message for the tag, the keys and the serialiser's framing. A
+      -- program is a few kilobytes, so this is a handful of round trips
+      -- once, when it is launched.
+      local CHUNK = 1024
+      local offset = req.offset or 0
+      local piece = source:sub(offset + 1, offset + CHUNK)
+
+      return { ok = true, value = piece,
+               more = (offset + #piece) < #source }
+    end,
+
+    getattr = function(req)
+      local name = req.path:match("([^/]+)$")
+      local source = name and state.programs[name]
+
+      if not source then return { ok = false, error = "no such program" } end
+      return { ok = true, attrs = { size = #source, kind = "program" } }
+    end,
+
+    write = function(req)
+      return { ok = false,
+               error = "/bin is in the image and cannot be written" }
+    end,
+  }
+end
+
+local function binfs_main(endpoint)
+  -- Loaded once, here, rather than on every request. A syntax error in a
+  -- program is a syntax error in this chunk and shows up at boot, which is
+  -- when somebody can do something about it.
+  local chunk, err = load(sys.programs(), "=programs", "t")
+  if not chunk then error("binfs: " .. tostring(err)) end
+
+  serve(endpoint, { programs = chunk() }, binfs_handlers)
+end
+
 local function devices_handlers(state)
   local function inventory()
     local m = describe_machine()
@@ -623,8 +747,9 @@ local function devices_main(endpoint)
 end
 
 local BURN_ROLE = ROLE_BURN
+local RUNNER_ROLE = ROLE_RUNNER
 
-local function shell_main(console_cap, ramfs_cap, devices_cap)
+local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
   ns.mount("/data", ramfs_cap)
@@ -634,6 +759,10 @@ local function shell_main(console_cap, ramfs_cap, devices_cap)
   -- under one directory, and neither knows about the other - which is what a
   -- per-process mount table buys.
   ns.mount("/dev", devices_cap)
+
+  -- The programs this image carries. Read-only, and served by a process of
+  -- its own like everything else.
+  ns.mount("/bin", bin_cap)
 
   local function out(s) ns.write("/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -674,6 +803,9 @@ only treated as a command when it does not also name something in Lua -
 so `devices` works, and if you ever alias `print` or `type` you will have
 to say `/print`. A shell where `type` sometimes means a command and
 sometimes means the function is a shell you cannot write anything in.
+
+  ls /bin        the programs this image carries
+  run <name>     run one, in a process of its own (a bare name works too)
 
   help fs        files, through this process's namespace
   help gfx       surfaces, the screen, and text
@@ -1148,109 +1280,63 @@ your filesystem back.
   -- word to Lua and the command was reachable only as /load. A command that
   -- always needs its slash has a badly chosen name.
   --------------------------------------------------------------------------
-  -- htop, as this system's shape rather than as a process list.
+  -- Running a program.
   --
-  -- What is worth seeing about Kosmos is not that there are five processes.
-  -- It is that there are only two layers, that the lower one is twenty
-  -- kilobytes and knows nothing about files or windows, and that every
-  -- process in the upper one can reach exactly the things in its capability
-  -- table and nothing else. So the columns are CAPS and OWNS, and the
-  -- kernel gets a box of its own.
+  -- The shell reads the source and hands it to a process of its own, along
+  -- with the capabilities it chose to pass on. That is what `exec` is here:
+  -- no path search, no inherited environment, no ambient authority. A
+  -- program reaches exactly what it was given.
+  --
+  -- The call blocks until the program finishes, which is what a command
+  -- line wants. A program that should outlive the prompt is a different
+  -- thing and will want a different verb.
   --------------------------------------------------------------------------
-  local LAYER = {
-    init = "supervisor", console = "server", ramfs = "server",
-    devices = "server",  shell   = "shell",  burn  = "app",
-  }
+  local function run_program(name, argument)
+    local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
 
-  local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
+    -- Asked about rather than read. The shell does not need the program;
+    -- the process that will run it does, and it has /bin too.
+    local attrs, err = ns.getattr(path)
 
-  -- Previous tick readings, so a percentage can mean "since the last look".
-  local last_proc, last_total, last_busy_total = {}, nil, 0
-  local last_proc_seeded = false
-
-  local function meter(pct, width)
-    local filled = (pct * width) // 100
-    return "[" .. string.rep("|", filled) .. string.rep(".", width - filled) .. "]"
-  end
-
-  local function draw_htop()
-    local m = describe_machine()
-    local procs = sys.processes()
-    if not m or not procs then out("the kernel would not say\n") return end
-
-    local total = m.kernel.idle_ticks + m.kernel.busy_ticks
-    local elapsed = last_total and (total - last_total) or nil
-
-    local cpu = 0
-    if elapsed and elapsed > 0 then
-      local busy_before = last_total and last_busy_total or 0
-      cpu = ((m.kernel.busy_ticks - busy_before) * 100) // elapsed
+    if not attrs then
+      return false, path .. ": " .. tostring(err)
     end
 
-    local used_mb = m.memory.total_mb - m.memory.free_mb
+    local ep = sys.endpoint()
+    if not ep then return false, "no endpoint for the program" end
 
-    out(string.format("\nKOSMOS%sup %ds\n\n",
-        string.rep(" ", 54), sys.ticks() // m.cpu.counter_hz))
+    -- The screen goes too, so a program can draw. Every capability here is
+    -- one the shell holds: a spawn resolves against the parent's own table,
+    -- so this cannot hand out more than it has.
+    local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
+                                        bin_cap, devices_cap }, SPAWN_SCREEN)
 
-    out(string.format("  CPU  %s %3d%%    %s %s x%d\n",
-        meter(cpu, 22), cpu, m.cpu.implementer, m.cpu.part, m.cpu.cores))
-    out(string.format("  MEM  %s %d / %d MB\n",
-        meter((used_mb * 100) // m.memory.total_mb, 22),
-        used_mb, m.memory.total_mb))
-    out(string.format("  POOLS  threads %d/%d   processes %d/%d   spaces %d/%d   endpoints %d/%d\n",
-        m.kernel.threads, m.kernel.threads_max,
-        m.kernel.processes, m.kernel.processes_max,
-        m.kernel.spaces, m.kernel.spaces_max,
-        m.kernel.endpoints, m.kernel.endpoints_max))
+    if not id then return false, "could not start a process for it" end
 
-    out("\n  EL1  the kernel\n")
-    out("       threads . address spaces . IPC . capabilities\n")
-    out("       It does not know what a file is, what a window is, or what\n")
-    out("       Lua is. Everything below this line asks it for those.\n")
+    local reply = sys.call(ep, {
+      path = path, args = argument or "",
+      console = 1, data = 2, bin = 3, devices = 4,
+    })
 
-    out("\n  EL0  every process, in an address space of its own\n\n")
-    out("   PID  NAME       LAYER       CPU%  CAPS  OWNS            STATE\n")
+    sys.wait()          -- it is finished; collect it
 
-    for _, x in ipairs(procs) do
-      local pct = 0
-      local before = last_proc[x.id]
+    if not reply then return false, "the program did not answer" end
+    if not reply.ok then return false, reply.error end
 
-      if before and elapsed and elapsed > 0 then
-        pct = ((x.ticks - before) * 100) // elapsed
-      end
-
-      last_proc[x.id] = x.ticks
-
-      local owns = {}
-      if x.owns & 1 ~= 0 then owns[#owns + 1] = "console" end
-      if x.owns & 2 ~= 0 then owns[#owns + 1] = "screen" end
-
-      out(string.format("  %4d  %-10s %-11s %3d%%  %4d  %-15s %s\n",
-          x.id, x.name, LAYER[x.name] or "app", pct, x.caps,
-          #owns > 0 and table.concat(owns, "+") or "-",
-          x.exited and ("exited " .. x.exit_code) or (STATE[x.state] or "?")))
-    end
-
-    last_total = total
-    last_busy_total = m.kernel.busy_ticks
+    return true
   end
 
-  commands.htop = function(arg)
-    if arg == "watch" then
-      for _ = 1, 20 do
-        commands.clear()
-        draw_htop()
-        for _ = 1, 60 do sys.yield() end
-      end
+  commands.run = function(arg)
+    if arg == "" then
+      out("usage: run <program> [arguments]\n")
+      out("`ls /bin` lists them. A bare program name works too.\n")
       return
     end
 
-    draw_htop()
+    local name, rest = arg:match("^(%S+)%s*(.*)$")
+    local ok, err = run_program(name, rest)
 
-    if not last_proc_seeded then
-      out("\n  (percentages are since the last look, so run it twice)\n")
-      last_proc_seeded = true
-    end
+    if not ok then out("run: " .. tostring(err) .. "\n") end
   end
 
   commands.benchmark = function(arg)
@@ -1554,6 +1640,27 @@ your filesystem back.
         goto next_line
       end
 
+      --------------------------------------------------------------------
+      -- Not a command. Is it a program?
+      --
+      -- The classic shell behaviour, and the reason it is safe here is the
+      -- same rule as before: only a word that does not already name
+      -- something in Lua is looked up in /bin. So `htop` runs the program
+      -- and `print` stays the function, and a program can never shadow the
+      -- language by being installed.
+      --------------------------------------------------------------------
+      if word and not shadows_lua(word) and not rest:match("^[=%(%.%:%[]") then
+        local exists = ns.getattr("/bin/" .. word .. ".lua")
+
+        if exists then
+          local ok, err = run_program(word, rest)
+          if not ok then out("run: " .. tostring(err) .. "\n") end
+          reap()
+          if monitor_on then draw_monitor() end
+          goto next_line
+        end
+      end
+
       -- `2+2` is not a chunk, it is an expression. Every Lua prompt wraps
       -- the line in `return` first and falls back to the line as written.
       local chunk, err = load("return " .. input, "=stdin", "t", env)
@@ -1638,6 +1745,7 @@ if role == ROLE_INIT then
   local CONSOLE_EP = 0
   local RAMFS_EP   = 1
   local DEVICES_EP = 2
+  local BINFS_EP   = 3
 
   -- **A failed spawn says which one and why.**
   --
@@ -1666,6 +1774,7 @@ if role == ROLE_INIT then
                         { CONSOLE_EP }, SPAWN_CONSOLE)
   local ramfs   = start("the ramfs", ROLE_RAMFS, { RAMFS_EP })
   local devices = start("the device server", ROLE_DEVICES, { DEVICES_EP })
+  local binfs   = start("the program store", ROLE_BINFS, { BINFS_EP })
 
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
@@ -1682,7 +1791,8 @@ if role == ROLE_INIT then
   -- like everything else, and `sys.write` from the prompt returning -102 is
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
-                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP }, SPAWN_SCREEN)
+                      { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP },
+                      SPAWN_SCREEN)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.
@@ -1800,8 +1910,8 @@ end
 
 if role == ROLE_SHELL then
   sys.name("shell")
-  -- Three capabilities, in the order init granted them.
-  shell_main(0, 1, 2)
+  -- Four capabilities, in the order init granted them.
+  shell_main(0, 1, 2, 3)
   return
 end
 
@@ -1854,6 +1964,91 @@ end
 if role == ROLE_DEVICES then
   sys.name("devices")
   devices_main(CAP)
+  return
+end
+
+if role == ROLE_BINFS then
+  sys.name("binfs")
+  binfs_main(CAP)
+  return
+end
+
+if role == ROLE_RUNNER then
+  --------------------------------------------------------------------------
+  -- A program, in a process of its own.
+  --
+  -- This is what `exec` looks like when there is no ambient authority. The
+  -- shell spawns this, hands it capabilities it chose, and sends it the
+  -- source over IPC; the program runs with a namespace built from exactly
+  -- those capabilities and can reach nothing else. There is no path search,
+  -- no inherited environment and no global tree - a program that was not
+  -- given the screen simply cannot draw.
+  --
+  -- The source arrives in a message rather than being read from a file by
+  -- this process, because the shell has already read it and passing bytes
+  -- it already holds is cheaper than handing over the capability to fetch
+  -- them again. It is the same mechanism hot reload uses.
+  --------------------------------------------------------------------------
+  sys.name("run")
+
+  local SOURCE_EP = 0
+
+  local req, who = sys.receive(SOURCE_EP)
+  if not req then return end
+
+  local ns = new_namespace()
+  -- The namespace is built before the program is fetched, because fetching
+  -- it goes through the namespace: the shell sends a *name*, not the source.
+  --
+  -- The first version sent the source in the message and could not: a
+  -- program is several kilobytes and a message is 2048 bytes. Sending the
+  -- name is better than making it fit, and not only because it works - the
+  -- shell no longer has to read a program in order to start one, and the
+  -- bytes cross the boundary once instead of twice.
+
+  -- Whatever the shell handed over, in the order it promised. A missing one
+  -- is simply not mounted, and the program finds that path does not exist.
+  if req.console then ns.mount("/dev/console", req.console) end
+  if req.data    then ns.mount("/data",        req.data)    end
+  if req.bin     then ns.mount("/bin",         req.bin)     end
+  if req.devices then ns.mount("/dev",         req.devices) end
+
+  local function out(s) ns.write("/dev/console", s) end
+
+  local env = {
+    fs = ns,
+    args = req.args or "",
+    print = function(...)
+      local parts = {}
+      for i = 1, select("#", ...) do
+        parts[#parts + 1] = tostring((select(i, ...)))
+      end
+      out(table.concat(parts, "\t") .. "\n")
+    end,
+  }
+  setmetatable(env, { __index = _G })
+
+  local path = req.path
+  local source, read_err = ns.read(path)
+
+  if not source then
+    sys.reply(who, { ok = false, error = tostring(read_err) })
+    return
+  end
+
+  local chunk, err = load(source, "=" .. path, "t", env)
+
+  if not chunk then
+    sys.reply(who, { ok = false, error = tostring(err) })
+    return
+  end
+
+  -- pcall, so a program that raises reports it instead of taking this
+  -- process down without a word. It is its own process either way; this
+  -- just means the shell hears why.
+  local ok, e = pcall(chunk)
+
+  sys.reply(who, { ok = ok, error = not ok and tostring(e) or nil })
   return
 end
 

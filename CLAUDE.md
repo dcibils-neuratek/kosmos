@@ -168,6 +168,7 @@ arch/        aarch64/
 hal/         qemu-virt/  (pi5/ and pi1/ arrive at milestone 2)
 kernel/      mmu, sched, ipc, caps, exceptions
 assets/      vendored data: fonts/ (BDF + its licence), converted at build time
+user/bin/    programs, in Lua. Carried in the image and served at /bin
 lua/         upstream/ + patches/
 runtime/     minimal libc, bindings, serializer
 servers/     Lua
