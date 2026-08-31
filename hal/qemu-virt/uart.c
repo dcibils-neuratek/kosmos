@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "mmio.h"
+#include "qemu-virt.h"
 #include "hal.h"
 
 #define UART0_BASE      0x09000000UL
@@ -90,6 +91,24 @@ void hal_putchar(char c)
 
 int hal_getchar(void)
 {
+    /*
+     * Two sources, one answer.
+     *
+     * `hal_getchar` is "one character in, from wherever this board's input
+     * comes from", and on this board that is two places: the serial line and
+     * a virtio keyboard, when the machine was started with one. Nothing
+     * above the HAL knows or cares which - the console server, the shell and
+     * every process reading a line are unchanged by the keyboard existing.
+     *
+     * The keyboard first, because the person at the screen is more likely to
+     * be the one typing; with both attached, either works.
+     */
+    int key = keyboard_getchar();
+
+    if (key >= 0) {
+        return key;
+    }
+
     if (mmio_read32(UART_FR) & FR_RXFE) {
         return HAL_NO_INPUT;
     }

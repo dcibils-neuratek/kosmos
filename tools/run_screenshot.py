@@ -24,6 +24,10 @@ So there are two phases here, and the second is the one that matters:
      actually announced disagree. The bar's green also covers the channel
      order, since a wrong fourcc turns it blue.
 
+  3. **Real key events**, injected through QEMU's input subsystem into the
+     virtio-input device - a path that shares nothing with the serial line
+     everything else here types over.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -57,6 +61,11 @@ QEMU_ARGS = [
     "-m", "512M",
     "-display", "none",
     "-device", "ramfb",
+    # force-legacy=false is not optional: QEMU's virtio-mmio transports
+    # report the legacy interface unless told otherwise, and the driver
+    # refuses those.
+    "-global", "virtio-mmio.force-legacy=false",
+    "-device", "virtio-keyboard-device",
 ]
 
 PROMPT = "kosmos>"          # printed once the shell is serving
@@ -179,6 +188,20 @@ class Guest:
                 self.monitor.recv(65536)        # the greeting
             except socket.timeout:
                 pass
+
+    def sendkey(self, key):
+        """One key press and release, through QEMU's own input plumbing.
+
+        This is the only way to test the keyboard from here: `type()` writes
+        to the serial line, which is the path that already worked. `sendkey`
+        goes into the QEMU input subsystem and out through the virtio-input
+        device, which is the path the driver reads - so what it proves is the
+        virtqueue, the feature negotiation and the keymap, none of which the
+        serial line touches.
+        """
+        self._connect_monitor()
+        self.monitor.sendall(f"sendkey {key}\n".encode())
+        time.sleep(0.25)
 
     def screendump(self):
         self._connect_monitor()
@@ -372,6 +395,64 @@ def check_bars(data):
     return checked
 
 
+def check_keyboard(guest):
+    """Phase three: real key events, through the virtio keyboard.
+
+    Everything typed at the shell until now arrived over the serial line.
+    This types `2+2` and a shifted `H` as key *events*, which go through
+    QEMU's input subsystem into the virtio-input device and come back out of
+    a virtqueue - a path that shares nothing with the UART.
+
+    Two things are checked and the second is the interesting one: that the
+    answer appears at all, and that shift works. A keymap indexed wrongly
+    still produces characters; producing the *right* character under shift
+    is what says the two tables and the modifier tracking agree.
+    """
+    before = len(guest.seen)
+
+    for key in ("2", "shift-equal", "2", "ret"):
+        guest.sendkey(key)
+
+    guest.wait_for("2+2", "echoed a key press")
+
+    # The shell answers 4. Waiting for the echo above is not enough: that
+    # only proves the characters arrived, not that the line was submitted -
+    # which is what the Enter key is for and what a wrong keycode for it
+    # would break.
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if "\n4\n" in guest.seen[before:] or "4\r\n" in guest.seen[before:]:
+            break
+        time.sleep(0.2)
+    else:
+        raise Failure(
+            "typing 2+2 and Enter on the keyboard did not produce 4.\n"
+            f"--- what arrived ---\n{guest.seen[before:]}"
+        )
+
+    # Shift. `H` is a different table from `h`, and an unshifted keymap
+    # would give a lower-case one that Lua reports differently.
+    mark = len(guest.seen)
+    for key in ("shift-h", "shift-i", "ret"):
+        guest.sendkey(key)
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if "HI" in guest.seen[mark:]:
+            break
+        time.sleep(0.2)
+    else:
+        raise Failure(
+            "shift-h shift-i did not echo as HI, so the shift keymap or the "
+            "modifier tracking is wrong.\n"
+            f"--- what arrived ---\n{guest.seen[mark:]}"
+        )
+
+    return 2
+
+
 def write_png(path, data):
     """The screendump, as something a person can open."""
     width, height, px = parse_ppm(data)
@@ -430,6 +511,8 @@ def main():
         drawn = guest.screendump()
         bar_checks = check_bars(drawn)
 
+        key_checks = check_keyboard(guest)
+
         if args.png:
             write_png(args.png, drawn)
             print(f"Wrote {args.png}.")
@@ -441,11 +524,11 @@ def main():
         if guest is not None:
             guest.close()
 
-    total = splash_checks + bar_checks
+    total = splash_checks + bar_checks + key_checks
     print(f"guest: the display is {reported}")
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
-          f"Lua drew through gfx).")
+          f"Lua drew through gfx, {key_checks} on the keyboard).")
     return 0
 
 

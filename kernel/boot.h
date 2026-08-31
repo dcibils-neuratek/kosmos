@@ -16,7 +16,7 @@
  */
 
 /* How many stages there are between the reset vector and userland. */
-#define BOOT_STAGES 10
+#define BOOT_STAGES 11
 
 /* Announces one, advances the bar. `what` is the short name; anything more
  * specific is printed after it by the caller, indented by boot_detail. */

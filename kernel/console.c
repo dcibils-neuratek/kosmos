@@ -55,6 +55,32 @@ extern const unsigned char font_8x16[];
  */
 static struct fb   screen;
 static bool        attached;
+
+/*
+ * What was printed before there was a screen.
+ *
+ * The display cannot be the first thing brought up: it needs the MMU on
+ * first, or the framebuffer is Device memory and clearing three megabytes of
+ * it is the 10-50x penalty `gfx.md` §19.5 warns about. So the first four
+ * stages of the boot happen before there is anywhere to draw them, and
+ * without this the screen would start at stage five and the beginning of the
+ * boot - the part that says how the machine came up - would exist only on a
+ * cable that may not be attached.
+ *
+ * An earlier comment here argued against exactly this, on the grounds that a
+ * buffer which exists to make the start look tidy is a buffer that can
+ * overflow during a panic. That was wrong: nothing writes to it once the
+ * screen is attached, so a panic never touches it. It is written before
+ * there is a second thread and replayed once.
+ *
+ * Bounded and it drops the oldest rather than growing. If it ever fills, the
+ * screen says so instead of quietly showing a boot that began in the middle.
+ */
+#define EARLY_BYTES 2048
+
+static char        early[EARLY_BYTES];
+static unsigned    early_len;
+static bool        early_lost;
 static unsigned    cols, rows;      /* the text area, in cells */
 static unsigned    cx, cy;          /* the cursor, in cells */
 static uint32_t    fg = 0xffc9d1d9;
@@ -149,6 +175,15 @@ static void screen_putc(char c)
     cx++;
 }
 
+/* Straight to the screen, bypassing the serial port. Only for text the
+ * serial port has already had. */
+static void replay(const char *s)
+{
+    for (; *s != '\0'; s++) {
+        screen_putc(*s);
+    }
+}
+
 void console_attach_screen(const struct fb *fb, const char *title)
 {
     screen = *fb;
@@ -167,14 +202,10 @@ void console_attach_screen(const struct fb *fb, const char *title)
     fill_rect(0, 0, fb->width, fb->height, bg);
 
     /*
-     * The banner, on the screen only.
-     *
-     * It cannot go through kputc, which would put a second copy on the
-     * serial line where one has already been printed. The screen misses the
-     * stages that happened before there was a display - there is no way
-     * around that short of buffering the boot log to replay it, and a buffer
-     * whose only job is to make the start look tidy is a buffer that can
-     * overflow during a panic.
+     * The banner and then everything printed before this moment, on the
+     * screen only. Neither can go through kputc: the serial line has already
+     * had both, and a second copy there would be worse than a missing one
+     * here.
      */
     if (title != NULL) {
         uint32_t was = fg;
@@ -187,6 +218,27 @@ void console_attach_screen(const struct fb *fb, const char *title)
         screen_putc('\n');
         fg = was;
     }
+
+    if (early_lost) {
+        uint32_t was = fg;
+
+        fg = 0xffd29922;
+        replay("[earlier output was lost: the replay buffer filled]\n");
+        fg = was;
+    }
+
+    /*
+     * In one colour, because the buffer holds characters and not the colour
+     * changes that went with them. Recording those would mean an escape
+     * language inside a boot log, which is a lot of machinery to make four
+     * lines match six.
+     */
+    console_colour(0xffc9d1d9);
+    replay(early);
+
+    /* Nothing writes to it again, and saying so here is what makes it safe
+     * for panic() to run through this file. */
+    early_len = 0;
 }
 
 void console_colour(unsigned long foreground)
@@ -233,6 +285,17 @@ void kputc(char c)
         }
 
         screen_putc(c);
+        return;
+    }
+
+    /* No screen yet. Kept, so that when one appears the boot can be shown
+     * from its beginning rather than from wherever the display happened to
+     * come up. */
+    if (early_len < EARLY_BYTES - 1) {
+        early[early_len++] = c;
+        early[early_len] = '\0';
+    } else {
+        early_lost = true;
     }
 }
 

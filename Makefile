@@ -43,6 +43,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/timer.c \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
+        hal/qemu-virt/keyboard.c \
         kernel/console.c \
         kernel/screen.c \
         kernel/boot.c \
@@ -337,12 +338,21 @@ QEMU      := qemu-system-aarch64
 # window", and a window is now the point.
 #
 # Ctrl-A x still quits, from the terminal.
+# -global virtio-mmio.force-legacy=false is not optional. QEMU's virtio-mmio
+# transports report version 1, the legacy interface, unless told otherwise -
+# a different ring layout reached through QUEUE_PFN, which modern structures
+# read as garbage. Linux passes the same thing. Without it the keyboard is
+# found, correctly refused, and the boot says there is none.
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
-             -device ramfb -display cocoa -serial mon:stdio \
+             -global virtio-mmio.force-legacy=false \
+             -device ramfb -device virtio-keyboard-device \
+             -display cocoa -serial mon:stdio \
              -kernel $(TARGET)
 
 # The same machine with no screen, for when the window is in the way or the
 # terminal is all there is - over ssh, for instance.
+# No window, and therefore no keyboard: with -display none QEMU has nowhere
+# to take key presses from, so the virtio device would sit there empty.
 QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     -kernel $(TARGET)
 

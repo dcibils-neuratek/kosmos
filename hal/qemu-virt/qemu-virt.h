@@ -44,4 +44,16 @@ bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size);
  * through the data register were removed in QEMU 2.4. */
 bool fwcfg_write(uint16_t select, const void *data, uint32_t length);
 
+/*
+ * The keyboard: virtio-input over virtio-mmio. See keyboard.c, which also
+ * holds the virtio transport - there is one virtio device on this board, and
+ * splitting the transport out before there are two would be inventing an
+ * interface against a single caller.
+ */
+
+/* One character, or -1 when nothing is waiting. Polled, like the UART. */
+int keyboard_getchar(void);
+
+bool keyboard_present(void);
+
 #endif /* HAL_QEMU_VIRT_H */

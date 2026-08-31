@@ -34,7 +34,7 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 `make qemu`, `make test`, `make bench`, `make bench-record`, `make debug`, `make disasm`, `make size`, `make clean`.
 
-105 tests, five benchmarks, and 30 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
+106 tests, five benchmarks, and 32 display checks. A 340 KB image, of which 232 KB is the userland carried inside it and 20 KB is the kernel's own machine code. Plus 3.2 MB of framebuffer, which is `.bss`-like and costs the file nothing.
 
 `make qemu` opens a window and keeps the shell on the terminal. `make serial` is the old serial-only behaviour, for when there is no screen to open.
 
@@ -73,7 +73,7 @@ nil	no such path: /nowhere
 - [x] A narrated boot with a progress bar, on the screen and on the serial line
 - [x] The shell visible on the screen, and `help` at the prompt
 - [ ] The app server in Lua: windows, decoration, stacking, focus
-- [ ] Input beyond the serial line — **virtio-input over virtio-mmio.** `virt` has 32 virtio-mmio transports at 0xa000000, stride 0x200, SPI 16 upward, and `virtio-keyboard-device` attaches to that bus. mmio rather than PCI is the whole point: no ECAM walk and no capability parsing, so it is a few fixed registers and one virtqueue — and the same transport then gives `virtio-gpu-device`, which is where real dirty-rectangle flush and vblank come from. The keyboard pays for the GPU.
+- [x] Input beyond the serial line — **virtio-input over virtio-mmio.** `virt` has 32 virtio-mmio transports at 0xa000000, stride 0x200, SPI 16 upward, and `virtio-keyboard-device` attaches to that bus. mmio rather than PCI is the whole point: no ECAM walk and no capability parsing, so it is a few fixed registers and one virtqueue — and the same transport then gives `virtio-gpu-device`, which is where real dirty-rectangle flush and vblank come from. The keyboard pays for the GPU.
 - [ ] **Definition of done: drag a window with a hung app inside it, and have the window keep moving smoothly**
 
 **ramfb, not virtio-gpu, and the order is deliberate.** `hal_fb_init` is "ask the firmware for a linear framebuffer, and let it say where the pixels are", which is exactly what QEMU's ramfb and the Pi's mailbox both do. virtio-gpu is the odd one out — it needs an explicit `RESOURCE_FLUSH` after drawing — so it is the target that will earn the interface a `hal_fb_flush`, with two implementations in front of it rather than one. That is `hal.md`'s own argument applied to the display. It also cost about a hundred lines against the eight hundred that PCI enumeration plus virtqueues plus the virtio-gpu command set would have cost before a single pixel appeared, and everything above the HAL is identical either way.
@@ -86,11 +86,23 @@ nil	no such path: /nowhere
 
 **Lua draws, and no line of it computes a pixel offset.** `gfx.surface{w=,h=}` is a userdata over flat bytes with `fill`, `span`, `blit`, `blend`, `get` and `set`; every pixel loop is in `user/lib/gfx.c` and every primitive clips rather than raising, because a window half off the edge of the screen is the normal case. `gfx.screen()` is the framebuffer as a surface, for the one process that was handed it.
 
+**There is a keyboard.** virtio-input over virtio-mmio, in `hal/qemu-virt/keyboard.c`. mmio rather than pci is what makes it three hundred lines instead of nine hundred: `virt` has 32 fixed windows at 0xa000000, stride 0x200, and the whole of discovery is reading two registers thirty-two times. No PCI bus, no ECAM walk, no capability list.
+
+**It is not a new HAL call.** A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. The console server, the shell and every process reading a line are unchanged by the keyboard existing — which is the property that says the HAL boundary was drawn in the right place.
+
+**QEMU's virtio-mmio defaults to the legacy interface**, and this cost a debugging round. The device was found in slot 31 with the right magic and the right device id, reporting version 1 — the legacy layout, reached through `QUEUE_PFN` and `GUEST_PAGE_SIZE`, which modern structures read as garbage. The driver refused it, correctly, and the boot said "none". `-global virtio-mmio.force-legacy=false` is what Linux passes too, and it is now on every QEMU line here including both test runners. Worth knowing: the failure looked like "the device is not there" and was actually "the device is speaking the other dialect".
+
+**Polled, not interrupt-driven**, like the UART. The console server already yields between polls, so a key in the used ring is found on the same schedule a character in the UART is. `roadmap.md`'s input-on-a-highest-priority-thread is when the interrupt starts to matter.
+
+**And the next device is nearly free.** Everything above the last two functions in that file is the virtio transport, and `virtio-gpu-device` is the same transport with a different id — which is where a real dirty-rectangle flush and a vblank come from. It is not split into its own file yet, because there is one device and splitting it now would be inventing an interface against a single caller.
+
 **The boot narrates itself, on the screen and on the wire.** Ten numbered stages, each with the facts that make it worth watching, and a progress bar in rows the text never scrolls through. `CLAUDE.md` says the kernel has no graphics, and it still does not have a graphics *subsystem* — what `console.c` gained is forty lines that put a glyph in a framebuffer, and the reason is `panic()`: it writes through the same console, so a panic now reaches a screen. On a board with no serial cable, a panic that prints into the void and a machine that does not work are the same thing.
 
 `BOOT_STAGES` is a constant and the `boot_stage` calls are scattered through `kmain`, so there is a test that they still agree — a bar that stops at four fifths reads as "something hung" rather than as "somebody added a stage", and the screenshot check catches the same drift from outside.
 
-**Keystrokes typed during boot are lost.** Nothing polls the UART receive register until the console server starts, and there is no input buffer. Harmless with a person at the keyboard, and it cost twenty minutes of confusion when a test harness typed too early. It stops mattering when there is a keyboard driver.
+**Keystrokes typed during boot are still lost.** Nothing polls either input source until the console server starts, and there is no input buffer. The keyboard did not change this — its ring holds sixteen events and the boot produces none, but nothing reads them until userland is up. Harmless with a person at the keyboard; it cost twenty minutes when a test harness typed too early.
+
+**The pre-display boot log is replayed onto the screen.** The display cannot be the first thing up — it needs the MMU on first, or the framebuffer is Device memory and clearing three megabytes of it is the 10-50× penalty `gfx.md` §19.5 warns about. So the first stages happen before there is anywhere to draw them. An earlier comment argued against buffering them on the grounds that such a buffer could overflow during a panic; that was simply wrong, since nothing writes to it once the screen is attached. Two kilobytes, written before there is a second thread, replayed once.
 
 **`help` at the prompt**, with `help("fs")`, `help("gfx")`, `help("sys")` and `help("demos")`. A table with `__tostring` and `__call`, so the bare word works as well as the call — the parentheses are the thing every newcomer forgets.
 

@@ -2588,6 +2588,25 @@ static bool test_the_padding_is_real(void)
     return by_pitch[0] == 0x00c0ffeeu;
 }
 
+static bool test_the_keyboard_came_up(void)
+{
+    /*
+     * The whole virtio bring-up in one assertion: a window found by magic
+     * and device id, the modern interface accepted, VIRTIO_F_VERSION_1
+     * negotiated and read back, a queue sized, addressed and made ready, and
+     * every buffer offered. Any of those going wrong returns false.
+     *
+     * The suite runs with `-device virtio-keyboard-device` and
+     * `-global virtio-mmio.force-legacy=false`, deliberately. Without the
+     * second QEMU reports the legacy interface, this refuses it correctly,
+     * and the test would fail - which is right: a keyboard nobody can read
+     * is not a keyboard.
+     *
+     * Idempotent, so calling it here after kmain already did is safe.
+     */
+    return hal_keyboard_init();
+}
+
 static bool test_the_boot_announced_every_stage(void)
 {
     /*
@@ -3084,6 +3103,7 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
+    { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
     { "fb: the pitch is not width * 4",        test_the_pitch_is_not_the_width },

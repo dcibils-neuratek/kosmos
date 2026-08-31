@@ -40,6 +40,11 @@ QEMU_ARGS = [
     # The display. Without it hal_fb_init reports there is none, and the
     # framebuffer tests would pass by being skipped rather than by working.
     "-device", "ramfb",
+    # And a keyboard. force-legacy=false is not optional: QEMU's virtio-mmio
+    # transports report version 1 - the legacy interface, with a different
+    # ring layout - unless told otherwise, and the driver refuses those.
+    "-global", "virtio-mmio.force-legacy=false",
+    "-device", "virtio-keyboard-device",
     # Without this the guest cannot set the exit code and `hlt #0xf000`
     # becomes an undefined instruction trap into a vector that does not
     # exist yet.

@@ -1,0 +1,493 @@
+/*
+ * A keyboard: virtio-input over virtio-mmio.
+ *
+ * `virt` has no PS/2 controller, so a real key press has to come from either
+ * USB or virtio. **virtio-mmio rather than virtio-pci** is what makes this a
+ * few hundred lines instead of the best part of a thousand: there is no PCI
+ * bus to enumerate, no ECAM window to walk and no capability list to parse.
+ * There are thirty-two fixed windows in the memory map, each with a magic
+ * number and a device id at the top of it, and the whole of discovery is
+ * reading two registers thirty-two times.
+ *
+ * Read out of QEMU's own device tree rather than remembered:
+ *
+ *     virtio_mmio@a000000, reg = <0x0 0xa000000 0x0 0x200>
+ *     ... through virtio_mmio@a003e00
+ *
+ * so thirty-two windows, 0x200 apart. Every register offset below is from
+ * include/standard-headers/linux/virtio_mmio.h at the tag this QEMU was
+ * built from, and the device id, status bits, feature bit, ring layout and
+ * event structure likewise from virtio_ids.h, virtio_config.h,
+ * virtio_ring.h and virtio_input.h.
+ *
+ * **Polled, not interrupt-driven.** The UART is polled too, and the console
+ * server already yields between polls, so a key waiting in the used ring is
+ * found on the same schedule a character in the UART is. `roadmap.md` wants
+ * input on a highest-priority thread eventually, and that is the point at
+ * which the interrupt matters; wiring one now would add a GIC route and a
+ * handler to solve a problem the system does not have yet.
+ *
+ * **And the next device is nearly free.** Everything above the last two
+ * functions is the transport, and virtio-gpu is the same transport with a
+ * different device id and different commands - which is where a real
+ * dirty-rectangle flush and a vblank come from. The transport is not split
+ * into its own file yet, because there is one device: splitting it now would
+ * be inventing an interface against a single caller, which is the mistake
+ * `hal.md` spends a page warning about. It comes out when the GPU arrives.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "mmio.h"
+#include "hal.h"
+#include "qemu-virt.h"
+
+/* From the device tree: 32 windows, 0x200 apart, starting here. */
+#define VIRTIO_MMIO_BASE    0x0a000000UL
+#define VIRTIO_MMIO_STRIDE  0x200UL
+#define VIRTIO_MMIO_COUNT   32
+
+/* include/standard-headers/linux/virtio_mmio.h */
+#define REG_MAGIC               0x000
+#define REG_VERSION             0x004
+#define REG_DEVICE_ID           0x008
+#define REG_DEVICE_FEATURES     0x010
+#define REG_DEVICE_FEATURES_SEL 0x014
+#define REG_DRIVER_FEATURES     0x020
+#define REG_DRIVER_FEATURES_SEL 0x024
+#define REG_QUEUE_SEL           0x030
+#define REG_QUEUE_NUM_MAX       0x034
+#define REG_QUEUE_NUM           0x038
+#define REG_QUEUE_READY         0x044
+#define REG_QUEUE_NOTIFY        0x050
+#define REG_INTERRUPT_STATUS    0x060
+#define REG_INTERRUPT_ACK       0x064
+#define REG_STATUS              0x070
+#define REG_QUEUE_DESC_LOW      0x080
+#define REG_QUEUE_DESC_HIGH     0x084
+#define REG_QUEUE_AVAIL_LOW     0x090
+#define REG_QUEUE_AVAIL_HIGH    0x094
+#define REG_QUEUE_USED_LOW      0x0a0
+#define REG_QUEUE_USED_HIGH     0x0a4
+
+#define VIRTIO_MAGIC        0x74726976u     /* 'virt', little endian */
+#define VIRTIO_VERSION_1    2               /* the modern interface */
+
+/* virtio_ids.h */
+#define VIRTIO_ID_INPUT     18
+
+/* virtio_config.h */
+#define STATUS_ACKNOWLEDGE  1u
+#define STATUS_DRIVER       2u
+#define STATUS_DRIVER_OK    4u
+#define STATUS_FEATURES_OK  8u
+#define STATUS_FAILED       0x80u
+
+/* Feature bit 32. Split across the two 32-bit feature windows, so it is bit
+ * 0 of the high one - which is the entire reason those selector registers
+ * exist and the one detail of feature negotiation that catches people. */
+#define FEATURE_VERSION_1_BIT   0u
+
+/* virtio_ring.h */
+#define VRING_DESC_F_WRITE  2u
+
+struct vring_desc {
+    uint64_t addr;
+    uint32_t len;
+    uint16_t flags;
+    uint16_t next;
+};
+
+/*
+ * How many events can be outstanding.
+ *
+ * A key press is eight bytes and the console reads far faster than anyone
+ * types, so this only has to cover a burst. Sixteen is four keys' worth of
+ * press, release and the EV_SYN that follows each, which is more than a
+ * person produces between two polls.
+ */
+#define QUEUE_SIZE  16
+
+/* virtio_input.h */
+struct virtio_input_event {
+    uint16_t type;
+    uint16_t code;
+    uint32_t value;
+};
+
+/* input-event-codes.h */
+#define EV_KEY          0x01
+#define KEY_LEFTSHIFT   42
+#define KEY_RIGHTSHIFT  54
+#define KEY_CAPSLOCK    58
+
+/*
+ * The split virtqueue.
+ *
+ * One structure rather than three allocations because there is no allocator:
+ * this is `.bss`, which is identity mapped, so its virtual address is its
+ * physical one and the device can be handed a pointer straight out of it.
+ * That equality is load-bearing and stops being true the day the kernel
+ * moves to TTBR1.
+ *
+ * The three parts get their own address registers, so they need not be
+ * adjacent - only aligned. 16 for the descriptor table, 2 for the available
+ * ring, 4 for the used ring, which is what the alignment attributes below
+ * are for.
+ *
+ * The memory is Normal cached and the device reads it directly. Under QEMU
+ * that is fine because TCG does not model caches; a real device on a real
+ * board would want this non-cacheable, and that is a difference worth
+ * knowing about before this file is pointed at hardware.
+ */
+static struct {
+    _Alignas(16) struct vring_desc desc[QUEUE_SIZE];
+
+    _Alignas(2) struct {
+        uint16_t flags;
+        uint16_t idx;
+        uint16_t ring[QUEUE_SIZE];
+        uint16_t used_event;
+    } avail;
+
+    _Alignas(4) struct {
+        uint16_t flags;
+        uint16_t idx;
+        struct {
+            uint32_t id;
+            uint32_t len;
+        } ring[QUEUE_SIZE];
+        uint16_t avail_event;
+    } used;
+} queue;
+
+static struct virtio_input_event events[QUEUE_SIZE];
+
+static uintptr_t device;            /* the window this keyboard is in */
+static bool      present;
+static uint16_t  last_used;         /* how far through the used ring we are */
+static bool      shift;
+static bool      caps;
+
+/*
+ * The US layout, generated by hand from input-event-codes.h at the same tag
+ * as everything else - the characters are the layout, the codes came from
+ * the header, so a misremembered scancode is not possible.
+ */
+static const unsigned char keymap_plain[128] = {
+    0x00, 0x1b, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,   /*   0  esc 1234567 */
+    0x37, 0x38, 0x39, 0x30, 0x2d, 0x3d, 0x08, 0x09,   /*   8  890-= bs tab */
+    0x71, 0x77, 0x65, 0x72, 0x74, 0x79, 0x75, 0x69,   /*  16  qwertyui */
+    0x6f, 0x70, 0x5b, 0x5d, 0x0a, 0x00, 0x61, 0x73,   /*  24  op[] enter ctrl as */
+    0x64, 0x66, 0x67, 0x68, 0x6a, 0x6b, 0x6c, 0x3b,   /*  32  dfghjkl; */
+    0x27, 0x60, 0x00, 0x5c, 0x7a, 0x78, 0x63, 0x76,   /*  40  '` shift \ zxcv */
+    0x62, 0x6e, 0x6d, 0x2c, 0x2e, 0x2f, 0x00, 0x00,   /*  48  bnm,./ shift */
+    0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  56  alt space caps */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  64 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  72 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  80 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  88 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  96 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 104 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 112 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 120 */
+};
+
+static const unsigned char keymap_shift[128] = {
+    0x00, 0x1b, 0x21, 0x40, 0x23, 0x24, 0x25, 0x5e,   /*   0  esc !@#$%^ */
+    0x26, 0x2a, 0x28, 0x29, 0x5f, 0x2b, 0x08, 0x09,   /*   8  &*()_+ bs tab */
+    0x51, 0x57, 0x45, 0x52, 0x54, 0x59, 0x55, 0x49,   /*  16  QWERTYUI */
+    0x4f, 0x50, 0x7b, 0x7d, 0x0a, 0x00, 0x41, 0x53,   /*  24  OP{} enter ctrl AS */
+    0x44, 0x46, 0x47, 0x48, 0x4a, 0x4b, 0x4c, 0x3a,   /*  32  DFGHJKL: */
+    0x22, 0x7e, 0x00, 0x7c, 0x5a, 0x58, 0x43, 0x56,   /*  40  "~ shift | ZXCV */
+    0x42, 0x4e, 0x4d, 0x3c, 0x3e, 0x3f, 0x00, 0x00,   /*  48  BNM<>? shift */
+    0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  56  alt space caps */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  64 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  72 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  80 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  88 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  96 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 104 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 112 */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 120 */
+};
+
+static uint32_t reg_read(unsigned offset)
+{
+    return mmio_read32(device + offset);
+}
+
+static void reg_write(unsigned offset, uint32_t value)
+{
+    mmio_write32(device + offset, value);
+}
+
+/*
+ * Orders our writes to the ring against the register write that tells the
+ * device to look at it.
+ *
+ * `oshst` and not `ishst`: the device is outside the inner shareable domain
+ * the cores share, so an inner barrier would not order against it. This is
+ * the same reasoning `mmio.h` gives, applied to memory the device reads
+ * rather than to the register itself.
+ */
+static void publish(void)
+{
+    __asm__ volatile("dmb oshst" ::: "memory");
+}
+
+/* And the other direction: the used ring has to be in hand before anything
+ * reads what it points at. */
+static void consume(void)
+{
+    __asm__ volatile("dmb oshld" ::: "memory");
+}
+
+/* Hands descriptor `i` back to the device as somewhere to put an event. */
+static void offer(unsigned i)
+{
+    uint16_t at = queue.avail.idx % QUEUE_SIZE;
+
+    queue.desc[i].addr  = (uint64_t)(uintptr_t)&events[i];
+    queue.desc[i].len   = sizeof(events[i]);
+    queue.desc[i].flags = VRING_DESC_F_WRITE;   /* the device writes it */
+    queue.desc[i].next  = 0;
+
+    queue.avail.ring[at] = (uint16_t)i;
+
+    /* The entry has to be visible before the index that publishes it. This
+     * is the barrier that is easy to leave out and produces a device reading
+     * a descriptor that has not been written yet. */
+    publish();
+    queue.avail.idx++;
+}
+
+/* Finds a window holding the device we want. Returns false if none does. */
+static bool find(uint32_t wanted_id)
+{
+    unsigned i;
+
+    for (i = 0; i < VIRTIO_MMIO_COUNT; i++) {
+        uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)i * VIRTIO_MMIO_STRIDE;
+
+        if (mmio_read32(base + REG_MAGIC) != VIRTIO_MAGIC) {
+            continue;
+        }
+
+        /*
+         * Version 2 is the modern interface. Version 1 is the legacy one,
+         * with a different ring layout reached through QUEUE_PFN and
+         * GUEST_PAGE_SIZE, and reading a legacy device with modern
+         * structures produces garbage rather than an error.
+         *
+         * **QEMU's virtio-mmio defaults to legacy.** `virt` reports version
+         * 1 unless the machine is started with
+         * `-global virtio-mmio.force-legacy=false`, which is what the
+         * Makefile passes and what Linux asks for too. Skipping rather than
+         * failing is deliberate: this is a scan, and a legacy device in one
+         * window says nothing about a modern one in another.
+         */
+        if (mmio_read32(base + REG_VERSION) != VIRTIO_VERSION_1) {
+            continue;
+        }
+
+        if (mmio_read32(base + REG_DEVICE_ID) != wanted_id) {
+            continue;               /* zero means the window is empty */
+        }
+
+        device = base;
+        return true;
+    }
+
+    return false;
+}
+
+bool hal_keyboard_init(void)
+{
+    uint32_t status;
+    unsigned max;
+    unsigned i;
+
+    /*
+     * Idempotent, and it has to be said rather than assumed. Running the
+     * sequence again would write 0 to STATUS, which resets the device and
+     * puts its used index back to zero - while `last_used` here kept
+     * counting. The two would disagree for the next sixty-five thousand
+     * events, which is to say for ever, and every key would be read out of
+     * the wrong slot.
+     */
+    if (present) {
+        return true;
+    }
+
+    if (!find(VIRTIO_ID_INPUT)) {
+        return false;               /* started without -device virtio-keyboard-device */
+    }
+
+    /*
+     * The bring-up sequence, in the order the specification requires. Each
+     * step is a promise to the device about what the driver has done, and
+     * doing them out of order is a device that stays silent.
+     */
+    reg_write(REG_STATUS, 0);                       /* reset */
+    reg_write(REG_STATUS, STATUS_ACKNOWLEDGE);
+    reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
+
+    /*
+     * Feature negotiation, and the one bit that matters.
+     *
+     * VIRTIO_F_VERSION_1 is feature 32, which is why there are selector
+     * registers: features are read and written thirty-two bits at a time, so
+     * bit 32 is bit 0 of window 1. Without it the device speaks the legacy
+     * layout and every structure below is subtly the wrong shape.
+     */
+    reg_write(REG_DEVICE_FEATURES_SEL, 1);
+    if ((reg_read(REG_DEVICE_FEATURES) & (1u << FEATURE_VERSION_1_BIT)) == 0) {
+        reg_write(REG_STATUS, STATUS_FAILED);
+        return false;
+    }
+
+    reg_write(REG_DRIVER_FEATURES_SEL, 1);
+    reg_write(REG_DRIVER_FEATURES, 1u << FEATURE_VERSION_1_BIT);
+    reg_write(REG_DRIVER_FEATURES_SEL, 0);
+    reg_write(REG_DRIVER_FEATURES, 0);
+
+    reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK);
+
+    /* Read back rather than assumed: the device clears the bit to refuse. */
+    status = reg_read(REG_STATUS);
+    if ((status & STATUS_FEATURES_OK) == 0) {
+        reg_write(REG_STATUS, STATUS_FAILED);
+        return false;
+    }
+
+    /* Queue 0 is the event queue, which is the one that carries key presses.
+     * Queue 1 carries status back to the device - LEDs and such - and there
+     * is nothing this system wants to say. */
+    reg_write(REG_QUEUE_SEL, 0);
+
+    max = reg_read(REG_QUEUE_NUM_MAX);
+    if (max == 0) {
+        reg_write(REG_STATUS, STATUS_FAILED);
+        return false;
+    }
+
+    if (max < QUEUE_SIZE) {
+        reg_write(REG_STATUS, STATUS_FAILED);
+        return false;               /* smaller than we are built for */
+    }
+
+    reg_write(REG_QUEUE_NUM, QUEUE_SIZE);
+
+    reg_write(REG_QUEUE_DESC_LOW,   (uint32_t)(uintptr_t)&queue.desc);
+    reg_write(REG_QUEUE_DESC_HIGH,  (uint32_t)((uint64_t)(uintptr_t)&queue.desc >> 32));
+    reg_write(REG_QUEUE_AVAIL_LOW,  (uint32_t)(uintptr_t)&queue.avail);
+    reg_write(REG_QUEUE_AVAIL_HIGH, (uint32_t)((uint64_t)(uintptr_t)&queue.avail >> 32));
+    reg_write(REG_QUEUE_USED_LOW,   (uint32_t)(uintptr_t)&queue.used);
+    reg_write(REG_QUEUE_USED_HIGH,  (uint32_t)((uint64_t)(uintptr_t)&queue.used >> 32));
+
+    reg_write(REG_QUEUE_READY, 1);
+
+    reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
+                          | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
+
+    /* Every buffer offered at once, because a device with nowhere to put an
+     * event drops it, and a dropped key is a key the person pressed. */
+    for (i = 0; i < QUEUE_SIZE; i++) {
+        offer(i);
+    }
+
+    publish();
+    reg_write(REG_QUEUE_NOTIFY, 0);
+
+    present = true;
+    return true;
+}
+
+int keyboard_getchar(void)
+{
+    if (!present) {
+        return -1;
+    }
+
+    /*
+     * Everything the device has finished with since the last look. A loop
+     * rather than one entry, because a single key produces at least a press
+     * and a release and only one of them is a character - returning after
+     * the first would leave the release to be found next time and halve the
+     * effective rate.
+     */
+    for (;;) {
+        struct virtio_input_event event;
+        unsigned slot;
+        unsigned char c;
+
+        consume();
+
+        if (queue.used.idx == last_used) {
+            return -1;              /* nothing waiting */
+        }
+
+        slot = queue.used.ring[last_used % QUEUE_SIZE].id % QUEUE_SIZE;
+        event = events[slot];
+
+        last_used++;
+
+        /* Handed straight back, so the device always has somewhere to write.
+         * Before anything is done with the event, because what follows can
+         * return and this must not be skipped. */
+        offer(slot);
+        publish();
+        reg_write(REG_QUEUE_NOTIFY, 0);
+
+        if (event.type != EV_KEY || event.code >= 128) {
+            continue;               /* EV_SYN, and anything off the map */
+        }
+
+        /* value: 0 released, 1 pressed, 2 auto-repeat. Both 1 and 2 are a
+         * character; a release only matters for the modifiers. */
+        if (event.code == KEY_LEFTSHIFT || event.code == KEY_RIGHTSHIFT) {
+            shift = (event.value != 0);
+            continue;
+        }
+
+        if (event.code == KEY_CAPSLOCK) {
+            if (event.value == 1) {
+                caps = !caps;
+            }
+            continue;
+        }
+
+        if (event.value == 0) {
+            continue;               /* a release of an ordinary key */
+        }
+
+        c = shift ? keymap_shift[event.code] : keymap_plain[event.code];
+
+        /*
+         * Caps lock is not a second shift: it applies to letters and to
+         * nothing else, so 1 stays 1 rather than becoming !. Checking the
+         * unshifted letter rather than the result is what makes shift and
+         * caps together give a lower-case letter, which is what a keyboard
+         * does.
+         */
+        if (caps) {
+            unsigned char plain = keymap_plain[event.code];
+
+            if (plain >= 'a' && plain <= 'z') {
+                c = shift ? plain : keymap_shift[event.code];
+            }
+        }
+
+        if (c != 0) {
+            return (int)c;
+        }
+    }
+}
+
+bool keyboard_present(void)
+{
+    return present;
+}

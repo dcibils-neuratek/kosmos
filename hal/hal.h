@@ -104,4 +104,16 @@ struct fb {
  */
 bool hal_fb_init(struct fb *out);
 
+/*
+ * Brings up a keyboard, if the board has one. False is not an error: input
+ * arriving over the serial line is how this system ran until M6 and is how
+ * it runs on a board with a cable and no keyboard.
+ *
+ * There is deliberately no hal_keyboard_getchar. A keyboard is a source of
+ * characters and `hal_getchar` is where characters come from, so the board
+ * answers from whichever of its sources has one. Nothing above the HAL
+ * changes because a keyboard exists.
+ */
+bool hal_keyboard_init(void);
+
 #endif /* HAL_H */

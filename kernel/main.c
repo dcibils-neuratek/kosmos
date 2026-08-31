@@ -121,6 +121,14 @@ void kmain(void)
         boot_detail("none; serial only");
     }
 
+    boot_stage("keyboard");
+
+    if (hal_keyboard_init()) {
+        boot_detail("virtio-input on virtio-mmio; polled, like the serial line");
+    } else {
+        boot_detail("none; input comes over the serial line");
+    }
+
     thread_init();
     boot_stage("threads");
     boot_detail("a fixed pool, each with two stacks and a guard page below");
