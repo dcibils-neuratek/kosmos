@@ -321,6 +321,53 @@ if role == R_TABLE_CLIENT then
   check(got[10] == "sparse", "a sparse key")
   check(got.tag == 3, "the tag")
 
+  --------------------------------------------------------------------------
+  -- The bytes, and not only the round trip.
+  --
+  -- A round trip proves the encoder and the decoder agree with each other.
+  -- It cannot tell whether they agree on anything a *second machine* could
+  -- reproduce - two matching native-endian halves round-trip perfectly and
+  -- produce a format that only reads back on the architecture that wrote
+  -- it.
+  --
+  -- Which is what this was, invisibly, because every target so far is
+  -- little-endian. It matters for the disk before it matters for anything
+  -- else: attribute blocks are `sys.pack` output written into a block, and
+  -- a disk outlives a boot and can be carried to another machine. `hal.md`
+  -- has a big-endian target on the list on purpose.
+  --
+  -- So these check the actual bytes. Tags from serialize.c: 3 is an
+  -- integer, 5 is a string.
+  --------------------------------------------------------------------------
+  local packed = sys.pack(258)
+
+  check(#packed == 9, "an integer packs to a tag and eight bytes")
+  check(packed:byte(1) == 3, "the integer tag")
+
+  -- 258 is 0x0102, so little-endian is 02 01 and then six zeroes. On a
+  -- big-endian machine writing native bytes this would be the other way
+  -- round, and this check is the only thing that would notice.
+  check(packed:byte(2) == 2 and packed:byte(3) == 1,
+        "an integer is little-endian on the wire")
+
+  for i = 4, 9 do
+    check(packed:byte(i) == 0, "the high bytes of a small integer are zero")
+  end
+
+  local text = sys.pack("hi")
+
+  check(text:byte(1) == 5, "the string tag")
+  check(text:byte(2) == 2 and text:byte(3) == 0 and text:byte(4) == 0
+        and text:byte(5) == 0, "a string length is little-endian")
+  check(text:sub(6) == "hi", "the string's bytes follow its length")
+
+  -- And a float still survives, which is the part that goes through a
+  -- uint64 rather than being copied.
+  check(sys.unpack(sys.pack(0.5)) == 0.5, "a float round trips")
+  check(sys.unpack(sys.pack(-2.25)) == -2.25, "a negative float round trips")
+  check(math.type(sys.unpack(sys.pack(7))) == "integer",
+        "an integer is still an integer after the change")
+
   sys.call(ep, { tag = STOP })
   wait_all(1)
   sys.exit(0)

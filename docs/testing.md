@@ -404,3 +404,46 @@ And the standing warning applies harder here than anywhere: **under
 emulation this measures the host, the emulator and the guest at once.**
 Comparing a QEMU run against a real board is comparing nothing to nothing.
 
+---
+
+## 18.11 The arrow keys are not broken, and how that was established
+
+The display harness fails on the arrow-key phase often enough that it has
+been written down as a bug twice. It is not one, and this section exists so
+it is not chased a third time.
+
+The input path was instrumented end to end and every stage is correct:
+
+- The window manager receives all three bytes of every arrow - `27`, `91`,
+  `66` - and forwards each to the focused window.
+- The widget kit's escape machine decodes them: `esc=1`, then `esc=2`, then
+  a code of `-2` with `handled=true`. Every time.
+- The selection moves sixteen pixels a press. Measured with the harness's
+  own colour probe, four presses running: 264, 280, 296, 312, 328.
+
+What fails is the *harness*, and it fails at a different phase on each run -
+the arrows, then a button click, then Control-C getting the screen back.
+That moving target is the signature of a timing problem rather than a
+broken feature, and it correlates with load on the machine running QEMU
+rather than with anything in the guest.
+
+Two mistakes were made while establishing this, and both are worth keeping:
+
+**The comparison against HEAD proved nothing.** Stashing the day's work and
+seeing the same failure looked like proof the bug predated it. It was run
+with five stray QEMU processes left over from earlier experiments still on
+the host, one of them using most of a core. A control that shares the
+variable it is controlling for is not a control. `pkill qemu` before
+believing a timing result.
+
+**The first probe was broken and looked like evidence.** Reporting the
+kit's state by assigning to `self.title` produced no output, which read as
+"no key ever arrived". Lua's `__newindex` does not fire for a key that is
+already present, so the assignment silently did nothing. It was caught by
+checking the probe against a keystroke known to arrive - a serial one -
+before trusting what it said about a keystroke that might not.
+
+**What is actually worth fixing** is the harness's sensitivity, not the
+system: phases that wait on a fixed deadline for a screen to change will
+fail on a busy host whatever the guest does.
+

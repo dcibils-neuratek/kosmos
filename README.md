@@ -229,6 +229,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | Attributes live in one block per file, pointed at by the inode; kind is structural only for directories | kfs.lua, gfx.md |
 | Sep 2026 | A cross-machine benchmark measures for fixed time, never fixed work | testing.md §18.10 |
 | Sep 2026 | The benchmark engine is a library; `score` prints it and `sysbench` draws it | testing.md §18.10 |
+| Sep 2026 | The serialised format is little-endian by decision, not by accident | serialize.c, testing.md §18.11 |
 
 ---
 

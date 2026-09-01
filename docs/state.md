@@ -46,6 +46,18 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The serialised format is little-endian on purpose now.** It used to be
+  a `memcpy` of the native bytes, which was invisible because every target
+  so far agrees. It matters for the disk before anything else: attribute
+  blocks are `sys.pack` output written into a block, and `kfs.lua` is
+  explicitly little-endian everywhere else, so that was the one part of the
+  on-disk format that depended on the machine that wrote it. A disk
+  outlives a boot and can be carried to another machine. The test checks
+  the actual bytes, because a round trip proves only that the two halves
+  agree with each other - two matching native-endian halves round-trip
+  perfectly and produce a format nothing else can read.
+
+
 - **The index is rebuilt at mount, and queries work on the disk.** A scan
   of the tree reads every attribute block into `index[attribute][value] ->
   paths`, the same shape the ramfs builds. Nothing about it is written
@@ -55,17 +67,15 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
   declaring it, which is BFS's rule. `find` now asks every mount that can
   answer instead of the one it used to name.
 
-- **Known bad, and reproducible right now: a dropped keystroke.** The
-  display harness fails on the arrow-key phase - two presses move the
-  selection one row, or the first press does nothing. It reproduces at
-  HEAD without any of the day's changes, so it is not a regression from
-  them. Ruled out: the pending-byte queue in `input.c`, which looked like
-  the obvious culprit and is not - `queue()` is only reached when the
-  buffer is already empty, so it cannot clobber a half-read escape
-  sequence. Not yet ruled out: where an `ESC [ B` split across polls
-  actually goes, between the console server, the window manager and the
-  widget kit. **This is the next thing to fix**, and it is worth doing
-  while it still reproduces.
+- **The arrow keys are not broken.** The display harness's arrow phase
+  fails often and it has been recorded as a bug twice. The input path was
+  instrumented end to end and is correct at every stage: the window manager
+  forwards all three bytes, the kit decodes them, and the selection moves
+  sixteen pixels a press - 264, 280, 296, 312, 328, measured with the
+  harness's own probe. What fails is the harness, on a busy host, at
+  whichever phase it happens to be running. `testing.md` 18.11 has the two
+  mistakes made while working that out, including a control run that shared
+  the variable it was controlling for.
 
 
 - **Kosmos is MIT.** `LICENSE` at the root, and every file this project

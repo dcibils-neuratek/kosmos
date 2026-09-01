@@ -95,6 +95,58 @@ static void put_byte(struct writer *w, uint8_t b)
     put(w, &b, 1);
 }
 
+/*
+ * Numbers go out little-endian, a byte at a time, whatever this machine is.
+ *
+ * They used to go out as a `memcpy` of the native bytes, which is faster
+ * and was invisible: every target so far is little-endian, so the format
+ * and the machine agreed by accident and nobody had to decide anything.
+ *
+ * It stops being invisible in two places, and the second one is why this
+ * changed now rather than later:
+ *
+ *   * **IPC between machines.** Not built, and a long way off.
+ *   * **The disk.** Attribute blocks are `sys.pack` output written into a
+ *     block. `kfs.lua` is careful everywhere else - `string.pack("<I4")`,
+ *     explicitly little-endian - so the *one* part of the on-disk format
+ *     that depended on the machine was the part that went through here.
+ *
+ * A disk outlives a boot and can be moved between machines. A format that
+ * only reads back on the architecture that wrote it is a format with a bug
+ * in it, and the bug is much cheaper to fix before there are disks with
+ * data on them than after. `hal.md` has the PowerPC G4 as a deliberate
+ * future target, and it is big-endian; this is one of the things that
+ * would have broken on the day it booted.
+ *
+ * Doubles go through a `uint64_t` rather than being copied byte-reversed,
+ * so what is defined is the IEEE 754 bit pattern in little-endian order,
+ * which is a thing both ends can agree on without agreeing on their own
+ * float layout.
+ */
+static void put_u64(struct writer *w, uint64_t v)
+{
+    uint8_t b[8];
+    unsigned i;
+
+    for (i = 0; i < 8; i++) {
+        b[i] = (uint8_t)(v >> (8 * i));
+    }
+
+    put(w, b, sizeof(b));
+}
+
+static void put_u32(struct writer *w, uint32_t v)
+{
+    uint8_t b[4];
+    unsigned i;
+
+    for (i = 0; i < 4; i++) {
+        b[i] = (uint8_t)(v >> (8 * i));
+    }
+
+    put(w, b, sizeof(b));
+}
+
 static bool take(struct reader *r, void *out, size_t n)
 {
     if (r->pos + n > r->len) {
@@ -104,6 +156,42 @@ static bool take(struct reader *r, void *out, size_t n)
 
     memcpy(out, r->buf + r->pos, n);
     r->pos += n;
+    return true;
+}
+
+static bool take_u64(struct reader *r, uint64_t *out)
+{
+    uint8_t b[8];
+    unsigned i;
+    uint64_t v = 0;
+
+    if (!take(r, b, sizeof(b))) {
+        return false;
+    }
+
+    for (i = 0; i < 8; i++) {
+        v |= (uint64_t)b[i] << (8 * i);
+    }
+
+    *out = v;
+    return true;
+}
+
+static bool take_u32(struct reader *r, uint32_t *out)
+{
+    uint8_t b[4];
+    unsigned i;
+    uint32_t v = 0;
+
+    if (!take(r, b, sizeof(b))) {
+        return false;
+    }
+
+    for (i = 0; i < 4; i++) {
+        v |= (uint32_t)b[i] << (8 * i);
+    }
+
+    *out = v;
     return true;
 }
 
@@ -182,12 +270,17 @@ static int pack_value(lua_State *L, int index, struct writer *w, int depth)
             lua_Integer n = lua_tointeger(L, index);
             int64_t v = (int64_t)n;
             put_byte(w, T_INT);
-            put(w, &v, sizeof(v));
+            put_u64(w, (uint64_t)v);
         } else {
             lua_Number n = lua_tonumber(L, index);
             double v = (double)n;
+            uint64_t bits;
+
+            /* Through memory rather than a cast, which would convert the
+             * value instead of reinterpreting it. */
+            memcpy(&bits, &v, sizeof(bits));
             put_byte(w, T_FLOAT);
-            put(w, &v, sizeof(v));
+            put_u64(w, bits);
         }
         break;
 
@@ -202,7 +295,7 @@ static int pack_value(lua_State *L, int index, struct writer *w, int depth)
 
         n = (uint32_t)len;
         put_byte(w, T_STRING);
-        put(w, &n, sizeof(n));
+        put_u32(w, n);
         /* Length-prefixed, so a string containing a zero byte survives.
          * Lua strings are byte strings and truncating at a NUL would lose
          * data silently. */
@@ -272,19 +365,23 @@ static int unpack_value(lua_State *L, struct reader *r, int depth)
         break;
 
     case T_INT: {
-        int64_t v;
-        if (!take(r, &v, sizeof(v))) {
+        uint64_t v;
+        if (!take_u64(r, &v)) {
             return SERIALIZE_ERR_MALFORMED;
         }
-        lua_pushinteger(L, (lua_Integer)v);
+        lua_pushinteger(L, (lua_Integer)(int64_t)v);
         break;
     }
 
     case T_FLOAT: {
+        uint64_t bits;
         double v;
-        if (!take(r, &v, sizeof(v))) {
+
+        if (!take_u64(r, &bits)) {
             return SERIALIZE_ERR_MALFORMED;
         }
+
+        memcpy(&v, &bits, sizeof(v));
         lua_pushnumber(L, (lua_Number)v);
         break;
     }
@@ -292,7 +389,7 @@ static int unpack_value(lua_State *L, struct reader *r, int depth)
     case T_STRING: {
         uint32_t n;
 
-        if (!take(r, &n, sizeof(n))) {
+        if (!take_u32(r, &n)) {
             return SERIALIZE_ERR_MALFORMED;
         }
 
