@@ -2716,6 +2716,37 @@ your filesystem back.
   out("Type `help` for what there is, `commands` for what you can type,\n")
   out("or `devices` for what this machine turned out to be.\n\n")
 
+  --------------------------------------------------------------------------
+  -- What the machine was told to start with.
+  --
+  --   qemu ... -fw_cfg name=opt/kosmos/boot,string=wm
+  --
+  -- Run through the ordinary command path rather than by a special case,
+  -- so `boot=wm` and typing `wm` are the same thing and there is one way a
+  -- program starts. Anything in /bin works, with arguments:
+  -- `string=wm tetris` opens the desktop with Tetris on it.
+  --
+  -- It is a *command line* option and not a setting on disk, because it is
+  -- how you decide what this boot is for - and a machine that will not
+  -- reach a prompt because of something written in a file is a machine you
+  -- cannot fix from the prompt.
+  --------------------------------------------------------------------------
+  local autostart = sys.boot("opt/kosmos/boot")
+
+  if autostart and autostart ~= "" then
+    out("starting " .. autostart .. "\n")
+
+    -- Through the same function a typed program name goes through, so
+    -- `boot=wm` and typing `wm` are the same thing and there is one way a
+    -- program starts.
+    local word, rest = autostart:match("^(%S+)%s*(.*)$")
+    local ok, why = run_program(word, rest, false)
+
+    if not ok then
+      out("boot: " .. tostring(word) .. ": " .. tostring(why) .. "\n")
+    end
+  end
+
   while true do
     out("kosmos> ")
 

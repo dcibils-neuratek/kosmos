@@ -708,6 +708,29 @@ static int l_memory_size(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.boot(name)` - a string the machine was started with, or nil.
+ *
+ *   qemu ... -fw_cfg name=opt/kosmos/boot,string=wm
+ *   sys.boot("opt/kosmos/boot")   -->  "wm"
+ *
+ * How a machine is told what to do without being rebuilt.
+ */
+static int l_boot_option(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    char value[128];
+    long n = kosmos_boot_option(name, value, sizeof(value));
+
+    if (n <= 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushlstring(L, value, (size_t)n);
+    return 1;
+}
+
 static int l_log(lua_State *L)
 {
     luaL_Buffer b;
@@ -872,6 +895,7 @@ static const luaL_Reg sys_functions[] = {
     { "disk",        l_disk },
     { "disk_read",   l_disk_read },
     { "disk_write",  l_disk_write },
+    { "boot",     l_boot_option },
     { "log",      l_log },
     { "build",    l_build },
     { "wait_input", l_wait_input },

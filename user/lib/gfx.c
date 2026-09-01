@@ -357,6 +357,24 @@ static int l_fill(lua_State *L)
  * The circle test is `dx*dx + dy*dy <= r*r` walked outward rather than a
  * square root per row: integer only, no libm here, and exact.
  */
+/*
+ * Mixing two colours by coverage.
+ *
+ * Integer only, and the rounding is `+ 127` so that a half-covered pixel
+ * lands on the midpoint rather than a step below it - which over a whole
+ * edge is the difference between a smooth line and one that reads slightly
+ * thin.
+ */
+static uint32_t mix(uint32_t dst, uint32_t src, unsigned a)
+{
+    unsigned inv = 255u - a;
+    unsigned r = ((((src >> 16) & 0xff) * a) + (((dst >> 16) & 0xff) * inv) + 127) / 255;
+    unsigned g = ((((src >>  8) & 0xff) * a) + (((dst >>  8) & 0xff) * inv) + 127) / 255;
+    unsigned b = ((((src      ) & 0xff) * a) + (((dst      ) & 0xff) * inv) + 127) / 255;
+
+    return 0xff000000u | (r << 16) | (g << 8) | b;
+}
+
 static int l_disc(lua_State *L)
 {
     struct surface *s = check_surface(L, 1);
@@ -364,9 +382,60 @@ static int l_disc(lua_State *L)
     long cy = (long)luaL_checkinteger(L, 3);
     long r  = (long)luaL_checkinteger(L, 4);
     uint32_t colour = (uint32_t)luaL_checkinteger(L, 5);
+    int smooth = lua_toboolean(L, 6);
     long dy;
 
     if (r <= 0) {
+        return 0;
+    }
+
+    /*
+     * A smooth edge, when asked for.
+     *
+     * Coverage from the squared distance rather than a real one: with
+     * everything scaled by two, a pixel is solid inside (2r-1)^2, empty
+     * outside (2r+1)^2, and blended in between. That is a straight line
+     * through a curve and it is close enough at these radii - what the eye
+     * objects to is a *step*, not a slightly wrong ramp.
+     *
+     * There is no libm here and no floating point in this file. This is
+     * also why it lives in C at all: `gfx.md` 19.11 measured a Lua loop
+     * calling a primitive per row at 3 Mpx/s, and this would be a call per
+     * *pixel*.
+     */
+    if (smooth) {
+        long inner = (2 * r - 1) * (2 * r - 1);
+        long outer = (2 * r + 1) * (2 * r + 1);
+        long dx;
+
+        for (dy = -r - 1; dy <= r + 1; dy++) {
+            long y = cy + dy;
+            uint32_t *p;
+
+            if (y < 0 || y >= (long)s->height) {
+                continue;
+            }
+
+            p = row_of(s, (unsigned)y);
+
+            for (dx = -r - 1; dx <= r + 1; dx++) {
+                long x = cx + dx;
+                long d2 = 4 * (dx * dx + dy * dy);
+
+                if (x < 0 || x >= (long)s->width || d2 >= outer) {
+                    continue;
+                }
+
+                if (d2 <= inner) {
+                    p[x] = colour;
+                } else {
+                    unsigned a = (unsigned)((outer - d2) * 255 / (outer - inner));
+
+                    p[x] = mix(p[x], colour, a);
+                }
+            }
+        }
+
         return 0;
     }
 

@@ -266,3 +266,44 @@ bool fwcfg_write(uint16_t select, const void *data, uint32_t length)
     return fwcfg_dma(DMA_SELECT | ((uint32_t)select << 16) | DMA_WRITE,
                      (void *)(uintptr_t)data, length);
 }
+
+/*
+ * A string passed on the QEMU command line.
+ *
+ *   -fw_cfg name=opt/kosmos/boot,string=wm
+ *
+ * Returns false when there is no such entry, which is the ordinary case and
+ * not an error: a machine started without one boots to the shell.
+ */
+bool hal_boot_option(const char *name, char *out, unsigned long max)
+{
+    uint16_t select;
+    uint32_t size;
+
+    if (out == NULL || max == 0) {
+        return false;
+    }
+
+    out[0] = '\0';
+
+    if (!fwcfg_present() || !fwcfg_find(name, &select, &size)) {
+        return false;
+    }
+
+    if (size == 0) {
+        return false;
+    }
+
+    /* Room for the terminator, and a value longer than the buffer is a
+     * value nobody meant to pass. */
+    if (size >= max) {
+        size = (uint32_t)(max - 1);
+    }
+
+    if (!fwcfg_read(select, out, size)) {
+        return false;
+    }
+
+    out[size] = '\0';
+    return true;
+}

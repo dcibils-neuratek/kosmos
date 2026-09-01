@@ -296,6 +296,15 @@ static inline long kosmos_disk_write(unsigned long sector, const void *buf,
     return sys3(SYS_DISK_WRITE, sector, (unsigned long)(uintptr_t)buf, bytes);
 }
 
+/* What the machine was started with, from the firmware. Zero when there is
+ * no such option, which is the ordinary case. */
+static inline long kosmos_boot_option(const char *name, char *out,
+                                      unsigned long max)
+{
+    return sys3(SYS_BOOT_OPT, (unsigned long)(uintptr_t)name,
+                (unsigned long)(uintptr_t)out, max);
+}
+
 /* The most recent bytes this machine printed, kernel and processes alike. */
 static inline long kosmos_log(char *out, unsigned long max)
 {

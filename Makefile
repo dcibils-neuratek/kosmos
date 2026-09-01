@@ -554,12 +554,27 @@ QEMU      := qemu-system-aarch64
 DISK      := build/kosmos.img
 DISK_MB   := 64
 
+#
+# What to start once the machine is up. Empty means the shell.
+#
+#   make qemu BOOT=wm            straight to the desktop
+#   make qemu BOOT="wm tetris"   the desktop with something on it
+#
+# Passed through QEMU's fw_cfg, which is how a machine is told what to do
+# without being rebuilt. `opt/` is the namespace QEMU reserves for exactly
+# this, so nothing here can collide with a name QEMU defines itself.
+#
+comma     := ,
+BOOT      :=
+BOOTARG   := $(if $(BOOT),-fw_cfg name=opt/kosmos/boot$(comma)string=$(BOOT),)
+
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
              -drive file=$(DISK),format=raw,if=none,id=disk \
              -device virtio-blk-device,drive=disk \
+             $(BOOTARG) \
              -display cocoa -serial mon:stdio \
              -kernel $(TARGET)
 
@@ -571,6 +586,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     -global virtio-mmio.force-legacy=false \
                     -drive file=$(DISK),format=raw,if=none,id=disk \
                     -device virtio-blk-device,drive=disk \
+                    $(BOOTARG) \
                     -kernel $(TARGET)
 
 .PHONY: all bump bump-minor bump-major qemu serial test disktest screenshot bench bench-record debug disasm size clean dist release disk

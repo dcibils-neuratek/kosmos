@@ -4,6 +4,8 @@
 #
 #   ./run-kosmos.sh                 a window, with the shell on this terminal
 #   ./run-kosmos.sh -r 1920x1080    at that size, if a build of it is here
+#   ./run-kosmos.sh -b wm           straight to the desktop
+#   ./run-kosmos.sh -b "wm tetris"  with something on it
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
@@ -41,6 +43,13 @@ serial_only="no"
 size=""
 want_size="no"
 
+# What to start once it is up. Empty means the shell.
+#
+#   ./run-kosmos.sh -b wm            straight to the desktop
+#   ./run-kosmos.sh -b "wm tetris"   with something on it
+boot=""
+want_boot="no"
+
 for arg in "$@"; do
     if [ "$want_size" = "yes" ]; then
         size="$arg"
@@ -48,9 +57,16 @@ for arg in "$@"; do
         continue
     fi
 
+    if [ "$want_boot" = "yes" ]; then
+        boot="$arg"
+        want_boot="no"
+        continue
+    fi
+
     case "$arg" in
         -serial) serial_only="yes" ;;
         -r)      want_size="yes" ;;
+        -b)      want_boot="yes" ;;
         -*)      echo "unknown option: $arg" >&2; exit 2 ;;
         *)       image="$arg" ;;
     esac
@@ -101,10 +117,19 @@ if [ -z "$image" ] || [ ! -f "$image" ]; then
     exit 1
 fi
 
+# Passed through fw_cfg, which is how a machine is told what to do without
+# being rebuilt. Built as an array so an empty option adds no arguments at
+# all rather than an empty one.
+bootargs=""
+if [ -n "$boot" ]; then
+    bootargs="-fw_cfg name=opt/kosmos/boot,string=$boot"
+fi
+
 if [ "$serial_only" = "yes" ]; then
+    # shellcheck disable=SC2086
     exec qemu-system-aarch64 \
         -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
-        -nographic \
+        -nographic $bootargs \
         -kernel "$image"
 fi
 
@@ -116,5 +141,5 @@ exec qemu-system-aarch64 \
     -device ramfb \
     -device virtio-keyboard-device \
     -device virtio-tablet-device \
-    -display default -serial mon:stdio \
+    -display default -serial mon:stdio $bootargs \
     -kernel "$image"

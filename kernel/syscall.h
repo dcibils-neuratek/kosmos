@@ -66,7 +66,9 @@
 #define SYS_DISK_READ  27   /* (sector, buf, bytes)   -> bytes or error     */
 #define SYS_DISK_WRITE 28   /* (sector, buf, bytes)   -> bytes or error     */
 
-#define SYS_MAX         29
+#define SYS_BOOT_OPT   29   /* (name, out, max)       -> length or error   */
+
+#define SYS_MAX         30
 
 /*
  * What a spawn may hand its child beyond capabilities.

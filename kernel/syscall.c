@@ -969,6 +969,55 @@ void syscall_dispatch(struct trapframe *tf)
                           (size_t)tf->x[2]);
         break;
 
+    case SYS_BOOT_OPT: {
+        /*
+         * What the machine was started with.
+         *
+         * Readable by anybody: it is a string somebody typed on the QEMU
+         * command line, and treating it as a secret would be pretending it
+         * is one. init is the only caller that has a use for it.
+         */
+        char name[64];
+        char value[128];
+        size_t len = (size_t)tf->x[2];
+
+        if (!process_may_read(p, (uintptr_t)tf->x[0], 1)
+            || !process_may_write(p, (uintptr_t)tf->x[1], len)) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        {
+            const char *from = (const char *)(uintptr_t)tf->x[0];
+            size_t i;
+
+            for (i = 0; i + 1 < sizeof(name) && from[i] != '\0'; i++) {
+                name[i] = from[i];
+            }
+
+            name[i] = '\0';
+        }
+
+        if (!hal_boot_option(name, value, sizeof(value))) {
+            result = 0;                 /* no such option; not an error */
+            break;
+        }
+
+        {
+            char *to = (char *)(uintptr_t)tf->x[1];
+            size_t i;
+
+            for (i = 0; i + 1 < len && value[i] != '\0'; i++) {
+                to[i] = value[i];
+            }
+
+            to[i] = '\0';
+            result = (long)i;
+        }
+
+        break;
+    }
+
     case SYS_YIELD:
         thread_yield();
         result = 0;

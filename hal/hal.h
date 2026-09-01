@@ -192,4 +192,18 @@ bool hal_blk_init(struct blkdev *out);      /* M8; false when there is none */
 bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes);
 bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes);
 
+/*
+ * A string the firmware was asked to carry, or false when there is none.
+ *
+ * QEMU takes `-fw_cfg name=opt/kosmos/boot,string=wm`, which is how a
+ * machine is told what to do without rebuilding it. `opt/` is the namespace
+ * QEMU reserves for exactly this, so nothing here collides with a name QEMU
+ * defines itself.
+ *
+ * Not a kernel command line. There is a device tree with `/chosen/bootargs`
+ * in it and parsing one is real work for a facility fw_cfg already
+ * provides - and fw_cfg is here because `hal_fb_init` needed it.
+ */
+bool hal_boot_option(const char *name, char *out, unsigned long max);
+
 #endif /* HAL_H */
