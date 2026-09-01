@@ -290,8 +290,70 @@ local function forget(r, c)
   tile_at(board, r, c)
 end
 
+--------------------------------------------------------------------------
+-- Only what moved.
+--
+-- The cached maze made the *decisions* cheap and left the pixels alone: one
+-- blit of the whole board is 608 x 700, which is 1.7 MB copied per frame,
+-- and the compositor then copies it again. That is where the time was
+-- going, and it was going there whether anything had moved or not.
+--
+-- So each frame repairs the boxes the last frame drew in *this* buffer,
+-- draws the entities, and commits the union. There are two buffers and they
+-- alternate, so what has to be repaired is what was drawn two frames ago -
+-- which is why the record is kept per surface rather than as one list.
+--
+-- Six boxes of 64 x 64 instead of a whole window: about twenty times fewer
+-- pixels, and the compositor gets a smaller rectangle to blit as well.
+--------------------------------------------------------------------------
+
+local dirt = setmetatable({}, { __mode = "k" })   -- surface -> boxes drawn
+
+-- Eaten dots change the board itself, so both buffers need the tile put
+-- back. Applied to the next two frames, which is one of each.
+local repairs = {}
+
+local function box_of(e)
+  -- Generous: the mouth's wedge reaches a whole tile past the centre.
+  return { x = e.x - TILE, y = e.y - TILE, w = TILE * 2, h = TILE * 2 }
+end
+
+local function clip_box(b)
+  local x0 = math.max(0, b.x)
+  local y0 = math.max(0, b.y)
+  local x1 = math.min(W, b.x + b.w)
+  local y1 = math.min(H, b.y + b.h)
+
+  if x1 <= x0 or y1 <= y0 then return nil end
+
+  return { x = x0, y = y0, w = x1 - x0, h = y1 - y0 }
+end
+
+-- The first frame in each buffer has to be the whole thing.
+--
+-- Damage-based drawing repairs what *it* drew; a buffer nothing has ever
+-- drawn into holds nothing to repair, and committing a small box leaves the
+-- rest of the window as it was - which, the first time round, is black.
+-- Two, because there are two buffers.
+local full_frames = 2
+
 local function draw(s)
-  s:blit(board, 0, 0, W, H, 0, 0)
+  local drew = {}
+
+  if full_frames > 0 then
+    s:blit(board, 0, 0, W, H, 0, 0)
+  end
+
+  local function repair(b)
+    b = clip_box(b)
+    if b then s:blit(board, b.x, b.y, b.w, b.h, b.x, b.y) end
+  end
+
+  -- What this buffer had on it, and any tile whose dot has gone.
+  if full_frames <= 0 then
+    for _, b in ipairs(dirt[s] or {}) do repair(b) end
+    for _, b in ipairs(repairs) do repair(b) end
+  end
 
   -- Pac-Man: a disc with a wedge taken out of it, and the wedge is a
   -- triangle in the background colour. That primitive exists because of the
@@ -346,6 +408,12 @@ local function draw(s)
     s:fill(g.x - r * 2 + e[1] * r, g.y - r * 2 + e[2] * r, r, r, eye)
     s:fill(g.x + r + e[1] * r,     g.y - r * 2 + e[2] * r, r, r, eye)
   end
+
+  for _, e in ipairs({ pac, ghosts[1], ghosts[2], ghosts[3], ghosts[4] }) do
+    if e then drew[#drew + 1] = box_of(e) end
+  end
+
+  dirt[s] = drew
 
   local bar = ROWS * TILE
   s:fill(0, bar, W, BAR, BG)
@@ -411,6 +479,9 @@ while win.running do
 
       dot[r][c], pellet[r][c] = false, false
       forget(r, c)
+
+      repairs[#repairs + 1] = { x = (c - 1) * TILE, y = (r - 1) * TILE,
+                                w = TILE, h = TILE, left = 2 }
       dots_left = dots_left - 1
 
       if dots_left == 0 then over, won = true, true end
@@ -440,6 +511,7 @@ while win.running do
         else
           pac.x, pac.y = centre(start_pac.r, start_pac.c)
           pac.dir, pac.want = "left", "left"
+          full_frames = 2
 
           fright, chain = 0, 0
 
@@ -457,7 +529,40 @@ while win.running do
 
   draw(win:surface())
 
-  if not win:commit{ x = 0, y = 0, w = W, h = H } then break end
+  -- The union of what was repaired and what was drawn, plus the score bar.
+  -- One rectangle, because that is what a commit carries - so two entities
+  -- at opposite corners cost the box between them, and that is still less
+  -- than the window whenever they are not.
+  local x0, y0, x1, y1 = W, ROWS * TILE, 0, H
+
+  if full_frames > 0 then
+    full_frames = full_frames - 1
+    x0, y0, x1, y1 = 0, 0, W, H
+  end
+
+  for _, e in ipairs({ pac, ghosts[1], ghosts[2], ghosts[3], ghosts[4] }) do
+    if e then
+      x0 = math.min(x0, e.x - TILE * 2)
+      y0 = math.min(y0, e.y - TILE * 2)
+      x1 = math.max(x1, e.x + TILE * 2)
+      y1 = math.max(y1, e.y + TILE * 2)
+    end
+  end
+
+  x0 = math.max(0, x0)
+  y0 = math.max(0, y0)
+  x1 = math.min(W, x1)
+  y1 = math.min(H, y1)
+
+  if not win:commit{ x = x0, y = y0, w = x1 - x0, h = y1 - y0 } then
+    break
+  end
+
+  -- A repair is needed once per buffer, so it survives exactly two frames.
+  for i = #repairs, 1, -1 do
+    repairs[i].left = repairs[i].left - 1
+    if repairs[i].left <= 0 then table.remove(repairs, i) end
+  end
 
   local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
                                      wait = 1 })
@@ -508,6 +613,7 @@ while win.running do
 
           pac.x, pac.y = centre(start_pac.r, start_pac.c)
           paint_board()
+          full_frames = 2
 
           for i, home in ipairs(ghost_home) do
             ghosts[i].x, ghosts[i].y = centre(home.r, home.c)
