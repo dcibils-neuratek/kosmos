@@ -46,6 +46,28 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The index is rebuilt at mount, and queries work on the disk.** A scan
+  of the tree reads every attribute block into `index[attribute][value] ->
+  paths`, the same shape the ramfs builds. Nothing about it is written
+  down: derived state that is also stored is state that can disagree with
+  itself, and on a filesystem that disagreement is a query returning a file
+  that is not there. `name` is indexed for every file without anybody
+  declaring it, which is BFS's rule. `find` now asks every mount that can
+  answer instead of the one it used to name.
+
+- **Known bad, and reproducible right now: a dropped keystroke.** The
+  display harness fails on the arrow-key phase - two presses move the
+  selection one row, or the first press does nothing. It reproduces at
+  HEAD without any of the day's changes, so it is not a regression from
+  them. Ruled out: the pending-byte queue in `input.c`, which looked like
+  the obvious culprit and is not - `queue()` is only reached when the
+  buffer is already empty, so it cannot clobber a half-read escape
+  sequence. Not yet ruled out: where an `ESC [ B` split across polls
+  actually goes, between the console server, the window manager and the
+  widget kit. **This is the next thing to fix**, and it is worth doing
+  while it still reproduces.
+
+
 - **Kosmos is MIT.** `LICENSE` at the root, and every file this project
   writes carries a one-line notice above its description. Vendored code is
   untouched and its licences are named in `LICENSE`. `assets2c.py` now

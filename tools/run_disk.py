@@ -124,6 +124,7 @@ def main():
             # as long as the file does.
             "attr /home/notes.txt kind=note author=diego",
             "attr /home/notes.txt size=999",
+            "attr /home/papers/deep.txt kind=note",
             "ls /home",
         ])
 
@@ -168,7 +169,12 @@ def main():
                                     'local t = fs.read("/home/kept"); '
                                     'print("kept:", type(t), t and t.palette, '
                                     't and t.n)',
-                                    "attr /home/notes.txt"])
+                                    "attr /home/notes.txt",
+                                    # The index is not on the disk. These
+                                    # answers can only come from a scan of
+                                    # the attributes done on this boot.
+                                    "find kind=note",
+                                    "find name=deep.txt"])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -278,6 +284,49 @@ def main():
             raise Failure(
                 "setting `size` was not refused out loud. Quietly dropping "
                 "it leaves the caller believing it was stored.\n" + first
+            )
+
+        checks += 1
+
+        # ---- the index, rebuilt rather than stored ----
+        #
+        # Nothing about a query is written down. The answers below exist
+        # because this boot walked the filesystem and read every
+        # attribute block, which is the whole design: derived state that
+        # is also stored is state that can disagree with itself, and on a
+        # filesystem that disagreement is a query returning a file that
+        # is not there.
+        matched = second.split("find kind=note")[-1]
+
+        for path in ("/home/notes.txt", "/home/papers/deep.txt"):
+            if path not in matched:
+                raise Failure(
+                    f"a query after the reboot did not find {path}. The "
+                    "attribute survived - the check above proves it - so "
+                    "the index was not rebuilt from what is on the disk.\n"
+                    + second
+                )
+
+            checks += 1
+
+        # And it is a query, not a walk that returns everything.
+        if "/home/kept" in matched.split("find name=deep.txt")[0]:
+            raise Failure(
+                "the query returned a file that does not match it. That "
+                "is a walk wearing a query's name, and it means the "
+                "filter is not being applied at all.\n" + second
+            )
+
+        checks += 1
+
+        # `name` is indexed without anyone having declared it, which is
+        # what makes a query by name fast however many files there are.
+        if "/home/papers/deep.txt" not in second.split("find name=deep.txt")[-1]:
+            raise Failure(
+                "a query by name found nothing. Name is supposed to be "
+                "indexed for every file without being declared - it is "
+                "not stored on the node at all, it comes from the "
+                "directory entry during the scan.\n" + second
             )
 
         checks += 1

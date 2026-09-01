@@ -1761,6 +1761,141 @@ local function diskfs_handlers(state)
     return sb
   end
 
+  --------------------------------------------------------------------------
+  -- The index, and where it comes from.
+  --
+  -- `index[attribute][value]` is the set of paths that have it - the same
+  -- shape the ramfs builds, because it answers the same question and the
+  -- query code should not care which filesystem it is talking to.
+  --
+  -- **It is not on the disk.** BFS kept its indices as on-disk B+trees
+  -- because it had hundreds of thousands of files; this has hundreds. A
+  -- journaled B+tree with split and merge is the largest and most
+  -- error-prone thing in this milestone, and dropping it costs one scan.
+  --
+  -- The deeper reason is the one design.md 8.3 gives: an index is derived
+  -- from the attributes, and derived state that is *also* stored is state
+  -- that can disagree with itself. On a filesystem that disagreement is a
+  -- query returning a file that is not there, or missing one that is, and
+  -- it survives reboots because both copies are on the disk. Rebuilding
+  -- makes that failure impossible rather than unlikely.
+  --
+  -- When mount time hurts, that is the moment to persist it - with a
+  -- measurement saying so, not before.
+  --
+  -- Built on first use rather than at mount. Same thing from the outside,
+  -- and a machine that never runs a query never pays for one.
+  --------------------------------------------------------------------------
+
+  -- What a node is, as opposed to what is in it. Stored attributes first,
+  -- then the four the inode already knows, which overwrite them.
+  local function attrs_of(sb, path, node)
+    local attrs = kfs.read_attrs(sb, node) or {}
+
+    attrs.kind = (node.kind == kfs.KIND_DIR) and "directory"
+                 or attrs.kind or "file"
+    attrs.size    = node.size
+    attrs.mtime   = node.mtime
+    attrs.extents = #node.extents
+
+    -- Always indexed, without anyone declaring it, which is the BFS rule
+    -- and the reason a query by name is fast whatever else is going on.
+    -- The name is not stored anywhere on the node - it lives in the
+    -- directory entry - so it is put here where everything else can see it.
+    attrs.name = path:match("([^/]+)$") or path
+
+    return attrs
+  end
+
+  local function index_add(path, attrs)
+    for name, value in pairs(attrs) do
+      local bucket = state.index[name]
+
+      if not bucket then
+        bucket = {}
+        state.index[name] = bucket
+      end
+
+      local key = tostring(value)
+
+      bucket[key] = bucket[key] or {}
+      bucket[key][path] = true
+    end
+  end
+
+  local function index_remove(path, attrs)
+    for name, value in pairs(attrs or {}) do
+      local bucket = state.index[name]
+      local by_value = bucket and bucket[tostring(value)]
+
+      if by_value then by_value[path] = nil end
+    end
+  end
+
+  -- The whole tree, depth first, into the index.
+  --
+  -- Recursive over directories, which is safe here for the reason the
+  -- format is: a directory holding itself is not something this filesystem
+  -- can express - there are no links - so the walk terminates.
+  local function scan(sb, path, node, seen)
+    local entries = kfs.read_dir(sb, node)
+
+    for _, e in ipairs(entries or {}) do
+      local child = (path == "") and ("/" .. e.name)
+                                 or (path .. "/" .. e.name)
+      local child_node = kfs.read_inode(sb, e.inode)
+
+      if child_node and child_node.kind ~= kfs.KIND_FREE then
+        local attrs = attrs_of(sb, child, child_node)
+
+        seen[child] = attrs
+        index_add(child, attrs)
+
+        if child_node.kind == kfs.KIND_DIR then
+          scan(sb, child, child_node, seen)
+        end
+      end
+    end
+  end
+
+  local function indexed()
+    if state.index then return state.index end
+
+    local sb = mounted()
+
+    state.index = {}
+    state.attrs = {}
+
+    if not sb then return state.index end
+
+    local root = kfs.read_inode(sb, kfs.ROOT_INODE)
+
+    if root then
+      scan(sb, "", root, state.attrs)
+    end
+
+    return state.index
+  end
+
+  -- Something changed at this path. Cheaper than rescanning and, more to
+  -- the point, correct: a rescan would also have to notice everything that
+  -- did *not* change.
+  local function touched(sb, path)
+    if not state.index then return end          -- nothing built yet
+
+    index_remove(path, state.attrs[path])
+    state.attrs[path] = nil
+
+    local number, node = kfs.find(sb, path)
+
+    if number and node and node.kind ~= kfs.KIND_FREE then
+      local attrs = attrs_of(sb, path, node)
+
+      state.attrs[path] = attrs
+      index_add(path, attrs)
+    end
+  end
+
   local function describe()
     local disk, why = sys.disk()
 
@@ -1949,6 +2084,11 @@ local function diskfs_handlers(state)
       end
 
       state.writes = (state.writes or 0) + 1
+
+      -- The size and the modification time just changed, and both are
+      -- indexed whether anybody asked for them or not.
+      touched(sb, req.path)
+
       return { ok = true }
     end,
 
@@ -1971,6 +2111,12 @@ local function diskfs_handlers(state)
         return { ok = false, error = tostring(err) }
       end
 
+      -- `touched` re-reads the path and finds nothing, which removes it.
+      -- One function for "this changed" rather than a separate one for
+      -- "this is gone": the second is the first, and two of them is two
+      -- chances to forget one.
+      touched(sb, req.path)
+
       return { ok = true }
     end,
 
@@ -1990,6 +2136,8 @@ local function diskfs_handlers(state)
       if not ok then
         return { ok = false, error = tostring(err) }
       end
+
+      touched(sb, req.path)
 
       return { ok = true }
     end,
@@ -2107,7 +2255,61 @@ local function diskfs_handlers(state)
         return { ok = false, error = tostring(werr) }
       end
 
+      touched(sb, req.path)
+
       return { ok = true }
+    end,
+
+    --
+    -- Everything matching, now.
+    --
+    -- The first term is looked up in the index and the rest filter what
+    -- came back, so the cost is the size of the *answer* rather than the
+    -- size of the filesystem. That is the entire claim of an indexed
+    -- filesystem, and `qbench` is what checks it stays true.
+    --
+    -- Which term goes first is whichever `pairs` hands over first, which
+    -- is the same real limitation the ramfs has: with two terms of very
+    -- different selectivity, the wrong one first costs more. Choosing
+    -- properly needs per-value counts.
+    --
+    query = function(req)
+      local index = indexed()
+      local where = req.where or {}
+      local first_name, first_value = next(where)
+
+      if first_name == nil then
+        return { ok = true, paths = {} }
+      end
+
+      local bucket = index[first_name]
+      local candidates = bucket and bucket[tostring(first_value)]
+
+      if not candidates then
+        return { ok = true, paths = {} }
+      end
+
+      local out = {}
+
+      for path in pairs(candidates) do
+        local attrs = state.attrs[path]
+        local keep = attrs ~= nil
+
+        if keep then
+          for name, value in pairs(where) do
+            if tostring(attrs[name]) ~= tostring(value) then
+              keep = false
+              break
+            end
+          end
+        end
+
+        if keep then out[#out + 1] = path end
+      end
+
+      table.sort(out)
+
+      return { ok = true, paths = out }
     end,
   }
 end
