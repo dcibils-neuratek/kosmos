@@ -134,6 +134,28 @@ still compiled into the image rather than read from a disk.
 | `/home` | a real disk, real files, journalled | done |
 | `/tmp` | the ramfs, at `/data` today | rename |
 
+**A disk this Mac cannot mount is still a disk this Mac can write.**
+`tools/kfs.lua` runs the filesystem on the development machine, over the
+image file:
+
+```
+build/host/lua tools/kfs.lua create disk.img 64
+build/host/lua tools/kfs.lua put    disk.img book.pdf /home/books/book.pdf
+build/host/lua tools/kfs.lua ls     disk.img /home
+build/host/lua tools/kfs.lua get    disk.img /home/notes.txt notes.txt
+build/host/lua tools/kfs.lua rm     disk.img /home/old
+```
+
+That is the answer to the one real cost of not using FAT32. `make test`
+runs `run_interchange.py`, which writes a file here, reads it inside the
+machine, writes one inside the machine, and reads it back here - because a
+format only one of the two can write is a format that traps everything you
+make in it.
+
+What is still missing compared to a mounted volume is Finder. That would
+be a FUSE filesystem, and the way to build one without a second
+implementation of the format is to embed this same `kfs.lua`.
+
 **Writing files to the disk at build time is now cheap**, and that is new:
 `build/host/lua` runs `kfs.lua` unchanged on the development machine, so
 the same code that formats a disk inside the machine can populate an image

@@ -1267,6 +1267,16 @@ end
 -- an inode table holding one entry: an empty root directory.
 --------------------------------------------------------------------------
 
+-- The directories a Kosmos disk has, made at format time.
+--
+-- `layout.md` describes them: what the system ships, what somebody
+-- installed, what somebody made. They are made here rather than by
+-- whoever mounts the disk because a formatted disk should *be* a Kosmos
+-- disk - the first thing that happened without this was `save notes.txt`
+-- failing on a freshly formatted drive, because `/home` was a mount point
+-- with nothing behind it.
+kfs.LAYOUT = { "/system", "/user", "/home" }
+
 function kfs.mkfs(sectors, now)
   local blocks = sectors // kfs.PER_BLOCK
 
@@ -1349,6 +1359,18 @@ function kfs.mkfs(sectors, now)
   -- and is not.
   local ok, err = kfs.write_block(0, kfs.pack_super(sb))
   if not ok then return nil, "writing the superblock: " .. tostring(err) end
+
+  -- And the layout, now that there is a filesystem to make it in. After
+  -- the superblock rather than before, because `mkdir` needs a mounted
+  -- filesystem to allocate out of - and because a format interrupted
+  -- between the two leaves a valid, empty disk rather than an invalid one.
+  for _, name in ipairs(kfs.LAYOUT) do
+    local made, derr = kfs.mkdir(sb, name, now or 0)
+
+    if not made then
+      return nil, "making " .. name .. ": " .. tostring(derr)
+    end
+  end
 
   return sb
 end

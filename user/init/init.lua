@@ -708,7 +708,11 @@ local function new_namespace()
 
   local ns = {}
 
-  function ns.mount(prefix, capability)
+  --
+  -- `root` is which part of the server appears here. Left out, the whole
+  -- of it does, which is what every mount did before subtrees existed.
+  --
+  function ns.mount(prefix, capability, root)
     --
     -- Mounting over a prefix replaces what was there.
     --
@@ -729,7 +733,7 @@ local function new_namespace()
       end
     end
 
-    mounts[#mounts + 1] = { prefix = prefix, cap = capability }
+    mounts[#mounts + 1] = { prefix = prefix, cap = capability, root = root }
 
     -- Longest prefix first, so /a/b wins over /a regardless of mount order.
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
@@ -770,7 +774,24 @@ local function new_namespace()
     for _, m in ipairs(mounts) do
       if path == m.prefix or path:sub(1, #m.prefix + 1) == m.prefix .. "/" then
         local rest = path:sub(#m.prefix + 1)
-        return m.cap, (rest == "" and "/" or rest), m.prefix
+
+        if rest == "" then rest = "/" end
+
+        -- A mount may name a *subtree* of what the server holds, so one
+        -- disk can appear at three places without three servers. `/system`
+        -- and `/home` are both the same filesystem, at `/system` and
+        -- `/home` inside it - which is what makes the layout in
+        -- `layout.md` possible with one disk and one server.
+        --
+        -- Prepended here rather than by the server, because the server has
+        -- no idea what anybody mounted it as and should not: it answers
+        -- about paths in its own space, and this is the one place that
+        -- knows how this process's names map onto them.
+        if m.root then
+          rest = (rest == "/") and m.root or (m.root .. rest)
+        end
+
+        return m.cap, rest, m.prefix
       end
     end
     return nil
@@ -2636,7 +2657,20 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- this as where user data lives, and the two reserved names at its root -
   -- `.super` and `.format` - are how the disk underneath it is asked about
   -- and laid down.
-  ns.mount("/home", disk_cap)
+  --
+  -- One disk, three names, which is what `layout.md` describes.
+  --
+  --   /system   what the operating system ships
+  --   /user     what somebody installed
+  --   /home     what somebody made
+  --
+  -- All three are the same filesystem and the same server; the mount says
+  -- which part of it appears where. Before subtree mounts this had to be
+  -- the whole disk at one name, and a file written by `mkimage` at
+  -- `/home/notes` arrived as `/home/home/notes`.
+  ns.mount("/system", disk_cap, "/system")
+  ns.mount("/user",   disk_cap, "/user")
+  ns.mount("/home",   disk_cap, "/home")
 
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
@@ -3907,7 +3941,11 @@ if role == ROLE_RUNNER then
   if req.devices then ns.mount("/dev",         req.devices) end
   if req.lib     then ns.mount("/lib",         req.lib)     end
   if req.app     then ns.mount_registry("/app", req.app)    end
-  if req.disk    then ns.mount("/home",        req.disk)    end
+  if req.disk    then
+    ns.mount("/system", req.disk, "/system")
+    ns.mount("/user",   req.disk, "/user")
+    ns.mount("/home",   req.disk, "/home")
+  end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started

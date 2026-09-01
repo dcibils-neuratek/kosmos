@@ -630,6 +630,17 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
 
 .PHONY: all bump bump-minor bump-major qemu serial test disktest powertest screenshot bench bench-record debug disasm size clean dist release disk
 
+# A disk image, built here, with whatever you want already in it.
+#
+#   make image FILES="book.pdf:/home/books/book.pdf song.mp3:/home/music/a.mp3"
+#
+# The same kfs.lua the machine runs, over a file. `tools/kfs.lua` also does
+# ls, put, get and rm on an existing image, which is how a file gets on and
+# off a disk this Mac cannot mount.
+.PHONY: image
+image: $(HOSTDIR)/lua
+	$(HOSTDIR)/lua tools/kfs.lua create $(DISK) $(DISK_MB) $(FILES)
+
 # An empty disk. Made when it is missing and never overwritten by accident:
 # `make disk` after deleting it is a deliberate act, and a build that
 # silently reformatted the disk would be a build that eats the filesystem it
@@ -758,6 +769,9 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# but of the ordinary image rather than the test one: what it checks
 	@# is init and the shell, which the test image replaces.
 	python3 tools/run_headless.py $(TARGET)
+	@# Files on and off the image from this computer, which is what a
+	@# filesystem that is not FAT32 has to answer for.
+	python3 tools/run_interchange.py $(TARGET)
 
 # Power loss, which cannot be asked inside one boot. Not part of `make test`
 # because it boots eleven times and kills five of them.

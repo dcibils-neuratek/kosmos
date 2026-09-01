@@ -46,6 +46,31 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The disk can be written from this Mac.** `tools/kfs.lua` runs the
+  filesystem on the host over the image file: `create`, `ls`, `put`,
+  `get`, `rm`. It is the answer to the one real cost of not using FAT32 -
+  a Mac cannot mount the image, but it can write it. Both directions are
+  tested by `run_interchange.py` in `make test`: a file written here is
+  read inside the machine, and a file written inside is read back here.
+  One implementation of the format, not two, which is what makes it
+  trustworthy.
+
+- **Subtree mounts, and the layout is real.** `ns.mount(prefix, cap,
+  root)` maps a name onto part of a server, so one disk appears as
+  `/system`, `/user` and `/home` - which is what `layout.md` describes and
+  what a single filesystem could not do before. `mkfs` makes those three
+  directories, because a formatted disk should be a Kosmos disk: without
+  it `save notes.txt` failed on a fresh drive, `/home` being a mount point
+  with nothing behind it.
+
+- **Next, decided:** a PDF reader for plain documents - no forms, no
+  encryption - then sound, then Doom. The PDF viewer is more tractable
+  than it looks: `puff` already does Flate, `stb_truetype` already
+  rasterises glyphs, and the blitter already exists. What is left is the
+  object model and the content-stream interpreter, which is structure
+  parsing and belongs in Lua.
+
+
 - **A file can be larger than a message.** `read` takes `into` and `write`
   takes `from` - a capability to shared pages the caller owns - which is
   `read(fd, buf, n)` with the buffer named by a capability instead of a
