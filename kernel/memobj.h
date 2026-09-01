@@ -48,7 +48,22 @@
  * limit beats a flexible one that fails somewhere unpredictable.
  */
 
-#define MEMOBJ_MAX        16
+/*
+ * Two hundred and fifty-six, because a descriptor is forty bytes and a
+ * tiled image wants one per tile.
+ *
+ * It was sixteen, which was enough for a few shared surfaces and nothing
+ * else. A hundred-megabyte image held as one region cannot work here - the
+ * pages are contiguous, for the reason above, and a run of twenty-five
+ * thousand of them fails on any machine that has been up for a while. Held
+ * as tiles it works, and a tile is an ordinary region. So the pool has to
+ * be able to hold a hundred of them.
+ *
+ * The cost is ten kilobytes of .bss for descriptors that are usually empty,
+ * which is the trade this kernel makes everywhere: a fixed shape that fails
+ * at a known limit.
+ */
+#define MEMOBJ_MAX        256
 #define MEMOBJ_PAGES_MAX  4096      /* 16 MB, a double-buffered full screen */
 
 struct memobj {

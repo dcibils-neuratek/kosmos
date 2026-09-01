@@ -825,7 +825,10 @@ local function new_namespace()
     autos[#autos + 1] = { prefix = prefix, cap = capability }
   end
 
-  local function request(op, path, extra)
+  -- `pass` is a capability travelling with the request, which the kernel
+  -- translates into the server's own index for the same object. It is how
+  -- a buffer is handed over for a large read: the pages, not the bytes.
+  local function request(op, path, extra, pass)
     local capability, rest = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
@@ -836,7 +839,7 @@ local function new_namespace()
     local req = { type = op, path = rest }
     if extra then for k, v in pairs(extra) do req[k] = v end end
 
-    local reply, err = sys.call(capability, req)
+    local reply, err = sys.call(capability, req, pass)
     if not reply then return nil, err end
     if not reply.ok then return nil, reply.error end
     return reply
@@ -959,6 +962,86 @@ local function new_namespace()
     end
 
     return table.concat(parts)
+  end
+
+  --
+  -- The same read, without ever holding the whole thing.
+  --
+  --   for piece in fs.chunks("/home/song.mp3") do decode(piece) end
+  --
+  -- `ns.read` streams correctly and then undoes the benefit on its last
+  -- line: it concatenates the pieces, so a four-megabyte file is fetched
+  -- two kilobytes at a time and then fails on a two-megabyte heap. The
+  -- protocol was never the limit. Accumulating was.
+  --
+  -- This is what anything long enough to matter should use - audio being
+  -- the case that asked for it. A round trip is about 1.8 ms and carries
+  -- roughly two kilobytes, so a stream runs at about a megabyte a second,
+  -- which is seventy times what playing an MP3 needs. There is no reason
+  -- to reach for shared pages until something needs to jump around inside
+  -- a large file rather than read it through.
+  --
+  -- Returns an iterator, so the caller writes a `for` loop and the pieces
+  -- are collected by the garbage collector as it goes.
+  --
+  --
+  -- `read(fd, buf, n)`. The file may be any size; the buffer is yours.
+  --
+  --   local buf = sys.memory(16)                    -- 64 KB of pages
+  --   local n = fs.read_into("/home/big.img", buf, 0, 65536)
+  --
+  -- Returns how many bytes arrived, and the file's total size, so a caller
+  -- can walk a large file a window at a time without asking twice.
+  --
+  function ns.read_into(path, region, offset, bytes)
+    local r, e = request("read", path,
+                         { into = true, offset = offset or 0,
+                           bytes = bytes }, region)
+
+    if not r then return nil, e end
+
+    return r.bytes, r.size
+  end
+
+  --
+  -- `write(fd, buf, n)`, the mirror of `read_into`.
+  --
+  function ns.write_from(path, region, bytes)
+    local r, e = request("write", path, { from = true, bytes = bytes },
+                         region)
+
+    if not r then return nil, e end
+
+    return r.bytes
+  end
+
+  function ns.chunks(path)
+    local offset = 0
+    local done = false
+
+    return function()
+      if done then return nil end
+
+      local r, e = request("read", path, { offset = offset })
+
+      if not r then
+        done = true
+        return nil, e
+      end
+
+      local piece = r.value or ""
+
+      offset = offset + #piece
+
+      -- A server that has never heard of `more` answers everything at
+      -- once, and this stops after that one piece rather than asking
+      -- again for ever.
+      if not r.more then done = true end
+
+      if #piece == 0 then return nil end
+
+      return piece
+    end
   end
 
   function ns.write(path, value)
@@ -2039,11 +2122,66 @@ local function diskfs_handlers(state)
       return { ok = true, entries = out }
     end,
 
-    read = function(req)
+    read = function(req, who, cap)
       local name = req.path:match("([^/]+)$")
 
       if name == ".super" or req.path == "/.super" then
         return { ok = true, value = describe() }
+      end
+
+      --
+      -- `read(fd, buf, n)`, with the buffer named by a capability.
+      --
+      -- Unix can copy into the caller's buffer because the kernel can
+      -- reach into the caller's address space. This server is another
+      -- process at EL0 and cannot, so the caller supplies shared pages and
+      -- this writes into those. Same three questions: which file, where to
+      -- put it, how much.
+      --
+      -- Without `into` the bytes come back inside the reply, which is
+      -- right for a settings file and impossible for a large one - the
+      -- message is 2048 bytes, and that was the whole reason a file bigger
+      -- than a message could not be read.
+      --
+      -- Stepped rather than read in one piece, so this process's own heap
+      -- holds sixty-four kilobytes however large the window is. A server
+      -- that read a megabyte into a Lua string to copy it out again would
+      -- have moved the limit rather than removed it.
+      --
+      if req.into then
+        local sb = mounted()
+
+        if not sb then
+          return { ok = false, error = "there is no filesystem here" }
+        end
+
+        local number, node = kfs.find(sb, req.path)
+
+        if not number then
+          return { ok = false, error = tostring(node) }
+        end
+
+        local from = tonumber(req.offset) or 0
+        local want = tonumber(req.bytes) or node.size
+        local STEP = 64 * 1024
+        local done = 0
+
+        while done < want do
+          local piece = kfs.read_range(sb, node, from + done,
+                                       math.min(STEP, want - done))
+
+          if not piece or #piece == 0 then break end
+
+          local ok, err = sys.region_write(cap, done, piece)
+
+          if not ok then
+            return { ok = false, error = tostring(err) }
+          end
+
+          done = done + #piece
+        end
+
+        return { ok = true, bytes = done, size = node.size }
       end
 
       local sb = mounted()
@@ -2099,7 +2237,7 @@ local function diskfs_handlers(state)
                more = (offset + #piece) < #data }
     end,
 
-    write = function(req)
+    write = function(req, who, cap)
       local name = req.path:match("([^/]+)$")
 
       if name == ".format" then
@@ -2135,6 +2273,57 @@ local function diskfs_handlers(state)
 
       if not name or RESERVED[name] then
         return { ok = false, error = "that name is reserved" }
+      end
+
+      --
+      -- The other half of `read(fd, buf, n)`: the bytes come out of pages
+      -- the caller owns rather than out of the message.
+      --
+      -- Without this nothing above about two kilobytes could be written at
+      -- all - reads could stream and writes had a ceiling nothing could
+      -- get past, which is a filesystem that works until you use it.
+      --
+      -- The ceiling that remains is this server's own heap: the bytes are
+      -- assembled here and handed to `store`, which takes a whole file.
+      -- Making `store` take a producer is what lifts that, and it is the
+      -- next piece rather than this one.
+      --
+      if req.from then
+        local want = tonumber(req.bytes) or 0
+
+        if want > 1024 * 1024 then
+          return { ok = false,
+                   error = "more than a megabyte in one write, which this "
+                           .. "server cannot assemble yet" }
+        end
+
+        local parts = {}
+        local done = 0
+
+        while done < want do
+          local piece, rerr = sys.region_read(cap, done,
+                                              math.min(64 * 1024,
+                                                       want - done))
+
+          if not piece then
+            return { ok = false, error = tostring(rerr) }
+          end
+
+          parts[#parts + 1] = piece
+          done = done + #piece
+        end
+
+        local number, serr = atomic(sb, kfs.store, req.path,
+                                    table.concat(parts), sys.ticks())
+
+        if not number then
+          return { ok = false, error = tostring(serr) }
+        end
+
+        state.writes = (state.writes or 0) + 1
+        touched(sb, req.path)
+
+        return { ok = true, bytes = done }
       end
 
       -- A leading dot is ordinary. It was refused for a while, on the

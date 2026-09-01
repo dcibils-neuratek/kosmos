@@ -234,6 +234,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A host Lua, so pure-logic libraries are unit-tested without booting | Makefile, tools/test_kfs.lua |
 | Sep 2026 | The language line is structure vs loops-over-bytes, not platform vs application | design.md §6 |
 | Sep 2026 | Audio: a virtio-snd driver, WAV first, then a vendored MP3 decoder in userland C | design.md §6, state.md |
+| Sep 2026 | Large files cross as `read(fd, buf, n)`: the buffer is a shared region named by a capability | design.md §8.4, layout.md |
+| Sep 2026 | A BeOS-shaped layout: `/system` ships, `/user` is installed, `/home` is yours | layout.md |
 
 ---
 

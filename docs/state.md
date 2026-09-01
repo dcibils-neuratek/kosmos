@@ -46,6 +46,26 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A file can be larger than a message.** `read` takes `into` and `write`
+  takes `from` - a capability to shared pages the caller owns - which is
+  `read(fd, buf, n)` with the buffer named by a capability instead of a
+  pointer, because a server at EL0 cannot dereference the caller's
+  pointer. 200 KB out and back, in one extent, verified across a reboot.
+  Before it, nothing above about two kilobytes could be written at all.
+  `kfs.read_range` is the `pread` underneath, so a window is read without
+  the rest of the file. `MEMOBJ_MAX` is 256, so a tiled image can hold a
+  region per tile.
+
+- **`docs/layout.md`**: what lives where, in the tree and at runtime. A
+  BeOS-shaped runtime layout - `/system` for what ships, `/user` for what
+  is installed, `/home` for what you made - with the caveat that it is a
+  convention init hands out rather than a tree anything can walk. It also
+  records two constraints any "servers in C" plan runs into: every process
+  is currently the same ELF entered at a different role, and there is no
+  dynamic linking, so C system libraries are a build-time fact rather than
+  files.
+
+
 - **A directory bigger than a message lists.** `list` answers in pieces the
   way `read` already did - offset in, `more` out. Before it, `ls` on a
   directory of two hundred files said "the answer does not fit in a

@@ -13,6 +13,7 @@
  * other resource, and reached only by a process that was handed it.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -696,6 +697,130 @@ static int l_memory_map(lua_State *L)
     return 1;
 }
 
+/*
+ * Moving bytes in and out of a shared region.
+ *
+ * This is the buffer half of `read(fd, buf, n)`, and it exists because a
+ * server cannot do what a Unix kernel does. `read` on Unix copies into the
+ * caller's buffer because the kernel can reach into the caller's address
+ * space. A server here is another process at EL0 and cannot, so the buffer
+ * is shared pages both sides hold a capability to, and these two functions
+ * are how bytes cross between such a region and a Lua string.
+ *
+ * The mapping is remembered rather than repeated. `sys.memory_map` bumps
+ * the process's share window every time it is called - it does not hand
+ * back the same address twice - so mapping a region on each access would
+ * walk through four gigabytes of address space and then stop working.
+ * Mapped once here, on first use, and kept.
+ */
+#define MAPPED_MAX 256
+
+static struct {
+    long      cap;
+    uintptr_t at;
+    size_t    bytes;
+} mapped[MAPPED_MAX];
+
+static unsigned mapped_count;
+
+static bool region_of(long cap, uintptr_t *at, size_t *bytes)
+{
+    unsigned i;
+    long pages;
+    long address;
+
+    for (i = 0; i < mapped_count; i++) {
+        if (mapped[i].cap == cap) {
+            *at = mapped[i].at;
+            *bytes = mapped[i].bytes;
+            return true;
+        }
+    }
+
+    if (mapped_count == MAPPED_MAX) {
+        return false;
+    }
+
+    pages = kosmos_mem_size(cap);
+
+    if (pages <= 0) {
+        return false;
+    }
+
+    address = kosmos_mem_map(cap);
+
+    if (address < 0) {
+        return false;
+    }
+
+    mapped[mapped_count].cap = cap;
+    mapped[mapped_count].at = (uintptr_t)address;
+    mapped[mapped_count].bytes = (size_t)pages * 4096u;
+
+    *at = mapped[mapped_count].at;
+    *bytes = mapped[mapped_count].bytes;
+    mapped_count++;
+
+    return true;
+}
+
+/* `sys.region_write(cap, offset, data)` - bytes into the region. */
+static int l_region_write(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    lua_Integer offset = luaL_checkinteger(L, 2);
+    size_t len;
+    const char *data = luaL_checklstring(L, 3, &len);
+    uintptr_t at;
+    size_t bytes;
+
+    if (!region_of(cap, &at, &bytes)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that is not a region this process can map");
+        return 2;
+    }
+
+    /* Bounds first, and against the region's real size rather than against
+     * what the caller believes it is. This is the one place a mistake
+     * writes over memory another process is reading. */
+    if (offset < 0 || (size_t)offset > bytes || len > bytes - (size_t)offset) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that would write past the end of the region");
+        return 2;
+    }
+
+    memcpy((void *)(at + (uintptr_t)offset), data, len);
+
+    lua_pushinteger(L, (lua_Integer)len);
+    return 1;
+}
+
+/* `sys.region_read(cap, offset, bytes)` - and back out again. */
+static int l_region_read(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    lua_Integer offset = luaL_checkinteger(L, 2);
+    lua_Integer want = luaL_checkinteger(L, 3);
+    uintptr_t at;
+    size_t bytes;
+
+    if (!region_of(cap, &at, &bytes)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that is not a region this process can map");
+        return 2;
+    }
+
+    if (offset < 0 || want < 0 || (size_t)offset > bytes
+        || (size_t)want > bytes - (size_t)offset) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that would read past the end of the region");
+        return 2;
+    }
+
+    lua_pushlstring(L, (const char *)(at + (uintptr_t)offset), (size_t)want);
+    return 1;
+}
+
 static int l_memory_size(lua_State *L)
 {
     long pages = kosmos_mem_size((long)luaL_checkinteger(L, 1));
@@ -959,6 +1084,8 @@ static const luaL_Reg sys_functions[] = {
     { "memory",      l_memory },
     { "memory_map",  l_memory_map },
     { "memory_size", l_memory_size },
+    { "region_write", l_region_write },
+    { "region_read",  l_region_read },
     { "disk",        l_disk },
     { "disk_read",   l_disk_read },
     { "disk_write",  l_disk_write },

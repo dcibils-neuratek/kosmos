@@ -128,10 +128,24 @@ def main():
             # A directory larger than one message. `list` answers in
             # pieces the way `read` does, and before it did, `ls` on a
             # directory like this showed nothing at all.
-            'for i = 1, 300 do fs.write("/home/many" .. i, "x") end '
+            # In a directory of their own. They were in /home first, and
+            # that made `ls /home` three hundred lines long - which the
+            # harness waits on over a serial line, and gave up on. A test
+            # that changes the thing another test measures is a test that
+            # breaks its neighbours.
+            'fs.send("/home/many", { type = "mkdir" }) '
+            'for i = 1, 300 do fs.write("/home/many/f" .. i, "x") end '
             'print("MADE MANY")',
-            'local l, e = fs.list("/home") '
+            'local l, e = fs.list("/home/many") '
             'print("LISTED", l and #l or -1, tostring(e))',
+            # A file a hundred times larger than a message, out and back
+            # through pages the caller owns. This is `read(fd, buf, n)`
+            # with the buffer named by a capability, and without it
+            # nothing above about two kilobytes could be written at all.
+            'local buf = sys.memory(64) '
+            'for i = 0, 49 do sys.region_write(buf, i * 4096, '
+            'string.rep(string.char(65 + i % 26), 4096)) end '
+            'print("BIGWROTE", fs.write_from("/home/big", buf, 200 * 1024))',
             "ls /home",
         ])
 
@@ -181,7 +195,13 @@ def main():
                                     # answers can only come from a scan of
                                     # the attributes done on this boot.
                                     "find kind=note",
-                                    "find name=deep.txt"])
+                                    "find name=deep.txt",
+                                    'local b = sys.memory(64) '
+                                    'local got, size = fs.read_into('
+                                    '"/home/big", b, 0, 200 * 1024) '
+                                    'print("BIGREAD", got, size, '
+                                    'sys.region_read(b, 0, 3), '
+                                    'sys.region_read(b, 8192, 3))'])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -203,7 +223,14 @@ def main():
 
             checks += 1
 
-        if "notes.txt" not in second.split("ls /home")[-1]:
+        # The output of `ls /home` and nothing else. Splitting on the
+        # command and taking the last piece used to work by accident: it
+        # landed after `ls /home/papers`, which also contains "ls /home",
+        # and found the name in a later `cat` line instead of in the
+        # listing. It stopped working the moment the directory grew.
+        home_listing = second.split("ls /home/papers")[0].split("ls /home")[-1]
+
+        if "notes.txt" not in home_listing:
             raise Failure(
                 "the file is not in the directory listing after the reboot. "
                 "The superblock survived and the directory did not, which "
@@ -348,6 +375,30 @@ def main():
                 "has to answer in pieces the way `read` does - without it "
                 "the files are all still there and nothing can see them.\n"
                 + first[-600:]
+            )
+
+        checks += 1
+
+        # ---- a file far larger than a message, across a reboot ----
+        big = second.replace("\t", " ").split("BIGREAD")[-1].split()
+
+        if len(big) < 4 or big[0] != "204800" or big[1] != "204800":
+            raise Failure(
+                "a 200 KB file did not come back through a shared buffer. "
+                "A message is 2048 bytes, so this is the only way anything "
+                "larger than that can be read or written at all.\n"
+                + second[-700:]
+            )
+
+        checks += 1
+
+        if big[2] != "AAA" or big[3] != "CCC":
+            raise Failure(
+                "the 200 KB file came back the right length and the wrong "
+                "contents: expected AAA at offset 0 and CCC at 8192, got "
+                f"{big[2]} and {big[3]}. The extents are being walked "
+                "wrongly, which is a file that reads as somebody else's "
+                "data.\n" + second[-700:]
             )
 
         checks += 1

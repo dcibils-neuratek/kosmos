@@ -18,6 +18,7 @@ A personal learning project. There are no users, no compatibility to maintain, n
 **Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware (Pi 5, Pi 1) arrives at milestone 2, once the serial cables are here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
 
 - The layers and how a command crosses them: `docs/architecture.md`
+- What lives where, in the tree and at runtime: `docs/layout.md`
 - Design and the reasoning behind every decision: `docs/design.md`
 - Current state and next step: `docs/state.md` — **read it before proposing anything**
 - Milestones: `docs/roadmap.md`

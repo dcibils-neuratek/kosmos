@@ -672,6 +672,73 @@ end
 -- silently truncating.
 --------------------------------------------------------------------------
 
+--
+-- A window of a file, without reading the rest of it.
+--
+-- `read_file` returns the whole thing as one string, which is right for a
+-- settings file and impossible for a hundred-megabyte one - it would not
+-- fit in the heap, and the heap is for the process's own data anyway.
+--
+-- This is `pread`: give it an offset and a length and it touches only the
+-- blocks that span them. It is the piece that lets a file be larger than
+-- anything that has to hold it - the caller reads a window at a time into
+-- a buffer it owns, which is how every system has done this since the
+-- 1970s.
+--
+-- Walks the extents to find where `offset` lands rather than assuming the
+-- file is contiguous. It usually is - that is what extents are for - and
+-- the walk is over twelve entries at most.
+--
+function kfs.read_range(sb, node, offset, want)
+  if offset >= node.size then return "" end
+
+  if offset + want > node.size then
+    want = node.size - offset
+  end
+
+  local parts = {}
+  local at = 0                     -- where this extent starts in the file
+  local left = want
+
+  for _, e in ipairs(node.extents) do
+    local span = e.count * kfs.BLOCK
+
+    if left <= 0 then break end
+
+    -- Does the window reach into this extent at all?
+    if offset < at + span then
+      local from = math.max(offset, at)
+      local first = (from - at) // kfs.BLOCK
+
+      for i = first, e.count - 1 do
+        if left <= 0 then break end
+
+        local bytes = kfs.read_block(e.start + i)
+
+        if not bytes then return nil, "reading a file" end
+
+        -- Where in this block the window starts. Only the first block of
+        -- the window is ever offset into; the rest begin at zero.
+        local skip = 0
+
+        if at + i * kfs.BLOCK < offset then
+          skip = offset - (at + i * kfs.BLOCK)
+        end
+
+        local piece = bytes:sub(skip + 1, skip + math.min(left,
+                                                          kfs.BLOCK - skip))
+
+        parts[#parts + 1] = piece
+        left = left - #piece
+      end
+    end
+
+    at = at + span
+  end
+
+  return table.concat(parts)
+end
+
 function kfs.read_file(sb, node)
   local parts = {}
   local left = node.size

@@ -148,6 +148,35 @@ check(kfs.read_file(sb, select(2, kfs.find(sb, "/hello"))) == "world",
       "a file reads back")
 
 --------------------------------------------------------------------------
+-- Reading a window of a file, which is how anything large is read.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+-- Big enough to span several blocks and to have a remainder, so the
+-- arithmetic at both ends is exercised rather than only the middle.
+local body = {}
+for i = 1, 3000 do body[i] = string.format("%04d", i % 10000) end
+body = table.concat(body)                      -- 12000 bytes, ~3 blocks
+
+assert(kfs.store(sb, "/long", body, 1))
+
+local _, node = kfs.find(sb, "/long")
+
+check(kfs.read_range(sb, node, 0, 10) == body:sub(1, 10),
+      "a window at the start")
+check(kfs.read_range(sb, node, 4096, 10) == body:sub(4097, 4106),
+      "a window at a block boundary")
+check(kfs.read_range(sb, node, 100, 8000) == body:sub(101, 8100),
+      "a window spanning three blocks")
+check(kfs.read_range(sb, node, 11990, 100) == body:sub(11991),
+      "a window running past the end is clipped to it")
+check(kfs.read_range(sb, node, 12000, 10) == "",
+      "a window starting past the end is empty")
+check(kfs.read_range(sb, node, 0, #body) == body,
+      "and the whole file, a window at a time, is the file")
+
+--------------------------------------------------------------------------
 -- A transaction is invisible until it commits.
 --------------------------------------------------------------------------
 
