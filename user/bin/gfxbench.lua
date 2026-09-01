@@ -31,7 +31,7 @@ local function timed(what, pixels, fn)
   return per_second
 end
 
-local W, H = 608, 700                 -- the Pac-Man window
+local W, H = 608, 700                 -- a maze game's window
 local a = gfx.surface { w = W, h = H }
 local b = gfx.surface { w = W, h = H }
 
@@ -53,7 +53,7 @@ timed("span, one row at a time", W * H, function()
   for y = 0, H - 1 do a:span(0, y, W, 0xff203040) end
 end)
 
--- A disc is what Pac-Man draws five of; a span per row.
+-- A disc is what a maze game draws five of; a span per row.
 timed("disc, radius 15, x1000", 1000 * 30 * 30, function()
   for _ = 1, 1000 do
     for dy = -15, 15 do
@@ -79,7 +79,7 @@ local function budget(name, w, h, fps)
 end
 
 budget("Doom",            320, 200, 35)
-budget("this Pac-Man",    W,   H,   30)
+budget("a maze game",     W,   H,   30)
 budget("a 400x320 window", 400, 320, 30)
 
 print("")

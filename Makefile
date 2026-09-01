@@ -574,7 +574,7 @@ DISK_MB   := 64
 # What to start once the machine is up. Empty means the shell.
 #
 #   make qemu BOOT=wm            straight to the desktop
-#   make qemu BOOT="wm tetris"   the desktop with something on it
+#   make qemu BOOT="wm blocks"   the desktop with something on it
 #
 # Passed through QEMU's fw_cfg, which is how a machine is told what to do
 # without being rebuilt. `opt/` is the namespace QEMU reserves for exactly

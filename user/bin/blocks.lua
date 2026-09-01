@@ -1,7 +1,8 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
--- Tetris.
+-- Falling Blocks.
 --
---   wm tetris
+--   wm blocks
 --
 --   left / right      move
 --   up                rotate
@@ -11,8 +12,8 @@
 --   r                 again, after it ends
 --
 -- **This one is not a direct-rendering window, and that is the interesting
--- part.** `plasma`, `cube3d` and `pacman` all draw every pixel every frame,
--- so they share memory with the compositor and swap buffers. Tetris changes
+-- part.** `plasma` and `cube3d` both draw every pixel every frame,
+-- so they share memory with the compositor and swap buffers. The game changes
 -- a handful of cells once or twice a second - so it sends drawing commands
 -- like every other window, and the compositor owns its pixels.
 --
@@ -32,10 +33,10 @@ local BOARD_W, BOARD_H = COLS * CELL, ROWS * CELL
 local W = BOARD_W + 150
 local H = BOARD_H + 76
 
-local win, err = ui.window{ title = "Tetris", w = W, h = H, x = 200, y = 60 }
+local win, err = ui.window{ title = "Falling Blocks", w = W, h = H, x = 200, y = 60 }
 
 if not win then
-  print("tetris: " .. tostring(err))
+  print("blocks: " .. tostring(err))
   return
 end
 

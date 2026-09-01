@@ -118,6 +118,12 @@ def main():
             "mkdir /home/papers",
             "save papers/deep.txt inside a directory",
             'fs.write("/home/kept", { palette = "light", n = 42 })',
+            # Attributes, which is the half of this filesystem that is not
+            # ext2. Set on the first boot and asked for on the second: the
+            # whole question is whether a thing said *about* a file lasts
+            # as long as the file does.
+            "attr /home/notes.txt kind=note author=diego",
+            "attr /home/notes.txt size=999",
             "ls /home",
         ])
 
@@ -161,7 +167,8 @@ def main():
                                     "cat /home/papers/deep.txt",
                                     'local t = fs.read("/home/kept"); '
                                     'print("kept:", type(t), t and t.palette, '
-                                    't and t.n)'])
+                                    't and t.n)',
+                                    "attr /home/notes.txt"])
 
         if "filesystem: none" in second or "filesystem: version" not in second:
             raise Failure(
@@ -231,6 +238,47 @@ def main():
                     "and never decoded, or it was stored as nothing at "
                     "all.\n" + second
                 )
+
+        checks += 1
+
+        # ---- attributes ----
+        #
+        # A file's contents surviving and the things said about it not
+        # surviving would be a filesystem that is ext2 and nothing more.
+        # This is the part that makes it worth having written.
+        after = second.split("attr /home/notes.txt")[-1]
+
+        for name, value in (("kind", "note"), ("author", "diego")):
+            if name not in after or value not in after:
+                raise Failure(
+                    f"the attribute `{name}` did not survive the reboot. "
+                    "The file came back and what was said about it did "
+                    "not, which means the attribute block is not being "
+                    "written, or the inode is not being pointed at it.\n"
+                    + second
+                )
+
+            checks += 1
+
+        # And the derived ones are still the file's own. `size=999` was
+        # offered on the first boot and has to have been refused: a stored
+        # size is a second copy of a fact, and the failure it produces is a
+        # listing that disagrees with the file months later.
+        if "999" in after:
+            raise Failure(
+                "`size` was stored as an attribute. It is read out of the "
+                "inode, so there are now two answers to how big this file "
+                "is, and they will disagree the moment it is written to.\n"
+                + second
+            )
+
+        checks += 1
+
+        if "not something you can set" not in first:
+            raise Failure(
+                "setting `size` was not refused out loud. Quietly dropping "
+                "it leaves the caller believing it was stored.\n" + first
+            )
 
         checks += 1
 

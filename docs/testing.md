@@ -349,3 +349,58 @@ The general lesson is not about screens. **A test suite that always
 provides every device only ever tests the machine you have.** The absent
 device is a configuration, and it is the configuration real hardware
 arrives in.
+
+---
+
+## 18.10 A score for a machine
+
+`make bench` answers "did this change make it slower", under `-icount`, on
+this desk. It cannot answer "is this board faster than that board", and
+that question arrives the moment there is more than one board.
+
+`score` is the answer to the second one, and `sysbench` is the same thing
+with a window. Twenty-two measurements in six groups - processor, memory,
+runtime, kernel, graphics, filesystem - taking about two minutes, ending
+in one number.
+
+**Fixed time, not fixed work.** Each measurement runs for four seconds and
+counts what it got through. Fixed work would take four seconds here and
+eleven minutes on a Pi 1, and the slow machine is the one most worth
+measuring. This way the run costs the same everywhere and the slow machine
+simply reports smaller numbers.
+
+**The batch size is found, not chosen.** Start at one iteration and double
+until a batch lasts long enough to time honestly. Nothing has to be tuned
+per target, which is the property that makes the same code meaningful on a
+machine a hundred times slower.
+
+**A batch size that changes what a unit costs is a broken measurement.**
+The string test originally appended *n* strings to one table and joined it,
+so the work per unit depended on the batch the calibrator happened to pick.
+It read as ordinary noise - 39,000 one run and 50,000 the next, same
+machine, nothing changed. It is now a fixed thirty-two strings per
+iteration. Any test whose per-unit cost varies with *n* can only compare a
+machine to itself, and barely that.
+
+**Never infer a count from a return value.** Batches used to return a
+running total so it was obvious the loop did something, and the harness
+could not tell that apart from a declared unit count. The integer test
+reported twenty-seven billion operations a second - about forty times what
+the hardware can retire, and really just the value of `x`. Units are
+declared in their own field now.
+
+**The scores are a geometric mean**, because they are ratios. The
+arithmetic mean of "twice as fast at one thing, half as fast at another" is
+1.25, which claims the machine is better when it is exactly even.
+
+**The windowed one is slower than the printed one, and that is real.**
+Painting the results costs the machine being measured. Throttled to twice a
+second it lands within about twenty percent of `score`; the rest is the
+desktop honestly running. `score` is the number to quote, and it is the one
+a new board can produce over a serial cable with no display attached -
+which is the state every board arrives in.
+
+And the standing warning applies harder here than anywhere: **under
+emulation this measures the host, the emulator and the guest at once.**
+Comparing a QEMU run against a real board is comparing nothing to nothing.
+

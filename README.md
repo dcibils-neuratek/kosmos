@@ -225,6 +225,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | Fonts are embedded, wallpapers are not: the image is copied per process | gfx.md §19.12 |
 | Aug 2026 | A font server is for containing the parser, not for saving memory; shared image pages are what save memory | gfx.md §19.13 |
 | Aug 2026 | A grant is asked for only when the machine can give it: a refused spawn is a server that does not start | design.md §17, testing.md |
+| Sep 2026 | Kosmos is MIT, and every file we write carries a one-line notice | LICENSE, CLAUDE.md |
+| Sep 2026 | Attributes live in one block per file, pointed at by the inode; kind is structural only for directories | kfs.lua, gfx.md |
+| Sep 2026 | A cross-machine benchmark measures for fixed time, never fixed work | testing.md §18.10 |
+| Sep 2026 | The benchmark engine is a library; `score` prints it and `sysbench` draws it | testing.md §18.10 |
 
 ---
 

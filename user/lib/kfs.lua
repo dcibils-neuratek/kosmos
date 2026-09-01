@@ -576,6 +576,116 @@ local function walk(sb, parts, count)
   return number, node
 end
 
+--------------------------------------------------------------------------
+-- Attributes.
+--
+-- BFS's idea and BFS's semantics: an attribute belongs to the file, it is
+-- typed, and it is not part of the contents. A picture's caption travels
+-- with the picture, and reading the picture does not read the caption.
+--
+-- **One block, and the inode points at it.** Not an extent list, because
+-- these are small typed values - a title, a rating, a kind - and four
+-- kilobytes of them on one file is already more than anything here has
+-- wanted. If that stops being true the field is still just a block number,
+-- and growing it into a list is a change to these two functions and to
+-- nothing else.
+--
+-- **Serialised with `sys.pack`**, which is the serialiser an IPC message
+-- already uses and the one a table stored in a file already uses. A
+-- filesystem inventing a second way to write a Lua table down would be two
+-- formats to keep in agreement, and they would drift.
+--
+-- **`attrs = 0` means there are none.** Zero is safe as "none" because
+-- block 0 is the superblock and can never be an attribute block. Every new
+-- inode and everything `mkfs` writes already leaves it at zero, which is
+-- why this could be added without touching the format.
+--
+-- What is *not* stored here: kind, size, modification time, how many
+-- extents. Those are in the inode, they are facts about the file, and a
+-- second copy of a fact is a copy that can disagree. It is the same
+-- argument design.md 8.3 makes for not storing the index.
+--------------------------------------------------------------------------
+
+function kfs.read_attrs(sb, node)
+  if not node or node.attrs == 0 then return {} end
+
+  local bytes, err = kfs.read_block(node.attrs)
+
+  if not bytes then return nil, err end
+
+  -- A length in front, because the block is padded with NULs out to 4096
+  -- and the serialiser cannot tell where the value it wrote ended.
+  local n = string.unpack("<I4", bytes)
+
+  if n == 0 or n > kfs.BLOCK - 4 then
+    return nil, "this is not an attribute block"
+  end
+
+  local value, perr = sys.unpack(bytes:sub(5, 4 + n))
+
+  if type(value) ~= "table" then
+    return nil, "the attributes did not unpack: " .. tostring(perr)
+  end
+
+  return value
+end
+
+function kfs.write_attrs(sb, number, node, attrs)
+  -- Nothing left to say about this file, so the block goes back. A
+  -- filesystem that keeps an empty block per attribute somebody set once
+  -- and then cleared is a filesystem that leaks, slowly, in a way nobody
+  -- notices until it is out of space.
+  if next(attrs) == nil then
+    if node.attrs ~= 0 then
+      kfs.free_block(sb, node.attrs)
+      node.attrs = 0
+      return kfs.write_inode(sb, number, node)
+    end
+
+    return true
+  end
+
+  local packed, perr = sys.pack(attrs)
+
+  if not packed then return nil, tostring(perr) end
+
+  if #packed > kfs.BLOCK - 4 then
+    return nil, "more attributes than fit in a block"
+  end
+
+  local block = node.attrs
+
+  if block == 0 then
+    local got, aerr = kfs.alloc_block(sb)
+
+    if not got then return nil, aerr end
+
+    block = got
+  end
+
+  -- The block before the inode, and the order matters. Interrupted between
+  -- the two, this has written a block nothing points at: a leak, which
+  -- `fsck` can find and which harms nobody meanwhile. The other order
+  -- leaves an inode pointing at a block that was never written, which is a
+  -- file whose attributes are whatever used to be there. Mirror of the
+  -- ordering `unlink` uses, and for the same reason.
+  local ok, werr = kfs.write_block(block,
+                                   string.pack("<I4", #packed) .. packed)
+
+  if not ok then
+    if node.attrs == 0 then kfs.free_block(sb, block) end
+
+    return nil, werr
+  end
+
+  if node.attrs ~= block then
+    node.attrs = block
+    return kfs.write_inode(sb, number, node)
+  end
+
+  return true
+end
+
 -- What is at this path.
 function kfs.find(sb, path)
   local parts, err = split(path)
@@ -776,6 +886,12 @@ function kfs.unlink(sb, path)
     for i = 0, e.count - 1 do
       kfs.free_block(sb, e.start + i)
     end
+  end
+
+  -- Including whatever was said about it. Forgetting this is the leak that
+  -- only shows up on a disk that has had files come and go for a while.
+  if node.attrs ~= 0 then
+    kfs.free_block(sb, node.attrs)
   end
 
   return kfs.write_inode(sb, victim, { kind = kfs.KIND_FREE, links = 0,

@@ -250,7 +250,7 @@ Three consequences, and two of them were already true by accident:
   (`BATCH_BYTES`). That is this same rule one layer up, at the IPC boundary
   instead of the Lua/C one.
 - **Direct rendering is not the fast road.** It is the road for something
-  that redraws wholesale. Pac-Man was direct *and* slow, because it was
+  that redraws wholesale. The maze game was direct *and* slow, because it was
   making four hundred small calls a frame; making the transport free did
   nothing about the crossings in front of it.
 - **Doom is the ideal shape.** It renders a frame inside its own C loop and

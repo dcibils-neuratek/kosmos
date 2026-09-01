@@ -5,6 +5,11 @@ readable on its own, and ordered so that reading front to back also works.
 
 Chapters are `NN-name.md` in this folder and are composed into one PDF.
 
+Diagrams are ASCII inside a fenced block, the way `architecture.md` already
+does it. They survive every format the text might end up in, they diff
+cleanly, and a picture that has to be redrawn in a separate tool is a
+picture that goes stale the first time the design moves.
+
 **What this is not.** `docs/` is for somebody about to change the code:
 terse, current, and it assumes you have the tree open. This is for somebody
 learning how the thing works, read in order. The documents are the source
@@ -23,7 +28,7 @@ follows the building.
 
 | | Chapter | Sources that already exist |
 |---|---|---|
-| 01 | What Kosmos is, and who it is for | `design.md` §1, §15 |
+| 01 | What Kosmos is, and who it is for - **written** | `design.md` §1, §15 |
 | 02 | Thirty years of taking notes | *new* — the systems tried, what each taught |
 | 03 | Learning by doing: the method | `CLAUDE.md`, `testing.md` §18.7 |
 | 04 | The principles, and why they are not laws | `CLAUDE.md` Principles |

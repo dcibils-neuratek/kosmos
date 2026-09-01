@@ -1434,8 +1434,13 @@ local function binfs_handlers(state)
       --
       -- Whether it draws.
       --
-      -- A program declares it, on its first line, with `-- kosmos:
-      -- application`. Guessing instead - looking for `ui.window` in the
+      -- A program declares it in its opening comment block, with
+      -- `-- kosmos: application`. Anywhere in that block, so the copyright
+      -- line every file carries can sit above it - it used to have to be
+      -- line one, and the day the licence header arrived every
+      -- application in here became a console program.
+      --
+      -- Guessing instead - looking for `ui.window` in the
       -- source, say - would be a store deciding what a program is by
       -- reading it, and would be wrong the first time somebody wrote the
       -- name in a comment.
@@ -1478,9 +1483,43 @@ local function binfs_main(endpoint, source, what)
   local windowed = {}
   local needs = {}
 
+  -- The comment block a file opens with, and nothing after it.
+  --
+  -- Written as a loop rather than a pattern because a pattern that does
+  -- this is a pattern nobody can read six months later, and this is the
+  -- code that decides whether something is an application at all.
+  local function header_of(source)
+    local lines = {}
+
+    for line in source:gmatch("([^\n]*)\n?") do
+      local trimmed = line:match("^%s*(.-)%s*$")
+
+      if trimmed ~= "" and not trimmed:match("^%-%-") then
+        break
+      end
+
+      lines[#lines + 1] = line
+    end
+
+    return table.concat(lines, "\n")
+  end
+
   for name, source in pairs(programs) do
-    -- The first line marks a graphical application, as it always has.
-    if source:match("^[^\n]*kosmos:%s*application") then
+    -- Anywhere in the file's opening comment block, not on the first line.
+    --
+    -- It used to have to be line one, and that broke the moment every file
+    -- grew a copyright line above its description: every application in
+    -- /bin quietly became a console program and the Deskbar emptied out.
+    -- The manifest belongs to the header comment, and where in the header
+    -- it sits is not something a program should have to get right.
+    --
+    -- The block ends at the first line that is not a comment and not
+    -- blank, so nothing found in the body counts - a string in the middle
+    -- of a program that happens to contain these words is not a
+    -- declaration.
+    local header = header_of(source)
+
+    if header:match("kosmos:%s*application") then
       windowed[name] = true
     end
 
@@ -1687,6 +1726,18 @@ end
 -- The dot is what keeps them from colliding with an ordinary file: nothing
 -- creates a name starting with one, and `store` refuses to.
 local RESERVED = { [".super"] = true, [".format"] = true }
+
+-- The attributes that are read out of the inode rather than stored beside
+-- it. `getattr` always reports these and `setattr` always refuses them.
+--
+-- `kind` is deliberately not in the list, and it took a failing test to
+-- see why. A directory's kind is structural - it is what the inode says,
+-- and nobody may set it. A *file's* kind is the BeOS idea: a People file
+-- is a node whose kind is `person`, with an address and a phone number and
+-- nothing inside it, and `attr notes.txt kind=note` is the documented way
+-- to say so. One name, derived in one case and free in the other, which is
+-- why it is handled where the node is in hand rather than in this table.
+local DERIVED = { size = true, mtime = true, extents = true }
 
 -- What marks a file as holding a serialised value rather than bytes.
 --
@@ -1961,16 +2012,102 @@ local function diskfs_handlers(state)
         return { ok = false, error = tostring(node) }
       end
 
-      return { ok = true, attrs = {
-        kind  = (node.kind == kfs.KIND_DIR) and "directory" or "file",
-        size  = node.size,
-        mtime = node.mtime,
-        -- How the file is laid out on the disk. Not something a filesystem
-        -- usually tells you, and worth telling here: this is a machine for
-        -- learning how one works, and "one extent" versus "nine" is the
-        -- whole of what fragmentation means.
-        extents = #node.extents,
-      } }
+      -- What somebody said about this file, and then what the file
+      -- actually is. In that order deliberately: the derived four are
+      -- facts read out of the inode a moment ago, and they overwrite
+      -- anything stored under the same name rather than being overwritten
+      -- by it. `setattr` refuses those names anyway, so this is a second
+      -- lock on a door that is already locked - which is the right number
+      -- of locks for the answer to "how big is this file".
+      local attrs, aerr = kfs.read_attrs(sb, node)
+
+      if not attrs then
+        return { ok = false, error = tostring(aerr) }
+      end
+
+      -- A directory's kind is what it is. A file's is whatever was said
+      -- about it, and `file` only when nothing was.
+      attrs.kind  = (node.kind == kfs.KIND_DIR) and "directory"
+                    or attrs.kind or "file"
+      attrs.size  = node.size
+      attrs.mtime = node.mtime
+      -- How the file is laid out on the disk. Not something a filesystem
+      -- usually tells you, and worth telling here: this is a machine for
+      -- learning how one works, and "one extent" versus "nine" is the
+      -- whole of what fragmentation means.
+      attrs.extents = #node.extents
+
+      return { ok = true, attrs = attrs }
+    end,
+
+    -- Attributes, which is the half of this filesystem that is not ext2.
+    --
+    -- BFS's semantics: they belong to the file, they are typed, and they
+    -- are not its contents. `attr` and `find` already worked this way
+    -- against the ramfs; this is the same protocol answered by something
+    -- that survives the power going off.
+    setattr = function(req)
+      local sb = mounted()
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      if type(req.attrs) ~= "table" then
+        return { ok = false, error = "setattr wants a table of attributes" }
+      end
+
+      local name = req.path:match("([^/]+)$")
+
+      if not name or RESERVED[name] then
+        return { ok = false, error = "that name is the disk, not a file" }
+      end
+
+      local number, node = kfs.find(sb, req.path)
+
+      if not number then
+        return { ok = false, error = tostring(node) }
+      end
+
+      local attrs, aerr = kfs.read_attrs(sb, node)
+
+      if not attrs then
+        return { ok = false, error = tostring(aerr) }
+      end
+
+      for k, v in pairs(req.attrs) do
+        -- Refused rather than quietly dropped. These four are read out of
+        -- the inode on every `getattr`, so storing them would create a
+        -- second copy of a fact - and the failure that produces is a
+        -- `find` that returns a file whose size is wrong, months later,
+        -- with nothing to point at. A caller that tries finds out now.
+        -- Refused rather than quietly dropped, and refused before
+        -- anything is written: a set that mentions one name it cannot
+        -- have stores none of the others either. Half-applying it would
+        -- leave the caller with no way to know which half.
+        if DERIVED[k] or (k == "kind" and node.kind == kfs.KIND_DIR) then
+          return { ok = false,
+                   error = "`" .. k .. "` is what this is, not something "
+                           .. "you can set; nothing was written" }
+        end
+
+        -- nil is how an attribute is removed, and `pairs` cannot carry
+        -- one, so the empty string means the same thing. The alternative
+        -- is a `delattr` in the protocol for a case this rare.
+        if v == "" then
+          attrs[k] = nil
+        else
+          attrs[k] = v
+        end
+      end
+
+      local ok, werr = kfs.write_attrs(sb, number, node, attrs)
+
+      if not ok then
+        return { ok = false, error = tostring(werr) }
+      end
+
+      return { ok = true }
     end,
   }
 end
@@ -2751,7 +2888,7 @@ your filesystem back.
   -- Run through the ordinary command path rather than by a special case,
   -- so `boot=wm` and typing `wm` are the same thing and there is one way a
   -- program starts. Anything in /bin works, with arguments:
-  -- `string=wm tetris` opens the desktop with Tetris on it.
+  -- `string=wm blocks` opens the desktop with a game on it.
   --
   -- It is a *command line* option and not a setting on disk, because it is
   -- how you decide what this boot is for - and a machine that will not

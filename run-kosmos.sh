@@ -5,7 +5,7 @@
 #   ./run-kosmos.sh                 a window, with the shell on this terminal
 #   ./run-kosmos.sh -r 1920x1080    at that size, if a build of it is here
 #   ./run-kosmos.sh -b wm           straight to the desktop
-#   ./run-kosmos.sh -b "wm tetris"  with something on it
+#   ./run-kosmos.sh -b "wm blocks"  with something on it
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
@@ -46,7 +46,7 @@ want_size="no"
 # What to start once it is up. Empty means the shell.
 #
 #   ./run-kosmos.sh -b wm            straight to the desktop
-#   ./run-kosmos.sh -b "wm tetris"   with something on it
+#   ./run-kosmos.sh -b "wm blocks"   with something on it
 boot=""
 want_boot="no"
 

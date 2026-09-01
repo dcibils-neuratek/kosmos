@@ -46,6 +46,32 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Kosmos is MIT.** `LICENSE` at the root, and every file this project
+  writes carries a one-line notice above its description. Vendored code is
+  untouched and its licences are named in `LICENSE`. `assets2c.py` now
+  repeats each vendored file's licence in the generated C and warns when
+  one has none - which found two fonts and an image that have none.
+
+- **Attributes on the disk.** One block per file, pointed at by the inode
+  field that had been reserved and zero since the format was laid down, and
+  serialised with the same `sys.pack` a message uses. `kind`, `size`,
+  `mtime` and the extent count are read from the inode and refused by
+  `setattr`: a stored copy of a fact is a copy that can disagree. `kind` is
+  the exception and it took a failing test to see why - structural for a
+  directory, free for a file, because a People file's kind is `person`.
+  Nineteen checks in `make disktest` now, across two boots.
+
+- **A benchmark for comparing machines.** `score` prints it, `sysbench`
+  draws it, and both are the same engine in `/lib/bench.lua`. Twenty-two
+  measurements in six groups, two minutes, one number. Fixed time rather
+  than fixed work, so a Pi 1 takes the same two minutes and reports smaller
+  numbers. `testing.md` 18.10 has the three mistakes that had to be fixed
+  before any of it meant anything.
+
+- **Pac-Man is gone and Tetris is `blocks`**, titled Falling Blocks. Names
+  somebody else owns are not worth the trouble on a public repository.
+
+
 - **Outline fonts, with three roles.** `stb_truetype` vendored unmodified,
   TrueType and CFF, so `.otf` works as well as `.ttf`. The build embeds
   whatever is in `assets/fonts/`, so adding a face is dropping a file there.

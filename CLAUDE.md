@@ -31,6 +31,35 @@ A personal learning project. There are no users, no compatibility to maintain, n
 
 ---
 
+## Licence and the header every file carries
+
+**Kosmos is MIT, and the terms are in `LICENSE`.**
+
+**Every file this project writes opens with one line saying so**, above its
+descriptive comment and below nothing:
+
+```
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.     (Lua)
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */  (C)
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.     (Python, sh)
+```
+
+One line, not a fifteen-line block. The full text lives in `LICENSE` and
+repeating it in three hundred files would be three hundred copies to keep
+in step.
+
+**Vendored files do not get it.** `lua/upstream/`, `runtime/upstream/` and
+`assets/` carry their authors' notices exactly as shipped, and adding a
+line to them would be modifying them - which is the one thing the rule
+about vendored code forbids. Their licences are named in `LICENSE`.
+
+**`-- kosmos: application` may sit anywhere in the opening comment block**,
+not only on the first line. It used to have to be first, and the copyright
+line above it turned every application in `/bin` into a console program
+with an empty Deskbar to show for it.
+
+---
+
 ## Language
 
 **Everything in this repository is written in English.** Documents, source code, comments, identifiers, commit messages, test names, log output, error strings. No exceptions, including in Lua code and in strings printed over the UART.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Boots a machine with no display and checks it still gets a shell.
 
 Every other runner here attaches `-device ramfb`, because every other runner
