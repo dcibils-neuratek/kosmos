@@ -2561,6 +2561,7 @@ static bool test_block_refuses_past_the_end(void)
 
 static bool test_gfx_triangles(void)                   { return luatest_role(30); }
 static bool test_g3d_orientation(void)                 { return luatest_role(31); }
+static bool test_kill_is_parent_only(void)             { return luatest_role(32); }
 
 static bool test_shared_memory_is_freed_once(void)
 {
@@ -3445,6 +3446,7 @@ static const struct test tests[] = {
     { "blk: past the end is refused",          test_block_refuses_past_the_end },
     { "gfx: triangles fill and meet",          test_gfx_triangles },
     { "3d: the near faces are the drawn ones", test_g3d_orientation },
+    { "kill: a sibling may not be ended",      test_kill_is_parent_only },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },

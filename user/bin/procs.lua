@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: needs processes
 -- Every process, and what it is costing.
 --
 -- BeOS's ProcessController, which put a bar beside each team and let you
@@ -239,8 +240,17 @@ function sampler:tick()
   totals.procs = #rows
   totals.threads = k and k.threads or 0
 
-  heading.text = ("%d processes, %d threads, share of the last second")
-                 :format(totals.procs, totals.threads)
+  -- What is in this list and what is not.
+  --
+  -- **Every row is a process at EL0.** There is no such thing here as a
+  -- process running in the kernel: Nebula has threads of its own - the idle
+  -- thread among them - and they are not processes and do not appear.
+  -- Saying so is more useful than a column that reads "user" on every line,
+  -- and it is the microkernel's shape stated out loud: the filesystem, the
+  -- console and the desktop are all in this list, and the kernel is not.
+  heading.text = ("%d processes at EL0, %d threads; %d kernel thread(s) not listed")
+                 :format(totals.procs, totals.threads,
+                         math.max(0, totals.threads - totals.procs))
 end
 
 win:add(sampler)

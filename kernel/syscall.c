@@ -252,6 +252,10 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         return SYS_ERR_DENIED;
     }
 
+    if ((flags & SPAWN_PROCCTL) != 0 && !p->owns_procctl) {
+        return SYS_ERR_DENIED;
+    }
+
     if ((flags & SPAWN_SCREEN) != 0 && !p->owns_screen) {
         return SYS_ERR_DENIED;
     }
@@ -281,6 +285,10 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
     if ((flags & SPAWN_DISK) != 0 && !process_grant_disk(child)) {
         process_abandon(child);
         return SYS_ERR_NO_ROOM;
+    }
+
+    if ((flags & SPAWN_PROCCTL) != 0) {
+        process_grant_procctl(child);
     }
 
     if ((flags & SPAWN_SCREEN) != 0 && !process_grant_screen(child)) {
@@ -738,8 +746,16 @@ void syscall_dispatch(struct trapframe *tf)
          * that started something may end it, and holding a capability to
          * somebody is not the same as being allowed to kill them.
          */
-        result = (process_kill(p, (unsigned)tf->x[0]) == 0)
-                 ? 0 : SYS_ERR_NO_CHILD;
+        if (p->owns_procctl) {
+            /* Granted authority over every process. See SPAWN_PROCCTL: the
+             * rule is not relaxed, one process is trusted with more than
+             * it. */
+            result = (process_kill_any((unsigned)tf->x[0]) == 0)
+                     ? 0 : SYS_ERR_NO_CHILD;
+        } else {
+            result = (process_kill(p, (unsigned)tf->x[0]) == 0)
+                     ? 0 : SYS_ERR_NO_CHILD;
+        }
         break;
 
     case SYS_WAIT_INPUT:

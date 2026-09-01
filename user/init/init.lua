@@ -39,6 +39,11 @@ local SPAWN_SCREEN  = 2
 -- screen, and the reason is stronger.
 local SPAWN_DISK    = 4
 
+-- Authority over every process, for the task manager and nothing else.
+-- Declared by the program, granted by whoever launches it, and refused by
+-- the kernel when the launcher does not hold it itself.
+local SPAWN_PROCCTL = 8
+
 local function line(s) sys.write(s .. "\n") end
 
 --------------------------------------------------------------------------
@@ -1415,6 +1420,10 @@ local function binfs_handlers(state)
       return { ok = true, attrs = {
         size = #source,
         kind = state.windowed[name] and "application" or "program",
+
+        -- What it declared it needs, so a launcher can decide what to
+        -- grant without reading the source itself.
+        needs = state.needs[name],
       } }
     end,
 
@@ -1440,14 +1449,37 @@ local function binfs_main(endpoint, source, what)
 
   local programs = chunk()
   local windowed = {}
+  local needs = {}
 
   for name, source in pairs(programs) do
+    -- The first line marks a graphical application, as it always has.
     if source:match("^[^\n]*kosmos:%s*application") then
       windowed[name] = true
     end
+
+    -- And a program may declare an authority it needs, which is the small
+    -- beginning of `design.md` 9.2's manifest.
+    --
+    --   -- kosmos: needs processes
+    --
+    -- Read here rather than by whoever launches it, because /bin is what
+    -- holds the source and reading several kilobytes to check one line
+    -- would be a launcher paying for a fact this server already has. The
+    -- launcher asks `getattr` and gets a list.
+    local declared = source:match("kosmos:%s*needs%s+([^\n]*)")
+
+    if declared then
+      local wanted = {}
+
+      for word in declared:gmatch("%a+") do
+        wanted[#wanted + 1] = word
+      end
+
+      needs[name] = wanted
+    end
   end
 
-  serve(endpoint, { programs = programs, windowed = windowed },
+  serve(endpoint, { programs = programs, windowed = windowed, needs = needs },
         binfs_handlers)
 end
 
@@ -2438,10 +2470,21 @@ your filesystem back.
     local ep = sys.endpoint()
     if not ep then return false, "no endpoint for the program" end
 
+    -- What the program declared, and what this process may actually hand
+    -- on. A declaration is a request, never a grant: the kernel refuses a
+    -- flag the parent does not hold, so a program that asks for authority
+    -- nobody gave this shell simply does not get it.
+    local flags = SPAWN_SCREEN
+    local attrs = ns.getattr(path)
+
+    for _, want in ipairs(attrs and attrs.needs or {}) do
+      if want == "processes" then flags = flags | SPAWN_PROCCTL end
+    end
+
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
                                         app_cap, disk_cap },
-                         SPAWN_SCREEN)
+                         flags)
 
     if not id then
       sys.destroy(ep)
@@ -2927,7 +2970,19 @@ if role == ROLE_INIT then
   local shell = start("the shell", ROLE_SHELL,
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP },
-                      SPAWN_SCREEN)
+                      -- The screen, and authority over processes.
+                      --
+                      -- The shell needs the second in order to *pass it
+                      -- on*: the desktop declares it needs it, and the task
+                      -- manager declares it to the desktop. The kernel
+                      -- refuses a flag the parent does not hold, so without
+                      -- this the chain breaks at the first link and the
+                      -- desktop will not start at all - which is what
+                      -- happened, and is the model saying no correctly.
+                      --
+                      -- It also makes a `kill` command in the shell
+                      -- possible, which is where it belongs.
+                      SPAWN_SCREEN | SPAWN_PROCCTL)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.
@@ -3229,7 +3284,17 @@ if role == ROLE_RUNNER then
       end
     end
 
-    local id = sys.spawn(RUNNER_ROLE, caps, SPAWN_SCREEN)
+    -- What the child declared it needs. The kernel refuses any flag this
+    -- process does not itself hold, so a program cannot ask its way to
+    -- authority the desktop was never given.
+    local flags = SPAWN_SCREEN
+    local attrs = ns.getattr(path)
+
+    for _, want in ipairs(attrs and attrs.needs or {}) do
+      if want == "processes" then flags = flags | SPAWN_PROCCTL end
+    end
+
+    local id = sys.spawn(RUNNER_ROLE, caps, flags)
 
     if not id then
       sys.destroy(ep)

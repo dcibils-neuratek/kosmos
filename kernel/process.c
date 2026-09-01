@@ -100,7 +100,8 @@ unsigned process_table(struct proc_info *out, unsigned max)
         out[n].caps      = thread_cap_count(p->thread);
         out[n].owns      = (p->owns_console ? 1u : 0u)
                          | (p->owns_screen ? 2u : 0u)
-                         | (p->owns_disk ? 4u : 0u);
+                         | (p->owns_disk ? 4u : 0u)
+                         | (p->owns_procctl ? 8u : 0u);
 
         memcpy(out[n].name, p->name, sizeof(out[n].name) - 1);
         out[n].name[sizeof(out[n].name) - 1] = '\0';
@@ -408,6 +409,13 @@ void process_grant_console(struct process *p)
     }
 }
 
+void process_grant_procctl(struct process *p)
+{
+    if (p != NULL) {
+        p->owns_procctl = true;
+    }
+}
+
 bool process_grant_disk(struct process *p)
 {
     struct blkdev dev;
@@ -464,6 +472,43 @@ bool process_grant_screen(struct process *p)
  * says so with a panic rather than behaving like cleanup and acting like
  * suicide.
  */
+/*
+ * The same, for a process that holds SPAWN_PROCCTL.
+ *
+ * Written as its own function rather than as a NULL parent, because a NULL
+ * parent already means something here - a process init did not start - and
+ * a flag that turns a safety check off is the kind of parameter that gets
+ * passed by accident. Two names, one of which no ordinary caller has.
+ *
+ * init itself is refused. Ending it ends the system, and doing that by
+ * clicking a row in a task manager is not a power worth having; the machine
+ * has a reset for that.
+ */
+int process_kill_any(unsigned id)
+{
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        struct process *c = &processes[i];
+
+        if (!c->in_use || c->id != id) {
+            continue;
+        }
+
+        if (c->parent == NULL) {
+            return -1;              /* init, or something init did not start */
+        }
+
+        if (c->exited) {
+            return 0;
+        }
+
+        return process_kill(c->parent, id);
+    }
+
+    return -1;
+}
+
 int process_kill(struct process *parent, unsigned id)
 {
     unsigned i;

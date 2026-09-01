@@ -91,6 +91,22 @@
  */
 #define SPAWN_DISK      4u
 
+/*
+ * Authority over every process, not only your own children.
+ *
+ * `SYS_KILL` is otherwise parent-only, and that rule is right: holding a
+ * capability to somebody is not permission to end them. But a task manager
+ * is exactly the program that needs to end things it did not start, and the
+ * answer to "this program needs a power it should not have by default" in
+ * this system is a grant rather than a relaxed rule.
+ *
+ * So: init holds it, init hands it to one process, and that process can end
+ * anything. Every other process keeps the parent-only rule. What makes this
+ * safe is not that killing is hard - it is that being *able* to is visible,
+ * granted once, and listed by `ps` next to the console and the screen.
+ */
+#define SPAWN_PROCCTL   8u
+
 
 
 /*

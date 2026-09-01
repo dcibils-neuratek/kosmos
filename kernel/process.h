@@ -232,6 +232,10 @@ struct process {
      * the machine, under every namespace - so it goes to one process. */
     bool              owns_disk;
 
+    /* May end any process, not only its own children. One process holds
+     * this: the task manager. */
+    bool              owns_procctl;
+
     /*
      * Pages this process asked for with SYS_MAP: where the next one goes,
      * and how many it holds. The count is both the budget and what
@@ -337,6 +341,11 @@ bool process_grant_screen(struct process *p);
  */
 bool process_grant_disk(struct process *p);
 
+/* Hands a process authority over every other one. Like the console, this is
+ * a flag and nothing to map. Always succeeds; there is no device to be
+ * absent. */
+void process_grant_procctl(struct process *p);
+
 
 /* Makes it runnable. Nothing may touch its address space afterwards without
  * masking interrupts: from here it can exit at any moment. */
@@ -395,6 +404,10 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking);
  * and nothing else may. It does not take effect here - see `killed`.
  */
 int process_kill(struct process *parent, unsigned id);
+
+/* Ends any process, for a caller the kernel has granted SPAWN_PROCCTL.
+ * Refuses init: ending it ends the system. */
+int process_kill_any(unsigned id);
 
 /* Whether the running process has been killed and should now exit. Asked on
  * the way out of the kernel, which is the only safe moment. */

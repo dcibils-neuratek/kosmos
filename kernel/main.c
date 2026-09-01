@@ -378,6 +378,10 @@ void kmain(void)
          */
         (void)process_grant_disk(init);
 
+        /* And authority over processes, which init hands to the task
+         * manager and to nothing else. */
+        process_grant_procctl(init);
+
         /* At the indices init expects them, and checked rather than assumed:
          * a capability that lands one slot over is a server talking to the
          * wrong endpoint, which fails in a way that looks like a protocol

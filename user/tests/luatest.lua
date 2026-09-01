@@ -52,6 +52,9 @@ local R_SHARE_MAIN   = 28
 local R_SHARE_PEER   = 29
 local R_TRIANGLE     = 30
 local R_G3D          = 31
+local R_KILL_MAIN    = 32
+local R_KILL_SIB     = 33
+local R_KILL_VICTIM  = 34
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -900,6 +903,77 @@ if role == R_G3D then
          .. "windings disagree with each other"):format(n))
 
   s:free()
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- Who may end whom.
+--
+-- `SYS_KILL` lets a parent end a child and nothing else. That rule now has
+-- an exception - a process granted SPAWN_PROCCTL may end anything, which is
+-- what a task manager needs - and an exception to a safety rule is exactly
+-- the thing to have a test for.
+--
+-- Three processes, and the third is not decoration. The first version had
+-- two, and the child tried to kill every id it could think of - which all
+-- failed *for the wrong reason*: a role is created by the C driver and has
+-- no parent, and `process_kill_any` refuses those regardless. Relaxing the
+-- rule on purpose left that test passing, which is the definition of a
+-- test that agrees with you.
+--
+-- So there is a victim, whose parent is the main role, and the sibling
+-- tries to end it. That one can only fail because of the rule.
+
+if role == R_KILL_MAIN then
+  local ep = sys.endpoint()
+
+  -- Both block in `call` until answered, so both are alive and one of them
+  -- has a parent for the whole of the attempt.
+  spawn(R_KILL_VICTIM, { ep })
+  spawn(R_KILL_SIB, { ep })
+
+  local report, waiting = nil, {}
+
+  for _ = 1, 2 do
+    local msg, who = sys.receive(ep)
+    check(msg, "a child said nothing")
+
+    waiting[#waiting + 1] = who
+    if msg.killed then report = msg end
+  end
+
+  check(report, "the sibling never reported")
+  check(report.killed == 0,
+        ("a process with no grant ended %d process(es) it did not start")
+        :format(report.killed))
+
+  for _, who in ipairs(waiting) do sys.reply(who, {}) end
+
+  wait_all(2)
+  sys.exit(0)
+end
+
+if role == R_KILL_VICTIM then
+  -- Alive, with a parent, and doing nothing until told.
+  sys.call(0, { victim = true })
+  sys.exit(0)
+end
+
+if role == R_KILL_SIB then
+  local killed = 0
+
+  -- Every process that actually exists, asked for by name rather than
+  -- guessed. The first version counted from 1 to 24, and process ids climb
+  -- for the life of the machine - by the ninety-fifth test they are in the
+  -- hundreds, so it was trying to end ids nothing had ever had. It passed
+  -- with the rule deliberately relaxed, which is how that was found.
+  for _, proc in ipairs(sys.processes() or {}) do
+    if proc.id ~= sys.id and sys.kill(proc.id) then
+      killed = killed + 1
+    end
+  end
+
+  sys.call(0, { killed = killed })
   sys.exit(0)
 end
 

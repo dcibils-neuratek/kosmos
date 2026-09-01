@@ -21,7 +21,10 @@
 
 local ui  = use("/lib/ui.lua")
 
-local TILE = 16
+-- Double what it was. At sixteen the maze was legible and the game was not
+-- playable: a corridor two pixels wider than Pac-Man leaves no room to see
+-- a junction coming.
+local TILE = 32
 
 -- The maze. `#` wall, `.` dot, `o` power pellet, `-` the ghost door.
 --
@@ -53,7 +56,7 @@ local MAZE = {
 }
 
 local COLS, ROWS = #MAZE[1], #MAZE
-local BAR = 24
+local BAR = 28
 local W, H = COLS * TILE, ROWS * TILE + BAR
 
 local win, err = ui.window{ title = "Pac-Man", w = W, h = H,
@@ -152,15 +155,28 @@ local function make(r, c, colour, speed)
            colour = colour, speed = speed }
 end
 
-local pac = make(start_pac.r, start_pac.c, PAC, 2)
+local pac = make(start_pac.r, start_pac.c, PAC, 4)
 local ghosts = {}
 
 for i, home in ipairs(ghost_home) do
-  ghosts[i] = make(home.r, home.c, GHOSTS[i] or GHOSTS[1], 2)
+  ghosts[i] = make(home.r, home.c, GHOSTS[i] or GHOSTS[1], 4)
   ghosts[i].dir, ghosts[i].want = "up", "up"
 end
 
 local score, lives, over, won = 0, 3, false, false
+
+-- Frames of fright left after a pellet, and what eating a ghost is worth.
+--
+-- A counter in frames rather than a deadline in `sys.ticks`: the game
+-- advances one step per frame and everything else it measures is in frames,
+-- so a second clock would be a second thing to keep in step.
+local FRIGHT_FRAMES = 300
+local fright = 0
+local chain  = 0          -- ghosts eaten since this pellet: 200, 400, 800...
+local frame  = 0
+
+local FRIGHT_BLUE  = 0xff2121de
+local FRIGHT_WHITE = 0xffe0e0e0
 
 local function step(e)
   -- The wanted turn is taken the moment it becomes possible, which is at a
@@ -197,6 +213,12 @@ local function chase(g, n)
       local d = DIRS[dir]
       local dr, dc = gr + d[2] - pr, gc + d[1] - pc
       local far = dr * dr + dc * dc + (n * 3)      -- the tie-break
+
+      -- Frightened ghosts want to be far away, which is the same
+      -- comparison with the sign turned over. It is not clever pathfinding
+      -- and it is what the original did: they are not trying to escape,
+      -- they are trying not to approach.
+      if fright > 0 then far = -far end
 
       if not best_d or far < best_d then best, best_d = dir, far end
     end
@@ -246,7 +268,13 @@ local function draw(s)
 
   local d = DIRS[pac.dir]
   local reach = TILE
-  local open_ = 5
+
+  -- The mouth opens and closes. A triangle whose half-width follows a
+  -- triangle wave, which is four lines and the whole of the animation
+  -- everybody remembers.
+  local phase = frame % 16
+  local open_ = (phase < 8) and phase or (16 - phase)
+  open_ = 2 + open_ * (TILE // 16)
 
   s:triangle(pac.x, pac.y,
              pac.x + d[1] * reach - d[2] * open_,
@@ -256,19 +284,47 @@ local function draw(s)
              BG)
 
   for _, g in ipairs(ghosts) do
-    disc(s, g.x, g.y - 1, TILE // 2 - 2, g.colour)
-    s:fill(g.x - TILE // 2 + 2, g.y - 1, TILE - 4, TILE // 2 - 1, g.colour)
+    local colour = g.colour
 
-    -- Eyes, looking the way it is going.
+    if g.eaten then
+      -- Eyes only, on their way home. Nothing to draw but them.
+      colour = nil
+    elseif fright > 0 then
+      -- Blue, and blinking white for the last second and a half so that
+      -- running out of time is something you can see coming rather than
+      -- something that happens to you.
+      colour = FRIGHT_BLUE
+
+      if fright < 90 and (frame // 8) % 2 == 0 then
+        colour = FRIGHT_WHITE
+      end
+    end
+
+    if colour then
+      disc(s, g.x, g.y - 2, TILE // 2 - 3, colour)
+      s:fill(g.x - TILE // 2 + 3, g.y - 2, TILE - 6, TILE // 2 - 1, colour)
+    end
+
+    -- Eyes, looking the way it is going, and all that is left of an eaten
+    -- one.
     local e = DIRS[g.dir]
-    s:fill(g.x - 4 + e[1], g.y - 3 + e[2], 3, 3, 0xffffffff)
-    s:fill(g.x + 1 + e[1], g.y - 3 + e[2], 3, 3, 0xffffffff)
+    local eye = (fright > 0 and not g.eaten) and FRIGHT_WHITE or 0xffffffff
+    local r = TILE // 8
+
+    s:fill(g.x - r * 2 + e[1] * r, g.y - r * 2 + e[2] * r, r, r, eye)
+    s:fill(g.x + r + e[1] * r,     g.y - r * 2 + e[2] * r, r, r, eye)
   end
 
   local bar = ROWS * TILE
   s:fill(0, bar, W, BAR, BG)
-  s:text(6, bar + 4, ("score %d"):format(score), TEXT, BG)
-  s:text(W - 90, bar + 4, ("lives %d"):format(lives), TEXT, BG)
+  s:text(8, bar + 6, ("score %d"):format(score), TEXT, BG)
+
+  if fright > 0 then
+    s:text(W // 2 - 40, bar + 6, ("fright %d"):format(fright // 30),
+           FRIGHT_WHITE, BG)
+  end
+
+  s:text(W - 100, bar + 6, ("lives %d"):format(lives), TEXT, BG)
 
   if over then
     s:text(W // 2 - 36, bar // 2, won and "you win" or "game over", TEXT, BG)
@@ -285,13 +341,39 @@ local escape = 0
 local function turn(dir) pac.want = dir end
 
 while win.running do
+  frame = frame + 1
+
   if not over then
+    if fright > 0 then
+      fright = fright - 1
+
+      -- When it runs out, whatever was eyes becomes a ghost again where it
+      -- stands, which is where it walked home to.
+      if fright == 0 then
+        for _, g in ipairs(ghosts) do g.eaten = false end
+        chain = 0
+      end
+    end
+
     step(pac)
 
     local r, c = tile_of(pac)
 
     if dot[r][c] or pellet[r][c] then
-      score = score + (pellet[r][c] and 50 or 10)
+      if pellet[r][c] then
+        score = score + 50
+        fright = FRIGHT_FRAMES
+        chain  = 0
+
+        -- Everyone turns round, which is what a pellet does: the moment of
+        -- a power pellet is the whole board reversing.
+        for _, g in ipairs(ghosts) do
+          if not g.eaten then g.dir = OPPOSITE[g.dir] end
+        end
+      else
+        score = score + 10
+      end
+
       dot[r][c], pellet[r][c] = false, false
       dots_left = dots_left - 1
 
@@ -304,7 +386,17 @@ while win.running do
 
       local gr, gc = tile_of(g)
 
-      if gr == r and gc == c then
+      if gr == r and gc == c and g.eaten then
+        -- Already eyes; walking through them costs nothing.
+      elseif gr == r and gc == c and fright > 0 then
+        -- Eaten. Doubling, as it always did.
+        chain = chain + 1
+        score = score + 200 * (1 << (chain - 1))
+
+        g.eaten = true
+        g.x, g.y = centre(ghost_home[n].r, ghost_home[n].c)
+        g.dir = "up"
+      elseif gr == r and gc == c then
         lives = lives - 1
 
         if lives <= 0 then
@@ -313,9 +405,12 @@ while win.running do
           pac.x, pac.y = centre(start_pac.r, start_pac.c)
           pac.dir, pac.want = "left", "left"
 
+          fright, chain = 0, 0
+
           for i, home in ipairs(ghost_home) do
             ghosts[i].x, ghosts[i].y = centre(home.r, home.c)
             ghosts[i].dir = "up"
+            ghosts[i].eaten = false
           end
         end
 
@@ -364,7 +459,7 @@ while win.running do
         elseif ch == "r" and over then
           -- Again.
           score, lives, over, won = 0, 3, false, false
-          dots_left = 0
+          fright, chain, dots_left = 0, 0, 0
 
           for rr = 1, ROWS do
             for cc = 1, COLS do
