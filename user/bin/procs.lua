@@ -34,6 +34,13 @@ end
 local rows = {}          -- { name, id, pct, pages, caps, exited }
 local totals = { procs = 0, threads = 0 }
 local last = {}          -- ticks per process, from the previous sample
+-- The *process* that is selected, not the row.
+--
+-- The list is sorted by processor share and that order changes every
+-- second, so a selected row number selects a different process each time it
+-- is redrawn - you aim at one and end another. Following the id means the
+-- highlight moves with the process as the list reorders around it.
+local selected_id = nil
 local selected = 1
 
 --------------------------------------------------------------------------
@@ -96,6 +103,7 @@ function table_view:mouse(action, x, y)
 
     if row >= 1 and row <= #rows then
       selected = row
+      selected_id = rows[row] and rows[row].id or nil
     end
   end
 
@@ -105,8 +113,17 @@ end
 table_view.focusable = true
 
 function table_view:key(c)
-  if c == -1 then selected = math.max(1, selected - 1) return true end
-  if c == -2 then selected = math.min(#rows, selected + 1) return true end
+  if c == -1 then
+    selected = math.max(1, selected - 1)
+    selected_id = rows[selected] and rows[selected].id or nil
+    return true
+  end
+
+  if c == -2 then
+    selected = math.min(#rows, selected + 1)
+    selected_id = rows[selected] and rows[selected].id or nil
+    return true
+  end
   return false
 end
 
@@ -137,10 +154,21 @@ win:add(ui.button{
 
     if not r then return end
 
-    local ok = sys.kill(r.id)
+    -- Through the desktop, because it started the applications and only a
+    -- parent may end a child. `sys.kill` is tried first for the case this
+    -- program ever does have children of its own.
+    if sys.kill(r.id) then
+      note.text = "ended " .. r.name
+      return
+    end
 
-    note.text = ok and ("ended " .. r.name)
-                   or (r.name .. " is not this app's child to end")
+    local ok, why = fs.send("/dev/wm", { type = "end_process", pid = r.id })
+
+    if ok then
+      note.text = "asked the desktop to end " .. r.name
+    else
+      note.text = r.name .. ": " .. tostring(why)
+    end
   end,
 })
 
@@ -193,7 +221,20 @@ function sampler:tick()
   rows = fresh
   last = now
 
+  -- Find where the selected process ended up in the new order. It may have
+  -- exited, in which case the row number is kept and whatever is there now
+  -- becomes the selection - which is the least surprising thing available.
+  if selected_id then
+    for i, r in ipairs(rows) do
+      if r.id == selected_id then selected = i break end
+    end
+  end
+
   if selected > #rows then selected = #rows > 0 and #rows or 1 end
+
+  if not selected_id then
+    selected_id = rows[selected] and rows[selected].id or nil
+  end
 
   totals.procs = #rows
   totals.threads = k and k.threads or 0

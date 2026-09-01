@@ -8,6 +8,8 @@
 -- `/` a directory at all. Nothing is mounted there, so no server answers
 -- for it, and it is a directory made entirely of mount points.
 
+local types = use("/lib/filetypes.lua")
+
 local name = args:match("^%s*(%S+)")
 local path = name and (name:sub(1, 1) == "/" and name
                        or ((cwd == "/" and "/" or cwd .. "/") .. name))
@@ -46,17 +48,19 @@ for _, entry in ipairs(entries) do
   -- A directory says so rather than reporting the size of the entries it
   -- happens to hold. That number is true and it is not what anybody asking
   -- means, which is the definition of a misleading answer.
-  local what
+  -- Size and kind in their own columns, the same two Tracker shows and
+  -- from the same table - `/lib/filetypes.lua`. Two programs answering
+  -- "what is this" differently is the thing that table exists to stop.
+  local size, kind
 
   if attrs and attrs.kind == "directory" then
-    what = "<dir>"
-  elseif attrs and attrs.size then
-    what = attrs.size .. " bytes"
+    size, kind = "--", "folder"
   else
-    what = ""
+    size = attrs and attrs.size and tostring(attrs.size) or ""
+    kind = types.kind_of(entry) or "file"
   end
 
-  out[#out + 1] = ("  %-16s %s"):format(entry, what)
+  out[#out + 1] = ("  %-18s %8s  %s"):format(entry, size, kind)
 end
 
 print(table.concat(out, "\n"))

@@ -861,6 +861,7 @@ handlers.close = function(req)
   return { ok = true }
 end
 
+
 --
 -- Everything the window manager did not claim goes to the window with the
 -- focus, as an event it can collect whenever it gets round to asking.
@@ -969,6 +970,46 @@ local close_grace = 0
 do
   local cpu = fs.read("/dev/cpu")
   close_grace = (cpu and cpu.counter_hz or 62500000)
+end
+
+--------------------------------------------------------------------------
+-- Ending an application, on somebody else's behalf.
+--
+-- `SYS_KILL` lets a parent end a child and nothing else, which is right and
+-- is why `procs` could not do it: it did not start anything. The process
+-- that *did* start every application is this one, so this is where the
+-- authority lives - and asking whoever holds it is the whole shape of the
+-- system rather than a workaround for it.
+--
+-- Only a process with a window here. A server was started by init and this
+-- has no business ending it; init would be the one to ask, and nothing has
+-- a reason to yet.
+--------------------------------------------------------------------------
+handlers.end_process = function(req)
+  local pid = tonumber(req.pid)
+
+  if not pid then
+    return { ok = false, error = "no such process" }
+  end
+
+  for _, win in ipairs(windows) do
+    if win.pid == pid then
+      -- Asked first, as the close box does: a window that is listening
+      -- tidies up and goes, and one that is not is taken by force on a
+      -- later pass.
+      win.closing = sys.ticks() + close_grace
+      post(win, { type = "close" })
+
+      if sys.kill(pid) then
+        return { ok = true, ended = true }
+      end
+
+      return { ok = true, ended = false }
+    end
+  end
+
+  return { ok = false,
+           error = "that is not an application this desktop started" }
 end
 
 local function collect_closing()
