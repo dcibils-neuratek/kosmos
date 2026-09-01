@@ -46,6 +46,14 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A directory bigger than a message lists.** `list` answers in pieces the
+  way `read` already did - offset in, `more` out. Before it, `ls` on a
+  directory of two hundred files said "the answer does not fit in a
+  message" and showed nothing, which the power test had been quietly
+  hiding behind an `or {}`. Found because that harness printed "128 files
+  survived, 0 names" and the two numbers disagreed.
+
+
 - **The journal works, and M8's definition of done is met.** ext3's shape:
   write the blocks into the journal, write one commit block, apply them,
   clear the header. The ordering is the whole guarantee. `make powertest`

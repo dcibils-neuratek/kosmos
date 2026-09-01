@@ -124,7 +124,17 @@ WRITER = ('for i = 1, %d do fs.write("/home/t" .. i, '
 # pointing at nothing, the second catches a file that came back wrong.
 VERIFY = (
     'local listed, unreadable, torn, present = 0, 0, 0, 0 '
-    'for _, name in ipairs(fs.list("/home") or {}) do '
+    # `or {}` was here, and it hid a real fault: a directory of two hundred
+    # files could not be listed at all, and the check read "0 names, all
+    # readable" and passed. A test that turns an error into an empty
+    # answer is a test that reports success for a broken machine.
+    'local names, lerr = fs.list("/home") '
+    # The marker is split in the source so it does not appear in the line
+    # the shell echoes back. Searching the transcript for a word that is
+    # also in the command that produced it finds the command every time,
+    # which is a harness reporting a failure it invented.
+    'if not names then print("LIST" .. "-FAILED", lerr) names = {} end '
+    'for _, name in ipairs(names) do '
     '  listed = listed + 1 '
     '  local v = fs.read("/home/" .. name) '
     '  if v == nil then unreadable = unreadable + 1 end '
@@ -171,6 +181,24 @@ def main():
             line = [l for l in back.splitlines() if "VERIFY" in l][-1]
             fields = line.replace("\t", " ").split()
             listed, unreadable, torn, present = (int(x) for x in fields[1:5])
+
+            if "LIST-FAILED" in back:
+                raise Failure(
+                    "the directory could not be listed at all after the "
+                    f"power was cut {at}s in: "
+                    + [l for l in back.splitlines()
+                       if "LIST-FAILED" in l][-1].strip()
+                    + "\nA filesystem whose directories cannot be read is "
+                    "not one that came back clean, whatever the files say."
+                )
+
+            if listed == 0 and present > 0:
+                raise Failure(
+                    f"{present} files can be read but the directory lists "
+                    "none of them. Every one of those files is reachable "
+                    "by name and invisible to anything that looks.\n"
+                    + back[-600:]
+                )
 
             if unreadable > 0:
                 raise Failure(

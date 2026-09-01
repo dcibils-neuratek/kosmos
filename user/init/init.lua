@@ -886,6 +886,23 @@ local function new_namespace()
   function ns.list(path)
     local r, e = request("list", path)
     local entries = r and r.entries
+
+    -- A server with more to say than fits in a message says so, exactly
+    -- as `read` does. One that has never heard of `more` answers once and
+    -- this loop does not run, which is what every server here did before
+    -- the disk grew directories big enough to need it.
+    while r and r.more and entries do
+      local next_r = request("list", path, { offset = r.offset })
+
+      if not next_r or not next_r.entries then break end
+
+      for _, name in ipairs(next_r.entries) do
+        entries[#entries + 1] = name
+      end
+
+      r = next_r
+    end
+
     local attached = mounted_under(path)
 
     -- Whatever the server said, plus whatever is mounted below it. Both are
@@ -1987,7 +2004,39 @@ local function diskfs_handlers(state)
         return { ok = false, error = tostring(err) }
       end
 
-      return { ok = true, entries = names }
+      -- In pieces, the same way `read` answers with something larger than
+      -- a message. A directory of two hundred files does not fit in 2048
+      -- bytes, and the first version of this simply failed - `ls` on a
+      -- large directory said "the answer does not fit in a message" and
+      -- showed nothing at all, which is a filesystem that works until you
+      -- use it.
+      --
+      -- Chunked by the length of the names rather than by a count,
+      -- because names are not a fixed size and a count that is safe for
+      -- two hundred short ones is not safe for twenty long ones.
+      --
+      -- Twenty bytes of overhead an entry, which is measured rather than
+      -- guessed: an array entry costs a tag and an eight-byte integer for
+      -- its key, then a tag and a four-byte length for the string. The
+      -- first version budgeted eight, packed a hundred and sixteen names
+      -- into a reply that needed 2088 bytes, and failed with exactly the
+      -- message it was written to avoid.
+      local from = tonumber(req.offset) or 0
+      local out, bytes = {}, 0
+
+      for i = from + 1, #names do
+        local name = names[i]
+
+        if bytes + #name + 20 > 1600 and #out > 0 then
+          return { ok = true, entries = out, more = true,
+                   offset = from + #out }
+        end
+
+        out[#out + 1] = name
+        bytes = bytes + #name + 20
+      end
+
+      return { ok = true, entries = out }
     end,
 
     read = function(req)

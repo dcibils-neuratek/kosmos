@@ -125,6 +125,13 @@ def main():
             "attr /home/notes.txt kind=note author=diego",
             "attr /home/notes.txt size=999",
             "attr /home/papers/deep.txt kind=note",
+            # A directory larger than one message. `list` answers in
+            # pieces the way `read` does, and before it did, `ls` on a
+            # directory like this showed nothing at all.
+            'for i = 1, 300 do fs.write("/home/many" .. i, "x") end '
+            'print("MADE MANY")',
+            'local l, e = fs.list("/home") '
+            'print("LISTED", l and #l or -1, tostring(e))',
             "ls /home",
         ])
 
@@ -327,6 +334,20 @@ def main():
                 "indexed for every file without being declared - it is "
                 "not stored on the node at all, it comes from the "
                 "directory entry during the scan.\n" + second
+            )
+
+        checks += 1
+
+        # ---- a directory bigger than a message ----
+        listed = first.split("LISTED")[-1].split()
+
+        if not listed or int(listed[0]) < 300:
+            raise Failure(
+                "a directory of three hundred files did not list. A reply "
+                "is 2048 bytes and three hundred names are not, so `list` "
+                "has to answer in pieces the way `read` does - without it "
+                "the files are all still there and nothing can see them.\n"
+                + first[-600:]
             )
 
         checks += 1
