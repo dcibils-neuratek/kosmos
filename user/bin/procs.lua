@@ -32,7 +32,7 @@ if not win then
   return
 end
 
-local rows = {}          -- { name, id, pct, pages, caps, exited }
+local rows = {}          -- { name, id, pct, pages, caps, owns, exited }
 local totals = { procs = 0, threads = 0 }
 local last = {}          -- ticks per process, from the previous sample
 -- The *process* that is selected, not the row.
@@ -155,6 +155,27 @@ win:add(ui.button{
 
     if not r then return end
 
+    -- Some processes are the ground you are standing on.
+    --
+    -- The grant makes ending *anything* possible, which is what a task
+    -- manager needs and is also enough rope to end the desktop you are
+    -- clicking in, or the console every program prints to. Both take the
+    -- whole session with them and neither is what anybody meant.
+    --
+    -- The check is what a process *holds*, not what it is called: the one
+    -- with the screen is the desktop whatever it was named, and a list of
+    -- trusted names would be wrong the first time somebody wrote another
+    -- window manager.
+    --
+    -- init is refused by the kernel and does not need a check here.
+    local OWNS_CONSOLE, OWNS_SCREEN = 1, 2
+
+    if r.owns and (r.owns & (OWNS_CONSOLE | OWNS_SCREEN)) ~= 0 then
+      note.text = r.name .. " holds the screen or the console; ending it "
+                  .. "would take the session with it"
+      return
+    end
+
     -- Through the desktop, because it started the applications and only a
     -- parent may end a child. `sys.kill` is tried first for the case this
     -- program ever does have children of its own.
@@ -208,6 +229,7 @@ function sampler:tick()
 
     fresh[#fresh + 1] = {
       id = p.id, name = p.name, pages = p.pages, caps = p.caps,
+      owns = p.owns,
       exited = p.exited,
       pct = (moved > 0) and (delta * 100 // moved) or 0,
     }

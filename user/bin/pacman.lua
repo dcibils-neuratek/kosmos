@@ -244,22 +244,54 @@ local function disc(s, cx, cy, radius, colour)
   end
 end
 
-local function draw(s)
-  s:fill(0, 0, W, H, BG)
+--------------------------------------------------------------------------
+-- The maze, drawn once.
+--
+-- It was redrawn tile by tile every frame: 399 `fill` calls to produce a
+-- picture that had not changed, thirty times a second. Direct rendering
+-- made the *transport* free and left that in place, which is the trap in
+-- "just make it direct" - the pixels were never the bottleneck, the four
+-- hundred decisions in front of them were.
+--
+-- So the maze lives in a surface of its own and each frame starts with one
+-- `blit` of it. Eating a dot patches that surface as well as the grid, so
+-- the cache stays true without being rebuilt.
+--------------------------------------------------------------------------
+
+local board = gfx.surface { w = W, h = H }
+
+local function tile_at(s, r, c)
+  local x, y = (c - 1) * TILE, (r - 1) * TILE
+
+  s:fill(x, y, TILE, TILE, BG)
+
+  if wall[r][c] then
+    s:fill(x + 1, y + 1, TILE - 2, TILE - 2, WALL)
+  elseif dot[r][c] then
+    local m = TILE // 2
+    s:fill(x + m - 2, y + m - 2, 4, 4, DOT)
+  elseif pellet[r][c] then
+    disc(s, x + TILE // 2, y + TILE // 2, TILE // 5, DOT)
+  end
+end
+
+local function paint_board()
+  board:fill(0, 0, W, H, BG)
 
   for r = 1, ROWS do
     for c = 1, COLS do
-      local x, y = (c - 1) * TILE, (r - 1) * TILE
-
-      if wall[r][c] then
-        s:fill(x + 1, y + 1, TILE - 2, TILE - 2, WALL)
-      elseif dot[r][c] then
-        s:fill(x + TILE // 2 - 1, y + TILE // 2 - 1, 3, 3, DOT)
-      elseif pellet[r][c] then
-        disc(s, x + TILE // 2, y + TILE // 2, 4, DOT)
-      end
+      tile_at(board, r, c)
     end
   end
+end
+
+-- One tile changed; patch the cache rather than repainting the maze.
+local function forget(r, c)
+  tile_at(board, r, c)
+end
+
+local function draw(s)
+  s:blit(board, 0, 0, W, H, 0, 0)
 
   -- Pac-Man: a disc with a wedge taken out of it, and the wedge is a
   -- triangle in the background colour. That primitive exists because of the
@@ -335,6 +367,9 @@ end
 -- The loop.
 --------------------------------------------------------------------------
 
+-- Painted once, before the first frame.
+paint_board()
+
 local hz = fs.read("/dev/cpu").counter_hz
 local escape = 0
 
@@ -375,6 +410,7 @@ while win.running do
       end
 
       dot[r][c], pellet[r][c] = false, false
+      forget(r, c)
       dots_left = dots_left - 1
 
       if dots_left == 0 then over, won = true, true end
@@ -471,6 +507,7 @@ while win.running do
           end
 
           pac.x, pac.y = centre(start_pac.r, start_pac.c)
+          paint_board()
 
           for i, home in ipairs(ghost_home) do
             ghosts[i].x, ghosts[i].y = centre(home.r, home.c)
