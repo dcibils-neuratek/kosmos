@@ -30,6 +30,33 @@ local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
 local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
 local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
 
+-- Whether this process can pass the screen on to a child.
+--
+-- Asking for the flag on a machine with no display is refused by the
+-- kernel, and a refused spawn is a program that does not start - which is
+-- the whole reason this exists.
+--
+-- Asked through `sys.screen()`, which is the only thing the kernel will
+-- answer: it reports about *this* process, not about the machine. That is
+-- the right answer to the question actually being asked - "may I pass this
+-- on" - and it is a different question from "is there a display", which
+-- nothing here can ask.
+--
+-- Remembered once true, and never re-asked after that. Ownership is set at
+-- spawn and never taken away (`SYS_SCREEN_TAKE` suspends the console's
+-- drawing, it does not move the grant), so a true answer cannot go back to
+-- false. A false one is retried, because a process can be given the screen
+-- later than it started.
+local screen_seen = false
+
+local function may_pass_screen()
+  if not screen_seen then
+    screen_seen = sys.screen() ~= nil
+  end
+
+  return screen_seen
+end
+
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
 
@@ -2474,7 +2501,7 @@ your filesystem back.
     -- on. A declaration is a request, never a grant: the kernel refuses a
     -- flag the parent does not hold, so a program that asks for authority
     -- nobody gave this shell simply does not get it.
-    local flags = SPAWN_SCREEN
+    local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
@@ -3013,7 +3040,16 @@ if role == ROLE_INIT then
                       --
                       -- It also makes a `kill` command in the shell
                       -- possible, which is where it belongs.
-                      SPAWN_SCREEN | SPAWN_PROCCTL)
+                      --
+                      -- The screen is asked for only when there is one, for
+                      -- the reason spelled out above the disk server: the
+                      -- kernel refuses a flag this process does not hold,
+                      -- and it does not hold the screen on a machine with
+                      -- no display. Asking anyway made `make serial` - and
+                      -- any real board without a framebuffer - die at boot
+                      -- with the shell never starting. The same mistake,
+                      -- twice, in the same function.
+                      (may_pass_screen() and SPAWN_SCREEN or 0) | SPAWN_PROCCTL)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.
@@ -3318,7 +3354,7 @@ if role == ROLE_RUNNER then
     -- What the child declared it needs. The kernel refuses any flag this
     -- process does not itself hold, so a program cannot ask its way to
     -- authority the desktop was never given.
-    local flags = SPAWN_SCREEN
+    local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
 
     for _, want in ipairs(attrs and attrs.needs or {}) do

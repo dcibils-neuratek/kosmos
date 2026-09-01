@@ -46,6 +46,28 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Outline fonts, with three roles.** `stb_truetype` vendored unmodified,
+  TrueType and CFF, so `.otf` works as well as `.ttf`. The build embeds
+  whatever is in `assets/fonts/`, so adding a face is dropping a file there.
+  Three independent roles - `ui`, `text`, `mono` - because a terminal's face
+  has to be fixed-width whatever the other two are, and one setting for all
+  three could only be right for one of them. Appearance picks a face and a
+  size per role. The check that says they are really independent: measuring
+  `iii` against `WWW` gives 21/75 for a proportional face and 18/18 for the
+  monospace one. See `gfx.md` §19.12.
+
+- **A machine with no display boots again.** It had not, and silently: init
+  asked for the screen grant whether or not there was a screen, the kernel
+  refuses a grant it cannot give, and the refused spawn was the shell - so
+  `make serial` reached stage 12 and then a prompt that never came. The
+  same mistake was in `run_program`, so even with the shell fixed nothing
+  would start. Both fixed by asking for the grant only when the machine can
+  give it, which is what the disk already did four lines higher.
+  `tools/run_headless.py` now runs as part of `make test`, and both sites
+  were re-broken one at a time to prove it catches each. See `testing.md`
+  §18.9.
+
+
 - **The disk is real, and what is written to it survives.** `mkfs --yes`
   formats, and a machine that has never seen the disk before finds a
   filesystem on it. virtio-blk in the HAL, three syscalls behind the

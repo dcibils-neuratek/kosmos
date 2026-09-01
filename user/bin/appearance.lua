@@ -20,7 +20,7 @@
 
 local ui = use("/lib/ui.lua")
 
-local W, H = 380, 320
+local W, H = 380, 470
 
 local win, err = ui.window{ title = "Appearance", w = W, h = H,
                             x = 200, y = 140 }
@@ -51,7 +51,19 @@ local PER_ROW = 8
 local chosen_palette = "dark"
 local chosen_desktop = nil     -- nil means "whatever the palette says"
 
-local status = ui.label{ x = 12, y = H - 60, w = W - 24, text = "" }
+-- Declared here rather than beside the font lists because `send` is written
+-- before them and closes over both.
+local chosen                   -- what each role is set to
+local role = "ui"              -- the role the lists are showing
+local chosen_font    = "spleen"
+local chosen_px      = 16
+
+-- What there is to choose from, asked for rather than listed: `gfx.fonts`
+-- knows because the fonts are embedded beside it, and a list written here
+-- would be a second place to keep in step.
+local FONTS = gfx.fonts()
+
+local status = ui.label{ x = 12, y = H - 34, w = W - 24, text = "" }
 
 local function send()
   -- Both return values. `fs.send` answers `nil, reason` when the server
@@ -59,7 +71,8 @@ local function send()
   -- reply" for every refusal and throws away what was actually wrong.
   local reply, why = fs.send("/dev/wm", { type = "theme",
                                           palette = chosen_palette,
-                                          desktop = chosen_desktop })
+                                          desktop = chosen_desktop,
+                                          fonts = chosen })
 
   if not reply then
     status.text = "refused: " .. tostring(why)
@@ -69,10 +82,15 @@ local function send()
   -- Written only after the window manager accepted it, so the file cannot
   -- come to hold an appearance the system never managed to apply.
   local ok, werr = fs.write(SETTINGS, { palette = chosen_palette,
-                                        desktop = chosen_desktop })
+                                        desktop = chosen_desktop,
+                                        fonts = chosen })
 
-  status.text = ok and ("saved: " .. chosen_palette)
-                or ("applied, but not saved: " .. tostring(werr))
+  status.text = ok and ("saved: " .. chosen_palette .. ", "
+                        .. role .. " = " .. chosen[role].font .. " "
+                        .. chosen[role].px)
+                or ("applied " .. role .. " = " .. chosen[role].font
+                    .. " " .. chosen[role].px .. ", not saved: "
+                    .. tostring(werr))
 end
 
 win:add(ui.label{ x = 12, y = 10, w = W - 24, text = "Palette" })
@@ -128,8 +146,80 @@ local swatches = ui.view{
 
 win:add(swatches)
 
+--------------------------------------------------------------------------
+-- Fonts, by role.
+--
+-- Three, because a titlebar, a paragraph and a terminal want different
+-- faces and one setting for all of them was always going to be wrong: a
+-- terminal's *must* be fixed-width whatever the other two are. Three is the
+-- number of decisions somebody actually has.
+--
+-- Three lists rather than a grid of buttons. A list costs the same space
+-- whatever is in it, scrolls when there is more, and answers the arrow
+-- keys - and there are five fonts now because dropping one into
+-- `assets/fonts/` is all it takes to add one.
+--------------------------------------------------------------------------
+
+local ROLES = {
+  { key = "ui",   label = "Titlebar and widgets" },
+  { key = "text", label = "Regular text" },
+  { key = "mono", label = "Monospace" },
+}
+
+local SIZES = { 10, 12, 14, 16, 18, 20, 22 }
+
+-- What each role is set to. The interface font is the one that was already
+-- being chosen, so it keeps the saved value; the other two start on the
+-- bitmap, which is what they have been all along.
+chosen = {
+  ui   = { font = chosen_font, px = chosen_px },
+  text = { font = "spleen", px = 16 },
+  mono = { font = "spleen", px = 16 },
+}
+
+local FY = 98 + 2 * SW + 30
+
+local role_list = ui.list{ x = 12,  y = FY, w = 150, h = 56, items = {} }
+local font_list = ui.list{ x = 172, y = FY, w = 122, h = 92, items = FONTS }
+local size_list = ui.list{ x = 304, y = FY, w = 56,  h = 92, items = {} }
+
+for i, r in ipairs(ROLES) do role_list.items[i] = r.label end
+for i, px in ipairs(SIZES) do size_list.items[i] = tostring(px) end
+
+local function reflect()
+  local c = chosen[role]
+
+  for i, f in ipairs(FONTS) do
+    if f == c.font then font_list.selected = i end
+  end
+
+  for i, px in ipairs(SIZES) do
+    if px == c.px then size_list.selected = i end
+  end
+end
+
+role_list.on_select = function(self, item, index)
+  role = ROLES[index].key
+  reflect()
+end
+
+font_list.on_select = function(self, item)
+  chosen[role].font = item
+  send()
+end
+
+size_list.on_select = function(self, item)
+  chosen[role].px = tonumber(item) or chosen[role].px
+  send()
+end
+
+win:add(ui.label{ x = 12, y = FY - 18, w = W - 24, text = "Fonts" })
+win:add(role_list)
+win:add(font_list)
+win:add(size_list)
+
 win:add(ui.button{
-  x = 12, y = 98 + 2 * SW + 12, w = 160, h = 26, text = "Palette default",
+  x = 12, y = FY + 100, w = 150, h = 24, text = "Palette default",
   on_click = function() chosen_desktop = nil; send() end,
 })
 
@@ -143,6 +233,18 @@ local saved = fs.read(SETTINGS)
 if type(saved) == "table" then
   chosen_palette = saved.palette or chosen_palette
   chosen_desktop = saved.desktop
+  if type(saved.fonts) == "table" then
+    for _, r in ipairs(ROLES) do
+      local c = saved.fonts[r.key]
+
+      if type(c) == "table" then
+        chosen[r.key].font = c.font or chosen[r.key].font
+        chosen[r.key].px   = c.px or chosen[r.key].px
+      end
+    end
+  end
+
+  reflect()
   status.text = "in force: " .. tostring(chosen_palette)
 else
   status.text = "in force: dark (nothing saved yet)"

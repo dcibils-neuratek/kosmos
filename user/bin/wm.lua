@@ -60,6 +60,34 @@ local function stamp_colour()    return theme.stamp end
 --------------------------------------------------------------------------
 local SETTINGS = "/home/.appearance"
 
+-- Three faces, not one: a titlebar, a paragraph and a terminal want
+-- different things, and the terminal's has to be fixed-width whatever the
+-- other two are. `theme.fonts` is what was asked for, which is not always
+-- what is loaded - a face that will not parse leaves the previous one in
+-- place, and saying so is the caller's job.
+local function apply_fonts(fonts)
+  if type(fonts) ~= "table" then return end
+
+  local why
+
+  for _, role in ipairs { "ui", "text", "mono" } do
+    local want = fonts[role]
+
+    if type(want) == "table" and want.font then
+      local px = tonumber(want.px) or 16
+      local ok, err = gfx.use_font(want.font, px, role)
+
+      if ok then
+        theme.fonts[role] = { font = want.font, px = px }
+      else
+        why = tostring(err)
+      end
+    end
+  end
+
+  return why
+end
+
 local function load_appearance()
   local saved = fs.read(SETTINGS)
 
@@ -67,6 +95,8 @@ local function load_appearance()
 
   if saved.palette then theme.apply(saved.palette) end
   if saved.desktop then theme.override { desktop = saved.desktop } end
+
+  apply_fonts(saved.fonts)
 end
 
 local screen = gfx.screen()
@@ -592,7 +622,8 @@ handlers.open = function(req, who, cap)
   -- *again*. Telling it here rather than posting an event means it knows
   -- before its first paint, so there is no flash of the wrong colours.
   return { ok = true, window = win.handle, w = w_, h = h_,
-           palette = theme.name, desktop = theme.desktop }
+           palette = theme.name, desktop = theme.desktop,
+           fonts = theme.fonts }
 end
 
 handlers.draw = function(req)
@@ -910,13 +941,20 @@ handlers.theme = function(req)
     theme.override { desktop = req.desktop }
   end
 
+  -- The font travels with the palette, because they are the same decision
+  -- from the user's side and arrive from the same window. Applied here and
+  -- forwarded, so a window drawing its own pixels changes too.
+  local font_why = apply_fonts(req.fonts)
+
   for _, win in ipairs(windows) do
-    post(win, { type = "theme", palette = theme.name, desktop = theme.desktop })
+    post(win, { type = "theme", palette = theme.name, desktop = theme.desktop,
+                fonts = theme.fonts })
   end
 
   add_damage(0, 0, W, H)
 
-  return { ok = true, palette = theme.name, desktop = theme.desktop }
+  return { ok = true, palette = theme.name, desktop = theme.desktop,
+           fonts = theme.fonts, font_why = font_why }
 end
 
 local function to_focused(c)

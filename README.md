@@ -220,6 +220,11 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | QEMU with `-icount` for regressions (deterministic), PMU on hardware for budget. They measure different things | testing.md §18.3 |
 | Aug 2026 | Anything with a frame budget is measured by max and p99, never by average | testing.md §18.5 |
 | Aug 2026 | Every milestone's definition of done becomes a permanent test | testing.md §18.7 |
+| Aug 2026 | Outline fonts via `stb_truetype`, vendored unmodified; the bitmap font stays the default | gfx.md §19.12 |
+| Aug 2026 | Three font roles - titlebar, text, monospace - because a terminal's must be fixed-width whatever the others are | gfx.md §19.12 |
+| Aug 2026 | Fonts are embedded, wallpapers are not: the image is copied per process | gfx.md §19.12 |
+| Aug 2026 | A font server is for containing the parser, not for saving memory; shared image pages are what save memory | gfx.md §19.13 |
+| Aug 2026 | A grant is asked for only when the machine can give it: a refused spawn is a server that does not start | design.md §17, testing.md |
 
 ---
 

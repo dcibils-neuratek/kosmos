@@ -198,7 +198,6 @@ Two consequences worth stating, because both are easy to get backwards:
 
 - **Undo in Paint.** Copying the whole surface per operation does not scale. The sensible approach is tile-based undo with copy-on-write, but it is not designed and it is not needed until M7.
 - **Scaling and rotation.** Not in the primitive set. They get added when a case appears, not before.
-- **Font output format in a surface.** `stb_truetype` rasterizes to 8bpp alpha; whether that is another surface type or a separate case is undecided.
 - **Video.** A decoder needs a YUV to RGB path and possibly surfaces in a different format. Out of scope until there is a real case.
 
 ---
@@ -264,3 +263,106 @@ detects a regression and predicts nothing about a Pi. The *ratio* between
 the rows is what transfers.
 
 ---
+
+---
+
+## 19.12 Outline fonts, and why there are three of them
+
+The bitmap font is still here and still the default. It is exact, it costs
+nothing, every display test was written against it, and a machine that
+cannot parse a font file still has text. What outlines add is a size that
+is chosen rather than fixed, and edges that are not stair-shaped.
+
+`stb_truetype` does the parsing and the rasterizing, vendored unmodified in
+`runtime/upstream/stb/` under the rule `lua/upstream/` follows. It handles
+TrueType and CFF, which is why `.otf` works as well as `.ttf`.
+
+Its own header says, in capitals, that it offers no security guarantee and
+should not be pointed at untrusted font files. That is worth stating
+plainly rather than filing away: it is a parser of an attacker-shaped
+format. What contains it today is where it runs - EL0, in whichever process
+is drawing, with no authority beyond that process's own capabilities, so
+the worst case is one application dying. That is the *whole* of the
+mitigation, and it stops being sufficient the moment fonts arrive from
+somewhere other than the build. See §19.13.
+
+### Three faces, not one
+
+Text appears in three places that want different things:
+
+| role | where | what it needs |
+|---|---|---|
+| `ui` | titlebars, buttons, menus, the Deskbar | to match how the desk looks |
+| `text` | documents, labels, anything to read | proportional, comfortable |
+| `mono` | the Terminal, the editor, hex dumps | **fixed width**, or columns stop lining up |
+
+One setting for all three could only ever be right for one of them. The
+terminal's face has to be fixed-width whatever the other two are, and that
+is not a preference - a proportional font in a terminal breaks alignment,
+which is what a terminal is for.
+
+The three are independent, and the check that says so is the one worth
+keeping: measure the same number of characters in two different shapes.
+
+```
+ui    designer 20      iii = 21   WWW = 75
+text  roboto 18        iii =  9   WWW = 42
+mono  jetbrainsmono 14 iii = 18   WWW = 18
+```
+
+The proportional faces disagree with themselves; the monospace one does
+not. A single-face design cannot produce that table.
+
+### What is embedded, and what it costs
+
+Fonts live in `assets/fonts/` as the author shipped them, with the licence
+beside them - and a face whose licence is not beside it does not get
+committed, which is the same rule `lua/upstream/` follows. They are
+converted at build time - the same arrangement as the
+BDF. Adding one is dropping a file in that directory.
+
+That is not free, and the number is the point: measured with five faces in
+the directory, the user image went from 577 KB to 1,433 KB. Every process gets a private copy of that
+image, so at fourteen processes it is about **19.6 MB of RAM spent on the
+same bytes fourteen times**. The fonts did not create that copy - Lua and
+the libc were always being copied too - they made it expensive enough to
+notice.
+
+Two separate things follow, and they are worth not confusing:
+
+- The **duplication** is a property of the image, not of fonts. Mapping the
+  image's read-only pages shared instead of copying them fixes it for
+  fonts, Lua, the libc and every program at once.
+- The **parsing** is a property of fonts, and is what §19.13 is about.
+
+Wallpapers, therefore, do not go in `assets/`. A photograph embedded in the
+image is that photograph copied into every process on the machine. Pictures
+come from the disk.
+
+---
+
+## 19.13 The font server that is not built yet
+
+Not built, and the reasoning is recorded here so it is not re-derived.
+
+The obvious argument for one - "so the bytes are not duplicated" - is the
+weak argument, and on its own it is wrong: the bytes are in the image, and
+a server that rasterizes elsewhere does not take them out of the image.
+Shared read-only image pages are what fixes duplication.
+
+The real argument is the parser. `stb_truetype` currently runs in every
+process that draws text. Once a person can install a font, that is an
+untrusted file being parsed in fourteen address spaces. A font server makes
+it one, in a process that can die and be restarted, costing text rather
+than the machine. That is a microkernel argument and it is the one to build
+on.
+
+The shape it has to take is decided by §19.11. Glyph-per-IPC is not
+allowed: at ~9µs a crossing, a sixty-character line would cost 540µs, worse
+than what exists now. Instead the server owns the faces, rasterizes an
+atlas per (face, size), and hands the atlas out as a **shared memory
+region** - the machinery the shared surfaces already use. One IPC per
+(face, size), none per glyph, and one copy of each atlas on the machine.
+
+It gets built when fonts come from the disk, because that is when the
+security argument stops being hypothetical.

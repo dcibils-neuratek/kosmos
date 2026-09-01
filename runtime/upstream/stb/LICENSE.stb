@@ -1,0 +1,13 @@
+stb_truetype.h is by Sean Barrett and is dual-licensed: MIT, or public
+domain under the Unlicense, at the recipient's choice. The full text of
+both is at the bottom of stb_truetype.h itself, where the author put it,
+and that file is here exactly as shipped.
+
+This note exists because the rule in CLAUDE.md is that anything vendored
+records its licence beside it. For stb the licence travels inside the file,
+so this is a pointer rather than a copy: if the two ever disagree, the text
+in stb_truetype.h is the one that counts.
+
+stb_impl.c is not upstream. It is the one translation unit that defines
+STB_TRUETYPE_IMPLEMENTATION, written here, and it carries no separate
+terms beyond the above.

@@ -749,6 +749,416 @@ static const unsigned char *glyph_of(unsigned char c)
     return font_8x16 + (size_t)index * GLYPH_H;
 }
 
+/*--------------------------------------------------------------------------
+ * Outline fonts.
+ *
+ * The 8x16 bitmap from `assets/fonts/` is still here and is still the
+ * default: it is exact, it costs nothing, and on a 1024-wide screen it is
+ * perfectly readable. What it cannot be is *smooth*, and it cannot be any
+ * other size.
+ *
+ * So a glyph can come from a TrueType outline instead, rasterised by
+ * `stb_truetype` into 8-bit coverage and blended in. Rasterising happens
+ * **once per glyph per size**, into a cache - a glyph is far more expensive
+ * to make than to draw, and `gfx.md` 19.11 is the reason to care: this is
+ * exactly the shape that must not be paid per frame.
+ *
+ * **Per-glyph metrics from the start, though both fonts here are
+ * monospaced.** Every glyph carries its own advance and bearings, and
+ * `text` walks a pen along by them rather than by a constant. That is what
+ * a proportional font needs, and doing it now costs nothing while doing it
+ * later would mean revisiting this loop with a working system depending on
+ * it. What is *not* ready for proportional text is the fifty-odd places in
+ * the applications that compute `#text * gfx.font.w`; `gfx.measure` exists
+ * for them to move to.
+ *------------------------------------------------------------------------*/
+
+#include "stb_truetype.h"
+
+struct kosmos_font_asset {
+    const char          *name;
+    const unsigned char *bytes;
+    size_t               length;
+};
+
+extern const struct kosmos_font_asset fonts_table[];
+
+#define GLYPH_MIN   32
+#define GLYPH_MAX   126
+#define GLYPH_COUNT (GLYPH_MAX - GLYPH_MIN + 1)
+
+struct glyph {
+    unsigned char *coverage;    /* w * h bytes, or NULL for a blank */
+    int w, h;
+    int xoff, yoff;             /* from the pen, at the baseline */
+    int advance;
+};
+
+static int font_table_ref = LUA_NOREF;
+
+/*
+ * Three fonts, not one.
+ *
+ * A titlebar, a paragraph and a terminal want different faces, and a
+ * terminal's *must* be fixed-width whatever the other two are - so one
+ * setting for all text was always going to be wrong the moment a
+ * proportional face existed. Roles rather than a font per widget: three is
+ * the number of decisions somebody actually has, and a fourth can be added
+ * the day something needs one.
+ *
+ * ROLE_UI is what everything draws with unless it says otherwise, which
+ * keeps every existing `text` call working.
+ */
+#define ROLE_UI    0
+#define ROLE_TEXT  1
+#define ROLE_MONO  2
+#define ROLE_COUNT 3
+
+struct outline_font {
+    bool  loaded;
+    char  name[24];
+    int   px;
+    int   ascent, descent, line_gap;
+    int   widest;
+    struct glyph glyphs[GLYPH_COUNT];
+};
+
+static struct outline_font outlines[ROLE_COUNT];
+
+/* The role a call names, or the interface font when it names none. */
+static int role_of(lua_State *L, int index)
+{
+    const char *name = luaL_optstring(L, index, "ui");
+
+    if (name[0] == 't') return ROLE_TEXT;
+    if (name[0] == 'm') return ROLE_MONO;
+
+    return ROLE_UI;
+}
+
+static void outline_release(struct outline_font *f)
+{
+    int i;
+
+    for (i = 0; i < GLYPH_COUNT; i++) {
+        if (f->glyphs[i].coverage != NULL) {
+            free(f->glyphs[i].coverage);
+            f->glyphs[i].coverage = NULL;
+        }
+    }
+
+    f->loaded = false;
+}
+
+/*
+ * The name somebody types, from the name of the file.
+ *
+ * "IBMPlexMono-Regular.ttf" is "ibmplexmono": everything before the first
+ * `-` or `.`, lowercased. So a font is added by dropping it in
+ * `assets/fonts/` and nothing here has to learn about it.
+ *
+ * The first version matched two characters - `want[0] == 'p' && n[0] ==
+ * 'I'` - which worked exactly as long as there were two fonts, and was
+ * wrong the moment a third arrived.
+ */
+static void font_short_name(const char *file, char *out, size_t max)
+{
+    size_t i;
+
+    for (i = 0; i + 1 < max && file[i] != '\0'
+                && file[i] != '-' && file[i] != '.'; i++) {
+        char c = file[i];
+
+        out[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+    }
+
+    out[i] = '\0';
+}
+
+static const struct kosmos_font_asset *font_asset(const char *want)
+{
+    unsigned i;
+
+    for (i = 0; fonts_table[i].name != NULL; i++) {
+        char shortname[32];
+        size_t n;
+
+        font_short_name(fonts_table[i].name, shortname, sizeof(shortname));
+
+        for (n = 0; want[n] != '\0' && shortname[n] != '\0'; n++) {
+            if (want[n] != shortname[n]) {
+                break;
+            }
+        }
+
+        /* A prefix is enough: "plex" would not match, but "ibm" does, and
+         * so does the whole name. Typing less than a name that is unique is
+         * a convenience, not an ambiguity, while there are five fonts. */
+        if (want[n] == '\0' && n > 0) {
+            return &fonts_table[i];
+        }
+    }
+
+    return NULL;
+}
+
+static bool outline_load(struct outline_font *f, const char *name, int px)
+{
+    const struct kosmos_font_asset *asset = font_asset(name);
+    stbtt_fontinfo info;
+    float scale;
+    int ch;
+
+    if (asset == NULL || px < 6 || px > 64) {
+        return false;
+    }
+
+    if (!stbtt_InitFont(&info, asset->bytes,
+                        stbtt_GetFontOffsetForIndex(asset->bytes, 0))) {
+        return false;
+    }
+
+    outline_release(f);
+
+    scale = stbtt_ScaleForPixelHeight(&info, (float)px);
+
+    {
+        int a, d, g;
+
+        stbtt_GetFontVMetrics(&info, &a, &d, &g);
+        f->ascent   = (int)(a * scale + 0.5f);
+        f->descent  = (int)(-d * scale + 0.5f);
+        f->line_gap = (int)(g * scale + 0.5f);
+    }
+
+    f->widest = 0;
+
+    for (ch = GLYPH_MIN; ch <= GLYPH_MAX; ch++) {
+        struct glyph *gl = &f->glyphs[ch - GLYPH_MIN];
+        int adv, lsb;
+
+        stbtt_GetCodepointHMetrics(&info, ch, &adv, &lsb);
+        gl->advance = (int)(adv * scale + 0.5f);
+
+        if (gl->advance > f->widest) {
+            f->widest = gl->advance;
+        }
+
+        gl->coverage = stbtt_GetCodepointBitmap(&info, scale, scale, ch,
+                                                &gl->w, &gl->h,
+                                                &gl->xoff, &gl->yoff);
+    }
+
+    {
+        size_t i;
+
+        for (i = 0; i + 1 < sizeof(f->name) && name[i] != '\0'; i++) {
+            f->name[i] = name[i];
+        }
+
+        f->name[i] = '\0';
+    }
+
+    f->px = px;
+    f->loaded = true;
+    return true;
+}
+
+/* How wide a string is with the font in force. */
+static long text_width(const struct outline_font *f, const char *str,
+                       size_t len)
+{
+    size_t i;
+    long w = 0;
+
+    if (!f->loaded) {
+        return (long)len * GLYPH_W;
+    }
+
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)str[i];
+
+        if (c < GLYPH_MIN || c > GLYPH_MAX) {
+            c = '?';
+        }
+
+        w += f->glyphs[c - GLYPH_MIN].advance;
+    }
+
+    return w;
+}
+
+static void draw_outline_text(struct surface *s, const struct outline_font *f,
+                              long x, long y, const char *str, size_t len,
+                              uint32_t fg, const uint32_t *bg)
+{
+    long pen = x;
+    long baseline = y + f->ascent;
+    size_t i;
+
+    if (bg != NULL) {
+        long w = text_width(f, str, len);
+        long h = f->ascent + f->descent;
+
+        if (w > 0) {
+            long bx = x, by = y, bw = w, bh = h;
+
+            if (clip(s, &bx, &by, &bw, &bh, NULL, NULL)) {
+                long row;
+
+                for (row = 0; row < bh; row++) {
+                    uint32_t *p = row_of(s, (unsigned)(by + row)) + bx;
+                    long n;
+
+                    for (n = 0; n < bw; n++) {
+                        p[n] = *bg;
+                    }
+                }
+            }
+        }
+    }
+
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)str[i];
+        const struct glyph *gl;
+        int gy;
+
+        if (c < GLYPH_MIN || c > GLYPH_MAX) {
+            c = '?';
+        }
+
+        gl = &f->glyphs[c - GLYPH_MIN];
+
+        for (gy = 0; gy < gl->h && gl->coverage != NULL; gy++) {
+            long py = baseline + gl->yoff + gy;
+            uint32_t *row;
+            int gx;
+
+            if (py < 0 || py >= (long)s->height) {
+                continue;
+            }
+
+            row = row_of(s, (unsigned)py);
+
+            for (gx = 0; gx < gl->w; gx++) {
+                long px_ = pen + gl->xoff + gx;
+                unsigned a = gl->coverage[gy * gl->w + gx];
+
+                if (px_ < 0 || px_ >= (long)s->width || a == 0) {
+                    continue;
+                }
+
+                /* Blended, which is the whole point: coverage is what an
+                 * outline produces and a threshold would throw it away. */
+                row[px_] = (a == 255) ? fg : mix(row[px_], fg, a);
+            }
+        }
+
+        pen += gl->advance;
+    }
+}
+
+/*
+ * `gfx.use_font(name, px)` - the font this process draws with.
+ *
+ * "spleen" is the bitmap and needs no size. Anything else is an outline at
+ * `px` pixels. Per process, because a font is a drawing state like a colour
+ * and not a property of the machine - though in practice the window manager
+ * draws almost all the text, so setting it there sets it for what you see.
+ */
+/* Publishes the metrics of whatever is in force into the `gfx.font` table
+ * every caller already holds. */
+static void publish_font(lua_State *L, const char *name)
+{
+    if (font_table_ref == LUA_NOREF) {
+        return;
+    }
+
+    lua_rawgeti(L, LUA_REGISTRYINDEX, font_table_ref);
+
+    /* `w` is the widest advance rather than a promise every glyph is that
+     * wide - true for these two monospaced faces, and still *honest* for a
+     * proportional one, where it becomes an upper bound and `gfx.measure`
+     * becomes the thing to ask. */
+    lua_pushinteger(L, outlines[ROLE_UI].loaded
+                       ? outlines[ROLE_UI].widest : GLYPH_W);
+    lua_setfield(L, -2, "w");
+
+    lua_pushinteger(L, outlines[ROLE_UI].loaded
+                       ? (outlines[ROLE_UI].ascent + outlines[ROLE_UI].descent)
+                       : GLYPH_H);
+    lua_setfield(L, -2, "h");
+
+    lua_pushstring(L, name);
+    lua_setfield(L, -2, "name");
+
+    lua_pop(L, 1);
+}
+
+static int l_use_font(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    int px = (int)luaL_optinteger(L, 2, 16);
+    int role = role_of(L, 3);
+
+    if (name[0] == 's') {                       /* spleen: the bitmap */
+        outline_release(&outlines[role]);
+
+        if (role == ROLE_UI) {
+            publish_font(L, "spleen");
+        }
+
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+
+    if (!outline_load(&outlines[role], name, px)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no such font");
+        return 2;
+    }
+
+    if (role == ROLE_UI) {
+        publish_font(L, name);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/* How wide a string would be. What the fifty places computing
+ * `#text * gfx.font.w` should ask instead, and what a proportional font
+ * makes compulsory. */
+static int l_measure(lua_State *L)
+{
+    size_t len;
+    const char *str = luaL_checklstring(L, 1, &len);
+
+    lua_pushinteger(L,
+        (lua_Integer)text_width(&outlines[role_of(L, 2)], str, len));
+    return 1;
+}
+
+/* What is available to choose from. */
+static int l_font_names(lua_State *L)
+{
+    unsigned i;
+
+    lua_newtable(L);
+    lua_pushstring(L, "spleen");
+    lua_rawseti(L, -2, 1);
+
+    for (i = 0; fonts_table[i].name != NULL; i++) {
+        char shortname[32];
+
+        font_short_name(fonts_table[i].name, shortname, sizeof(shortname));
+        lua_pushstring(L, shortname);
+        lua_rawseti(L, -2, (lua_Integer)(i + 2));
+    }
+
+    return 1;
+}
+
 /*
  * s:text(x, y, string, colour [, background])
  *
@@ -771,6 +1181,19 @@ static int l_text(lua_State *L)
     bool opaque = !lua_isnoneornil(L, 6);
     uint32_t bg = opaque ? (uint32_t)luaL_checkinteger(L, 6) : 0;
     size_t i;
+
+    /* An outline font, when one is in force. Same call, same arguments;
+     * what changes is where the glyphs come from. */
+    {
+        const struct outline_font *f = &outlines[role_of(L, 7)];
+
+        if (f->loaded) {
+            draw_outline_text(s, f, x, y, text, len, fg,
+                              opaque ? &bg : NULL);
+            lua_pushinteger(L, x + text_width(f, text, len));
+            return 1;
+        }
+    }
 
     for (i = 0; i < len; i++) {
         const unsigned char *rows = glyph_of((unsigned char)text[i]);
@@ -1000,6 +1423,9 @@ static int l_screen(lua_State *L)
 }
 
 static const luaL_Reg gfx_functions[] = {
+    { "use_font", l_use_font },
+    { "measure",  l_measure },
+    { "fonts",    l_font_names },
     { "surface", l_new },
     { "wrap",    l_wrap },
     { "bytes",   l_surface_bytes },
@@ -1037,11 +1463,25 @@ int luaopen_gfx(lua_State *L)
      * width would be Lua doing arithmetic about pixels. A table rather than
      * two functions: it is a property of the font, not a question to ask.
      */
-    lua_createtable(L, 0, 2);
+    lua_createtable(L, 0, 3);
     lua_pushinteger(L, GLYPH_W);
     lua_setfield(L, -2, "w");
     lua_pushinteger(L, GLYPH_H);
     lua_setfield(L, -2, "h");
+    lua_pushstring(L, "spleen");
+    lua_setfield(L, -2, "name");
+
+    /*
+     * Kept in the registry so that `use_font` can refresh it *in place*.
+     *
+     * The same reasoning as the palette in `theme.lua`: every caller reads
+     * `gfx.font.w` when it draws, so changing the fields of the one table
+     * changes what they all see. Replacing the table would leave every
+     * existing reference pointing at the old one.
+     */
+    lua_pushvalue(L, -1);
+    font_table_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
     lua_setfield(L, -2, "font");
 
     /* `gfx.png`, which lives in its own file because a decoder and a

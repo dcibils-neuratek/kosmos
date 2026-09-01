@@ -135,6 +135,20 @@ function theme.override(fields)
   return theme
 end
 
+-- The bitmap font until something says otherwise. It is exact, it costs
+-- nothing, and it is what every display test was written against.
+--
+-- Three of them, because the three places text appears do not want the same
+-- face: the titlebar and the widgets want whatever the desk looks like, a
+-- paragraph wants something to read, and a terminal wants a fixed width or
+-- its columns stop lining up. One setting for all three could only ever be
+-- wrong for two of them.
+theme.fonts = {
+  ui   = { font = "spleen", px = 16 },
+  text = { font = "spleen", px = 16 },
+  mono = { font = "spleen", px = 16 },
+}
+
 theme.apply("dark")
 
 return theme

@@ -821,6 +821,38 @@ static int l_kill(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.screen()` - is there a screen, and how big.
+ *
+ * The counterpart of `sys.disk()`, and it exists for the same reason: init
+ * has to decide whether to ask for a grant, and asking for one the machine
+ * cannot give is refused - which killed the whole boot the first time it
+ * happened with the disk. A machine with no display is a supported way to
+ * run, so this is how a caller finds out before asking.
+ *
+ * It answers about *this* process, because that is the only thing the
+ * kernel will tell anyone: the screen is held, not observed.
+ */
+static int l_screen_info(lua_State *L)
+{
+    struct screen_info info;
+
+    if (kosmos_screen(&info) < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "there is no screen");
+        return 2;
+    }
+
+    lua_newtable(L);
+
+    lua_pushinteger(L, (lua_Integer)info.width);
+    lua_setfield(L, -2, "width");
+    lua_pushinteger(L, (lua_Integer)info.height);
+    lua_setfield(L, -2, "height");
+
+    return 1;
+}
+
 static int l_screen_take(lua_State *L)
 {
     long status = kosmos_screen_take(lua_toboolean(L, 1));
@@ -900,6 +932,7 @@ static const luaL_Reg sys_functions[] = {
     { "build",    l_build },
     { "wait_input", l_wait_input },
     { "kill",     l_kill },
+    { "screen",      l_screen_info },
     { "screen_take", l_screen_take },
     { "programs", l_programs },
     { "libraries", l_libraries },

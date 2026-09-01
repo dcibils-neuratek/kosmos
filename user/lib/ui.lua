@@ -1264,6 +1264,29 @@ local function op_cost(o)
   return cost
 end
 
+-- The three faces the desktop is using, applied in this process.
+--
+-- A window that draws its own pixels rasterizes its own glyphs, so it needs
+-- to be told which faces to use - twice: once when it opens, and again
+-- whenever somebody changes them. Both paths call this.
+--
+-- A face that will not load leaves the previous one in place rather than
+-- raising: a font is a preference, and an application that dies because
+-- somebody picked an odd one is worse than an application with the old
+-- font.
+local function apply_fonts(fonts)
+  if type(fonts) ~= "table" then return end
+
+  for _, role in ipairs { "ui", "text", "mono" } do
+    local want = fonts[role]
+
+    if type(want) == "table" and want.font then
+      gfx.use_font(want.font, tonumber(want.px) or 16, role)
+      theme.fonts[role] = { font = want.font, px = tonumber(want.px) or 16 }
+    end
+  end
+end
+
 function ui.window(spec)
   spec = spec or {}
 
@@ -1321,6 +1344,7 @@ function ui.window(spec)
   -- about to build reads the right colours from the start.
   if reply.palette then theme.apply(reply.palette) end
   if reply.desktop then theme.override { desktop = reply.desktop } end
+  apply_fonts(reply.fonts)
 
   local w = setmetatable({
     handle = reply.window,
@@ -1780,6 +1804,12 @@ function window:run()
         --
         if ev.palette then theme.apply(ev.palette) end
         if ev.desktop then theme.override { desktop = ev.desktop } end
+
+        -- A window that draws its own pixels draws its own text, so it
+        -- needs the faces as well as the colours. One that sends commands
+        -- is unaffected: the compositor drew that text and has already
+        -- changed.
+        apply_fonts(ev.fonts)
 
         changed = true
       elseif ev.type == "mouse" then

@@ -316,3 +316,36 @@ With that, the full suite is the history of the project. At M8, if something bre
 **Do not chase a number that is inside budget.** If the frame fits in 16.6ms with room to spare, taking it from 8ms to 6ms buys nothing. The goal is to fit, not to win a benchmark.
 
 **Do not delete an old test because "we know that works by now".** That is exactly the test that will catch the regression.
+
+---
+
+## 18.9 The machine that is not there
+
+Every runner in `tools/` attached `-device ramfb`, because every runner was
+about pixels. That left one shape of machine untested: the one with no
+display at all - which is `make serial`, and which is also a real board
+with nothing plugged into it.
+
+It was broken, and silently. init asked the kernel for the screen grant
+whether or not there was a screen; the kernel refuses a grant it cannot
+give; the refused spawn was the shell. So the machine booted through all
+twelve stages, printed nothing that looked wrong, and stopped at a prompt
+that never came. The identical mistake had already been made and fixed for
+the disk, four lines higher in the same function, with a comment above it
+explaining exactly this.
+
+`tools/run_headless.py` is the test that would have caught it, and it runs
+as part of `make test`. Four checks: a prompt appears, no server said it
+could not start, a program runs, and the program's own output arrives.
+
+The third one earns its place separately. Programs are spawned through a
+different path than the shell, and that path had the same bug: with only
+the shell's site fixed, the machine reached a prompt and then refused to
+run anything. Both sites were re-broken one at a time to confirm each
+check fails on its own, which is the only way to know a test tests what its
+name says.
+
+The general lesson is not about screens. **A test suite that always
+provides every device only ever tests the machine you have.** The absent
+device is a configuration, and it is the configuration real hardware
+arrives in.

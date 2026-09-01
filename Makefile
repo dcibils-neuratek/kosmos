@@ -317,6 +317,8 @@ USER_SRCS := user/init/start.S \
              $(GEN)/programs.c \
              $(GEN)/version.c \
              $(GEN)/assets.c \
+             $(GEN)/fonts.c \
+             runtime/upstream/stb/stb_impl.c \
              $(GEN)/libraries.c \
              lua/kosmos/serialize.c \
              $(USER_LIBC) \
@@ -339,7 +341,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
 UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER \
-           -Iruntime/upstream/puff \
+           -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector
@@ -485,6 +487,20 @@ KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
 $(GEN)/assets.c: assets/images/test-pattern.png tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ assets/images/test-pattern.png
+
+# The outline fonts, embedded the same way.
+#
+# In the image rather than on the disk, because the desktop has to be able
+# to draw text on a machine with no drive - which is how every display test
+# runs. The cost is real and is written down in roadmap.md: the image is
+# copied into every process, so these bytes are paid for per process, and
+# that makes the shared read-only text mapping already on that list worth
+# more than it was.
+FONT_FILES := $(sort $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/*.otf))
+
+$(GEN)/fonts.c: $(FONT_FILES) tools/assets2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/assets2c.py fonts_table $@ $(FONT_FILES)
 
 $(GEN)/version.c: FORCE
 	@mkdir -p $(dir $@)
@@ -708,9 +724,13 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test:
+test: $(TARGET)
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
+	@# And the same machine with nothing plugged into it. A second boot,
+	@# but of the ordinary image rather than the test one: what it checks
+	@# is init and the shell, which the test image replaces.
+	python3 tools/run_headless.py $(TARGET)
 
 # The display, checked from outside the guest.
 #
