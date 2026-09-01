@@ -215,6 +215,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Aug 2026 | The microkernel is **Nebula**; Kosmos is the operating system on top of it | CLAUDE.md |
 | Aug 2026 | Versions are major.minor.revision: a revision per push, a minor per milestone | VERSION, tools/bump.py |
 | Aug 2026 | Action buttons go in a bar across the top of a window's content, never below it | ui.md §16.10 |
+| Aug 2026 | A Lua/C crossing costs ~2000 pixels; a primitive writes that much or is batched | gfx.md §19.11 |
 | Aug 2026 | Test harness from M0: host-side runner, TAP over serial, exit code via semihosting | testing.md §18.1, roadmap.md M0 |
 | Aug 2026 | QEMU with `-icount` for regressions (deterministic), PMU on hardware for budget. They measure different things | testing.md §18.3 |
 | Aug 2026 | Anything with a frame budget is measured by max and p99, never by average | testing.md §18.5 |

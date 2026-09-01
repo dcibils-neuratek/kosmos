@@ -215,3 +215,52 @@ Two consequences worth stating, because both are easy to get backwards:
 | `map` with a Lua function | 7 |
 | Triangle rasterizer, as one more primitive | 9 |
 | Tile-based undo with copy-on-write | 7 |
+
+## 19.11 What a crossing costs, and the rule that follows
+
+`gfxbench` measures the primitives. Under QEMU, on the machine this was
+written on:
+
+| | |
+|---|---|
+| `fill`, whole surface | 214 Mpx/s |
+| `blit`, whole surface | 48 Mpx/s |
+| `span`, one row at a time | 80 Mpx/s |
+| a disc drawn as a span per row, **from Lua** | **3 Mpx/s** |
+| the same disc as one `gfx.disc` call | **103 Mpx/s** |
+
+Thirty-three times, for the same pixels and the same arithmetic. The only
+difference is that the loop stopped crossing the Lua/C boundary once per
+row.
+
+**A crossing costs about 9 microseconds here.** At the rate a `fill`
+achieves, that buys about **two thousand pixels** - so:
+
+- a 30-pixel span is 99% overhead;
+- a 32x32 tile is roughly break-even;
+- a whole-window blit is pure pixel work.
+
+**The rule: a primitive should write about two thousand pixels or more, or
+be called in a batch.** That is not "avoid C calls" - it is the number that
+says when a call is worth making, and it is why `fill` takes a rectangle
+rather than being called per row.
+
+Three consequences, and two of them were already true by accident:
+
+- **`ui.lua` batches drawing commands by size**, not by count
+  (`BATCH_BYTES`). That is this same rule one layer up, at the IPC boundary
+  instead of the Lua/C one.
+- **Direct rendering is not the fast road.** It is the road for something
+  that redraws wholesale. Pac-Man was direct *and* slow, because it was
+  making four hundred small calls a frame; making the transport free did
+  nothing about the crossings in front of it.
+- **Doom is the ideal shape.** It renders a frame inside its own C loop and
+  hands over one buffer: one crossing per frame, not one per shape. 320x200
+  at 35 fps needs 2 Mpx/s against the 48 measured above, and the headroom is
+  not the interesting part - the shape is.
+
+The number is QEMU's, not hardware's, and `testing.md` 18.3 applies: this
+detects a regression and predicts nothing about a Pi. The *ratio* between
+the rows is what transfers.
+
+---

@@ -237,11 +237,15 @@ end
 -- 19.1 forbids, and it would also be slower.
 --------------------------------------------------------------------------
 
+-- One call rather than a span per row.
+--
+-- This was the Lua version, and `gfxbench` measured it at 3 Mpx/s against
+-- 208 for a fill: a radius-15 disc is thirty-one crossings of the Lua
+-- boundary, and each one costs more than the thirty pixels it writes. The
+-- primitive moved to C on the strength of that number, which is the order
+-- `CLAUDE.md` asks for.
 local function disc(s, cx, cy, radius, colour)
-  for dy = -radius, radius do
-    local dx = math.floor(math.sqrt(radius * radius - dy * dy))
-    s:span(cx - dx, cy + dy, dx * 2 + 1, colour)
-  end
+  s:disc(cx, cy, radius, colour)
 end
 
 --------------------------------------------------------------------------

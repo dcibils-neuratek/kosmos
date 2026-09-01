@@ -341,6 +341,77 @@ static int l_fill(lua_State *L)
 }
 
 /*
+ * A filled circle.
+ *
+ * Added because it was measured, which is the bar `CLAUDE.md` sets before
+ * anything moves to C. Drawn from Lua as a span per row it ran at 3 Mpx/s
+ * against 208 for `fill` - seventy times slower for the same kind of work,
+ * and not because of the pixels. A radius-15 disc is thirty-one separate
+ * calls across the Lua boundary, and each crossing costs far more than the
+ * thirty pixels it writes.
+ *
+ * So the loop moves and the arithmetic comes with it. One call, one
+ * integer square root per row, and the same spans written by the same
+ * code that `span` uses.
+ *
+ * The circle test is `dx*dx + dy*dy <= r*r` walked outward rather than a
+ * square root per row: integer only, no libm here, and exact.
+ */
+static int l_disc(lua_State *L)
+{
+    struct surface *s = check_surface(L, 1);
+    long cx = (long)luaL_checkinteger(L, 2);
+    long cy = (long)luaL_checkinteger(L, 3);
+    long r  = (long)luaL_checkinteger(L, 4);
+    uint32_t colour = (uint32_t)luaL_checkinteger(L, 5);
+    long dy;
+
+    if (r <= 0) {
+        return 0;
+    }
+
+    for (dy = -r; dy <= r; dy++) {
+        long y = cy + dy;
+        long dx = 0;
+        long x0, x1;
+        uint32_t *p;
+
+        if (y < 0 || y >= (long)s->height) {
+            continue;
+        }
+
+        /* The widest dx with dx*dx + dy*dy <= r*r. Walked up from zero,
+         * which is a handful of steps and no floating point. */
+        while ((dx + 1) * (dx + 1) + dy * dy <= r * r) {
+            dx++;
+        }
+
+        x0 = cx - dx;
+        x1 = cx + dx;
+
+        if (x0 < 0) {
+            x0 = 0;
+        }
+
+        if (x1 >= (long)s->width) {
+            x1 = (long)s->width - 1;
+        }
+
+        if (x1 < x0) {
+            continue;
+        }
+
+        p = row_of(s, (unsigned)y);
+
+        for (; x0 <= x1; x0++) {
+            p[x0] = colour;
+        }
+    }
+
+    return 0;
+}
+
+/*
  * A filled triangle.
  *
  * The one primitive the 3D engine needs that the others could not fake. A
@@ -716,6 +787,7 @@ static const luaL_Reg surface_methods[] = {
     { "fill",   l_fill },
     { "span",   l_span },
     { "triangle", l_triangle },
+    { "disc",   l_disc },
     { "blit",   l_blit },
     { "blend",  l_blend },
     { "text",   l_text },
