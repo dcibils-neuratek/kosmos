@@ -71,6 +71,50 @@ shell rather than underneath it.
                                    |
                         18 syscalls |  the whole interface
                                    v
+### What is inside one of those boxes
+
+Every box on that floor is drawn as though it were Lua, and none of them
+are only Lua. A process is Lua source *and* the C that runs it, in one
+address space, at EL0:
+
+```
+   any one of the boxes above
+   +--------------------------------------------------------+
+   |  the program, and the libraries it loaded    Lua source |
+   |  ui.lua, gfx.lua, kfs.lua, theme.lua         Lua source |
+   |  - - - - - - - - - - - - - - - - - - - - - - - - - - -  |
+   |  the Lua interpreter                                  C |
+   |  gfx.c        fill, blit, blend, glyphs, discs        C |
+   |  stb_truetype outlines                                C |
+   |  serialize.c  a table to bytes and back               C |
+   |  libc         memcpy, malloc, snprintf, setjmp        C |
+   +--------------------------------------------------------+
+```
+
+**That C is not kernel code and is not privileged.** It is compiled into
+the user image, which is a different binary from the kernel, and it runs
+with the process's own page tables at EL0. A bug in `gfx.c` can corrupt
+the process it is in and nothing else - the same blast radius as a bug in
+the Lua above it, only faster.
+
+Which is exactly why the language rule permits it. The rule asks what a bug
+there could reach, not what language it is written in: the pixel loop is C
+because Lua cannot write two million pixels in time, and it is *allowed* to
+be C because it cannot reach past its own address space.
+
+The one qualification worth keeping: a surface shared with the compositor
+is shared memory, so a bad write there can scribble on pixels another
+process is reading. It cannot reach anything else, because the mapping is
+the only thing it was handed.
+
+**A decoder is the same shape.** When there is audio, the code that turns a
+compressed file into samples is C in the player's own address space, beside
+the font rasteriser. What has to live lower down is the *driver* - talking
+to the device needs MMIO and interrupts, which userland cannot reach yet -
+and that is a limitation rather than a principle. See `hal.md`.
+
+---
+
   EL1  +----------------------------------------------------------------+
        |  kernel: threads, address spaces, IPC, capabilities             |
        |                                                                 |

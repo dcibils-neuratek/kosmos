@@ -46,6 +46,35 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The journal works, and M8's definition of done is met.** ext3's shape:
+  write the blocks into the journal, write one commit block, apply them,
+  clear the header. The ordering is the whole guarantee. `make powertest`
+  kills the machine five times mid-write and finds every directory entry
+  readable and no file half-written; `tools/test_kfs.lua` tests replay by
+  *choosing* the instant, because a SIGKILL cannot aim at the few
+  milliseconds that matter. Each of the four rules was deleted in turn to
+  check its test fails without it - and one did not, which is how a hole in
+  the uncommitted-journal case was found.
+
+- **A host Lua**, `build/host/lua`, so pure-logic libraries are tested
+  without booting. `kfs.lua` is the case that asked for it.
+
+- **The language line, measured rather than argued.** The journal's
+  structure in Lua costs about 2%; its checksum, a byte loop in Lua, cost
+  30%. Moved to C it recovers about half - the rest is unexplained and
+  worth chasing. `design.md` 6 now carries the whole reasoning: where the C
+  actually runs (EL0, in the process, not the kernel), what a C server
+  would cost in marshalling and hot reload, and the experiment that would
+  settle it - `kfs.store` written both ways. The prediction on record is
+  fifteen percent.
+
+- **Next, by decision rather than by roadmap:** audio - a virtio-snd driver
+  in the HAL, WAV first to prove the path, then a vendored MP3 decoder as
+  userland C beside the font rasteriser - and a music player. Then Doom,
+  then real hardware. `roadmap.md` is a guide and not a rule; it still says
+  audio is out of scope, and it is out of date rather than right.
+
+
 - **The serialised format is little-endian on purpose now.** It used to be
   a `memcpy` of the native bytes, which was invisible because every target
   so far agrees. It matters for the disk before anything else: attribute

@@ -216,6 +216,123 @@ And three things **only when measurement justifies it**: the alpha-blending blit
 
 The namespace server. The filesystem servers. The entire app server, including compositing. The shell and the REPL. Init and supervision. Every application.
 
+### Where that C actually runs, which is not where people assume
+
+**Almost none of it is in the kernel.** The interpreter, the serializer, the
+libc, `gfx.c`, `stb_truetype` - all of that is compiled into the *user*
+image, a different binary from the kernel, and it runs at EL0 with the
+process's own page tables. A process is Lua source and the C that runs it,
+in one address space:
+
+```
+   one process, EL0
+   +--------------------------------------------------------+
+   |  the program, and the libraries it loaded    Lua source |
+   |  ui.lua, gfx.lua, kfs.lua, theme.lua         Lua source |
+   |  - - - - - - - - - - - - - - - - - - - - - - - - - - -  |
+   |  the Lua interpreter                                  C |
+   |  gfx.c        fill, blit, blend, glyphs, discs        C |
+   |  stb_truetype outlines                                C |
+   |  serialize.c  a table to bytes and back               C |
+   |  libc         memcpy, malloc, snprintf, setjmp        C |
+   +--------------------------------------------------------+
+```
+
+So the split is **not** about privilege. A bug in `gfx.c` can corrupt the
+process it is in and nothing else, which is the same blast radius as a bug
+in the Lua above it. That is why the speed exceptions are allowed at all.
+
+### Where the line really falls: structure or a loop over bytes
+
+The rule at the top of this section answers "may this be C". It does not
+answer "should it be", and the honest answer to that only arrives with a
+measurement. There is now one worth writing down, because it is the
+clearest example this system has produced.
+
+The filesystem journal was written entirely in Lua, including a checksum
+over every block of a transaction - FNV-1a, a byte at a time. Creating a
+file went from 21 a second to 14 when the journal landed. Stubbing out only
+the checksum brought it back to 20.5.
+
+| | files a second |
+|---|---|
+| before the journal existed | 21.0 |
+| with the journal, checksum in Lua | 14.4 |
+| with the journal, checksum stubbed out | 20.5 |
+| with the journal, checksum in C | 16.7 |
+
+Read that table twice, because it says something surprising. **The journal's
+own work - transactions, ordering, recovery, writing every block twice -
+cost about two percent.** Hashing four kilobytes a byte at a time through
+the interpreter cost the other thirty.
+
+Nothing about the *structure* of a journal wanted to be C. One loop over
+bytes did, and only a profile could have said which. Moving that loop to C
+recovered about half of what was lost; the remaining gap is not explained
+yet and is worth chasing before anything larger is concluded from this.
+
+The line, then, is not "platform in C, applications in Lua". It is:
+
+- **Decisions, dispatch, protocol, state, layout: Lua.** Measurably cheap,
+  and where every advantage below lives.
+- **Loops over many bytes, pixels or samples: C.** Measurably expensive,
+  and no reload value - nobody hot-patches a checksum.
+
+### Why the servers stay in Lua, stated as costs
+
+The proposal that arrives naturally at this point is: the window manager,
+the filesystem, the namespace server are *platform*, nobody edits them,
+write them in C and have them be fast. It is a serious proposal and these
+are the things it would cost.
+
+**Every server would have to marshal.** Today a server receives a Lua table
+and returns a Lua table, and there is no marshalling code anywhere in the
+system - not a line. A C server has to parse the serialised bytes into C
+structures and rebuild them on the way out, or reimplement dynamically
+typed tables in C, which is writing Lua again under worse conditions. That
+is the IDL-and-generated-stubs work section 3 rejects SOM for, arriving
+through the back door.
+
+**Hot reload stops at the boundary.** `fs.reload` replaces a running
+server's code without losing its state or its clients, and the project's
+own definition of done says "Doom at 35fps next to a prompt where you
+redefine the window manager while you play". That sentence is about
+`wm.lua` specifically. In C it is not a harder demo, it is not a demo.
+
+**Portability, which is a stated goal.** The 16,000 lines of Lua userland
+are recompiled for a new architecture exactly zero times, and cannot carry
+an endian or alignment bug. The C is about 11,000 lines and has already
+produced one endian bug, in the serializer. Moving the userland to C
+roughly doubles the code that has to be got right again per target.
+
+**The complexity budget.** Section 3 takes Oberon's constraint seriously.
+16,000 lines of Lua is not 16,000 lines of C.
+
+**And the experiment loses its result.** Section 1's thesis is that a
+system simplifies when the protocol between servers is the data model of
+the userland language. Servers written in C do not test that claim; they
+decline to.
+
+### What would change this decision
+
+Not an argument - a measurement. The costs above are real and so is the
+speed, and the way to settle it is to build one hot server path both ways.
+
+`kfs.store` is the right subject: it is self-contained, it is measured
+already, and `tools/test_kfs.lua` tests the format on the host so a C
+version can be held to exactly the same checks.
+
+- If the C version is several times faster, the platform should follow it
+  and this section is wrong.
+- If it is fifteen or twenty percent, the cost was never the interpreter -
+  it is the block I/O and the round trips, which are the same in any
+  language - and the question is closed.
+
+The prediction on record, so it can be wrong in public: **fifteen percent.**
+A file create is about sixty milliseconds and roughly fifteen block
+operations at three milliseconds each, none of which cares what language
+asked for them.
+
 ### Why C and not Rust
 
 Lua is 30k lines of C and it is the system's central piece. With a Rust kernel, that C exists anyway but inside an `unsafe extern`, with raw pointers and a raw allocator. You get all of Rust's costs and no guarantee where it matters most, because the real risk surface is the kernel↔Lua interface.

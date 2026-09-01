@@ -1757,6 +1757,23 @@ local function diskfs_handlers(state)
     if state.sb then return state.sb end
 
     local sb = kfs.mount()
+
+    -- Before anything else looks at the disk.
+    --
+    -- A committed transaction that was not finished is not an error and not
+    -- a repair: it is a write that was in progress when the power went, and
+    -- replaying it is what makes that write have happened. Said out loud,
+    -- because a silent replay would hide the only evidence that the machine
+    -- did not shut down cleanly.
+    if sb then
+      local replayed = kfs.recover(sb)
+
+      if replayed > 0 then
+        print(("disk: the last write did not finish; %d block(s) replayed")
+              :format(replayed))
+      end
+    end
+
     state.sb = sb
     return sb
   end
@@ -1894,6 +1911,33 @@ local function diskfs_handlers(state)
       state.attrs[path] = attrs
       index_add(path, attrs)
     end
+  end
+
+  --
+  -- One operation, all of it or none of it.
+  --
+  -- Everything that changes the disk goes through here. The alternative is
+  -- `begin` and `commit` written out at each of the four call sites, and
+  -- the failure that produces is one path that returns early between them,
+  -- leaving a transaction open for the *next* operation to inherit.
+  --
+  local function atomic(sb, fn, ...)
+    local ok, err = kfs.begin()
+
+    if not ok then return nil, err end
+
+    local result, why = fn(sb, ...)
+
+    if not result then
+      kfs.rollback()
+      return nil, why
+    end
+
+    local done, cerr = kfs.commit(sb)
+
+    if not done then return nil, cerr end
+
+    return result
   end
 
   local function describe()
@@ -2077,7 +2121,7 @@ local function diskfs_handlers(state)
         body = tostring(body)
       end
 
-      local number, err = kfs.store(sb, req.path, body, sys.ticks())
+      local number, err = atomic(sb, kfs.store, req.path, body, sys.ticks())
 
       if not number then
         return { ok = false, error = tostring(err) }
@@ -2105,7 +2149,7 @@ local function diskfs_handlers(state)
         return { ok = false, error = "that name is reserved" }
       end
 
-      local ok, err = kfs.unlink(sb, req.path)
+      local ok, err = atomic(sb, kfs.unlink, req.path)
 
       if not ok then
         return { ok = false, error = tostring(err) }
@@ -2131,7 +2175,7 @@ local function diskfs_handlers(state)
         return { ok = false, error = "there is no filesystem here" }
       end
 
-      local ok, err = kfs.mkdir(sb, req.path, sys.ticks())
+      local ok, err = atomic(sb, kfs.mkdir, req.path, sys.ticks())
 
       if not ok then
         return { ok = false, error = tostring(err) }
@@ -2249,7 +2293,7 @@ local function diskfs_handlers(state)
         end
       end
 
-      local ok, werr = kfs.write_attrs(sb, number, node, attrs)
+      local ok, werr = atomic(sb, kfs.write_attrs, number, node, attrs)
 
       if not ok then
         return { ok = false, error = tostring(werr) }

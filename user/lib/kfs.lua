@@ -210,7 +210,28 @@ end
 -- pitch, one layer down and for the same reason.
 --------------------------------------------------------------------------
 
+--------------------------------------------------------------------------
+-- The transaction in progress, if there is one.
+--
+-- `kfs.begin()` starts collecting writes instead of performing them;
+-- `kfs.commit()` puts them on the disk in an order that survives losing
+-- power at any point. Between those two, `write_block` records and
+-- `read_block` answers out of the record - because the code doing the work
+-- reads back what it just wrote constantly (allocate a block, then read the
+-- bitmap again) and it must see its own changes.
+--
+-- Held as whole blocks rather than as a diff. A block is 4 KB and a
+-- transaction here is a handful of them, so the simple thing costs about
+-- sixty kilobytes at worst in a process with two megabytes.
+--------------------------------------------------------------------------
+
+local txn = nil
+
 function kfs.read_block(n)
+  if txn and txn.blocks[n] then
+    return txn.blocks[n]
+  end
+
   return sys.disk_read(n * kfs.PER_BLOCK, kfs.BLOCK)
 end
 
@@ -225,7 +246,280 @@ function kfs.write_block(n, bytes)
     bytes = bytes .. string.rep("\0", kfs.BLOCK - #bytes)
   end
 
+  if txn then
+    if not txn.blocks[n] then
+      txn.order[#txn.order + 1] = n
+    end
+
+    txn.blocks[n] = bytes
+
+    if #txn.order > kfs.JOURNAL_BLOCKS - 2 then
+      txn.too_big = true
+    end
+
+    return true
+  end
+
   return sys.disk_write(n * kfs.PER_BLOCK, bytes)
+end
+
+--------------------------------------------------------------------------
+-- The journal.
+--
+-- What it is for, stated plainly: **an operation on this filesystem either
+-- happened or did not, even if the power goes off in the middle of it.**
+--
+-- Without one, `store` writes a directory block, an inode, a bitmap block
+-- and a data block, in some order, and losing power between any two of them
+-- leaves the disk in a state no rule covers - a directory entry pointing at
+-- an inode that was never written, a block marked used that nothing owns, a
+-- file whose size says forty bytes and whose extent was never allocated.
+-- Those are not lost data. They are a filesystem that disagrees with
+-- itself, and every later operation builds on the disagreement.
+--
+-- Borrowed from ext3, and it is the *ordering* that does the work rather
+-- than any cleverness:
+--
+--   1. Write every changed block into the journal, with a list of where
+--      each one belongs. Nothing at its real address has moved yet.
+--   2. Write the header saying "this transaction is complete", with a
+--      checksum over everything above it. **This single block write is the
+--      commit.** Before it, the transaction did not happen. After it, it
+--      did, and the disk simply has not caught up.
+--   3. Copy each block from the journal to where it belongs.
+--   4. Write the header back to empty.
+--
+-- Lose power in 1, and mount finds an uncommitted header and ignores
+-- everything - the operation never happened. Lose power in 3, and mount
+-- finds a committed header and *replays* it, which finishes the job. Lose
+-- power in 4 and the replay happens again, which is harmless: writing the
+-- same blocks to the same places twice is the same as doing it once. That
+-- last property is what "idempotent" is worth here, and it is why replay
+-- can be dumb.
+--
+-- **The assumption, said out loud:** a single 4 KB block write either
+-- happens or does not. That is not free on real hardware - a drive losing
+-- power mid-sector can tear one - which is why the header carries a
+-- checksum over the whole transaction. A torn commit fails the checksum and
+-- is treated as never having happened, which is the safe direction.
+--
+-- **What this does not do:** batch. ext3 gets much of its speed from
+-- collecting many operations into one journal write, because a disk costs
+-- about the same for a large write as a small one. Here every operation is
+-- its own transaction, which is the slow and simple thing. The measurement
+-- that would justify batching does not exist yet; when `score` says the
+-- filesystem group is the bottleneck, that is the moment.
+--------------------------------------------------------------------------
+
+-- Exported, because two other things need them: the test that has to build
+-- a header by hand to check the state field is honoured, and eventually
+-- fsck, which has to be able to say what the journal is holding.
+kfs.J_MAGIC     = 0x4b4a524e          -- "KJRN"
+kfs.J_EMPTY     = 0
+kfs.J_COMMITTED = 1
+
+-- header: magic, state, count, checksum, sequence
+kfs.J_HEADER = "<I4I4I4I4I8"
+
+local J_MAGIC     = kfs.J_MAGIC
+local J_EMPTY     = kfs.J_EMPTY
+local J_COMMITTED = kfs.J_COMMITTED
+local J_HEADER    = kfs.J_HEADER
+
+-- A checksum good enough to catch a torn write. FNV-1a, in C.
+--
+-- It was in Lua first, and the measurement is worth keeping because it is
+-- the clearest example in this system of where the language line actually
+-- falls. Creating a file went from 21 a second to 14 when the journal
+-- landed. Stubbing the checksum out brought it back to 20.5 - so the
+-- journal's own work, writing every block twice, costs about two percent,
+-- and hashing four kilobytes a byte at a time through the interpreter cost
+-- the other thirty.
+--
+-- Nothing about the *structure* of this file wanted to be C. One loop over
+-- bytes did, and only a profile could have said which.
+local function checksum(parts)
+  local h = 0x811c9dc5
+
+  for _, part in ipairs(parts) do
+    h = sys.fnv1a(part, h)
+  end
+
+  return h
+end
+
+-- Everything a transaction is, on the disk:
+--
+--   journal_at + 0   the header
+--   journal_at + 1   where each block belongs, as 4-byte numbers
+--   journal_at + 2   the blocks themselves, in that order
+--
+-- One descriptor block caps a transaction at 1024 entries, and the journal
+-- caps it at 254. The second limit is the real one.
+
+function kfs.begin()
+  if txn then return nil, "a transaction is already open" end
+
+  txn = { blocks = {}, order = {}, too_big = false }
+  return true
+end
+
+function kfs.rollback()
+  txn = nil
+end
+
+--
+-- Puts the transaction on the disk, in the order above.
+--
+-- Writes go through `sys.disk_write` directly rather than through
+-- `kfs.write_block`, because `write_block` is the thing that records into
+-- the transaction and this is the code emptying it.
+--
+local function raw_write(n, bytes)
+  if #bytes < kfs.BLOCK then
+    bytes = bytes .. string.rep("\0", kfs.BLOCK - #bytes)
+  end
+
+  return sys.disk_write(n * kfs.PER_BLOCK, bytes)
+end
+
+--
+-- `stop` is where to pretend the power went, and it exists because the
+-- alternative is not testing this at all.
+--
+-- The guarantee the journal makes is about one instant: after the commit
+-- block has landed and before the last data block has reached its home.
+-- Under QEMU that window is a few milliseconds inside a fifty-millisecond
+-- write, and a SIGKILL aimed at it lands there by luck. `run_power.py`
+-- kills the machine anyway and proves something else worth proving - that
+-- the filesystem is never left inconsistent - but it cannot aim.
+--
+-- So the instant is a parameter. `"after-commit"` returns as soon as the
+-- transaction is durable and before any of it has been applied, which is
+-- exactly the state a mount has to recover from. Nothing in the system
+-- passes it; `tools/test_kfs.lua` does.
+--
+function kfs.commit(sb, stop)
+  if not txn then return nil, "no transaction is open" end
+
+  local t = txn
+
+  -- Closed first, so that anything below writing through `write_block`
+  -- reaches the disk instead of being recorded into the transaction it is
+  -- trying to finish.
+  txn = nil
+
+  if #t.order == 0 then return true end
+
+  if t.too_big then
+    return nil, "more blocks changed than the journal can hold"
+  end
+
+  local at = sb.journal_at
+
+  -- 1. The descriptor and the data. Nothing at its real address has moved.
+  local descriptor = {}
+  local data = {}
+
+  for i, block in ipairs(t.order) do
+    descriptor[i] = string.pack("<I4", block)
+    data[i] = t.blocks[block]
+  end
+
+  local desc_bytes = table.concat(descriptor)
+
+  local ok, err = raw_write(at + 1, desc_bytes)
+
+  if not ok then return nil, err end
+
+  for i, bytes in ipairs(data) do
+    ok, err = raw_write(at + 1 + i, bytes)
+
+    if not ok then return nil, err end
+  end
+
+  -- 2. The commit. One block, and the whole guarantee turns on it.
+  local sum = checksum({ desc_bytes, table.unpack(data) })
+
+  ok, err = raw_write(at, string.pack(J_HEADER, J_MAGIC, J_COMMITTED,
+                                      #t.order, sum, 0))
+
+  if not ok then return nil, err end
+
+  if stop == "after-commit" then
+    return true
+  end
+
+  -- 3. Where the blocks actually belong.
+  for i, block in ipairs(t.order) do
+    ok, err = raw_write(block, data[i])
+
+    if not ok then
+      -- Left committed on purpose. The next mount replays it and finishes
+      -- what this could not, which is exactly the case the journal is for.
+      return nil, err
+    end
+  end
+
+  -- 4. Done with. A crash before this replays a transaction that has
+  --    already been applied, which writes the same bytes to the same
+  --    places and changes nothing.
+  raw_write(at, string.pack(J_HEADER, J_MAGIC, J_EMPTY, 0, 0, 0))
+
+  return true
+end
+
+--
+-- What a mount does before anything else looks at the disk.
+--
+-- Returns the number of blocks replayed, so a caller can say so. Silence
+-- about a replay would hide the only evidence that the machine did not shut
+-- down cleanly.
+--
+function kfs.recover(sb)
+  local head = kfs.read_block(sb.journal_at)
+
+  if not head then return 0 end
+
+  local magic, state, count, sum = string.unpack(J_HEADER, head)
+
+  if magic ~= J_MAGIC or state ~= J_COMMITTED then
+    return 0
+  end
+
+  if count == 0 or count > kfs.JOURNAL_BLOCKS - 2 then
+    return 0
+  end
+
+  local desc = kfs.read_block(sb.journal_at + 1)
+
+  if not desc then return 0 end
+
+  local data = {}
+
+  for i = 1, count do
+    data[i] = kfs.read_block(sb.journal_at + 1 + i)
+
+    if not data[i] then return 0 end
+  end
+
+  -- The checksum decides. A transaction whose commit block landed but whose
+  -- data did not is exactly what this catches, and the safe answer is to
+  -- treat it as never having happened.
+  if checksum({ desc:sub(1, count * 4), table.unpack(data) }) ~= sum then
+    raw_write(sb.journal_at, string.pack(J_HEADER, J_MAGIC, J_EMPTY, 0, 0, 0))
+    return 0
+  end
+
+  for i = 1, count do
+    local block = string.unpack("<I4", desc, (i - 1) * 4 + 1)
+
+    raw_write(block, data[i])
+  end
+
+  raw_write(sb.journal_at, string.pack(J_HEADER, J_MAGIC, J_EMPTY, 0, 0, 0))
+
+  return count
 end
 
 --------------------------------------------------------------------------

@@ -230,6 +230,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A cross-machine benchmark measures for fixed time, never fixed work | testing.md §18.10 |
 | Sep 2026 | The benchmark engine is a library; `score` prints it and `sysbench` draws it | testing.md §18.10 |
 | Sep 2026 | The serialised format is little-endian by decision, not by accident | serialize.c, testing.md §18.11 |
+| Sep 2026 | Journalling, ext3-style: journal, commit block, apply, clear. The order is the guarantee | kfs.lua, testing.md §18.12 |
+| Sep 2026 | A host Lua, so pure-logic libraries are unit-tested without booting | Makefile, tools/test_kfs.lua |
+| Sep 2026 | The language line is structure vs loops-over-bytes, not platform vs application | design.md §6 |
+| Sep 2026 | Audio: a virtio-snd driver, WAV first, then a vendored MP3 decoder in userland C | design.md §6, state.md |
 
 ---
 

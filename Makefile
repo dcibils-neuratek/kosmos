@@ -452,6 +452,29 @@ $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
 
+# The interpreter, on this machine rather than the target.
+#
+# For unit-testing the Lua libraries that are pure logic. `kfs.lua` is the
+# case that asked for it: it is a filesystem format, its whole job is
+# arithmetic over blocks, and the only thing it needs from the system is
+# two functions to read and write one. Given those as stubs over a byte
+# string, every branch of it can be tested here in a tenth of a second -
+# including the ones that need a machine to lose power at an exact instant,
+# which cannot be arranged under QEMU on purpose at all.
+#
+# It does not replace the guest tests and it is not allowed to. What runs
+# here is the same source, but not on the same machine, against the same
+# libc, or through the same syscalls. This answers "is the format correct";
+# `make test` and `make disktest` answer "does it work on the machine".
+#
+# `linit.c` is added back here and nowhere else. The rest of the host tools
+# deliberately leave it out - it opens every standard library, including the
+# ones the guest does not have - but an interpreter that cannot `require`
+# its own standard library cannot run a test.
+$(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
+
 # A stamp rather than a phony target: the generated sources depend on this,
 # and a phony one would rebuild them on every make.
 $(HOSTDIR)/lua.ok: $(LUA_FILES) $(HOSTDIR)/luacheck $(HOSTDIR)/luac tools/luaglobals.py
@@ -605,7 +628,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test disktest screenshot bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest screenshot bench bench-record debug disasm size clean dist release disk
 
 # An empty disk. Made when it is missing and never overwritten by accident:
 # `make disk` after deleting it is a deliberate act, and a build that
@@ -724,13 +747,23 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET)
+test: $(TARGET) $(HOSTDIR)/lua
+	@# The format, on this machine, before anything is booted. It is the
+	@# fastest of the three and the one that fails first when the disk
+	@# layout is wrong.
+	$(HOSTDIR)/lua tools/test_kfs.lua
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,
 	@# but of the ordinary image rather than the test one: what it checks
 	@# is init and the shell, which the test image replaces.
 	python3 tools/run_headless.py $(TARGET)
+
+# Power loss, which cannot be asked inside one boot. Not part of `make test`
+# because it boots eleven times and kills five of them.
+.PHONY: powertest
+powertest: $(TARGET)
+	python3 tools/run_power.py $(TARGET)
 
 # The display, checked from outside the guest.
 #

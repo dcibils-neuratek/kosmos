@@ -833,6 +833,41 @@ static int l_kill(lua_State *L)
  * It answers about *this* process, because that is the only thing the
  * kernel will tell anyone: the screen is held, not observed.
  */
+/*
+ * `sys.fnv1a(bytes, [seed])` - a checksum over a string, in C.
+ *
+ * Here for one reason, and the number is the reason. The filesystem's
+ * journal checksums every block of a transaction, and written in Lua that
+ * loop cost more than everything else the journal does put together:
+ * creating a file went from 21 to 14 a second when the journal landed, and
+ * 20.5 of those 21 came back the moment the checksum was stubbed out. The
+ * double write a journal exists to do costs about two percent. Hashing
+ * four kilobytes a byte at a time through the interpreter cost thirty.
+ *
+ * This is the rule in CLAUDE.md working exactly as written: a loop over
+ * bytes goes to C, *after* a measurement says so and not before. It is the
+ * same argument as the pixel loop, one layer down - Lua decides what to
+ * checksum and when, and the walk over the bytes happens here.
+ *
+ * FNV-1a, 32-bit. Not cryptographic and not trying to be: what it has to
+ * catch is half a block arriving, not somebody forging one.
+ */
+static int l_fnv1a(lua_State *L)
+{
+    size_t len;
+    const char *bytes = luaL_checklstring(L, 1, &len);
+    uint32_t h = (uint32_t)luaL_optinteger(L, 2, 0x811c9dc5u);
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        h ^= (uint32_t)(unsigned char)bytes[i];
+        h *= 16777619u;
+    }
+
+    lua_pushinteger(L, (lua_Integer)h);
+    return 1;
+}
+
 static int l_screen_info(lua_State *L)
 {
     struct screen_info info;
@@ -932,6 +967,7 @@ static const luaL_Reg sys_functions[] = {
     { "build",    l_build },
     { "wait_input", l_wait_input },
     { "kill",     l_kill },
+    { "fnv1a",       l_fnv1a },
     { "screen",      l_screen_info },
     { "screen_take", l_screen_take },
     { "programs", l_programs },

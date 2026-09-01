@@ -447,3 +447,67 @@ before trusting what it said about a keystroke that might not.
 system: phases that wait on a fixed deadline for a screen to change will
 fail on a busy host whatever the guest does.
 
+---
+
+## 18.12 Testing a thing that only fails when the power goes off
+
+M8's definition of done is "cut power during a write and mount clean". That
+is two different tests, and conflating them produced a bad one first.
+
+**`make powertest` kills the machine.** SIGKILL, five times, at five
+different instants during a run of four hundred writes, and after each one
+the machine is booted again and asked: can every name in the directory be
+read, and does every file that came back hold exactly what was written to
+it? A file that is missing is fine - it was not finished. A file that is
+half there is not, and neither is a name that lists but cannot be opened,
+which is a directory entry pointing at an inode that was never written.
+
+**`build/host/lua tools/test_kfs.lua` tests recovery.** It has to be
+separate, and the reason is worth stating: the journal's guarantee is about
+one instant - after the commit block lands and before the last data block
+reaches its home. Under QEMU that is a few milliseconds inside a
+fifty-millisecond write. Five kills will usually miss it.
+
+The first version of the power test asserted that at least one run replayed
+a transaction. It was asserting on luck, and a test that fails when a coin
+comes up tails is worse than no test. So the instant is chosen instead:
+`kfs.commit(sb, "after-commit")` returns as soon as the transaction is
+durable and before any of it is applied, which is exactly the state a mount
+must recover from.
+
+That parameter exists only for the test, and that is the right trade. The
+alternative is not testing the one property the whole milestone is about.
+
+### The host interpreter, and what it is not for
+
+`kfs.lua` is arithmetic over blocks. Given stubs for reading and writing
+one, every branch of it runs on this machine in a fraction of a second -
+including the ones that need power to fail at an exact moment.
+
+It does not replace the guest tests and must not. The same source runs, but
+not on the same machine, against the same libc, or through the same
+syscalls. This answers "is the format correct". `make test` and
+`make disktest` answer "does it work on the machine".
+
+### Four rules, and deleting each one to check
+
+Every check here guards a rule rather than a value, so each rule was
+deleted in turn to confirm its check fails without it:
+
+| deleted | caught |
+|---|---|
+| the checksum comparison | yes |
+| `recover` entirely | yes |
+| the "was it committed" test | **no** |
+| journal writes | yes |
+
+The third is the one worth having. The uncommitted case blanked the
+journal header, so recovery refused it for having no magic and the state
+field was never exercised at all. Rebuilt with a *valid* header - real
+magic, real count, real checksum, only the state saying empty - it fails
+correctly.
+
+It took three attempts and each wrong one passed. **A check that still
+passes when the rule it names is deleted is not testing that rule**, and
+the only way to find that out is to delete it and watch.
+
