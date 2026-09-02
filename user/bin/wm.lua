@@ -40,7 +40,15 @@ local theme = use("/lib/theme.lua")
 
 local TAB_H      = 20
 local BORDER     = 2
-local CLOSE_W    = 12             -- the close box at the left of a tab
+--
+-- The three controls on a tab, and the room they take.
+--
+-- `BOX` is the control; `CLOSE_W` and `BOX_W` are the *slots*, so there is
+-- a gap between two adjacent controls without either of them knowing about
+-- the other.
+--
+local BOX        = 14
+local CLOSE_W    = BOX + 6        -- the close box at the left of a tab
 
 --
 -- The sizing grip, bottom right, and how far into the window it reaches.
@@ -55,7 +63,7 @@ local CLOSE_W    = 12             -- the close box at the left of a tab
 -- in the one corner least likely to hold anything you meant to press.
 --
 local GRIP       = 16
-local BOX_W      = 12             -- minimise and maximise, at the right
+local BOX_W      = BOX + 4        -- minimise and maximise, at the right
 
 -- Nothing may be resized smaller than this. Below it a window is all
 -- decoration and no window.
@@ -571,6 +579,23 @@ end
 -- Into the backbuffer, clipped by the surface primitives like anything
 -- else. A run of identical pixels at a time rather than one fill per pixel:
 -- the arrow is ten columns wide and mostly runs.
+--
+-- A raised control, drawn straight onto the backbuffer.
+--
+-- The kit has `gc:raised` and this cannot use it: that builds a *command*
+-- for an application's window, and the decoration is drawn here, in screen
+-- coordinates, by the process that owns the screen. Same two edges and the
+-- same colour tokens, so the two agree about what raised looks like even
+-- though neither can call the other.
+--
+local function raised_box(x, y, w, h, face)
+  back:fill(x, y, w, h, face)
+  back:fill(x, y, w - 1, 1, theme.edge_light)
+  back:fill(x, y, 1, h - 1, theme.edge_light)
+  back:fill(x, y + h - 1, w, 1, theme.edge_dark)
+  back:fill(x + w - 1, y, 1, h, theme.edge_dark)
+end
+
 local function draw_cursor()
   for row = 0, CURSOR_H - 1 do
     local line = CURSOR[row + 1]
@@ -691,10 +716,28 @@ local function compose_rect(r)
       -- bar, and redrawing a title nobody disturbed is a string of glyphs
       -- per frame for nothing.
       if r.y < fy + TAB_H and r.y + r.h > fy then
-        local bx, by = fx + 4, fy + (TAB_H - 8) // 2
+        --
+        -- Raised, like every other control in the system.
+        --
+        -- These were 8x8 flat squares painted straight onto the tab, from
+        -- before `ui.md` 16.8b decided the look was dimensional. Next to a
+        -- bevelled button they read as a smudge rather than as something
+        -- you press - which is precisely the sentence a bevel is there to
+        -- say, and the title bar is the one place every window has one.
+        --
+        -- The face is the window colour rather than the tab's, so a control
+        -- looks like a control and not like a hole in the amber.
+        --
+        local by = fy + (TAB_H - BOX) // 2
+        local bx = fx + 4
 
-        back:fill(bx, by, 8, 8, title_colour())
-        back:fill(bx + 1, by + 1, 6, 6, tab)
+        raised_box(bx, by, BOX, BOX, theme.raised)
+
+        -- Close: a square, the way BeOS drew it. A cross would need
+        -- diagonals, and there is no line primitive - it would be fourteen
+        -- one-pixel fills to say what a square says in two.
+        back:fill(bx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
+        back:fill(bx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
 
         back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
                   title_colour(), tab)
@@ -711,21 +754,21 @@ local function compose_rect(r)
         -- hides a window instead of ending it.
         --
         local mx = boxes_x(win)
-        local my = fy + (TAB_H - 8) // 2
 
-        -- Minimise: a bar along the bottom of its box.
-        back:fill(mx, my, 8, 8, title_colour())
-        back:fill(mx + 1, my + 1, 6, 5, tab)
+        -- Minimise: a bar along the bottom, which is what the window is
+        -- about to become.
+        raised_box(mx, by, BOX, BOX, theme.raised)
+        back:fill(mx + 3, by + BOX - 6, BOX - 6, 2, theme.text)
 
         if resizable(win) then
-          -- Maximise: an outline, filled when the window already is.
+          -- Maximise: a little window - a frame with a title bar on it -
+          -- and the bar is what makes it read as a window rather than as
+          -- an empty box.
           local zx = mx + BOX_W
 
-          back:fill(zx, my, 8, 8, title_colour())
-
-          if not win.restore then
-            back:fill(zx + 1, my + 2, 6, 5, tab)
-          end
+          raised_box(zx, by, BOX, BOX, theme.raised)
+          back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text)
+          back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
         end
       end
 
