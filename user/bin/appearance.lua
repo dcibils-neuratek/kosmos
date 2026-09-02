@@ -50,6 +50,29 @@ local SW      = 40             -- a swatch, in pixels
 local PER_ROW = 8
 
 --
+-- The vertical layout, derived rather than typed.
+--
+-- These were eight numbers written by hand - the list at 30, its label at
+-- 10, "Desktop" at 76, the swatches at 98 - and one of them was wrong: the
+-- list is 58 tall from y=30, so it ends at 88, and "Desktop" sat at 76,
+-- inside it.
+--
+-- Worth being exact about *why* it was wrong, because it was right when it
+-- was written. This window lets you choose the interface font, from 14
+-- pixels to 22. A label is one line of that font, so every one of these
+-- gaps changes size when you use the thing this window is for - and a
+-- layout of constants is a layout that is correct at exactly one font size.
+--
+local LH      = gfx.font.h + 2        -- a label, and the room under it
+local GAP     = 6
+
+local LIST_Y  = 10 + LH
+local LIST_H  = 58
+
+local DESK_Y  = LIST_Y + LIST_H + GAP
+local SWATCH_Y = DESK_Y + LH
+
+--
 -- Every theme this machine has: the ones compiled in, plus any `.theme`
 -- file it finds on the disk.
 --
@@ -161,7 +184,7 @@ win:add(ui.label{ x = 12, y = 10, w = W - 24, text = "Palette" })
 -- length.
 --
 local palette_list = ui.list{
-  x = 12, y = 30, w = W - 24, h = 58,
+  x = 12, y = LIST_Y, w = W - 24, h = LIST_H,
   items = theme_names(),
   on_select = function(_, item)
     chosen_palette = item
@@ -175,7 +198,7 @@ end
 
 win:add(palette_list)
 
-win:add(ui.label{ x = 12, y = 76, w = W - 24, text = "Desktop" })
+win:add(ui.label{ x = 12, y = DESK_Y, w = W - 24, text = "Desktop" })
 
 -- The swatches, as a view that draws itself and answers a click.
 --
@@ -183,7 +206,7 @@ win:add(ui.label{ x = 12, y = 76, w = W - 24, text = "Desktop" })
 -- and what this wants is a colour and nothing else. `gfx.md`'s rule holds
 -- either way - the fills are C, and what Lua decides is where they go.
 local swatches = ui.view{
-  x = 12, y = 98, w = PER_ROW * SW, h = 2 * SW,
+  x = 12, y = SWATCH_Y, w = PER_ROW * SW, h = 2 * SW,
 
   draw = function(self, g)
     for i, colour in ipairs(SWATCHES) do
@@ -247,7 +270,7 @@ chosen = {
   mono = { font = "spleen", px = 16 },
 }
 
-local FY = 98 + 2 * SW + 30
+local FY = SWATCH_Y + 2 * SW + LH + GAP
 
 local role_list = ui.list{ x = 12,  y = FY, w = 150, h = 56, items = {} }
 local font_list = ui.list{ x = 172, y = FY, w = 122, h = 92, items = FONTS }
@@ -283,7 +306,7 @@ size_list.on_select = function(self, item)
   send()
 end
 
-win:add(ui.label{ x = 12, y = FY - 18, w = W - 24, text = "Fonts" })
+win:add(ui.label{ x = 12, y = FY - LH, w = W - 24, text = "Fonts" })
 win:add(role_list)
 win:add(font_list)
 win:add(size_list)

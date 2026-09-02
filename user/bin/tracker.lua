@@ -80,12 +80,27 @@ if backdrop then
 
   W, H = screen.width or 1024, screen.height or 768
 
-  -- `/home/Desktop` if there is one, the way every system that has a desktop
-  -- folder names it. No magic beyond that: if it is not there, the desktop
-  -- shows `/home`, which is a real directory rather than an empty rectangle
-  -- pretending to be one.
-  if where == "/home" and files.entries("/home/Desktop") then
-    where = "/home/Desktop"
+  --
+  -- The desktop shows `/home/Desktop`, and nothing else ever.
+  --
+  -- Not `/home`: what is on the desktop should be what you put on the
+  -- desktop. A backdrop showing a home directory is showing you every dot
+  -- file and every half-finished thing you have, which is not a desktop,
+  -- it is a directory that happens to be behind your windows.
+  --
+  -- Created if it is not there, rather than fallen back from. A desktop
+  -- folder that only exists once you think to make one is a folder nobody
+  -- makes, and the fallback this replaced put `/home` on the backdrop on
+  -- every machine that had never had one.
+  --
+  where = "/home/Desktop"
+
+  if not fs.getattr(where) then
+    local ok, why = fs.send(where, { type = "mkdir" })
+
+    if not ok then
+      print("tracker: no desktop folder: " .. tostring(why))
+    end
   end
 end
 
@@ -442,32 +457,17 @@ function rows:mouse(action, x, y)
   -- everything else in this view only cares about a press, which is why the
   -- early return below has to come after this rather than before it.
   --
-  if self.bar and x >= self.w - ui.SCROLL_W - 2 then
+  do
     local per = self.per or 1
     local total = self.shown and #self.shown or 0
+    local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
+                                  total, per, scroll)
 
-    if action == "press" then
-      local to = ui.scrollbar_click(x, y, self.w, self.h, total, per, scroll)
+    if to then
+      scroll = to
 
-      if to == scroll then
-        self.bar_drag = { y = y, top = scroll }
-      elseif to then
-        scroll = to
-      end
-    elseif action == "move" and self.bar_drag then
-      local d = self.bar_drag
-      local _, size = ui.thumb(self.h, total, per, d.top)
-      local room = (self.h - 4) - (size or 0)
-
-      if room > 0 then
-        scroll = math.min(math.max(1, d.top + ((y - d.y) * (total - per)) // room),
-                          math.max(1, total - per + 1))
-      end
-    elseif action == "release" then
-      self.bar_drag = nil
+      return true
     end
-
-    return true
   end
 
   if action ~= "press" then return false end

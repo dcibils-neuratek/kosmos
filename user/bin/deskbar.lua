@@ -288,4 +288,52 @@ function watcher:tick()
 end
 
 win:add(watcher)
+
+--------------------------------------------------------------------------
+-- Startup items.
+--
+-- What `/bin/startup` ticked, opened once, here, after the Deskbar's own
+-- window exists.
+--
+-- **Here rather than anywhere earlier on the boot path**, and that is the
+-- whole point of the feature living in this file. `init.lua` runs one
+-- program from a firmware option and refuses to read a setting off the
+-- disk, because a machine that will not reach a prompt because of something
+-- written in a file is a machine you cannot fix from the prompt. Nothing
+-- here changes that: by the time this line runs there is a shell, a window
+-- manager and a Deskbar, so the worst a bad entry can do is open a window
+-- that dies - and the panel that unticks it is two clicks away.
+--
+-- Started through the same `launch` message the menu sends, so an item that
+-- opens at startup and the same item chosen by hand are the same thing.
+--------------------------------------------------------------------------
+do
+  local saved = fs.read("/home/.startup")
+  local items = (type(saved) == "table" and type(saved.items) == "table")
+                and saved.items or {}
+
+  local started = 0
+
+  for _, name in ipairs(items) do
+    name = tostring(name)
+
+    -- Only what this Deskbar would list. A name in the file that is no
+    -- longer in `/bin` is a stale tick, not a reason to send the window
+    -- manager a program it cannot find.
+    local known = false
+
+    for _, have in ipairs(launchable) do
+      if have == name then known = true break end
+    end
+
+    if known and fs.send("/dev/wm", { type = "launch", program = name }) then
+      started = started + 1
+    end
+  end
+
+  if started > 0 then
+    status.text = ("started %d at login"):format(started)
+  end
+end
+
 win:run()

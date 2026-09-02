@@ -282,21 +282,59 @@ end
 local SCROLL_W = 14
 
 --
--- Where the thumb goes, or nil when everything fits and there is no bar.
+-- An arrow button at each end, which is Mac OS 8 and 9 and is not decoration.
 --
--- `top` is one-based like the rest of the list code. Returned rather than
--- drawn so the hit test and the drawing agree by construction - the same
--- reason `boxes_x` exists in the window manager.
+-- A trough alone can only page. Scrolling by *one* row - which is what you
+-- want most of the time, and the only thing you want when the list is nearly
+-- as tall as its view - had no gesture at all: a page in a five-row list is
+-- five rows, so a click either did nothing or went past what you were
+-- looking at.
+--
+-- They cost the track two squares' worth of height, so a bar too short to
+-- have both and still leave a usable track has neither. A scrollbar that is
+-- all buttons is not a scrollbar.
+--
+local ARROW = SCROLL_W
+
+local function has_arrows(h)
+  return h >= 4 + 2 * ARROW + 24
+end
+
+--
+-- Where everything is, or nil when it all fits and there is no bar.
+--
+-- One function for the drawing, the hit test and the drag, because they have
+-- to agree and the way they stop agreeing is you click one thing and another
+-- one moves - the same reason `boxes_x` exists in the window manager.
+--
+-- `top` is one-based, like the rest of the list code.
 --
 local function thumb_of(h, total, shown, top)
   if total <= shown then return nil end
 
-  local track = h - 4
+  local arrows = has_arrows(h) and ARROW or 0
+  local y0 = 2 + arrows
+  local track = h - 4 - 2 * arrows
   local size = math.max(16, (track * shown) // total)
   local room = track - size
   local at = ((top - 1) * room) // math.max(1, total - shown)
 
-  return 2 + at, size, track
+  return y0 + at, size, room, y0
+end
+
+--
+-- A triangle, four rows tall, centred in the button.
+--
+-- Drawn rather than vendored: it is eleven pixels and it has to be the
+-- theme's ink, which a picture could not be.
+--
+local function triangle(g, x, y, up)
+  for k = 0, 3 do
+    local w = 1 + k * 2
+
+    g:fill(x + (ARROW - w) // 2, up and (y + 5 + k) or (y + 8 - k),
+           w, 1, "text")
+  end
 end
 
 local function draw_scrollbar(g, w, h, total, shown, top)
@@ -309,47 +347,110 @@ local function draw_scrollbar(g, w, h, total, shown, top)
   g:sunken(x, 2, SCROLL_W, h - 4, "window")
   g:raised(x + 1, y, SCROLL_W - 2, size, "raised")
 
+  if has_arrows(h) then
+    g:raised(x + 1, 3, SCROLL_W - 2, ARROW - 2, "raised")
+    triangle(g, x + 1, 3, true)
+
+    g:raised(x + 1, h - 2 - ARROW, SCROLL_W - 2, ARROW - 2, "raised")
+    triangle(g, x + 1, h - 2 - ARROW, false)
+  end
+
   return true
 end
 
---
--- A click in the bar. Returns the new `top`, or nil if the click was not in
--- the bar at all.
---
--- Above the thumb is a page back and below it is a page forward, which is
--- what a trough has always meant. Dragging the thumb is not handled here:
--- the widget owns the drag, because it owns the press.
---
---
--- Exported, because two of the lists in this system are not `ui.list`.
---
--- `procs` and Tracker both draw rows themselves - a file manager's list has
--- *fields*, and a list that formats them into one string cannot sort by one
--- of them. Those views need a bar as much as any other, and the choice is
--- to share this or to have three scrollbars that drift apart. `ui.md` 16.2:
--- a view draws itself, and what it draws with comes from here.
---
 ui.SCROLL_W = SCROLL_W
 
-local function scrollbar_click(x, y, w, h, total, shown, top)
+--
+-- The whole interaction, in one place.
+--
+-- This used to be a hit test that answered a press, and each of the four
+-- lists in this system carried its own twenty-five lines of drag on top of
+-- it. All four had the same bug, because all four were the same code: the
+-- drag ran inside `if x >= self.w - SCROLL_W - 2`, so it only continued
+-- while the pointer stayed within the fourteen pixels of the bar. Slip two
+-- pixels left - which you do, because you are looking at the list and not
+-- at the bar - and the drag stopped without saying so, and the press fell
+-- through to the rows underneath and changed the selection.
+--
+-- A drag that only works if you drag in a straight line is a drag that does
+-- not work. So the widget hands its own state over and this decides
+-- everything, including whether the event was the bar's at all: **while a
+-- drag is live it always is**, wherever the pointer has got to.
+--
+-- Returns the new `top`, or nil when the event belongs to whatever is under
+-- the bar rather than to the bar.
+--
+function ui.scrollbar_mouse(w_, action, x, y, w, h, total, shown, top)
+  local drag = w_.bar_drag
+
+  if action == "release" then
+    w_.bar_drag = nil
+
+    return drag and top or nil
+  end
+
+  if drag and action == "move" then
+    local _, _, room = thumb_of(h, total, shown, drag.top)
+    local span = total - shown
+
+    if not room or room <= 0 then return top end
+
+    --
+    -- Rounded, and rounded symmetrically.
+    --
+    -- `//` floors, and floor is not symmetric about zero: dragging up by one
+    -- pixel gave `(-1 * span) // room` = -1 and dragging down by one gave 0.
+    -- So the list jumped the instant you moved up and resisted moving down,
+    -- which is what "jerky" was.
+    --
+    local dy = y - drag.y
+    local moved
+
+    if dy >= 0 then
+      moved = (dy * span + room // 2) // room
+    else
+      moved = -((-dy * span + room // 2) // room)
+    end
+
+    return math.min(math.max(1, drag.top + moved), math.max(1, span + 1))
+  end
+
+  if action ~= "press" then return nil end
+
+  -- Not a press on the bar, and no drag to continue: not ours.
   if total <= shown or x < w - SCROLL_W - 2 then return nil end
+
+  -- The buttons, one row each. A held button does not repeat: nothing here
+  -- has a clock, and a widget that wanted one would need the event loop to
+  -- wake it rather than a timer of its own.
+  if has_arrows(h) then
+    if y < 2 + ARROW then
+      return math.max(1, top - 1)
+    elseif y >= h - 2 - ARROW then
+      return math.min(math.max(1, total - shown + 1), top + 1)
+    end
+  end
 
   local ty, size = thumb_of(h, total, shown, top)
 
   if not ty then return nil end
 
+  -- Above the thumb is a page back and below it a page forward, which is
+  -- what a trough has always meant.
   if y < ty then
     return math.max(1, top - shown)
   elseif y >= ty + size then
     return math.min(total - shown + 1, top + shown)
   end
 
-  return top          -- on the thumb: the widget will drag it
+  -- On the thumb. Remember where it was grabbed, so the list moves by how
+  -- far the pointer moved rather than jumping to it.
+  w_.bar_drag = { y = y, top = top }
+
+  return top
 end
 
 ui.scrollbar = draw_scrollbar
-ui.scrollbar_click = scrollbar_click
-ui.thumb = thumb_of
 
 --------------------------------------------------------------------------
 -- Trees.
@@ -459,13 +560,12 @@ function ui.tree(spec)
   end
 
   function v:mouse(action, x, y)
-    if self.bar and x >= self.w - SCROLL_W - 2 then
-      if action == "press" then
-        local to = scrollbar_click(x, y, self.w, self.h, #(self.rows or {}),
-                                   self.shown or 1, self.top)
+    local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
+                                  #(self.rows or {}), self.shown or 1,
+                                  self.top)
 
-        if to and to ~= self.top then self.top = to end
-      end
+    if to then
+      self.top = to
 
       return true
     end
@@ -949,6 +1049,19 @@ function ui.list(spec)
   v.selected = v.selected or 1
   v.top = 1
 
+  --
+  -- An optional checkbox down the left.
+  --
+  -- `checks` is a set keyed by the item's own text, so the caller reads the
+  -- answer straight out of it without walking anything, and the set survives
+  -- the list being rebuilt in a different order. Absent, and this is the
+  -- plain list it has always been - which is the point of it being a field
+  -- on the list rather than a widget of its own. A preferences window that
+  -- wants "these, of those" should not need a second kind of list, and the
+  -- three that already exist should not pay for one.
+  --
+  v.checks = v.checks or nil
+
   function v:draw(g)
     -- A well: content lives in here, and the bevel says so. The focus
     -- ring goes inside it rather than over it, so a focused field is
@@ -992,7 +1105,21 @@ function ui.list(spec)
 
         if on then g:fill(2, y, room, GH, bg) end
 
-        g:text(4, y, tostring(item), on and theme.text_on or theme.text, bg)
+        local tx = 4
+
+        if self.checks then
+          local box = GH - 4
+
+          g:sunken(4, y + 2, box, box, "sunken")
+
+          if self.checks[tostring(item)] then
+            g:fill(6, y + 4, box - 4, box - 4, theme.good)
+          end
+
+          tx = 4 + box + 6
+        end
+
+        g:text(tx, y, tostring(item), on and theme.text_on or theme.text, bg)
       end
     end
   end
@@ -1006,6 +1133,20 @@ function ui.list(spec)
 
     if c == -2 then
       self.selected = math.min(#self.items, self.selected + 1)
+      return true
+    end
+
+    -- Space, because a checklist you can reach with the arrows and cannot
+    -- tick with the keyboard is a checklist you have to use the mouse for.
+    if c == 32 and self.checks then
+      local key = tostring(self.items[self.selected])
+
+      if key then
+        self.checks[key] = (not self.checks[key]) or nil
+
+        if self.on_toggle then self.on_toggle(self, key, self.checks[key]) end
+      end
+
       return true
     end
 
@@ -1033,33 +1174,11 @@ function ui.list(spec)
     -- The bar first, because it sits over the right-hand end of every row
     -- and a click there is not a click on an item.
     --
-    if self.bar and x >= self.w - SCROLL_W - 2 then
-      if action == "press" then
-        local to = scrollbar_click(x, y, self.w, self.h, #self.items,
-                                   rows, self.top)
+    local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
+                                  #self.items, rows, self.top)
 
-        if to == self.top then
-          -- On the thumb. Remember where, so the drag moves the list by
-          -- how far the pointer moved rather than jumping to it.
-          self.dragging_bar = { y = y, top = self.top }
-        elseif to then
-          self.top = to
-        end
-      elseif action == "move" and self.dragging_bar then
-        local d = self.dragging_bar
-        local track = self.h - 4
-        local _, size = thumb_of(self.h, #self.items, rows, d.top)
-        local room = track - (size or 0)
-
-        if room > 0 then
-          local moved = ((y - d.y) * (#self.items - rows)) // room
-
-          self.top = math.min(math.max(1, d.top + moved),
-                              #self.items - rows + 1)
-        end
-      elseif action == "release" then
-        self.dragging_bar = nil
-      end
+    if to then
+      self.top = to
 
       return true
     end
@@ -1068,6 +1187,21 @@ function ui.list(spec)
     local n = self.top + row
 
     if row < 0 or n > #self.items then return true end
+
+    --
+    -- The box is its own target. Pressing it toggles and does not select,
+    -- because a checklist is read down the boxes and a selection moving
+    -- under your eye while you tick things is noise.
+    --
+    if self.checks and action == "press" and x < 4 + GH + 2 then
+      local key = tostring(self.items[n])
+
+      self.checks[key] = (not self.checks[key]) or nil
+
+      if self.on_toggle then self.on_toggle(self, key, self.checks[key]) end
+
+      return true
+    end
 
     if action == "press" or action == "move" then
       self.selected = n

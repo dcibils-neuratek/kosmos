@@ -252,27 +252,11 @@ function table_view:mouse(action, x, y)
   --
   local visible = self.visible or 1
 
-  if self.bar and x >= self.w - ui.SCROLL_W - 2 then
-    if action == "press" then
-      local to = ui.scrollbar_click(x, y, self.w, self.h, #rows, visible, top)
+  local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
+                                #rows, visible, top)
 
-      if to == top then
-        self.bar_drag = { y = y, top = top }
-      elseif to then
-        top = to
-      end
-    elseif action == "move" and self.bar_drag then
-      local d = self.bar_drag
-      local _, size = ui.thumb(self.h, #rows, visible, d.top)
-      local room = (self.h - 4) - (size or 0)
-
-      if room > 0 then
-        top = math.min(math.max(1, d.top + ((y - d.y) * (#rows - visible)) // room),
-                       math.max(1, #rows - visible + 1))
-      end
-    elseif action == "release" then
-      self.bar_drag = nil
-    end
+  if to then
+    top = to
 
     return true
   end
