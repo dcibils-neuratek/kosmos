@@ -6,6 +6,51 @@ Last updated: 2026-09-02
 
 ---
 
+## Two things found while adding a kind column, and not yet fixed
+
+**Every launched program is handed the screen.** Both launchers say
+`may_pass_screen() and SPAWN_SCREEN or 0`, so any program the shell or the
+desktop starts gets `process_grant_screen` - which maps the framebuffer into
+its address space *and* promotes it to `SCHED_PRIO_DISPLAY`. Two
+consequences, neither intended. Any program can draw over the desktop
+without going near the window manager, which is ambient authority in a
+system whose first principle is that what you were not handed you cannot
+reach. And the compositor's band means nothing when everything is in it -
+`process_grant_screen`'s own comment says "whoever was handed the screen is
+the one drawing it", which was true when only the desktop was handed it.
+
+Confirmed on the running machine rather than only in the source: a kind
+column that tested `owns & SCREEN` labelled `procs` a server.
+
+**Fixing it uncovers something worse, which is why it is not fixed yet.**
+Granting the screen only to programs that declare `kosmos: needs screen`
+works, and the four programs that draw (`wm`, `deskbar`, `monitor`, `edit`)
+now carry the declaration. But with ordinary programs at NORMAL instead of
+DISPLAY, **a thread that spins on `sys.yield()` instead of blocking is
+starved outright while the desktop runs.** `say 3 hello` never reaches its
+own deadline - and its deadline is wall-clock, off `sys.ticks()`, so even one
+per cent of a core would finish it. Instrumented, the loop advances only when
+it makes an IPC call: a thread that *blocks* is woken and runs, a thread that
+only yields is not. The display harness caught it.
+
+So the scheduler answers for that first, and the screen change is one line
+here once yielding at NORMAL is fair. This was invisible until now because
+every program was promoted into the compositor's band - nothing had ever run
+at NORMAL.
+
+**An intermittent panic in `prio_pick_next`.** Seen twice today, both at
+`sched_prio.c:165` reading `far 0x2b0` - `head[level]` was NULL while the
+`occupied` bitmask said that level had somebody in it. Once in the benchmark
+image and once in a screenshot run; both times the run before and the run
+after passed with identical code, so it is timing-dependent. Not
+root-caused. The queue invariant has only three writers (`prio_init`,
+`prio_enqueue`, `prio_pick_next`) and they look locally consistent, so the
+next place to look is a thread whose effective band changes while it is
+queued - `thread_inherit` and `thread_disinherit` write `sched.effective`,
+which is what `level_of` reads, and neither re-queues.
+
+---
+
 ## A frame is measured now, and what it said
 
 `make frames`. `wm` keeps seven stage counters, `/bin/frames.lua` reads them

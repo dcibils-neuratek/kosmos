@@ -1,4 +1,5 @@
--- kosmos: needs processes
+-- kosmos: server
+-- kosmos: needs processes screen
 -- The window manager: windows, decoration, stacking, focus, and the
 -- compositor underneath them.
 --

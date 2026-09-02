@@ -1,3 +1,4 @@
+-- kosmos: needs screen
 -- A status bar along the bottom of the screen, kept up to date.
 --
 --   monitor        ten minutes, or until Control-C

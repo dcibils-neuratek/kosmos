@@ -1,3 +1,4 @@
+-- kosmos: needs screen
 -- A screen editor, so the machine can write its own Lua.
 --
 --   edit /data/hello.lua       open it, or start it empty

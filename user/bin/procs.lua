@@ -22,7 +22,7 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 420, 340
+local W, H = 520, 420
 local ROW = gfx.font.h + 4
 
 local win, err = ui.window{ title = "Processes", w = W, h = H, x = 150, y = 90 }
@@ -32,7 +32,67 @@ if not win then
   return
 end
 
-local rows = {}          -- { name, id, pct, pages, caps, owns, exited }
+--------------------------------------------------------------------------
+-- What kind of thing each process is.
+--
+-- The glossary says a server is a process that owns something and a kit is
+-- code you run; the question a monitor can actually answer is the first
+-- one, because owning is a fact the system reports and everything else is
+-- a label somebody wrote down.
+--
+-- **The file says what it is, in its own header.** `kosmos: application`
+-- already meant a window, and `kosmos: server` now means one that owns
+-- something; a file that says neither is a console program. The program
+-- store parses the header and hands it over as a `kind` attribute, which
+-- is how the Deskbar has always decided what to list. A runner names
+-- itself after the program it runs, so the name in the process table is
+-- the file name in `/bin`.
+--
+-- What is left over - anything with no file in `/bin` - is one of the
+-- servers init starts and keeps, because nothing else survives without
+-- being a program somebody launched.
+--
+-- **What this deliberately does not do is guess from what a process
+-- holds.** That was the first version and it was wrong twice over: the
+-- shell is handed the screen so it can pass it to the desktop, and until
+-- the change that went with this, *every* launched program was handed it
+-- too. A grant says what something may do, not what it is.
+--
+-- **Drivers are missing from this list, and that is the true answer.**
+-- Every driver in Kosmos is inside the kernel, in `hal/`, so no process is
+-- one. The day virtio-gpu arrives in userland is the day this needs a
+-- fourth kind, and until then saying "driver" would be inventing a row.
+--------------------------------------------------------------------------
+
+-- Asked once. `/bin` does not change while this runs, and a round trip
+-- per row per second for an answer that never moves would be a lot of
+-- messages to learn the same thing.
+local from_bin = {}
+
+do
+  for _, file in ipairs(fs.list("/bin") or {}) do
+    local attrs = fs.getattr("/bin/" .. file)
+    local kind  = attrs and attrs.kind
+
+    from_bin[(file:gsub("%.lua$", ""))] =
+      (kind == "application") and "app" or kind or "program"
+  end
+end
+
+local function kind_of(p)
+  --
+  -- The shell is the one thing a name has to answer for, and it is the one
+  -- thing that cannot be asked: it is the only program that lives inside
+  -- init rather than in `/bin`, so there is no file to have declared it.
+  --
+  if p.name == "shell" then
+    return "program"
+  end
+
+  return from_bin[p.name] or "server"
+end
+
+local rows = {}          -- { name, kind, id, pct, pages, caps, owns, exited }
 local totals = { procs = 0, threads = 0 }
 local last = {}          -- ticks per process, from the previous sample
 -- The *process* that is selected, not the row.
@@ -43,6 +103,7 @@ local last = {}          -- ticks per process, from the previous sample
 -- highlight moves with the process as the list reorders around it.
 local selected_id = nil
 local selected = 1
+local top = 1            -- the first row drawn, for a list taller than the view
 
 --------------------------------------------------------------------------
 -- The table, drawn as one view.
@@ -60,9 +121,24 @@ function table_view:draw(g)
 
   local visible = (self.h - 6) // ROW
 
-  for i = 1, math.min(visible, #rows) do
+  --
+  -- Scrolled to keep the selection in view rather than by its own handle.
+  -- There is no scrollbar because there is nothing to drag it with that
+  -- the arrow keys do not already do, and a list that follows what you
+  -- selected never needs one - the selection *is* the scroll position.
+  --
+  if selected < top then
+    top = selected
+  elseif selected > top + visible - 1 then
+    top = selected - visible + 1
+  end
+
+  if top > #rows - visible + 1 then top = #rows - visible + 1 end
+  if top < 1 then top = 1 end
+
+  for i = top, math.min(top + visible - 1, #rows) do
     local r = rows[i]
-    local y = 3 + (i - 1) * ROW
+    local y = 3 + (i - top) * ROW
     local on = (i == selected)
     local bg = on and theme.accent or theme.sunken
 
@@ -77,7 +153,12 @@ function table_view:draw(g)
                                                        and theme.text_dim
                                                        or fg, bg)
 
-    local bar_x = 190
+    -- Dimmer than the name, because it is what the row *is* rather than
+    -- what it is called, and the name is what you are looking for.
+    g:text(190, y + 2, r.kind or "",
+           on and theme.text_on or "text_dim", bg)
+
+    local bar_x = 262
     local bar_w = self.w - bar_x - 60
 
     g:fill(bar_x, y + 3, bar_w, ROW - 6, "window")
@@ -100,7 +181,7 @@ end
 --
 function table_view:mouse(action, x, y)
   if action == "press" or action == "move" then
-    local row = (y - 3) // ROW + 1
+    local row = (y - 3) // ROW + top
 
     if row >= 1 and row <= #rows then
       selected = row
@@ -229,7 +310,7 @@ function sampler:tick()
 
     fresh[#fresh + 1] = {
       id = p.id, name = p.name, pages = p.pages, caps = p.caps,
-      owns = p.owns,
+      owns = p.owns, kind = kind_of(p),
       exited = p.exited,
       pct = (moved > 0) and (delta * 100 // moved) or 0,
     }
@@ -270,7 +351,8 @@ function sampler:tick()
   -- Saying so is more useful than a column that reads "user" on every line,
   -- and it is the microkernel's shape stated out loud: the filesystem, the
   -- console and the desktop are all in this list, and the kernel is not.
-  heading.text = ("%d processes at EL0, %d threads; %d kernel thread(s) not listed")
+  -- Short enough to fit the window, which the first version was not.
+  heading.text = ("%d at EL0, %d threads; %d in the kernel, drivers too")
                  :format(totals.procs, totals.threads,
                          math.max(0, totals.threads - totals.procs))
 end

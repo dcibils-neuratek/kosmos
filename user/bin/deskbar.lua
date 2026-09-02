@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: needs screen
 -- The Deskbar: what is running, and what can be.
 --
 --   wm                  starts this by itself

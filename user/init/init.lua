@@ -1572,7 +1572,8 @@ local function binfs_handlers(state)
       --
       return { ok = true, attrs = {
         size = #source,
-        kind = state.windowed[name] and "application" or "program",
+        kind = state.windowed[name] and "application"
+               or state.kinds[name] or "program",
 
         -- What it declared it needs, so a launcher can decide what to
         -- grant without reading the source itself.
@@ -1602,6 +1603,7 @@ local function binfs_main(endpoint, source, what)
 
   local programs = chunk()
   local windowed = {}
+  local kinds = {}          -- for what is neither application nor program
   local needs = {}
 
   -- The comment block a file opens with, and nothing after it.
@@ -1640,8 +1642,28 @@ local function binfs_main(endpoint, source, what)
     -- declaration.
     local header = header_of(source)
 
+    --
+    -- What the file says it is. Three kinds, and the header decides - the
+    -- same way it already decided what an application was:
+    --
+    --   -- kosmos: application     a window, listed in the Deskbar
+    --   -- kosmos: server          owns something; others ask it
+    --   (neither)                  a console program
+    --
+    -- Declaring `server` is a *description*, not a grant. What a process
+    -- may actually do is still only what it was handed, and the kernel
+    -- still refuses a flag the launcher does not hold - so a program that
+    -- calls itself a server gets a word in a monitor and nothing more.
+    --
+    -- Which is why the declaration belongs here. The alternative was a
+    -- list of known server names inside the process monitor, and `procs`
+    -- says exactly what is wrong with that: it "would be wrong the first
+    -- time somebody wrote another window manager".
+    --
     if header:match("kosmos:%s*application") then
       windowed[name] = true
+    elseif header:match("kosmos:%s*server") then
+      kinds[name] = "server"
     end
 
     -- And a program may declare an authority it needs, which is the small
@@ -1653,7 +1675,11 @@ local function binfs_main(endpoint, source, what)
     -- holds the source and reading several kilobytes to check one line
     -- would be a launcher paying for a fact this server already has. The
     -- launcher asks `getattr` and gets a list.
-    local declared = source:match("kosmos:%s*needs%s+([^\n]*)")
+    -- The *header*, not the source. The block above explains that it ends
+    -- at the first line of code so that "nothing found in the body counts"
+    -- - and then this line read the whole file anyway, so a program with
+    -- those words in a string was declaring an authority by accident.
+    local declared = header:match("kosmos:%s*needs%s+([^\n]*)")
 
     if declared then
       local wanted = {}
@@ -1666,7 +1692,9 @@ local function binfs_main(endpoint, source, what)
     end
   end
 
-  serve(endpoint, { programs = programs, windowed = windowed, needs = needs },
+  serve(endpoint,
+        { programs = programs, windowed = windowed, kinds = kinds,
+          needs = needs },
         binfs_handlers)
 end
 
@@ -3172,6 +3200,32 @@ your filesystem back.
     -- on. A declaration is a request, never a grant: the kernel refuses a
     -- flag the parent does not hold, so a program that asks for authority
     -- nobody gave this shell simply does not get it.
+    --
+    -- The screen to everything, which is wrong and is staying for now.
+    --
+    -- Two things follow from it and neither was meant. Every program has
+    -- the framebuffer mapped into its address space and could draw over
+    -- the desktop without going near the window manager - ambient
+    -- authority, in a system whose first principle is that what you were
+    -- not handed you cannot reach. And `process_grant_screen` promotes to
+    -- SCHED_PRIO_DISPLAY, so every program runs in the compositor's band,
+    -- which means nothing once everything is in it. The comment there says
+    -- "whoever was handed the screen is the one drawing it", and that was
+    -- true when only the desktop was handed it.
+    --
+    -- Granting it only to programs that declare `kosmos: needs screen` was
+    -- tried, and it is the right change - but it uncovers something worse
+    -- underneath, so it is not this change. With programs at NORMAL rather
+    -- than DISPLAY, one that spins on `sys.yield()` instead of blocking is
+    -- starved outright while the desktop runs: `say 3 hello` never reaches
+    -- its own deadline, and the display harness caught it. A thread that
+    -- *blocks* is woken and runs; a thread that only yields is not.
+    --
+    -- So the scheduler has to answer for that first. The declarations are
+    -- already in the four programs that draw (`wm`, `deskbar`, `monitor`,
+    -- `edit`), so the change is one line here once yielding at NORMAL is
+    -- fair. See `docs/state.md`.
+    --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
 
@@ -4029,6 +4083,32 @@ if role == ROLE_RUNNER then
     -- What the child declared it needs. The kernel refuses any flag this
     -- process does not itself hold, so a program cannot ask its way to
     -- authority the desktop was never given.
+    --
+    -- The screen to everything, which is wrong and is staying for now.
+    --
+    -- Two things follow from it and neither was meant. Every program has
+    -- the framebuffer mapped into its address space and could draw over
+    -- the desktop without going near the window manager - ambient
+    -- authority, in a system whose first principle is that what you were
+    -- not handed you cannot reach. And `process_grant_screen` promotes to
+    -- SCHED_PRIO_DISPLAY, so every program runs in the compositor's band,
+    -- which means nothing once everything is in it. The comment there says
+    -- "whoever was handed the screen is the one drawing it", and that was
+    -- true when only the desktop was handed it.
+    --
+    -- Granting it only to programs that declare `kosmos: needs screen` was
+    -- tried, and it is the right change - but it uncovers something worse
+    -- underneath, so it is not this change. With programs at NORMAL rather
+    -- than DISPLAY, one that spins on `sys.yield()` instead of blocking is
+    -- starved outright while the desktop runs: `say 3 hello` never reaches
+    -- its own deadline, and the display harness caught it. A thread that
+    -- *blocks* is woken and runs; a thread that only yields is not.
+    --
+    -- So the scheduler has to answer for that first. The declarations are
+    -- already in the four programs that draw (`wm`, `deskbar`, `monitor`,
+    -- `edit`), so the change is one line here once yielding at NORMAL is
+    -- fair. See `docs/state.md`.
+    --
     local flags = may_pass_screen() and SPAWN_SCREEN or 0
     local attrs = ns.getattr(path)
 
