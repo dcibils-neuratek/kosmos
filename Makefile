@@ -513,9 +513,24 @@ KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
 # The pictures in assets/images/, as a C table. Binary, so unlike programs
 # and libraries these cannot travel as Lua source: a PNG contains every byte
 # value there is, including the ones that would end a Lua long string early.
-$(GEN)/assets.c: assets/images/test-pattern.png tools/assets2c.py
+#
+# assets/icons/ rides in the same table, and they are the file manager's
+# icons. Vendored PNGs rather than shapes drawn from `g:fill`, which is what
+# was there first: eleven hand-drawn rectangles per icon that looked exactly
+# as hand-drawn as they were, and could not say what a script was.
+#
+# There is nothing to convert. The system already decodes PNG (`gfx.png`, in
+# C because it is a pixel loop) and already composites alpha (`surface:blend`,
+# source-over), so the release's own bytes go in and 32x32 RGBA comes out.
+# The alternative - a host script turning them into C arrays, the way
+# `bdf2c.py` handles the bitmap font - would have been a build step written
+# to avoid using a decoder this system needs anyway.
+ICON_FILES := $(sort $(wildcard assets/icons/*.png))
+
+$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) tools/assets2c.py
 	@mkdir -p $(dir $@)
-	python3 tools/assets2c.py assets_table $@ assets/images/test-pattern.png
+	python3 tools/assets2c.py assets_table $@ \
+	        assets/images/test-pattern.png $(ICON_FILES)
 
 # The outline fonts, embedded the same way.
 #

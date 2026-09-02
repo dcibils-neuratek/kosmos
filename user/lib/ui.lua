@@ -153,6 +153,41 @@ function gc:text(x, y, s, color, bg)
                               s = shown, color = color, bg = bg }
 end
 
+--
+-- A picture from `assets/`, composited.
+--
+-- Named, not carried: the op says which asset and the compositor loads it,
+-- because a decoded 32x32 icon is four kilobytes and a message is two. That
+-- is the same division as everywhere else here - this process decides what
+-- is drawn, the process that owns the pixels draws it.
+--
+-- The clipping is the reason this is a verb rather than a line each caller
+-- writes. `gc:fill` clips because a rectangle that runs out of its view
+-- must not reach the compositor, and an image has the same problem with an
+-- extra half: the *source* origin has to move with the destination, or an
+-- icon scrolled half off the top of a list would draw its top half at the
+-- top of the list rather than its bottom half.
+--
+function gc:icon(x, y, name, size)
+  size = size or 32
+
+  local ax, ay = self.ox + x, self.oy + y
+
+  local x0 = (ax > self.cx) and ax or self.cx
+  local y0 = (ay > self.cy) and ay or self.cy
+  local x1 = math.min(ax + size, self.cx + self.cw)
+  local y1 = math.min(ay + size, self.cy + self.ch)
+
+  if x1 <= x0 or y1 <= y0 then return end
+
+  self.ops[#self.ops + 1] = {
+    op = "image", asset = name, alpha = true,
+    sx = x0 - ax, sy = y0 - ay,
+    w = x1 - x0, h = y1 - y0,
+    x = x0, y = y0,
+  }
+end
+
 -- A one-pixel frame, which is what this kit uses instead of a bevel.
 function gc:frame(x, y, w, h, color)
   color = shade(color)
@@ -1723,6 +1758,11 @@ local function op_cost(o)
 
   if o.s then cost = cost + #o.s end
 
+  -- An `image` carries an asset name instead of a string, and a window full
+  -- of icons is a hundred of them. Not counting it is how a batch goes over
+  -- 2048 bytes and the whole frame silently fails to draw.
+  if o.asset then cost = cost + #tostring(o.asset) end
+
   return cost
 end
 
@@ -1844,6 +1884,10 @@ function ui.window(spec)
     -- box, no minimise, no maximise. The Deskbar is the only one, because
     -- it is how a hidden window comes back and how anything is started.
     pinned = spec.pinned or nil,
+
+    -- The window everything else sits on: undecorated, screen-sized, at the
+    -- bottom of the stack and never raised. The desktop is one of these.
+    backdrop = spec.backdrop or nil,
   }, shared_cap)
 
   if not reply then

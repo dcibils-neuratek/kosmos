@@ -279,7 +279,10 @@ local menus = {}
 -- the only place that has to know.
 --
 local function frame_of(win)
-  if win.kind == "menu" then
+  -- A menu and the backdrop are both undecorated, at opposite ends of the
+  -- stack: one floats over everything, the other is what everything sits
+  -- on. Neither has a tab, so for both the frame is the rectangle.
+  if win.kind == "menu" or win.backdrop then
     return win.x, win.y, win.w, win.h
   end
 
@@ -417,8 +420,27 @@ local ops = {
 
     if not picture then return end
 
-    s:blit(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
-           o.x or 0, o.y or 0)
+    --
+    -- `alpha` picks the compositing rule, and a picture needs both.
+    --
+    -- A photograph is opaque and wants `blit`, which is a `memcpy` a row at
+    -- a time. An icon is not: Tango's are RGBA and the corners outside the
+    -- shape are transparent, so copying them would paint a grey square
+    -- around every file - and worse, would paint over the selection colour
+    -- underneath it.
+    --
+    -- `blend` is source-over with the source's own alpha, in C, and it is
+    -- perhaps three times the work per pixel. Choosing per command rather
+    -- than always blending is the difference between the two cases costing
+    -- what they need and a full-screen photograph paying an icon's price.
+    --
+    if o.alpha then
+      s:blend(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
+              o.x or 0, o.y or 0)
+    else
+      s:blit(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
+             o.x or 0, o.y or 0)
+    end
   end,
 }
 
@@ -1035,6 +1057,14 @@ local function minimise(win)
 end
 
 local function raise(win)
+  --
+  -- The backdrop is never raised. It is the thing windows are in front of,
+  -- and a desktop that came to the front when you clicked it would hide
+  -- everything you were working on - which is what clicking the desktop is
+  -- for the opposite of.
+  --
+  if win.backdrop then return end
+
   -- Raising a minimised window is how it comes back, and the Deskbar is
   -- what does the raising. See `minimise`.
   if win.hidden then
@@ -1210,6 +1240,24 @@ handlers.open = function(req, who, cap)
   --
   win.pinned = req.pinned and true or nil
 
+  --
+  -- The backdrop: the window everything else sits on.
+  --
+  -- BeOS's desktop was a Tracker window - borderless, screen-sized, at the
+  -- bottom of the stack - and that is why BeOS had no separate desktop
+  -- program. It is the right shape here for a stronger reason: this process
+  -- knows nothing about files, and drawing icons would mean learning what a
+  -- directory is, what a file type is, and how to start a program. Tracker
+  -- knows all three already.
+  --
+  -- So the compositor gains no knowledge, only a place to put a window.
+  --
+  if req.backdrop then
+    win.backdrop = true
+    win.pinned = true
+    win.x, win.y = 0, 0
+  end
+
   if req.kind == "menu" then
     win.kind = "menu"
     win.owner = tonumber(req.owner)
@@ -1235,6 +1283,11 @@ handlers.open = function(req, who, cap)
     -- part of the window it came from rather than a window of its own.
     --
     menus[#menus + 1] = win
+    damage_window(win)
+  elseif win.backdrop then
+    -- At the bottom, and it does not take the focus: `focused_window` is
+    -- `windows[#windows]`, and the backdrop is never last.
+    table.insert(windows, 1, win)
     damage_window(win)
   else
     -- The window that had the focus loses it to this one, and has to be

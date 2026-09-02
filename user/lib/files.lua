@@ -92,72 +92,80 @@ end
 -- window is refused with its size, which is a copy that did not happen
 -- rather than one that half did.
 --------------------------------------------------------------------------
+-- The icons.
+--
+-- Vendored pictures, not shapes drawn from `g:fill`. What was here first
+-- was the latter - a folder built from a tab and five bevel edges, a
+-- document from a sheet, a three-step fold and three grey lines - and it
+-- had two problems. It looked hand-drawn, because it was. And it could
+-- only ever say "directory" or "not a directory": drawing a *script*
+-- distinctly would have meant drawing a script, and then an image, and
+-- then a font, each in eleven rectangles, by hand.
+--
+-- So: `assets/icons/`, which is the Tango Icon Library at the size it was
+-- drawn for, public domain, byte for byte as released. Nothing converts
+-- them. `gfx.png` decodes PNG already and `surface:blend` composites
+-- source-over already, both in C because both are pixel loops, so the
+-- release's own bytes are what the system carries.
+--
+-- The names are freedesktop's, which is the point of using them: `ICONS`
+-- below maps what Kosmos knows about a file onto a name that a *different*
+-- icon theme would also answer to, so a second theme is seven files and no
+-- new code.
+--------------------------------------------------------------------------
 
-local COPY_PAGES = 256                    -- 1 MB
-local COPY_MAX = COPY_PAGES * 4096
+files.ICON = 32
 
-local buffer                              -- allocated on the first copy
+-- What Kosmos can actually tell apart, and nothing else. An entry here for
+-- a distinction the system cannot make would be a picture that lies about
+-- what it knows - which is the same rule `filetypes.by_extension` follows
+-- and for the same reason.
+local ICONS = {
+  directory = "folder",
 
-function files.copy(from, to)
-  local attrs = fs.getattr(from)
+  lua  = "text-x-script",
+  txt  = "text-x-generic",
+  conf = "text-x-generic",
+  md   = "text-x-generic",
 
-  if not attrs then return nil, from .. ": no such file" end
+  png  = "image-x-generic",
 
-  if attrs.kind == "directory" then
-    return nil, "copying a directory is not done yet"
+  ttf  = "font-x-generic",
+  otf  = "font-x-generic",
+  bdf  = "font-x-generic",
+}
+
+-- Two directories that are not just directories. Every desktop since the
+-- Macintosh has drawn home and a volume differently from a folder, because
+-- they are places rather than containers, and Tango ships both.
+local BY_PATH = {
+  ["/home"] = "user-home",
+  ["/data"] = "drive-harddisk",
+}
+
+--
+-- `path` is optional and only decides between a folder and a place.
+--
+-- Nothing is decoded here. `gc:icon` sends the *name* and the compositor
+-- loads and caches the picture, which is the same division the rest of this
+-- kit follows: an application says what it wants drawn and never holds what
+-- is drawn. It also means seven icons are decoded once for the whole
+-- desktop rather than once per application that shows a directory.
+--
+function files.icon(g, x, y, entry, path)
+  local name
+
+  if path and BY_PATH[path] then
+    name = BY_PATH[path]
+  elseif entry.kind == "directory" then
+    name = ICONS.directory
+  else
+    local ext = tostring(entry.name):sub(2):match("%.([%w]+)$")
+
+    name = ext and ICONS[ext:lower()] or "text-x-generic"
   end
 
-  local size = attrs.size or 0
-
-  if size > COPY_MAX then
-    return nil, ("%s is %d KB and the copy window is %d KB")
-                :format(from, size // 1024, COPY_MAX // 1024)
-  end
-
-  -- Allocated once and kept. A file manager copies more than one thing, and
-  -- a region per copy is a region per copy that nothing gives back.
-  if not buffer then
-    buffer = sys.memory(COPY_PAGES)
-
-    if not buffer then return nil, "no memory for a copy buffer" end
-  end
-
-  --
-  -- The region first, and a plain read if the server does not do regions.
-  --
-  -- Not every filesystem implements `read_into`. The program store serves
-  -- `/bin` out of the image and answers `read` with the source as a value;
-  -- it has no pages to hand over, so a copy from `/bin` failed outright -
-  -- which is exactly what the first copy attempted here did, and the status
-  -- bar said "could not be read" without saying that the *path* was the
-  -- reason.
-  --
-  -- So: the efficient way when it is available, and the ordinary way when
-  -- it is not. The ordinary way puts the file through this process's heap,
-  -- which is what the region exists to avoid - hence the same size limit
-  -- applying to both.
-  --
-  local got = fs.read_into(from, buffer, 0, size)
-
-  if got then
-    local put, why = fs.write_from(to, buffer, got)
-
-    if not put then return nil, to .. ": " .. tostring(why) end
-
-    return put
-  end
-
-  local data = fs.read(from)
-
-  if type(data) ~= "string" then
-    return nil, from .. ": could not be read"
-  end
-
-  local ok, why = fs.write(to, data)
-
-  if not ok then return nil, to .. ": " .. tostring(why) end
-
-  return #data
+  g:icon(x, y, name .. ".png", files.ICON)
 end
 
 return files

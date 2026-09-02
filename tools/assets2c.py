@@ -42,6 +42,25 @@ def licence_for(path):
         if entry.lower().endswith("." + stem.lower()):
             return entry
 
+    #
+    # Failing that, a licence that covers the whole directory.
+    #
+    # `assets/fonts/` holds several unrelated fonts under different terms,
+    # so each one names its own; `assets/icons/` holds one release of one
+    # icon theme under a single notice, and asking Tango to ship seven
+    # copies of the same sentence - one per file, named after the file -
+    # would mean renaming what it released, which is the one thing the rule
+    # about vendored data forbids.
+    #
+    # So: exactly one LICENSE* in the directory covers everything in it.
+    # Two, and it is ambiguous and this says nothing rather than guessing.
+    #
+    licences = [e for e in sorted(os.listdir(folder))
+                if e.startswith("LICENSE")]
+
+    if len(licences) == 1:
+        return licences[0]
+
     return None
 
 

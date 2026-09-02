@@ -38,7 +38,31 @@ local W, H = 700, 460
 -- reserves, so the offset is this program's business - see `ui.menubar`.
 local BAR_H = gfx.font.h + 8
 
-local where = args:match("^%s*(%S+)") or "/home"
+--
+-- `wm tracker:/bin icons` - a path, then the words that change how it opens.
+--
+-- `icons` is here rather than only in the View menu because the desktop
+-- needs it: the desktop is this program with `desktop`, and a desktop that
+-- opened as a list of filenames and had to be told to draw icons would be a
+-- desktop that flickered through the wrong thing on every boot.
+--
+local words = {}
+
+for w in args:gmatch("%S+") do words[#words + 1] = w end
+
+local where = "/home"
+
+for _, w in ipairs(words) do
+  if w:sub(1, 1) == "/" then where = w end
+end
+
+local as_icons  = false
+local backdrop  = false
+
+for _, w in ipairs(words) do
+  if w == "icons"   then as_icons = true end
+  if w == "desktop" then as_icons, backdrop = true, true end
+end
 
 local win, err = ui.window{ title = "Tracker", w = W, h = H, x = 80, y = 60 }
 
@@ -62,6 +86,15 @@ local new_folder, delete_selected
 local show
 local sort_by  = "name"
 local scroll   = 1        -- the first row shown; the bar moves this
+
+--
+-- "list" or "icons", and the View menu changes it.
+--
+-- The same entries either way - the mode is a *layout*, not a different
+-- reading of the directory. That is what makes the desktop possible later:
+-- a desktop is this view in icon mode with no frame around it.
+--
+local mode = as_icons and "icons" or "list"
 local reversed = false
 
 local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where }
@@ -189,9 +222,78 @@ end
 
 rows.focusable = true
 
+--
+-- How many columns of icons fit, and where one goes.
+--
+-- Worked out in one place because the drawing and the hit test both need it
+-- and disagreeing about it is the bug where you click one icon and open
+-- another - the same reason `boxes_x` exists in the window manager.
+--
+local CELL_W, CELL_H = 84, 56
+
+local function cell_of(self, i)
+  local across = math.max(1, (self.w - 4) // CELL_W)
+  local col = (i - 1) % across
+  local row = (i - 1) // across
+
+  return 2 + col * CELL_W, 2 + row * CELL_H, across
+end
+
+local function draw_icons(self, g, list)
+  local per_row = math.max(1, (self.w - 4) // CELL_W)
+  local rows_fit = math.max(1, self.h // CELL_H)
+  local total = math.ceil(#list / per_row)
+
+  if scroll > total - rows_fit + 1 then scroll = total - rows_fit + 1 end
+  if scroll < 1 then scroll = 1 end
+
+  self.per = rows_fit * per_row
+  self.first = (scroll - 1) * per_row + 1
+  self.bar = ui.scrollbar(g, self.w, self.h, total * per_row,
+                          rows_fit * per_row, self.first)
+
+  for i = 0, self.per - 1 do
+    local n = self.first + i
+    local e = list[n]
+
+    if not e then break end
+
+    local x, y = cell_of(self, i + 1)
+    local on = (n == selected)
+
+    if on then g:fill(x, y, CELL_W - 4, CELL_H - 2, theme.accent) end
+
+    local bg = on and theme.accent or theme.sunken
+
+    files.icon(g, x + (CELL_W - 4 - files.ICON) // 2, y + 2, e,
+               files.join(where, e.name))
+
+    -- Trimmed to the cell rather than clipped, so a long name ends in a
+    -- readable way instead of half a glyph.
+    local label = files.label(e)
+    local room = (CELL_W - 8) // GW
+
+    if #label > room then label = label:sub(1, math.max(1, room - 1)) .. "~" end
+
+    g:text(x + (CELL_W - 4 - gfx.measure(label)) // 2, y + files.ICON + 6,
+           label, on and theme.text_on or theme.text, bg)
+  end
+end
+
 function rows:draw(g)
   g:fill(0, 0, self.w, self.h, theme.sunken)
   g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+
+  local shown = sorted()
+  self.shown = shown
+
+  if mode == "icons" then
+    -- No heading: there are no columns to sort by when there are no
+    -- columns. The View menu still sorts, and the order shows.
+    self.top_row = 0
+    draw_icons(self, g, shown)
+    return
+  end
 
   -- The heading, which is also what you click to sort.
   g:fill(1, 1, self.w - 2, GH + 4, theme.raised)
@@ -207,8 +309,7 @@ function rows:draw(g)
   self.per_page = per
   self.top_row  = top
 
-  local list = sorted()
-  self.shown  = list
+  local list = shown
 
   --
   -- The scroll position is remembered rather than worked out from the
@@ -326,6 +427,22 @@ function rows:mouse(action, x, y)
   end
 
   if action ~= "press" then return false end
+
+  if mode == "icons" then
+    local across = math.max(1, (self.w - 4) // CELL_W)
+    local col = (x - 2) // CELL_W
+    local row = (y - 2) // CELL_H
+
+    if col < 0 or col >= across or row < 0 then return true end
+
+    local n = (self.first or 1) + row * across + col
+
+    if not (self.shown and self.shown[n]) then return true end
+
+    if n == selected then open_selected() else selected = n end
+
+    return true
+  end
 
   if y < (self.top_row or 0) then
     for _, c in ipairs(COLUMNS) do
@@ -535,6 +652,13 @@ win:add(ui.menubar{
       } },
     { title = "View",
       items = {
+        { text = "as icons", on_choose = function()
+            mode, scroll = "icons", 1
+          end },
+        { text = "as list",  on_choose = function()
+            mode, scroll = "list", 1
+          end },
+        { separator = true },
         { text = "By name", on_choose = function() sort_on("name") end },
         { text = "By size", on_choose = function() sort_on("size") end },
         { text = "By kind", on_choose = function() sort_on("kind") end },
