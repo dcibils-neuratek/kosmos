@@ -2,27 +2,41 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-08-31
+Last updated: 2026-09-02
 
 ---
 
 ## Current milestone
 
-**M6 — Graphics and the app server. In progress.** There is a framebuffer, a
-surface type, a blitter, an 8x16 font, a screen console with a scroll region
-and a blinking cursor, a keyboard, and a shell that runs programs from `/bin`.
+**No milestone is the current one, and that is the honest answer.** M6, M7,
+M8 and M9 have all met their definitions of done; M2's remaining half is a
+cable. What is being built now is chosen by hand — see **Concrete next
+step** at the bottom: a PDF reader, then sound, then Doom.
 
-Known and not yet fixed: the window manager cannot usefully be run detached,
-because it and the shell's line editor would both be draining one keyboard
-and whichever asks first wins. The Terminal app is the answer - once the
-shell is a window there is one reader. The framebuffer half of that problem
-is already solved: a process that owns the screen takes it, and the console
-stops drawing.
+**The PDF reader reads.** Not draws: `pdftext` puts a page of The Odyssey on
+the console in about 380 ms, through the object layer, the C scanner and the
+`/ToUnicode` tables. What is missing before it is a *viewer* is glyph
+rendering - `gfx` rasterises by codepoint and a CID font gives glyph
+*indices*, so `stbtt_GetGlyphBitmap` and loading a font from the document's
+own bytes are the next C additions - and then the window, which is
+`reader`'s text view with a different thing behind it.
 
-Still missing, and the next things to build: **a backbuffer with damage
-tracking**, and then **the app server** on top of it. Today a program draws
-straight at the scanned-out framebuffer, so a slow draw is visible as it
-happens and two programs drawing at once would fight.
+**M6 — Graphics and the app server. Done.** Its definition of done is met and
+tested: `wm hello-win,stuck` drags a window with a hung application inside it
+and the window keeps moving. There is a framebuffer, a surface type, a
+blitter, bitmap and outline fonts, a compositor with a backbuffer and damage
+tracking, a mouse, a UI kit, a Deskbar, and a Terminal.
+
+The Terminal closed the last structural problem on that list. The window
+manager could not usefully be run detached while it and the shell's line
+editor were both draining one keyboard; once the shell is a window there is
+one reader. The framebuffer half had already gone the same way — a process
+that owns the screen takes it, and the console stops drawing.
+
+**Still ahead of M6, and not blocking anything:** virtio-gpu and the
+`hal_fb_flush` it will earn the HAL. ramfb gives no dirty rectangles and no
+vblank, so damage tracking saves the drawing but not the scanout. Under
+emulation neither is the bottleneck.
 
 **M5 — Namespaces and servers. Done.** Its definition of done is met, both halves, and the last item on the list — taking Lua out of the kernel — is done as well.
 
@@ -45,6 +59,123 @@ Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU
 QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
+
+- **A PDF is readable in a window.** `wm pdfview:/home/odyssey.pdf` opens
+  The Odyssey and turns its pages, 142 ms a page. Text, wrapped by the
+  window in the system font - not the page as it was typeset, which needs
+  glyphs rasterised by index out of the font inside the document and is the
+  next piece.
+
+  What stood between it and working was memory, and finding it took three
+  wrong answers. The scanner returns a batch of tokens as two Lua tables,
+  and at 1024 entries those did not fit beside everything else a windowed
+  program holds - a window starts around 640 KB because the UI kit is
+  loaded, against 330 KB for a console one, which is exactly why `pdftext`
+  worked all along and `pdfview` did not.
+
+  Two things fixed it rather than one, and the second is the one that
+  matters: the batch is 256 now, and the page list holds an object number
+  per page instead of a table with a reference and four inherited
+  attributes in it. That was 500 tables for a 254-page book and about
+  310 KB still held after opening; the inherited attributes are found by
+  walking `/Parent` when a page is asked for. Before it, 512 worked and
+  1024 did not. After it, 2048 works. The batch sits at 256 well inside
+  that.
+
+- **A check that cannot see a failure reports a pass, twice in one
+  evening.** The first was `grep -c ... || echo 0`, which prints `0` twice
+  when it matches nothing, so every run compared unequal and every batch
+  size looked broken. The second was worse: `pdfview` showed its error *in
+  the window* and printed nothing, so grepping the serial log said every
+  batch size worked - including the ones a screenshot plainly showed
+  failing. Errors go to the serial line as well as the window now, which is
+  the actual fix; the lesson is the one this project keeps paying for, that
+  a test exercising a different path from the user is a test that agrees
+  with you.
+
+
+- **A PDF reads on the machine, and the language line moved with the
+  measurement.** `/lib/pdf.lua` is the object layer - cross-reference table,
+  indirect objects, the page tree - and it never holds the document: it asks
+  its source for a window at a time, and parsing all 1127 objects of a 1.6 MB
+  book reads 5.9% of the file. The window is 256 bytes because that was
+  measured against 128, 512, 2048 and 8192, and the table is in the file.
+
+  `/lib/pdfpage.lua` interprets the content stream and `pdfinfo`, `pdftext`
+  and `pdfbench` are the programs over it. The Odyssey's 254 pages, its
+  fonts, and a page of Homer as text, all from `/home/odyssey.pdf` on a real
+  disk.
+
+- **The scanner is C and the profile is why.** A page cost 1.1 seconds, of
+  which 538 ms was the tokenizer - 144 microseconds a token, which is
+  `string.sub` allocating a one-character string per byte. In C the same
+  3,657 tokens take **4.7 ms**. The page is now 380 ms and the remainder is
+  the interpreter's matrix arithmetic, which is the next thing to look at and
+  has not been.
+
+  `pdfbench` prints the profile phase by phase and stays, so the day someone
+  wonders whether the C is still earning its keep the answer is one command.
+
+- **Kits.** C libraries reached as `use("/kits/compress")`, through the
+  namespace like any other library. `inflate` and the PDF scanner sat in
+  `sys` for an evening and did not belong: `sys` is the syscall boundary, and
+  a decompressor is not a syscall. `kits` lists them.
+
+- **A capability can be given back, which it could not before.**
+  `SYS_CAP_DROP`. A thread has sixteen slots and nothing ever released one -
+  `ipc_caps_release` ran when a thread died and that was all - so the
+  filesystem server, handed a buffer per request, filled its table and
+  refused every request after the sixteenth for the life of the machine. The
+  endpoint pool had this same bug once and was fixed; memory never got the
+  matching half. Found by a PDF read in 256-byte windows, on the fifteenth
+  read.
+
+- **And releasing has to mean losing the mapping.** `SYS_SHARE_UNMAP`, because
+  `SYS_UNMAP` is bounded to the window `SYS_MAP` hands out and *frees* what it
+  unmaps - correct there, a double free here, since a shared region's pages
+  belong to the memobj. Without it `sys.release` gave up the right to name a
+  region while keeping the ability to read and write it.
+
+- **The bug behind the bug, and it cost an evening.** `region_of` in
+  `sys_user.c` caches mappings keyed by capability *index*. That was safe for
+  exactly as long as an index was never reused, which was until `sys.release`
+  existed. Afterwards a server dropped slot 1, the next region arrived at
+  slot 1, and the cache handed back the *previous* region's address - so the
+  server wrote 1811 bytes into somebody else's pages, read them back
+  correctly, and reported success, while the process that owned the buffer
+  saw zeroes.
+
+  What found it was making the server read back its own write: `server_sent
+  789c, server_readback 789c, client 0000` says the two capabilities are not
+  the same object, and nothing else does. Three hypotheses were tested and
+  discarded first - the install dedupe, generation on release, and a false
+  byte count - which is worth recording because each was plausible and none
+  was it.
+
+- **An install dedupe was tried and removed.** Handing back an existing index
+  for a region a thread already held, without taking a reference. Wrong in
+  company: `SYS_MEM_CREATE` unrefs after installing on the stated grounds
+  that install took a reference, so when the dedupe fired there the count
+  went to zero and freed the region its caller had just made.
+
+- **Decimals are parsed exactly.** The C scanner multiplied a running scale
+  by 0.1 per digit, so `-2.25` came out a few units in the last place from
+  what Lua's own `tonumber` gives: it prints identically and compares
+  unequal. Now it is an integer mantissa divided once by a power of ten. A
+  content stream is mostly fractions like `.23999999`, six before every `cm`,
+  so this was a rendering bug and not only a test one. The test found it on
+  its first run.
+
+- **`BOOT` with a space in it never worked.** `make qemu BOOT="wm blocks"` is
+  in the Makefile's own comment as an example; the shell split it and QEMU
+  took the second word for a filename. Quoted now.
+
+- **Three permanent tests**, one per thing above: forty regions made,
+  mapped, written, read back and released; a Flate stream produced elsewhere,
+  both through a string and region to region; and the scanner against a
+  content stream with a negative number, a leading-dot fraction, a hex
+  string and an escaped bracket in it.
+
 
 - **The disk can be written from this Mac.** `tools/kfs.lua` runs the
   filesystem on the host over the image file: `create`, `ls`, `put`,
@@ -507,13 +638,13 @@ nil	no such path: /nowhere
 - [x] `gfx.surface` as a userdata over flat bytes, and the C primitive set
 - [x] Explicit `free`, a `__gc` net, and telling the GC the real size
 - [x] The screen reachable from a process, as a surface
-- [ ] A backbuffer and damage tracking
+- [x] A backbuffer and damage tracking
 - [x] An 8x16 bitmap font
 - [x] A narrated boot with a progress bar, on the screen and on the serial line
 - [x] The shell visible on the screen, and `help` at the prompt
-- [ ] The app server in Lua: windows, decoration, stacking, focus
+- [x] The app server in Lua: windows, decoration, stacking, focus
 - [x] Input beyond the serial line — **virtio-input over virtio-mmio.** `virt` has 32 virtio-mmio transports at 0xa000000, stride 0x200, SPI 16 upward, and `virtio-keyboard-device` attaches to that bus. mmio rather than PCI is the whole point: no ECAM walk and no capability parsing, so it is a few fixed registers and one virtqueue — and the same transport then gives `virtio-gpu-device`, which is where real dirty-rectangle flush and vblank come from. The keyboard pays for the GPU.
-- [ ] **Definition of done: drag a window with a hung app inside it, and have the window keep moving smoothly**
+- [x] **Definition of done: drag a window with a hung app inside it, and have the window keep moving smoothly** — `wm hello-win,stuck`
 
 **ramfb, not virtio-gpu, and the order is deliberate.** `hal_fb_init` is "ask the firmware for a linear framebuffer, and let it say where the pixels are", which is exactly what QEMU's ramfb and the Pi's mailbox both do. virtio-gpu is the odd one out — it needs an explicit `RESOURCE_FLUSH` after drawing — so it is the target that will earn the interface a `hal_fb_flush`, with two implementations in front of it rather than one. That is `hal.md`'s own argument applied to the display. It also cost about a hundred lines against the eight hundred that PCI enumeration plus virtqueues plus the virtio-gpu command set would have cost before a single pixel appeared, and everything above the HAL is identical either way.
 
@@ -759,22 +890,65 @@ There is a permanent test, and the page count is checked from C rather than from
 
 ## Concrete next step
 
-**M6 — graphics and the app server.** M5 is closed, so this is next, and `roadmap.md` names its definition of done: drag a window with a hung app inside it and have the window keep moving smoothly. That is the BeOS test, and it is the one that decides whether the system feels good.
+**A PDF reader, then sound, then Doom.** Decided by hand rather than taken
+from `roadmap.md`, which still schedules M9's 3D demo next and still says
+audio is out of scope. The roadmap is a guide; where it disagrees with this
+paragraph it is out of date rather than right.
 
-What it needs first, in the order it needs it:
+**The PDF reader is more tractable than it looks, and that is why it is
+first.** Three of its four hard parts are already in the tree: `puff` does
+Flate, `stb_truetype` rasterises glyphs, and the blitter draws them. What is
+left is the cross-reference table, the object model and the content-stream
+interpreter — structure parsing over bytes that arrive from somewhere else,
+which is the Lua side of the line `design.md` §6 draws. Plain documents
+only: no forms, no encryption, no JavaScript.
 
-- **virtio-gpu under QEMU.** There is no framebuffer today. Nothing in M0–M5 draws a pixel; the console is a UART.
-- **`gfx.surface` as userdata over flat bytes**, with the C primitive set (`fill`, `blit`, `blend`, `span`, `get`/`set`). `CLAUDE.md` is absolute that pixels never go into a Lua table and nothing in Lua computes a pixel offset — a Lua array holding 2M pixels makes the GC walk 2M slots per cycle. `gc_pause_max` is baselined and will say immediately if that rule is broken.
-- **A backbuffer in cached RAM with a dirty-rectangle blit.** An uncached framebuffer is 10–50× slower, and drawing straight into it is the mistake that kills the whole thing.
-- **The app server in Lua**, over the same IPC everything else already uses.
+Two things it will lean on that arrived in the last session. `read` takes
+`into`, a capability to pages the caller owns, so a document larger than a
+2 KB message crosses at all; and `kfs.read_range` is the `pread` underneath
+it, so a page is read without the rest of the file. And `tools/kfs.lua`
+means a real PDF can be put on a disk image from this Mac before any of it
+is written — which is the right way to start, because a synthetic document
+fails in none of the ways a real one does.
 
-**Two things this session's work bears on directly.** `sys.ticks()` exists now, so input latency can be measured from event to pixel with a timestamp at each end, which is what `testing.md` §18.5 asks for. And the app server will be chatty — a round trip per drawing command is the shape to avoid, and `ipc_roundtrip` at 30 ticks against `serialize` at 1,365 is the number that says how much a command costs to carry.
+**Then sound**: a virtio-snd driver in the HAL, WAV first to prove the whole
+path from device to speaker, then a vendored MP3 decoder as userland C
+beside the font rasteriser — the same shape, and for the same reason. A
+music player after it.
 
-**The FP question is still open and gets closer here.** The context switch does not save FP state. It has not mattered because only one thread at a time runs Lua, and Lua's numbers are doubles. A compositor with more than one drawing process makes it matter, and the fix is lazy FP save, which `roadmap.md` schedules at M10 for Doom.
+**Then Doom**, and then real hardware.
 
-**M2 cannot be closed without a cable**, and its remaining half is the point of the milestone: the HAL takes its real shape once there are two implementations to compare, and `hal.md` is explicit that writing that interface against one target produces the shape of QEMU wearing generic names. Nothing is gained by guessing at it now. When a cable arrives: `hal/pi1/` or `hal/pi5/`, and then the HAL interface takes its real shape.
+### Open, and not part of that
 
-**Two benchmarks `roadmap.md` asked for at M4 are still not built:** allocating and freeing a table, and the overhead of a syscall from Lua versus the same one from C. The second is more interesting than it was — `sys.ticks()` makes it measurable from inside a process, and it is the number that says what the EL0 boundary costs per crossing.
+**The display harness is unreliable, and it is a gate on pushing.** About one
+run in three fails at one of several phases, and the common sentence is that
+an input the harness sent did not arrive — by the monitor socket or by the
+serial line, so it is not one mechanism. `make test`'s 109 tests are
+unaffected and pass every run. See **Known bad** above; the honest fix is
+probably a guest per phase, and the honest measurement is a timestamp at each
+end rather than more repetitions.
+
+**M2 cannot be closed without a cable**, and its remaining half is the point
+of the milestone: the HAL takes its real shape once there are two
+implementations to compare, and `hal.md` is explicit that writing that
+interface against one target produces the shape of QEMU wearing generic
+names. Nothing is gained by guessing at it now. When a cable arrives:
+`hal/pi1/` or `hal/pi5/`.
+
+**Two benchmarks `roadmap.md` asked for at M4 are still not built:**
+allocating and freeing a table, and the overhead of a syscall from Lua versus
+the same one from C. The second is the number that says what the EL0 boundary
+costs per crossing, and `sys.ticks()` makes it measurable from inside a
+process.
+
+**`list` still costs a round trip per entry** to ask for a size and a kind.
+A `list` that answered with attributes would turn a listing of thirty files
+from thirty-one messages into one. It is the protocol's shape, not `ls`'s
+fault.
+
+**The book is at chapter 2 of the outline in `book/OUTLINE.md`.** Chapters
+are written after the thing they describe works, which is the rule that keeps
+them describing what happened rather than what was intended.
 
 ## Decisions taken while implementing
 
@@ -887,18 +1061,29 @@ Found the hard way: the first `setjmp` panicked with EC 0x07, whose name ("unhan
 
 ## Overall progress
 
+**The numbers are names, not an order** (`roadmap.md`), so this table is read
+down the status column rather than across it. Work has repeatedly jumped
+ahead of the numbering: M6, M7 and M8 all met their definitions of done while
+M2's second half sat waiting for a cable.
+
 | # | Milestone | Status |
 |---|---|---|
 | 0 | Boot under QEMU | **done** |
 | 1 | MMU, exceptions, timer | **done** |
-| 2 | Lua in the kernel + second target | **in progress** |
+| 2 | Lua in the kernel + second target | **half done** — QEMU yes, hardware blocked on cables |
 | 3 | Microkernel | **done** |
-| 4 | Lua to userspace | **definition of done met** |
-| 5 | Namespaces and servers | **in progress** |
-| 6 | Graphics and app server | |
-| 7 | Attributes, live queries, replicants | |
-| 8 | Own filesystem | |
-| 9 | Software 3D demo | |
-| 10 | Doom | |
+| 4 | Lua to userspace | **done** — two benchmarks on its list unbuilt |
+| 5 | Namespaces and servers | **done** — both halves, plus Lua out of the kernel |
+| 6 | Graphics and app server | **done** — window manager, compositor, mouse, UI kit, Terminal |
+| 7 | Attributes, live queries, replicants | **done** — all three definitions of done |
+| 8 | Own filesystem | **done** — kfs on virtio-blk, journalled, host tooling |
+| 9 | Software 3D demo | **done ahead of order** — `cube3d`, `g3d.lua` |
+| 10 | Doom | after the PDF reader and sound |
 | 11 | Drivers (GPIO, USB, network) | |
 | 12 | SSH client | |
+
+**"Done" here means the milestone's own definition of done is met and has a
+permanent test**, not that nothing more will ever be added to it. M6 is the
+clearest case: the window drag with a hung app inside it works and is
+checked, and virtio-gpu and the `hal_fb_flush` it will earn are still ahead
+of it.

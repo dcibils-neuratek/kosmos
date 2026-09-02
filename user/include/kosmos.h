@@ -234,6 +234,25 @@ static inline long kosmos_endpoint_destroy(long cap)
     return sys1(SYS_ENDPOINT_DESTROY, cap);
 }
 
+/*
+ * A capability back. The region's pages survive while anyone else holds one,
+ * so a server may drop what it was handed the moment it has finished.
+ */
+static inline long kosmos_cap_drop(long cap)
+{
+    return sys1(SYS_CAP_DROP, cap);
+}
+
+/*
+ * A shared region out of the share window. The pages are the region's and
+ * are not freed here; this is losing sight of them, not disposing of them.
+ */
+static inline long kosmos_share_unmap(unsigned long address,
+                                      unsigned long pages)
+{
+    return sys2(SYS_SHARE_UNMAP, (long)address, (long)pages);
+}
+
 static inline long kosmos_call(long cap, const struct message *msg,
                                struct message *reply)
 {

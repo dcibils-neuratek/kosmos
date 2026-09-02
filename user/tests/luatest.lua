@@ -55,6 +55,9 @@ local R_G3D          = 31
 local R_KILL_MAIN    = 32
 local R_KILL_SIB     = 33
 local R_KILL_VICTIM  = 34
+local R_CAP_RELEASE  = 35
+local R_INFLATE      = 36
+local R_PDF_SCAN     = 37
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -1021,6 +1024,162 @@ if role == R_KILL_SIB then
   end
 
   sys.call(0, { killed = killed })
+  sys.exit(0)
+end
+
+if role == R_CAP_RELEASE then
+  -- Forty regions, made and given back one at a time.
+  --
+  -- A thread gets sixteen capability slots and, until `sys.release` existed,
+  -- nothing ever freed one: `ipc_caps_release` ran when a thread died and
+  -- that was all. So a server handed a buffer per request filled its table
+  -- and refused every request after the sixteenth, for the life of the
+  -- machine. A PDF read in 256-byte windows found it on the fifteenth read.
+  --
+  -- Forty rather than seventeen so the margin is not the thing being tested.
+  --
+  -- Each region is also mapped, written through, and read back, because the
+  -- first fix for this had a second bug behind it: the userland mapping
+  -- cache in `sys_user.c` is keyed by capability *index*, which was safe
+  -- only while an index was never reused. Releasing made them reusable, so
+  -- a stale entry handed back the address of a previous region - and the
+  -- write landed in somebody else's pages and read back perfectly. Only the
+  -- process that owned the buffer could see anything wrong with it.
+  for i = 1, 40 do
+    local cap = sys.memory(1)
+
+    if not cap then
+      sys.write(("release: no region on round %d\n"):format(i))
+      sys.exit(1)
+    end
+
+    -- A marker unique to this round: a stale mapping shows up as the
+    -- previous round's number rather than as an error.
+    local marker = ("round-%03d"):format(i)
+
+    if not sys.region_write(cap, 0, marker) then
+      sys.write(("release: cannot write on round %d\n"):format(i))
+      sys.exit(1)
+    end
+
+    local seen = sys.region_read(cap, 0, #marker)
+
+    if seen ~= marker then
+      sys.write(("release: round %d read %q, wanted %q\n")
+                :format(i, tostring(seen), marker))
+      sys.exit(1)
+    end
+
+    if not sys.release(cap) then
+      sys.write(("release: cannot release on round %d\n"):format(i))
+      sys.exit(1)
+    end
+  end
+
+  sys.exit(0)
+end
+
+if role == R_INFLATE then
+  -- Flate, both ways round, against a stream produced elsewhere.
+  --
+  -- The bytes are a zlib stream of "kosmos" repeated, made on the host. A
+  -- round trip through our own compressor would prove only that the two
+  -- halves agree with each other; there is no compressor here, so this is
+  -- data this system did not write and has to understand.
+  local stream = "\x78\xda\xcb\xce\x2f\xce\xcd\x2f\xce\x26\x8b"
+                 .. "\x04\x00\x1b\x9b\x1a\x19"
+
+  -- Straight from `sys.kit`, because a test role is a bare process with no
+  -- namespace and therefore no `use`. What it is testing is the kit, not the
+  -- path a program takes to reach it.
+  local compress = sys.kit("compress")
+
+  local ok, plain = pcall(compress.inflate, stream)
+
+  if not ok then
+    sys.write("inflate: " .. tostring(plain) .. "\n")
+    sys.exit(1)
+  end
+
+  if plain ~= string.rep("kosmos", 10) then
+    sys.write(("inflate: got %d bytes, %q\n"):format(#plain, plain:sub(1, 20)))
+    sys.exit(1)
+  end
+
+  -- And the region form, which is the one a document actually uses. Same
+  -- bytes in, same bytes out, with nothing on the heap in between.
+  local src = sys.memory(1)
+  local dst = sys.memory(1)
+
+  sys.region_write(src, 0, stream)
+
+  local n = compress.inflate_into(sys.memory_map(src), #stream,
+                                  sys.memory_map(dst), 4096)
+
+  if n ~= #plain or sys.region_read(dst, 0, n) ~= plain then
+    sys.write(("inflate_into: %d bytes, expected %d\n"):format(n, #plain))
+    sys.exit(1)
+  end
+
+  sys.exit(0)
+end
+
+if role == R_PDF_SCAN then
+  -- The scanner, against a content stream with one of everything in it.
+  --
+  -- It exists because the C scanner replaced a Lua one that was 110 times
+  -- slower, and a replacement that is faster and subtly different is worse
+  -- than the thing it replaced. What is checked is the shape of what comes
+  -- out: how many tokens, what each one is, and the values that are easy to
+  -- get wrong - a negative number, a fraction with no leading zero, a hex
+  -- string, an escaped bracket.
+  local text = "q 1 0 0 -1 .5 -2.25 cm /F7 20 Tf <0003> Tj [(a\\)b) -12] TJ Q"
+
+  local region = sys.memory(1)
+  sys.region_write(region, 0, text)
+
+  local pdfkit = sys.kit("pdf")
+
+  local at = sys.memory_map(region)
+  local kinds, values = pdfkit.scan(at, #text, 0, 64)
+
+  local want = {
+    { pdfkit.OPERATOR, "q" },
+    { pdfkit.NUMBER, 1 }, { pdfkit.NUMBER, 0 }, { pdfkit.NUMBER, 0 },
+    { pdfkit.NUMBER, -1 }, { pdfkit.NUMBER, 0.5 }, { pdfkit.NUMBER, -2.25 },
+    { pdfkit.OPERATOR, "cm" },
+    { pdfkit.NAME, "F7" },
+    { pdfkit.NUMBER, 20 },
+    { pdfkit.OPERATOR, "Tf" },
+    { pdfkit.STRING, "\0\3" },
+    { pdfkit.OPERATOR, "Tj" },
+    { pdfkit.ARRAY_OPEN, true },
+    { pdfkit.STRING, "a)b" },
+    { pdfkit.NUMBER, -12 },
+    { pdfkit.ARRAY_CLOSE, true },
+    { pdfkit.OPERATOR, "TJ" },
+    { pdfkit.OPERATOR, "Q" },
+  }
+
+  if #kinds ~= #want then
+    sys.write(("pdf_scan: %d tokens, expected %d\n"):format(#kinds, #want))
+    sys.exit(1)
+  end
+
+  for i = 1, #want do
+    if kinds[i] ~= want[i][1] then
+      sys.write(("pdf_scan: token %d is kind %s, expected %s\n")
+                :format(i, tostring(kinds[i]), tostring(want[i][1])))
+      sys.exit(1)
+    end
+
+    if want[i][2] ~= true and values[i] ~= want[i][2] then
+      sys.write(("pdf_scan: token %d is %q, expected %q\n")
+                :format(i, tostring(values[i]), tostring(want[i][2])))
+      sys.exit(1)
+    end
+  end
+
   sys.exit(0)
 end
 

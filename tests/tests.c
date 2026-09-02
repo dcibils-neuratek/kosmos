@@ -2562,6 +2562,9 @@ static bool test_block_refuses_past_the_end(void)
 static bool test_gfx_triangles(void)                   { return luatest_role(30); }
 static bool test_g3d_orientation(void)                 { return luatest_role(31); }
 static bool test_kill_is_parent_only(void)             { return luatest_role(32); }
+static bool test_cap_release_frees_slots(void)         { return luatest_role(35); }
+static bool test_inflate_round_trip(void)              { return luatest_role(36); }
+static bool test_pdf_scanner(void)                     { return luatest_role(37); }
 
 static bool test_shared_memory_is_freed_once(void)
 {
@@ -3447,6 +3450,9 @@ static const struct test tests[] = {
     { "gfx: triangles fill and meet",          test_gfx_triangles },
     { "3d: the near faces are the drawn ones", test_g3d_orientation },
     { "kill: a sibling may not be ended",      test_kill_is_parent_only },
+    { "cap: forty regions, made and released", test_cap_release_frees_slots },
+    { "inflate: a stream from elsewhere",      test_inflate_round_trip },
+    { "pdf: the scanner reads what it should", test_pdf_scanner },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },

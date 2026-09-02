@@ -150,6 +150,9 @@ cap_t ipc_install_memory(struct thread *t, struct memobj *m);
 
 /* Drops everything a thread holds. Only memory needs it - an endpoint
  * capability going stale is harmless, a region's pages are not. */
+/* One capability back. Dropping is not destroying: see ipc.c. */
+int  ipc_cap_drop(struct thread *t, cap_t index);
+
 void ipc_caps_release(struct thread *t);
 
 /*

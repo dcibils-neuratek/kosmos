@@ -1068,6 +1068,57 @@ void syscall_dispatch(struct trapframe *tf)
         result = ipc_endpoint_destroy((cap_t)tf->x[0]);
         break;
 
+    case SYS_SHARE_UNMAP: {
+        /*
+         * A shared region out of this process's share window.
+         *
+         * `SYS_UNMAP` cannot do this and should not: it is bounded to the
+         * window `SYS_MAP` hands out and it *frees* what it unmaps, which is
+         * correct there and catastrophic here. The pages under a shared
+         * region belong to the memobj, and the memobj frees them when its
+         * last capability goes. Freeing them from the mapper's side is the
+         * double free that `USER_SHARE_VA` was introduced to prevent.
+         *
+         * So this clears page table entries and nothing else, and it exists
+         * because giving a capability back has to mean losing access to it.
+         * Without it `sys.release` dropped the right to *name* a region while
+         * keeping the ability to read and write it, which is not a capability
+         * system, it is a capability system with a hole in it.
+         */
+        uintptr_t va    = tf->x[0];
+        size_t    pages = (size_t)tf->x[1];
+
+        if ((va & (PAGE_SIZE - 1)) != 0 || pages == 0) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        if (va < USER_SHARE_VA
+            || va + pages * PAGE_SIZE > p->next_share) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        result = (as_unmap(p->space, va, pages) == AS_OK) ? 0 : SYS_ERR_FAULT;
+        break;
+    }
+
+    case SYS_CAP_DROP:
+        /*
+         * A capability this thread holds, given back.
+         *
+         * The counterpart of receiving one, and until now there was none:
+         * `ipc_caps_release` ran when a thread died and nothing else ever
+         * released a slot. Sixteen received regions and a server was full
+         * for good.
+         *
+         * No permission check beyond the index, for the same reason
+         * SYS_ENDPOINT_DESTROY needs none: it resolves against this
+         * thread's own table, so a process can only drop what it was given.
+         */
+        result = ipc_cap_drop(thread_current(), (cap_t)tf->x[0]);
+        break;
+
     case SYS_CALL:
         result = sys_call(p, (cap_t)tf->x[0], tf->x[1], tf->x[2]);
         break;

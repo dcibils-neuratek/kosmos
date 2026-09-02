@@ -29,6 +29,14 @@ Swap `darwin-x86_64` for `darwin-arm64` on an Apple Silicon machine.
 
 **Do not use `aarch64-unknown-linux-gnu` from Homebrew.** It targets Linux: it brings glibc, Linux start files and a dynamic loader, which is exactly what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces binaries named `aarch64-unknown-linux-gnu-gcc`, not the `aarch64-none-elf-gcc` this project calls for.
 
+**And `aarch64-elf-gcc` from Homebrew does not work either, for a different and more interesting reason.** It is a genuine bare-metal ELF target, so the objection above does not apply to it, and it compiles this tree cleanly - the kernel and all of upstream Lua, GCC 16.2 against `-Werror`, no warnings. It cannot *link* the user image, because it ships no C library at all.
+
+That matters because the userland - not the kernel - depends on the toolchain's `libm` for thirteen functions: `pow`, `exp`, `log`, `log2`, `log10`, `sqrt`, `fmod`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan2`. Lua's `math` library wants most of them and `stb_truetype` wants `sqrt` and `fmod`. `runtime/libc/math.c` supplies only the six that are exact bit-manipulation - `fabs`, `trunc`, `floor`, `ceil`, `frexp`, `ldexp` - and the rest come from newlib, which ARM's tarball bundles and Homebrew's does not.
+
+So `-lm` on the user link is real and load-bearing, and the split is worth stating plainly: **the kernel needs a compiler, the userland needs a compiler and a libm.** Writing the missing thirteen by hand is not a tidy-up - `pow` and `exp` and the trigonometric functions are numerically delicate, and a plausible wrong answer in a font rasteriser looks like a rendering bug rather than an arithmetic one.
+
+This is also the shape of the question the Pi will ask, and it is not a HAL question. Whatever toolchain builds for a second target has to bring a `libm` or the userland has to grow its own.
+
 ### QEMU
 
 From MacPorts or Homebrew, whichever is already on the machine:

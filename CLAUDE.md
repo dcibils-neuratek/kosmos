@@ -164,7 +164,17 @@ The test: **if a bug there can corrupt another process, it is C. If it can only 
 
 **Do not push things down to C "because it is faster" without a profile that justifies it.** Every time something is pushed to C, hot reload is lost, and hot reload is the reason for the entire design.
 
+**But notice what that cost is made of, because it is not always there.** The price of C is losing hot reload. A finished algorithm has nothing to reload: JPEG is not going to change, and neither is DEFLATE, or the syntax of a PDF content stream. For those the cost is zero and the speed is free, so they belong in C and the profile is a formality.
+
+The test, then, is two questions rather than one: **is it a loop over bytes, and would you ever want to reload it?** A window manager's layout policy is reloaded constantly. A Huffman decoder never is.
+
 The legitimate exception is pixel loops: never in Lua. Lua decides what gets drawn and where, the loop happens inside a surface, in C.
+
+**Those C libraries are kits**, and they are reached through the namespace: `use("/kits/pdf")` gets a table the runtime built, exactly as `use("/lib/ui.lua")` gets one a Lua file returned. The caller writes the same line either way, because which language something is written in is not a fact its user should have to know - and a library whose hot loop later moves into C should not change a single call site.
+
+The name is BeOS's and so is the idea (Interface Kit, Storage Kit, Media Kit, Translation Kit). Reaching them through the namespace rather than as globals keeps the rule everything else obeys: **what you were not given, you do not have.** `kits` at the prompt lists them.
+
+Measured, on a page of a real PDF: the scanner in Lua took 538 ms and in C takes 4.7 ms, for identical output. That is the shape of the argument - not that C is faster, but that a scanner is the kind of thing where 110x is available and nothing is given up to take it.
 
 ---
 

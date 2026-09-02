@@ -236,6 +236,11 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | Audio: a virtio-snd driver, WAV first, then a vendored MP3 decoder in userland C | design.md §6, state.md |
 | Sep 2026 | Large files cross as `read(fd, buf, n)`: the buffer is a shared region named by a capability | design.md §8.4, layout.md |
 | Sep 2026 | A BeOS-shaped layout: `/system` ships, `/user` is installed, `/home` is yours | layout.md |
+| Sep 2026 | A finished algorithm goes in C: hot reload is the cost of C, and there is nothing to reload in a codec | CLAUDE.md, design.md §6 |
+| Sep 2026 | **Kits**: C libraries reached as `use("/kits/pdf")`, through the namespace like any library | CLAUDE.md, design.md §6 |
+| Sep 2026 | `SYS_CAP_DROP`: a capability can be given back. Sixteen a thread, and nothing released one | design.md §4.3, kernel/ipc.c |
+| Sep 2026 | `SYS_SHARE_UNMAP`: releasing a region means losing the mapping, not only the name | kernel/syscall.c |
+| Sep 2026 | A PDF is read through a window and never held: the object layer is Lua, the scanner is C | design.md §6, pdf.lua |
 
 ---
 

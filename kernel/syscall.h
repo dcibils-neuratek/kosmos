@@ -67,8 +67,10 @@
 #define SYS_DISK_WRITE 28   /* (sector, buf, bytes)   -> bytes or error     */
 
 #define SYS_BOOT_OPT   29   /* (name, out, max)       -> length or error   */
+#define SYS_CAP_DROP   30   /* (cap)                  -> 0 or error         */
+#define SYS_SHARE_UNMAP 31  /* (address, pages)       -> 0 or error         */
 
-#define SYS_MAX         30
+#define SYS_MAX         32
 
 /*
  * What a spawn may hand its child beyond capabilities.

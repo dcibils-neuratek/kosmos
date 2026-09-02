@@ -764,6 +764,56 @@ static bool region_of(long cap, uintptr_t *at, size_t *bytes)
     return true;
 }
 
+/*
+ * `sys.release(cap)` - a capability this process holds, given back.
+ *
+ * A server that is handed a buffer calls this when it has filled it. Not
+ * doing so is not a leak that grows slowly: the table is sixteen deep, so
+ * it is sixteen requests and then nothing works.
+ */
+static int l_release(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    long status;
+    unsigned i;
+
+    /*
+     * The mapping goes first, and forgetting it is not optional.
+     *
+     * `region_of` caches by capability *index*, which was safe for exactly
+     * as long as an index was never reused - which was until this function
+     * existed. The moment a server gives a slot back, the next region to
+     * arrive takes that number, and a cache that still holds the old
+     * address hands the caller a different region entirely. The server then
+     * writes its data into somebody else's pages, reads it back, and
+     * reports success; the process that actually owned the buffer sees
+     * zeroes. That cost an evening.
+     *
+     * Unmapped before the capability is dropped, because after the drop
+     * this process may have no right to name those pages at all - and
+     * because dropping first would leave a window where the pages could be
+     * freed underneath a mapping this process still has.
+     */
+    for (i = 0; i < mapped_count; i++) {
+        if (mapped[i].cap == cap) {
+            kosmos_share_unmap(mapped[i].at, mapped[i].bytes / 4096u);
+
+            mapped[i] = mapped[mapped_count - 1];
+            mapped_count--;
+            break;
+        }
+    }
+
+    status = kosmos_cap_drop(cap);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 /* `sys.region_write(cap, offset, data)` - bytes into the region. */
 static int l_region_write(lua_State *L)
 {
@@ -1068,6 +1118,57 @@ static int l_libraries(lua_State *L)
     return 1;
 }
 
+/*
+ * The kits, each in its own file, each building its own table.
+ *
+ * `sys.kit(name)` is the door and it is deliberately dull: `use` turns
+ * `/kits/pdf` into a call to it, so a kit is reached the way a library is,
+ * through the namespace, and nothing has to know which of the two it got.
+ */
+void kosmos_compress_kit(lua_State *L);
+void kosmos_pdf_kit(lua_State *L);
+
+static const struct {
+    const char *name;
+    void      (*build)(lua_State *L);
+} kits[] = {
+    { "compress", kosmos_compress_kit },
+    { "pdf",      kosmos_pdf_kit },
+    { NULL, NULL }
+};
+
+static int l_kit(lua_State *L)
+{
+    const char *want = luaL_checkstring(L, 1);
+    unsigned i;
+
+    for (i = 0; kits[i].name != NULL; i++) {
+        if (strcmp(kits[i].name, want) == 0) {
+            kits[i].build(L);
+            return 1;
+        }
+    }
+
+    lua_pushnil(L);
+    lua_pushfstring(L, "there is no kit called %s", want);
+    return 2;
+}
+
+/* Every kit's name, so `kits` can list what a machine has. */
+static int l_kit_names(lua_State *L)
+{
+    unsigned i;
+
+    lua_newtable(L);
+
+    for (i = 0; kits[i].name != NULL; i++) {
+        lua_pushstring(L, kits[i].name);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    return 1;
+}
+
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "getchar",  l_getchar },
@@ -1101,6 +1202,9 @@ static const luaL_Reg sys_functions[] = {
     { "libraries", l_libraries },
     { "endpoint", l_endpoint },
     { "destroy",  l_destroy },
+    { "release",  l_release },
+    { "kit",       l_kit },
+    { "kit_names", l_kit_names },
     { "call",     l_call },
     { "receive",  l_receive },
     { "reply",    l_reply },

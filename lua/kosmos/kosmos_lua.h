@@ -80,6 +80,23 @@ long kosmos_lua_time(long *out);
 #define l_randomizePivot()  (kosmos_lua_seed())
 
 /*
+ * The one type Lua reaches outside itself for.
+ *
+ * `lstate.h` wants `sig_atomic_t` for the two fields the debug hook writes
+ * from what upstream assumes may be a signal handler, and reaches for
+ * <signal.h> to get it. This system has no signals and `runtime/include/`
+ * has no such header - the build only ever worked because the toolchain in
+ * use bundled a libc whose headers were on the include path, which is
+ * exactly what -ffreestanding -nostdlib says not to depend on. It surfaced
+ * the first time the project was built with a compiler shipping no libc at
+ * all.
+ *
+ * `int` is what that header would have given on this target, and the guard
+ * upstream puts around the include is there for precisely this.
+ */
+#define l_signalT   int
+
+/*
  * There is one locale and it is C. Upstream reads localeconv()->decimal_point
  * on every number parsed; this makes it a constant the compiler folds away,
  * and means locale.h is never actually called into.

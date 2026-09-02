@@ -312,6 +312,8 @@ USER_SRCS := user/init/start.S \
              user/lib/sys_user.c \
              user/lib/gfx.c \
              user/lib/png.c \
+             user/lib/inflate.c \
+             user/lib/pdftok.c \
              runtime/upstream/puff/puff.c \
              $(GEN)/font_8x16.c \
              $(GEN)/programs.c \
@@ -590,6 +592,27 @@ QEMU      := qemu-system-aarch64
 # it is that what was written is still there next time - which is the whole
 # of M8. `make disk` remakes it when it needs to be empty again.
 #
+# The disk. Overridable, and worth overriding.
+#
+#   make qemu DISK=build/play.img
+#
+# QEMU takes a write lock on the image, so two machines cannot share one:
+# the second says `Failed to get "write" lock` and refuses to start. That is
+# the right behaviour - two writers on one filesystem is corruption - but it
+# means a machine left running blocks the next one, and a machine running at
+# all blocks `kfs.lua put` from this side.
+#
+# `make test` is not the problem: every harness makes its own temporary
+# image, on purpose, so a pass can never be a leftover. The collision is
+# between one person's machine and another's, or between a machine and the
+# host tool writing to the image underneath it.
+#
+# Making a second image is one command, and it can be filled while it is
+# made:
+#
+#   build/host/lua tools/kfs.lua create build/play.img 64 \
+#       ~/Downloads/book.pdf:/home/book.pdf
+#
 DISK      := build/kosmos.img
 DISK_MB   := 64
 
@@ -605,7 +628,11 @@ DISK_MB   := 64
 #
 comma     := ,
 BOOT      :=
-BOOTARG   := $(if $(BOOT),-fw_cfg name=opt/kosmos/boot$(comma)string=$(BOOT),)
+# Quoted, because a boot string with a space in it is the normal case -
+# `BOOT="wm blocks"` is in the comment above and did not work: the shell
+# split it and QEMU took `blocks` for a filename it could not open. The
+# example was written before anything used one.
+BOOTARG   := $(if $(BOOT),-fw_cfg 'name=opt/kosmos/boot$(comma)string=$(BOOT)',)
 
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \

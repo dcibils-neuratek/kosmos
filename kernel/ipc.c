@@ -335,6 +335,30 @@ cap_t ipc_install_memory(struct thread *t, struct memobj *m)
 {
     cap_t i;
 
+    /*
+     * Every install takes a slot and a reference, and there is deliberately
+     * no dedupe here.
+     *
+     * There was, for about an hour: handing back an existing index for a
+     * region the thread already held, so that a client resending one buffer
+     * in a loop did not spend a slot per call. It returned that index
+     * without taking a reference, which is defensible on its own and is
+     * wrong in company - `SYS_MEM_CREATE` installs and then unrefs on the
+     * stated grounds that `install` took a reference of its own. When the
+     * dedupe fired there, that unref took the count to zero and freed the
+     * region its caller had just created, whose pages then went back to the
+     * allocator while a capability still named them.
+     *
+     * The symptom was a read that reported writing 1811 bytes into a region
+     * that stayed full of zeroes, and only for regions created late - late
+     * being when a pool slot had been recycled and a stale capability could
+     * match it.
+     *
+     * `ipc_cap_drop` is what makes the dedupe unnecessary: a server that
+     * gives a buffer back does not accumulate them, so there is nothing to
+     * deduplicate. An optimisation that trades a correct reference count
+     * for a slot is not one.
+     */
     for (i = 0; i < CAPS_PER_THREAD; i++) {
         if (t->caps[i].kind == CAP_NONE) {
             t->caps[i].kind = CAP_MEMORY;
@@ -347,6 +371,53 @@ cap_t ipc_install_memory(struct thread *t, struct memobj *m)
     }
 
     return IPC_ERR_NO_SPACE;
+}
+
+/*
+ * One capability, released.
+ *
+ * The other half of receiving one, and it was missing in exactly the way
+ * `SYS_ENDPOINT_DESTROY` was missing before it: a thread could be given a
+ * region and had no way to give it back, so a server that took a buffer per
+ * request ran out of slots and every later request failed. The endpoint
+ * pool had this same shape and the same cure.
+ *
+ * Dropping is not destroying. The region's pages go when the *last*
+ * capability to it is dropped, so a server letting go of its own has no
+ * effect on the client still holding one - which is the property that makes
+ * it safe for a server to drop unconditionally when it is done.
+ */
+int ipc_cap_drop(struct thread *t, cap_t index)
+{
+    if (t == NULL || index < 0 || index >= CAPS_PER_THREAD) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    if (t->caps[index].kind == CAP_NONE) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    /*
+     * A stale capability is dropped without touching the object.
+     *
+     * The slot may name a region that was freed and whose pool entry has
+     * since been taken by another one. Unreffing then decrements a stranger,
+     * and the stranger's owner watches its pages go back to the allocator
+     * while it still holds a capability to them. The generation is exactly
+     * the check that tells the two apart, and it is why the field is there.
+     */
+    if (t->caps[index].kind == CAP_MEMORY
+        && t->caps[index].memory != NULL
+        && t->caps[index].generation == t->caps[index].memory->generation) {
+        memobj_unref(t->caps[index].memory);
+    }
+
+    t->caps[index].kind = CAP_NONE;
+    t->caps[index].endpoint = NULL;
+    t->caps[index].memory = NULL;
+    t->caps[index].generation = 0;
+
+    return 0;
 }
 
 /*
@@ -366,7 +437,11 @@ void ipc_caps_release(struct thread *t)
     }
 
     for (i = 0; i < CAPS_PER_THREAD; i++) {
-        if (t->caps[i].kind == CAP_MEMORY) {
+        /* Generation-checked, for the reason `ipc_cap_drop` gives: a stale
+         * slot names a pool entry, not the region that used to be in it. */
+        if (t->caps[i].kind == CAP_MEMORY
+            && t->caps[i].memory != NULL
+            && t->caps[i].generation == t->caps[i].memory->generation) {
             memobj_unref(t->caps[i].memory);
         }
 

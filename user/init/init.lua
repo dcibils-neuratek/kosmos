@@ -2170,16 +2170,32 @@ local function diskfs_handlers(state)
       -- have moved the limit rather than removed it.
       --
       if req.into then
+        --
+        -- The buffer is the caller's, and this holds a capability to it
+        -- until it says otherwise. Sixteen is all a thread gets, so a
+        -- server that keeps them answers sixteen requests and then refuses
+        -- every one after - which is what a PDF read in 256-byte windows
+        -- found on its fifteenth read.
+        --
+        -- Released on the way out of every path, not only the happy one:
+        -- an error is still a request that was handed a buffer.
+        --
+        local function done_with(answer)
+          if cap then sys.release(cap) end
+          return answer
+        end
+
         local sb = mounted()
 
         if not sb then
-          return { ok = false, error = "there is no filesystem here" }
+          return done_with({ ok = false,
+                             error = "there is no filesystem here" })
         end
 
         local number, node = kfs.find(sb, req.path)
 
         if not number then
-          return { ok = false, error = tostring(node) }
+          return done_with({ ok = false, error = tostring(node) })
         end
 
         local from = tonumber(req.offset) or 0
@@ -2196,13 +2212,13 @@ local function diskfs_handlers(state)
           local ok, err = sys.region_write(cap, done, piece)
 
           if not ok then
-            return { ok = false, error = tostring(err) }
+            return done_with({ ok = false, error = tostring(err) })
           end
 
           done = done + #piece
         end
 
-        return { ok = true, bytes = done, size = node.size }
+        return done_with({ ok = true, bytes = done, size = node.size })
       end
 
       local sb = mounted()
@@ -4105,6 +4121,33 @@ if role == ROLE_RUNNER then
   env.use = function(path)
     if loaded[path] ~= nil then
       return loaded[path]
+    end
+
+    --
+    -- A kit is a library that happens to be C.
+    --
+    -- `use("/lib/ui.lua")` reads Lua out of the namespace and runs it;
+    -- `use("/kits/pdf")` gets a table the runtime built. The caller writes
+    -- the same line either way, which is the point: where a library's speed
+    -- comes from is not something the program using it should have to know,
+    -- and a kit that later grows a Lua half - or a Lua library that has its
+    -- hot loop moved into C - should not change a single call site.
+    --
+    -- Kits come through the namespace rather than as globals so that the
+    -- rule the rest of the system runs on still holds: what you were not
+    -- given, you do not have. A program with no `use` has no kits.
+    --
+    local kit = path:match("^/kits/([%w_]+)$")
+
+    if kit then
+      local value, why = sys.kit(kit)
+
+      if not value then
+        error(("use: %s: %s"):format(path, tostring(why)), 2)
+      end
+
+      loaded[path] = value
+      return value
     end
 
     local source, err = ns.read(path)
