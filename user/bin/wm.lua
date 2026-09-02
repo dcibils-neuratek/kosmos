@@ -54,6 +54,12 @@ local BOX        = 14
 -- the tab rather than a coincidence between two numbers.
 local MARGIN     = 4
 
+-- How far each window steps down and across from the one already in its
+-- corner. A tab's height, so the one underneath always has a strip of its
+-- own title bar showing - which is the whole point: a window you can see a
+-- piece of is a window you can pick up.
+local CASCADE    = TAB_H + 8
+
 local CLOSE_W    = BOX + 6        -- the close box at the left of a tab
 
 --
@@ -1046,6 +1052,46 @@ handlers.open = function(req, who, cap)
       -- shared surface is a window that opens, stays blank, and gives the
       -- application no idea why - which is how this arrived the first time.
       print("wm: could not map a shared surface: " .. tostring(why))
+    end
+  end
+
+  --
+  -- Cascaded, if something is already there.
+  --
+  -- Applications carry a position in their source and several of them were
+  -- written to the same corner, so opening four of them put four windows
+  -- exactly on top of each other with only the last one reachable. Every
+  -- desktop since the Macintosh has stepped each new window down and across
+  -- instead, and the reason is not tidiness: a window nobody can see is a
+  -- window nobody can move, because the one underneath cannot be clicked.
+  --
+  -- Only when the corner is actually taken, so an application that asks for
+  -- somewhere free is put exactly where it asked. And it gives up after a
+  -- few steps rather than walking off the screen - past that, landing on
+  -- top of something is better than landing outside.
+  --
+  if req.kind ~= "menu" then
+    for _ = 1, 8 do
+      local taken = false
+
+      for _, other in ipairs(windows) do
+        if math.abs(other.x - win.x) < CASCADE
+           and math.abs(other.y - win.y) < CASCADE then
+          taken = true
+          break
+        end
+      end
+
+      if not taken then break end
+
+      win.x = win.x + CASCADE
+      win.y = win.y + CASCADE
+
+      -- Back to the top left rather than off the bottom right.
+      if win.x + win.w > W - BORDER or win.y + win.h > H - BORDER then
+        win.x, win.y = BORDER + CASCADE, TAB_H + CASCADE
+        break
+      end
     end
   end
 

@@ -686,7 +686,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot frames bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot shot frames bench bench-record debug disasm size clean dist release disk
 
 # A disk image, built here, with whatever you want already in it.
 #
@@ -859,6 +859,38 @@ powertest: $(TARGET)
 # half no test inside the guest can reach.
 screenshot: $(TARGET)
 	python3 tools/run_screenshot.py $(TARGET) --png build/screenshot.png
+
+# One picture of the desktop, for the record.
+#
+#   make shot
+#
+# Boots at 1920x1080, opens Tracker, the widget gallery, Processes, Monitor
+# and the cube, lays them out so all of them are visible, and saves the
+# screen to `builds/screenshots/` under the date and the revision.
+#
+# The point is the series rather than any one of them: a repository full of
+# these is the only honest account of what the desktop looked like on a
+# given day. A commit message says what changed; a screenshot says what it
+# became, and nothing else here records that.
+#
+# In `docs/`, because that is what these are. `build/` is gitignored and
+# `make clean` deletes it, so a history kept there would vanish the first
+# time anybody cleaned; `builds/` is for things you can run. A picture of
+# what the desktop looked like on a given day is documentation, and it sits
+# with the rest of it.
+#
+# The size is a build flag, so this rebuilds at 1920x1080 and then puts the
+# default image back - otherwise the next `make screenshot` would silently
+# be testing a different machine.
+SHOTDIR := docs/screenshots
+
+.PHONY: shot
+shot:
+	@$(MAKE) --no-print-directory FB=1920x1080 $(TARGET)
+	@mkdir -p $(SHOTDIR)
+	python3 tools/run_gallery.py $(TARGET) \
+	  --out $(SHOTDIR)/$$(date +%Y-%m-%d-%H%M)-$$(git rev-parse --short HEAD).png
+	@$(MAKE) --no-print-directory $(TARGET)
 
 # Where a window manager pass goes, under an idle desktop, an animating one
 # and a drag. Not gated and deliberately not: these are QEMU numbers and

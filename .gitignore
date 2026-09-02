@@ -9,5 +9,6 @@ build/
 # Except the released images, which are the point of that directory: an
 # image somebody can download and run without a toolchain.
 !builds/*.elf
+
 tools/__pycache__/
 build/kosmos.img
