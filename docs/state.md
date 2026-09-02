@@ -6,6 +6,53 @@ Last updated: 2026-09-02
 
 ---
 
+## A frame is measured now, and what it said
+
+`make frames`. `wm` keeps seven stage counters, `/bin/frames.lua` reads them
+over the window manager's own protocol, and `tools/run_frames.py` drives an
+idle desktop, one with a plasma animating, and a window being dragged.
+
+This existed because nothing measured a frame. All five gated benchmarks are
+the kernel - IPC, context switch, page fault, allocation - in a system whose
+stated aim is a desktop that stays responsive on a Pi 5, and every argument
+about rewriting the window manager in C was therefore an argument about a
+number nobody had.
+
+**Under animation, composing is 83% of a busy pass, and composing is already
+C.** The Lua half - event routing, focus, damage bookkeeping, layout - is
+the other seventeen per cent, and most of that is IPC rather than
+computation. Rewriting this process in C attacks the seventeen.
+
+**The worst pass has never been a garbage collection.** The worst collecting
+pass came to 45-69% of the worst pass overall, in every run. GC jitter is
+the whole stated reason for moving a server to C, and here it is not what
+the worst case is made of. That is the measurement the C question was
+waiting on, and it says no for this process.
+
+**What it found on its first run was in the compositor.** A dragged window
+composed half the pixels of an animating one and took four fifths of the
+time, which is a cost that does not scale with the damage - and it was
+`back:fill(fx, fy, fw, fh, tab)` filling the whole frame of every window a
+damage rectangle touched. Ten pixels of damage on a 360x264 window cost
+95,040 of them. Clipped, plus the title and the desktop stamp only when the
+rectangle reaches them: 4.24 -> 4.09 ms a composing pass, 8.84 -> 8.08 ms
+worst. Small on the animating case on purpose - a plasma commits its whole
+window, so that is the load the fix helps least. Small damage was the case
+paying a whole window frame.
+
+**Not gated, and deliberately.** These are QEMU numbers and `CLAUDE.md` is
+clear about what those are worth: the shape survives the emulator, the
+milliseconds wait for a Pi.
+
+**What is still weak in it.** The dragging scenario composes about nineteen
+frames in eight seconds, which means the synthetic drag is not reliably
+landing on the title bar - the numbers from that row should not be trusted
+until it is calibrated. And nothing yet decomposes *inside* compose: the
+split between what the C primitives cost and what asking for them costs is
+still inferred from three points rather than measured.
+
+---
+
 ## Current milestone
 
 **No milestone is the current one, and that is the honest answer.** M6, M7,
