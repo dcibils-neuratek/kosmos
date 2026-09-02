@@ -315,6 +315,7 @@ USER_SRCS := user/init/start.S \
              user/lib/sys_user.c \
              user/lib/gfx.c \
              user/lib/png.c \
+             user/lib/docfont.c \
              user/lib/inflate.c \
              user/lib/pdftok.c \
              runtime/upstream/puff/puff.c \

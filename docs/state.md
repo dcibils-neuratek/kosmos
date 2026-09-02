@@ -543,6 +543,50 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Known bad
 
+**`pdfview` renders nothing, and the cause is contiguous memory rather than
+the renderer.** The renderer itself works: `user/lib/docfont.c` loads a font
+program out of the document, rasterises glyphs *by index* through
+`stbtt_GetGlyphBitmap`, caches them, and draws a whole page in two or three
+crossings. It was seen drawing, with `handle=true` and glyphs on a page.
+
+What it cannot do is get memory for everything at once. A `memobj` is
+**physically contiguous** by construction - `SYS_MEM_MAP` maps `base + i *
+PAGE_SIZE` and assumes it - and a rendered page wants all of these at the
+same time:
+
+  * the page surface, about 730 pages at this window size
+  * the content-stream buffers, 48
+  * a font program per face, 5 to 13 each
+  * the window's own double buffer, around 920
+
+Whichever is asked for last fails, and moving the order only moves which one
+fails: loading fonts first starves the content buffers, allocating the page
+first starves the fonts. Seven megabytes of a 512 MB machine, and it is the
+*runs* that are missing rather than the pages.
+
+Three ways out, cheapest first:
+
+  * **Render a band rather than a page.** The window is 620 tall and the
+    page surface is 984; a band of the visible height plus a margin, re-cut
+    when scrolled past it, is a third of the pages. Scrolling stays a blit.
+  * **Reuse one surface across pages**, which it half does already - it only
+    reallocates when the size changes.
+  * **Let a memobj be non-contiguous**: a page list rather than a base
+    pointer, with `SYS_MEM_MAP` walking it. That is the principled fix and
+    the only one that stops this recurring, and it is real kernel work.
+
+Two things found on the way that are fixed and worth keeping:
+
+  * **A PDF's fonts have no `cmap`**, which is correct - a CID-keyed subset
+    is addressed by glyph index, so a character map means nothing and the
+    producer drops it. `stbtt_InitFont` refuses a font without one, *and*
+    refuses one whose cmap has no encoding record it recognises. Rather than
+    modify vendored code, `ensure_cmap` writes a 22-byte cmap into our own
+    copy and repoints the `post` entry at it.
+  * **A font program is loaded once per face, not per face per size.** The
+    first version allocated two regions per size and never released them.
+
+
 **One display phase fails about one run in three, and I do not know why.**
 `check_widgets` clicks the gallery's list and presses Down through QEMU's
 input plumbing; the selection has to move a row. It passes standalone every

@@ -231,6 +231,107 @@ function pdfpage.width(font, code)
   return font.default_width
 end
 
+--
+-- The font program itself, inflated into a region and handed to the
+-- rasteriser.
+--
+-- Not a Lua string: `stb_truetype` reads from the buffer for the life of
+-- the font rather than taking a copy, and a font program is a couple of
+-- hundred kilobytes against a 2 MB heap. So it goes into pages this process
+-- owns, exactly as a content stream does, and what Lua holds is an address.
+--
+-- One region per font, kept for as long as the document is open. Freeing it
+-- while a `docfont` still points into it is a use-after-free, which is why
+-- nothing here frees it and why closing a document is the only thing that
+-- should.
+--
+--
+-- The font program, loaded once per face and shared by every size.
+--
+-- Two mistakes are baked out of this, both found the same evening.
+--
+-- The first version allocated per face *per size* and never released, so
+-- the second page ran the machine out of memory. A font program does not
+-- depend on the size it is drawn at - only the rasterised glyphs do - so it
+-- is inflated once and every `docfont` over it points at the same bytes.
+--
+-- The second asked for a fixed 512 KB, twice, for a font of 28 KB. A region
+-- is *contiguous* physical pages, so a large round number is a much
+-- stronger request than the same number of free pages, and the second face
+-- on the page simply could not get one. The sizes come from the stream now:
+-- the compressed length is known from the object, and `inflated_size` asks
+-- the decompressor how big the answer will be without producing it.
+--
+local function pages_for(bytes)
+  return (bytes + 4095) // 4096
+end
+
+local function program_of(doc, font)
+  if font.program ~= nil then
+    return font.program or nil
+  end
+
+  font.program = false          -- so a failure is not retried every page
+
+  local offset, length, filter = doc:stream_range(font.file)
+
+  if not offset then print("pdfpage: font: no stream") return nil end
+
+  local raw = sys.memory(pages_for(length))
+
+  if not raw then
+    print(("pdfpage: font: no region for %d pages"):format(pages_for(length)))
+    return nil
+  end
+
+  local raw_at = sys.memory_map(raw)
+  local done = 0
+
+  while done < length do
+    local got = doc.source.read_into(raw, offset + done, length - done)
+    if not got or got == 0 then break end
+    done = done + got
+  end
+
+  if done ~= length then
+    print(("pdfpage: font: read %d of %d"):format(done, length))
+    return nil
+  end
+
+  if filter[1] ~= "FlateDecode" then
+    font.program = { at = raw_at, size = length,
+                     cap = pages_for(length) * 4096 }
+    return font.program
+  end
+
+  -- Room over the top, because a subset font has no `cmap` and a minimal
+  -- one is synthesised on the end of it; see `ensure_cmap` in docfont.c.
+  local sized, want = pcall(compress.inflated_size, raw_at, length)
+
+  if not sized then
+    print("pdfpage: font: inflated_size: " .. tostring(want))
+    return nil
+  end
+
+  want = want + 32
+
+  local out = sys.memory(pages_for(want))
+
+  if not out then
+    print(("pdfpage: font: no out region for %d pages"):format(pages_for(want)))
+    return nil
+  end
+
+  local out_at = sys.memory_map(out)
+  local cap    = pages_for(want) * 4096
+
+  font.program = { at = out_at,
+                   size = compress.inflate_into(raw_at, length, out_at, cap),
+                   cap = cap }
+
+  return font.program
+end
+
 -- Everything about one font that drawing or reading a run needs.
 function pdfpage.font(doc, dict)
   local font = { subtype = dict.Subtype, base = dict.BaseFont, two_byte = false }
@@ -262,6 +363,220 @@ function pdfpage.font(doc, dict)
 
   font.unicode = font.unicode or { single = {}, ranges = {} }
   return font
+end
+
+--
+-- The same font, with something that can draw it.
+--
+-- Separate from `pdfpage.font` because reading a page and drawing one want
+-- different things: extracting text needs the `/ToUnicode` table and no
+-- rasteriser at all, and rendering needs the opposite. A reader that paid
+-- for a font program it never draws would be paying half a megabyte per
+-- face to produce a string.
+--
+-- One rasteriser per face *per size*: a glyph cache is keyed by glyph, and
+-- the same glyph at ten and at twenty pixels is two different bitmaps.
+function pdfpage.rasteriser(doc, font, px)
+  if font.file == nil then return nil end
+
+  font.handles = font.handles or {}
+
+  if font.handles[px] == nil then
+    local program = program_of(doc, font)
+
+    if program then
+      local ok, handle = pcall(gfx.docfont, program.at, program.size,
+                               program.cap, px)
+
+      if not ok then
+        print("pdfpage: docfont: " .. tostring(handle))
+      end
+
+      font.handles[px] = ok and handle or false
+    else
+      font.handles[px] = false
+    end
+  end
+
+  return font.handles[px] or nil
+end
+
+-- Two regions, made once and reused for every page: the compressed stream
+-- lands in the first and is inflated into the second, and the scanner reads
+-- the second where it lies. Nothing about the page reaches the Lua heap
+-- except the text that comes out - which is the same rule `gfx` follows for
+-- pixels, and for the same reason.
+-- Sized against the document rather than guessed.
+--
+-- The largest compressed content stream in a 254-page book is 5,518 bytes
+-- and the largest inflated one is about 45 KB, so 16 pages in and 32 out
+-- carry any page of it with room over. The first version asked for 16 and
+-- 64, which was 320 KB of contiguous pages for no reason - and a program
+-- that also has a window and a UI kit could not get them. It failed as
+-- `not enough memory` from inside `sys.memory`, three layers from anything
+-- that looked like a cause, and worked perfectly in a console program that
+-- had the machine to itself.
+--
+-- `pmm_alloc_contiguous` is the constraint, not the total: a run of 64 free
+-- pages is a stronger thing to ask for than 64 free pages.
+local RAW_PAGES, OUT_PAGES = 16, 32
+
+local buffers
+
+local function regions()
+  if not buffers then
+    local raw = sys.memory(RAW_PAGES)
+    local out = sys.memory(OUT_PAGES)
+
+    if not raw or not out then
+    print("pdfpage: no region for a font program")
+    return nil
+  end
+
+    buffers = {
+      raw = raw, out = out,
+      raw_at = sys.memory_map(raw), out_at = sys.memory_map(out),
+      raw_max = RAW_PAGES * 4096, out_max = OUT_PAGES * 4096,
+    }
+  end
+
+  return buffers
+end
+
+--------------------------------------------------------------------------
+-- A page, as pixels.
+--------------------------------------------------------------------------
+
+--
+-- The fonts a page uses, loaded before anything large is allocated.
+--
+-- A region is *contiguous* physical pages, and a font program wants a
+-- handful of them. A rendered page wants seven hundred. Asking for the big
+-- one first leaves the address space with no run long enough for the small
+-- ones, and the second face on the page fails to load with plenty of free
+-- memory - which reads as a font problem and is an ordering problem.
+--
+-- So the caller does this, then allocates its surface, then renders.
+-- Returns the fonts so the render need not build them twice.
+--
+function pdfpage.prepare(doc, page)
+  local resources = doc:resolve(page.Resources) or {}
+  local dicts     = doc:resolve(resources.Font) or {}
+  local fonts     = {}
+
+  for name, dict in pairs(dicts) do
+    local font = pdfpage.font(doc, doc:resolve(dict))
+
+    fonts[name] = font
+    program_of(doc, font)
+  end
+
+  return fonts
+end
+
+--
+-- Draws one page into `surface` at `scale`, and returns what it cost.
+--
+-- **Glyphs are accumulated and drawn per font, not per glyph.** A page is
+-- around two thousand of them; a call across the Lua/C boundary for each
+-- would cost more than the drawing, since `gfx.md` 19.11 puts a crossing at
+-- about two thousand pixels of work. So the walk fills a flat array of
+-- glyph, x, y for each face and size in use, and each of those becomes one
+-- call - two or three per page rather than two thousand.
+--
+-- Flat arrays rather than tables of three, for the reason the interpreter
+-- learned the hard way: a table per glyph is thousands of objects for the
+-- collector to walk, on a heap that has 2 MB in it.
+--
+-- PDF's y axis points up from the bottom of the page and a surface's points
+-- down from the top, so the flip happens here, once per glyph, in the same
+-- arithmetic that applies the scale.
+--
+function pdfpage.render(doc, page, surface, scale, colour, fonts)
+  fonts = fonts or pdfpage.prepare(doc, page)
+
+  local box    = doc:resolve(page.MediaBox) or { 0, 0, 612, 792 }
+  local height = box[4] or 792
+
+  local offset, length, filter = doc:stream_range(page.dict.Contents)
+  if not offset then return 0, 0 end
+
+  local b = regions()
+  if not b then error("pdfpage: no memory for the page buffers") end
+  if length > b.raw_max then
+    error(("pdfpage: a %d byte stream needs a bigger buffer"):format(length))
+  end
+
+  local done = 0
+
+  while done < length do
+    local got = doc.source.read_into(b.raw, offset + done, length - done)
+    if not got or got == 0 then break end
+    done = done + got
+  end
+
+  if done ~= length then
+    error(("pdfpage: read %d bytes of %d"):format(done, length))
+  end
+
+  local size = length
+
+  if filter[1] == "FlateDecode" then
+    size = compress.inflate_into(b.raw_at, length, b.out_at, b.out_max)
+  end
+
+  local at = filter[1] == "FlateDecode" and b.out_at or b.raw_at
+
+  -- One bucket per face and size actually used on this page.
+  local buckets, order = {}, {}
+
+  pdfpage.walk(at, size, fonts, function (x, y, px, font, bytes)
+    local at_px = math.floor(px * scale + 0.5)
+
+    if at_px < 4 then at_px = 4 end
+    if at_px > 200 then at_px = 200 end
+
+    local key = tostring(font) .. ":" .. at_px
+    local bucket = buckets[key]
+
+    if not bucket then
+      bucket = { font = font, px = at_px, runs = {} }
+      buckets[key] = bucket
+      order[#order + 1] = bucket
+    end
+
+    local runs = bucket.runs
+    local n    = #runs
+    local step = font.two_byte and 2 or 1
+    local pen  = x
+
+    for i = 1, #bytes, step do
+      local code = step == 2
+                   and (bytes:byte(i) * 256 + (bytes:byte(i + 1) or 0))
+                   or  bytes:byte(i)
+
+      n = n + 1 ; runs[n] = code
+      n = n + 1 ; runs[n] = math.floor(pen * scale + 0.5)
+      n = n + 1 ; runs[n] = math.floor((height - y) * scale + 0.5)
+
+      pen = pen + (pdfpage.width(font, code) / 1000) * px
+    end
+  end)
+
+  local drawn, faces = 0, 0
+
+  for _, bucket in ipairs(order) do
+    local handle = pdfpage.rasteriser(doc, bucket.font, bucket.px)
+
+    if handle then
+      drawn = drawn + (handle:draw(surface, colour, bucket.runs) or 0)
+      faces = faces + 1
+    end
+  end
+
+  doc:forget()
+
+  return drawn, faces
 end
 
 --------------------------------------------------------------------------
@@ -491,45 +806,6 @@ end
 -- page which comes out scrambled points straight at it.
 --
 local TOLERANCE = 2
-
--- Two regions, made once and reused for every page: the compressed stream
--- lands in the first and is inflated into the second, and the scanner reads
--- the second where it lies. Nothing about the page reaches the Lua heap
--- except the text that comes out - which is the same rule `gfx` follows for
--- pixels, and for the same reason.
--- Sized against the document rather than guessed.
---
--- The largest compressed content stream in a 254-page book is 5,518 bytes
--- and the largest inflated one is about 45 KB, so 16 pages in and 32 out
--- carry any page of it with room over. The first version asked for 16 and
--- 64, which was 320 KB of contiguous pages for no reason - and a program
--- that also has a window and a UI kit could not get them. It failed as
--- `not enough memory` from inside `sys.memory`, three layers from anything
--- that looked like a cause, and worked perfectly in a console program that
--- had the machine to itself.
---
--- `pmm_alloc_contiguous` is the constraint, not the total: a run of 64 free
--- pages is a stronger thing to ask for than 64 free pages.
-local RAW_PAGES, OUT_PAGES = 16, 32
-
-local buffers
-
-local function regions()
-  if not buffers then
-    local raw = sys.memory(RAW_PAGES)
-    local out = sys.memory(OUT_PAGES)
-
-    if not raw or not out then return nil end
-
-    buffers = {
-      raw = raw, out = out,
-      raw_at = sys.memory_map(raw), out_at = sys.memory_map(out),
-      raw_max = RAW_PAGES * 4096, out_max = OUT_PAGES * 4096,
-    }
-  end
-
-  return buffers
-end
 
 function pdfpage.text(doc, page)
   local resources = doc:resolve(page.Resources) or {}

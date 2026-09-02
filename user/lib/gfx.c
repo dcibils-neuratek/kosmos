@@ -41,6 +41,7 @@
 #include "kosmos.h"
 
 void kosmos_png_open(lua_State *L);
+void kosmos_docfont_open(lua_State *L);
 
 #define SURFACE_MT  "kosmos.surface"
 
@@ -1487,6 +1488,7 @@ int luaopen_gfx(lua_State *L)
     /* `gfx.png`, which lives in its own file because a decoder and a
      * blitter have nothing to say to each other. */
     kosmos_png_open(L);
+    kosmos_docfont_open(L);
 
     return 1;
 }

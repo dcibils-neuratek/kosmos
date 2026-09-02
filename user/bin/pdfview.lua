@@ -1,158 +1,85 @@
 -- kosmos: application
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
--- A PDF, in a window.
+-- A PDF, as it was typeset.
 --
 --   wm pdfview
 --   wm pdfview:/home/odyssey.pdf
 --
--- **What this shows and what it does not.** The page's text, laid out by
--- this window rather than by the document: the system font, wrapped to the
--- width you give it. Not the page as its author arranged it - no Times New
--- Roman, no columns, no images, no line breaks where the typesetter put
--- them.
+--   arrows / PageUp / PageDown    scroll
+--   , and .                       previous and next page
+--   + and -                       zoom
 --
--- That is a real limitation and it is worth being plain about, because the
--- distance from here to a viewer that draws the page properly is one piece:
--- `gfx` rasterises a glyph by *codepoint*, and a PDF with a CID font hands
--- out glyph *indices* into a font embedded in the document. Reaching those
--- needs `stbtt_GetGlyphBitmap` and a font loaded from bytes rather than
--- from the built-in table, both of which are small C additions to the
--- graphics kit. When they exist this window keeps its shape and changes
--- what it draws into.
+-- **Built so that scrolling costs nothing.** The page is rendered once into
+-- an offscreen surface as tall as the whole page, and a frame is one blit of
+-- the visible band out of it. Nothing re-runs the content interpreter,
+-- nothing re-rasterises a glyph; moving a line copies the pixels that moved
+-- and stops. Rendering per frame would mean two thousand glyphs and a stack
+-- machine over fourteen kilobytes of operators, sixty times a second - which
+-- is not something to optimise, it is the wrong shape.
 --
--- Until then this is a reader rather than a viewer, and for a book - which
--- is what it was built against - a reader is most of what you want.
+-- **A direct window** (`gfx.md` 19.4). The ordinary path sends drawing
+-- commands and the compositor owns every pixel, which is what lets a hung
+-- application keep its window - the right trade for a dialog and the wrong
+-- one here, where the whole surface changes and describing it costs more
+-- than copying it. So this process owns the pixels, draws into the buffer
+-- the compositor is not showing, and commits with damage.
+--
+-- Two things underneath make the render itself quick, and both are C:
+--
+--   * a glyph is rasterised **once per face per size** and blitted from a
+--     cache after that. A page of Times New Roman is about a hundred
+--     distinct glyphs against two thousand drawn.
+--   * a page is **two or three crossings**, not two thousand: the glyphs go
+--     into a flat array per face and each becomes one call.
+--
+-- Still missing: images, so a cover page is blank. `DCTDecode` is JPEG and
+-- `stb_image` is the same vendor as the rasteriser already here.
 
 local ui       = use("/lib/ui.lua")
-local panel    = use("/lib/panel.lua")
 local pdf      = use("/lib/pdf.lua")
 local pdfpage  = use("/lib/pdfpage.lua")
-local theme    = ui.theme
 
-local W, H = 700, 520
+local W, H = 760, 620
+local BAR  = 22                       -- the status line along the bottom
 
 local path = args and args:match("^%s*(%S+)")
 
-local win, err = ui.window{ title = "PDF", w = W, h = H, x = 90, y = 50 }
+local win, err = ui.window{
+  title = "PDF", w = W, h = H, x = 70, y = 40, direct = true,
+}
 
 if not win then
   print("pdfview: " .. tostring(err))
   return
 end
 
-local GW, GH = gfx.font.w, gfx.font.h
-
-local doc, lines, wrapped, top, current = nil, {}, {}, 1, 1
-
-local where  = ui.label{ x = 12, y = 10, w = W - 24, text = "no document" }
-local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
-
-local view = ui.view{ x = 12, y = 56, w = W - 24, h = H - 122 }
-view.focusable = true
-
---------------------------------------------------------------------------
--- Wrapping.
---
--- The interpreter gives back one string per line of the page, which is the
--- typesetter's idea of a line and not this window's. A book page is set to
--- about seventy characters and this window is not, so a line is broken at
--- the last space that fits and the remainder carries on.
---------------------------------------------------------------------------
-
-local function wrap(source, columns)
-  local out = {}
-
-  if columns < 8 then columns = 8 end
-
-  for _, line in ipairs(source) do
-    if #line == 0 then
-      out[#out + 1] = ""
-    end
-
-    while #line > 0 do
-      if #line <= columns then
-        out[#out + 1] = line
-        break
-      end
-
-      -- The last space that fits. A word longer than the window is cut
-      -- rather than allowed to run off the edge, which is rare in prose and
-      -- common in a URL.
-      local cut = nil
-
-      for i = columns + 1, 2, -1 do
-        if line:sub(i, i) == " " then cut = i break end
-      end
-
-      if not cut then cut = columns + 1 end
-
-      out[#out + 1] = line:sub(1, cut - 1)
-      line = line:sub(cut):gsub("^%s+", "")
-    end
-  end
-
-  return out
+if not win:surface() then
+  print("pdfview: this window did not get a shared surface")
+  return
 end
 
-local function relayout()
-  wrapped = wrap(lines, (view.w - 16) // GW)
-  top = 1
-end
+local INK   = 0xff101418            -- the text
+local PAPER = 0xfff4f1ea            -- the page
+local CHROME= 0xff20262e
+local LABEL = 0xffb8c2cc
+
+local doc, current = nil, 1
+local paper, paper_w, paper_h = nil, 0, 0
+local top, zoom = 0, 1.0
+local said = "no document"
+local render_ms, glyph_count = 0, 0
 
 --------------------------------------------------------------------------
-
-function view:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.window)
-  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
-
-  local rows = (self.h - 8) // GH
-  self.rows = rows
-
-  for i = 0, rows - 1 do
-    local line = wrapped[top + i]
-
-    if not line then break end
-
-    g:text(8, 4 + i * GH, line, theme.text, theme.window)
-  end
-end
-
-local show                                   -- forward: keys change the page
-
-function view:key(c)
-  local rows = self.rows or 20
-  local last = math.max(1, #wrapped - rows + 1)
-
-  if     c == -2 then top = math.min(top + 1, last)
-  elseif c == -1 then top = math.max(1, top - 1)
-  elseif c == -3 then top = math.min(top + rows, last)
-  elseif c == -4 then top = math.max(1, top - rows)
-  elseif c == 46 then show(current + 1)      -- '.'
-  elseif c == 44 then show(current - 1)      -- ','
-  else return false end
-
-  return true
-end
-
-function view:mouse(action)
-  return action == "press"
-end
-
---------------------------------------------------------------------------
--- The document.
+-- The file, read a window at a time and never held.
 --------------------------------------------------------------------------
 
--- One region, made once and reused: `pdf.lua` reads a window at a time and
--- never holds the file, which is what makes a 1.6 MB book openable on a
--- 2 MB heap at all.
 local buffer, capacity
 
 local function source_for(file, size)
   if not buffer then
-    -- Four pages, not sixteen. `pdf.lua` reads in 256-byte windows and the
-    -- only larger read is a page's content stream, which goes straight into
-    -- `pdfpage`'s own region and never through here.
+    -- Four pages. `pdf.lua` reads in 256-byte windows; the only larger read
+    -- is a content stream, which goes straight into `pdfpage`'s own region.
     buffer = sys.memory(4)
     capacity = 4 * 4096
   end
@@ -179,15 +106,52 @@ local function source_for(file, size)
       return table.concat(out)
     end,
 
-    -- The path a page takes: into pages this process owns, with no copy
-    -- through the heap on the way.
     read_into = function (region, offset, length)
       return fs.read_into(file, region, offset, length)
     end,
   }
 end
 
-show = function (n)
+--------------------------------------------------------------------------
+-- Drawing.
+--------------------------------------------------------------------------
+
+local function frame(damage_all)
+  local s = win:surface()
+
+  if not s then return end
+
+  local view_h = H - BAR
+
+  if paper then
+    -- The whole of scrolling. `top` is a pixel offset into a surface that
+    -- already holds the page.
+    local band = math.min(view_h, paper_h - top)
+
+    if band > 0 then
+      s:fill(0, 0, W, view_h, PAPER)
+      s:blit(paper, 0, top, math.min(paper_w, W), band, 0, 0)
+    else
+      s:fill(0, 0, W, view_h, PAPER)
+    end
+  else
+    s:fill(0, 0, W, view_h, CHROME)
+    s:text(12, 12, "Open a document:  wm pdfview:/home/odyssey.pdf", LABEL)
+    s:text(12, 32, "arrows scroll, , and . turn pages, + and - zoom", LABEL)
+  end
+
+  s:fill(0, view_h, W, BAR, CHROME)
+  s:text(6, view_h + 4, said, LABEL)
+
+  win:commit(damage_all and nil
+             or { x = 0, y = 0, w = W, h = H })
+end
+
+--------------------------------------------------------------------------
+-- Pages.
+--------------------------------------------------------------------------
+
+local function show(n)
   if not doc then return end
 
   if n < 1 then n = 1 end
@@ -195,61 +159,80 @@ show = function (n)
 
   current = n
 
-  collectgarbage()
+  local page = doc:page(n)
+  local box  = doc:resolve(page.MediaBox) or { 0, 0, 612, 792 }
+  local pw   = (box[3] or 612) - (box[1] or 0)
+  local ph   = (box[4] or 792) - (box[2] or 0)
 
-  local started = sys.ticks()
-  local ok, got = pcall(pdfpage.text, doc, doc:page(n))
+  -- Scaled to the window's width, so a page always fits across and zoom is
+  -- a multiplier on top of that.
+  local scale = (W / pw) * zoom
 
-  if not ok then
-    -- Onto the serial line as well as into the window. A window can only
-    -- show what a person is there to read, and the harness that checks this
-    -- is not a person: an error visible in a screenshot and invisible in a
-    -- log is one that automated checking will report as a pass.
-    print(("pdfview: page %d: %s"):format(n, tostring(got)))
-    lines = { "this page could not be read:", tostring(got) }
-  else
-    lines = got
-    if #lines == 0 then lines = { "(this page has no text on it)" } end
+  local want_w = math.floor(pw * scale + 0.5)
+  local want_h = math.floor(ph * scale + 0.5)
+
+  if paper and (paper_w ~= want_w or paper_h ~= want_h) then
+    paper:free()
+    paper = nil
   end
 
-  relayout()
+  if not paper then
+    local made = pcall(function ()
+      paper = gfx.surface{ w = want_w, h = want_h }
+    end)
 
-  status.text = ("page %d of %d - %d lines, %d ms   , . to turn")
-                :format(n, #doc.pages, #lines,
-                        (sys.ticks() - started) // 62500)
+    if not made or not paper then
+      said = ("no memory for a %dx%d page"):format(want_w, want_h)
+      return
+    end
+
+    paper_w, paper_h = want_w, want_h
+  end
+
+  paper:fill(0, 0, paper_w, paper_h, PAPER)
+
+  local started = sys.ticks()
+  local ok, drawn = pcall(pdfpage.render, doc, page, paper, scale, INK)
+  render_ms = (sys.ticks() - started) // 62500
+
+  if not ok then
+    said = ("page %d: %s"):format(n, tostring(drawn))
+    glyph_count = 0
+  else
+    glyph_count = drawn or 0
+    said = ("page %d of %d - %d glyphs in %d ms - %.0f%%")
+           :format(n, #doc.pages, glyph_count, render_ms, zoom * 100)
+  end
+
+  top = 0
 end
 
 local function open(file)
   local attrs, why = fs.getattr(file)
 
   if not attrs then
-    status.text = ("cannot open %s: %s"):format(file, tostring(why))
+    said = ("cannot open %s: %s"):format(file, tostring(why))
     return
   end
 
   local source = source_for(file, attrs.size)
 
   if not source then
-    status.text = "no memory for a read buffer"
+    said = "no memory for a read buffer"
     return
   end
 
   local ok, got = pcall(pdf.open, source)
 
   if not ok then
-    status.text = tostring(got)
-    where.text  = file
-    lines = {}
-    relayout()
+    said = tostring(got)
     return
   end
 
   doc = got
-  where.text = ("%s - PDF %s, %d pages")
-               :format(file, doc.version, #doc.pages)
 
-  -- The first page with text on it. A book's first page is a cover, and
-  -- opening on a blank window looks like a failure.
+  -- The first page with a font on it: a cover is a single image and this
+  -- cannot draw images yet, so opening on one looks like a failure.
   local first = 1
 
   for i = 1, #doc.pages do
@@ -262,52 +245,41 @@ end
 
 --------------------------------------------------------------------------
 
-win:add(where)
+if path then open(path) end
 
-win:add(ui.button{
-  x = 12, y = 28, w = 70, h = 24, text = "Open",
-  on_click = function ()
-    local chooser = panel.open{
-      start = path and path:match("^(.*)/") or "/home",
-      on_choose = function (chosen) open(chosen) end,
-    }
+frame(true)
 
-    if chooser then chooser:run() end
-  end,
-})
+--
+-- The loop.
+--
+-- `poll` blocks until something happens, so an idle viewer costs nothing -
+-- and a scroll is a blit and a commit rather than a re-render, which is the
+-- whole point of the arrangement above.
+--
+while win.running do
+  local event = win:poll()
 
-win:add(ui.button{
-  x = 90, y = 28, w = 70, h = 24, text = "Prev",
-  on_click = function () show(current - 1) end,
-})
+  if event == nil then break end
 
-win:add(ui.button{
-  x = 168, y = 28, w = 70, h = 24, text = "Next",
-  on_click = function () show(current + 1) end,
-})
+  if event.type == "key" then
+    local c = event.code or event.key
+    local step = 40
+    local page_step = H - BAR - 24
+    local last = math.max(0, paper_h - (H - BAR))
+    local moved = false
 
-win:add(view)
-win:add(status)
+    if     c == -2 then top = math.min(top + step, last)       ; moved = true
+    elseif c == -1 then top = math.max(0, top - step)          ; moved = true
+    elseif c == -3 then top = math.min(top + page_step, last)  ; moved = true
+    elseif c == -4 then top = math.max(0, top - page_step)     ; moved = true
+    elseif c == 46 then show(current + 1)                      ; moved = true
+    elseif c == 44 then show(current - 1)                      ; moved = true
+    elseif c == 43 or c == 61 then
+      zoom = math.min(zoom * 1.25, 4.0) ; show(current) ; moved = true
+    elseif c == 45 then
+      zoom = math.max(zoom / 1.25, 0.5) ; show(current) ; moved = true
+    end
 
-if path then
-  open(path)
-else
-  lines = {
-    "PDF",
-    "",
-    "Press Open and choose a document, or start this with one:",
-    "",
-    "    wm pdfview:/home/odyssey.pdf",
-    "",
-    "Comma and full stop turn the page; the arrows and PageUp and",
-    "PageDown move within it.",
-    "",
-    "What you get is the page's text, wrapped to this window in the",
-    "system font - not the page as it was typeset. Drawing it properly",
-    "needs a glyph rasterised by index out of the font inside the",
-    "document, which the graphics kit cannot do yet.",
-  }
-  relayout()
+    if moved then frame(false) end
+  end
 end
-
-win:run()
