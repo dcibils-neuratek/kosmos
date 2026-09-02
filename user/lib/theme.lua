@@ -1,14 +1,24 @@
 -- The palette, in one file, and now more than one of them.
 --
--- `ui.md` 16.8b: BeOS's structure, not BeOS's skin. What that meant when
--- there was one palette was a dark ground, flat surfaces, one-pixel
--- separators instead of two-pixel chamfers, and weight and spacing doing
--- the work a bevel used to do.
+-- `ui.md` 16.8b, which was reversed in September 2026: the look is
+-- dimensional on purpose. It used to say flat surfaces and one-pixel
+-- separators, with weight and spacing doing the work a bevel used to do -
+-- and that mistook the bevel for decoration. It is not decoration. Raised
+-- means you can press this, sunken means content lives in here, and a
+-- groove means these two things are separate: a two-pixel sentence about
+-- what a thing does, read without looking straight at it.
 --
--- There are two now, and the second one *is* the 1998 skin - because having
--- built the dark one first and lived with it, the interesting question
--- turned out to be what the grey actually bought. So `light` is not a
--- concession, it is the comparison.
+-- So every palette carries `edge_light` and `edge_dark` as well as its
+-- surfaces. A raised control takes the light edge on its top and left and
+-- the dark edge on its bottom and right; a sunken one swaps them, which is
+-- the whole trick and the reason the two are named rather than derived.
+--
+-- Derived would have been tempting and wrong: on the dark palette the
+-- highlight is *not* simply a lightened surface - a flat lightening reads
+-- as fog rather than as an edge - and on the light one the highlight is
+-- pure white while the shadow is a mid grey, which no single formula gives.
+--
+-- There are two palettes, and the second is unashamedly the 1998 grey.
 --
 -- **The table is mutated in place, never replaced.** Every widget in
 -- `ui.lua` reads `theme.text` at the moment it draws, so changing the
@@ -38,6 +48,11 @@ theme.palettes.dark = {
 
   line      = 0xff30363d,
   line_soft = 0xff21262d,
+
+  -- The two edges a bevel is made of. Top-left light, bottom-right dark,
+  -- and swapped for a sunken well.
+  edge_light = 0xff424a55,
+  edge_dark  = 0xff05080c,
 
   text      = 0xffc9d1d9,
   text_dim  = 0xff8b949e,
@@ -79,6 +94,11 @@ theme.palettes.light = {
 
   line      = 0xff8c8c8c,
   line_soft = 0xffbfbfbf,
+
+  -- Pure white against a mid grey, which is what makes the grey read as
+  -- moulded rather than merely shaded.
+  edge_light = 0xffffffff,
+  edge_dark  = 0xff707070,
 
   text      = 0xff000000,
   text_dim  = 0xff5a5a5a,

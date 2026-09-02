@@ -35,6 +35,15 @@ buy nothing.
 4. **M8, the filesystem.** The biggest, and the one that benefits most from
    not being rushed.
 
+**Revised, September 2026.** The three above M8 are done, and what came
+next was chosen by hand rather than from this list: a PDF reader, the
+scheduler bands, and a frame profiler. The order now is:
+
+5. **M13, the desktop.** Menus, resizing, scrollbars, columns, a tree, and
+   Tracker. Decided ahead of Doom deliberately - the UI has to look like an
+   operating system before the machine is asked to prove it is a fast one.
+6. **M10, Doom.** After the desktop, not before it.
+
 ### Later, and not yet scheduled
 
 **The shell needs to be one.** It has `cd`, `pwd`, `ls`, `cat`, aliases and
@@ -444,6 +453,74 @@ If there is a hiccup every two seconds, it is the Lua GC. Zero allocations in th
 **Definition of done:** Doom at 35fps in an app server window, on real hardware.
 
 **Why it matters:** Doom is the first userland process that is not Lua. It proves the message boundary is a real boundary and not a language convention. If Doom runs as a normal citizen, with its own namespace and declared capabilities, Kosmos is an OS and not a Lua runtime with pretensions.
+
+---
+
+## M13 — The desktop
+
+The point at which Kosmos stops looking like a system that can draw windows
+and starts looking like one you would use.
+
+**Why this comes before Doom.** Doom proves the machine is fast. It proves
+nothing about whether the machine is *a desktop*, and a system with no menus,
+no scrollbars and windows that cannot be resized is not one however many
+frames a second it manages. The order is deliberate: furniture first, then
+the thing that shows off.
+
+**The inspiration is QNX Photon, and specifically not its shading.** What
+makes a Photon screenshot read as a real operating system is not the grey
+bevels, it is that every window has the full set of furniture - a menu bar,
+a toolbar, scrollbars, a status bar; lists with columns you can sort; a tree
+with expand arrows; a splitter between panes. That is behaviour and
+completeness, which `ui.md` 16.8b says to copy. The shading is decided
+fresh, and 16.8b now says dimensional: raised, sunken, grooved.
+
+**What gets built, in the order that unlocks the most**
+
+1. **Resize, and the window controls.** Nothing reads as a desktop while
+   windows are a fixed size - `ui.lua` currently says so in a comment, that
+   `width` is "an honest answer while windows cannot be resized". Splitters
+   and panes are meaningless without it, so it is first. Minimise and
+   maximise come with it, and the frame grows a grip.
+
+2. **The overlay layer, and then menus.** The hard part is not drawing a
+   menu, it is that a dropdown must appear *above other windows* and outside
+   its own window's frame. That is a compositing and input-routing question
+   the window manager owns, and it is the same mechanism a context menu, a
+   combo box and a tooltip all need - so it is designed once, deliberately,
+   before any of them.
+
+   The constraint that decides the design: **a hung application must not be
+   able to wedge the desktop.** That is M6's definition of done and it is
+   not negotiable for a menu either.
+
+3. **Scrollbars.** Lists and text views already scroll and never say so;
+   `procs` grew a hand-rolled scroll offset the day this milestone was
+   written. A real widget, sunken trough and raised thumb.
+
+4. **The columned list, and the tree.** A list with headers you can click to
+   sort, and a tree with expand/collapse. These two together are what a file
+   manager is made of, which is why they are one item.
+
+5. **The toolbar and the status bar.** Cheap once the rest exists, and they
+   are most of what makes a window look finished.
+
+6. **Tracker.** A real file manager, which is the app that proves the rest:
+   a tree of places on the left, a columned listing on the right, a splitter
+   between them, a toolbar above and a status bar below. `deskbar.lua`
+   already explains that Tracker is the file manager and that Kosmos does
+   not have one yet. This is that.
+
+**Definition of done:** open Tracker, resize its window with the mouse, drag
+the splitter, sort the listing by clicking a column header, scroll it with
+the scrollbar, and open a file from a menu - with a second application open
+behind it whose menu drops over Tracker's window and dismisses correctly.
+And `make frames` shows a composing pass no worse than it is today.
+
+That last clause is the one with teeth. A bevel is more pixels per widget
+than a flat rectangle and composing is already 83% of a busy pass, so this
+milestone is the first that could plausibly make the desktop slower. It has
+a profiler now; it has no excuse.
 
 ---
 

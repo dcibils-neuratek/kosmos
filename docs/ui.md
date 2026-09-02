@@ -255,35 +255,67 @@ both paths itself now and leaves the answers where the host can read them.
 
 ---
 
-## 16.8b The look: BeOS's structure, not BeOS's skin
+## 16.8b The look: dimensional on purpose
 
-Decided deliberately, because "BeOS-style" can mean two very different
-things and only one of them is worth having.
+**Reversed, September 2026.** This section used to say "take the structure,
+not the skin", and it called bevels "a period costume" that would make the
+system look like a museum piece. That was wrong, and it was wrong in a
+specific way worth recording rather than quietly editing out.
 
-**Take the structure.** The widget vocabulary, the tab that is only as wide
-as its title, follow modes instead of a constraint solver, click to focus,
-stack and tile, the replicant. These are decisions that were right in 1998
-and are still right, and reinventing them would be work spent arriving back
-where BeOS already was.
+**What it got wrong is that it conflated pastiche with a style.** Cloning a
+particular 1998 desktop pixel for pixel is pastiche, and that part still
+stands. But *committing to dimensionality* - raised, sunken, grooved, with a
+palette chosen now - is not a costume. It is a design language, and it
+carries information that flat design threw away and then spent a decade
+reinventing badly with drop shadows and outlines:
 
-**Do not take the skin.** The specific 1998 surface - the grey bevels, the
-two-pixel light-and-dark chamfer on every button, the exact yellow - is a
-period costume. Copying it makes the system look like a museum piece and,
-worse, like a clone rather than a descendant.
+- **raised** means you can press this
+- **sunken** means content lives in here
+- **a groove** means these two things are separate
 
-So: the same bones, a different finish. Concretely, what is already chosen
-here and what it means:
+The old text said a bevel "stopped being a useful lie once everyone knew
+what a button was". That mistook the bevel for decoration. It is not
+decoration; it is a two-pixel-wide sentence about what a thing does, read
+without looking directly at it.
 
-| BeOS did | Kosmos does | Why |
+**And the argument that actually settles it is about personality.** Every
+desktop now converges on the same flat rectangle with the same grey sans
+face, for the same reason every car now has the same silhouette: convergent
+optimisation - wind tunnels and regulation there, design systems and A/B
+tests here. Kosmos owes compatibility to nothing and has no market to test
+against. Spending that freedom on the house style everyone else already has
+would be the one genuinely wasteful thing it could do.
+
+So: **Kosmos is dimensional, and it means it.** The palette in
+`/system/ui/theme` is ours and is chosen fresh; the geometry is deliberate.
+
+| | Kosmos does | Why |
 |---|---|---|
-| Tab as wide as its title | **Departed from.** The bar spans the window and the border takes its colour: yellow when focused, grey when not | Copied at first, and it was right about *why* BeOS does it — several stacked windows keep their titles readable. Kosmos does not stack windows, so it bought nothing here and cost what a border gives for free: which window is listening, seen from the corner of the eye without reading. It also made the picture disagree with the behaviour, since dragging was always the full width of the frame |
-| `#FFCC00` tab yellow, hard-edged | A warmer amber on a dark desktop | Keeps the "the focused one is the yellow one" reading, drops the 1998 palette |
-| Light grey chrome, bevelled | Dark, flat, one-pixel separators | A bevel says "this is a raised physical control", which stopped being a useful lie once everyone knew what a button was |
-| Every control chamfered | Weight and spacing do the work | Fewer pixels spent saying what a thing is, more spent on what it contains |
+| Buttons | Raised, with a light top-left and a dark bottom-right edge | It says "press me" before you have read the label |
+| Content wells - lists, fields, text views | Sunken | The boundary between chrome and content is structural, so it should be visible |
+| Panels and groups | A one-pixel groove, light under dark | Separates without drawing a heavy line |
+| Window frame | The bar spans the window and the border takes its colour: amber when focused, grey when not | Which window is listening, seen from the corner of the eye without reading. See the row below |
+| The focused window | Amber, warmer than 1998's `#FFCC00` | Keeps "the focused one is the yellow one" and drops the period palette |
 
-The rule for anything not in that table: **if the BeOS decision is about how
-something behaves, copy it. If it is about how something is shaded, decide
-it fresh.**
+**What is still true from the old section**, and is the rule that survives:
+
+> If the decision is about how something *behaves*, copy what already got it
+> right. If it is about how something is *shaded*, decide it fresh.
+
+That rule was always right. What changed is the answer it gives about
+shading: the answer is dimensional, not flat.
+
+**One departure from BeOS that stays**, because it was about behaviour and
+not shading: BeOS made a tab only as wide as its title so several stacked
+windows keep their titles readable. Kosmos does not stack windows, so it
+bought nothing and cost what a full-width border gives for free. It also
+made the picture disagree with the behaviour, since dragging was always the
+full width of the frame.
+
+**The measurement that keeps this honest.** A bevel is more pixels per
+widget than a flat rectangle, and `make frames` exists now. Composing is
+already 83% of a busy pass, so the dimensional style is a thing to *watch*
+in the profile rather than a thing to assume is free.
 
 ---
 

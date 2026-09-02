@@ -239,6 +239,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A finished algorithm goes in C: hot reload is the cost of C, and there is nothing to reload in a codec | CLAUDE.md, design.md §6 |
 | Sep 2026 | **Kits**: C libraries reached as `use("/kits/pdf")`, through the namespace like any library | CLAUDE.md, design.md §6 |
 | Sep 2026 | Where speed and hot reload disagree, speed wins. What keeps policy servers in Lua is that C buys ~2% there and can overflow a buffer | CLAUDE.md, design.md §10 |
+| Sep 2026 | **The look is dimensional on purpose.** Raised, sunken, grooved - a bevel is not decoration, it is a sentence about what a thing does. Reverses "structure not skin" | ui.md §16.8b |
 | Sep 2026 | `SYS_CAP_DROP`: a capability can be given back. Sixteen a thread, and nothing released one | design.md §4.3, kernel/ipc.c |
 | Sep 2026 | `SYS_SHARE_UNMAP`: releasing a region means losing the mapping, not only the name | kernel/syscall.c |
 | Sep 2026 | A PDF is read through a window and never held: the object layer is Lua, the scanner is C | design.md §6, pdf.lua |
