@@ -445,8 +445,32 @@ struct addrspace *as_create(void)
     return NULL;
 }
 
+/*
+ * The maximum number of pages any user range can hold. Nothing legitimate
+ * comes near it; it exists so that the multiply below cannot be made to
+ * wrap.
+ */
+#define USER_PAGES_MAX  ((USER_VA_END - USER_VA_BASE) / PAGE_SIZE)
+
 static bool user_range(uintptr_t va, size_t pages)
 {
+    /*
+     * The count before it is multiplied, and this is not belt and braces.
+     *
+     * `pages * PAGE_SIZE` is unsigned arithmetic on a number the caller
+     * chose. 2^52 + 1 pages multiplies to 4096, so an enormous request
+     * wraps into a legal-looking one-page one and passes every bound below
+     * it - and the caller's loop then runs `pages` times, not `end - va`
+     * times, walking out of the user window and off the end of the address
+     * space.
+     *
+     * `end > va` catches a wrap to exactly zero and nothing else, which is
+     * why it looked sufficient and was not.
+     */
+    if (pages > USER_PAGES_MAX) {
+        return false;
+    }
+
     uintptr_t end = va + pages * PAGE_SIZE;
 
     return va >= USER_VA_BASE && end > va && end <= USER_VA_END;

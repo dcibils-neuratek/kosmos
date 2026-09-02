@@ -42,17 +42,24 @@
  * all - and most of them never do, because the kernel's own C is built
  * -mgeneral-regs-only.
  *
- * So the switch now only *disarms* FP for EL0 (`CPACR_EL1.FPEN`), and the
+ * So the switch now only *disarms* FP (`CPACR_EL1.FPEN` to 0b00), and the
  * first floating-point instruction a thread executes after being scheduled
  * traps. The handler writes the previous owner's registers into its context,
  * reads this thread's back, and arms FP again. A thread that uses FP pays
  * one fault per time slice; a thread that does not pays nothing.
  *
- * EL0 only. The kernel keeps FP enabled for itself because `setjmp` saves
- * d8-d15 and `longjmp` restores them, and trapping at EL1 would mean
- * handling a fault inside the machinery that exists to handle faults.
- * Nothing else in the kernel may touch an FP register, and the build flag
- * makes that a compile error rather than a promise.
+ * **Both privilege levels, not EL0 alone.** Trapping only EL0 was tried and
+ * three tests said no, and the reason is `setjmp`: it saves d8-d15 and
+ * `longjmp` restores them, so a kernel thread returning through one writes
+ * over whatever EL0 thread owns those registers. Kernel threads would also
+ * have their own values neither saved by the switch nor faulted back in,
+ * which is the bug the eager save existed to fix.
+ *
+ * Uniform is simpler than either: whoever touches an FP register first after
+ * a switch faults, and the fault does not care which level it came from.
+ * `setjmp` and `longjmp` are the only two things at EL1 that reach it,
+ * because nothing else in the kernel may touch an FP register at all - and
+ * `-mgeneral-regs-only` makes that a compile error rather than a promise.
  *
  * Full 128-bit Q registers, not the low halves. Lua's numbers are doubles,
  * but the userland it is compiled into is not built -mgeneral-regs-only and

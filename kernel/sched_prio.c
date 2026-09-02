@@ -209,7 +209,13 @@ static bool prio_preempts(const struct thread *running,
 
 void sched_set_quantum(unsigned ticks)
 {
-    quantum_ticks = ticks == 0 ? 1 : ticks;
+    if (ticks == 0) {
+        ticks = 1;
+    } else if (ticks > SCHED_QUANTUM_MAX) {
+        ticks = SCHED_QUANTUM_MAX;
+    }
+
+    quantum_ticks = ticks;
 }
 
 unsigned sched_get_quantum(void)

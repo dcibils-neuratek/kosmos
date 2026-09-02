@@ -638,6 +638,33 @@ BOOT      :=
 # example was written before anything used one.
 BOOTARG   := $(if $(BOOT),-fw_cfg 'name=opt/kosmos/boot$(comma)string=$(BOOT)',)
 
+#
+# Making it readable on a Retina display.
+#
+# QEMU draws one guest pixel per point, so a 1920x1080 guest in a window
+# that is 1000 points wide is scaled *down* - a 16-pixel glyph lands in nine
+# physical pixels and the desktop is unreadable at arm's length. Asking for
+# more guest pixels makes that worse, not better, which is the opposite of
+# what it feels like it should do.
+#
+# The fix is the one macOS uses for every native application: draw at half
+# and show at 2x. So pick a guest size around half the screen's points and
+# let `zoom-to-fit` scale it up - on a Retina panel the doubling lands on
+# real pixels and the result is sharp.
+#
+#   make FB=1280x800 qemu          a good default on a 16-inch MacBook Pro
+#   make FB=1280x800 FULLSCREEN=1 qemu
+#
+# `zoom-to-fit` is on always: with the window at its natural size it changes
+# nothing, and it is what makes resizing the window scale the picture
+# instead of revealing more grey.
+#
+# The real answer is a UI scale factor inside Kosmos - `appearance` already
+# chooses a font and a size, so the mechanism half exists - and that is what
+# a Pi 5 on a 4K monitor will need. This is the host-side stopgap.
+#
+FULLSCREEN_FLAG := $(if $(FULLSCREEN),$(comma)full-screen=on,)
+
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
@@ -645,7 +672,7 @@ QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -drive file=$(DISK),format=raw,if=none,id=disk \
              -device virtio-blk-device,drive=disk \
              $(BOOTARG) \
-             -display cocoa -serial mon:stdio \
+             -display cocoa,zoom-to-fit=on$(FULLSCREEN_FLAG) -serial mon:stdio \
              -kernel $(TARGET)
 
 # The same machine with no screen, for when the window is in the way or the

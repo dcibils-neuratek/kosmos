@@ -590,7 +590,14 @@ static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
         return SYS_ERR_FAULT;
     }
 
-    if (va < USER_MAP_VA || pages == 0
+    /*
+     * `pages` is bounded before it is multiplied. The loop below runs
+     * `pages` times whatever the arithmetic says, and 2^52 + 1 pages
+     * multiplies to 4096 - a request that looks like one page and iterates
+     * four and a half quadrillion times. `sys_map` has always checked this
+     * and this had not.
+     */
+    if (va < USER_MAP_VA || pages == 0 || pages > USER_MAP_PAGES_MAX
         || va + pages * PAGE_SIZE > p->next_map) {
         return SYS_ERR_FAULT;
     }
@@ -1106,6 +1113,16 @@ void syscall_dispatch(struct trapframe *tf)
             break;
         }
 
+        /*
+         * And the count before the multiply, for the reason `user_range`
+         * now gives: a page count large enough to wrap it comes back
+         * inside the window and takes the loop in `as_unmap` with it.
+         */
+        if (pages > (USER_SHARE_END - USER_SHARE_VA) / PAGE_SIZE) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
         if (va < USER_SHARE_VA
             || va + pages * PAGE_SIZE > p->next_share) {
             result = SYS_ERR_FAULT;
@@ -1174,6 +1191,18 @@ void syscall_dispatch(struct trapframe *tf)
          */
         switch ((unsigned)tf->x[0]) {
         case SCHED_SET_QUANTUM:
+            /*
+             * Refused rather than clamped. The setter clamps too, because
+             * it is called from inside the kernel as well, but a process
+             * that asked for four hundred days should be told it did not
+             * get them instead of being answered "yes" and given one
+             * second.
+             */
+            if (tf->x[1] == 0 || tf->x[1] > SCHED_QUANTUM_MAX) {
+                result = SYS_ERR_DENIED;
+                break;
+            }
+
             sched_set_quantum((unsigned)tf->x[1]);
             result = 0;
             break;

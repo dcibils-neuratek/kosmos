@@ -71,10 +71,10 @@ context_switch:
      * touch. The correctness argument for saving them was right and is
      * unchanged; what was wrong was doing it here, eagerly.
      *
-     * Instead the epilogue disarms FP for EL0 and the first floating-point
-     * instruction the incoming thread executes traps into `fp_fault`, which
-     * saves whoever owned the registers and loads whoever wants them. See
-     * `fp.c`.
+     * Instead the epilogue disarms FP - at both levels; see there for why -
+     * and the first floating-point instruction the incoming thread executes
+     * traps into `fp_fault`, which saves whoever owned the registers and
+     * loads whoever wants them. See `fp.c`.
      */
 
     /*

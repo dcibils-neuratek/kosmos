@@ -109,6 +109,21 @@ extern const struct scheduler sched_priority;
 
 /* The quantum, in timer ticks. One tick is the floor; see sched_prio.c. */
 void     sched_set_quantum(unsigned ticks);
+/*
+ * The longest turn a thread may be given, in scheduler ticks.
+ *
+ * `SYS_SCHED_SET` is deliberately unprivileged - changing the quantum is
+ * tuning the machine you are sitting at, and on a single-user system there
+ * is nobody to defend it from. That stays defensible only while the worst
+ * an unprivileged caller can do is make the machine feel wrong. Four
+ * billion ticks is four hundred days: threads in a band stop rotating and
+ * the caller never gives the processor back, which is not tuning.
+ *
+ * A hundred ticks is one second at TICK_HZ, twice the largest the settings
+ * app offers and far longer than any desktop wants.
+ */
+#define SCHED_QUANTUM_MAX   100
+
 unsigned sched_get_quantum(void);
 
 /*

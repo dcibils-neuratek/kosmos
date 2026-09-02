@@ -1331,6 +1331,45 @@ static bool test_a_space_refuses_the_kernel_region(void)
     return ok;
 }
 
+static bool test_a_space_refuses_a_page_count_that_wraps(void)
+{
+    /*
+     * A page count large enough to overflow `pages * PAGE_SIZE`.
+     *
+     * 2^52 + 1 pages multiplies to 4096 on a 64-bit size_t, so the request
+     * arrives at every bound check looking like a single page: it starts
+     * inside the user window, it ends one page later, and `end > va` - the
+     * only overflow guard there was - is perfectly happy, because that
+     * catches a wrap to exactly zero and nothing else.
+     *
+     * What it is not is one page. `as_unmap` loops `pages` times, so the
+     * accepted request walks out of the user window and off the end of the
+     * address space, four and a half quadrillion iterations later. Any
+     * process could ask for it.
+     *
+     * The fix is to bound the count before multiplying it, and this is the
+     * test that says so. It has to be a *count* test rather than an address
+     * one: every address in the request is legal.
+     */
+    struct addrspace *as = as_create();
+    size_t wraps = ((size_t)1 << 52) + 1;
+    bool ok;
+
+    if (as == NULL) {
+        return false;
+    }
+
+    ok = as_unmap(as, USER_VA_BASE, wraps) == AS_ERR_RANGE
+      && as_map(as, USER_VA_BASE, 0x40000000UL, wraps, MAP_RW) == AS_ERR_RANGE;
+
+    /* And the wrap to exactly zero, which was already refused and must
+     * stay refused now that the count is checked first. */
+    ok = ok && as_unmap(as, USER_VA_BASE, (size_t)1 << 52) == AS_ERR_RANGE;
+
+    as_destroy(as);
+    return ok;
+}
+
 static bool test_switching_to_a_space_makes_its_mapping_real(void)
 {
     /*
@@ -3656,6 +3695,7 @@ static const struct test tests[] = {
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "as: a page count that wraps is refused", test_a_space_refuses_a_page_count_that_wraps },
     { "as: switching makes a mapping real",    test_switching_to_a_space_makes_its_mapping_real },
     { "as: destroy returns its pages",         test_destroying_a_space_returns_its_pages },
     { "sched: a spinning thread is preempted", test_a_thread_that_never_yields_is_preempted },
