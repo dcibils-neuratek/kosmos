@@ -238,6 +238,17 @@ static inline long kosmos_endpoint_destroy(long cap)
  * A capability back. The region's pages survive while anyone else holds one,
  * so a server may drop what it was handed the moment it has finished.
  */
+/* How the machine is scheduled, and changing it. */
+static inline long kosmos_sched_info(void *out)
+{
+    return sys1(SYS_SCHED_INFO, (long)(uintptr_t)out);
+}
+
+static inline long kosmos_sched_set(long what, long value)
+{
+    return sys2(SYS_SCHED_SET, what, value);
+}
+
 static inline long kosmos_cap_drop(long cap)
 {
     return sys1(SYS_CAP_DROP, cap);

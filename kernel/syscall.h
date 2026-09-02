@@ -69,8 +69,10 @@
 #define SYS_BOOT_OPT   29   /* (name, out, max)       -> length or error   */
 #define SYS_CAP_DROP   30   /* (cap)                  -> 0 or error         */
 #define SYS_SHARE_UNMAP 31  /* (address, pages)       -> 0 or error         */
+#define SYS_SCHED_INFO 32   /* (&info)                -> 0 or error         */
+#define SYS_SCHED_SET  33   /* (what, value)          -> 0 or error         */
 
-#define SYS_MAX         32
+#define SYS_MAX         34
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -114,6 +116,22 @@
 
 
 /*
+ * What SYS_SCHED_INFO reports: which policy is running, how long a turn is,
+ * and what else this machine could be using instead.
+ *
+ * `tick_hz` is here so a caller can turn a quantum in ticks into
+ * milliseconds without knowing what the timer was configured to. A settings
+ * app that hardcoded 100 would be lying the day the tick rate changes, and
+ * changing the tick rate is the only way to get a quantum below 10 ms.
+ */
+#define SCHED_NAME_MAX   16
+#define SCHED_POLICY_MAX  4
+
+/* What SYS_SCHED_SET changes. */
+#define SCHED_SET_QUANTUM  0
+#define SCHED_SET_POLICY   1
+
+/*
  * What SYS_SCREEN reports.
  *
  * The address is in the *caller's* address space, because the framebuffer is
@@ -127,6 +145,23 @@
  */
 #ifndef __ASSEMBLER__
 #include <stdint.h>
+
+/*
+ * Inside the guard, with every other struct in this header.
+ *
+ * This file is included from assembly - `user/hello.S` does, for the
+ * syscall numbers - and a struct definition there is a syntax error per
+ * line. The constants above may live outside because a `#define` is
+ * meaningful to both; a type is not.
+ */
+struct schedinfo {
+    uint32_t policy;        /* index of the one installed */
+    uint32_t policies;      /* how many there are */
+    uint32_t quantum;       /* a turn, in ticks */
+    uint32_t tick_hz;       /* ticks per second */
+    uint32_t priorities;    /* how many bands */
+    char     name[SCHED_POLICY_MAX][SCHED_NAME_MAX];
+};
 
 struct screen_info {
     uint64_t address;

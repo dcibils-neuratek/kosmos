@@ -23,6 +23,7 @@
 
 #include "syscall.h"
 #include "process.h"
+#include "sched.h"
 #include "thread.h"
 #include "ipc.h"
 #include "memobj.h"
@@ -1102,6 +1103,78 @@ void syscall_dispatch(struct trapframe *tf)
         result = (as_unmap(p->space, va, pages) == AS_OK) ? 0 : SYS_ERR_FAULT;
         break;
     }
+
+    case SYS_SCHED_INFO: {
+        /*
+         * Readable by anyone. It says how the machine is scheduled, which
+         * is not authority over anything and is exactly what a settings app
+         * and `htop` both want.
+         */
+        struct schedinfo info;
+        unsigned i;
+
+        if (!process_may_write(p, (uintptr_t)tf->x[0], sizeof(info))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        memset(&info, 0, sizeof(info));
+
+        info.policy     = sched_policy_index();
+        info.policies   = sched_policy_count();
+        info.quantum    = sched_get_quantum();
+        info.tick_hz    = TICK_HZ;
+        info.priorities = SCHED_PRIORITIES;
+
+        if (info.policies > SCHED_POLICY_MAX) {
+            info.policies = SCHED_POLICY_MAX;
+        }
+
+        for (i = 0; i < info.policies; i++) {
+            const char *name = sched_policy_name(i);
+            unsigned    j;
+
+            for (j = 0; j + 1 < SCHED_NAME_MAX && name[j] != '\0'; j++) {
+                info.name[i][j] = name[j];
+            }
+        }
+
+        memcpy((void *)(uintptr_t)tf->x[0], &info, sizeof(info));
+        result = 0;
+        break;
+    }
+
+    case SYS_SCHED_SET:
+        /*
+         * Writable by anyone too, and that is a decision rather than an
+         * oversight.
+         *
+         * Changing the quantum or the policy is tuning the machine you are
+         * sitting at, not reaching into another process - and on a
+         * single-user system there is nobody to defend it from. What is
+         * deliberately *not* here is setting a priority: bands are handed
+         * out by capability (`process_grant_screen` gives the compositor
+         * DISPLAY) precisely so that nothing can promote itself, and a
+         * syscall that let it would undo that in one line.
+         *
+         * If this ever needs an owner, the shape already exists: a spawn
+         * grant, the way `SPAWN_DISK` hands the disk to exactly one child.
+         */
+        switch ((unsigned)tf->x[0]) {
+        case SCHED_SET_QUANTUM:
+            sched_set_quantum((unsigned)tf->x[1]);
+            result = 0;
+            break;
+
+        case SCHED_SET_POLICY:
+            result = sched_switch_to((unsigned)tf->x[1]) ? 0 : SYS_ERR_DENIED;
+            break;
+
+        default:
+            result = SYS_ERR_DENIED;
+            break;
+        }
+        break;
 
     case SYS_CAP_DROP:
         /*

@@ -112,6 +112,19 @@ void     sched_set_quantum(unsigned ticks);
 unsigned sched_get_quantum(void);
 
 /*
+ * The policies this machine has, and swapping between them while it runs.
+ *
+ * `sched_use` is the boot-time one and empties the queues; `sched_switch_to`
+ * drains the runnable threads out of the old policy into the new one first,
+ * which is the difference between changing your mind and losing every
+ * thread on the machine.
+ */
+unsigned    sched_policy_count(void);
+const char *sched_policy_name(unsigned index);
+unsigned    sched_policy_index(void);
+bool        sched_switch_to(unsigned index);
+
+/*
  * Installs a policy. Legal only before `thread_init`, or from a test that
  * knows exactly which threads exist: swapping policies with threads queued
  * would strand them in the outgoing policy's structures.

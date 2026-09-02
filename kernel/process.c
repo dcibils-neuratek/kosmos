@@ -6,6 +6,7 @@
 #include "process.h"
 #include "screen.h"
 #include "syscall.h"
+#include "sched.h"
 #include "thread.h"
 #include "ipc.h"
 #include "mmu.h"
@@ -406,6 +407,38 @@ void process_grant_console(struct process *p)
 {
     if (p != NULL) {
         p->owns_console = true;
+
+        /*
+         * **Not** promoted to SCHED_PRIO_INPUT, and the reason is worth
+         * keeping.
+         *
+         * It looks right: the console owner is the one process allowed to
+         * read the keyboard and the pointer, so it is what every keystroke
+         * waits on, and priority following capability rather than being
+         * asked for is the shape the rest of this system has. Nothing can
+         * promote itself; it can only be handed something that comes with a
+         * promotion.
+         *
+         * It was tried and it starves the machine. The console owner is not
+         * only the input reader - it is also the *output* path, and every
+         * program that prints asks it to. At the top band it outranks
+         * everything it is serving, and strict priority means the things it
+         * serves never run. `thread: three threads interleave` failed
+         * within a minute of the change, which is the fairness property
+         * that test exists to hold.
+         *
+         * What would make it work is one of the two answers this policy
+         * does not have yet: a boost that lasts only across the wake, so a
+         * keystroke is answered immediately and the server drops back
+         * before it can hold the CPU; or priority inheritance across IPC,
+         * which is QNX's answer - a server runs at the priority of whoever
+         * is waiting on it, which is exactly right for a server that is
+         * both the input path and the print path. The second is the better
+         * idea and is a design change rather than a line.
+         *
+         * Until then the console stays at NORMAL, and input latency comes
+         * from preemption-on-wake rather than from a band.
+         */
     }
 }
 
@@ -460,6 +493,14 @@ bool process_grant_screen(struct process *p)
     }
 
     p->owns_screen = true;
+
+    /*
+     * The compositor is what the eye is waiting for, so it outranks ordinary
+     * work and is outranked by input. Same argument as the console: whoever
+     * was handed the screen is the one drawing it, and nothing else needs to
+     * be asked.
+     */
+    thread_set_priority(p->thread, SCHED_PRIO_DISPLAY);
     return true;
 }
 

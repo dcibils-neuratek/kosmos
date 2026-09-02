@@ -60,6 +60,48 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **The scheduler can be changed while the machine is running.** `wm
+  scheduler`: which policy, how long a turn lasts, what the timer rate is
+  and how many bands there are - all read from the kernel, and the first two
+  changeable from the window. There is a button that starts a busy thread,
+  because an idle machine schedules identically whatever you pick and the
+  app would otherwise be a display of numbers that never move.
+
+  `SYS_SCHED_INFO` and `SYS_SCHED_SET`, and `sched_switch_to` underneath
+  them. **Swapping policies had to drain, not reset.** `sched_use` calls
+  `init`, which empties the queues - correct at boot, where nothing is in
+  them, and a way to lose every runnable thread on the machine at any other
+  moment. The threads are not in a list the kernel keeps; they are in
+  whatever structure the policy chose, and `pick_next` is the only handle on
+  them. So they are pulled out one at a time and handed to the new policy
+  before it is installed, with interrupts masked across the exchange.
+
+  **Quantum and policy are anyone's to change; priority is not.** Tuning the
+  machine you are sitting at is not reaching into another process, and there
+  is nobody to defend a single-user system from. Setting a *priority* is
+  different: bands are handed out by capability precisely so nothing can
+  promote itself, and a syscall for it would undo that in one line.
+
+- **The screen owner runs in the display band; the console owner does not
+  run in the input band.** The first is committed and works. The second was
+  tried, because it looks like the same argument - the console owner is the
+  one process allowed to read input, so it is what every keystroke waits on
+  - and it starves the machine: that process is also the *output* path, so
+  at the top band it outranks everything it is serving. `thread: three
+  threads interleave` failed within a minute.
+
+  The fix is one of two things this policy does not have: a boost that lasts
+  only across the wake, or priority inheritance across IPC, which is QNX's
+  answer and the better idea. Written up in `process.c` where the promotion
+  would go.
+
+- **A struct in `syscall.h` outside the assembler guard.** `user/hello.S`
+  includes that header for the syscall numbers, and a struct there is a
+  syntax error per line. It only broke the *test* image, which is the only
+  build that assembles that file - so the ordinary build was clean and the
+  suite caught it.
+
+
 - **Priorities, and a wake that is acted on.** `kernel/sched_prio.c`: five
   named bands - idle, low, normal, display, input - with round robin inside
   each, and a thread that becomes ready while outranking the running one

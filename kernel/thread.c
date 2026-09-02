@@ -49,6 +49,105 @@ void sched_use(const struct scheduler *p)
     policy->init();
 }
 
+/*
+ * Every policy this machine has, in the order a chooser shows them.
+ *
+ * A list rather than a compile-time choice because the whole point of
+ * having the seam is being able to feel the difference, and a difference
+ * you have to rebuild to see is one nobody looks at.
+ */
+static const struct scheduler *const policies[] = {
+    &sched_priority,
+    &sched_round_robin,
+};
+
+unsigned sched_policy_count(void)
+{
+    return (unsigned)(sizeof(policies) / sizeof(policies[0]));
+}
+
+const char *sched_policy_name(unsigned index)
+{
+    return index < sched_policy_count() ? policies[index]->name : NULL;
+}
+
+unsigned sched_policy_index(void)
+{
+    unsigned i;
+
+    for (i = 0; i < sched_policy_count(); i++) {
+        if (policies[i] == policy) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Change policy with threads already queued in the old one.
+ *
+ * `sched_use` calls `init`, which empties the queues - correct at boot,
+ * where nothing is in them, and a way to lose every runnable thread on the
+ * machine at any other time. The threads are not in a list the kernel keeps;
+ * they are in whatever structure the policy chose, and the only handle on
+ * them is `pick_next`.
+ *
+ * So they are drained one at a time out of the old policy and handed to the
+ * new one, before the new one is installed. Interrupts are masked for the
+ * duration: a tick landing halfway through would ask a policy that owns half
+ * the runnable threads which one should run next.
+ */
+bool sched_switch_to(unsigned index)
+{
+    const struct scheduler *next;
+    struct thread *drained[THREAD_MAX];
+    unsigned n = 0;
+    unsigned i;
+    unsigned long daif;
+
+    if (index >= sched_policy_count()) {
+        return false;
+    }
+
+    next = policies[index];
+
+    if (next == policy) {
+        return true;
+    }
+
+    /*
+     * Masked for the duration. A tick landing between the drain and the
+     * install would ask a policy that owns half the runnable threads which
+     * one runs next. Saved and restored rather than unconditionally
+     * re-enabled, so this is correct when called from somewhere that
+     * already held them off.
+     */
+    __asm__ volatile("mrs %0, daif" : "=r"(daif));
+    __asm__ volatile("msr daifset, #3" ::: "memory");
+
+    while (n < THREAD_MAX) {
+        struct thread *t = policy->pick_next();
+
+        if (t == NULL) {
+            break;
+        }
+
+        drained[n++] = t;
+    }
+
+    policy = next;
+    policy->init();
+
+    for (i = 0; i < n; i++) {
+        policy->enqueue(drained[i]);
+    }
+
+    __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
+
+    return true;
+}
+
 const struct scheduler *sched_current(void)
 {
     return policy;

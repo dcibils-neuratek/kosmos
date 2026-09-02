@@ -771,6 +771,86 @@ static bool region_of(long cap, uintptr_t *at, size_t *bytes)
  * doing so is not a leak that grows slowly: the table is sixteen deep, so
  * it is sixteen requests and then nothing works.
  */
+/*
+ * `sys.scheduler()` - how the machine is scheduled right now.
+ *
+ * Returns a table: which policy is installed, what else there is, the
+ * quantum in ticks and in milliseconds, and how many priority bands exist.
+ * The millisecond figure is computed here from the tick rate the kernel
+ * reports rather than assumed, because the only way to get a quantum below
+ * ten milliseconds is to change that rate.
+ */
+static int l_scheduler(lua_State *L)
+{
+    struct schedinfo info;
+    long status = kosmos_sched_info(&info);
+    unsigned i;
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_newtable(L);
+
+    lua_pushinteger(L, (lua_Integer)info.policy + 1);   /* Lua counts from 1 */
+    lua_setfield(L, -2, "policy");
+
+    lua_pushinteger(L, (lua_Integer)info.quantum);
+    lua_setfield(L, -2, "quantum");
+
+    lua_pushnumber(L, (lua_Number)info.quantum * 1000.0 / (lua_Number)info.tick_hz);
+    lua_setfield(L, -2, "quantum_ms");
+
+    lua_pushinteger(L, (lua_Integer)info.tick_hz);
+    lua_setfield(L, -2, "tick_hz");
+
+    lua_pushinteger(L, (lua_Integer)info.priorities);
+    lua_setfield(L, -2, "bands");
+
+    lua_newtable(L);
+
+    for (i = 0; i < info.policies && i < SCHED_POLICY_MAX; i++) {
+        lua_pushstring(L, info.name[i]);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    lua_setfield(L, -2, "policies");
+
+    return 1;
+}
+
+/* `sys.set_quantum(ticks)` - how long a turn lasts. */
+static int l_set_quantum(lua_State *L)
+{
+    long ticks = (long)luaL_checkinteger(L, 1);
+    long status = kosmos_sched_set(SCHED_SET_QUANTUM, ticks);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/*
+ * `sys.set_policy(n)` - which scheduler runs the machine, changed underneath
+ * it. The runnable threads are moved across rather than dropped; see
+ * `sched_switch_to`.
+ */
+static int l_set_policy(lua_State *L)
+{
+    long which = (long)luaL_checkinteger(L, 1) - 1;   /* Lua counts from 1 */
+    long status = kosmos_sched_set(SCHED_SET_POLICY, which);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_release(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
@@ -1203,6 +1283,9 @@ static const luaL_Reg sys_functions[] = {
     { "endpoint", l_endpoint },
     { "destroy",  l_destroy },
     { "release",  l_release },
+    { "scheduler",   l_scheduler },
+    { "set_quantum", l_set_quantum },
+    { "set_policy",  l_set_policy },
     { "kit",       l_kit },
     { "kit_names", l_kit_names },
     { "call",     l_call },
