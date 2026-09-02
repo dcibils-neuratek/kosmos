@@ -60,6 +60,26 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A region is a list of pages, not a run of them.** `memobj.h` used to
+  explain why they were contiguous and named the cost in its own words: "a
+  large region can fail to allocate on a fragmented machine even when there
+  is enough memory. That is real." It became real, so the premise changed.
+
+  A page holds 512 pointers, so a region's pages are indexed by up to eight
+  index pages taken from the allocator itself. The objection the old comment
+  raised - a quarter of a megabyte of `.bss` for lists that are usually
+  empty - is answered rather than ignored: the index is allocated per region
+  that exists, and the descriptor grows from 40 bytes to 96, which is 24 KB
+  of `.bss` instead of 10.
+
+  What is given up: mapping walks an index instead of adding to a base, and
+  a region can no longer be handed to a device expecting one physical run.
+  Nothing does - DMA here uses kernel buffers, identity mapped and
+  contiguous by construction.
+
+  156 checks and the benchmarks are unmoved by it.
+
+
 - **The scheduler can be changed while the machine is running.** `wm
   scheduler`: which policy, how long a turn lasts, what the timer rate is
   and how many bands there are - all read from the kernel, and the first two

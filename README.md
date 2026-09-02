@@ -249,6 +249,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | Responsiveness is a design goal: Kosmos owes compatibility to nothing and may borrow freely | CLAUDE.md |
 | Sep 2026 | The scheduler is swappable while the machine runs; the queues are drained, not dropped | thread.c, scheduler.lua |
 | Sep 2026 | Quantum and policy are anyone's to change; priority is not, because bands come from capability | syscall.c |
+| Sep 2026 | A shared region is a list of pages, not a contiguous run; the index lives in allocated pages | memobj.h |
 
 ---
 

@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "page.h"           /* PAGE_SIZE: an index page holds 512 pointers */
+
 /*
  * Memory two processes can both see.
  *
@@ -33,19 +35,34 @@
  * process that was not handed one cannot map it and cannot refer to it.
  *
  *--------------------------------------------------------------------------
- * Why the pages are contiguous.
+ * Why the pages are *not* contiguous any more.
  *
- * A region is one run of physical pages rather than a list of them, which
- * makes mapping it a loop over a base address instead of a page table full
- * of scattered entries - and, more to the point, keeps the object small.
- * Sixteen regions holding a list of two thousand page pointers each would be
- * a quarter of a megabyte of kernel .bss for something that is usually
- * empty.
+ * They were, and this comment used to explain why: one run rather than a
+ * list keeps mapping simple and keeps the descriptor small, and it named the
+ * cost honestly - "a large region can fail to allocate on a fragmented
+ * machine even when there is enough memory. That is real."
  *
- * The cost is that a large region can fail to allocate on a fragmented
- * machine even when there is enough memory. That is real, and it is the
- * trade this kernel makes everywhere: a fixed shape that fails at a known
- * limit beats a flexible one that fails somewhere unpredictable.
+ * It became real. A PDF page rendered offscreen wants about 730 pages, its
+ * content buffers 48, a font program 5 to 13, and the window's own double
+ * buffer around 920 - all live at once. Seven megabytes on a 512 MB machine,
+ * and whichever was asked for last failed for want of a *run* rather than
+ * for want of pages. Reordering only moved which one failed.
+ *
+ * So a region is a list now, and the objection the old comment raised is
+ * answered rather than ignored: **the list does not live in .bss.** A page
+ * holds 512 pointers, so a region's pages are indexed by up to eight pages
+ * taken from the allocator itself, and the descriptor carries eight pointers
+ * instead of one. That is 256 descriptors at 96 bytes rather than 40 - 24 KB
+ * of .bss instead of 10 - and the quarter of a megabyte the old comment
+ * feared never appears, because the index is allocated only for regions that
+ * exist.
+ *
+ * What is given up: mapping walks an index instead of adding to a base, and
+ * a region is no longer a single physical run, so it could not be handed to
+ * a device expecting one. Nothing does - DMA in this kernel uses kernel
+ * buffers, which are identity mapped and contiguous by construction - and
+ * the day something needs it, it needs a different allocator rather than
+ * this constraint back.
  */
 
 /*
@@ -66,11 +83,24 @@
 #define MEMOBJ_MAX        256
 #define MEMOBJ_PAGES_MAX  4096      /* 16 MB, a double-buffered full screen */
 
+/* A page of pointers, and how many such pages the largest region needs. */
+#define MEMOBJ_PER_INDEX  (PAGE_SIZE / sizeof(void *))
+#define MEMOBJ_INDEXES    ((MEMOBJ_PAGES_MAX + MEMOBJ_PER_INDEX - 1) \
+                           / MEMOBJ_PER_INDEX)
+
 struct memobj {
     bool     in_use;
     unsigned generation;            /* against a stale capability */
     unsigned refs;                  /* how many capability slots hold it */
-    void    *base;                  /* contiguous, identity mapped */
+
+    /*
+     * The pages, indexed rather than contiguous. `index[k]` is a page from
+     * the allocator holding up to 512 page pointers; page `i` of the region
+     * is `index[i / 512][i % 512]`. Use `memobj_page` rather than reaching
+     * in, so the arithmetic lives in one place.
+     */
+    void   **index[MEMOBJ_INDEXES];
+    size_t   indexes;               /* how many of the above are in use */
     size_t   pages;
 };
 
@@ -81,6 +111,15 @@ void memobj_init(void);
  * pool is full or the pages are not there.
  */
 struct memobj *memobj_create(size_t pages);
+
+/*
+ * Page `i` of the region, or NULL if there is no such page.
+ *
+ * The one place that knows how a region is laid out. Everything that maps a
+ * region walks this rather than adding to a base - which is the whole of
+ * what changed when regions stopped being contiguous.
+ */
+void *memobj_page(const struct memobj *m, size_t i);
 
 /* Reference counting. A region's pages go back when the last capability to
  * it does. */

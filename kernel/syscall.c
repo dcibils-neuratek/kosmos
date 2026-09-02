@@ -902,7 +902,7 @@ void syscall_dispatch(struct trapframe *tf)
 
         for (i = 0; i < m->pages; i++) {
             if (as_map(p->space, base + i * PAGE_SIZE,
-                       (uintptr_t)m->base + i * PAGE_SIZE,
+                       (uintptr_t)memobj_page(m, i),
                        1, MAP_USER_RW) != AS_OK) {
                 break;
             }

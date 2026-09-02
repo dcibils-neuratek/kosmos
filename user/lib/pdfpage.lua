@@ -425,13 +425,15 @@ local buffers
 
 local function regions()
   if not buffers then
-    local raw = sys.memory(RAW_PAGES)
-    local out = sys.memory(OUT_PAGES)
+    local raw, why1 = sys.memory(RAW_PAGES)
+    local out, why2 = sys.memory(OUT_PAGES)
 
     if not raw or not out then
-    print("pdfpage: no region for a font program")
-    return nil
-  end
+      print(("pdfpage: page buffers: raw=%s (%s) out=%s (%s)")
+            :format(tostring(raw), tostring(why1),
+                    tostring(out), tostring(why2)))
+      return nil
+    end
 
     buffers = {
       raw = raw, out = out,
