@@ -273,6 +273,25 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 
 **QEMU numbers are not performance numbers.** They are for detecting regressions (with `-icount`, which is deterministic), not for knowing whether something is fast. The PMU is not faithfully emulated under QEMU. Do not optimize against QEMU.
 
+**Before a minor or major version, review the code before adding to it.** Not
+a skim: read the files that changed since the last one, as they now are
+rather than as they were meant to be. The question is what has no reason to
+exist any more - code kept from an idea the system has since replaced,
+comments that were true when written and are not now, functions nothing
+calls, work done every frame for a result nobody reads.
+
+This is a policy because the alternative was tried. Complexity accumulates by
+addition: each piece was reasonable when it arrived, and nothing removes it
+when the idea behind it changes. One review pass found two live races in
+`memobj.c`, eight kilobytes of a superseded text path in `pdfpage.lua`, a
+comment explaining a constraint that no longer existed, and an application
+whose event loop called a method that was never there - so it had been dying
+on its first pass for a day while appearing to work. None of that was found
+by writing more code.
+
+**A version number is the moment to do it**, because it is the only moment
+that arrives on its own.
+
 **At the end of a session, update `docs/state.md`.** Without that, the next session starts from zero.
 
 **When a design decision is taken, propagate it to the documents in the same session.** A decision that lives only in chat history is lost. The order: the row in the decision log in `README.md`, the explanation in the matching section of `docs/design.md` (or `ui.md` / `gfx.md` / `hal.md` depending on the topic), and the scope adjustment in `docs/roadmap.md` if it changes what has to be built. If a decision contradicts something already written, correct the old text instead of adding an exception next to it.
