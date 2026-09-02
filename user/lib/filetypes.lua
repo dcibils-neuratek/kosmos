@@ -54,22 +54,4 @@ function filetypes.kind_of(path, attrs)
   return ext and ext:lower() or nil
 end
 
--- The program to open it with, or nil when nothing claims it.
-function filetypes.opener(path, attrs)
-  local kind = filetypes.kind_of(path, attrs)
-
-  return kind and filetypes.by_extension[kind]
-end
-
--- For a human: what this is, in words.
-function filetypes.describe(path, attrs)
-  local kind = filetypes.kind_of(path, attrs)
-
-  if not kind then return "file" end
-
-  local opener = filetypes.by_extension[kind]
-
-  return opener and (kind .. ", opens in " .. opener) or kind
-end
-
 return filetypes

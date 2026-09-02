@@ -506,26 +506,6 @@ int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
     return AS_OK;
 }
 
-/*
- * The physical address behind a mapped virtual one, or zero.
- *
- * For handing a device a pointer into a *process's* memory. Everything else
- * in this kernel that talks to a device passes a kernel buffer, and the
- * kernel is identity mapped, so the question never came up - which is
- * exactly why it is worth a function with a name rather than an assumption
- * at one call site.
- */
-uintptr_t as_physical(struct addrspace *as, uintptr_t va)
-{
-    uint64_t *entry = as_page_entry(as, va);
-
-    if (entry == NULL || (*entry & 3) != 3) {
-        return 0;                   /* not a valid page descriptor */
-    }
-
-    return (uintptr_t)((*entry & 0x0000fffffffff000UL) | (va & 0xfff));
-}
-
 uint64_t *as_page_entry(struct addrspace *as, uintptr_t va)
 {
     return page_entry(as->root, va);

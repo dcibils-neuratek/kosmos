@@ -541,15 +541,6 @@ local function bitmap_position(sb, block)
          within
 end
 
-function kfs.block_used(sb, block)
-  local at, byte, bit = bitmap_position(sb, block)
-  local bytes = kfs.read_block(at)
-
-  if not bytes then return nil, "reading the bitmap" end
-
-  return (bytes:byte(byte + 1) & (1 << bit)) ~= 0
-end
-
 local function bitmap_set(sb, block, used)
   local at, byte, bit = bitmap_position(sb, block)
   local bytes = kfs.read_block(at)

@@ -72,15 +72,5 @@ function files.label(entry)
   return entry.name
 end
 
-function files.describe(entry)
-  if entry.kind == "directory" then return "directory" end
-
-  local extents = entry.extents and entry.extents > 0
-                  and (", %d extent%s"):format(entry.extents,
-                                               entry.extents == 1 and "" or "s")
-                  or ""
-
-  return ("%d bytes%s"):format(entry.size, extents)
-end
 
 return files

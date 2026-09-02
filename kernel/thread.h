@@ -306,7 +306,6 @@ void thread_set_idle(struct thread *t);
  * imprecision and not worth a requeue to remove.
  */
 void thread_set_priority(struct thread *t, unsigned priority);
-unsigned thread_priority(const struct thread *t);
 
 /*
  * What a thread actually runs at: its own band, or one borrowed from a

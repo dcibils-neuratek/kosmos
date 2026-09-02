@@ -49,7 +49,6 @@ void cpu_identify(struct cpu_info *out);
 
 /* Cache line sizes in bytes, from CTR_EL0. Both are logged as log2 of the
  * number of *words*, which is the encoding people get wrong. */
-unsigned cpu_icache_line(const struct cpu_info *cpu);
 unsigned cpu_dcache_line(const struct cpu_info *cpu);
 
 /* The physical address range the core can drive, in bits. */

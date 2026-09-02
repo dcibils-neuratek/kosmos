@@ -606,10 +606,4 @@ function bench.cleanup()
   fs.send(FS_DIR, { type = "delete" })
 end
 
--- Whether there is a disk under /data at all, which decides whether the
--- filesystem group ran or was skipped.
-function bench.has_disk()
-  return fs_ready
-end
-
 return bench

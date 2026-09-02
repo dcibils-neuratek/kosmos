@@ -72,13 +72,6 @@ function g3d.multiply(a, b)
   }
 end
 
-function g3d.translation(x, y, z)
-  return { 1, 0, 0, 0,
-           0, 1, 0, 0,
-           0, 0, 1, 0,
-           x, y, z, 1 }
-end
-
 function g3d.rotation_x(a)
   local c, s = math.cos(a), math.sin(a)
   return { 1, 0, 0, 0,
@@ -92,14 +85,6 @@ function g3d.rotation_y(a)
   return { c, 0, -s, 0,
            0, 1, 0, 0,
            s, 0, c, 0,
-           0, 0, 0, 1 }
-end
-
-function g3d.rotation_z(a)
-  local c, s = math.cos(a), math.sin(a)
-  return { c, s, 0, 0,
-           -s, c, 0, 0,
-           0, 0, 1, 0,
            0, 0, 0, 1 }
 end
 

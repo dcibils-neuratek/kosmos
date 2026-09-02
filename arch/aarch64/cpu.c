@@ -109,16 +109,14 @@ void cpu_identify(struct cpu_info *out)
 }
 
 /*
- * CTR_EL0: IminLine [3:0], DminLine [19:16], both log2 of the line size in
- * *words*, not bytes. Four bytes to a word, hence the extra shift - and
- * forgetting it is how a cache maintenance loop ends up striding four times
- * too far and clearing a quarter of what it should.
+ * CTR_EL0: DminLine [19:16], log2 of the line size in *words*, not bytes.
+ * Four bytes to a word, hence the extra shift - and forgetting it is how a
+ * cache maintenance loop ends up striding four times too far and clearing a
+ * quarter of what it should.
+ *
+ * IminLine [3:0] is the same thing for the instruction cache and had a
+ * function of its own until nothing turned out to maintain that cache.
  */
-unsigned cpu_icache_line(const struct cpu_info *cpu)
-{
-    return 4u << (cpu->ctr & 0xf);
-}
-
 unsigned cpu_dcache_line(const struct cpu_info *cpu)
 {
     return 4u << ((cpu->ctr >> 16) & 0xf);

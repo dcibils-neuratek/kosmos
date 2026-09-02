@@ -537,11 +537,6 @@ void thread_set_priority(struct thread *t, unsigned priority)
     t->sched.priority = priority;
 }
 
-unsigned thread_priority(const struct thread *t)
-{
-    return t == NULL ? SCHED_PRIO_NORMAL : t->sched.priority;
-}
-
 unsigned thread_cap_count(const struct thread *t)
 {
     unsigned i, n = 0;
