@@ -317,6 +317,198 @@ ui.scrollbar_click = scrollbar_click
 ui.thumb = thumb_of
 
 --------------------------------------------------------------------------
+-- Trees.
+--
+-- A hierarchy you can open and close, which is the other half of what a file
+-- manager is made of. `ui.md` 16.4's follow modes place it; everything below
+-- is about what it draws and how it is walked.
+--
+-- **Children are asked for, not held.** A node carries a `children` function
+-- that is called the first time it is opened and never again, so a tree of a
+-- filesystem does not read the filesystem to be shown - it reads one
+-- directory when you open one. A tree that loaded eagerly would walk every
+-- disk on the machine to draw a pane four rows tall.
+--
+-- **One flat view, hit-tested by arithmetic**, for the same reason menus
+-- are: `view:hit` returns the deepest child and a press grabs it, so a row
+-- that were a view of its own would eat the drag. The visible rows are
+-- flattened on each draw, which is a walk over what is open rather than
+-- over what exists.
+--------------------------------------------------------------------------
+
+local TREE_INDENT = 14
+local TREE_ARROW = 10
+
+-- Every open node, in the order they are drawn.
+local function tree_rows(nodes, depth, out)
+  for _, n in ipairs(nodes) do
+    out[#out + 1] = { node = n, depth = depth }
+
+    if n.open and n.kids then
+      tree_rows(n.kids, depth + 1, out)
+    end
+  end
+
+  return out
+end
+
+function ui.tree(spec)
+  local v = ui.view(spec)
+
+  v.w = v.w > 0 and v.w or 180
+  v.h = v.h > 0 and v.h or (GH * 8)
+  v.focusable = true
+  v.roots = v.roots or {}
+  v.top = 1
+  v.chosen = nil
+
+  function v:draw(g)
+    g:sunken(0, 0, self.w, self.h, "sunken")
+
+    if self.focused then
+      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+    end
+
+    local rows = tree_rows(self.roots, 0, {})
+    local shown = (self.h - 4) // GH
+
+    self.rows = rows
+    self.shown = shown
+
+    if self.top > #rows - shown + 1 then self.top = #rows - shown + 1 end
+    if self.top < 1 then self.top = 1 end
+
+    self.bar = draw_scrollbar(g, self.w, self.h, #rows, shown, self.top)
+
+    local room = self.w - 4 - (self.bar and SCROLL_W + 2 or 0)
+
+    for i = 0, shown - 1 do
+      local r = rows[self.top + i]
+
+      if not r then break end
+
+      local y = 2 + i * GH
+      local x = 4 + r.depth * TREE_INDENT
+      local on = (r.node == self.chosen)
+      local bg = on and theme.accent or theme.sunken
+      local fg = on and theme.text_on or theme.text
+
+      if on then g:fill(2, y, room, GH, bg) end
+
+      --
+      -- The marker, and only on something that can be opened. Built from
+      -- fills like the menu's: pointing right when shut and down when open,
+      -- which is the one convention every tree in every system shares.
+      --
+      if r.node.children or r.node.kids then
+        local ax, ay = x, y + (GH - 5) // 2
+
+        for k = 0, 4 do
+          if r.node.open then
+            -- Down: widest at the top.
+            local run = 5 - k
+
+            if run > 0 and k < 3 then
+              g:fill(ax + k, ay + k, run, 1, fg)
+            end
+          else
+            local run = 3 - math.abs(k - 2)
+
+            if run > 0 then g:fill(ax + 1, ay + k, run, 1, fg) end
+          end
+        end
+      end
+
+      g:text(x + TREE_ARROW, y, tostring(r.node.text or "?"), fg, bg)
+    end
+  end
+
+  function v:mouse(action, x, y)
+    if self.bar and x >= self.w - SCROLL_W - 2 then
+      if action == "press" then
+        local to = scrollbar_click(x, y, self.w, self.h, #(self.rows or {}),
+                                   self.shown or 1, self.top)
+
+        if to and to ~= self.top then self.top = to end
+      end
+
+      return true
+    end
+
+    if action ~= "press" then return true end
+
+    local r = self.rows and self.rows[self.top + (y - 2) // GH]
+
+    if not r then return true end
+
+    --
+    -- The marker opens; anything else selects. Two targets in one row, and
+    -- the marker is the narrow one, so it is tested first.
+    --
+    local ax = 4 + r.depth * TREE_INDENT
+
+    if (r.node.children or r.node.kids) and x >= ax and x < ax + TREE_ARROW then
+      if r.node.open then
+        r.node.open = false
+      else
+        -- Asked once. A node that has been opened keeps its children, so
+        -- closing and opening again does not read the directory twice.
+        if not r.node.kids and r.node.children then
+          r.node.kids = r.node.children(r.node) or {}
+        end
+
+        r.node.open = true
+      end
+
+      return true
+    end
+
+    self.chosen = r.node
+
+    if self.on_select then self.on_select(self, r.node) end
+
+    return true
+  end
+
+  return v
+end
+
+--------------------------------------------------------------------------
+-- Splitters.
+--
+-- A grip between two views that changes where the boundary is. It moves the
+-- *views*, which is the whole of it: everything else about a split pane is
+-- the two things either side, and they are ordinary views that already know
+-- how to be a size.
+--------------------------------------------------------------------------
+
+function ui.splitter(spec)
+  local v = ui.view(spec)
+
+  v.w = v.w > 0 and v.w or 6
+  v.follow = v.follow or { left = true, top = true, bottom = true }
+
+  function v:draw(g)
+    g:fill(0, 0, self.w, self.h, theme.window)
+    g:groove(self.w // 2 - 1, 0, 2, self.h)
+  end
+
+  function v:mouse(action, x)
+    if action == "press" then
+      self.holding = x
+    elseif action == "move" and self.holding then
+      if self.on_move then self:on_move(x - self.holding) end
+    elseif action == "release" then
+      self.holding = nil
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--------------------------------------------------------------------------
 -- Views.
 --
 -- Follow modes rather than a constraint solver, `ui.md` 16.4. Each edge

@@ -31,7 +31,7 @@ local files = use("/lib/files.lua")
 local types = use("/lib/filetypes.lua")
 local theme = ui.theme
 
-local W, H = 620, 440
+local W, H = 700, 460
 
 -- The menu bar's height, which everything below it is offset by. A menu bar
 -- is an ordinary widget in this window rather than a band the desktop
@@ -56,6 +56,10 @@ local selected = 0
 -- the same actions and a menu item and a button doing the same thing should
 -- be one function rather than two that drift apart.
 local new_folder, delete_selected
+
+-- And the one that changes directory, because the places tree calls it and
+-- is built above it.
+local show
 local sort_by  = "name"
 local scroll   = 1        -- the first row shown; the bar moves this
 local reversed = false
@@ -75,9 +79,9 @@ local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
 --------------------------------------------------------------------------
 
 local COLUMNS = {
-  { key = "name", title = "Name", x = 4,   w = 300 },
-  { key = "size", title = "Size", x = 310, w = 110 },
-  { key = "kind", title = "Kind", x = 425, w = 100 },
+  { key = "name", title = "Name", x = 4,   w = 210 },
+  { key = "size", title = "Size", x = 220, w = 90  },
+  { key = "kind", title = "Kind", x = 316, w = 90  },
 }
 
 local function sorted()
@@ -114,9 +118,74 @@ local function sorted()
   return out
 end
 
-local rows = ui.view{ x = 12, y = 58 + BAR_H, w = W - 24,
+--
+-- A pane of places on the left, the listing on the right, a grip between.
+--
+-- The tree is *lazy*: a node's children are read the first time it is
+-- opened and kept after that. A tree that loaded eagerly would walk every
+-- filesystem on the machine to draw a pane four rows tall, and one of them
+-- is a disk.
+--
+local PLACES_W = 150
+
+local function subdirs(node)
+  local out = {}
+
+  for _, e in ipairs(files.entries(node.path) or {}) do
+    if e.kind == "directory" then
+      local full = files.join(node.path, e.name)
+
+      out[#out + 1] = { text = e.name, path = full, children = subdirs }
+    end
+  end
+
+  return out
+end
+
+--
+-- The roots are the mounts, because those are the places this machine
+-- actually has - `/bin` in the image, `/data` in memory, `/home` on the
+-- disk. Naming them here rather than reading `/` keeps the pane in a
+-- sensible order and out of the way of a root that lists something else.
+--
+local places = ui.tree{
+  x = 12, y = 58 + BAR_H, w = PLACES_W, h = H - 128 - BAR_H,
+  follow = { "left", "top", "bottom" },
+  roots = {
+    { text = "home",   path = "/home",   children = subdirs },
+    { text = "system", path = "/system", children = subdirs },
+    { text = "data",   path = "/data",   children = subdirs },
+    { text = "bin",    path = "/bin" },
+    { text = "lib",    path = "/lib" },
+    { text = "dev",    path = "/dev" },
+  },
+  on_select = function(_, node) show(node.path) end,
+}
+
+local split = ui.splitter{
+  x = 12 + PLACES_W, y = 58 + BAR_H, w = 6, h = H - 128 - BAR_H,
+  follow = { "left", "top", "bottom" },
+}
+
+local rows = ui.view{ x = 12 + PLACES_W + 6, y = 58 + BAR_H,
+                      w = W - 24 - PLACES_W - 6,
                       h = H - 128 - BAR_H,
                       follow = { "left", "right", "top", "bottom" } }
+
+--
+-- The grip moves the boundary, and the two panes are told their new size
+-- rather than working it out: `view:resize` is what applies a follow mode,
+-- and a view whose width changed without it would keep drawing at the old
+-- one until the window itself was resized.
+--
+function split:on_move(dx)
+  local w = math.min(math.max(80, places.w + dx), self.parent.w - 160)
+
+  places.w = w
+  self.x = 12 + w
+  rows.x = 12 + w + 6
+  rows.w = self.parent.w - 24 - w - 6
+end
 
 rows.focusable = true
 
@@ -473,6 +542,8 @@ win:add(ui.menubar{
   },
 })
 
+win:add(places)
+win:add(split)
 win:add(rows)
 win:add(status)
 
