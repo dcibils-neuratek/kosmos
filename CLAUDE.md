@@ -249,9 +249,10 @@ buys nothing.
 
 **The window manager is the open case, and it is a measurement rather than an
 opinion.** Its pixel work is already C; its Lua half is layout, focus, damage
-and event routing. Whether that is five per cent of a frame or fifty is not
-known, because nothing measures a frame yet. Profile before rewriting thirty
-thousand lines.
+and event routing - 1,422 lines of it. Whether that is five per cent of a
+frame or fifty is now measurable rather than arguable: `frames` starts the
+window manager's own stage counters and prints where a pass went. Profile
+before rewriting it.
 
 `docs/glossary.md` defines what a server, a kit, a library, a program, an app
 and a tool each are, and the distinction that does the most work: **a kit is

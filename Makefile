@@ -659,7 +659,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot frames bench bench-record debug disasm size clean dist release disk
 
 # A disk image, built here, with whatever you want already in it.
 #
@@ -832,6 +832,14 @@ powertest: $(TARGET)
 # half no test inside the guest can reach.
 screenshot: $(TARGET)
 	python3 tools/run_screenshot.py $(TARGET) --png build/screenshot.png
+
+# Where a window manager pass goes, under an idle desktop, an animating one
+# and a drag. Not gated and deliberately not: these are QEMU numbers and
+# `CLAUDE.md` is clear about what those are worth. It exists because every
+# other measurement here is of the kernel, and a system aiming at a
+# responsive desktop had nothing at all that measured a frame.
+frames: $(TARGET)
+	python3 tools/run_frames.py $(TARGET) --seconds 6
 
 # Separate image again, and a separate runner: a benchmark needs QEMU's
 # -icount to be repeatable at all, and -icount makes everything several times

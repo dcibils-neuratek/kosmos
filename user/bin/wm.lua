@@ -347,6 +347,139 @@ local buttons = 0
 local dragging = nil          -- { win, dx, dy } while a title bar is held
 local grabbed = nil           -- the window a press landed in, until release
 
+--------------------------------------------------------------------------
+-- The frame profile.
+--
+-- Where a pass of the loop below actually goes, measured rather than
+-- argued. The system is aiming at a fast desktop on a Pi 5 and every
+-- discussion about moving this process into C has had to guess at whether
+-- its Lua half is five per cent of a frame or fifty. This is the thing
+-- that answers that.
+--
+-- **Off by default, and costing nothing while it is off.** The timer reads
+-- are behind `profiling`, so a desktop nobody asked to measure itself does
+-- not make eight extra syscalls a hundred times a second.
+--
+-- **Waiting is not working, and the two are counted apart.** Most of a
+-- pass on an idle desktop is `wait_input` sleeping, which is the loop
+-- doing its job rather than costing anything. `busy` is every stage except
+-- that one, and `busy.max` - the worst pass ever seen - is the number that
+-- matters: responsiveness is a promise about the worst case.
+--
+-- **Pixels, so compose time can be divided by something.** Knowing that
+-- compose took 3 ms means nothing without knowing whether it drew a
+-- cursor or the whole screen. With both, the quotient can be compared
+-- against what the C primitives do on their own, and the difference is
+-- what the Lua around them costs.
+--
+-- **And the collector, because that is the whole argument.** C is proposed
+-- here for jitter rather than throughput: a GC pause is about 1.25 ms and
+-- arrives when it chooses, against a 16 ms frame. So a pass during which
+-- the heap shrank is a pass a collection finished in, and the worst of
+-- those is recorded separately. If the worst pass overall is also a
+-- collection pass, the argument is made. If it is not, it is not.
+--------------------------------------------------------------------------
+
+local STAGES = { "wait", "keys", "messages", "pointer",
+                 "waiting", "collect", "compose" }
+
+local profiling = false
+
+--
+-- Whether *this* pass is being measured, decided once at the top of it.
+--
+-- Not the same question as `profiling`, and conflating them was a crash on
+-- the first run: `frames` turns the profile on by sending a message, which
+-- is handled in the middle of a pass, so a pass that began unmeasured
+-- reached the next stage boundary with no reading to subtract from. A pass
+-- measures throughout or not at all - which is also the only way its
+-- stages can add up to its total.
+--
+local measuring = false
+
+local prof
+local pass_busy = 0
+
+--
+-- A client blocked in `fs.send` until its measurement is over.
+--
+-- `frames` cannot sleep for itself: `sys.wait_input` is refused to anything
+-- that does not own the console, and this process owns it. Spinning instead
+-- would be worse than useless - a program burning processor beside the loop
+-- it is measuring lands in whichever stage the loop was preempted in, and
+-- the measurement would be of the measuring.
+--
+-- So the wait happens here, and the client spends it blocked in IPC, which
+-- costs a descheduled thread and nothing else. Same shape as `poll`.
+--
+local profile_waiting = nil
+
+local function prof_reset()
+  prof = { passes = 0, frames = 0, rects = 0, px = 0,
+           busy = { total = 0, max = 0 },
+           gc = { collections = 0, worst = 0 } }
+
+  for _, name in ipairs(STAGES) do
+    prof[name] = { total = 0, max = 0 }
+  end
+end
+
+-- Charge the time since `t0` to a stage, and hand back the reading so the
+-- next stage starts where this one ended - one clock read per boundary
+-- rather than two.
+local function charge(stage, t0, idle)
+  local now = sys.ticks()
+  local took = now - t0
+  local s = prof[stage]
+
+  s.total = s.total + took
+  if took > s.max then s.max = took end
+  if not idle then pass_busy = pass_busy + took end
+
+  return now
+end
+
+-- Everything measured, flattened: the serialiser crosses this as a table of
+-- scalars, and a stage is two numbers rather than a structure worth naming
+-- twice. Times are counter ticks - what a tick is worth is `/dev/cpu`'s
+-- business and the reporting program's, not this one's.
+local function profile_report()
+  local out = { ok = true, profiling = profiling,
+                passes = prof.passes, frames = prof.frames,
+                rects = prof.rects, px = prof.px,
+                busy_total = prof.busy.total, busy_max = prof.busy.max,
+                collections = prof.gc.collections, gc_worst = prof.gc.worst,
+                heap = collectgarbage("count") }
+
+  for _, name in ipairs(STAGES) do
+    out[name .. "_total"] = prof[name].total
+    out[name .. "_max"]   = prof[name].max
+  end
+
+  return out
+end
+
+--
+-- Answer a client whose measurement is over.
+--
+-- Called at the very top of a pass, before that pass decides whether it is
+-- being measured, and stopping first so that it is not. Building a report
+-- takes a few microseconds and charging them to a stage would land them in
+-- `max` - which is the one number this whole thing exists to report, and
+-- the last place to put an artefact of reporting it.
+--
+local function profile_due()
+  if not profile_waiting then return end
+  if sys.ticks() < profile_waiting.deadline then return end
+
+  local who = profile_waiting.who
+
+  profiling = false
+  profile_waiting = nil
+
+  pcall(sys.reply, who, profile_report())
+end
+
 -- Into the backbuffer, clipped by the surface primitives like anything
 -- else. A run of identical pixels at a time rather than one fill per pixel:
 -- the arrow is ten columns wide and mostly runs.
@@ -389,8 +522,15 @@ local function compose_rect(r)
   -- What is running, bottom right, on the desktop and under everything
   -- else. Drawn as part of the composite rather than once at startup, so a
   -- window dragged over it and away again leaves it intact.
-  back:text(W - #stamp * gfx.font.w - 10, H - gfx.font.h - 8, stamp,
-            stamp_colour(), desktop_colour())
+  --
+  -- And only when this rectangle actually reaches that corner. The
+  -- primitives clip to the backbuffer, so a rectangle in the top left was
+  -- still paying for every glyph of it.
+  local sx, sy = W - #stamp * gfx.font.w - 10, H - gfx.font.h - 8
+
+  if r.x < W and r.x + r.w > sx and r.y < H and r.y + r.h > sy then
+    back:text(sx, sy, stamp, stamp_colour(), desktop_colour())
+  end
 
   for i = 1, #windows do
     local win = windows[i]
@@ -430,18 +570,46 @@ local function compose_rect(r)
       -- `ny < fy + TAB_H` and knows nothing about the title's length - so
       -- the narrow tab was drawing a handle smaller than the one you could
       -- actually grab.
-      back:fill(fx, fy, fw, fh, tab)
+      --
+      -- Clipped to the damage rectangle, which the contents below have
+      -- always been and this had never been.
+      --
+      -- The comment above explains that the primitives clip to the
+      -- backbuffer rather than to the rectangle being composed, and uses
+      -- that to skip windows the rectangle does not touch. It did not
+      -- finish the thought: a window the rectangle touches *at all* was
+      -- having its whole frame filled. Ten pixels of damage on a 360x264
+      -- window cost 95,040 of them.
+      --
+      -- Which is what the profile found. A dragged window composed half
+      -- the pixels of an animating one and took four fifths of the time,
+      -- and a cost that does not fall when the damage does is a cost that
+      -- is not being charged to the damage.
+      --
+      local dx0 = (fx > r.x) and fx or r.x
+      local dy0 = (fy > r.y) and fy or r.y
+      local dx1 = math.min(fx + fw, r.x + r.w)
+      local dy1 = math.min(fy + fh, r.y + r.h)
+
+      back:fill(dx0, dy0, dx1 - dx0, dy1 - dy0, tab)
 
       -- The close box, at the left of the tab where BeOS put it. A square
       -- outline rather than a cross: at this size a cross is four grey
       -- pixels and a smudge.
-      local bx, by = fx + 4, fy + (TAB_H - 8) // 2
+      --
+      -- Both it and the title only when the rectangle reaches the tab at
+      -- all. A window whose *contents* changed damages the area below the
+      -- bar, and redrawing a title nobody disturbed is a string of glyphs
+      -- per frame for nothing.
+      if r.y < fy + TAB_H and r.y + r.h > fy then
+        local bx, by = fx + 4, fy + (TAB_H - 8) // 2
 
-      back:fill(bx, by, 8, 8, title_colour())
-      back:fill(bx + 1, by + 1, 6, 6, tab)
+        back:fill(bx, by, 8, 8, title_colour())
+        back:fill(bx + 1, by + 1, 6, 6, tab)
 
-      back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
-                title_colour(), tab)
+        back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
+                  title_colour(), tab)
+      end
 
       -- And the contents, clipped to the intersection. The window's own
       -- surface is the source, so the source rectangle moves with the clip:
@@ -477,7 +645,13 @@ end
 local function compose()
   if #damage == 0 then return end
 
+  if measuring then
+    prof.frames = prof.frames + 1
+    prof.rects  = prof.rects + #damage
+  end
+
   for _, r in ipairs(damage) do
+    if measuring then prof.px = prof.px + r.w * r.h end
     compose_rect(r)
   end
 
@@ -1024,6 +1198,47 @@ end
 -- has no business ending it; init would be the one to ask, and nothing has
 -- a reason to yet.
 --------------------------------------------------------------------------
+--
+-- Start, stop, or read the profile. `/bin/frames.lua` is the client.
+--
+-- Reading does not stop the measurement and does not reset it, so a long
+-- run can be sampled while it happens; `on = true` is what clears the
+-- counters. Times are in counter ticks, because this process has no
+-- business deciding what a tick is worth - `/dev/cpu` says, and the
+-- program that prints the report is where that division belongs.
+--
+handlers.profile = function(req, who)
+  if req.on == true then
+    prof_reset()
+    pass_busy = 0
+    profiling = true
+
+    --
+    -- `run_for` counter ticks and then the answer, which is how `frames`
+    -- waits without spinning. Deferred exactly as `poll` is: the reply is
+    -- this process's to send later, and until it does the client is a
+    -- blocked thread costing nothing.
+    --
+    if req.run_for then
+      profile_waiting = { who = who,
+                          deadline = sys.ticks() + req.run_for }
+      return DEFER
+    end
+
+    return { ok = true, profiling = true }
+  elseif req.on == false then
+    profiling = false
+    profile_waiting = nil
+    return { ok = true, profiling = false }
+  end
+
+  if not prof then
+    return { ok = false, error = "nothing measured yet: start it with on=true" }
+  end
+
+  return profile_report()
+end
+
 handlers.end_process = function(req)
   local pid = tonumber(req.pid)
 
@@ -1347,11 +1562,29 @@ while running do
   -- none. One call for keys and the pointer together, because the console
   -- has to be asked anyway and two round trips to learn nothing is one
   -- more than necessary.
+  local t, heap
+
+  profile_due()
+
+  measuring = profiling
+
+  if measuring then
+    prof.passes = prof.passes + 1
+    heap = collectgarbage("count")
+    t = sys.ticks()
+  end
+
   local input = fs.wait_input("/dev/console", PASS) or {}
+
+  -- Idle, and charged as such: this is the loop asleep with nothing to do,
+  -- and counting it as work would make an empty desktop look busy.
+  if measuring then t = charge("wait", t, true) end
 
   for _, c in ipairs(input.keys or {}) do
     key(c)
   end
+
+  if measuring then t = charge("keys", t) end
 
   -- 2. Whatever the applications have asked for, and not one message more
   -- than has already arrived.
@@ -1383,12 +1616,18 @@ while running do
     end
   end
 
+  if measuring then t = charge("messages", t) end
+
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
   pointer_pass(input.pointer)
 
+  if measuring then t = charge("pointer", t) end
+
   -- 4. Anybody who has been waiting long enough, or now has something.
   answer_waiting()
+
+  if measuring then t = charge("waiting", t) end
 
   -- 5. Anything that was asked to close and did not, and the slots of
   -- anything that has already gone.
@@ -1405,8 +1644,32 @@ while running do
   --
   while sys.wait(true) do end
 
+  if measuring then t = charge("collect", t) end
+
   -- 6. The picture, cursor included.
   compose()
+
+  if measuring then
+    charge("compose", t)
+
+    local b = prof.busy
+    b.total = b.total + pass_busy
+    if pass_busy > b.max then b.max = pass_busy end
+
+    --
+    -- A pass the heap ended smaller than it started is a pass a collection
+    -- finished in. That is not every collection - an incremental step that
+    -- only marked will not show - but it is every one that freed anything,
+    -- which is the kind that takes the time.
+    --
+    if collectgarbage("count") < heap then
+      local gc = prof.gc
+      gc.collections = gc.collections + 1
+      if pass_busy > gc.worst then gc.worst = pass_busy end
+    end
+
+    pass_busy = 0
+  end
 end
 
 -- Given back, which repaints: the console has no scrollback, so it starts

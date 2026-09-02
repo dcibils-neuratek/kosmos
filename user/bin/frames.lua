@@ -1,0 +1,206 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+-- Where a window manager pass actually goes.
+--
+--   frames            measure for five seconds, then report
+--   frames 20         for as long as you like
+--   frames on         start measuring and leave it running
+--   frames read       report without disturbing anything
+--   frames off        stop
+--
+-- **Why this exists.** Kosmos is aiming at a desktop that stays responsive
+-- on a Pi 5, and the recurring question is whether the window manager - a
+-- Lua process with C primitives underneath it - should be rewritten in C.
+-- Every discussion of that has had to guess, because five of the five
+-- gated benchmarks measure the kernel and none of them measures a frame.
+--
+-- So this measures one. `wm` keeps seven counters and hands them over;
+-- this divides them by a clock and prints them.
+--
+-- **The number to look at is `busy max`, not the average.** An average
+-- frame time of 2 ms with one pass in a thousand at 40 ms is a desktop
+-- that stutters, and the stutter is the thing being fixed. Responsiveness
+-- is a promise about the worst case.
+--
+-- **Waiting is reported apart from working.** Most of an idle pass is
+-- `wait_input` asleep, which is the loop behaving correctly rather than
+-- costing anything, and folding it in would make an empty desktop look
+-- like a busy one.
+--
+-- **And these are QEMU numbers.** `CLAUDE.md` is clear that they are for
+-- catching regressions and not for knowing whether something is fast. What
+-- survives the emulator is the *shape*: which stage dominates, and whether
+-- the worst pass is a collection. Absolute milliseconds wait for the Pi.
+
+local seconds = 5
+local mode    = "run"
+
+local a = args and args:match("%S+")
+
+if a == "on" or a == "off" or a == "read" then
+  mode = a
+elseif a then
+  seconds = tonumber(a) or 5
+end
+
+local cpu = fs.read("/dev/cpu") or {}
+local HZ  = cpu.counter_hz or 62500000
+
+local function ms(ticks) return ticks * 1000.0 / HZ end
+local function us(ticks) return ticks * 1000000.0 / HZ end
+
+local function ask(msg)
+  local reply, err = fs.send("/dev/wm", msg)
+
+  if not reply then
+    print("frames: no window manager (" .. tostring(err) .. ")")
+    print("frames: start one with `wm` and try again.")
+    return nil
+  end
+
+  if not reply.ok then
+    print("frames: " .. tostring(reply.error))
+    return nil
+  end
+
+  return reply
+end
+
+--------------------------------------------------------------------------
+-- The report.
+--------------------------------------------------------------------------
+
+local STAGES = {
+  { "wait",     "waiting for input" },
+  { "keys",     "keys" },
+  { "messages", "application requests" },
+  { "pointer",  "pointer" },
+  { "waiting",  "answering polls" },
+  { "collect",  "reaping" },
+  { "compose",  "composing" },
+}
+
+local function report(p)
+  if p.passes == 0 then
+    print("frames: no passes measured.")
+    return
+  end
+
+  print("")
+  print(string.format("%d passes, %d of which composed something",
+                      p.passes, p.frames))
+  print("")
+
+  -- Busy first and on its own, because it is the answer and everything
+  -- below it is the explanation.
+  print(string.format("  busy   %8.3f ms total   %7.1f us mean   %7.3f ms WORST",
+                      ms(p.busy_total),
+                      us(p.busy_total) / p.passes,
+                      ms(p.busy_max)))
+  print("")
+  print("  stage                     total ms     share    worst us")
+  print("  ---------------------------------------------------------")
+
+  for _, s in ipairs(STAGES) do
+    local name, label = s[1], s[2]
+    local total = p[name .. "_total"] or 0
+    local worst = p[name .. "_max"] or 0
+
+    -- Share of *busy*, so the stages add to a hundred. Waiting is not
+    -- busy and is shown with a dash rather than a fraction it is not part
+    -- of - it would otherwise be ninety-odd per cent of everything and
+    -- bury the six numbers this is for.
+    local share = (name == "wait") and "     -"
+                  or string.format("%5.1f%%",
+                                   (p.busy_total > 0)
+                                     and (total * 100.0 / p.busy_total) or 0)
+
+    print(string.format("  %-22s %10.3f    %s   %9.1f",
+                        label, ms(total), share, us(worst)))
+  end
+
+  print("")
+
+  if p.frames > 0 then
+    local per = p.px / p.frames
+    print(string.format("  composed %d rects, %.1f Mpx, %.0f px a frame",
+                        p.rects, p.px / 1000000.0, per))
+
+    -- What a pixel cost, which is the number that can be compared against
+    -- the C primitives measured on their own. The difference between the
+    -- two is what the Lua around them is worth.
+    if p.px > 0 then
+      print(string.format("  %.1f ns a pixel, %.2f ms a composing pass",
+                          ms(p.compose_total) * 1000000.0 / p.px,
+                          ms(p.compose_total) / p.frames))
+    end
+    print("")
+  end
+
+  --
+  -- The collector, which is the whole reason the C question is open. If
+  -- the worst pass and the worst collecting pass are the same number, the
+  -- collector is the jitter and moving this process to C would remove it.
+  -- If the worst pass is much larger, something else is wrong and C would
+  -- not have helped.
+  --
+  print(string.format("  %d collections, worst collecting pass %.3f ms",
+                      p.collections, ms(p.gc_worst)))
+  print(string.format("  heap %.0f KB", p.heap))
+
+  if p.collections > 0 and p.busy_max > 0 then
+    local blame = p.gc_worst * 100.0 / p.busy_max
+    if blame > 90 then
+      print("  -> the worst pass was a collection.")
+    else
+      print(string.format(
+        "  -> the worst pass was not a collection (%.0f%% of it at most).",
+        blame))
+    end
+  end
+
+  print("")
+end
+
+--------------------------------------------------------------------------
+
+if mode == "off" then
+  if ask{ type = "profile", on = false } then print("frames: stopped.") end
+  return
+end
+
+if mode == "read" then
+  local p = ask{ type = "profile" }
+  if p then report(p) end
+  return
+end
+
+if mode == "on" then
+  if ask{ type = "profile", on = true } then
+    print("frames: measuring. `frames read` for the report.")
+  end
+  return
+end
+
+print(string.format("frames: measuring for %g seconds; use the desktop.",
+                    seconds))
+
+--
+-- One blocking call, and the window manager answers it when the time is up.
+--
+-- This program cannot sleep for itself. `sys.wait_input` is the only timed
+-- sleep there is and the kernel refuses it to anything that does not own
+-- the console - which the window manager does, and must, because input has
+-- one reader. The first version of this ignored that refusal, returned
+-- instantly, and measured two passes while reporting six seconds.
+--
+-- Spinning instead would have been worse than wrong. `wm` charges wall
+-- clock to whichever stage it is in, so a program burning processor beside
+-- it puts its own preemptions into the numbers, and the worst pass would be
+-- a measurement of the measuring.
+--
+-- Blocked in IPC costs a descheduled thread and nothing else.
+--
+local p = ask{ type = "profile", on = true,
+               run_for = math.floor(seconds * HZ) }
+
+if p then report(p) end
