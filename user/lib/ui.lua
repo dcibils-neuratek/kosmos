@@ -1477,6 +1477,12 @@ function ui.window(spec)
   local w = setmetatable({
     handle = reply.window,
     root = ui.view{ x = 0, y = 0, w = reply.w, h = reply.h },
+
+    -- Where this window's content begins on the screen. The window manager
+    -- says so in the reply because it clamps what it was asked for, and
+    -- anything that places a menu needs it.
+    origin_x = reply.x or 0,
+    origin_y = reply.y or 0,
     -- Nil unless the application asked for a particular colour, so that
     -- `paint` can fall back to the palette *at the moment it draws*.
     -- Resolving it here instead captured the colour once, at creation, and
@@ -1592,6 +1598,11 @@ end
 
 function window:move(x, y)
   self.x, self.y = x, y
+
+  -- And the origin with it, or a menu opened after a move appears where the
+  -- window used to be.
+  self.origin_x, self.origin_y = x, y
+
   fs.send("/dev/wm", { type = "move", window = self.handle, x = x, y = y })
 end
 
@@ -1653,6 +1664,14 @@ end
 function window:add(child)
   local added = self.root:add(child)
 
+  -- Which window this widget is in. Absent until now, and a menu bar
+  -- cannot open a menu without it: a menu is a window placed on the
+  -- *screen*, so a widget that opens one has to be able to ask where its
+  -- own window is.
+  if type(child) == "table" then
+    child.window = self
+  end
+
   if type(child) == "table" and child.tick then
     self.ticking = self.ticking or {}
     self.ticking[#self.ticking + 1] = child
@@ -1697,6 +1716,239 @@ local function apply_focus(self)
   end
 
   return list
+end
+
+--------------------------------------------------------------------------
+-- The menu bar.
+--
+-- A row of titles across the top of a window. Clicking one opens its menu
+-- as a window below it, which is what lets a dropdown fall outside the
+-- frame and over whatever is behind.
+--
+-- **It is an ordinary widget in the window's own view tree**, not a band
+-- the window manager reserves. The survey that preceded this found that a
+-- menu bar in the client rectangle would push every application's content
+-- down by its height and break all of them at once - so it does not push
+-- anything: an application that wants one adds it at y = 0 and lays its own
+-- content out below, and an application that does not is untouched.
+--------------------------------------------------------------------------
+
+function ui.menubar(spec)
+  local v = ui.view(spec)
+
+  v.h = v.h > 0 and v.h or (GH + 8)
+  v.menus = v.menus or {}
+  v.follow = { left = true, right = true, top = true }
+
+  -- Where each title starts and ends, worked out once per draw and read by
+  -- the hit test. Two functions agreeing about geometry by coincidence is
+  -- how a control ends up drawn in one place and clickable in another.
+  local function spans(self)
+    local out, x = {}, 4
+
+    for i, m in ipairs(self.menus) do
+      local w = #tostring(m.title or "") * GW + 16
+
+      out[i] = { x = x, w = w }
+      x = x + w
+    end
+
+    return out
+  end
+
+  function v:draw(g)
+    g:fill(0, 0, self.w, self.h, theme.raised)
+    g:groove(0, self.h - 2, self.w, 2)
+
+    for i, m in ipairs(self.menus) do
+      local s = spans(self)[i]
+      local open = (self.open_index == i)
+
+      if open then g:fill(s.x, 0, s.w, self.h - 2, "accent") end
+
+      g:text(s.x + 8, (self.h - 2 - GH) // 2, tostring(m.title or ""),
+             open and theme.text_on or theme.text,
+             open and theme.accent or theme.raised)
+    end
+  end
+
+  function v:mouse(action, x, y)
+    if action ~= "press" then return true end
+
+    local win = self.window
+
+    if not win then return true end
+
+    for i, s in ipairs(spans(self)) do
+      if x >= s.x and x < s.x + s.w then
+        -- Screen coordinates: the menu is a window of its own, so it is
+        -- placed on the screen rather than inside this one. `win.origin`
+        -- is where this window's content begins.
+        self.open_index = i
+        win:open_menu(win.origin_x + self.x + s.x,
+                      win.origin_y + self.y + self.h,
+                      self.menus[i].items or {})
+        return true
+      end
+    end
+
+    return true
+  end
+
+  return v
+end
+
+--------------------------------------------------------------------------
+-- Menus.
+--
+-- `roadmap.md` M13 item 2. A menu is a *window* - undecorated, above
+-- everything, owned by whoever opened it - so it drops over other windows
+-- and outside its own frame, which is the thing the milestone is about.
+--
+-- **Not a nested run loop, and that is the one decision worth defending.**
+-- The obvious shape is `local choice = win:menu(...)` blocking until the
+-- user picks, and it would wedge every window that is also a server: the
+-- Terminal answers `write` for the programs it runs from inside its own
+-- pass, so a Terminal with a menu open would stop delivering output until
+-- the menu closed. Asynchronous costs a callback and keeps one loop.
+--
+-- **One flat view, hit-tested by arithmetic.** Not a parent with an
+-- item-view per row: `view:hit` returns the deepest child and the press
+-- grabs it until release, so a row that captured the press would eat the
+-- drag that a menu is driven by. The panel is one rectangle that works out
+-- which row a coordinate is in.
+--
+-- Its events arrive on the *owner's* queue tagged with the menu's handle,
+-- so an application still polls one window. See `wm.lua`'s pointer routing.
+--------------------------------------------------------------------------
+
+local MENU_PAD = 8
+
+local function menu_metrics(items)
+  local widest = 0
+
+  for _, it in ipairs(items) do
+    local n = #tostring(it.text or "")
+
+    if n > widest then widest = n end
+  end
+
+  local row = GH + 6
+
+  return widest * GW + MENU_PAD * 2 + 12, #items * row + 4, row
+end
+
+--
+-- Draw the open menu into its own window.
+--
+-- The same graphics context and the same batching as any window, because it
+-- *is* a window. `gc:raised` gives it the edge that says it is sitting on
+-- top of what is behind it.
+--
+function window:paint_menu()
+  local m = self.menu
+
+  if not m then return end
+
+  local g = new_gc()
+
+  g.cw, g.ch = m.w, m.h
+  g:raised(0, 0, m.w, m.h, "raised")
+
+  for i, it in ipairs(m.items) do
+    local y = 2 + (i - 1) * m.row
+
+    if it.separator then
+      g:groove(MENU_PAD, y + m.row // 2, m.w - MENU_PAD * 2, 2)
+    else
+      local hot = (i == m.hot)
+      local bg  = hot and theme.accent or theme.raised
+
+      if hot then g:fill(2, y, m.w - 4, m.row, "accent") end
+
+      g:text(MENU_PAD + 4, y + (m.row - GH) // 2, tostring(it.text or ""),
+             hot and theme.text_on or theme.text, bg)
+    end
+  end
+
+  fs.send("/dev/wm", { type = "draw", window = m.handle, ops = g.ops })
+end
+
+--
+-- Open one, at a point on the screen.
+--
+function window:open_menu(x, y, items)
+  self:close_menu()
+
+  local w, h, row = menu_metrics(items)
+
+  local reply = fs.send("/dev/wm", { type = "open", kind = "menu",
+                                     owner = self.handle,
+                                     x = x, y = y, w = w, h = h })
+
+  if not reply or not reply.ok then return nil end
+
+  -- Where it actually went, which is not always where it was asked for:
+  -- the window manager pulls a menu back onto the screen and says so in the
+  -- reply. A caller that did not read this could not hit-test its own menu.
+  self.menu = { handle = reply.window, items = items, row = row,
+                x = reply.x, y = reply.y, w = reply.w, h = reply.h,
+                hot = nil }
+
+  self:paint_menu()
+
+  return self.menu
+end
+
+function window:close_menu()
+  if not self.menu then return false end
+
+  fs.send("/dev/wm", { type = "close", window = self.menu.handle })
+  self.menu = nil
+
+  return true
+end
+
+--
+-- A mouse event that arrived tagged with a menu handle.
+--
+-- Returns true when the menu wants a repaint. Highlighting follows the
+-- pointer while a button is held, which is how a menu is used: press on the
+-- title, slide down, release on the item.
+--
+function window:menu_mouse(ev)
+  local m = self.menu
+
+  if not m or ev.menu ~= m.handle then return false end
+
+  local row = nil
+
+  if ev.x >= 0 and ev.x < m.w and ev.y >= 2 then
+    local i = (ev.y - 2) // m.row + 1
+
+    if i >= 1 and i <= #m.items and not m.items[i].separator then
+      row = i
+    end
+  end
+
+  if ev.action == "release" then
+    local chosen = m.items[row or -1]
+
+    self:close_menu()
+
+    if chosen and chosen.on_choose then
+      pcall(chosen.on_choose, chosen)
+    end
+
+    return true
+  end
+
+  if row ~= m.hot then
+    m.hot = row
+    self:paint_menu()
+  end
+
+  return false
 end
 
 function window:paint()
@@ -1958,6 +2210,10 @@ function window:run()
         if self.on_resize then pcall(self.on_resize, self, ev.w, ev.h) end
 
         changed = true
+      elseif ev.type == "mouse" and ev.menu then
+        -- Tagged with a menu handle by the window manager, so it belongs to
+        -- the open menu rather than to any widget in this window.
+        if self:menu_mouse(ev) then changed = true end
       elseif ev.type == "mouse" then
         if dispatch_mouse(self, ev) then changed = true end
       elseif ev.type == "key" then

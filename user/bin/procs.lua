@@ -22,7 +22,13 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 520, 420
+local W, H = 520, 440
+
+-- The menu bar's height, which everything below it is offset by. A menu bar
+-- is an ordinary widget in this window rather than a band the window
+-- manager reserves, so the offset is this program's business - see
+-- `ui.menubar`.
+local BAR_H = gfx.font.h + 8
 local ROW = gfx.font.h + 4
 
 local win, err = ui.window{ title = "Processes", w = W, h = H, x = 150, y = 90 }
@@ -116,7 +122,8 @@ local top = 1            -- the first row drawn, for a list taller than the view
 -- Follows all four edges, so it grows with the window. The first widget in
 -- Kosmos to use a follow mode for real - see `ui.md` 16.4 for why that took
 -- until something could be resized.
-local table_view = ui.view{ x = 12, y = 70, w = W - 24, h = H - 116,
+local table_view = ui.view{ x = 12, y = 70 + BAR_H, w = W - 24,
+                            h = H - 116 - BAR_H,
                             follow = { "left", "right", "top", "bottom" } }
 
 function table_view:draw(g)
@@ -213,9 +220,40 @@ function table_view:key(c)
   return false
 end
 
+-- Declared before the menu bar refers to them and defined below: the menu
+-- and the button do the same thing, and the same thing should be one
+-- function rather than two that drift.
+local end_selected
+local sampler
+
+--
+-- A menu bar, and the first in Kosmos.
+--
+-- `Process > End` does what the button does, which is the point rather than
+-- a duplication: a menu that only holds things with no other way to reach
+-- them is a menu nobody learns. Every desktop puts its common actions in
+-- both places.
+--
+win:add(ui.menubar{
+  x = 0, y = 0, w = W,
+  menus = {
+    { title = "Process",
+      items = {
+        { text = "End",     on_choose = function() end_selected() end },
+        { separator = true },
+        { text = "Refresh", on_choose = function() sampler:tick() end },
+      } },
+    { title = "View",
+      items = {
+        { text = "Busiest first", on_choose = function() end },
+        { text = "By id",         on_choose = function() end },
+      } },
+  },
+})
+
 win:add(table_view)
 
-local heading = ui.label{ x = 12, y = 12, text = "", color = "text" }
+local heading = ui.label{ x = 12, y = 12 + BAR_H, text = "", color = "text" }
 win:add(heading)
 
 local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
@@ -233,9 +271,7 @@ local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
 -- In the bar at the top, with the path and the heading, rather than under
 -- the list. `ui.md` 16.10: the verbs go next to the noun, and the bottom
 -- edge is where a window's size is least certain.
-win:add(ui.button{
-  x = 12, y = 38, w = 60, h = 24, text = "End",
-  on_click = function()
+function end_selected()
     local r = rows[selected]
 
     if not r then return end
@@ -276,7 +312,12 @@ win:add(ui.button{
     else
       note.text = r.name .. ": " .. tostring(why)
     end
-  end,
+end
+
+-- The button, which is the same action under a different control.
+win:add(ui.button{
+  x = 12, y = 38 + BAR_H, w = 60, h = 24, text = "End",
+  on_click = end_selected,
 })
 
 note.x = 130
@@ -291,7 +332,7 @@ win:add(note)
 -- since boot a process was running, which stops moving after a minute.
 --------------------------------------------------------------------------
 
-local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function sampler:tick()
   local k = fs.read("/dev/kernel")

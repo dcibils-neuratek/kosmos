@@ -227,7 +227,36 @@ end
 
 -- Everything a window occupies on screen, decoration included. Used for
 -- damage, so it has to be the outside of the outermost thing drawn.
+--
+-- Menus, above everything, in a list of their own.
+--
+-- `roadmap.md` M13 item 2 and the design that won: **a menu is a window.**
+-- Same record, same `by_handle`, same `draw`, same `close`, same
+-- `collect_closing` - so a menu inherits every death path the desktop
+-- already survives rather than inventing one. That is the whole argument
+-- for it: the alternative designs each grew a modal input grab held by the
+-- window manager on behalf of an application, which is the one new way to
+-- wedge a desktop whose entire premise is that it cannot be wedged.
+--
+-- What is *not* shared is the stacking. `windows` is walked in a dozen
+-- places, two of which read `i == #windows` as "focused", and threading a
+-- kind flag through all of them to keep menus out of the focus order would
+-- be twelve chances to get it wrong. A second list, composited after the
+-- first and hit-tested before it, leaves every one of those walks exactly
+-- as correct as it was.
+--
+local menus = {}
+
+--
+-- A menu has no decoration, so its frame is its rectangle. Everything that
+-- damages, hit-tests or composites goes through here, which is why this is
+-- the only place that has to know.
+--
 local function frame_of(win)
+  if win.kind == "menu" then
+    return win.x, win.y, win.w, win.h
+  end
+
   return win.x - BORDER,
          win.y - TAB_H,
          win.w + BORDER * 2,
@@ -750,6 +779,31 @@ local function compose_rect(r)
     end
   end
 
+  --
+  -- Menus, above every window and below the cursor.
+  --
+  -- No decoration and no tab: a menu is its rectangle. One groove around
+  -- it so it reads as sitting on top of what is behind it rather than
+  -- being part of it - which is the whole job of the border on a thing
+  -- that floats.
+  --
+  for i = 1, #menus do
+    local m = menus[i]
+
+    if m.x < r.x + r.w and m.x + m.w > r.x
+       and m.y < r.y + r.h and m.y + m.h > r.y then
+      local x0 = (m.x > r.x) and m.x or r.x
+      local y0 = (m.y > r.y) and m.y or r.y
+      local x1 = math.min(m.x + m.w, r.x + r.w)
+      local y1 = math.min(m.y + m.h, r.y + r.h)
+
+      if x1 > x0 and y1 > y0 then
+        back:blit(m.surface, x0 - m.x, y0 - m.y,
+                  x1 - x0, y1 - y0, x0, y0)
+      end
+    end
+  end
+
   -- Last, so it is on top of everything, and before the blit, so what
   -- reaches the screen is a frame with a cursor in it.
   draw_cursor()
@@ -942,22 +996,53 @@ handlers.open = function(req, who, cap)
     end
   end
 
+  --
+  -- A menu rather than a window, and the difference is only in where it is
+  -- kept: no decoration, above everything, placed exactly where it was
+  -- asked for rather than clamped into the workspace, and it never takes
+  -- the focus.
+  --
+  -- `owner` is the window it belongs to. Its events go to that window's
+  -- queue, so an application polls one handle and gets everything - which
+  -- is what keeps `ui.window`'s loop a loop rather than two.
+  --
+  if req.kind == "menu" then
+    win.kind = "menu"
+    win.owner = tonumber(req.owner)
+
+    -- Placed where it was asked, only pulled back far enough to be on the
+    -- screen. A menu under the pointer is the whole point of a menu.
+    win.x = math.min(math.max(tonumber(req.x) or 0, 0), W - w_)
+    win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
+  end
+
   -- Whoever was launched most recently, if this is their first window.
   win.pid = pending_pid
   pending_pid = nil
 
   next_handle = next_handle + 1
 
-  -- The window that had the focus loses it to this one, and has to be
-  -- repainted to say so. Same reason as `raise`: only damage is redrawn.
-  local losing = windows[#windows]
-
-  windows[#windows + 1] = win
   by_handle[win.handle] = win
-  damage_window(win)
 
-  if losing then
-    damage_window(losing)
+  if win.kind == "menu" then
+    --
+    -- Into the menu list, and it takes no focus: the window that owns it
+    -- keeps the focus while it is up, which is what makes a menu feel like
+    -- part of the window it came from rather than a window of its own.
+    --
+    menus[#menus + 1] = win
+    damage_window(win)
+  else
+    -- The window that had the focus loses it to this one, and has to be
+    -- repainted to say so. Same reason as `raise`: only damage is redrawn.
+    local losing = windows[#windows]
+
+    windows[#windows + 1] = win
+    damage_window(win)
+
+    if losing then
+      damage_window(losing)
+    end
   end
 
   -- The appearance in force, in the reply that creates the window.
@@ -967,7 +1052,11 @@ handlers.open = function(req, who, cap)
   -- opened dark and only became light when somebody changed the theme
   -- *again*. Telling it here rather than posting an event means it knows
   -- before its first paint, so there is no flash of the wrong colours.
+  -- `x` and `y` go back as well as `w` and `h`. A menu asks to appear at a
+  -- particular place on the screen and may have been pulled back to fit, and
+  -- a caller that does not know where its menu ended up cannot hit-test it.
   return { ok = true, window = win.handle, w = w_, h = h_,
+           x = win.x, y = win.y,
            palette = theme.name, desktop = theme.desktop,
            fonts = theme.fonts }
 end
@@ -1251,10 +1340,34 @@ handlers.close = function(req)
   damage_window(win)
   by_handle[req.window] = nil
 
-  for i, w_ in ipairs(windows) do
+  -- Whichever list it is in. A menu is a window in every way except where
+  -- it is stacked, and this is the one place that difference has to be
+  -- spelled out on the way out.
+  local list = (win.kind == "menu") and menus or windows
+
+  for i, w_ in ipairs(list) do
     if w_ == win then
-      table.remove(windows, i)
+      table.remove(list, i)
       break
+    end
+  end
+
+  --
+  -- And a window takes its menus with it. Without this a menu outlives the
+  -- window it belongs to and floats above a desktop with nothing behind
+  -- it, still taking clicks - which is the leak the whole design was
+  -- chosen to avoid, arriving by the back door.
+  --
+  if win.kind ~= "menu" then
+    for i = #menus, 1, -1 do
+      if menus[i].owner == req.window then
+        local orphan = menus[i]
+
+        damage_window(orphan)
+        by_handle[orphan.handle] = nil
+        table.remove(menus, i)
+        orphan.surface:free()
+      end
     end
   end
 
@@ -1549,6 +1662,47 @@ local function collect_closing()
 end
 
 -- Which window is under a point, front to back, decoration included.
+--
+-- The menu under a point, if any. Front to back, like windows.
+--
+local function menu_at(x, y)
+  for i = #menus, 1, -1 do
+    local m = menus[i]
+
+    if x >= m.x and x < m.x + m.w and y >= m.y and y < m.y + m.h then
+      return m
+    end
+  end
+
+  return nil
+end
+
+--
+-- Every menu, gone.
+--
+-- Called when a press lands outside them, when the owner is raised away,
+-- and when the owner dies. It goes through `handlers.close` rather than
+-- deleting the record, so a menu leaves by the same path a window leaves
+-- by - which is the reason for building a menu as a window in the first
+-- place and would be wasted by tearing one down by hand here.
+--
+local function dismiss_menus(owner_handle)
+  local n = #menus
+
+  for i = n, 1, -1 do
+    local m = menus[i]
+
+    if owner_handle == nil or m.owner == owner_handle then
+      -- pcall because this runs from `pointer_pass`, which the main loop
+      -- calls bare rather than inside the pcall that wraps handlers. An
+      -- error here would take the desktop with it.
+      pcall(handlers.close, { window = m.handle })
+    end
+  end
+
+  return #menus < n
+end
+
 local function window_at(x, y)
   for i = #windows, 1, -1 do
     local win = windows[i]
@@ -1605,6 +1759,34 @@ local function pointer_pass(p)
   -- whatever happened to be underneath.
   --------------------------------------------------------------------------
   if is_down and not was_down then
+    --
+    -- Menus first, and they take the press whatever is under them.
+    --
+    -- A press inside one goes to the *owner's* queue tagged with the menu's
+    -- handle, so an application polls one window and gets everything - which
+    -- is the reason a menu belongs to a window rather than standing alone.
+    --
+    -- A press outside every menu dismisses them and stops there. It does not
+    -- also reach whatever is underneath, which is what every desktop does
+    -- and is the right answer: the first click after opening a menu is how
+    -- you change your mind, not how you press the thing behind it.
+    --
+    if #menus > 0 then
+      local m = menu_at(nx, ny)
+
+      if m then
+        post(by_handle[m.owner],
+             { type = "mouse", menu = m.handle, action = "press",
+               x = nx - m.x, y = ny - m.y })
+        grabbed = m
+      else
+        dismiss_menus()
+      end
+
+      buttons = p.buttons
+      return
+    end
+
     local win, fx, fy = window_at(nx, ny)
 
     if win then
@@ -1648,8 +1830,15 @@ local function pointer_pass(p)
     end
   elseif not is_down and was_down then
     if grabbed then
-      post(grabbed, { type = "mouse", action = "release",
-                      x = nx - grabbed.x, y = ny - grabbed.y })
+      if grabbed.kind == "menu" then
+        post(by_handle[grabbed.owner],
+             { type = "mouse", menu = grabbed.handle, action = "release",
+               x = nx - grabbed.x, y = ny - grabbed.y })
+      else
+        post(grabbed, { type = "mouse", action = "release",
+                        x = nx - grabbed.x, y = ny - grabbed.y })
+      end
+
       grabbed = nil
     end
 
@@ -1677,7 +1866,11 @@ local function pointer_pass(p)
   -- pointer moves rather than at the rate anything changes. What a button
   -- needs to un-press when you slide off it is drag, and this is drag.
   --
-  if grabbed and is_down and moved_this_pass then
+  if grabbed and is_down and moved_this_pass and grabbed.kind == "menu" then
+    post(by_handle[grabbed.owner],
+         { type = "mouse", menu = grabbed.handle, action = "move",
+           x = nx - grabbed.x, y = ny - grabbed.y })
+  elseif grabbed and is_down and moved_this_pass then
     post(grabbed, { type = "mouse", action = "move",
                     x = nx - grabbed.x, y = ny - grabbed.y })
   end
