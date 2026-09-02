@@ -84,13 +84,35 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
   a server created at LOW, a caller at INPUT, and the server reads its own
   effective band from *inside* the handler and again after replying.
 
-- **The benchmark harness needed thirty minutes, not ten.** It failed
-  looking exactly like a hang - the boot log stopping at stage two and
-  staying there - and it was simply `-icount` being slow against an image
-  that has grown: the glyph rasteriser, the PDF scanner and the inflate kit
-  are all linked into the benchmark build too. Booting the same image
-  *without* `-icount` ran all five in seventy-five seconds, which is how a
-  slow run was told from a stuck one.
+- **The benchmark "deadlock" was a stale image, and three conclusions drawn
+  from it were wrong.** Worth recording in full, because the failure was in
+  the method rather than the code.
+
+  The bench image is `build/bench/kosmos.elf`, built by `make BENCH=1
+  build/bench/kosmos.elf`. Plain `make` builds `build/kosmos.elf`, a
+  different target. Booting the second while believing it was the first gave
+  a `thread_block: every thread is blocked` panic from an image several
+  commits old - and on the strength of it: the benchmarks were declared
+  hung, priority inheritance was blamed, inheritance was reverted, the panic
+  "persisted", and inheritance was therefore declared innocent. Every one of
+  those was reasoning about a binary nobody had rebuilt.
+
+  Rebuilt properly, HEAD runs all five benchmarks under `-icount` and there
+  is no deadlock anywhere.
+
+  The harness timeout is still raised to thirty minutes, which is right for
+  its own reason: the image has grown by the glyph rasteriser, the PDF
+  scanner and the inflate kit, and `-icount` is several times slower.
+
+- **What the benchmarks actually say about priority inheritance:**
+  `context_switch` 8.375 -> 9.125 (+9.0%) and `ipc_roundtrip` 36.438 ->
+  41.439 (+13.7%). Not recorded as a new baseline, because whether that is
+  worth paying is a decision rather than a measurement. The cost is
+  `thread_effective_priority` - a max of two fields - being called on every
+  enqueue, every pick and every wake, plus the inherit and disinherit on the
+  IPC path. It is optimisable: the effective band could be stored on the
+  thread and recomputed only when either input changes, which would take
+  most of it back.
 
 
 - **A PDF renders as it was typeset.** `wm pdfview:/home/odyssey.pdf` draws
