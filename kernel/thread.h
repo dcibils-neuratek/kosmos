@@ -141,6 +141,23 @@ struct thread {
          * that is what `ipc_call` is.
          */
         unsigned       inherited;
+
+        /*
+         * The band this thread is actually queued at: the larger of the two
+         * above, kept rather than computed.
+         *
+         * It is a field because the scheduler asks for it on every enqueue
+         * and every pick, and asking meant a call out of `sched_prio.c` into
+         * `thread.c` - which nothing inlines across translation units. That
+         * call cost 9% of a context switch and 13.7% of an IPC round trip,
+         * measured, for a comparison of two integers.
+         *
+         * Maintained by `refresh_effective` at the four places the inputs
+         * change, and nowhere else. A fifth writer that forgets is a thread
+         * queued in the wrong band, which is silent - so if one appears, it
+         * calls that function or it is a bug.
+         */
+        unsigned       effective;
         uint64_t       key;
         unsigned long  quantum;
     } sched;

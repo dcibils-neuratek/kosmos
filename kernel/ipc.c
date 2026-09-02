@@ -578,7 +578,15 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          * is enqueued. Boosting afterwards would put it in the right band
          * for the *next* time it runs, which is one request too late.
          */
-        thread_inherit(receiver, self);
+        /*
+         * The common case is a peer - a server and its client both at
+         * NORMAL - and it is settled here without a call. `thread_inherit`
+         * lives in `thread.c` and nothing inlines across files, so asking it
+         * to decide "no" was a call on every message.
+         */
+        if (self->sched.effective > receiver->sched.inherited) {
+            thread_inherit(receiver, self);
+        }
 
         deliver(receiver, IPC_OK);
         queue_push(&ep->awaiting_reply, self);
@@ -632,7 +640,9 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
 
         /* The other way round: this thread collected a message that was
          * already waiting, so it takes on that sender's band. */
-        thread_inherit(self, s);
+        if (s->sched.effective > self->sched.inherited) {
+            thread_inherit(self, s);
+        }
 
         queue_push(&ep->awaiting_reply, s);
         return IPC_OK;
@@ -697,7 +707,14 @@ int ipc_reply(struct thread *sender, const struct message *msg)
      * downward is the safe direction: a server that stays high starves the
      * machine, and one that drops early is merely slower for a moment.
      */
-    thread_disinherit(thread_current());
+    /* Likewise: a server that borrowed nothing has nothing to give back. */
+    {
+        struct thread *me = thread_current();
+
+        if (me != NULL && me->sched.inherited != 0) {
+            thread_disinherit(me);
+        }
+    }
 
     return IPC_OK;
 }

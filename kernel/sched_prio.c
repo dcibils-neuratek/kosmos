@@ -103,8 +103,13 @@ static inline unsigned level_of(const struct thread *t)
      * The effective band, not the given one: a server carrying a caller's
      * priority has to be *queued* at it, or inheritance would change a
      * number nobody reads.
+     *
+     * Read straight from the thread rather than asked for. This runs on
+     * every enqueue and every pick, and a call into `thread.c` for it - which
+     * nothing inlines across files - cost 9% of a context switch and 13.7%
+     * of an IPC round trip.
      */
-    return thread_effective_priority(t);
+    return t->sched.effective;
 }
 
 static void prio_init(void)

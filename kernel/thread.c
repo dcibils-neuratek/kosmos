@@ -43,6 +43,9 @@ static unsigned next_id = 1;
  */
 static volatile bool preempt_pending;
 
+/* The effective band, worked out in one place; see below. */
+static void refresh_effective(struct thread *t);
+
 void sched_use(const struct scheduler *p)
 {
     policy = p;
@@ -355,6 +358,7 @@ struct thread *thread_create_suspended(const char *name,
      * enqueued - which looks exactly like round robin working, and is not.
      */
     t->sched.priority = SCHED_PRIO_NORMAL;
+    t->sched.effective = SCHED_PRIO_NORMAL;
 
     /*
      * A context built by hand so the first `ret` in context_switch lands in
@@ -482,17 +486,23 @@ void thread_set_idle(struct thread *t)
      */
     if (t != NULL) {
         t->sched.priority = SCHED_PRIO_IDLE;
+        refresh_effective(t);
     }
+}
+
+/*
+ * The one place the effective band is worked out. Everything that changes
+ * either input calls this; nothing else writes the field.
+ */
+static void refresh_effective(struct thread *t)
+{
+    t->sched.effective = t->sched.inherited > t->sched.priority
+                       ? t->sched.inherited : t->sched.priority;
 }
 
 unsigned thread_effective_priority(const struct thread *t)
 {
-    if (t == NULL) {
-        return SCHED_PRIO_NORMAL;
-    }
-
-    return t->sched.inherited > t->sched.priority
-         ? t->sched.inherited : t->sched.priority;
+    return t == NULL ? SCHED_PRIO_NORMAL : t->sched.effective;
 }
 
 void thread_inherit(struct thread *to, const struct thread *from)
@@ -514,6 +524,7 @@ void thread_inherit(struct thread *to, const struct thread *from)
      */
     if (band > to->sched.inherited) {
         to->sched.inherited = band;
+        refresh_effective(to);
     }
 }
 
@@ -521,6 +532,7 @@ void thread_disinherit(struct thread *t)
 {
     if (t != NULL) {
         t->sched.inherited = 0;
+        refresh_effective(t);
     }
 }
 
@@ -535,6 +547,7 @@ void thread_set_priority(struct thread *t, unsigned priority)
     }
 
     t->sched.priority = priority;
+    refresh_effective(t);
 }
 
 unsigned thread_cap_count(const struct thread *t)
@@ -760,8 +773,7 @@ void thread_wake(struct thread *t)
          * about a thread that ranks lower.
          */
         if (current != NULL && t != current
-            && thread_effective_priority(t)
-               > thread_effective_priority(current)
+            && t->sched.effective > current->sched.effective
             && policy->preempts != NULL && policy->preempts(current, t)) {
             preempt_pending = true;
         }
