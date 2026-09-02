@@ -2,10 +2,10 @@
   "context_switch": {
     "commit": "pending",
     "iterations": 200000,
-    "note": "One of the three that touch no Lua. 9.812 -> 6.875, -29.9%, when the FP and SIMD register file stopped being saved and restored on every switch. The switch now only disarms FP (CPACR_EL1.FPEN) and the first floating-point instruction after it faults into `fp_fault`, which moves the registers to whoever wanted them. A thread that never touches FP - which is every kernel thread, since the kernel is built -mgeneral-regs-only - pays nothing at all. See arch/aarch64/fp.c.",
+    "note": "One of the three that touch no Lua. Two changes moved it in opposite directions and the net is what matters: 9.812 -> 6.875 when the FP register file stopped being saved on every switch, then 6.875 -> 8.375 when round robin became a priority queue. Net -14.6% against the eager-FP round-robin number, with priorities and preemption-on-wake gained. The +21.8% half is the cost of indexing eight queues and maintaining an occupancy mask instead of following one head pointer; the obvious version, which scanned the levels, cost twice that and the benchmark caught it the same day.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 6.875
+    "value": 8.375
   },
   "exception": {
     "commit": "pending",
@@ -26,10 +26,10 @@
   "ipc_roundtrip": {
     "commit": "pending",
     "iterations": 100000,
-    "note": "A minimal message: the floor of the IPC path, including the capability lookup. 36.251 -> 30.376, -16.2%, from lazy FP save: a round trip is two context switches and it was paying for the register file twice.",
+    "note": "A minimal message: the floor of the IPC path, including the capability lookup. 36.251 -> 30.376 from lazy FP save, then back to 36.438 with the priority scheduler - a round trip is two switches, so it pays the policy twice. Net flat against two days earlier, which is the honest way to read it: lazy FP bought the priority queue rather than the priority queue being free. What was gained for it is a bounded wait for a higher-priority thread, which this benchmark cannot see.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 30.376
+    "value": 36.438
   },
   "serialize": {
     "commit": "pending",
@@ -37,6 +37,6 @@
     "note": "Best of five processes within a run. **This benchmark is sensitive to what else is in the process**, not only to the serialiser: every library the image opens is more objects for the collector to pace against. 1450.574 -> 1498.325, +3.3%, when the PDF scanner and the inflate kit joined the user image; `serialize.c` was untouched. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was added. Making it independent of its process - a fixed GC pause and a forced collection before the loop - is a known improvement and is still not done.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 1498.325
+    "value": 1506.201
   }
 }

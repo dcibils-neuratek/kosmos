@@ -110,6 +110,7 @@ SRCS := boot/start.S \
         kernel/pmm.c \
         kernel/thread.c \
         kernel/sched_rr.c \
+        kernel/sched_prio.c \
         kernel/ipc.c \
         kernel/memobj.c \
         kernel/process.c \

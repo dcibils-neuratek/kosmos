@@ -110,6 +110,11 @@ struct thread {
      */
     struct {
         struct thread *next;
+        /*
+         * Which band this thread runs in: `SCHED_PRIO_*` in sched.h.
+         * Set to NORMAL at creation, because zero is the idle band and a
+         * zeroed struct would put everything there.
+         */
         unsigned       priority;
         uint64_t       key;
         unsigned long  quantum;
@@ -269,6 +274,14 @@ void thread_tick(void);
  * can tell working from waiting. Called once, by kmain, about itself.
  */
 void thread_set_idle(struct thread *t);
+
+/*
+ * Which band a thread runs in. Takes effect at its next turn: a thread
+ * already on a queue stays where it was enqueued, which is one quantum of
+ * imprecision and not worth a requeue to remove.
+ */
+void thread_set_priority(struct thread *t, unsigned priority);
+unsigned thread_priority(const struct thread *t);
 
 /*
  * Ticks spent idle and ticks spent working, since boot. Both only rise: a

@@ -573,8 +573,21 @@ static bool test_the_scheduler_is_pluggable(void)
     }
     for (i = 0; i < 3; i++) { lifo[i] = trace[i]; }
 
-    /* Put the real policy back before anything else runs. */
-    sched_use(&sched_round_robin);
+    /*
+     * Put the real policy back before anything else runs - and the real one
+     * is `sched_priority`, not round robin.
+     *
+     * This said `sched_round_robin` because that was the default when it was
+     * written, and it kept saying it after the default changed. Every test
+     * after this one then ran under round robin: the two scheduler tests
+     * below saw FIFO ordering and no preemption on wake, and reported the
+     * priority policy broken when what was broken was this line.
+     *
+     * A test that changes global state and restores it by *name* rather than
+     * by what it found is a test that silently disables a feature for
+     * everything after it.
+     */
+    sched_use(&sched_priority);
 
     /* Created 1, 2, 3 in that order. FIFO runs them in it; LIFO reverses it.
      * Asserting the exact orders rather than merely "they differ" means a
@@ -3186,6 +3199,114 @@ static void fp_spinner(void *arg)
     }
 }
 
+/*
+ * Priorities, and the two things they have to do.
+ *
+ * `sched_rr.c` said in its first comment that there was "nothing to
+ * prioritise", while `design.md` and `ui.md` both called input at the
+ * highest priority non-negotiable. This is that sentence becoming code, and
+ * these are the two properties it has to have.
+ */
+static volatile unsigned prio_order[8];
+static volatile unsigned prio_count;
+
+static void prio_marker(void *arg)
+{
+    unsigned me = (unsigned)(uintptr_t)arg;
+
+    if (prio_count < 8) {
+        prio_order[prio_count++] = me;
+    }
+
+    thread_exit();
+}
+
+static bool test_higher_priority_runs_first(void)
+{
+    struct thread *low, *high;
+    unsigned i;
+
+    prio_count = 0;
+
+    /* Enqueued low first, so running it first is what a FIFO would do and
+     * what a priority queue must not. */
+    low = thread_create_suspended("prio-low", prio_marker, (void *)1);
+    high = thread_create_suspended("prio-high", prio_marker, (void *)2);
+
+    if (low == NULL || high == NULL) {
+        return false;
+    }
+
+    /*
+     * The "low" one is at NORMAL, not LOW - the same band as the thread
+     * running this test, so round robin gives it a turn. At LOW it would
+     * never run at all while this test is spinning at NORMAL, and the test
+     * would be measuring starvation rather than ordering. That is correct
+     * behaviour for strict priority and a badly built test.
+     */
+    thread_set_priority(low, SCHED_PRIO_NORMAL);
+    thread_set_priority(high, SCHED_PRIO_DISPLAY);
+
+    thread_wake(low);
+    thread_wake(high);
+
+    for (i = 0; i < 100000u && prio_count < 2; i++) {
+        thread_yield();
+    }
+
+    /* The one enqueued second, and higher, ran first. */
+    return prio_count == 2 && prio_order[0] == 2 && prio_order[1] == 1;
+}
+
+static volatile bool preempt_woke;
+
+static void preempt_waker(void *arg)
+{
+    (void)arg;
+
+    preempt_woke = true;
+    thread_exit();
+}
+
+/*
+ * And that a wake is acted on rather than queued.
+ *
+ * Without `preempts`, a thread that becomes ready waits for the running
+ * thread's quantum - up to a hundred milliseconds at ten ticks. The test is
+ * that the higher-priority thread runs *before* the spinner has burned
+ * through its turn, which a fair queue could not manage.
+ */
+static bool test_a_wake_preempts_a_lower_priority_thread(void)
+{
+    struct thread *high;
+    unsigned spins;
+
+    preempt_woke = false;
+
+    high = thread_create_suspended("preempt-high", preempt_waker, NULL);
+
+    if (high == NULL) {
+        return false;
+    }
+
+    thread_set_priority(high, SCHED_PRIO_INPUT);
+    thread_wake(high);
+
+    /*
+     * Spin without yielding. If preemption on becoming ready works, the
+     * wake hands the CPU over at the next exception; if it does
+     * not, nothing runs until this loop gives up.
+     *
+     * The bound is generous and the assertion is not: what matters is that
+     * it happened at all without a yield in this loop.
+     */
+    for (spins = 0; spins < 20000000u && !preempt_woke; spins++) {
+        __asm__ volatile("" ::: "memory");
+    }
+
+    return preempt_woke;
+}
+
 static bool test_fp_survives_a_preemption(void)
 {
     unsigned i;
@@ -3467,6 +3588,8 @@ static const struct test tests[] = {
     { "libc: memmove handles overlap",         test_memmove_handles_overlap },
     { "libc: the string functions",            test_string_functions },
     { "fp: EL1 may use FP and SIMD",           test_fp_is_usable_at_el1 },
+    { "sched: the higher priority runs first", test_higher_priority_runs_first },
+    { "sched: a wake preempts a lower band",   test_a_wake_preempts_a_lower_priority_thread },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
     { "fp: disarmed until it is wanted",       test_fp_is_disarmed_until_it_is_wanted },
     { "libc: setjmp returns 0 when called",    test_setjmp_returns_zero_directly },

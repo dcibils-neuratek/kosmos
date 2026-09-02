@@ -243,6 +243,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A PDF is read through a window and never held: the object layer is Lua, the scanner is C | design.md §6, pdf.lua |
 | Sep 2026 | FP and SIMD are saved lazily: the switch disarms them, the first instruction that wants them faults | arch/aarch64/fp.c, CLAUDE.md |
 | Sep 2026 | The FP trap is armed at both privilege levels, not EL0 alone, because kernel threads have FP state too | arch/aarch64/fp.c |
+| Sep 2026 | Strict priority bands with round robin inside each, from QNX. Five named levels, not 256 | sched_prio.c, CLAUDE.md |
+| Sep 2026 | A wake preempts a lower band at the next exception, rather than waiting out a quantum | sched.h, thread.c |
+| Sep 2026 | The quantum is a variable, because the interesting thing about one is what changes when you change it | sched_prio.c |
+| Sep 2026 | Responsiveness is a design goal: Kosmos owes compatibility to nothing and may borrow freely | CLAUDE.md |
 
 ---
 

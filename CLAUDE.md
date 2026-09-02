@@ -135,6 +135,32 @@ If the number goes up because something crept in that does not belong, the answe
 
 **Capabilities by index, never global IDs.** A syscall takes an index into the process's table. If a design needs to name something globally, the design is wrong.
 
+**Responsiveness is a design goal, not a later optimisation.** Kosmos is a
+reimagining of BeOS for machines that exist now - the same bet that a
+desktop should feel instant - with what has been learned since, and it is
+free to take good ideas from anywhere because it owes compatibility to
+nothing. It is not POSIX and never will be, so it inherits none of POSIX's
+scheduling vocabulary and none of its constraints.
+
+The scheduler is where that shows first. **Strict priority bands with
+immediate preemption**, borrowed from QNX, which is a microkernel of the
+same shape and a real-time system - and real-time does not mean fast, it
+means *bounded*: the highest-priority ready thread starts within a known
+worst case, every time. Two of its ideas are worth having here and cost
+almost nothing:
+
+- A thread that becomes ready and outranks the running one takes the CPU at
+  the next exception, not when a quantum expires. Waking used to only
+  enqueue, so an input event could sit behind a compute-bound thread for a
+  hundred milliseconds.
+- The quantum is a variable that can be changed and measured, not a constant
+  compiled in and never questioned.
+
+Not borrowed: 256 priority levels, where five say everything this system has
+to say, and hard guarantees, which would mean bounding every kernel
+operation. Kosmos wants a desktop that feels alive, not an airbag that fires
+in time.
+
 **Single-core until milestone 6.** But the code is written SMP-ready from now: no loose mutable globals, `TPIDR_EL1` as the pointer to the per-CPU struct, a per-CPU runqueue even with a single CPU.
 
 **No hardware addresses outside `hal/`.** Not one.

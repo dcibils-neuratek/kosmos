@@ -174,7 +174,7 @@ void thread_init(void)
 
     /* Round robin unless a test or a boot option already chose otherwise. */
     if (policy == NULL) {
-        sched_use(&sched_round_robin);
+        sched_use(&sched_priority);
     }
 
     /*
@@ -245,6 +245,17 @@ struct thread *thread_create_suspended(const char *name,
     t->space = NULL;
     memset(&t->ipc, 0, sizeof(t->ipc));
     memset(&t->sched, 0, sizeof(t->sched));
+
+    /*
+     * Normal, not zero.
+     *
+     * Zeroing the whole struct is right for everything else in it and wrong
+     * for this one field: level 0 is the idle band, so every thread created
+     * would have been the least important thing on the machine and the
+     * scheduler would have run them in the order they happened to be
+     * enqueued - which looks exactly like round robin working, and is not.
+     */
+    t->sched.priority = SCHED_PRIO_NORMAL;
 
     /*
      * A context built by hand so the first `ret` in context_switch lands in
@@ -363,6 +374,34 @@ static unsigned long    busy_ticks;
 void thread_set_idle(struct thread *t)
 {
     idle_thread = t;
+
+    /*
+     * And into the band that only runs when nothing else will. Without
+     * this the idle loop competes with real work at normal priority and
+     * takes a turn in the rotation, which is not idling, it is spinning
+     * politely.
+     */
+    if (t != NULL) {
+        t->sched.priority = SCHED_PRIO_IDLE;
+    }
+}
+
+void thread_set_priority(struct thread *t, unsigned priority)
+{
+    if (t == NULL) {
+        return;
+    }
+
+    if (priority >= SCHED_PRIORITIES) {
+        priority = SCHED_PRIORITIES - 1;
+    }
+
+    t->sched.priority = priority;
+}
+
+unsigned thread_priority(const struct thread *t)
+{
+    return t == NULL ? SCHED_PRIO_NORMAL : t->sched.priority;
 }
 
 unsigned thread_cap_count(const struct thread *t)
@@ -556,6 +595,42 @@ void thread_wake(struct thread *t)
     if (t->state == THREAD_BLOCKED) {
         t->state = THREAD_READY;
         policy->enqueue(t);
+
+        /*
+         * And if it outranks whoever is running, say so.
+         *
+         * Enqueuing alone means the woken thread waits for the running
+         * one's quantum to expire - up to a hundred milliseconds, for a
+         * thread the policy considers more important. That is the whole of
+         * why an input event could sit behind a compute-bound one.
+         *
+         * The switch is not done here. `thread_wake` is called from inside
+         * IPC and from the interrupt path, and switching there would move
+         * SP_EL1 while something above is still reading the trap frame at
+         * `sp`. Setting the flag the timer already sets means the vector's
+         * epilogue does it, at the one place where it is safe.
+         */
+        /*
+         * The band comparison is done here, before the policy is asked.
+         *
+         * IPC wakes a thread on every message and almost always wakes a
+         * peer - a server and its client both run at NORMAL - so the
+         * indirect call through `preempts` was paid on every round trip to
+         * be told "no". Comparing the two numbers first settles the common
+         * case without a call.
+         *
+         * This does assume a larger band number outranks a smaller one,
+         * which is a property of `SCHED_PRIO_*` in sched.h rather than a
+         * secret of any one policy. A policy that disagrees is free to: the
+         * call below still has the final say, and one that wants to preempt
+         * a *peer* can say so by returning true - it just will not be asked
+         * about a thread that ranks lower.
+         */
+        if (current != NULL && t != current
+            && t->sched.priority > current->sched.priority
+            && policy->preempts != NULL && policy->preempts(current, t)) {
+            preempt_pending = true;
+        }
     }
 }
 

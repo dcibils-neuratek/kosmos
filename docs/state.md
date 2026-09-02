@@ -60,6 +60,50 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **Priorities, and a wake that is acted on.** `kernel/sched_prio.c`: five
+  named bands - idle, low, normal, display, input - with round robin inside
+  each, and a thread that becomes ready while outranking the running one
+  takes the CPU at the next exception instead of waiting out a quantum.
+  `design.md` and `ui.md` had both called input-at-highest-priority
+  non-negotiable since before there was a scheduler that could express it,
+  and `sched_rr.c` said in its own first comment that there was "nothing to
+  prioritise". Both are now true at the same time.
+
+  From QNX, which is a microkernel of the same shape and a real-time system
+  - and real-time means bounded, not fast. Taken: strict priority with
+  immediate preemption, and a quantum that can be changed. Not taken: 256
+  levels, and hard guarantees. Starvation is real under strict priority and
+  is accepted deliberately; the reasoning is in the file.
+
+  **The cost, measured rather than assumed.** `context_switch` 6.875 ->
+  8.375 and `ipc_roundtrip` 30.376 -> 36.438. Read against two days ago
+  rather than against yesterday: the switch is **-14.6%** net and IPC is
+  flat, because lazy FP save bought the priority queue rather than the
+  priority queue being free.
+
+  The first version scanned the eight levels to find the highest occupied
+  one, and cost twice that - almost everything runs at NORMAL, so almost
+  every pick walked five empty bands first. An occupancy bitmask and `clz`
+  make it one instruction, which is what QNX and Linux both keep. The
+  benchmark caught it the same afternoon.
+
+- **A test was quietly disabling the feature it sat above.** The policy-seam
+  test swaps in a deliberately terrible LIFO scheduler and then restores the
+  default - by *name*. The name it restored was `sched_round_robin`, which
+  stopped being the default the moment `sched_priority` arrived, so every
+  test after it ran under round robin. Both new scheduler tests reported the
+  priority policy broken when what was broken was that one line.
+
+  A test that changes global state and puts back what it *thinks* was there
+  is a test that can disable a feature for everything after it, and report
+  the feature as the failure.
+
+- **And one of those tests was wrong in the other direction**: it put the
+  low-priority thread at LOW while the test thread itself ran at NORMAL, so
+  strict priority starved it exactly as designed and the test measured
+  starvation rather than ordering. Correct behaviour, badly built test.
+
+
 - **FP and SIMD are saved lazily, and it is the first piece of M10.**
   `context_switch` **9.812 -> 6.875 ticks, -29.9%**, and `ipc_roundtrip`
   **36.251 -> 30.376, -16.2%**, because a round trip is two switches and was

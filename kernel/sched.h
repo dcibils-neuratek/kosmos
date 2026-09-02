@@ -66,7 +66,50 @@ struct scheduler {
      * true when preemption landed and was not corrected at the time.
      */
     bool (*tick)(struct thread *running);
+
+    /*
+     * `woken` has just become runnable while `running` holds the CPU.
+     * Should it take it now?
+     *
+     * Optional: a policy that leaves this NULL never preempts on a wake and
+     * behaves exactly as before, which is what round robin does.
+     *
+     * This is the difference between a system that answers input in a
+     * quantum and one that answers it in a switch. It cannot do the switch
+     * itself - `thread_wake` is called from inside IPC and from the
+     * interrupt path, and a switch there would move SP_EL1 out from under
+     * whatever is reading the trap frame. It sets the same flag the timer
+     * sets, and the vector's epilogue acts on it.
+     */
+    bool (*preempts)(const struct thread *running, const struct thread *woken);
 };
+
+/* How many levels there are. Five would do; eight leaves room and costs
+ * eight pointers. */
+#define SCHED_PRIORITIES  8
+
+/*
+ * The levels that have names. Anything not named is `SCHED_PRIO_NORMAL`.
+ *
+ *   IDLE     runs only when nothing else will. The idle thread.
+ *   LOW      background work nobody is waiting for.
+ *   NORMAL   everything, unless there is a reason.
+ *   DISPLAY  the compositor: what the eye is waiting for.
+ *   INPUT    whoever reads the keyboard and the pointer. `design.md` and
+ *            `ui.md` have both called this non-negotiable since before
+ *            there was a scheduler that could express it.
+ */
+#define SCHED_PRIO_IDLE     0u
+#define SCHED_PRIO_LOW      1u
+#define SCHED_PRIO_NORMAL   2u
+#define SCHED_PRIO_DISPLAY  3u
+#define SCHED_PRIO_INPUT    4u
+
+extern const struct scheduler sched_priority;
+
+/* The quantum, in timer ticks. One tick is the floor; see sched_prio.c. */
+void     sched_set_quantum(unsigned ticks);
+unsigned sched_get_quantum(void);
 
 /*
  * Installs a policy. Legal only before `thread_init`, or from a test that
