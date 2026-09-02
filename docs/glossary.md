@@ -33,20 +33,90 @@ Written to be re-read six months from now without having to look anything up.
 ---
 
 
-## app, program
+## The parts of the system, and which language each is
 
-Two words for two things, and they are not interchangeable here.
+Eight words, and they are not interchangeable. The distinction that does the
+most work is between **something you run** and **someone you ask**.
 
-A **program** is console-based: it prints, it reads lines, it lives in
-`/bin` and you type its name at the prompt. `ls`, `cat`, `htop`, `qbench`.
+**The kernel** is Nebula: threads, address spaces, IPC and capabilities, and
+nothing else. It does not know what a file is, what a pixel is, or what a
+network is. It runs at EL1 and is the only thing that does. Its whole job is
+to make processes exist, keep them apart, and let them send each other
+messages.
 
-An **app** is graphical: it opens a window, it is driven with the pointer
-and the keyboard, and it appears in the Deskbar. It says so on its first
-line with `-- kosmos: application`, which is how the program store knows to
-list it.
+**A driver** is the code that touches hardware, in `hal/`. A UART, a timer,
+a block device, a virtio queue. One per board, behind a common interface.
 
-Graphical is the intended way to use this system. When something here says
-"let us build an app", it means a window.
+**A server is a process that owns something.** That is the definition, and
+it is about ownership rather than about code. A server was handed a
+capability nobody else holds, and it rents the thing out through a message
+protocol: the console server owns the serial port and the keyboard, so no
+other process can print - it *asks*. The disk server is the only process
+with `SPAWN_DISK`, so it is the only thing that can read a raw sector,
+whatever any namespace says. The window manager owns the screen.
+
+Mechanically a server is `serve(endpoint, state, handlers)`: own an
+endpoint, receive a typed message, reply. What makes it worth the boundary
+is not the loop, it is that the boundary is real - "only the disk server can
+corrupt the disk" is true because nothing else can name the disk.
+
+**A kit is C that runs inside your own process.** `use("/kits/compress")`
+hands back a table of C functions compiled into your address space. No
+process, no message, no ownership: calling it is a function call.
+`/kits/compress` inflates, `/kits/pdf` scans a content stream.
+
+So: **a kit is code you run; a server is someone you ask.** That is why
+inflate is a kit - it computes - and the disk is a server - it owns.
+
+**A library is the same position, in Lua.** `use("/lib/ui.lua")` loads Lua
+source into the caller's own environment. `ui`, `panel`, `pdf`, `kfs`.
+
+**A program** is console-based: it prints, it reads lines, it lives in
+`/bin` and you type its name at the prompt. `ls`, `cat`, `htop`, `stress`.
+
+**An app** is graphical: it opens a window, it is driven with the pointer
+and the keyboard, and it appears in the Deskbar. It says so with
+`-- kosmos: application` in its opening comment, which is how the program
+store knows to list it. Graphical is the intended way to use this system;
+when something here says "let us build an app", it means a window.
+
+**A tool does not run on Kosmos at all.** `tools/` is host-side: the test
+runners, the benchmark harness, `kfs.lua` writing a disk image from the Mac,
+`bdf2c.py` converting a font at build time. They are the workshop, not the
+machine.
+
+
+## Which language, and why
+
+C is for anything that touches hardware, defines the isolation boundary, or
+sits where a pause would be felt. Lua is for anything whose bugs can only
+kill their own process and whose shape will keep changing.
+
+| | language | the reason |
+|---|---|---|
+| kernel | C | it is the isolation boundary |
+| drivers | C | hardware, and loops over bytes |
+| kits | C | finished algorithms, and no collector |
+| servers on the frame or packet path | C | a GC pause is a dropped frame |
+| policy servers - namespace, init, `/app` | Lua | decisions, almost no bytes, and reloadable |
+| libraries | either | whichever the code is shaped like |
+| apps and programs | Lua | a crash kills only itself |
+| tools | the host's language | they never run here |
+
+**The argument for C is jitter rather than speed**, and that is worth being
+exact about. Structure-shaped code in Lua costs about 2%, measured - nothing.
+A loop over bytes costs 30%, and the PDF scanner was 110x. But the number
+that decides a *server* is `gc_pause_max`: about 1.25 ms, arriving when the
+collector decides. A frame is 16 ms. No amount of optimising the Lua removes
+that pause, and responsiveness is a promise about the worst case.
+
+**The argument for Lua is hot reload**, and it is not sentimental: M5's
+definition of done was replacing the console server's code while the shell
+was mid-conversation with it. `layout.md` records that there is no dynamic
+linking, so a C server cannot be reloaded at all - moving one to C gives that
+up rather than trading it. Which is why a policy server that moves no bytes
+stays Lua: it would buy a fraction of 2% and cost the thing the design exists
+for.
 
 
 ## Microkernel and IPC

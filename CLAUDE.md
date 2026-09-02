@@ -216,9 +216,35 @@ C is what touches hardware or defines the isolation boundary. Lua is everything 
 
 The test: **if a bug there can corrupt another process, it is C. If it can only kill its own process, it is Lua.**
 
-**C:** the whole kernel, the Lua interpreter, the `lua_State` allocator, syscall bindings, the minimal libc, the table serializer for IPC. And only when measurement justifies it: the blitter, the font rasterizer, framebuffer drivers.
+**C:** the kernel, drivers, kits, and any server on the frame or the packet
+path. Plus the Lua interpreter, the `lua_State` allocator, syscall bindings,
+the minimal libc and the table serialiser.
 
-**Lua:** the namespace server, filesystem servers, the entire app server including compositing, the shell, the REPL, init, supervision, every app, the whole UI kit.
+**Lua:** apps, programs, libraries, and the policy servers - the namespace,
+init and supervision, the `/app` registry - which decide things and move
+almost no bytes.
+
+**The argument for C is jitter, not speed.** Structure-shaped code in Lua
+costs about 2%, measured, which is nothing. What decides a server is
+`gc_pause_max`: about 1.25 ms, arriving when the collector chooses. A frame
+is 16 ms. No amount of optimising the Lua removes that, and responsiveness is
+a promise about the worst case rather than the average.
+
+**The argument for Lua is hot reload.** M5's definition of done was replacing
+the console server's code while the shell was mid-conversation with it, and
+`layout.md` records that there is no dynamic linking - so a C server cannot
+be reloaded at all. Moving one to C gives that up rather than trading it,
+which is why a server that moves no bytes stays here.
+
+**The window manager is the open case, and it is a measurement rather than an
+opinion.** Its pixel work is already C; its Lua half is layout, focus, damage
+and event routing. Whether that is five per cent of a frame or fifty is not
+known, because nothing measures a frame yet. Profile before rewriting thirty
+thousand lines.
+
+`docs/glossary.md` defines what a server, a kit, a library, a program, an app
+and a tool each are, and the distinction that does the most work: **a kit is
+code you run, a server is someone you ask.**
 
 **Do not push things down to C "because it is faster" without a profile that justifies it.** Every time something is pushed to C, hot reload is lost, and hot reload is the reason for the entire design.
 
