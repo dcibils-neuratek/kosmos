@@ -100,12 +100,26 @@ struct thread;
 /*
  * How much a process may map this way, in pages.
  *
- * 16 MB. Enough for a double-buffered full-screen surface with room over,
- * and small enough that thirty-two processes asking for all of it is 512 MB
- * - which is all the RAM there is, so this is the number that stops one
- * process starving the rest rather than a number chosen to be comfortable.
+ * 48 MB, and it was 16 MB until a maximised window at 1920x1080 hit it.
+ *
+ * The old number said "enough for a double-buffered full-screen surface
+ * with room over", and that was true of the screen it was written for. A
+ * full screen at 1024x768 is 3 MB; at 1920x1080 it is 8.3 MB, so the
+ * compositor's backbuffer plus one maximised window is 4009 pages against a
+ * 4096 cap - over by less than one per cent, which is the worst way for a
+ * limit to be wrong because it works everywhere except the case you built
+ * the system for.
+ *
+ * The reasoning that came with the old number does not survive either. It
+ * was that thirty-two processes at 16 MB is 512 MB, which is all the RAM -
+ * so the cap was set where every process could take all of it at once. That
+ * is sizing for a case that never happens, and it is not what stops memory
+ * being exhausted: `pmm_alloc_page` returning NULL is. This is a guard
+ * against one process running away, and the number to pick is a generous
+ * multiple of what the largest legitimate one needs - a compositor wanting
+ * four full screens at 1080p.
  */
-#define USER_MAP_PAGES_MAX  4096
+#define USER_MAP_PAGES_MAX  12288
 
 /*
  * Where a shared region lands, and deliberately not in the window above.

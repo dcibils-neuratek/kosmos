@@ -288,6 +288,25 @@ local function damage_window(win)
 end
 
 --
+-- Only the four edges, not the rectangle they enclose.
+--
+-- A resize drag damages the outline twice per step - where it was and where
+-- it is - and the whole point is that this costs nothing. Damaging the area
+-- inside would recomposite every window under it on every pointer movement,
+-- which is the expense the outline exists to avoid.
+--
+local OUTLINE = 2
+
+local function damage_outline(o)
+  if not o then return end
+
+  add_damage(o.x, o.y, o.w, OUTLINE)
+  add_damage(o.x, o.y + o.h - OUTLINE, o.w, OUTLINE)
+  add_damage(o.x, o.y, OUTLINE, o.h)
+  add_damage(o.x + o.w - OUTLINE, o.y, OUTLINE, o.h)
+end
+
+--
 -- Where the minimise box starts. The maximise box is `BOX_W` further right.
 --
 -- One function rather than the same arithmetic in the compositor and in the
@@ -451,6 +470,23 @@ local pointer_x, pointer_y = 0, 0
 local buttons = 0
 local dragging = nil          -- { win, dx, dy } while a title bar is held
 local resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
+
+--
+-- The rubber band: where the frame *would* be, while the grip is held.
+--
+-- Resizing used to reallocate the window's surface on every step of the
+-- drag. At 1920x1080 that is an eight megabyte allocation, a fill, a whole
+-- frame of damage and a resize event to the application - per pointer
+-- movement. What that looks like is the window going black and stuttering
+-- while you drag it, because the surface is new and empty and the
+-- application has not had a chance to draw into it yet.
+--
+-- So the drag moves an outline and nothing else, and the window is resized
+-- once, on release. Four thin rectangles instead of eight megabytes. This is
+-- what X11 and every desktop of that era did, and the reason was the same
+-- one.
+--
+local outline = nil           -- { x, y, w, h }, a frame rectangle
 
 -- Declared here and defined below, because the compositor and the pointer
 -- both ask about resizing and both run above the code that answers. Locals
@@ -863,6 +899,20 @@ local function compose_rect(r)
     end
   end
 
+  --
+  -- The rubber band, above every window: this is where the frame is going.
+  -- In the focused window's colour, because it is that window being resized
+  -- and the eye should not have to work that out.
+  --
+  if outline then
+    back:fill(outline.x, outline.y, outline.w, OUTLINE, focused_colour())
+    back:fill(outline.x, outline.y + outline.h - OUTLINE, outline.w,
+              OUTLINE, focused_colour())
+    back:fill(outline.x, outline.y, OUTLINE, outline.h, focused_colour())
+    back:fill(outline.x + outline.w - OUTLINE, outline.y, OUTLINE,
+              outline.h, focused_colour())
+  end
+
   -- Last, so it is on top of everything, and before the blit, so what
   -- reaches the screen is a frame with a cursor in it.
   draw_cursor()
@@ -916,11 +966,28 @@ local function maximise(win)
     return true
   end
 
-  win.restore = { x = win.x, y = win.y, w = win.w, h = win.h }
+  --
+  -- Moved first and *put back* if the resize will not happen.
+  --
+  -- The order used to be: record where it was, move it to the corner, then
+  -- resize. When the resize failed - which it did, on the screen this was
+  -- built for - the window was left in the corner at its old size with
+  -- `win.restore` set, so it was small, in the wrong place, and convinced
+  -- it was maximised. Nothing here may be half-applied.
+  --
+  local was = { x = win.x, y = win.y, w = win.w, h = win.h }
 
   damage_window(win)
   win.x, win.y = BORDER, TAB_H
-  resize_window(win, W - BORDER * 2, H - TAB_H - BORDER)
+
+  if not resize_window(win, W - BORDER * 2, H - TAB_H - BORDER) then
+    win.x, win.y = was.x, was.y
+    damage_window(win)
+
+    return false
+  end
+
+  win.restore = was
 
   return true
 end
@@ -1599,11 +1666,21 @@ function resize_window(win, w, h)
   -- Where it was, so the part it no longer covers is repainted.
   damage_window(win)
 
-  local fresh = gfx.surface{ w = w, h = h }
+  --
+  -- `pcall`, because `gfx.surface` *raises* when the kernel refuses the
+  -- pages rather than returning nil - and this used to check for nil, which
+  -- is a check that could never fire.
+  --
+  -- What that cost: maximising a window on a 1920x1080 screen asked for
+  -- eight megabytes, the kernel said no, and the error went up through the
+  -- compositor's main loop and killed the desktop. Every window on the
+  -- screen went with it. A window that will not resize is a window that did
+  -- not resize; it is not a reason to end the session.
+  --
+  local ok, fresh = pcall(gfx.surface, { w = w, h = h })
 
-  if not fresh then
-    -- Out of memory for a surface. The window keeps the one it has, which
-    -- is a window that did not resize rather than a window that is gone.
+  if not ok or not fresh then
+    print("wm: " .. tostring(fresh))
     return false
   end
 
@@ -1945,7 +2022,13 @@ local function pointer_pass(p)
         -- square belongs to the window manager, and an application that
         -- happens to have drawn something there does not get the press.
         --
-        resizing = { win = win, ox = nx, oy = ny, ow = win.w, oh = win.h }
+        resizing = { win = win, ox = nx, oy = ny, ow = win.w, oh = win.h,
+                     w = win.w, h = win.h }
+
+        outline = { frame_of(win) }
+        outline = { x = outline[1], y = outline[2],
+                    w = outline[3], h = outline[4] }
+        damage_outline(outline)
       else
         grabbed = win
         post(win, { type = "mouse", action = "press",
@@ -1966,14 +2049,44 @@ local function pointer_pass(p)
       grabbed = nil
     end
 
+    --
+    -- The one resize, on release. Everything up to here was an outline.
+    --
+    if resizing then
+      damage_outline(outline)
+      outline = nil
+
+      resize_window(resizing.win, resizing.w, resizing.h)
+      resizing = nil
+    end
+
     dragging = nil
-    resizing = nil
   end
 
-  if resizing and is_down then
-    resize_window(resizing.win,
-                  resizing.ow + (nx - resizing.ox),
-                  resizing.oh + (ny - resizing.oy))
+  if resizing and is_down and moved_this_pass then
+    --
+    -- The band follows the pointer; the window does not move at all until
+    -- the button comes up. Clamped here rather than in `resize_window`, so
+    -- what the band shows is what you will get - an outline that promises a
+    -- size the window will refuse is worse than no outline.
+    --
+    local win = resizing.win
+    local w = resizing.ow + (nx - resizing.ox)
+    local h = resizing.oh + (ny - resizing.oy)
+
+    if w < MIN_W then w = MIN_W end
+    if h < MIN_H then h = MIN_H end
+    if w > W - BORDER * 2 then w = W - BORDER * 2 end
+    if h > H - TAB_H - BORDER then h = H - TAB_H - BORDER end
+
+    resizing.w, resizing.h = w, h
+
+    damage_outline(outline)
+
+    outline = { x = win.x - BORDER, y = win.y - TAB_H,
+                w = w + BORDER * 2, h = h + TAB_H + BORDER }
+
+    damage_outline(outline)
   end
 
   if dragging and is_down then
