@@ -35,7 +35,11 @@ void *memobj_page(const struct memobj *m, size_t i)
     return m->index[i / MEMOBJ_PER_INDEX][i % MEMOBJ_PER_INDEX];
 }
 
-/* Everything a half-built region has taken, given back. */
+/*
+ * Everything a half-built region has taken, given back, and the slot with
+ * it. Called only from `memobj_create`, which claims the slot before it
+ * starts - so releasing it is this function's job and not the caller's.
+ */
 static void unwind(struct memobj *m, size_t built)
 {
     size_t i;
@@ -51,6 +55,7 @@ static void unwind(struct memobj *m, size_t built)
 
     m->indexes = 0;
     m->pages = 0;
+    m->in_use = false;
 }
 
 struct memobj *memobj_create(size_t pages)
@@ -71,9 +76,20 @@ struct memobj *memobj_create(size_t pages)
         }
 
         /*
-         * The index first, because it is small and failing here costs
-         * nothing to undo. Each index page holds 512 page pointers.
+         * The slot is claimed before anything is built in it.
+         *
+         * `memobj_create` runs in a syscall with interrupts on, so it can be
+         * preempted between finding a free slot and finishing with it. While
+         * `in_use` was still false, a second caller scanning for a free slot
+         * would find the *same* one and both would build into it. That was
+         * survivable when a region was one `pmm_alloc_contiguous` and a base
+         * pointer; it is not now, when building one is a loop over hundreds
+         * of pages writing into a shared index.
+         *
+         * Claiming first makes the window empty. Every failure below has to
+         * release it again, which is what `unwind` does.
          */
+        m->in_use = true;
         m->pages = pages;
         m->indexes = 0;
 
@@ -111,7 +127,6 @@ struct memobj *memobj_create(size_t pages)
             m->index[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] = page;
         }
 
-        m->in_use = true;
         m->refs = 1;
 
         return m;
@@ -152,8 +167,19 @@ void memobj_unref(struct memobj *m)
      * and for the same reason.
      */
     m->generation++;
-    m->in_use = false;
 
+    /*
+     * The pages go back first and the *slot* last.
+     *
+     * `in_use = false` is what makes this descriptor claimable, and a
+     * claimant immediately writes `pages` and the index pointers into it.
+     * Releasing the slot before walking the index to free the pages means
+     * walking an index the new owner is rewriting: pages freed twice, and
+     * pages belonging to the new region freed out from under it.
+     *
+     * The generation still moves first, because that is what makes a stale
+     * capability refuse before any of this happens.
+     */
     {
         size_t i;
 
@@ -172,7 +198,9 @@ void memobj_unref(struct memobj *m)
 
         m->indexes = 0;
     }
+
     m->pages = 0;
+    m->in_use = false;
 }
 
 unsigned memobj_in_use(void)

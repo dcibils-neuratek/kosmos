@@ -60,17 +60,6 @@ local IDENTITY = identity()
 --
 local BATCH = 256
 
-local function multiply(m, n)
-  return {
-    a = m.a * n.a + m.b * n.c,
-    b = m.a * n.b + m.b * n.d,
-    c = m.c * n.a + m.d * n.c,
-    d = m.c * n.b + m.d * n.d,
-    e = m.e * n.a + m.f * n.c + n.e,
-    f = m.e * n.b + m.f * n.d + n.f,
-  }
-end
-
 --
 -- The same, into a table that already exists.
 --
@@ -101,79 +90,6 @@ local function copy_into(from, to)
   to.a, to.b, to.c, to.d, to.e, to.f =
     from.a, from.b, from.c, from.d, from.e, from.f
   return to
-end
-
---------------------------------------------------------------------------
--- /ToUnicode, in the two forms that actually appear.
---
--- The CMap is PostScript and a general reader of it would be an
--- interpreter for a second language. It does not have to be: what matters
--- is between `beginbfchar` and `endbfchar`, where a code maps to a string,
--- and between `beginbfrange` and `endbfrange`, where a run of codes maps to
--- a run of characters. Everything else in the object is boilerplate that
--- says which conventions are in force.
---------------------------------------------------------------------------
-
-local function utf8_of(code)
-  -- A surrogate pair is two UTF-16 values and appears for anything past the
-  -- basic plane. Rare in a book; wrong-looking rather than fatal if unhandled.
-  if code >= 0xD800 and code <= 0xDFFF then return "?" end
-  return utf8.char(code)
-end
-
-local function hex_string(text)
-  -- <0041> and <00410042> both appear: the second is a ligature or an
-  -- accented form written as more than one character.
-  local out = {}
-  for pair in text:gmatch("%x%x%x%x") do
-    out[#out + 1] = utf8_of(tonumber(pair, 16))
-  end
-  return table.concat(out)
-end
-
-function pdfpage.tounicode(bytes)
-  -- Kept as the two shapes the CMap states them in, rather than expanded
-  -- into one entry per code. A `bfrange` may legally span thousands of
-  -- codes, and writing each one into a Lua table turned a 500-byte object
-  -- into megabytes - which on a 2 MB heap is the difference between a page
-  -- and `not enough memory`. Found exactly that way.
-  local map = { single = {}, ranges = {} }
-
-  for body in bytes:gmatch("beginbfchar(.-)endbfchar") do
-    for code, value in body:gmatch("<(%x+)>%s*<(%x+)>") do
-      map.single[tonumber(code, 16)] = hex_string(value)
-    end
-  end
-
-  for body in bytes:gmatch("beginbfrange(.-)endbfrange") do
-    for first, last, value in body:gmatch("<(%x+)>%s*<(%x+)>%s*<(%x+)>") do
-      map.ranges[#map.ranges + 1] = {
-        from = tonumber(first, 16),
-        to   = tonumber(last, 16),
-        base = tonumber(value:sub(1, 4), 16),
-      }
-    end
-  end
-
-  return map
-end
-
--- What one code says. A handful of ranges is a short scan and beats the
--- table that holding them expanded would cost.
-function pdfpage.char(font, code)
-  local map = font.unicode
-  if not map then return "" end
-
-  local hit = map.single[code]
-  if hit then return hit end
-
-  for _, range in ipairs(map.ranges) do
-    if code >= range.from and code <= range.to then
-      return utf8_of(range.base + (code - range.from))
-    end
-  end
-
-  return ""
 end
 
 --------------------------------------------------------------------------
@@ -340,18 +256,6 @@ function pdfpage.font(doc, dict)
     font.widths, font.default_width = { single = {}, ranges = {} }, 500
   end
 
-  local unicode = doc:resolve(dict.ToUnicode)
-  local offset, length = doc:stream_range(unicode)
-
-  if offset then
-    local ok, bytes = pcall(doc.source.read, offset, length)
-    if ok and bytes then
-      local plain = compress.inflate(bytes)
-      font.unicode = pdfpage.tounicode(plain)
-    end
-  end
-
-  font.unicode = font.unicode or { single = {}, ranges = {} }
   return font
 end
 
@@ -403,8 +307,11 @@ end
 -- that looked like a cause, and worked perfectly in a console program that
 -- had the machine to itself.
 --
--- `pmm_alloc_contiguous` is the constraint, not the total: a run of 64 free
--- pages is a stronger thing to ask for than 64 free pages.
+-- That reasoning was about contiguity, and contiguity stopped being the
+-- constraint when a region became a list of pages rather than a run. The
+-- sizes stay because they are the right sizes - a content stream is a few
+-- kilobytes and the largest in this book inflates to about 45 KB - not
+-- because a bigger one could not be allocated.
 local RAW_PAGES, OUT_PAGES = 16, 32
 
 local buffers
@@ -442,53 +349,14 @@ end
 -- A page, as pixels.
 --------------------------------------------------------------------------
 
---
--- The fonts a page uses, loaded before anything large is allocated.
---
--- A region is *contiguous* physical pages, and a font program wants a
--- handful of them. A rendered page wants seven hundred. Asking for the big
--- one first leaves the address space with no run long enough for the small
--- ones, and the second face on the page fails to load with plenty of free
--- memory - which reads as a font problem and is an ordering problem.
---
--- So the caller does this, then allocates its surface, then renders.
--- Returns the fonts so the render need not build them twice.
---
-function pdfpage.prepare(doc, page)
+function pdfpage.render(doc, page, surface, scale, colour)
   local resources = doc:resolve(page.Resources) or {}
   local dicts     = doc:resolve(resources.Font) or {}
   local fonts     = {}
 
   for name, dict in pairs(dicts) do
-    local font = pdfpage.font(doc, doc:resolve(dict))
-
-    fonts[name] = font
-    program_of(doc, font)
+    fonts[name] = pdfpage.font(doc, doc:resolve(dict))
   end
-
-  return fonts
-end
-
---
--- Draws one page into `surface` at `scale`, and returns what it cost.
---
--- **Glyphs are accumulated and drawn per font, not per glyph.** A page is
--- around two thousand of them; a call across the Lua/C boundary for each
--- would cost more than the drawing, since `gfx.md` 19.11 puts a crossing at
--- about two thousand pixels of work. So the walk fills a flat array of
--- glyph, x, y for each face and size in use, and each of those becomes one
--- call - two or three per page rather than two thousand.
---
--- Flat arrays rather than tables of three, for the reason the interpreter
--- learned the hard way: a table per glyph is thousands of objects for the
--- collector to walk, on a heap that has 2 MB in it.
---
--- PDF's y axis points up from the bottom of the page and a surface's points
--- down from the top, so the flip happens here, once per glyph, in the same
--- arithmetic that applies the scale.
---
-function pdfpage.render(doc, page, surface, scale, colour, fonts)
-  fonts = fonts or pdfpage.prepare(doc, page)
 
   local box    = doc:resolve(page.MediaBox) or { 0, 0, 612, 792 }
   local height = box[4] or 792
@@ -764,123 +632,6 @@ function pdfpage.walk(at, length, fonts, emit)
       end
     end
   end
-end
-
--- Every code in a shown string, as text.
-function pdfpage.decode(font, bytes)
-  local out, step = {}, font.two_byte and 2 or 1
-
-  for i = 1, #bytes, step do
-    local code = step == 2
-                 and (bytes:byte(i) * 256 + (bytes:byte(i + 1) or 0))
-                 or  bytes:byte(i)
-    out[#out + 1] = pdfpage.char(font, code)
-  end
-
-  return table.concat(out)
-end
-
---------------------------------------------------------------------------
--- One page, as text.
---------------------------------------------------------------------------
-
--- Runs come out in the order the producer emitted them, which is not
--- reading order and is not lines. Grouping by the y they landed on is what
--- turns a page back into something to read - and the tolerance matters:
--- exactly equal fails on a line whose baseline shifts by a rounding, and
--- too loose merges a line with the one under it.
---
--- Lines come out in the order the producer emitted them, which is not
--- reading order. Grouping by the y a show landed on is what turns a page
--- back into something to read, and the tolerance matters: exactly equal
--- fails on a baseline that shifts by a rounding, too loose merges a line
--- with the one beneath it.
---
--- Text is appended in emission order within a line rather than sorted by x.
--- That is an assumption about the producer and it is stated here so that a
--- page which comes out scrambled points straight at it.
---
-local TOLERANCE = 2
-
-function pdfpage.text(doc, page)
-  local resources = doc:resolve(page.Resources) or {}
-  local dicts     = doc:resolve(resources.Font) or {}
-  local fonts     = {}
-
-  for name, dict in pairs(dicts) do
-    fonts[name] = pdfpage.font(doc, doc:resolve(dict))
-  end
-
-  local offset, length, filter = doc:stream_range(page.dict.Contents)
-  if not offset then return {} end
-
-  local b = regions()
-  if not b then
-    error("pdfpage: no memory for the page buffers")
-  end
-
-  if length > b.raw_max then
-    error(("pdfpage: a %d byte stream needs a bigger buffer"):format(length))
-  end
-
-  -- Straight from the filesystem into the region: the bytes are never a
-  -- Lua string on the way in. A source that cannot do that - the host's,
-  -- which has a file and no regions - says so rather than being worked
-  -- around, because the fallback would be the copy this exists to remove.
-  if type(doc.source.read_into) ~= "function" then
-    error("pdfpage: this source cannot read into a region")
-  end
-
-  local done = 0
-  while done < length do
-    local got = doc.source.read_into(b.raw, offset + done, length - done)
-    if not got or got == 0 then break end
-    done = done + got
-  end
-
-  if done ~= length then
-    error(("pdfpage: read %d bytes of %d at %d"):format(done, length, offset))
-  end
-
-  local size = length
-
-  if filter[1] == "FlateDecode" then
-    size = compress.inflate_into(b.raw_at, length, b.out_at, b.out_max)
-  end
-
-  local at = filter[1] == "FlateDecode" and b.out_at or b.raw_at
-
-  local lines = {}
-
-  pdfpage.walk(at, size, fonts, function (_, y, _, font, bytes)
-    local line
-
-    for _, candidate in ipairs(lines) do
-      if math.abs(candidate.y - y) <= TOLERANCE then line = candidate break end
-    end
-
-    if not line then
-      line = { y = y, parts = {} }
-      lines[#lines + 1] = line
-    end
-
-    line.parts[#line.parts + 1] = pdfpage.decode(font, bytes)
-  end)
-
-  -- Anything this page needed and the next one will not: the fonts, its
-  -- own dictionary, the objects behind them. A reader that turns pages
-  -- otherwise accumulates every page it has seen.
-  doc:forget()
-
-  -- The y axis points up in PDF space, so the larger y is the higher line.
-  table.sort(lines, function (p, q) return p.y > q.y end)
-
-  local out = {}
-  for _, line in ipairs(lines) do
-    out[#out + 1] = table.concat(line.parts)
-  end
-
-  return out
 end
 
 return pdfpage

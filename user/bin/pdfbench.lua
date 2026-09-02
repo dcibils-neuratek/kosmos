@@ -161,10 +161,3 @@ time("scan + interpret", function ()
 end)
 
 print(("  %-34s %d"):format("(shows)", shows))
-
--- 7. and the whole thing, as the viewer will do it
-local lines = time("everything, into lines of text", function ()
-  return pdfpage.text(doc, page)
-end)
-
-print(("  %-34s %d"):format("(lines)", #lines))

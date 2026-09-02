@@ -60,6 +60,36 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A review pass, and two live races it found.** Reading `memobj.c` rather
+  than remembering writing it: `memobj_unref` cleared `in_use` *before*
+  walking the index to free the pages, so another `sys.memory` could claim
+  the descriptor and start rewriting `index[]` mid-walk - pages freed twice,
+  and pages belonging to the new region freed under it. `memobj_create`
+  mirrored it, writing `pages` and the index into a slot it had not claimed.
+  The old contiguous code had a narrow version of both; turning a region
+  into a page list widened the window enormously. The slot is claimed first
+  and released last now.
+
+- **The text-extraction path is gone, with everything that served it.**
+  `pdfpage.text`, `decode`, `char`, `tounicode`, the `/ToUnicode` parser and
+  `user/bin/pdftext.lua`. It was the first idea - read a PDF as text and lay
+  it out in the system font - and the renderer superseded it.
+
+  It was not merely dead. `pdfpage.font` read and inflated the `/ToUnicode`
+  stream **on every page render, per font**, to build a table nothing used
+  any more. A page went 152 ms to 143 ms by deleting it.
+
+  Also removed: `pdfpage.prepare`, which was written for an allocation
+  ordering that no longer applies and was never called; and `multiply`,
+  superseded by `multiply_into` the day the interpreter stopped allocating a
+  matrix per glyph. `pdfpage.lua` is 30 KB down to 22 KB.
+
+- **A comment that had become false.** `pdfpage.lua` explained its buffer
+  sizes in terms of `pmm_alloc_contiguous` - true when it was written and
+  wrong since regions became lists of pages. The sizes are right for their
+  own reason and now say so.
+
+
 - **A server runs at the priority of whoever is waiting for it.** Priority
   inheritance, from QNX, and it fits a synchronous rendezvous exactly: the
   kernel already knows who is blocked on whom, because that is what
