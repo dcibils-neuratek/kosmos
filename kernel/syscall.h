@@ -210,8 +210,22 @@ struct proc_info {
     int32_t  exit_code;
     uint64_t ticks;             /* timer ticks charged to it, only rising */
     uint32_t pages;             /* pages it holds through SYS_MAP */
+    uint32_t held;              /* and everything else: image, heap, stacks */
     uint32_t caps;              /* capabilities in its table */
     uint32_t owns;              /* bit 0 the console, bit 1 the screen */
+
+    /*
+     * The band it is scheduled in - the *effective* one, so a server
+     * carrying a caller's priority reports what it is actually running at
+     * rather than what it was given.
+     *
+     * Reported because a scheduler with bands nobody can see is a scheduler
+     * nobody can reason about. `scheduler` lets you change the policy and
+     * the quantum while the machine runs, and until now there was no way to
+     * look at what that did to any particular process.
+     */
+    uint32_t priority;
+
     char     name[16];
 };
 

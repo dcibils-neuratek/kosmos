@@ -493,7 +493,7 @@ function ui.label(spec)
 
   function v:measure()
     if not self.fixed_width then
-      self.w = #tostring(self.text or "") * GW
+      self.w = gfx.measure(tostring(self.text or ""))
     end
   end
 
@@ -510,7 +510,7 @@ end
 function ui.button(spec)
   local v = ui.view(spec)
   v.h = v.h > 0 and v.h or (GH + 10)
-  v.w = v.w > 0 and v.w or (#tostring(v.text or "") * GW + 24)
+  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 24)
   v.focusable = true
 
   function v:draw(g)
@@ -534,7 +534,7 @@ function ui.button(spec)
     end
 
     local label = tostring(self.text or "")
-    local tx = (self.w - #label * GW) // 2
+    local tx = (self.w - gfx.measure(label)) // 2
     local ty = (self.h - GH) // 2
 
     -- And the label moves with it, a pixel down and right, because a
@@ -585,7 +585,7 @@ end
 function ui.checkbox(spec)
   local v = ui.view(spec)
   v.h = v.h > 0 and v.h or GH
-  v.w = v.w > 0 and v.w or (#tostring(v.text or "") * GW + 3 * GW)
+  v.w = v.w > 0 and v.w or (gfx.measure(tostring(v.text or "")) + 3 * GW)
   v.focusable = true
   v.checked = v.checked or false
 
@@ -1926,7 +1926,7 @@ function ui.menubar(spec)
     local out, x = {}, 4
 
     for i, m in ipairs(self.menus) do
-      local w = #tostring(m.title or "") * GW + 16
+      local w = gfx.measure(tostring(m.title or "")) + 16
 
       out[i] = { x = x, w = w }
       x = x + w
@@ -2011,7 +2011,9 @@ local function menu_metrics(items)
   local deep = false
 
   for _, it in ipairs(items) do
-    local n = #tostring(it.text or "")
+    -- Measured, not counted. A character count is a width only while every
+    -- glyph is the same width, and the interface font need not be.
+    local n = gfx.measure(tostring(it.text or ""))
 
     if n > widest then widest = n end
     if it.submenu then deep = true end
@@ -2019,7 +2021,7 @@ local function menu_metrics(items)
 
   local row = GH + 6
 
-  return widest * GW + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0),
+  return widest + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0),
          #items * row + 4, row
 end
 

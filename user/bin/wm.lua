@@ -38,7 +38,13 @@ local KEY_PREFIX = 23      -- Control-W
 
 local theme = use("/lib/theme.lua")
 
-local TAB_H      = 20
+--
+-- Eighteen, not twenty. The controls are fourteen and the glyphs sixteen,
+-- so this is the smallest a tab can be and still hold both with a pixel
+-- either side - which is what a title bar should be: as small as it can be
+-- while remaining a handle you can hit.
+--
+local TAB_H      = 18
 local BORDER     = 2
 --
 -- The three controls on a tab, and the room they take.
@@ -696,7 +702,10 @@ local function compose_rect(r)
   -- And only when this rectangle actually reaches that corner. The
   -- primitives clip to the backbuffer, so a rectangle in the top left was
   -- still paying for every glyph of it.
-  local sx, sy = W - #stamp * gfx.font.w - 10, H - gfx.font.h - 8
+  -- Measured rather than counted: the interface font need not be monospaced,
+  -- and a stamp positioned by character count would drift off the corner the
+  -- moment it is not.
+  local sx, sy = W - gfx.measure(stamp) - 10, H - gfx.font.h - 8
 
   if r.x < W and r.x + r.w > sx and r.y < H and r.y + r.h > sy then
     back:text(sx, sy, stamp, stamp_colour(), desktop_colour())
@@ -1339,7 +1348,15 @@ handlers.windows = function(req)
 
   for i, win in ipairs(windows) do
     out[i] = { handle = win.handle, title = win.title,
-               focused = (i == #windows) or nil }
+               focused = (i == #windows) or nil,
+
+               -- Who to ask about, and how it draws. `procs` shows this:
+               -- a window with a shared region owns its own pixels and the
+               -- compositor only blits them, which is a different bargain
+               -- from sending drawing commands and is worth being able to
+               -- see. `gfx.md` 19.4.
+               pid = win.pid,
+               direct = (win.shared ~= nil) or nil }
   end
 
   return { ok = true, windows = out }

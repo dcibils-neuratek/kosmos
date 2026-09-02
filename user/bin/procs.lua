@@ -22,7 +22,7 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 520, 440
+local W, H = 790, 440
 
 -- The menu bar's height, which everything below it is offset by. A menu bar
 -- is an ordinary widget in this window rather than a band the window
@@ -101,6 +101,35 @@ end
 local rows = {}          -- { name, kind, id, pct, pages, caps, owns, exited }
 local totals = { procs = 0, threads = 0 }
 local last = {}          -- ticks per process, from the previous sample
+local last_total         -- idle + busy from the previous sample: the machine
+local last_idle, last_busy
+
+--
+-- How each process gets its pixels, asked of the desktop.
+--
+-- Three answers, and the difference is the whole of `gfx.md` 19.4:
+--
+--   direct     it owns a region the compositor blits from. A whole surface
+--              changes every frame and describing it would cost more than
+--              copying it - a rendered scene, a video frame.
+--   commands   it sends drawing commands and the compositor owns every
+--              pixel. This is what lets a hung application keep a window.
+--   (blank)    it has no window at all.
+--
+-- The kernel does not know this and should not: which of two ways an
+-- application draws is a fact about the desktop, so the desktop is asked.
+--
+local video = {}
+
+--
+-- The scheduling bands, by name.
+--
+-- `sched.h` names five of eight and says anything unnamed is NORMAL. A
+-- number in a column would be a number a person has to go and look up, and
+-- the whole reason to show it is that the bands are the thing the scheduler
+-- app changes and nothing showed what it had done.
+--
+local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
 -- The *process* that is selected, not the row.
 --
 -- The list is sorted by processor share and that order changes every
@@ -169,7 +198,26 @@ function table_view:draw(g)
     g:text(190, y + 2, r.kind or "",
            on and theme.text_on or "text_dim", bg)
 
-    local bar_x = 262
+    -- How it draws, dimmer still: it is a property of the row rather than
+    -- something you are looking for.
+    g:text(266, y + 2, r.video or "",
+           on and theme.text_on or "text_dim", bg)
+
+    -- And the band it is scheduled in.
+    g:text(356, y + 2, r.band or "",
+           on and theme.text_on or "text_dim", bg)
+
+    -- What it holds: the image, the heap, the stacks and any surface it
+    -- asked for. Right-aligned, because a column of numbers is read down
+    -- its last digit.
+    if not r.synthetic then
+      local kb = ("%d KB"):format(r.kb or 0)
+
+      g:text(500 - gfx.measure(kb), y + 2, kb,
+             on and theme.text_on or "text_dim", bg)
+    end
+
+    local bar_x = 516
     local bar_w = self.w - bar_x - 60
 
     g:fill(bar_x, y + 3, bar_w, ROW - 6, "window")
@@ -338,28 +386,109 @@ function sampler:tick()
   local k = fs.read("/dev/kernel")
   local list = sys.processes()
 
+  -- Which processes have windows, and how those windows draw.
+  video = {}
+
+  local desktop = fs.send("/dev/wm", { type = "windows" })
+
+  for _, w in ipairs(desktop and desktop.windows or {}) do
+    if w.pid then
+      -- A process with two windows counts as direct if either of them is:
+      -- what the column answers is "does this map the framebuffer", and one
+      -- direct window is enough for that to be true.
+      if w.direct or video[w.pid] == "direct" then
+        video[w.pid] = "direct"
+      else
+        video[w.pid] = "commands"
+      end
+    end
+  end
+
   if not list then return end
 
   local now = {}
-  local moved = 0
 
-  for _, p in ipairs(list) do
-    now[p.id] = p.ticks
-    moved = moved + (p.ticks - (last[p.id] or p.ticks))
+  for _, p in ipairs(list) do now[p.id] = p.ticks end
+
+  --
+  -- A share of the *machine*, not a share of the work that happened.
+  --
+  -- This used to divide each process's ticks by the sum of every process's
+  -- ticks, which makes the column always add up to a hundred whatever the
+  -- machine is doing. On an idle desktop that reads "100%" beside whichever
+  -- process did the small amount of work there was - while `sysmon`, two
+  -- windows away, correctly said the processor was one per cent busy. Both
+  -- numbers were right and one of them was a lie, because the column is
+  -- headed with a percentage and a person reads that as "of the processor".
+  --
+  -- The denominator is now every tick that passed, idle ones included,
+  -- which is exactly what `sysmon` divides by. The two agree now, and a
+  -- process at 100% here is a process actually eating the machine.
+  --
+  -- Elapsed ticks come from the kernel rather than from a clock read here,
+  -- so a slow pass does not turn into a spike: the numerator and the
+  -- denominator are counted by the same interrupt.
+  --
+  local elapsed = 0
+
+  if k and last_total then
+    elapsed = (k.idle_ticks + k.busy_ticks) - last_total
   end
 
+  if k then last_total = k.idle_ticks + k.busy_ticks end
+
   local fresh = {}
+  local charged = 0
 
   for _, p in ipairs(list) do
     local delta = p.ticks - (last[p.id] or p.ticks)
 
+    charged = charged + delta
+
     fresh[#fresh + 1] = {
       id = p.id, name = p.name, pages = p.pages, caps = p.caps,
-      owns = p.owns, kind = kind_of(p),
+      owns = p.owns, kind = kind_of(p), video = video[p.id],
+      band = BANDS[p.priority or 2] or tostring(p.priority),
+      kb = ((p.held or p.pages or 0) * 4096) // 1024,
       exited = p.exited,
-      pct = (moved > 0) and (delta * 100 // moved) or 0,
+      pct = (elapsed > 0) and math.min(100, delta * 100 // elapsed) or 0,
     }
   end
+
+  --
+  -- Where the rest of the machine went.
+  --
+  -- Two rows that are not processes, and saying so is the point rather than
+  -- a caveat. Everything above them runs at EL0; these two are the time the
+  -- machine spent somewhere a process cannot be:
+  --
+  --   kernel   threads Nebula owns - not the idle one. The busy ticks the
+  --            kernel counted, less every tick charged to a process.
+  --   idle     nothing wanted the processor.
+  --
+  -- No kernel change was needed for this. The kernel already counts idle
+  -- and busy, and the difference between busy and the sum of the processes
+  -- is exactly what ran in the kernel and was not idle. It also makes the
+  -- column add up: if these two and the processes do not come to a hundred,
+  -- one of the three is wrong, and that is worth being able to see.
+  --
+  if k and elapsed > 0 then
+    local idle_delta = (last_idle and (k.idle_ticks - last_idle)) or 0
+    local busy_delta = (last_busy and (k.busy_ticks - last_busy)) or 0
+    local in_kernel = busy_delta - charged
+
+    if in_kernel < 0 then in_kernel = 0 end
+
+    fresh[#fresh + 1] = { id = 0, name = "kernel", kind = "threads",
+                          band = "", video = "", kb = 0,
+                          pct = in_kernel * 100 // elapsed, synthetic = true }
+
+    fresh[#fresh + 1] = { id = 0, name = "idle", kind = "", band = "",
+                          video = "", kb = 0,
+                          pct = idle_delta * 100 // elapsed, synthetic = true }
+  end
+
+  if k then last_idle, last_busy = k.idle_ticks, k.busy_ticks end
 
   -- Busiest first, which is what a list like this is for.
   table.sort(fresh, function(a, b)

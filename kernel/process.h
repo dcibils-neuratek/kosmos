@@ -259,6 +259,7 @@ struct process {
     uintptr_t         next_map;
     size_t            mapped_pages;
 
+
     /*
      * The same for shared regions, in the window that says the pages are
      * not this process's to free. Counted separately as well as mapped

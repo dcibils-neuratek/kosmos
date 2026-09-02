@@ -487,8 +487,10 @@ static int l_processes(lua_State *L)
         SETI("exit_code", table[i].exit_code);
         SETI("ticks",     table[i].ticks);
         SETI("pages",     table[i].pages);
+        SETI("held",      table[i].held);
         SETI("caps",      table[i].caps);
         SETI("owns",      table[i].owns);
+        SETI("priority",  table[i].priority);
 #undef SETI
 
         lua_pushboolean(L, table[i].exited != 0);

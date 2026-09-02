@@ -97,8 +97,29 @@ unsigned process_table(struct proc_info *out, unsigned max)
         }
 
         out[n].ticks = p->ticks;
+        /*
+         * Everything the process holds, not only what it asked for.
+         *
+         * `mapped_pages` is the surfaces and buffers it took with SYS_MAP,
+         * and reporting only that says zero for every process that has not
+         * taken one - which is most of them, and none of which are using no
+         * memory. The image is as big as the program; the heap and the
+         * stacks are the same for everybody.
+         *
+         * Shared regions are deliberately not counted. A region's pages are
+         * already charged to whoever created it, and charging every process
+         * that maps one would have two processes sharing a surface paying
+         * for it twice - the same reason `next_share` is counted apart from
+         * `next_map`.
+         */
         out[n].pages     = (uint32_t)p->mapped_pages;
+        out[n].held      = (uint32_t)(p->mapped_pages + p->image_page_count
+                                      + USER_HEAP_PAGES + USER_STACK_PAGES);
         out[n].caps      = thread_cap_count(p->thread);
+        out[n].priority  = (p->thread != NULL)
+                           ? thread_effective_priority(p->thread)
+                           : 0u;
+
         out[n].owns      = (p->owns_console ? 1u : 0u)
                          | (p->owns_screen ? 2u : 0u)
                          | (p->owns_disk ? 4u : 0u)
