@@ -1576,6 +1576,96 @@ static void echo_server(void *arg)
     server_done = true;
 }
 
+/*
+ * Priority inheritance: a server runs at the band of whoever is waiting on
+ * it, and gives it back when it answers.
+ *
+ * This is what makes it possible to have a server that is *both* the input
+ * path and the print path - which the console is - without either starving
+ * the machine or answering keystrokes slowly. Promoting it outright was
+ * tried and starved everything it serves; inheriting means the question
+ * "how important is this server" gets the only honest answer, which is that
+ * it depends entirely on who is asking.
+ */
+static volatile unsigned inherit_seen_inside;
+static volatile unsigned inherit_seen_after;
+static cap_t inherit_cap;
+
+static void inherit_server(void *arg)
+{
+    struct message msg, reply = { 0 };
+    struct thread *sender;
+
+    (void)arg;
+
+    if (ipc_receive(inherit_cap, &msg, &sender, false) != IPC_OK) {
+        thread_exit();
+    }
+
+    /* Serving a caller from the input band, so this must read as the input
+     * band and not as the LOW this thread was created with. */
+    inherit_seen_inside = thread_effective_priority(thread_current());
+
+    ipc_reply(sender, &reply);
+
+    /* And handed straight back. */
+    inherit_seen_after = thread_effective_priority(thread_current());
+
+    thread_exit();
+}
+
+static bool test_a_server_inherits_its_callers_priority(void)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    struct thread *server;
+    cap_t client_cap;
+    unsigned i;
+
+    inherit_seen_inside = 0;
+    inherit_seen_after  = 99;
+
+    client_cap = ipc_endpoint_create();
+    if (client_cap < 0) {
+        return false;
+    }
+
+    server = thread_create_suspended("inherit", inherit_server, NULL);
+    if (server == NULL) {
+        return false;
+    }
+
+    inherit_cap = ipc_cap_grant(server, client_cap);
+    if (inherit_cap < 0) {
+        return false;
+    }
+
+    /* Deliberately the lowest band that still runs, so a server that did
+     * not inherit would be visibly below its caller. */
+    thread_set_priority(server, SCHED_PRIO_LOW);
+    thread_wake(server);
+
+    /* And the caller is the most urgent thing on the machine. */
+    thread_set_priority(thread_current(), SCHED_PRIO_INPUT);
+
+    msg.tag = 1;
+    msg.length = 0;
+
+    if (ipc_call(client_cap, &msg, &reply) != IPC_OK) {
+        thread_set_priority(thread_current(), SCHED_PRIO_NORMAL);
+        return false;
+    }
+
+    thread_set_priority(thread_current(), SCHED_PRIO_NORMAL);
+
+    for (i = 0; i < 100000u && inherit_seen_after == 99; i++) {
+        thread_yield();
+    }
+
+    return inherit_seen_inside == SCHED_PRIO_INPUT
+        && inherit_seen_after  == SCHED_PRIO_LOW;
+}
+
 static bool test_ipc_call_and_reply(void)
 {
     struct message msg = { 0 };
@@ -3590,6 +3680,7 @@ static const struct test tests[] = {
     { "fp: EL1 may use FP and SIMD",           test_fp_is_usable_at_el1 },
     { "sched: the higher priority runs first", test_higher_priority_runs_first },
     { "sched: a wake preempts a lower band",   test_a_wake_preempts_a_lower_priority_thread },
+    { "sched: a server inherits its caller",   test_a_server_inherits_its_callers_priority },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
     { "fp: disarmed until it is wanted",       test_fp_is_disarmed_until_it_is_wanted },
     { "libc: setjmp returns 0 when called",    test_setjmp_returns_zero_directly },

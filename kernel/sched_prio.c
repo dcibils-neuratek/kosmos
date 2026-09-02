@@ -99,7 +99,12 @@ static unsigned occupied;
  */
 static inline unsigned level_of(const struct thread *t)
 {
-    return t->sched.priority;
+    /*
+     * The effective band, not the given one: a server carrying a caller's
+     * priority has to be *queued* at it, or inheritance would change a
+     * number nobody reads.
+     */
+    return thread_effective_priority(t);
 }
 
 static void prio_init(void)

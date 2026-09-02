@@ -569,6 +569,17 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          */
         message_deliver(receiver, self, msg, &receiver->ipc.msg);
         receiver->ipc.peer = self;
+
+        /*
+         * And it runs at this thread's band until it answers.
+         *
+         * Before `deliver`, which wakes it: the wake enqueues it, and a
+         * priority queue puts a thread where its band says at the moment it
+         * is enqueued. Boosting afterwards would put it in the right band
+         * for the *next* time it runs, which is one request too late.
+         */
+        thread_inherit(receiver, self);
+
         deliver(receiver, IPC_OK);
         queue_push(&ep->awaiting_reply, self);
     } else {
@@ -618,6 +629,11 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
         message_deliver(self, s, &s->ipc.msg, msg);
         *sender = s;
         s->ipc.peer = self;
+
+        /* The other way round: this thread collected a message that was
+         * already waiting, so it takes on that sender's band. */
+        thread_inherit(self, s);
+
         queue_push(&ep->awaiting_reply, s);
         return IPC_OK;
     }
@@ -671,6 +687,17 @@ int ipc_reply(struct thread *sender, const struct message *msg)
 
     message_deliver(sender, thread_current(), msg, &sender->ipc.msg);
     deliver(sender, IPC_OK);
+
+    /*
+     * Done on somebody's behalf, so back to its own band.
+     *
+     * Cleared rather than unwound: a server handling two requests at once -
+     * which a coroutine server does - would need a stack of borrowed bands
+     * to be exact, and the error either way lasts one request. Erring
+     * downward is the safe direction: a server that stays high starves the
+     * machine, and one that drops early is merely slower for a moment.
+     */
+    thread_disinherit(thread_current());
 
     return IPC_OK;
 }

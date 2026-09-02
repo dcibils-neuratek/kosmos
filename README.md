@@ -253,6 +253,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A thread holds 32 capabilities, not 16: a graphical application needs more than a shell did | ipc.h |
 | Sep 2026 | A full capability table is its own error, not "out of memory" | syscall.h |
 | Sep 2026 | A document's own fonts are rasterised by glyph index, cached per face and size, drawn a page per call | docfont.c |
+| Sep 2026 | Priority inheritance across IPC: a server runs at the band of whoever is waiting on it | ipc.c, thread.c |
+| Sep 2026 | A server is not promoted by capability; it borrows urgency from its caller and gives it back | process.c |
 
 ---
 

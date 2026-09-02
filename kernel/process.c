@@ -427,17 +427,17 @@ void process_grant_console(struct process *p)
          * within a minute of the change, which is the fairness property
          * that test exists to hold.
          *
-         * What would make it work is one of the two answers this policy
-         * does not have yet: a boost that lasts only across the wake, so a
-         * keystroke is answered immediately and the server drops back
-         * before it can hold the CPU; or priority inheritance across IPC,
-         * which is QNX's answer - a server runs at the priority of whoever
-         * is waiting on it, which is exactly right for a server that is
-         * both the input path and the print path. The second is the better
-         * idea and is a design change rather than a line.
+         * **Priority inheritance is the answer, and it exists now.** A server runs
+         * at the band of whoever is blocked waiting for it - `thread_inherit`,
+         * called from `ipc_call` and `ipc_receive`, given back in `ipc_reply`.
+         * So the console does not need promoting: it sits at NORMAL and
+         * *becomes* urgent for exactly as long as something urgent is waiting
+         * on it, and goes back to being ordinary the moment it answers.
          *
-         * Until then the console stays at NORMAL, and input latency comes
-         * from preemption-on-wake rather than from a band.
+         * Which is why this promotion is not merely disabled but wrong. A
+         * band says "this thread is always important". Inheritance says "it
+         * is as important as whoever needs it", and for a server that is
+         * both the input path and the print path, only the second is true.
          */
     }
 }

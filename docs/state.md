@@ -60,6 +60,39 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A server runs at the priority of whoever is waiting for it.** Priority
+  inheritance, from QNX, and it fits a synchronous rendezvous exactly: the
+  kernel already knows who is blocked on whom, because that is what
+  `ipc_call` is. `thread_inherit` on delivery in both directions,
+  `thread_disinherit` in `ipc_reply`, and the scheduler queues on the
+  *effective* band rather than the given one.
+
+  This is the answer to the thing that failed two days ago. Promoting the
+  console server to the input band starved the machine, because it is also
+  the path every `print` takes - at the top band it outranks everything it
+  serves. Inheritance means the question never arises: it sits at NORMAL and
+  *becomes* urgent for exactly as long as something urgent is waiting on it.
+  The note in `process.c` that recorded the failure now records the answer.
+
+  Cleared on reply rather than unwound. A coroutine server handling two
+  requests at once would need a stack of borrowed bands to be exact, and the
+  error either way lasts one request - erring downward, which is the safe
+  direction: a server that stays high starves the machine, one that drops
+  early is briefly slower.
+
+  There is a test, and it is the kind that would fail silently without care:
+  a server created at LOW, a caller at INPUT, and the server reads its own
+  effective band from *inside* the handler and again after replying.
+
+- **The benchmark harness needed thirty minutes, not ten.** It failed
+  looking exactly like a hang - the boot log stopping at stage two and
+  staying there - and it was simply `-icount` being slow against an image
+  that has grown: the glyph rasteriser, the PDF scanner and the inflate kit
+  are all linked into the benchmark build too. Booting the same image
+  *without* `-icount` ran all five in seventy-five seconds, which is how a
+  slow run was told from a stuck one.
+
+
 - **A PDF renders as it was typeset.** `wm pdfview:/home/odyssey.pdf` draws
   the page in the document's own Times New Roman, at the positions its
   producer chose, from the font programs carried inside the file. 685 glyphs

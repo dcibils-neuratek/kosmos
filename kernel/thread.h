@@ -114,8 +114,33 @@ struct thread {
          * Which band this thread runs in: `SCHED_PRIO_*` in sched.h.
          * Set to NORMAL at creation, because zero is the idle band and a
          * zeroed struct would put everything there.
+         *
+         * This is the band it was *given*. What it actually runs at is
+         * `thread_effective_priority`, which is this or a band borrowed
+         * from whoever is waiting on it, whichever is higher.
          */
         unsigned       priority;
+
+        /*
+         * A band borrowed from a caller, or zero.
+         *
+         * Priority inheritance, and the reason it exists here: a server
+         * runs at the priority of whoever is blocked waiting for it. Without
+         * it, the console server cannot be given the input band - it is also
+         * the path every `print` takes, so at the top band it outranks
+         * everything it serves and starves the machine, which is exactly
+         * what happened when that promotion was tried.
+         *
+         * With it the question does not arise. The server sits at NORMAL and
+         * *becomes* urgent for exactly as long as something urgent is
+         * waiting on it, which is the honest answer to "how important is
+         * this server" - it depends entirely on who is asking.
+         *
+         * This is QNX's mechanism and it fits a synchronous rendezvous
+         * exactly: the kernel already knows who is blocked on whom, because
+         * that is what `ipc_call` is.
+         */
+        unsigned       inherited;
         uint64_t       key;
         unsigned long  quantum;
     } sched;
@@ -282,6 +307,23 @@ void thread_set_idle(struct thread *t);
  */
 void thread_set_priority(struct thread *t, unsigned priority);
 unsigned thread_priority(const struct thread *t);
+
+/*
+ * What a thread actually runs at: its own band, or one borrowed from a
+ * caller, whichever is higher. Everything that schedules asks this rather
+ * than reading `priority`.
+ */
+unsigned thread_effective_priority(const struct thread *t);
+
+/*
+ * `to` is about to work on `from`'s behalf, so it runs at `from`'s band
+ * until it replies. Chains: a server that calls another server passes on
+ * whatever it is carrying, because this reads the effective band.
+ */
+void thread_inherit(struct thread *to, const struct thread *from);
+
+/* Finished on somebody's behalf; back to its own band. */
+void thread_disinherit(struct thread *t);
 
 /*
  * Ticks spent idle and ticks spent working, since boot. Both only rise: a

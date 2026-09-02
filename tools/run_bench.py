@@ -223,7 +223,18 @@ def main():
     ap.add_argument("image")
     ap.add_argument("--record", action="store_true",
                     help="write these numbers as the new baselines")
-    ap.add_argument("--timeout", type=float, default=600.0,
+    #
+    # Thirty minutes, not ten.
+    #
+    # `-icount` makes QEMU several times slower and the image it has to boot
+    # keeps growing - the glyph rasteriser, the PDF scanner and the inflate
+    # kit all went into the user image, and every one of them is linked into
+    # the benchmark build too. Ten minutes stopped being enough, and the
+    # failure looked exactly like a hang: the boot log stopped at stage two
+    # and stayed there. Booting the same image without `-icount` ran all five
+    # benchmarks in seventy-five seconds, which is how it was told apart.
+    #
+    ap.add_argument("--timeout", type=float, default=1800,
                     help="seconds before the run is considered hung "
                          "(default: 600; -icount is slow)")
     args = ap.parse_args()

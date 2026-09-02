@@ -485,6 +485,45 @@ void thread_set_idle(struct thread *t)
     }
 }
 
+unsigned thread_effective_priority(const struct thread *t)
+{
+    if (t == NULL) {
+        return SCHED_PRIO_NORMAL;
+    }
+
+    return t->sched.inherited > t->sched.priority
+         ? t->sched.inherited : t->sched.priority;
+}
+
+void thread_inherit(struct thread *to, const struct thread *from)
+{
+    unsigned band;
+
+    if (to == NULL || from == NULL || to == from) {
+        return;
+    }
+
+    band = thread_effective_priority(from);
+
+    /*
+     * Only ever upward, and only while it is higher than what the thread
+     * already carries. A server serving two clients at once - which a
+     * coroutine server does - keeps the more urgent of them, and `reply`
+     * clears it rather than trying to work out which one just left. That is
+     * imprecise for exactly one request and self-correcting on the next.
+     */
+    if (band > to->sched.inherited) {
+        to->sched.inherited = band;
+    }
+}
+
+void thread_disinherit(struct thread *t)
+{
+    if (t != NULL) {
+        t->sched.inherited = 0;
+    }
+}
+
 void thread_set_priority(struct thread *t, unsigned priority)
 {
     if (t == NULL) {
@@ -726,7 +765,8 @@ void thread_wake(struct thread *t)
          * about a thread that ranks lower.
          */
         if (current != NULL && t != current
-            && t->sched.priority > current->sched.priority
+            && thread_effective_priority(t)
+               > thread_effective_priority(current)
             && policy->preempts != NULL && policy->preempts(current, t)) {
             preempt_pending = true;
         }
