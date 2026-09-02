@@ -285,6 +285,17 @@ end
 -- what a trough has always meant. Dragging the thumb is not handled here:
 -- the widget owns the drag, because it owns the press.
 --
+--
+-- Exported, because two of the lists in this system are not `ui.list`.
+--
+-- `procs` and Tracker both draw rows themselves - a file manager's list has
+-- *fields*, and a list that formats them into one string cannot sort by one
+-- of them. Those views need a bar as much as any other, and the choice is
+-- to share this or to have three scrollbars that drift apart. `ui.md` 16.2:
+-- a view draws itself, and what it draws with comes from here.
+--
+ui.SCROLL_W = SCROLL_W
+
 local function scrollbar_click(x, y, w, h, total, shown, top)
   if total <= shown or x < w - SCROLL_W - 2 then return nil end
 
@@ -300,6 +311,10 @@ local function scrollbar_click(x, y, w, h, total, shown, top)
 
   return top          -- on the thumb: the widget will drag it
 end
+
+ui.scrollbar = draw_scrollbar
+ui.scrollbar_click = scrollbar_click
+ui.thumb = thumb_of
 
 --------------------------------------------------------------------------
 -- Views.

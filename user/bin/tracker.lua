@@ -57,6 +57,7 @@ local selected = 0
 -- be one function rather than two that drift apart.
 local new_folder, delete_selected
 local sort_by  = "name"
+local scroll   = 1        -- the first row shown; the bar moves this
 local reversed = false
 
 local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where }
@@ -140,9 +141,30 @@ function rows:draw(g)
   local list = sorted()
   self.shown  = list
 
-  local first = math.max(1, math.min(selected - per + 1, #list - per + 1))
-  first = math.max(1, first)
+  --
+  -- The scroll position is remembered rather than worked out from the
+  -- selection every time.
+  --
+  -- It used to be `selected - per + 1`, which means the list can only be
+  -- moved by moving the selection - and a scrollbar moves the list without
+  -- touching it. So: keep `scroll`, and only push it far enough that the
+  -- selection stays visible.
+  --
+  if selected > 0 then
+    if selected < scroll then scroll = selected end
+    if selected > scroll + per - 1 then scroll = selected - per + 1 end
+  end
+
+  if scroll > #list - per + 1 then scroll = #list - per + 1 end
+  if scroll < 1 then scroll = 1 end
+
+  local first = scroll
   self.first = first
+  self.per = per
+
+  -- The bar covers the rows and the heading alike, so it starts below the
+  -- heading rather than at the top of the well.
+  self.bar = ui.scrollbar(g, self.w, self.h, #list, per, first)
 
   for i = 0, per - 1 do
     local n = first + i
@@ -155,7 +177,9 @@ function rows:draw(g)
     local bg = on and theme.accent or theme.sunken
     local fg = on and theme.text_on or theme.text
 
-    if on then g:fill(1, y, self.w - 2, GH, bg) end
+    if on then
+      g:fill(1, y, self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0), GH, bg)
+    end
 
     g:text(COLUMNS[1].x, y, files.label(e), fg, bg)
     g:text(COLUMNS[2].x, y,
@@ -199,6 +223,39 @@ local function open_selected()
 end
 
 function rows:mouse(action, x, y)
+  --
+  -- The bar first, and it takes moves and releases as well as presses -
+  -- everything else in this view only cares about a press, which is why the
+  -- early return below has to come after this rather than before it.
+  --
+  if self.bar and x >= self.w - ui.SCROLL_W - 2 then
+    local per = self.per or 1
+    local total = self.shown and #self.shown or 0
+
+    if action == "press" then
+      local to = ui.scrollbar_click(x, y, self.w, self.h, total, per, scroll)
+
+      if to == scroll then
+        self.bar_drag = { y = y, top = scroll }
+      elseif to then
+        scroll = to
+      end
+    elseif action == "move" and self.bar_drag then
+      local d = self.bar_drag
+      local _, size = ui.thumb(self.h, total, per, d.top)
+      local room = (self.h - 4) - (size or 0)
+
+      if room > 0 then
+        scroll = math.min(math.max(1, d.top + ((y - d.y) * (total - per)) // room),
+                          math.max(1, total - per + 1))
+      end
+    elseif action == "release" then
+      self.bar_drag = nil
+    end
+
+    return true
+  end
+
   if action ~= "press" then return false end
 
   if y < (self.top_row or 0) then

@@ -176,6 +176,12 @@ function table_view:draw(g)
   if top > #rows - visible + 1 then top = #rows - visible + 1 end
   if top < 1 then top = 1 end
 
+  -- The bar, and the rows stop where it starts.
+  self.bar = ui.scrollbar(g, self.w, self.h, #rows, visible, top)
+  self.visible = visible
+
+  local room = self.w - 4 - (self.bar and ui.SCROLL_W + 2 or 0)
+
   for i = top, math.min(top + visible - 1, #rows) do
     local r = rows[i]
     local y = 3 + (i - top) * ROW
@@ -183,7 +189,7 @@ function table_view:draw(g)
     local bg = on and theme.accent or theme.sunken
 
     if on then
-      g:fill(2, y, self.w - 4, ROW, bg)
+      g:fill(2, y, room, ROW, bg)
     end
 
     -- Name, then a bar, then the share. The bar is the point: BeOS put one
@@ -239,6 +245,38 @@ end
 -- Clicking picks a row, which is what the End button acts on.
 --
 function table_view:mouse(action, x, y)
+  --
+  -- The bar first, because it sits over the right-hand end of every row.
+  -- Shared with `ui.list` rather than written again here: three scrollbars
+  -- in one system would be three that drift apart.
+  --
+  local visible = self.visible or 1
+
+  if self.bar and x >= self.w - ui.SCROLL_W - 2 then
+    if action == "press" then
+      local to = ui.scrollbar_click(x, y, self.w, self.h, #rows, visible, top)
+
+      if to == top then
+        self.bar_drag = { y = y, top = top }
+      elseif to then
+        top = to
+      end
+    elseif action == "move" and self.bar_drag then
+      local d = self.bar_drag
+      local _, size = ui.thumb(self.h, #rows, visible, d.top)
+      local room = (self.h - 4) - (size or 0)
+
+      if room > 0 then
+        top = math.min(math.max(1, d.top + ((y - d.y) * (#rows - visible)) // room),
+                       math.max(1, #rows - visible + 1))
+      end
+    elseif action == "release" then
+      self.bar_drag = nil
+    end
+
+    return true
+  end
+
   if action == "press" or action == "move" then
     local row = (y - 3) // ROW + top
 
