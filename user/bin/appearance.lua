@@ -48,6 +48,61 @@ local SWATCHES = {
 local SW      = 40             -- a swatch, in pixels
 local PER_ROW = 8
 
+--
+-- Every theme this machine has: the ones compiled in, plus any `.theme`
+-- file it finds on the disk.
+--
+-- A theme is text - `ui.md` and `theme.lua` describe the format - so
+-- "install a theme" means putting a file somewhere, not rebuilding
+-- anything. The shipped ones are in `/lib/themes.lua` in exactly the same
+-- format, parsed by exactly the same parser, so the format is the thing
+-- that ships rather than a thing bolted on beside it.
+--
+local theme = ui.theme
+local complaints = {}
+
+do
+  local shipped = use("/lib/themes.lua")
+
+  for _, name in ipairs(shipped.order) do
+    local palette, said = theme.read(shipped[name], "dark")
+
+    theme.install(name, palette)
+
+    for _, why in ipairs(said) do
+      complaints[#complaints + 1] = name .. ": " .. why
+    end
+  end
+
+  -- And whatever is on the disk. A machine with no disk simply finds
+  -- nothing, which is why this is not an error.
+  for _, file in ipairs(fs.list("/system/themes") or {}) do
+    if file:match("%.theme$") then
+      local palette, said = theme.load("/system/themes/" .. file, "dark")
+
+      if palette then
+        local name = palette.name or file:gsub("%.theme$", "")
+
+        theme.install(name, palette)
+
+        for _, why in ipairs(said or {}) do
+          complaints[#complaints + 1] = name .. ": " .. why
+        end
+      end
+    end
+  end
+end
+
+local function theme_names()
+  local names = {}
+
+  for name in pairs(theme.palettes) do names[#names + 1] = name end
+
+  table.sort(names)
+
+  return names
+end
+
 local chosen_palette = "dark"
 local chosen_desktop = nil     -- nil means "whatever the palette says"
 
@@ -69,8 +124,11 @@ local function send()
   -- Both return values. `fs.send` answers `nil, reason` when the server
   -- said no, so a caller that looks only at the first one reports "no
   -- reply" for every refusal and throws away what was actually wrong.
+  -- The palette *table*, not its name: the window manager forwards what it
+  -- is given to every window, and a window cannot look up a theme that only
+  -- ever existed as a file on this machine's disk.
   local reply, why = fs.send("/dev/wm", { type = "theme",
-                                          palette = chosen_palette,
+                                          palette = theme.palettes[chosen_palette],
                                           desktop = chosen_desktop,
                                           fonts = chosen })
 
@@ -95,15 +153,26 @@ end
 
 win:add(ui.label{ x = 12, y = 10, w = W - 24, text = "Palette" })
 
-win:add(ui.button{
-  x = 12, y = 32, w = 110, h = 26, text = "Dark",
-  on_click = function() chosen_palette = "dark"; send() end,
-})
+--
+-- A list rather than a button per theme. Two buttons fitted while there
+-- were two themes; there is no number of themes for which a row of buttons
+-- is right, and a list is the widget that already knows how to be any
+-- length.
+--
+local palette_list = ui.list{
+  x = 12, y = 30, w = W - 24, h = 58,
+  items = theme_names(),
+  on_select = function(_, item)
+    chosen_palette = item
+    send()
+  end,
+}
 
-win:add(ui.button{
-  x = 132, y = 32, w = 110, h = 26, text = "Light",
-  on_click = function() chosen_palette = "light"; send() end,
-})
+for i, n in ipairs(palette_list.items) do
+  if n == chosen_palette then palette_list.selected = i end
+end
+
+win:add(palette_list)
 
 win:add(ui.label{ x = 12, y = 76, w = W - 24, text = "Desktop" })
 

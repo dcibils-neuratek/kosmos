@@ -1057,7 +1057,7 @@ handlers.open = function(req, who, cap)
   -- a caller that does not know where its menu ended up cannot hit-test it.
   return { ok = true, window = win.handle, w = w_, h = h_,
            x = win.x, y = win.y,
-           palette = theme.name, desktop = theme.desktop,
+           palette = theme.current(), desktop = theme.desktop,
            fonts = theme.fonts }
 end
 
@@ -1428,9 +1428,25 @@ handlers.theme = function(req)
   -- forwarded, so a window drawing its own pixels changes too.
   local font_why = apply_fonts(req.fonts)
 
+  --
+  -- The whole palette, not its name.
+  --
+  -- A name only works while every window already holds the same palettes,
+  -- which was true when two were compiled in and stopped being true the
+  -- moment a theme could be a file. `theme.apply` takes either, so this is
+  -- the one line that had to change.
+  --
+  local now = theme.current()
+
   for _, win in ipairs(windows) do
-    post(win, { type = "theme", palette = theme.name, desktop = theme.desktop,
+    post(win, { type = "theme", palette = now, desktop = theme.desktop,
                 fonts = theme.fonts })
+  end
+
+  -- Menus wear the theme too, and they are not in `windows`.
+  for _, m in ipairs(menus) do
+    post(by_handle[m.owner], { type = "theme", palette = now,
+                               desktop = theme.desktop, fonts = theme.fonts })
   end
 
   add_damage(0, 0, W, H)

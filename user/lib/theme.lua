@@ -120,6 +120,167 @@ theme.palettes.light = {
 }
 
 --------------------------------------------------------------------------
+-- Themes as text.
+--
+-- GTK's idea, and the useful half of it. GTK2 kept themes in `gtkrc` files
+-- naming *semantic roles* - `bg[NORMAL]`, `fg[ACTIVE]` - so a theme was
+-- data a person could write rather than code somebody had to compile. That
+-- is exactly the shape wanted here, and this file already had the hard
+-- half: the tokens below are named for what they mean rather than for what
+-- they colour, which is `ui.md` 16.9 arriving at GTK's answer independently.
+--
+-- What is deliberately *not* taken is GTK3's CSS - selectors, a cascade and
+-- specificity, which is a constraint solver's worth of machinery, and
+-- `ui.md` 16.4 already refuses one of those for layout. A theme here is a
+-- flat list of key and value with no rules about which one wins, because
+-- there is only ever one.
+--
+-- Also not taken: GTK's *engines*. A GTK theme could ship drawing code as a
+-- shared object the toolkit loaded. `layout.md` records that Kosmos has no
+-- dynamic linking, and more to the point the drawing vocabulary is the
+-- kit's: `gc:raised`, `gc:sunken`, `gc:groove`. A theme picks the colours,
+-- never the algorithm.
+--
+-- The format, in full:
+--
+--   # a comment
+--   name       = Photon
+--   desktop    = #a4b8cc
+--   edge_light = #ffffff
+--
+-- A file may set as few tokens as it likes; anything it does not mention is
+-- inherited from the palette it is based on. That is what makes "the dark
+-- theme but with a green desktop" a three-line file instead of a copy of
+-- twenty values that then drifts.
+--------------------------------------------------------------------------
+
+-- Every token a palette has, so a typo in a theme file can be *told* rather
+-- than silently ignored - which is the failure mode that makes text
+-- configuration miserable everywhere it is miserable.
+theme.tokens = {
+  "name", "desktop", "window", "raised", "sunken", "line", "line_soft",
+  "edge_light", "edge_dark", "text", "text_dim", "text_on",
+  "tab", "tab_idle", "tab_text", "accent", "good", "bad", "ring", "stamp",
+}
+
+local known = {}
+
+for _, k in ipairs(theme.tokens) do known[k] = true end
+
+--
+-- `#rrggbb` or `#aarrggbb` to the 0xAARRGGBB this system draws with.
+--
+-- Opaque unless the file says otherwise: a theme that writes six digits
+-- means a colour, not a colour that is invisible because alpha defaulted to
+-- zero. That is a one-character mistake with a completely blank window as
+-- its symptom.
+--
+local function colour(v)
+  local hex = v:match("^#(%x+)$")
+
+  if not hex then return nil end
+
+  if #hex == 6 then
+    return 0xff000000 | tonumber(hex, 16)
+  elseif #hex == 8 then
+    return tonumber(hex, 16)
+  end
+
+  return nil
+end
+
+--
+-- Read a theme from text. Returns a palette table, plus a list of
+-- complaints - lines that were not understood and keys that are not
+-- tokens. The caller decides whether to care; `appearance` shows them,
+-- because a theme that silently half-loaded is worse than one that says
+-- which line it could not read.
+--
+function theme.read(text, base)
+  local out = {}
+  local said = {}
+  local n = 0
+
+  for k, v in pairs(theme.palettes[base or "dark"] or {}) do out[k] = v end
+
+  for line in tostring(text or ""):gmatch("([^\n]*)\n?") do
+    n = n + 1
+
+    -- Comments and blank lines, and a comment may follow a value.
+    local body = line:gsub("#%s.*$", ""):match("^%s*(.-)%s*$")
+
+    if body ~= "" then
+      local key, value = body:match("^([%w_]+)%s*=%s*(.-)$")
+
+      if not key then
+        said[#said + 1] = ("line %d: not `key = value`"):format(n)
+      elseif not known[key] then
+        said[#said + 1] = ("line %d: no token called `%s`"):format(n, key)
+      elseif key == "name" then
+        out.name = value
+      else
+        local c = colour(value)
+
+        if c then
+          out[key] = c
+        else
+          said[#said + 1] =
+            ("line %d: `%s` is not #rrggbb"):format(n, value)
+        end
+      end
+    end
+  end
+
+  return out, said
+end
+
+--
+-- Read one from the namespace, so a theme can be a file on the disk that
+-- nobody rebuilt anything to install.
+--
+function theme.load(path, base)
+  local text = fs.read(path)
+
+  if type(text) ~= "string" then
+    return nil, tostring(path) .. ": no such theme"
+  end
+
+  return theme.read(text, base)
+end
+
+--
+-- The palette in force, as a flat table of just the tokens.
+--
+-- This is what crosses to every window when the appearance changes, and it
+-- has to be the *values* rather than the name. A name only works while both
+-- sides already hold the same palettes - which was true when there were two
+-- of them compiled in, and stopped being true the moment a theme could be a
+-- file somebody wrote. An application cannot look up a theme it has never
+-- read.
+--
+-- Twenty numbers and a string, which is nothing against a 2048-byte
+-- message, and it means a theme loaded from a disk works in every window
+-- without any of them knowing the file existed.
+--
+function theme.current()
+  local out = {}
+
+  for _, k in ipairs(theme.tokens) do out[k] = theme[k] end
+
+  return out
+end
+
+--
+-- Install a palette under a name, which is what makes a loaded file appear
+-- in `appearance` beside the ones that ship.
+--
+function theme.install(key, palette)
+  theme.palettes[key] = palette
+
+  return palette
+end
+
+--------------------------------------------------------------------------
 -- The one that is in force.
 --
 -- Fields are copied into this table rather than the table being swapped,
