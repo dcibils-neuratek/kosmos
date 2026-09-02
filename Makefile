@@ -659,7 +659,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest screenshot bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot bench bench-record debug disasm size clean dist release disk
 
 # A disk image, built here, with whatever you want already in it.
 #
@@ -764,7 +764,12 @@ dist: $(TARGET)
 #
 RELEASE_SIZES := 1024x768 1280x800 1920x1080
 
-release: $(TARGET)
+# A binary that leaves this machine has been used for a while first.
+#
+# `make test` says the parts work and `make screenshot` says the machine
+# works once. Neither notices a pool that fills on the fiftieth try, and a
+# release is the thing somebody else runs without watching it.
+release: $(TARGET) stress
 	@mkdir -p builds
 	@for size in $(RELEASE_SIZES); do \
 	    rm -f $(BUILD)/hal/qemu-virt/fb.c.o $(TARGET); \
@@ -803,6 +808,15 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# Files on and off the image from this computer, which is what a
 	@# filesystem that is not FAT32 has to answer for.
 	python3 tools/run_interchange.py $(TARGET)
+
+# Used for a while, then asked whether it gave everything back.
+#
+# Not part of `make test`: that is the fast gate and this boots a machine and
+# works it for minutes. This is the gate on a *release* - see the `release`
+# target, which will not produce a binary that has not survived it.
+.PHONY: stress
+stress: $(TARGET)
+	python3 tools/run_stress.py $(TARGET) $(if $(ROUNDS),$(ROUNDS),60)
 
 # Power loss, which cannot be asked inside one boot. Not part of `make test`
 # because it boots eleven times and kills five of them.

@@ -15,6 +15,34 @@ big enough to be one. `make bump`, `make bump-minor`, `make bump-major`.
 
 A personal learning project. There are no users, no compatibility to maintain, no deadline. **Correctness and simplicity always win over delivery speed.**
 
+---
+
+## What this is aiming at
+
+**A blazing fast, responsive graphical operating system.** Not a shell that
+grew a window manager - that is where it started and it is no longer what it
+is. The bet is BeOS's, updated: a desktop that feels instant on hardware that
+exists now, with QNX's answers where BeOS did not have them.
+
+Four things, and they are the order of preference when two of them disagree:
+
+- **Fast.** A microkernel with fast servers, and a UI with no slow paths in
+  it. Where something is slow, measure it and move the byte loops to C; where
+  it is fast enough, leave it in Lua.
+- **Responsive.** Bounded, not merely quick on average. Input reaches the
+  thing that draws without waiting behind whatever else is running.
+- **Secure.** Capabilities, no global names, no ambient authority. What you
+  were not handed, you cannot reach.
+- **Scalable.** It has to still be true when the machine is busy, which is
+  what `make stress` is for.
+
+**The target is a Raspberry Pi 5**, and it is chosen to be hard: a fast UI on
+it is a real result rather than a QEMU number.
+
+**We know an OS can be built here. The remaining question is whether it can
+be a fast one.** That is what to optimise for now - not more features, and
+not another subsystem, but the speed and the feel of the ones that exist.
+
 **Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware (Pi 5, Pi 1) arrives at milestone 2, once the serial cables are here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
 
 - The layers and how a command crosses them: `docs/architecture.md`
@@ -272,6 +300,18 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 **Nothing in Lua computes a pixel offset.** The pitch is almost never `width * 4`. All address arithmetic happens inside the C primitives. See `gfx.md` §19.3.
 
 **QEMU numbers are not performance numbers.** They are for detecting regressions (with `-icount`, which is deterministic), not for knowing whether something is fast. The PMU is not faithfully emulated under QEMU. Do not optimize against QEMU.
+
+**A binary that leaves this machine has been used for a while first.**
+`make test` says the parts work and `make screenshot` says the machine works
+*once*. Neither notices a pool that fills on the fiftieth try - and every
+resource bug this system has had was that shape: capability slots gone on the
+sixteenth read, a region per font per size, a process table full at round
+twenty-two. So `make release` runs `make stress`, which uses the machine hard
+and then asks `sysinfo` whether it gave everything back.
+
+Committing a working revision needs none of that. **Publishing a binary
+does**, because that is the one somebody runs on another computer without
+watching it.
 
 **Before a minor or major version, review the code before adding to it.** Not
 a skim: read the files that changed since the last one, as they now are
