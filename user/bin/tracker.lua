@@ -31,7 +31,12 @@ local files = use("/lib/files.lua")
 local types = use("/lib/filetypes.lua")
 local theme = ui.theme
 
-local W, H = 560, 400
+local W, H = 620, 440
+
+-- The menu bar's height, which everything below it is offset by. A menu bar
+-- is an ordinary widget in this window rather than a band the desktop
+-- reserves, so the offset is this program's business - see `ui.menubar`.
+local BAR_H = gfx.font.h + 8
 
 local where = args:match("^%s*(%S+)") or "/home"
 
@@ -46,10 +51,15 @@ local GW, GH = gfx.font.w, gfx.font.h
 
 local entries  = {}
 local selected = 0
+
+-- Declared here and defined with the toolbar, because the menu bar names
+-- the same actions and a menu item and a button doing the same thing should
+-- be one function rather than two that drift apart.
+local new_folder, delete_selected
 local sort_by  = "name"
 local reversed = false
 
-local here   = ui.label{ x = 12, y = 10, w = W - 24, text = where }
+local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where }
 local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
 
 --------------------------------------------------------------------------
@@ -103,7 +113,9 @@ local function sorted()
   return out
 end
 
-local rows = ui.view{ x = 12, y = 58, w = W - 24, h = H - 128 }
+local rows = ui.view{ x = 12, y = 58 + BAR_H, w = W - 24,
+                      h = H - 128 - BAR_H,
+                      follow = { "left", "right", "top", "bottom" } }
 
 rows.focusable = true
 
@@ -249,7 +261,7 @@ end
 win:add(here)
 
 local function button(x, w, text, fn)
-  win:add(ui.button{ x = x, y = 28, w = w, h = 24, text = text,
+  win:add(ui.button{ x = x, y = 28 + BAR_H, w = w, h = 24, text = text,
                      on_click = fn })
 end
 
@@ -260,10 +272,14 @@ end)
 button(70,  60, "Home",   function() show("/home") end)
 button(138, 76, "Refresh", function() show(where) end)
 
-button(222, 96, "New folder", function()
+--
+-- Named, because the menu and the toolbar do the same things and the same
+-- thing should be one function rather than two that drift apart.
+--
+function new_folder()
   -- Named by counting rather than by asking. A dialog for a name needs a
   -- panel of its own, and the thing that makes a folder useful is that it
-  -- exists; renaming is the next operation to add and is not here yet.
+  -- exists.
   local n = 1
   local name
 
@@ -275,9 +291,9 @@ button(222, 96, "New folder", function()
   local ok, why = fs.send(files.join(where, name), { type = "mkdir" })
 
   if ok then show(where) else status.text = tostring(why) end
-end)
+end
 
-button(326, 70, "Delete", function()
+function delete_selected()
   local e = rows.shown and rows.shown[selected]
 
   if not e then
@@ -293,7 +309,112 @@ button(326, 70, "Delete", function()
   else
     status.text = tostring(why)
   end
-end)
+end
+
+button(222, 96, "New folder", new_folder)
+button(326, 70, "Delete", delete_selected)
+
+--------------------------------------------------------------------------
+-- Copying, which is the thing a file manager is for and this one could not
+-- do.
+--
+-- One path, held until it is pasted. Not a copy of the *bytes*: a file that
+-- was copied and then changed before pasting should paste what it is now,
+-- and holding the contents would paste what it was. That is also why there
+-- is no size limit on copying and only on pasting - copying here costs a
+-- string.
+--------------------------------------------------------------------------
+
+local clipboard = nil
+
+local function chosen()
+  return rows.shown and rows.shown[selected]
+end
+
+local function do_copy()
+  local e = chosen()
+
+  if not e then status.text = "nothing is selected" return end
+
+  clipboard = files.join(where, e.name)
+  status.text = "copied " .. e.name
+end
+
+local function do_paste()
+  if not clipboard then
+    status.text = "nothing has been copied"
+    return
+  end
+
+  local name = clipboard:match("([^/]+)$") or "copy"
+  local to = files.join(where, name)
+
+  -- Pasting into the directory a file came from would otherwise ask the
+  -- filesystem to copy a file onto itself, which is a truncation.
+  local n = 2
+
+  while fs.getattr(to) do
+    to = files.join(where, ("%s (%d)"):format(name, n))
+    n = n + 1
+  end
+
+  local put, why = files.copy(clipboard, to)
+
+  if put then
+    show(where)
+    status.text = ("pasted %s, %d bytes"):format(name, put)
+  else
+    status.text = tostring(why)
+  end
+end
+
+local function do_open()
+  if not chosen() then status.text = "nothing is selected" return end
+
+  open_selected()
+end
+
+local function sort_on(key)
+  if sort_by == key then reversed = not reversed else sort_by, reversed = key, false end
+end
+
+--------------------------------------------------------------------------
+-- The menu bar.
+--
+-- Added after the actions it names, because a menu is a list of functions
+-- and the functions have to exist. Its position is the top of the window;
+-- where it sits in the view tree does not decide where it is drawn.
+--------------------------------------------------------------------------
+
+win:add(ui.menubar{
+  x = 0, y = 0, w = W,
+  menus = {
+    { title = "File",
+      items = {
+        { text = "Open",       on_choose = do_open },
+        { text = "New folder", on_choose = function() new_folder() end },
+        { separator = true },
+        { text = "Copy",       on_choose = do_copy },
+        { text = "Paste",      on_choose = do_paste },
+        { separator = true },
+        { text = "Delete",     on_choose = function() delete_selected() end },
+      } },
+    { title = "Go",
+      items = {
+        { text = "Up",      on_choose = function()
+            if where ~= "/" then show(files.parent(where)) end
+          end },
+        { text = "Home",    on_choose = function() show("/home") end },
+        { text = "Refresh", on_choose = function() show(where) end },
+      } },
+    { title = "View",
+      items = {
+        { text = "By name", on_choose = function() sort_on("name") end },
+        { text = "By size", on_choose = function() sort_on("size") end },
+        { text = "By kind", on_choose = function() sort_on("kind") end },
+      } },
+  },
+})
 
 win:add(rows)
 win:add(status)

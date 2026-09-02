@@ -73,4 +73,91 @@ function files.label(entry)
 end
 
 
+--------------------------------------------------------------------------
+-- Copying a file, which is the one thing a file manager must be able to do
+-- and this system could not.
+--
+-- Through a shared region rather than through Lua. `fs.read` hands back a
+-- string and a process has a 2 MB heap, so a copy that went that way would
+-- hold the whole file twice - once as the string and once inside the write
+-- - and fall over on anything real. `read_into` puts the bytes in pages
+-- this process owns and `write_from` sends the same pages out; the content
+-- never enters the interpreter at all.
+--
+-- **One region, one read, one write, and a limit that is honest about
+-- why.** `write_from` writes a whole file and takes no offset, so a copy
+-- larger than the region cannot be assembled - it would need either an
+-- append or a second region, and both are a change to the filesystem
+-- protocol rather than to this function. Until then a file bigger than the
+-- window is refused with its size, which is a copy that did not happen
+-- rather than one that half did.
+--------------------------------------------------------------------------
+
+local COPY_PAGES = 256                    -- 1 MB
+local COPY_MAX = COPY_PAGES * 4096
+
+local buffer                              -- allocated on the first copy
+
+function files.copy(from, to)
+  local attrs = fs.getattr(from)
+
+  if not attrs then return nil, from .. ": no such file" end
+
+  if attrs.kind == "directory" then
+    return nil, "copying a directory is not done yet"
+  end
+
+  local size = attrs.size or 0
+
+  if size > COPY_MAX then
+    return nil, ("%s is %d KB and the copy window is %d KB")
+                :format(from, size // 1024, COPY_MAX // 1024)
+  end
+
+  -- Allocated once and kept. A file manager copies more than one thing, and
+  -- a region per copy is a region per copy that nothing gives back.
+  if not buffer then
+    buffer = sys.memory(COPY_PAGES)
+
+    if not buffer then return nil, "no memory for a copy buffer" end
+  end
+
+  --
+  -- The region first, and a plain read if the server does not do regions.
+  --
+  -- Not every filesystem implements `read_into`. The program store serves
+  -- `/bin` out of the image and answers `read` with the source as a value;
+  -- it has no pages to hand over, so a copy from `/bin` failed outright -
+  -- which is exactly what the first copy attempted here did, and the status
+  -- bar said "could not be read" without saying that the *path* was the
+  -- reason.
+  --
+  -- So: the efficient way when it is available, and the ordinary way when
+  -- it is not. The ordinary way puts the file through this process's heap,
+  -- which is what the region exists to avoid - hence the same size limit
+  -- applying to both.
+  --
+  local got = fs.read_into(from, buffer, 0, size)
+
+  if got then
+    local put, why = fs.write_from(to, buffer, got)
+
+    if not put then return nil, to .. ": " .. tostring(why) end
+
+    return put
+  end
+
+  local data = fs.read(from)
+
+  if type(data) ~= "string" then
+    return nil, from .. ": could not be read"
+  end
+
+  local ok, why = fs.write(to, data)
+
+  if not ok then return nil, to .. ": " .. tostring(why) end
+
+  return #data
+end
+
 return files
