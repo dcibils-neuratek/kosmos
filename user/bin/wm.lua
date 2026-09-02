@@ -48,6 +48,12 @@ local BORDER     = 2
 -- the other.
 --
 local BOX        = 14
+
+-- How far a control sits from the end of the tab. One constant for both
+-- ends, because "the same margin on the left and the right" is a fact about
+-- the tab rather than a coincidence between two numbers.
+local MARGIN     = 4
+
 local CLOSE_W    = BOX + 6        -- the close box at the left of a tab
 
 --
@@ -285,7 +291,11 @@ end
 local function boxes_x(win)
   local fx, _, fw = frame_of(win)
 
-  return fx + fw - BOX_W * 2 - 8
+  -- The pair spans from here to `BOX_W + BOX` further on: the first box
+  -- starts the slot, the second starts one slot in and is `BOX` wide. Put
+  -- the far edge `MARGIN` from the frame and the right side matches the
+  -- left, which it did not - close sat four pixels in and these sat twelve.
+  return fx + fw - MARGIN - (BOX_W + BOX)
 end
 
 --------------------------------------------------------------------------
@@ -729,7 +739,7 @@ local function compose_rect(r)
         -- looks like a control and not like a hole in the amber.
         --
         local by = fy + (TAB_H - BOX) // 2
-        local bx = fx + 4
+        local bx = fx + MARGIN
 
         raised_box(bx, by, BOX, BOX, theme.raised)
 
@@ -739,8 +749,8 @@ local function compose_rect(r)
         back:fill(bx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
         back:fill(bx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
 
-        back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
-                  title_colour(), tab)
+        back:text(fx + MARGIN + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2,
+                  win.title, title_colour(), tab)
 
         --
         -- Minimise and maximise, at the *right*, with close staying at the
@@ -1867,7 +1877,7 @@ local function pointer_pass(p)
           minimise(win)
         elseif nx >= mx + BOX_W and nx < mx + BOX_W * 2 and resizable(win) then
           maximise(win)
-        elseif nx < fx + 4 + CLOSE_W then
+        elseif nx < fx + MARGIN + CLOSE_W then
           --
           -- The close box. Asked first, taken by force second.
           --
