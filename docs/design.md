@@ -631,6 +631,26 @@ A historical clarification first, because this gets conflated often: **BeOS was 
 
 Kosmos is more radical: servers in separate processes with separate address spaces. That is QNX. From BeOS it takes the concurrency model and the design sensibility.
 
+**Where it ranks, as of September 2026: below speed.** This section used to
+treat hot reload as the property the design existed to protect, and that is
+no longer the order. The goal is a system that is fast and stays responsive
+on a Pi 5, and when the two disagree, responsiveness wins - a server that
+needs to be C to hold a frame becomes C, and gives reload up.
+
+That is a demotion rather than a repudiation. Reload still works, it is still
+how development here feels, and nothing below this line has stopped being
+true. What changed is that it is no longer an argument that ends a
+discussion.
+
+**And it is not what keeps the policy servers in Lua.** Two other things do.
+The first is arithmetic: the namespace, init and the `/app` registry move
+almost no bytes, so C would buy a fraction of the ~2% that structure-shaped
+Lua costs. The second is the shape of the bug - a Lua server cannot have a
+buffer overflow. Isolation is identical either way, since both are EL0
+processes behind an address space, but one failure is a stack trace and the
+other is a night with a debugger. So C is for servers whose hot loop is small
+and bounded, and policy code is neither.
+
 ### Two levels
 
 **Level 1 — reload code in a live server.** Nearly free in Lua. The server keeps its state in a table, receives a reload message, `load()`s the new code, and continues. The process never died and the clients never knew. This is the fun part and it is what will change how you work.

@@ -230,11 +230,22 @@ costs about 2%, measured, which is nothing. What decides a server is
 is 16 ms. No amount of optimising the Lua removes that, and responsiveness is
 a promise about the worst case rather than the average.
 
-**The argument for Lua is hot reload.** M5's definition of done was replacing
-the console server's code while the shell was mid-conversation with it, and
-`layout.md` records that there is no dynamic linking - so a C server cannot
-be reloaded at all. Moving one to C gives that up rather than trading it,
-which is why a server that moves no bytes stays here.
+**Hot reload is real and it is no longer what ranks first.** It works, M5
+proved it - the console server's code was replaced while the shell was
+mid-conversation with it - and `layout.md` records that there is no dynamic
+linking, so a C server cannot be reloaded at all. That is a genuine cost and
+it is now an accepted one: **where speed and hot reload disagree, speed
+wins.** Decided September 2026, and it is a change of order rather than a
+change of opinion about reload.
+
+**What keeps a policy server in Lua, then, is the shape of its bug.** A Lua
+server cannot have a buffer overflow. The blast radius is identical either
+way - both are EL0 processes behind an address space, and neither can touch
+another - but one of those bugs is a stack trace and the other is an evening.
+So C is for a server whose hot loop is *small and bounded*: a scanner, a
+blitter, a packet path. Four thousand lines of policy rewritten in C would be
+string handling and table lookups, which is where overflows live and where C
+buys nothing.
 
 **The window manager is the open case, and it is a measurement rather than an
 opinion.** Its pixel work is already C; its Lua half is layout, focus, damage
@@ -246,11 +257,11 @@ thousand lines.
 and a tool each are, and the distinction that does the most work: **a kit is
 code you run, a server is someone you ask.**
 
-**Do not push things down to C "because it is faster" without a profile that justifies it.** Every time something is pushed to C, hot reload is lost, and hot reload is the reason for the entire design.
+**Do not push things down to C "because it is faster" without a profile that justifies it.** Not because reload outranks speed - it does not - but because without a number you cannot tell whether you bought anything. Structure-shaped Lua costs about 2%, and 2% of nothing is nothing.
 
 **But notice what that cost is made of, because it is not always there.** The price of C is losing hot reload. A finished algorithm has nothing to reload: JPEG is not going to change, and neither is DEFLATE, or the syntax of a PDF content stream. For those the cost is zero and the speed is free, so they belong in C and the profile is a formality.
 
-The test, then, is two questions rather than one: **is it a loop over bytes, and would you ever want to reload it?** A window manager's layout policy is reloaded constantly. A Huffman decoder never is.
+The first question is therefore the one that decides: **is it a loop over bytes, or does it sit where a collector pause would be felt?** If neither, C buys about 2% and costs reload, and the answer is no. Reload is the tiebreaker rather than the veto it used to be: a Huffman decoder is never reloaded, so for a codec the cost is genuinely zero.
 
 The legitimate exception is pixel loops: never in Lua. Lua decides what gets drawn and where, the loop happens inside a surface, in C.
 
