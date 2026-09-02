@@ -54,4 +54,24 @@ function filetypes.kind_of(path, attrs)
   return ext and ext:lower() or nil
 end
 
+--
+-- Which program opens a path, or nil if nothing claims it.
+--
+-- Tracker has always called this and this file has never had it, so opening
+-- a file from the file manager failed on the call rather than on the answer:
+-- `types.opener(full)` on a nil field, every time, for every file. Nothing
+-- caught it because nothing tests opening a file from Tracker - the display
+-- harness starts applications from the Deskbar, which goes a different way.
+--
+-- Thin on purpose. `kind_of` already decides what a file *is*, attribute
+-- first and extension second, and this is only the lookup from that to a
+-- program name. Keeping them apart is what lets the type come from an
+-- attribute later without this function changing at all.
+--
+function filetypes.opener(path, attrs)
+  local kind = filetypes.kind_of(path, attrs)
+
+  return kind and filetypes.by_extension[kind] or nil
+end
+
 return filetypes

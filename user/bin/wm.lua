@@ -274,8 +274,26 @@ local ops = {
            o.color or 0xffffffff, o.bg)
   end,
 
+  --
+  -- Removed, because it could only ever have failed.
+  --
+  -- This called `s:blend(x, y, w, h, colour)` as though it were an alpha
+  -- fill. `l_blend` in `gfx.c` is not one: it is a surface-to-surface alpha
+  -- *blit* and wants a surface at argument two, so this passed a number
+  -- where a userdata was checked for and raised every time.
+  --
+  -- It never raised, because nothing could reach it: `ui.lua`'s graphics
+  -- context has no `blend` verb, so no application has ever sent the op.
+  -- Dead and wrong at the same time, which is the pair that survives
+  -- longest - neither the compiler nor the tests have anything to say about
+  -- code nobody calls.
+  --
+  -- An alpha fill is genuinely wanted for a dimmed control or a wash behind
+  -- a menu, and when it arrives it is new C in `gfx.c` plus a verb in the
+  -- kit, not this line.
+  --
   blend = function(s, o)
-    s:blend(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0)
+    local _ = s, o
   end,
 
   --
