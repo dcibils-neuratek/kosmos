@@ -448,6 +448,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.processes_used   = process_count();
     info.processes_held   = process_slots_used();
     info.processes_total  = PROCESS_MAX;
+    info.regions_used     = memobj_in_use();
+    info.regions_total    = memobj_total();
     info.endpoints_used   = ipc_endpoints_in_use();
     info.endpoints_total  = ENDPOINT_MAX;
     info.spaces_used      = as_count();
@@ -858,8 +860,18 @@ void syscall_dispatch(struct trapframe *tf)
         result = ipc_install_memory(thread_current(), m);
 
         if (result < 0) {
+            /*
+             * The region was made and there is nowhere to put the
+             * capability to it: this thread's table is full.
+             *
+             * Reported as itself rather than folded into NO_ROOM. The two
+             * are completely different problems - one is a machine out of
+             * memory, the other is one process holding too many things -
+             * and saying "no room" for both cost an evening of looking at
+             * the allocator while 117,000 pages sat free.
+             */
             memobj_unref(m);            /* the create's own reference */
-            result = SYS_ERR_NO_ROOM;
+            result = SYS_ERR_NO_CAPS;
             break;
         }
 

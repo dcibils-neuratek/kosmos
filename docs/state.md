@@ -60,6 +60,55 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **A PDF renders as it was typeset.** `wm pdfview:/home/odyssey.pdf` draws
+  the page in the document's own Times New Roman, at the positions its
+  producer chose, from the font programs carried inside the file. 685 glyphs
+  in 152 ms, and scrolling is a blit out of a surface that already holds the
+  page - the interpreter does not run again and no glyph is rasterised
+  twice.
+
+  `user/lib/docfont.c` is the C half: a font loaded from bytes in the
+  document, rasterised **by glyph index** rather than codepoint, cached per
+  face per size, and a `draw` that takes a whole page as a flat array so a
+  page is two or three crossings instead of two thousand. `pdfview` is a
+  direct window (`gfx.md` 19.4), which is what lets it own its pixels.
+
+- **A PDF's fonts have no `cmap`, and that is correct.** A CID-keyed subset
+  is addressed by glyph index, so a character map means nothing and the
+  producer drops it - the font here has eleven tables and `cmap` is not
+  among them. `stbtt_InitFont` refuses a font without one, *and* refuses one
+  whose cmap carries no encoding record it recognises: the last thing it
+  does is `if (info->index_map == 0) return 0`. Rather than touch vendored
+  code, `ensure_cmap` writes a 22-byte table into our own copy of the font
+  and repoints the unused `post` entry at it.
+
+- **Sixteen capabilities a thread was a number from when the userland was a
+  shell.** A graphical application holds its console, its `/dev/wm`
+  endpoint, the filesystem, its window's region, a read buffer, the buffers
+  a page decodes through, and a region per embedded font. It ran out
+  mid-page, and the failure arrived as `NO_ROOM` - which reads as "out of
+  memory" and sent two evenings at the allocator. There were 117,000 free
+  pages at the time.
+
+  Three things came out of that and all three stay: the limit is 32,
+  `SYS_ERR_NO_CAPS` is its own error rather than folded into `NO_ROOM`, and
+  **`sysinfo` reports the region pool**, which it never did - `memobj_in_use`
+  and `memobj_total` had existed since regions did and nothing had ever
+  called them, so "could not allocate a region" was the same sentence
+  whether the machine was out of memory or out of descriptors.
+
+  **Sixty-four was tried first and panicked the benchmark image.** A slot is
+  32 bytes, so that was 73 KB more `.bss`, and this kernel has a documented
+  constraint about exactly that: the thread stacks and their guard pages
+  have to stay inside the first 2 MB of RAM, the only part mapped a page at
+  a time. `make test` passed and the benchmarks did not, which is the
+  argument for having a third build.
+
+- **Errors from a syscall have words now.** `ipc_error` knew five codes and
+  answered "unknown error" for the rest, including every `SYS_ERR_*`. Half
+  of the debugging above was reading that phrase.
+
+
 - **A region is a list of pages, not a run of them.** `memobj.h` used to
   explain why they were contiguous and named the cost in its own words: "a
   large region can fail to allocate on a fragmented machine even when there
@@ -562,50 +611,6 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
   `mmu_init` about a stack guard, which is nowhere near the cause.
 
 ## Known bad
-
-**`pdfview` renders nothing, and the cause is contiguous memory rather than
-the renderer.** The renderer itself works: `user/lib/docfont.c` loads a font
-program out of the document, rasterises glyphs *by index* through
-`stbtt_GetGlyphBitmap`, caches them, and draws a whole page in two or three
-crossings. It was seen drawing, with `handle=true` and glyphs on a page.
-
-What it cannot do is get memory for everything at once. A `memobj` is
-**physically contiguous** by construction - `SYS_MEM_MAP` maps `base + i *
-PAGE_SIZE` and assumes it - and a rendered page wants all of these at the
-same time:
-
-  * the page surface, about 730 pages at this window size
-  * the content-stream buffers, 48
-  * a font program per face, 5 to 13 each
-  * the window's own double buffer, around 920
-
-Whichever is asked for last fails, and moving the order only moves which one
-fails: loading fonts first starves the content buffers, allocating the page
-first starves the fonts. Seven megabytes of a 512 MB machine, and it is the
-*runs* that are missing rather than the pages.
-
-Three ways out, cheapest first:
-
-  * **Render a band rather than a page.** The window is 620 tall and the
-    page surface is 984; a band of the visible height plus a margin, re-cut
-    when scrolled past it, is a third of the pages. Scrolling stays a blit.
-  * **Reuse one surface across pages**, which it half does already - it only
-    reallocates when the size changes.
-  * **Let a memobj be non-contiguous**: a page list rather than a base
-    pointer, with `SYS_MEM_MAP` walking it. That is the principled fix and
-    the only one that stops this recurring, and it is real kernel work.
-
-Two things found on the way that are fixed and worth keeping:
-
-  * **A PDF's fonts have no `cmap`**, which is correct - a CID-keyed subset
-    is addressed by glyph index, so a character map means nothing and the
-    producer drops it. `stbtt_InitFont` refuses a font without one, *and*
-    refuses one whose cmap has no encoding record it recognises. Rather than
-    modify vendored code, `ensure_cmap` writes a 22-byte cmap into our own
-    copy and repoints the `post` entry at it.
-  * **A font program is loaded once per face, not per face per size.** The
-    first version allocated two regions per size and never released them.
-
 
 **One display phase fails about one run in three, and I do not know why.**
 `check_widgets` clicks the gallery's list and presses Down through QEMU's

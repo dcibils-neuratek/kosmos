@@ -275,12 +275,11 @@ local function program_of(doc, font)
 
   local offset, length, filter = doc:stream_range(font.file)
 
-  if not offset then print("pdfpage: font: no stream") return nil end
+  if not offset then return nil end
 
   local raw = sys.memory(pages_for(length))
 
   if not raw then
-    print(("pdfpage: font: no region for %d pages"):format(pages_for(length)))
     return nil
   end
 
@@ -293,10 +292,7 @@ local function program_of(doc, font)
     done = done + got
   end
 
-  if done ~= length then
-    print(("pdfpage: font: read %d of %d"):format(done, length))
-    return nil
-  end
+  if done ~= length then return nil end
 
   if filter[1] ~= "FlateDecode" then
     font.program = { at = raw_at, size = length,
@@ -308,19 +304,13 @@ local function program_of(doc, font)
   -- one is synthesised on the end of it; see `ensure_cmap` in docfont.c.
   local sized, want = pcall(compress.inflated_size, raw_at, length)
 
-  if not sized then
-    print("pdfpage: font: inflated_size: " .. tostring(want))
-    return nil
-  end
+  if not sized then return nil end
 
   want = want + 32
 
   local out = sys.memory(pages_for(want))
 
-  if not out then
-    print(("pdfpage: font: no out region for %d pages"):format(pages_for(want)))
-    return nil
-  end
+  if not out then return nil end
 
   local out_at = sys.memory_map(out)
   local cap    = pages_for(want) * 4096
@@ -388,10 +378,6 @@ function pdfpage.rasteriser(doc, font, px)
       local ok, handle = pcall(gfx.docfont, program.at, program.size,
                                program.cap, px)
 
-      if not ok then
-        print("pdfpage: docfont: " .. tostring(handle))
-      end
-
       font.handles[px] = ok and handle or false
     else
       font.handles[px] = false
@@ -429,9 +415,16 @@ local function regions()
     local out, why2 = sys.memory(OUT_PAGES)
 
     if not raw or not out then
-      print(("pdfpage: page buffers: raw=%s (%s) out=%s (%s)")
-            :format(tostring(raw), tostring(why1),
-                    tostring(out), tostring(why2)))
+      -- Named, because "could not allocate" is the same sentence whether
+      -- the machine is out of memory or this process is out of capability
+      -- slots, and those are entirely different problems. Telling them
+      -- apart took an evening once.
+      local i = sys.info() or {}
+
+      print(("pdfpage: page buffers: %s / %s (regions %s/%s, pages free %s)")
+            :format(tostring(why1), tostring(why2),
+                    tostring(i.regions_used), tostring(i.regions_total),
+                    tostring(i.pages_free)))
       return nil
     end
 

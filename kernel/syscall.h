@@ -261,6 +261,17 @@ struct sysinfo {
     uint32_t spaces_used;
     uint32_t spaces_total;
 
+    /*
+     * Shared regions. `memobj_in_use` and `memobj_total` have existed since
+     * regions did and nothing ever called them, so the pool's depth was
+     * invisible - and "a region could not be allocated" is the same message
+     * whether the machine is out of memory or out of *descriptors*, which
+     * are very different problems. Two rounds of debugging went to the wrong
+     * layer for want of this number.
+     */
+    uint32_t regions_used;
+    uint32_t regions_total;
+
     /* Devices. Zero width means there is no display. */
     uint32_t screen_width;
     uint32_t screen_height;
@@ -303,6 +314,7 @@ struct diskinfo {
 #define SYS_NO_CHILD_READY (-106)   /* children, but none has exited yet */
 #define SYS_NO_MESSAGE    (-107)    /* nothing to receive, and not blocking */
 #define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
+#define SYS_ERR_NO_CAPS   (-106)    /* this thread's capability table is full */
 
 /*
  * Everything above is plain preprocessor because user programs written in

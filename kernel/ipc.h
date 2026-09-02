@@ -122,7 +122,33 @@ static inline cap_t message_get_cap(const struct message *m)
  * check on every operation is a bounds check rather than a permission
  * lookup.
  */
-#define CAPS_PER_THREAD     16
+/*
+ * How many capabilities a thread may hold at once.
+ *
+ * Sixteen, until a graphical application turned out to need more than that
+ * on its own. A PDF viewer holds its console, its `/dev/wm` endpoint, the
+ * filesystem, its window's shared region, a read buffer, the buffers a page
+ * is decoded through, and a region per embedded font - and every one of them
+ * is a slot. It ran out mid-page and the failure arrived as `NO_ROOM`, which
+ * reads as "out of memory" and sent two rounds of debugging at the
+ * allocator. There were 117,000 free pages at the time.
+ *
+ * Thirty-two, because the shape of what runs here changed: the userland this
+ * number was chosen for was a shell and three servers.
+ *
+ * Sixty-four was tried first and panicked the benchmark image with a data
+ * abort. A slot is 32 bytes, so that was 1.5 KB more per thread and 73 KB
+ * more `.bss` across the pool - and `state.md` already records what `.bss`
+ * growth does here: the thread stacks and their guard pages have to stay
+ * inside the first 2 MB of RAM, which is the only part mapped a page at a
+ * time. Doubling is enough for what applications actually hold and leaves
+ * that alone.
+ *
+ * It is still a *limit*, and deliberately: a process that leaks capabilities
+ * should hit a wall rather than grow without bound. `SYS_CAP_DROP` is how a
+ * program stays under it.
+ */
+#define CAPS_PER_THREAD     32
 
 /*
  * How many endpoints exist. Here rather than only in ipc.c because

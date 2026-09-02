@@ -250,6 +250,9 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | The scheduler is swappable while the machine runs; the queues are drained, not dropped | thread.c, scheduler.lua |
 | Sep 2026 | Quantum and policy are anyone's to change; priority is not, because bands come from capability | syscall.c |
 | Sep 2026 | A shared region is a list of pages, not a contiguous run; the index lives in allocated pages | memobj.h |
+| Sep 2026 | A thread holds 32 capabilities, not 16: a graphical application needs more than a shell did | ipc.h |
+| Sep 2026 | A full capability table is its own error, not "out of memory" | syscall.h |
+| Sep 2026 | A document's own fonts are rasterised by glyph index, cached per face and size, drawn a page per call | docfont.c |
 
 ---
 

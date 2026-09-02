@@ -38,6 +38,10 @@ static const char *ipc_error(long status)
     case -3:   return "that thread is not waiting for a reply";
     case -4:   return "out of endpoints or capability slots";
     case -101: return "a pointer this process may not use";
+    case -102: return "this process does not hold that device";
+    case -104: return "there is nothing to wait for";
+    case -105: return "the machine is out of memory or processes";
+    case -106: return "this process holds too many capabilities";
     default:   return "unknown error";
     }
 }
@@ -421,6 +425,8 @@ static int l_info(lua_State *L)
     SET("processes_total",  info.processes_total);
     SET("endpoints_used",   info.endpoints_used);
     SET("endpoints_total",  info.endpoints_total);
+    SET("regions_used",     info.regions_used);
+    SET("regions_total",    info.regions_total);
     SET("spaces_used",      info.spaces_used);
     SET("spaces_total",     info.spaces_total);
 
