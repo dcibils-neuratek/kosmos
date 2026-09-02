@@ -1762,12 +1762,21 @@ local function dismiss_menus(owner_handle)
   return #menus < n
 end
 
+--
+-- Which window a point is in, front to back.
+--
+-- A minimised one is skipped. It keeps its place in the stack, its surface
+-- and its contents - an application drawing into it is not interrupted, the
+-- same as one buried under another window - but it is not on the screen,
+-- and a window you cannot see must not be a window you can click.
+--
 local function window_at(x, y)
   for i = #windows, 1, -1 do
     local win = windows[i]
     local fx, fy, fw, fh = frame_of(win)
 
-    if x >= fx and x < fx + fw and y >= fy and y < fy + fh then
+    if not win.hidden
+       and x >= fx and x < fx + fw and y >= fy and y < fy + fh then
       return win, fx, fy
     end
   end

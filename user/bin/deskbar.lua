@@ -175,7 +175,30 @@ function watcher:tick()
 
   handles = {}
 
-  for i, w_ in ipairs(reply and reply.windows or {}) do
+  --
+  -- Sorted by handle, which is the order the windows were opened in and
+  -- never changes.
+  --
+  -- The window manager returns them in *stacking* order, and stacking order
+  -- moves every time anything is raised - including by the very click that
+  -- is about to land on this list. So the row under the pointer changed
+  -- between the press and the release, and you restored whatever had taken
+  -- the place of the thing you aimed at.
+  --
+  -- `procs` hit this first and its comment says it best: "you aim at one and
+  -- end another". Its answer was to follow the selection by identity; this
+  -- one's is simpler because a window's handle never changes - put them in
+  -- an order that has nothing to do with what is on top.
+  --
+  local list = {}
+
+  for _, w_ in ipairs(reply and reply.windows or {}) do
+    list[#list + 1] = w_
+  end
+
+  table.sort(list, function(a, b) return a.handle < b.handle end)
+
+  for i, w_ in ipairs(list) do
     names[i] = w_.title
     handles[i] = w_.handle
   end
