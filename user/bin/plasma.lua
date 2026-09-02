@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section demos
 -- Pixels, drawn by the application itself, thirty times a second.
 --
 --   wm plasma

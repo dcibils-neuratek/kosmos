@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section demos
 -- An application with a window.
 --
 -- Started by `wm`, which hands it the window manager under /dev/wm and

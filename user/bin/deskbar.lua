@@ -67,21 +67,36 @@ if screen then sw, sh = screen:size() end
 
 local launchable = {}
 
-do
-  local names = fs.list("/bin") or {}
+--
+-- Three sections, the way BeOS's Be menu had three folders.
+--
+-- It sorted by *directory* - /boot/apps, /boot/demos, /boot/preferences -
+-- and the menu was those folders. Kosmos has one `/bin`, so each file says
+-- which section it is in and the program store reports it; see
+-- `kosmos: section` in the header of any application.
+--
+local SECTIONS = { "applications", "demos", "preferences" }
+local by_section = { applications = {}, demos = {}, preferences = {} }
 
-  for _, file in ipairs(names) do
+do
+  for _, file in ipairs(fs.list("/bin") or {}) do
     local attrs = fs.getattr("/bin/" .. file)
 
     if attrs and attrs.kind == "application" then
       local short = file:gsub("%.lua$", "")
 
+      -- The Deskbar does not list itself. It is not something you start.
       if short ~= "deskbar" then
+        local into = by_section[attrs.section or "applications"]
+                     or by_section.applications
+
+        into[#into + 1] = short
         launchable[#launchable + 1] = short
       end
     end
   end
 
+  for _, name in pairs(by_section) do table.sort(name) end
   table.sort(launchable)
 end
 
@@ -99,18 +114,21 @@ end
 local ROW = gfx.font.h
 local W = 210
 
-local RUNNING_ROWS = 6
-local app_rows = math.max(#launchable, 3)
+--
+-- A button and a list, and that is the whole window now.
+--
+-- It used to carry every application in a list of its own, which at
+-- twenty-three of them was most of the height of the screen and still
+-- needed scrolling. BeOS put them in a *menu* instead - three folders,
+-- opened from one button - and that is right for the same reason it is
+-- right anywhere: a launcher you use once a minute should not be occupying
+-- the screen the rest of the time.
+--
+local BUTTON_H = ROW + 12
+local RUNNING_ROWS = 10
 
 local running_h = RUNNING_ROWS * ROW + 6
-local apps_h = app_rows * ROW + 6
-
-local H = 26 + running_h + 26 + apps_h + 34
-
-if H > sh - 60 then
-  apps_h = apps_h - (H - (sh - 60))
-  H = sh - 60
-end
+local H = 12 + BUTTON_H + 12 + 18 + running_h + 30
 
 local win, err = ui.window{ title = "Deskbar", w = W, h = H,
                             x = sw - W - 12, y = 34 }
@@ -123,12 +141,13 @@ end
 local status = ui.label{ x = 10, y = H - 22, text = "",
                          color = "text_dim" }
 
-win:add(ui.label{ x = 10, y = 8, text = "Running", color = "text" })
+win:add(ui.label{ x = 10, y = 12 + BUTTON_H + 12, text = "Running",
+                  color = "text" })
 
 local handles = {}
 
 local running = ui.list{
-  x = 10, y = 26, w = W - 20, h = running_h, items = {},
+  x = 10, y = 12 + BUTTON_H + 12 + 18, w = W - 20, h = running_h, items = {},
   on_select = function(_, _, index)
     local handle = handles[index]
 
@@ -141,22 +160,58 @@ local running = ui.list{
 
 win:add(running)
 
-win:add(ui.label{ x = 10, y = 26 + running_h + 6, text = "Applications",
-                  color = "text" })
 
-local apps = ui.list{
-  x = 10, y = 26 + running_h + 26, w = W - 20, h = apps_h,
-  items = launchable,
-  on_select = function(_, name)
-    if not name then return end
 
-    local ok, why = fs.send("/dev/wm", { type = "launch", program = name })
-    status.text = ok and ("started " .. name)
-                     or ("could not: " .. tostring(why))
+--
+-- One button, and the menu comes out of it.
+--
+-- Opened downward from the button's bottom-left corner, which is where a
+-- menu belongs relative to the thing that opened it. `win.origin_x` is
+-- where this window's content starts on the screen; a menu is a window of
+-- its own and is placed on the screen, not inside this one.
+--
+local function section_items(which)
+  local out = {}
+
+  for _, name in ipairs(by_section[which] or {}) do
+    out[#out + 1] = {
+      text = name,
+      on_choose = function()
+        local ok, why = fs.send("/dev/wm", { type = "launch", program = name })
+
+        status.text = ok and ("started " .. name)
+                         or ("could not: " .. tostring(why))
+      end,
+    }
+  end
+
+  if #out == 0 then out[1] = { text = "(nothing here)" } end
+
+  return out
+end
+
+local menu_button
+menu_button = ui.button{
+  x = 10, y = 12, w = W - 20, h = BUTTON_H, text = "Kosmos",
+  on_click = function()
+    local items = {}
+
+    for _, which in ipairs(SECTIONS) do
+      items[#items + 1] = {
+        -- Capitalised for the menu, lower case everywhere else, because a
+        -- section is a name here and an identifier in the header.
+        text = which:sub(1, 1):upper() .. which:sub(2),
+        submenu = section_items(which),
+      }
+    end
+
+    win:open_menu(win.origin_x + menu_button.x,
+                  win.origin_y + menu_button.y + menu_button.h,
+                  items)
   end,
 }
 
-win:add(apps)
+win:add(menu_button)
 win:add(status)
 
 --------------------------------------------------------------------------
@@ -196,7 +251,16 @@ function watcher:tick()
     list[#list + 1] = w_
   end
 
-  table.sort(list, function(a, b) return a.handle < b.handle end)
+  --
+  -- Newest first, which is the opposite of the order they opened in.
+  --
+  -- Sorted rather than reversed-as-found, because the window manager hands
+  -- them back in stacking order and stacking order moves when anything is
+  -- raised - including by the click about to land on this list. A handle
+  -- never changes, so this order does not move under the pointer. `procs`
+  -- learned the same thing: "you aim at one and end another".
+  --
+  table.sort(list, function(a, b) return a.handle > b.handle end)
 
   for i, w_ in ipairs(list) do
     names[i] = w_.title

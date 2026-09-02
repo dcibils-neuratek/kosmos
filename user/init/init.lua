@@ -1575,6 +1575,10 @@ local function binfs_handlers(state)
         kind = state.windowed[name] and "application"
                or state.kinds[name] or "program",
 
+        -- Applications only; a program is not in the menu at all.
+        section = state.windowed[name]
+                  and (state.sections[name] or "applications") or nil,
+
         -- What it declared it needs, so a launcher can decide what to
         -- grant without reading the source itself.
         needs = state.needs[name],
@@ -1604,6 +1608,7 @@ local function binfs_main(endpoint, source, what)
   local programs = chunk()
   local windowed = {}
   local kinds = {}          -- for what is neither application nor program
+  local sections = {}       -- which part of the Deskbar's menu it lives in
   local needs = {}
 
   -- The comment block a file opens with, and nothing after it.
@@ -1666,6 +1671,22 @@ local function binfs_main(endpoint, source, what)
       kinds[name] = "server"
     end
 
+    --
+    -- Which part of the menu an application belongs in.
+    --
+    --   -- kosmos: section demos
+    --
+    -- BeOS sorted these by *directory* - /boot/apps, /boot/demos,
+    -- /boot/preferences - and the Deskbar's menu was those three folders.
+    -- Kosmos has one `/bin`, so the file says instead, which is where
+    -- everything else about a file is already said. Anything that does not
+    -- say is an application, because that is what most things are and a
+    -- declaration everybody has to write is a declaration everybody forgets.
+    --
+    local said = header:match("kosmos:%s*section%s+(%a+)")
+
+    if said then sections[name] = said:lower() end
+
     -- And a program may declare an authority it needs, which is the small
     -- beginning of `design.md` 9.2's manifest.
     --
@@ -1694,7 +1715,7 @@ local function binfs_main(endpoint, source, what)
 
   serve(endpoint,
         { programs = programs, windowed = windowed, kinds = kinds,
-          needs = needs },
+          sections = sections, needs = needs },
         binfs_handlers)
 end
 

@@ -2103,6 +2103,32 @@ local function pointer_pass(p)
   -- pointer moves rather than at the rate anything changes. What a button
   -- needs to un-press when you slide off it is drag, and this is drag.
   --
+  --
+  -- Hover, but only while a menu is open.
+  --
+  -- Movement is otherwise sent only to whatever is holding a button - see
+  -- the note below, which is still right: every movement would be a message
+  -- and an application would poll a queue full of them.
+  --
+  -- A menu is the one case that genuinely needs the pointer without a
+  -- button. You click a title, let go, and slide down the items; a submenu
+  -- opens because the pointer passed over its parent, not because anything
+  -- was pressed. Without this the whole menu is only usable by dragging.
+  --
+  -- Bounded by the thing that makes it affordable: it happens only while
+  -- menus are open, which is a second at a time and never while anything is
+  -- trying to be fast.
+  --
+  if #menus > 0 and not is_down and moved_this_pass then
+    local m = menu_at(nx, ny)
+
+    if m then
+      post(by_handle[m.owner],
+           { type = "mouse", menu = m.handle, action = "move",
+             x = nx - m.x, y = ny - m.y })
+    end
+  end
+
   if grabbed and is_down and moved_this_pass and grabbed.kind == "menu" then
     post(by_handle[grabbed.owner],
          { type = "mouse", menu = grabbed.handle, action = "move",

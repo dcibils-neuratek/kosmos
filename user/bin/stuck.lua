@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section demos
 -- An application that hangs, on purpose.
 --
 -- It opens a window, draws it once, and then stops answering for ever.

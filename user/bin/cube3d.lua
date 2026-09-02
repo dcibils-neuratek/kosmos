@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section demos
 -- A rotating solid cube, rendered in software.
 --
 --   wm cube3d

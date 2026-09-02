@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section demos
 -- The widget gallery. Every control the kit has, in one window.
 --
 --   wm gallery

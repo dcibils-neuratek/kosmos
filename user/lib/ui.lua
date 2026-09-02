@@ -1392,6 +1392,50 @@ local function op_cost(o)
   return cost
 end
 
+--
+-- A list of drawing commands, sent to a window in message-sized pieces.
+--
+-- A message is 2048 bytes. Three menu items already come close and seven go
+-- over, so a menu that sent its commands in one go drew *nothing at all*
+-- past a certain length - the send raised, the compositor kept the pixels it
+-- had, and what appeared was an empty panel with no error anywhere. The
+-- window painter has always batched; the menu painter did not, and this is
+-- that code in one place so there is no second one to forget.
+--
+-- `more` holds the damage back until the last piece, so a window is never
+-- composited half-drawn.
+--
+local function send_ops(handle, ops)
+  local at = 1
+
+  while at <= #ops do
+    local batch, bytes = {}, 0
+
+    while at <= #ops do
+      local cost = op_cost(ops[at])
+
+      -- Always at least one, so a single enormous command is sent on its
+      -- own and refused by the serialiser with its own message rather than
+      -- looping here for ever.
+      if #batch > 0 and bytes + cost > BATCH_BYTES then break end
+
+      batch[#batch + 1] = ops[at]
+      bytes = bytes + cost
+      at = at + 1
+    end
+
+    local last = at > #ops
+
+    if not fs.send("/dev/wm", { type = "draw", window = handle,
+                                ops = batch,
+                                more = (not last) or nil }) then
+      return false
+    end
+  end
+
+  return true
+end
+
 -- The three faces the desktop is using, applied in this process.
 --
 -- A window that draws its own pixels rasterizes its own glyphs, so it needs
@@ -1477,6 +1521,9 @@ function ui.window(spec)
   local w = setmetatable({
     handle = reply.window,
     root = ui.view{ x = 0, y = 0, w = reply.w, h = reply.h },
+
+    -- Menus this window has open, innermost last. See `push_menu`.
+    menus = {},
 
     -- Where this window's content begins on the screen. The window manager
     -- says so in the reply because it clamps what it was asked for, and
@@ -1824,30 +1871,34 @@ end
 
 local MENU_PAD = 8
 
+-- Room on the right for the marker that says "there is more this way".
+local MENU_ARROW = 12
+
 local function menu_metrics(items)
   local widest = 0
+  local deep = false
 
   for _, it in ipairs(items) do
     local n = #tostring(it.text or "")
 
     if n > widest then widest = n end
+    if it.submenu then deep = true end
   end
 
   local row = GH + 6
 
-  return widest * GW + MENU_PAD * 2 + 12, #items * row + 4, row
+  return widest * GW + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0),
+         #items * row + 4, row
 end
 
 --
--- Draw the open menu into its own window.
+-- Draw one menu into its own window.
 --
 -- The same graphics context and the same batching as any window, because it
 -- *is* a window. `gc:raised` gives it the edge that says it is sitting on
 -- top of what is behind it.
 --
-function window:paint_menu()
-  local m = self.menu
-
+function window:paint_menu(m)
   if not m then return end
 
   local g = new_gc()
@@ -1868,18 +1919,39 @@ function window:paint_menu()
 
       g:text(MENU_PAD + 4, y + (m.row - GH) // 2, tostring(it.text or ""),
              hot and theme.text_on or theme.text, bg)
+
+      --
+      -- The submenu marker, built out of fills because there is no line and
+      -- no triangle a window can draw. Five stacked rows, widest in the
+      -- middle: at this size that reads as an arrow and costs five
+      -- rectangles, where a real triangle would cost a new op in the
+      -- compositor and a new verb in this file.
+      --
+      if it.submenu then
+        local ax = m.w - MENU_ARROW - 4
+        local ay = y + (m.row - 5) // 2
+        local ink = hot and theme.text_on or theme.text
+
+        for k = 0, 4 do
+          local run = 3 - math.abs(k - 2)
+
+          if run > 0 then g:fill(ax, ay + k, run, 1, ink) end
+        end
+      end
     end
   end
 
-  fs.send("/dev/wm", { type = "draw", window = m.handle, ops = g.ops })
+  send_ops(m.handle, g.ops)
 end
 
 --
--- Open one, at a point on the screen.
+-- Open a menu, and push it on the stack.
 --
-function window:open_menu(x, y, items)
-  self:close_menu()
-
+-- A stack rather than one menu, because a submenu is a menu: the same
+-- record, the same window, the same routing. What makes it a submenu is
+-- only that something above it in the stack is still open.
+--
+function window:push_menu(x, y, items)
   local w, h, row = menu_metrics(items)
 
   local reply = fs.send("/dev/wm", { type = "open", kind = "menu",
@@ -1888,38 +1960,60 @@ function window:open_menu(x, y, items)
 
   if not reply or not reply.ok then return nil end
 
-  -- Where it actually went, which is not always where it was asked for:
-  -- the window manager pulls a menu back onto the screen and says so in the
-  -- reply. A caller that did not read this could not hit-test its own menu.
-  self.menu = { handle = reply.window, items = items, row = row,
-                x = reply.x, y = reply.y, w = reply.w, h = reply.h,
-                hot = nil }
+  -- Where it actually went, which is not always where it was asked for: the
+  -- window manager pulls a menu back onto the screen and says so in the
+  -- reply. A caller that did not read this could not place a submenu beside
+  -- its parent.
+  local m = { handle = reply.window, items = items, row = row,
+              x = reply.x, y = reply.y, w = reply.w, h = reply.h,
+              hot = nil }
 
-  self:paint_menu()
+  self.menus[#self.menus + 1] = m
+  self:paint_menu(m)
 
-  return self.menu
+  return m
+end
+
+-- Everything from `from` upward, closed. `close_menus()` closes the lot.
+function window:close_menus(from)
+  from = from or 1
+
+  for i = #self.menus, from, -1 do
+    fs.send("/dev/wm", { type = "close", window = self.menus[i].handle })
+    self.menus[i] = nil
+  end
+
+  return true
+end
+
+-- The old single-menu names, kept because the menu bar and anything else
+-- that only ever wants one still reads better this way.
+function window:open_menu(x, y, items)
+  self:close_menus()
+
+  return self:push_menu(x, y, items)
 end
 
 function window:close_menu()
-  if not self.menu then return false end
-
-  fs.send("/dev/wm", { type = "close", window = self.menu.handle })
-  self.menu = nil
-
-  return true
+  return self:close_menus()
 end
 
 --
 -- A mouse event that arrived tagged with a menu handle.
 --
--- Returns true when the menu wants a repaint. Highlighting follows the
--- pointer while a button is held, which is how a menu is used: press on the
--- title, slide down, release on the item.
+-- Highlighting follows the pointer while a button is held, which is how a
+-- menu is used: press on the title, slide down, release on the item. An item
+-- with a submenu opens it on the way past rather than on a click, which is
+-- what every menu does and is why sliding along a row of them works.
 --
 function window:menu_mouse(ev)
-  local m = self.menu
+  local at, m = nil, nil
 
-  if not m or ev.menu ~= m.handle then return false end
+  for i, one in ipairs(self.menus) do
+    if one.handle == ev.menu then at, m = i, one break end
+  end
+
+  if not m then return false end
 
   local row = nil
 
@@ -1931,24 +2025,41 @@ function window:menu_mouse(ev)
     end
   end
 
+  local item = row and m.items[row]
+
   if ev.action == "release" then
-    local chosen = m.items[row or -1]
+    --
+    -- Releasing on something that opens a submenu is not a choice. The
+    -- submenu is already open and the pointer is on its way there; closing
+    -- everything here would make a menu impossible to reach by sliding,
+    -- which is how they are used.
+    --
+    if item and item.submenu then return false end
 
-    self:close_menu()
+    self:close_menus()
 
-    if chosen and chosen.on_choose then
-      pcall(chosen.on_choose, chosen)
+    if item and item.on_choose then
+      pcall(item.on_choose, item)
     end
 
     return true
   end
 
-  if row ~= m.hot then
-    m.hot = row
-    self:paint_menu()
+  if row == m.hot then return false end
+
+  m.hot = row
+
+  -- Anything this menu opened is no longer what the pointer is over.
+  self:close_menus(at + 1)
+  self:paint_menu(m)
+
+  if item and item.submenu then
+    -- Beside the parent and level with the row, overlapping by the border
+    -- so the two read as one shape rather than two windows.
+    self:push_menu(m.x + m.w - 2, m.y + 2 + (row - 1) * m.row, item.submenu)
   end
 
-  return false
+  return true
 end
 
 function window:paint()

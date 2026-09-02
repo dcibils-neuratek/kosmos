@@ -1719,12 +1719,45 @@ def check_deskbar(guest):
             f"counted {before} windows."
         )
 
-    # The Deskbar is placed at the right edge by deskbar.lua, and its
-    # Applications list starts at (10, 170) inside it.
+    #
+    # Through the menu, which is where the applications are now.
+    #
+    # The Deskbar used to carry every application in a list of its own and
+    # this clicked a row in it. It carries a *menu* now - three sections,
+    # the way BeOS's Be menu had three folders - so the path is: press the
+    # button, slide onto Applications, slide onto the first item, release.
+    #
+    # That is three more steps and they are the point: this check exists to
+    # prove an application can be started from the Deskbar by a person, and
+    # a person now has to open a menu and walk a submenu. A check that still
+    # clicked where the old list was would pass on a Deskbar nobody could
+    # use.
+    #
+    # deskbar.lua: window at (sw - 210 - 12, 34), button at (10, 12) and
+    # 28 tall, so the menu opens at (dx + 10, dy + 12 + 28). Menu rows are
+    # one glyph plus six, from two pixels in.
+    #
     dx, dy = width - 210 - 12, 34
+    row_h = GLYPH_H + 6
+    menu_x, menu_y = dx + 10, dy + 12 + GLYPH_H + 12
 
-    guest.mouse_to(*_to_tablet(dx + 70, dy + 170 + 2 + 8, width, height))
+    guest.mouse_to(*_to_tablet(dx + 100, dy + 26, width, height))
     time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(1.2)
+
+    # Applications is the first row; hovering it opens its submenu, which
+    # the window manager forwards because a menu is open.
+    guest.mouse_to(*_to_tablet(menu_x + 40, menu_y + 2 + row_h // 2,
+                               width, height))
+    time.sleep(1.4)
+
+    # And the first item in that submenu, which sits beside the parent row.
+    guest.mouse_to(*_to_tablet(menu_x + 150, menu_y + 2 + row_h // 2 + 4,
+                               width, height))
+    time.sleep(0.8)
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
@@ -1733,10 +1766,12 @@ def check_deskbar(guest):
         guest,
         lambda w, h, px: (lambda n: n if n > before else None)(
             count_windows(w, h, px)),
-        f"clicking an application in the Deskbar started nothing: there was "
-        f"{before} window and there still is. Either the launch request is "
-        "not reaching the window manager, or the program it named is not "
-        "marked `-- kosmos: application` and so is not in the list at all.")
+        f"starting an application from the Deskbar's menu did nothing: "
+        f"there was {before} window and there still is. Either the menu did "
+        "not open, or its submenu did not (the window manager forwards "
+        "pointer movement only while a menu is open - see `pointer_pass`), "
+        "or the program named is not marked `-- kosmos: application` and so "
+        "is not in the menu at all.")
 
     if False:
         raise Failure(
