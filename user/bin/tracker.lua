@@ -64,7 +64,36 @@ for _, w in ipairs(words) do
   if w == "desktop" then as_icons, backdrop = true, true end
 end
 
-local win, err = ui.window{ title = "Tracker", w = W, h = H, x = 80, y = 60 }
+--
+-- The desktop is this program with the frame taken off.
+--
+-- BeOS had no desktop program: the desktop *was* a Tracker window, borderless
+-- and screen-sized, at the bottom of the stack. That is the right shape here
+-- for a stronger reason than lineage. The window manager knows nothing about
+-- files and should not learn - drawing icons would mean teaching it what a
+-- directory is, what a file type is, and how to start a program, all of which
+-- are already in this file. So the compositor gained a *place* to put a
+-- window and no new knowledge, and everything else is here.
+--
+if backdrop then
+  local screen = fs.read("/dev/screen") or {}
+
+  W, H = screen.width or 1024, screen.height or 768
+
+  -- `/home/Desktop` if there is one, the way every system that has a desktop
+  -- folder names it. No magic beyond that: if it is not there, the desktop
+  -- shows `/home`, which is a real directory rather than an empty rectangle
+  -- pretending to be one.
+  if where == "/home" and files.entries("/home/Desktop") then
+    where = "/home/Desktop"
+  end
+end
+
+local win, err = ui.window{
+  title = "Tracker", w = W, h = H,
+  x = backdrop and 0 or 80, y = backdrop and 0 or 60,
+  backdrop = backdrop or nil,
+}
 
 if not win then
   print("tracker: " .. tostring(err))
@@ -263,7 +292,16 @@ local function draw_icons(self, g, list)
 
     if on then g:fill(x, y, CELL_W - 4, CELL_H - 2, theme.accent) end
 
-    local bg = on and theme.accent or theme.sunken
+    -- The label's background, and on the desktop it is the desktop.
+    --
+    -- `g:text` fills behind the glyphs rather than drawing them onto what
+    -- is already there, so this has to be the actual colour underneath or
+    -- every name sits in a rectangle of the wrong grey.
+    local bg = on and theme.accent
+               or (backdrop and theme.desktop or theme.sunken)
+
+    local ink = on and theme.text_on
+                or (backdrop and theme.desktop_text or theme.text)
 
     files.icon(g, x + (CELL_W - 4 - files.ICON) // 2, y + 2, e,
                files.join(where, e.name))
@@ -276,13 +314,19 @@ local function draw_icons(self, g, list)
     if #label > room then label = label:sub(1, math.max(1, room - 1)) .. "~" end
 
     g:text(x + (CELL_W - 4 - gfx.measure(label)) // 2, y + files.ICON + 6,
-           label, on and theme.text_on or theme.text, bg)
+           label, ink, bg)
   end
 end
 
 function rows:draw(g)
-  g:fill(0, 0, self.w, self.h, theme.sunken)
-  g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+  -- On the desktop this view *is* the desktop, so it paints the desktop
+  -- colour and has no frame: a one-pixel line around the edge of the screen
+  -- is a line around the edge of the screen.
+  g:fill(0, 0, self.w, self.h, backdrop and theme.desktop or theme.sunken)
+
+  if not backdrop then
+    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+  end
 
   local shown = sorted()
   self.shown = shown
@@ -501,11 +545,23 @@ function show(path)
                 or ("%d item%s"):format(#found, #found == 1 and "" or "s")
 end
 
-win:add(here)
+--
+-- The chrome, and the one thing that decides whether there is any.
+--
+-- A desktop has no menu bar, no toolbar, no places pane and no status line -
+-- it is the icons and nothing else. Rather than a `backdrop` test at eight
+-- call sites, the widgets that make up the frame go through here and the
+-- test is in one place.
+--
+local function chrome(widget)
+  if not backdrop then win:add(widget) end
+end
+
+chrome(here)
 
 local function button(x, w, text, fn)
-  win:add(ui.button{ x = x, y = 28 + BAR_H, w = w, h = 24, text = text,
-                     on_click = fn })
+  chrome(ui.button{ x = x, y = 28 + BAR_H, w = w, h = 24, text = text,
+                    on_click = fn })
 end
 
 button(12,  50, "Up",     function()
@@ -666,10 +722,17 @@ win:add(ui.menubar{
   },
 })
 
-win:add(places)
-win:add(split)
+chrome(places)
+chrome(split)
+
+-- The one widget the desktop is made of, and on the desktop it is the whole
+-- window: no insets, because there is no frame to be inset from.
+if backdrop then
+  rows.x, rows.y, rows.w, rows.h = 0, 0, W, H
+end
+
 win:add(rows)
-win:add(status)
+chrome(status)
 
 show(where)
 win:run()

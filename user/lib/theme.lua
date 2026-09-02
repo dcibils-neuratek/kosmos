@@ -67,6 +67,14 @@ theme.palettes.dark = {
   tab_idle  = 0xffb8b8b8,
   tab_text  = 0xff101010,
 
+  -- Ink for a label lying on the desktop itself, which is not the ink for
+  -- a label in a window and cannot be. `text` is chosen to read against
+  -- `window`; the desktop is a colour the user picks, and every default
+  -- here and in `themes.lua` picks a mid-to-dark blue, so black text on it
+  -- is unreadable in exactly the themes that look best. Same reason
+  -- `tab_text` is separate: the title bar is not a window surface either.
+  desktop_text = 0xffffffff,
+
   accent    = 0xff1f6feb,
   good      = 0xff3fb950,
   bad       = 0xffda3633,
@@ -110,6 +118,8 @@ theme.palettes.light = {
   -- has no edge at all on a light desktop.
   tab_idle  = 0xffb0b0b0,
   tab_text  = 0xff101010,
+
+  desktop_text = 0xffffffff,
 
   accent    = 0xff2d5faf,
   good      = 0xff1a7f37,
@@ -160,7 +170,8 @@ theme.palettes.light = {
 theme.tokens = {
   "name", "desktop", "window", "raised", "sunken", "line", "line_soft",
   "edge_light", "edge_dark", "text", "text_dim", "text_on",
-  "tab", "tab_idle", "tab_text", "accent", "good", "bad", "ring", "stamp",
+  "tab", "tab_idle", "tab_text", "desktop_text",
+  "accent", "good", "bad", "ring", "stamp",
 }
 
 local known = {}
