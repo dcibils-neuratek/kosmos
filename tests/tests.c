@@ -3208,25 +3208,30 @@ static bool test_fp_survives_a_preemption(void)
            && fp_preempt_wrong == 0;
 }
 
+/* Lazy FP save, from arch/aarch64/fp.c. */
+bool fp_owned_by(const struct thread *t);
+void fp_reset(void);
+
 static bool test_fp_is_usable_at_el1(void)
 {
     /*
      * CPACR_EL1.FPEN resets to "trap everything", and setjmp saves d8 to
-     * d15. Without the enable in start.S, the first setjmp is an EC 0x07
-     * trap whose name says nothing about floating point unless you go
+     * d15. Without something arranging otherwise, the first setjmp is an EC
+     * 0x07 trap whose name says nothing about floating point unless you go
      * looking. That is how it was found.
      *
-     * Reading CPACR is not enough on its own, so this also executes an FP
-     * instruction. The arithmetic is in assembly because the kernel is built
-     * -mgeneral-regs-only and the compiler will not emit one.
+     * What arranges it changed. This used to assert `FPEN == 0b11` - trap
+     * nothing - because that was set once at boot and never moved. FP is
+     * saved lazily now, so FPEN is 0b00 until a thread actually wants the
+     * registers and the fault hands them over. Asserting the old value was
+     * asserting the old *mechanism*; what matters, and what this asserts
+     * now, is that floating point works at EL1 and that the lazy path is
+     * what made it work.
+     *
+     * The arithmetic is in assembly because the kernel is built
+     * -mgeneral-regs-only and the compiler will not emit an FP instruction.
      */
-    uint64_t cpacr;
     uint64_t bits;
-
-    __asm__ volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
-    if (((cpacr >> 20) & 3) != 3) {
-        return false;
-    }
 
     __asm__ volatile(
         "fmov d0, #1.0\n"
@@ -3234,7 +3239,59 @@ static bool test_fp_is_usable_at_el1(void)
         "fmov %0, d0\n"
         : "=r"(bits) : : "d0");
 
-    return bits == 0x4000000000000000UL;    /* 2.0 as an IEEE-754 double */
+    if (bits != 0x4000000000000000UL) {     /* 2.0 as an IEEE-754 double */
+        return false;
+    }
+
+    /* And the fault is what granted them: the owner is this thread now. */
+    return fp_owned_by(thread_current());
+}
+
+/*
+ * And that the laziness is real.
+ *
+ * A save that still happened on every switch would pass every test above
+ * this one: the registers would be correct, just expensively. What says
+ * otherwise is the *state* - disarmed, with nobody owning the registers -
+ * and that only one thing arms them.
+ *
+ * Driven directly rather than by yielding, because a yield with nothing
+ * else runnable does not switch at all, and a test whose setup silently
+ * does nothing is a test that passes for the wrong reason. That is what the
+ * first version of this did.
+ */
+static bool test_fp_is_disarmed_until_it_is_wanted(void)
+{
+    uint64_t cpacr;
+    uint64_t bits;
+
+    /* The state a thread is handed by a context switch. */
+    fp_reset();
+
+    __asm__ volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
+
+    if (((cpacr >> 20) & 3) != 0) {
+        return false;                       /* armed when it should not be */
+    }
+
+    if (fp_owned_by(thread_current())) {
+        return false;                       /* owned when nobody asked */
+    }
+
+    /* One FP instruction, which traps, and comes back having worked. */
+    __asm__ volatile(
+        "fmov d0, #1.0\n"
+        "fmov %0, d0\n"
+        : "=r"(bits) : : "d0");
+
+    if (bits != 0x3ff0000000000000UL) {     /* 1.0 */
+        return false;
+    }
+
+    __asm__ volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
+
+    /* Armed now, and attributed to whoever wanted it. */
+    return ((cpacr >> 20) & 3) == 3 && fp_owned_by(thread_current());
 }
 
 /*
@@ -3411,6 +3468,7 @@ static const struct test tests[] = {
     { "libc: the string functions",            test_string_functions },
     { "fp: EL1 may use FP and SIMD",           test_fp_is_usable_at_el1 },
     { "fp: a preemption preserves d0",         test_fp_survives_a_preemption },
+    { "fp: disarmed until it is wanted",       test_fp_is_disarmed_until_it_is_wanted },
     { "libc: setjmp returns 0 when called",    test_setjmp_returns_zero_directly },
     { "libc: longjmp delivers its value",      test_longjmp_delivers_its_value },
     { "libc: longjmp turns 0 into 1",          test_longjmp_turns_zero_into_one },

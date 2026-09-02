@@ -95,7 +95,7 @@ at_el1:
      * roadmap already schedules at M10 for Doom and which will be needed
      * sooner.
      */
-    mov     x0, #(3 << 20)          /* CPACR_EL1.FPEN = 0b11: trap nothing */
+    mov     x0, #(0 << 20)          /* CPACR_EL1.FPEN = 0b00: trap both, lazily */
     msr     cpacr_el1, x0
     isb
 

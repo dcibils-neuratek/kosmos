@@ -559,6 +559,13 @@ void thread_wake(struct thread *t)
     }
 }
 
+/*
+ * The FP registers may still be attributed to a thread that is going away.
+ * From arch/aarch64/fp.c; saving into a slot that is about to be recycled
+ * is silent corruption the moment somebody else gets it.
+ */
+void fp_forget(struct thread *t);
+
 void thread_abandon(struct thread *t)
 {
     if (t == NULL || t == current || t->state != THREAD_BLOCKED) {
@@ -568,6 +575,7 @@ void thread_abandon(struct thread *t)
     /* Dead rather than unused, so the slot is recycled with its stacks
      * still allocated and their guard pages still unmapped, which is what
      * alloc_thread expects to find. */
+    fp_forget(t);
     t->state = THREAD_DEAD;
 }
 
@@ -575,6 +583,7 @@ void thread_exit(void)
 {
     struct thread *next;
 
+    fp_forget(current);
     current->state = THREAD_DEAD;
     next = policy->pick_next();
 

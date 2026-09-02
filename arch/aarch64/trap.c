@@ -42,6 +42,9 @@ static const char *const vector_name[16] = {
 };
 
 /* ESR_EL1 exception class. ARM ARM D17.2.37, table of EC encodings. */
+/* Lazy FP save, from arch/aarch64/fp.c. */
+void fp_fault(void);
+
 static const char *ec_name(unsigned ec)
 {
     switch (ec) {
@@ -214,6 +217,25 @@ void trap_handler(unsigned index, struct trapframe *tf)
     bool synchronous = (index == 0 || index == 4 || index == 8 || index == 12);
 
     /*
+     * A floating-point instruction while FP was disarmed, from either level.
+     *
+     * First, and before the fault-expectation machinery gets a look at it,
+     * because this is not a fault in any sense worth reporting: it is how a
+     * thread comes to own the registers. The switch turns FP off and the
+     * first instruction that wants it lands here; `fp_fault` moves the
+     * register file to its new owner and returns, and the instruction that
+     * trapped is re-executed rather than stepped over.
+     *
+     * Not stepping `elr` is the whole difference between this and every
+     * other synchronous exception here, and getting it wrong would silently
+     * skip one arithmetic instruction per time slice.
+     */
+    if (synchronous && ESR_EC(tf->esr) == EC_SIMD_FP) {
+        fp_fault();
+        return;
+    }
+
+    /*
      * Where the handler itself is running. The stack overflow test asserts
      * this is the exception stack and not the thread's, which is the only
      * direct evidence that the two are actually separate.
@@ -299,6 +321,8 @@ void trap_handler(unsigned index, struct trapframe *tf)
             die_if_killed();
             return;
         }
+
+
 
         if (index == 9) {
             hal_irq_handle();

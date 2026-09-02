@@ -1,41 +1,42 @@
 {
   "context_switch": {
-    "commit": "3ac953a",
+    "commit": "pending",
     "iterations": 200000,
-    "note": "One of the three that touch no Lua. Together with `exception` and `ipc_roundtrip` they are the control group. 7.187 -> 9.812 (+36.5%) when the switch started saving the whole FP and SIMD register file instead of the callee-saved half. That is not an optimisation that was lost, it is a correctness bug that was fixed: a preempted thread was interrupted between two instructions with live values in v0-v7 and v16-v31, the exception entry saves no FP state, and the next thread overwrote them. `test_fp_survives_a_preemption` corrupted d0 on 14 preemptions out of 14 before the fix and 0 out of 14 after.\\n\\nThe cost is 32 q-register pairs plus fpcr and fpsr, about 2.6 counter ticks. Lazy FP save - trap on first use after a switch and only then move the file - is the way to get it back, and roadmap.md schedules it at M10. It may buy less here than it would elsewhere: lazy save wins on switches between threads that do not touch FP, and in this system nearly every thread runs Lua, whose numbers are doubles. Measure before assuming it helps.",
+    "note": "One of the three that touch no Lua. 9.812 -> 6.875, -29.9%, when the FP and SIMD register file stopped being saved and restored on every switch. The switch now only disarms FP (CPACR_EL1.FPEN) and the first floating-point instruction after it faults into `fp_fault`, which moves the registers to whoever wanted them. A thread that never touches FP - which is every kernel thread, since the kernel is built -mgeneral-regs-only - pays nothing at all. See arch/aarch64/fp.c.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 9.812
+    "value": 6.875
   },
   "exception": {
-    "commit": "d485da3",
+    "commit": "pending",
     "iterations": 20000,
+    "note": "The cost of taking and returning from a synchronous exception. 7.250 -> 7.562, +4.3%, and it is the price of lazy FP save rather than a regression to chase: every exception now begins by asking whether it is an FP trap, because that question has to be answered before anything else looks at the frame. One comparison, paid on every exception, to save the whole register file on every context switch - `context_switch` went down 29.9% and `ipc_roundtrip` 16.2% in the same change.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 7.25
+    "value": 7.562
   },
   "gc_pause_max": {
-    "commit": "d485da3",
+    "commit": "pending",
     "iterations": 1,
     "note": "The worst single collector step, measured in a process. 78221, drifting up with what the process carries in the same way serialize does and by far less: 78129 before gfx, 78199 after, 78221 with the font. A long step is dominated by the 3000-object heap the benchmark builds rather than by a handful of library tables. Before that it was 77860, running inside the kernel with interrupts masked. Leaving EL1 cost the interpreter +0.3% and nothing else: a collector step costs the same at either privilege level. Interrupts are live in the window now, because a process cannot mask them, and for a pause metric that is more honest rather than less - a pause the user feels includes the tick that landed in it.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 78221.0
+    "value": 78371.0
   },
   "ipc_roundtrip": {
-    "commit": "3ac953a",
+    "commit": "pending",
     "iterations": 100000,
-    "note": "A minimal message: the floor of the IPC path, including the capability translation every delivery performs. Compare with `serialize`, which is what carrying a real Lua table costs on top - about forty-seven times more. 30.000 -> 31.001 when a capability slot gained a kind. A slot used to hold an endpoint and nothing else, so `resolve` could go straight to the pointer; it holds either an endpoint or a region of memory now, so every resolve loads the tag and compares it first, and a round trip resolves twice. That is the price of two kinds in one table and it is not avoidable while indices stay the only way to name anything - the alternative is a second table with a second index space, which is the global-name design this kernel does not have. 31.001 -> 36.251 when the context switch started saving the whole FP register file; a round trip switches twice, so it pays that cost twice. See `context_switch` for why that is not negotiable. Measured, not estimated: each of these numbers held to three decimals across consecutive builds. `context_switch` and `exception` did not move at all across the same change, which is what says the cost is in the capability lookup and not in the path around it.",
+    "note": "A minimal message: the floor of the IPC path, including the capability lookup. 36.251 -> 30.376, -16.2%, from lazy FP save: a round trip is two context switches and it was paying for the register file twice.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 36.251
+    "value": 30.376
   },
   "serialize": {
-    "commit": "554bd77",
+    "commit": "pending",
     "iterations": 20000,
-    "note": "Best of five processes within a run. **This benchmark is sensitive to what else is in the process, not only to the serialiser.** 1364.9 -> 1394.1 when the gfx library started being opened in every process, and 1394.1 -> 1412.5 when the 1.5 KB font array joined it, and 1412.5 -> 1450.6 when shared memory added `sys.memory`, `sys.memory_map`, `sys.memory_size` and `gfx.wrap` to every process. The serialiser has not changed once across either. The cause is measured, not guessed: the same tree with the requiref for gfx commented out gives 1358.2. More objects and more image on a 2 MB heap means the collector paces differently through the measured loop. So: if this moves and nothing in serialize.c or sys_user.c did, look at what was added to the user image. It will drift again with the next library. Making it independent of the process it runs in - a fixed GC pause setting and a forced collection before the loop - is a known improvement and is not done. Spread: consecutive runs of one recorded image have spanned 0.045%; across separately built images of the same source, up to 1.1%. Before all this it was 1037.6, when it measured serialize_pack/unpack called from C inside the kernel. It measures sys.pack/sys.unpack from a process now, which allocates a Lua string per round where the C version wrote into a struct message. Those are not comparable.",
+    "note": "Best of five processes within a run. **This benchmark is sensitive to what else is in the process**, not only to the serialiser: every library the image opens is more objects for the collector to pace against. 1450.574 -> 1498.325, +3.3%, when the PDF scanner and the inflate kit joined the user image; `serialize.c` was untouched. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was added. Making it independent of its process - a fixed GC pause and a forced collection before the loop - is a known improvement and is still not done.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 1450.574
+    "value": 1498.325
   }
 }

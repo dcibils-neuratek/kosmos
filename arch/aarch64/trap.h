@@ -50,6 +50,7 @@ _Static_assert(offsetof(struct trapframe, far)  == TF_FAR,  "TF_FAR");
 #define ESR_ISS(esr)    ((esr) & 0x1ffffff)
 
 #define EC_UNKNOWN          0x00
+#define EC_SIMD_FP          0x07    /* FP or SIMD used while FPEN traps it */
 #define EC_SVC64            0x15
 #define EC_IABT_LOWER       0x20
 #define EC_IABT_SAME        0x21

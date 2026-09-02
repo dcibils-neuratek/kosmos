@@ -60,6 +60,61 @@ QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
 
+- **FP and SIMD are saved lazily, and it is the first piece of M10.**
+  `context_switch` **9.812 -> 6.875 ticks, -29.9%**, and `ipc_roundtrip`
+  **36.251 -> 30.376, -16.2%**, because a round trip is two switches and was
+  paying for the whole register file twice.
+
+  The switch does not save FP any more. It disarms it - `CPACR_EL1.FPEN` to
+  0b00 - and the first floating-point instruction the incoming thread
+  executes traps into `fp_fault`, which writes the previous owner's
+  registers into its context, reads this thread's back, and arms FP again. A
+  thread that uses FP pays one fault per time slice. A thread that does not
+  pays nothing, and most do not: the kernel is built `-mgeneral-regs-only`
+  and cannot emit an FP instruction, so every kernel thread is in the second
+  group.
+
+  **Trapping EL0 alone was tried first and three tests said no**, which is
+  the argument for having had them. Kernel threads run at EL1, so their
+  registers would have been neither saved by the switch nor faulted in by
+  anything - which is exactly the bug the eager save was added to fix. And
+  `longjmp` writes `d8`-`d15` from its buffer, so a kernel thread returning
+  through one would overwrite whatever EL0 thread owned those registers.
+  Arming both levels is simpler than either.
+
+  `exception` went **7.250 -> 7.562, +4.3%**, and that is the price rather
+  than a regression to chase: every exception now begins by asking whether
+  it is an FP trap, because that has to be settled before the
+  fault-expectation machinery looks at the frame. One comparison on every
+  exception against the whole register file on every switch.
+
+  Two permanent tests. The first was rewritten rather than added: it used to
+  assert `CPACR.FPEN == 0b11`, which tested the old *mechanism* - FP enabled
+  once at boot and never moved - and says nothing now. It asserts the
+  property instead, that FP works at EL1, plus that the lazy path is what
+  made it work. The second drives the mechanism directly: disarmed and
+  unowned after a reset, armed and owned after one instruction.
+
+  **That second test was wrong on its first attempt in an instructive way.**
+  It called `thread_yield` to force a switch, and a yield with nothing else
+  runnable does not switch at all - so the setup silently did nothing and
+  the test failed for a reason unrelated to what it was checking. A test
+  whose setup can quietly not happen is a test that will one day pass for
+  the wrong reason.
+
+- **doomgeneric is vendored and the WAD is on the disk.** 95 `.c` files,
+  73,095 lines, unmodified under `runtime/upstream/doom/` with its licence,
+  the same rule `lua/upstream/` and `stb/` follow. Its platform layer is six
+  functions - `DG_Init`, `DG_DrawFrame`, `DG_SleepMs`, `DG_GetTicksMs`,
+  `DG_GetKey`, `DG_SetWindowTitle` - and `pixel_t` is `uint32_t`, so a frame
+  is a blit into an XRGB8888 framebuffer rather than a conversion. Nothing
+  is built yet: it is not in the Makefile.
+
+  `doom1.wad` is 4,196,020 bytes of shareware and is **not** in the tree. It
+  lives on `build/play.img` beside `odyssey.pdf`, which is what a filesystem
+  is for.
+
+
 - **A PDF is readable in a window.** `wm pdfview:/home/odyssey.pdf` opens
   The Odyssey and turns its pages, 142 ms a page. Text, wrapped by the
   window in the system font - not the page as it was typeset, which needs

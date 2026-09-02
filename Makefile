@@ -88,6 +88,8 @@ SRCS := boot/start.S \
         arch/aarch64/mmu.c \
         arch/aarch64/cpu.c \
         arch/aarch64/switch.S \
+        arch/aarch64/fp.S \
+        arch/aarch64/fp.c \
         arch/aarch64/el0.S \
         hal/qemu-virt/uart.c \
         hal/qemu-virt/memory.c \

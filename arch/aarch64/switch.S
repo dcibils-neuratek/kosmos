@@ -62,43 +62,20 @@ context_switch:
     stp     x27, x28, [x0, #CTX_X27]
     stp     x29, x30, [x0, #CTX_X29]
 
-    stp     d8,  d9,  [x0, #CTX_D8]
-    stp     d10, d11, [x0, #CTX_D10]
-    stp     d12, d13, [x0, #CTX_D12]
-    stp     d14, d15, [x0, #CTX_D14]
-
     /*
-     * And the whole file, because this is also where a preempted thread is
-     * switched away and a preempted thread has live values everywhere. See
-     * the comment on CTX_Q0 in context.h for why the callee-saved half above
-     * is not enough and why here is the right place.
+     * No FP here any more, and that is the point.
      *
-     * x12 rather than an immediate offset: the q forms of stp reach 1008
-     * bytes at most and the later pairs are past it once the general
-     * registers are in front.
+     * This used to write out all thirty-two Q registers and read them back,
+     * on every switch, for every thread - and it cost 36% of a switch and
+     * 17% of an IPC round trip to preserve registers most threads never
+     * touch. The correctness argument for saving them was right and is
+     * unchanged; what was wrong was doing it here, eagerly.
+     *
+     * Instead the epilogue disarms FP for EL0 and the first floating-point
+     * instruction the incoming thread executes traps into `fp_fault`, which
+     * saves whoever owned the registers and loads whoever wants them. See
+     * `fp.c`.
      */
-    add     x12, x0, #CTX_Q0
-    stp     q0,  q1,  [x12, #0]
-    stp     q2,  q3,  [x12, #32]
-    stp     q4,  q5,  [x12, #64]
-    stp     q6,  q7,  [x12, #96]
-    stp     q8,  q9,  [x12, #128]
-    stp     q10, q11, [x12, #160]
-    stp     q12, q13, [x12, #192]
-    stp     q14, q15, [x12, #224]
-    stp     q16, q17, [x12, #256]
-    stp     q18, q19, [x12, #288]
-    stp     q20, q21, [x12, #320]
-    stp     q22, q23, [x12, #352]
-    stp     q24, q25, [x12, #384]
-    stp     q26, q27, [x12, #416]
-    stp     q28, q29, [x12, #448]
-    stp     q30, q31, [x12, #480]
-
-    mrs     x9,  fpcr
-    mrs     x10, fpsr
-    add     x13, x0, #CTX_FPCR      /* past what an stp offset can reach */
-    stp     x9,  x10, [x13]
 
     /*
      * Both stack pointers, and the awkward part.
@@ -148,33 +125,32 @@ context_switch:
     ldp     x27, x28, [x1, #CTX_X27]
     ldp     x29, x30, [x1, #CTX_X29]
 
-    ldp     d8,  d9,  [x1, #CTX_D8]
-    ldp     d10, d11, [x1, #CTX_D10]
-    ldp     d12, d13, [x1, #CTX_D12]
-    ldp     d14, d15, [x1, #CTX_D14]
-
-    add     x13, x1, #CTX_FPCR
-    ldp     x9,  x10, [x13]
-    msr     fpcr, x9
-    msr     fpsr, x10
-
-    add     x12, x1, #CTX_Q0
-    ldp     q0,  q1,  [x12, #0]
-    ldp     q2,  q3,  [x12, #32]
-    ldp     q4,  q5,  [x12, #64]
-    ldp     q6,  q7,  [x12, #96]
-    ldp     q8,  q9,  [x12, #128]
-    ldp     q10, q11, [x12, #160]
-    ldp     q12, q13, [x12, #192]
-    ldp     q14, q15, [x12, #224]
-    ldp     q16, q17, [x12, #256]
-    ldp     q18, q19, [x12, #288]
-    ldp     q20, q21, [x12, #320]
-    ldp     q22, q23, [x12, #352]
-    ldp     q24, q25, [x12, #384]
-    ldp     q26, q27, [x12, #416]
-    ldp     q28, q29, [x12, #448]
-    ldp     q30, q31, [x12, #480]
+    /*
+     * FP off for EL0, for whichever thread is about to run.
+     *
+     * 0b00 in CPACR_EL1.FPEN traps both levels, and both is the answer
+     * rather than EL0 alone.
+     *
+     * Trapping only EL0 was tried and three tests said no. Kernel threads
+     * run at EL1, so their registers would be neither saved by this switch
+     * nor faulted in by anything - two of them holding a value across a
+     * preemption lose it, which is the bug the eager save was added to fix
+     * in the first place. And `longjmp` writes d8-d15 from its buffer, so a
+     * kernel thread returning through one would overwrite whatever EL0
+     * thread currently owns those registers.
+     *
+     * Uniform is simpler than either: whoever touches an FP register first
+     * after a switch faults, and the fault does not care which level it came
+     * from.
+     *
+     * The `isb` is not decoration. CPACR is a control register and the
+     * change has to be in force before the first instruction of the incoming
+     * thread is fetched; without it the trap can be skipped for exactly the
+     * instruction it was armed for.
+     */
+    mov     x9, #(0 << 20)
+    msr     cpacr_el1, x9
+    isb
 
     /* The mask the incoming thread was running under, not the outgoing one's. */
     ldr     x9, [x1, #CTX_DAIF]

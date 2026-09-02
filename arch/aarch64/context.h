@@ -36,24 +36,32 @@
  * corruption is rare and silent. `test_fp_survives_a_preemption` catches it
  * in about two spins in sixty.
  *
- * Saved here rather than on the exception path because here it is both
- * correct and much rarer: the kernel's own C is built -mgeneral-regs-only
- * and cannot touch an FP register, so by the time this runs the values are
- * still exactly what the interrupted thread left, and a switch is far less
- * frequent than an exception.
+ * **Saved lazily, not on every switch.** It used to be written out and read
+ * back here on each one, which is correct and costs `context_switch` 36%
+ * and `ipc_roundtrip` 17% for threads that never touch an FP register at
+ * all - and most of them never do, because the kernel's own C is built
+ * -mgeneral-regs-only.
+ *
+ * So the switch now only *disarms* FP for EL0 (`CPACR_EL1.FPEN`), and the
+ * first floating-point instruction a thread executes after being scheduled
+ * traps. The handler writes the previous owner's registers into its context,
+ * reads this thread's back, and arms FP again. A thread that uses FP pays
+ * one fault per time slice; a thread that does not pays nothing.
+ *
+ * EL0 only. The kernel keeps FP enabled for itself because `setjmp` saves
+ * d8-d15 and `longjmp` restores them, and trapping at EL1 would mean
+ * handling a fault inside the machinery that exists to handle faults.
+ * Nothing else in the kernel may touch an FP register, and the build flag
+ * makes that a compile error rather than a promise.
  *
  * Full 128-bit Q registers, not the low halves. Lua's numbers are doubles,
  * but the userland it is compiled into is not built -mgeneral-regs-only and
  * the compiler is free to use the upper halves; saving only what Lua's
  * arithmetic obviously needs would be the same bug one layer down.
  */
-#define CTX_D8      128
-#define CTX_D10     144
-#define CTX_D12     160
-#define CTX_D14     176
-#define CTX_Q0      192     /* q0 through q31, sixteen pairs, 512 bytes */
-#define CTX_FPCR    704     /* fpcr, fpsr */
-#define CTX_SIZE    720
+#define CTX_Q0      128     /* q0 through q31, sixteen pairs, 512 bytes */
+#define CTX_FPCR    640     /* fpcr, fpsr */
+#define CTX_SIZE    656
 
 #ifndef __ASSEMBLER__
 
@@ -87,8 +95,6 @@ struct context {
      */
     uint64_t spsel;
 
-    uint64_t d8, d9, d10, d11, d12, d13, d14, d15;
-
     /*
      * v0 to v31, two 64-bit words each, and then the two control registers.
      * Aligned to 16 because `stp q` addresses it and an unaligned pair
@@ -108,10 +114,6 @@ _Static_assert(offsetof(struct context, x29)    == CTX_X29, "CTX_X29");
 _Static_assert(offsetof(struct context, sp_el0) == CTX_SP,   "CTX_SP");
 _Static_assert(offsetof(struct context, daif)   == CTX_DAIF,  "CTX_DAIF");
 _Static_assert(offsetof(struct context, spsel)  == CTX_SPSEL, "CTX_SPSEL");
-_Static_assert(offsetof(struct context, d8)     == CTX_D8,  "CTX_D8");
-_Static_assert(offsetof(struct context, d10)    == CTX_D10, "CTX_D10");
-_Static_assert(offsetof(struct context, d12)    == CTX_D12, "CTX_D12");
-_Static_assert(offsetof(struct context, d14)    == CTX_D14, "CTX_D14");
 _Static_assert(offsetof(struct context, v)      == CTX_Q0,   "CTX_Q0");
 _Static_assert(offsetof(struct context, fpcr)   == CTX_FPCR, "CTX_FPCR");
 

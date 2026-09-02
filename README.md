@@ -241,6 +241,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | `SYS_CAP_DROP`: a capability can be given back. Sixteen a thread, and nothing released one | design.md §4.3, kernel/ipc.c |
 | Sep 2026 | `SYS_SHARE_UNMAP`: releasing a region means losing the mapping, not only the name | kernel/syscall.c |
 | Sep 2026 | A PDF is read through a window and never held: the object layer is Lua, the scanner is C | design.md §6, pdf.lua |
+| Sep 2026 | FP and SIMD are saved lazily: the switch disarms them, the first instruction that wants them faults | arch/aarch64/fp.c, CLAUDE.md |
+| Sep 2026 | The FP trap is armed at both privilege levels, not EL0 alone, because kernel threads have FP state too | arch/aarch64/fp.c |
 
 ---
 

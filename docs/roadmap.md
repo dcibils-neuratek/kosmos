@@ -438,7 +438,7 @@ If there is a hiccup every two seconds, it is the Lua GC. Zero allocations in th
 - Extended libc: `malloc`/`free` over the process heap, `printf`, `abort`, `qsort`, `fopen`/`fread`/`fwrite`/`fclose`
 - **The rule that holds the POSIX line:** every I/O function is a call into the process's namespace and nothing else. No fallback to a global tree. Never `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`. See `design.md` §17
 - `errno` per process, in the state struct, not global (with coroutines a global does not work)
-- Lazy FP save in the context switch
+- ~~Lazy FP save in the context switch~~ - **done, Sep 2026**, ahead of the rest of M10. `context_switch` 9.812 -> 6.875 ticks and `ipc_roundtrip` 36.251 -> 30.376. See `arch/aarch64/fp.c`
 - Loading the 4MB WAD from the filesystem
 
 **Definition of done:** Doom at 35fps in an app server window, on real hardware.
