@@ -163,6 +163,70 @@ function gc:frame(x, y, w, h, color)
 end
 
 --------------------------------------------------------------------------
+-- Edges, which is what `ui.md` 16.8b decided the look is made of.
+--
+-- Light on the top and left, dark on the bottom and right, and a thing is
+-- raised. Swap them and it is sunken. That is the whole trick, and it is
+-- worth being exact about why it is worth two commands: it is not shading,
+-- it is a sentence. Raised means you can press this. Sunken means content
+-- lives in here. Read from the corner of the eye, without looking straight
+-- at it and without a label.
+--
+-- **Built from `gc:fill` rather than from the op list**, so they inherit
+-- the clip and the origin for free and cannot drift from the one place that
+-- knows how clipping works. Four fills, no new op, nothing new in the
+-- window manager.
+--
+-- **Colour names, not numbers.** `shade` resolves a name at the moment it
+-- draws, which is what lets a theme change repaint every widget without any
+-- of them subscribing to anything - `ui.md` 16.9. Passing `theme.edge_light`
+-- here would freeze this palette's grey into the widget, which is exactly
+-- the bug that left a light theme with near-invisible headings.
+--
+-- One pixel, not two. A 1998 chamfer was two, and at these sizes the second
+-- pixel reads as a blur rather than as depth: the tab is twenty pixels tall
+-- and a button is smaller than that.
+--------------------------------------------------------------------------
+
+-- The two edges, given which way round they go.
+local function bevel(g, x, y, w, h, top_left, bottom_right)
+  if w < 2 or h < 2 then return end
+
+  g:fill(x, y, w - 1, 1, top_left)          -- top
+  g:fill(x, y, 1, h - 1, top_left)          -- left
+  g:fill(x, y + h - 1, w, 1, bottom_right)  -- bottom
+  g:fill(x + w - 1, y, 1, h, bottom_right)  -- right
+end
+
+-- Something you can press.
+function gc:raised(x, y, w, h, face)
+  if face then self:fill(x, y, w, h, face) end
+
+  bevel(self, x, y, w, h, "edge_light", "edge_dark")
+end
+
+-- Something you can put things in.
+function gc:sunken(x, y, w, h, face)
+  if face then self:fill(x, y, w, h, face) end
+
+  bevel(self, x, y, w, h, "edge_dark", "edge_light")
+end
+
+--
+-- A separator: two lines that read as a scored groove rather than as a
+-- drawn line. Horizontal when it is wider than it is tall.
+--
+function gc:groove(x, y, w, h)
+  if (w or 1) >= (h or 1) then
+    self:fill(x, y, w, 1, "edge_dark")
+    self:fill(x, y + 1, w, 1, "edge_light")
+  else
+    self:fill(x, y, 1, h, "edge_dark")
+    self:fill(x + 1, y, 1, h, "edge_light")
+  end
+end
+
+--------------------------------------------------------------------------
 -- Views.
 --
 -- Follow modes rather than a constraint solver, `ui.md` 16.4. Each edge
@@ -376,12 +440,33 @@ function ui.button(spec)
 
   function v:draw(g)
     local face = self.pressed and theme.accent or theme.raised
-    g:fill(0, 0, self.w, self.h, face)
-    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+
+    --
+    -- Raised, and sunken while it is held - which is the oldest trick in
+    -- the vocabulary and still the clearest: the button goes *in* under
+    -- your finger. `ui.md` 16.8b.
+    --
+    if self.pressed then
+      g:sunken(0, 0, self.w, self.h, face)
+    else
+      g:raised(0, 0, self.w, self.h, face)
+    end
+
+    -- The focus ring goes inside the bevel rather than over it, so a
+    -- focused button is still visibly a button.
+    if self.focused then
+      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+    end
 
     local label = tostring(self.text or "")
     local tx = (self.w - #label * GW) // 2
-    g:text(tx, (self.h - GH) // 2, label,
+    local ty = (self.h - GH) // 2
+
+    -- And the label moves with it, a pixel down and right, because a
+    -- control that goes in takes its label with it.
+    if self.pressed then tx, ty = tx + 1, ty + 1 end
+
+    g:text(tx, ty, label,
            self.pressed and theme.text_on or theme.text, face)
   end
 
@@ -431,8 +516,11 @@ function ui.checkbox(spec)
 
   function v:draw(g)
     local box = GH - 2
-    g:fill(0, 1, box, box, theme.sunken)
-    g:frame(0, 1, box, box, self.focused and theme.ring or theme.line)
+    g:sunken(0, 1, box, box, "sunken")
+
+    if self.focused then
+      g:frame(1, 2, box - 2, box - 2, "ring")
+    end
 
     if self.checked then
       g:fill(3, 4, box - 6, box - 6, theme.good)
@@ -472,8 +560,14 @@ function ui.field(spec)
   v.caret = #v.text + 1
 
   function v:draw(g)
-    g:fill(0, 0, self.w, self.h, theme.sunken)
-    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+    -- A well: content lives in here, and the bevel says so. The focus
+    -- ring goes inside it rather than over it, so a focused field is
+    -- still visibly a field.
+    g:sunken(0, 0, self.w, self.h, "sunken")
+
+    if self.focused then
+      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+    end
 
     local room = (self.w - 8) // GW
     local from = math.max(1, self.caret - room + 1)
@@ -539,8 +633,14 @@ function ui.list(spec)
   v.top = 1
 
   function v:draw(g)
-    g:fill(0, 0, self.w, self.h, theme.sunken)
-    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+    -- A well: content lives in here, and the bevel says so. The focus
+    -- ring goes inside it rather than over it, so a focused field is
+    -- still visibly a field.
+    g:sunken(0, 0, self.w, self.h, "sunken")
+
+    if self.focused then
+      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+    end
 
     local rows = (self.h - 4) // GH
 
@@ -704,8 +804,14 @@ function ui.editor(spec)
   function v:draw(g)
     scroll_into_view(self)
 
-    g:fill(0, 0, self.w, self.h, theme.sunken)
-    g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)
+    -- A well: content lives in here, and the bevel says so. The focus
+    -- ring goes inside it rather than over it, so a focused field is
+    -- still visibly a field.
+    g:sunken(0, 0, self.w, self.h, "sunken")
+
+    if self.focused then
+      g:frame(1, 1, self.w - 2, self.h - 2, "ring")
+    end
 
     local columns = (self.w - 4) // GW - GUTTER
 
@@ -884,7 +990,7 @@ function ui.image(spec)
   end
 
   function v:draw(g)
-    g:fill(0, 0, self.w, self.h, theme.sunken)
+    g:sunken(0, 0, self.w, self.h, "sunken")
 
     if self.image_w == 0 then
       g:text(6, 6, "no picture called " .. tostring(self.asset), theme.bad)
