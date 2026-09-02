@@ -42,6 +42,26 @@ local TAB_H      = 20
 local BORDER     = 2
 local CLOSE_W    = 12             -- the close box at the left of a tab
 
+--
+-- The sizing grip, bottom right, and how far into the window it reaches.
+--
+-- The border is two pixels, which is a fine thing to look at and an
+-- impossible thing to hit: a target that thin is a target you miss. So the
+-- grip claims a square of the window's own bottom-right corner, which is
+-- what every desktop that has ever had one does, and for the same reason.
+--
+-- The cost is real and worth saying out loud: a click in that corner is the
+-- window manager's and never reaches the application. Sixteen pixels square
+-- in the one corner least likely to hold anything you meant to press.
+--
+local GRIP       = 16
+local BOX_W      = 12             -- minimise and maximise, at the right
+
+-- Nothing may be resized smaller than this. Below it a window is all
+-- decoration and no window.
+local MIN_W      = 120
+local MIN_H      = 60
+
 -- The decoration reads the palette at the moment it draws rather than
 -- copying it into constants here, which is what lets the theme change
 -- without restarting anything. See `theme.lua`: the palette table is
@@ -218,6 +238,19 @@ local function damage_window(win)
   add_damage(frame_of(win))
 end
 
+--
+-- Where the minimise box starts. The maximise box is `BOX_W` further right.
+--
+-- One function rather than the same arithmetic in the compositor and in the
+-- pointer, because those two agreeing by coincidence is how a control ends
+-- up drawn in one place and clickable in another.
+--
+local function boxes_x(win)
+  local fx, _, fw = frame_of(win)
+
+  return fx + fw - BOX_W * 2 - 8
+end
+
 --------------------------------------------------------------------------
 -- The drawing commands an application may send.
 --
@@ -346,6 +379,13 @@ local CURSOR = {
 local pointer_x, pointer_y = 0, 0
 local buttons = 0
 local dragging = nil          -- { win, dx, dy } while a title bar is held
+local resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
+
+-- Declared here and defined below, because the compositor and the pointer
+-- both ask about resizing and both run above the code that answers. Locals
+-- rather than globals: `luaglobals` is what caught this, which is what it
+-- is for.
+local resizable, resize_window
 local grabbed = nil           -- the window a press landed in, until release
 
 --------------------------------------------------------------------------
@@ -550,7 +590,8 @@ local function compose_rect(r)
     -- What that feels like is a drag that gets heavier as you open things,
     -- which is exactly what it was.
     --
-    if fx < r.x + r.w and fx + fw > r.x
+    if not win.hidden
+       and fx < r.x + r.w and fx + fw > r.x
        and fy < r.y + r.h and fy + fh > r.y then
       local tab = focused and focused_colour() or idle_colour()
 
@@ -610,6 +651,35 @@ local function compose_rect(r)
 
         back:text(fx + 4 + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2, win.title,
                   title_colour(), tab)
+
+        --
+        -- Minimise and maximise, at the *right*, with close staying at the
+        -- left where BeOS put it and `ui.md` 16.8b records it.
+        --
+        -- Not all three together at one end, which is what Photon does and
+        -- what every system since has copied. Splitting them is the older
+        -- arrangement and it is the better one for a reason that outlived
+        -- the fashion: close is the irreversible one, and putting it a
+        -- window's width away from the two harmless ones means a slip
+        -- hides a window instead of ending it.
+        --
+        local mx = boxes_x(win)
+        local my = fy + (TAB_H - 8) // 2
+
+        -- Minimise: a bar along the bottom of its box.
+        back:fill(mx, my, 8, 8, title_colour())
+        back:fill(mx + 1, my + 1, 6, 5, tab)
+
+        if resizable(win) then
+          -- Maximise: an outline, filled when the window already is.
+          local zx = mx + BOX_W
+
+          back:fill(zx, my, 8, 8, title_colour())
+
+          if not win.restore then
+            back:fill(zx + 1, my + 2, 6, 5, tab)
+          end
+        end
       end
 
       -- And the contents, clipped to the intersection. The window's own
@@ -632,6 +702,32 @@ local function compose_rect(r)
 
         back:blit(from, x0 - win.x, y0 - win.y,
                   x1 - x0, y1 - y0, x0, y0)
+      end
+
+      --
+      -- The sizing grip, over the window's own bottom-right corner.
+      --
+      -- Three diagonal steps rather than a solid block, which is the
+      -- shape every desktop uses for this and is readable at a glance
+      -- without a label. Drawn after the contents so it sits on top of
+      -- them, and only on windows that can actually be resized - see
+      -- `resizable`.
+      --
+      if resizable(win) then
+        local gx = win.x + win.w - GRIP
+        local gy = win.y + win.h - GRIP
+
+        for step = 0, 2 do
+          local o = step * 5
+          local n = GRIP - 3 - o
+
+          if n > 0 then
+            -- Light above, dark below: the same two edges every raised
+            -- thing here is made of, at a diagonal.
+            back:fill(gx + o + 2, gy + GRIP - 3 - o, n, 1, theme.edge_light)
+            back:fill(gx + o + 2, gy + GRIP - 2 - o, n, 1, theme.edge_dark)
+          end
+        end
       end
     end
   end
@@ -667,7 +763,64 @@ local function focused_window()
   return windows[#windows]
 end
 
+--
+-- Full screen, and back again.
+--
+-- `win.restore` holds where it was and is the flag as well as the record:
+-- a window with one is maximised, and restoring clears it. Keeping the two
+-- separate would let them disagree, which is how a maximised window ends up
+-- restoring to its own maximised size and can never be got back.
+--
+local function maximise(win)
+  if not resizable(win) then return false end
+
+  if win.restore then
+    local r = win.restore
+
+    win.restore = nil
+    damage_window(win)
+    win.x, win.y = r.x, r.y
+    resize_window(win, r.w, r.h)
+
+    return true
+  end
+
+  win.restore = { x = win.x, y = win.y, w = win.w, h = win.h }
+
+  damage_window(win)
+  win.x, win.y = BORDER, TAB_H
+  resize_window(win, W - BORDER * 2, H - TAB_H - BORDER)
+
+  return true
+end
+
+--
+-- Out of sight, and the Deskbar is how it comes back.
+--
+-- Nothing else is needed: the Deskbar already lists every window and
+-- already raises one by handle, so `raise` clearing this is the whole of
+-- restore. A minimised window keeps its surface and its contents and is
+-- simply not composed - an application that carries on drawing into it is
+-- not interrupted, which is the same arrangement as a window buried under
+-- another one.
+--
+local function minimise(win)
+  if win.hidden then return false end
+
+  win.hidden = true
+  damage_window(win)
+
+  return true
+end
+
 local function raise(win)
+  -- Raising a minimised window is how it comes back, and the Deskbar is
+  -- what does the raising. See `minimise`.
+  if win.hidden then
+    win.hidden = false
+    damage_window(win)
+  end
+
   if windows[#windows] == win then return end
 
   -- The window *losing* the focus is damaged as well as the one gaining it.
@@ -963,6 +1116,29 @@ handlers.commit = function(req)
   return { ok = true, draw_into = win.shared.live == 1 and 2 or 1 }
 end
 
+--
+-- A window asking for a size, rather than a person dragging one.
+--
+-- Same clamps and the same event as the grip, because an application that
+-- resizes itself has to lay out again exactly as one that was resized by
+-- hand - and having two paths that agree only by accident is how they stop
+-- agreeing.
+--
+handlers.resize = function(req)
+  local win = by_handle[req.window]
+
+  if not win then return { ok = false, error = "no such window" } end
+
+  if not resizable(win) then
+    return { ok = false,
+             error = "a window that draws its own pixels cannot be resized yet" }
+  end
+
+  resize_window(win, tonumber(req.w) or win.w, tonumber(req.h) or win.h)
+
+  return { ok = true, w = win.w, h = win.h }
+end
+
 handlers.retitle = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -1130,6 +1306,74 @@ handlers.theme = function(req)
 
   return { ok = true, palette = theme.name, desktop = theme.desktop,
            fonts = theme.fonts, font_why = font_why }
+end
+
+--
+-- Whether a window can be resized at all.
+--
+-- One that draws its own pixels cannot, yet. Its buffers are a region the
+-- *application* allocated and handed over, sized for exactly these
+-- dimensions and holding two of them - so this process cannot make them
+-- bigger, and pretending otherwise would mean compositing from memory that
+-- was never mapped. Giving it back a new region needs a message in the
+-- protocol and a round trip through an application that may be hung, which
+-- is a second piece of work and not this one.
+--
+-- Until then the grip is not drawn on those windows, which is the honest
+-- way to say no: a control that is not there cannot be pressed and be
+-- ignored.
+--
+function resizable(win)
+  return win.shared == nil
+end
+
+--
+-- A new size, and a new surface to go with it.
+--
+-- The old contents are not carried over. It would be a blit and it would be
+-- wrong: the application lays out for the size it is given, so what is on
+-- screen a moment after a resize should be what it drew for the new size,
+-- not the old picture stretched or cropped underneath it. The window is
+-- filled with its background and the application is told; the next frame it
+-- sends is the right one.
+--
+function resize_window(win, w, h)
+  w = math.floor(w)
+  h = math.floor(h)
+
+  -- Not smaller than a window, and not bigger than the screen it has to fit
+  -- inside along with its own decoration.
+  if w < MIN_W then w = MIN_W end
+  if h < MIN_H then h = MIN_H end
+  if w > W - BORDER * 2 then w = W - BORDER * 2 end
+  if h > H - TAB_H - BORDER then h = H - TAB_H - BORDER end
+
+  if w == win.w and h == win.h then return false end
+
+  -- Where it was, so the part it no longer covers is repainted.
+  damage_window(win)
+
+  local fresh = gfx.surface{ w = w, h = h }
+
+  if not fresh then
+    -- Out of memory for a surface. The window keeps the one it has, which
+    -- is a window that did not resize rather than a window that is gone.
+    return false
+  end
+
+  fresh:fill(0, 0, w, h, 0xff202020)
+
+  win.surface:free()
+  win.surface = fresh
+  win.w, win.h = w, h
+
+  damage_window(win)
+
+  -- And the application, so it can lay out again. Queued like every other
+  -- event: this process does not call applications.
+  post(win, { type = "resize", w = w, h = h })
+
+  return true
 end
 
 local function to_focused(c)
@@ -1349,7 +1593,13 @@ local function pointer_pass(p)
       raise(win)
 
       if ny < fy + TAB_H then
-        if nx < fx + 4 + CLOSE_W then
+        local mx = boxes_x(win)
+
+        if nx >= mx and nx < mx + BOX_W then
+          minimise(win)
+        elseif nx >= mx + BOX_W and nx < mx + BOX_W * 2 and resizable(win) then
+          maximise(win)
+        elseif nx < fx + 4 + CLOSE_W then
           --
           -- The close box. Asked first, taken by force second.
           --
@@ -1363,6 +1613,15 @@ local function pointer_pass(p)
         else
           dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
         end
+      elseif resizable(win)
+             and nx >= win.x + win.w - GRIP and nx < win.x + win.w
+             and ny >= win.y + win.h - GRIP and ny < win.y + win.h then
+        --
+        -- The grip, and it is tested before the contents on purpose: this
+        -- square belongs to the window manager, and an application that
+        -- happens to have drawn something there does not get the press.
+        --
+        resizing = { win = win, ox = nx, oy = ny, ow = win.w, oh = win.h }
       else
         grabbed = win
         post(win, { type = "mouse", action = "press",
@@ -1377,6 +1636,13 @@ local function pointer_pass(p)
     end
 
     dragging = nil
+    resizing = nil
+  end
+
+  if resizing and is_down then
+    resize_window(resizing.win,
+                  resizing.ow + (nx - resizing.ox),
+                  resizing.oh + (ny - resizing.oy))
   end
 
   if dragging and is_down then

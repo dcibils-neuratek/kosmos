@@ -183,9 +183,31 @@ function ui.view(spec)
   v.h = v.h or 0
   v.children = v.children or {}
 
-  -- Which edges are pinned. Left and top by default, which is the
-  -- behaviour of something that simply sits where it was put.
+  --
+  -- Which edges are pinned. Left and top by default, which is the behaviour
+  -- of something that simply sits where it was put.
+  --
+  -- Written either way, because `ui.md` 16.4 has always documented the list
+  -- form and this file has always read the set form:
+  --
+  --   follow = { "left", "right", "top" }     what the documentation says
+  --   follow = { left = true, right = true }  what the code read
+  --
+  -- A list produced a table whose `.left` was nil, so every edge came out
+  -- unpinned and the widget silently did not move. Nothing caught it because
+  -- no application had ever used `follow` at all - there was nothing to
+  -- resize until now, so the whole path was dead code that happened to
+  -- compile.
+  --
   v.follow = v.follow or { left = true, top = true }
+
+  for i = 1, #v.follow do
+    local edge = v.follow[i]
+
+    if type(edge) == "string" then
+      v.follow[edge] = true
+    end
+  end
 
   return v
 end
@@ -1810,6 +1832,24 @@ function window:run()
         -- is unaffected: the compositor drew that text and has already
         -- changed.
         apply_fonts(ev.fonts)
+
+        changed = true
+      elseif ev.type == "resize" then
+        --
+        -- The window was resized - by the grip, or by whoever asked.
+        --
+        -- `view:resize` walks the tree applying follow modes, which is the
+        -- whole of layout here and is why this is three lines rather than a
+        -- relayout pass: a widget that said it follows the right edge moves
+        -- with the right edge, and one that said nothing stays put.
+        --
+        -- The compositor has already thrown away the old surface and filled
+        -- the new one, so this repaints unconditionally rather than only
+        -- when something moved. There is nothing underneath to keep.
+        --
+        self.root:resize(ev.w, ev.h)
+
+        if self.on_resize then pcall(self.on_resize, self, ev.w, ev.h) end
 
         changed = true
       elseif ev.type == "mouse" then

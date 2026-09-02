@@ -3387,6 +3387,121 @@ static bool test_higher_priority_runs_first(void)
     return prio_count == 2 && prio_order[0] == 2 && prio_order[1] == 1;
 }
 
+/*
+ * Does anything at NORMAL run while the desktop is up?
+ *
+ * The question is not academic and it is not about a spinner outranking
+ * something. `test_higher_priority_runs_first` already notes that a lower
+ * band never runs while a higher one *spins*, and calls that correct for
+ * strict priority. This asks the other case: the higher band is a
+ * compositor, which is not spinning at all - it wakes on a timer, does a
+ * few microseconds of work, and blocks again for the rest of the tick.
+ *
+ * That is what `wm` measurably does: 267 ms of work in a six second run on
+ * an idle desktop, 4.5% of the machine. So the ninety-five per cent it is
+ * not using has to be available to whatever is below it, and a thread at
+ * NORMAL that yields in a loop has to make progress.
+ *
+ * It did not, on the real machine: with programs at NORMAL instead of
+ * being promoted into the compositor's band, `say 3 hello` never reached a
+ * *wall clock* deadline it would have reached on one per cent of a core.
+ * This is that, reduced to two threads and no desktop.
+ */
+static volatile unsigned long starve_spins;
+static volatile bool          starve_stop;
+static volatile bool          starve_done;
+
+static void starve_sleeper(void *arg)
+{
+    (void)arg;
+
+    /* The shape of a compositor's loop: wake, do almost nothing, sleep
+     * again for the rest of the tick. */
+    while (!starve_stop) {
+        thread_sleep_until(hal_ticks() + 1);
+    }
+
+    thread_exit();
+}
+
+static void starve_spinner(void *arg)
+{
+    unsigned long deadline = hal_ticks() + (unsigned long)(uintptr_t)arg;
+
+    /*
+     * Bounded by the *clock*, not by a count. That is the whole point: the
+     * loop finishes after so many ticks of wall time however little of the
+     * processor it gets, so a test that never finishes means it got none.
+     */
+    while (hal_ticks() < deadline) {
+        starve_spins++;
+        thread_yield();
+    }
+
+    starve_done = true;
+    thread_exit();
+}
+
+static bool test_normal_runs_while_a_higher_band_sleeps(void)
+{
+    struct thread *sleeper, *spinner;
+    unsigned long  guard;
+    bool           finished;
+
+    starve_spins = 0;
+    starve_stop  = false;
+    starve_done  = false;
+
+    sleeper = thread_create_suspended("starve-sleep", starve_sleeper, NULL);
+    spinner = thread_create_suspended("starve-spin", starve_spinner,
+                                      (void *)(uintptr_t)10u);
+
+    if (sleeper == NULL || spinner == NULL) {
+        return false;
+    }
+
+    thread_set_priority(sleeper, SCHED_PRIO_DISPLAY);
+    thread_set_priority(spinner, SCHED_PRIO_NORMAL);
+
+    /*
+     * And this thread drops to IDLE for the duration, standing in for the
+     * idle thread the test image does not have. At NORMAL it would be
+     * competing with the thread it is measuring; at IDLE it runs only when
+     * genuinely nothing else wants the processor, which is the condition
+     * being tested.
+     */
+    thread_set_priority(thread_current(), SCHED_PRIO_IDLE);
+
+    thread_wake(sleeper);
+    thread_wake(spinner);
+
+    /* Generous: the spinner asks for ten ticks and gets fifty before this
+     * gives up, so a slow host fails nothing. */
+    guard = hal_ticks() + 50;
+
+    while (!starve_done && hal_ticks() < guard) {
+        thread_yield();
+    }
+
+
+    finished    = starve_done;
+    starve_stop = true;
+
+    for (guard = hal_ticks() + 4; hal_ticks() < guard; ) {
+        thread_yield();
+    }
+
+    thread_set_priority(thread_current(), SCHED_PRIO_NORMAL);
+
+    /*
+     * Two things, and the first is the one that was broken: the spinner
+     * reached its own deadline at all. The count is a sanity check on top -
+     * a hundred is far below what a working scheduler gives and far above
+     * the zero a starved thread gives.
+     */
+    return finished && starve_spins > 100;
+}
+
 static volatile bool preempt_woke;
 
 static void preempt_waker(void *arg)
@@ -3695,6 +3810,7 @@ static const struct test tests[] = {
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "sched: NORMAL runs while DISPLAY sleeps", test_normal_runs_while_a_higher_band_sleeps },
     { "as: a page count that wraps is refused", test_a_space_refuses_a_page_count_that_wraps },
     { "as: switching makes a mapping real",    test_switching_to_a_space_makes_its_mapping_real },
     { "as: destroy returns its pages",         test_destroying_a_space_returns_its_pages },

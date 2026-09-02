@@ -650,19 +650,62 @@ bool thread_any_ready(void)
 
 void thread_yield(void)
 {
+    unsigned long  daif;
+    struct thread *next;
+
+    /*
+     * Masked for the duration, and this one was found the hard way.
+     *
+     * A syscall arrives with interrupts already masked, so `SYS_YIELD` was
+     * safe. A *kernel* thread calling this is not: it runs with interrupts
+     * enabled, and there is a window of three instructions below where a
+     * timer tick corrupts the runqueue.
+     *
+     * The tick lands between the enqueue and the switch. `current` is on the
+     * runqueue by then and its state is still THREAD_RUNNING, because
+     * `switch_to` is what changes it - so `thread_preempt_if_needed`, whose
+     * whole guard is that state, does not recognise the situation and
+     * enqueues `current` a *second* time.
+     *
+     * `prio_enqueue` then does `tail[level]->sched.next = t` on a thread
+     * already in that list. If it is the tail, `t->sched.next = t` - a
+     * self-loop, so `head[level]` never empties, the occupancy bit never
+     * clears, and every other thread in that band becomes unreachable. If it
+     * is mid-list, `t->sched.next = NULL` truncates the list while
+     * `tail[level]` still points past the end, and the next pick reads
+     * through a NULL head.
+     *
+     * Which is exactly the two symptoms: a machine that hangs, and
+     * `sched_prio.c` faulting on a NULL `head[level]` while the bitmask said
+     * that band had somebody in it. Both were intermittent for the same
+     * reason - the window is three instructions wide and needs a tick to
+     * land inside it.
+     *
+     * Saved and restored rather than unconditionally re-enabled, so this
+     * stays correct when called from somewhere that already held them off -
+     * the same reason `sched_switch_to` does it that way.
+     */
+    __asm__ volatile("mrs %0, daif" : "=r"(daif));
+    __asm__ volatile("msr daifset, #3" ::: "memory");
+
     /*
      * Ask before offering. Picking first and enqueuing afterwards is what
      * makes this a yield rather than a no-op: enqueuing the caller first
      * would let a FIFO policy hand it straight back.
      */
-    struct thread *next = policy->pick_next();
+    next = policy->pick_next();
 
-    if (next == NULL) {
-        return;     /* nothing else wants the CPU */
+    if (next != NULL) {
+        policy->enqueue(current);
+        switch_to(next);
     }
 
-    policy->enqueue(current);
-    switch_to(next);
+    /*
+     * Reached when this thread runs again. `context_switch` restored this
+     * thread's own saved mask on the way back in, and this puts back what
+     * the caller had.
+     */
+    __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
 }
 
 void thread_block(void)

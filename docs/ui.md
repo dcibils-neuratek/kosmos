@@ -87,6 +87,20 @@ follow = { "left", "top" }             -- fixed size, top-left corner
 follow = { "right", "bottom" }         -- pinned to the bottom-right corner
 ```
 
+Either form works, and the kit normalises the first into the second:
+
+```lua
+follow = { left = true, right = true, top = true }   -- the same thing
+```
+
+That is not a convenience. This section documented the list form and
+`ui.lua` read the set form, so a list gave a table whose `.left` was nil and
+every edge came out unpinned - the widget silently stayed where it was.
+Nothing caught it for a long time because **no application had ever used
+`follow`**: nothing could be resized until M13, so the entire layout path
+was dead code that happened to compile. The first window to be dragged
+bigger is what found it.
+
 The reason is the complexity budget. A constraint solver is thousands of lines, hard to debug, and has non-obvious behavior when the system is overdetermined. Follow modes are fifty lines and cover 90% of what you need.
 
 On top of that, two containers cover nearly everything else:

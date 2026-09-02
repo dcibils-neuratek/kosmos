@@ -113,7 +113,11 @@ local top = 1            -- the first row drawn, for a list taller than the view
 -- list that changes would be a lot of work to look identical.
 --------------------------------------------------------------------------
 
-local table_view = ui.view{ x = 12, y = 70, w = W - 24, h = H - 116 }
+-- Follows all four edges, so it grows with the window. The first widget in
+-- Kosmos to use a follow mode for real - see `ui.md` 16.4 for why that took
+-- until something could be resized.
+local table_view = ui.view{ x = 12, y = 70, w = W - 24, h = H - 116,
+                            follow = { "left", "right", "top", "bottom" } }
 
 function table_view:draw(g)
   g:fill(0, 0, self.w, self.h, "sunken")
