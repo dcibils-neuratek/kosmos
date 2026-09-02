@@ -686,7 +686,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot shot frames bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot shot prepush frames bench bench-record debug disasm size clean dist release disk
 
 # A disk image, built here, with whatever you want already in it.
 #
@@ -883,6 +883,21 @@ screenshot: $(TARGET)
 # default image back - otherwise the next `make screenshot` would silently
 # be testing a different machine.
 SHOTDIR := docs/screenshots
+
+# Everything a push should carry.
+#
+#   make prepush
+#
+# The suites, the display harness, and a picture of the desktop. The
+# screenshot is the one that would otherwise be forgotten - it is not a
+# check, nothing fails without it, and a series with gaps in it is worth
+# much less than a series without. So it is a step in a target rather than
+# something to remember.
+.PHONY: prepush
+prepush: test screenshot shot
+	@echo
+	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
+
 
 .PHONY: shot
 shot:

@@ -370,6 +370,17 @@ by writing more code.
 **A version number is the moment to do it**, because it is the only moment
 that arrives on its own.
 
+**A push carries a picture. `make prepush`** runs the suites, the display
+harness and `make shot`, which puts a 1920x1080 screenshot of the desktop -
+Tracker, the widget gallery, Processes, Monitor and the cube, tiled - into
+`docs/screenshots/` under the date and the revision.
+
+It is a make target rather than a habit because it is the step that would be
+forgotten: nothing fails without it, and a series of these with gaps in it
+is worth much less than one without. A commit message says what changed; a
+screenshot says what it became, and this is a system whose whole point is
+something you look at.
+
 **At the end of a session, update `docs/state.md`.** Without that, the next session starts from zero.
 
 **When a design decision is taken, propagate it to the documents in the same session.** A decision that lives only in chat history is lost. The order: the row in the decision log in `README.md`, the explanation in the matching section of `docs/design.md` (or `ui.md` / `gfx.md` / `hal.md` depending on the topic), and the scope adjustment in `docs/roadmap.md` if it changes what has to be built. If a decision contradicts something already written, correct the old text instead of adding an exception next to it.

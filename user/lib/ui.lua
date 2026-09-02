@@ -227,6 +227,81 @@ function gc:groove(x, y, w, h)
 end
 
 --------------------------------------------------------------------------
+-- Scrollbars.
+--
+-- Drawn *into* a widget rather than added beside it as a child view, and
+-- that is a decision rather than a shortcut. `view:hit` returns the deepest
+-- child and a press grabs it until release, so a scrollbar that were a
+-- child of a list would take the press and the list would never learn the
+-- drag happened - and the two would then need to talk to each other about
+-- a scroll position they both already have.
+--
+-- So a well that scrolls draws its own bar and answers its own clicks in
+-- the coordinates it already has. One widget, one scroll position.
+--
+-- Sunken trough, raised thumb: `ui.md` 16.8b, and here it is doing real
+-- work rather than decoration. Which part of a scrollbar you can drag is
+-- exactly the question the two edges answer.
+--------------------------------------------------------------------------
+
+local SCROLL_W = 14
+
+--
+-- Where the thumb goes, or nil when everything fits and there is no bar.
+--
+-- `top` is one-based like the rest of the list code. Returned rather than
+-- drawn so the hit test and the drawing agree by construction - the same
+-- reason `boxes_x` exists in the window manager.
+--
+local function thumb_of(h, total, shown, top)
+  if total <= shown then return nil end
+
+  local track = h - 4
+  local size = math.max(16, (track * shown) // total)
+  local room = track - size
+  local at = ((top - 1) * room) // math.max(1, total - shown)
+
+  return 2 + at, size, track
+end
+
+local function draw_scrollbar(g, w, h, total, shown, top)
+  local y, size = thumb_of(h, total, shown, top)
+
+  if not y then return false end
+
+  local x = w - SCROLL_W - 2
+
+  g:sunken(x, 2, SCROLL_W, h - 4, "window")
+  g:raised(x + 1, y, SCROLL_W - 2, size, "raised")
+
+  return true
+end
+
+--
+-- A click in the bar. Returns the new `top`, or nil if the click was not in
+-- the bar at all.
+--
+-- Above the thumb is a page back and below it is a page forward, which is
+-- what a trough has always meant. Dragging the thumb is not handled here:
+-- the widget owns the drag, because it owns the press.
+--
+local function scrollbar_click(x, y, w, h, total, shown, top)
+  if total <= shown or x < w - SCROLL_W - 2 then return nil end
+
+  local ty, size = thumb_of(h, total, shown, top)
+
+  if not ty then return nil end
+
+  if y < ty then
+    return math.max(1, top - shown)
+  elseif y >= ty + size then
+    return math.min(total - shown + 1, top + shown)
+  end
+
+  return top          -- on the thumb: the widget will drag it
+end
+
+--------------------------------------------------------------------------
 -- Views.
 --
 -- Follow modes rather than a constraint solver, `ui.md` 16.4. Each edge
@@ -649,6 +724,21 @@ function ui.list(spec)
       self.top = self.selected - rows + 1
     end
 
+    -- And never past the end: the keyboard can only move the selection, but
+    -- the bar and the wheel move `top` directly.
+    if self.top > #self.items - rows + 1 then
+      self.top = #self.items - rows + 1
+    end
+
+    if self.top < 1 then self.top = 1 end
+
+    self.rows = rows
+    self.bar = draw_scrollbar(g, self.w, self.h, #self.items, rows, self.top)
+
+    -- The rows stop where the bar starts, or the last column of every long
+    -- item would be drawn underneath it.
+    local room = self.w - 4 - (self.bar and SCROLL_W + 2 or 0)
+
     for i = 0, rows - 1 do
       local n = self.top + i
       local item = self.items[n]
@@ -658,7 +748,7 @@ function ui.list(spec)
         local on = (n == self.selected)
         local bg = on and theme.accent or theme.sunken
 
-        if on then g:fill(2, y, self.w - 4, GH, bg) end
+        if on then g:fill(2, y, room, GH, bg) end
 
         g:text(4, y, tostring(item), on and theme.text_on or theme.text, bg)
       end
@@ -695,6 +785,43 @@ function ui.list(spec)
   -- same bargain the button makes.
   --
   function v:mouse(action, x, y)
+    local rows = self.rows or ((self.h - 4) // GH)
+
+    --
+    -- The bar first, because it sits over the right-hand end of every row
+    -- and a click there is not a click on an item.
+    --
+    if self.bar and x >= self.w - SCROLL_W - 2 then
+      if action == "press" then
+        local to = scrollbar_click(x, y, self.w, self.h, #self.items,
+                                   rows, self.top)
+
+        if to == self.top then
+          -- On the thumb. Remember where, so the drag moves the list by
+          -- how far the pointer moved rather than jumping to it.
+          self.dragging_bar = { y = y, top = self.top }
+        elseif to then
+          self.top = to
+        end
+      elseif action == "move" and self.dragging_bar then
+        local d = self.dragging_bar
+        local track = self.h - 4
+        local _, size = thumb_of(self.h, #self.items, rows, d.top)
+        local room = track - (size or 0)
+
+        if room > 0 then
+          local moved = ((y - d.y) * (#self.items - rows)) // room
+
+          self.top = math.min(math.max(1, d.top + moved),
+                              #self.items - rows + 1)
+        end
+      elseif action == "release" then
+        self.dragging_bar = nil
+      end
+
+      return true
+    end
+
     local row = (y - 2) // GH
     local n = self.top + row
 
