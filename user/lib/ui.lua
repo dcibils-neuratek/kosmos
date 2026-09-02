@@ -1505,6 +1505,11 @@ function ui.window(spec)
     title = spec.title or "window",
     w = spec.w or 400, h = spec.h or 240,
     x = spec.x, y = spec.y,
+
+    -- Part of the desktop rather than something running on it: no close
+    -- box, no minimise, no maximise. The Deskbar is the only one, because
+    -- it is how a hidden window comes back and how anything is started.
+    pinned = spec.pinned or nil,
   }, shared_cap)
 
   if not reply then
@@ -2321,6 +2326,14 @@ function window:run()
         if self.on_resize then pcall(self.on_resize, self, ev.w, ev.h) end
 
         changed = true
+      elseif ev.type == "moved" then
+        --
+        -- The window was moved - by a drag, or by whoever asked. Menus are
+        -- windows placed on the *screen*, so anything that opens one needs
+        -- this or it opens where the window used to be.
+        --
+        self.origin_x, self.origin_y = ev.x, ev.y
+        self.x, self.y = ev.x, ev.y
       elseif ev.type == "mouse" and ev.menu then
         -- Tagged with a menu handle by the window manager, so it belongs to
         -- the open menu rather than to any widget in this window.

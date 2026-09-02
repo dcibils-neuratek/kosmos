@@ -491,8 +491,13 @@ local outline = nil           -- { x, y, w, h }, a frame rectangle
 -- Declared here and defined below, because the compositor and the pointer
 -- both ask about resizing and both run above the code that answers. Locals
 -- rather than globals: `luaglobals` is what caught this, which is what it
--- is for.
+-- is for - twice now, and both times within a minute of writing the bug.
 local resizable, resize_window
+
+-- The same, for the queue every handler puts events on. `handlers.move`
+-- reports where a window ended up, and it is written above the function
+-- that does the reporting.
+local post
 local grabbed = nil           -- the window a press landed in, until release
 
 --------------------------------------------------------------------------
@@ -783,15 +788,20 @@ local function compose_rect(r)
         local by = fy + (TAB_H - BOX) // 2
         local bx = fx + MARGIN
 
-        raised_box(bx, by, BOX, BOX, theme.raised)
+        if not win.pinned then
+          raised_box(bx, by, BOX, BOX, theme.raised)
 
         -- Close: a square, the way BeOS drew it. A cross would need
         -- diagonals, and there is no line primitive - it would be fourteen
         -- one-pixel fills to say what a square says in two.
-        back:fill(bx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
-        back:fill(bx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
+          back:fill(bx + 4, by + 4, BOX - 8, BOX - 8, theme.text)
+          back:fill(bx + 5, by + 5, BOX - 10, BOX - 10, theme.raised)
+        end
 
-        back:text(fx + MARGIN + CLOSE_W, fy + (TAB_H - gfx.font.h) // 2,
+        -- A pinned window's title starts where its close box would have
+        -- been, rather than leaving a hole the shape of a missing control.
+        back:text(fx + MARGIN + (win.pinned and 0 or CLOSE_W),
+                  fy + (TAB_H - gfx.font.h) // 2,
                   win.title, title_colour(), tab)
 
         --
@@ -806,6 +816,8 @@ local function compose_rect(r)
         -- hides a window instead of ending it.
         --
         local mx = boxes_x(win)
+
+        if win.pinned then goto no_controls end
 
         -- Minimise: a bar along the bottom, which is what the window is
         -- about to become.
@@ -822,6 +834,8 @@ local function compose_rect(r)
           back:fill(zx + 3, by + 3, BOX - 6, BOX - 6, theme.text)
           back:fill(zx + 4, by + 6, BOX - 8, BOX - 7, theme.raised)
         end
+
+        ::no_controls::
       end
 
       -- And the contents, clipped to the intersection. The window's own
@@ -1172,6 +1186,21 @@ handlers.open = function(req, who, cap)
   -- queue, so an application polls one handle and gets everything - which
   -- is what keeps `ui.window`'s loop a loop rather than two.
   --
+  --
+  -- A window that is part of the desktop rather than a thing running on it.
+  --
+  -- The Deskbar is the only one. It has no close box, no minimise and no
+  -- maximise, and the reason is not tidiness: it is *how you get a window
+  -- back*. Minimising it hid the one thing that restores hidden windows,
+  -- and closing it took away the only way to start anything. Neither had a
+  -- way back short of Control-C.
+  --
+  -- BeOS's Deskbar had none of those controls either, for the same reason.
+  -- A control that must never be pressed should not be drawn, which is the
+  -- same argument as not drawing a grip on a window that cannot resize.
+  --
+  win.pinned = req.pinned and true or nil
+
   if req.kind == "menu" then
     win.kind = "menu"
     win.owner = tonumber(req.owner)
@@ -1449,7 +1478,24 @@ handlers.move = function(req)
                    H - KEEP)
   damage_window(win)
 
-  return { ok = true }
+  --
+  -- And the application is told where it now is.
+  --
+  -- It needs to know, because a menu is a *window* and is placed on the
+  -- screen rather than inside the window that opened it. Without this a
+  -- window that had been dragged opened its menus where it used to be -
+  -- which is exactly what happened, in the corner it started in, halfway
+  -- across the screen from the button that was pressed.
+  --
+  -- Not while a drag is in progress: that would be a message per pointer
+  -- movement, and the queue would fill with positions nobody read. `quiet`
+  -- is the drag saying it will report the final position itself, on release.
+  --
+  if not req.quiet then
+    post(win, { type = "moved", x = win.x, y = win.y })
+  end
+
+  return { ok = true, x = win.x, y = win.y }
 end
 
 local function events_for(win)
@@ -1548,7 +1594,7 @@ end
 -- Queued and not delivered: delivering would mean calling the application,
 -- and calling it is what this process must never do.
 --
-local function post(win, event)
+function post(win, event)
   if not win then return end
 
   win.events[#win.events + 1] = event
@@ -1996,7 +2042,10 @@ local function pointer_pass(p)
       if ny < fy + TAB_H then
         local mx = boxes_x(win)
 
-        if nx >= mx and nx < mx + BOX_W then
+        if win.pinned then
+          -- Nothing on this tab but the tab. Drag it and that is all.
+          dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
+        elseif nx >= mx and nx < mx + BOX_W then
           minimise(win)
         elseif nx >= mx + BOX_W and nx < mx + BOX_W * 2 and resizable(win) then
           maximise(win)
@@ -2060,7 +2109,13 @@ local function pointer_pass(p)
       resizing = nil
     end
 
-    dragging = nil
+    -- The end of a drag is where the application is told, once, rather
+    -- than on every step of it.
+    if dragging then
+      post(dragging.win, { type = "moved",
+                           x = dragging.win.x, y = dragging.win.y })
+      dragging = nil
+    end
   end
 
   if resizing and is_down and moved_this_pass then
@@ -2090,7 +2145,7 @@ local function pointer_pass(p)
   end
 
   if dragging and is_down then
-    handlers.move{ window = dragging.win.handle,
+    handlers.move{ window = dragging.win.handle, quiet = true,
                    x = nx - dragging.dx, y = ny - dragging.dy }
   end
 

@@ -130,7 +130,7 @@ local RUNNING_ROWS = 10
 local running_h = RUNNING_ROWS * ROW + 6
 local H = 12 + BUTTON_H + 12 + 18 + running_h + 30
 
-local win, err = ui.window{ title = "Deskbar", w = W, h = H,
+local win, err = ui.window{ title = "Deskbar", w = W, h = H, pinned = true,
                             x = sw - W - 12, y = 34 }
 
 if not win then
