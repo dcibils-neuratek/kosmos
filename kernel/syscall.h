@@ -131,9 +131,42 @@
  */
 #define HAL_SND_PERIOD_BYTES_MAX 8192
 
+/*
+ * The rate every source is converted to, which userland needs in order to
+ * do the converting. The board fixes it in `hal.h`; this is the ABI's copy
+ * of the same number, and `sys.info().audio_rate` reports what the machine
+ * actually has. They agree today because there is one board.
+ */
+#define HAL_SND_RATE 44100u
+
 #define SYS_SND_QUEUED 37   /* ()                     -> periods in flight */
 
-#define SYS_MAX         38
+/*
+ * Sleep for a number of scheduler ticks.
+ *
+ * `SYS_WAIT_INPUT` has done this since M6 and does it well, but only for
+ * the one process that owns the console, because it also wakes on a key.
+ * Everything else that wanted to wait had `SYS_YIELD`, which does not wait
+ * at all: it goes to the back of its band and comes straight back, so a
+ * thread "waiting" this way is runnable for ever and a core is gone.
+ *
+ * That was measured rather than reasoned about. Playing a tone put the
+ * audio server at 26% and the program feeding it at 63%, against 8% for
+ * Doom - which draws a 320x200 frame thirty-five times a second and is
+ * cheap precisely because it *waits* in between. Two spinning threads cost
+ * eight times what rendering Doom costs.
+ *
+ * No permission check. A thread choosing not to run is the one request
+ * that cannot be used against anybody: it gives the machine back.
+ *
+ * Ticks, not the physical counter - the trap `SYS_WAIT_INPUT` documents at
+ * length, and the reason this takes the same units as that one rather than
+ * milliseconds, which would read as an invitation to sleep for less than
+ * a tick and get a tick anyway.
+ */
+#define SYS_SLEEP      38   /* (ticks)                -> 0                  */
+
+#define SYS_MAX         39
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -398,6 +431,8 @@ struct sysinfo {
     uint32_t audio_channels;
     uint32_t audio_period;      /* bytes in one period */
     uint32_t audio_periods;     /* how many the device will hold */
+    uint32_t audio_dry;         /* periods that arrived at an empty device */
+    uint32_t audio_floor;       /* smallest depth ever seen, in periods */
 
     uint32_t cpus;              /* cores the kernel is scheduling on */
     uint32_t tick_hz;

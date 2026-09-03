@@ -156,7 +156,8 @@ static long sys_call(struct process *p, cap_t cap, uintptr_t msg_ptr,
 }
 
 static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
-                        uintptr_t sender_ptr, bool nonblocking)
+                        uintptr_t sender_ptr, bool nonblocking,
+                        unsigned long timeout)
 {
     struct message msg;
     struct thread *sender = NULL;
@@ -167,7 +168,7 @@ static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
         return SYS_ERR_FAULT;
     }
 
-    status = ipc_receive(cap, &msg, &sender, nonblocking);
+    status = ipc_receive(cap, &msg, &sender, nonblocking, timeout);
 
     if (status != IPC_OK) {
         return status;
@@ -478,6 +479,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         info.audio_channels = HAL_SND_CHANNELS;
         info.audio_period   = HAL_SND_PERIOD_BYTES;
         info.audio_periods  = HAL_SND_PERIODS;
+        info.audio_dry      = hal_snd_dry();
+        info.audio_floor    = hal_snd_floor();
     }
 
     info.threads_used     = thread_count();
@@ -918,6 +921,36 @@ void syscall_dispatch(struct trapframe *tf)
         }
         break;
 
+    case SYS_SLEEP:
+        /*
+         * The same sleep, for anybody, without the input half.
+         *
+         * Capped, because a sleep is the one call whose argument nobody
+         * checks against anything: a program that computes a deadline
+         * wrongly and asks for four billion ticks is asking to be gone for
+         * a year and a half, and it looks exactly like a hang. An hour is
+         * far longer than anything here waits for and far shorter than a
+         * mistake.
+         *
+         * Zero ticks is a yield and is written as one. `thread_sleep_until`
+         * already returns immediately for a deadline that has passed, so
+         * this is only about saying what happens rather than relying on it.
+         */
+        if (tf->x[0] == 0) {
+            thread_yield();
+        } else {
+            unsigned long ticks = (unsigned long)tf->x[0];
+
+            if (ticks > (unsigned long)TICK_HZ * 3600UL) {
+                ticks = (unsigned long)TICK_HZ * 3600UL;
+            }
+
+            thread_sleep_until(hal_ticks() + ticks);
+        }
+
+        result = 0;
+        break;
+
     case SYS_LOG: {
         /*
          * What this machine has printed, kernel and processes together.
@@ -1344,9 +1377,25 @@ void syscall_dispatch(struct trapframe *tf)
         break;
 
     case SYS_RECEIVE:
-        /* x3 bit 0 asks not to block, the same way SYS_WAIT's x1 does. */
-        result = sys_receive(p, (cap_t)tf->x[0], tf->x[1], tf->x[2],
-                             (tf->x[3] & 1u) != 0);
+        /*
+         * x3 bit 0 asks not to block, the same way SYS_WAIT's x1 does, and
+         * x4 is how many scheduler ticks to wait before giving up - zero
+         * for the old behaviour, which is to wait for ever.
+         *
+         * Capped like `SYS_SLEEP` is and for the same reason: a deadline
+         * computed wrongly is a server that stops answering for a year, and
+         * it looks exactly like a hang.
+         */
+        {
+            unsigned long timeout = (unsigned long)tf->x[4];
+
+            if (timeout > (unsigned long)TICK_HZ * 3600UL) {
+                timeout = (unsigned long)TICK_HZ * 3600UL;
+            }
+
+            result = sys_receive(p, (cap_t)tf->x[0], tf->x[1], tf->x[2],
+                                 (tf->x[3] & 1u) != 0, timeout);
+        }
         break;
 
     case SYS_REPLY:

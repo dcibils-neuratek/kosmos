@@ -334,6 +334,149 @@ static int l_mix(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.pcm(bytes, rate, channels, bits, phase, max_out)` - somebody else's
+ * samples, in this machine's format.
+ *
+ * Returns the converted bytes, how many input bytes were used, and the
+ * fractional phase to hand back on the next call.
+ *
+ *--------------------------------------------------------------------------
+ * Why it takes a phase, and why that is not an implementation detail.
+ *
+ * A file is converted a piece at a time, because a three-minute song is
+ * thirty megabytes at 44100 stereo and a process has forty-eight. Resampling
+ * one piece at a time means the position between input frames does not
+ * finish on a whole number - and starting the next piece at zero puts a
+ * discontinuity at every boundary, which is a click several times a second.
+ * So the caller carries it. There is nowhere else to put it: this function
+ * has no idea which stream it is working on.
+ *
+ *--------------------------------------------------------------------------
+ * What it does and does not do.
+ *
+ * 8-bit unsigned and 16-bit signed in; mono or stereo; any rate. Out is
+ * always the board's format, because there is exactly one device and
+ * `hal.h` fixes what it takes.
+ *
+ * The resampling is linear interpolation between neighbouring frames. Not
+ * nearest-neighbour, which is free and audibly wrong on anything with high
+ * frequencies in it; not a windowed sinc, which is what you would want for
+ * a serious resampler and is a great deal more arithmetic for a difference
+ * most people cannot hear on a laptop speaker. Saying which one it is
+ * matters more than which one it is.
+ */
+static int l_pcm(lua_State *L)
+{
+    size_t len;
+    const unsigned char *in = (const unsigned char *)
+                              luaL_checklstring(L, 1, &len);
+    long rate = (long)luaL_checkinteger(L, 2);
+    long channels = (long)luaL_checkinteger(L, 3);
+    long bits = (long)luaL_checkinteger(L, 4);
+    double phase = (double)luaL_optnumber(L, 5, 0.0);
+    long max_out = (long)luaL_optinteger(L, 6, HAL_SND_PERIOD_BYTES_MAX);
+
+    static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
+
+    long in_frame_bytes = channels * (bits / 8);
+    long in_frames, out_frames = 0, i;
+    double step;
+
+    if (rate <= 0 || (channels != 1 && channels != 2)
+        || (bits != 8 && bits != 16)) {
+        return luaL_error(L, "pcm: %d Hz, %d channels, %d bits is not a "
+                             "format this understands", (int)rate,
+                          (int)channels, (int)bits);
+    }
+
+    if (max_out > (long)sizeof(out)) {
+        max_out = (long)sizeof(out);
+    }
+
+    in_frames = (long)(len / (size_t)in_frame_bytes);
+
+    if (in_frames < 2) {
+        lua_pushlstring(L, "", 0);
+        lua_pushinteger(L, 0);
+        lua_pushnumber(L, (lua_Number)phase);
+
+        return 3;
+    }
+
+    step = (double)rate / (double)HAL_SND_RATE;
+
+    while (out_frames * 4 + 4 <= max_out) {
+        long at = (long)phase;
+        double frac = phase - (double)at;
+        int32_t l0, r0, l1, r1;
+
+        /* The last frame has no neighbour to interpolate towards, so it is
+         * where this piece stops - and the caller sends the rest next time
+         * with the phase that got us here. */
+        if (at + 1 >= in_frames) {
+            break;
+        }
+
+        if (bits == 8) {
+            /* Unsigned, centred on 128, which is what an 8-bit WAV is. */
+            const unsigned char *a = in + at * in_frame_bytes;
+            const unsigned char *b = a + in_frame_bytes;
+
+            l0 = ((int32_t)a[0] - 128) << 8;
+            r0 = (channels == 2) ? (((int32_t)a[1] - 128) << 8) : l0;
+            l1 = ((int32_t)b[0] - 128) << 8;
+            r1 = (channels == 2) ? (((int32_t)b[1] - 128) << 8) : l1;
+        } else {
+            const unsigned char *a = in + at * in_frame_bytes;
+            const unsigned char *b = a + in_frame_bytes;
+
+            /* Little endian, read a byte at a time: the input is a Lua
+             * string and nothing promises it is two-byte aligned. */
+            l0 = (int16_t)(a[0] | (a[1] << 8));
+            r0 = (channels == 2) ? (int16_t)(a[2] | (a[3] << 8)) : l0;
+            l1 = (int16_t)(b[0] | (b[1] << 8));
+            r1 = (channels == 2) ? (int16_t)(b[2] | (b[3] << 8)) : l1;
+        }
+
+        out[out_frames * 2]     = (int16_t)(l0 + (l1 - l0) * frac);
+        out[out_frames * 2 + 1] = (int16_t)(r0 + (r1 - r0) * frac);
+
+        out_frames++;
+        phase += step;
+    }
+
+    /*
+     * How much of the input is finished with.
+     *
+     * Everything up to the frame the phase now sits in - not including it,
+     * because the next piece has to interpolate from it. The caller drops
+     * that many bytes and keeps the rest, and the phase comes back reduced
+     * by the same amount so the two agree.
+     */
+    {
+        long consumed = (long)phase;
+
+        if (consumed > in_frames - 1) {
+            consumed = in_frames - 1;
+        }
+
+        if (consumed < 0) {
+            consumed = 0;
+        }
+
+        phase -= (double)consumed;
+
+        lua_pushlstring(L, (const char *)out, (size_t)out_frames * 4);
+        lua_pushinteger(L, (lua_Integer)(consumed * in_frame_bytes));
+        lua_pushnumber(L, (lua_Number)phase);
+    }
+
+    for (i = 0; i < 0; i++) { }        /* keeps -Wunused-but-set quiet */
+
+    return 3;
+}
+
 static int l_sound_queued(lua_State *L)
 {
     long n = kosmos_snd_queued();
@@ -462,6 +605,30 @@ static int l_yield(lua_State *L)
 }
 
 /*
+ * Stop running for a while.
+ *
+ * In scheduler ticks - a hundredth of a second each - and not in
+ * milliseconds, which would suggest a precision this does not have. A
+ * sleep of one tick is "wake me at the next tick", so it lasts anywhere
+ * from nothing to ten milliseconds depending on where in the tick it was
+ * asked. That is fine for what wants it and worth being honest about.
+ *
+ * `sys.yield` and `sys.sleep(0)` are the same call. The difference that
+ * matters is `sys.yield` in a loop, which is a spin dressed as a wait.
+ */
+static int l_sleep(lua_State *L)
+{
+    lua_Integer ticks = luaL_optinteger(L, 1, 1);
+
+    if (ticks < 0) {
+        ticks = 0;
+    }
+
+    kosmos_sleep((unsigned long)ticks);
+    return 0;
+}
+
+/*
  * How long something took, in counter ticks.
  *
  * A Lua integer is 64 bits, so the counter fits without losing a bit, and
@@ -525,7 +692,10 @@ static int l_receive(lua_State *L)
     struct message msg;
     uint64_t sender = 0;
     int nonblocking = lua_toboolean(L, 2);
-    long status = kosmos_receive(cap, &msg, &sender, nonblocking);
+    /* Scheduler ticks, and absent means wait for ever - which is what every
+     * caller written before this argument existed meant. */
+    unsigned long timeout = (unsigned long)luaL_optinteger(L, 3, 0);
+    long status = kosmos_receive(cap, &msg, &sender, nonblocking, timeout);
 
     if (status != 0) {
         return fail(L, status);
@@ -705,6 +875,10 @@ static int l_info(lua_State *L)
     SET("audio_channels",   info.audio_channels);
     SET("audio_period",     info.audio_period);
     SET("audio_periods",    info.audio_periods);
+    /* The two that say whether it is *on time*, rather than how much of it
+     * there was. See `hal_snd_dry`. */
+    SET("audio_dry",        info.audio_dry);
+    SET("audio_floor",      info.audio_floor);
     SET("cpus",             info.cpus);
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);
@@ -1532,11 +1706,13 @@ static const luaL_Reg sys_functions[] = {
     { "sound",       l_sound },
     { "sound_queued", l_sound_queued },
     { "mix",         l_mix },
+    { "pcm",         l_pcm },
     { "getchar",  l_getchar },
     { "spawn",    l_spawn },
     { "wait",     l_wait },
     { "exit",     l_exit },
     { "yield",    l_yield },
+    { "sleep",    l_sleep },
     { "ticks",    l_ticks },
     { "info",     l_info },
     { "name",     l_setname },

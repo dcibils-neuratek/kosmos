@@ -41,6 +41,7 @@
 
 #include <stddef.h>
 
+#include "kernel.h"
 #include "sched.h"
 #include "thread.h"
 #include "panic.h"
@@ -48,21 +49,28 @@
 /*
  * How many ticks a thread gets before its turn is over.
  *
- * Ten at the 100 Hz the timer runs at, so 100 ms, which is the value round
- * robin used and is kept so that this change is about priorities and not
- * about two things at once.
+ * A tenth of a second, which is the value round robin used and is kept so
+ * that this change is about priorities and not about two things at once.
+ *
+ * Derived from `TICK_HZ` rather than written as a count of ticks. It was
+ * the bare `10` when a tick was 10 ms; raising the rate to 250 Hz for the
+ * sound device turned the same `10` into 40 ms without anybody deciding
+ * that, which is the shape of mistake this system keeps making - one fact
+ * written down twice, agreeing right up until one copy changes.
  *
  * It is a variable rather than a constant because the interesting thing
  * about a quantum is what happens when you change it, and a system you can
  * only ask that of by rebuilding is one nobody asks.
  *
- * **The floor is one tick.** A quantum is counted in timer interrupts, so
- * 10 ms is as fine as this gets without raising `TICK_HZ` - and BeOS, whose
- * feel this is chasing, ran a quantum of a few milliseconds. Going below
- * 10 ms here is a change to the timer, not to this number, and it costs an
- * interrupt per millisecond to get there.
+ * **The floor is one tick, and the tick got finer.** This used to say that
+ * 10 ms was as fine as a quantum could be without raising `TICK_HZ`, that
+ * BeOS - whose feel this is chasing - ran a few milliseconds, and that
+ * going lower was a change to the timer rather than to this number. All
+ * true, and the timer did change: 250 Hz, so the floor is 4 ms now. It was
+ * raised for the audio deadline rather than for the scheduler, but the
+ * scheduler is the other thing it buys.
  */
-static unsigned quantum_ticks = 10;
+static unsigned quantum_ticks = TICK_HZ / 10;
 
 /* One queue per level. Level 0 runs only when nothing else wants to. */
 static struct thread *head[SCHED_PRIORITIES];

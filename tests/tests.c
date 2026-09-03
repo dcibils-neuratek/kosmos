@@ -1611,7 +1611,7 @@ static void echo_server(void *arg)
         struct thread *sender;
         uint32_t w;
 
-        server_result = ipc_receive(server_cap, &msg, &sender, false);
+        server_result = ipc_receive(server_cap, &msg, &sender, false, 0);
         if (server_result != IPC_OK) {
             break;
         }
@@ -1656,7 +1656,7 @@ static void inherit_server(void *arg)
 
     (void)arg;
 
-    if (ipc_receive(inherit_cap, &msg, &sender, false) != IPC_OK) {
+    if (ipc_receive(inherit_cap, &msg, &sender, false, 0) != IPC_OK) {
         thread_exit();
     }
 
@@ -2022,10 +2022,123 @@ static bool test_a_nonblocking_receive_returns_empty(void)
         return false;
     }
 
-    status = ipc_receive(cap, &msg, &sender, true);
+    status = ipc_receive(cap, &msg, &sender, true, 0);
     ipc_endpoint_destroy(cap);
 
     return status == IPC_NO_MESSAGE;
+}
+
+/*
+ * A receive with a deadline comes back when the deadline passes.
+ *
+ * Nobody sends anything to this endpoint, so the only way out is the timer -
+ * which is the whole point of the argument. Before it existed, a server that
+ * wanted to be somewhere else in a millisecond had to spin or sleep, and
+ * sleeping made it deaf: the audio server answered its clients a whole tick
+ * late, so a program handing it twelve periods a pass spent 45 ms on twelve
+ * round trips and played its music at two thirds speed.
+ *
+ * **In a thread of its own**, because a blocking receive on the only
+ * runnable thread is `thread_block: every thread is blocked` - which is what
+ * the first version of this test produced, and is the same reason every
+ * other blocking test here creates one.
+ */
+static cap_t          deadline_cap;
+static volatile int   deadline_status;
+static volatile unsigned long deadline_waited;
+
+static void deadline_thread(void *arg)
+{
+    struct message msg;
+    struct thread *sender = NULL;
+    unsigned long began = hal_ticks();
+
+    (void)arg;
+
+    int status = ipc_receive(deadline_cap, &msg, &sender, false,
+                             (unsigned long)3);
+
+    /*
+     * The measurement first and the flag last, because the flag is what the
+     * waiting thread spins on. Written the other way round - which is how
+     * this was first - the test could read `deadline_waited` before this
+     * thread had written it, and passed or failed depending on what the
+     * previous test happened to leave in it. It passed when a test that did
+     * more yielding ran alongside, which is exactly how a race advertises
+     * itself.
+     */
+    deadline_waited = hal_ticks() - began;
+    deadline_status = status;
+}
+
+static bool test_a_receive_with_a_deadline_gives_up(void)
+{
+    cap_t cap = ipc_endpoint_create();
+    struct thread *t;
+    unsigned long limit;
+    unsigned i;
+
+    if (cap < 0) {
+        return false;
+    }
+
+    deadline_status = 12345;            /* neither an error nor a success */
+    deadline_waited = 0;
+
+    t = thread_create("deadline", deadline_thread, NULL);
+
+    if (t == NULL) {
+        ipc_endpoint_destroy(cap);
+        return false;
+    }
+
+    /*
+     * The helper needs its *own* index for this endpoint.
+     *
+     * Capabilities are per-thread - `resolve` reads `t->caps[index]` - so
+     * handing a created thread the creator's number gets `IPC_ERR_BAD_CAP`
+     * and a test that fails for a reason that has nothing to do with what
+     * it is testing. Which is how the first version of this failed.
+     *
+     * Granted after `thread_create` and before the first `thread_yield`,
+     * because a created thread does not run until something yields to it.
+     */
+    deadline_cap = ipc_cap_grant(t, cap);
+
+    if (deadline_cap < 0) {
+        ipc_endpoint_destroy(cap);
+        return false;
+    }
+
+    /*
+     * Waited out in *ticks*, not in iterations.
+     *
+     * This counted to a hundred thousand yields, which sounds generous and
+     * is not a duration: a yield with nothing else runnable is quick, so the
+     * count could run out before the three ticks being waited for had passed
+     * - and the test failed for having been in a hurry. It passed most runs
+     * and failed some, which is the worst way for a test to be wrong.
+     */
+    limit = hal_ticks() + 100;          /* 400 ms, far past three ticks */
+
+    while (deadline_status == 12345 && hal_ticks() < limit) {
+        thread_yield();
+    }
+
+    /* And let it run off the end of its function before its endpoint goes. */
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    ipc_endpoint_destroy(cap);
+
+    if (deadline_status != IPC_NO_MESSAGE) {
+        return false;
+    }
+
+    /* It waited, and it did not wait for ever. Two ticks is the floor
+     * because the first may land almost immediately. */
+    return deadline_waited >= 2 && deadline_waited < 200;
 }
 
 static bool test_endpoints_are_reclaimed(void)
@@ -3842,6 +3955,7 @@ static const struct test tests[] = {
     { "ipc: an out-of-range index fails",      test_a_capability_index_out_of_range_fails },
     { "ipc: endpoints are reclaimed",          test_endpoints_are_reclaimed },
     { "ipc: a non-blocking receive returns",   test_a_nonblocking_receive_returns_empty },
+    { "ipc: a receive with a deadline gives up", test_a_receive_with_a_deadline_gives_up },
     { "mmu: translation is on",                test_mmu_is_on },
     { "mmu: a null dereference faults",        test_null_dereference_faults },
     { "mmu: the stack guard is unmapped",      test_stack_guard_page_is_unmapped },

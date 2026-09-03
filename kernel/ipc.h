@@ -170,6 +170,11 @@ void ipc_init(void);
  * For killing: a blocked thread cannot notice anything by itself. */
 void ipc_abort(struct thread *t);
 
+/* A blocked receiver whose deadline has arrived. Called from the timer,
+ * before the thread is made runnable, so that no sender can be handed a
+ * thread that is about to give up. */
+void ipc_timed_out(struct thread *t);
+
 /* Capabilities to shared memory: the same two operations endpoints have. */
 struct memobj *ipc_resolve_memory(struct thread *t, cap_t index);
 cap_t ipc_install_memory(struct thread *t, struct memobj *m);
@@ -216,8 +221,11 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply);
  * holding whoever sent it, which is the token `ipc_reply` needs; it is not a
  * capability and cannot be stored or passed on.
  */
+/* `timeout` is in scheduler ticks: 0 waits for ever, anything else returns
+ * IPC_NO_MESSAGE if nothing has arrived by then. Ignored when nonblocking,
+ * which already returns immediately. */
 int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
-                bool nonblocking);
+                bool nonblocking, unsigned long timeout);
 
 /* Answer a sender obtained from ipc_receive, unblocking it. */
 int ipc_reply(struct thread *sender, const struct message *msg);

@@ -2853,6 +2853,11 @@ local function audio_main(endpoint)
   --
   local BACKLOG = 4
 
+  -- Declared here and defined below, because `handlers.play` needs to call
+  -- it: a client asking for room should be told whether there is room
+  -- *now*, not whether there was room the last time this loop went round.
+  local refill
+
   -- Periods actually mixed, reported with `streams` so a client can tell a
   -- silent server from a busy one.
   local mixes = 0
@@ -2899,8 +2904,26 @@ local function audio_main(endpoint)
       return { ok = false, error = "play wants pcm" }
     end
 
+    --
     -- Full is a fact rather than a failure: the client is ahead and should
     -- wait, which is the only thing keeping the pipe short.
+    --
+    -- But answer it with a fresh fact. This used to reply "full" from
+    -- whatever the queue happened to hold, and what the queue held was
+    -- whatever was left when this loop last ran - up to a tick ago. The
+    -- client believed it, slept a tick, and asked again, so a period moved
+    -- every 10 ms while the device wanted one every 5.8. A third of a
+    -- second of sound took 572 ms and it was the *answer* that was slow,
+    -- not the machine: 1% of the processor, playing at two thirds speed.
+    --
+    -- So before saying no, try to make room. `refill` moves a period from
+    -- this queue into the device if the device has space, which is exactly
+    -- the question being asked and is a few microseconds of work.
+    --
+    if #s.queue >= BACKLOG then
+      refill()
+    end
+
     if #s.queue >= BACKLOG then
       return { ok = true, taken = false, queued = #s.queue }
     end
@@ -2984,7 +3007,7 @@ local function audio_main(endpoint)
   --
   local mixlist = {}          -- reused, so the loop allocates nothing
 
-  local function refill()
+  function refill()
     if PERIOD == 0 then return false end
 
     local queued = sys.sound_queued() or 0
@@ -3117,9 +3140,43 @@ local function audio_main(endpoint)
       end
 
       if busy or (sys.sound_queued() or 0) > 0 then
-        -- Something is in flight: give the rest of the machine a turn, but
-        -- come back for the next period rather than sleeping through it.
-        sys.yield()
+        --
+        -- The device is full and there is more to send. Wait - for a
+        -- message, or for a tick, whichever arrives first.
+        --
+        -- This used to be `sys.yield()`, with a comment about coming back
+        -- for the next period rather than sleeping through it, and it was
+        -- wrong in a way worth recording: yielding does not wait, so this
+        -- loop was runnable for ever and the meter read 26% for playing a
+        -- tone. Doom, which actually renders, reads 8%.
+        --
+        -- A tick is 10 ms and the device holds four periods, 23.2 ms. So
+        -- waking a tick from now finds 13 ms still in flight, which is not
+        -- a near thing. Sleeping through a period would need two ticks to
+        -- go by unserved, and if that is happening the machine has a
+        -- problem this loop cannot fix by spinning.
+        --
+        -- The right answer is still the virtio-sound interrupt - the
+        -- device saying it consumed a period, rather than this asking a
+        -- hundred times a second whether it has. That is a driver change;
+        -- this is the same latency for a fiftieth of the cost.
+        --
+        -- **It was `sys.sleep(1)` for an afternoon, and sleeping was the
+        -- wrong verb.** A sleeping server answers nobody: a client sending
+        -- a period waited for the timer rather than for this loop, so every
+        -- send cost a tick. The Music window, which hands over twelve
+        -- periods a pass, spent 45 ms doing twelve round trips that should
+        -- be microseconds - and played at two thirds speed with the
+        -- processor almost idle, which is a shape of bug worth recognising:
+        -- slow *and* idle means waiting on the wrong thing.
+        --
+        -- A receive with a deadline is both. Somebody calls and this
+        -- answers now; nobody calls and it is back for the next period
+        -- anyway.
+        --
+        local request, sender, cap = sys.receive(endpoint, false, 1)
+
+        if request then state.answer(request, sender, cap) end
       else
         -- Nothing playing. Wait for a message like an ordinary server.
         local request, sender, cap = sys.receive(endpoint)

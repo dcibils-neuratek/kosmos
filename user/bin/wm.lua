@@ -2631,7 +2631,14 @@ add_damage(0, 0, W, H)
 -- for a sleep of several hours - which looks exactly like the desktop
 -- having hung, because it has.
 --
-local PASS = 1
+--
+-- One tick used to be written here as the literal `1`, which was fine for
+-- as long as a tick was 10 ms and stopped being fine the moment it was not.
+-- The tick rate is a kernel decision this program does not get a say in, so
+-- it asks rather than assuming: a pass waits about ten milliseconds for
+-- input, whatever that is in ticks today.
+--
+local PASS = math.max(1, ((sys.info() or {}).tick_hz or 100) // 100)
 
 while running do
   -- 1. Input, always first - and this is where the pass sleeps if there is

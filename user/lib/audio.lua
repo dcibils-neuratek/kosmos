@@ -55,6 +55,40 @@ function stream:play(pcm)
   return r.taken and true or false, r.taken and nil or "full"
 end
 
+--
+-- Hand over a period and do not come back until it is taken.
+--
+-- `play` reports "full" and returns, which is what something with other
+-- work to do wants - Doom has a frame to render and cannot sit here. But a
+-- program whose whole job is playing a file has nothing else to do, and
+-- what it did instead was call `play` again immediately, for ever, at
+-- whatever priority it happened to have.
+--
+-- That cost 63% of the machine, and it was worse than the number suggests:
+-- a program launched from the window manager is in the *display* band and
+-- the audio server is in *normal*, so the client spinning on "full"
+-- outranked the server that would have made room. The thing waiting was
+-- preempting the thing it waited for.
+--
+-- So the wait lives here rather than in each program, because it is the
+-- kind of mistake that is invisible until somebody looks at a meter.
+--
+function stream:write(pcm)
+  while true do
+    local took, why = self:play(pcm)
+
+    if took then return true end
+    if why ~= "full" then return false, why end
+
+    --
+    -- One tick. The server holds a queue of `self.periods`, so there is
+    -- most of that still to play while this sleeps, and being woken with
+    -- room to spare is the whole idea.
+    --
+    sys.sleep(1)
+  end
+end
+
 function stream:close()
   fs.send("/dev/audio", { type = "close", stream = self.id })
 end

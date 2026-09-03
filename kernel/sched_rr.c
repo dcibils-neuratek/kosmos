@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "kernel.h"
 #include "sched.h"
 #include "thread.h"
 #include "panic.h"
@@ -24,14 +25,18 @@
 /*
  * How many ticks a thread gets before it is taken off the CPU.
  *
- * Ten, so 100 ms at the 100 Hz the timer runs at. Long enough that a thread
- * doing ordinary work is never interrupted for no reason, short enough that
- * one that never yields cannot hold the machine.
+ * A tenth of a second: long enough that a thread doing ordinary work is
+ * never interrupted for no reason, short enough that one that never yields
+ * cannot hold the machine.
+ *
+ * From `TICK_HZ` rather than a count, so that changing the tick rate - which
+ * happened, for the sound device - does not quietly change what fairness
+ * means here as well.
  *
  * It is a property of this policy and nothing else knows it. A policy with a
  * different idea of fairness is a different file.
  */
-#define RR_QUANTUM  10
+#define RR_QUANTUM  (TICK_HZ / 10)
 
 static struct thread *head;
 static struct thread *tail;

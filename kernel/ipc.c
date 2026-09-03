@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "ipc.h"
+#include "hal.h"
 #include "thread.h"
 #include "memobj.h"
 #include "panic.h"
@@ -225,6 +226,46 @@ void ipc_abort(struct thread *t)
     t->ipc.waiting_on = NULL;
     t->ipc.status = IPC_ERR_GONE;
     thread_wake(t);
+}
+
+/*
+ * A blocked receiver whose deadline arrived: unlink it, and say nothing came.
+ *
+ * Called from the timer, not from the thread itself, and that is the whole
+ * point. `thread_wake_sleepers` makes the thread *ready*; it does not run
+ * until the scheduler gets to it, and in that window it is still sitting on
+ * the endpoint's receiver queue. A sender arriving there would be handed a
+ * thread that has already given up, so the message would go into a receive
+ * that is about to return "nothing arrived" and the sender would wait for a
+ * reply nobody is going to send.
+ *
+ * Unlinking here closes the window instead of narrowing it. `ipc_receive`
+ * removes itself too, on the path where it was woken with no message, and
+ * `queue_remove` is safe on a queue that does not hold the thread - so the
+ * two together are belt and braces rather than a conflict.
+ *
+ * `status` is left alone: `ipc_receive` set it to `IPC_NO_MESSAGE` before
+ * blocking, and that is exactly what this means.
+ */
+void ipc_timed_out(struct thread *t)
+{
+    struct endpoint *ep;
+
+    if (t == NULL) {
+        return;
+    }
+
+    ep = t->ipc.waiting_on;
+
+    if (ep == NULL) {
+        return;                     /* a plain sleep, not a receive */
+    }
+
+    queue_remove(&ep->senders, t);
+    queue_remove(&ep->receivers, t);
+    queue_remove(&ep->awaiting_reply, t);
+
+    t->ipc.waiting_on = NULL;
 }
 
 void ipc_init(void)
@@ -615,7 +656,7 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
 }
 
 int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
-                bool nonblocking)
+                bool nonblocking, unsigned long timeout)
 {
     struct thread *self = thread_current();
     struct endpoint *ep = resolve(self, index);
@@ -664,9 +705,49 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
         return IPC_NO_MESSAGE;
     }
 
+    /*
+     * Wait for a message, and optionally not for ever.
+     *
+     * **A server that sleeps on a timer is deaf**, and that is not a
+     * hypothesis: the audio server was changed to `sleep(1)` between
+     * refills, which stopped it burning a quarter of the machine and also
+     * stopped it answering anybody until the timer got round to it. A
+     * client sending twelve periods a pass paid a whole tick for each one,
+     * so the Music window fed the device at two thirds of the rate it
+     * drained - 45 ms in `feed` for twelve round trips that should be
+     * microseconds.
+     *
+     * The two halves already existed and had never been put together: a
+     * thread blocked on an endpoint is `THREAD_BLOCKED`, and
+     * `thread_wake_sleepers` wakes any blocked thread whose `wake_at` has
+     * arrived. Setting both means whichever comes first wins, which is what
+     * every event loop in the world actually wants.
+     *
+     * `status` is set to `IPC_NO_MESSAGE` first so that waking can be told
+     * apart from being sent to: a real delivery overwrites it.
+     */
+    self->ipc.status = IPC_NO_MESSAGE;
+
+    if (timeout != 0) {
+        self->wake_at = hal_ticks() + timeout;
+    }
+
     queue_push(&ep->receivers, self);
     self->ipc.waiting_on = ep;
     thread_block();
+    self->wake_at = 0;
+
+    if (self->ipc.status == IPC_NO_MESSAGE) {
+        /*
+         * The timer, not a sender. Nothing has been handed over, so this
+         * thread has to take itself off the queue it is still on - leaving
+         * it there would let a later sender deliver into a thread that has
+         * moved on, which is the worst kind of bug this file can have.
+         */
+        queue_remove(&ep->receivers, self);
+        self->ipc.waiting_on = NULL;
+        return IPC_NO_MESSAGE;
+    }
 
     if (self->ipc.status != IPC_OK) {
         return self->ipc.status;

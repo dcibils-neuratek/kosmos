@@ -150,25 +150,28 @@ local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 local began = sys.ticks()
 
 while at <= #tone do
-  local chunk = tone:sub(at, at + PERIOD - 1)
-  local took, why = out:play(chunk)
+  --
+  -- `write` waits; `play` reports and returns.
+  --
+  -- This was a loop around `play` with `sys.yield()` on "full", under a
+  -- comment reading "yield rather than spin" - which had the two words the
+  -- wrong way round. Yielding *is* spinning: the thread goes to the back
+  -- of its band and is immediately runnable again, so it was never not
+  -- running. The meter said 63%.
+  --
+  local ok, why = out:write(tone:sub(at, at + PERIOD - 1))
 
-  if took then
-    at = at + PERIOD
-    sent = sent + 1
-  elseif why ~= "full" then
+  if not ok then
     -- Not "wait", but "that did not arrive". Spinning on this is how a
     -- program hangs with its stream still open and nothing to show for it.
     print("beep: the audio server would not take a period: " .. tostring(why))
     out:close()
 
     return
-  else
-    -- Full. Yield rather than spin: a busy wait here is a core taken away
-    -- from whatever else is running, to wait for a device that will be
-    -- ready in five milliseconds whatever this thread does.
-    sys.yield()
   end
+
+  at = at + PERIOD
+  sent = sent + 1
 end
 
 local elapsed = ((sys.ticks() - began) * 1000) // counter_hz
@@ -193,7 +196,7 @@ for _ = 1, 200 do
 
   if not mine or (mine.queued or 0) == 0 then break end
 
-  sys.yield()
+  sys.sleep(1)
 end
 
 out:close()

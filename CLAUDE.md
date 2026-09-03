@@ -157,6 +157,45 @@ If the number goes up because something crept in that does not belong, the answe
 
 **Compatibility inside a process yes, at system level never.** A libc that lives in the app's address space and whose I/O functions resolve against that process's namespace is fine and necessary. What is forbidden is a POSIX personality: `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, `unistd.h`, global file descriptors, or any path tree reachable without a namespace. If a port asks for one of those, patch the port. Detail: `errno` is per-process, never global. See `docs/design.md` §17.
 
+**Control by message, data by shared memory.** A message says *what to do*;
+a region holds *what to do it to*. **A stream of data never travels as a
+message payload** - not audio periods, not video frames, not packets, not
+disk blocks.
+
+The test is the rate: **if it recurs because the hardware says so - a frame,
+a period, a packet, a block - the bytes live in a region and the message
+carries only where and how much.** One-shot payloads are fine and always
+were: a `getattr` reply, a keystroke, a line of text. Those happen because
+somebody asked, not because a clock came round.
+
+This was learned the expensive way and the evidence is in the tree twice
+over. The window manager takes a *shared surface* from an application and
+the message says "buffer 2 is live" - which is why `cube3d` holds 60 frames
+a second. The audio server took a 1024-byte period *as a message payload*
+172 times a second, which meant a Lua string allocated on each side of every
+one: 340 KB a second of garbage manufactured inside a 5.8 ms deadline, with
+`gc_pause_max` at 1.25 ms. It played, and it jittered, and no amount of
+scheduling fixed it because the collector was in the audio path by
+construction.
+
+It happened because `MSG_BYTES` is 2048 and a period is 1024. **It fit.**
+Fitting is not a reason - it is the trap, and the rule exists so that the
+next subsystem does not walk into it.
+
+This is the same law BeOS and QNX both arrived at. BeOS's media server is a
+matchmaker: once two nodes are connected the buffers live in a shared
+`BBufferGroup` and what passes between them is a buffer id and a timestamp,
+with the server out of the loop entirely. QNX's `io-audio` puts samples in
+shared memory and sends only control. Neither of them is a system that could
+afford to be sentimental about it.
+
+What the rule costs, and it is real: a region is harder to reason about than
+a message. Messages are copied and therefore safe; a region is two processes
+looking at the same bytes. So the discipline that comes with it is
+**single-producer, single-consumer rings with indices** - one side only
+writes, one side only reads, nobody takes a lock, and the indices are the
+only thing both touch. Anything that wants more than that wants a message.
+
 **MMIO only through `mmio_read32` / `mmio_write32`.** They carry the barriers inside. No loose `volatile`.
 
 **No precompiled Lua bytecode.** Source only. The bytecode loader verifies nothing and gives arbitrary execution.

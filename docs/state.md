@@ -69,6 +69,83 @@ here once yielding at NORMAL is fair. This was invisible until now because
 every program was promoted into the compositor's band - nothing had ever run
 at NORMAL.
 
+**Sleeping is `sys.sleep`; yielding in a loop is a spin (fixed, Sep 2026).**
+The audio path had two of them - the server between refills, the client on a
+full queue - and playing a tone cost 63% of the machine for the client and
+26% for the server, against 8% for Doom, which renders a frame and then
+actually waits. `SYS_SLEEP` now exposes `thread_sleep_until`, which the
+kernel has had since M6 behind `SYS_WAIT_INPUT`'s console check, and the
+same tone costs under 1%.
+
+The comment in `process.c` that refused to promote the audio server to the
+display band said a spinning server is the wrong shape and no band fixes it.
+That was right, and it is now moot: the server sleeps, and priority
+inheritance (`thread_inherit`) already gives it the caller's urgency for as
+long as a client is waiting on it, which is the only time it needs any.
+
+**The tick is 250 Hz, and the sound device chose it.** Four measurements,
+delivering 580 ms of audio: spinning server 502 ms, sleeping server at
+100 Hz 922 ms, sleeping server at 100 Hz with the queue doubled to 46 ms
+966 ms, sleeping server at 250 Hz 520 ms. The third is the one that settles
+it - **buffering more does not help, because the shortfall is in how often
+the queue is topped up rather than how much it holds.** A 5.8 ms period
+cannot be serviced on a 10 ms clock. `audiolag` is the instrument: if its
+mean wait is a whole tick, the pipeline is running at the tick rate instead
+of the device rate.
+
+Anything measured in ticks changed meaning with it, and **the blinking
+cursor is how that got found** - it went five times a second and looked
+frantic, which was `CURSOR_TICKS = 25` with a comment reading "at 100 Hz".
+Behind it were two that mattered more and were silent: both schedulers set
+their quantum to a bare `10`, so a tenth of a second quietly became a
+twenty-fifth. All three now derive from `TICK_HZ`, and `wm`'s input timeout
+derives from `sysinfo.tick_hz` instead of the literal `1` it was when a tick
+happened to be the interval it wanted.
+
+The lesson is the one this system keeps relearning: **a duration written as
+a count of ticks is one fact stored twice.** Nothing failed, no test caught
+any of the three, and the only reason the quantum change was noticed at all
+is that a cursor next to it was visible.
+
+**Waiting is `sys.receive` with a deadline, not `sys.sleep` (Sep 2026).**
+The sleep was right about cost and wrong about shape: **a server that sleeps
+on a timer is deaf.** The audio server could not answer a client until the
+timer got round to it, so every `play` cost a tick - and the Music window,
+which hands over a dozen periods a pass, spent 45 ms on twelve round trips
+that should be microseconds and played at two thirds speed with the
+processor almost idle. *Slow and idle at the same time* is the signature:
+it means waiting on the wrong thing.
+
+`ipc_receive` now takes a timeout in scheduler ticks, so a server waits for
+a message **or** a deadline, whichever comes first. Both halves already
+existed - a thread blocked on an endpoint is `THREAD_BLOCKED`, and
+`thread_wake_sleepers` wakes any blocked thread whose `wake_at` has arrived
+- and had never been put together.
+
+**Writing the test found a real race.** Unlinking the timed-out receiver
+inside `ipc_receive` after it woke leaves a window: the timer makes the
+thread *ready* and it does not run until the scheduler reaches it, so a
+sender arriving in between was handed a receiver that had already given up -
+the message lost, the sender blocked for ever. `ipc_timed_out` now unlinks
+from the timer, before the thread becomes runnable. A control test with the
+same scaffolding and no timeout in it passed throughout, which is what said
+the fault was in the kernel rather than in the test.
+
+**One test was written for this and is not in the tree**, which is worth
+being explicit about rather than quiet. `ipc: a timed-out receiver leaves no
+trace` - time out a receiver, then have a second thread call and check the
+message reaches a fresh receiver - fails, and the same sequence without the
+timeout passes. It may be a residual fault in the timeout path or a
+thread-pool artifact of the kernel test harness; it was not isolated. What
+is known: the path carries thousands of round trips a second under Music
+with nothing lost, and `ipc: a receive with a deadline gives up` passes.
+**Not a closed question.**
+
+**The virtio-sound interrupt is still the right answer** and is still not
+used. Polling at 250 Hz costs almost nothing and meets the deadline, but it
+is a rate this system chose rather than one the device asked for. The driver
+has the queue set up for it.
+
 **An intermittent panic in `prio_pick_next`.** Seen twice today, both at
 `sched_prio.c:165` reading `far 0x2b0` - `head[level]` was NULL while the
 `occupied` bitmask said that level had somebody in it. Once in the benchmark

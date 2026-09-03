@@ -9,6 +9,7 @@
 #include "panic.h"
 #include "hal.h"
 #include "console.h"
+#include "ipc.h"
 #include "mmu.h"
 #include "sched.h"
 
@@ -760,6 +761,11 @@ void thread_wake_sleepers(void)
         if (t->state == THREAD_BLOCKED && t->wake_at != 0
             && now >= t->wake_at) {
             t->wake_at = 0;
+
+            /* If it was waiting on an endpoint rather than merely sleeping,
+             * take it off that queue *before* it becomes runnable - see
+             * `ipc_timed_out`. Harmless for a plain sleeper. */
+            ipc_timed_out(t);
             thread_wake(t);
         }
     }

@@ -273,6 +273,17 @@ bool          hal_snd_write(const void *pcm, unsigned bytes);
 unsigned      hal_snd_queued(void);
 
 /*
+ * How many periods arrived at a device that had already run out, and the
+ * smallest depth ever seen. The first is deadlines missed; the second is the
+ * margin that is left.
+ *
+ * Here rather than computed above, because the only exact moment to read the
+ * depth is as a period is handed over, and only the driver is there.
+ */
+unsigned      hal_snd_dry(void);
+unsigned      hal_snd_floor(void);
+
+/*
  * Stop, or start again.
  *
  * Neither returns when it works. There is no `bool` here for the same

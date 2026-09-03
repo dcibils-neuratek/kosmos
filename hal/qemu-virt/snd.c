@@ -225,6 +225,10 @@ static struct {
     struct snd_pcm_status xstat[QUEUE_SIZE / 3];
     uint8_t               period[QUEUE_SIZE / 3][HAL_SND_PERIOD_BYTES];
     unsigned              next_slot;
+
+    /* Deadlines missed, and the closest it came. See `hal_snd_dry`. */
+    unsigned              dry;
+    unsigned              floor;
 } snd;
 
 static uint32_t reg_read(unsigned offset)
@@ -484,6 +488,10 @@ bool hal_snd_init(void)
         snd.present = true;
         snd.running = true;
 
+        /* The floor only ever comes down, so it starts at the ceiling. */
+        snd.dry = 0;
+        snd.floor = HAL_SND_PERIODS;
+
         return true;
     }
 
@@ -517,6 +525,34 @@ unsigned hal_snd_queued(void)
 }
 
 /*
+ * Deadlines missed, and the closest this has come to missing one.
+ *
+ * **The number that matters, and the one nothing was counting.** Throughput
+ * says how much audio came out; it says nothing about *when*, and a stream
+ * that delivers a full second of sound every second with a twenty
+ * millisecond hole in the middle measures perfect and sounds broken. Two
+ * days were spent declaring this fixed against an average.
+ *
+ * `dry` counts periods that arrived at a device with nothing left in hand:
+ * the hardware had already played silence, and that silence is the click.
+ * `floor` is the smallest depth ever seen while running - the margin, in
+ * periods. A floor of zero means it underran; a floor of three out of four
+ * means the pipeline never came close.
+ *
+ * Counted where they happen rather than sampled from above, because the
+ * moment a period is handed over is the only place the answer is exact.
+ */
+unsigned hal_snd_dry(void)
+{
+    return snd.dry;
+}
+
+unsigned hal_snd_floor(void)
+{
+    return snd.floor;
+}
+
+/*
  * One period, queued. False when there is no room or no device.
  *
  * It does not block and it does not wait for the device: that is the whole
@@ -535,6 +571,23 @@ bool hal_snd_write(const void *pcm, unsigned bytes)
 
     if (hal_snd_queued() >= (QUEUE_SIZE / 3) - 1) {
         return false;
+    }
+
+    /*
+     * The depth *before* this period joins it, which is what says whether
+     * the device had anything to play while we were getting here. Zero
+     * means it did not.
+     */
+    {
+        unsigned depth = hal_snd_queued();
+
+        if (depth == 0) {
+            snd.dry++;
+        }
+
+        if (depth < snd.floor) {
+            snd.floor = depth;
+        }
     }
 
     slot = snd.next_slot;

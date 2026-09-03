@@ -26,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kernel.h"
 #include "console.h"
 #include "hal.h"
 
@@ -183,7 +184,16 @@ static uint32_t    bg = 0xff0d1117;
  * writes a cell hides it first, so the block is never left behind as a
  * square of background over a character somebody just printed.
  */
-#define CURSOR_TICKS    25          /* at 100 Hz, twice a second */
+/*
+ * A quarter of a second per toggle, so the cursor blinks twice a second.
+ *
+ * Written as `25` with a comment reading "at 100 Hz" until the tick became
+ * 250 Hz for the sound device, at which point it blinked five times a
+ * second and looked frantic. The rate is a kernel decision recorded in one
+ * place; a second copy of it here is a second thing to remember, and this
+ * is what forgetting looks like.
+ */
+#define CURSOR_TICKS    (TICK_HZ / 4)
 
 static bool         cursor_shown;
 static unsigned     cursor_x, cursor_y;

@@ -970,6 +970,9 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
 	$(HOSTDIR)/lua tools/test_kfs.lua
+	@# The WAV header walker, likewise: pure Lua over a reader, so the
+	@# awkward headers can be built by hand rather than found in the wild.
+	$(HOSTDIR)/lua tools/test_wav.lua
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,

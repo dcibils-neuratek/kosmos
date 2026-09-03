@@ -68,6 +68,22 @@ static inline long sys4(long n, long a, long b, long c, long d)
     return x0;
 }
 
+/* Five arguments, for the one call that needs them: a receive with both a
+ * "do not block" flag and a deadline. */
+static inline long sys5(long n, long a, long b, long c, long d, long e)
+{
+    register long x8 __asm__("x8") = n;
+    register long x0 __asm__("x0") = a;
+    register long x1 __asm__("x1") = b;
+    register long x2 __asm__("x2") = c;
+    register long x3 __asm__("x3") = d;
+    register long x4 __asm__("x4") = e;
+    __asm__ volatile("svc #0"
+                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4)
+                     : "memory", "cc");
+    return x0;
+}
+
 __attribute__((noreturn))
 static inline void kosmos_exit(int code)
 {
@@ -164,6 +180,19 @@ static inline long kosmos_wait(uint64_t *id, int nonblocking)
 static inline void kosmos_yield(void)
 {
     (void)sys0(SYS_YIELD);
+}
+
+/*
+ * Stop running for `ticks` scheduler ticks - a hundredth of a second each.
+ *
+ * The difference from `kosmos_yield` is the whole point: yielding goes to
+ * the back of the band and comes straight back, so a loop around it is a
+ * spin and the thread never stops being runnable. This one leaves the
+ * runqueue entirely until the timer puts it back.
+ */
+static inline void kosmos_sleep(unsigned long ticks)
+{
+    (void)sys1(SYS_SLEEP, (long)ticks);
 }
 
 /*
@@ -310,11 +339,21 @@ static inline long kosmos_call(long cap, const struct message *msg,
 
 /* `nonblocking` returns SYS_NO_MESSAGE rather than parking when nobody is
  * waiting - for a server that has something else to be getting on with. */
+/*
+ * `timeout` is in scheduler ticks: 0 waits for ever, anything else gives up
+ * and returns SYS_NO_MESSAGE when nothing has arrived by then.
+ *
+ * The combination is what a server loop actually wants - answer whoever
+ * calls, but be back by the next deadline whether or not anybody did. A
+ * server that sleeps on a timer instead cannot answer while it sleeps, and
+ * every one of its callers pays a tick.
+ */
 static inline long kosmos_receive(long cap, struct message *msg,
-                                  uint64_t *sender, int nonblocking)
+                                  uint64_t *sender, int nonblocking,
+                                  unsigned long timeout)
 {
-    return sys4(SYS_RECEIVE, cap, (long)(uintptr_t)msg,
-                (long)(uintptr_t)sender, nonblocking ? 1 : 0);
+    return sys5(SYS_RECEIVE, cap, (long)(uintptr_t)msg,
+                (long)(uintptr_t)sender, nonblocking ? 1 : 0, (long)timeout);
 }
 
 /*

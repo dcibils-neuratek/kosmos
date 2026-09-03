@@ -261,6 +261,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | Leaks are asserted on `sysinfo` counters, and memory is judged by whether it *stopped* falling | stress.lua |
 | Sep 2026 | A server is not promoted by capability; it borrows urgency from its caller and gives it back | process.c |
 | Sep 2026 | Audio is in scope; *guaranteed* latency is not. The mixer reports its worst refill rather than promising one | roadmap.md M11a |
+| Sep 2026 | Waiting is `sys.sleep`, never `sys.yield` in a loop: yielding is a spin, and two of them cost 89% of the machine to play a tone | syscall.c |
+| Sep 2026 | The tick is 250 Hz, chosen by the sound device rather than by convention: a 5.8 ms period cannot be fed on a 10 ms clock, and buffering more does not fix it | kernel.h |
+| Sep 2026 | A server waits with `receive`-plus-deadline, never a sleep: a server that sleeps on a timer answers nobody while it sleeps | ipc.c |
+| Sep 2026 | **Control by message, data by shared memory.** A stream never travels as a message payload; if it recurs at the hardware's rate, the bytes go in a region | CLAUDE.md |
 
 ---
 
