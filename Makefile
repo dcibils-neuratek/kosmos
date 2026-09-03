@@ -97,6 +97,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/timer.c \
         hal/qemu-virt/rtc.c \
         hal/qemu-virt/power.c \
+        hal/qemu-virt/snd.c \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
         hal/qemu-virt/input.c \
@@ -792,10 +793,26 @@ FULLSCREEN_FLAG := $(if $(FULLSCREEN),$(comma)full-screen=on,)
 #
 ZOOM_FLAG := $(if $(ZOOM),$(comma)zoom-to-fit=on,)
 
+#
+# Sound, through the host's own audio.
+#
+# `coreaudio` is the macOS backend and the only one that plays in *real
+# time*, which matters for more than hearing it: `wav` and `none` both take
+# samples as fast as they are offered, so a latency measurement against
+# either measures the backend. `beep` says which it got and refuses to
+# report a number it did not earn.
+#
+# `make NOAUDIO=1 qemu` leaves the device out, for when something else on
+# the Mac wants the audio hardware to itself.
+#
+AUDIO_FLAGS := $(if $(NOAUDIO),,-audiodev coreaudio$(comma)id=snd0 \
+                                -device virtio-sound-device$(comma)audiodev=snd0)
+
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
+             $(AUDIO_FLAGS) \
              -drive file=$(DISK),format=raw,if=none,id=disk \
              -device virtio-blk-device,drive=disk \
              $(BOOTARG) \

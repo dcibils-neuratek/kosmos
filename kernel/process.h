@@ -257,6 +257,7 @@ struct process {
      * right shape - authority flows from parent to child and never sideways.
      */
     bool              owns_screen;
+    bool              owns_audio;
 
     /* Raw sectors. The strongest grant in the system - it is every file on
      * the machine, under every namespace - so it goes to one process. */
@@ -361,6 +362,7 @@ void process_grant_console(struct process *p);
  * caller decides what to do about it.
  */
 bool process_grant_screen(struct process *p);
+bool process_grant_audio(struct process *p);
 
 /*
  * Hands a process the disk. Like the console and unlike the screen, there is

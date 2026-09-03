@@ -257,6 +257,10 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         return SYS_ERR_DENIED;
     }
 
+    if ((flags & SPAWN_AUDIO) != 0 && !p->owns_audio) {
+        return SYS_ERR_DENIED;          /* cannot pass on what it has not got */
+    }
+
     if ((flags & SPAWN_SCREEN) != 0 && !p->owns_screen) {
         return SYS_ERR_DENIED;
     }
@@ -290,6 +294,11 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
 
     if ((flags & SPAWN_PROCCTL) != 0) {
         process_grant_procctl(child);
+    }
+
+    if ((flags & SPAWN_AUDIO) != 0 && !process_grant_audio(child)) {
+        /* Not fatal: a machine with no sound device still runs a program
+         * that would have liked some, and it finds out by being silent. */
     }
 
     if ((flags & SPAWN_SCREEN) != 0 && !process_grant_screen(child)) {
@@ -419,6 +428,25 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         return SYS_ERR_FAULT;
     }
 
+    /*
+     * Zeroed before anything is filled in, and it was not.
+     *
+     * Every field here used to be assigned unconditionally, so nothing
+     * noticed. The audio fields are the first that are only set when the
+     * board has the device - and on a board without one they were whatever
+     * the stack happened to hold. `may_pass_audio()` read a nonzero period
+     * size on a silent machine, asked to pass on authority init did not
+     * have, and the shell never started.
+     *
+     * The bug that found it is the small one. This struct is copied whole
+     * into a process's memory, so any field the kernel does not write is
+     * *kernel stack* handed to userland - and a leak like that is invisible
+     * until somebody looks for it. One memset is the whole fix, and it has
+     * to be here rather than at each new field, because the next person to
+     * add a conditional one will not read this comment either.
+     */
+    memset(&info, 0, sizeof(info));
+
     cpu_identify(&cpu);
     hal_ram_range(&ram);
 
@@ -444,6 +472,13 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     }
 
     info.epoch = (uint64_t)hal_rtc_seconds();
+
+    if (hal_snd_present()) {
+        info.audio_rate     = HAL_SND_RATE;
+        info.audio_channels = HAL_SND_CHANNELS;
+        info.audio_period   = HAL_SND_PERIOD_BYTES;
+        info.audio_periods  = HAL_SND_PERIODS;
+    }
 
     info.threads_used     = thread_count();
     info.threads_total    = THREAD_MAX;
@@ -677,6 +712,26 @@ void syscall_dispatch(struct trapframe *tf)
 
     case SYS_WRITE:
         result = sys_write(p, tf->x[0], (size_t)tf->x[1]);
+        break;
+
+    case SYS_SND_WRITE:
+        if (!p->owns_audio) {
+            result = SYS_ERR_DENIED;
+        } else if (tf->x[1] == 0 || tf->x[1] > HAL_SND_PERIOD_BYTES) {
+            result = SYS_ERR_FAULT;
+        } else if (!process_may_read(p, tf->x[0], (size_t)tf->x[1])) {
+            result = SYS_ERR_FAULT;
+        } else {
+            /* Full is not a failure. See SYS_SND_WRITE in syscall.h: a
+             * caller ahead of the device is told so rather than blocked. */
+            result = hal_snd_write((const void *)tf->x[0],
+                                   (unsigned)tf->x[1]) ? 0 : SYS_NO_INPUT;
+        }
+
+        break;
+
+    case SYS_SND_QUEUED:
+        result = p->owns_audio ? (long)hal_snd_queued() : SYS_ERR_DENIED;
         break;
 
     case SYS_POWER:

@@ -246,6 +246,33 @@ bool hal_key_event(unsigned *code, bool *down);
 unsigned long hal_rtc_seconds(void);
 
 /*
+ * Sound: PCM out, and the deadline that comes with it.
+ *
+ * The format is fixed here rather than negotiated per caller, and that is
+ * the honest simplification: one output stream, 44100 Hz, stereo, signed
+ * sixteen-bit little-endian, which is what every source in this system will
+ * be resampled to anyway. A device that cannot do it is a device this board
+ * does not have.
+ *
+ * A *period* is the unit: the amount the device consumes before it needs
+ * more. 256 frames is 1024 bytes and 5.8 milliseconds at this rate, and
+ * four of them in flight is 23 milliseconds of sound in hand. That is the
+ * deadline - `roadmap.md` M11a promises a measurement rather than a bound,
+ * and `hal_snd_queued` is what makes the measurement possible.
+ */
+#define HAL_SND_RATE          44100u
+#define HAL_SND_CHANNELS      2u
+#define HAL_SND_FRAME_BYTES   4u        /* stereo, sixteen bits */
+#define HAL_SND_PERIOD_FRAMES 256u
+#define HAL_SND_PERIOD_BYTES  (HAL_SND_PERIOD_FRAMES * HAL_SND_FRAME_BYTES)
+#define HAL_SND_PERIODS       4u
+
+bool          hal_snd_init(void);       /* false when there is no device */
+bool          hal_snd_present(void);    /* asked after init, by the kernel */
+bool          hal_snd_write(const void *pcm, unsigned bytes);
+unsigned      hal_snd_queued(void);
+
+/*
  * Stop, or start again.
  *
  * Neither returns when it works. There is no `bool` here for the same

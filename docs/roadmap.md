@@ -532,7 +532,41 @@ No fixed order. Picked up as the appetite appears.
 - **USB: XHCI + HID.** A real keyboard. Tedious but bounded and well documented.
 - **Networking: ported lwIP**, with connections exposed as namespace nodes, Plan 9 style. The property worth testing: mount another machine's `/net` into your local namespace, and have a process use that computer's network without knowing.
 
-**Out of scope, no discussion:** WiFi, Bluetooth, audio with decent latency, GPU-accelerated 3D, and any system-level POSIX personality.
+- **Audio: virtio-sound.** See below; it moved out of the out-of-scope list and it is worth saying why rather than quietly editing the line.
+
+**Out of scope, no discussion:** WiFi, Bluetooth, GPU-accelerated 3D, and any system-level POSIX personality.
+
+**Audio used to be on that list, as "audio with decent latency", and the qualifier is what changed.** What the line was protecting was a *quality bar* rather than the existence of a driver: everything else on it is a subsystem where the hard part is the standard rather than the code, and for audio the hard part is bounded jitter. That concern is real and specific here - `gc_pause_max` is about 1.25 ms, and a mixer that misses a refill deadline does not degrade, it clicks.
+
+But the line was drawn in the wrong place. A virtio-sound driver is a bounded, documented driver on a transport this system already speaks - `input.c` and `blk.c` already do the queue setup, the feature negotiation and the interrupt path - which is exactly what "drivers, by interest" means. Refusing it was refusing the cheap half because the expensive half is expensive.
+
+So: **audio is in scope, and *guaranteed* latency is not.** There is no promise about worst-case jitter and there will not be one until something bounds the collector. What there is instead is a number: `make bench` reports the worst refill it saw, and a click budget that is written down rather than hoped for. A best-effort mixer that says how often it was late is honest; one that claims to be real-time would not be.
+
+---
+
+## M11a — Sound
+
+Four stages, each testable on its own, and the first two are the ones that
+carry no risk to the promise above.
+
+1. **`hal/qemu-virt/snd.c`** - virtio-sound over virtio-mmio. Negotiate,
+   claim the output stream, set the format, push periods. Testable with
+   QEMU's `wav` audio backend, which writes a file the host can check: no
+   speakers, and no ears required to know it worked.
+2. **`/dev/audio`** - a server that owns the device and takes PCM from
+   whoever holds a capability to it. The same shape as the screen: one
+   owner, everybody else asks.
+3. **The mixer**, in C, because it is a loop over samples. This is where the
+   latency question gets answered with a measurement rather than an opinion,
+   and it is the stage that has to report its own worst case.
+4. **Doom's `DG_sound_module`.** doomgeneric already has the hook behind
+   `FEATURE_SOUND` and ships `i_sdlsound.c` to read. The WAD's `DS*` lumps
+   are 11 kHz 8-bit mono, so the work is resample-and-sum into stage 3.
+
+**The definition of done is a number, not a noise.** The permanent test is
+not "sound came out" - it is that the refill deadline was met a stated
+fraction of the time, measured under `make stress`, because that is the
+claim being made and the only one worth defending.
 
 ---
 

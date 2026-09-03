@@ -101,6 +101,23 @@ static inline long kosmos_getchar(void)
  * Stop the machine (0) or start it again (1). Does not return when it
  * works, so a return is a refusal - see SYS_POWER.
  */
+/*
+ * One period of PCM: 44100 Hz, stereo, signed sixteen-bit little-endian.
+ *
+ * 0 when it was taken, SYS_NO_INPUT when the queue is full - which is a
+ * fact rather than a failure. See SYS_SND_WRITE.
+ */
+static inline long kosmos_snd_write(const void *pcm, unsigned long bytes)
+{
+    return sys2(SYS_SND_WRITE, (long)(uintptr_t)pcm, (long)bytes);
+}
+
+/* Periods the device has not finished with: the refill deadline, measured. */
+static inline long kosmos_snd_queued(void)
+{
+    return sys0(SYS_SND_QUEUED);
+}
+
 static inline long kosmos_power(unsigned long what)
 {
     return sys1(SYS_POWER, (long)what);

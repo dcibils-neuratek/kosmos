@@ -260,6 +260,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A released binary must survive `make stress`; a committed revision need not | CLAUDE.md, Makefile |
 | Sep 2026 | Leaks are asserted on `sysinfo` counters, and memory is judged by whether it *stopped* falling | stress.lua |
 | Sep 2026 | A server is not promoted by capability; it borrows urgency from its caller and gives it back | process.c |
+| Sep 2026 | Audio is in scope; *guaranteed* latency is not. The mixer reports its worst refill rather than promising one | roadmap.md M11a |
 
 ---
 

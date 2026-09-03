@@ -57,6 +57,32 @@ local function may_pass_screen()
   return screen_seen
 end
 
+--
+-- The same question about sound, and asked for the same reason.
+--
+-- The kernel refuses a spawn that asks to pass on authority the parent does
+-- not hold, so passing SPAWN_AUDIO on a machine with no sound device does
+-- not silently do nothing - it fails the spawn, and the thing that fails to
+-- start is the shell.
+--
+-- This is the *third* time in this function. The comment beside the shell's
+-- spawn already records the first two, both about the screen, and the fix
+-- was this exact shape both times. Adding audio without looking at it made
+-- it three, and `make test` caught it the way it caught the others: a
+-- machine with no display never reached a prompt.
+--
+local audio_seen = nil
+
+local function may_pass_audio()
+  if audio_seen == nil then
+    local i = sys.info()
+
+    audio_seen = (i ~= nil) and (i.audio_period or 0) > 0
+  end
+
+  return audio_seen
+end
+
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
 
@@ -70,6 +96,7 @@ local SPAWN_DISK    = 4
 -- Declared by the program, granted by whoever launches it, and refused by
 -- the kernel when the launcher does not hold it itself.
 local SPAWN_PROCCTL = 8
+local SPAWN_AUDIO   = 16
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -3335,6 +3362,9 @@ your filesystem back.
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
+      if want == "audio" and may_pass_audio() then
+        flags = flags | SPAWN_AUDIO
+      end
     end
 
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
@@ -3878,7 +3908,9 @@ if role == ROLE_INIT then
                       -- any real board without a framebuffer - die at boot
                       -- with the shell never starting. The same mistake,
                       -- twice, in the same function.
-                      (may_pass_screen() and SPAWN_SCREEN or 0) | SPAWN_PROCCTL)
+                      (may_pass_screen() and SPAWN_SCREEN or 0)
+                      | (may_pass_audio() and SPAWN_AUDIO or 0)
+                      | SPAWN_PROCCTL)
 
   -- And now it does what an init does, which is outlive everything and
   -- notice when something ends.
@@ -4218,6 +4250,9 @@ if role == ROLE_RUNNER then
 
     for _, want in ipairs(attrs and attrs.needs or {}) do
       if want == "processes" then flags = flags | SPAWN_PROCCTL end
+      if want == "audio" and may_pass_audio() then
+        flags = flags | SPAWN_AUDIO
+      end
     end
 
     local id = sys.spawn(RUNNER_ROLE, caps, flags)

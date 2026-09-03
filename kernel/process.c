@@ -470,6 +470,31 @@ void process_grant_procctl(struct process *p)
     }
 }
 
+/*
+ * The right to play sound.
+ *
+ * Nothing is mapped and nothing is reserved: unlike the screen there are no
+ * pages to hand over, because samples go through a syscall rather than into
+ * a shared buffer. Which is a deliberate difference and not an oversight -
+ * a period is a kilobyte and arrives every five milliseconds, so the copy
+ * is cheap and the alternative is a shared ring that two sides have to
+ * agree about under a deadline.
+ *
+ * False when the board has no sound device, so that a process asking for
+ * audio on a machine without any finds out at spawn rather than at the
+ * first silent `beep`.
+ */
+bool process_grant_audio(struct process *p)
+{
+    if (p == NULL || !hal_snd_present()) {
+        return false;
+    }
+
+    p->owns_audio = true;
+
+    return true;
+}
+
 bool process_grant_disk(struct process *p)
 {
     struct blkdev dev;

@@ -141,6 +141,69 @@ static int l_getchar(lua_State *L)
  * system that cannot be undone by trying again, and `sys.power(1)` is one
  * typo away from `sys.power(0)`.
  */
+/*
+ * `sys.sound(pcm)` - one period of samples, as a string.
+ *
+ * A Lua string because that is what a Lua caller has, and because a period
+ * is a kilobyte: the cost of it being a string rather than a region is one
+ * copy of 1024 bytes every five milliseconds, which is not the thing that
+ * will be too slow here. When something wants to hand over more than that
+ * at a time - a whole track from a decoder - the answer is a region and a
+ * different call, not this one made cleverer.
+ *
+ * Returns true when it was taken, false when the device is still busy with
+ * what it has. False is the ordinary case for a caller that is ahead, and
+ * is not an error.
+ */
+static int l_sound(lua_State *L)
+{
+    size_t len;
+    const char *pcm = luaL_checklstring(L, 1, &len);
+    long status;
+
+    /*
+     * The size is not checked here.
+     *
+     * A period's length is the *board's* fact - `hal.h` fixes it and the
+     * kernel enforces it - and repeating the number in userland would be
+     * two copies of one thing that agree until somebody changes a driver.
+     * `sys.info().audio_period` is how a caller learns it; this just passes
+     * the bytes down and reports what came back.
+     */
+    status = kosmos_snd_write(pcm, (unsigned long)len);
+
+    if (status == SYS_ERR_DENIED) {
+        return luaL_error(L, "this process may not play sound");
+    }
+
+    if (status == SYS_ERR_FAULT) {
+        return luaL_error(L, "%d bytes is not one period", (int)len);
+    }
+
+    lua_pushboolean(L, status == 0);
+
+    return 1;
+}
+
+/*
+ * `sys.sound_queued()` - periods the device has not finished with.
+ *
+ * The deadline as a number, which `roadmap.md` M11a promises instead of a
+ * bound. Zero means it has run dry and the next sound has a click in it.
+ */
+static int l_sound_queued(lua_State *L)
+{
+    long n = kosmos_snd_queued();
+
+    if (n < 0) {
+        return 0;
+    }
+
+    lua_pushinteger(L, (lua_Integer)n);
+
+    return 1;
+}
+
 static int l_power(lua_State *L)
 {
     const char *what = luaL_checkstring(L, 1);
@@ -492,6 +555,13 @@ static int l_info(lua_State *L)
     SET("idle_ticks",       info.idle_ticks);
     SET("busy_ticks",       info.busy_ticks);
     SET("epoch",            info.epoch);
+
+    /* What one period is, so a caller can size its buffer without carrying
+     * a copy of a number the board owns. Zero when there is no device. */
+    SET("audio_rate",       info.audio_rate);
+    SET("audio_channels",   info.audio_channels);
+    SET("audio_period",     info.audio_period);
+    SET("audio_periods",    info.audio_periods);
     SET("cpus",             info.cpus);
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);
@@ -1316,6 +1386,8 @@ static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "key_event",  l_key_event },
     { "power",       l_power },
+    { "sound",       l_sound },
+    { "sound_queued", l_sound_queued },
     { "getchar",  l_getchar },
     { "spawn",    l_spawn },
     { "wait",     l_wait },

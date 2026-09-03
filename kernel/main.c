@@ -245,6 +245,29 @@ void kmain(void)
         boot_fact("no pointer; windows are moved with the keyboard");
     }
 
+    /*
+     * Sound, in the same scan and reported here for the same reason: it is
+     * another virtio device in another of the thirty-two windows, and what
+     * a machine turned out to have is worth saying once, at the start.
+     *
+     * Started at boot rather than when something first wants to play,
+     * because the setup is four synchronous control requests and doing them
+     * inside the first `beep` would put them on the path with the deadline.
+     */
+    if (hal_snd_init()) {
+        boot_fact_begin();
+        kputs("sound: virtio-sound, 44100 Hz stereo, ");
+        kputu(HAL_SND_PERIOD_FRAMES);
+        kputs("-frame periods (");
+        kputu(HAL_SND_PERIOD_FRAMES * 1000u / HAL_SND_RATE);
+        kputs(" ms), ");
+        kputu(HAL_SND_PERIODS);
+        kputs(" deep");
+        boot_fact_end();
+    } else {
+        boot_fact("no sound device; this machine is silent");
+    }
+
     thread_init();
     boot_stage("threads");
     boot_why("A fixed pool; two stacks each, so a stack overflow can report itself.");
@@ -381,6 +404,14 @@ void kmain(void)
         /* And authority over processes, which init hands to the task
          * manager and to nothing else. */
         process_grant_procctl(init);
+
+        /*
+         * And the sound device, on the same argument as the screen: init
+         * holds every device at boot and hands each on to whoever it
+         * decides should have it. False here means the board has none,
+         * which is not a failure of anything.
+         */
+        (void)process_grant_audio(init);
 
         /* At the indices init expects them, and checked rather than assumed:
          * a capability that lands one slot over is a server talking to the

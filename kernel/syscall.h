@@ -105,7 +105,27 @@
  */
 #define SYS_POWER      35   /* (0 off, 1 restart)     -> does not return   */
 
-#define SYS_MAX         36
+/*
+ * One period of PCM, queued. 44100 Hz, stereo, signed sixteen-bit - the
+ * format is `hal.h`'s and is not negotiable here.
+ *
+ * Returns 0 when it was taken and SYS_NO_INPUT when the queue is full,
+ * which is not an error: a caller that is ahead of the device should be
+ * told so rather than blocked, because blocking in an audio path is how a
+ * frame gets missed somewhere else.
+ */
+#define SYS_SND_WRITE  36   /* (ptr, len)             -> 0, full, or error */
+
+/*
+ * How many periods the device has not finished with.
+ *
+ * The deadline, as a number. `roadmap.md` M11a promises a measurement
+ * rather than a bound, and this is the measurement: at zero the device has
+ * run dry and the next sound has a click in it.
+ */
+#define SYS_SND_QUEUED 37   /* ()                     -> periods in flight */
+
+#define SYS_MAX         38
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -118,6 +138,18 @@
  */
 #define SPAWN_CONSOLE   1u
 #define SPAWN_SCREEN    2u
+
+/*
+ * The right to make a noise.
+ *
+ * Its own flag rather than riding on the screen's, because they are
+ * different powers: a program that draws is not thereby allowed to play
+ * sound over whatever else is playing, and a program that plays a sound
+ * has no business drawing. One device, one owner, one grant - the same
+ * shape the screen already has, which is what makes this a line of code
+ * rather than a design.
+ */
+#define SPAWN_AUDIO    16u
 
 /*
  * The disk, handed on the same way and for the same reason.
@@ -345,6 +377,19 @@ struct sysinfo {
      * the two drift.
      */
     uint64_t epoch;
+
+    /*
+     * The sound device's format, or zeroes when there is none.
+     *
+     * Reported rather than defined in a header both sides include, because
+     * it is the *board's* fact: `hal.h` fixes it and a different board
+     * would fix it differently. A caller sizes its buffer from what the
+     * machine says it is rather than from a constant that might be stale.
+     */
+    uint32_t audio_rate;
+    uint32_t audio_channels;
+    uint32_t audio_period;      /* bytes in one period */
+    uint32_t audio_periods;     /* how many the device will hold */
 
     uint32_t cpus;              /* cores the kernel is scheduling on */
     uint32_t tick_hz;
