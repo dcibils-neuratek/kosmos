@@ -10,22 +10,48 @@ Two pieces: the cross-compiler and QEMU. They come from different places.
 
 **The official ARM toolchain, downloaded from ARM's site.** It is the one that is genuinely bare metal, with no Linux assumptions, and it ships `gcc`, `binutils` and `gdb` in one tarball with nothing to build.
 
+**On Apple Silicon**, which is what this is built on:
+
 ```
 mkdir -p ~/toolchains && cd ~/toolchains
-curl -fLO https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-darwin-x86_64-aarch64-none-elf.tar.xz
-tar xf arm-gnu-toolchain-14.2.rel1-darwin-x86_64-aarch64-none-elf.tar.xz
-xattr -dr com.apple.quarantine arm-gnu-toolchain-14.2.rel1-darwin-x86_64-aarch64-none-elf
+curl -fLO https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf.tar.xz
+tar xf arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf.tar.xz
+xattr -dr com.apple.quarantine arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf
 ```
 
 Then put it on the `PATH`, in `~/.zprofile`:
 
 ```
-export PATH="$HOME/toolchains/arm-gnu-toolchain-14.2.rel1-darwin-x86_64-aarch64-none-elf/bin:$PATH"
+export PATH="$HOME/toolchains/arm-gnu-toolchain-14.2.rel1-darwin-arm64-aarch64-none-elf/bin:$PATH"
 ```
 
-The `xattr` line is not optional. macOS quarantines anything downloaded through a browser or `curl`, and without clearing it Gatekeeper kills the binaries with a message that does not say why.
+On an Intel Mac, `darwin-arm64` becomes `darwin-x86_64` in all four lines.
 
-Swap `darwin-x86_64` for `darwin-arm64` on an Apple Silicon machine.
+**The architecture used to be the other way round here**, with `darwin-x86_64`
+in the commands and a line at the end saying to swap it. That is the wrong
+way round for a document written on an Apple Silicon machine: what it gave
+you if you followed it exactly was a tarball that does not run, and what it
+gave you if you followed it *nearly* exactly - downloading the right one and
+copying the `PATH` line - was
+
+```
+make: aarch64-none-elf-gcc: No such file or directory
+```
+
+which says the compiler is missing rather than that the path has the wrong
+architecture in it. An hour of a session went into that, and the lesson is
+smaller than the hour: the default in an instruction should be the machine
+the instruction was written on.
+
+The `xattr` line is not optional. macOS quarantines anything downloaded
+through a browser or `curl`, and without clearing it Gatekeeper kills the
+binaries with a message that does not say why.
+
+**If `make` cannot find `aarch64-none-elf-gcc`**, the toolchain is not on
+this shell's `PATH` - which is a different thing from not being installed,
+and is what happens in a terminal opened before the `~/.zprofile` line was
+added. Check with `which aarch64-none-elf-gcc`, and `source ~/.zprofile` in
+the shell you are in.
 
 **Do not use `aarch64-unknown-linux-gnu` from Homebrew.** It targets Linux: it brings glibc, Linux start files and a dynamic loader, which is exactly what `-ffreestanding -nostdlib -nostartfiles` exists to avoid. It also produces binaries named `aarch64-unknown-linux-gnu-gcc`, not the `aarch64-none-elf-gcc` this project calls for.
 
