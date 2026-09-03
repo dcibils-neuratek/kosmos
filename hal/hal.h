@@ -193,6 +193,29 @@ bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes);
 bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes);
 
 /*
+ * Is this key down right now?
+ *
+ * `code` is the keycode the board's keyboard uses, which on this one is
+ * Linux's `input-event-codes.h` numbering because that is what virtio-input
+ * speaks. Undecoded, like `hal_pointer_poll`'s device units and `sysinfo`'s
+ * raw ID registers: this layer says what the hardware said.
+ *
+ * **This is a departure from what `CLAUDE.md` says about keyboards**, and
+ * worth stating rather than sliding past. The rule was that a keyboard is a
+ * source of characters and `hal_getchar` is where characters come from, so
+ * there was deliberately no second keyboard entry point. That reasoning is
+ * still right for characters and it cannot answer this question: "W is
+ * still held" is not a character, and no stream of characters expresses it.
+ * A key that repeats is not the same as a key that is down - the repeat
+ * rate is a setting, and a game walks at whatever rate the frame runs at.
+ *
+ * The cost is one entry point and a bitmap the driver already had the
+ * events for. What it buys is holding a key, which is the whole of moving
+ * in a game and half of a modifier in a shortcut.
+ */
+bool hal_key_held(unsigned code);
+
+/*
  * Seconds since 1970, or 0 when this board has no clock.
  *
  * Read-only, and deliberately the whole of it. Setting the time is a

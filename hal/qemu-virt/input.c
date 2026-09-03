@@ -309,6 +309,27 @@ static struct {
     bool     moved;
 } cursor;
 
+/*
+ * Which keys are down, one bit per keycode.
+ *
+ * Four words covers the 128 codes this keymap knows, which is the same
+ * bound the decode loop already enforces (`event.code >= 128` is skipped).
+ * A bitmap rather than a queue on purpose: what a caller wants to know is
+ * whether a key is held *now*, and a queue of transitions answers that only
+ * if you have consumed every one of them in order - which the console, the
+ * window manager and an application cannot all do at once.
+ */
+static uint32_t held[4];
+
+bool hal_key_held(unsigned code)
+{
+    if (code >= 128) {
+        return false;
+    }
+
+    return (held[code >> 5] & (1u << (code & 31))) != 0;
+}
+
 static const unsigned char keymap_plain[128] = {
     0x00, 0x1b, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,   /*   0  esc 1234567 */
     0x37, 0x38, 0x39, 0x30, 0x2d, 0x3d, 0x08, 0x09,   /*   8  890-= bs tab */
@@ -821,6 +842,23 @@ int keyboard_getchar(void)
             }
             continue;
         }
+
+        /*
+         * Remembered before it is discarded.
+         *
+         * `hal_getchar` is a character source and a release is not a
+         * character, so this loop has always thrown one away. That is still
+         * the right answer *for characters* - but "the W key is currently
+         * held" is not a character and cannot be expressed as a stream of
+         * them, and it is what a game and a held-down control both need.
+         *
+         * So the bitmap is kept here, where the events already arrive, and
+         * `hal_key_held` reads it. Nothing above changes, and the driver
+         * decodes each event exactly once either way.
+         */
+        held[event.code >> 5] = (event.value != 0)
+            ? (held[event.code >> 5] |  (1u << (event.code & 31)))
+            : (held[event.code >> 5] & ~(1u << (event.code & 31)));
 
         if (event.value == 0) {
             continue;               /* a release of an ordinary key */
