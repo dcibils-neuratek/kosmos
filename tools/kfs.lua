@@ -157,6 +157,37 @@ if command == "create" then
     die("usage: create <image> <megabytes> [host:guest ...]")
   end
 
+  --
+  -- Every host file is checked *before* anything is written.
+  --
+  -- This used to format first and read the files as it went, so a typo in a
+  -- name - or a file that is simply not in the directory you ran from -
+  -- destroyed the disk and then said `cannot read doom1.wad`. The message
+  -- is about the file; the damage was to everything that had been on the
+  -- image, and there is no undo. It happened.
+  --
+  -- The pairs are parsed here too, for the same reason: `host:guest` being
+  -- malformed is an argument error, and an argument error must not be
+  -- reported by a tool that has already reformatted something.
+  --
+  local pairs_in = {}
+
+  for i = 4, #args do
+    local host, guest = args[i]:match("^(.-):(.+)$")
+
+    if not host then die("`" .. args[i] .. "` is not host:guest") end
+
+    local probe = io.open(host, "rb")
+
+    if not probe then
+      die("cannot read " .. host .. " - nothing has been written")
+    end
+
+    probe:close()
+
+    pairs_in[#pairs_in + 1] = { host = host, guest = guest }
+  end
+
   -- Made at its full size first, so the filesystem lands in a file that is
   -- already as large as it believes the disk to be.
   local f = io.open(out, "wb")
@@ -177,12 +208,8 @@ if command == "create" then
 
   local count, total = 0, 0
 
-  for i = 4, #args do
-    local host, guest = args[i]:match("^(.-):(.+)$")
-
-    if not host then die("`" .. args[i] .. "` is not host:guest") end
-
-    total = total + put(sb, host, guest)
+  for _, one in ipairs(pairs_in) do
+    total = total + put(sb, one.host, one.guest)
     count = count + 1
   end
 
