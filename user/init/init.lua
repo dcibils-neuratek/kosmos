@@ -3080,7 +3080,34 @@ local function audio_main(endpoint)
 
     if n == 0 then return false end
 
-    sys.mix(mixlist)
+    --
+    -- **What `sys.mix` says, not what this hoped.**
+    --
+    -- It returns false when no ring had a period ready, and that answer is
+    -- the loop's only way to know it has nothing to do. This used to be
+    -- called and ignored, which was survivable while `n` counted only
+    -- streams with data - `n == 0` meant the same thing. The moment every
+    -- stream went into the list so that C could skip the empty ones, `n`
+    -- stopped being zero, this always returned true, and the server never
+    -- blocked again.
+    --
+    -- It span, at the top priority band, above the window manager. The
+    -- desktop stopped being usable while anything played, which is what a
+    -- spin at the top of a strict-priority scheduler looks like from the
+    -- outside.
+    --
+    if not sys.mix(mixlist) then
+      for _, id in ipairs(order) do
+        local st = streams[id]
+
+        if st then
+          st.quiet = st.quiet + 1
+          st.idle_this_pass = true
+        end
+      end
+
+      return false
+    end
 
     for i = 1, n do
       mixlist[i].owner.peak = mixlist[i].peak or 0

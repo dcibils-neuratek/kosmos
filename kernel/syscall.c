@@ -481,6 +481,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         info.audio_periods  = HAL_SND_PERIODS;
         info.audio_dry      = hal_snd_dry();
         info.audio_floor    = hal_snd_floor();
+        info.audio_wakes    = hal_snd_wakes();
     }
 
     info.threads_used     = thread_count();

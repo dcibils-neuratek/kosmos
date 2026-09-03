@@ -433,6 +433,7 @@ struct sysinfo {
     uint32_t audio_periods;     /* how many the device will hold */
     uint32_t audio_dry;         /* periods that arrived at an empty device */
     uint32_t audio_floor;       /* smallest depth ever seen, in periods */
+    uint32_t audio_wakes;       /* times the device raised its interrupt */
 
     uint32_t cpus;              /* cores the kernel is scheduling on */
     uint32_t tick_hz;

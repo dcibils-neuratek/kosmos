@@ -201,12 +201,21 @@ void hal_irq_handle(void)
     } else if (intid >= VIRTIO_INTID_BASE
                && intid < VIRTIO_INTID_BASE + VIRTIO_MMIO_COUNT) {
         /*
-         * A virtio-mmio device. Which one is the INTID minus the base, and
-         * the input driver is the only thing that has any: `virt` maps slot
-         * i to SPI 16 + i, and a GIC interrupt ID for an SPI is 32 + the SPI
-         * number.
+         * A virtio-mmio device. Which one is the INTID minus the base:
+         * `virt` maps slot i to SPI 16 + i, and a GIC interrupt ID for an
+         * SPI is 32 + the SPI number.
+         *
+         * Offered to each driver in turn rather than looked up, and every
+         * one of them returns immediately unless the slot is its own. A
+         * registry keyed by slot is the tidier answer and is what this
+         * should become if a third kind of device ever wants a line; with
+         * two it would be a table, a registration call and an indirection
+         * to save one comparison.
          */
-        input_interrupt(intid - VIRTIO_INTID_BASE);
+        unsigned slot = intid - VIRTIO_INTID_BASE;
+
+        input_interrupt(slot);
+        snd_interrupt(slot);
     }
 
     /*

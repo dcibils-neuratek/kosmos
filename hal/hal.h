@@ -280,6 +280,16 @@ unsigned      hal_snd_queued(void);
  * Here rather than computed above, because the only exact moment to read the
  * depth is as a period is handed over, and only the driver is there.
  */
+/*
+ * Has the sound device asked for a period since this was last asked?
+ *
+ * Read-and-clear. The interrupt is what makes an audio deadline a deadline
+ * rather than a poll that is usually often enough - the device knows when it
+ * consumed a period and nothing above can do better than guess.
+ */
+bool          hal_snd_wants(void);
+unsigned      hal_snd_wakes(void);
+
 unsigned      hal_snd_dry(void);
 unsigned      hal_snd_floor(void);
 

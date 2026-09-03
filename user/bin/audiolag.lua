@@ -39,7 +39,9 @@ local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 local us = hz // 1000000
 
 local worst, over = 0, 0
+local worst_gap = 0                 -- between iterations, while playing
 local began = sys.ticks()
+local prev_iter = began
 
 for _ = 1, N do
   local t0 = sys.ticks()
@@ -59,6 +61,23 @@ for _ = 1, N do
   -- where waiting stops being pacing and starts being a stall.
   --
   if took > 11600 then over = over + 1 end
+
+  --
+  -- And the gap between one turn round this loop and the next, measured
+  -- *while sound is playing* rather than after it has stopped.
+  --
+  -- The first version of this probe ran after `close`, and reported 106 ms
+  -- - which turned out to be the teardown, not the playing: unmapping a
+  -- region and dropping a capability, once, at the end. Measuring the quiet
+  -- moment after the interesting one is an easy mistake and it pointed at
+  -- the scheduler for an hour.
+  --
+  local t_now = sys.ticks()
+  local gap = (t_now - prev_iter) // us
+
+  if gap > worst_gap then worst_gap = gap end
+
+  prev_iter = t_now
 end
 
 local wall = (sys.ticks() - began) // us
@@ -71,8 +90,54 @@ print(("audiolag: %d periods, %d ms of audio in %d ms wall")
       :format(N, audio_ms, wall // 1000))
 print(("audiolag: UNDERRUNS %d   worst write %d us   stalls over two periods %d")
       :format((after.audio_dry or 0) - dry0, worst, over))
+print(("audiolag: worst gap between turns while playing %d us")
+      :format(worst_gap))
 print(("audiolag: queue floor %d of %d periods")
       :format(after.audio_floor or 0, fmt.periods))
+
+--
+-- Did the device actually say anything?
+--
+-- The distinction that matters when a deadline is missed: an interrupt that
+-- never arrives and an interrupt that arrives while something else is slow
+-- are the same symptom and completely different faults. One period is 5.8
+-- ms, so a second of sound should raise this about 172 times.
+--
+print(("audiolag: device raised its line %d times for %d periods")
+      :format((after.audio_wakes or 0) - (before.audio_wakes or 0), N))
+
+--
+-- How long this thread can be away from the processor without asking to be.
+--
+-- **The measurement that says whether a number here means anything.** A
+-- tight loop reading the clock should see gaps of microseconds; a gap of
+-- tens of milliseconds means something took the machine away, and until
+-- that is known no audio figure can be attributed to the audio path.
+--
+-- Three things it cannot tell apart, and it is worth being honest that it
+-- cannot: this thread preempted by another, the whole guest descheduled by
+-- the host, and QEMU stopping to do its own work. All three look like time
+-- that passed without this loop running. What it *does* settle is whether
+-- the fault is inside the audio design at all - `CLAUDE.md` warns that QEMU
+-- is for spotting regressions rather than for knowing whether something is
+-- fast, and this is what that warning looks like as a number.
+--
+local worst_gap, gaps = 0, 0
+local prev = sys.ticks()
+local stop = prev + hz                  -- one second
+
+while prev < stop do
+  local now = sys.ticks()
+  local gap = (now - prev) // us
+
+  if gap > worst_gap then worst_gap = gap end
+  if gap > 5800 then gaps = gaps + 1 end
+
+  prev = now
+end
+
+print(("audiolag: worst gap in a tight loop %d us, %d over one period")
+      :format(worst_gap, gaps))
 
 --
 -- How the device drains cannot be sampled from here.

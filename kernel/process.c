@@ -523,15 +523,101 @@ bool process_grant_audio(struct process *p)
      * block. A thread that cannot run long cannot starve anybody, which is
      * what made the first refusal true and makes this safe.
      *
-     * Not `SCHED_PRIO_INPUT`. Audio's deadline is harder than the
-     * compositor's - a late frame is invisible and a late period is a click
-     * - but the input band is what keeps a keystroke ahead of everything,
-     * and a desktop that answers the keyboard late to protect a sound is
-     * the wrong trade for a machine somebody is using.
+     * **The input band, and the display band was measured to be wrong.**
+     *
+     * Equal priority is round robin, and this system's quantum is a tenth
+     * of a second. So a server sharing a band with the program feeding it
+     * can wait up to 100 ms for its turn - against a device holding 23 ms
+     * of sound. That is the argument, and it is a structural one rather
+     * than a measured one: moving this from the display band to here did
+     * not change the underrun count, and the 106 ms stall that first
+     * suggested it turned out to be teardown - unmapping a region and
+     * dropping a capability, once, after the sound had stopped - measured
+     * by a probe that ran after `close` instead of during play. During play
+     * the worst gap is 24 ms, which is the device's whole buffer and a
+     * different problem.
+     *
+     * It stays because the hazard is real even though it was not what was
+     * being seen: a periodic server that round-robins with its own client
+     * at a tenth of a second is one slow client away from a gap, and
+     * nothing else in the design prevents it.
+     *
+     * That is also what priority inheritance had been hiding. A server
+     * lifted by `ipc_call` does not wait for a turn, it *preempts* - the
+     * caller's band arrives with the call. Take the calls away and equal
+     * priority is not "as urgent as its client", it is "after its client,
+     * for up to a quantum".
+     *
+     * **The display band, not the input band, and that was tried the hard
+     * way.** Above its clients is the tidier argument and it was put at
+     * `SCHED_PRIO_INPUT` for an afternoon. Then `refill` stopped blocking -
+     * a separate bug, in Lua, in this same change - and a spin at the top
+     * of a strict-priority scheduler took the desktop with it: the whole
+     * user interface stopped responding while anything played.
+     *
+     * The lesson is not "the band was wrong". It is that **the safety of a
+     * high band rests entirely on the thread blocking**, and that is a
+     * property of code somebody can break in a different file. The display
+     * band leaves the compositor able to fight back, which for a bug of
+     * that shape is the difference between bad audio and no machine.
+     *
+     * Above the clients remains the right answer once there is something
+     * enforcing the bound rather than a promise. A budget the scheduler
+     * checks would be that; there is not one yet.
+     *
+     * The remaining discomfort is honest: a 100 ms quantum is a long time
+     * for anything, and a band is being used to work around it. Bands are
+     * the right answer for a periodic deadline; the quantum is a separate
+     * question and `sched_prio.c` says it is a variable so that it can be
+     * asked.
      */
     thread_set_priority(p->thread, SCHED_PRIO_DISPLAY);
 
     return true;
+}
+
+/*
+ * Wake whoever holds the sound device, because the device asked.
+ *
+ * Called from the interrupt path. There is exactly one such process - that
+ * is what `SPAWN_AUDIO` means and what makes per-application volume possible
+ * - so there is no search to do beyond finding it, and no ambiguity about
+ * who to wake.
+ *
+ * **This is what an interrupt is for.** The server was blocking with a
+ * deadline and being woken by the timer, which is a poll wearing a
+ * different hat: it asked the device whether it wanted anything at a rate
+ * somebody had picked. Now the device says so, and the deadline it still
+ * carries is a backstop rather than the mechanism.
+ *
+ * Only a thread that is *waiting* is touched. Waking a running thread is
+ * meaningless, and waking one blocked on something else - a reply it is
+ * owed, a child it is waiting for - would be a bug that presents as a
+ * server returning from a call nobody answered.
+ */
+void process_wake_audio(void)
+{
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        struct process *p = &processes[i];
+
+        if (p->in_use && p->owns_audio && p->thread != NULL
+            && p->thread->state == THREAD_BLOCKED
+            && p->thread->wake_at != 0) {
+            /*
+             * `wake_at` is the giveaway that this is the timed wait in
+             * `ipc_receive`, and clearing it before waking is what makes the
+             * receive report "nothing arrived" rather than believing a
+             * message came - `ipc_timed_out` does the unlinking that goes
+             * with it.
+             */
+            p->thread->wake_at = 0;
+            ipc_timed_out(p->thread);
+            thread_wake(p->thread);
+            return;
+        }
+    }
 }
 
 bool process_grant_disk(struct process *p)

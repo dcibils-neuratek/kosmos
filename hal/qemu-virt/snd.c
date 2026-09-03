@@ -228,6 +228,8 @@ static struct {
 
     /* Deadlines missed, and the closest it came. See `hal_snd_dry`. */
     bool                  primed;     /* the queue has been full at least once */
+    volatile bool         wants;      /* the device raised its line */
+    volatile unsigned     woke;       /* how many times it has */
     unsigned              dry;
     unsigned              floor;
 } snd;
@@ -493,6 +495,15 @@ bool hal_snd_init(void)
         snd.primed = false;
         snd.dry = 0;
         snd.floor = HAL_SND_PERIODS;
+        snd.wants = false;
+        snd.woke = 0;
+
+        /*
+         * And ask to be told. Last, so that nothing can arrive before the
+         * state it would touch exists - an interrupt into a half-built
+         * driver is the kind of bug that only happens on a fast machine.
+         */
+        gic_enable_spi(VIRTIO_INTID_BASE + snd.slot);
 
         return true;
     }
@@ -544,6 +555,54 @@ unsigned hal_snd_queued(void)
  * Counted where they happen rather than sampled from above, because the
  * moment a period is handed over is the only place the answer is exact.
  */
+/*
+ * The device has finished with a period, and says so.
+ *
+ * **This is what turns "usually fine" into a deadline.** Everything above
+ * used to ask - `hal_snd_queued` on a timer, at whatever rate somebody had
+ * chosen - and a poll is a guess about when the answer changed. The device
+ * knows exactly when, and virtio-mmio has had a line for saying so since
+ * before this driver existed; it simply was not wired up.
+ *
+ * The acknowledge is not optional. The status bit stays set until it is
+ * written back, and an unacknowledged interrupt fires again immediately and
+ * for ever, which presents as a machine that has hung with the fans on.
+ */
+void snd_interrupt(unsigned slot)
+{
+    if (!snd.present || snd.slot != slot) {
+        return;
+    }
+
+    reg_write(REG_INTERRUPT_ACK, reg_read(REG_INTERRUPT_STATUS));
+
+    snd.woke++;
+    snd.wants = true;
+}
+
+/*
+ * Has the device asked for a period since this was last read?
+ *
+ * Read-and-clear, because the question is "has anything happened", not "is
+ * something true": leaving it set would have the server come straight back
+ * round a loop it has already served.
+ */
+bool hal_snd_wants(void)
+{
+    bool w = snd.wants;
+
+    snd.wants = false;
+    return w;
+}
+
+/* How many times the device has raised its line. Nothing depends on it; it
+ * is here so that "the interrupt is not arriving" and "the interrupt is
+ * arriving and something else is slow" are different observations. */
+unsigned hal_snd_wakes(void)
+{
+    return snd.woke;
+}
+
 unsigned hal_snd_dry(void)
 {
     return snd.dry;

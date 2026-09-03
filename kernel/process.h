@@ -374,6 +374,10 @@ bool process_grant_audio(struct process *p);
  */
 bool process_grant_disk(struct process *p);
 
+/* The sound device wants a period: wake the one process that holds it, if
+ * it is waiting. Called from the interrupt path. */
+void process_wake_audio(void);
+
 /* Hands a process authority over every other one. Like the console, this is
  * a flag and nothing to map. Always succeeds; there is no device to be
  * absent. */

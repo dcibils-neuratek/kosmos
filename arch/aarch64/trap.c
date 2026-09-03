@@ -280,6 +280,16 @@ void trap_handler(unsigned index, struct trapframe *tf)
         hal_irq_handle();
 
         /*
+         * The sound device asked for a period. Woken here rather than inside
+         * the driver because waking a thread is the kernel's business and
+         * `hal/` may not reach into it - the same separation that keeps
+         * hardware addresses out of everything above it.
+         */
+        if (hal_snd_wants()) {
+            process_wake_audio();
+        }
+
+        /*
          * The timer is the scheduler's clock, and it is the only interrupt
          * source there is, so every IRQ is a tick. When there is a second
          * source, hal_irq_handle has to say which one fired rather than this

@@ -1236,6 +1236,7 @@ static int l_info(lua_State *L)
      * there was. See `hal_snd_dry`. */
     SET("audio_dry",        info.audio_dry);
     SET("audio_floor",      info.audio_floor);
+    SET("audio_wakes",      info.audio_wakes);
     SET("cpus",             info.cpus);
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);

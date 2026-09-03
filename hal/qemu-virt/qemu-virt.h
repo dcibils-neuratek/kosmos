@@ -44,6 +44,9 @@ void gic_enable_spi(unsigned intid);
 /* One of the input devices has events waiting. `slot` is which window. */
 void input_interrupt(unsigned slot);
 
+/* The sound device has finished with a period. `slot` is which window. */
+void snd_interrupt(unsigned slot);
+
 /* The interrupt to service, or 1023 when there is none. */
 unsigned gic_acknowledge(void);
 void     gic_end_of_interrupt(unsigned intid);
