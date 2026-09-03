@@ -22,6 +22,7 @@
 #include "lauxlib.h"
 
 #include "kosmos.h"
+#include "audioring.h"
 #include "serialize.h"
 
 /* The two definitions of struct message are one contract written twice, so
@@ -228,10 +229,199 @@ static int l_sound(lua_State *L)
  * that is still playing should show it, or the meter has become a second
  * volume display.
  */
+/*--------------------------------------------------------------------------
+ * Audio rings: a stream of samples in memory two processes share.
+ *
+ * `audioring.h` holds the layout and the reasoning. What lives here is the
+ * Lua side of it, and the rule it obeys is the one `gfx` already obeys:
+ * **nothing in Lua computes an offset into the ring.** Lua says which
+ * streams exist and what gain each has; every byte of address arithmetic is
+ * below this line.
+ *------------------------------------------------------------------------*/
+
+static struct audio_ring *ring_at(lua_State *L, int arg)
+{
+    struct audio_ring *r =
+        (struct audio_ring *)(uintptr_t)luaL_checkinteger(L, arg);
+
+    if (!audio_ring_valid(r)) {
+        return NULL;
+    }
+
+    return r;
+}
+
+/*
+ * `sys.ring_create(period_bytes, periods)` -> capability, address
+ *
+ * The *client* owns the ring and hands the server a capability to it, which
+ * is the same way a window hands the compositor its surface. The server maps
+ * what it is given and can reach nothing else.
+ *
+ * The period size is asked for rather than compiled in, because it is the
+ * board's and userland does not see `hal.h`. The caller reads it from
+ * `sys.info().audio_period`, which is where every other audio fact comes
+ * from - and a ring built to a number this file believed instead would be
+ * the same "two copies of one fact" that has cost this system a week.
+ */
+static int l_ring_create(lua_State *L)
+{
+    unsigned period_bytes = (unsigned)luaL_checkinteger(L, 1);
+    unsigned periods = (unsigned)luaL_optinteger(L, 2, AUDIO_RING_PERIODS);
+    unsigned bytes;
+    unsigned pages;
+    long cap, at;
+    struct audio_ring *r;
+
+    if (period_bytes == 0 || period_bytes > HAL_SND_PERIOD_BYTES_MAX) {
+        lua_pushnil(L);
+        lua_pushstring(L, "a period that size is not one this machine has");
+        return 2;
+    }
+
+    if (periods == 0 || periods > 64) {
+        periods = AUDIO_RING_PERIODS;
+    }
+
+    bytes = AUDIO_RING_DATA + periods * period_bytes;
+    pages = (bytes + 4095u) / 4096u;
+
+    cap = kosmos_mem_create(pages);
+
+    if (cap < 0) {
+        return fail(L, cap);
+    }
+
+    at = kosmos_mem_map(cap);
+
+    if (at < 0) {
+        return fail(L, at);
+    }
+
+    r = (struct audio_ring *)(uintptr_t)at;
+    memset(r, 0, AUDIO_RING_DATA);
+    r->periods = periods;
+    r->period_bytes = period_bytes;
+    r->write = 0;
+    r->read = 0;
+
+    /* Last, so that a server which maps this while it is being built cannot
+     * see a half-initialised header and believe it. */
+    audio_ring_publish(r, 0);
+    r->magic = AUDIO_RING_MAGIC;
+
+    lua_pushinteger(L, (lua_Integer)cap);
+    lua_pushinteger(L, (lua_Integer)at);
+    return 2;
+}
+
+/* `sys.ring_map(cap)` -> address, for the server side. */
+static int l_ring_map(lua_State *L)
+{
+    long at = kosmos_mem_map((long)luaL_checkinteger(L, 1));
+    struct audio_ring *r;
+
+    if (at < 0) {
+        return fail(L, at);
+    }
+
+    r = (struct audio_ring *)(uintptr_t)at;
+
+    if (!audio_ring_valid(r)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "not an audio ring");
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)at);
+    return 1;
+}
+
+/* How many periods are waiting, and how many slots are free. */
+static int l_ring_ready(lua_State *L)
+{
+    struct audio_ring *r = ring_at(L, 1);
+
+    lua_pushinteger(L, r ? (lua_Integer)audio_ring_ready(r) : 0);
+    return 1;
+}
+
+static int l_ring_space(lua_State *L)
+{
+    struct audio_ring *r = ring_at(L, 1);
+
+    lua_pushinteger(L, r ? (lua_Integer)audio_ring_space(r) : 0);
+    return 1;
+}
+
+/*
+ * `sys.ring_put(at, bytes)` -> true, or false when the ring is full.
+ *
+ * One period from a Lua string, for sources that generate their samples in
+ * Lua - a test tone, a beep. **Not the path a file takes**: `sys.pcm` writes
+ * into the ring directly, because a string here would be exactly the
+ * allocation this whole design exists to remove.
+ */
+static int l_ring_put(lua_State *L)
+{
+    struct audio_ring *r = ring_at(L, 1);
+    size_t len = 0;
+    const char *pcm = luaL_checklstring(L, 2, &len);
+
+    if (r == NULL || pcm == NULL) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    if (audio_ring_space(r) == 0) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    if (len > r->period_bytes) {
+        len = r->period_bytes;
+    }
+
+    {
+        uint8_t *slot = audio_ring_slot(r, r->write);
+
+        memcpy(slot, pcm, len);
+
+        /* A short period is silence for the rest of it rather than whatever
+         * the last user of this slot left there. */
+        if (len < r->period_bytes) {
+            memset(slot + len, 0, r->period_bytes - len);
+        }
+
+        audio_ring_publish(r, r->write + 1);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/*
+ * `sys.mix(list)` - one period out of the device, summed from the rings.
+ *
+ * Each entry is `{ ring = <address>, left = <gain>, right = <gain> }` and
+ * gets a `peak` written back. An entry whose ring has nothing ready is
+ * skipped rather than waited for: a stream that has fallen behind must not
+ * take the others down with it.
+ *
+ * **It used to take the samples as Lua strings**, one per stream per period,
+ * which meant the collector ran inside the mix. Now the only thing crossing
+ * the boundary is an address and two integers, and the samples are read from
+ * where the client left them.
+ *
+ * The peak is taken *before* the gain, deliberately: it answers "who is
+ * making a noise" rather than "how loud is it", so a muted stream still
+ * shows a moving meter - which is the whole point when you are hunting for
+ * the program that will not shut up.
+ */
 static int l_mix(lua_State *L)
 {
     static int32_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
-    unsigned frames_seen = 0;
+    unsigned mixed = 0;
     unsigned samples = 0;
     lua_Integer n, i;
     unsigned k;
@@ -242,10 +432,11 @@ static int l_mix(lua_State *L)
     memset(acc, 0, sizeof(acc));
 
     for (i = 1; i <= n; i++) {
+        struct audio_ring *r;
         const int16_t *in;
-        size_t len = 0;
         long left = 256, right = 256;
         int32_t peak = 0;
+        unsigned count;
 
         lua_rawgeti(L, 1, i);
 
@@ -254,56 +445,66 @@ static int l_mix(lua_State *L)
             continue;
         }
 
-        lua_getfield(L, -1, "pcm");
-        in = (const int16_t *)lua_tolstring(L, -1, &len);
+        lua_getfield(L, -1, "ring");
+        r = (struct audio_ring *)(uintptr_t)lua_tointeger(L, -1);
+        lua_pop(L, 1);
 
-        lua_getfield(L, -3 + 1, "left");
+        lua_getfield(L, -1, "left");
         if (lua_isnumber(L, -1)) { left = (long)lua_tointeger(L, -1); }
         lua_pop(L, 1);
 
-        lua_getfield(L, -2, "right");
+        lua_getfield(L, -1, "right");
         if (lua_isnumber(L, -1)) { right = (long)lua_tointeger(L, -1); }
         lua_pop(L, 1);
 
-        if (in != NULL && len >= 4) {
-            unsigned count = (unsigned)(len / 2);
-
-            if (count > sizeof(acc) / sizeof(acc[0])) {
-                count = (unsigned)(sizeof(acc) / sizeof(acc[0]));
-            }
-
-            if (count > samples) {
-                samples = count;
-            }
-
-            for (k = 0; k < count; k++) {
-                int32_t v = in[k];
-                int32_t mag = (v < 0) ? -v : v;
-
-                if (mag > peak) {
-                    peak = mag;
-                }
-
-                /* Even samples are the left channel, odd the right: that is
-                 * what interleaved stereo means and it is the only place
-                 * the balance can be applied. */
-                acc[k] += (v * (int32_t)((k & 1u) ? right : left)) >> 8;
-            }
-
-            frames_seen++;
+        if (!audio_ring_valid(r)) {
+            lua_pop(L, 1);
+            continue;
         }
 
-        lua_pop(L, 1);                  /* the pcm string */
+        /* Acquire: having seen this index, the samples behind it are there. */
+        if (audio_ring_acquire(&r->write) - r->read == 0) {
+            lua_pushinteger(L, 0);
+            lua_setfield(L, -2, "peak");
+            lua_pop(L, 1);
+            continue;                   /* nothing ready; not this one's turn */
+        }
+
+        in = (const int16_t *)(const void *)audio_ring_slot(r, r->read);
+        count = r->period_bytes / 2;
+
+        if (count > sizeof(acc) / sizeof(acc[0])) {
+            count = (unsigned)(sizeof(acc) / sizeof(acc[0]));
+        }
+
+        if (count > samples) {
+            samples = count;
+        }
+
+        for (k = 0; k < count; k++) {
+            int32_t v = in[k];
+            int32_t mag = (v < 0) ? -v : v;
+
+            if (mag > peak) {
+                peak = mag;
+            }
+
+            /* Even samples are the left channel, odd the right: that is what
+             * interleaved stereo means and it is the only place the balance
+             * can be applied. */
+            acc[k] += (v * (int32_t)((k & 1u) ? right : left)) >> 8;
+        }
+
+        audio_ring_consumed(r, r->read + 1);
+        mixed++;
 
         lua_pushinteger(L, (lua_Integer)peak);
         lua_setfield(L, -2, "peak");
-
         lua_pop(L, 1);                  /* the entry */
     }
 
-    if (frames_seen == 0 || samples == 0) {
+    if (mixed == 0 || samples == 0) {
         lua_pushboolean(L, 0);
-
         return 1;
     }
 
@@ -312,8 +513,8 @@ static int l_mix(lua_State *L)
      *
      * Two streams at full scale sum past what sixteen bits hold, and the
      * difference between the two answers is the difference between a loud
-     * moment and a bang: wrapping turns a peak into the opposite sign,
-     * which is the worst noise a mixer can make.
+     * moment and a bang: wrapping turns a peak into the opposite sign, which
+     * is the worst noise a mixer can make.
      */
     {
         static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
@@ -332,6 +533,162 @@ static int l_mix(lua_State *L)
     }
 
     return 1;
+}
+
+/*
+ * One frame of somebody else's audio, interpolated, as this board's.
+ *
+ * Pulled out of `l_pcm` so that the ring path and the string path cannot
+ * drift apart - they are the same arithmetic and there is no version of
+ * this system where it is right for them to disagree.
+ */
+static void pcm_frame(const unsigned char *in, long at, double frac,
+                      long channels, long bits, long in_frame_bytes,
+                      int16_t *out_l, int16_t *out_r)
+{
+    int32_t l0, r0, l1, r1;
+    const unsigned char *a = in + at * in_frame_bytes;
+    const unsigned char *b = a + in_frame_bytes;
+
+    if (bits == 8) {
+        /* Unsigned, centred on 128, which is what an 8-bit WAV is. */
+        l0 = ((int32_t)a[0] - 128) << 8;
+        r0 = (channels == 2) ? (((int32_t)a[1] - 128) << 8) : l0;
+        l1 = ((int32_t)b[0] - 128) << 8;
+        r1 = (channels == 2) ? (((int32_t)b[1] - 128) << 8) : l1;
+    } else {
+        /* Little endian, read a byte at a time: nothing promises the source
+         * is two-byte aligned. */
+        l0 = (int16_t)(a[0] | (a[1] << 8));
+        r0 = (channels == 2) ? (int16_t)(a[2] | (a[3] << 8)) : l0;
+        l1 = (int16_t)(b[0] | (b[1] << 8));
+        r1 = (channels == 2) ? (int16_t)(b[2] | (b[3] << 8)) : l1;
+    }
+
+    *out_l = (int16_t)(l0 + (l1 - l0) * frac);
+    *out_r = (int16_t)(r0 + (r1 - r0) * frac);
+}
+
+/*
+ * `sys.pcm_into(src, src_len, ring, rate, channels, bits, phase, partial)`
+ *   -> periods, consumed_bytes, phase, partial
+ *
+ * **The path a file actually takes, and the reason this refactor exists.**
+ * Source bytes are in a region the filesystem read into; the output goes
+ * straight into the ring the audio server reads from. No Lua string is
+ * created at either end, so a minute of music allocates nothing and the
+ * collector has no reason to run inside the deadline.
+ *
+ * `partial` is how many frames of the current slot are already written, and
+ * it is the piece that makes this work without a staging buffer: the frames
+ * go directly into the slot at `write`, which the server cannot be looking
+ * at, because it never reads past the index this has not advanced yet. A
+ * slot is published only when it is full, so the server never sees a period
+ * that is half a period.
+ *
+ * The caller carries `partial` for the same reason it carries `phase` -
+ * there are several streams and this function has no idea which one it is
+ * working on.
+ */
+static int l_pcm_into(lua_State *L)
+{
+    const unsigned char *in =
+        (const unsigned char *)(uintptr_t)luaL_checkinteger(L, 1);
+    size_t len = (size_t)luaL_checkinteger(L, 2);
+    struct audio_ring *r =
+        (struct audio_ring *)(uintptr_t)luaL_checkinteger(L, 3);
+    long rate = (long)luaL_checkinteger(L, 4);
+    long channels = (long)luaL_checkinteger(L, 5);
+    long bits = (long)luaL_checkinteger(L, 6);
+    double phase = (double)luaL_optnumber(L, 7, 0.0);
+    long partial = (long)luaL_optinteger(L, 8, 0);
+
+    long in_frame_bytes = channels * (bits / 8);
+    long in_frames, period_frames, written = 0;
+    double step;
+
+    if (rate <= 0 || (channels != 1 && channels != 2)
+        || (bits != 8 && bits != 16)) {
+        return luaL_error(L, "pcm_into: %d Hz, %d channels, %d bits is not a "
+                             "format this understands", (int)rate,
+                          (int)channels, (int)bits);
+    }
+
+    if (!audio_ring_valid(r) || in == NULL) {
+        lua_pushinteger(L, 0);
+        lua_pushinteger(L, 0);
+        lua_pushnumber(L, (lua_Number)phase);
+        lua_pushinteger(L, (lua_Integer)partial);
+        return 4;
+    }
+
+    period_frames = (long)(r->period_bytes / 4);
+    in_frames = (long)(len / (size_t)in_frame_bytes);
+    step = (double)rate / (double)HAL_SND_RATE;
+
+    if (partial < 0 || partial >= period_frames) {
+        partial = 0;
+    }
+
+    while (audio_ring_space(r) > 0) {
+        int16_t *slot = (int16_t *)(void *)audio_ring_slot(r, r->write);
+        int ran_out = 0;
+
+        while (partial < period_frames) {
+            long at = (long)phase;
+
+            /* The last frame has no neighbour to interpolate towards, so it
+             * is where this piece stops - and the caller sends the rest next
+             * time with the phase that got us here. */
+            if (at + 1 >= in_frames) {
+                ran_out = 1;
+                break;
+            }
+
+            pcm_frame(in, at, phase - (double)at, channels, bits,
+                      in_frame_bytes,
+                      &slot[partial * 2], &slot[partial * 2 + 1]);
+
+            partial++;
+            phase += step;
+        }
+
+        if (partial < period_frames) {
+            /* A slot with a hole in it is not published. What is in it stays
+             * there and `partial` says where to carry on. */
+            break;
+        }
+
+        audio_ring_publish(r, r->write + 1);
+        partial = 0;
+        written++;
+
+        if (ran_out) {
+            break;
+        }
+    }
+
+    /*
+     * How much of the input is finished with: everything up to the frame the
+     * phase now sits in, not including it, because the next piece has to
+     * interpolate from it. The caller drops that many bytes and keeps the
+     * rest, and the phase comes back reduced by the same amount so the two
+     * agree.
+     */
+    {
+        long consumed = (long)phase;
+
+        if (consumed > in_frames) {
+            consumed = in_frames;
+        }
+
+        lua_pushinteger(L, (lua_Integer)written);
+        lua_pushinteger(L, (lua_Integer)(consumed * in_frame_bytes));
+        lua_pushnumber(L, (lua_Number)(phase - (double)consumed));
+        lua_pushinteger(L, (lua_Integer)partial);
+    }
+
+    return 4;
 }
 
 /*
@@ -1712,6 +2069,12 @@ static const luaL_Reg sys_functions[] = {
     { "wait",     l_wait },
     { "exit",     l_exit },
     { "yield",    l_yield },
+    { "ring_create", l_ring_create },
+    { "ring_map",    l_ring_map },
+    { "ring_ready",  l_ring_ready },
+    { "ring_space",  l_ring_space },
+    { "ring_put",    l_ring_put },
+    { "pcm_into",    l_pcm_into },
     { "sleep",    l_sleep },
     { "ticks",    l_ticks },
     { "info",     l_info },

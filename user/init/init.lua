@@ -2868,7 +2868,7 @@ local function audio_main(endpoint)
 
   local handlers = {}
 
-  handlers.open = function(req)
+  handlers.open = function(req, sender, cap)
     if PERIOD == 0 then
       return { ok = false, error = "this machine has no sound device" }
     end
@@ -2877,13 +2877,39 @@ local function audio_main(endpoint)
 
     next_id = next_id + 1
 
+    --
+    -- The samples arrive in memory the client owns, not in messages.
+    --
+    -- `CLAUDE.md`: control by message, data by shared memory. The capability
+    -- travels in this one message and nothing else ever does - after this,
+    -- the client writes periods into the ring and this server reads them
+    -- where they lie. A stream that sent its periods as message payloads
+    -- minted two Lua strings per period, 172 times a second, inside a 5.8 ms
+    -- deadline.
+    --
+    local at
+
+    if cap and cap >= 0 then
+      local why
+
+      at, why = sys.ring_map(cap)
+
+      if not at then
+        return { ok = false, error = "that is not an audio ring: "
+                                     .. tostring(why) }
+      end
+    else
+      return { ok = false, error = "open wants a ring capability" }
+    end
+
     streams[id] = {
       id = id,
       name = tostring(req.name or "sound"),
       gain = 256,
       balance = 0,              -- -100 left .. +100 right
       muted = false,
-      queue = {},
+      ring = at,
+      cap = cap,
       peak = 0,
       quiet = 0,                -- periods since it last sent anything
     }
@@ -2893,51 +2919,39 @@ local function audio_main(endpoint)
     return { ok = true, stream = id, period = PERIOD, periods = DEPTH }
   end
 
-  handlers.play = function(req)
-    local s = pick(req.stream)
-
-    if not s then
-      return { ok = false, error = "no such stream" }
-    end
-
-    if type(req.pcm) ~= "string" or #req.pcm == 0 then
-      return { ok = false, error = "play wants pcm" }
-    end
-
-    --
-    -- Full is a fact rather than a failure: the client is ahead and should
-    -- wait, which is the only thing keeping the pipe short.
-    --
-    -- But answer it with a fresh fact. This used to reply "full" from
-    -- whatever the queue happened to hold, and what the queue held was
-    -- whatever was left when this loop last ran - up to a tick ago. The
-    -- client believed it, slept a tick, and asked again, so a period moved
-    -- every 10 ms while the device wanted one every 5.8. A third of a
-    -- second of sound took 572 ms and it was the *answer* that was slow,
-    -- not the machine: 1% of the processor, playing at two thirds speed.
-    --
-    -- So before saying no, try to make room. `refill` moves a period from
-    -- this queue into the device if the device has space, which is exactly
-    -- the question being asked and is a few microseconds of work.
-    --
-    if #s.queue >= BACKLOG then
-      refill()
-    end
-
-    if #s.queue >= BACKLOG then
-      return { ok = true, taken = false, queued = #s.queue }
-    end
-
-    s.queue[#s.queue + 1] = req.pcm
-    s.quiet = 0
-
-    return { ok = true, taken = true, queued = #s.queue }
-  end
+  --
+  -- There is no `play`, and its absence is the point.
+  --
+  -- It took a period as a message payload and this server put it in a Lua
+  -- table. That is a stream travelling as a message, which `CLAUDE.md` now
+  -- forbids, and the cost was not theoretical: two Lua strings minted per
+  -- period, 172 times a second, 340 KB a second of garbage inside a 5.8 ms
+  -- deadline. Throughput measured perfect and it clicked four times every
+  -- two seconds.
+  --
+  -- A client writes into the ring it handed over at `open` and nothing is
+  -- sent at all. What is left in this protocol is control: open, close,
+  -- set a gain, ask what is playing.
+  --
 
   handlers.close = function(req)
     local s = pick(req.stream)
 
     if s then
+      --
+      -- The ring was the client's memory and this process only borrowed a
+      -- view of it.
+      --
+      -- `release` unmaps the pages *and* drops the capability, in that
+      -- order, which is the order that matters: dropping first would leave
+      -- a window where the pages could be freed underneath a mapping this
+      -- process still holds. Letting go here rather than at exit is what
+      -- stops a server that runs for weeks from accumulating a mapping per
+      -- song played - which is exactly the shape of leak `make stress`
+      -- exists to catch.
+      --
+      if s.cap then sys.release(s.cap) end
+
       streams[req.stream] = nil
 
       for i, id in ipairs(order) do
@@ -2965,7 +2979,7 @@ local function audio_main(endpoint)
         out[#out + 1] = {
           stream = id, name = s.name, gain = s.gain,
           balance = s.balance, muted = s.muted,
-          peak = s.peak, queued = #s.queue,
+          peak = s.peak, queued = sys.ring_ready(s.ring) or 0,
           playing = s.quiet < 8,
         }
       end
@@ -3019,36 +3033,43 @@ local function audio_main(endpoint)
     for _, id in ipairs(order) do
       local s = streams[id]
 
-      if s then
-        local pcm = table.remove(s.queue, 1)
+      if s and s.ring then
+        --
+        -- Balance is a pan, applied to the gain rather than beside it.
+        --
+        -- Left of centre attenuates the right channel and vice versa, which
+        -- is what a balance control does and is not what a *pan* law does -
+        -- a real pan keeps the total power constant and needs a square
+        -- root. This is the simple one, and saying so is better than
+        -- implying the other.
+        --
+        local g = s.muted and 0 or ((s.gain * master) // 256)
+        local l, r = g, g
 
-        if pcm then
-          --
-          -- Balance is a pan, applied to the gain rather than beside it.
-          --
-          -- Left of centre attenuates the right channel and vice versa,
-          -- which is what a balance control does and is not what a *pan*
-          -- law does - a real pan keeps the total power constant and needs
-          -- a square root. This is the simple one, and saying so is better
-          -- than implying the other.
-          --
-          local g = s.muted and 0 or ((s.gain * master) // 256)
-          local l, r = g, g
+        if s.balance > 0 then
+          l = (g * (100 - s.balance)) // 100
+        elseif s.balance < 0 then
+          r = (g * (100 + s.balance)) // 100
+        end
 
-          if s.balance > 0 then
-            l = (g * (100 - s.balance)) // 100
-          elseif s.balance < 0 then
-            r = (g * (100 + s.balance)) // 100
-          end
+        --
+        -- Every stream goes in the list whether or not it has a period
+        -- ready, and `sys.mix` skips the empty ones.
+        --
+        -- Asking here as well would be a second look at an index the client
+        -- may change in between, and two answers to one question is how
+        -- this system keeps hurting itself. C looks once, mixes what it
+        -- found, and advances only the rings it actually read.
+        --
+        n = n + 1
+        mixlist[n] = mixlist[n] or {}
+        mixlist[n].ring = s.ring
+        mixlist[n].left = l
+        mixlist[n].right = r
+        mixlist[n].peak = 0
+        mixlist[n].owner = s
 
-          n = n + 1
-          mixlist[n] = mixlist[n] or {}
-          mixlist[n].pcm = pcm
-          mixlist[n].left = l
-          mixlist[n].right = r
-          mixlist[n].peak = 0
-          mixlist[n].owner = s
-        else
+        if (sys.ring_ready(s.ring) or 0) == 0 then
           s.quiet = s.quiet + 1
           s.idle_this_pass = true
         end
@@ -3136,7 +3157,9 @@ local function audio_main(endpoint)
       for _, id in ipairs(order) do
         local s = streams[id]
 
-        if s and #s.queue > 0 then busy = true break end
+        if s and s.ring and (sys.ring_ready(s.ring) or 0) > 0 then
+          busy = true break
+        end
       end
 
       if busy or (sys.sound_queued() or 0) > 0 then

@@ -72,79 +72,83 @@ if not out then
 end
 
 --
--- A window of the file at a time.
+-- A window of the file at a time, and not a byte of it in a Lua string.
 --
--- 64 KB is about a third of a second of CD audio: big enough that the
--- reads are not the cost, small enough that converting one is not a pause
--- somebody hears. The leftover matters as much as the window - `sys.pcm`
--- stops at the last frame it can interpolate *from*, so what it did not
--- consume is carried forward and prepended to the next read.
+-- **This is the shape `CLAUDE.md`'s rule asks for.** The filesystem reads
+-- into a region; `sys.pcm_into` converts from that region straight into the
+-- audio ring the server is reading from; nothing is allocated per period,
+-- so the collector has no reason to run inside the deadline. The old loop
+-- built a Lua string per read, sliced another per period, and sent every
+-- one of them as a message.
 --
-local WINDOW = 64 * 1024
-local buffer = sys.memory(WINDOW // 4096)
+-- The read window is matched to the ring rather than chosen for being a
+-- round number. `pcm_into` stops when the ring is full, and whatever it did
+-- not consume is simply read again next time - so a window much larger than
+-- the ring would re-read most of itself on every pass. Eight periods of
+-- ring is 8 KB of source at this rate; sixteen gives slack without turning
+-- the loop into a re-reader.
+--
+local READ = 16 * 1024
+local bufcap = sys.memory(READ // 4096)
 
-if not buffer then
+if not bufcap then
   print("play: no room for a read buffer")
   return
 end
 
-local at = info.offset
+local addr = sys.memory_map(bufcap)
+
+if not addr then
+  print("play: could not map the read buffer")
+  return
+end
+
+local pos = info.offset
 local last = info.offset + info.bytes
-local carry, phase = "", 0.0
-local pending = ""
+local phase, partial = 0.0, 0
 
-while at < last or #pending > 0 or #carry > 0 do
-  -- Top up: convert more only when there is nothing left to send.
-  if #pending == 0 then
-    if at < last and #carry < WINDOW then
-      local want = math.min(WINDOW - #carry, last - at)
-      local n = fs.read_into(path, buffer, at, want)
+while pos < last do
+  if out:space() == 0 then
+    -- Ahead of the device, which is the good problem. Sleep rather than
+    -- spin: yielding here would be a busy wait dressed as a wait.
+    sys.sleep(1)
+  else
+    local want = math.min(READ, last - pos)
+    local n = fs.read_into(path, bufcap, pos, want)
 
-      if not n or n == 0 then break end
+    if not n or n == 0 then break end
 
-      carry = carry .. sys.region_read(buffer, 0, n)
-      at = at + n
+    local wrote, used
+    wrote, used, phase, partial =
+        sys.pcm_into(addr, n, out.ring,
+                     info.rate, info.channels, info.bits, phase, partial)
+
+    --
+    -- The file position carries the leftover.
+    --
+    -- `pcm_into` stops at the last frame it can interpolate *from*, so what
+    -- it did not consume is still needed - and rather than shuffling those
+    -- bytes down the buffer, the next read simply starts where the
+    -- conversion stopped. A few bytes are read twice and no primitive has
+    -- to exist for moving them.
+    --
+    pos = pos + used
+
+    if used == 0 then
+      if n < info.frame * 2 then break end     -- the tail of the file
+      if wrote == 0 then sys.sleep(1) end
     end
-
-    if #carry < info.frame * 2 then break end
-
-    local pcm, used
-    pcm, used, phase = sys.pcm(carry, info.rate, info.channels, info.bits,
-                               phase, fmt.period * 8)
-
-    if used == 0 or #pcm == 0 then break end
-
-    carry = carry:sub(used + 1)
-    pending = pcm
   end
-
-  -- `write` rather than `play`: there is nothing else to do with the time,
-  -- and calling `play` in a loop is a spin rather than a wait.
-  local ok, oops2 = out:write(pending:sub(1, fmt.period))
-
-  if not ok then
-    print("play: " .. tostring(oops2))
-    break
-  end
-
-  pending = pending:sub(fmt.period + 1)
 end
 
 --
 -- Wait for what was handed over to actually be played before letting go.
 --
--- Closing drops whatever the server has not mixed yet, which is a fifth of
--- a second of the end of every song.
+-- Closing drops whatever has not been mixed yet, which is the last fifth of
+-- a second of every song.
 --
-for _ = 1, 100 do
-  local list = audio.streams()
-  local mine = nil
-
-  for _, one in ipairs(list or {}) do
-    if one.stream == out.id then mine = one end
-  end
-
-  if not mine or (mine.queued or 0) == 0 then break end
+for _ = 1, 400 do
+  if out:queued() == 0 then break end
 
   sys.sleep(1)
 end

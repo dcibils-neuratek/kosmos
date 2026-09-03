@@ -348,13 +348,7 @@ function ticker:tick()
     -- the server still holds up to four periods. Letting go here would cut
     -- the last twenty milliseconds off every file.
     --
-    local left = 0
-
-    for _, one in ipairs(audio.streams() or {}) do
-      if one.stream == stream.id then left = one.queued or 0 end
-    end
-
-    if left == 0 then
+    if stream:queued() == 0 then
       unload()
       status = "finished"
       pace()

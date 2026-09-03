@@ -187,14 +187,9 @@ local paced = elapsed * 10 >= ms * 8      -- within a fifth of real time
 -- taking it away.
 --
 for _ = 1, 200 do
-  local list = audio.streams()
-  local mine = nil
-
-  for _, one in ipairs(list or {}) do
-    if one.stream == out.id then mine = one end
-  end
-
-  if not mine or (mine.queued or 0) == 0 then break end
+  -- Its own ring, read directly. Asking the server would be a round trip
+  -- for a number this process can see.
+  if out:queued() == 0 then break end
 
   sys.sleep(1)
 end

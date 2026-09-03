@@ -227,6 +227,7 @@ static struct {
     unsigned              next_slot;
 
     /* Deadlines missed, and the closest it came. See `hal_snd_dry`. */
+    bool                  primed;     /* the queue has been full at least once */
     unsigned              dry;
     unsigned              floor;
 } snd;
@@ -489,6 +490,7 @@ bool hal_snd_init(void)
         snd.running = true;
 
         /* The floor only ever comes down, so it starts at the ceiling. */
+        snd.primed = false;
         snd.dry = 0;
         snd.floor = HAL_SND_PERIODS;
 
@@ -581,12 +583,31 @@ bool hal_snd_write(const void *pcm, unsigned bytes)
     {
         unsigned depth = hal_snd_queued();
 
-        if (depth == 0) {
-            snd.dry++;
+        /*
+         * **Not counted until the pipeline has filled once.**
+         *
+         * A stream starts with an empty device, so the first period always
+         * arrives at a depth of zero and so do the next few - that is the
+         * queue filling, not a deadline missed. Counting them made every
+         * measurement read "four underruns" whatever the system did, which
+         * is worse than no instrument: it looked like a constant fault and
+         * hid whether anything had changed.
+         *
+         * `primed` turns on the first time the device is actually full, and
+         * only then does running out mean something went wrong.
+         */
+        if (depth >= HAL_SND_PERIODS - 1) {
+            snd.primed = true;
         }
 
-        if (depth < snd.floor) {
-            snd.floor = depth;
+        if (snd.primed) {
+            if (depth == 0) {
+                snd.dry++;
+            }
+
+            if (depth < snd.floor) {
+                snd.floor = depth;
+            }
         }
     }
 

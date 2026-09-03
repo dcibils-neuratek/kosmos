@@ -493,29 +493,44 @@ bool process_grant_audio(struct process *p)
     p->owns_audio = true;
 
     /*
-     * **Not** promoted to the display band, and the reason is measured
-     * rather than assumed.
+     * **Promoted to the display band, and it took three tries to earn it.**
      *
-     * The argument for promoting it is good: the device wants a period
-     * every 5.8 milliseconds, the server cannot block waiting for a message
-     * that nobody sends, so it spins - and a thread that yields at NORMAL
-     * while the compositor spins at DISPLAY is a thread that never runs.
-     * `docs/state.md` records that hazard already.
+     * First refusal: the server spun, so a DISPLAY-band spinner starved the
+     * clients that had real work to do before they could play anything. The
+     * note here said a spinning server is the wrong shape and no band fixes
+     * it, and that was right.
      *
-     * It was tried and it made things worse. Promoting the *server* starves
-     * the *client*: a program that has any real work to do before it can
-     * play - and generating audio is real work - is at NORMAL with two
-     * DISPLAY-band spinners above it, so it never reaches its first `play`.
-     * The result was silence under the desktop and perfect sound at the
-     * prompt.
+     * Second: the spin became a sleep, and priority inheritance made the
+     * question look moot - `ipc_call` lifts a server to its caller's band
+     * for as long as the caller waits, so the server *became* urgent
+     * whenever anybody needed it and was ordinary otherwise, which is
+     * strictly better than a fixed band.
      *
-     * The honest answer is that a spinning server is the wrong shape and no
-     * band fixes it. What it wants is to sleep until the device asks, which
-     * means the sound card's interrupt - virtio-sound has one and this
-     * driver does not use it yet. Until then the server spins at NORMAL,
-     * which works when the desktop is not also spinning, and the gap is
-     * written down rather than papered over with a priority.
+     * Third, and the reason this is here now: **the samples stopped
+     * travelling as messages.** A client writes into a shared ring and calls
+     * nothing, so there is no call to inherit from - and the mechanism that
+     * had been quietly holding this server up disappeared along with the
+     * copying. That is a real cost of `CLAUDE.md`'s "control by message,
+     * data by shared memory", and it is worth naming: inheritance only
+     * works on a path somebody is blocked on, so the moment a data path
+     * stops blocking, whatever was riding on it needs saying out loud.
+     *
+     * A band is honest here in a way it was not for the console. The console
+     * is both the input path and the print path, so "always urgent" is true
+     * of half its job and false of the other half. This server has one job,
+     * it arrives every 5.8 milliseconds whether anybody asks or not, and the
+     * work is bounded: mix at most a device-queue's worth of periods, then
+     * block. A thread that cannot run long cannot starve anybody, which is
+     * what made the first refusal true and makes this safe.
+     *
+     * Not `SCHED_PRIO_INPUT`. Audio's deadline is harder than the
+     * compositor's - a late frame is invisible and a late period is a click
+     * - but the input band is what keeps a keystroke ahead of everything,
+     * and a desktop that answers the keyboard late to protect a sound is
+     * the wrong trade for a machine somebody is using.
      */
+    thread_set_priority(p->thread, SCHED_PRIO_DISPLAY);
+
     return true;
 }
 

@@ -46,51 +46,59 @@ stream.__index = stream
 -- happened: two tones sat in the Mixer at "idle" while `beep` spun,
 -- because a failed send and a full queue looked identical.
 --
+--
+-- Hand over one period.
+--
+-- **Nothing is sent.** The samples go into the ring this stream opened
+-- with, which the audio server is already reading from - `CLAUDE.md`'s
+-- rule, and `audioring.h` has the reasoning. What used to happen here was
+-- an IPC call with 1024 bytes of payload, 172 times a second, minting a
+-- Lua string on each side of every one.
+--
+-- Returns false with "full" when the ring has no room, which means this
+-- client is ahead of the device and should do something else for a moment.
+-- That is a fact rather than a failure, and it is the only thing keeping
+-- the pipe short.
+--
 function stream:play(pcm)
-  local r, why = fs.send("/dev/audio", { type = "play", stream = self.id,
-                                         pcm = pcm })
+  if sys.ring_put(self.ring, pcm) then return true end
 
-  if not r then return false, tostring(why) end
-
-  return r.taken and true or false, r.taken and nil or "full"
+  return false, "full"
 end
 
 --
--- Hand over a period and do not come back until it is taken.
+-- The same, but wait for room.
 --
--- `play` reports "full" and returns, which is what something with other
--- work to do wants - Doom has a frame to render and cannot sit here. But a
--- program whose whole job is playing a file has nothing else to do, and
--- what it did instead was call `play` again immediately, for ever, at
--- whatever priority it happened to have.
---
--- That cost 63% of the machine, and it was worse than the number suggests:
--- a program launched from the window manager is in the *display* band and
--- the audio server is in *normal*, so the client spinning on "full"
--- outranked the server that would have made room. The thing waiting was
--- preempting the thing it waited for.
---
--- So the wait lives here rather than in each program, because it is the
--- kind of mistake that is invisible until somebody looks at a meter.
+-- For a program whose whole job is playing - `play` at a prompt - as
+-- against one with a window to keep answering, which wants `play` and its
+-- "full" so it can go and do that instead. Two shapes of caller, not two
+-- ways of doing one thing.
 --
 function stream:write(pcm)
   while true do
-    local took, why = self:play(pcm)
-
-    if took then return true end
-    if why ~= "full" then return false, why end
+    if sys.ring_put(self.ring, pcm) then return true end
 
     --
-    -- One tick. The server holds a queue of `self.periods`, so there is
-    -- most of that still to play while this sleeps, and being woken with
-    -- room to spare is the whole idea.
+    -- One tick. The ring holds `AUDIO_RING_PERIODS` and the device another
+    -- few, so there is tens of milliseconds still to play while this
+    -- sleeps, and being woken with room to spare is the whole idea.
     --
     sys.sleep(1)
   end
 end
 
+-- How many periods are waiting to be mixed, and how much room is left.
+function stream:queued()
+  return sys.ring_ready(self.ring) or 0
+end
+
+function stream:space()
+  return sys.ring_space(self.ring) or 0
+end
+
 function stream:close()
   fs.send("/dev/audio", { type = "close", stream = self.id })
+  if self.cap then sys.release(self.cap) end
 end
 
 --
@@ -100,13 +108,35 @@ end
 -- same program get two streams with the same name, which is right - they
 -- are two things making a noise and each should have its own fader.
 --
+-- **The client creates the ring and hands over a capability to it**, the
+-- same way a window hands the compositor its surface. The server can reach
+-- that ring and nothing else in this process, which is what makes shared
+-- memory safe to use here at all: it is not "shared memory", it is one
+-- region, named by a capability, given away deliberately.
+--
 function audio.open(name)
-  local r, why = fs.send("/dev/audio", { type = "open", name = name })
+  local fmt = audio.format()
 
-  if not r then return nil, tostring(why) end
+  if fmt.period == 0 then return nil, "this machine has no sound device" end
+
+  local cap, at = sys.ring_create(fmt.period)
+
+  if not cap then return nil, tostring(at) end
+
+  -- The capability goes as `send`'s third argument, which is how a window
+  -- hands the compositor its surface. It is not a field in the message: a
+  -- capability is not data and does not travel as any.
+  local r, why = fs.send("/dev/audio",
+                         { type = "open", name = name }, cap)
+
+  if not r or not r.ok then
+    sys.release(cap)
+
+    return nil, tostring((r and r.error) or why)
+  end
 
   return setmetatable({ id = r.stream, period = r.period,
-                        periods = r.periods }, stream)
+                        periods = r.periods, ring = at, cap = cap }, stream)
 end
 
 --
