@@ -234,17 +234,50 @@ local function bevel(g, x, y, w, h, top_left, bottom_right)
 end
 
 -- Something you can press.
+--
+-- Two rings, not one, when there is room for two.
+--
+-- A single-pixel bevel reads as an outline at any distance; two read as a
+-- moulded edge. That is the whole difference between a control that looks
+-- drawn on and one that looks like it sticks out, and it is why every
+-- interface of the period this system is arguing with - Motif, Windows 95,
+-- Platinum - drew two. The outer ring is the hard one and the inner is the
+-- soft one, so the light side goes white then face and the dark side goes
+-- line then edge_dark: a bright corner, a shoulder, and then the face.
+--
+-- **Only when there is room.** A 14-pixel title-bar box or a checkbox with
+-- two rings on each side has four pixels of bevel and six of anything else,
+-- which does not read as moulded, it reads as a box with a hole in it. The
+-- same systems drew thin bevels on small controls for the same reason.
+--
+-- Four more fills on a control that qualifies. `ui.md` 16.8b measured the
+-- first ring at about four operations a window and called it free; this is
+-- the second helping of the same, and a window has tens of controls rather
+-- than hundreds.
+--
+local DOUBLE_MIN = 16
+
 function gc:raised(x, y, w, h, face)
   if face then self:fill(x, y, w, h, face) end
 
-  bevel(self, x, y, w, h, "edge_light", "edge_dark")
+  if w >= DOUBLE_MIN and h >= DOUBLE_MIN then
+    bevel(self, x, y, w, h, "edge_light", "line")
+    bevel(self, x + 1, y + 1, w - 2, h - 2, face or "raised", "edge_dark")
+  else
+    bevel(self, x, y, w, h, "edge_light", "edge_dark")
+  end
 end
 
 -- Something you can put things in.
 function gc:sunken(x, y, w, h, face)
   if face then self:fill(x, y, w, h, face) end
 
-  bevel(self, x, y, w, h, "edge_dark", "edge_light")
+  if w >= DOUBLE_MIN and h >= DOUBLE_MIN then
+    bevel(self, x, y, w, h, "edge_dark", "edge_light")
+    bevel(self, x + 1, y + 1, w - 2, h - 2, "line", face or "window")
+  else
+    bevel(self, x, y, w, h, "edge_dark", "edge_light")
+  end
 end
 
 --
@@ -2022,6 +2055,10 @@ function ui.window(spec)
     -- The window everything else sits on: undecorated, screen-sized, at the
     -- bottom of the stack and never raised. The desktop is one of these.
     backdrop = spec.backdrop or nil,
+
+    -- And its opposite: a strip across the top, undecorated and pinned,
+    -- which takes room away from the screen rather than sitting over it.
+    strip = spec.strip or nil,
   }, shared_cap)
 
   if not reply then

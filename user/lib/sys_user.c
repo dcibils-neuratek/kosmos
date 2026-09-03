@@ -437,6 +437,7 @@ static int l_info(lua_State *L)
 
     SET("idle_ticks",       info.idle_ticks);
     SET("busy_ticks",       info.busy_ticks);
+    SET("epoch",            info.epoch);
     SET("cpus",             info.cpus);
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);

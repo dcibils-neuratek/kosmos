@@ -200,6 +200,60 @@ local function describe_machine()
   m.console = { transport = "PL011 UART, polled" }
   m.timer   = { hz = i.tick_hz, counter_hz = i.counter_hz }
 
+  --
+  -- What time it is, which is a different question from how long this
+  -- machine has been running and could not be answered before.
+  --
+  -- `sys.ticks()` counts since boot, so a file written yesterday has an
+  -- mtime that means nothing today - which is why Tracker has no Modified
+  -- column and says so in its own header. This is the number that fixes
+  -- that, read from the board's clock through the HAL.
+  --
+  -- **UTC, and only UTC.** There is no timezone database and no setting for
+  -- one, so calling this local time would be calling it something it is
+  -- not. A zone is a table of political decisions that changes several
+  -- times a year; when this system wants one it will carry it and say
+  -- where it came from, the way it does with fonts and icons.
+  --
+  if i.epoch and i.epoch > 0 then
+    m.clock = { epoch = i.epoch, utc = true }
+
+    local days = i.epoch // 86400
+    local secs = i.epoch % 86400
+
+    --
+    -- Days since 1970 into a date, by Howard Hinnant's `civil_from_days`.
+    --
+    -- Written out rather than approximated, because the approximations are
+    -- all wrong in the same interesting way: 365.2425 days a year is right
+    -- on average and wrong on a specific Tuesday, and the error is a day,
+    -- which is exactly the resolution anybody reading a date cares about.
+    -- This one is exact for the proleptic Gregorian calendar, with no
+    -- table and no loop over years, by shifting the era to start on 1 March
+    -- so that the leap day is the last day of the year rather than a hole
+    -- in the middle of one.
+    --
+    local z = days + 719468
+    local era = (z >= 0 and z or z - 146096) // 146097
+    local doe = z - era * 146097
+    local yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    local y = yoe + era * 400
+    local doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    local mp = (5 * doy + 2) // 153
+    local d = doy - (153 * mp + 2) // 5 + 1
+    local mo = mp + (mp < 10 and 3 or -9)
+
+    if mo <= 2 then y = y + 1 end
+
+    m.clock.year, m.clock.month, m.clock.day = y, mo, d
+    m.clock.hour = secs // 3600
+    m.clock.min  = (secs % 3600) // 60
+    m.clock.sec  = secs % 60
+
+    -- 1 January 1970 was a Thursday, which is why the 4.
+    m.clock.weekday = (days + 4) % 7          -- 0 is Sunday
+  end
+
   return m
 end
 
@@ -1821,7 +1875,13 @@ local function devices_handlers(state)
     -- one: the first version listed it, the `devices` command dutifully read
     -- every name it was given, and the console server answered by swallowing
     -- the next thing typed at the prompt.
-    return m, { "cpu", "memory", "kernel", "timer", "screen", "keyboard" }
+    local names = { "cpu", "memory", "kernel", "timer", "screen", "keyboard" }
+
+    -- Listed only when there is one, like `screen` and `keyboard` above it:
+    -- a board with no clock should not offer a node that answers nothing.
+    if m.clock then names[#names + 1] = "clock" end
+
+    return m, names
   end
 
   return {

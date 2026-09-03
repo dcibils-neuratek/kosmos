@@ -95,6 +95,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/memory.c \
         hal/qemu-virt/gic.c \
         hal/qemu-virt/timer.c \
+        hal/qemu-virt/rtc.c \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
         hal/qemu-virt/input.c \
@@ -680,6 +681,18 @@ BOOTARG   := $(if $(BOOT),-fw_cfg 'name=opt/kosmos/boot$(comma)string=$(BOOT)',)
 #
 FULLSCREEN_FLAG := $(if $(FULLSCREEN),$(comma)full-screen=on,)
 
+#
+# `make ZOOM=1 qemu` scales the guest to fill the window.
+#
+# Off by default, and it used to be on. On a Retina display the window is
+# half the size the pixel count says and zooming is the only way to read it;
+# on an ordinary monitor the same setting resamples a 1024x768 guest onto a
+# window of some other size, and every one-pixel bevel this desktop is built
+# out of goes soft. Which of those is happening depends on the monitor
+# somebody plugged in this morning, so it is a flag rather than a decision.
+#
+ZOOM_FLAG := $(if $(ZOOM),$(comma)zoom-to-fit=on,)
+
 QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
@@ -687,7 +700,7 @@ QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
              -drive file=$(DISK),format=raw,if=none,id=disk \
              -device virtio-blk-device,drive=disk \
              $(BOOTARG) \
-             -display cocoa,zoom-to-fit=on$(FULLSCREEN_FLAG) -serial mon:stdio \
+             -display cocoa$(ZOOM_FLAG)$(FULLSCREEN_FLAG) -serial mon:stdio \
              -kernel $(TARGET)
 
 # The same machine with no screen, for when the window is in the way or the

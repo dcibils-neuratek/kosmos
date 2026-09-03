@@ -193,6 +193,20 @@ bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes);
 bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes);
 
 /*
+ * Seconds since 1970, or 0 when this board has no clock.
+ *
+ * Read-only, and deliberately the whole of it. Setting the time is a
+ * different operation with a different question behind it - what is
+ * authoritative, this machine or the network - and there is no network.
+ *
+ * A number, not a date. Decoding it into a year and a month is arithmetic
+ * with no hardware in it, so it happens above this layer, in Lua, for the
+ * same reason `hal_pointer_poll` reports the device's own units and lets
+ * the window manager scale them: this layer says what the hardware said.
+ */
+unsigned long hal_rtc_seconds(void);
+
+/*
  * A string the firmware was asked to carry, or false when there is none.
  *
  * QEMU takes `-fw_cfg name=opt/kosmos/boot,string=wm`, which is how a

@@ -247,8 +247,18 @@ function watcher:tick()
   --
   local list = {}
 
+  --
+  -- Chrome is not something that is running.
+  --
+  -- The desktop and the bar across the top are windows, because everything
+  -- here is, but neither is an application you started or one you can
+  -- switch to - and both turned up in this list the moment they existed.
+  -- The window manager marks them, rather than this matching on titles: it
+  -- already did that for its own window and a second name to exclude is the
+  -- point at which that stops being a rule and starts being a list.
+  --
   for _, w_ in ipairs(reply and reply.windows or {}) do
-    list[#list + 1] = w_
+    if not w_.chrome then list[#list + 1] = w_ end
   end
 
   --

@@ -443,6 +443,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         info.busy_ticks = busy;
     }
 
+    info.epoch = (uint64_t)hal_rtc_seconds();
+
     info.threads_used     = thread_count();
     info.threads_total    = THREAD_MAX;
     info.processes_used   = process_count();

@@ -298,6 +298,21 @@ struct sysinfo {
     uint64_t idle_ticks;
     uint64_t busy_ticks;
 
+    /*
+     * Seconds since 1970, from the board's clock, or 0 when it has none.
+     *
+     * Not a tick count, and it is the only number in here that is not.
+     * Everything else says how long this machine has been doing something;
+     * this says what time it is, which no counter since boot can answer -
+     * a file written before the last reboot has an mtime of `sys.ticks()`
+     * and that number means nothing at all across a restart.
+     *
+     * Read fresh on every call rather than latched at boot and added to,
+     * because a load from an MMIO register is cheaper than being wrong when
+     * the two drift.
+     */
+    uint64_t epoch;
+
     uint32_t cpus;              /* cores the kernel is scheduling on */
     uint32_t tick_hz;
     uint32_t current_el;

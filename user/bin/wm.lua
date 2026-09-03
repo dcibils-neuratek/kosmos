@@ -44,7 +44,7 @@ local theme = use("/lib/theme.lua")
 -- either side - which is what a title bar should be: as small as it can be
 -- while remaining a handle you can hit.
 --
-local TAB_H      = 18
+local TAB_H      = 20
 local BORDER     = 2
 --
 -- The three controls on a tab, and the room they take.
@@ -282,7 +282,7 @@ local function frame_of(win)
   -- A menu and the backdrop are both undecorated, at opposite ends of the
   -- stack: one floats over everything, the other is what everything sits
   -- on. Neither has a tab, so for both the frame is the rectangle.
-  if win.kind == "menu" or win.backdrop then
+  if win.kind == "menu" or win.backdrop or win.strip then
     return win.x, win.y, win.w, win.h
   end
 
@@ -322,6 +322,25 @@ end
 -- pointer, because those two agreeing by coincidence is how a control ends
 -- up drawn in one place and clickable in another.
 --
+--
+-- How far down the screen an ordinary window may start.
+--
+-- `TAB_H` on its own, until something claims a strip across the top. A
+-- window's own title bar is drawn *above* `win.y`, so the smallest `win.y`
+-- that leaves the tab on screen is `TAB_H` - and with a bar up there it is
+-- that plus the bar.
+--
+-- A number the strip sets rather than a constant, because the strip is an
+-- application and its height is its own business: it chooses a font, and a
+-- compositor that had the height compiled into it would put every window
+-- under a bar of the wrong size the first time somebody chose a bigger one.
+--
+local reserved_top = 0
+
+local function top_limit()
+  return TAB_H + reserved_top
+end
+
 local function boxes_x(win)
   local fx, _, fw = frame_of(win)
 
@@ -755,6 +774,24 @@ local function compose_rect(r)
        and fy < r.y + r.h and fy + fh > r.y then
       local tab = focused and focused_colour() or idle_colour()
 
+      --
+      -- Undecorated windows skip all of it: no tab, no border, no controls.
+      --
+      -- Menus have always escaped this by accident rather than by rule -
+      -- they live in their own list and are composited by a different loop,
+      -- so this one never sees one. The backdrop and the strip do not have
+      -- that luck: they are ordinary entries in `windows`, and the strip
+      -- came up wearing a title bar that said "Topbar" with a minimise box
+      -- on the end of it.
+      --
+      -- `frame_of` already knows which windows these are - it is the
+      -- function that says a menu, the backdrop and the strip are their own
+      -- rectangle with nothing added. This asks it the same question a
+      -- second way, and that is the part worth not repeating: one predicate,
+      -- used by the thing that measures and by the thing that paints.
+      --
+      local bare = win.backdrop or win.strip
+
       -- The whole decoration in one colour: the bar across the top and the
       -- border all the way round, yellow when this window has the focus and
       -- grey when it does not.
@@ -793,7 +830,9 @@ local function compose_rect(r)
       local dx1 = math.min(fx + fw, r.x + r.w)
       local dy1 = math.min(fy + fh, r.y + r.h)
 
-      back:fill(dx0, dy0, dx1 - dx0, dy1 - dy0, tab)
+      if not bare then
+        back:fill(dx0, dy0, dx1 - dx0, dy1 - dy0, tab)
+      end
 
       -- The close box, at the left of the tab where BeOS put it. A square
       -- outline rather than a cross: at this size a cross is four grey
@@ -803,7 +842,7 @@ local function compose_rect(r)
       -- all. A window whose *contents* changed damages the area below the
       -- bar, and redrawing a title nobody disturbed is a string of glyphs
       -- per frame for nothing.
-      if r.y < fy + TAB_H and r.y + r.h > fy then
+      if not bare and r.y < fy + TAB_H and r.y + r.h > fy then
         --
         -- Raised, like every other control in the system.
         --
@@ -1023,9 +1062,10 @@ local function maximise(win)
   local was = { x = win.x, y = win.y, w = win.w, h = win.h }
 
   damage_window(win)
-  win.x, win.y = BORDER, TAB_H
+  win.x, win.y = BORDER, top_limit()
 
-  if not resize_window(win, W - BORDER * 2, H - TAB_H - BORDER) then
+  if not resize_window(win, W - BORDER * 2,
+                       H - top_limit() - BORDER) then
     win.x, win.y = was.x, was.y
     damage_window(win)
 
@@ -1054,6 +1094,22 @@ local function minimise(win)
   damage_window(win)
 
   return true
+end
+
+--
+-- Whatever a strip is currently claiming, recomputed rather than
+-- decremented. A count that goes up on open and down on close is a count
+-- that drifts the first time something closes twice or dies without saying
+-- so - and an application dying without saying so is the ordinary case.
+--
+local function recount_strips()
+  reserved_top = 0
+
+  for _, w in ipairs(windows) do
+    if w.strip == "top" and not w.hidden then
+      reserved_top = w.h
+    end
+  end
 end
 
 local function raise(win)
@@ -1089,6 +1145,7 @@ local function raise(win)
   for i, w_ in ipairs(windows) do
     if w_ == win then
       table.remove(windows, i)
+      recount_strips()
       break
     end
   end
@@ -1140,7 +1197,8 @@ handlers.open = function(req, who, cap)
     handle  = next_handle,
     title   = tostring(req.title or "window"),
     x       = math.min(math.max(tonumber(req.x) or 40, BORDER), W - w_ - BORDER),
-    y       = math.min(math.max(tonumber(req.y) or 40, TAB_H), H - h_ - BORDER),
+    y       = math.min(math.max(tonumber(req.y) or 40, top_limit()),
+                       H - h_ - BORDER),
     w       = w_,
     h       = h_,
     surface = gfx.surface{ w = w_, h = h_ },
@@ -1209,7 +1267,7 @@ handlers.open = function(req, who, cap)
 
       -- Back to the top left rather than off the bottom right.
       if win.x + win.w > W - BORDER or win.y + win.h > H - BORDER then
-        win.x, win.y = BORDER + CASCADE, TAB_H + CASCADE
+        win.x, win.y = BORDER + CASCADE, top_limit() + CASCADE
         break
       end
     end
@@ -1256,6 +1314,24 @@ handlers.open = function(req, who, cap)
     win.backdrop = true
     win.pinned = true
     win.x, win.y = 0, 0
+  end
+
+  --
+  -- A strip across the top: the menu bar's place on a Macintosh, and the
+  -- opposite end of the same idea as the backdrop. Undecorated, screen-wide,
+  -- pinned, and - unlike everything else - it takes room away from the rest
+  -- of the screen rather than sitting over it.
+  --
+  -- That last part is what makes it worth a flag instead of a well-behaved
+  -- application putting itself at the top. A window placed at y=0 is a
+  -- window every other window opens underneath.
+  --
+  if req.strip == "top" then
+    win.strip = "top"
+    win.pinned = true
+    win.x, win.y = 0, 0
+    win.w = W
+    reserved_top = win.h
   end
 
   if req.kind == "menu" then
@@ -1409,7 +1485,15 @@ handlers.windows = function(req)
                -- from sending drawing commands and is worth being able to
                -- see. `gfx.md` 19.4.
                pid = win.pid,
-               direct = (win.shared ~= nil) or nil }
+               direct = (win.shared ~= nil) or nil,
+
+               -- Chrome rather than an application: the desktop underneath
+               -- everything and the bar across the top. The Deskbar lists
+               -- what is *running* and neither of these is something you
+               -- started or can switch to, so it filters on this rather
+               -- than on titles - which is what it did for its own window
+               -- and does not scale to a second one.
+               chrome = (win.backdrop or win.strip) and true or nil }
   end
 
   return { ok = true, windows = out }
@@ -1544,7 +1628,7 @@ handlers.move = function(req)
 
   win.x = math.min(math.max(tonumber(req.x) or win.x, KEEP - win.w),
                    W - KEEP)
-  win.y = math.min(math.max(tonumber(req.y) or win.y, TAB_H),
+  win.y = math.min(math.max(tonumber(req.y) or win.y, top_limit()),
                    H - KEEP)
   damage_window(win)
 
@@ -2109,7 +2193,27 @@ local function pointer_pass(p)
     if win then
       raise(win)
 
-      if ny < fy + TAB_H then
+      --
+      -- The backdrop and the strip are not windows you move.
+      --
+      -- They have no title bar, so there is nothing that *looks* like a
+      -- handle - but the hit test asks where the pointer is relative to the
+      -- frame, and for an undecorated window the frame starts at its own
+      -- first row. So the top eighteen pixels of the menu bar dragged it,
+      -- and the desktop could be picked up by its top edge and slid off the
+      -- screen with every icon on it.
+      --
+      -- Not a special case so much as the same rule as the decoration: a
+      -- window with no tab has no tab to grab.
+      --
+      if win.backdrop or win.strip then
+        -- Straight to the application, which is what a bar is for - and
+        -- grabbed, like any other press, or the release never arrives and a
+        -- shortcut is a word that highlights and does nothing.
+        grabbed = win
+        post(win, { type = "mouse", action = "press",
+                    x = nx - win.x, y = ny - win.y })
+      elseif ny < fy + TAB_H then
         local mx = boxes_x(win)
 
         if win.pinned then
