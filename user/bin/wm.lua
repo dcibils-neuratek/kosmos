@@ -370,8 +370,10 @@ local ops = {
   end,
 
   text = function(s, o)
+    -- `o.role` picks the face. Absent, `gfx` uses the interface font, which
+    -- is what every application that does not care wants.
     s:text(o.x or 0, o.y or 0, tostring(o.s or ""),
-           o.color or 0xffffffff, o.bg)
+           o.color or 0xffffffff, o.bg, o.role)
   end,
 
   --

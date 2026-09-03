@@ -102,8 +102,17 @@ function view:draw(g)
   g:fill(0, 0, self.w, self.h, "console")
   g:frame(0, 0, self.w, self.h, self.focused and theme.ring or "line")
 
-  local rows = (self.h - 6) // gfx.font.h
-  local columns = (self.w - 8) // gfx.font.w
+  --
+  -- Measured in the *monospace* font, which is the one this window draws
+  -- in. `gfx.font` is the interface font and answers for that one only, so
+  -- a terminal that sized its grid with it laid out rows and columns for a
+  -- face it was not using.
+  --
+  local MH = gfx.height("mono")
+  local MW = math.max(1, gfx.measure("0", "mono"))
+
+  local rows = (self.h - 6) // MH
+  local columns = (self.w - 8) // MW
 
   -- The prompt is the last row, so the visible history is one short.
   local shown = {}
@@ -116,23 +125,23 @@ function view:draw(g)
     -- `console_text`, not `text`: `text` is chosen to read against the
     -- window colour, and in a light theme that is black - which on a black
     -- console is nothing at all.
-    g:text(4, 3 + (i - 1) * gfx.font.h, line:sub(1, columns),
-           "console_text", "console")
+    g:text(4, 3 + (i - 1) * MH, line:sub(1, columns),
+           "console_text", "console", "mono")
   end
 
-  local y = 3 + #shown * gfx.font.h
+  local y = 3 + #shown * MH
   local prompt = "> " .. input
 
-  g:text(4, y, prompt:sub(1, columns), "good", "console")
+  g:text(4, y, prompt:sub(1, columns), "good", "console", "mono")
 
   if busy then
-    g:text(self.w - 12 * gfx.font.w, 3, "running " .. busy,
-           "text_dim", "console")
+    g:text(self.w - 12 * MW, 3, "running " .. busy,
+           "text_dim", "console", "mono")
   end
 
   if self.focused then
-    local cx = 4 + math.min(#prompt, columns) * gfx.font.w
-    g:fill(cx, y, gfx.font.w, gfx.font.h, "ring")
+    local cx = 4 + math.min(#prompt, columns) * MW
+    g:fill(cx, y, MW, MH, "ring")
   end
 end
 

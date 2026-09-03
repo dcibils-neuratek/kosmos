@@ -125,9 +125,30 @@ function gc:fill(x, y, w, h, color)
                               w = x1 - x0, h = y1 - y0, color = color }
 end
 
-function gc:text(x, y, s, color, bg)
+--
+-- `role` picks the face: "ui" when it is not given, "mono" for a terminal,
+-- "text" for a paragraph.
+--
+-- It had no such argument, so every string an application drew went out as
+-- an op with no role on it and the compositor drew all of them in the
+-- widget font. Choosing a monospace font in the settings changed the
+-- setting, changed nothing on screen, and reported success - the terminal
+-- kept drawing in whatever the widgets were using, which for a
+-- proportional face means the columns it is made of stop lining up.
+--
+function gc:text(x, y, s, color, bg, role)
   color, bg = shade(color), shade(bg)
   local ax, ay = self.ox + x, self.oy + y
+
+  local GW, GH = GW, GH
+
+  -- A role's own metrics, for the clipping below. The widget font's cell is
+  -- the wrong ruler for a face that is not the widget font, and clipping by
+  -- the wrong cell width drops characters that would have fitted.
+  if role then
+    GW = math.max(1, gfx.measure("0", role))
+    GH = gfx.height(role)
+  end
 
   if ay + GH <= self.cy or ay >= self.cy + self.ch then return end
 
@@ -150,7 +171,8 @@ function gc:text(x, y, s, color, bg)
   if shown == "" then return end
 
   self.ops[#self.ops + 1] = { op = "text", x = ax, y = ay,
-                              s = shown, color = color, bg = bg }
+                              s = shown, color = color, bg = bg,
+                              role = role }
 end
 
 --
@@ -1929,6 +1951,7 @@ local function op_cost(o)
   -- of icons is a hundred of them. Not counting it is how a batch goes over
   -- 2048 bytes and the whole frame silently fails to draw.
   if o.asset then cost = cost + #tostring(o.asset) end
+  if o.role then cost = cost + #tostring(o.role) end
 
   return cost
 end

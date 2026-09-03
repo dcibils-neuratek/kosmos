@@ -121,6 +121,16 @@ local function lit(colour, k)
   return a | (r << 16) | (gg << 8) | b
 end
 
+-- The same, the other way: the bar's own colour with the light taken out.
+local function dim(colour, k)
+  local a = colour & 0xff000000
+  local r = ((colour >> 16) & 0xff) * (100 - k) // 100
+  local gg = ((colour >> 8) & 0xff) * (100 - k) // 100
+  local b = (colour & 0xff) * (100 - k) // 100
+
+  return a | (r << 16) | (gg << 8) | b
+end
+
 function bar:draw(g)
   local top_lift = 18          -- per cent of the way to white, at row 0
 
@@ -133,12 +143,24 @@ function bar:draw(g)
     g:fill(0, row, self.w, 1, lit(theme.tab, k))
   end
 
-  -- The bright line along the very top, and the dark one along the bottom.
-  -- The same two edges every raised thing in this system has: the bar is a
-  -- surface standing slightly proud of the screen, and these say so.
+  --
+  -- A lit row at the top and a shaded one at the bottom, both made from the
+  -- bar's own colour.
+  --
+  -- This was `edge_dark` and then `line` - the two tokens every raised
+  -- widget in the kit uses - and it was wrong twice over. Two rows is a
+  -- band rather than an edge, and both of those tokens are near-black in a
+  -- dark theme, so what appeared under the bar was a two-pixel black frame.
+  -- It read as a border because that is what a border looks like, and the
+  -- one thing this strip must not look like is a window.
+  --
+  -- A single row of the bar's colour with the light taken out of it is the
+  -- underside of the bar rather than a line drawn beneath it, and it cannot
+  -- go black in any theme because it is made of whatever the bar is made
+  -- of. Chrome is lit, not outlined.
+  --
   g:fill(0, 0, self.w, 1, lit(theme.tab, 55))
-  g:fill(0, self.h - 2, self.w, 1, theme.edge_dark)
-  g:fill(0, self.h - 1, self.w, 1, theme.line)
+  g:fill(0, self.h - 1, self.w, 1, dim(theme.tab, 30))
 
   --
   -- Text with no background, which everything else here passes.
