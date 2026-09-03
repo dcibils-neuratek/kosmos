@@ -508,6 +508,94 @@ end
 ui.scrollbar = draw_scrollbar
 
 --------------------------------------------------------------------------
+-- Keys, decoded.
+--
+-- The window manager forwards *bytes*, so an arrow arrives as the three of
+-- an ANSI escape sequence - 27, 91, then 65 to 68 - and a widget that wants
+-- to know "up" has to reassemble them. `win:run()` has always done that
+-- inline, which was fine while it was the only reader.
+--
+-- It is not any more. An application with a direct window drives its own
+-- loop and reads the poll reply itself: cube3d, plasma, Doom. Doom is what
+-- found this - every arrow key arrived as an Escape followed by two
+-- characters, so the menus jumped out instead of moving.
+--
+-- One decoder, then, and both loops use it. Negative codes so they can
+-- never collide with a character: -1 up, -2 down, -3 right, -4 left, which
+-- is A B C D and therefore the order the terminal sends rather than the
+-- order anybody would choose.
+--------------------------------------------------------------------------
+
+ui.UP, ui.DOWN, ui.RIGHT, ui.LEFT = -1, -2, -3, -4
+
+local ARROWS = { [65] = -1, [66] = -2, [67] = -3, [68] = -4 }
+
+--
+-- Returns a function: give it one byte, get back nought, one or two codes.
+--
+-- Two, and that is the part worth being careful about. A byte can resolve
+-- more than one key, because 27 is ambiguous until the byte after it: if
+-- that byte is not 91 then the 27 was a real Escape *and* the byte is a key
+-- of its own, and both have to come out. Returning one and remembering the
+-- other for next time sounds equivalent and is not - the next call arrives
+-- with its own byte, and the remembered one has to displace it. That was
+-- the first attempt, and it ate two bytes out of every three: three presses
+-- of Down moved a Doom menu once.
+--
+-- Lua returns two values as easily as one, so it returns two.
+--
+-- Stateful, because three bytes make one arrow, so each reader needs its
+-- own decoder.
+--
+function ui.key_decoder()
+  local escape = 0
+
+  return function(c)
+    if escape == 1 then
+      if c == 91 then
+        escape = 2
+
+        return nil
+      end
+
+      --
+      -- An Escape that was not the start of a sequence.
+      --
+      -- Both bytes used to be dropped here, so a real Escape did nothing
+      -- and took the next key with it. Invisible in a widget kit, where
+      -- little is bound to Escape; very visible in a game, where it is the
+      -- menu.
+      --
+      escape = 0
+
+      -- The byte after it may itself be an Escape, and then the guessing
+      -- starts again on that one.
+      if c == 27 then
+        escape = 1
+
+        return 27
+      end
+
+      return 27, c
+    end
+
+    if escape == 2 then
+      escape = 0
+
+      return ARROWS[c]
+    end
+
+    if c == 27 then
+      escape = 1
+
+      return nil
+    end
+
+    return c
+  end
+end
+
+--------------------------------------------------------------------------
 -- Trees.
 --
 -- A hierarchy you can open and close, which is the other half of what a file
@@ -2818,7 +2906,7 @@ local function dispatch_mouse(self, ev)
 end
 
 function window:run()
-  local escape = 0
+  local decode_key = ui.key_decoder()
 
   self:paint()
 
@@ -2957,22 +3045,13 @@ function window:run()
       elseif ev.type == "mouse" then
         if dispatch_mouse(self, ev) then changed = true end
       elseif ev.type == "key" then
-        local c = ev.code
+        -- One byte in, up to *two* codes out - see `ui.key_decoder`: an
+        -- Escape that turned out not to start a sequence resolves both
+        -- itself and the byte that disproved it.
+        local a, b = decode_key(ev.code)
 
-        -- The three bytes of an arrow, turned into one code the widgets can
-        -- read. Negative, so it can never collide with a character.
-        if escape == 1 then
-          escape = (c == 91) and 2 or 0
-          c = nil
-        elseif escape == 2 then
-          escape = 0
-          c = ({ [65] = -1, [66] = -2, [67] = -3, [68] = -4 })[c]
-        elseif c == 27 then
-          escape = 1
-          c = nil
-        end
-
-        if c and dispatch(self, c) then changed = true end
+        if a and dispatch(self, a) then changed = true end
+        if b and dispatch(self, b) then changed = true end
       end
     end
 

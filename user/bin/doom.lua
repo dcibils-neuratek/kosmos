@@ -197,17 +197,47 @@ end
 -- over bytes.
 --
 local KEYS = {
-  [-1] = 0xad,        -- up
-  [-2] = 0xaf,        -- down
-  [-3] = 0xac,        -- left
-  [-4] = 0xae,        -- right
-  [27] = 27,          -- escape
-  [10] = 13,          -- enter
+  [ui.UP]    = 0xad,  -- KEY_UPARROW
+  [ui.DOWN]  = 0xaf,  -- KEY_DOWNARROW
+  [ui.LEFT]  = 0xac,  -- KEY_LEFTARROW
+  [ui.RIGHT] = 0xae,  -- KEY_RIGHTARROW
+
+  [27] = 27,          -- KEY_ESCAPE, and it is the menu
+  [10] = 13,          -- KEY_ENTER
   [13] = 13,
-  [9]  = 9,           -- tab
+  [9]  = 9,           -- KEY_TAB, the automap
   [8]  = 127,         -- backspace
-  [32] = 0xa3,        -- space fires
+  [32] = 0xa3,        -- KEY_FIRE
 }
+
+--
+-- The window manager forwards bytes, so this reassembles them.
+--
+-- Held per process rather than per call, because three bytes make one
+-- arrow: `ui.key_decoder` is where that lives and `win:run()` uses the same
+-- one. Reading `ev.code` raw - which is what this did - means an arrow
+-- arrives as Escape and two letters, so every arrow press left the menu
+-- instead of moving down it.
+--
+local decode_key = ui.key_decoder()
+
+--
+-- One decoded code, into Doom.
+--
+-- Press and release together, because that is all there is. The window
+-- manager forwards *characters*, and a character is a press with no release
+-- behind it. Sending both means the menus and the fire button work and
+-- holding a direction does not - you get a step per repeat rather than a
+-- walk.
+--
+-- The half that fixes it exists already: `hal_key_held` keeps the bitmap,
+-- because the driver was decoding releases and throwing them away. What is
+-- missing is the path from there to here, which is a capability question -
+-- a process that can ask what keys are down is a keylogger - and belongs to
+-- the window manager, which owns input and can answer only for the window
+-- that has the focus.
+--
+local press
 
 local function doomkey(c)
   if KEYS[c] then return KEYS[c] end
@@ -221,6 +251,23 @@ local function doomkey(c)
   end
 
   return nil
+end
+
+function press(code)
+  if not code then return end
+
+  if code == 3 then
+    win:close()                         -- Control-C, like every other one
+
+    return
+  end
+
+  local k = doomkey(code)
+
+  if k then
+    doom.key(k, true)
+    doom.key(k, false)
+  end
 end
 
 --
@@ -274,29 +321,11 @@ while win.running do
     if ev.type == "close" then
       win:close()
     elseif ev.type == "key" then
-      local k = doomkey(ev.code)
+      -- Up to two codes from one byte; see `ui.key_decoder`.
+      local a, b = decode_key(ev.code)
 
-      if ev.code == 3 then
-        win:close()                     -- Control-C, like every other one
-      elseif k then
-        --
-        -- Press and release together, because that is all there is.
-        --
-        -- The window manager forwards *characters*, and a character is a
-        -- press with no release behind it. Sending both means menus and
-        -- the fire button work and holding a direction does not - you get
-        -- a step per repeat rather than a walk.
-        --
-        -- The half that fixes it exists already: `hal_key_held` keeps the
-        -- bitmap, because the driver was decoding releases and throwing
-        -- them away. What is missing is the path from there to here, which
-        -- is a capability question - a process that can ask what keys are
-        -- down is a keylogger - and belongs to the window manager, which
-        -- owns input and can answer only for the window with the focus.
-        --
-        doom.key(k, true)
-        doom.key(k, false)
-      end
+      press(a)
+      press(b)
     end
   end
 end
