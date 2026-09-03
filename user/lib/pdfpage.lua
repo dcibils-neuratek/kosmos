@@ -278,13 +278,36 @@ function pdfpage.rasteriser(doc, font, px)
   if font.handles[px] == nil then
     local program = program_of(doc, font)
 
-    if program then
+    if not program then
+      -- No program to rasterise, and there never will be: this font is not
+      -- embedded, or its stream would not inflate. Remembered, because
+      -- asking again on every page is asking the same question.
+      font.handles[px] = false
+    else
       local ok, handle = pcall(gfx.docfont, program.at, program.size,
                                program.cap, px)
 
-      font.handles[px] = ok and handle or false
-    else
-      font.handles[px] = false
+      if ok and handle then
+        font.handles[px] = handle
+      end
+
+      --
+      -- A refused *allocation* is not remembered, and the difference
+      -- matters more than it looks.
+      --
+      -- This used to write `false` here as well, so the two failures were
+      -- one: a face that could not be rasterised because the machine was
+      -- momentarily out of regions was written off for the life of the
+      -- document. What that looks like is a reader that renders eight pages
+      -- and then shows blank paper for ever, on a book it was reading a
+      -- moment ago - and going back does not help, because the answer was
+      -- cached rather than the cause fixed.
+      --
+      -- Left as nil it is asked again on the next page, which costs one
+      -- allocation attempt and can succeed. A document whose fonts really
+      -- are too big for this machine pays a failed call per page, which is
+      -- the cheaper of the two mistakes by a long way.
+      --
     end
   end
 
@@ -426,7 +449,7 @@ function pdfpage.render(doc, page, surface, scale, colour)
     end
   end)
 
-  local drawn, faces = 0, 0
+  local drawn, faces, missing = 0, 0, 0
 
   for _, bucket in ipairs(order) do
     local handle = pdfpage.rasteriser(doc, bucket.font, bucket.px)
@@ -434,12 +457,23 @@ function pdfpage.render(doc, page, surface, scale, colour)
     if handle then
       drawn = drawn + (handle:draw(surface, colour, bucket.runs) or 0)
       faces = faces + 1
+    else
+      missing = missing + 1
     end
   end
 
   doc:forget()
 
-  return drawn, faces
+  --
+  -- `missing` is the third return and it exists because of a bug report
+  -- nobody could act on: a page that drew nothing said "0 glyphs" and that
+  -- was the whole of what it said. Zero glyphs has two causes that look
+  -- identical from outside - a page with no text on it, and a page whose
+  -- every font failed to load - and telling them apart needed the reader to
+  -- say which. A silent failure that reports a number is worse than one
+  -- that reports nothing, because the number looks like an answer.
+  --
+  return drawn, faces, missing
 end
 
 --------------------------------------------------------------------------

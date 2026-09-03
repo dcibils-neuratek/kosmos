@@ -231,7 +231,8 @@ local function show(n)
   paper:fill(0, 0, paper_w, paper_h, PAPER)
 
   local started = sys.ticks()
-  local ok, drawn = pcall(pdfpage.render, doc, page, paper, scale, INK)
+  local ok, drawn, _, missing = pcall(pdfpage.render, doc, page, paper,
+                                      scale, INK)
   render_ms = (sys.ticks() - started) // 62500
 
   if not ok then
@@ -241,6 +242,12 @@ local function show(n)
     glyph_count = drawn or 0
     said = ("page %d of %d - %d glyphs in %d ms - %.0f%%")
            :format(n, #doc.pages, glyph_count, render_ms, zoom * 100)
+
+    -- Said out loud rather than left to be inferred from a blank page.
+    if (missing or 0) > 0 then
+      said = said .. (" - %d face%s would not load"):format(
+               missing, missing == 1 and "" or "s")
+    end
   end
 
   top = 0
