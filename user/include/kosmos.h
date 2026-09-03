@@ -97,6 +97,15 @@ static inline long kosmos_getchar(void)
  * process that owns the console may ask, because a process that can watch
  * every key is a keylogger. Everything else asks the console server.
  */
+/*
+ * Stop the machine (0) or start it again (1). Does not return when it
+ * works, so a return is a refusal - see SYS_POWER.
+ */
+static inline long kosmos_power(unsigned long what)
+{
+    return sys1(SYS_POWER, (long)what);
+}
+
 static inline long kosmos_key_event(unsigned *code, unsigned *down)
 {
     return sys2(SYS_KEY_EVENT, (long)(uintptr_t)code, (long)(uintptr_t)down);

@@ -134,6 +134,35 @@ static int l_getchar(lua_State *L)
  * say that a key is *still* held: a stream of them is a stream of meanings,
  * and holding a direction in a game is a question about the key itself.
  */
+/*
+ * `sys.power("off")` or `sys.power("restart")`.
+ *
+ * Words rather than numbers, because these are the two things in this
+ * system that cannot be undone by trying again, and `sys.power(1)` is one
+ * typo away from `sys.power(0)`.
+ */
+static int l_power(lua_State *L)
+{
+    const char *what = luaL_checkstring(L, 1);
+    unsigned long which;
+
+    if (strcmp(what, "off") == 0) {
+        which = 0;
+    } else if (strcmp(what, "restart") == 0) {
+        which = 1;
+    } else {
+        return luaL_error(L, "power: \"off\" or \"restart\", not %s", what);
+    }
+
+    /* Only reached if the firmware refused; otherwise the machine is gone. */
+    lua_pushnil(L);
+    lua_pushstring(L, (kosmos_power(which) == SYS_ERR_DENIED)
+                      ? "this process may not power the machine"
+                      : "the firmware would not");
+
+    return 2;
+}
+
 static int l_key_event(lua_State *L)
 {
     unsigned code = 0, down = 0;
@@ -1286,6 +1315,7 @@ static int l_kit_names(lua_State *L)
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
     { "key_event",  l_key_event },
+    { "power",       l_power },
     { "getchar",  l_getchar },
     { "spawn",    l_spawn },
     { "wait",     l_wait },

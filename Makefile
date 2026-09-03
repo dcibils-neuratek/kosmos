@@ -96,6 +96,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/gic.c \
         hal/qemu-virt/timer.c \
         hal/qemu-virt/rtc.c \
+        hal/qemu-virt/power.c \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
         hal/qemu-virt/input.c \

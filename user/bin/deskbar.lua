@@ -205,6 +205,37 @@ menu_button = ui.button{
       }
     end
 
+    --
+    -- Restart and Shut Down, at the bottom behind a separator.
+    --
+    -- BeOS put them here and so does every desktop since, which is reason
+    -- enough on its own - but the separator is doing real work: everything
+    -- above it starts something and these two end everything, and a menu
+    -- that mixed the two would eventually be a machine somebody turned off
+    -- while reaching for a calculator.
+    --
+    -- A *request to the window manager*, not an action taken here. That
+    -- process holds `owns_procctl`; this one does not, and asking is the
+    -- whole point - see `handlers.power`.
+    --
+    items[#items + 1] = { separator = true }
+
+    items[#items + 1] = {
+      text = "Restart",
+      on_choose = function()
+        status.text = "restarting"
+        fs.send("/dev/wm", { type = "power", action = "restart" })
+      end,
+    }
+
+    items[#items + 1] = {
+      text = "Shut Down",
+      on_choose = function()
+        status.text = "shutting down"
+        fs.send("/dev/wm", { type = "power", action = "off" })
+      end,
+    }
+
     win:open_menu(win.origin_x + menu_button.x,
                   win.origin_y + menu_button.y + menu_button.h,
                   items)

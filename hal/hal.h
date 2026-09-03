@@ -246,6 +246,19 @@ bool hal_key_event(unsigned *code, bool *down);
 unsigned long hal_rtc_seconds(void);
 
 /*
+ * Stop, or start again.
+ *
+ * Neither returns when it works. There is no `bool` here for the same
+ * reason there is no error path: a machine that could not be turned off is
+ * a machine still running, and the caller finds that out by still running.
+ *
+ * Firmware rather than a peripheral - PSCI on this board - so unlike every
+ * other entry here it names no device and reads no register.
+ */
+void          hal_power_off(void);
+void          hal_restart(void);
+
+/*
  * A string the firmware was asked to carry, or false when there is none.
  *
  * QEMU takes `-fw_cfg name=opt/kosmos/boot,string=wm`, which is how a

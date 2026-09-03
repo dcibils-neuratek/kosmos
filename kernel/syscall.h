@@ -91,7 +91,21 @@
  */
 #define SYS_KEY_EVENT  34   /* (&code, &down)         -> 0, or SYS_NO_INPUT */
 
-#define SYS_MAX         35
+/*
+ * Stop the machine, or start it again.
+ *
+ * Gated on `owns_procctl`, which is the same authority `SYS_KILL` uses to
+ * end any process - and that is the right comparison rather than a
+ * convenient one: turning the machine off ends every process on it, so the
+ * right to do it is the right to end them all at once. Nothing new is
+ * granted, and a program that may not kill a process it did not start
+ * certainly may not do this.
+ *
+ * Does not return when it works.
+ */
+#define SYS_POWER      35   /* (0 off, 1 restart)     -> does not return   */
+
+#define SYS_MAX         36
 
 /*
  * What a spawn may hand its child beyond capabilities.

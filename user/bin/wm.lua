@@ -1496,6 +1496,34 @@ handlers.launch = function(req)
 end
 
 --
+-- Stop the machine, or start it again.
+--
+-- Here rather than in the Deskbar, and the reason is the same one `launch`
+-- is here: this process holds `owns_procctl` - it declares
+-- `kosmos: needs processes` - and the Deskbar does not. The authority to
+-- end every process at once lives in one place, and what the menu sends is
+-- a request rather than a right.
+--
+-- Every window is told first. An application that is listening gets the
+-- chance to write something down; one that is not gets nothing, which is
+-- the same bargain closing a window already makes. There is no waiting for
+-- them: a machine you cannot turn off because something will not answer is
+-- the failure mode this whole desktop is built to avoid.
+--
+handlers.power = function(req)
+  local what = (req.action == "restart") and "restart" or "off"
+
+  for _, win in ipairs(windows) do
+    post(win, { type = "close" })
+  end
+
+  local _, why = sys.power(what)
+
+  -- Only reached if it was refused; otherwise nothing runs after this.
+  return { ok = false, error = tostring(why) }
+end
+
+--
 -- Every window on the desktop, back to front.
 --
 -- The Deskbar asks this rather than asking /app, and the difference matters:

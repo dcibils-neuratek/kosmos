@@ -679,6 +679,30 @@ void syscall_dispatch(struct trapframe *tf)
         result = sys_write(p, tf->x[0], (size_t)tf->x[1]);
         break;
 
+    case SYS_POWER:
+        if (!p->owns_procctl) {
+            result = SYS_ERR_DENIED;
+        } else {
+            /*
+             * Said before it happens, because after it there is nobody to
+             * say anything. The console is the kernel's here, so this
+             * reaches the serial line whatever userland was doing.
+             */
+            kputs((tf->x[0] == 1) ? "\nkosmos: restarting\n"
+                                  : "\nkosmos: powering off\n");
+
+            if (tf->x[0] == 1) {
+                hal_restart();
+            } else {
+                hal_power_off();
+            }
+
+            /* Only if the firmware refused. */
+            result = SYS_ERR_DENIED;
+        }
+
+        break;
+
     case SYS_KEY_EVENT: {
         /*
          * Two out-parameters rather than a packed return, because a
