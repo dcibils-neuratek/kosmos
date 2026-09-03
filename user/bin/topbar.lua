@@ -35,12 +35,19 @@ local theme = ui.theme
 local screen = fs.read("/dev/screen") or {}
 local W = screen.width or 1024
 
--- As tall as a title bar, and for the same reason: it is one line of the
--- interface font with room around it, and the interface font is a setting.
--- The 20 is `TAB_H` in the window manager; a bar shorter than a title bar
--- reads as a mistake next to one, and a bar taller than the font it holds
--- is what happens when somebody picks 22-pixel text.
-local H = math.max(20, gfx.font.h + 4)
+--
+-- Taller than a title bar, which it did not used to be.
+--
+-- It started at `TAB_H`, on the reasoning that a bar shorter than a title
+-- bar reads as a mistake next to one. True, and it does not follow that
+-- matching is right: a title bar is a handle on one window, and this is the
+-- one strip that is always there. At the same height it read as a window
+-- that had lost its way to the top of the screen.
+--
+-- Eight pixels of air around the line of text rather than four. Derived
+-- from the font because the font is a setting, with a floor so that a small
+-- font does not produce a sliver.
+local H = math.max(26, gfx.font.h + 10)
 
 local win, err = ui.window{
   title = "Topbar", w = W, h = H, strip = "top",
@@ -77,6 +84,15 @@ local said = nil            -- what the last click did, shown briefly
 -- and none of those belong on a menu bar. What this wants is a word you can
 -- click, which is a fill and a string.
 --
+--
+-- The clock's own name in `hot`, so one field says which thing is lit.
+--
+-- A string nothing else can equal, rather than a boolean beside `hot`: two
+-- variables that must never both be set is a state machine with an illegal
+-- state in it, and this way there is one.
+--
+local CLOCK = "\0clock"
+
 local bar = ui.view{ x = 0, y = 0, w = W, h = H }
 
 local function spans()
@@ -121,46 +137,44 @@ local function lit(colour, k)
   return a | (r << 16) | (gg << 8) | b
 end
 
--- The same, the other way: the bar's own colour with the light taken out.
-local function dim(colour, k)
-  local a = colour & 0xff000000
-  local r = ((colour >> 16) & 0xff) * (100 - k) // 100
-  local gg = ((colour >> 8) & 0xff) * (100 - k) // 100
-  local b = (colour & 0xff) * (100 - k) // 100
-
-  return a | (r << 16) | (gg << 8) | b
-end
-
 function bar:draw(g)
-  local top_lift = 18          -- per cent of the way to white, at row 0
+  --
+  -- How far toward white the top row goes.
+  --
+  -- Started at 18 per cent, which measured correctly and could not be seen:
+  -- on a saturated yellow the eye has very little to compare against, and a
+  -- gradient nobody notices is a gradient that is not there. 38 is still
+  -- well short of looking like a picture of a lit surface, which is the
+  -- failure in the other direction.
+  --
+  local top_lift = 38
 
+  -- Over the whole height rather than the top two thirds. With no line at
+  -- the bottom the gradient is what marks the bottom, and a fade that
+  -- stopped early left a flat band that looked like one.
   for row = 0, self.h - 1 do
-    -- Falls off over the top two thirds and is flat under that, so the bar
-    -- has a lit edge rather than looking like it is fading out.
-    local t = (row * 3) // 2
-    local k = (t < self.h) and (top_lift * (self.h - t)) // self.h or 0
+    local k = (top_lift * (self.h - 1 - row)) // (self.h - 1)
 
     g:fill(0, row, self.w, 1, lit(theme.tab, k))
   end
 
   --
-  -- A lit row at the top and a shaded one at the bottom, both made from the
-  -- bar's own colour.
+  -- No edge rows at all: the gradient is the whole of it.
   --
-  -- This was `edge_dark` and then `line` - the two tokens every raised
-  -- widget in the kit uses - and it was wrong twice over. Two rows is a
-  -- band rather than an edge, and both of those tokens are near-black in a
-  -- dark theme, so what appeared under the bar was a two-pixel black frame.
-  -- It read as a border because that is what a border looks like, and the
-  -- one thing this strip must not look like is a window.
+  -- There were two, a lit one on top and a shaded one underneath, on the
+  -- argument that every raised thing in this kit has both. Three versions
+  -- of that were wrong in the same direction. The first used `edge_dark`
+  -- and `line`, which are near-black in a dark theme, so a two-pixel black
+  -- frame appeared under the bar. The second used one row of the bar's own
+  -- colour darkened, which is honest and *still reads as a line*, because
+  -- a row of a different colour along an edge is what a border is - what it
+  -- is made of does not change what it looks like.
   --
-  -- A single row of the bar's colour with the light taken out of it is the
-  -- underside of the bar rather than a line drawn beneath it, and it cannot
-  -- go black in any theme because it is made of whatever the bar is made
-  -- of. Chrome is lit, not outlined.
+  -- So: none. A surface that is lighter at the top and settles by the
+  -- bottom is already saying which way is up, and it says it without
+  -- drawing a boundary. The strip is not an object sitting on the screen
+  -- with edges; it is the top of the screen.
   --
-  g:fill(0, 0, self.w, 1, lit(theme.tab, 55))
-  g:fill(0, self.h - 1, self.w, 1, dim(theme.tab, 30))
 
   --
   -- Text with no background, which everything else here passes.
@@ -203,8 +217,23 @@ function bar:draw(g)
   local tw = gfx.measure(time)
   local dw = gfx.measure(date)
 
-  g:text(self.w - 10 - tw, ty, time, theme.tab_text)
-  g:text(self.w - 10 - tw - 12 - dw, ty, date, theme.tab_text)
+  --
+  -- The clock is a control, and remembering where it starts is what makes
+  -- it one. A clock showing the wrong time with no way to say so from the
+  -- clock is the thing every person hits first on a new machine - the
+  -- setting exists, in Date & Time, and nothing on screen points at it.
+  --
+  self.clock_x = self.w - 10 - tw - 12 - dw
+
+  if self.hot == CLOCK then
+    g:fill(self.clock_x - 6, 1, self.w - self.clock_x + 4, self.h - 2,
+           theme.accent)
+  end
+
+  local ink = (self.hot == CLOCK) and theme.text_on or theme.tab_text
+
+  g:text(self.w - 10 - tw, ty, time, ink)
+  g:text(self.clock_x, ty, date, ink)
 
   if said then
     g:text(self.w - 10 - tw - 12 - dw - 16 - gfx.measure(said), ty, said,
@@ -221,18 +250,22 @@ function bar:mouse(action, x, y)
     for _, s in ipairs(spans()) do
       if x >= s.x - 4 and x < s.x - 4 + s.w then self.hot = s.name end
     end
+
+    if self.clock_x and x >= self.clock_x - 6 then self.hot = CLOCK end
   end
 
   if action == "release" then
     if self.hot then
-      local ok, why = fs.send("/dev/wm",
-                              { type = "launch", program = self.hot })
+      local want = (self.hot == CLOCK) and "datetime" or self.hot
+      local reply, why = fs.send("/dev/wm",
+                                 { type = "launch", program = want })
 
-      -- `ok` alone was not enough, and the bar said "could not start
-      -- tracker" over a Tracker that had plainly started. The reply is a
-      -- table; what says whether it worked is the field inside it.
-      said = ok and nil or ("could not start " .. self.hot
-                            .. ": " .. tostring(why))
+      -- The reply is a table, and a table is what says it worked. `ok` on
+      -- its own reported "could not start tracker" over a Tracker that had
+      -- plainly started, because a missing reply and a refused one look the
+      -- same to a caller that only looks at the first return.
+      said = reply and nil
+             or ("could not start " .. want .. ": " .. tostring(why))
     end
 
     self.hot = nil

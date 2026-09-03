@@ -24,7 +24,7 @@ SIZE    := $(CROSS)size
 # carry a Lua chunk the shipping one must not, so their user images are
 # different binaries and cannot share a directory or a generated .c with it -
 # `make` and `make test` would trade stale ones back and forth.
-VARIANT := $(if $(TEST),-test,$(if $(BENCH),-bench))
+VARIANT := $(if $(TEST),-test,$(if $(BENCH),-bench,$(if $(DOOM),-doom)))
 
 # Where generated sources go. Defined here rather than beside the rules that
 # produce them, because SRCS below is a := assignment and expands it on the
@@ -340,6 +340,29 @@ USER_SRCS += $(GEN)/luatest_lua.c
 endif
 ifdef BENCH
 USER_SRCS += $(GEN)/luabench_lua.c
+endif
+
+#
+# `make DOOM=1 qemu` builds an image with Doom in it.
+#
+# **A build option because of the licence.** Doom is GPLv2 and Kosmos is
+# MIT; there is no dynamic linking here, so anything compiled in is linked
+# in and an image containing Doom is a combined work under the GPL. The line
+# is drawn in the build rather than in a comment, because a licence boundary
+# that depends on somebody remembering is not a boundary. See
+# `user/doom/README.md`.
+#
+# **And because of the size.** The image is copied into every process, so a
+# megabyte of Doom on an eighteen-process desktop is paid for eighteen times
+# by seventeen processes that will never call it.
+#
+# Its own VARIANT, so the objects never mix with an ordinary build's: they
+# are compiled with different flags and `make` compares timestamps, not
+# command lines.
+#
+ifdef DOOM
+DOOM_SRCS := $(sort $(wildcard user/doom/*.c)) user/lib/doom_kosmos.c
+USER_SRCS += $(DOOM_SRCS)
 endif
 
 USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))

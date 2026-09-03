@@ -133,7 +133,27 @@ local chosen_desktop = nil     -- nil means "whatever the palette says"
 -- Declared here rather than beside the font lists because `send` is written
 -- before them and closes over both.
 local chosen                   -- what each role is set to
-local role = "ui"              -- the role the lists are showing
+local ROLES                    -- the four of them, defined with the lists
+
+--
+-- Which role the three lists are showing.
+--
+-- A *function* rather than a variable, and that is the fix for a real bug
+-- rather than a preference. It was a variable initialised to "ui" while the
+-- list beside it started on row 1, and row 1 stopped being "ui" the moment
+-- window titles became a role of their own. So the panel showed "Window
+-- titles" selected, and choosing a font set the widget font - the display
+-- and the state disagreed from the first frame, before anybody clicked
+-- anything, and each was internally consistent.
+--
+-- Two copies of one fact is the shape of that bug. There is one now, in the
+-- list, and this reads it.
+--
+local role_list                -- defined with the other two, below
+
+local function role()
+  return ROLES[role_list.selected or 1].key
+end
 local chosen_font    = "spleen"
 local chosen_px      = 16
 
@@ -168,10 +188,10 @@ local function send()
                                         fonts = chosen })
 
   status.text = ok and ("saved: " .. chosen_palette .. ", "
-                        .. role .. " = " .. chosen[role].font .. " "
-                        .. chosen[role].px)
-                or ("applied " .. role .. " = " .. chosen[role].font
-                    .. " " .. chosen[role].px .. ", not saved: "
+                        .. role() .. " = " .. chosen[role()].font .. " "
+                        .. chosen[role()].px)
+                or ("applied " .. role() .. " = " .. chosen[role()].font
+                    .. " " .. chosen[role()].px .. ", not saved: "
                     .. tostring(werr))
 end
 
@@ -253,7 +273,7 @@ win:add(swatches)
 -- `assets/fonts/` is all it takes to add one.
 --------------------------------------------------------------------------
 
-local ROLES = {
+ROLES = {
   { key = "title", label = "Window titles" },
   { key = "ui",   label = "Widgets" },
   { key = "text", label = "Regular text" },
@@ -265,15 +285,21 @@ local SIZES = { 10, 12, 14, 16, 18, 20, 22 }
 -- What each role is set to. The interface font is the one that was already
 -- being chosen, so it keeps the saved value; the other two start on the
 -- bitmap, which is what they have been all along.
+--
+-- One entry per role, and there must be one per role: a missing entry is a
+-- nil indexed a moment later, and the role that was missing was the one
+-- that had just been added.
+--
 chosen = {
-  ui   = { font = chosen_font, px = chosen_px },
-  text = { font = "spleen", px = 16 },
-  mono = { font = "spleen", px = 16 },
+  title = { font = chosen_font, px = chosen_px },
+  ui    = { font = chosen_font, px = chosen_px },
+  text  = { font = "spleen", px = 16 },
+  mono  = { font = "spleen", px = 16 },
 }
 
 local FY = SWATCH_Y + 2 * SW + LH + GAP
 
-local role_list = ui.list{ x = 12,  y = FY, w = 150, h = 56, items = {} }
+role_list = ui.list{ x = 12,  y = FY, w = 150, h = 56, items = {} }
 local font_list = ui.list{ x = 172, y = FY, w = 122, h = 92, items = FONTS }
 local size_list = ui.list{ x = 304, y = FY, w = 56,  h = 92, items = {} }
 
@@ -281,7 +307,7 @@ for i, r in ipairs(ROLES) do role_list.items[i] = r.label end
 for i, px in ipairs(SIZES) do size_list.items[i] = tostring(px) end
 
 local function reflect()
-  local c = chosen[role]
+  local c = chosen[role()]
 
   for i, f in ipairs(FONTS) do
     if f == c.font then font_list.selected = i end
@@ -292,18 +318,19 @@ local function reflect()
   end
 end
 
-role_list.on_select = function(self, item, index)
-  role = ROLES[index].key
+role_list.on_select = function()
+  -- Nothing to assign: `role()` reads the selection. Only the two lists
+  -- beside it have to catch up.
   reflect()
 end
 
 font_list.on_select = function(self, item)
-  chosen[role].font = item
+  chosen[role()].font = item
   send()
 end
 
 size_list.on_select = function(self, item)
-  chosen[role].px = tonumber(item) or chosen[role].px
+  chosen[role()].px = tonumber(item) or chosen[role()].px
   send()
 end
 
