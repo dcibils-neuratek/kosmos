@@ -321,6 +321,57 @@ static struct {
  */
 static uint32_t held[4];
 
+/*
+ * And the transitions, in order.
+ *
+ * The bitmap answers "is W down now", which is what a game asks once a
+ * frame. It cannot answer "the menu key was pressed", because a press and
+ * its release inside one frame leave the bitmap exactly as it found it -
+ * and a key you tap is a key that never appears to have been held.
+ *
+ * So both: the bitmap for state, this for events. They are filled on the
+ * same pass through the same virtqueue, so there is no second reader and
+ * nothing can see one and miss the other.
+ *
+ * Sixty-four is four frames of frantic typing. Full, the *oldest* goes: a
+ * lost press is an action you did not take, and a lost release is a key
+ * stuck down for ever, which is worse than either.
+ */
+#define KEYQ 64
+
+static struct {
+    uint16_t code;
+    uint8_t  down;
+} keyq[KEYQ];
+
+static unsigned keyq_head, keyq_tail;
+
+static void keyq_put(unsigned code, int down)
+{
+    unsigned next = (keyq_head + 1) % KEYQ;
+
+    keyq[keyq_head].code = (uint16_t)code;
+    keyq[keyq_head].down = (uint8_t)(down ? 1 : 0);
+    keyq_head = next;
+
+    if (keyq_head == keyq_tail) {
+        keyq_tail = (keyq_tail + 1) % KEYQ;
+    }
+}
+
+bool hal_key_event(unsigned *code, bool *down)
+{
+    if (keyq_head == keyq_tail) {
+        return false;
+    }
+
+    *code = keyq[keyq_tail].code;
+    *down = keyq[keyq_tail].down != 0;
+    keyq_tail = (keyq_tail + 1) % KEYQ;
+
+    return true;
+}
+
 bool hal_key_held(unsigned code)
 {
     if (code >= 128) {
@@ -824,6 +875,26 @@ int keyboard_getchar(void)
             continue;               /* EV_SYN, and anything off the map */
         }
 
+        /*
+         * Recorded before anything below returns or continues.
+         *
+         * Everything after this point is the *character* path, and it takes
+         * several early exits - a modifier is consumed, a release is
+         * dropped, a key with no character becomes a sequence and returns
+         * mid-loop. Putting this first is what makes the two streams agree:
+         * every transition the device reported is here, whatever the
+         * character half decided to do with it.
+         */
+        held[event.code >> 5] = (event.value != 0)
+            ? (held[event.code >> 5] |  (1u << (event.code & 31)))
+            : (held[event.code >> 5] & ~(1u << (event.code & 31)));
+
+        /* value 2 is auto-repeat, which is not a transition: the key was
+         * already down and still is. */
+        if (event.value != 2) {
+            keyq_put(event.code, event.value != 0);
+        }
+
         /* value: 0 released, 1 pressed, 2 auto-repeat. Both 1 and 2 are a
          * character; a release only matters for the modifiers. */
         if (event.code == KEY_LEFTSHIFT || event.code == KEY_RIGHTSHIFT) {
@@ -842,23 +913,6 @@ int keyboard_getchar(void)
             }
             continue;
         }
-
-        /*
-         * Remembered before it is discarded.
-         *
-         * `hal_getchar` is a character source and a release is not a
-         * character, so this loop has always thrown one away. That is still
-         * the right answer *for characters* - but "the W key is currently
-         * held" is not a character and cannot be expressed as a stream of
-         * them, and it is what a game and a held-down control both need.
-         *
-         * So the bitmap is kept here, where the events already arrive, and
-         * `hal_key_held` reads it. Nothing above changes, and the driver
-         * decodes each event exactly once either way.
-         */
-        held[event.code >> 5] = (event.value != 0)
-            ? (held[event.code >> 5] |  (1u << (event.code & 31)))
-            : (held[event.code >> 5] & ~(1u << (event.code & 31)));
 
         if (event.value == 0) {
             continue;               /* a release of an ordinary key */

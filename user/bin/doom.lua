@@ -187,88 +187,63 @@ if not started then
 end
 
 --
--- Keys, in Doom's numbering.
+-- Keys, as transitions.
 --
--- Doom has its own key codes - `doomkeys.h` - and they are not ASCII for
--- anything that is not a letter. The window manager sends characters and
--- negative codes for the arrows (see `dispatch` in `ui.lua`), so this is
--- the map between the two vocabularies, and it is here rather than in C
--- because it is a table of decisions about a keyboard rather than a loop
--- over bytes.
+-- The window manager sends two streams. `key` is characters - what a key
+-- *meant*, shifted and mapped, with an arrow spread over three bytes - and
+-- is what a terminal wants. `rawkey` is what the key *did*: a keycode and
+-- whether it went down.
+--
+-- A game wants the second, and not as a preference. Holding a direction is
+-- a question about the key itself, and no stream of characters can express
+-- it: a character is a press with no release behind it, so walking forward
+-- came out as a step per key-repeat. Reading transitions, Doom is told the
+-- key went down and hears nothing more until it comes up, which is exactly
+-- what it wants.
+--
+-- It also disposes of the escape-sequence problem rather than solving it.
+-- The left arrow is keycode 105 whatever else is going on; it is only as a
+-- *character* that it needs three bytes and a decoder.
+--
+-- The codes are Linux's `input-event-codes.h`, which is what virtio-input
+-- speaks and what the HAL passes up undecoded. The Doom side is
+-- `doomkeys.h`. This table is the whole of the translation.
 --
 local KEYS = {
-  [ui.UP]    = 0xad,  -- KEY_UPARROW
-  [ui.DOWN]  = 0xaf,  -- KEY_DOWNARROW
-  [ui.LEFT]  = 0xac,  -- KEY_LEFTARROW
-  [ui.RIGHT] = 0xae,  -- KEY_RIGHTARROW
+  [103] = 0xad,       -- up      -> KEY_UPARROW
+  [108] = 0xaf,       -- down    -> KEY_DOWNARROW
+  [105] = 0xac,       -- left    -> KEY_LEFTARROW
+  [106] = 0xae,       -- right   -> KEY_RIGHTARROW
 
-  [27] = 27,          -- KEY_ESCAPE, and it is the menu
-  [10] = 13,          -- KEY_ENTER
-  [13] = 13,
-  [9]  = 9,           -- KEY_TAB, the automap
-  [8]  = 127,         -- backspace
-  [32] = 0xa3,        -- KEY_FIRE
+  [1]   = 27,         -- escape  -> KEY_ESCAPE, the menu
+  [28]  = 13,         -- enter   -> KEY_ENTER
+  [15]  = 9,          -- tab     -> KEY_TAB, the automap
+  [14]  = 127,        -- backspace
+
+  [29]  = 0xa3,       -- left ctrl  -> KEY_FIRE
+  [97]  = 0xa3,       -- right ctrl
+  [57]  = 0xa2,       -- space      -> KEY_USE
+  [42]  = 0xb6,       -- left shift -> KEY_RSHIFT, which is run
+  [54]  = 0xb6,       -- right shift
+  [56]  = 0xb8,       -- left alt   -> KEY_LALT, which is strafe
+
+  -- The number row picks a weapon; y and n answer the prompts.
+  [2] = 49, [3] = 50, [4] = 51, [5] = 52,
+  [6] = 53, [7] = 54, [8] = 55,
+
+  [21] = 121,         -- y
+  [49] = 110,         -- n
 }
 
 --
--- The window manager forwards bytes, so this reassembles them.
+-- The one key here that is not Doom's: Control-C closes the window.
 --
--- Held per process rather than per call, because three bytes make one
--- arrow: `ui.key_decoder` is where that lives and `win:run()` uses the same
--- one. Reading `ev.code` raw - which is what this did - means an arrow
--- arrives as Escape and two letters, so every arrow press left the menu
--- instead of moving down it.
+-- By keycode, so it does not depend on the character path at all - left
+-- control is 29 and `c` is 46.
 --
-local decode_key = ui.key_decoder()
+local CTRL = { [29] = true, [97] = true }
 
---
--- One decoded code, into Doom.
---
--- Press and release together, because that is all there is. The window
--- manager forwards *characters*, and a character is a press with no release
--- behind it. Sending both means the menus and the fire button work and
--- holding a direction does not - you get a step per repeat rather than a
--- walk.
---
--- The half that fixes it exists already: `hal_key_held` keeps the bitmap,
--- because the driver was decoding releases and throwing them away. What is
--- missing is the path from there to here, which is a capability question -
--- a process that can ask what keys are down is a keylogger - and belongs to
--- the window manager, which owns input and can answer only for the window
--- that has the focus.
---
-local press
-
-local function doomkey(c)
-  if KEYS[c] then return KEYS[c] end
-
-  -- A letter or a digit is itself, lowercased, which is what Doom's own
-  -- key bindings are written in.
-  if c >= 33 and c <= 126 then
-    if c >= 65 and c <= 90 then return c + 32 end
-
-    return c
-  end
-
-  return nil
-end
-
-function press(code)
-  if not code then return end
-
-  if code == 3 then
-    win:close()                         -- Control-C, like every other one
-
-    return
-  end
-
-  local k = doomkey(code)
-
-  if k then
-    doom.key(k, true)
-    doom.key(k, false)
-  end
-end
+local ctrl_down = false
 
 --
 -- The loop, which is cube3d's and plasma's shape rather than `win:run()`.
@@ -320,12 +295,20 @@ while win.running do
   for _, ev in ipairs(reply.events or {}) do
     if ev.type == "close" then
       win:close()
-    elseif ev.type == "key" then
-      -- Up to two codes from one byte; see `ui.key_decoder`.
-      local a, b = decode_key(ev.code)
+    elseif ev.type == "rawkey" then
+      if CTRL[ev.code] then ctrl_down = ev.down end
 
-      press(a)
-      press(b)
+      -- Control-C, like every other application here.
+      if ctrl_down and ev.code == 46 and ev.down then
+        win:close()
+      else
+        local k = KEYS[ev.code]
+
+        -- Down and up, each as it happens. This is the whole fix for
+        -- holding a direction: Doom is told the key went down and hears
+        -- nothing more until it comes up.
+        if k then doom.key(k, ev.down) end
+      end
     end
   end
 end

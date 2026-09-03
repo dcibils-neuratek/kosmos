@@ -72,7 +72,26 @@
 #define SYS_SCHED_INFO 32   /* (&info)                -> 0 or error         */
 #define SYS_SCHED_SET  33   /* (what, value)          -> 0 or error         */
 
-#define SYS_MAX         34
+/*
+ * The next key transition: a keycode and whether it went down.
+ *
+ * Separate from SYS_GETCHAR rather than folded into it, because they are
+ * different questions. A character is what a key *means* - shifted, mapped,
+ * with an arrow spread over three bytes - and is what a terminal wants. A
+ * transition is what the key *did*, and is what anything that cares about a
+ * key being held has to have; no stream of characters can express it.
+ *
+ * Both come off the same pass through the device, so the two never
+ * disagree about what happened.
+ *
+ * Gated on owning the console, exactly as SYS_GETCHAR is. That is not
+ * ceremony: a process that can ask which keys are being pressed is a
+ * keylogger, so this goes to the one process the kernel already trusts with
+ * input, and everything else asks it.
+ */
+#define SYS_KEY_EVENT  34   /* (&code, &down)         -> 0, or SYS_NO_INPUT */
+
+#define SYS_MAX         35
 
 /*
  * What a spawn may hand its child beyond capabilities.

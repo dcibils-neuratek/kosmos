@@ -124,6 +124,31 @@ static int l_getchar(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.key_event()` - the next key transition, or nil.
+ *
+ * Returns the board's keycode and whether it went down. Two values, because
+ * they are two facts.
+ *
+ * The other half of `sys.getchar`, and needed because a character cannot
+ * say that a key is *still* held: a stream of them is a stream of meanings,
+ * and holding a direction in a game is a question about the key itself.
+ */
+static int l_key_event(lua_State *L)
+{
+    unsigned code = 0, down = 0;
+    long status = kosmos_key_event(&code, &down);
+
+    if (status != 0) {
+        return 0;
+    }
+
+    lua_pushinteger(L, (lua_Integer)code);
+    lua_pushboolean(L, down != 0);
+
+    return 2;
+}
+
 static int l_spawn(lua_State *L)
 {
     unsigned long arg = (unsigned long)luaL_checkinteger(L, 1);
@@ -1260,6 +1285,7 @@ static int l_kit_names(lua_State *L)
 
 static const luaL_Reg sys_functions[] = {
     { "write",    l_write },
+    { "key_event",  l_key_event },
     { "getchar",  l_getchar },
     { "spawn",    l_spawn },
     { "wait",     l_wait },

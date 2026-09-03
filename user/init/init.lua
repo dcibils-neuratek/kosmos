@@ -1453,13 +1453,36 @@ local function console_handlers(state)
         keys[#keys + 1] = c
       end
 
+      --
+      -- And the transitions, which are a different question.
+      --
+      -- `keys` is what the keys *meant* - shifted, mapped, an arrow spread
+      -- over three bytes - and is what a terminal wants. This is what they
+      -- *did*, and is the only thing that can say a key is still held: no
+      -- stream of characters expresses that, which is why holding a
+      -- direction in a game was a step per repeat rather than a walk.
+      --
+      -- Drained after the characters and from the same device pass, so the
+      -- two never disagree about what happened.
+      --
+      local events = {}
+
+      while true do
+        local code, down = sys.key_event()
+
+        if code == nil then break end
+
+        events[#events + 1] = { code = code, down = down }
+      end
+
       local where = sys.pointer()
 
-      if #keys == 0 then
+      if #keys == 0 and #events == 0 then
         sys.wait_input(tonumber(req.ticks) or 0)
       end
 
-      return { ok = true, value = { keys = keys, pointer = where } }
+      return { ok = true,
+               value = { keys = keys, events = events, pointer = where } }
     end,
 
     pointer = function(req)

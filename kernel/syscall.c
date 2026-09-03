@@ -679,6 +679,31 @@ void syscall_dispatch(struct trapframe *tf)
         result = sys_write(p, tf->x[0], (size_t)tf->x[1]);
         break;
 
+    case SYS_KEY_EVENT: {
+        /*
+         * Two out-parameters rather than a packed return, because a
+         * keycode and a boolean are two facts and encoding them into one
+         * integer would mean a decode ring on the other side for no gain.
+         */
+        unsigned code = 0;
+        bool down = false;
+
+        if (!p->owns_console) {
+            result = SYS_ERR_DENIED;
+        } else if (!process_may_write(p, tf->x[0], sizeof(unsigned))
+                   || !process_may_write(p, tf->x[1], sizeof(unsigned))) {
+            result = SYS_ERR_FAULT;
+        } else if (!hal_key_event(&code, &down)) {
+            result = SYS_NO_INPUT;
+        } else {
+            *(unsigned *)tf->x[0] = code;
+            *(unsigned *)tf->x[1] = down ? 1u : 0u;
+            result = 0;
+        }
+
+        break;
+    }
+
     case SYS_GETCHAR:
         /*
          * One byte, or SYS_NO_INPUT when none is waiting. Non-blocking,

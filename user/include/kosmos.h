@@ -91,6 +91,18 @@ static inline long kosmos_getchar(void)
 }
 
 /*
+ * The next key transition, or SYS_NO_INPUT when there is none.
+ *
+ * The companion to `kosmos_getchar`, and gated the same way: only the
+ * process that owns the console may ask, because a process that can watch
+ * every key is a keylogger. Everything else asks the console server.
+ */
+static inline long kosmos_key_event(unsigned *code, unsigned *down)
+{
+    return sys2(SYS_KEY_EVENT, (long)(uintptr_t)code, (long)(uintptr_t)down);
+}
+
+/*
  * Makes another process from this one's image.
  *
  * `caps` are indices in *this* process's table; the child gets its own, in

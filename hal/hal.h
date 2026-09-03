@@ -216,6 +216,22 @@ bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes);
 bool hal_key_held(unsigned code);
 
 /*
+ * The next key transition, oldest first, or false when there are none.
+ *
+ * The companion to `hal_key_held`, and both are needed. The bitmap answers
+ * "is it down now", which is what a game asks once a frame; it cannot
+ * answer "it was pressed", because a press and its release inside one frame
+ * leave the bitmap as they found it. A key you tap would never appear to
+ * have been held.
+ *
+ * `code` is the board's own numbering, undecoded - Linux's
+ * `input-event-codes.h` here, because that is what virtio-input speaks.
+ * Turning it into a character is `hal_getchar`'s job and turning it into
+ * something an application means is the window manager's.
+ */
+bool hal_key_event(unsigned *code, bool *down);
+
+/*
  * Seconds since 1970, or 0 when this board has no clock.
  *
  * Read-only, and deliberately the whole of it. Setting the time is a

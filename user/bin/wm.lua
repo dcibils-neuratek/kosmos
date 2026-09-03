@@ -1957,6 +1957,30 @@ local function to_focused(c)
   post(focused_window(), { type = "key", code = c })
 end
 
+--
+-- A key transition, to whichever window has the focus.
+--
+-- A *second* event type rather than a field on `key`, and additive on
+-- purpose: everything that exists reads `key` and gets characters, exactly
+-- as it did. An application that needs to know a key is held reads
+-- `rawkey` instead and ignores the character stream. Nothing has to be
+-- changed to keep working, and nothing that wants this has to reconstruct
+-- it from characters, which is impossible anyway.
+--
+-- `code` is the board's own keycode, undecoded. This process knows which
+-- window is listening; it does not know what a keycode means, and an
+-- application that wants "the W key" is asking about the key rather than
+-- about a letter.
+--
+-- Only the focused window, which is the whole reason this goes through
+-- here: a process that could ask the kernel directly could watch every key
+-- in the system. This one already owns input and already knows who is in
+-- front.
+--
+local function raw_to_focused(code, down)
+  post(focused_window(), { type = "rawkey", code = code, down = down })
+end
+
 --------------------------------------------------------------------------
 -- Input.
 --
@@ -2606,6 +2630,11 @@ while running do
 
   for _, c in ipairs(input.keys or {}) do
     key(c)
+  end
+
+  -- The same presses as transitions, for whoever wants them that way.
+  for _, ev in ipairs(input.events or {}) do
+    raw_to_focused(ev.code, ev.down)
   end
 
   if measuring then t = charge("keys", t) end
