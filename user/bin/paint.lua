@@ -185,10 +185,21 @@ while win.running do
 
   if not win:commit(damage) then break end
 
+  --
   -- Kept for one more frame, which is the other buffer.
-  dirty = pending and pending.again and nil or (pending and
-          { x = pending.x, y = pending.y, w = pending.w, h = pending.h,
-            again = true }) or nil
+  --
+  -- Written as an `if`, because `a and b and nil or c` is not a
+  -- conditional: `... and nil` is nil whatever came before it, so the `or`
+  -- always won and a rectangle that had already been repeated was repeated
+  -- again, with `again` set once more. The damage never retired - every
+  -- stroke was re-composited for the life of the program.
+  --
+  if not pending or pending.again then
+    dirty = nil
+  else
+    dirty = { x = pending.x, y = pending.y,
+              w = pending.w, h = pending.h, again = true }
+  end
 
   local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
                                      wait = 1 })

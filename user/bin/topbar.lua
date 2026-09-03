@@ -269,12 +269,24 @@ function bar:mouse(action, x, y)
       local reply, why = fs.send("/dev/wm",
                                  { type = "launch", program = want })
 
-      -- The reply is a table, and a table is what says it worked. `ok` on
-      -- its own reported "could not start tracker" over a Tracker that had
-      -- plainly started, because a missing reply and a refused one look the
-      -- same to a caller that only looks at the first return.
-      said = reply and nil
-             or ("could not start " .. want .. ": " .. tostring(why))
+      --
+      -- An `if`, because `a and nil or b` is not a conditional.
+      --
+      -- This was `said = reply and nil or (...)`, which cannot produce nil:
+      -- `reply and nil` is nil whatever `reply` was, and `nil or b` is b.
+      -- So the bar reported "could not start tracker" over a Tracker that
+      -- had plainly started, on every launch, and the reason it said `nil`
+      -- for the error is that there was not one.
+      --
+      -- Twice I read that line and blamed the reply. The pitfall is that
+      -- the expression *looks* like a ternary and is one only when the
+      -- middle value can never be false.
+      --
+      if reply then
+        said = nil
+      else
+        said = "could not start " .. want .. ": " .. tostring(why)
+      end
     end
 
     self.hot = nil
