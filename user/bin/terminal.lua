@@ -99,7 +99,7 @@ end
 local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 20 }
 
 function view:draw(g)
-  g:fill(0, 0, self.w, self.h, "sunken")
+  g:fill(0, 0, self.w, self.h, "console")
   g:frame(0, 0, self.w, self.h, self.focused and theme.ring or "line")
 
   local rows = (self.h - 6) // gfx.font.h
@@ -113,18 +113,21 @@ function view:draw(g)
   end
 
   for i, line in ipairs(shown) do
-    g:text(4, 3 + (i - 1) * gfx.font.h, line:sub(1, columns), "text",
-           "sunken")
+    -- `console_text`, not `text`: `text` is chosen to read against the
+    -- window colour, and in a light theme that is black - which on a black
+    -- console is nothing at all.
+    g:text(4, 3 + (i - 1) * gfx.font.h, line:sub(1, columns),
+           "console_text", "console")
   end
 
   local y = 3 + #shown * gfx.font.h
   local prompt = "> " .. input
 
-  g:text(4, y, prompt:sub(1, columns), "good", "sunken")
+  g:text(4, y, prompt:sub(1, columns), "good", "console")
 
   if busy then
     g:text(self.w - 12 * gfx.font.w, 3, "running " .. busy,
-           "text_dim", "sunken")
+           "text_dim", "console")
   end
 
   if self.focused then

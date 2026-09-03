@@ -254,7 +254,8 @@ win:add(swatches)
 --------------------------------------------------------------------------
 
 local ROLES = {
-  { key = "ui",   label = "Titlebar and widgets" },
+  { key = "title", label = "Window titles" },
+  { key = "ui",   label = "Widgets" },
   { key = "text", label = "Regular text" },
   { key = "mono", label = "Monospace" },
 }

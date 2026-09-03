@@ -69,6 +69,8 @@ tab        = #5786da
 tab_idle   = #abbbd2
 tab_text   = #000065
 desktop_text = #ffffff
+console      = #0b0b0b
+console_text = #d8d8d8
 
 accent     = #8ea29b
 good       = #8d9c88
@@ -119,6 +121,8 @@ tab        = #ffcb00
 tab_idle   = #e8e8e8
 tab_text   = #000000
 desktop_text = #ffffff
+console      = #0b0b0b
+console_text = #d8d8d8
 
 accent     = #bebebe
 good       = #009800
@@ -165,6 +169,8 @@ tab        = #cccccc
 tab_idle   = #dddddd
 tab_text   = #000000
 desktop_text = #ffffff
+console      = #0b0b0b
+console_text = #d8d8d8
 
 accent     = #ccccff
 good       = #008800
@@ -209,6 +215,8 @@ tab        = #a59f80
 tab_idle   = #808080
 tab_text   = #000000
 desktop_text = #ffffff
+console      = #0b0b0b
+console_text = #d8d8d8
 
 accent     = #d5d5d5
 good       = #23d223

@@ -813,7 +813,8 @@ static int font_table_ref = LUA_NOREF;
 #define ROLE_UI    0
 #define ROLE_TEXT  1
 #define ROLE_MONO  2
-#define ROLE_COUNT 3
+#define ROLE_TITLE 3
+#define ROLE_COUNT 4
 
 struct outline_font {
     bool  loaded;
@@ -831,8 +832,19 @@ static int role_of(lua_State *L, int index)
 {
     const char *name = luaL_optstring(L, index, "ui");
 
-    if (name[0] == 't') return ROLE_TEXT;
-    if (name[0] == 'm') return ROLE_MONO;
+    /*
+     * Compared in full, which it was not.
+     *
+     * This tested the first letter alone - 't' meant text, 'm' meant mono -
+     * and that was fine for exactly as long as there were three roles whose
+     * names began with different letters. "title" begins with a 't', so a
+     * title bar asking for its own face silently got the paragraph font,
+     * and there is no error anywhere for a font that is merely the wrong
+     * one.
+     */
+    if (strcmp(name, "text") == 0)  return ROLE_TEXT;
+    if (strcmp(name, "mono") == 0)  return ROLE_MONO;
+    if (strcmp(name, "title") == 0) return ROLE_TITLE;
 
     return ROLE_UI;
 }
@@ -1124,6 +1136,28 @@ static int l_use_font(lua_State *L)
     }
 
     lua_pushboolean(L, 1);
+    return 1;
+}
+
+/*
+ * How tall a line of a role's font is.
+ *
+ * `gfx.font.h` answers this for the interface font and only for that one,
+ * which was enough while the title bar and the widgets shared a face. They
+ * do not any more, and centring a title vertically with the *widget* font's
+ * height puts it off centre by however far the two differ - which for a
+ * 22-pixel display face against 16-pixel widgets is three pixels, and looks
+ * exactly like a mistake because it is one.
+ *
+ * The companion to `gfx.measure`: that one is the width nobody may compute
+ * themselves, this is the height.
+ */
+static int l_height(lua_State *L)
+{
+    const struct outline_font *f = &outlines[role_of(L, 1)];
+
+    lua_pushinteger(L, f->loaded ? (f->ascent + f->descent) : GLYPH_H);
+
     return 1;
 }
 
@@ -1426,6 +1460,7 @@ static int l_screen(lua_State *L)
 static const luaL_Reg gfx_functions[] = {
     { "use_font", l_use_font },
     { "measure",  l_measure },
+    { "height",   l_height },
     { "fonts",    l_font_names },
     { "surface", l_new },
     { "wrap",    l_wrap },

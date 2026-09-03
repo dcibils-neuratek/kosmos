@@ -75,6 +75,22 @@ theme.palettes.dark = {
   -- `tab_text` is separate: the title bar is not a window surface either.
   desktop_text = 0xffffffff,
 
+  --
+  -- A terminal is black, in every theme, and that is not laziness.
+  --
+  -- It used to draw on `sunken`, which is the colour of a well - white in
+  -- every light theme - and a white terminal is not a light-themed terminal,
+  -- it is a text editor with a prompt in it. A console has been dark since
+  -- it was a phosphor tube, the programs that write into one assume it, and
+  -- the one thing a terminal must not do is make its own output hard to
+  -- read.
+  --
+  -- Tokens rather than a literal in `terminal.lua`, so a theme that really
+  -- does want a paper-white console can say so - but it has to say so.
+  --
+  console      = 0xff0b0b0b,
+  console_text = 0xffd8d8d8,
+
   accent    = 0xff1f6feb,
   good      = 0xff3fb950,
   bad       = 0xffda3633,
@@ -120,6 +136,11 @@ theme.palettes.light = {
   tab_text  = 0xff101010,
 
   desktop_text = 0xffffffff,
+
+  -- Dark here too. See the note in the dark palette: a terminal is a
+  -- terminal in every theme.
+  console      = 0xff0b0b0b,
+  console_text = 0xffd8d8d8,
 
   accent    = 0xff2d5faf,
   good      = 0xff1a7f37,
@@ -171,6 +192,7 @@ theme.tokens = {
   "name", "desktop", "window", "raised", "sunken", "line", "line_soft",
   "edge_light", "edge_dark", "text", "text_dim", "text_on",
   "tab", "tab_idle", "tab_text", "desktop_text",
+  "console", "console_text",
   "accent", "good", "bad", "ring", "stamp",
 }
 
@@ -330,15 +352,21 @@ end
 -- The bitmap font until something says otherwise. It is exact, it costs
 -- nothing, and it is what every display test was written against.
 --
--- Three of them, because the three places text appears do not want the same
--- face: the titlebar and the widgets want whatever the desk looks like, a
--- paragraph wants something to read, and a terminal wants a fixed width or
--- its columns stop lining up. One setting for all three could only ever be
--- wrong for two of them.
+-- Four of them, because the four places text appears do not want the same
+-- face: a title bar is a label on chrome and can carry a face with some
+-- character in it, a widget font has to still work at every size in every
+-- list in the system, a paragraph wants something to read, and a terminal
+-- wants a fixed width or its columns stop lining up. One setting for all
+-- four could only ever be wrong for three of them.
+--
+-- The title was part of `ui` until somebody chose a display face for their
+-- title bars and got it in every list as well, which is the whole argument
+-- for splitting it: the settings you *want* to make are the roles.
 theme.fonts = {
-  ui   = { font = "spleen", px = 16 },
-  text = { font = "spleen", px = 16 },
-  mono = { font = "spleen", px = 16 },
+  ui    = { font = "spleen", px = 16 },
+  title = { font = "spleen", px = 16 },
+  text  = { font = "spleen", px = 16 },
+  mono  = { font = "spleen", px = 16 },
 }
 
 theme.apply("dark")

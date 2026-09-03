@@ -117,7 +117,7 @@ local function apply_fonts(fonts)
 
   local why
 
-  for _, role in ipairs { "ui", "text", "mono" } do
+  for _, role in ipairs { "ui", "title", "text", "mono" } do
     local want = fonts[role]
 
     if type(want) == "table" and want.font then
@@ -870,9 +870,22 @@ local function compose_rect(r)
 
         -- A pinned window's title starts where its close box would have
         -- been, rather than leaving a hole the shape of a missing control.
+        --
+        -- In the title font, which is its own role.
+        --
+        -- It used to be the widget font, and the two are not the same
+        -- question: a title bar is a label on a piece of chrome and can
+        -- afford a face with some character in it, where a widget font has
+        -- to work at every size in every list in the system. Asking one
+        -- setting to answer both meant choosing a display face for the
+        -- title bars and getting it in every list as well.
+        --
+        -- `gfx.measure` with the same role, so the vertical centring is of
+        -- the font that will actually be drawn.
+        --
         back:text(fx + MARGIN + (win.pinned and 0 or CLOSE_W),
-                  fy + (TAB_H - gfx.font.h) // 2,
-                  win.title, title_colour(), tab)
+                  fy + (TAB_H - gfx.height("title")) // 2,
+                  win.title, title_colour(), tab, "title")
 
         --
         -- Minimise and maximise, at the *right*, with close staying at the
@@ -1190,8 +1203,21 @@ local handlers = {}
 --------------------------------------------------------------------------
 
 handlers.open = function(req, who, cap)
-  local w_ = math.min(math.max(tonumber(req.w) or 320, 32), W - 8)
-  local h_ = math.min(math.max(tonumber(req.h) or 200, 32), H - TAB_H - 8)
+  --
+  -- Room for a window, which is the screen less its own decoration.
+  --
+  -- A strip is not a window and gets neither reduction: it is exactly as
+  -- wide as the screen and sits at the very top. The eight pixels this
+  -- takes off an ordinary window are the border either side, and a bar
+  -- four pixels short at each end has a dark stripe down its right-hand
+  -- edge where the desktop shows past it - which is what happened, and
+  -- read as a border because a border is what it looked like.
+  --
+  local room_w = (req.strip == "top") and W or (W - 8)
+  local room_h = (req.strip == "top") and H or (H - TAB_H - 8)
+
+  local w_ = math.min(math.max(tonumber(req.w) or 320, 32), room_w)
+  local h_ = math.min(math.max(tonumber(req.h) or 200, 32), room_h)
 
   local win = {
     handle  = next_handle,
@@ -1330,7 +1356,6 @@ handlers.open = function(req, who, cap)
     win.strip = "top"
     win.pinned = true
     win.x, win.y = 0, 0
-    win.w = W
     reserved_top = win.h
   end
 
@@ -1837,6 +1862,24 @@ end
 -- ignored.
 --
 function resizable(win)
+  --
+  -- Chrome is never resized, and saying so *here* rather than at the two
+  -- call sites is the point.
+  --
+  -- This function is asked twice about every window: once by the compositor,
+  -- which draws a grip on anything that answers yes, and once by the pointer,
+  -- which starts a drag on the same corner. The bar across the top answered
+  -- yes - it sends drawing commands rather than holding a shared surface, so
+  -- it looked like an ordinary application - and grew a sizing grip in its
+  -- own bottom-right corner, sixteen pixels of window chrome on a thing that
+  -- is not a window.
+  --
+  -- The `bare` predicate in the composite loop learned the same lesson an
+  -- hour earlier and I put it in one place there; this is the other half of
+  -- it. A window with no frame has no corner to pull.
+  --
+  if win.backdrop or win.strip then return false end
+
   return win.shared == nil
 end
 
