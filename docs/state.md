@@ -2,9 +2,40 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ---
+
+## Where this left off
+
+**Doom runs, and the machine makes a noise.** Both are new since the last
+update and both are worth reading the commits for rather than trusting a
+summary here.
+
+- `make DOOM=1 qemu`, with `doom1.wad` at `/home/doom1.wad`. It is a build
+  option because Doom is GPLv2 and Kosmos is MIT, and there is no dynamic
+  linking - so a Kosmos image with Doom in it is a combined work. The line
+  is drawn in the build rather than in a comment. `runtime/upstream/doom/`
+  is upstream, `user/lib/doom_kosmos.c` is ours, `user/bin/doom.lua` owns
+  the loop.
+- `beep`, and `make qemu` now gives the machine a virtio-sound device
+  through coreaudio. **M11a stage one only**: there is a driver and a
+  syscall, and no `/dev/audio`, no mixer, and no sound in Doom.
+
+**The audio latency number is 2 dry periods in 173**, at 5.8 ms periods four
+deep, measured against coreaudio. `beep` reports it, and reports whether the
+backend paced at all - `wav` and `none` do not, and a measurement against
+either is a measurement of QEMU.
+
+## Next, in order
+
+1. **`/dev/audio`** - M11a stage two. One owner, everyone else asks, the
+   same shape as the screen. Nothing can make a sound today unless it was
+   spawned with `SPAWN_AUDIO`, which means one program at a time.
+2. **The mixer** - stage three, in C, and the stage that has to report its
+   own worst case. This is where the latency claim gets defended.
+3. **Doom's `DG_sound_module`** - stage four. doomgeneric has the hook
+   behind `FEATURE_SOUND` and ships `i_sdlsound.c` to read from.
 
 ## Two things found while adding a kind column, and not yet fixed
 
@@ -151,6 +182,63 @@ Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU
 QEMU `virt` aarch64, and nothing else. Real hardware arrives at M2.
 
 ## Recently done
+
+- **Doom.** See above. Seven bugs on the way and the two the *system* owned
+  are the ones to remember: `snprintf` ignored precision on integers, so
+  `%.3d` of 33 gave "33" and Doom's HUD font lumps came out one character
+  short - a missing-file error caused by a formatting bug. And C output from
+  a windowed process vanished entirely, because `SYS_WRITE` is refused
+  unless the process owns the console; forty thousand lines of Doom started
+  up, failed and said nothing. A refused write now spills into a ring that
+  something with a namespace drains.
+
+- **`exit()` can land somewhere.** It panicked, and the comment was right -
+  there is nothing to exit *to*. That is exactly what a vendored port
+  breaks: `I_Error` prints and calls `exit`, and with a panic on the end the
+  process died with the explanation still in a buffer. `kosmos_exit_arm()`
+  is a `setjmp` a caller may arm.
+
+- **`fopen` works for files a process already holds.** `kosmos_provide(name,
+  bytes, len)` and then `fopen` finds it. Not a global tree: one process
+  saying what a name means to it, which is what CLAUDE.md's "a libc whose
+  I/O resolves against that process's namespace" comes to when there is no
+  tree to resolve against.
+
+- **Keys are two streams now.** `key` is characters, as always. `rawkey` is
+  transitions - keycode and up/down - posted only to the focused window,
+  gated on owning the console because a process that can watch every key is
+  a keylogger. A character cannot say a key is *held*, which is why holding
+  a direction in Doom was a step per key-repeat.
+
+- **A clock.** PL031 at 0x9010000, read out of the device tree rather than
+  remembered. `/dev/clock`, `lib/clock.lua`, and a Date & Time panel. The
+  offset is an *offset*, not a timezone: there is no tzdata, so summer time
+  is set by hand twice a year and the panel says so.
+
+- **Restart and Shut Down**, in the Deskbar. PSCI over `hvc`, again from the
+  device tree. Gated on `owns_procctl`, because turning the machine off is
+  ending every process at once.
+
+- **The desktop is Tracker with the frame taken off.** `backdrop = true`
+  puts a window at the bottom of the stack undecorated; `strip = "top"` is
+  its opposite and takes room away rather than sitting over things.
+
+- **Real file icons.** The Tango Icon Library, public domain, at the 32x32
+  size it was drawn for, decoded by `gfx.png` and composited by
+  `surface:blend`. Nothing converts them.
+
+- **Startup items**, in `/bin/startup`, read by the Deskbar - deliberately
+  not on the boot path, because init's argument about a machine that cannot
+  reach a prompt still stands.
+
+- **One bug shape, five times in one session**, and it is worth naming
+  because it will happen again: *two copies of one fact that agree until
+  they do not*. The font role and the list selection. The bar's height and
+  the height it was granted. `USER_HEAP_PAGES` in the kernel and
+  `USER_HEAP_SIZE` in userland. Appearance's hardcoded layout against a font
+  size the user picks. And `struct sysinfo` never being zeroed, which is the
+  same thing wearing a security bug's clothes - any field the kernel does
+  not write is kernel stack handed to a process.
 
 - **A review pass, and two live races it found.** Reading `memobj.c` rather
   than remembering writing it: `memobj_unref` cleared `in_use` *before*

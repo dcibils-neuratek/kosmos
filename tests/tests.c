@@ -714,6 +714,7 @@ static bool test_lua_runs_at_el0(void)
     int code;
 
     if (p == NULL) {
+        kputs("\n   (no room to create the process)\n");
         return false;
     }
 
@@ -724,11 +725,29 @@ static bool test_lua_runs_at_el0(void)
     }
 
     if (!p->exited) {
+        /* A test that fails should say which way it failed. This one has
+         * three, and telling them apart used to mean reading the source
+         * and guessing. */
+        kputs("\n   (still running after 4096 yields)\n");
         return false;
     }
 
     code = p->exit_code;
+
+    if (code != 0) {
+        kputs("\n   (the chunk exited with ");
+        kputu((unsigned long)code);
+        kputs(")\n");
+    }
     process_reap(p);
+
+    if (process_count() != before) {
+        kputs("\n   (processes: ");
+        kputu(before);
+        kputs(" before, ");
+        kputu(process_count());
+        kputs(" after)\n");
+    }
 
     return code == 0 && process_count() == before;
 }

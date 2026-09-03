@@ -191,6 +191,149 @@ static int l_sound(lua_State *L)
  * The deadline as a number, which `roadmap.md` M11a promises instead of a
  * bound. Zero means it has run dry and the next sound has a click in it.
  */
+/*
+ * `sys.mix(streams)` - sum several streams into one period and play it.
+ *
+ * `streams` is an array of `{ pcm = <string>, left = 0..256, right = 0..256 }`
+ * and this is the only place in the system where more than one sound
+ * exists at once. It returns whether the device took the result, and writes
+ * a `peak` back into each entry.
+ *
+ *--------------------------------------------------------------------------
+ * Why the mixing is here and not in Lua.
+ *
+ * It is a loop over samples - 512 of them per period, per stream - and
+ * `gfx.md` 19.2's arithmetic applies unchanged: twenty to fifty nanoseconds
+ * an iteration in Lua, against a period that has to be ready every 5.8
+ * milliseconds. Four streams would be two thousand iterations a period and
+ * most of the budget spent on the interpreter.
+ *
+ * The other reason is garbage. A Lua mixer builds a new 1 KB string per
+ * period, which at 172 periods a second is 176 KB a second of allocation on
+ * the one path in this system with a hard deadline - and `CLAUDE.md` is
+ * explicit that what decides a server is `gc_pause_max`, not throughput.
+ * This allocates nothing: the accumulator is static and the result goes
+ * straight to the device.
+ *
+ *--------------------------------------------------------------------------
+ * Gain is an integer, 256 for unity.
+ *
+ * Not a float, and not because floats are unavailable - this is EL0 and may
+ * use them. Because `(sample * gain) >> 8` is exact, and a volume control
+ * that is exact at unity is a volume control that cannot quietly attenuate
+ * a stream nobody asked it to touch.
+ *
+ * The peak is measured *before* gain, which is the question the meter is
+ * actually answering: which application is sending audio. A muted stream
+ * that is still playing should show it, or the meter has become a second
+ * volume display.
+ */
+static int l_mix(lua_State *L)
+{
+    static int32_t acc[HAL_SND_PERIOD_BYTES_MAX / 2];
+    unsigned frames_seen = 0;
+    unsigned samples = 0;
+    lua_Integer n, i;
+    unsigned k;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    n = (lua_Integer)lua_rawlen(L, 1);
+
+    memset(acc, 0, sizeof(acc));
+
+    for (i = 1; i <= n; i++) {
+        const int16_t *in;
+        size_t len = 0;
+        long left = 256, right = 256;
+        int32_t peak = 0;
+
+        lua_rawgeti(L, 1, i);
+
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            continue;
+        }
+
+        lua_getfield(L, -1, "pcm");
+        in = (const int16_t *)lua_tolstring(L, -1, &len);
+
+        lua_getfield(L, -3 + 1, "left");
+        if (lua_isnumber(L, -1)) { left = (long)lua_tointeger(L, -1); }
+        lua_pop(L, 1);
+
+        lua_getfield(L, -2, "right");
+        if (lua_isnumber(L, -1)) { right = (long)lua_tointeger(L, -1); }
+        lua_pop(L, 1);
+
+        if (in != NULL && len >= 4) {
+            unsigned count = (unsigned)(len / 2);
+
+            if (count > sizeof(acc) / sizeof(acc[0])) {
+                count = (unsigned)(sizeof(acc) / sizeof(acc[0]));
+            }
+
+            if (count > samples) {
+                samples = count;
+            }
+
+            for (k = 0; k < count; k++) {
+                int32_t v = in[k];
+                int32_t mag = (v < 0) ? -v : v;
+
+                if (mag > peak) {
+                    peak = mag;
+                }
+
+                /* Even samples are the left channel, odd the right: that is
+                 * what interleaved stereo means and it is the only place
+                 * the balance can be applied. */
+                acc[k] += (v * (int32_t)((k & 1u) ? right : left)) >> 8;
+            }
+
+            frames_seen++;
+        }
+
+        lua_pop(L, 1);                  /* the pcm string */
+
+        lua_pushinteger(L, (lua_Integer)peak);
+        lua_setfield(L, -2, "peak");
+
+        lua_pop(L, 1);                  /* the entry */
+    }
+
+    if (frames_seen == 0 || samples == 0) {
+        lua_pushboolean(L, 0);
+
+        return 1;
+    }
+
+    /*
+     * Clipped rather than wrapped.
+     *
+     * Two streams at full scale sum past what sixteen bits hold, and the
+     * difference between the two answers is the difference between a loud
+     * moment and a bang: wrapping turns a peak into the opposite sign,
+     * which is the worst noise a mixer can make.
+     */
+    {
+        static int16_t out[HAL_SND_PERIOD_BYTES_MAX / 2];
+
+        for (k = 0; k < samples; k++) {
+            int32_t v = acc[k];
+
+            if (v > 32767)  { v = 32767; }
+            if (v < -32768) { v = -32768; }
+
+            out[k] = (int16_t)v;
+        }
+
+        lua_pushboolean(L,
+            kosmos_snd_write(out, (unsigned long)samples * 2) == 0);
+    }
+
+    return 1;
+}
+
 static int l_sound_queued(lua_State *L)
 {
     long n = kosmos_snd_queued();
@@ -1388,6 +1531,7 @@ static const luaL_Reg sys_functions[] = {
     { "power",       l_power },
     { "sound",       l_sound },
     { "sound_queued", l_sound_queued },
+    { "mix",         l_mix },
     { "getchar",  l_getchar },
     { "spawn",    l_spawn },
     { "wait",     l_wait },

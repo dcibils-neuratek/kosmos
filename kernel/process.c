@@ -492,6 +492,30 @@ bool process_grant_audio(struct process *p)
 
     p->owns_audio = true;
 
+    /*
+     * **Not** promoted to the display band, and the reason is measured
+     * rather than assumed.
+     *
+     * The argument for promoting it is good: the device wants a period
+     * every 5.8 milliseconds, the server cannot block waiting for a message
+     * that nobody sends, so it spins - and a thread that yields at NORMAL
+     * while the compositor spins at DISPLAY is a thread that never runs.
+     * `docs/state.md` records that hazard already.
+     *
+     * It was tried and it made things worse. Promoting the *server* starves
+     * the *client*: a program that has any real work to do before it can
+     * play - and generating audio is real work - is at NORMAL with two
+     * DISPLAY-band spinners above it, so it never reaches its first `play`.
+     * The result was silence under the desktop and perfect sound at the
+     * prompt.
+     *
+     * The honest answer is that a spinning server is the wrong shape and no
+     * band fixes it. What it wants is to sleep until the device asks, which
+     * means the sound card's interrupt - virtio-sound has one and this
+     * driver does not use it yet. Until then the server spins at NORMAL,
+     * which works when the desktop is not also spinning, and the gap is
+     * written down rather than papered over with a priority.
+     */
     return true;
 }
 

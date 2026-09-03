@@ -123,6 +123,14 @@
  * rather than a bound, and this is the measurement: at zero the device has
  * run dry and the next sound has a click in it.
  */
+/*
+ * The largest period any board here uses, so userland can size a buffer
+ * without including the HAL. A number rather than the real one because the
+ * real one is the board's: `sys.info().audio_period` says what this machine
+ * actually uses, and this is only the ceiling.
+ */
+#define HAL_SND_PERIOD_BYTES_MAX 8192
+
 #define SYS_SND_QUEUED 37   /* ()                     -> periods in flight */
 
 #define SYS_MAX         38

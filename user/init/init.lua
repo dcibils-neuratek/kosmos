@@ -29,6 +29,7 @@ local ROLE_RUNNER    = 12 -- runs one program, in an address space of its own
 local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
 local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
 local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
+local ROLE_AUDIO     = 16 -- serves /dev/audio: the one process that may play
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -332,7 +333,17 @@ end
 --
 local DEFER = { "deferred" }
 
-local function serve(endpoint, state, make_handlers)
+--
+-- `manual` hands the loop back to the caller.
+--
+-- Every server here blocks on receive, which is right when the only reason
+-- to wake is a message. The audio server has another: the device wants
+-- another period every 5.8 milliseconds and nobody sends a message to say
+-- so, and a server that waits for one runs dry. So it drives its own loop,
+-- pumping the mailbox between refills - and this returns the state with
+-- `pump` and `answer` on it instead of looping.
+--
+local function serve(endpoint, state, make_handlers, manual)
   local handlers = make_handlers(state)
 
   local function reload(source)
@@ -459,6 +470,12 @@ local function serve(endpoint, state, make_handlers)
       if not request then return end
       answer(request, sender, cap)
     end
+  end
+
+  state.answer = answer
+
+  if manual then
+    return state
   end
 
   while true do
@@ -2792,6 +2809,329 @@ local function diskfs_handlers(state)
   }
 end
 
+--------------------------------------------------------------------------
+-- audio: the one process that makes a noise, so that several can.
+--
+-- `SPAWN_AUDIO` grants the device to exactly one process, the same way the
+-- screen and the disk work. That is what makes per-application volume
+-- possible rather than a coincidence: if every program could write to the
+-- device, the last one to write would win and there would be nothing to
+-- turn down.
+--
+-- So this holds it, and everything else asks. A client opens a stream, says
+-- what it is called, and sends periods; this sums them with a gain each and
+-- hands one period to the device.
+--
+-- **The summing is `sys.mix`, in C**, and the note beside it says why: 512
+-- samples per stream per period against a 5.8 millisecond deadline, and a
+-- Lua mixer would also allocate a kilobyte of garbage 172 times a second on
+-- the one path in this system that has a deadline. What is in Lua is the
+-- part that is *policy* - which streams exist, what each is called, how
+-- loud each should be - which is a few dozen decisions a period.
+--
+-- The peak comes back from the same pass, which is what makes a level meter
+-- free: the mixer has already touched every sample.
+--------------------------------------------------------------------------
+
+local function audio_main(endpoint)
+  local streams = {}          -- id -> stream
+  local order = {}            -- ids, oldest first, so the mixer list is stable
+  local next_id = 1
+  local master = 256          -- 256 is unity; see sys.mix
+
+  local info = sys.info() or {}
+  local PERIOD = info.audio_period or 0
+  local DEPTH  = info.audio_periods or 0
+
+  --
+  -- How much a stream may hold before its writes start failing.
+  --
+  -- Four periods, the same as the device. A client that is further ahead
+  -- than the hardware is a client buffering for a latency nobody asked for,
+  -- and telling it to wait is what keeps the *whole* pipe short - which is
+  -- the promise this is all in aid of.
+  --
+  local BACKLOG = 4
+
+  -- Periods actually mixed, reported with `streams` so a client can tell a
+  -- silent server from a busy one.
+  local mixes = 0
+
+  local function pick(id)
+    return streams[id]
+  end
+
+  local handlers = {}
+
+  handlers.open = function(req)
+    if PERIOD == 0 then
+      return { ok = false, error = "this machine has no sound device" }
+    end
+
+    local id = next_id
+
+    next_id = next_id + 1
+
+    streams[id] = {
+      id = id,
+      name = tostring(req.name or "sound"),
+      gain = 256,
+      balance = 0,              -- -100 left .. +100 right
+      muted = false,
+      queue = {},
+      peak = 0,
+      quiet = 0,                -- periods since it last sent anything
+    }
+
+    order[#order + 1] = id
+
+    return { ok = true, stream = id, period = PERIOD, periods = DEPTH }
+  end
+
+  handlers.play = function(req)
+    local s = pick(req.stream)
+
+    if not s then
+      return { ok = false, error = "no such stream" }
+    end
+
+    if type(req.pcm) ~= "string" or #req.pcm == 0 then
+      return { ok = false, error = "play wants pcm" }
+    end
+
+    -- Full is a fact rather than a failure: the client is ahead and should
+    -- wait, which is the only thing keeping the pipe short.
+    if #s.queue >= BACKLOG then
+      return { ok = true, taken = false, queued = #s.queue }
+    end
+
+    s.queue[#s.queue + 1] = req.pcm
+    s.quiet = 0
+
+    return { ok = true, taken = true, queued = #s.queue }
+  end
+
+  handlers.close = function(req)
+    local s = pick(req.stream)
+
+    if s then
+      streams[req.stream] = nil
+
+      for i, id in ipairs(order) do
+        if id == req.stream then table.remove(order, i) break end
+      end
+    end
+
+    return { ok = true }
+  end
+
+  --
+  -- What the mixer application draws.
+  --
+  -- `peak` is from the last mix and is measured *before* gain, so a muted
+  -- stream that is still playing shows a moving meter - which is the
+  -- question a meter answers: who is sending audio.
+  --
+  handlers.streams = function()
+    local out = {}
+
+    for _, id in ipairs(order) do
+      local s = streams[id]
+
+      if s then
+        out[#out + 1] = {
+          stream = id, name = s.name, gain = s.gain,
+          balance = s.balance, muted = s.muted,
+          peak = s.peak, queued = #s.queue,
+          playing = s.quiet < 8,
+        }
+      end
+    end
+
+    return { ok = true, master = master, streams = out,
+             period = PERIOD, periods = DEPTH, mixes = mixes }
+  end
+
+  handlers.set = function(req)
+    if req.master then
+      master = math.min(math.max(math.floor(req.master), 0), 256)
+    end
+
+    local s = pick(req.stream)
+
+    if s then
+      if req.gain then
+        s.gain = math.min(math.max(math.floor(req.gain), 0), 256)
+      end
+
+      if req.balance then
+        s.balance = math.min(math.max(math.floor(req.balance), -100), 100)
+      end
+
+      if req.muted ~= nil then s.muted = req.muted and true or false end
+    end
+
+    return { ok = true }
+  end
+
+  --
+  -- One period out, if the device has room for one.
+  --
+  -- Every stream contributes what it has; a stream with nothing contributes
+  -- nothing, which is not the same as contributing silence - a period with
+  -- no streams in it at all is not sent, because sending silence would keep
+  -- the device awake for nothing.
+  --
+  local mixlist = {}          -- reused, so the loop allocates nothing
+
+  local function refill()
+    if PERIOD == 0 then return false end
+
+    local queued = sys.sound_queued() or 0
+
+    if queued >= DEPTH then return false end
+
+    local n = 0
+
+    for _, id in ipairs(order) do
+      local s = streams[id]
+
+      if s then
+        local pcm = table.remove(s.queue, 1)
+
+        if pcm then
+          --
+          -- Balance is a pan, applied to the gain rather than beside it.
+          --
+          -- Left of centre attenuates the right channel and vice versa,
+          -- which is what a balance control does and is not what a *pan*
+          -- law does - a real pan keeps the total power constant and needs
+          -- a square root. This is the simple one, and saying so is better
+          -- than implying the other.
+          --
+          local g = s.muted and 0 or ((s.gain * master) // 256)
+          local l, r = g, g
+
+          if s.balance > 0 then
+            l = (g * (100 - s.balance)) // 100
+          elseif s.balance < 0 then
+            r = (g * (100 + s.balance)) // 100
+          end
+
+          n = n + 1
+          mixlist[n] = mixlist[n] or {}
+          mixlist[n].pcm = pcm
+          mixlist[n].left = l
+          mixlist[n].right = r
+          mixlist[n].peak = 0
+          mixlist[n].owner = s
+        else
+          s.quiet = s.quiet + 1
+          s.idle_this_pass = true
+        end
+      end
+    end
+
+    for i = n + 1, #mixlist do mixlist[i] = nil end
+
+    if n == 0 then return false end
+
+    sys.mix(mixlist)
+
+    for i = 1, n do
+      mixlist[i].owner.peak = mixlist[i].peak or 0
+      mixlist[i].owner.idle_this_pass = nil
+    end
+
+    --
+    -- Counted rather than printed.
+    --
+    -- This process is spawned with one capability - its own endpoint - and
+    -- no console, so it *cannot* print: a `line` here does not go
+    -- unnoticed, it raises, and the server dies mid-refill with the sound
+    -- stopping and nothing said. Which is what happened while looking for
+    -- the bug below.
+    --
+    -- So a diagnostic in a server like this has to be a *reply*. The count
+    -- goes out with `streams` and the Mixer can show it.
+    --
+    mixes = mixes + 1
+
+    --
+    -- The meter falls, and it falls *per mixed period* rather than per turn
+    -- round this loop.
+    --
+    -- That distinction was a bug and an instructive one. Decaying wherever
+    -- a stream had nothing to contribute looks equivalent and is not: this
+    -- loop spins - it has to, because the device wants a period every 5.8
+    -- milliseconds and nothing sends a message to say so - so it goes round
+    -- thousands of times a second while only 172 periods are played. A
+    -- decay of three quarters reached zero between one period and the next,
+    -- and every meter read empty while the sound was plainly playing.
+    --
+    -- Here it runs once per period actually mixed, which is the rate the
+    -- meter is a picture of. About 40 milliseconds to halve, which is the
+    -- decay every hardware meter has and for the same reason: an eye cannot
+    -- follow a value that changes 172 times a second, so the instrument
+    -- holds what it saw.
+    --
+    for _, id in ipairs(order) do
+      local s = streams[id]
+
+      if s and s.idle_this_pass then
+        s.peak = (s.peak * 3) // 4
+        s.idle_this_pass = nil
+      end
+    end
+
+    return true
+  end
+
+  local state = serve(endpoint, {}, function() return handlers end, true)
+
+  --
+  -- The loop, and the one place in this system that deliberately spins.
+  --
+  -- `serve` blocks on receive, which is right for every other server here
+  -- and wrong for this one: nobody sends a message when the device wants
+  -- another period, so waiting for one means running dry. So this pumps the
+  -- mailbox without blocking and refills between times.
+  --
+  -- It spins *only while something is playing*. With no streams it goes
+  -- back to a blocking receive, because an idle desktop should be idle and
+  -- a machine that burns a core to play silence is worse than one with no
+  -- sound at all.
+  --
+  while true do
+    state.pump()
+
+    local worked = refill()
+
+    if not worked then
+      local busy = false
+
+      for _, id in ipairs(order) do
+        local s = streams[id]
+
+        if s and #s.queue > 0 then busy = true break end
+      end
+
+      if busy or (sys.sound_queued() or 0) > 0 then
+        -- Something is in flight: give the rest of the machine a turn, but
+        -- come back for the next period rather than sleeping through it.
+        sys.yield()
+      else
+        -- Nothing playing. Wait for a message like an ordinary server.
+        local request, sender, cap = sys.receive(endpoint)
+
+        if not request then return end
+
+        state.answer(request, sender, cap)
+      end
+    end
+  end
+end
+
 local function diskfs_main(endpoint)
   local kfs = assert(load(sys.libraries(), "libraries"))()["kfs.lua"]
 
@@ -2805,7 +3145,7 @@ end
 local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
-                          lib_cap, app_cap, disk_cap)
+                          lib_cap, app_cap, disk_cap, audio_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap)
   ns.mount("/data", ramfs_cap)
@@ -2815,6 +3155,18 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- under one directory, and neither knows about the other - which is what a
   -- per-process mount table buys.
   ns.mount("/dev", devices_cap)
+
+  --
+  -- Over the top of `/dev`, because longest prefix wins.
+  --
+  -- `/dev/audio` is a different server from the one that answers the rest
+  -- of `/dev`, exactly as `/dev/console` is - the devices server describes
+  -- hardware and this one *is* a piece of it. Mounted for everybody rather
+  -- than passed to children the way `/dev/wm` is, because any program may
+  -- ask to make a noise and the answer is a stream with a volume on it
+  -- rather than a refusal.
+  --
+  if audio_cap then ns.mount("/dev/audio", audio_cap) end
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
@@ -3369,7 +3721,7 @@ your filesystem back.
 
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
-                                        app_cap, disk_cap },
+                                        app_cap, disk_cap, audio_cap },
                          flags)
 
     if not id then
@@ -3381,7 +3733,7 @@ your filesystem back.
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7,
+      disk = 7, audio = 8,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -3818,6 +4170,7 @@ if role == ROLE_INIT then
   local LIBFS_EP = sys.endpoint()
   local APPFS_EP = sys.endpoint()
   local DISKFS_EP = sys.endpoint()
+  local AUDIO_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -3870,6 +4223,24 @@ if role == ROLE_INIT then
   local diskfs  = start("the disk server", ROLE_DISKFS, { DISKFS_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
+  --
+  -- The sound device goes here and nowhere else.
+  --
+  -- Same shape as the disk, and the same conditional: the grant is asked
+  -- for only when there is something to grant, because a machine with no
+  -- sound card is a supported way to run and asking anyway would fail the
+  -- spawn. The server starts either way and answers "this machine has no
+  -- sound device", so there is one boot path rather than two.
+  --
+  -- One owner is the whole design and not a simplification. If every
+  -- program could write to the device the last writer would win, and per-
+  -- application volume would have nothing to be a volume *of*.
+  --
+  local audio = start("the audio server", ROLE_AUDIO, { AUDIO_EP },
+                      may_pass_audio() and SPAWN_AUDIO or 0)
+
+  local _ = audio
+
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
   --
@@ -3886,7 +4257,7 @@ if role == ROLE_INIT then
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
-                        APPFS_EP, DISKFS_EP },
+                        APPFS_EP, DISKFS_EP, AUDIO_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -4029,7 +4400,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7)
   return
 end
 
@@ -4058,6 +4429,21 @@ if role == ROLE_SELFTEST then
 
   check(io == nil and os == nil and debug == nil, "a forbidden library is present")
 
+  --
+  -- The collector reclaims what was allocated. Measured as a *difference*,
+  -- not a ratio.
+  --
+  -- This used to assert `peak > before * 2 and after < peak / 2`, which is
+  -- a statement about the size of the baseline heap rather than about the
+  -- collector: it passes while this chunk is small and fails when it grows,
+  -- because two thousand small tables are a fixed amount of memory and
+  -- doubling a larger number takes more of them. Adding an audio server to
+  -- this file broke it, and the collector was working perfectly.
+  --
+  -- What the test is for is that allocation costs memory and collection
+  -- gives it back. So: the rise has to be real, and nearly all of it has to
+  -- come back. Neither depends on what else happens to be on the heap.
+  --
   collectgarbage()
   local before = collectgarbage("count")
   local t = {}
@@ -4066,8 +4452,14 @@ if role == ROLE_SELFTEST then
   t = nil
   collectgarbage()
   local after = collectgarbage("count")
-  check(peak > before * 2 and after < peak / 2, "the collector did not reclaim")
-  line(string.format("selftest: gc %.0fK -> %.0fK -> %.0fK", before, peak, after))
+
+  local rose = peak - before
+  local kept = after - before
+
+  check(rose > 50, "allocating two thousand tables cost no memory")
+  check(kept < rose / 4, "the collector did not reclaim")
+  line(string.format("selftest: gc %.0fK, +%.0fK allocated, %.0fK kept",
+                     before, rose, kept))
 
   line("selftest: done")
   return
@@ -4093,6 +4485,12 @@ end
 if role == ROLE_DISKFS then
   sys.name("diskfs")
   diskfs_main(CAP)
+  return
+end
+
+if role == ROLE_AUDIO then
+  sys.name("audio")
+  audio_main(CAP)
   return
 end
 
@@ -4153,6 +4551,10 @@ if role == ROLE_RUNNER then
     ns.mount("/home",   req.disk, "/home")
   end
 
+  -- After `/dev`, because longest prefix wins and this is a different
+  -- server from the one that answers the rest of it.
+  if req.audio   then ns.mount("/dev/audio",   req.audio)   end
+
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
   -- by another program can be handed things the shell never had - and can
@@ -4205,8 +4607,14 @@ if role == ROLE_RUNNER then
     -- The four the runner always passes, then whatever is being shared.
     -- Order is the contract: the child is told which index each landed at,
     -- because a capability table is indexed and never named.
+    -- The audio server comes last, and has to be here: a program launched
+    -- by another program - which is every application, because the window
+    -- manager launches them - gets its namespace from this list, and
+    -- without it `/dev/audio` is a path that does not exist. The Mixer said
+    -- "nothing is playing" while two tones were running, because they were
+    -- not able to reach the server to say otherwise.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
-                   req.lib, req.app, req.disk }
+                   req.lib, req.app, req.disk, req.audio }
     local mounts = {}
 
     if shares then
@@ -4266,7 +4674,7 @@ if role == ROLE_RUNNER then
       path = path, args = argument or "", cwd = where or req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7,
+      disk = 7, audio = 8,
       mounts = (#mounts > 0) and mounts or nil,
     })
 

@@ -1,6 +1,5 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- A tone, and the first thing this machine ever said out loud.
--- kosmos: needs audio
 --
 --   beep                 440 Hz for a third of a second
 --   beep 880             that pitch
@@ -15,17 +14,34 @@
 -- It also prints how close it came to the deadline, which is the number
 -- `roadmap.md` M11a promises instead of a bound.
 
-local info = sys.info()
+local audio = use("/lib/audio.lua")
 
-if not info or (info.audio_period or 0) == 0 then
+local fmt = audio.format()
+
+if fmt.period == 0 then
   print("beep: this machine has no sound device")
   return
 end
 
-local RATE     = info.audio_rate
-local CHANNELS = info.audio_channels
-local PERIOD   = info.audio_period          -- bytes
-local DEPTH    = info.audio_periods
+local RATE     = fmt.rate
+local CHANNELS = fmt.channels
+local PERIOD   = fmt.period                 -- bytes
+local DEPTH    = fmt.periods
+
+--
+-- Through the audio server rather than straight at the device.
+--
+-- `beep` used to hold `SPAWN_AUDIO` itself, which worked and meant only one
+-- thing could ever make a noise. Now it opens a stream like anything else,
+-- appears in the Mixer with its own fader, and can be turned down while
+-- something louder plays.
+--
+local out, why = audio.open("beep")
+
+if not out then
+  print("beep: " .. tostring(why))
+  return
+end
 
 -- Four bytes a frame: two channels of signed sixteen-bit.
 local FRAME  = 2 * CHANNELS
@@ -52,32 +68,58 @@ local ms = tonumber((args or ""):match("^%s*%d+%s+(%d+)")) or 333
 -- one period and the next, which is the whole difficulty with audio: the
 -- expensive part must not be on the path with the deadline.
 --
-local seconds = ms / 1000
+--
+-- A seam-free loop, built once and repeated.
+--
+-- Three versions of this, and the differences are the whole lesson.
+--
+-- The first snapped the frequency so a whole number of cycles fitted one
+-- *period*, to avoid a discontinuity at the seam. A 256-frame period has a
+-- frequency resolution of 172 Hz, so 440 came out as 517.
+--
+-- The second built the entire tone up front, which is exact - and is a lot
+-- of work: three seconds is 132,000 iterations of `sin` and `string.char`.
+-- That was fine at the prompt and fatal under the desktop. A program doing
+-- that much Lua before its first sound is at NORMAL priority competing with
+-- a compositor that spins at DISPLAY, so it never finishes: the Mixer
+-- showed a stream that had opened and never played a note, and the machine
+-- was silent with everything apparently working. `docs/state.md` records
+-- that starvation already; this is a second face of it.
+--
+-- This one builds a whole number of *cycles* - seam-free by construction,
+-- because the buffer length is chosen to fit the pitch rather than the
+-- pitch squeezed to fit the buffer - and repeats it. About eleven thousand
+-- iterations however long the tone lasts.
+--
+if ms > 60000 then ms = 60000 end
 
-if seconds > 5 then
-  print("beep: five seconds is the limit; this builds it all up front")
-  return
-end
+local loop_frames = RATE // 4
+local cycles = math.max(1, (hz * loop_frames) // RATE)
 
-local total  = math.floor(RATE * seconds)
-local step   = 2 * math.pi * hz / RATE
+-- The buffer holds exactly that many cycles, so its end meets its start.
+loop_frames = (cycles * RATE) // hz
+
 local sample = {}
 
-for i = 0, total - 1 do
+for i = 0, loop_frames - 1 do
   -- A quarter of full scale. Loud enough to hear and quiet enough that a
   -- mistake in the mixing later is not painful through headphones.
-  local v = math.floor(math.sin(i * step) * 8000)
+  local v = math.floor(math.sin(2 * math.pi * cycles * i / loop_frames) * 8000)
 
   if v < 0 then v = v + 65536 end
 
   local lo = v & 0xff
   local hi = (v >> 8) & 0xff
 
-  -- The same sample to both channels, little endian.
   sample[#sample + 1] = string.char(lo, hi, lo, hi)
 end
 
-local tone = table.concat(sample)
+local loop = table.concat(sample)
+
+-- Enough copies to cover the duration, cut to length.
+local want_bytes = ((RATE * ms) // 1000) * 4
+local copies = math.max(1, (want_bytes // #loop) + 1)
+local tone = string.rep(loop, copies):sub(1, want_bytes)
 
 --
 -- Out, a period at a time.
@@ -109,17 +151,18 @@ local began = sys.ticks()
 
 while at <= #tone do
   local chunk = tone:sub(at, at + PERIOD - 1)
-  local queued = sys.sound_queued() or 0
+  local took, why = out:play(chunk)
 
-  if queued < lowest then lowest = queued end
-
-  -- Only counted once the pipe has had a chance to fill, or the first few
-  -- periods - when it is legitimately empty - would read as failures.
-  if queued == 0 and sent > DEPTH then dry = dry + 1 end
-
-  if sys.sound(chunk) then
+  if took then
     at = at + PERIOD
     sent = sent + 1
+  elseif why ~= "full" then
+    -- Not "wait", but "that did not arrive". Spinning on this is how a
+    -- program hangs with its stream still open and nothing to show for it.
+    print("beep: the audio server would not take a period: " .. tostring(why))
+    out:close()
+
+    return
   else
     -- Full. Yield rather than spin: a busy wait here is a core taken away
     -- from whatever else is running, to wait for a device that will be
@@ -131,12 +174,36 @@ end
 local elapsed = ((sys.ticks() - began) * 1000) // counter_hz
 local paced = elapsed * 10 >= ms * 8      -- within a fifth of real time
 
-print(("beep: %d Hz, %d ms of sound in %d ms, %d periods, %d deep at worst")
-      :format(hz, ms, elapsed, sent, lowest))
+--
+-- Held open until the server has mixed what it was given.
+--
+-- Closing the moment the last period is handed over drops whatever has not
+-- been mixed yet - which for a short beep is most of it, because the client
+-- runs ahead of the device by design. This is the one place a client has to
+-- know the pipe has depth: wait for the stream's own queue to drain before
+-- taking it away.
+--
+for _ = 1, 200 do
+  local list = audio.streams()
+  local mine = nil
 
-if paced then
-  print(("      the device paced it; ran dry %d times"):format(dry))
-else
+  for _, one in ipairs(list or {}) do
+    if one.stream == out.id then mine = one end
+  end
+
+  if not mine or (mine.queued or 0) == 0 then break end
+
+  sys.yield()
+end
+
+out:close()
+
+print(("beep: %d Hz, %d ms of sound in %d ms, %d periods")
+      :format(hz, ms, elapsed, sent))
+
+if not paced then
   print("      the backend took it as fast as it was offered, so there is"
         .. " no latency here to measure")
 end
+
+local _ = dry, lowest
