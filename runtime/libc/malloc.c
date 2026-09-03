@@ -233,3 +233,28 @@ void exit(int status)
     (void)status;
     panic("exit() was called: there is nothing to exit to");
 }
+
+/*
+ * A copy of a string on the heap.
+ *
+ * Here rather than in `string.c` with its siblings because it allocates,
+ * and `string.c` is linked into the kernel, which has no allocator and must
+ * not have one. The link error that put it here was the rule enforcing
+ * itself, which is the best kind.
+ *
+ * Returns NULL when there is no room. That is the one thing about `strdup`
+ * worth care: it allocates and almost nobody checks. Doom does not check
+ * either, which is Doom's problem rather than a reason to hand back
+ * something that is not a string.
+ */
+char *strdup(const char *s)
+{
+    size_t n = strlen(s) + 1;
+    char *out = malloc(n);
+
+    if (out != NULL) {
+        memcpy(out, s, n);
+    }
+
+    return out;
+}

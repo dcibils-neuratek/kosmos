@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>   /* strdup allocates */
 
 /*
  * Deliberately naive. Every one of these is a byte-at-a-time loop, which is
@@ -239,3 +240,112 @@ char *strstr(const char *haystack, const char *needle)
 
     return NULL;
 }
+
+/*
+ *--------------------------------------------------------------------------
+ * Added because a link error asked, which is the rule this file follows.
+ *
+ * The asker was Doom. Every one of these is ordinary C89 string handling
+ * with nothing system-specific in it, so they go here rather than beside
+ * the thing that wanted them - the next caller should find them where the
+ * standard says they are.
+ *--------------------------------------------------------------------------
+ */
+
+char *strncpy(char *dst, const char *src, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        dst[i] = src[i];
+    }
+
+    /* The padding is not a courtesy, it is what the standard says: strncpy
+     * fills the rest of the buffer with NULs, and code that relies on a
+     * short copy leaving zeroes behind is common enough that leaving it out
+     * would be a bug somebody else has to find. */
+    for (; i < n; i++) {
+        dst[i] = '\0';
+    }
+
+    return dst;
+}
+
+char *strcat(char *dst, const char *src)
+{
+    char *at = dst + strlen(dst);
+
+    while ((*at++ = *src++) != '\0') {
+    }
+
+    return dst;
+}
+
+char *strncat(char *dst, const char *src, size_t n)
+{
+    char *at = dst + strlen(dst);
+    size_t i;
+
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        at[i] = src[i];
+    }
+
+    at[i] = '\0';
+
+    return dst;
+}
+
+/*
+ * Case-insensitive comparison, ASCII only.
+ *
+ * Not `tolower` from <ctype.h>, which is locale-aware in principle: there is
+ * one locale here and it is C, and doing the arithmetic inline keeps this
+ * file free of a dependency on that being true.
+ */
+static int fold(int c)
+{
+    return (c >= 'A' && c <= 'Z') ? (c - 'A' + 'a') : c;
+}
+
+int strcasecmp(const char *a, const char *b)
+{
+    while (*a != '\0' && fold((unsigned char)*a) == fold((unsigned char)*b)) {
+        a++;
+        b++;
+    }
+
+    return fold((unsigned char)*a) - fold((unsigned char)*b);
+}
+
+int strncasecmp(const char *a, const char *b, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        int ca = fold((unsigned char)a[i]);
+        int cb = fold((unsigned char)b[i]);
+
+        if (ca != cb) {
+            return ca - cb;
+        }
+
+        if (ca == '\0') {
+            break;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * `strdup` is NOT here, and the reason is worth the four lines.
+ *
+ * It allocates, and this file is linked into the *kernel* as well as into
+ * userland - CLAUDE.md's first principle is that there is no dynamic
+ * allocator in the kernel, so there is no `malloc` for it to call and the
+ * link fails. That failure is the rule working: a function that allocates
+ * cannot live in the half of the libc the kernel shares.
+ *
+ * It lives in `malloc.c`, which only userland links, next to the heap it
+ * needs.
+ */
