@@ -363,6 +363,21 @@ endif
 ifdef DOOM
 DOOM_SRCS := $(sort $(wildcard user/doom/*.c)) user/lib/doom_kosmos.c
 USER_SRCS += $(DOOM_SRCS)
+
+#
+# id's source is 1997 C and does not compile clean under this project's
+# flags, which is not a criticism of it - `-Wall -Wextra -Werror` did not
+# exist as a habit then, and the code is thirty years old and correct.
+#
+# The warnings are turned off *for those files only*, further down, rather
+# than for the build: Kosmos's own code including `doom_kosmos.c` is still
+# held to the same bar it always was. Vendored code is not modified, which
+# is the rule that decides this - patching eighty files to silence a warning
+# would be exactly the modification `CLAUDE.md` forbids.
+#
+DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iuser/doom \
+               -DNORMALUNIX -DLINUX -DDOOMGENERIC_RESX=640 \
+               -DDOOMGENERIC_RESY=400
 endif
 
 USER_OBJS := $(addprefix $(UBUILD)/,$(addsuffix .o,$(USER_SRCS)))
@@ -370,7 +385,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) $(if $(DOOM),-DKOSMOS_DOOM) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \

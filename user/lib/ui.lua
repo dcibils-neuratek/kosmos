@@ -2107,6 +2107,20 @@ function ui.window(spec)
     -- anything that places a menu needs it.
     origin_x = reply.x or 0,
     origin_y = reply.y or 0,
+
+    --
+    -- And how big it actually is, for the same reason and it was missing.
+    --
+    -- The size in the reply is the size the compositor granted, which is
+    -- not always the size that was asked for - it clamps to the screen and
+    -- to a floor. `root` was built from it and nothing else was, so an
+    -- application that laid out from its own numbers drew short and left
+    -- whatever it did not reach showing. The bar across the top asked for
+    -- 26 rows, was granted 32, painted 26, and the six nobody painted read
+    -- as a border under it.
+    --
+    w = reply.w,
+    h = reply.h,
     -- Nil unless the application asked for a particular colour, so that
     -- `paint` can fall back to the palette *at the moment it draws*.
     -- Resolving it here instead captured the colour once, at creation, and

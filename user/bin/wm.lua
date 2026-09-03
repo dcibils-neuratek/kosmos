@@ -1218,8 +1218,17 @@ handlers.open = function(req, who, cap)
   local room_w = (req.strip == "top") and W or (W - 8)
   local room_h = (req.strip == "top") and H or (H - TAB_H - 8)
 
-  local w_ = math.min(math.max(tonumber(req.w) or 320, 32), room_w)
-  local h_ = math.min(math.max(tonumber(req.h) or 200, 32), room_h)
+  --
+  -- The floor of 32 is so a window cannot be smaller than its own
+  -- decoration. A strip has none, so it does not apply: it was rounding a
+  -- 26-pixel bar up to 32, the application went on drawing 26 rows, and the
+  -- six rows nobody painted showed as a dark line under the bar. Which read
+  -- as a border, and was chased three times as one.
+  --
+  local floor = (req.strip == "top") and 1 or 32
+
+  local w_ = math.min(math.max(tonumber(req.w) or 320, floor), room_w)
+  local h_ = math.min(math.max(tonumber(req.h) or 200, floor), room_h)
 
   local win = {
     handle  = next_handle,

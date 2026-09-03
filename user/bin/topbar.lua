@@ -47,7 +47,7 @@ local W = screen.width or 1024
 -- Eight pixels of air around the line of text rather than four. Derived
 -- from the font because the font is a setting, with a floor so that a small
 -- font does not produce a sliver.
-local H = math.max(26, gfx.font.h + 10)
+local H = math.max(32, gfx.font.h + 10)
 
 local win, err = ui.window{
   title = "Topbar", w = W, h = H, strip = "top",
@@ -93,7 +93,16 @@ local said = nil            -- what the last click did, shown briefly
 --
 local CLOCK = "\0clock"
 
-local bar = ui.view{ x = 0, y = 0, w = W, h = H }
+--
+-- Sized from what the window manager *granted*, not from what was asked.
+--
+-- Those are two different numbers whenever the compositor clamps one, and
+-- an application that draws to its own copy leaves whatever it did not
+-- reach showing. The reply to `ui.window` carries the real size for exactly
+-- this reason, and taking it from there means there is one copy of the
+-- fact rather than two that agree until they do not.
+--
+local bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
 
 local function spans()
   local out = {}

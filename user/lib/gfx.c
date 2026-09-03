@@ -41,6 +41,10 @@
 #include "kosmos.h"
 
 void kosmos_png_open(lua_State *L);
+
+#ifdef KOSMOS_DOOM
+void kosmos_doom_open(lua_State *L);
+#endif
 void kosmos_docfont_open(lua_State *L);
 
 #define SURFACE_MT  "kosmos.surface"
@@ -82,6 +86,31 @@ static struct surface *check_surface(lua_State *L, int index)
     }
 
     return s;
+}
+
+/*
+ * A surface's pixels, for C in another file.
+ *
+ * The one crack in "gfx.c is the only file that knows how a surface is laid
+ * out", and it is deliberate rather than a leak: it hands back the *pitch*
+ * along with the pointer, so the caller cannot compute a row offset without
+ * being told the one number that makes it correct. A caller that ignored it
+ * would be making the mistake `gfx.md` 19.3 names, with the right value in
+ * its hand.
+ *
+ * It exists for Doom, which renders into a buffer of its own and needs the
+ * result copied in. Nothing in Lua can reach it.
+ */
+uint32_t *kosmos_surface_pixels(lua_State *L, int index,
+                                unsigned *w, unsigned *h, unsigned *pitch)
+{
+    struct surface *s = check_surface(L, index);
+
+    if (w != NULL)     { *w = s->width; }
+    if (h != NULL)     { *h = s->height; }
+    if (pitch != NULL) { *pitch = s->pitch; }
+
+    return s->pixels;
 }
 
 /* The start of a row. The one place row arithmetic happens. */
@@ -1523,6 +1552,12 @@ int luaopen_gfx(lua_State *L)
     /* `gfx.png`, which lives in its own file because a decoder and a
      * blitter have nothing to say to each other. */
     kosmos_png_open(L);
+
+#ifdef KOSMOS_DOOM
+    /* `make DOOM=1` only. See user/doom/README.md: the licence and the size
+     * both say this does not belong in an ordinary image. */
+    kosmos_doom_open(L);
+#endif
     kosmos_docfont_open(L);
 
     return 1;
