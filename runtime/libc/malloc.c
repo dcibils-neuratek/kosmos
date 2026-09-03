@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <panic.h>
+#include <setjmp.h>
 
 /*
  * 16 bytes, because that is what a double and a long double want on
@@ -228,9 +229,64 @@ void abort(void)
     panic("abort() was called");
 }
 
+/*
+ * Somewhere to land, for a program that thinks it owns the process.
+ *
+ * `exit()` used to panic, and the comment was right: there is nothing to
+ * exit *to*, because this process is not a Unix program with a `main` that
+ * somebody called. It is a Lua application that happens to have some C in
+ * it.
+ *
+ * That is exactly the case a vendored port breaks. Doom calls `I_Error`
+ * when it does not like something, `I_Error` prints and calls `exit`, and
+ * with a panic on the end of that the process dies with the explanation
+ * still in a buffer nobody read. What that looks like from outside is a
+ * black window and total silence, which is the least useful failure a
+ * system can have.
+ *
+ * So a caller may arm a landing place. `exit` jumps back to it and the
+ * caller carries on - drains the message, closes the window, tells the
+ * person what happened. Nothing is unwound: no destructors run and no
+ * memory is freed, and that is fine here because the whole heap goes when
+ * the process does.
+ *
+ * Unarmed, it still panics, because then the old comment is true again.
+ */
+static jmp_buf exit_to;
+static int     exit_armed;
+
+int kosmos_exit_arm(void)
+{
+    int landed;
+
+    exit_armed = 1;
+    landed = setjmp(exit_to);
+
+    if (landed != 0) {
+        exit_armed = 0;
+    }
+
+    return landed;
+}
+
+void kosmos_exit_disarm(void)
+{
+    exit_armed = 0;
+}
+
 void exit(int status)
 {
-    (void)status;
+    if (exit_armed) {
+        exit_armed = 0;
+
+        /* 1 when the status was 0, because longjmp(0) is defined to arrive
+         * as 1 and the caller has to be able to tell a landing from the
+         * first pass. The status itself is not carried: nothing here reads
+         * it, and inventing an encoding for it would be inventing a
+         * requirement. */
+        longjmp(exit_to, (status == 0) ? 1 : 2);
+    }
+
     panic("exit() was called: there is nothing to exit to");
 }
 

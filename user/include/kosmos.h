@@ -390,7 +390,30 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 
 #define USER_TEXT       0x80000000UL
 #define USER_HEAP       0x81000000UL
-#define USER_HEAP_SIZE  (2UL * 1024 * 1024)     /* design.md 5.2: ~2 MB */
+/*
+ * The heap's size, and it must be the same number the *kernel* used.
+ *
+ * `kernel/process.h` maps `USER_HEAP_PAGES` pages at this address, and
+ * `heap_init` here is told how much of it to manage. These were two
+ * independent constants - 512 pages there and a literal 2 MB here - and
+ * they agreed only because nobody had ever changed one.
+ *
+ * Changing one is exactly what `make DOOM=1` does, and what that looked
+ * like was Doom saying "Unable to allocate 5 MiB of RAM for zone" on a
+ * process whose kernel-side mapping was twelve megabytes: the pages were
+ * there and the allocator had been told they were not.
+ *
+ * Derived from the same macro now, with the same default, so one `-D` moves
+ * both. Kept as a `#ifndef` rather than including `kernel/process.h`,
+ * because that header is the kernel's own structures and userland has no
+ * business seeing them - the shared fact is one number, so one number is
+ * what is shared.
+ */
+#ifndef USER_HEAP_PAGES
+#define USER_HEAP_PAGES 512                     /* design.md 5.2: ~2 MB */
+#endif
+
+#define USER_HEAP_SIZE  ((unsigned long)USER_HEAP_PAGES * 4096UL)
 #define USER_STACK_END  0x82000000UL
 
 #endif /* KOSMOS_H */

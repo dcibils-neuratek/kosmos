@@ -63,7 +63,23 @@ struct thread;
  */
 #define USER_TEXT_VA     USER_VA_BASE                       /* 0x80000000 */
 #define USER_HEAP_VA     (USER_VA_BASE + 0x01000000UL)      /* 0x81000000 */
+/*
+ * Two megabytes, and overridable at build time.
+ *
+ * It is the size of a *process's* heap, which is Lua's heap and also
+ * whatever C in that process allocates - and 2 MB is generous for Lua and
+ * far too little for a program that brought its own allocator. Doom asks
+ * for six megabytes of zone before it draws anything, and `make DOOM=1`
+ * passes a larger number here.
+ *
+ * It cannot grow without limit: `USER_HEAP_VA` sits 16 MB below
+ * `USER_STACK_TOP` and the gap between them is deliberate - a heap that
+ * ran off its top would land in the stack instead of in unmapped space,
+ * and the fault is the thing that makes that a bug you can find.
+ */
+#ifndef USER_HEAP_PAGES
 #define USER_HEAP_PAGES  512                                /* 2 MB       */
+#endif
 #define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* 0x82000000 */
 #define USER_STACK_PAGES 16                                 /* 64 KB      */
 

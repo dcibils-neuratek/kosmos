@@ -2,9 +2,9 @@
 /*
  * Doom, on this machine.
  *
- * The half of the port that is ours. `user/doom/` is id's source, byte for
+ * The half of the port that is ours. `runtime/upstream/doom/` is id's source, byte for
  * byte and GPLv2; this file is the platform underneath it and is the only
- * place the two vocabularies meet. See `user/doom/README.md` for why the
+ * place the two vocabularies meet. See `runtime/upstream/doom/README.md` for why the
  * whole thing is behind `make DOOM=1`.
  *
  *--------------------------------------------------------------------------
@@ -40,15 +40,16 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include <kosmos.h>
 
 #include "lua.h"
 #include "lauxlib.h"
 
-#include "../doom/doomgeneric.h"
-#include "../doom/doomkeys.h"
-#include "../doom/w_file.h"
+#include "doomgeneric.h"
+#include "doomkeys.h"
+#include "w_file.h"
 
 void doomgeneric_Create(int argc, char **argv);
 void doomgeneric_Tick(void);
@@ -70,6 +71,10 @@ static size_t               wad_len;
 
 static wad_file_t wad_handle;
 
+/* Defined below, and referred to above: an implementation has to put its
+ * own class into the handle it returns. */
+extern wad_file_class_t stdc_wad_file;
+
 static wad_file_t *kosmos_OpenFile(char *path)
 {
     (void)path;
@@ -87,7 +92,18 @@ static wad_file_t *kosmos_OpenFile(char *path)
         return NULL;
     }
 
-    wad_handle.file_class = NULL;       /* filled in by W_OpenFile's caller */
+    /*
+     * The implementation sets this, not `W_OpenFile`.
+     *
+     * It said `NULL` here with a comment saying the caller would fill it in,
+     * which was a guess and was wrong: `W_OpenFile` only walks the list of
+     * classes and takes the first that returns non-NULL - every one of
+     * upstream's own implementations sets its own `file_class` on the way
+     * out. `W_Read` then loads it and calls through it, so a NULL here is
+     * `ldr x4, [x4, #16]` on address zero, which is exactly the fault it
+     * produced.
+     */
+    wad_handle.file_class = &stdc_wad_file;
     wad_handle.mapped = (unsigned char *)wad_bytes;
     wad_handle.length = (unsigned int)wad_len;
 
@@ -239,35 +255,101 @@ void DG_SetWindowTitle(const char *title)
 
 static int running;
 
-/* doom.start(wad) - hands over the bytes and runs Doom's setup. */
+/*
+ * doom.start(address, length) - where the WAD is, and how much of it.
+ *
+ * An address rather than a string, and that is not an optimisation.
+ *
+ * `USER_HEAP_PAGES` is 512, so the Lua heap is two megabytes and the
+ * smallest real IWAD is four. A WAD simply cannot be a Lua value here. What
+ * it can be is a *region*: pages taken from the page allocator, outside the
+ * heap, which `fs.read_into` fills straight from the disk server without
+ * the bytes ever passing through Lua at all.
+ *
+ * So the Lua side maps a region and hands over the address, and Doom reads
+ * it where it lies through `wad_file_t.mapped`. Four megabytes, read once,
+ * copied never - and the limit that forced it turned out to be pointing at
+ * the better design, which is usually what a limit like that is doing.
+ *
+ * The caller must keep the region alive for as long as Doom runs. It does:
+ * the application holds the capability for its own lifetime, and when it
+ * exits the process goes with it.
+ */
 static int l_start(lua_State *L)
 {
-    size_t len;
-    const char *bytes = luaL_checklstring(L, 1, &len);
+    unsigned long at = (unsigned long)luaL_checkinteger(L, 1);
+    size_t len = (size_t)luaL_checkinteger(L, 2);
+    /*
+     * `-iwad doom1.wad`, and both halves matter.
+     *
+     * Without it `D_FindIWAD` searches directories for a WAD, using an
+     * `opendir` this system does not have, and ends at `I_Error("Game mode
+     * indeterminate")`. With it, Doom takes the name it was given.
+     *
+     * The *name* is not decoration either: `IdentifyIWADByName` decides
+     * which game this is - shareware Doom, Ultimate, Doom II - from the
+     * filename alone, so `doom1.wad` is what makes the episode menus right.
+     * That is Doom's convention and this is Doom.
+     */
     static char arg0[] = "doom";
-    static char *argv[] = { arg0, NULL };
+    static char arg1[] = "-iwad";
+    static char arg2[] = "doom1.wad";
+    static char *argv[] = { arg0, arg1, arg2, NULL };
 
     if (running) {
         return luaL_error(L, "doom is already running in this process");
     }
 
-    /*
-     * The string is pinned in the registry for the life of the process.
-     *
-     * `wad_bytes` points into a Lua string and Doom keeps that pointer -
-     * `wad_file_t.mapped` is the whole reason this is fast. A collected
-     * string would be a dangling pointer inside id's code, which is the one
-     * place a bug here would be impossible to read. Pinned, it cannot be.
-     */
-    lua_pushvalue(L, 1);
-    lua_setfield(L, LUA_REGISTRYINDEX, "kosmos.doom.wad");
+    if (at == 0 || len < 12) {
+        return luaL_error(L, "that is not a WAD: %d bytes at %d",
+                          (int)len, (int)at);
+    }
 
-    wad_bytes = (const unsigned char *)bytes;
+    wad_bytes = (const unsigned char *)at;
     wad_len = len;
+
+    /*
+     * And the libc is told what that name means here.
+     *
+     * `D_FindWADByName` checks the file exists before believing in it, and
+     * it checks with `fopen`. So the same bytes are reachable two ways: as
+     * a `wad_file_t.mapped` for the reading Doom does at speed, and as a
+     * `FILE` for the one question it asks about existence. Both point at the
+     * same region and neither copies it.
+     */
+    if (kosmos_provide("doom1.wad", (const void *)at, len) != 0) {
+        return luaL_error(L, "the libc would not take the WAD");
+    }
 
     running = 1;
 
-    doomgeneric_Create(1, argv);
+    /*
+     * This runs Doom's whole setup - reading the WAD's directory, building
+     * its tables, and one frame - and returns. It does not loop: that is
+     * what makes doomgeneric the port to start from, and what lets the Lua
+     * side own the frame loop and be able to stop.
+     */
+    /*
+     * Armed, because Doom exits when it is unhappy.
+     *
+     * `I_Error` prints what is wrong and calls `exit`, and without a landing
+     * place that is a panic - the process dies with the explanation still in
+     * the spill ring and nobody left to drain it. With one, control comes
+     * back here, `l_start` returns false, and the Lua side prints what Doom
+     * actually said.
+     */
+    if (kosmos_exit_arm() != 0) {
+        running = 0;
+
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, "doom stopped during startup");
+
+        return 2;
+    }
+
+    doomgeneric_Create(3, argv);
+
+    kosmos_exit_disarm();
 
     lua_pushboolean(L, 1);
 
@@ -333,8 +415,35 @@ static int l_key(lua_State *L)
     return 0;
 }
 
+/*
+ * doom.log() - whatever Doom printed since the last call, or nil.
+ *
+ * Doom talks: which IWAD it found, how many lumps, what it could not load,
+ * and `I_Error`'s last words. All of it goes through `printf`, and `printf`
+ * is refused for a process that does not own the console - so it lands in
+ * the ring in `stdio.c` and this is the spoon. The Lua side calls it each
+ * frame and prints what comes out, which puts Doom's account of itself on
+ * the same console as everything else.
+ */
+size_t kosmos_spill_drain(char *out, size_t max);
+
+static int l_log(lua_State *L)
+{
+    char buf[1024];
+    size_t n = kosmos_spill_drain(buf, sizeof buf);
+
+    if (n == 0) {
+        return 0;
+    }
+
+    lua_pushlstring(L, buf, n);
+
+    return 1;
+}
+
 static const luaL_Reg doom_lib[] = {
     { "start", l_start },
+    { "log",   l_log },
     { "frame", l_frame },
     { "key",   l_key },
     { NULL, NULL },

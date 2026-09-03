@@ -23,7 +23,17 @@ size_t heap_size(void);
 
 long   strtol(const char *s, char **end, int base);
 int    atoi(const char *s);
+double atof(const char *s);
 char  *getenv(const char *name);
+int    system(const char *command);
+
+/*
+ * Arm a landing place for `exit()`. Returns 0 the first time and non-zero
+ * when something called `exit` and arrived back here - the same shape as
+ * `setjmp`, because it is one. See the note in malloc.c.
+ */
+int    kosmos_exit_arm(void);
+void   kosmos_exit_disarm(void);
 void   qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
 

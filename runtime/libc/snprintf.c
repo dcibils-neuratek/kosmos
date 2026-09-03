@@ -123,6 +123,27 @@ static void format_unsigned(struct out *o, const struct spec *sp,
         value /= base;
     }
 
+    /*
+     * Precision on an integer is a *minimum number of digits*, zero-filled -
+     * which is not the same thing as zero padding to a width, and was not
+     * implemented: `precision` was parsed and then used only by the float
+     * path, so `%.3d` of 33 produced "33".
+     *
+     * Doom found it. It builds the names of its HUD font lumps with
+     * `sprintf(buffer, "STCFN%.3d", j)`, so every one of them came out one
+     * character short, and what that looks like is `W_GetNumForName:
+     * STCFN33 not found!` on a WAD that has STCFN033 in it - a missing-file
+     * error caused by a formatting bug, which is a long way to look for it.
+     *
+     * The digits are already in `tmp` in reverse at this point, so the fill
+     * goes on the end and comes out at the front.
+     */
+    if (sp->precision > 0) {
+        while (n < (size_t)sp->precision && n < sizeof tmp) {
+            tmp[n++] = '0';
+        }
+    }
+
     /* Reverse in place; emit_padded wants them in reading order. */
     for (size_t i = 0; i < n / 2; i++) {
         char c = tmp[i];
@@ -586,3 +607,11 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
 
     return n;
 }
+
+/*
+ * `sscanf` is not here, and for the same reason `strdup` is not in
+ * string.c: it needs `strtol`, `strtol` is userland-only, and this file is
+ * linked into the kernel's test build. The link said so.
+ *
+ * It lives in `user/lib/misc_user.c`, next to the `strtol` it calls.
+ */

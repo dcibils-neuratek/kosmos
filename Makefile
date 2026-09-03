@@ -204,7 +204,8 @@ TARGET := $(BUILD)/kosmos.elf
 # registers on a context switch. If something in the kernel needs a float,
 # it is badly designed, and this turns that into a compile error rather than
 # a corrupted register found three milestones later.
-CFLAGS_BASE := -std=c11 -ffreestanding -nostdlib -nostartfiles \
+CFLAGS_BASE := $(if $(DOOM),-DUSER_HEAP_PAGES=3072) \
+               -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
                -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Iuser \
@@ -361,7 +362,30 @@ endif
 # command lines.
 #
 ifdef DOOM
-DOOM_SRCS := $(sort $(wildcard user/doom/*.c)) user/lib/doom_kosmos.c
+#
+# The 79 objects doomgeneric's own Makefile names, and not one more.
+#
+# Listed rather than globbed, because `runtime/upstream/doom/` is upstream's
+# whole tree and eight of the files in it are *other people's* platform
+# layers - SDL, Xlib, Win32, Allegro. Globbing would compile all of them and
+# then fail to link four different sets of missing symbols. The list is
+# upstream's, from its Makefile, which is the authority on what Doom is made
+# of.
+#
+DOOM_NAMES := dummy am_map doomdef doomstat dstrings d_event d_items \
+              d_iwad d_loop d_main d_mode d_net f_finale f_wipe g_game \
+              hu_lib hu_stuff info i_cdmus i_endoom i_joystick i_scale \
+              i_sound i_system i_timer memio m_argv m_bbox m_cheat \
+              m_config m_controls m_fixed m_menu m_misc m_random p_ceilng \
+              p_doors p_enemy p_floor p_inter p_lights p_map p_maputl \
+              p_mobj p_plats p_pspr p_saveg p_setup p_sight p_spec \
+              p_switch p_telept p_tick p_user r_bsp r_data r_draw r_main \
+              r_plane r_segs r_sky r_things sha1 sounds statdump st_lib \
+              st_stuff s_sound tables v_video wi_stuff w_checksum w_file \
+              w_main w_wad z_zone i_input i_video doomgeneric
+
+DOOM_SRCS := $(addprefix runtime/upstream/doom/,$(addsuffix .c,$(DOOM_NAMES))) \
+             user/lib/doom_kosmos.c
 USER_SRCS += $(DOOM_SRCS)
 
 #
@@ -375,7 +399,23 @@ USER_SRCS += $(DOOM_SRCS)
 # is the rule that decides this - patching eighty files to silence a warning
 # would be exactly the modification `CLAUDE.md` forbids.
 #
-DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iuser/doom \
+#
+# Twelve megabytes of heap instead of two, for both halves of the build.
+#
+# `malloc` in a Kosmos process is the process's own heap, and Doom brought
+# its own allocator: `I_ZoneBase` asks for six megabytes before the game
+# draws anything, and `DG_ScreenBuffer` is another one at 640x400. Against a
+# two-megabyte heap the first allocation fails, and what that looks like is
+# a black window and not one line of output - Doom faults writing through
+# the pointer it did not get, and the compositor goes on drawing the
+# window's last contents because it owns them.
+#
+# The kernel needs the same number, because it is the kernel that maps the
+# heap when it builds the process.
+#
+DOOM_HEAP := -DUSER_HEAP_PAGES=3072
+
+DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iruntime/upstream/doom \
                -DNORMALUNIX -DLINUX -DDOOMGENERIC_RESX=640 \
                -DDOOMGENERIC_RESY=400
 endif
@@ -385,7 +425,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) $(if $(DOOM),-DKOSMOS_DOOM) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
@@ -445,6 +485,26 @@ $(BUILD)/hal/qemu-virt/fb.c.o: $(FB_FILE)
 $(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Wno-error -MMD -MP -c $< -o $@
+
+#
+# id's source, compiled on its own terms.
+#
+# Before the general rule, because make takes the first pattern that
+# matches. Three differences from everything else here:
+#
+#   `-w` and `-Wno-error`. This is 1997 C - unused parameters, missing field
+#   initialisers, K&R habits - and it is thirty years old and correct.
+#   Kosmos's own code including `doom_kosmos.c` is still held to
+#   `-Wall -Wextra -Werror`; only these eighty files are not. The
+#   alternative was patching them, which is the one thing the rule about
+#   vendored code forbids.
+#
+#   No `-include kosmos_lua.h`. Doom does not know what Lua is and should
+#   not be told.
+#
+$(UBUILD)/runtime/upstream/doom/%.c.o: runtime/upstream/doom/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(DOOM_CFLAGS) -MMD -MP -c $< -o $@
 
 $(UBUILD)/%.c.o: %.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)

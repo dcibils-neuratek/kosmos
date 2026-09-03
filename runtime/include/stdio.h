@@ -63,6 +63,51 @@ int    fflush(FILE *f);
 int    getc(FILE *f);
 int    ungetc(int c, FILE *f);
 
+/*
+ * The printing half, which goes to this process's console.
+ *
+ * `FILE *` is accepted and ignored: both stream pointers are NULL here and
+ * a process has one console, not two. See the note in stdio.c.
+ */
+int printf(const char *fmt, ...)  __attribute__((format(printf, 1, 2)));
+int fprintf(FILE *f, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+int vprintf(const char *fmt, va_list ap)
+    __attribute__((format(printf, 1, 0)));
+int vfprintf(FILE *f, const char *fmt, va_list ap)
+    __attribute__((format(printf, 2, 0)));
+int sprintf(char *buf, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+int sscanf(const char *in, const char *fmt, ...)
+    __attribute__((format(scanf, 2, 3)));
+int vsscanf(const char *in, const char *fmt, va_list ap)
+    __attribute__((format(scanf, 2, 0)));
+
+/*
+ * Hand this libc a file the process already holds.
+ *
+ * `name` is matched by its last path component, and the bytes must outlive
+ * every `fopen` of it. See the long note in stdio.c: this is not a global
+ * tree, it is one process saying what a name means to it.
+ */
+int kosmos_provide(const char *name, const void *bytes, size_t len);
+
+int puts(const char *s);
+
+/* The savegame half, all of which fail. See the note in stdio.c. */
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+int  fseek(FILE *f, long offset, int whence);
+long ftell(FILE *f);
+void rewind(FILE *f);
+int  remove(const char *path);
+int  rename(const char *from, const char *to);
+int putchar(int c);
+int fputs(const char *s, FILE *f);
+int fputc(int c, FILE *f);
+
 int snprintf(char *buf, size_t size, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
 
