@@ -47,7 +47,7 @@ local W = screen.width or 1024
 -- Eight pixels of air around the line of text rather than four. Derived
 -- from the font because the font is a setting, with a floor so that a small
 -- font does not produce a sliver.
-local H = math.max(32, gfx.font.h + 10)
+local H = math.max(26, gfx.font.h + 10)
 
 local win, err = ui.window{
   title = "Topbar", w = W, h = H, strip = "top",

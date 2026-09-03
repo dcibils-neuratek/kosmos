@@ -1336,8 +1336,29 @@ function ui.editor(spec)
     self.dirty = false
   end
 
+  --
+  -- The monospace cell, read fresh each time rather than captured.
+  --
+  -- This widget numbers its lines in a gutter, puts a block caret *on* a
+  -- character and clips to a column count. All three are arithmetic on a
+  -- cell that is the same width for every glyph, so in a proportional face
+  -- none of it lands: the caret sits beside the character it is on and the
+  -- gutter walks away from the text. An editor is monospace by
+  -- construction, not by preference.
+  --
+  -- `GW`/`GH` are the *interface* font's and answer for that one only,
+  -- which is the same thing the terminal had wrong. Read per repaint
+  -- because the font is a setting and a window open while it changes has
+  -- to follow it.
+  --
+  local function cell()
+    return math.max(1, gfx.measure("0", "mono")), gfx.height("mono")
+  end
+
   local function rows(self)
-    return (self.h - 4) // GH
+    local _, ch = cell()
+
+    return (self.h - 4) // ch
   end
 
   local function scroll_into_view(self)
@@ -1360,6 +1381,8 @@ function ui.editor(spec)
   end
 
   function v:draw(g)
+    local GW, GH = cell()
+
     scroll_into_view(self)
 
     -- A well: content lives in here, and the bevel says so. The focus
@@ -1380,9 +1403,9 @@ function ui.editor(spec)
       if line then
         local y = 2 + row * GH
 
-        g:text(2, y, ("%4d "):format(n), theme.line, theme.sunken)
+        g:text(2, y, ("%4d "):format(n), theme.line, theme.sunken, "mono")
         g:text(2 + GUTTER * GW, y, line:sub(1, columns), theme.text,
-               theme.sunken)
+               theme.sunken, "mono")
       end
     end
 
@@ -1397,7 +1420,7 @@ function ui.editor(spec)
       g:fill(px, py, GW, GH, theme.ring)
 
       if under ~= "" then
-        g:text(px, py, under, theme.sunken, theme.ring)
+        g:text(px, py, under, theme.sunken, theme.ring, "mono")
       end
     end
   end
@@ -1484,6 +1507,11 @@ function ui.editor(spec)
   -- until it does not.
   --
   function v:mouse(action, x, y)
+    -- The same cell the drawing used, or a click lands on a different
+    -- character from the one under the pointer. That disagreement is the
+    -- whole reason `cell()` is a function rather than two captured numbers.
+    local GW, GH = cell()
+
     if action == "press" or action == "move" then
       local row = (y - 2) // GH
 
