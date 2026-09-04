@@ -1449,10 +1449,27 @@ local function new_namespace()
   -- an index means something different on each side and only the kernel can
   -- translate it.
   function ns.send(path, message, pass)
-    local capability, rest = resolve(path)
+    local capability, rest, _, proto = resolve(path)
 
     if not capability then
       return nil, "no such path: " .. path
+    end
+
+    --
+    -- A server with a declared protocol does not take arbitrary tables.
+    --
+    -- `send` is the generic escape hatch - whatever you put in the table
+    -- reaches the server - and that is exactly what a struct server must
+    -- not be given. Refused here, with a sentence, because the alternative
+    -- is what happened the first time: a `send` to a path under `/dev` that
+    -- named nothing was answered by the C devices server, its struct reply
+    -- was unpacked as a Lua value, and the caller crashed indexing a
+    -- number. Before the conversion the same mistake produced "no such
+    -- device", which is the behaviour to keep.
+    --
+    if proto then
+      return nil, ("/" .. tostring(proto) .. " speaks a fixed protocol; "
+                   .. "there is no `send` to it")
     end
 
     local req = { path = rest }
