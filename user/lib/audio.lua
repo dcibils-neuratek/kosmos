@@ -75,16 +75,28 @@ end
 -- ways of doing one thing.
 --
 function stream:write(pcm)
-  while true do
+  --
+  -- Bounded, because the alternative is a program that never returns.
+  --
+  -- This waited for ever. If the server stops draining the ring - because
+  -- it died, and a server spawned with one capability dies *silently* -
+  -- then every client blocks in here with nothing on screen and nothing on
+  -- the serial line. That is indistinguishable from a hung machine, and it
+  -- cost an evening of suspecting the test harness.
+  --
+  -- Two seconds is far longer than any legitimate wait: the ring plus the
+  -- device is well under a hundred milliseconds of sound, so anything past
+  -- that is not back pressure, it is a fault.
+  --
+  for _ = 1, 500 do
     if sys.ring_put(self.ring, pcm) then return true end
 
-    --
-    -- One tick. The ring holds `AUDIO_RING_PERIODS` and the device another
-    -- few, so there is tens of milliseconds still to play while this
-    -- sleeps, and being woken with room to spare is the whole idea.
-    --
+    -- One tick. The ring holds several periods and the device a few more,
+    -- so there are tens of milliseconds still to play while this sleeps.
     sys.sleep(1)
   end
+
+  return false, "the audio server stopped taking periods"
 end
 
 -- How many periods are waiting to be mixed, and how much room is left.
@@ -147,6 +159,21 @@ end
 -- audio", and a meter that went quiet when you muted something would be a
 -- second volume display.
 --
+--
+-- What the server says about its own timekeeping.
+--
+-- Separate from `audio.streams` because it is a different question - that
+-- one is "what is playing", this is "is the machine keeping up" - and
+-- because a meter that redraws at 25 Hz should not be carrying diagnostics.
+--
+function audio.stats()
+  local r = fs.send("/dev/audio", { type = "streams" })
+
+  if not r or not r.ok then return nil end
+
+  return { starved = r.starved, late = r.late, mixes = r.mixes }
+end
+
 function audio.streams()
   local r = fs.send("/dev/audio", { type = "streams" })
 

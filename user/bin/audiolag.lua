@@ -38,7 +38,7 @@ local out = assert(audio.open("audiolag"))
 local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 local us = hz // 1000000
 
-local worst, over = 0, 0
+local worst, over, sent = 0, 0, 0
 local worst_gap = 0                 -- between iterations, while playing
 local began = sys.ticks()
 local prev_iter = began
@@ -46,7 +46,15 @@ local prev_iter = began
 for _ = 1, N do
   local t0 = sys.ticks()
 
-  if not out:write(chunk) then break end
+  local ok, why = out:write(chunk)
+
+  if not ok then
+    print("audiolag: stopped at period " .. tostring(sent) .. ": "
+          .. tostring(why))
+    break
+  end
+
+  sent = sent + 1
 
   local took = (sys.ticks() - t0) // us
 
@@ -92,6 +100,20 @@ print(("audiolag: UNDERRUNS %d   worst write %d us   stalls over two periods %d"
       :format((after.audio_dry or 0) - dry0, worst, over))
 print(("audiolag: worst gap between turns while playing %d us")
       :format(worst_gap))
+
+--
+-- And the same question asked of the server, which is the only process that
+-- can see both ends.
+--
+-- `starved` is passes where the device had room and no ring had a period -
+-- the clients are behind. `late` is the worst gap between two turns of the
+-- server's own loop - the server is behind. An underrun is one or the
+-- other, and until now there was no way to tell which.
+--
+local srv = audio.stats() or {}
+
+print(("audiolag: server starved %d times, worst turn %d us")
+      :format(srv.starved or -1, srv.late or -1))
 print(("audiolag: queue floor %d of %d periods")
       :format(after.audio_floor or 0, fmt.periods))
 

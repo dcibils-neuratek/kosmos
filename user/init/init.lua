@@ -2862,6 +2862,25 @@ local function audio_main(endpoint)
   -- silent server from a busy one.
   local mixes = 0
 
+  --
+  -- Why the device ran dry, from the only place that can tell.
+  --
+  -- `starved` counts passes where the device had room and no ring had a
+  -- period: the clients are behind. `late` is the worst gap between two
+  -- turns round the loop: this server is behind. They are the two halves of
+  -- a missed deadline and the whole difference between fixing a player and
+  -- fixing a server, and nothing was measuring either - so an underrun was
+  -- an underrun and the argument about which end to look at had no data in
+  -- it at all.
+  --
+  --
+  -- `sys.info`, not `/dev/cpu`: this process is spawned with its endpoint
+  -- and nothing else, so it has no namespace to read a device from. A
+  -- server that cannot print also cannot look things up.
+  --
+  local starved, late, last_turn = 0, 0, 0
+  local US = ((info.counter_hz or 62500000) // 1000000)
+
   local function pick(id)
     return streams[id]
   end
@@ -2986,7 +3005,8 @@ local function audio_main(endpoint)
     end
 
     return { ok = true, master = master, streams = out,
-             period = PERIOD, periods = DEPTH, mixes = mixes }
+             period = PERIOD, periods = DEPTH, mixes = mixes,
+             starved = starved, late = late }
   end
 
   handlers.set = function(req)
@@ -3176,20 +3196,76 @@ local function audio_main(endpoint)
   while true do
     state.pump()
 
-    local worked = refill()
+    --
+    -- How long since this loop last came round, in microseconds.
+    --
+    -- Measured every turn rather than sampled, because the interesting
+    -- value is the worst one and a sample almost never lands on it.
+    --
+    local turn = sys.ticks()
 
-    if not worked then
-      local busy = false
+    --
+    -- Only while something is playing, and `last_turn` is cleared the
+    -- moment nothing is.
+    --
+    -- Otherwise the first turn after a stream opens carries the whole idle
+    -- wait that preceded it - this server sits in a blocking receive until
+    -- somebody calls `open`, so that gap is however long the machine took
+    -- to get around to playing something. It read 367 ms, which is a
+    -- perfectly healthy server measured across a quiet boot.
+    --
+    -- The same mistake as counting a dry device before the queue has ever
+    -- filled: an instrument that measures the quiet part reports a fault
+    -- that is not there, and it is worth noticing that this is the second
+    -- time in one subsystem.
+    --
+    if #order > 0 then
+      if last_turn > 0 then
+        local gap = (turn - last_turn) // US
 
-      for _, id in ipairs(order) do
-        local s = streams[id]
-
-        if s and s.ring and (sys.ring_ready(s.ring) or 0) > 0 then
-          busy = true break
-        end
+        if gap > late then late = gap end
       end
 
-      if busy or (sys.sound_queued() or 0) > 0 then
+      last_turn = turn
+    else
+      last_turn = 0
+    end
+
+    local worked = refill()
+
+    if not worked and (sys.sound_queued() or 0) < DEPTH then
+      -- The device had room and nothing was ready to give it.
+      starved = starved + 1
+    end
+
+    if not worked then
+      --
+      -- Is there anybody who *could* send audio, whether or not they have?
+      --
+      -- **Not "does a ring have a period in it".** That was the question
+      -- until now and it is the wrong one, because a client with a ring
+      -- announces nothing: it writes into shared memory and sends no
+      -- message at all. So the sequence that killed this was ordinary -
+      -- `open` arrives, this loop handles it and comes back round, the ring
+      -- is still empty because the client has not written yet, the device
+      -- is empty because nothing has been mixed - and every test said
+      -- "nothing to do", so it blocked for a message that was never coming.
+      -- The client then filled its ring and waited for a server that was
+      -- asleep for good.
+      --
+      -- It is a race the client sometimes won, which is why this played
+      -- perfectly some runs and not at all in others, and why it looked
+      -- like whatever had been edited most recently.
+      --
+      -- **The cost of the data path being silent is that its liveness has
+      -- to come from somewhere else.** Here that is simply: a stream is
+      -- open, so poll. Nothing can start playing without an `open` first,
+      -- and that is a message, so with no streams at all a blocking receive
+      -- is still safe and still what an idle machine should do.
+      --
+      local anyone = #order > 0
+
+      if anyone or (sys.sound_queued() or 0) > 0 then
         --
         -- The device is full and there is more to send. Wait - for a
         -- message, or for a tick, whichever arrives first.

@@ -251,17 +251,53 @@ means a window, every time.
 
 ## Language split
 
-C is what touches hardware or defines the isolation boundary. Lua is everything else.
+**C is what runs on behalf of another process. Lua is what runs for a
+person.**
 
-The test: **if a bug there can corrupt another process, it is C. If it can only kill its own process, it is Lua.**
+- **C:** the kernel, `arch/`, `hal/`, drivers, **servers**, kits. Plus the
+  Lua interpreter, the `lua_State` allocator, the syscall bindings, the
+  minimal libc and the table serialiser.
+- **Lua:** applications, programs, and the libraries they use.
 
-**C:** the kernel, drivers, kits, and any server on the frame or the packet
-path. Plus the Lua interpreter, the `lua_State` allocator, syscall bindings,
-the minimal libc and the table serialiser.
+The line is a *layer*, and that is the point of it. It used to be a
+judgement - "any server on the frame or the packet path" - and a judgement
+has to be made again at every new subsystem by somebody who remembers to
+make it.
 
-**Lua:** apps, programs, libraries, and the policy servers - the namespace,
-init and supervision, the `/app` registry - which decide things and move
-almost no bytes.
+**Nobody remembered, and the audio server is what it cost.** It sits on the
+period path, which is the frame path with a different clock, and the rule
+named two paths so a third went unnoticed. Written in Lua, it then produced
+in one day: a spin, because `return true` was wrong in a way nothing could
+catch; two Lua strings allocated per period inside a 5.8 ms deadline, which
+is what the shared-ring refactor exists to undo; no way to print a
+diagnostic, because a server is spawned with one capability; and no way to
+read the counter frequency, because it has no namespace to read `/dev/cpu`
+from. Every one of those is a consequence of being a Lua process rather than
+of anything the audio server was trying to do.
+
+**A rule that requires you to recognise a third case will miss the fourth.**
+So the layer decides, and the reason travels with it: if something else's
+correctness or timing depends on you, you do not get a garbage collector.
+
+**What this costs, because it is not free.** The namespace, init and
+supervision, and the `/app` registry are about four thousand lines of policy
+- paths, names, tables - and that is precisely where C buys the least and
+risks the most. A Lua server cannot have a buffer overflow; the blast radius
+is identical either way, since both are EL0 processes behind an address
+space, but one of those bugs is a stack trace and the other is an evening.
+That argument was right when it was written and it has not stopped being
+right. What changed is that it was being used to justify a *judgement* about
+which servers, and the judgement is what failed.
+
+Two things make the move survivable that did not hold before: messages are
+fixed-size and the serialiser is already C, so string handling here has a
+bounded shape rather than an open one; and hot reload has already been
+demoted below speed, so the old objection to a C server is gone.
+
+**Move them one at a time, and live with each before starting the next.**
+The audio server first: it is on a deadline, it is the one that proved the
+point, and it is the smallest. Rewriting all of them at once would be
+today's mistake at a larger scale.
 
 **The argument for C is jitter, not speed.** Structure-shaped code in Lua
 costs about 2%, measured, which is nothing. What decides a server is

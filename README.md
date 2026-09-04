@@ -265,6 +265,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | The tick is 250 Hz, chosen by the sound device rather than by convention: a 5.8 ms period cannot be fed on a 10 ms clock, and buffering more does not fix it | kernel.h |
 | Sep 2026 | A server waits with `receive`-plus-deadline, never a sleep: a server that sleeps on a timer answers nobody while it sleeps | ipc.c |
 | Sep 2026 | **Control by message, data by shared memory.** A stream never travels as a message payload; if it recurs at the hardware's rate, the bytes go in a region | CLAUDE.md |
+| Sep 2026 | The language follows the *layer*, not a judgement: C runs on behalf of another process (kernel, drivers, servers, kits), Lua runs for a person (apps, programs) | CLAUDE.md |
 
 ---
 
