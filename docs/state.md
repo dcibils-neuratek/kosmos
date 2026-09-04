@@ -80,37 +80,27 @@ All eight demos are upstream C, renamed apart on the compile line because
 each defines a function called `draw`. `mech` needs one extra `-D`: it calls
 its per-frame function `display`, GLUT's name rather than `ui.h`'s.
 
-**Three things are unfinished here and the order matters.**
+**All eight are their own application now, under Demos > GLDemos**, and the
+Deskbar nests one level for it: `kosmos: section demos/GLDemos`. The teapot
+runs at 34 fps, gears at 41.
 
-1. ~~An application launched by the window manager cannot print to the
-   serial line.~~ **This was wrong and was checked the next morning.** A
-   windowed application prints perfectly well: `wm saysomething` put all
-   three of its lines on the UART. The runner hands a child the launching
-   process's console capability, the window manager has one, so its children
-   do too.
+**What actually stopped them was a heap, not a channel.** A GL context costs
+ten bytes a pixel - a colour buffer and a conversion buffer at four each, a
+depth buffer at two - out of a two-megabyte heap Lua is already living in.
+360x330 wants 1.2 MB and runs; 460x380 wants 1.7 MB and killed the process
+with nothing said, because TinyGL *asserts* rather than returning when an
+allocation fails, and an assert here is a panic.
 
-   What actually happened is that the GL application **stopped before
-   reaching any print** - a hang or a death produces exactly the same
-   silence - and the missing output was read as a closed channel rather than
-   as evidence about where it stopped. An hour went into building a theory
-   on top of it, and it reached `state.md` and a commit message before
-   anybody tested the claim itself.
+So the kit refuses a context it cannot afford and says what would fit:
 
-   Worth keeping rather than quietly deleting, because it is the same
-   mistake as the four instrument failures beside it: **the absence of a
-   measurement was treated as a measurement.**
+    a 460x380 context wants 1707 KB and this process may spend 1536;
+    about 157286 pixels fit
 
-2. **One application per demo, under a `GLDemos` submenu**, which is what
-   was asked for. The Deskbar learned to nest a section - `kosmos: section
-   demos/GLDemos`, one level deep, and nothing uses it yet. The eight
-   applications were written and removed again: factored through a shared
-   library body they rendered nothing at all, while the otherwise identical
-   single application renders perfectly. The difference was not found, and
-   (1) is why.
-
-3. **Switching demos with 1-8 inside the one application is unverified.**
-   It was reported not working, and the per-app split was meant to replace
-   it rather than fix it.
+The budget is three quarters of the heap, and that fraction is measured
+rather than chosen - 388x400 wants 1516 KB and runs, 460x380 wants 1707 and
+dies. Half the heap was tried first and would have refused the size that
+demonstrably worked, which is the other way to be wrong about a limit and
+the more annoying one, because it looks like caution.
 
 **The audio server is C, and its protocol is a struct (Sep 2026).** 482
 lines of Lua became 462 of C plus a 108-line header. `main.c` dispatches

@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "kosmos.h"       /* USER_HEAP_SIZE, for the budget below */
 #include "lua.h"
 #include "lauxlib.h"
 
@@ -86,6 +87,39 @@ static int l_context(lua_State *L)
         lua_pushnil(L);
         lua_pushstring(L, "a GL context that size is not one this machine has");
         return 2;
+    }
+
+    /*
+     * Refused here rather than attempted, because TinyGL does not return
+     * from this failure - it asserts, and an assert is a panic.
+     *
+     * `ostgl_create_context` allocates a colour buffer and a conversion
+     * buffer at four bytes a pixel each, and `ZB_open` a depth buffer at
+     * two: ten bytes a pixel before anything is drawn. A 460x380 window
+     * wants 1.75 MB of a 2 MB heap that Lua is already living in, and the
+     * process died with nothing on the serial line - which read exactly
+     * like a channel that was closed, and cost an evening on that theory.
+     *
+     * Three quarters of the heap, and the fraction is measured rather than
+     * chosen: 388x400 wants 1516 KB and runs, 460x380 wants 1707 KB and
+     * dies. Half the heap was tried first and would have refused the size
+     * that demonstrably works, which is the other way to be wrong about a
+     * limit - and the more annoying one, because it looks like caution.
+     */
+    {
+        unsigned long want = (unsigned long)w * (unsigned long)h * 10UL;
+        unsigned long budget = (USER_HEAP_SIZE / 4UL) * 3UL;
+
+        if (want > budget) {
+            unsigned long fits = budget / 10UL;
+
+            lua_pushnil(L);
+            lua_pushfstring(L,
+                "a %dx%d context wants %d KB and this process may spend %d; "
+                "about %d pixels fit",
+                w, h, (int)(want / 1024), (int)(budget / 1024), (int)fits);
+            return 2;
+        }
     }
 
     g = lua_newuserdatauv(L, sizeof(*g), 0);
