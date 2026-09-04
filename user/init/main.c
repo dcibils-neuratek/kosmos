@@ -59,8 +59,10 @@ extern const unsigned long luabench_lua_len;
  * `print` to next month.
  */
 void audio_server(long endpoint);
+void devices_server(long endpoint);
 
-#define ROLE_AUDIO  16UL
+#define ROLE_AUDIO    16UL
+#define ROLE_DEVICES   9UL
 
 static void say(const char *s)
 {
@@ -94,6 +96,10 @@ int main(unsigned long arg)
      */
     if (arg == ROLE_AUDIO) {
         audio_server(0);
+    }
+
+    if (arg == ROLE_DEVICES) {
+        devices_server(0);
     }
 
     L = kosmos_lua_open();

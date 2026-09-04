@@ -810,7 +810,7 @@ local function new_namespace()
   -- `root` is which part of the server appears here. Left out, the whole
   -- of it does, which is what every mount did before subtrees existed.
   --
-  function ns.mount(prefix, capability, root)
+  function ns.mount(prefix, capability, root, proto)
     --
     -- Mounting over a prefix replaces what was there.
     --
@@ -831,7 +831,7 @@ local function new_namespace()
       end
     end
 
-    mounts[#mounts + 1] = { prefix = prefix, cap = capability, root = root }
+    mounts[#mounts + 1] = { prefix = prefix, cap = capability, root = root , proto = proto }
 
     -- Longest prefix first, so /a/b wins over /a regardless of mount order.
     table.sort(mounts, function(x, y) return #x.prefix > #y.prefix end)
@@ -889,7 +889,7 @@ local function new_namespace()
           rest = (rest == "/") and m.root or (m.root .. rest)
         end
 
-        return m.cap, rest, m.prefix
+        return m.cap, rest, m.prefix, m.proto
       end
     end
     return nil
@@ -910,7 +910,7 @@ local function new_namespace()
     -- ordinary longest-prefix rule picks it from then on and this costs one
     -- exchange the first time and nothing afterwards.
     --
-    local cap, rest, prefix = match(path)
+    local cap, rest, prefix, proto = match(path)
 
     for _, a in ipairs(autos) do
       if prefix == a.prefix and rest ~= "/" then
@@ -920,7 +920,7 @@ local function new_namespace()
       end
     end
 
-    if cap then return cap, rest, prefix end
+    if cap then return cap, rest, prefix, proto end
 
     -- Nothing matched at all. Still worth asking, for a registry mounted
     -- somewhere this path only partly overlaps.
@@ -947,13 +947,94 @@ local function new_namespace()
   -- `pass` is a capability travelling with the request, which the kernel
   -- translates into the server's own index for the same object. It is how
   -- a buffer is handed over for a large read: the pages, not the bytes.
+  --------------------------------------------------------------------------
+  -- Servers that speak a struct rather than a table.
+  --
+  -- **This is the migration showing through, and it is meant to be visible
+  -- rather than hidden.** A mount says which protocol the server on the
+  -- other side speaks, and this kit packs accordingly. Every mount without
+  -- one speaks tables, which is all of them but `/dev` today.
+  --
+  -- It lives here because this is the client half of the boundary: the
+  -- namespace is the kit that knows how to talk to servers, so knowing that
+  -- one of them wants 24 bytes of struct is exactly its business. When the
+  -- last server has moved, the branch and the flag both go and `request`
+  -- becomes one path again.
+  --
+  -- The layouts mirror `user/include/devproto.h`, which is the second and
+  -- last place they are written. The asserts below are what stands in for
+  -- the single implementation `serialize.h` argues for - a size that has
+  -- drifted fails here, at load, rather than in a device tree of plausible
+  -- nonsense.
+  --------------------------------------------------------------------------
+
+  local DEV_REQUEST = "<I4c20"          -- op, name[20]
+  local DEV_FIELD   = "<I8I4c20c32"     -- number, kind, name[20], text[32]
+  local DEV_HEAD    = "<I4I4"           -- error, count
+
+  assert(#string.pack(DEV_REQUEST, 0, "") == 24,
+         "namespace: the /dev request layout does not match devproto.h")
+  assert(#string.pack(DEV_FIELD, 0, 0, "", "") == 64,
+         "namespace: the /dev field layout does not match devproto.h")
+
+  local DEV_OPS = { list = 1, read = 2, getattr = 3 }
+  local DEV_ERRORS = {
+    [1] = "the kernel would not say",
+    [2] = "no such device",
+    [3] = "the devices server did not understand that",
+  }
+
+  local function trim(s) return (s:gsub("%z.*$", "")) end
+
+  local function dev_request(capability, op, rest)
+    local code = DEV_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    local reply, why = sys.call_raw(capability,
+                                    string.pack(DEV_REQUEST, code, rest or ""))
+
+    if not reply then return nil, tostring(why) end
+
+    if #reply < 8 then return nil, "a /dev reply of the wrong size" end
+
+    local err, count = string.unpack(DEV_HEAD, reply)
+
+    if err ~= 0 then
+      return nil, DEV_ERRORS[err] or ("device error " .. tostring(err))
+    end
+
+    local names, value = {}, {}
+
+    for i = 1, count do
+      local at = 8 + (i - 1) * 64 + 1
+      local number, kind, name, text = string.unpack(DEV_FIELD, reply, at)
+
+      name = trim(name)
+      names[i] = name
+      value[name] = (kind == 1) and trim(text) or number
+    end
+
+    if op == "list" then return { ok = true, entries = names } end
+    if op == "getattr" then return { ok = true, attrs = value } end
+
+    return { ok = true, value = value }
+  end
+
   local function request(op, path, extra, pass)
-    local capability, rest = resolve(path)
+    local capability, rest, _, proto = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
       -- simply no such path in this process's world.
       return nil, "no such path: " .. path
     end
+
+    if proto == "dev" then
+      return dev_request(capability, op, rest)
+    end
+
 
     local req = { type = op, path = rest }
     if extra then for k, v in pairs(extra) do req[k] = v end end
@@ -1945,98 +2026,6 @@ local function appfs_main(endpoint)
   serve(endpoint, { apps = {}, order = {} }, appfs_handlers)
 end
 
-local function devices_handlers(state)
-  local function inventory()
-    local m = describe_machine()
-    if not m then return nil end
-
-    -- The order is the order `list` returns, so a listing is reproducible.
-    --
-    -- **`console` is not in it, and that is the point.** The machine has one
-    -- and this server knows about it, but `/dev/console` is mounted to the
-    -- console *server* - longest prefix wins - so a read of that path goes
-    -- somewhere else entirely and means "give me a line of input". Listing a
-    -- name this server does not answer for would be a lie, and an expensive
-    -- one: the first version listed it, the `devices` command dutifully read
-    -- every name it was given, and the console server answered by swallowing
-    -- the next thing typed at the prompt.
-    local names = { "cpu", "memory", "kernel", "timer", "screen", "keyboard" }
-
-    -- Listed only when there is one, like `screen` and `keyboard` above it:
-    -- a board with no clock should not offer a node that answers nothing.
-    if m.clock then names[#names + 1] = "clock" end
-
-    return m, names
-  end
-
-  return {
-    list = function(req)
-      local m, order = inventory()
-      if not m then return { ok = false, error = "the kernel would not say" } end
-
-      local names = {}
-      for _, name in ipairs(order) do
-        if m[name] then names[#names + 1] = name end
-      end
-
-      state.lists = (state.lists or 0) + 1
-      return { ok = true, entries = names }
-    end,
-
-    read = function(req)
-      local m = inventory()
-      if not m then return { ok = false, error = "the kernel would not say" } end
-
-      -- "/cpu" and "cpu" and "/dev/cpu" all mean the same node. The mount
-      -- prefix is stripped before it gets here; the leading slash is not.
-      local name = req.path:match("([^/]+)$")
-      local node = name and m[name]
-
-      if not node then
-        return { ok = false, error = "no such device" }
-      end
-
-      return { ok = true, value = node }
-    end,
-
-    getattr = function(req)
-      return { ok = true, attrs = { kind = "device" } }
-    end,
-  }
-end
-
---------------------------------------------------------------------------
--- The disk server.
---
--- The only process holding SPAWN_DISK. Everything that wants the block
--- device comes through here, which is what makes "raw sectors" an authority
--- somebody was given rather than something any program can reach.
---
--- It serves two names and no more, because at this milestone there are only
--- two questions:
---
---   /disk/super    read: what the superblock says, or why there is none
---   /disk/format   write: format it, erasing everything
---
--- Both are the ordinary protocol - `read` and `write` over typed records -
--- rather than operations invented for the occasion. When the real
--- filesystem lands it answers `list`, `read` and `write` for actual paths
--- and these two stay as what they are: a way to look at, and to lay down,
--- the structure underneath.
---
--- Block *contents* deliberately do not travel through here. A message is
--- 2048 bytes and a block is 4096, and the answer to "how do I move a
--- megabyte" is never "in smaller messages" - design.md 8.4 has that as
--- mapped pages. What crosses this boundary is small tables.
---------------------------------------------------------------------------
-
--- Reserved at the root of the filesystem, and the only two names that are.
---
--- A filesystem has to be able to say what it is and to be laid down, and
--- both are questions about the *disk* rather than about a file on it. They
--- live here as names because the protocol this system has is paths - adding
--- two operations to it so that one server could be asked two questions
--- would be a bigger change than reserving two names.
 --
 -- The dot is what keeps them from colliding with an ordinary file: nothing
 -- creates a name starting with one, and `store` refuses to.
@@ -2857,9 +2846,10 @@ local function diskfs_main(endpoint)
   serve(endpoint, { kfs = assert(load(kfs, "kfs.lua"))() }, diskfs_handlers)
 end
 
-local function devices_main(endpoint)
-  serve(endpoint, {}, devices_handlers)
-end
+--
+-- No `devices_main`: the devices server is C. `user/servers/devices.c` is
+-- the whole of it and `main.c` dispatches role 9 before Lua is opened.
+--
 
 local RUNNER_ROLE = ROLE_RUNNER
 
@@ -2873,7 +2863,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- while everything else under /dev goes to the device server. Two servers
   -- under one directory, and neither knows about the other - which is what a
   -- per-process mount table buys.
-  ns.mount("/dev", devices_cap)
+  ns.mount("/dev", devices_cap, nil, "dev")
 
   --
   -- Over the top of `/dev`, because longest prefix wins.
@@ -4190,11 +4180,10 @@ if role == ROLE_RAMFS then
   return
 end
 
-if role == ROLE_DEVICES then
-  sys.name("devices")
-  devices_main(CAP)
-  return
-end
+--
+-- No branch for ROLE_DEVICES: the devices server is C, and
+-- `user/init/main.c` dispatches it before the interpreter is opened.
+--
 
 if role == ROLE_APPFS then
   sys.name("appfs")
@@ -4266,7 +4255,7 @@ if role == ROLE_RUNNER then
   if req.console then ns.mount("/dev/console", req.console) end
   if req.data    then ns.mount("/data",        req.data)    end
   if req.bin     then ns.mount("/bin",         req.bin)     end
-  if req.devices then ns.mount("/dev",         req.devices) end
+  if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
   if req.lib     then ns.mount("/lib",         req.lib)     end
   if req.app     then ns.mount_registry("/app", req.app)    end
   if req.disk    then
