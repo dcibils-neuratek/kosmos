@@ -267,6 +267,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **Control by message, data by shared memory.** A stream never travels as a message payload; if it recurs at the hardware's rate, the bytes go in a region | CLAUDE.md |
 | Sep 2026 | The language follows the *layer*, not a judgement: C runs on behalf of another process (kernel, drivers, servers, kits), Lua runs for a person (apps, programs) | CLAUDE.md |
 | Sep 2026 | A boundary is an agreement: what crosses into the system is a declared struct, not a table. A capability is what you cannot *name*; a struct is what you cannot *say* | audioproto.h |
+| Sep 2026 | The namespace is a **kit**, not a server: it is run in the caller's own process, has no endpoint and no thread. This file called it a server for months and an argument was built on the name | glossary.md |
 
 ---
 

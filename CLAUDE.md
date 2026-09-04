@@ -308,10 +308,24 @@ of anything the audio server was trying to do.
 So the layer decides, and the reason travels with it: if something else's
 correctness or timing depends on you, you do not get a garbage collector.
 
-**What this costs, because it is not free.** The namespace, init and
-supervision, and the `/app` registry are about four thousand lines of policy
-- paths, names, tables - and that is precisely where C buys the least and
-risks the most. A Lua server cannot have a buffer overflow; the blast radius
+**The namespace is not one of them, and calling it a server was an error
+this file made for a long time.** `glossary.md` is exact - *a kit is code you
+run; a server is someone you ask* - and `new_namespace` is run, in the
+caller's own process, five separate times. It has no endpoint and no thread.
+Nobody asks it anything. It is a **kit**, it is Lua, and it is already on the
+right side of the line; moving it to C would be moving it to the wrong one.
+
+Worth recording rather than quietly corrected, because the mislabel did
+work: it appeared in this file as "the policy servers - the namespace, init
+and supervision, the `/app` registry", and an argument for converting four
+thousand lines was built on top of it before anybody looked at what
+`new_namespace` actually is. A name in a document is a claim, and this one
+went unchecked for months.
+
+**What the move does cost, because it is not free.** The servers that hold
+policy rather than a deadline - `binfs`, `appfs`, `devices` - are paths,
+names and tables, and that is precisely where C buys the least and risks the
+most. A Lua server cannot have a buffer overflow; the blast radius
 is identical either way, since both are EL0 processes behind an address
 space, but one of those bugs is a stack trace and the other is an evening.
 That argument was right when it was written and it has not stopped being
@@ -324,9 +338,18 @@ bounded shape rather than an open one; and hot reload has already been
 demoted below speed, so the old objection to a C server is gone.
 
 **Move them one at a time, and live with each before starting the next.**
-The audio server first: it is on a deadline, it is the one that proved the
-point, and it is the smallest. Rewriting all of them at once would be
-today's mistake at a larger scale.
+The audio server first, because it is on a deadline and it is what proved
+the point. Then the small ones - `devices` at 115 lines, `appfs` at 62 -
+where the protocol convention gets its second try while it is still cheap to
+find it wrong.
+
+**`diskfs` is the one to leave alone**, and for a reason that has nothing to
+do with its size. Its core is `kfs.lua`, which runs on the host *and* the
+guest, and that is what lets `make test` check the filesystem format and the
+journal's power-loss window without booting a machine - at an exact instant
+a SIGKILL aimed at a running QEMU hits only by luck. Rewriting it in C
+throws that away. It may still be right one day; it is not a consequence of
+"servers are C".
 
 **The argument for C is jitter, not speed.** Structure-shaped code in Lua
 costs about 2%, measured, which is nothing. What decides a server is
