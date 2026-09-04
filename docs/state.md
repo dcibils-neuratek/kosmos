@@ -69,6 +69,38 @@ here once yielding at NORMAL is fair. This was invisible until now because
 every program was promoted into the compositor's band - nothing had ever run
 at NORMAL.
 
+**TinyGL is vendored and the GL Kit works (Sep 2026).** Bellard's software
+rasteriser, MIT, byte for byte in `runtime/upstream/tinygl/`. It compiled
+freestanding on the first attempt with no errors - it wants `malloc`,
+`memcpy`, `assert` and seven functions out of `math.h` - so it is compiled
+with `-w -Wno-error` as Doom is. `/kits/gl` is the door; gears renders at
+41 fps in a 388x400 window.
+
+All eight demos are upstream C, renamed apart on the compile line because
+each defines a function called `draw`. `mech` needs one extra `-D`: it calls
+its per-frame function `display`, GLUT's name rather than `ui.h`'s.
+
+**Three things are unfinished here and the order matters.**
+
+1. **An application launched by the window manager cannot print to the
+   serial line.** Every diagnostic added to a graphical app came back empty,
+   because the only channel a headless harness can read is closed exactly
+   where the interesting failures are. This is the blocker: it made the next
+   item undebuggable, and it will do the same to the next graphical bug
+   anybody has.
+
+2. **One application per demo, under a `GLDemos` submenu**, which is what
+   was asked for. The Deskbar learned to nest a section - `kosmos: section
+   demos/GLDemos`, one level deep, and nothing uses it yet. The eight
+   applications were written and removed again: factored through a shared
+   library body they rendered nothing at all, while the otherwise identical
+   single application renders perfectly. The difference was not found, and
+   (1) is why.
+
+3. **Switching demos with 1-8 inside the one application is unverified.**
+   It was reported not working, and the per-app split was meant to replace
+   it rather than fix it.
+
 **The audio server is C, and its protocol is a struct (Sep 2026).** 482
 lines of Lua became 462 of C plus a 108-line header. `main.c` dispatches
 role 16 before the interpreter is opened, so the process serving
