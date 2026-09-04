@@ -1089,7 +1089,18 @@ static int l_call_raw(lua_State *L)
 
     lua_pushlstring(L, (const char *)reply.data,
                     (reply.length > MSG_BYTES) ? MSG_BYTES : reply.length);
-    return 1;
+
+    /*
+     * And whatever capability came back beside them.
+     *
+     * `/app`'s whole purpose is answering `lookup` with an endpoint, and a
+     * raw call that dropped it would make the registry unable to do the one
+     * thing it exists for. Second return value, as `sys.call` has always
+     * done, and -1 when there was none.
+     */
+    lua_pushinteger(L, (lua_Integer)((reply.cap_plus_one == 0)
+                                     ? -1 : (long)reply.cap_plus_one - 1));
+    return 2;
 }
 
 static int l_receive(lua_State *L)

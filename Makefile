@@ -341,6 +341,7 @@ USER_SRCS := user/init/start.S \
              user/servers/audio.c \
              user/servers/devices.c \
              user/servers/binfs.c \
+             user/servers/appfs.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \

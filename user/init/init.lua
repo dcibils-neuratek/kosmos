@@ -858,9 +858,15 @@ local function new_namespace()
 
     if not name then return nil end
 
-    local reply, got = sys.call(cap, { type = "lookup", name = name })
+    --
+    -- Raw, because `/app` is C. The capability comes back beside the bytes
+    -- as it always did: `sys.call_raw` returns the reply's payload and the
+    -- endpoint travels in the message rather than in it.
+    --
+    local reply, got = sys.call_raw(cap, string.pack("<I4c24", 2, name))
 
-    if not reply or not reply.ok or not got or got < 0 then
+    if not reply or #reply < 4 or string.unpack("<I4", reply) ~= 0
+       or not got or got < 0 then
       return nil
     end
 
@@ -939,8 +945,8 @@ local function new_namespace()
   -- Mounts `capability` at `prefix`, and says that names under it are to be
   -- looked up rather than known in advance.
   --
-  function ns.mount_registry(prefix, capability)
-    ns.mount(prefix, capability)
+  function ns.mount_registry(prefix, capability, proto)
+    ns.mount(prefix, capability, nil, proto)
     autos[#autos + 1] = { prefix = prefix, cap = capability }
   end
 
@@ -1098,6 +1104,64 @@ local function new_namespace()
              value = reply:sub(BIN_DATA, BIN_DATA + length - 1) }
   end
 
+  --------------------------------------------------------------------------
+  -- /app, which is C and speaks `appproto.h`.
+  --
+  -- The registry is not mounted like the others - `mount_registry` looks a
+  -- child up on demand and mounts what comes back - so this is spoken to
+  -- from two places: `request`, for `list`, and `lookup_into` above, which
+  -- needs the endpoint itself rather than any bytes.
+  --------------------------------------------------------------------------
+
+  local APP_REQUEST = "<I4c24"                   -- op, name[24]
+  local APP_HEAD    = "<I4I4c24"                 -- error, count, name[24]
+  local APP_NAMES   = 32 + 1                     -- past the header, 1-based
+
+  assert(#string.pack(APP_REQUEST, 0, "") == 28,
+         "namespace: the /app request layout does not match appproto.h")
+
+  local APP_OPS = { register = 1, lookup = 2, list = 3, unregister = 4 }
+  local APP_ERRORS = {
+    [1] = "register: no endpoint came with that",
+    [2] = "no such application",
+    [3] = "too many applications registered",
+    [4] = "the /app registry did not understand that",
+  }
+
+  local function app_request(capability, op, name, pass)
+    local code = APP_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    local reply, got = sys.call_raw(capability,
+                                    string.pack(APP_REQUEST, code, name or ""),
+                                    pass)
+
+    if not reply then return nil, tostring(got) end
+    if #reply < APP_NAMES - 1 then return nil, "an /app reply of the wrong size" end
+
+    local err, count, settled = string.unpack(APP_HEAD, reply)
+
+    if err ~= 0 then
+      return nil, APP_ERRORS[err] or ("app error " .. tostring(err))
+    end
+
+    if op == "list" then
+      local names = {}
+
+      for i = 1, count do
+        local at = APP_NAMES + (i - 1) * 24
+        names[i] = trim(reply:sub(at, at + 23))
+      end
+
+      return { ok = true, entries = names }
+    end
+
+    return { ok = true, name = trim(settled) }
+  end
+
   local function request(op, path, extra, pass)
     local capability, rest, _, proto = resolve(path)
     if not capability then
@@ -1112,6 +1176,14 @@ local function new_namespace()
 
     if proto == "bin" then
       return bin_request(capability, op, rest, extra)
+    end
+
+    if proto == "app" then
+      -- The name is whatever is left of the path after the mount prefix,
+      -- with the slash `resolve` leaves on the front taken off.
+      return app_request(capability, op,
+                         (rest or ""):match("([^/]+)$") or "",
+                         extra and extra.pass)
     end
 
 
@@ -1467,6 +1539,25 @@ local function new_namespace()
     -- number. Before the conversion the same mistake produced "no such
     -- device", which is the behaviour to keep.
     --
+    --
+    -- A server with a declared protocol does not take arbitrary tables.
+    --
+    -- `send` is the generic escape hatch - whatever is in the table reaches
+    -- the server - and that is exactly what a struct server must not be
+    -- handed. Where the protocol has an operation for what was asked, this
+    -- routes to it; where it does not, it refuses with a sentence.
+    --
+    -- The alternative is what happened before the check existed: a `send`
+    -- to a path under `/dev` that named nothing was answered by the C
+    -- devices server, its struct reply was unpacked as a Lua value, and the
+    -- caller crashed indexing a number. "No such device" is the behaviour
+    -- worth keeping.
+    --
+    if proto == "app" then
+      return app_request(capability, tostring(message.type or ""),
+                         tostring(message.name or ""), pass)
+    end
+
     if proto then
       return nil, ("/" .. tostring(proto) .. " speaks a fixed protocol; "
                    .. "there is no `send` to it")
@@ -1866,67 +1957,11 @@ end
 -- it would be holding every other application's door.
 --------------------------------------------------------------------------
 
-local function appfs_handlers(state)
-  return {
-    register = function(req, who, cap)
-      if not cap or cap < 0 then
-        return { ok = false, error = "register: no endpoint came with that" }
-      end
+--
+-- No `appfs` here: /app is served by `user/servers/appfs.c`, and `main.c`
+-- dispatches role 14 before the interpreter is opened.
+--
 
-      local name = tostring(req.name or "?")
-
-      -- A second application of the same name gets a number, rather than
-      -- replacing the first: two clocks are two clocks.
-      if state.apps[name] then
-        local n = 2
-        while state.apps[name .. n] do n = n + 1 end
-        name = name .. n
-      end
-
-      state.apps[name] = cap
-      state.order[#state.order + 1] = name
-
-      return { ok = true, name = name }
-    end,
-
-    lookup = function(req)
-      local cap = state.apps[tostring(req.name or "")]
-
-      if not cap then
-        return { ok = false, error = "no such application" }
-      end
-
-      -- The endpoint itself, for the caller to mount and hold.
-      return { ok = true, send_cap = cap }
-    end,
-
-    list = function(req)
-      local names = {}
-
-      for _, name in ipairs(state.order) do
-        if state.apps[name] then names[#names + 1] = name end
-      end
-
-      table.sort(names)
-      return { ok = true, entries = names }
-    end,
-
-    unregister = function(req)
-      local name = tostring(req.name or "")
-
-      if state.apps[name] then
-        sys.destroy(state.apps[name])
-        state.apps[name] = nil
-      end
-
-      return { ok = true }
-    end,
-  }
-end
-
-local function appfs_main(endpoint)
-  serve(endpoint, { apps = {}, order = {} }, appfs_handlers)
-end
 
 --
 -- The dot is what keeps them from colliding with an ordinary file: nothing
@@ -2789,7 +2824,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- What is running, and what each one exposes. A registry rather than a
   -- mount: the names under it appear and disappear with the programs.
-  ns.mount_registry("/app", app_cap)
+  ns.mount_registry("/app", app_cap, "app")
 
   -- Files, on the disk, surviving the power going off. design.md 8.1 names
   -- this as where user data lives, and the two reserved names at its root -
@@ -4087,10 +4122,6 @@ end
 -- `user/init/main.c` dispatches it before the interpreter is opened.
 --
 
-if role == ROLE_APPFS then
-  sys.name("appfs")
-  appfs_main(CAP)
-end
 
 if role == ROLE_DISKFS then
   sys.name("diskfs")
@@ -4154,7 +4185,7 @@ if role == ROLE_RUNNER then
   if req.bin     then ns.mount("/bin",         req.bin, nil, "bin") end
   if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
   if req.lib     then ns.mount("/lib",         req.lib, nil, "bin") end
-  if req.app     then ns.mount_registry("/app", req.app)    end
+  if req.app     then ns.mount_registry("/app", req.app, "app") end
   if req.disk    then
     ns.mount("/system", req.disk, "/system")
     ns.mount("/user",   req.disk, "/user")
