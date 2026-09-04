@@ -77,6 +77,23 @@ period costs 0.095 ms to decode against a 5.8 ms deadline. That is a QEMU
 number and worth what `CLAUDE.md` says QEMU numbers are worth, but sixty
 times over is margin rather than a fit.
 
+**The window manager's Lua half is about a ninth of a busy pass**, measured
+with `frames` on two windows: composing 84.7% (already C), application
+requests 10.2%, polls 3.5%, everything else ~1.3%. `CLAUDE.md` carried
+"profile before rewriting it" as an open question for months; the answer is
+no, and it is recorded there.
+
+**What the same profile found instead**: 4.2 KB of garbage a pass, 3.63 KB of
+it in `wait_input` - the call the desktop makes every pass whether or not
+anything happened - against 0.02 KB for composing. It was the marshalling: a
+1036-byte request string and a 1400-byte reply string, sixty times a second,
+because the console had moved to a declared struct. `con.wait` does that
+exchange in C into a reused table now. **0.6 KB a pass, one collection
+instead of four, worst collecting pass 5.75 ms -> 1.40 ms.**
+
+`frames` reports a KB/pass column per stage, which is what made any of this
+visible.
+
 ## Next, in order
 
 1. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
@@ -86,6 +103,10 @@ times over is margin rather than a fit.
 3. **Seeking in `music`** - the bar is drawn and cannot be dragged. For MP3
    it means finding a frame boundary rather than a byte offset, which is
    what `mp3.decoder():reset()` exists for.
+4. **The remaining 0.6 KB a pass** is `application requests` (0.42) and
+   `answering polls` (0.15) - the desktop serving its own applications over
+   the table protocol. Smaller than what was just removed, and the same
+   shape if it ever matters.
 
 ## Still open
 

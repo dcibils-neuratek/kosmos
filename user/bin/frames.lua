@@ -106,13 +106,14 @@ local function report(p)
                       us(p.busy_total) / p.passes,
                       ms(p.busy_max)))
   print("")
-  print("  stage                     total ms     share    worst us")
-  print("  ---------------------------------------------------------")
+  print("  stage                     total ms     share    worst us    KB/pass")
+  print("  --------------------------------------------------------------------")
 
   for _, s in ipairs(STAGES) do
     local name, label = s[1], s[2]
     local total = p[name .. "_total"] or 0
     local worst = p[name .. "_max"] or 0
+    local kb    = (p[name .. "_kb"] or 0) / p.passes
 
     -- Share of *busy*, so the stages add to a hundred. Waiting is not
     -- busy and is shown with a dash rather than a fraction it is not part
@@ -123,9 +124,26 @@ local function report(p)
                                    (p.busy_total > 0)
                                      and (total * 100.0 / p.busy_total) or 0)
 
-    print(string.format("  %-22s %10.3f    %s   %9.1f",
-                        label, ms(total), share, us(worst)))
+    print(string.format("  %-22s %10.3f    %s   %9.1f   %8.2f",
+                        label, ms(total), share, us(worst), kb))
   end
+
+  --
+  -- What a pass allocates, which is the number the collector answers to.
+  --
+  -- The times say which stage is slow; this says which stage will *stop*
+  -- the desktop, and they are not the same question. A collection arrives
+  -- when the allocator decides, so a stage that costs nothing and allocates
+  -- steadily is buying a pause for whichever stage happens to be running
+  -- when it lands.
+  --
+  local alloc = 0
+
+  for _, s in ipairs(STAGES) do alloc = alloc + (p[s[1] .. "_kb"] or 0) end
+
+  print("")
+  print(string.format("  %.1f KB a pass allocated, %.0f KB a second at %d passes/s",
+                      alloc / p.passes, alloc / p.passes * 60, 60))
 
   print("")
 

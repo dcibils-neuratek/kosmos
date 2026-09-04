@@ -390,12 +390,39 @@ blitter, a packet path. Four thousand lines of policy rewritten in C would be
 string handling and table lookups, which is where overflows live and where C
 buys nothing.
 
-**The window manager is the open case, and it is a measurement rather than an
-opinion.** Its pixel work is already C; its Lua half is layout, focus, damage
-and event routing - 1,422 lines of it. Whether that is five per cent of a
-frame or fifty is now measurable rather than arguable: `frames` starts the
-window manager's own stage counters and prints where a pass went. Profile
-before rewriting it.
+**The window manager was the open case. It has been measured, and the answer
+is no.** Its pixel work is already C; its Lua half is layout, focus, damage
+and event routing. `frames`, on two windows going from idle to animating:
+
+```
+composing            84.7%      already C, 42 ns a pixel
+application requests 10.2%
+answering polls       3.5%
+keys / pointer / reaping ~1.3%
+```
+
+**About a ninth of a busy pass**, against seven eighths in pixels that are
+already C. Rewriting it would be four figures of lines for a fraction of a
+ninth, and the profile is what says so rather than anyone's opinion.
+
+**The same profile found the thing that was actually worth fixing**, and it
+was not the language. `frames` also reports what each stage *allocates*, and
+the desktop was making 4.2 KB of garbage a pass - 254 KB a second - of which
+3.63 KB was `wait_input`, the call it makes every pass whether or not
+anything happened. Composing allocated 0.02 KB.
+
+It was the marshalling. A console request is 1036 bytes and a reply about
+1400, and going through `sys.call_raw` meant a Lua string for each plus five
+tables, sixty times a second - so moving the console to a declared struct had
+taken the collector out of the *server* and put it into every client on the
+frame path. `con.wait` now does the whole exchange in C into a reused table:
+**0.6 KB a pass, one collection instead of four, and the worst collecting
+pass down from 5.75 ms to 1.40 ms against a 16 ms frame.**
+
+The lesson generalises and is why this is written down: **when a Lua process
+is on a deadline, ask what it allocates before asking what language it is.**
+The language question was worth about a ninth; the allocation question was
+worth four times the worst-case pause.
 
 `docs/glossary.md` defines what a server, a kit, a library, a program, an app
 and a tool each are, and the distinction that does the most work: **a kit is

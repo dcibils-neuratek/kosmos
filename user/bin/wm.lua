@@ -661,23 +661,47 @@ local function prof_reset()
            gc = { collections = 0, worst = 0 } }
 
   for _, name in ipairs(STAGES) do
-    prof[name] = { total = 0, max = 0 }
+    prof[name] = { total = 0, max = 0, kb = 0 }
   end
 end
 
+--
 -- Charge the time since `t0` to a stage, and hand back the reading so the
 -- next stage starts where this one ended - one clock read per boundary
 -- rather than two.
-local function charge(stage, t0, idle)
+--
+-- **And the heap it grew**, which is why this now takes and returns two
+-- numbers instead of one.
+--
+-- The first profile said the Lua half of this loop is about a tenth of a
+-- busy pass and composing is the rest - so the question of rewriting it in
+-- C was answered no. What the same profile also said was that the worst
+-- collecting pass was 5.7 ms against a 16 ms frame, and *that* is not a
+-- question about which language the loop is written in. It is a question
+-- about what the loop allocates, and nothing here could say.
+--
+-- Per stage rather than per pass, for the same reason the times are per
+-- stage: "this pass allocated 40 KB" tells you there is a problem and
+-- nothing about where.
+--
+-- `collectgarbage("count")` is a call per stage boundary, seven a pass, and
+-- only when measuring. A stage in which a collection ran shows a *fall*,
+-- and a fall is charged as zero rather than as a negative: it did allocate,
+-- and how much is unknowable once something else freed more.
+--
+local function charge(stage, t0, h0, idle)
   local now = sys.ticks()
+  local heap = collectgarbage("count")
   local took = now - t0
+  local grew = heap - h0
   local s = prof[stage]
 
   s.total = s.total + took
   if took > s.max then s.max = took end
+  if grew > 0 then s.kb = s.kb + grew end
   if not idle then pass_busy = pass_busy + took end
 
-  return now
+  return now, heap
 end
 
 -- Everything measured, flattened: the serialiser crosses this as a table of
@@ -695,6 +719,7 @@ local function profile_report()
   for _, name in ipairs(STAGES) do
     out[name .. "_total"] = prof[name].total
     out[name .. "_max"]   = prof[name].max
+    out[name .. "_kb"]    = prof[name].kb
   end
 
   return out
@@ -2710,7 +2735,10 @@ while running do
   -- none. One call for keys and the pointer together, because the console
   -- has to be asked anyway and two round trips to learn nothing is one
   -- more than necessary.
-  local t, heap
+  -- `heap` moves with the stage boundaries and `heap_at_start` does not:
+  -- one is what the last stage ended with, the other is what the pass began
+  -- with, and the collection check below needs the second.
+  local t, heap, heap_at_start
 
   profile_due()
 
@@ -2719,6 +2747,7 @@ while running do
   if measuring then
     prof.passes = prof.passes + 1
     heap = collectgarbage("count")
+    heap_at_start = heap
     t = sys.ticks()
   end
 
@@ -2726,7 +2755,7 @@ while running do
 
   -- Idle, and charged as such: this is the loop asleep with nothing to do,
   -- and counting it as work would make an empty desktop look busy.
-  if measuring then t = charge("wait", t, true) end
+  if measuring then t, heap = charge("wait", t, heap, true) end
 
   for _, c in ipairs(input.keys or {}) do
     key(c)
@@ -2737,7 +2766,7 @@ while running do
     raw_to_focused(ev.code, ev.down)
   end
 
-  if measuring then t = charge("keys", t) end
+  if measuring then t, heap = charge("keys", t, heap) end
 
   -- 2. Whatever the applications have asked for, and not one message more
   -- than has already arrived.
@@ -2769,18 +2798,18 @@ while running do
     end
   end
 
-  if measuring then t = charge("messages", t) end
+  if measuring then t, heap = charge("messages", t, heap) end
 
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
   pointer_pass(input.pointer)
 
-  if measuring then t = charge("pointer", t) end
+  if measuring then t, heap = charge("pointer", t, heap) end
 
   -- 4. Anybody who has been waiting long enough, or now has something.
   answer_waiting()
 
-  if measuring then t = charge("waiting", t) end
+  if measuring then t, heap = charge("waiting", t, heap) end
 
   -- 5. Anything that was asked to close and did not, and the slots of
   -- anything that has already gone.
@@ -2797,13 +2826,13 @@ while running do
   --
   while sys.wait(true) do end
 
-  if measuring then t = charge("collect", t) end
+  if measuring then t, heap = charge("collect", t, heap) end
 
   -- 6. The picture, cursor included.
   compose()
 
   if measuring then
-    charge("compose", t)
+    charge("compose", t, heap)
 
     local b = prof.busy
     b.total = b.total + pass_busy
@@ -2815,7 +2844,7 @@ while running do
     -- only marked will not show - but it is every one that freed anything,
     -- which is the kind that takes the time.
     --
-    if collectgarbage("count") < heap then
+    if collectgarbage("count") < heap_at_start then
       local gc = prof.gc
       gc.collections = gc.collections + 1
       if pass_busy > gc.worst then gc.worst = pass_busy end

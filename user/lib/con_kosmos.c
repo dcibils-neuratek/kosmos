@@ -34,6 +34,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "kosmos.h"
 #include "conproto.h"
 
 /*
@@ -320,6 +321,152 @@ static int l_encode_reply(lua_State *L)
     return 1;
 }
 
+/*------------------------------------------------------------------------
+ * The frame path, which does not go through Lua strings.
+ *----------------------------------------------------------------------*/
+
+/*
+ * Empty a table's array part without freeing it.
+ *
+ * `lua_createtable` on every call is the thing this whole function exists
+ * to avoid, so the caller's tables are reused and this is what makes that
+ * safe: an old sixth key left behind when only five arrived would be read
+ * as a sixth key.
+ */
+static void clear_array(lua_State *L, int idx, unsigned keep)
+{
+    lua_Integer n = (lua_Integer)lua_rawlen(L, idx);
+    lua_Integer i;
+
+    for (i = (lua_Integer)keep + 1; i <= n; i++) {
+        lua_pushnil(L);
+        lua_rawseti(L, idx, i);
+    }
+}
+
+/* The sub-table at `field`, made once and reused afterwards. */
+static void subtable(lua_State *L, int out, const char *field)
+{
+    lua_getfield(L, out, field);
+
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, out, field);
+    }
+}
+
+/*
+ * One `wait` exchange, start to finish, allocating nothing.
+ *
+ * **This exists because of a measurement.** `frames` said the window
+ * manager allocates 4.2 KB a pass and that 3.63 KB of it - eighty-six per
+ * cent - is in `wait_input`, the call it makes every pass whether or not
+ * anything happened. Composing, which is eighty-eight per cent of the time,
+ * allocates 0.02 KB.
+ *
+ * The garbage was the marshalling. A request is 1036 bytes and a reply
+ * about 1400, and going through `sys.call_raw` means a Lua string for each,
+ * plus a table to describe the request and four more to hold the answer -
+ * built and dropped sixty times a second. Moving the console to a declared
+ * struct took the collector out of the console *server* and put this into
+ * every client on the frame path, which is the opposite of the point.
+ *
+ * So the whole exchange happens here: the request is built in a stack
+ * buffer, the reply is decoded straight into tables the caller keeps, and
+ * no Lua string is created at any point.
+ *
+ * `con.wait(cap, ticks, out)` - `out` is reused across calls, so whatever
+ * reads it must be finished before the next call. The window manager is:
+ * it uses `input` inside the pass that fetched it.
+ */
+static int l_wait(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    unsigned long ticks = (unsigned long)luaL_optinteger(L, 2, 0);
+    int out;
+    struct message msg, rep;
+    struct con_request *req = (struct con_request *)msg.data;
+    struct con_reply *r = (struct con_reply *)rep.data;
+    uint32_t i;
+    long status;
+
+    luaL_checktype(L, 3, LUA_TTABLE);
+    out = 3;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(*req);
+    req->op = CON_OP_WAIT;
+    req->ticks = (uint32_t)ticks;
+
+    status = kosmos_call(cap, &msg, &rep);
+
+    if (status != 0 || rep.length < sizeof(*r)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the console did not answer");
+        return 2;
+    }
+
+    if (r->error != CON_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)r->error);
+        return 2;
+    }
+
+    /* The bytes typed. */
+    subtable(L, out, "keys");
+
+    for (i = 0; i < r->nkeys && i < CON_KEYS_MAX; i++) {
+        lua_pushinteger(L, (lua_Integer)r->keys[i]);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    clear_array(L, lua_gettop(L), i);
+    lua_pop(L, 1);
+
+    /*
+     * The transitions. Each is a table of its own, and those are reused as
+     * well - a burst of key events would otherwise allocate one per event,
+     * per pass, which is the same bug one level down.
+     */
+    subtable(L, out, "events");
+
+    for (i = 0; i < r->nevents && i < CON_EVENTS_MAX; i++) {
+        lua_rawgeti(L, -1, (lua_Integer)i + 1);
+
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            lua_newtable(L);
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, -3, (lua_Integer)i + 1);
+        }
+
+        lua_pushinteger(L, (lua_Integer)r->events[i].code);
+        lua_setfield(L, -2, "code");
+        lua_pushboolean(L, r->events[i].down != 0);
+        lua_setfield(L, -2, "down");
+        lua_pop(L, 1);
+    }
+
+    clear_array(L, lua_gettop(L), i);
+    lua_pop(L, 1);
+
+    subtable(L, out, "pointer");
+    lua_pushinteger(L, (lua_Integer)r->x);       lua_setfield(L, -2, "x");
+    lua_pushinteger(L, (lua_Integer)r->y);       lua_setfield(L, -2, "y");
+    lua_pushinteger(L, (lua_Integer)r->min_x);   lua_setfield(L, -2, "min_x");
+    lua_pushinteger(L, (lua_Integer)r->max_x);   lua_setfield(L, -2, "max_x");
+    lua_pushinteger(L, (lua_Integer)r->min_y);   lua_setfield(L, -2, "min_y");
+    lua_pushinteger(L, (lua_Integer)r->max_y);   lua_setfield(L, -2, "max_y");
+    lua_pushinteger(L, (lua_Integer)r->buttons); lua_setfield(L, -2, "buttons");
+    lua_pushboolean(L, r->moved != 0);           lua_setfield(L, -2, "moved");
+    lua_pop(L, 1);
+
+    lua_pushvalue(L, out);
+    return 1;
+}
+
 /*
  * The sentence for a number.
  *
@@ -361,6 +508,7 @@ void kosmos_console_kit(lua_State *L)
         { "encode_reply",   l_encode_reply },
         { "decode_reply",   l_decode_reply },
         { "message",        l_message },
+        { "wait",           l_wait },
         { NULL, NULL }
     };
 

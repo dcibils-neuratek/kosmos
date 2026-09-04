@@ -1531,9 +1531,46 @@ local function new_namespace()
   --
   -- Keys and the pointer in one exchange, sleeping if there is nothing.
   --
+  --
+  -- The one call on the frame path, and the only one that gets its own door.
+  --
+  -- The window manager makes this every pass, sixty times a second, whether
+  -- or not anything happened - and going the ordinary way meant a 1036-byte
+  -- Lua string for the request, a 1400-byte one for the reply, and five
+  -- tables, all dropped immediately. `frames` measured it at 3.63 KB a pass,
+  -- eighty-six per cent of everything the desktop allocated, against 0.02 KB
+  -- for composing.
+  --
+  -- `con.wait` does the whole exchange in C and fills a table this keeps, so
+  -- the steady state allocates nothing at all. The table is reused, which is
+  -- the price: what reads it must be done before the next call. The window
+  -- manager is - it uses the answer inside the pass that asked for it.
+  --
+  -- Nothing else needs this. It is here because a *measurement* said so, and
+  -- if a second call ever shows up on a frame path the answer is another
+  -- door rather than a general mechanism nobody needed yet.
+  --
+  local wait_out = {}
+
   function ns.wait_input(path, ticks)
+    local con = console_kit()
+    local capability, _, _, proto = resolve(path)
+
+    if con and capability and proto == "console" then
+      local got, why = con.wait(capability, tonumber(ticks) or 0, wait_out)
+
+      if got then return got end
+
+      return nil, why and con.message(why) or "the console did not answer"
+    end
+
+    -- Whatever is mounted there does not speak the console protocol - a
+    -- terminal window, say. The ordinary path still works and still costs
+    -- what it costs, which nothing on a frame path pays.
     local r, e = request("wait", path, { ticks = ticks })
+
     if not r then return nil, e end
+
     return r.value
   end
 
