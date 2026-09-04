@@ -48,6 +48,20 @@ extern const unsigned long luabench_lua_len;
 #define LUABENCH_BASE   2000UL
 #endif
 
+/*
+ * The audio server, which is C and does not want a `lua_State` at all.
+ *
+ * Dispatched before the interpreter is opened rather than after, and that
+ * is the point rather than an optimisation: `CLAUDE.md` says a server runs
+ * on behalf of another process and therefore does not get a collector, and
+ * the way to mean that is for there to be no collector in the process. A
+ * server that merely promises not to allocate is a server somebody adds a
+ * `print` to next month.
+ */
+void audio_server(long endpoint);
+
+#define ROLE_AUDIO  16UL
+
 static void say(const char *s)
 {
     (void)kosmos_write(s, strlen(s));
@@ -70,6 +84,17 @@ int main(unsigned long arg)
      * system stutters.
      */
     heap_init((void *)USER_HEAP, USER_HEAP_SIZE);
+
+    /*
+     * Before Lua, and it never comes back.
+     *
+     * The capability table a spawned process is handed puts its own
+     * endpoint first, which is the same arrangement every Lua server here
+     * relies on - this one just does not need a chunk loaded to find it.
+     */
+    if (arg == ROLE_AUDIO) {
+        audio_server(0);
+    }
 
     L = kosmos_lua_open();
     if (L == NULL) {

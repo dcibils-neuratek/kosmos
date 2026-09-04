@@ -1043,6 +1043,55 @@ static int l_call(lua_State *L)
     return 2;
 }
 
+/*
+ * `sys.call_raw(cap, bytes [, pass])` -> bytes
+ *
+ * A call whose payload is bytes rather than a serialised Lua value.
+ *
+ * **This is what a C server needs.** Every other message here is a Lua
+ * table packed by `serialize_pack`, which walks it through a `lua_State` -
+ * so a server that wants to read one has to be Lua, or carry Lua, or grow a
+ * second implementation of the format. `CLAUDE.md` says the layer decides
+ * the language and a server is C, so the message has to be something C can
+ * read without decoding: a struct, sent verbatim.
+ *
+ * The bytes are opaque here on purpose. What shape they are is between the
+ * client library and the server, written down in a header they share -
+ * `audioproto.h` is the first of them.
+ */
+static int l_call_raw(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    size_t len = 0;
+    const char *bytes = luaL_checklstring(L, 2, &len);
+    long pass = (long)luaL_optinteger(L, 3, -1);
+    struct message msg;
+    struct message reply;
+    long status;
+
+    if (len > MSG_BYTES) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that does not fit in one message");
+        return 2;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.tag = 0;
+    msg.length = (uint32_t)len;
+    msg.cap_plus_one = (pass >= 0) ? (uint32_t)(pass + 1) : 0u;
+    memcpy(msg.data, bytes, len);
+
+    status = kosmos_call(cap, &msg, &reply);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushlstring(L, (const char *)reply.data,
+                    (reply.length > MSG_BYTES) ? MSG_BYTES : reply.length);
+    return 1;
+}
+
 static int l_receive(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
@@ -2110,6 +2159,7 @@ static const luaL_Reg sys_functions[] = {
     { "kit",       l_kit },
     { "kit_names", l_kit_names },
     { "call",     l_call },
+    { "call_raw", l_call_raw },
     { "receive",  l_receive },
     { "reply",    l_reply },
     { "pack",     l_pack },

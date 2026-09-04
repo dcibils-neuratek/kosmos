@@ -89,9 +89,27 @@ for _ = 1, N do
 end
 
 local wall = (sys.ticks() - began) // us
+
+--
+-- Let it finish before asking how it went.
+--
+-- Closing drops whatever is still in the ring and the device then plays
+-- itself empty, which counts as an underrun every time - so the figure was
+-- the same three whatever the machine did, and no change to the ring, the
+-- band or the scheduler ever moved it. Third instrument in this subsystem
+-- to measure the shutdown instead of the run.
+--
+for _ = 1, 2000 do
+  if out:queued() == 0 then break end
+
+  sys.sleep(1)
+end
+
+local after_play = sys.info() or {}
+
 out:close()
 
-local after = sys.info() or {}
+local after = after_play
 local audio_ms = N * (fmt.period // 4) * 1000 // fmt.rate
 
 print(("audiolag: %d periods, %d ms of audio in %d ms wall")

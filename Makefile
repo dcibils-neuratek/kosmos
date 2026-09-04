@@ -315,6 +315,7 @@ USER_LIBC := runtime/libc/string.c \
 
 USER_SRCS := user/init/start.S \
              user/init/main.c \
+             user/servers/audio.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \
