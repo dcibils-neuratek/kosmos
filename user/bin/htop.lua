@@ -10,10 +10,18 @@
 -- upper one can reach exactly the things in its capability table and
 -- nothing else. So the columns are CAPS and OWNS, and EL1 gets a box.
 
+--
+-- The four that were missing said `app`, which is what an unknown name gets.
+--
+-- Not because anything classified them wrongly: they were spawned as C
+-- servers and never called `sys.name`, so they were all called `init` and
+-- there was nothing here to look up. Naming them showed the gap.
+--
 local LAYER = {
-  init = "supervisor", console = "server", ramfs = "server",
-  binfs = "server",    devices = "server", shell = "shell",
-  burn = "app",        run = "runner",
+  init = "supervisor", console = "server", ramfs  = "server",
+  binfs = "server",    devices = "server", libfs  = "server",
+  appfs = "server",    diskfs  = "server", audio  = "server",
+  shell = "shell",     burn    = "app",    run    = "runner",
 }
 
 local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }

@@ -2,40 +2,78 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ---
 
 ## Where this left off
 
-**Doom runs, and the machine makes a noise.** Both are new since the last
-update and both are worth reading the commits for rather than trusting a
-summary here.
+**Six servers are C now, and the console was the interesting one.** The
+order was audio, devices, binfs, libfs, appfs, console - each lived with
+before the next was started, which is what `CLAUDE.md` asks for and what
+found the problems below.
 
-- `make DOOM=1 qemu`, with `doom1.wad` at `/home/doom1.wad`. It is a build
-  option because Doom is GPLv2 and Kosmos is MIT, and there is no dynamic
-  linking - so a Kosmos image with Doom in it is a combined work. The line
-  is drawn in the build rather than in a comment. `runtime/upstream/doom/`
-  is upstream, `user/lib/doom_kosmos.c` is ours, `user/bin/doom.lua` owns
-  the loop.
-- `beep`, and `make qemu` now gives the machine a virtio-sound device
-  through coreaudio. **M11a stage one only**: there is a driver and a
-  syscall, and no `/dev/audio`, no mixer, and no sound in Doom.
+Each speaks a **declared shape** rather than a Lua table: `audioproto.h`,
+`devproto.h`, `binproto.h`, `appproto.h`, `conproto.h`. `main.c` dispatches
+their role numbers before the interpreter is opened, so a server has no
+collector in the process at all rather than a promise not to allocate.
 
-**The audio latency number is 2 dry periods in 173**, at 5.8 ms periods four
-deep, measured against coreaudio. `beep` reports it, and reports whether the
-backend paced at all - `wav` and `none` do not, and a measurement against
-either is a measurement of QEMU.
+**The console needed a kit, and that is the finding worth carrying
+forward.** It is the one protocol with *two* implementations: a terminal
+window mounts itself as its child's `/dev/console`, so an application
+answers the console ABI as well as the server does, and the runner that
+mounts it cannot tell which it got - which is the capability discipline
+working correctly. So the layout is compiled once into `use("/kits/console")`
+and both sides go through it, rather than a format string in `init.lua` and
+a second copy in `terminal.lua`.
+
+`read` also stopped blocking inside a handler. The Lua console pumped its own
+mailbox while a line was half-typed, which worked and cost a re-entrant
+server and a `sys.yield` spin - there is no UART interrupt to park on. The C
+one records who asked and answers from the loop.
+
+**`diskfs` and `ramfs` stay Lua, for two different reasons.** `diskfs`
+because `kfs.lua` runs on the host as well as the guest, which is what lets
+`make test` check the journal's power-loss window without booting a machine.
+`ramfs` because it is what `ROLE_RELOAD` reloads, and that test is M5's
+definition of done.
+
+**Audio: control by message, data by shared memory.** The period path is an
+SPSC ring in shared memory (`audioring.h`) and the message says only which
+slot is live. It replaced a 1024-byte period travelling *as* a message
+payload 172 times a second, which manufactured 340 KB/s of garbage inside a
+5.8 ms deadline. `TICK_HZ` is 250 because of it, and three constants that
+silently changed meaning with the tick have been fixed.
+
+**TinyGL is vendored**, with eight demos as eight applications under
+`demos/GLDemos`, and a GL Kit at `use("/kits/gl")`. The context is 10 bytes
+a pixel and `gl_kosmos.c` refuses one it cannot afford, because
+`ostgl_create_context` asserts and an assert here is a panic.
+
+**The chrome is not flat.** `theme.chrome` derives both ends of a gradient
+from the one colour a palette names; window tabs and menu bars use it.
 
 ## Next, in order
 
-1. **`/dev/audio`** - M11a stage two. One owner, everyone else asks, the
-   same shape as the screen. Nothing can make a sound today unless it was
-   spawned with `SPAWN_AUDIO`, which means one program at a time.
-2. **The mixer** - stage three, in C, and the stage that has to report its
-   own worst case. This is where the latency claim gets defended.
-3. **Doom's `DG_sound_module`** - stage four. doomgeneric has the hook
-   behind `FEATURE_SOUND` and ships `i_sdlsound.c` to read from.
+1. **MP3 decoding** - minimp3, vendored the way TinyGL was. `music` plays
+   WAV today and the file everybody actually has is an MP3.
+2. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
+   and `i_sdlsound.c` is the model. Doom is silent.
+3. **An equaliser in the Mixer**, which is the first thing that will want
+   the ring to carry something other than what was written to it.
+
+## Still open
+
+- **3-4 audio underruns per 2.3 s**, and six structural changes did not
+  move it: the ring, the priority band, an 8x buffer, the interrupt, the C
+  rewrite, and measuring during play rather than after. 194 interrupts per
+  400 periods means the device services about two periods per raise, which
+  is QEMU's model rather than ours. **The next measurement wants real
+  hardware**, which is M2.
+- **`procs` at the shell prints `/dev speaks a fixed protocol; there is no
+  send to it`.** Pre-existing and verified against an unmodified tree, so
+  it is not from the server conversions. `wm procs` is fine; it is the
+  console path that is wrong.
 
 ## Two things found while adding a kind column, and not yet fixed
 

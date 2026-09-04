@@ -342,6 +342,7 @@ USER_SRCS := user/init/start.S \
              user/servers/devices.c \
              user/servers/binfs.c \
              user/servers/appfs.c \
+             user/servers/console.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \
@@ -350,6 +351,7 @@ USER_SRCS := user/init/start.S \
              user/lib/inflate.c \
              user/lib/pdftok.c \
              user/lib/gl_kosmos.c \
+             user/lib/con_kosmos.c \
              runtime/upstream/puff/puff.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \

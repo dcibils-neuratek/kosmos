@@ -1136,6 +1136,71 @@ static int l_receive(lua_State *L)
     return 3;
 }
 
+/*
+ * The other half of `call_raw`: receiving and answering bytes.
+ *
+ * `receive` and `reply` deserialise a Lua table, which is exactly right for
+ * a Lua server talking to Lua clients and exactly wrong for one implementing
+ * a declared protocol. These two hand over the payload as it arrived.
+ *
+ * They exist because `/dev/console` has two implementations - the server in
+ * `user/servers/console.c` and any terminal window, which mounts itself as
+ * its child's console. A C server gets these for free by being C; a terminal
+ * needed a way to answer the same struct, and inventing a second wire format
+ * for it would have made the same path mean two different things depending
+ * on who happened to be behind it.
+ */
+static int l_receive_raw(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct message msg;
+    uint64_t sender = 0;
+    int nonblocking = lua_toboolean(L, 2);
+    unsigned long timeout = (unsigned long)luaL_optinteger(L, 3, 0);
+    long status = kosmos_receive(cap, &msg, &sender, nonblocking, timeout);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushlstring(L, (const char *)msg.data,
+                    (msg.length > MSG_BYTES) ? MSG_BYTES : msg.length);
+    lua_pushinteger(L, (lua_Integer)sender);
+    lua_pushinteger(L, (lua_Integer)((msg.cap_plus_one == 0)
+                                     ? -1 : (long)msg.cap_plus_one - 1));
+    return 3;
+}
+
+static int l_reply_raw(lua_State *L)
+{
+    uint64_t sender = (uint64_t)luaL_checkinteger(L, 1);
+    size_t len = 0;
+    const char *bytes = luaL_checklstring(L, 2, &len);
+    long pass = (long)luaL_optinteger(L, 3, -1);
+    struct message msg;
+    long status;
+
+    if (len > MSG_BYTES) {
+        lua_pushnil(L);
+        lua_pushstring(L, "that does not fit in one message");
+        return 2;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = (uint32_t)len;
+    msg.cap_plus_one = (pass >= 0) ? (uint32_t)(pass + 1) : 0u;
+    memcpy(msg.data, bytes, len);
+
+    status = kosmos_reply(sender, &msg);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 static int l_reply(lua_State *L)
 {
     uint64_t sender = (uint64_t)luaL_checkinteger(L, 1);
@@ -2076,6 +2141,7 @@ static int l_libraries(lua_State *L)
 void kosmos_compress_kit(lua_State *L);
 void kosmos_pdf_kit(lua_State *L);
 void kosmos_gl_kit(lua_State *L);
+void kosmos_console_kit(lua_State *L);
 
 static const struct {
     const char *name;
@@ -2084,6 +2150,7 @@ static const struct {
     { "compress", kosmos_compress_kit },
     { "pdf",      kosmos_pdf_kit },
     { "gl",       kosmos_gl_kit },
+    { "console",  kosmos_console_kit },
     { NULL, NULL }
 };
 
@@ -2174,7 +2241,9 @@ static const luaL_Reg sys_functions[] = {
     { "call",     l_call },
     { "call_raw", l_call_raw },
     { "receive",  l_receive },
+    { "receive_raw", l_receive_raw },
     { "reply",    l_reply },
+    { "reply_raw", l_reply_raw },
     { "pack",     l_pack },
     { "unpack",   l_unpack },
     { NULL, NULL }

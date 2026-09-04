@@ -233,7 +233,13 @@ local function launch(text)
   -- detached and `busy` says so, and the child's output arrives as `write`
   -- messages while it runs.
   --
-  local ok, why = run(path, rest, true, { ["/dev/console"] = ep }, cwd)
+  -- The endpoint *and* what it speaks. This window is a console, and the
+  -- child has to mount it as one: a bare capability would be mounted
+  -- speaking Lua tables, and every `write` would arrive here as a
+  -- serialised table where a `con_request` was expected.
+  local ok, why = run(path, rest, true,
+                      { ["/dev/console"] = { cap = ep, proto = "console" } },
+                      cwd)
 
   if ok then
     busy = name
@@ -246,35 +252,64 @@ end
 -- The console protocol, as far as a program can tell.
 --------------------------------------------------------------------------
 
+--
+-- This window is a console, and says so in the console's own words.
+--
+-- A terminal mounts itself as its child's `/dev/console`, so a program
+-- running in one prints to an application and cannot tell - which is the
+-- namespace working as intended, and which means this window implements a
+-- system ABI. It used to answer with Lua tables while the real console
+-- server answered with Lua tables, and the two agreed by both being written
+-- in the same language rather than by agreeing about anything.
+--
+-- The server is C now and the protocol is `conproto.h`. Rather than copy a
+-- format string in here, both sides go through the Console Kit, which
+-- compiles that header once. `use("/kits/console")` is the same line
+-- `use("/lib/ui.lua")` is; that the layout is defined in C is not something
+-- this file has to know.
+--
+local con = use("/kits/console")
+
 local function serve_console()
   local changed = false
 
   while true do
-    local req, who = sys.receive(ep, true)
+    local bytes, who = sys.receive_raw(ep, true)
 
-    if not req then return changed end
+    if not bytes then return changed end
 
+    local req = con.decode_request(bytes)
     local reply
 
-    if req.type == "write" then
-      emit(req.value)
-      changed = true
-      reply = { ok = true }
+    if not req then
+      reply = { error = con.ERR_BAD_OP }
 
-    elseif req.type == "read" then
+    elseif req.op == con.WRITE then
+      emit(req.text)
+      changed = true
+      reply = {}
+
+    elseif req.op == con.READ then
       -- A program asking this window for a line. Not supported yet, and
       -- said rather than hung: a child blocked for ever on a reply nobody
       -- is going to send is the worst failure shape there is.
-      reply = { ok = false, error = "this terminal cannot be read from yet" }
+      --
+      -- A number now, not a sentence. The words used to be invented here,
+      -- by one of the two things that implement this protocol; whoever puts
+      -- the failure in front of a person composes them.
+      reply = { error = con.ERR_NO_READER }
 
-    elseif req.type == "poll" or req.type == "keys" then
-      reply = { ok = true, value = (req.type == "poll") and false or {} }
+    elseif req.op == con.POLL or req.op == con.KEYS then
+      -- Nothing typed at this window reaches the program in it yet. `poll`
+      -- answers "no Control-C" and `keys` answers "nothing", which are the
+      -- same two answers as before and are now the protocol's own zeroes.
+      reply = {}
 
     else
-      reply = { ok = false, error = "no such operation: " .. tostring(req.type) }
+      reply = { error = con.ERR_BAD_OP }
     end
 
-    pcall(sys.reply, who, reply)
+    pcall(sys.reply_raw, who, con.encode_reply(reply))
   end
 end
 

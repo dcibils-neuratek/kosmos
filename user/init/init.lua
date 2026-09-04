@@ -1162,12 +1162,124 @@ local function new_namespace()
     return { ok = true, name = trim(settled) }
   end
 
+  --------------------------------------------------------------------------
+  -- /dev/console, which is C and speaks `conproto.h`.
+  --
+  -- Through the Console Kit rather than `string.pack`, and it is the only
+  -- one of these four that does. The difference is that the console has two
+  -- implementations: a terminal window mounts *itself* as its child's
+  -- console, so an application answers this protocol as well as the server
+  -- does. A format string here and a second copy in `terminal.lua` would be
+  -- one layout described in two places, and only a size assertion between
+  -- them. The kit compiles it once against the header.
+  --------------------------------------------------------------------------
+
+  local CON, CON_OPS
+
+  local function console_kit()
+    if CON == nil then
+      CON = sys.kit("console") or false
+
+      if CON then
+        CON_OPS = { write = CON.WRITE, read = CON.READ, keys = CON.KEYS,
+                    wait = CON.WAIT, pointer = CON.POINTER,
+                    poll = CON.POLL, stat = CON.STAT }
+      end
+    end
+
+    return CON
+  end
+
+  -- One exchange, with the reply decoded and the error turned back into a
+  -- sentence. Every operation below is this plus a shape.
+  local function con_call(con, capability, code, text, ticks)
+    local raw, why = sys.call_raw(capability,
+                                  con.encode_request{ op = code, text = text,
+                                                      ticks = ticks or 0 })
+
+    if not raw then return nil, tostring(why) end
+
+    local rep, bad = con.decode_reply(raw)
+
+    if not rep then return nil, bad end
+
+    if rep.error ~= con.OK then
+      return nil, con.message(rep.error)
+    end
+
+    return rep
+  end
+
+  local function con_request(capability, op, extra)
+    local con = console_kit()
+
+    if not con then
+      return nil, "this image has no console kit"
+    end
+
+    local code = CON_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    --
+    -- A write is a stream and the field is 1024 bytes, so a long one goes as
+    -- several messages rather than being truncated.
+    --
+    -- The Lua console had the same limit and never said so: the text was
+    -- serialised into a 2048-byte message, and a listing that did not fit
+    -- failed at the boundary with an error about the message rather than
+    -- about the text. This splits instead, and the limit is a number the
+    -- kit publishes.
+    --
+    if op == "write" then
+      local text = tostring(extra and extra.value or "")
+      local at = 1
+
+      repeat
+        local piece = text:sub(at, at + con.TEXT_MAX - 1)
+        local _, err = con_call(con, capability, code, piece)
+
+        if err then return nil, err end
+
+        at = at + #piece
+      until at > #text
+
+      return { ok = true }
+    end
+
+    local rep, err = con_call(con, capability, code, nil,
+                              extra and tonumber(extra.ticks) or 0)
+
+    if not rep then return nil, err end
+
+    -- The shapes each caller already expects, unchanged from when a Lua
+    -- table came back with them in it.
+    if op == "read"    then return { ok = true, value = rep.line } end
+    if op == "keys"    then return { ok = true, value = rep.keys } end
+    if op == "poll"    then return { ok = true, value = rep.seen } end
+    if op == "pointer" then return { ok = true, value = rep.pointer } end
+    if op == "stat"    then return { ok = true, value = rep.stat } end
+
+    if op == "wait" then
+      return { ok = true, value = { keys = rep.keys, events = rep.events,
+                                    pointer = rep.pointer } }
+    end
+
+    return { ok = true }
+  end
+
   local function request(op, path, extra, pass)
     local capability, rest, _, proto = resolve(path)
     if not capability then
       -- The sentence design.md 2 asks for. Nothing was denied; there is
       -- simply no such path in this process's world.
       return nil, "no such path: " .. path
+    end
+
+    if proto == "console" then
+      return con_request(capability, op, extra)
     end
 
     if proto == "dev" then
@@ -1655,231 +1767,22 @@ end
 -- it ends would be worse than not polling at all.
 --------------------------------------------------------------------------
 
-local function console_handlers(state)
-  return {
-    write = function(req)
-      local text = tostring(req.value)
-      state.bytes = state.bytes + #text
-      sys.write(text)
-      return { ok = true }
-    end,
-
-    read = function(req)
-      --
-      -- Only one reader at a time. `pump` below can deliver another `read`
-      -- while this one is waiting, and two handlers both consuming keys
-      -- would split the line between them. Saying no is right rather than
-      -- merely safe: there is one keyboard, and a second client asking for
-      -- a line is a bug in that client.
-      --
-      if state.reading then
-        return { ok = false, error = "the console already has a reader" }
-      end
-
-      state.reading = true
-      local buf = {}
-
-      -- Whatever `poll` took off the keyboard while a program was running,
-      -- in the order it arrived, before anything new.
-      local function next_byte()
-        if #state.typed > 0 then
-          return table.remove(state.typed, 1)
-        end
-        return sys.getchar()
-      end
-
-      while true do
-        local c = next_byte()
-
-        if c == nil then
-          -- Nothing waiting. Serve whoever else has asked for something -
-          -- this is the handler that would otherwise make the whole server
-          -- unavailable for as long as nobody types - and then yield.
-          -- Yielding rather than spinning costs a scheduling slot instead of
-          -- the machine; there is no UART interrupt to park on yet.
-          state.pump()
-          sys.yield()
-        elseif c == 10 or c == 13 then
-          sys.write("\n")
-          state.lines = state.lines + 1
-          state.reading = false
-          return { ok = true, value = table.concat(buf) }
-        elseif c == 3 then
-          -- Control-C at the prompt abandons the line, as it does in every
-          -- other shell. An empty line back, which the shell already knows
-          -- how to do nothing with.
-          sys.write("^C\n")
-          state.interrupts = state.interrupts + 1
-          state.reading = false
-          return { ok = true, value = "" }
-        elseif c == 8 or c == 127 then
-          if #buf > 0 then
-            table.remove(buf)
-            -- Back up, overwrite, back up again: a serial terminal erases
-            -- nothing just because the cursor moved over it.
-            sys.write("\b \b")
-          end
-        elseif c >= 32 and c < 127 then
-          buf[#buf + 1] = string.char(c)
-          sys.write(string.char(c))
-        end
-        -- Anything else is dropped rather than echoed. An arrow key arrives
-        -- as three bytes of escape sequence, and the thing that understands
-        -- those is a terminal emulator, which is M6.
-      end
-    end,
-
-    keys = function(req)
-      --
-      -- Every byte typed since the last time somebody asked, as an array.
-      --
-      -- `poll` above answers a yes-or-no question and keeps what it saw for
-      -- the line editor. This one is for a program that *is* the line
-      -- editor for as long as it runs - the window manager - and wants the
-      -- keys themselves. The stash goes with them, or a character typed
-      -- just before it started would be delivered to the shell afterwards.
-      --
-      local out = state.typed
-      state.typed = {}
-
-      while true do
-        local c = sys.getchar()
-        if c == nil then break end
-        if c == 3 then state.interrupts = state.interrupts + 1 end
-        out[#out + 1] = c
-      end
-
-      return { ok = true, value = out }
-    end,
-
-    wait = function(req)
-      --
-      -- Everything the desktop needs, and a sleep if there is nothing.
-      --
-      -- One call rather than three, and blocking rather than polling. The
-      -- window manager used to ask for keys, ask for the pointer, get
-      -- nothing, yield, and go round again - which is a thread that is
-      -- always runnable, which is a core at a hundred per cent for ever on
-      -- an idle desktop. It sleeps in here now, and an input interrupt cuts
-      -- the sleep short, so a key is noticed at interrupt speed and an idle
-      -- machine is idle.
-      --
-      -- This process is the only one the kernel will let sleep on input,
-      -- for the same reason it is the only one that may read it: input has
-      -- one reader.
-      --
-      -- The cost is that the console is not answering anyone else while it
-      -- is asleep. That is bounded by whatever the caller asked for - one
-      -- tick, in practice - and it is why this is a separate operation
-      -- rather than something `keys` started doing.
-      --
-      local keys = state.typed
-      state.typed = {}
-
-      while true do
-        local c = sys.getchar()
-        if c == nil then break end
-        if c == 3 then state.interrupts = state.interrupts + 1 end
-        keys[#keys + 1] = c
-      end
-
-      --
-      -- And the transitions, which are a different question.
-      --
-      -- `keys` is what the keys *meant* - shifted, mapped, an arrow spread
-      -- over three bytes - and is what a terminal wants. This is what they
-      -- *did*, and is the only thing that can say a key is still held: no
-      -- stream of characters expresses that, which is why holding a
-      -- direction in a game was a step per repeat rather than a walk.
-      --
-      -- Drained after the characters and from the same device pass, so the
-      -- two never disagree about what happened.
-      --
-      local events = {}
-
-      while true do
-        local code, down = sys.key_event()
-
-        if code == nil then break end
-
-        events[#events + 1] = { code = code, down = down }
-      end
-
-      local where = sys.pointer()
-
-      if #keys == 0 and #events == 0 then
-        sys.wait_input(tonumber(req.ticks) or 0)
-      end
-
-      return { ok = true,
-               value = { keys = keys, events = events, pointer = where } }
-    end,
-
-    pointer = function(req)
-      --
-      -- Where the pointer is. Here for the same reason `keys` is: this is
-      -- the only process the kernel will answer about input at all, because
-      -- input has one reader and two pollers would each take events the
-      -- other never sees.
-      --
-      -- Passed through untouched, range and all. The console has no more
-      -- idea how big the screen is than the kernel does; the window manager
-      -- does, and scaling is its business.
-      --
-      local where, err = sys.pointer()
-
-      if not where then
-        return { ok = false, error = tostring(err) }
-      end
-
-      return { ok = true, value = where }
-    end,
-
-    poll = function(req)
-      --
-      -- Was Control-C pressed? Everything else typed is kept for `read`.
-      --
-      -- This drains rather than reading one byte, because the answer has to
-      -- be about everything typed since the last question. Reading one byte
-      -- a second would find the interrupt a second late for every character
-      -- typed ahead of it.
-      --
-      local seen = false
-
-      while true do
-        local c = sys.getchar()
-
-        if c == nil then
-          break
-        elseif c == 3 then
-          seen = true
-          state.interrupts = state.interrupts + 1
-        else
-          state.typed[#state.typed + 1] = c
-        end
-      end
-
-      return { ok = true, value = seen }
-    end,
-
-    stat = function(req)
-      -- What it has done, out of the state table. It survives a reload,
-      -- which is how you can see that the state and the code are separate
-      -- things.
-      return { ok = true, value = {
-        bytes = state.bytes, lines = state.lines,
-        interrupts = state.interrupts,
-        reloads = state.reloads or 0,
-      } }
-    end,
-  }
-end
-
-local function console_main(endpoint)
-  serve(endpoint, { bytes = 0, lines = 0, interrupts = 0, typed = {},
-          reading = false },
-        console_handlers)
-end
+--
+-- No handlers here: the console is `user/servers/console.c`, and `main.c`
+-- dispatches role 4 to it before the interpreter is opened.
+--
+-- It is the fifth server to move and the first whose protocol something
+-- other than a server implements. A terminal window mounts itself as its
+-- child's `/dev/console`, so `terminal.lua` answers `conproto.h` too -
+-- through `use("/kits/console")`, which is the same header compiled once
+-- rather than a format string copied into an application.
+--
+-- What the move bought, beyond a server with no collector on the path every
+-- `print` in the system takes: `read` no longer blocks inside a handler
+-- pumping its own mailbox. It records who asked and answers from the loop,
+-- so nothing re-enters and a half-typed line costs a receive with a
+-- deadline instead of a `sys.yield` spin.
+--
 
 --------------------------------------------------------------------------
 -- The shell.
@@ -2793,7 +2696,7 @@ local RUNNER_ROLE = ROLE_RUNNER
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap)
   local ns = new_namespace()
-  ns.mount("/dev/console", console_cap)
+  ns.mount("/dev/console", console_cap, nil, "console")
   ns.mount("/data", ramfs_cap)
 
   -- Longest prefix wins, so /dev/console keeps going to the console server
@@ -4037,12 +3940,6 @@ if role == ROLE_RELOAD then
   return
 end
 
-if role == ROLE_CONSOLE then
-  sys.name("console")
-  console_main(CAP)
-  return
-end
-
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
@@ -4180,7 +4077,11 @@ if role == ROLE_RUNNER then
 
   -- Whatever the shell handed over, in the order it promised. A missing one
   -- is simply not mounted, and the program finds that path does not exist.
-  if req.console then ns.mount("/dev/console", req.console) end
+  -- `"console"` whoever is behind it. A terminal window mounts itself here
+  -- for its child, and a terminal speaks the same protocol the server does -
+  -- through the same kit, which is the whole reason that kit exists. The
+  -- runner cannot tell the two apart and must not need to.
+  if req.console then ns.mount("/dev/console", req.console, nil, "console") end
   if req.data    then ns.mount("/data",        req.data)    end
   if req.bin     then ns.mount("/bin",         req.bin, nil, "bin") end
   if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
@@ -4204,7 +4105,7 @@ if role == ROLE_RUNNER then
   -- window.
   if req.mounts then
     for _, m in ipairs(req.mounts) do
-      ns.mount(m.path, m.index)
+      ns.mount(m.path, m.index, nil, m.proto)
     end
   end
 
@@ -4258,10 +4159,33 @@ if role == ROLE_RUNNER then
                    req.lib, req.app, req.disk, req.audio }
     local mounts = {}
 
+    --
+    -- A share carries its protocol, because a capability is not enough to
+    -- say what is behind it.
+    --
+    -- This passed the index alone, and the child mounted it speaking Lua
+    -- tables - which was right while every server did. It stopped being
+    -- right when `/dev/console` became a struct: a terminal shares its own
+    -- endpoint there, the child mounted it with no protocol, and a `write`
+    -- arrived at the terminal as 83 bytes of serialised table where 1036
+    -- bytes of `con_request` were expected.
+    --
+    -- The parent is the one that knows. It is asserting "I am a console" by
+    -- mounting itself at that path, and the protocol is the other half of
+    -- that sentence. A bare capability still works and still means tables,
+    -- which is what every share before this one meant.
+    --
     if shares then
-      for path_, cap in pairs(shares) do
+      for path_, share in pairs(shares) do
+        local cap, proto = share, nil
+
+        if type(share) == "table" then
+          cap, proto = share.cap, share.proto
+        end
+
         caps[#caps + 1] = cap
-        mounts[#mounts + 1] = { path = path_, index = #caps - 1 }
+        mounts[#mounts + 1] = { path = path_, index = #caps - 1,
+                                proto = proto }
       end
     end
 

@@ -62,16 +62,24 @@ void audio_server(long endpoint);
 void devices_server(long endpoint);
 void binfs_server(long endpoint, int libraries);
 void appfs_server(long endpoint);
+void console_server(long endpoint);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
 #define ROLE_BINFS    11UL
 #define ROLE_LIBFS    13UL
 #define ROLE_APPFS    14UL
+#define ROLE_CONSOLE   4UL
 
 static void say(const char *s)
 {
     (void)kosmos_write(s, strlen(s));
+}
+
+/* What this process calls itself, which is what `procs` and `kill` show. */
+static void named(const char *s)
+{
+    (void)kosmos_setname(s, strlen(s));
 }
 
 int main(unsigned long arg)
@@ -99,24 +107,44 @@ int main(unsigned long arg)
      * endpoint first, which is the same arrangement every Lua server here
      * relies on - this one just does not need a chunk loaded to find it.
      */
+    /*
+     * Each of these says what it is before it starts serving.
+     *
+     * `sys.name` was a line in every Lua role and went out with them, which
+     * nobody noticed until a screenshot of `procs` showed five processes
+     * called `init`: a process's name is whatever it last said it was, and a
+     * server that says nothing keeps the name of the image it was spawned
+     * from. It costs one syscall at startup and it is the only way anything
+     * can tell these apart.
+     */
     if (arg == ROLE_AUDIO) {
+        named("audio");
         audio_server(0);
     }
 
     if (arg == ROLE_DEVICES) {
+        named("devices");
         devices_server(0);
     }
 
     if (arg == ROLE_BINFS) {
+        named("binfs");
         binfs_server(0, 0);
     }
 
     if (arg == ROLE_LIBFS) {
+        named("libfs");
         binfs_server(0, 1);
     }
 
     if (arg == ROLE_APPFS) {
+        named("appfs");
         appfs_server(0);
+    }
+
+    if (arg == ROLE_CONSOLE) {
+        named("console");
+        console_server(0);
     }
 
     L = kosmos_lua_open();
