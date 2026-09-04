@@ -78,6 +78,21 @@ local launchable = {}
 local SECTIONS = { "applications", "demos", "preferences" }
 local by_section = { applications = {}, demos = {}, preferences = {} }
 
+--
+-- A group inside a section: `kosmos: section demos/GLDemos`.
+--
+-- Eight TinyGL demos in a flat list is eight of the ten things in Demos,
+-- which is not a menu any more, it is a wall. So a section name may carry a
+-- group after a slash, and the group becomes a submenu one level further
+-- in. `by_group.demos.GLDemos` holds those names; `by_section.demos` holds
+-- the ones with no group, and both appear together.
+--
+-- One level, deliberately. A menu deep enough to get lost in is a menu
+-- somebody has to remember the shape of, and BeOS's Be menu was two deep
+-- for the whole of its life.
+--
+local by_group = {}
+
 do
   for _, file in ipairs(fs.list("/bin") or {}) do
     local attrs = fs.getattr("/bin/" .. file)
@@ -87,8 +102,18 @@ do
 
       -- The Deskbar does not list itself. It is not something you start.
       if short ~= "deskbar" then
-        local into = by_section[attrs.section or "applications"]
-                     or by_section.applications
+        local said = attrs.section or "applications"
+        local where, group = said:match("^([^/]+)/(.+)$")
+
+        where = where or said
+
+        local into = by_section[where] or by_section.applications
+
+        if group and by_section[where] then
+          by_group[where] = by_group[where] or {}
+          by_group[where][group] = by_group[where][group] or {}
+          into = by_group[where][group]
+        end
 
         into[#into + 1] = short
         launchable[#launchable + 1] = short
@@ -97,6 +122,10 @@ do
   end
 
   for _, name in pairs(by_section) do table.sort(name) end
+
+  for _, groups in pairs(by_group) do
+    for _, name in pairs(groups) do table.sort(name) end
+  end
   table.sort(launchable)
 end
 
@@ -170,19 +199,47 @@ win:add(running)
 -- where this window's content starts on the screen; a menu is a window of
 -- its own and is placed on the screen, not inside this one.
 --
+local function launcher(name)
+  return {
+    text = name,
+    on_choose = function()
+      local ok, why = fs.send("/dev/wm", { type = "launch", program = name })
+
+      status.text = ok and ("started " .. name)
+                       or ("could not: " .. tostring(why))
+    end,
+  }
+end
+
 local function section_items(which)
   local out = {}
 
-  for _, name in ipairs(by_section[which] or {}) do
-    out[#out + 1] = {
-      text = name,
-      on_choose = function()
-        local ok, why = fs.send("/dev/wm", { type = "launch", program = name })
+  --
+  -- Groups first, then the loose ones.
+  --
+  -- A submenu is a heavier thing to open than an item is to click, so the
+  -- few that need one should not be hunted for among the many that do not.
+  -- Sorted, because `pairs` over a table has no order and a menu whose rows
+  -- move between boots is a menu nobody learns.
+  --
+  local names = {}
 
-        status.text = ok and ("started " .. name)
-                         or ("could not: " .. tostring(why))
-      end,
-    }
+  for group in pairs(by_group[which] or {}) do names[#names + 1] = group end
+
+  table.sort(names)
+
+  for _, group in ipairs(names) do
+    local inner = {}
+
+    for _, name in ipairs(by_group[which][group]) do
+      inner[#inner + 1] = launcher(name)
+    end
+
+    out[#out + 1] = { text = group, submenu = inner }
+  end
+
+  for _, name in ipairs(by_section[which] or {}) do
+    out[#out + 1] = launcher(name)
   end
 
   if #out == 0 then out[1] = { text = "(nothing here)" } end

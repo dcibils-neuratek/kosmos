@@ -2064,6 +2064,7 @@ static int l_libraries(lua_State *L)
  */
 void kosmos_compress_kit(lua_State *L);
 void kosmos_pdf_kit(lua_State *L);
+void kosmos_gl_kit(lua_State *L);
 
 static const struct {
     const char *name;
@@ -2071,6 +2072,7 @@ static const struct {
 } kits[] = {
     { "compress", kosmos_compress_kit },
     { "pdf",      kosmos_pdf_kit },
+    { "gl",       kosmos_gl_kit },
     { NULL, NULL }
 };
 

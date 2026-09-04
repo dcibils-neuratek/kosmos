@@ -313,6 +313,29 @@ USER_LIBC := runtime/libc/string.c \
              user/lib/misc_user.c \
              user/lib/panic_user.c
 
+TINYGL_CFLAGS := -w -Wno-error \
+                 -Iruntime/upstream/tinygl/include \
+                 -Iruntime/upstream/tinygl/source
+
+TINYGL_SRCS := $(wildcard runtime/upstream/tinygl/source/*.c)
+
+#
+# TinyGL's own demos, compiled so that eight of them can share one binary.
+#
+# Every one defines `draw`, `init`, `idle`, `reshape`, `key` and `main`,
+# because upstream builds each as its own executable. Renaming them on the
+# compile line is what lets all eight link together, and it leaves
+# `runtime/upstream/tinygl/examples/` byte for byte as released - which
+# patching them would not.
+#
+TINYGL_DEMOS := bounce cube gears mech morph3d spin teapot texobj
+TINYGL_DEMO_SRCS := $(patsubst %,runtime/upstream/tinygl/examples/%.c,\
+                                $(TINYGL_DEMOS))
+
+# The rename, as a function of the demo's name.
+tinygl_rename = -Ddraw=$(1)_draw -Dinit=$(1)_init -Didle=$(1)_idle \
+                -Dreshape=$(1)_reshape -Dkey=$(1)_key -Dmain=$(1)_main
+
 USER_SRCS := user/init/start.S \
              user/init/main.c \
              user/servers/audio.c \
@@ -325,7 +348,11 @@ USER_SRCS := user/init/start.S \
              user/lib/docfont.c \
              user/lib/inflate.c \
              user/lib/pdftok.c \
+             user/lib/gl_kosmos.c \
              runtime/upstream/puff/puff.c \
+             $(TINYGL_SRCS) \
+             $(TINYGL_DEMO_SRCS) \
+             user/lib/gl_demos.c \
              $(GEN)/font_8x16.c \
              $(GEN)/programs.c \
              $(GEN)/version.c \
@@ -420,6 +447,19 @@ USER_SRCS += $(DOOM_SRCS)
 #
 DOOM_HEAP := -DUSER_HEAP_PAGES=3072
 
+#
+# TinyGL, compiled on its own terms.
+#
+# `-w -Wno-error` for the same reason Doom gets them: this is other people's
+# code and the rule about vendored trees forbids patching it. Kosmos's own
+# `gl_kosmos.c` is still held to `-Wall -Wextra -Werror`; only the twenty-five
+# files under `runtime/upstream/tinygl/source/` are not.
+#
+# It compiled freestanding on the first attempt with no errors at all, which
+# is what seven thousand lines of self-contained software rasteriser looks
+# like: it wants `malloc`, `memcpy`, `assert` and seven functions out of
+# `math.h`, and this machine has all of them.
+#
 DOOM_CFLAGS := -DKOSMOS_DOOM -w -Wno-error -Iruntime/upstream/doom \
                -DNORMALUNIX -DLINUX -DDOOMGENERIC_RESX=640 \
                -DDOOMGENERIC_RESY=400
@@ -487,6 +527,55 @@ $(BUILD)/hal/qemu-virt/fb.c.o: $(FB_FILE)
 # Upstream code is compiled without -Werror, the same allowance lua/upstream
 # gets: its warnings are not ours to fix and patching them would mean the
 # tree no longer holding what the author released.
+#
+# TinyGL, compiled on its own terms, and above the general upstream rule for
+# the reason that rule's neighbour already records: make takes the first
+# pattern that matches, and `runtime/upstream/%.c` matches these too.
+#
+$(UBUILD)/runtime/upstream/tinygl/examples/bounce.c.o: runtime/upstream/tinygl/examples/bounce.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,bounce) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/examples/cube.c.o: runtime/upstream/tinygl/examples/cube.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,cube) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/examples/gears.c.o: runtime/upstream/tinygl/examples/gears.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,gears) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+#
+# `mech` is the one that does not follow the pattern: it calls its per-frame
+# function `display`, which is GLUT's name for it rather than `ui.h`'s, so
+# the ordinary rename finds no `draw` to rename. Given its own line here
+# rather than patched, for the same reason as everything else in this tree.
+#
+$(UBUILD)/runtime/upstream/tinygl/examples/mech.c.o: runtime/upstream/tinygl/examples/mech.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,mech) \
+	      -Ddisplay=mech_draw \
+	      -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/examples/morph3d.c.o: runtime/upstream/tinygl/examples/morph3d.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,morph3d) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/examples/spin.c.o: runtime/upstream/tinygl/examples/spin.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,spin) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/examples/teapot.c.o: runtime/upstream/tinygl/examples/teapot.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,teapot) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/examples/texobj.c.o: runtime/upstream/tinygl/examples/texobj.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,texobj) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) -MMD -MP -c $< -o $@
+
 $(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Wno-error -MMD -MP -c $< -o $@
@@ -507,6 +596,14 @@ $(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
 #   No `-include kosmos_lua.h`. Doom does not know what Lua is and should
 #   not be told.
 #
+$(UBUILD)/user/lib/gl_demos.c.o: user/lib/gl_demos.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/lib/gl_kosmos.c.o: user/lib/gl_kosmos.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
+
 $(UBUILD)/runtime/upstream/doom/%.c.o: runtime/upstream/doom/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(DOOM_CFLAGS) -MMD -MP -c $< -o $@
