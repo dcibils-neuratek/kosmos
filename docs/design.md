@@ -34,7 +34,7 @@ Seven non-negotiable decisions. If something collides with one of them, the feat
 
 **Isolation comes from the hardware.** Lua is not sandboxed and does not need to be. A process runs at EL0 with its own address space; if it breaks its language sandbox, it breaks itself.
 
-**The system is modified while running.** A server reloads its code without losing its state or its clients.
+**The system is modified while running.** ~~A server reloads its code without losing its state or its clients.~~ **Withdrawn, September 2026** - see §10. Servers are C now and there is no dynamic linking, so none of them can be reloaded. Level 2, a supervisor restarting a server that died, is unaffected and is the architectural property.
 
 **Compatibility inside a process, never at system level.** A libc inside an app is fine and necessary. A POSIX personality in the system is forbidden. The line is drawn in section 17.
 
@@ -293,11 +293,14 @@ typed tables in C, which is writing Lua again under worse conditions. That
 is the IDL-and-generated-stubs work section 3 rejects SOM for, arriving
 through the back door.
 
-**Hot reload stops at the boundary.** `fs.reload` replaces a running
-server's code without losing its state or its clients, and the project's
-own definition of done says "Doom at 35fps next to a prompt where you
-redefine the window manager while you play". That sentence is about
-`wm.lua` specifically. In C it is not a harder demo, it is not a demo.
+**Hot reload stopped at the boundary, and then stopped.** This argued that
+`fs.reload` replaces a running server's code without losing its state or its
+clients, and that the project's own definition of done - "Doom at 35fps next
+to a prompt where you redefine the window manager while you play" - would
+not survive a C userland. That was true and it is now moot: reload was
+removed in September 2026 (§10), so this is no longer an argument for
+keeping anything in Lua. The window manager's Lua half is still Lua, but for
+the reasons below rather than this one.
 
 **Portability, which is a stated goal.** The 16,000 lines of Lua userland
 are recompiled for a new architecture exactly zero times, and cannot carry
@@ -615,7 +618,7 @@ That reduction is the whole argument, and it is the reason to build this even if
 
 The full design of the UI kit and window manager is in [ui.md](ui.md). Summary: BeOS lineage (view tree, follow modes, one message handler per window, replicants), with the locks removed because coroutines replace threads, and with `Draw()` producing commands instead of writing into a shared buffer.
 
-The consistency rule: **an app does not draw UI primitives.** The kit lives in `/lib/ui` and is resolved by namespace, the visual tokens are in `/system/ui/theme`, and since everything is Lua source with hot reload, editing `button.lua` updates every running app instantly.
+The consistency rule: **an app does not draw UI primitives.** The kit lives in `/lib/ui` and is resolved by namespace, and the visual tokens are in `/system/ui/theme`. Editing `button.lua` changes every app the next time one starts - it used to say "instantly", which was written when servers reloaded and was never true of a *library* anyway: `use` caches what it loaded, and an application holds the table it was given.
 
 ### 9.7 The first app
 
@@ -631,29 +634,55 @@ A historical clarification first, because this gets conflated often: **BeOS was 
 
 Kosmos is more radical: servers in separate processes with separate address spaces. That is QNX. From BeOS it takes the concurrency model and the design sensibility.
 
-**Where it ranks, as of September 2026: below speed.** This section used to
-treat hot reload as the property the design existed to protect, and that is
-no longer the order. The goal is a system that is fast and stays responsive
-on a Pi 5, and when the two disagree, responsiveness wins - a server that
-needs to be C to hold a frame becomes C, and gives reload up.
+### Level 1 is gone, and this is the record of removing it
 
-That is a demotion rather than a repudiation. Reload still works, it is still
-how development here feels, and nothing below this line has stopped being
-true. What changed is that it is no longer an argument that ends a
-discussion.
+**September 2026: hot reload was removed from Kosmos.** Not outranked,
+removed. There is no `fs.reload`, no reload branch in `serve`, and no server
+whose code can be replaced while it runs.
 
-**And it is not what keeps the policy servers in Lua.** Two other things do.
-The first is arithmetic: the namespace, init and the `/app` registry move
-almost no bytes, so C would buy a fraction of the ~2% that structure-shaped
-Lua costs. The second is the shape of the bug - a Lua server cannot have a
-buffer overflow. Isolation is identical either way, since both are EL0
-processes behind an address space, but one failure is a stack trace and the
-other is a night with a debugger. So C is for servers whose hot loop is small
-and bounded, and policy code is neither.
+It happened in two steps and the second one is the honest one. The first was
+a demotion: this section used to treat reload as the property the design
+existed to protect, and that stopped being the order once the goal was a
+system that stays responsive on a Pi 5. When the two disagreed,
+responsiveness won.
+
+The second step was that the disagreement stopped happening, because the
+servers ran out. Seven of them moved to C - audio, devices, binfs, libfs,
+appfs, console, ramfs - and there is no dynamic linking here, so a C server
+cannot be reloaded at all. ramfs was the last one that could be, and it was
+what `ROLE_RELOAD` reloaded and what `help("demos")` let you *watch* being
+reloaded.
+
+**And ramfs did not have to go.** It is 247 lines of paths and table lookups,
+nothing's timing depends on it, and by this document's own rule - C is for a
+server whose hot loop is small and bounded - it was the weakest candidate of
+the seven. It went because the system should be one thing rather than six
+servers in C and one in Lua for the sake of a feature, and that was a
+deliberate trade with a known price: a milestone's permanent test deleted,
+and the one demonstration of §9.1's Lisp Machine property gone with it.
+
+What survives is the *shape*: `serve` still takes a factory rather than a
+table of handlers, so a server's state and its behaviour are still separate
+things. That was reload's mechanism and it is worth keeping on its own.
+
+**Level 2 is untouched and is the architectural property anyway.** A
+supervisor restarting a dead server, with clients reconnecting through the
+namespace, never depended on the language a server was written in.
+
+**What keeps anything in Lua now is not reload.** Two things do. The first is
+arithmetic: code that moves almost no bytes gains a fraction of the ~2% that
+structure-shaped Lua costs. The second is the shape of the bug - a Lua server
+cannot have a buffer overflow. Isolation is identical either way, since both
+are EL0 processes behind an address space, but one failure is a stack trace
+and the other is a night with a debugger.
+
+`diskfs` is what is left, and for neither of those reasons: its core runs on
+the host as well as the guest, which is what lets `make test` check the
+journal's power-loss window without booting a machine.
 
 ### Two levels
 
-**Level 1 — reload code in a live server.** Nearly free in Lua. The server keeps its state in a table, receives a reload message, `load()`s the new code, and continues. The process never died and the clients never knew. This is the fun part and it is what will change how you work.
+**Level 1 — reload code in a live server.** *Removed, September 2026; see above.* It was nearly free in Lua: the server kept its state in a table, received a reload message, `load()`ed the new code, and continued. The process never died and the clients never knew.
 
 **Level 2 — restart a server that died.** A supervisor relaunches it, clients reconnect through the namespace. This is the architectural property.
 
@@ -739,7 +768,7 @@ A filesystem with attributes tests an idea. A Chromium port closes a gap. The fi
 
 ## 15. The measure of success
 
-Reaching stage 7 with a graphical desktop booting on real hardware, with hot-reloadable servers and working live queries.
+Reaching stage 7 with a graphical desktop booting on real hardware, with working live queries. (Hot-reloadable servers were part of this and were removed in September 2026; see §10.)
 
 That is something almost nobody builds. It not being your everyday machine takes nothing away from it.
 

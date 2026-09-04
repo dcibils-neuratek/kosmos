@@ -32,11 +32,24 @@ mailbox while a line was half-typed, which worked and cost a re-entrant
 server and a `sys.yield` spin - there is no UART interrupt to park on. The C
 one records who asked and answers from the loop.
 
-**`diskfs` and `ramfs` stay Lua, for two different reasons.** `diskfs`
-because `kfs.lua` runs on the host as well as the guest, which is what lets
-`make test` check the journal's power-loss window without booting a machine.
-`ramfs` because it is what `ROLE_RELOAD` reloads, and that test is M5's
-definition of done.
+**`ramfs` went, and hot reload went with it.** Decided rather than
+discovered: ramfs is 247 lines of paths and table lookups, nothing's timing
+depends on it, and by `CLAUDE.md`'s own rule it was the weakest candidate of
+the seven. It went so the system would be one thing rather than six servers
+in C and one in Lua for a feature's sake, at a price known in advance -
+`ROLE_RELOAD` deleted and `help("demos")`'s watchable reload with it.
+`design.md` §10 is the record, and the honest word is *removed*.
+
+Three things that conversion found, none visible by reading: `/data` had
+always stored **Lua values, not bytes** - `help("fs")` promises you get back
+the table you wrote - so the namespace packs and the server holds bytes with
+a flag saying what they are; the two M4/M5 test clients mount it and had to
+learn the protocol; and a replicant publishes a table holding its own source,
+several messages long, so packed values page as well.
+
+**`diskfs` is the only Lua server left**, because `kfs.lua` runs on the host
+as well as the guest, which is what lets `make test` check the journal's
+power-loss window without booting a machine.
 
 **Audio: control by message, data by shared memory.** The period path is an
 SPSC ring in shared memory (`audioring.h`) and the message says only which

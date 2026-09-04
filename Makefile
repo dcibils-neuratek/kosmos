@@ -343,6 +343,7 @@ USER_SRCS := user/init/start.S \
              user/servers/binfs.c \
              user/servers/appfs.c \
              user/servers/console.c \
+             user/servers/ramfs.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \

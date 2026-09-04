@@ -19,7 +19,10 @@ local ROLE_CLIENT_B = 2
 local ROLE_SELFTEST = 3   -- needs no capability: checks the language itself
 local ROLE_CONSOLE  = 4
 local ROLE_SHELL    = 5
-local ROLE_RELOAD   = 6   -- checks hot reload against a live server
+-- 6 was ROLE_RELOAD, which checked hot reload against a live server.
+-- Hot reload went with ramfs; the number is left unused rather than
+-- reassigned, because a role number that changes meaning is how a spawn
+-- ends up starting the wrong thing.
 local ROLE_INIT     = 7   -- starts everything else, and outlives it
 
 local ROLE_SPAWNTEST = 8  -- checks what a spawn may and may not pass on
@@ -299,24 +302,23 @@ end
 --------------------------------------------------------------------------
 
 --------------------------------------------------------------------------
--- A server: receive, dispatch, reply, repeat. And reload.
+-- A server: receive, dispatch, reply, repeat.
 --
--- Each request runs in a coroutine. Today that buys error isolation - a
--- handler that raises kills its own request and not the server - and it is
--- also the shape design.md 4.5 wants: every `receive` is a yield, so server
--- code is written sequentially over synchronous IPC instead of as a state
--- machine.
+-- Each request runs in a coroutine. That buys error isolation - a handler
+-- that raises kills its own request and not the server - and it is the
+-- shape design.md 4.5 wants: every `receive` is a yield, so server code is
+-- written sequentially over synchronous IPC instead of as a state machine.
 --
--- **The state is a table and the behaviour is a function of it.** That
--- separation is the whole of hot reload, and it is why `serve` takes a
--- factory rather than a table of handlers. Anything captured in a closure
--- built at startup is lost when the code is replaced; anything in `state`
--- survives, because the new handlers are handed the same table.
+-- **This used to reload too, and no longer does.** `serve` took a factory
+-- rather than a table of handlers so that behaviour could be replaced while
+-- state survived, and that worked: M5's definition of done was a server's
+-- code being swapped mid-conversation with a client. It went when ramfs
+-- became C, because ramfs was the last server this ran and there is nothing
+-- left to reload. `design.md` records the decision.
 --
--- design.md 10 calls this level 1: the process never died and the clients
--- never knew. Level 2, where a supervisor restarts a server that actually
--- died and clients reconnect through the namespace, is a different problem
--- and comes after there is something to supervise.
+-- The factory is kept, even with one caller and nothing to replace. It costs
+-- a line and it is the shape that makes the state and the behaviour separate
+-- things, which is worth having whether or not anything swaps them.
 --------------------------------------------------------------------------
 
 --
@@ -346,34 +348,6 @@ local DEFER = { "deferred" }
 local function serve(endpoint, state, make_handlers, manual)
   local handlers = make_handlers(state)
 
-  local function reload(source)
-    -- Loaded, then run, then installed, in that order and each checked. A
-    -- server that half-reloads is worse than one that refuses to: the
-    -- client is told no and the old code is still serving.
-    local chunk, err = load(source, "=reload", "t")
-    if not chunk then return { ok = false, error = "reload: " .. tostring(err) } end
-
-    local ok, factory = pcall(chunk)
-    if not ok then return { ok = false, error = "reload: " .. tostring(factory) } end
-    if type(factory) ~= "function" then
-      return { ok = false, error = "reload: the chunk did not return a factory" }
-    end
-
-    local built
-    ok, built = pcall(factory, state)
-    if not ok then return { ok = false, error = "reload: " .. tostring(built) } end
-    if type(built) ~= "table" then
-      return { ok = false, error = "reload: the factory did not return handlers" }
-    end
-
-    -- The same `state` table the old handlers were built around. Nothing is
-    -- copied and nothing is migrated: it is the same table, and the new code
-    -- simply keeps using it.
-    handlers = built
-    state.reloads = (state.reloads or 0) + 1
-    return { ok = true, reloads = state.reloads }
-  end
-
   --
   -- One request, answered. Pulled out of the loop below because a handler
   -- that has to wait needs to be able to do this too - see `state.pump`.
@@ -385,9 +359,7 @@ local function serve(endpoint, state, make_handlers, manual)
   local function answer(request, sender, cap)
     local reply
 
-    if request.type == "reload" then
-      reply = reload(request.source)
-    else
+    do
       local handler = handlers[request.type]
 
       if not handler then
@@ -523,271 +495,23 @@ end
 -- alternative is a typed key nobody would ever look up.
 --------------------------------------------------------------------------
 
-local function ramfs_handlers(state)
-  local function unindex(path, attrs)
-    for name, value in pairs(attrs or {}) do
-      local bucket = state.index[name]
-
-      if bucket then
-        local by_value = bucket[tostring(value)]
-        if by_value then by_value[path] = nil end
-      end
-    end
-  end
-
-  local function reindex(path, attrs)
-    for name, value in pairs(attrs or {}) do
-      local bucket = state.index[name]
-
-      if not bucket then
-        bucket = {}
-        state.index[name] = bucket
-      end
-
-      local key = tostring(value)
-      local by_value = bucket[key]
-
-      if not by_value then
-        by_value = {}
-        bucket[key] = by_value
-      end
-
-      by_value[path] = true
-    end
-  end
-
-  --
-  -- Everything matching `where`, as a sorted list of paths.
-  --
-  -- The first term is looked up in the index and the rest filter what came
-  -- back, so the cost is the size of the *answer* and not the size of the
-  -- filesystem. Which term goes first is whichever `pairs` hands over
-  -- first, and that is a real limitation rather than a subtlety: with two
-  -- terms of very different selectivity the wrong one first costs more.
-  -- Choosing needs per-value counts, and counting is M8's problem.
-  --
-  local function evaluate(where)
-    local first_name, first_value = next(where or {})
-
-    if first_name == nil then
-      return {}
-    end
-
-    local bucket = state.index[first_name]
-    local candidates = bucket and bucket[tostring(first_value)]
-
-    if not candidates then
-      return {}
-    end
-
-    local out = {}
-
-    for path in pairs(candidates) do
-      local node = state.nodes[path]
-      local keep = node ~= nil
-
-      if keep then
-        for name, value in pairs(where) do
-          if tostring(node.attrs[name]) ~= tostring(value) then
-            keep = false
-            break
-          end
-        end
-      end
-
-      if keep then out[#out + 1] = path end
-    end
-
-    table.sort(out)
-    return out
-  end
-
-  local function same(a, b)
-    if #a ~= #b then return false end
-    for i = 1, #a do
-      if a[i] ~= b[i] then return false end
-    end
-    return true
-  end
-
-  --
-  -- Something changed. Every watcher whose answer is now different gets the
-  -- reply it has been parked on since it asked.
-  --
-  -- Re-evaluated rather than worked out incrementally, because a watcher's
-  -- predicate can involve attributes the write never touched. Correct
-  -- first; the number of watchers is small and the cost of each is the size
-  -- of its own answer.
-  --
-  local function notify()
-    local still = {}
-
-    for _, w in ipairs(state.watchers) do
-      local now = evaluate(w.where)
-
-      if same(now, w.last) then
-        still[#still + 1] = w
-      else
-        pcall(sys.reply, w.who, { ok = true, paths = now })
-      end
-    end
-
-    state.watchers = still
-  end
-
-  local function find(path, create)
-    local node = state.root
-
-    for _, name in ipairs(split(path)) do
-      --
-      -- A node with no children is either a file or a directory nobody has
-      -- put anything in yet, and on the way to creating something the two
-      -- are the same case: make the table and carry on. Without this, any
-      -- path more than one deep failed to be created - `find` returned nil
-      -- and the caller indexed it - which is to say `/data/a/b` was not a
-      -- writable path and `/data/b` was.
-      --
-      if not node.children then
-        if not create then return nil end
-        node.children = {}
-      end
-
-      local child = node.children[name]
-
-      if not child then
-        if not create then return nil end
-        child = { attrs = {} }
-        node.children[name] = child
-      end
-
-      node = child
-    end
-
-    return node
-  end
-
-  return {
-    list = function(req)
-      local node = find(req.path)
-      if not node then return { ok = false, error = "no such path" } end
-      if not node.children then
-        return { ok = false, error = "not a directory" }
-      end
-      local names = {}
-      for name in pairs(node.children) do names[#names + 1] = name end
-      table.sort(names)                     -- so a listing is reproducible
-      return { ok = true, entries = names }
-    end,
-
-    read = function(req)
-      local node = find(req.path)
-      if not node then return { ok = false, error = "no such path" } end
-      if node.value == nil then
-        return { ok = false, error = "not readable" }
-      end
-      return { ok = true, value = node.value }
-    end,
-
-    write = function(req)
-      local node = find(req.path, true)
-      node.value = req.value
-      node.children = nil                   -- it holds data now
-      state.nodes[req.path] = node
-      -- A size, for the things that have one. A table has a shape rather
-      -- than a length, and reporting 1 for it - which this used to - makes
-      -- `ls` say "1 bytes" about a record with four fields.
-      unindex(req.path, node.attrs)
-      node.attrs.size = (type(req.value) == "string") and #req.value or nil
-      reindex(req.path, node.attrs)
-      state.writes = (state.writes or 0) + 1
-
-      -- After the node is what it is going to be, so a watcher woken here
-      -- sees the write it was waiting for and not the state before it.
-      notify()
-      return { ok = true }
-    end,
-
-    getattr = function(req)
-      local node = find(req.path)
-      if not node then return { ok = false, error = "no such path" } end
-      return { ok = true, attrs = node.attrs }
-    end,
-
-    setattr = function(req)
-      local node = find(req.path, true)
-      state.nodes[req.path] = node
-
-      unindex(req.path, node.attrs)
-      for k, v in pairs(req.attrs) do node.attrs[k] = v end
-      reindex(req.path, node.attrs)
-
-      notify()
-      return { ok = true }
-    end,
-
-    --
-    -- Everything matching, now.
-    --
-    query = function(req)
-      return { ok = true, paths = evaluate(req.where) }
-    end,
-
-    --
-    -- Everything matching, when it changes.
-    --
-    -- The caller is blocked in this call until the answer is different from
-    -- what it sent as `known`. That is the whole of "live": one outstanding
-    -- call, no timer, no repeated question, and the process asking is not
-    -- running while it waits.
-    --
-    -- It is answered immediately if the answer is *already* different, which
-    -- is what stops a watcher missing a change that happened between its
-    -- last reply and its next call.
-    --
-    watch = function(req, who)
-      local known = req.known or {}
-      local now = evaluate(req.where)
-
-      if not same(now, known) then
-        return { ok = true, paths = now }
-      end
-
-      state.watchers[#state.watchers + 1] = {
-        who = who, where = req.where, last = now,
-      }
-
-      return DEFER
-    end,
-
-    --
-    -- How many watchers are parked. For the tests, which otherwise have to
-    -- prove a negative about a process that is doing nothing.
-    --
-    watchers = function(req)
-      return { ok = true, value = #state.watchers }
-    end,
-  }
-end
-
-local function ramfs_main(endpoint)
-  local state = {
-    root = { children = {}, attrs = { kind = "directory" } },
-    writes = 0,
-
-    -- Every node that has ever been written or given an attribute, by path.
-    -- The tree answers "what is under here"; this answers "what is at this
-    -- path" without walking, which is what a query result needs.
-    nodes = {},
-
-    -- index[attribute][value] -> set of paths.
-    index = {},
-
-    -- Calls that have not been answered yet.
-    watchers = {},
-  }
-
-  serve(endpoint, state, ramfs_handlers)
-end
+--
+-- No handlers here: /data is `user/servers/ramfs.c`, and `main.c`
+-- dispatches role 1 to it before the interpreter is opened.
+--
+-- The seventh and last to move, and the only one whose conversion cost a
+-- feature rather than only buying one. ramfs was what `ROLE_RELOAD`
+-- reloaded and what `help("demos")` let you watch being reloaded, so with
+-- it in C there is no server left whose code can be replaced while it runs.
+-- Hot reload is gone from this system, deliberately - `design.md` records
+-- the decision, and the honest word is *removed* rather than *outranked*.
+--
+-- What the C one does differently, beyond having no collector: it keeps a
+-- flat table of paths instead of a tree plus a path map. The Lua version
+-- held both and kept them in step by hand, which meant `write` had to
+-- remember to touch two representations of one fact. A directory is now a
+-- path with no value, and listing is a scan for children.
+--
 
 --------------------------------------------------------------------------
 -- The client side of the protocol: a namespace.
@@ -1270,6 +994,285 @@ local function new_namespace()
     return { ok = true }
   end
 
+  --------------------------------------------------------------------------
+  -- /data, which is C and speaks `ramproto.h`.
+  --
+  -- `string.pack` rather than a kit, and the difference from the console is
+  -- the whole reason that one needed a kit: ramfs has exactly one
+  -- implementation, so the layout has one reader here and one in the server,
+  -- and an assertion on the size is enough to catch a drift. The console has
+  -- two, and a terminal is not a place to keep a copy of a struct.
+  --------------------------------------------------------------------------
+
+  local RAM_ATTR    = "I4c32c48"                     -- kind, name, value
+  local RAM_REQUEST = "<I4I4I4I4I4c128" .. string.rep(RAM_ATTR, 8) .. "c1024"
+  local RAM_REPLY   = "<I4I4I4I4I4c1024"
+
+  local RAM_PATH_MAX, RAM_ATTRS_MAX = 128, 8
+  local RAM_ENTRIES_MAX, RAM_DATA_MAX = 8, 1024
+
+  assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, "") == 1044,
+         "namespace: the /data reply layout does not match ramproto.h")
+
+  local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
+                    setattr = 5, query = 6, watch = 7, watchers = 8 }
+
+  local RAM_ERRORS = {
+    [1] = "no such path",
+    [2] = "not a directory",
+    [3] = "not readable",
+    [4] = "/data did not understand that",
+    [5] = "/data is full",
+    [6] = "too many attributes on one node",
+  }
+
+  -- A string cut to exactly what a fixed field holds. `c128` pads a short
+  -- one and refuses a long one, so the cut has to happen first.
+  local function fixed(text, n)
+    text = tostring(text or "")
+    return (#text > n) and text:sub(1, n) or text
+  end
+
+  --
+  -- A table of attributes, as the eight slots the struct has.
+  --
+  -- Numbers travel as text with `kind` saying they were numbers, which is
+  -- what `/dev` settled: the wire carries characters either way, and the far
+  -- side hands back the type that went in.
+  --
+  local function pack_attrs(attrs)
+    local out, count = {}, 0
+
+    for name, value in pairs(attrs or {}) do
+      if count < RAM_ATTRS_MAX then
+        count = count + 1
+        out[#out + 1] = (type(value) == "number") and 1 or 0
+        out[#out + 1] = fixed(name, 32)
+        out[#out + 1] = fixed(tostring(value), 48)
+      end
+    end
+
+    for _ = count + 1, RAM_ATTRS_MAX do
+      out[#out + 1] = 0
+      out[#out + 1] = ""
+      out[#out + 1] = ""
+    end
+
+    return out, count
+  end
+
+  local function ram_pack(op, path, offset, length, count, attrs, blob, packed)
+    local a = pack_attrs(attrs)
+
+    a[#a + 1] = fixed(blob, RAM_DATA_MAX)   -- the union, zero-padded by `c`
+
+    return string.pack(RAM_REQUEST, op, offset or 0, length or 0, count or 0,
+                       packed or 0, fixed(path, RAM_PATH_MAX),
+                       table.unpack(a, 1, RAM_ATTRS_MAX * 3 + 1))
+  end
+
+  -- The payload of a reply, read as whichever of the three things it is.
+  local function ram_entries(blob, count)
+    local out = {}
+
+    for i = 1, math.min(count, RAM_ENTRIES_MAX) do
+      local at = (i - 1) * RAM_PATH_MAX + 1
+      out[i] = trim(blob:sub(at, at + RAM_PATH_MAX - 1))
+    end
+
+    return out
+  end
+
+  local function ram_attrs(blob, count)
+    local out = {}
+
+    for i = 1, math.min(count, RAM_ATTRS_MAX) do
+      local at = (i - 1) * 84 + 1
+      local kind, name, value = string.unpack(RAM_ATTR, blob, at)
+
+      name = trim(name)
+
+      if name ~= "" then
+        out[name] = (kind == 1) and (tonumber(trim(value)) or trim(value))
+                                or trim(value)
+      end
+    end
+
+    return out
+  end
+
+  local function ram_call(capability, bytes)
+    local raw, why = sys.call_raw(capability, bytes)
+
+    if not raw then return nil, tostring(why) end
+    if #raw < 1044 then return nil, "a /data reply of the wrong size" end
+
+    local err, more, count, length, packed, blob = string.unpack(RAM_REPLY, raw)
+
+    if err ~= 0 then
+      return nil, RAM_ERRORS[err] or ("/data error " .. tostring(err))
+    end
+
+    return { more = more ~= 0, count = count, length = length,
+             packed = packed ~= 0, blob = blob }
+  end
+
+  local function ram_request(capability, op, rest, extra)
+    local code = RAM_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    extra = extra or {}
+
+    if op == "write" then
+      --
+      -- /data holds Lua values, and this is where that survives the move to
+      -- C. A string goes as itself; anything else - a table, a float, a
+      -- boolean - goes as `sys.pack` and comes back through `sys.unpack`, so
+      -- `help("fs")`'s promise still holds: you get back the table you wrote.
+      --
+      -- A write is also a stream, and `offset` is what makes it one. The Lua
+      -- ramfs replaced the whole value every time, so a file larger than one
+      -- message could not be written at all: the namespace split long text
+      -- and each piece overwrote the last. Writing at 0 truncates, which is
+      -- what `fs.write` has always meant; the rest appends.
+      --
+      local value = extra.value
+      local text, packed
+
+      if type(value) == "string" then
+        text, packed = value, 0
+      else
+        text, packed = sys.pack(value), 1
+      end
+
+      local at = 0
+
+      repeat
+        local piece = text:sub(at + 1, at + RAM_DATA_MAX)
+        local _, err = ram_call(capability,
+                                ram_pack(code, rest, at, #piece, 0, nil,
+                                         piece, packed))
+
+        if err then return nil, err end
+
+        at = at + #piece
+      until at >= #text
+
+      return { ok = true }
+    end
+
+    if op == "setattr" then
+      local _, n = pack_attrs(extra.attrs)
+      local _, err = ram_call(capability,
+                              ram_pack(code, rest, 0, 0, n, extra.attrs))
+
+      if err then return nil, err end
+
+      return { ok = true }
+    end
+
+    if op == "watch" then
+      --
+      -- `known` goes in the union where a write's bytes go, as eight fixed
+      -- slots, and the number of query terms rides in `offset` because a
+      -- watch never pages and `count` is spoken for.
+      --
+      local known = {}
+
+      for i = 1, RAM_ENTRIES_MAX do
+        local p = fixed((extra.known or {})[i] or "", RAM_PATH_MAX)
+
+        -- Each slot padded to its full width by hand, because these are
+        -- concatenated into one field and `c` pads only the whole of it.
+        known[i] = p .. string.rep("\0", RAM_PATH_MAX - #p)
+      end
+
+      local _, nwhere = pack_attrs(extra.where)
+      local r, err = ram_call(capability,
+                              ram_pack(code, rest, nwhere, 0,
+                                       math.min(#(extra.known or {}),
+                                                RAM_ENTRIES_MAX),
+                                       extra.where, table.concat(known)))
+
+      if not r then return nil, err end
+
+      return { ok = true, paths = ram_entries(r.blob, r.count) }
+    end
+
+    local offset = tonumber(extra.offset) or 0
+    local nterms = 0
+
+    if op == "query" then
+      nterms = select(2, pack_attrs(extra.where))
+    end
+
+    local r, err = ram_call(capability,
+                            ram_pack(code, rest, offset, 0, nterms,
+                                     (op == "query") and extra.where or nil))
+
+    if not r then return nil, err end
+
+    if op == "list" then
+      return { ok = true, entries = ram_entries(r.blob, r.count),
+               more = r.more, offset = offset + r.count }
+    end
+
+    if op == "read" then
+      local bytes = r.blob:sub(1, r.length)
+
+      if not r.packed then
+        -- Text pages the way every other server's does, and `ns.read` above
+        -- is what puts the pieces together.
+        return { ok = true, value = bytes, more = r.more }
+      end
+
+      --
+      -- A serialised value is reassembled *here*, not by `ns.read`.
+      --
+      -- The pieces are only a Lua value once all of them are present, so the
+      -- generic paging loop - which concatenates strings and hands back
+      -- whatever it has - cannot be the thing that finishes this. The server
+      -- stores bytes and remembers what they were; the encoding is between
+      -- this function and `sys.pack`.
+      --
+      -- The replicant is what needs it: a clock publishes a table holding
+      -- its own source, which is well over one message.
+      --
+      local parts, more, at = { bytes }, r.more, #bytes
+
+      while more do
+        local nxt, err = ram_call(capability,
+                                  ram_pack(code, rest, at, 0, 0, nil, nil, 0))
+
+        if not nxt then return nil, err end
+
+        parts[#parts + 1] = nxt.blob:sub(1, nxt.length)
+        at = at + nxt.length
+        more = nxt.more
+      end
+
+      return { ok = true, value = sys.unpack(table.concat(parts)) }
+    end
+
+    if op == "getattr" then
+      return { ok = true, attrs = ram_attrs(r.blob, r.count) }
+    end
+
+    if op == "query" then
+      return { ok = true, paths = ram_entries(r.blob, r.count),
+               more = r.more }
+    end
+
+    if op == "watchers" then
+      return { ok = true, value = r.count }
+    end
+
+    return { ok = true }
+  end
+
   local function request(op, path, extra, pass)
     local capability, rest, _, proto = resolve(path)
     if not capability then
@@ -1280,6 +1283,10 @@ local function new_namespace()
 
     if proto == "console" then
       return con_request(capability, op, extra)
+    end
+
+    if proto == "ram" then
+      return ram_request(capability, op, rest, extra)
     end
 
     if proto == "dev" then
@@ -1541,13 +1548,6 @@ local function new_namespace()
     return r and r.value, e
   end
 
-  -- Replaces the code of whatever serves this path, keeping its state.
-  --
-  -- An operation like any other, reached by name like any other, which is
-  -- the point: there is no separate management channel and no privileged
-  -- back door. A process can reload a server exactly when it holds a
-  -- capability for it, and not otherwise.
-  --
   -- Was the interrupt key pressed? Only the console answers this, and only
   -- because it is the one process allowed to read the keyboard.
   --
@@ -1736,10 +1736,6 @@ local function new_namespace()
     return r.value and true or false
   end
 
-  function ns.reload(path, source)
-    local r, e = request("reload", path, { source = source })
-    return r and r.reloads or nil, e
-  end
 
   return ns
 end
@@ -2697,7 +2693,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
-  ns.mount("/data", ramfs_cap)
+  ns.mount("/data", ramfs_cap, nil, "ram")
 
   -- Longest prefix wins, so /dev/console keeps going to the console server
   -- while everything else under /dev goes to the device server. Two servers
@@ -2824,9 +2820,6 @@ nothing there to deny.
 Values are Lua values, not bytes. A read gives you back the table you
 wrote, integers still integers and floats still floats.
 
-  fs.reload(path, source)   replaces a running server's code
-
-See help("demos") for a hot reload you can watch happen.
 ]=]
 
   topics.gfx = [=[
@@ -2969,15 +2962,14 @@ The serialiser, which is how every message travels:
   sys.unpack(sys.pack({ deep = { "a", "b" } })).deep[2]
   sys.pack(print)            -> refused: a function cannot cross
 
-Replace a running server's code, while it is holding your files:
+Attributes, and a query that finds by them rather than by name:
 
   fs.write("/data/a", "one")
-  fs.reload("/data", "return function(s) return { read = function(r) return { ok = true, value = 'REPLACED, writes so far: ' .. tostring(s.writes) } end } end")
-  fs.read("/data/a")
+  fs.setattr("/data/a", { kind = "note" })
+  fs.query("/data", { kind = "note" })
 
-The counter in that answer was incremented by the code you just
-deleted: the behaviour changed and the state survived. Reboot to get
-your filesystem back.
+BeOS's idea: the filesystem is a database, and a folder is a saved
+query. `find` and `watch` are built on exactly these two calls.
 ]=]
 
   --------------------------------------------------------------------------
@@ -3864,82 +3856,6 @@ if role == ROLE_INIT then
   end
 end
 
-if role == ROLE_RELOAD then
-  -- M5's other half: reload a server's code while a client is connected,
-  -- without the client noticing.
-  --
-  -- "Without noticing" is precise. This process holds one capability and
-  -- never reconnects: the same endpoint, the same server process, the same
-  -- table of files. What changes underneath it is the code.
-  local function check(c, what) if not c then error("reload: " .. what) end end
-
-  local fs = new_namespace()
-  fs.mount("/fs", CAP)
-
-  check(fs.write("/fs/note", "before"), "the first write failed")
-  check(fs.read("/fs/note") == "before", "the first read came back wrong")
-
-  -- New behaviour, same state. `read` now shouts; everything else is as it
-  -- was. The tree is not passed in or copied - the factory is handed the
-  -- state table the old handlers were already using.
-  local source = [[
-    return function(state)
-      local function find(path)
-        local node = state.root
-        for name in path:gmatch("[^/]+") do
-          if not node.children then return nil end
-          node = node.children[name]
-          if not node then return nil end
-        end
-        return node
-      end
-
-      return {
-        read = function(req)
-          local node = find(req.path)
-          if not node or node.value == nil then
-            return { ok = false, error = "no such path" }
-          end
-          return { ok = true, value = tostring(node.value):upper() }
-        end,
-
-        stat = function(req)
-          return { ok = true, value = {
-            writes = state.writes, reloads = state.reloads or 0,
-          } }
-        end,
-      }
-    end
-  ]]
-
-  local reloads, err = fs.reload("/fs", source)
-  check(reloads == 1, "reload failed: " .. tostring(err))
-
-  -- The file is still there, which is the state surviving.
-  -- It comes back shouting, which is the code having been replaced.
-  check(fs.read("/fs/note") == "BEFORE", "state and code did not both survive")
-
-  -- The counter the old code kept is the counter the new code reads.
-  local stat = fs.stat("/fs")
-  check(stat ~= nil and stat.writes == 1, "the write counter did not survive")
-  check(stat.reloads == 1, "the reload was not counted")
-
-  -- And an operation the new code dropped is gone, which is proof the
-  -- handlers really were replaced rather than added to.
-  local ok = fs.write("/fs/other", "x")
-  check(ok == false, "an operation the new code does not have still worked")
-
-  -- A reload that does not compile is refused, and the server keeps
-  -- serving the code it already had. Half-reloading would be worse than
-  -- not reloading.
-  local bad, berr = fs.reload("/fs", "this is not lua")
-  check(bad == nil and berr:find("reload") ~= nil, "a broken reload was accepted")
-  check(fs.read("/fs/note") == "BEFORE", "a refused reload broke the server")
-
-  line("reload: state survived, code replaced, bad reload refused")
-  return
-end
-
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
@@ -4005,12 +3921,6 @@ if role == ROLE_SELFTEST then
                      before, rose, kept))
 
   line("selftest: done")
-  return
-end
-
-if role == ROLE_RAMFS then
-  sys.name("ramfs")
-  ramfs_main(CAP)
   return
 end
 
@@ -4082,7 +3992,7 @@ if role == ROLE_RUNNER then
   -- through the same kit, which is the whole reason that kit exists. The
   -- runner cannot tell the two apart and must not need to.
   if req.console then ns.mount("/dev/console", req.console, nil, "console") end
-  if req.data    then ns.mount("/data",        req.data)    end
+  if req.data    then ns.mount("/data",        req.data, nil, "ram") end
   if req.bin     then ns.mount("/bin",         req.bin, nil, "bin") end
   if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
   if req.lib     then ns.mount("/lib",         req.lib, nil, "bin") end
@@ -4417,7 +4327,12 @@ end
 local mount_point = (role == ROLE_CLIENT) and "/data" or "/files"
 
 local fs = new_namespace()
-fs.mount(mount_point, CAP)
+
+-- `"ram"` because the server on the other end is `user/servers/ramfs.c` and
+-- speaks `ramproto.h`. A mount with no protocol means Lua tables, which is
+-- what this said while the ramfs was Lua and what made both of these checks
+-- fail the moment it was not.
+fs.mount(mount_point, CAP, nil, "ram")
 
 line("client: mounted the ramfs at " .. mount_point)
 

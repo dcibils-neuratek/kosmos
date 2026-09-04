@@ -36,7 +36,7 @@ On Linux, reading a file, reading a sensor, listing processes, watching for chan
 
 **It is not a daily driver, and chasing that would kill the project.** A daily driver needs a browser, and a modern browser is 30 million lines that assume POSIX, threads, a JIT, a GPU and a full network stack. Porting Chromium is more work than the whole system. That was the wall Haiku hit, with 20 years and dozens of contributors.
 
-**It is not a BeOS clone.** BeOS was monolithic, with drivers and the filesystem inside the kernel, and no hot reload. Kosmos takes its concurrency model, its live queries and its design sensibility. The architecture is QNX.
+**It is not a BeOS clone.** BeOS was monolithic, with drivers and the filesystem inside the kernel. Kosmos takes its concurrency model, its live queries and its design sensibility. The architecture is QNX.
 
 **It does not pursue system-level compatibility.** Computational libraries (SQLite, zlib, monocypher, Doom) can be ported with a libc shim inside the process, subject to its capabilities. What does not fit is a POSIX personality: `fork`, signals, BSD sockets, or a global tree. The moment that exists, the namespace design becomes decorative and the experiment loses its result.
 
@@ -59,7 +59,7 @@ If something collides with one of these, the feature gets cut, not the principle
 3. **One protocol for every resource.** Sensor, process, file, window, network connection.
 4. **Share-nothing userland.** One `lua_State` per process. Concurrency complexity stays confined to the kernel.
 5. **Isolation comes from the hardware.** An EL0 address space plus capabilities. Lua does not need to be sandboxed.
-6. **The system is modified while running.** A server reloads its code without losing state or clients.
+6. **The system is modified while running.** ~~A server reloads its code without losing state or clients.~~ **Withdrawn September 2026**: every server is C, there is no dynamic linking, and hot reload was removed with the last Lua one. See `docs/design.md` §10.
 7. **Compatibility inside a process, never at system level.** A libc inside an app is necessary and fine. A POSIX personality (`fork`, signals, a global tree, ambient authority) is forbidden. The line is drawn in [design.md](docs/design.md) section 17.
 
 ---
@@ -268,6 +268,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | The language follows the *layer*, not a judgement: C runs on behalf of another process (kernel, drivers, servers, kits), Lua runs for a person (apps, programs) | CLAUDE.md |
 | Sep 2026 | A boundary is an agreement: what crosses into the system is a declared struct, not a table. A capability is what you cannot *name*; a struct is what you cannot *say* | audioproto.h |
 | Sep 2026 | The namespace is a **kit**, not a server: it is run in the caller's own process, has no endpoint and no thread. This file called it a server for months and an argument was built on the name | glossary.md |
+| Sep 2026 | Servers speak `conproto.h` through a **kit** where a protocol has two implementations. `/dev/console` is the only one: a terminal mounts itself as its child's console, so an application answers the same ABI | con_kosmos.c |
+| Sep 2026 | **Hot reload removed.** Not outranked - removed. Seven servers went to C and there is no dynamic linking, so nothing is left to reload. ramfs did not have to go and went anyway, at a known price: a milestone's test deleted and §9.1's only live demonstration with it | design.md §10 |
 
 ---
 

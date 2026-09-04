@@ -877,80 +877,6 @@ static bool test_a_process_can_spawn_and_wait(void)
     return code == 0;
 }
 
-static bool test_a_server_reloads_without_the_client_noticing(void)
-{
-    /*
-     * The other half of M5's definition of done, and design.md 10's whole
-     * argument: a server reloads its code without losing its state or its
-     * clients.
-     *
-     * "Without the client noticing" is precise here. The client holds one
-     * capability and never reconnects; the server process never dies. What
-     * changes underneath it is the code, and the table of files it was
-     * already holding is the table the new code carries on with.
-     *
-     * The client checks all of it: the file survives, it comes back changed
-     * by the new handler, a counter the old code kept is read by the new
-     * one, an operation the new code dropped is gone, and a reload that does
-     * not compile is refused with the old code still serving.
-     */
-    extern const unsigned char init_image[];
-    extern const unsigned long init_image_len;
-    size_t len = (size_t)init_image_len;
-    struct process *server;
-    struct process *client;
-    cap_t ep;
-    unsigned i;
-    bool ok;
-
-    ep = ipc_endpoint_create();
-    if (ep < 0) {
-        return false;
-    }
-
-    server = process_create("t-rl-srv", init_image, len, 1 /* ramfs */);
-    client = process_create("t-rl-cli", init_image, len, 6 /* reload */);
-
-    if (server == NULL || client == NULL) {
-        (void)ipc_endpoint_destroy(ep);
-        return false;
-    }
-
-    if (ipc_cap_grant(server->thread, ep) != 0
-        || ipc_cap_grant(client->thread, ep) != 0) {
-        (void)ipc_endpoint_destroy(ep);
-        return false;
-    }
-
-    /* The client reports by writing, so it gets the console. */
-    process_grant_console(client);
-
-    process_start(server);
-    process_start(client);
-
-    for (i = 0; i < 16384 && !client->exited; i++) {
-        thread_yield();
-    }
-
-    ok = client->exited && client->exit_code == 0;
-
-    if (client->exited) {
-        process_reap(client);
-    }
-
-    (void)ipc_endpoint_destroy(ep);
-
-    for (i = 0; i < 1024 && !server->exited; i++) {
-        thread_yield();
-    }
-
-    if (server->exited) {
-        process_reap(server);
-    }
-
-    return ok;
-}
-
 static bool test_only_the_console_owner_may_print(void)
 {
     /*
@@ -3933,7 +3859,6 @@ static const struct test tests[] = {
     { "ns: same server, two names, two views", test_the_same_server_under_two_names },
     { "dev: only the owner may print",         test_only_the_console_owner_may_print },
     { "spawn: a child runs and is waited for", test_a_process_can_spawn_and_wait },
-    { "reload: code replaced, state kept",     test_a_server_reloads_without_the_client_noticing },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },

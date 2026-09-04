@@ -334,17 +334,24 @@ which servers, and the judgement is what failed.
 
 Two things make the move survivable that did not hold before: messages are
 fixed-size and the serialiser is already C, so string handling here has a
-bounded shape rather than an open one; and hot reload has already been
-demoted below speed, so the old objection to a C server is gone.
+bounded shape rather than an open one; and hot reload has since been removed
+outright, so the old objection to a C server is gone.
 
-**Move them one at a time, and live with each before starting the next.**
-The audio server first, because it is on a deadline and it is what proved
-the point. Then the small ones - `devices` at 115 lines, `appfs` at 62 -
-where the protocol convention gets its second try while it is still cheap to
-find it wrong.
+**They have all moved, one at a time, and the order was the point.** Audio
+first, because it is on a deadline and it is what proved the point; then the
+small ones - `devices`, `appfs` - where the protocol convention got its
+second try while it was still cheap to find it wrong; then `binfs` and
+`libfs`; then `console`, which needed a kit because a terminal implements the
+same ABI; then `ramfs`, which cost hot reload.
 
-**`diskfs` is the one to leave alone**, and for a reason that has nothing to
-do with its size. Its core is `kfs.lua`, which runs on the host *and* the
+**Living with each before starting the next is what found the bugs**, and
+every one of them was a thing no amount of reading would have shown: a reply
+that dropped the pointer's range, a share that did not carry its protocol,
+five servers that had quietly stopped naming themselves, and a `/data` that
+had always stored Lua values rather than bytes.
+
+**`diskfs` is the one left, and the one to leave alone**, for a reason that
+has nothing to do with its size. Its core is `kfs.lua`, which runs on the host *and* the
 guest, and that is what lets `make test` check the filesystem format and the
 journal's power-loss window without booting a machine - at an exact instant
 a SIGKILL aimed at a running QEMU hits only by luck. Rewriting it in C
@@ -357,13 +364,22 @@ costs about 2%, measured, which is nothing. What decides a server is
 is 16 ms. No amount of optimising the Lua removes that, and responsiveness is
 a promise about the worst case rather than the average.
 
-**Hot reload is real and it is no longer what ranks first.** It works, M5
-proved it - the console server's code was replaced while the shell was
-mid-conversation with it - and `layout.md` records that there is no dynamic
-linking, so a C server cannot be reloaded at all. That is a genuine cost and
-it is now an accepted one: **where speed and hot reload disagree, speed
-wins.** Decided September 2026, and it is a change of order rather than a
-change of opinion about reload.
+**Hot reload is gone, and "gone" is the word.** It was real - M5 proved it,
+with a server's code replaced while a client was mid-conversation with it -
+and it was first demoted below speed, on the grounds that a C server cannot
+be reloaded because there is no dynamic linking.
+
+Then the disagreement stopped happening, because the servers ran out. Seven
+moved to C and `ramfs` was the last one that could be reloaded. It was
+converted in September 2026 knowing the price: `ROLE_RELOAD` deleted, and
+`help("demos")`'s watchable reload with it.
+
+**Do not describe this as a tiebreaker any more.** `fs.reload` does not
+exist, `serve` has no reload branch, and nothing in the running system can
+have its code replaced. `design.md` §10 is the record. What survives is the
+shape - `serve` still takes a factory, so state and behaviour are separate -
+and level 2, where a supervisor restarts a server that *died*, which never
+depended on the language anything was written in.
 
 **What keeps a policy server in Lua, then, is the shape of its bug.** A Lua
 server cannot have a buffer overflow. The blast radius is identical either
@@ -385,11 +401,11 @@ before rewriting it.
 and a tool each are, and the distinction that does the most work: **a kit is
 code you run, a server is someone you ask.**
 
-**Do not push things down to C "because it is faster" without a profile that justifies it.** Not because reload outranks speed - it does not - but because without a number you cannot tell whether you bought anything. Structure-shaped Lua costs about 2%, and 2% of nothing is nothing.
+**Do not push things down to C "because it is faster" without a profile that justifies it.** Without a number you cannot tell whether you bought anything, and structure-shaped Lua costs about 2% - 2% of nothing is nothing.
 
-**But notice what that cost is made of, because it is not always there.** The price of C is losing hot reload. A finished algorithm has nothing to reload: JPEG is not going to change, and neither is DEFLATE, or the syntax of a PDF content stream. For those the cost is zero and the speed is free, so they belong in C and the profile is a formality.
+**The question that decides is: is it a loop over bytes, or does it sit where a collector pause would be felt?** If neither, C buys about 2% and the answer is no.
 
-The first question is therefore the one that decides: **is it a loop over bytes, or does it sit where a collector pause would be felt?** If neither, C buys about 2% and costs reload, and the answer is no. Reload is the tiebreaker rather than the veto it used to be: a Huffman decoder is never reloaded, so for a codec the cost is genuinely zero.
+Reload used to be the other half of this, and is not any more - there is nothing left to reload. What replaced it as the cost of C is the shape of the bug: a Lua module cannot have a buffer overflow, and 2% is not worth an evening with a debugger. That argument still says yes to a scanner, a blitter and a Huffman decoder, and no to four thousand lines of paths and table lookups.
 
 The legitimate exception is pixel loops: never in Lua. Lua decides what gets drawn and where, the loop happens inside a surface, in C.
 
