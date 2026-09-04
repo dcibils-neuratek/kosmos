@@ -57,7 +57,7 @@ shell rather than underneath it.
        .        ^                                                       .
        .        | spawned, each in a space of its own                    .
        .   +---------+                                                  .
-       .   |  shell  |          servers, in Lua                          .
+       .   |  shell  |          servers, in C                            .
        .   +---------+     +---------+ +---------+ +---------+ +------+ .
        .        ^          | console | |  /data  | |  /bin   | | /dev | .
        .        |          +---------+ +---------+ +---------+ +------+ .
@@ -240,13 +240,21 @@ and *where*; the loop over the pixels happens inside a surface, in C, and
 nothing in Lua ever computes a pixel offset - the pitch is not `width * 4`
 and pretending it is produces diagonal lines. `gfx.md` §19.
 
-### `user/init/init.lua` - init and every server
+### `user/init/init.lua` and `user/servers/` - init and every server
 
-One file, one binary, many roles. The image carries a single userland ELF and
-the role number it is spawned with decides what it becomes: init, the console
-server, `/data`, `/dev`, `/bin`, the shell, or the runner that hosts one
-program. About 2,400 lines of Lua, all of it hot-reloadable in principle,
-which is the reason the whole design exists.
+One binary, many roles. The image carries a single userland ELF and the role
+number it is spawned with decides what it becomes.
+
+**Where that number is answered moved in September 2026.** `user/init/main.c`
+dispatches the server roles *before* the Lua interpreter is opened, so those
+processes have no collector at all rather than a promise not to allocate:
+`/dev/audio`, `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/data` are
+each one file in `user/servers/`, speaking a struct declared in
+`user/include/`.
+
+What is left in `init.lua` is init itself, the shell, the runner that hosts
+one program, `diskfs`, and the namespace - which is a *kit* rather than a
+server, run in the caller's own process with no endpoint and no thread.
 
 ### `user/bin/` - programs
 

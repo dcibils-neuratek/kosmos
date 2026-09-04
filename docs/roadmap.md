@@ -137,7 +137,7 @@ Get a character out to the console. It sounds trivial and it is the step that st
 - Exception vector: the 16-entry table
 - A sync exception handler that prints ESR, ELR and FAR
 - GICv3: distributor and redistributor, enable one IRQ. **`-M virt` defaults to GICv2; v3 needs `gic-version=3`.** See `hal.md`
-- ARM generic timer, ticking at 100Hz
+- ARM generic timer, ticking at 100Hz — **250 Hz since September 2026**, chosen by the sound device: a 5.8 ms audio period cannot be fed on a 10 ms clock, and `kernel/kernel.h` carries the measurement
 - Stack guard page
 - **Expected-exception support in the handler:** a flag plus `setjmp` so a test can cause a fault on purpose, record it and continue. It has to be anticipated when the vector is written; retrofitting it later is worse. See `testing.md` §18.2
 
@@ -221,11 +221,13 @@ The original design starts here. From this point there is far less reference mat
 - Lua coroutines as the servers' concurrency layer
 - Console server
 - ramfs
-- Hot reload level 1: `load()` of new code while preserving state
+- Hot reload level 1: `load()` of new code while preserving state — *done, and removed again in September 2026; see `design.md` §10*
 - Init and basic supervision
 - The Lua shell as a REPL against the system
 
-**Definition of done:** from the shell, mount the same ramfs server at two different paths in two different processes, and have each see only its own. And reload the console server's code while a client is connected, without the client noticing.
+**Definition of done:** from the shell, mount the same ramfs server at two different paths in two different processes, and have each see only its own. And reload a server's code while a client is connected, without the client noticing.
+
+Both were met. The first is still a permanent test. **The second no longer is:** every server is C, there is no dynamic linking, and reload was removed deliberately along with its test — the one case in this project of a milestone's definition of done being withdrawn rather than kept. The reasoning is in `design.md` §10, and it is recorded rather than quietly dropped because a milestone that silently loses its test is a milestone nobody can check.
 
 ---
 

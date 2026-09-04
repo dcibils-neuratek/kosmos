@@ -111,7 +111,7 @@ The cost is real: BeOS had an ecosystem of ported software and Kosmos will have 
 
 Drivers, BFS and eventually networking lived inside the kernel. The userland servers were app_server, media, registrar and net_server, and none of them could be restarted: killing the app_server took the desktop with it.
 
-Kosmos is a real microkernel. Hot reload and supervised restart are properties BeOS did not have.
+Kosmos is a real microkernel, and supervised restart is a property BeOS did not have: a server here is a process, and killing one is survivable by construction. Hot reload was a second such property and was removed in September 2026 when the last Lua server became C — `design.md` §10.
 
 ### Threads with shared memory
 

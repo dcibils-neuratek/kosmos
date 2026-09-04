@@ -224,7 +224,6 @@ Each milestone adds its metrics and none of them get removed afterwards.
 - Path resolution
 - A node `read`, end to end from the client
 - How many concurrent clients a server takes before latency degrades
-- The cost of a hot reload
 
 ### Graphics (M6)
 
@@ -296,7 +295,7 @@ Each milestone's definition of done becomes a test, and that test is never delet
 | M2 | The REPL evaluates `2+2` and returns `4` |
 | M3 | 100,000 IPC round trips, with the count inside tolerance |
 | M4 | A process doing `*(nil)` dies without taking the system with it |
-| M5 | Two processes see different namespaces from the same server. Hot reload without the client noticing |
+| M5 | Two processes see different namespaces from the same server. ~~Hot reload without the client noticing~~ — withdrawn September 2026 with the feature; `design.md` §10 |
 | M6 | Dragging a window with a hung app inside it stays smooth |
 | M7 | A live query updates without polling when another process writes. An `fs.write` into an app's namespace changes its state |
 | M8 | Power cut during a write and the filesystem mounts clean |

@@ -14,9 +14,48 @@ A microkernel desktop operating system with a Lua userland, booting on a Raspber
 
 The goal is to learn by building, and to test on real hardware a set of ideas that already exist but rarely appear together. Kosmos competes with nothing. There are no users to serve and no compatibility to maintain, and that is what makes it possible to take decisions a commercial OS cannot.
 
-The thesis: **if the protocol between servers is the data model of the userland language, the entire system has one mentality from top to bottom.**
+**What travels between things here is a Lua table, until the moment that is
+the wrong answer — and then it is a declared struct.** That is one rule, not
+a compromise between two, and the line it draws is a layer:
 
-IPC messages are Lua tables. Namespace nodes serve Lua tables. A server is a coroutine that receives a table and returns a table. No marshalling, no IDL, no two worlds.
+> The language's data model where the shape is the caller's to choose.
+> A declared struct where the shape is agreed.
+
+Inside a program, and between a program and anything whose vocabulary is
+open — the window manager, application scripting, `diskfs` — a table is
+exactly right. Adding a field costs nothing and nobody has to be told.
+
+Crossing into a system server it is wrong, for two reasons that were arrived
+at by building the thing and living with it rather than by reasoning:
+
+**A server has to stay correct when its caller is wrong.** A table lets a
+caller send any shape at all — an extra key, a wrong type, a nested table, a
+megabyte of string — and every one is something the server must think about.
+A struct means most of them cannot be expressed, so the wire refuses them and
+the server never has to. This is the same argument as capabilities, one layer
+up: a capability means you cannot **name** what you were not handed; a struct
+means you cannot **say** what the protocol has no field for. Both replace a
+server that validates with one that is correct by construction.
+
+**A collector cannot sit where something else's timing depends on it.**
+`gc_pause_max` is about 1.25 ms and arrives when the collector decides; an
+audio period is 5.8 ms and a frame is 16. Not speed — structure-shaped Lua
+costs about 2%, measured, which is nothing. The worst case is what decides.
+
+Seven servers speak structs declared in `user/include/`: `/dev/audio`,
+`/dev`, `/bin`, `/lib`, `/app`, `/dev/console`, `/data`. Five headers, about
+3,700 lines with the servers themselves. Everything above them is still Lua
+tables, and that is most of the system.
+
+**What it costs, which is not hidden**: adding a field means editing a header
+and rebuilding both sides; an error is a number, with the sentence composed
+by whoever shows it to a person; and hot reload is gone entirely (§10).
+
+This section used to end *"no marshalling, no IDL, no two worlds"*. There is
+marshalling, those headers are an IDL, and there are two worlds — a small one
+at the boundary and a large one above it. That is the arrangement that turned
+out to work, and the sentence has been changed to say so rather than kept and
+apologised for.
 
 ---
 
@@ -278,7 +317,12 @@ The line, then, is not "platform in C, applications in Lua". It is:
 - **Loops over many bytes, pixels or samples: C.** Measurably expensive,
   and no reload value - nobody hot-patches a checksum.
 
-### Why the servers stay in Lua, stated as costs
+### Why the servers stayed in Lua, stated as costs
+
+**They did not stay.** All seven moved between August and September 2026,
+and §1 records what the experiment returned. The costs below were real and
+were paid; they are kept because they are the honest price of the decision,
+not an argument that was lost.
 
 The proposal that arrives naturally at this point is: the window manager,
 the filesystem, the namespace server are *platform*, nobody edits them,
@@ -302,19 +346,36 @@ removed in September 2026 (§10), so this is no longer an argument for
 keeping anything in Lua. The window manager's Lua half is still Lua, but for
 the reasons below rather than this one.
 
-**Portability, which is a stated goal.** The 16,000 lines of Lua userland
+**Portability, which is a stated goal.** The 26,000 lines of Lua userland
 are recompiled for a new architecture exactly zero times, and cannot carry
-an endian or alignment bug. The C is about 11,000 lines and has already
-produced one endian bug, in the serializer. Moving the userland to C
-roughly doubles the code that has to be got right again per target.
+an endian or alignment bug. The C has already produced one endian bug, in
+the serializer, and every line of it is code that has to be got right again
+per target.
+
+The counts, measured rather than remembered — this paragraph said 16,000 and
+11,000 for months, and both had drifted well past being round:
+
+| | lines |
+|---|---|
+| Lua userland (`user/**.lua`, less tests) | 26,241 |
+| the kernel side (`kernel/ arch/ hal/ boot/`) | 14,533 |
+| userland C we wrote (`user/**.c`, `.h`) | 11,542 |
+| — of which the seven servers and their headers | 3,715 |
+| the libc and the Lua glue | 2,999 |
 
 **The complexity budget.** Section 3 takes Oberon's constraint seriously.
-16,000 lines of Lua is not 16,000 lines of C.
+26,000 lines of Lua is not 26,000 lines of C — and the seven servers are the
+evidence for the exchange rate rather than against it: they cost 3,715 lines
+of C and protocol headers to replace roughly 1,400 lines of Lua, which is the
+price of a declared shape and no collector, paid deliberately.
 
-**And the experiment loses its result.** Section 1's thesis is that a
-system simplifies when the protocol between servers is the data model of
-the userland language. Servers written in C do not test that claim; they
-decline to.
+**And the experiment loses its result** — which is what this said, and which
+is no longer a reason not to, because the experiment has since run to
+completion. §1 records what it returned: the thesis held everywhere the
+shape is the caller's to choose, and failed at the boundary where a server
+must stay correct against a caller that is wrong. The servers moved to C
+knowing that. What remains an argument against a *wholesale* C userland is
+the paragraph above this one and the two below it, not this.
 
 ### What would change this decision
 

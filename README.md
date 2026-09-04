@@ -12,9 +12,11 @@ in `/bin`. See [docs/state.md](docs/state.md), and
 
 ## The idea in one paragraph
 
-Kosmos takes the microkernel from QNX, per-process namespaces from Plan 9, attributes and live queries from BeOS, the live image from Lisp Machines, and capabilities from seL4, and puts them on top of a userland written entirely in Lua.
+Kosmos takes the microkernel from QNX, per-process namespaces from Plan 9, attributes and live queries from BeOS, the live image from Lisp Machines, and capabilities from seL4, and puts them on top of a userland written in Lua.
 
-The thesis that makes this a system rather than a collage: **the protocol between servers is the data model of the userland language.** IPC messages are Lua tables. Namespace nodes serve Lua tables. A server is a coroutine that receives a table and returns a table. No marshalling, no IDL, no two worlds.
+What holds it together is one rule about what travels between things: **the language's data model where the shape is the caller's to choose, a declared struct where the shape is agreed.**
+
+So IPC messages are Lua tables almost everywhere — the shell, applications, the UI kit, scripting, the window manager — and that is what gives the system one mentality from the prompt upward. At the boundary into a system server they are structs declared in a header both sides compile against, for two reasons found by building it: a server has to stay correct when its caller is wrong, and a garbage collector cannot sit where something else's timing depends on it. `docs/design.md` §1 has the argument and what it costs.
 
 ---
 

@@ -62,8 +62,17 @@ corrupt the disk" is true because nothing else can name the disk.
 
 **A kit is C that runs inside your own process.** `use("/kits/compress")`
 hands back a table of C functions compiled into your address space. No
-process, no message, no ownership: calling it is a function call.
-`/kits/compress` inflates, `/kits/pdf` scans a content stream.
+process, no message, no ownership: calling it is a function call. `kits` at
+the prompt lists what a machine has; today that is `/kits/compress` to
+inflate, `/kits/pdf` to scan a content stream, `/kits/gl` for TinyGL, and
+`/kits/console` for the console's wire format.
+
+That last one is the odd one and worth knowing about, because it is a kit for
+a reason none of the others share. `/dev/console` is the only protocol here
+with **two implementations**: a terminal window mounts itself as its child's
+console, so an application answers the same ABI the server does. The kit is
+where that layout is compiled once, rather than living as a format string in
+the namespace and a second copy inside the terminal.
 
 So: **a kit is code you run; a server is someone you ask.** That is why
 inflate is a kit - it computes - and the disk is a server - it owns.
@@ -97,11 +106,20 @@ kill their own process and whose shape will keep changing.
 | kernel | C | it is the isolation boundary |
 | drivers | C | hardware, and loops over bytes |
 | kits | C | finished algorithms, and no collector |
-| servers on the frame or packet path | C | a GC pause is a dropped frame |
-| policy servers - namespace, init, `/app` | Lua | decisions, almost no bytes, and reloadable |
+| servers | C | something else's timing depends on them |
+| the namespace and init | Lua | run in the caller's own process; not servers |
 | libraries | either | whichever the code is shaped like |
 | apps and programs | Lua | a crash kills only itself |
 | tools | the host's language | they never run here |
+
+The servers row used to read *"servers on the frame or packet path"*, with a
+second row keeping the policy servers in Lua. That was a judgement made per
+server, and it failed: the audio server sits on the period path, which is the
+frame path with a different clock, and nobody recognised it as a third case.
+A rule that needs you to spot a third case will miss the fourth, so the layer
+decides now and all seven moved. `diskfs` is the exception and not for
+language reasons: `kfs.lua` runs on the host too, which is what tests the
+journal without booting a machine.
 
 **The argument for C is jitter rather than speed**, and that is worth being
 exact about. Structure-shaped code in Lua costs about 2%, measured - nothing.
@@ -110,13 +128,21 @@ that decides a *server* is `gc_pause_max`: about 1.25 ms, arriving when the
 collector decides. A frame is 16 ms. No amount of optimising the Lua removes
 that pause, and responsiveness is a promise about the worst case.
 
-**The argument for Lua is hot reload**, and it is not sentimental: M5's
-definition of done was replacing the console server's code while the shell
-was mid-conversation with it. `layout.md` records that there is no dynamic
-linking, so a C server cannot be reloaded at all - moving one to C gives that
-up rather than trading it. Which is why a policy server that moves no bytes
-stays Lua: it would buy a fraction of 2% and cost the thing the design exists
-for.
+**The argument for Lua used to be hot reload**, and it was not sentimental:
+M5's definition of done was replacing a server's code while a client was
+mid-conversation with it. There is no dynamic linking, so a C server cannot
+be reloaded at all, and moving one gave that up rather than trading it.
+
+That argument is gone, because reload is - removed in September 2026 when
+the last reloadable server became C. See `design.md` §10; the honest word is
+*removed* rather than *outranked*.
+
+**What argues for Lua now is the shape of the bug.** A Lua module cannot have
+a buffer overflow. Isolation is identical either way, since both are EL0
+processes behind an address space, but one failure is a stack trace and the
+other is an evening. So C is for a loop over bytes or a place where a
+collector pause would be felt, and 2% is not worth the difference anywhere
+else.
 
 
 ## Microkernel and IPC
@@ -235,9 +261,9 @@ for.
 
 **Drawing commands (model B)** — An app sends tables describing what to draw, instead of writing pixels. The Kosmos default model.
 
-**Hot reload level 1** — A server reloads its code without losing state or clients.
+**Hot reload level 1** — *Removed, September 2026.* A server reloaded its code without losing state or clients. It went when the last Lua server became C: there is no dynamic linking, so nothing that runs here can have its code replaced. `design.md` §10 is the record.
 
-**Hot reload level 2** — A server dies and a supervisor relaunches it; clients reconnect through the namespace.
+**Hot reload level 2** — A server dies and a supervisor relaunches it; clients reconnect through the namespace. Unaffected by the above, and the architectural property of the two: it never depended on what language a server was written in.
 
 **doomgeneric** — The Doom port that separated the engine from the platform. Five functions to implement.
 
