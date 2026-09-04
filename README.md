@@ -266,6 +266,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | A server waits with `receive`-plus-deadline, never a sleep: a server that sleeps on a timer answers nobody while it sleeps | ipc.c |
 | Sep 2026 | **Control by message, data by shared memory.** A stream never travels as a message payload; if it recurs at the hardware's rate, the bytes go in a region | CLAUDE.md |
 | Sep 2026 | The language follows the *layer*, not a judgement: C runs on behalf of another process (kernel, drivers, servers, kits), Lua runs for a person (apps, programs) | CLAUDE.md |
+| Sep 2026 | A boundary is an agreement: what crosses into the system is a declared struct, not a table. A capability is what you cannot *name*; a struct is what you cannot *say* | audioproto.h |
 
 ---
 

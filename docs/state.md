@@ -69,6 +69,34 @@ here once yielding at NORMAL is fair. This was invisible until now because
 every program was promoted into the compositor's band - nothing had ever run
 at NORMAL.
 
+**The audio server is C, and its protocol is a struct (Sep 2026).** 482
+lines of Lua became 462 of C plus a 108-line header. `main.c` dispatches
+role 16 before the interpreter is opened, so the process serving
+`/dev/audio` has no `lua_State` at all - which is the difference between
+promising not to allocate and being unable to.
+
+`sys.call_raw` and `fs.raw` carry bytes rather than a serialised table; the
+namespace still resolves the path and is otherwise not involved. The layout
+is written twice, in C and as a `string.pack` format, which is the one place
+`serialize.h`'s one-implementation rule is deliberately bent - a
+`_Static_assert`, a load-time assert and a server length check stand where
+the shared implementation used to.
+
+**It did not change the underrun count**, which was predicted beforehand: 4
+against 3, noise. Six structural changes have now been tried against that
+number - the shared ring, a priority band, an eight-times deeper buffer, the
+device interrupt, the C rewrite, and measuring during play instead of after
+- and none of them moved it. The server meets a 5.8 ms deadline with the
+whole buffer as margin (worst turn 5.4 ms, machine noise floor 0.26 ms), and
+194 interrupts for 400 periods says the device completes about two periods
+per raise. **The remaining question is a hardware question**, and `CLAUDE.md`
+already says QEMU detects regressions rather than saying whether something is
+fast.
+
+What the C server bought is not clicks: it is that the audio path can no
+longer acquire a collector by accident, and that a client can no longer send
+a shape the server has to think about.
+
 **Sleeping is `sys.sleep`; yielding in a loop is a spin (fixed, Sep 2026).**
 The audio path had two of them - the server between refills, the client on a
 full queue - and playing a tone cost 63% of the machine for the client and

@@ -200,6 +200,32 @@ only thing both touch. Anything that wants more than that wants a message.
 
 **No precompiled Lua bytecode.** Source only. The bytecode loader verifies nothing and gives arbitrary execution.
 
+**A boundary is an agreement, not a conversation.** Inside a program a Lua
+table is exactly right: it costs nothing to add a field and nobody has to be
+told. Crossing into the system is a different thing. The other side is a
+server that has to stay correct when the caller is wrong, out of date, or
+hostile - so what crosses is a *declared shape*: fixed fields, fixed sizes,
+in a header both sides compile against. `user/include/audioproto.h` is the
+first of them.
+
+**This is the same argument as capabilities, one layer up.** A capability
+means you cannot *name* what you were not handed. A struct means you cannot
+*say* what the protocol has no field for. Both replace a server checking
+what arrived with a shape that could not have arrived wrong, which is the
+difference between a system that validates and one that is correct by
+construction.
+
+A table lets a caller send any shape at all - an extra key, a wrong type, a
+nested table, a megabyte of string - and every one of those is something the
+server must think about. A 48-byte struct means most of them cannot be
+expressed, so the wire refuses them and the server never has to.
+
+What it costs is real and is not hidden: adding a field means editing a
+header and rebuilding both sides, and an error is a number with the sentence
+composed by whoever shows it to a person. **Only `/dev/audio` speaks this way
+today**; the rest still take tables and are being moved one at a time, each
+lived with before the next is started.
+
 **Capabilities by index, never global IDs.** A syscall takes an index into the process's table. If a design needs to name something globally, the design is wrong.
 
 **Responsiveness is a design goal, not a later optimisation.** Kosmos is a
