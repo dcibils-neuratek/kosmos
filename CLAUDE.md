@@ -200,13 +200,16 @@ only thing both touch. Anything that wants more than that wants a message.
 
 **No precompiled Lua bytecode.** Source only. The bytecode loader verifies nothing and gives arbitrary execution.
 
-**A boundary is an agreement, not a conversation.** Inside a program a Lua
-table is exactly right: it costs nothing to add a field and nobody has to be
-told. Crossing into the system is a different thing. The other side is a
-server that has to stay correct when the caller is wrong, out of date, or
-hostile - so what crosses is a *declared shape*: fixed fields, fixed sizes,
-in a header both sides compile against. `user/include/audioproto.h` is the
-first of them.
+**A server receives exactly what it expects, not whatever somebody put in a
+table.** It is a system component: the thing on the other side of that
+message has to stay correct when the caller is wrong, out of date, or
+hostile, and it does not get to assume otherwise.
+
+So a boundary is an agreement rather than a conversation. Inside a program a
+Lua table is exactly right - adding a field costs nothing and nobody has to
+be told. Crossing into the system, what crosses is a *declared shape*: fixed
+fields, fixed sizes, in a header both sides compile against.
+`user/include/audioproto.h` is the first of them.
 
 **This is the same argument as capabilities, one layer up.** A capability
 means you cannot *name* what you were not handed. A struct means you cannot
