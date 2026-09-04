@@ -294,7 +294,7 @@ end
 win:add(ui.button{
   x = 8, y = H - 34, w = 90, h = 24, text = "Test tone",
   on_click = function()
-    fs.send("/dev/wm", { type = "launch", program = "beep",
+    fs.send("/app/wm", { type = "launch", program = "beep",
                          args = "440 3000" })
   end,
 })

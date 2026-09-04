@@ -442,7 +442,7 @@ local function open_selected()
       return
     end
 
-    local ok, why = fs.send("/dev/wm", { type = "launch",
+    local ok, why = fs.send("/app/wm", { type = "launch",
                                          program = opener,
                                          args = full })
 

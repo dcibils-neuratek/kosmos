@@ -442,6 +442,24 @@ local function new_namespace()
         if lookup_into(a.prefix, a.cap, path) then
           return match(path)
         end
+
+        --
+        -- It is not registered, and the registry is not a substitute for it.
+        --
+        -- The paragraph above fixed the case where the lookup *succeeds*.
+        -- This is the same bug on the other branch, and it survived because
+        -- it only shows when a name is absent: falling through here returns
+        -- the registry's own mount, so asking a desktop that is not running
+        -- to start profiling came back "no such operation: profile" - a
+        -- clean, wrong answer from a directory, which is the exact sentence
+        -- the comment above was written about.
+        --
+        -- `design.md` 2 says what the answer is. Nothing was denied; there
+        -- is no such path in this process's world, and saying so lets a
+        -- caller tell "you have no window manager" from "your window
+        -- manager said no".
+        --
+        return nil
       end
     end
 
@@ -2502,7 +2520,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- `/dev/audio` is a different server from the one that answers the rest
   -- of `/dev`, exactly as `/dev/console` is - the devices server describes
   -- hardware and this one *is* a piece of it. Mounted for everybody rather
-  -- than passed to children the way `/dev/wm` is, because any program may
+  -- than passed to children the way `/app/wm` is, because any program may
   -- ask to make a noise and the answer is a stream with a volume on it
   -- rather than a refusal.
   --
@@ -3832,7 +3850,7 @@ if role == ROLE_RUNNER then
   -- what a command line wants.
   --
   -- `shares` hands the child capabilities this program holds, each under a
-  -- name in the child's namespace: run(path, args, detach, { ["/dev/wm"] = c }).
+  -- name in the child's namespace: run(path, args, detach, { ["/app/wm"] = c }).
   --
   -- This is how a program becomes a server for its own children. The window
   -- manager needs it: it makes an endpoint, starts applications, and each

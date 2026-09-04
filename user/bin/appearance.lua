@@ -171,7 +171,7 @@ local function send()
   -- The palette *table*, not its name: the window manager forwards what it
   -- is given to every window, and a window cannot look up a theme that only
   -- ever existed as a file on this machine's disk.
-  local reply, why = fs.send("/dev/wm", { type = "theme",
+  local reply, why = fs.send("/app/wm", { type = "theme",
                                           palette = theme.palettes[chosen_palette],
                                           desktop = chosen_desktop,
                                           fonts = chosen })

@@ -13,7 +13,7 @@
 
 local W, H = 300, 140
 
-local win, err = fs.send("/dev/wm", {
+local win, err = fs.send("/app/wm", {
   type = "open", title = "hung", w = W, h = H, x = 470, y = 300,
 })
 
@@ -22,7 +22,7 @@ if not win then
   return
 end
 
-fs.send("/dev/wm", { type = "draw", window = win.window, ops = {
+fs.send("/app/wm", { type = "draw", window = win.window, ops = {
   { op = "fill", x = 0, y = 0, w = W, h = H, color = 0xff3d1418 },
   { op = "fill", x = 0, y = 0, w = W, h = 28, color = 0xffda3633 },
   { op = "text", x = 10, y = 7, s = "not answering",

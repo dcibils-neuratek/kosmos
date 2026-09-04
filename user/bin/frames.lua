@@ -48,21 +48,30 @@ local HZ  = cpu.counter_hz or 62500000
 local function ms(ticks) return ticks * 1000.0 / HZ end
 local function us(ticks) return ticks * 1000000.0 / HZ end
 
+--
+-- Two different failures wear one shape, so this has to tell them apart.
+--
+-- `ns.send` returns `nil` and a string when the path cannot be resolved
+-- *and* when the server answered `ok = false` - it unwraps the reply, which
+-- is why the `reply.ok` branch that used to be here was dead code. So a
+-- desktop answering "nothing measured yet" was reported as "no window
+-- manager", which sent you looking for the wrong thing. The path is the one
+-- failure that names itself.
+--
 local function ask(msg)
-  local reply, err = fs.send("/dev/wm", msg)
+  local reply, err = fs.send("/app/wm", msg)
 
-  if not reply then
-    print("frames: no window manager (" .. tostring(err) .. ")")
-    print("frames: start one with `wm` and try again.")
-    return nil
+  if reply then return reply end
+
+  err = tostring(err)
+
+  if err:match("^no such path") then
+    print("frames: no window manager is running. Start one with `wm`.")
+  else
+    print("frames: " .. err)
   end
 
-  if not reply.ok then
-    print("frames: " .. tostring(reply.error))
-    return nil
-  end
-
-  return reply
+  return nil
 end
 
 --------------------------------------------------------------------------

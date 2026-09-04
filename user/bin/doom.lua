@@ -287,7 +287,7 @@ while win.running do
   -- while it waits - so waiting here as well would halve the frame rate
   -- for nothing.
   --
-  local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
+  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
                                      wait = 0 })
 
   if not reply then break end

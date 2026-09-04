@@ -266,7 +266,7 @@ function bar:mouse(action, x, y)
   if action == "release" then
     if self.hot then
       local want = (self.hot == CLOCK) and "datetime" or self.hot
-      local reply, why = fs.send("/dev/wm",
+      local reply, why = fs.send("/app/wm",
                                  { type = "launch", program = want })
 
       --

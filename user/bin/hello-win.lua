@@ -2,7 +2,7 @@
 -- kosmos: section demos
 -- An application with a window.
 --
--- Started by `wm`, which hands it the window manager under /dev/wm and
+-- Started by `wm`, which hands it the window manager under /app/wm and
 -- nothing else it did not already have. It draws once, then redraws when a
 -- key arrives, and it never touches a pixel: everything it wants on screen
 -- leaves here as a list of commands.
@@ -13,7 +13,7 @@
 
 local W, H = 360, 200
 
-local win, err = fs.send("/dev/wm", {
+local win, err = fs.send("/app/wm", {
   type = "open", title = "hello", w = W, h = H, x = 80, y = 120,
 })
 
@@ -26,7 +26,7 @@ local handle = win.window
 local presses = 0
 
 local function draw()
-  fs.send("/dev/wm", { type = "draw", window = handle, ops = {
+  fs.send("/app/wm", { type = "draw", window = handle, ops = {
     { op = "fill", x = 0, y = 0, w = W, h = H, color = 0xff101820 },
     { op = "fill", x = 0, y = 0, w = W, h = 28,  color = 0xff1f6feb },
     { op = "text", x = 10, y = 7, s = "A window of my own",
@@ -55,7 +55,7 @@ draw()
 -- over when asked; asking is a round trip and the answer is usually empty,
 -- which is what the yield below is for.
 while true do
-  local reply = fs.send("/dev/wm", { type = "poll", window = handle })
+  local reply = fs.send("/app/wm", { type = "poll", window = handle })
 
   if not reply then return end            -- the manager went away
 

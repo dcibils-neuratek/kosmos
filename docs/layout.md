@@ -67,7 +67,7 @@ second without breaking the machine.
                     contents, which this filesystem already supports
   queries/          saved live queries, which re-evaluate when asked
 
-/dev/               devices: cpu, memory, screen, keyboard, console, wm
+/dev/               devices: cpu, memory, screen, keyboard, console, audio
 /tmp/               the ramfs. Fast, and gone at the next boot.
 ```
 
@@ -103,7 +103,7 @@ processes get different subsets of it:
    the shell                     a game started from the Deskbar
    ---------                     ------------------------------
    /system/libraries             /system/libraries
-   /user/programs                /dev/wm
+   /user/programs                /app/wm
    /user/applications            /home/settings
    /home
    /dev

@@ -181,7 +181,7 @@ local running = ui.list{
     local handle = handles[index]
 
     if handle then
-      fs.send("/dev/wm", { type = "raise", window = handle })
+      fs.send("/app/wm", { type = "raise", window = handle })
       status.text = "raised"
     end
   end,
@@ -203,7 +203,7 @@ local function launcher(name)
   return {
     text = name,
     on_choose = function()
-      local ok, why = fs.send("/dev/wm", { type = "launch", program = name })
+      local ok, why = fs.send("/app/wm", { type = "launch", program = name })
 
       status.text = ok and ("started " .. name)
                        or ("could not: " .. tostring(why))
@@ -281,7 +281,7 @@ menu_button = ui.button{
       text = "Restart",
       on_choose = function()
         status.text = "restarting"
-        fs.send("/dev/wm", { type = "power", action = "restart" })
+        fs.send("/app/wm", { type = "power", action = "restart" })
       end,
     }
 
@@ -289,7 +289,7 @@ menu_button = ui.button{
       text = "Shut Down",
       on_choose = function()
         status.text = "shutting down"
-        fs.send("/dev/wm", { type = "power", action = "off" })
+        fs.send("/app/wm", { type = "power", action = "off" })
       end,
     }
 
@@ -313,7 +313,7 @@ win:add(status)
 local watcher = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function watcher:tick()
-  local reply = fs.send("/dev/wm", { type = "windows" })
+  local reply = fs.send("/app/wm", { type = "windows" })
   local names = {}
 
   handles = {}
@@ -424,7 +424,7 @@ do
       if have == name then known = true break end
     end
 
-    if known and fs.send("/dev/wm", { type = "launch", program = name }) then
+    if known and fs.send("/app/wm", { type = "launch", program = name }) then
       started = started + 1
     end
   end

@@ -192,6 +192,45 @@ if not ep then
   return
 end
 
+--
+-- Publish it, so a process that was not started by this one can find it.
+--
+-- The window manager used to be reachable only as `/dev/wm`, and only by
+-- children it launched itself - the endpoint was handed over at spawn and
+-- there was no other way to get it. That made two things wrong at once.
+--
+-- It was in `/dev`, which is devices: `cpu`, `memory`, `screen`, `keyboard`,
+-- read a path and get a table of facts. A window manager is not a fact and
+-- is not hardware. It is a *server* - the thing every graphical application
+-- talks to - and the screen is the device it draws on, reached by syscall
+-- and not by path at all. Plan 9, which this system takes namespaces from,
+-- names the interface and never the program: it has `/dev/draw` and
+-- `/dev/cons`, and no `/dev/rio`.
+--
+-- And nothing could discover a running desktop. `frames` and `procs` both
+-- ask the window manager questions, both are run from a shell, and neither
+-- was ever handed `/dev/wm` - so both failed, reporting a protocol error
+-- from the *devices* server, because `/dev/wm` fell back to the `/dev`
+-- mount by prefix. An error that names the wrong server is worse than one
+-- that says nothing.
+--
+-- `/app` is exactly the registry for this: which running application
+-- answers to which name. It hands over the endpoint and steps out of the
+-- way rather than forwarding, so a hung desktop blocks whoever chose to
+-- talk to it and nobody else.
+--
+-- **Children are still handed it directly**, mounted under the same name.
+-- That is not redundancy: a game started from the Deskbar gets a window
+-- manager and nothing else, and must not need `/app` to draw - `/app` would
+-- let it enumerate and script every other running application. One name,
+-- two ways to get it: given to you, or looked up if you are allowed to look.
+--
+if not fs.send("/app", { type = "register", name = "wm" }, ep) then
+  -- Not fatal. A desktop that cannot publish itself still works for
+  -- everything it starts, which is how it worked before this existed.
+  print("wm: could not register in /app; only my own children can find me")
+end
+
 -- Which build this is, in the corner. `sys.build()` is compiled in by the
 -- Makefile from the commit, so it identifies the source that produced the
 -- image rather than the moment it was linked.
@@ -1506,7 +1545,7 @@ handlers.launch = function(req)
   end
 
   local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
-  local ok, err, id = run(path, req.args or "", true, { ["/dev/wm"] = ep })
+  local ok, err, id = run(path, req.args or "", true, { ["/app/wm"] = ep })
 
   if not ok then
     return { ok = false, error = tostring(err) }
@@ -2628,7 +2667,7 @@ for entry in wanted:gmatch("[^,]+") do
 
     local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
     local ok, err, id = run(path, argument or "", true,
-                            { ["/dev/wm"] = ep })
+                            { ["/app/wm"] = ep })
 
     if not ok then
       print(("wm: could not start %s: %s"):format(path, tostring(err)))

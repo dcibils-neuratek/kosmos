@@ -391,7 +391,7 @@ function end_selected()
       return
     end
 
-    local ok, why = fs.send("/dev/wm", { type = "end_process", pid = r.id })
+    local ok, why = fs.send("/app/wm", { type = "end_process", pid = r.id })
 
     if ok then
       note.text = "asked the desktop to end " .. r.name
@@ -427,7 +427,7 @@ function sampler:tick()
   -- Which processes have windows, and how those windows draw.
   video = {}
 
-  local desktop = fs.send("/dev/wm", { type = "windows" })
+  local desktop = fs.send("/app/wm", { type = "windows" })
 
   for _, w in ipairs(desktop and desktop.windows or {}) do
     if w.pid then

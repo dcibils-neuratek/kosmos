@@ -38,7 +38,7 @@ local function settled()
   local giveup = sys.ticks() + hz * 30
 
   while sys.ticks() < giveup do
-    local r = fs.send("/dev/wm", { type = "windows" })
+    local r = fs.send("/app/wm", { type = "windows" })
 
     if not r or not r.windows then return nil end
 
@@ -103,7 +103,7 @@ for i, w in ipairs(wins) do
   local col = (i - 1) % across
   local row = (i - 1) // across
 
-  local ok, why = fs.send("/dev/wm", {
+  local ok, why = fs.send("/app/wm", {
     type = "move",
     window = w.handle,
     x = 30 + col * cell_w,

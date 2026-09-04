@@ -83,7 +83,7 @@ win:add(ui.button{
 
     save()
 
-    local ok, why = fs.send("/dev/wm", { type = "launch", program = path })
+    local ok, why = fs.send("/app/wm", { type = "launch", program = path })
 
     status.text = ok and ("running " .. path)
                   or ("could not run it: " .. tostring(why))

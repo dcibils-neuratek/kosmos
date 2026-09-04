@@ -1641,7 +1641,7 @@ function ui.image(spec)
   v.oy = 0
 
   local iw, ih = 0, 0
-  local size = v.asset and fs.send("/dev/wm", { type = "image_size",
+  local size = v.asset and fs.send("/app/wm", { type = "image_size",
                                                asset = v.asset })
 
   if size then
@@ -2106,7 +2106,7 @@ local function send_ops(handle, ops)
 
     local last = at > #ops
 
-    if not fs.send("/dev/wm", { type = "draw", window = handle,
+    if not fs.send("/app/wm", { type = "draw", window = handle,
                                 ops = batch,
                                 more = (not last) or nil }) then
       return false
@@ -2180,7 +2180,7 @@ function ui.window(spec)
     end
   end
 
-  local reply, err = fs.send("/dev/wm", {
+  local reply, err = fs.send("/app/wm", {
     type = "open",
     title = spec.title or "window",
     w = spec.w or 400, h = spec.h or 240,
@@ -2267,7 +2267,7 @@ function ui.window(spec)
             function() return w.title end,
             function(v)
               w.title = tostring(v)
-              fs.send("/dev/wm", { type = "retitle", window = w.handle,
+              fs.send("/app/wm", { type = "retitle", window = w.handle,
                                    title = w.title })
             end)
 
@@ -2330,7 +2330,7 @@ function window:commit(damage)
 
   damage = damage or { x = 0, y = 0, w = self.root.w, h = self.root.h }
 
-  local reply = fs.send("/dev/wm", {
+  local reply = fs.send("/app/wm", {
     type = "commit", window = self.handle,
     x = damage.x, y = damage.y, w = damage.w, h = damage.h,
   })
@@ -2357,7 +2357,7 @@ function window:move(x, y)
   -- window used to be.
   self.origin_x, self.origin_y = x, y
 
-  fs.send("/dev/wm", { type = "move", window = self.handle, x = x, y = y })
+  fs.send("/app/wm", { type = "move", window = self.handle, x = x, y = y })
 end
 
 --
@@ -2453,7 +2453,7 @@ function window:close()
   self.closed = true
   self.running = false
 
-  fs.send("/dev/wm", { type = "close", window = self.handle })
+  fs.send("/app/wm", { type = "close", window = self.handle })
 
   if self.control then
     fs.send("/app", { type = "unregister", name = self.name })
@@ -2670,7 +2670,7 @@ end
 function window:push_menu(x, y, items)
   local w, h, row = menu_metrics(items)
 
-  local reply = fs.send("/dev/wm", { type = "open", kind = "menu",
+  local reply = fs.send("/app/wm", { type = "open", kind = "menu",
                                      owner = self.handle,
                                      x = x, y = y, w = w, h = h })
 
@@ -2695,7 +2695,7 @@ function window:close_menus(from)
   from = from or 1
 
   for i = #self.menus, from, -1 do
-    fs.send("/dev/wm", { type = "close", window = self.menus[i].handle })
+    fs.send("/app/wm", { type = "close", window = self.menus[i].handle })
     self.menus[i] = nil
   end
 
@@ -2824,7 +2824,7 @@ function window:paint()
     -- arrive in the next two.
     local last = at > #g.ops
 
-    local ok = fs.send("/dev/wm", { type = "draw", window = self.handle,
+    local ok = fs.send("/app/wm", { type = "draw", window = self.handle,
                                     ops = batch,
                                     more = (not last) or nil })
 
@@ -2949,7 +2949,7 @@ function window:run()
       wait = (cpu and cpu.counter_hz or 62500000) // 4
     end
 
-    local reply = fs.send("/dev/wm", { type = "poll", window = self.handle,
+    local reply = fs.send("/app/wm", { type = "poll", window = self.handle,
                                        wait = wait })
 
     --

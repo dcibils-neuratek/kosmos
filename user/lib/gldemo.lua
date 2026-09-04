@@ -95,7 +95,7 @@ return function(name, title)
 
     -- A tick of waiting rather than none: a loop that never blocks is a
     -- thread that is always runnable, and an idle desktop should be idle.
-    local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
+    local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
                                        wait = 1 })
 
     if not reply then break end

@@ -51,7 +51,7 @@ shell rather than underneath it.
        .      ^   ^    window that moves.                               .
        .      |   |                                                     .
        .   +------+ +--------+                                          .
-       .   |hello-| | stuck  |  started by wm, each handed /dev/wm and   .
+       .   |hello-| | stuck  |  started by wm, each handed /app/wm and   .
        .   | win  | |        |  nothing else it did not already have     .
        .   +------+ +--------+                                          .
        .        ^                                                       .

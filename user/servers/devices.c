@@ -8,7 +8,7 @@
  * server is a system component that receives exactly what it expects rather
  * than whatever somebody put in a table.
  *
- * `/dev/console`, `/dev/audio`, `/dev/wm` and the rest are *not* served from
+ * `/dev/console` and `/dev/audio` are *not* served from
  * here. They are mounted over this prefix by whoever owns them and longest
  * prefix wins, so a read of `/dev/console` goes to the console server and
  * means "give me a line". Listing a name this server does not answer for

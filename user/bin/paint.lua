@@ -201,7 +201,7 @@ while win.running do
               w = pending.w, h = pending.h, again = true }
   end
 
-  local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
+  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
                                      wait = 1 })
 
   if not reply then break end

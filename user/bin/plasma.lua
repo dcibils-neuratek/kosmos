@@ -101,7 +101,7 @@ while win.running do
   -- is ten milliseconds, so this still draws as fast as anything can be
   -- seen, and the machine is idle in between.
   --
-  local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
+  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
                                      wait = 1 })
 
   if not reply then break end

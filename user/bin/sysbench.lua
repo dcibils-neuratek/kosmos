@@ -246,7 +246,7 @@ while win.running do
   -- deliberately trying to use the whole processor, and a poll that slept
   -- would be timing the sleep. Once it has a score it waits like anything
   -- else, because an idle desktop should be idle.
-  local reply = fs.send("/dev/wm", { type = "poll", window = win.handle,
+  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
                                      wait = score and 1 or 0 })
 
   if not reply then break end

@@ -1071,7 +1071,7 @@ def check_scripting(guest):
     other.
 
     `wm gallery,setprop:/app/gallery/title=renamed by another process`
-    starts both, each in its own address space, each handed /dev/wm and
+    starts both, each in its own address space, each handed /app/wm and
     /app and nothing else.
 
     Foreground, and that is not incidental. A window manager reads the
@@ -2061,7 +2061,7 @@ def check_window_manager(guest):
         raise Failure(
             "the hung application's window is not on screen at all, so "
             "there is nothing here to drag. Either `wm` did not start, or "
-            "it could not hand /dev/wm to the applications it started."
+            "it could not hand /app/wm to the applications it started."
         )
 
     # Dragged by its title bar, with the mouse, which is what the milestone
