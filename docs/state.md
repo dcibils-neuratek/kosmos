@@ -82,12 +82,23 @@ its per-frame function `display`, GLUT's name rather than `ui.h`'s.
 
 **Three things are unfinished here and the order matters.**
 
-1. **An application launched by the window manager cannot print to the
-   serial line.** Every diagnostic added to a graphical app came back empty,
-   because the only channel a headless harness can read is closed exactly
-   where the interesting failures are. This is the blocker: it made the next
-   item undebuggable, and it will do the same to the next graphical bug
-   anybody has.
+1. ~~An application launched by the window manager cannot print to the
+   serial line.~~ **This was wrong and was checked the next morning.** A
+   windowed application prints perfectly well: `wm saysomething` put all
+   three of its lines on the UART. The runner hands a child the launching
+   process's console capability, the window manager has one, so its children
+   do too.
+
+   What actually happened is that the GL application **stopped before
+   reaching any print** - a hang or a death produces exactly the same
+   silence - and the missing output was read as a closed channel rather than
+   as evidence about where it stopped. An hour went into building a theory
+   on top of it, and it reached `state.md` and a commit message before
+   anybody tested the claim itself.
+
+   Worth keeping rather than quietly deleting, because it is the same
+   mistake as the four instrument failures beside it: **the absence of a
+   measurement was treated as a measurement.**
 
 2. **One application per demo, under a `GLDemos` submenu**, which is what
    was asked for. The Deskbar learned to nest a section - `kosmos: section
