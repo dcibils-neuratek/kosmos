@@ -1023,6 +1023,81 @@ local function new_namespace()
     return { ok = true, value = value }
   end
 
+  --------------------------------------------------------------------------
+  -- /bin, which is C and speaks `binproto.h`.
+  --------------------------------------------------------------------------
+
+  local BIN_REQUEST = "<I4I4c24"                    -- op, offset, name[24]
+  local BIN_HEAD    = "<I4I4I4I4I4I4c16c16c16c16c16c16"
+
+  assert(#string.pack(BIN_REQUEST, 0, 0, "") == 32,
+         "namespace: the /bin request layout does not match binproto.h")
+
+  local BIN_DATA = 24 + 96 + 1        -- past the header, 1-based
+  local BIN_OPS = { list = 1, read = 2, getattr = 3 }
+  local BIN_ERRORS = {
+    [1] = "no such program",
+    [2] = "this is in the image and cannot be written",
+    [3] = "the /bin server did not understand that",
+  }
+
+  local function bin_request(capability, op, rest, extra)
+    local code = BIN_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    local reply, why = sys.call_raw(capability,
+        string.pack(BIN_REQUEST, code, (extra and extra.offset) or 0,
+                    rest or ""))
+
+    if not reply then return nil, tostring(why) end
+    if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
+
+    local err, count, size, length, more, windowed,
+          kind, section, n1, n2, n3, n4 = string.unpack(BIN_HEAD, reply)
+
+    if err ~= 0 then
+      return nil, BIN_ERRORS[err] or ("bin error " .. tostring(err))
+    end
+
+    if op == "list" then
+      local names = {}
+
+      for i = 1, count do
+        local at = BIN_DATA + (i - 1) * 24
+        names[i] = trim(reply:sub(at, at + 23))
+      end
+
+      return { ok = true, entries = names }
+    end
+
+    if op == "getattr" then
+      local needs = nil
+
+      for _, w in ipairs({ n1, n2, n3, n4 }) do
+        w = trim(w)
+
+        if w ~= "" then
+          needs = needs or {}
+          needs[#needs + 1] = w
+        end
+      end
+
+      return { ok = true, attrs = {
+        size = size,
+        kind = trim(kind),
+        -- Applications only; a program is not in the menu at all.
+        section = (windowed ~= 0) and trim(section) or nil,
+        needs = needs,
+      } }
+    end
+
+    return { ok = true, size = size, more = (more ~= 0),
+             value = reply:sub(BIN_DATA, BIN_DATA + length - 1) }
+  end
+
   local function request(op, path, extra, pass)
     local capability, rest, _, proto = resolve(path)
     if not capability then
@@ -1033,6 +1108,10 @@ local function new_namespace()
 
     if proto == "dev" then
       return dev_request(capability, op, rest)
+    end
+
+    if proto == "bin" then
+      return bin_request(capability, op, rest, extra)
     end
 
 
@@ -1737,207 +1816,13 @@ end
 -- somewhere else, and nothing in the shell knows /bin is special.
 --------------------------------------------------------------------------
 
-local function binfs_handlers(state)
-  return {
-    list = function(req)
-      local names = {}
-      for name in pairs(state.programs) do names[#names + 1] = name end
-      table.sort(names)
-      return { ok = true, entries = names }
-    end,
-
-    read = function(req)
-      local name = req.path:match("([^/]+)$")
-      local source = name and state.programs[name]
-
-      if not source then
-        return { ok = false, error = "no such program" }
-      end
-
-      -- A thousand bytes at a time, which leaves room in a 2048-byte
-      -- message for the tag, the keys and the serialiser's framing. A
-      -- program is a few kilobytes, so this is a handful of round trips
-      -- once, when it is launched.
-      local CHUNK = 1024
-      local offset = req.offset or 0
-      local piece = source:sub(offset + 1, offset + CHUNK)
-
-      return { ok = true, value = piece,
-               more = (offset + #piece) < #source }
-    end,
-
-    getattr = function(req)
-      local name = req.path:match("([^/]+)$")
-      local source = name and state.programs[name]
-
-      if not source then return { ok = false, error = "no such program" } end
-
-      --
-      -- Whether it draws.
-      --
-      -- A program declares it in its opening comment block, with
-      -- `-- kosmos: application`. Anywhere in that block, so the copyright
-      -- line every file carries can sit above it - it used to have to be
-      -- line one, and the day the licence header arrived every
-      -- application in here became a console program.
-      --
-      -- Guessing instead - looking for `ui.window` in the
-      -- source, say - would be a store deciding what a program is by
-      -- reading it, and would be wrong the first time somebody wrote the
-      -- name in a comment.
-      --
-      -- Worked out when the store loads, not per request: it is a property
-      -- of source that cannot change while the system runs, because /bin is
-      -- in the image.
-      --
-      return { ok = true, attrs = {
-        size = #source,
-        kind = state.windowed[name] and "application"
-               or state.kinds[name] or "program",
-
-        -- Applications only; a program is not in the menu at all.
-        section = state.windowed[name]
-                  and (state.sections[name] or "applications") or nil,
-
-        -- What it declared it needs, so a launcher can decide what to
-        -- grant without reading the source itself.
-        needs = state.needs[name],
-      } }
-    end,
-
-    write = function(req)
-      return { ok = false,
-               error = "this is in the image and cannot be written" }
-    end,
-  }
-end
-
 --
--- One server, two stores. `/bin` and `/lib` differ only in which table of
--- source they were handed - the protocol, the chunking and the refusal to
--- be written are identical, because "read-only source carried in the image"
--- is the same thing in both cases.
+-- No `binfs` here: /bin is served by `user/servers/binfs.c`, and `main.c`
+-- dispatches role 11 before the interpreter is opened. The program store it
+-- reads is the array `tools/progs2c.py` now emits beside the Lua chunk -
+-- which also means /bin no longer costs a Lua `load` of four hundred
+-- kilobytes at boot to get a table of sources.
 --
-local function binfs_main(endpoint, source, what)
-  -- Loaded once, here, rather than on every request. A syntax error in a
-  -- program is a syntax error in this chunk and shows up at boot, which is
-  -- when somebody can do something about it.
-  local chunk, err = load(source, "=" .. what, "t")
-  if not chunk then error(what .. ": " .. tostring(err)) end
-
-  local programs = chunk()
-  local windowed = {}
-  local kinds = {}          -- for what is neither application nor program
-  local sections = {}       -- which part of the Deskbar's menu it lives in
-  local needs = {}
-
-  -- The comment block a file opens with, and nothing after it.
-  --
-  -- Written as a loop rather than a pattern because a pattern that does
-  -- this is a pattern nobody can read six months later, and this is the
-  -- code that decides whether something is an application at all.
-  local function header_of(source)
-    local lines = {}
-
-    for line in source:gmatch("([^\n]*)\n?") do
-      local trimmed = line:match("^%s*(.-)%s*$")
-
-      if trimmed ~= "" and not trimmed:match("^%-%-") then
-        break
-      end
-
-      lines[#lines + 1] = line
-    end
-
-    return table.concat(lines, "\n")
-  end
-
-  for name, source in pairs(programs) do
-    -- Anywhere in the file's opening comment block, not on the first line.
-    --
-    -- It used to have to be line one, and that broke the moment every file
-    -- grew a copyright line above its description: every application in
-    -- /bin quietly became a console program and the Deskbar emptied out.
-    -- The manifest belongs to the header comment, and where in the header
-    -- it sits is not something a program should have to get right.
-    --
-    -- The block ends at the first line that is not a comment and not
-    -- blank, so nothing found in the body counts - a string in the middle
-    -- of a program that happens to contain these words is not a
-    -- declaration.
-    local header = header_of(source)
-
-    --
-    -- What the file says it is. Three kinds, and the header decides - the
-    -- same way it already decided what an application was:
-    --
-    --   -- kosmos: application     a window, listed in the Deskbar
-    --   -- kosmos: server          owns something; others ask it
-    --   (neither)                  a console program
-    --
-    -- Declaring `server` is a *description*, not a grant. What a process
-    -- may actually do is still only what it was handed, and the kernel
-    -- still refuses a flag the launcher does not hold - so a program that
-    -- calls itself a server gets a word in a monitor and nothing more.
-    --
-    -- Which is why the declaration belongs here. The alternative was a
-    -- list of known server names inside the process monitor, and `procs`
-    -- says exactly what is wrong with that: it "would be wrong the first
-    -- time somebody wrote another window manager".
-    --
-    if header:match("kosmos:%s*application") then
-      windowed[name] = true
-    elseif header:match("kosmos:%s*server") then
-      kinds[name] = "server"
-    end
-
-    --
-    -- Which part of the menu an application belongs in.
-    --
-    --   -- kosmos: section demos
-    --
-    -- BeOS sorted these by *directory* - /boot/apps, /boot/demos,
-    -- /boot/preferences - and the Deskbar's menu was those three folders.
-    -- Kosmos has one `/bin`, so the file says instead, which is where
-    -- everything else about a file is already said. Anything that does not
-    -- say is an application, because that is what most things are and a
-    -- declaration everybody has to write is a declaration everybody forgets.
-    --
-    local said = header:match("kosmos:%s*section%s+(%a+)")
-
-    if said then sections[name] = said:lower() end
-
-    -- And a program may declare an authority it needs, which is the small
-    -- beginning of `design.md` 9.2's manifest.
-    --
-    --   -- kosmos: needs processes
-    --
-    -- Read here rather than by whoever launches it, because /bin is what
-    -- holds the source and reading several kilobytes to check one line
-    -- would be a launcher paying for a fact this server already has. The
-    -- launcher asks `getattr` and gets a list.
-    -- The *header*, not the source. The block above explains that it ends
-    -- at the first line of code so that "nothing found in the body counts"
-    -- - and then this line read the whole file anyway, so a program with
-    -- those words in a string was declaring an authority by accident.
-    local declared = header:match("kosmos:%s*needs%s+([^\n]*)")
-
-    if declared then
-      local wanted = {}
-
-      for word in declared:gmatch("%a+") do
-        wanted[#wanted + 1] = word
-      end
-
-      needs[name] = wanted
-    end
-  end
-
-  serve(endpoint,
-        { programs = programs, windowed = windowed, kinds = kinds,
-          sections = sections, needs = needs },
-        binfs_handlers)
-end
 
 --------------------------------------------------------------------------
 -- /app: the registry of what is running and what it exposes.
@@ -2879,11 +2764,11 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
-  ns.mount("/bin", bin_cap)
+  ns.mount("/bin", bin_cap, nil, "bin")
 
   -- And what programs load rather than run. Separate from /bin so that `ls
   -- /bin` lists things you can type and nothing else.
-  ns.mount("/lib", lib_cap)
+  ns.mount("/lib", lib_cap, nil, "bin")
 
   -- What is running, and what each one exposes. A registry rather than a
   -- mount: the names under it appear and disappear with the programs.
@@ -4207,16 +4092,11 @@ end
 -- allocate that somebody adds a `print` to next month.
 --
 
-if role == ROLE_LIBFS then
-  sys.name("libfs")
-  binfs_main(CAP, sys.libraries(), "libraries")
-end
+--
+-- No branch for ROLE_LIBFS or ROLE_BINFS: both are served by
+-- `user/servers/binfs.c`, which is the same code over a different array.
+--
 
-if role == ROLE_BINFS then
-  sys.name("binfs")
-  binfs_main(CAP, sys.programs(), "programs")
-  return
-end
 
 if role == ROLE_RUNNER then
   --------------------------------------------------------------------------
@@ -4254,9 +4134,9 @@ if role == ROLE_RUNNER then
   -- is simply not mounted, and the program finds that path does not exist.
   if req.console then ns.mount("/dev/console", req.console) end
   if req.data    then ns.mount("/data",        req.data)    end
-  if req.bin     then ns.mount("/bin",         req.bin)     end
+  if req.bin     then ns.mount("/bin",         req.bin, nil, "bin") end
   if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
-  if req.lib     then ns.mount("/lib",         req.lib)     end
+  if req.lib     then ns.mount("/lib",         req.lib, nil, "bin") end
   if req.app     then ns.mount_registry("/app", req.app)    end
   if req.disk    then
     ns.mount("/system", req.disk, "/system")

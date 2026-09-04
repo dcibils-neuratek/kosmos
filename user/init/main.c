@@ -60,9 +60,12 @@ extern const unsigned long luabench_lua_len;
  */
 void audio_server(long endpoint);
 void devices_server(long endpoint);
+void binfs_server(long endpoint, int libraries);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
+#define ROLE_BINFS    11UL
+#define ROLE_LIBFS    13UL
 
 static void say(const char *s)
 {
@@ -100,6 +103,14 @@ int main(unsigned long arg)
 
     if (arg == ROLE_DEVICES) {
         devices_server(0);
+    }
+
+    if (arg == ROLE_BINFS) {
+        binfs_server(0, 0);
+    }
+
+    if (arg == ROLE_LIBFS) {
+        binfs_server(0, 1);
     }
 
     L = kosmos_lua_open();
