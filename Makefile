@@ -353,6 +353,7 @@ USER_SRCS := user/init/start.S \
              user/lib/pdftok.c \
              user/lib/gl_kosmos.c \
              user/lib/con_kosmos.c \
+             user/lib/mp3_kosmos.c \
              runtime/upstream/puff/puff.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
@@ -476,6 +477,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 # numbers are the ABI and belong to both sides of it by definition.
 UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
+           -Iruntime/upstream/minimp3 \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector

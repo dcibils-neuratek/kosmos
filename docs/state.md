@@ -66,14 +66,26 @@ a pixel and `gl_kosmos.c` refuses one it cannot afford, because
 **The chrome is not flat.** `theme.chrome` derives both ends of a gradient
 from the one colour a palette names; window tabs and menu bars use it.
 
+**MP3 plays.** minimp3 is vendored and is the first thing brought in here
+that needed no patches at all - no libm, no allocation, sixteen-bit output by
+default, and NEON is safe because `fp.S` saves the whole `q0`-`q31` file
+rather than the callee-saved half. `use("/kits/mp3")` is the door; `music`
+takes `.mp3` beside `.wav` and `mp3info` reports the headroom.
+
+**61x real time on QEMU**, and the number that matters is that one 256-frame
+period costs 0.095 ms to decode against a 5.8 ms deadline. That is a QEMU
+number and worth what `CLAUDE.md` says QEMU numbers are worth, but sixty
+times over is margin rather than a fit.
+
 ## Next, in order
 
-1. **MP3 decoding** - minimp3, vendored the way TinyGL was. `music` plays
-   WAV today and the file everybody actually has is an MP3.
-2. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
+1. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
    and `i_sdlsound.c` is the model. Doom is silent.
-3. **An equaliser in the Mixer**, which is the first thing that will want
+2. **An equaliser in the Mixer**, which is the first thing that will want
    the ring to carry something other than what was written to it.
+3. **Seeking in `music`** - the bar is drawn and cannot be dragged. For MP3
+   it means finding a frame boundary rather than a byte offset, which is
+   what `mp3.decoder():reset()` exists for.
 
 ## Still open
 

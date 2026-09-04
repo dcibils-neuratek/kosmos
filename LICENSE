@@ -34,6 +34,14 @@ Vendored third-party code keeps its own licence, which travels beside it:
   puff.c, by Mark Adler, zlib licence
       runtime/upstream/puff/LICENSE.puff
 
+  TinyGL, by Fabrice Bellard and erysdren, MIT
+      runtime/upstream/tinygl/COPYING, with the vendoring recorded in
+      README.kosmos.md beside it
+
+  minimp3, by lieff, CC0 1.0 (public domain)
+      runtime/upstream/minimp3/LICENSE, and the notice at the top of
+      minimp3.h
+
   The fonts
       assets/fonts/, each under the LICENSE file beside it. A font
       whose licence is not beside it is not committed, and the build
@@ -41,3 +49,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
 
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
+
+  doomgeneric, GPLv2 - and therefore NOT built by default.
+      runtime/upstream/doom/. Doom is included only under `make DOOM=1`,
+      because there is no dynamic linking here: an image with Doom in it
+      is a combined work and would have to be GPLv2 as a whole. The line
+      is drawn in the build rather than in a comment, so an ordinary
+      `make` produces an MIT binary and there is nothing to remember.

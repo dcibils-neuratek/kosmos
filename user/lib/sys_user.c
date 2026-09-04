@@ -2142,6 +2142,7 @@ void kosmos_compress_kit(lua_State *L);
 void kosmos_pdf_kit(lua_State *L);
 void kosmos_gl_kit(lua_State *L);
 void kosmos_console_kit(lua_State *L);
+void kosmos_mp3_kit(lua_State *L);
 
 static const struct {
     const char *name;
@@ -2151,6 +2152,7 @@ static const struct {
     { "pdf",      kosmos_pdf_kit },
     { "gl",       kosmos_gl_kit },
     { "console",  kosmos_console_kit },
+    { "mp3",      kosmos_mp3_kit },
     { NULL, NULL }
 };
 

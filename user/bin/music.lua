@@ -22,6 +22,7 @@
 local ui    = use("/lib/ui.lua")
 local audio = use("/lib/audio.lua")
 local wav   = use("/lib/wav.lua")
+local mp3   = use("/kits/mp3")
 
 local theme = ui.theme
 
@@ -42,7 +43,19 @@ end
 --------------------------------------------------------------------------
 
 local stream                    -- the open audio stream, or nil
-local info                      -- what `wav.scan` said about the file
+local info                      -- what the format said about the file
+local decoder                   -- the MP3 decoder, for an MP3; nil for WAV
+
+--
+-- Two buffers, because a compressed file has two stages.
+--
+-- `carry` is what came off the disk and `samples` is what the resampler
+-- eats. For a WAV they are the same bytes and `samples` is simply `carry` -
+-- the file already holds PCM. For an MP3 the decoder sits between them, and
+-- `used` from `sys.pcm` has to come off `samples` while `used` from the
+-- decoder comes off `carry`, which is why they cannot be one variable.
+--
+local samples = ""
 local name                      -- what is loaded, for the label
 local window_page               -- a page to read the file through
 local at, last                  -- where we are in the file, and where it ends
@@ -71,8 +84,8 @@ local READ = 32768
 local function unload()
   if stream then stream:close() end
 
-  stream, info, window_page = nil, nil, nil
-  carry, pending, phase = "", "", 0.0
+  stream, info, window_page, decoder = nil, nil, nil, nil
+  carry, samples, pending, phase = "", "", "", 0.0
   at, last, played = 0, 0, 0
 end
 
@@ -89,13 +102,66 @@ local function load(file)
 
   if not page then status = "no memory for a read buffer" return end
 
-  local got, why = wav.scan(function(off, n)
+  local read_at = function(off, n)
     local n2 = fs.read_into(path, page, off, n)
 
     if not n2 or n2 == 0 then return nil end
 
     return sys.region_read(page, 0, n2)
-  end)
+  end
+
+  local got, why, dec
+
+  if file:lower():match("%.mp3$") then
+    --
+    -- An MP3 has no header, only a run of frames, so the first frame *is*
+    -- the header - and finding it means decoding one. `mp3.probe` does that
+    -- with a decoder of its own so the real one does not start life holding
+    -- half a frame of somebody else's overlap.
+    --
+    -- 32 KB is plenty to find it in: a frame is at most 1728 bytes and an
+    -- ID3v2 tag ahead of it is usually a few kilobytes of cover art.
+    --
+    local head = read_at(0, READ)
+
+    if not head then status = "cannot read " .. file return end
+
+    got, why = mp3.probe(head)
+
+    if got then
+      dec = mp3.decoder()
+
+      -- The whole file after the tag is audio. There is no length field to
+      -- read, which is why the bar below measures bytes of *source* rather
+      -- than seconds: seconds would need either a Xing header or a scan of
+      -- every frame, and neither is worth it to draw a bar.
+      local size = (fs.getattr(path) or {}).size or 0
+
+      got.bytes = size - got.offset
+      got.frame = 1                 -- no fixed source frame; see `feed`
+
+      --
+      -- How long it runs, from the bitrate.
+      --
+      -- Exact for a constant-bitrate file and an estimate for a variable
+      -- one, and there is no third option worth taking: the length is not
+      -- written down anywhere an MP3 is required to have, so knowing it
+      -- properly means either trusting a Xing header some encoders omit or
+      -- decoding every frame in the file before playing the first.
+      --
+      -- **Not optional, which is how this was found.** The transport draws
+      -- `info.seconds * frac`, so a nil here is an arithmetic error inside
+      -- a draw handler - and a view whose draw raises keeps whatever it
+      -- last painted. The window went on showing "nothing loaded" while the
+      -- file was loaded, playing, and printing its own success to the
+      -- console.
+      --
+      got.seconds = (got.bitrate > 0)
+                    and (got.bytes * 8 / (got.bitrate * 1000)) or 0
+    end
+  else
+    got, why = wav.scan(read_at)
+  end
 
   if not got then status = tostring(why) return end
 
@@ -104,10 +170,14 @@ local function load(file)
 
   if not s then status = tostring(why) return end
 
-  info, stream, window_page, name = got, s, page, file
+  info, stream, window_page, name, decoder = got, s, page, file, dec
   at, last, played = got.offset, got.offset + got.bytes, 0
   status = ("%d Hz %s %d-bit"):format(got.rate,
             got.channels == 2 and "stereo" or "mono", got.bits)
+
+  if decoder then
+    status = status .. (" MP3 %d kbps"):format(got.bitrate or 0)
+  end
 end
 
 local function finished()
@@ -154,16 +224,49 @@ local function feed()
         at = at + n
       end
 
-      if #carry < info.frame * 2 then break end
+      --
+      -- Decode, for a format that needs it. A WAV's bytes are already
+      -- samples and go straight through.
+      --
+      -- `played` counts *source* bytes either way, because that is what the
+      -- progress bar measures against the file's length. For an MP3 that is
+      -- what the decoder consumed, not what it produced.
+      --
+      if decoder then
+        if #samples < fmt.period * 4 and #carry > 0 then
+          local pcm, used = decoder:decode(carry, fmt.period * 8)
+
+          if used == 0 then
+            -- Not a whole frame yet. If the file is finished there will
+            -- never be one, so stop rather than spin on the same bytes.
+            if at >= last then carry = "" end
+            break
+          end
+
+          samples = samples .. pcm
+          played = played + used
+          carry = carry:sub(used + 1)
+        end
+      else
+        samples, carry = carry, ""
+      end
+
+      if #samples < info.channels * 2 * 2 then break end
 
       local pcm, used
-      pcm, used, phase = sys.pcm(carry, info.rate, info.channels, info.bits,
+      pcm, used, phase = sys.pcm(samples, info.rate, info.channels, info.bits,
                                  phase, fmt.period * 4)
 
       if used == 0 or #pcm == 0 then break end
 
-      played = played + used
-      carry = carry:sub(used + 1)
+      if not decoder then played = played + used end
+
+      samples = samples:sub(used + 1)
+
+      -- What the resampler did not take goes back, so a WAV keeps its one
+      -- buffer and the next turn reads on from where this one stopped.
+      if not decoder then carry, samples = samples, "" end
+
       pending = pcm
     end
 
@@ -190,10 +293,16 @@ end
 local files = {}
 
 for _, f in ipairs(fs.list(FOLDER) or {}) do
-  if f:lower():match("%.wav$") then files[#files + 1] = f end
+  local low = f:lower()
+
+  if low:match("%.wav$") or low:match("%.mp3$") then
+    files[#files + 1] = f
+  end
 end
 
-if #files == 0 then files = { "(no .wav files in " .. FOLDER .. ")" } end
+if #files == 0 then
+  files = { "(nothing to play in " .. FOLDER .. ")" }
+end
 
 local list = ui.list{ x = 10, y = 10, w = W - 20, h = 150, items = files }
 
