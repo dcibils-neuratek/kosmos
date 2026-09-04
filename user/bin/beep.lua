@@ -44,8 +44,7 @@ if not out then
 end
 
 -- Four bytes a frame: two channels of signed sixteen-bit.
-local FRAME  = 2 * CHANNELS
-local FRAMES = PERIOD // FRAME
+local FRAME = 2 * CHANNELS
 
 local hz = tonumber((args or ""):match("^%s*(%d+)")) or 440
 local ms = tonumber((args or ""):match("^%s*%d+%s+(%d+)")) or 333

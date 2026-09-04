@@ -137,168 +137,43 @@ local function write_text(ns, path, text)
   return true
 end
 
---------------------------------------------------------------------------
--- What the machine is.
 --
--- `sys.info()` hands back raw ID registers and pool counts and decodes
--- nothing, deliberately: decoding a MIDR is a table lookup, and tables
--- belong up here. A processor the kernel has never heard of gets described
--- properly without the kernel changing, which is the same division of
--- labour design.md 1 draws everywhere else.
+-- No `describe_machine` here: `user/servers/devices.c` decodes the ID
+-- registers now, and this was the same three tables and the same MIDR
+-- arithmetic left behind when the devices server moved to C.
 --
--- The numbers below are from arch/arm64/include/asm/cputype.h and
--- arch/arm64/tools/sysreg, the same sources the kernel's own decode used.
---------------------------------------------------------------------------
-
-local IMPLEMENTERS = {
-  [0x41] = "ARM",      [0x42] = "Broadcom", [0x43] = "Cavium",
-  [0x46] = "Fujitsu",  [0x48] = "HiSilicon", [0x4e] = "NVIDIA",
-  [0x50] = "APM",      [0x51] = "Qualcomm", [0x61] = "Apple",
-  [0x6d] = "Microsoft", [0xc0] = "Ampere",
-}
-
-local ARM_PARTS = {
-  [0xb76] = "ARM1176JZF-S", [0xc07] = "Cortex-A7",  [0xc08] = "Cortex-A8",
-  [0xc09] = "Cortex-A9",    [0xd03] = "Cortex-A53", [0xd05] = "Cortex-A55",
-  [0xd07] = "Cortex-A57",   [0xd08] = "Cortex-A72", [0xd09] = "Cortex-A73",
-  [0xd0a] = "Cortex-A75",   [0xd0b] = "Cortex-A76", [0xd0c] = "Neoverse-N1",
-  [0xd0d] = "Cortex-A77",   [0xd41] = "Cortex-A78",
-}
-
--- ID_AA64MMFR0_EL1.PARANGE [3:0] is a table, not a formula.
-local PA_BITS = { [0]=32, 36, 40, 42, 44, 48, 52, 56 }
-
-local function describe_machine()
-  local i = sys.info()
-  if not i then return nil end
-
-  local impl = (i.midr >> 24) & 0xff
-  local part = (i.midr >> 4) & 0xfff
-
-  local m = { raw = i }
-
-  m.cpu = {
-    implementer = IMPLEMENTERS[impl] or string.format("0x%02x", impl),
-    part        = (impl == 0x41 and ARM_PARTS[part])
-                  or string.format("part 0x%03x", part),
-    revision    = string.format("r%dp%d", (i.midr >> 20) & 0xf, i.midr & 0xf),
-    midr        = i.midr,
-    cores       = i.cpus,
-    -- CTR_EL0 DminLine [19:16] is log2 of the line in *words*, not bytes.
-    cache_line  = 4 << ((i.ctr >> 16) & 0xf),
-    pa_bits     = PA_BITS[i.mmfr0 & 0xf] or 0,
-    counter_hz  = i.counter_hz,
-    -- ID_AA64ISAR0_EL1: AES [7:4], SHA1 [11:8], SHA2 [15:12], CRC32 [19:16],
-    -- atomics [23:20]. Non-zero means present.
-    aes         = ((i.isar0 >> 4) & 0xf) ~= 0,
-    sha1        = ((i.isar0 >> 8) & 0xf) ~= 0,
-    sha2        = ((i.isar0 >> 12) & 0xf) ~= 0,
-    crc32       = ((i.isar0 >> 16) & 0xf) ~= 0,
-    atomics     = ((i.isar0 >> 20) & 0xf) ~= 0,
-    -- ID_AA64PFR0_EL1: FP [19:16], AdvSIMD [23:20]. 0xf means absent.
-    fp          = ((i.pfr0 >> 16) & 0xf) ~= 0xf,
-    simd        = ((i.pfr0 >> 20) & 0xf) ~= 0xf,
-    el          = i.current_el,
-  }
-
-  m.memory = {
-    total_mb    = i.pages_total * i.page_size // (1024 * 1024),
-    free_mb     = i.pages_free  * i.page_size // (1024 * 1024),
-    pages_total = i.pages_total,
-    pages_free  = i.pages_free,
-    page_size   = i.page_size,
-    base        = i.ram_base,
-  }
-
-  m.kernel = {
-    idle_ticks = i.idle_ticks,    busy_ticks    = i.busy_ticks,
-    threads   = i.threads_used,   threads_max   = i.threads_total,
-    processes = i.processes_used, processes_max = i.processes_total,
-    endpoints = i.endpoints_used, endpoints_max = i.endpoints_total,
-    spaces    = i.spaces_used,    spaces_max    = i.spaces_total,
-    tick_hz   = i.tick_hz,
-  }
-
-  if i.screen_width > 0 then
-    m.screen = { width = i.screen_width, height = i.screen_height,
-                 pitch = i.screen_pitch }
-  end
-
-  if i.has_keyboard ~= 0 then
-    m.keyboard = { transport = "virtio-input over virtio-mmio" }
-  end
-
-  m.console = { transport = "PL011 UART, polled" }
-  m.timer   = { hz = i.tick_hz, counter_hz = i.counter_hz }
-
-  --
-  -- What time it is, which is a different question from how long this
-  -- machine has been running and could not be answered before.
-  --
-  -- `sys.ticks()` counts since boot, so a file written yesterday has an
-  -- mtime that means nothing today - which is why Tracker has no Modified
-  -- column and says so in its own header. This is the number that fixes
-  -- that, read from the board's clock through the HAL.
-  --
-  -- **UTC, and only UTC.** There is no timezone database and no setting for
-  -- one, so calling this local time would be calling it something it is
-  -- not. A zone is a table of political decisions that changes several
-  -- times a year; when this system wants one it will carry it and say
-  -- where it came from, the way it does with fonts and icons.
-  --
-  if i.epoch and i.epoch > 0 then
-    m.clock = { epoch = i.epoch, utc = true }
-
-    local days = i.epoch // 86400
-    local secs = i.epoch % 86400
-
-    --
-    -- Days since 1970 into a date, by Howard Hinnant's `civil_from_days`.
-    --
-    -- Written out rather than approximated, because the approximations are
-    -- all wrong in the same interesting way: 365.2425 days a year is right
-    -- on average and wrong on a specific Tuesday, and the error is a day,
-    -- which is exactly the resolution anybody reading a date cares about.
-    -- This one is exact for the proleptic Gregorian calendar, with no
-    -- table and no loop over years, by shifting the era to start on 1 March
-    -- so that the leap day is the last day of the year rather than a hole
-    -- in the middle of one.
-    --
-    local z = days + 719468
-    local era = (z >= 0 and z or z - 146096) // 146097
-    local doe = z - era * 146097
-    local yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
-    local y = yoe + era * 400
-    local doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
-    local mp = (5 * doy + 2) // 153
-    local d = doy - (153 * mp + 2) // 5 + 1
-    local mo = mp + (mp < 10 and 3 or -9)
-
-    if mo <= 2 then y = y + 1 end
-
-    m.clock.year, m.clock.month, m.clock.day = y, mo, d
-    m.clock.hour = secs // 3600
-    m.clock.min  = (secs % 3600) // 60
-    m.clock.sec  = secs % 60
-
-    -- 1 January 1970 was a Thursday, which is why the 4.
-    m.clock.weekday = (days + 4) % 7          -- 0 is Sunday
-  end
-
-  return m
-end
+-- The division it was written to demonstrate is unchanged and is worth
+-- restating, because it is the reason none of this is in the kernel:
+-- `sys.info()` hands back raw ID registers and decodes nothing, so a
+-- processor the kernel has never heard of gets described properly without
+-- the kernel changing. What moved is which side of the syscall the lookup
+-- table lives on, not whether the kernel holds one.
+--
 
 --------------------------------------------------------------------------
--- The protocol
+-- The protocol, which is now two protocols with one vocabulary.
 --
 -- design.md 4.4: `list`, `read`, `write`, `getattr`, `setattr`, over typed
--- records rather than byte streams. A request is a table with a `type`, and
--- design.md 14 makes that field mandatory: with no static types, a message
--- that does not say what it is becomes a silent nil three layers down.
+-- records rather than byte streams. `read` returns a value and not a string,
+-- which is the whole point - `fs.read("/dev/temp")` gives `{ celsius = 47.2 }`
+-- rather than "47200\n" for whoever asked to parse.
 --
--- `read` returns a table, not a string. That is the whole point of the
--- protocol: fs.read("/dev/temp") gives { celsius = 47.2 } rather than
--- "47200\n" to be parsed by whoever asked.
+-- **What carries those verbs depends on who answers**, and that is the
+-- change this file has been through. Six servers are C and take a *declared
+-- struct*: `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/data`, each
+-- with a header in `user/include/` that both sides compile against. A mount
+-- names which, and `request` below branches on it.
+--
+-- Everything else still sends a table with a `type`, and design.md 14 makes
+-- that field mandatory: with no static types, a message that does not say
+-- what it is becomes a silent nil three layers down. `diskfs` is the last
+-- server that speaks this way; the window manager and application scripting
+-- also do, and always will - their vocabularies are open, which is exactly
+-- when a table is right.
+--
+-- The two are not a compromise between them. A struct is for a boundary
+-- where the shape is agreed and a caller being wrong should be impossible to
+-- express; a table is for one where the shape is the caller's to choose.
 --------------------------------------------------------------------------
 
 --------------------------------------------------------------------------
@@ -322,30 +197,28 @@ end
 --------------------------------------------------------------------------
 
 --
--- A handler returns this when it is not answering yet.
+-- Three things this used to have, and no longer needs. All of them were
+-- built for servers that are C now, and each solves its problem natively
+-- there rather than needing the loop's help:
 --
--- Live queries need it: a watcher's call is parked until something it is
--- watching changes, which may be minutes later or never. The client is
--- blocked in that call the whole time and that is the point - it is waiting
--- without asking, which is the difference between a live query and a poll.
+--   `DEFER`, a sentinel a handler returned when it was not answering yet.
+--   ramfs's `watch` was the only thing that returned it; `ramfs.c` keeps the
+--   sender in a slot and replies from `notify`.
 --
--- A sentinel and not `nil`, because `nil` is what a handler returns when
--- somebody forgot a `return`, and the failure that produces - a client
--- blocked for ever on a reply nobody is going to send - is far too quiet.
+--   `state.pump`, which let a blocked handler answer other callers while it
+--   waited. The console's `read` was the only caller: it blocked inside the
+--   handler until somebody typed a line, and while blocked it answered
+--   nobody. `console.c` does not block at all - it records who asked and
+--   replies from its own loop.
 --
-local DEFER = { "deferred" }
-
+--   `manual`, which handed the loop back so the audio server could drive
+--   its own: the device wants a period every 5.8 ms and no message says so.
+--   `audio.c` has its own loop by construction.
 --
--- `manual` hands the loop back to the caller.
+-- Removed in the review before 0.8 rather than kept in case. Each was six
+-- lines and is in the history; what none of them had any more was a caller.
 --
--- Every server here blocks on receive, which is right when the only reason
--- to wake is a message. The audio server has another: the device wants
--- another period every 5.8 milliseconds and nobody sends a message to say
--- so, and a server that waits for one runs dry. So it drives its own loop,
--- pumping the mailbox between refills - and this returns the state with
--- `pump` and `answer` on it instead of looping.
---
-local function serve(endpoint, state, make_handlers, manual)
+local function serve(endpoint, state, make_handlers)
   local handlers = make_handlers(state)
 
   --
@@ -392,12 +265,6 @@ local function serve(endpoint, state, make_handlers, manual)
     --
     -- Now the failure reaches whoever asked, which is the one place that can
     -- do anything about it.
-    -- The handler said it would answer later, and holds `sender` to do it
-    -- with. Nothing to send now.
-    if reply == DEFER then
-      return
-    end
-
     -- A reply may carry a capability. `send_cap` is taken out rather than
     -- serialised: the number in it is an index in *this* process's table
     -- and would mean something else entirely in the caller's.
@@ -416,40 +283,6 @@ local function serve(endpoint, state, make_handlers, manual)
     end
   end
 
-  --------------------------------------------------------------------------
-  -- For a handler that has to wait.
-  --
-  -- A server is one thread, so a handler that blocks blocks the server, and
-  -- everyone else waits for something that has nothing to do with them. The
-  -- console is where this stopped being theoretical: it blocks inside `read`
-  -- until somebody types a line, and while it is blocked it answers nobody -
-  -- so a status bar asking once a second whether Control-C was pressed was
-  -- waiting on a keystroke that would only arrive if you stopped waiting for
-  -- the status bar.
-  --
-  -- So a waiting handler calls this instead of only yielding: whatever has
-  -- arrived gets answered, and then the wait continues. Non-blocking, so an
-  -- empty queue costs one syscall and returns.
-  --
-  -- The alternative was a second thread inside the server, and there are no
-  -- threads inside a process - which is not a limitation to work around
-  -- here. One thread is why a handler never races another handler, and that
-  -- is worth more than what it costs.
-  --------------------------------------------------------------------------
-  function state.pump()
-    while true do
-      local request, sender, cap = sys.receive(endpoint, true)
-      if not request then return end
-      answer(request, sender, cap)
-    end
-  end
-
-  state.answer = answer
-
-  if manual then
-    return state
-  end
-
   while true do
     local request, sender, cap = sys.receive(endpoint)
     if not request then return end          -- the endpoint went away
@@ -458,46 +291,8 @@ local function serve(endpoint, state, make_handlers, manual)
 end
 
 --------------------------------------------------------------------------
--- ramfs: a tree of nodes, in memory.
---
--- A node has attributes and either children or a value. Directories and
--- files are the same kind of thing with a different field filled in, which
--- is what lets `list` and `read` be the same protocol rather than two.
---------------------------------------------------------------------------
-
-local function split(path)
-  local parts = {}
-  for part in path:gmatch("[^/]+") do parts[#parts + 1] = part end
-  return parts
-end
-
---
--- The state is the tree; the behaviour is everything below. Reloading
--- replaces the second and keeps the first, which is what makes a filesystem
--- server something you can fix while it is holding your files.
-
---------------------------------------------------------------------------
--- Attributes, the index over them, and live queries.
---
--- `beos.md` 17.2 and roadmap M7. The BeOS idea: a file is a named thing
--- with typed attributes, the filesystem indexes those attributes, and a
--- query over them is as cheap as opening one file. Entity files - nodes
--- with attributes and no content at all - fall straight out of it.
---
--- The index is the whole claim. Without it a query is a walk, and a walk
--- costs more the more files there are, which is exactly the thing BeOS was
--- built to avoid and the thing the benchmark for this milestone measures.
--- `bench/` has it, and what it has to show is a flat line.
---
--- Structure: index[attribute][value] is the set of paths that have it.
--- Values are keyed by `tostring`, so 3 and "3" share a bucket - which is
--- wrong in general and right here, where an attribute has one type and the
--- alternative is a typed key nobody would ever look up.
---------------------------------------------------------------------------
-
---
--- No handlers here: /data is `user/servers/ramfs.c`, and `main.c`
--- dispatches role 1 to it before the interpreter is opened.
+-- /data is `user/servers/ramfs.c`, and `main.c` dispatches role 1 to it
+-- before the interpreter is opened.
 --
 -- The seventh and last to move, and the only one whose conversion cost a
 -- feature rather than only buying one. ramfs was what `ROLE_RELOAD`
@@ -4324,7 +4119,7 @@ end
 -- A client. The name it mounts the filesystem under is its own business,
 -- and is the whole demonstration: the same server, two processes, two
 -- different worlds.
-local mount_point = (role == ROLE_CLIENT) and "/data" or "/files"
+local mount_point = (role == ROLE_CLIENT_B) and "/files" or "/data"
 
 local fs = new_namespace()
 

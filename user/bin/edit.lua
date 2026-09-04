@@ -42,7 +42,6 @@ local GW, GH = gfx.font.w, gfx.font.h
 
 local BG      = 0xff0d1117
 local FG      = 0xffc9d1d9
-local STATUS  = 0xff1f6feb
 local STATUS2 = 0xff21262d
 local GUTTER  = 0xff484f58
 local CURSOR  = 0xff58a6ff

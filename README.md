@@ -98,19 +98,27 @@ Toolchain and prerequisites in [docs/setup.md](docs/setup.md).
 ## Layout
 
 ```
-boot/        assembly entry, linker script
-arch/        aarch64/ — what depends on the CPU
-hal/         qemu-virt/, pi5/, pi1/ — what depends on the board
-kernel/      EL1: mmu, sched, ipc, caps, exceptions
-lua/         upstream/ untouched + patches/ for freestanding
-runtime/     minimal libc, syscall bindings, serializer
-servers/     Lua: namespace, fs, console, appserver
-apps/        Lua
-lib/         Lua: ui, gfx, and other shared libraries
-tests/       guest-side tests (C until M2, Lua after that)
-bench/       benchmarks and baselines.json
-tools/       host-side test runner, scripts
+boot/           assembly entry, linker script
+arch/           aarch64/ — what depends on the CPU
+hal/            qemu-virt/ — what depends on the board (pi5/, pi1/ at M2)
+kernel/         EL1: mmu, sched, ipc, caps, exceptions
+lua/            upstream/ untouched + kosmos/ for freestanding
+runtime/        minimal libc, and upstream/ for what is vendored
+assets/         vendored data: fonts, icons, images, with their licences
+user/           everything at EL0:
+  init/           init, the roles, and the namespace kit
+  servers/        the servers, in C: audio, devices, binfs, appfs,
+                  console, ramfs
+  include/        the protocol headers both sides compile against
+  lib/            libraries: Lua (ui, theme, pdf) and C kits (gfx, gl,
+                  console, png)
+  bin/            programs and applications, in Lua
+  tests/          the Lua suite
+tests/          guest-side tests, in C
+bench/          benchmarks and baselines.json
+tools/          host-side test runner, scripts
 docs/
+book/
 ```
 
 ---

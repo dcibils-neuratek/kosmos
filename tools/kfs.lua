@@ -41,7 +41,6 @@ local command = args[1]
 -- disk to change one file in it is a tool that stops working.
 --------------------------------------------------------------------------
 
-local BLOCK = 4096
 local image                              -- the open file
 local writable = false
 

@@ -533,19 +533,31 @@ something you look at.
 ## Layout
 
 ```
-boot/        assembly entry, linker script
-arch/        aarch64/
-hal/         qemu-virt/  (pi5/ and pi1/ arrive at milestone 2)
-kernel/      mmu, sched, ipc, caps, exceptions
-assets/      vendored data: fonts/ (BDF + its licence), converted at build time
-user/bin/    programs, in Lua. Carried in the image and served at /bin
-lua/         upstream/ + patches/
-runtime/     minimal libc, bindings, serializer
-servers/     Lua
-apps/        Lua
-lib/         Lua: ui, gfx
-tests/       guest-side tests (C until M2, Lua after that)
-bench/       benchmarks and baselines.json
-tools/       host-side test runner, scripts
+boot/           assembly entry, linker script
+arch/           aarch64/
+hal/            qemu-virt/  (pi5/ and pi1/ arrive at milestone 2)
+kernel/         mmu, sched, ipc, caps, exceptions
+assets/         vendored data: fonts/ (BDF + its licence), icons/, images/
+lua/            upstream/ + kosmos/
+runtime/        minimal libc, bindings, serializer, and upstream/
+user/           everything at EL0:
+  init/           init, the roles, and the namespace kit
+  servers/        the servers, in C, one file each
+  include/        the protocol headers both sides compile against
+  lib/            libraries: Lua, and C kits reached the same way
+  bin/            programs and applications, in Lua. Carried in the image
+                  and served at /bin
+  tests/          the Lua suite
+tests/          guest-side tests, in C
+bench/          benchmarks and baselines.json
+tools/          host-side test runner, scripts
 docs/
 ```
+
+**There is no top-level `servers/`, `apps/` or `lib/`.** There were, holding
+nothing but a `.gitkeep` each, and both this file and `README.md` documented
+them as the real layout for months - `servers/ Lua: namespace, fs, console,
+appserver`, which by the end was wrong in three ways at once: those servers
+are C, they live in `user/servers/`, and the namespace is a kit rather than a
+server. Removed in the review before 0.8.
+
