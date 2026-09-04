@@ -994,6 +994,28 @@ def check_widgets(guest):
 # The focused window's tab, 0xffc700.
 TAB = (0xff, 0xc7, 0x00)
 
+# How far a pixel may sit from a tab colour and still be that tab.
+#
+# **Zero until the chrome stopped being flat.** These three functions each
+# tested a pixel with `== TAB`, which was exactly right while a title bar was
+# one colour, and became wrong the moment `theme.chrome` gave it a gradient:
+# the bar now runs from the base colour lifted 13 counts to the base dropped
+# 9, so the row that is *exactly* TAB is one row out of twenty and may not
+# exist at all once the ends clamp. `count_windows` needs a run of 40 such
+# pixels and found none, so a screen with three windows on it counted zero.
+#
+# 20 rather than 13 because the ramp's ends clamp per channel and the
+# arithmetic rounds, and well under the distance to any other colour that
+# appears in a run this long.
+TAB_TOL = 20
+
+
+def is_tab(px, at, base=TAB):
+    """Whether the pixel at byte offset `at` belongs to a tab of `base`."""
+    return (abs(px[at]     - base[0]) <= TAB_TOL
+            and abs(px[at + 1] - base[1]) <= TAB_TOL
+            and abs(px[at + 2] - base[2]) <= TAB_TOL)
+
 
 def tab_width(width, height, px):
     """How wide the widest run of tab colour on screen is, in pixels.
@@ -1011,7 +1033,7 @@ def tab_width(width, height, px):
         for x in range(width):
             at = (y * width + x) * 3
 
-            if (px[at], px[at + 1], px[at + 2]) == TAB:
+            if is_tab(px, at):
                 run += 1
 
                 if run > widest:
@@ -1033,7 +1055,7 @@ def tab_top(width, height, px):
         for x in range(0, width, 2):
             at = (y * width + x) * 3
 
-            if (px[at], px[at + 1], px[at + 2]) == TAB:
+            if is_tab(px, at):
                 return y
 
     return None
@@ -1316,7 +1338,7 @@ def count_windows(width, height, px):
 
         for x in range(width):
             at = (y * width + x) * 3
-            hit = (px[at], px[at + 1], px[at + 2]) in (TAB, TAB_IDLE)
+            hit = is_tab(px, at) or is_tab(px, at, TAB_IDLE)
 
             if hit and run_from is None:
                 run_from = x

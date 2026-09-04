@@ -162,10 +162,12 @@ function table_view:draw(g)
   local visible = (self.h - 6) // ROW
 
   --
-  -- Scrolled to keep the selection in view rather than by its own handle.
-  -- There is no scrollbar because there is nothing to drag it with that
-  -- the arrow keys do not already do, and a list that follows what you
-  -- selected never needs one - the selection *is* the scroll position.
+  -- Scrolled to keep the selection in view, *and* draggable by its own
+  -- handle. This said there was no scrollbar, on the grounds that a list
+  -- following the selection never needs one - and that was true when it
+  -- was written and false three lines later, once a pointer arrived and
+  -- `ui.scrollbar` went in below. A list you can drag needs somewhere to
+  -- drag it, and a list of thirty processes is longer than the window.
   --
   if selected < top then
     top = selected
@@ -181,6 +183,16 @@ function table_view:draw(g)
   self.visible = visible
 
   local room = self.w - 4 - (self.bar and ui.SCROLL_W + 2 or 0)
+
+  -- Where a row actually ends. Rows start at x = 2 and are `room` wide, so
+  -- this is the last column the scrollbar does not own.
+  --
+  -- Everything at the right-hand end used to be placed against `self.w`
+  -- instead, which is the window - so the load bar ran under the scrollbar
+  -- and the percentage was drawn on top of it. Unreadable, and worse than
+  -- unreadable: the bar could not be clicked, because the thing you were
+  -- aiming at had a number painted over it.
+  local edge = 2 + room
 
   for i = top, math.min(top + visible - 1, #rows) do
     local r = rows[i]
@@ -224,7 +236,7 @@ function table_view:draw(g)
     end
 
     local bar_x = 516
-    local bar_w = self.w - bar_x - 60
+    local bar_w = edge - bar_x - 60
 
     g:fill(bar_x, y + 3, bar_w, ROW - 6, "window")
 
@@ -235,8 +247,12 @@ function table_view:draw(g)
              (r.pct > 60) and theme.bad or "good")
     end
 
+    -- Right-aligned against the row's end, and measured rather than
+    -- counted: `#right * gfx.font.w` is the width this string would have
+    -- in the terminal face, and the rows are not drawn in it.
     local right = r.exited and "gone" or ("%d%%"):format(r.pct)
-    g:text(self.w - #right * gfx.font.w - 8, y + 2, right,
+
+    g:text(edge - gfx.measure(right) - 8, y + 2, right,
            on and theme.text_on or "text_dim", bg)
   end
 end

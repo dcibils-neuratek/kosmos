@@ -2511,7 +2511,14 @@ function ui.menubar(spec)
   end
 
   function v:draw(g)
-    g:fill(0, 0, self.w, self.h, theme.raised)
+    -- The same gradient the window tab above it gets, from the same pair of
+    -- functions, so the two pieces of chrome at the top of a window are lit
+    -- from the same direction. The groove underneath still separates the
+    -- bar from the content; the gradient is what stops it reading as a
+    -- painted rectangle.
+    local top, bottom = theme.chrome(theme.raised)
+
+    theme.vgradient(g, 0, 0, self.w, self.h - 2, top, bottom, 0, self.h - 2)
     g:groove(0, self.h - 2, self.w, 2)
 
     for i, m in ipairs(self.menus) do

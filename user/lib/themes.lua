@@ -20,8 +20,10 @@
 -- both of them blue selections when neither has one. Each note below says
 -- what the real thing does.
 --
--- Where a system used a gradient or a pinstripe there is a flat colour that
--- reads as it, because this kit draws one-pixel bevels and no gradients.
+-- Where a system used a pinstripe there is a flat colour that reads as it.
+-- Gradients are no longer in that list: the chrome - window tabs and menu
+-- bars - is shaded from the one colour named here, by `theme.chrome`, so a
+-- palette still names one surface and gets both ends of it.
 
 local themes = {}
 

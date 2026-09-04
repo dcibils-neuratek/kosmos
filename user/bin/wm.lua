@@ -833,7 +833,33 @@ local function compose_rect(r)
       local dy1 = math.min(fy + fh, r.y + r.h)
 
       if not bare then
-        back:fill(dx0, dy0, dx1 - dx0, dy1 - dy0, tab)
+        --
+        -- The tab is a gradient and the border below it is not, which is
+        -- why this is two fills where it was one.
+        --
+        -- The single fill above covered both, because both were the same
+        -- colour: `tab` is the whole decoration, and the border says which
+        -- window is listening by being the same yellow as the bar. A
+        -- gradient run over all of it would shade the border too, and a
+        -- border that is lighter at the top of a window than at the bottom
+        -- reads as a lighting error rather than as a surface.
+        --
+        -- `fy` and `TAB_H` rather than `dy0` and the damaged height: the
+        -- ramp belongs to the bar, not to whatever piece of it is being
+        -- repainted. `theme.vgradient` says why at length.
+        --
+        local band = math.max(dy0, math.min(dy1, fy + TAB_H))
+
+        if dy0 < band then
+          local top, bottom = theme.chrome(tab)
+
+          theme.vgradient(back, dx0, dy0, dx1 - dx0, band - dy0,
+                          top, bottom, fy, TAB_H)
+        end
+
+        if band < dy1 then
+          back:fill(dx0, band, dx1 - dx0, dy1 - band, tab)
+        end
       end
 
       -- The close box, at the left of the tab where BeOS put it. A square

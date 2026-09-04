@@ -349,6 +349,108 @@ function theme.override(fields)
   return theme
 end
 
+--------------------------------------------------------------------------
+-- Chrome that is not flat.
+--
+-- The kit drew one-pixel bevels and no gradients, and said so in
+-- `themes.lua`, on the grounds that a flat colour reading *as* a gradient
+-- was honest and cheap. The bevels stay - they are the sentence about what
+-- a control does - but the flat chrome underneath them was the one place
+-- the look read as unfinished rather than as restrained.
+--
+-- **This is Lua painting a row at a time, and that is not the pixel loop
+-- the rules forbid.** A row is a `fill`, which is a C span; a 20-row tab is
+-- twenty crossings of the boundary and twenty tight loops on the far side
+-- of it. What Lua does here is choose twenty colours, which is arithmetic
+-- on twenty numbers. Moving that into C would buy twenty subtractions and
+-- cost a primitive.
+--------------------------------------------------------------------------
+
+local function clamp(v)
+  return (v < 0) and 0 or ((v > 255) and 255 or v)
+end
+
+--
+-- The same colour, carried towards white or towards black.
+--
+-- Per channel and unweighted, which is wrong for a perceptual lightening
+-- and exactly right here: over the ten or so counts a chrome gradient
+-- moves, the hue does not visibly shift, and anything cleverer would need
+-- a colour space this kit has no other use for.
+--
+function theme.lift(c, amount)
+  return 0xff000000
+         | (clamp(((c >> 16) & 0xff) + amount) << 16)
+         | (clamp(((c >>  8) & 0xff) + amount) <<  8)
+         |  clamp(( c        & 0xff) + amount)
+end
+
+--
+-- The two ends of a piece of chrome, from the one colour a theme names.
+--
+-- Derived rather than named, and this is the opposite call from the one
+-- `edge_light` and `edge_dark` got at the top of this file - so it is worth
+-- saying why they differ. An edge is a single pixel doing a *semantic* job,
+-- and on the dark palette a flatly-lightened highlight reads as fog: there
+-- is no formula, so the palette names both. A gradient is twenty pixels
+-- doing an *atmospheric* job, and over ten counts a flat lift is
+-- indistinguishable from anything a formula could do better. Naming two
+-- more colours per palette would be four more numbers in every theme, and
+-- every one of them would be the base plus ten.
+--
+-- Light from above, which is where every bevel in this kit already puts it.
+--
+function theme.chrome(base)
+  return theme.lift(base, 13), theme.lift(base, -9)
+end
+
+--
+-- A vertical gradient, one span per row.
+--
+-- **The ramp is measured over `[y0, y0 + span)`, not over the rectangle
+-- being painted**, and that is why this takes nine arguments rather than
+-- seven. The window manager composes clipped to the damage rectangle, so a
+-- title bar arrives here in slices - ten rows of it when ten rows were
+-- disturbed. A ramp that ran over each slice would restart at every damage
+-- boundary, and the bar would break into bands that moved as you dragged
+-- it. Passing the band's own extent separately is what makes a partial
+-- repaint indistinguishable from a whole one.
+--
+-- `dst` is anything with `fill(x, y, w, h, colour)`, which is both a
+-- surface and a `gc`. The window manager composes onto one and every widget
+-- draws through the other, and neither needs to know which this is.
+--
+function theme.vgradient(dst, x, y, w, h, top, bottom, y0, span)
+  if w <= 0 or h <= 0 then return end
+
+  y0   = y0 or y
+  span = span or h
+
+  -- The last row of the ramp, and never zero: a one-row band is entirely
+  -- its own top, and dividing by `span - 1` would be a divide by zero.
+  local last = (span > 1) and (span - 1) or 1
+
+  local tr, tg, tb = (top >> 16) & 0xff, (top >> 8) & 0xff, top & 0xff
+  local dr = ((bottom >> 16) & 0xff) - tr
+  local dg = ((bottom >>  8) & 0xff) - tg
+  local db = ( bottom        & 0xff) - tb
+
+  for i = 0, h - 1 do
+    -- Where this row sits in the ramp, clamped: a caller may paint rows
+    -- outside the band, and they take the nearest end rather than a colour
+    -- off the end of it.
+    local t = y + i - y0
+
+    if t < 0 then t = 0 elseif t > last then t = last end
+
+    dst:fill(x, y + i, w, 1,
+             0xff000000
+             | ((tr + dr * t // last) << 16)
+             | ((tg + dg * t // last) <<  8)
+             |  (tb + db * t // last))
+  end
+end
+
 -- The bitmap font until something says otherwise. It is exact, it costs
 -- nothing, and it is what every display test was written against.
 --
