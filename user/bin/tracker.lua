@@ -118,12 +118,69 @@ end
 local GW, GH = gfx.font.w, gfx.font.h
 
 local entries  = {}
+
+--
+-- Two things, and they are not the same thing.
+--
+-- `selected` is the *cursor*: one row, moved by the arrow keys, and what
+-- Enter opens. `marked` is the *selection*: a set of names, and what Delete
+-- and Copy act on. A plain click sets both to one row, so in the ordinary
+-- case they agree and nothing has to think about the difference.
+--
+-- Kept by name rather than by row, so sorting by size does not select
+-- different files than were selected by name a moment earlier.
+--
+-- **No shift-click and no control-click**, because there are no modifiers to
+-- click with: `wm.lua` records that a virtio keyboard gives Control plus a
+-- letter and nothing else - no Shift state, no Alt, no Super. So the gesture
+-- is the one BeOS's Tracker used anyway, and the one that needs no modifier:
+-- drag a rectangle over what you want.
+--
+local rename_field, rename_of   -- the box a new name is typed in
+
 local selected = 0
+local marked   = {}
+local band     = nil       -- { x0, y0, x1, y1 } while a rectangle is drawn
+local followed = nil       -- the cursor the view last scrolled to
+
+local function marked_count()
+  local n = 0
+
+  for _ in pairs(marked) do n = n + 1 end
+
+  return n
+end
+
+-- Everything marked, in the order the view shows it, which is the order a
+-- person expects an operation to happen in.
+local function marked_entries(shown)
+  local out = {}
+
+  for _, e in ipairs(shown or {}) do
+    if marked[e.name] then out[#out + 1] = e end
+  end
+
+  return out
+end
+
+-- The cursor lands on one row and the selection becomes exactly it.
+local function mark_only(n, shown)
+  selected = n
+  marked = {}
+
+  local e = shown and shown[n]
+
+  if e then marked[e.name] = true end
+end
 
 -- Declared here and defined with the toolbar, because the menu bar names
 -- the same actions and a menu item and a button doing the same thing should
 -- be one function rather than two that drift apart.
 local new_folder, delete_selected
+
+-- The same reason, for the ones the key handler names: it is defined above
+-- them because it belongs with the view, and they belong with the menu.
+local select_all, select_none, do_rename
 
 -- And the one that changes directory, because the places tree calls it and
 -- is built above it.
@@ -143,6 +200,16 @@ local reversed = false
 
 local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where }
 local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
+
+--
+-- Where a new name is typed. Empty and inert until Rename fills it.
+--
+-- Always on screen rather than appearing and going away, because the kit
+-- has no way to hide a view and inventing one for this would be a widget
+-- change made for an application. An empty box at the bottom is a smaller
+-- cost than that.
+--
+rename_field = ui.field{ x = 12, y = H - 58, w = 260, text = "" }
 
 --------------------------------------------------------------------------
 -- The columns.
@@ -283,6 +350,30 @@ local function cell_of(self, i)
   return 2 + col * CELL_W, 2 + row * CELL_H, across
 end
 
+--
+-- Where row `n` is on screen, or nil if it is not.
+--
+-- One function for both layouts, and it exists so the rubber band and the
+-- drawing agree about where a thing is. Working it out twice is how a file
+-- ends up highlighted in one place and hit in another.
+--
+local function box_of(self, n)
+  local first = self.first or 1
+  local i = n - first
+
+  if i < 0 or i >= (self.per or 0) then return nil end
+
+  if mode == "icons" then
+    local x, y = cell_of(self, i + 1)
+
+    return x, y, CELL_W - 4, CELL_H - 2
+  end
+
+  local w = self.w - 2 - (self.bar and ui.SCROLL_W + 2 or 0)
+
+  return 1, (self.top_row or 0) + i * GH, w, GH
+end
+
 local function draw_icons(self, g, list)
   local per_row = math.max(1, (self.w - 4) // CELL_W)
   local rows_fit = math.max(1, self.h // CELL_H)
@@ -303,7 +394,7 @@ local function draw_icons(self, g, list)
     if not e then break end
 
     local x, y = cell_of(self, i + 1)
-    local on = (n == selected)
+    local on = marked[e.name] or false
 
     if on then g:fill(x, y, CELL_W - 4, CELL_H - 2, theme.accent) end
 
@@ -346,11 +437,30 @@ function rows:draw(g)
   local shown = sorted()
   self.shown = shown
 
+  --
+  -- The rectangle being dragged, drawn last of all - see the end of this
+  -- function - so it sits over the rows it is selecting.
+  --
+  local function draw_band()
+    if not band then return end
+
+    local x0 = math.min(band.x0, band.x1)
+    local y0 = math.min(band.y0, band.y1)
+    local x1 = math.max(band.x0, band.x1)
+    local y1 = math.max(band.y0, band.y1)
+
+    -- An outline and not a wash: a filled rectangle over the names would
+    -- hide what is being selected, which is the one thing it is for. Four
+    -- fills, which is four C spans.
+    g:frame(x0, y0, math.max(1, x1 - x0), math.max(1, y1 - y0), theme.ring)
+  end
+
   if mode == "icons" then
     -- No heading: there are no columns to sort by when there are no
     -- columns. The View menu still sorts, and the order shows.
     self.top_row = 0
     draw_icons(self, g, shown)
+    draw_band()
     return
   end
 
@@ -379,9 +489,15 @@ function rows:draw(g)
   -- touching it. So: keep `scroll`, and only push it far enough that the
   -- selection stays visible.
   --
-  if selected > 0 then
+  -- Follow the cursor when it *moves*, not on every pass: unconditionally
+  -- the scrollbar is useless in one direction, because the next repaint
+  -- drags the view back to wherever the cursor is. Same bug `ui.list` and
+  -- `procs` had.
+  if selected > 0 and selected ~= followed then
     if selected < scroll then scroll = selected end
     if selected > scroll + per - 1 then scroll = selected - per + 1 end
+
+    followed = selected
   end
 
   if scroll > #list - per + 1 then scroll = #list - per + 1 end
@@ -402,7 +518,7 @@ function rows:draw(g)
     if not e then break end
 
     local y  = top + i * GH
-    local on = (n == selected)
+    local on = marked[e.name] or false
     local bg = on and theme.accent or theme.sunken
     local fg = on and theme.text_on or theme.text
 
@@ -417,6 +533,8 @@ function rows:draw(g)
            (e.kind == "directory") and "folder"
            or (types.kind_of(e.name) or "file"), fg, bg)
   end
+
+  draw_band()
 end
 
 local show                     -- defined below; the handlers call it
@@ -470,6 +588,43 @@ function rows:mouse(action, x, y)
     end
   end
 
+  --
+  -- The rubber band, while one is being drawn.
+  --
+  -- Before the press-only guard below, because a band is the one thing here
+  -- that cares about `move` and `release`. Everything the rectangle touches
+  -- is marked, recomputed each time rather than accumulated: dragging back
+  -- over something should unmark it, which is what a rectangle means.
+  --
+  if band then
+    if action == "move" then
+      self.box_of = self.box_of or box_of
+      band.x1, band.y1 = x, y
+
+      local x0 = math.min(band.x0, band.x1)
+      local y0 = math.min(band.y0, band.y1)
+      local x1 = math.max(band.x0, band.x1)
+      local y1 = math.max(band.y0, band.y1)
+
+      marked = {}
+
+      for n, e in ipairs(self.shown or {}) do
+        local ex, ey, ew, eh = self:box_of(n)
+
+        if ex and ex < x1 and ex + ew > x0 and ey < y1 and ey + eh > y0 then
+          marked[e.name] = true
+        end
+      end
+
+      return true
+    end
+
+    if action == "release" then
+      band = nil
+      return true
+    end
+  end
+
   if action ~= "press" then return false end
 
   if mode == "icons" then
@@ -481,9 +636,19 @@ function rows:mouse(action, x, y)
 
     local n = (self.first or 1) + row * across + col
 
-    if not (self.shown and self.shown[n]) then return true end
+    if not (self.shown and self.shown[n]) then
+      -- Empty space: start a rectangle rather than doing nothing.
+      band = { x0 = x, y0 = y, x1 = x, y1 = y }
+      marked = {}
+      selected = 0
+      return true
+    end
 
-    if n == selected then open_selected() else selected = n end
+    if n == selected then
+      open_selected()
+    else
+      mark_only(n, self.shown)
+    end
 
     return true
   end
@@ -503,20 +668,43 @@ function rows:mouse(action, x, y)
 
   local n = (self.first or 1) + (y - self.top_row) // GH
 
-  if not (self.shown and self.shown[n]) then return true end
+  if not (self.shown and self.shown[n]) then
+    band = { x0 = x, y0 = y, x1 = x, y1 = y }
+    marked = {}
+    selected = 0
+    return true
+  end
 
   -- The second click on an already-selected row opens it. A double click
   -- would be the BeOS answer and this kit has no notion of one; adding it
   -- to serve a single caller would be a widget change made for an
   -- application, which is the wrong way round.
-  if n == selected then open_selected() else selected = n end
+  if n == selected then open_selected() else mark_only(n, self.shown) end
 
   return true
 end
 
 function rows:key(c)
-  if c == -2 then selected = math.min(selected + 1, #(self.shown or {}))
-  elseif c == -1 then selected = math.max(selected - 1, 1)
+  --
+  -- Control plus a letter is the only modifier this hardware gives - see
+  -- `wm.lua` - so the shortcuts are the ones that fit in it. Control-W is
+  -- the window manager's and is not available.
+  --
+  if c == 1 then                       -- Control-A
+    select_all()
+    return true
+  elseif c == 27 then                  -- Escape
+    select_none()
+    return true
+  elseif c == 18 then                  -- Control-R
+    do_rename()
+    return true
+  end
+
+  if c == -2 then
+    mark_only(math.min(selected + 1, #(self.shown or {})), self.shown)
+  elseif c == -1 then
+    mark_only(math.max(selected - 1, 1), self.shown)
   elseif c == 13 or c == 10 then open_selected()
   elseif c == 8 or c == 127 then
     if where ~= "/" then show(files.parent(where)) end
@@ -593,21 +781,40 @@ function new_folder()
 end
 
 function delete_selected()
-  local e = rows.shown and rows.shown[selected]
+  local list = marked_entries(rows.shown)
 
-  if not e then
+  if #list == 0 then
     status.text = "nothing is selected"
     return
   end
 
-  local ok, why = fs.send(files.join(where, e.name), { type = "delete" })
+  --
+  -- Every marked file, and the first failure stops it.
+  --
+  -- Stopping rather than carrying on, because the reason one delete fails -
+  -- a directory that is not empty, a read-only store - is usually the reason
+  -- the next one will, and a list of twelve identical complaints is not more
+  -- informative than one. What was already deleted stays deleted; there is
+  -- no undo here yet and this does not pretend otherwise.
+  --
+  local done = 0
 
-  if ok then
-    show(where)
-    status.text = "deleted " .. e.name
-  else
-    status.text = tostring(why)
+  for _, e in ipairs(list) do
+    local ok, why = fs.send(files.join(where, e.name), { type = "delete" })
+
+    if not ok then
+      show(where)
+      status.text = ("deleted %d, then %s: %s"):format(done, e.name,
+                                                       tostring(why))
+      return
+    end
+
+    done = done + 1
   end
+
+  show(where)
+  status.text = (done == 1) and ("deleted " .. list[1].name)
+                or ("deleted " .. done .. " items")
 end
 
 button(222, 96, "New folder", new_folder)
@@ -624,47 +831,161 @@ button(326, 70, "Delete", delete_selected)
 -- string.
 --------------------------------------------------------------------------
 
-local clipboard = nil
+local clipboard = nil       -- a list of paths, held until it is pasted
+local cut_from  = false     -- whether pasting them should remove the originals
 
 local function chosen()
   return rows.shown and rows.shown[selected]
 end
 
 local function do_copy()
-  local e = chosen()
+  local list = marked_entries(rows.shown)
 
-  if not e then status.text = "nothing is selected" return end
+  if #list == 0 then status.text = "nothing is selected" return end
 
-  clipboard = files.join(where, e.name)
-  status.text = "copied " .. e.name
+  -- A list of paths now, not one. `do_paste` walks it, so copying three
+  -- files and pasting them elsewhere is one gesture rather than three.
+  clipboard = {}
+
+  for i, e in ipairs(list) do clipboard[i] = files.join(where, e.name) end
+
+  status.text = (#list == 1) and ("copied " .. list[1].name)
+                or ("copied " .. #list .. " items")
 end
 
 local function do_paste()
-  if not clipboard then
+  if not clipboard or #clipboard == 0 then
     status.text = "nothing has been copied"
     return
   end
 
-  local name = clipboard:match("([^/]+)$") or "copy"
-  local to = files.join(where, name)
+  local done, bytes = 0, 0
 
-  -- Pasting into the directory a file came from would otherwise ask the
-  -- filesystem to copy a file onto itself, which is a truncation.
-  local n = 2
+  for _, from in ipairs(clipboard) do
+    local name = from:match("([^/]+)$") or "copy"
+    local to = files.join(where, name)
 
-  while fs.getattr(to) do
-    to = files.join(where, ("%s (%d)"):format(name, n))
-    n = n + 1
+    -- Pasting into the directory a file came from would otherwise ask the
+    -- filesystem to copy a file onto itself, which is a truncation.
+    local n = 2
+
+    while fs.getattr(to) do
+      to = files.join(where, ("%s (%d)"):format(name, n))
+      n = n + 1
+    end
+
+    local put, why = files.copy(from, to)
+
+    if not put then
+      show(where)
+      status.text = ("pasted %d, then %s: %s"):format(done, name,
+                                                      tostring(why))
+      return
+    end
+
+    done = done + 1
+    bytes = bytes + put
+
+    if cut_from then
+      -- A move is a copy and then a delete, and the delete only happens
+      -- once the copy has actually landed. Cutting a file and losing it
+      -- because the destination was full is the one failure a file manager
+      -- must not have.
+      local gone, gwhy = fs.send(from, { type = "delete" })
+
+      if not gone then
+        status.text = ("copied %s but could not remove the original: %s")
+                      :format(name, tostring(gwhy))
+      end
+    end
   end
 
-  local put, why = files.copy(clipboard, to)
+  local only = (done == 1)
+               and (clipboard[1]:match("([^/]+)$") or "it") or nil
 
-  if put then
-    show(where)
-    status.text = ("pasted %s, %d bytes"):format(name, put)
-  else
-    status.text = tostring(why)
+  -- A cut is spent once it is pasted. A copy is not: pasting the same
+  -- things into three directories is a thing people do.
+  if cut_from then clipboard, cut_from = nil, false end
+
+  show(where)
+  status.text = only and ("%s %s, %d bytes"):format(
+                           cut_from and "moved" or "pasted", only, bytes)
+                or ("pasted %d items, %d bytes"):format(done, bytes)
+end
+
+--
+-- Cut is copy with a flag. The originals go when the paste lands, and not
+-- before: a move that removes the source first and then fails to write the
+-- destination has destroyed the file, which is the one thing a file manager
+-- must never do.
+--
+local function do_cut()
+  do_copy()
+
+  if clipboard and #clipboard > 0 then
+    cut_from = true
+    status.text = (#clipboard == 1)
+                  and ("cut " .. (clipboard[1]:match("([^/]+)$") or "it"))
+                  or ("cut " .. #clipboard .. " items")
   end
+end
+
+function select_all()
+  marked = {}
+
+  for _, e in ipairs(rows.shown or {}) do marked[e.name] = true end
+
+  status.text = marked_count() .. " selected"
+end
+
+function select_none()
+  marked, selected = {}, 0
+  status.text = ""
+end
+
+--
+-- Renaming, in a field that appears under the list.
+--
+-- Not a dialog: `new_folder` above explains why there is none - a panel of
+-- its own is a lot of machinery for one question - and that argument holds
+-- here too. What it does instead is show the name where it can be edited,
+-- take Enter as yes and Escape as no, and go away again.
+--
+-- One at a time, deliberately. Renaming several things at once means a
+-- pattern, and a pattern is a different feature with different mistakes in
+-- it.
+--
+--
+-- Focus, set by hand.
+--
+-- The window keeps `focus` as an index into `root:focusables()`, which is
+-- what a click sets. There is no `win:focus(v)` in the kit, and adding one
+-- for a single caller would be a widget change made for an application.
+--
+local function focus_on(v)
+  for i, w in ipairs(win.root:focusables()) do
+    if w == v then win.focus = i return true end
+  end
+
+  return false
+end
+
+function do_rename()
+  local list = marked_entries(rows.shown)
+
+  if #list == 0 then status.text = "nothing is selected" return end
+
+  if #list > 1 then
+    status.text = "rename takes one thing at a time"
+    return
+  end
+
+  rename_of = list[1].name
+  rename_field.text = rename_of
+  rename_field.caret = #rename_of + 1
+
+  focus_on(rename_field)
+  status.text = "new name for " .. rename_of .. ", then Enter"
 end
 
 local function do_open()
@@ -693,8 +1014,14 @@ win:add(ui.menubar{
         { text = "Open",       on_choose = do_open },
         { text = "New folder", on_choose = function() new_folder() end },
         { separator = true },
+        { text = "Rename",     on_choose = function() do_rename() end },
+        { separator = true },
+        { text = "Cut",        on_choose = do_cut },
         { text = "Copy",       on_choose = do_copy },
         { text = "Paste",      on_choose = do_paste },
+        { separator = true },
+        { text = "Select all", on_choose = select_all },
+        { text = "Select none", on_choose = select_none },
         { separator = true },
         { text = "Delete",     on_choose = function() delete_selected() end },
       } },
@@ -731,7 +1058,51 @@ if backdrop then
   rows.x, rows.y, rows.w, rows.h = 0, 0, W, H
 end
 
+--
+-- Enter commits the rename; an empty name or the same name is a no.
+--
+-- `fs.send` with a `rename` type, and if the filesystem has no such
+-- operation the message says so rather than this pretending it worked.
+--
+function rename_field:on_enter(text)
+  local from = rename_of
+
+  rename_of = nil
+  self.text = ""
+
+  if not from then return end
+
+  text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+  if text == "" or text == from then
+    status.text = "not renamed"
+    return
+  end
+
+  if text:find("/") then
+    status.text = "a name cannot contain a slash"
+    return
+  end
+
+  if fs.getattr(files.join(where, text)) then
+    status.text = text .. " already exists"
+    return
+  end
+
+  local ok, why = fs.send(files.join(where, from),
+                          { type = "rename", to = text })
+
+  if ok then
+    show(where)
+    marked = { [text] = true }
+    status.text = from .. " is now " .. text
+  else
+    status.text = "rename: " .. tostring(why)
+  end
+end
+
 win:add(rows)
+chrome(rename_field)
 chrome(status)
 
 show(where)

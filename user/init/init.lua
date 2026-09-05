@@ -2308,6 +2308,50 @@ local function diskfs_handlers(state)
       return { ok = true }
     end,
 
+    --
+    -- A new name for the same file, in the same directory.
+    --
+    -- Also not one of the five, and here for the same reason as `mkdir`: it
+    -- is a real filesystem operation, and this protocol is ours. What makes
+    -- it worth having rather than leaving to the caller is that it edits a
+    -- directory entry and copies nothing - renaming a four-megabyte song by
+    -- copy-and-delete would read and write four megabytes to change eleven
+    -- characters, and would leave two files or none if it failed halfway.
+    --
+    rename = function(req)
+      local sb = mounted()
+
+      if not sb then
+        return { ok = false, error = "there is no filesystem here" }
+      end
+
+      local name = req.path:match("([^/]+)$")
+
+      if not name or RESERVED[name] then
+        return { ok = false, error = "that name is reserved" }
+      end
+
+      if type(req.to) ~= "string" or RESERVED[req.to] then
+        return { ok = false, error = "that name is reserved" }
+      end
+
+      local ok, err = atomic(sb, kfs.rename, req.path, req.to)
+
+      if not ok then
+        return { ok = false, error = tostring(err) }
+      end
+
+      -- Both names changed: the old one is gone and the new one is here,
+      -- and a watcher on either has to hear about it.
+      touched(sb, req.path)
+      -- The new path is the old one with its last component replaced. The
+      -- extra parentheses drop `gsub`'s count, which would otherwise arrive
+      -- as a second argument.
+      touched(sb, (req.path:gsub("[^/]+$", req.to)))
+
+      return { ok = true }
+    end,
+
     -- Not one of the five the protocol names, and deliberately so: making a
     -- directory is a real filesystem operation and this protocol is ours.
     -- It is reachable as `fs.send(path, { type = "mkdir" })` without the

@@ -1194,6 +1194,52 @@ end
 -- A directory has to be empty. Removing a full one means walking it, and a
 -- walk that fails halfway leaves a tree in a state nothing described - that
 -- is a transaction, and it belongs after the journal rather than before it.
+--
+-- A new name for the same inode, in the same directory.
+--
+-- **A directory entry is edited; nothing is copied.** That is the whole
+-- reason a filesystem has this operation rather than leaving it to whoever
+-- is asking: renaming a four-megabyte song by copying and deleting reads and
+-- writes four megabytes to change eleven characters, and does it
+-- non-atomically, so a failure halfway leaves two files or none.
+--
+-- Same directory only, for now. Moving between directories is the same edit
+-- twice - remove there, add here - but it also has to think about crossing a
+-- filesystem boundary, and that is a second piece of work. `Cut` and `Paste`
+-- in Tracker do the cross-directory case by copying, which is honest about
+-- what it costs.
+--
+function kfs.rename(sb, path, to)
+  if type(to) ~= "string" or to == "" or to:find("/") then
+    return nil, "a name cannot be empty or contain a slash"
+  end
+
+  local dir_number, dir_node, name = kfs.parent_of(sb, path)
+
+  if not dir_number then return nil, dir_node end
+
+  local entries, err = kfs.read_dir(sb, dir_node)
+
+  if not entries then return nil, err end
+
+  local at
+
+  for i, e in ipairs(entries) do
+    if e.name == to then return nil, "that name is taken" end
+    if e.name == name then at = i end
+  end
+
+  if not at then return nil, "no such file" end
+
+  entries[at].name = to
+
+  local ok, derr = kfs.write_dir(sb, dir_number, dir_node, entries)
+
+  if not ok then return nil, derr end
+
+  return true
+end
+
 function kfs.unlink(sb, path)
   local dir_number, dir_node, name = kfs.parent_of(sb, path)
 
