@@ -21,7 +21,7 @@
 
 local ui = use("/lib/ui.lua")
 
-local W, H = 380, 470
+local W, H = 380, 510
 
 local win, err = ui.window{ title = "Appearance", w = W, h = H,
                             x = 200, y = 140 }
@@ -164,6 +164,9 @@ local FONTS = gfx.fonts()
 
 local status = ui.label{ x = 12, y = H - 34, w = W - 24, text = "" }
 
+-- The picture behind everything, or nil for none.
+local chosen_wallpaper = nil
+
 local function send()
   -- Both return values. `fs.send` answers `nil, reason` when the server
   -- said no, so a caller that looks only at the first one reports "no
@@ -185,6 +188,7 @@ local function send()
   -- come to hold an appearance the system never managed to apply.
   local ok, werr = fs.write(SETTINGS, { palette = chosen_palette,
                                         desktop = chosen_desktop,
+                                        wallpaper = chosen_wallpaper,
                                         fonts = chosen })
 
   status.text = ok and ("saved: " .. chosen_palette .. ", "
@@ -354,6 +358,7 @@ local saved = fs.read(SETTINGS)
 if type(saved) == "table" then
   chosen_palette = saved.palette or chosen_palette
   chosen_desktop = saved.desktop
+  chosen_wallpaper = saved.wallpaper
   if type(saved.fonts) == "table" then
     for _, r in ipairs(ROLES) do
       local c = saved.fonts[r.key]
@@ -370,5 +375,64 @@ if type(saved) == "table" then
 else
   status.text = "in force: dark (nothing saved yet)"
 end
+
+--------------------------------------------------------------------------
+-- The wallpaper.
+--
+-- Whatever pictures are in `/home`, by name, and "none" to go back to the
+-- flat colour above.
+--
+-- **Centred, never stretched**, which the window manager does and this only
+-- names: an image the size of the screen lands exactly, a smaller one sits
+-- in the middle on the desktop colour, and a larger one is cropped to its
+-- middle. Scaling would put every wallpaper through a resampler to serve
+-- the ones that do not fit, and lose sharpness on the ones that do.
+--
+-- PNG only. There is no JPEG decoder in this image yet, and a `.jpg` listed
+-- here would be a name that does nothing when you pick it.
+--------------------------------------------------------------------------
+
+-- Below the "Palette default" button, which sits at FY + 100 and is 24
+-- tall. The first attempt put this at FY + 92 + GAP and drew the heading
+-- straight through it.
+local WALL_Y = FY + 124 + GAP
+
+win:add(ui.label{ x = 12, y = WALL_Y, w = W - 24, text = "Wallpaper" })
+
+local function wallpapers()
+  local out = { "none" }
+
+  for _, name in ipairs(fs.list("/home") or {}) do
+    if name:lower():match("%.png$") then out[#out + 1] = name end
+  end
+
+  return out
+end
+
+local wall_list = ui.list{
+  x = 12, y = WALL_Y + LH, w = W - 24, h = 74,
+  items = wallpapers(),
+  on_select = function(_, item)
+    chosen_wallpaper = (item ~= "none") and ("/home/" .. item) or nil
+
+    local reply, why = fs.send("/app/wm", { type = "wallpaper",
+                                            path = chosen_wallpaper })
+
+    if not reply then
+      status.text = "wallpaper: " .. tostring(why)
+      return
+    end
+
+    -- Saved through the same door as everything else here, so one file is
+    -- the record of the whole appearance.
+    send()
+  end,
+}
+
+for i, n in ipairs(wall_list.items) do
+  if chosen_wallpaper == "/home/" .. n then wall_list.selected = i end
+end
+
+win:add(wall_list)
 
 win:run()

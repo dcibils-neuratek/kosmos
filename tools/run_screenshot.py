@@ -130,6 +130,17 @@ RESERVED_PX = 2 * GLYPH_H
 # that does not. That is not a spare detail - adding the disk server broke
 # booting without a drive, init exited, and this harness is what found it.
 # If a disk is ever added here, that coverage has to move somewhere else.
+#
+# ...and a way to attach one anyway, without changing what the suite runs.
+#
+# `KOSMOS_DISK=build/kosmos.img` adds the drive. The default stays diskless
+# so the coverage above is not quietly lost, and anything that needs a real
+# file - a PDF, a song, a WAD - can ask for it in one word instead of
+# rebuilding the argument list by hand, which is what every ad-hoc script
+# had been doing.
+#
+_DISK = os.environ.get("KOSMOS_DISK")
+
 QEMU_ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
@@ -143,7 +154,10 @@ QEMU_ARGS = [
     "-device", "virtio-keyboard-device",
     "-device", "virtio-tablet-device",
 
-]
+] + ([
+    "-drive", "file=%s,format=raw,if=none,id=disk" % _DISK,
+    "-device", "virtio-blk-device,drive=disk",
+] if _DISK else [])
 
 PROMPT = "kosmos>"          # printed once the shell is serving
 

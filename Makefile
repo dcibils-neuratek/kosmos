@@ -936,7 +936,7 @@ QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test disktest powertest stress screenshot shot prepush frames bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu serial test droplet disktest powertest stress screenshot shot prepush frames bench bench-record debug disasm size clean dist release disk
 
 # A disk image, built here, with whatever you want already in it.
 #
@@ -970,6 +970,29 @@ bump-major:
 	@python3 tools/bump.py major
 
 disk: $(DISK)
+
+#
+# A Dock icon you can drop files on, and they land in the image's /home.
+#
+# The tedious part of putting a song or a PDF on the machine was never the
+# copy - it was remembering where the image is and what `kfs.lua put` wants
+# its arguments in. This is one gesture instead, and it shells out to the
+# same `tools/kfs.lua` the machine itself runs, so a file put in by dropping
+# it is written by the code that will read it.
+#
+# Built rather than committed: an `.app` is a directory of generated files,
+# and the repository keeps the script it is generated from.
+#
+DROPLET := build/Kosmos Drop.app
+
+droplet: $(DISK)
+	@rm -rf "$(DROPLET)"
+	@mkdir -p build
+	@sed 's|__REPO__|$(CURDIR)|' tools/kosmos-drop.applescript > build/kosmos-drop.applescript
+	@osacompile -o "$(DROPLET)" build/kosmos-drop.applescript
+	@rm -f build/kosmos-drop.applescript
+	@echo "Built $(DROPLET)"
+	@echo "Drag it to the Dock, then drop files on it."
 
 # Does what was written survive the power going off?
 #

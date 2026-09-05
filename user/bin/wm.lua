@@ -107,6 +107,9 @@ local function stamp_colour()    return theme.stamp end
 --------------------------------------------------------------------------
 local SETTINGS = "/home/.appearance"
 
+-- What `load_appearance` found, for the startup below to apply.
+local saved_wallpaper = nil
+
 -- Three faces, not one: a titlebar, a paragraph and a terminal want
 -- different things, and the terminal's has to be fixed-width whatever the
 -- other two are. `theme.fonts` is what was asked for, which is not always
@@ -144,9 +147,110 @@ local function load_appearance()
   if saved.desktop then theme.override { desktop = saved.desktop } end
 
   apply_fonts(saved.fonts)
+
+  -- Kept, not applied: this runs before the framebuffer is taken, and a
+  -- picture cannot be centred until something knows how big the screen is.
+  saved_wallpaper = saved.wallpaper
 end
 
 local screen = gfx.screen()
+--
+-- The wallpaper, if there is one.
+--
+-- A surface and where its top-left corner sits, worked out once when it is
+-- loaded rather than per rectangle: the desktop is composed in pieces and
+-- the arithmetic would otherwise be redone for every one of them.
+--
+-- **Centred, never stretched.** Scaling would need a resampler and would
+-- make a picture that is the size of the screen - the case worth having -
+-- pass through one anyway, losing sharpness for nothing. An image smaller
+-- than the screen sits in the middle on the desktop colour; a larger one is
+-- cropped to the middle by the same arithmetic, since `blit` clips.
+--
+local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
+
+--
+-- Read a picture and make it the desktop.
+--
+-- PNG only, and `gfx.png` is the whole decoder. A JPEG needs one this image
+-- does not carry, and saying so is better than a file that silently does
+-- nothing when you pick it.
+--
+local function wallpaper_load(path)
+  if path == nil or path == "" then
+    if wallpaper then wallpaper:free() end
+    wallpaper = nil
+    return true
+  end
+
+  if not tostring(path):lower():match("%.png$") then
+    return nil, "only PNG for now, and that is not one"
+  end
+
+  --
+  -- Into a region, not a Lua string.
+  --
+  -- A screen-sized photograph is a megabyte or three of PNG and this heap is
+  -- two, by design. `fs.read` would build that as a string out of chunks
+  -- that are themselves on the heap, and the answer was "cannot read" on a
+  -- file that was plainly there. `fs.read_into` puts it in pages instead and
+  -- `gfx.png` is given where it landed.
+  --
+  local size = (fs.getattr(path) or {}).size
+
+  if not size or size == 0 then
+    return nil, "cannot read " .. tostring(path)
+  end
+
+  local pages = (size + 4095) // 4096
+  local region = sys.memory(pages)
+
+  if not region then
+    return nil, "no memory for a picture that size"
+  end
+
+  local at = sys.memory_map(region)
+  local done = 0
+
+  while done < size do
+    local got = fs.read_into(path, region, done, size - done)
+
+    if not got or got == 0 then break end
+
+    done = done + got
+  end
+
+  if done ~= size then
+    sys.release(region)
+    return nil, "could only read " .. done .. " of " .. size .. " bytes"
+  end
+
+  local ok, made = pcall(gfx.png, at, size)
+
+  -- The compressed copy is scratch: the surface holds the pixels now.
+  sys.release(region)
+
+  if not ok or not made then
+    return nil, "that PNG would not decode"
+  end
+
+  -- The old one goes back only once the new one exists: a decode that fails
+  -- should leave the desktop it had rather than clearing it.
+  if wallpaper then wallpaper:free() end
+
+  wallpaper = made
+  return true
+end
+
+local function wallpaper_place()
+  if not wallpaper then return end
+
+  local sw, sh = screen:size()
+
+  wall_w, wall_h = wallpaper:size()
+  wall_x = (sw - wall_w) // 2
+  wall_y = (sh - wall_h) // 2
+end
 
 if not screen then
   print("wm: this process was not given the screen")
@@ -184,6 +288,13 @@ sys.screen_take(true)
 -- desktop starting, and before compositing because otherwise the first
 -- frame is the default palette and the second is the chosen one.
 load_appearance()
+
+-- And the picture, now that there is a screen to centre it on. A wallpaper
+-- that has gone missing is not an error worth stopping for: the desktop
+-- colour is underneath it and always was.
+if saved_wallpaper then
+  if wallpaper_load(saved_wallpaper) then wallpaper_place() end
+end
 
 local ep = sys.endpoint()
 
@@ -800,7 +911,37 @@ end
 --------------------------------------------------------------------------
 
 local function compose_rect(r)
-  back:fill(r.x, r.y, r.w, r.h, desktop_colour())
+  --
+  -- The desktop: a picture if there is one, the flat colour if not.
+  --
+  -- **The fill is skipped when the picture covers this rectangle**, which
+  -- is every rectangle when the wallpaper is the size of the screen - the
+  -- case worth having, and the one the Appearance app tells you to aim for.
+  -- Filling first and blitting over it wrote every damaged pixel twice, and
+  -- composing is already eighty-odd per cent of a pass.
+  --
+  -- Only the part this rectangle covers, in any case: the compositor draws
+  -- in damaged pieces, and blitting the whole picture for a ten-pixel change
+  -- would cost the whole screen every time the clock ticked.
+  --
+  -- **No message anywhere near this.** The wallpaper is asked for once, when
+  -- somebody picks one, and lives here as a surface from then on. What
+  -- happens per frame is one `blit`, which is C.
+  --
+  local covered = wallpaper
+                  and r.x >= wall_x and r.y >= wall_y
+                  and (r.x + r.w) <= wall_x + wall_w
+                  and (r.y + r.h) <= wall_y + wall_h
+
+  if not covered then
+    back:fill(r.x, r.y, r.w, r.h, desktop_colour())
+  end
+
+  if wallpaper then
+    -- `blit` clips against both surfaces, so a rectangle that misses the
+    -- picture copies nothing and one that runs off its edge stops there.
+    back:blit(wallpaper, r.x - wall_x, r.y - wall_y, r.w, r.h, r.x, r.y)
+  end
 
   -- What is running, bottom right, on the desktop and under everything
   -- else. Drawn as part of the composite rather than once at startup, so a
@@ -1928,6 +2069,21 @@ end
 -- that already talks to every window. A settings *server* would be the
 -- other answer and is more machinery than one palette needs.
 --------------------------------------------------------------------------
+--
+-- Set the desktop picture. `{ type = "wallpaper", path = "/home/x.png" }`,
+-- and no path at all clears it.
+--
+handlers.wallpaper = function(req)
+  local ok, why = wallpaper_load(req.path)
+
+  if not ok then return { ok = false, error = why } end
+
+  wallpaper_place()
+  add_damage(0, 0, W, H)
+
+  return { ok = true }
+end
+
 handlers.theme = function(req)
   if req.palette then
     local ok, err = theme.apply(req.palette)

@@ -155,11 +155,40 @@ local table_view = ui.view{ x = 12, y = 70 + BAR_H, w = W - 24,
                             h = H - 116 - BAR_H,
                             follow = { "left", "right", "top", "bottom" } }
 
+--
+-- Where each column starts. One table, read by the heading and by the rows,
+-- because two functions agreeing about geometry by coincidence is how a
+-- column ends up labelled in one place and drawn in another.
+--
+local COLUMNS = {
+  { x = 6,   text = "id  name" },
+  { x = 190, text = "kind" },
+  { x = 266, text = "draws" },
+  { x = 356, text = "priority" },
+  { x = 440, text = "memory" },
+  { x = 516, text = "processor" },
+}
+
 function table_view:draw(g)
   g:fill(0, 0, self.w, self.h, "sunken")
   g:frame(0, 0, self.w, self.h, "line")
 
-  local visible = (self.h - 6) // ROW
+  --
+  -- The headings, and the reason they are worth a row.
+  --
+  -- The band column has always been here - `idle`, `low`, `normal`,
+  -- `display`, `input` - and nothing said what those words were. A column of
+  -- unexplained adjectives is not information, and the scheduler app is the
+  -- thing that changes them, so this is where you check that it worked.
+  --
+  for _, c in ipairs(COLUMNS) do
+    g:text(c.x, 3, c.text, theme.text_dim, theme.sunken)
+  end
+
+  g:fill(2, 3 + ROW - 2, self.w - 4, 1, theme.line)
+
+  -- One row shorter, because the heading took one.
+  local visible = (self.h - 6) // ROW - 1
 
   --
   -- Scrolled to keep the selection in view, *and* draggable by its own
@@ -196,7 +225,7 @@ function table_view:draw(g)
 
   for i = top, math.min(top + visible - 1, #rows) do
     local r = rows[i]
-    local y = 3 + (i - top) * ROW
+    local y = 3 + (i - top + 1) * ROW
     local on = (i == selected)
     local bg = on and theme.accent or theme.sunken
 
@@ -278,7 +307,10 @@ function table_view:mouse(action, x, y)
   end
 
   if action == "press" or action == "move" then
-    local row = (y - 3) // ROW + top
+    -- Less one, for the heading row the list now starts below. Without it
+    -- every click selected the process one place further down than the one
+    -- under the pointer.
+    local row = (y - 3) // ROW + top - 1
 
     if row >= 1 and row <= #rows then
       selected = row

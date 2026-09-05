@@ -26,6 +26,16 @@ local LAYER = {
 
 local STATE = { [0] = "unused", "ready", "running", "blocked", "dead" }
 
+--
+-- The scheduling bands, by name. `sched.h` names five of eight and says
+-- anything unnamed is NORMAL.
+--
+-- Shown because the band is the thing that decides who runs when the machine
+-- is busy, and nothing on this screen said what it was: a process at 90% and
+-- a process at 90% *in the display band* are different situations.
+--
+local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
+
 local function meter(pct, width)
   local filled = (pct * width) // 100
   if filled > width then filled = width end
@@ -87,7 +97,7 @@ local function report(before, after)
   print("")
   print("  EL0  every process, in an address space of its own")
   print("")
-  print("   PID  NAME       LAYER       CPU%  CAPS  OWNS            STATE")
+  print("   PID  NAME       LAYER       BAND      CPU%  CAPS  OWNS            STATE")
 
   for _, p in ipairs(sys.processes()) do
     local was = before.procs[p.id] or p.ticks
@@ -97,8 +107,10 @@ local function report(before, after)
     if p.owns & 1 ~= 0 then owns[#owns + 1] = "console" end
     if p.owns & 2 ~= 0 then owns[#owns + 1] = "screen" end
 
-    print(("  %4d  %-10s %-11s %3d%%  %4d  %-15s %s"):format(
-          p.id, p.name, LAYER[p.name] or "app", share, p.caps,
+    print(("  %4d  %-10s %-11s %-8s %3d%%  %4d  %-15s %s"):format(
+          p.id, p.name, LAYER[p.name] or "app",
+          BANDS[p.priority] or tostring(p.priority),
+          share, p.caps,
           #owns > 0 and table.concat(owns, "+") or "-",
           p.exited and ("exited " .. p.exit_code) or (STATE[p.state] or "?")))
   end

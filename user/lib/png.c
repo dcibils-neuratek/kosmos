@@ -173,11 +173,32 @@ static bool unfilter(unsigned char *rows, unsigned height, size_t stride,
     return true;
 }
 
+/*
+ * `gfx.png(bytes)` or `gfx.png(address, length)`.
+ *
+ * **The second form exists because a photograph does not fit in a Lua
+ * string.** The heap is 2 MB by design - `design.md` 5.2 wants a small one,
+ * because a small heap collects fast and the collector's worst pause is what
+ * decides whether the desktop stutters - and a 1024x768 wallpaper is about a
+ * megabyte of PNG. Reading it with `fs.read` builds that megabyte as a Lua
+ * string, out of chunks that are themselves on the heap, and the answer is
+ * "cannot read" on a file that is plainly there.
+ *
+ * So the caller reads into a region with `fs.read_into` and passes where it
+ * landed. Same rule the rest of this system runs on: bytes that are really
+ * pixels travel in a region, and the language only says where they are.
+ */
 static int l_png(lua_State *L)
 {
     size_t length = 0;
-    const unsigned char *data =
-        (const unsigned char *)luaL_checklstring(L, 1, &length);
+    const unsigned char *data;
+
+    if (lua_type(L, 1) == LUA_TNUMBER) {
+        data = (const unsigned char *)(uintptr_t)luaL_checkinteger(L, 1);
+        length = (size_t)luaL_checkinteger(L, 2);
+    } else {
+        data = (const unsigned char *)luaL_checklstring(L, 1, &length);
+    }
 
     unsigned char signature[8] = {
         0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'
