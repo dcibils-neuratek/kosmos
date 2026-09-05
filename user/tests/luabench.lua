@@ -25,10 +25,13 @@ local role, BASE = ...
 local R_SERIALIZE     = 0
 local R_SERIALIZE_ONE = 1
 local R_GC            = 2
+local R_ALLOC         = 3
 
 local ROUNDS   = 20000
 local STATES   = 5
 local GC_STEPS = 2000
+local ALLOCS   = 20000
+local LIVE     = 3000
 
 -- What a message between servers actually looks like: a tag, a couple of
 -- strings, and a small nested table of options.
@@ -111,6 +114,51 @@ local function measure(r)
 
     -- One operation, because the number is a maximum and not a rate.
     return worst, 1
+  end
+
+  if r == R_ALLOC then
+    --
+    -- Allocating and freeing a table, which `roadmap.md` M4 named as the
+    -- benchmark that would decide whether the allocator has to become a
+    -- real one. `malloc.c` has said so in a comment since it was written -
+    -- that its linear scan and its 32-byte header are "known and neither is
+    -- fixed yet, because nothing has measured them" - and nothing did.
+    --
+    -- **The live population is the point, not the loop.** `malloc` walks
+    -- one list holding every block, free *or allocated*, so an allocation
+    -- costs what the heap already contains. Timing a loop on an empty heap
+    -- measures the best case and would report that everything is fine.
+    -- Three thousand composite objects is an ordinary Lua program rather
+    -- than a stress test, and it is the condition under which the cost is
+    -- real.
+    --
+    -- What this includes and cannot separate is the collector: every table
+    -- made here is garbage a moment later, and Lua reaches the allocator
+    -- through `l_alloc`. That is fine for what this is for. It is a
+    -- regression number under `-icount`, where the collector's share is
+    -- identical between two runs, so a change in it is a change in the
+    -- allocator.
+    --
+    local live = {}
+
+    for i = 1, LIVE do live[i] = { i, tostring(i), { i } } end
+
+    local start = sys.ticks()
+
+    for _ = 1, ALLOCS do
+      local t = { 1, 2, 3, 4, 5, 6, 7, 8 }
+
+      t.name   = "a table with a few fields"
+      t.nested = { x = 1, y = 2 }
+    end
+
+    local took = sys.ticks() - start
+
+    -- Read after the loop so the population cannot be collected during it,
+    -- which would quietly turn this into a benchmark of a heap that empties.
+    if #live ~= LIVE then error("the population was collected") end
+
+    return took, ALLOCS
   end
 
   error("no such role: " .. tostring(r))

@@ -1,4 +1,12 @@
 {
+  "alloc_table": {
+    "commit": "pending",
+    "iterations": 20000,
+    "note": "Allocating and freeing a table against a live population of three thousand composite objects. `roadmap.md` M4 named this benchmark and `malloc.c` pointed at it in a comment for as long as it did not exist - that its linear scan and its 32-byte header were unfixed \"because nothing has measured them\". 28138.160 on the first-fit allocator, 355.731 on the segregated-fit one that replaced it: 79x, and it is the scan rather than anything clever. The old malloc walked one list holding every block, free *or allocated*, so an allocation cost what the heap already contained. **The live population is what makes this number mean anything** - on an empty heap both allocators look the same, which is how this went unmeasured for so long. Includes the collector, which cannot be separated out and does not need to be: under -icount its share is identical between two runs.",
+    "tol": 0.02,
+    "unit": "counter ticks per operation, QEMU -icount shift=0",
+    "value": 355.731
+  },
   "context_switch": {
     "commit": "pending",
     "iterations": 200000,
@@ -34,9 +42,9 @@
   "serialize": {
     "commit": "pending",
     "iterations": 20000,
-    "note": "Best of five processes within a run. **This benchmark is sensitive to what else is in the process**, not only to the serialiser: every library the image opens is more objects for the collector to pace against. 1450.574 -> 1498.325, +3.3%, when the PDF scanner and the inflate kit joined the user image; `serialize.c` was untouched. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was added. Making it independent of its process - a fixed GC pause and a forced collection before the loop - is a known improvement and is still not done.",
+    "note": "Best of five processes within a run. **This benchmark is sensitive to what else is in the process**, not only to the serialiser: every library the image opens is more objects for the collector to pace against. 1450.574 -> 1498.325, +3.3%, when the PDF scanner and the inflate kit joined the user image; `serialize.c` was untouched. If it moves and nothing in `serialize.c` or `sys_user.c` did, look at what was added. Making it independent of its process - a fixed GC pause and a forced collection before the loop - is a known improvement and is still not done. Then 1506.201 -> 897.665, -40.4%, and `serialize.c` was untouched again: the allocator underneath it stopped being a linear scan. That is the same sensitivity this note has always described, finally pointing at something worth fixing - the sentence above says to look at what was added, and the answer this time was that something was taken away. See `alloc_table`.",
     "tol": 0.02,
     "unit": "counter ticks per operation, QEMU -icount shift=0",
-    "value": 1506.201
+    "value": 897.665
   }
 }

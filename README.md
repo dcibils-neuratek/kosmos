@@ -299,6 +299,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **A drain loop must not read from the buffer it is filling.** The console's `interrupted` took a byte off the stash, put it back, and took it again - one character typed ahead and the console server span for ever, which looked like whichever program had asked having hung | user/servers/console.c |
 | Sep 2026 | **A namespace call behaves the same on every mount, or it is not one.** `fs.write` split long writes for `/data`, and *raised* out of the serialiser on the disk, which takes no offset to append at. It sends a value too big for a message through a region now - the route `write_from` and `files.copy` already used | user/init/init.lua |
 | Sep 2026 | **A server lent a buffer gives the capability back, on every path.** diskfs's read side had paid that debt since a PDF found it on its fifteenth read; the write side never had, so it worked for thirty-one writes and then refused every one after with what reads like a bad pointer | user/init/init.lua |
+| Sep 2026 | **The allocator scanned every block, allocated ones included**, so what an allocation cost was what the heap already held. Free blocks are binned by size now, with the links inside their own unused payloads: `alloc_table` 28138 -> 356, and `serialize` fell 40% without being touched | runtime/libc/malloc.c |
+| Sep 2026 | **A heap that grows is a runtime answer to a runtime question.** 2 MB was fixed at compile time and `make DOOM=1` existed to rebuild the system with a bigger one; `malloc` asks the kernel for another arena instead, to 48 MB. Arenas are never adjacent, so each is its own physical list and coalescing cannot cross | runtime/libc/malloc.c |
 
 ---
 

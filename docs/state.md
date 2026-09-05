@@ -8,6 +8,60 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**The allocator was the slow thing, and it had said so in a comment since it
+was written.** `malloc` was a first-fit scan over one list holding every
+block, free *or allocated*, so an allocation cost what the heap already
+contained - fine empty, quadratic in aggregate full. Free blocks are binned
+by size class now, with the bin links living inside each free block's own
+payload, which costs nothing because a free block's payload is unused by
+definition and the minimum payload is exactly two pointers. The physical
+address-ordered list stays, because that is what lets `free` find its
+neighbours and merge both ways, which is what Lua's collector depends on.
+
+    alloc_table   28138.160 -> 355.731     79x
+    serialize      1506.201 -> 897.665     -40.4%, and untouched
+
+`serialize` falling forty per cent is the part worth keeping. That benchmark
+has moved four times without anybody editing `serialize.c`, and its note has
+always said to look at what was added to the process. This time the answer
+was that something was taken away.
+
+**And the heap grows.** It was 2 MB fixed at compile time, which is why `make
+DOOM=1` exists at all - Doom wanted five megabytes and the only way to give
+it one was to rebuild the system with a different `-D`. `malloc` asks the
+kernel for another arena when no bin can serve, up to the 48 MB a process may
+map. Six megabytes of live strings now allocate in a process that could hold
+two. The `DOOM=1` heap flag is redundant and still there, because proving it
+needs a Doom run.
+
+**The one trap, written into the code rather than left to be remembered:**
+`sys_map` bumps a cursor and never reuses an address, so arenas are *not*
+adjacent. Two blocks in different arenas can be neighbours in a bin and are
+never neighbours in memory. Each arena being its own physical list with NULL
+at both ends is what makes coalescing safe.
+
+**Getting there turned up two things that were not the allocator.**
+
+`make bench` had not built since `727b81f` gave `ipc_receive` a timeout and
+left three call sites behind. That is very likely why the M4 benchmark the
+allocator kept pointing at was never written: the suite could not run to
+receive it.
+
+And two numbers drifted while nobody could look - `context_switch` +3.0%,
+`ipc_roundtrip` +3.3%. Neither touches Lua or the allocator. The guess is the
+timed receive itself, since `thread_wake_sleepers` now scans every thread on
+each tick, and it is a guess. **Their baselines were deliberately not
+raised**, so `make bench` still fails on them and they stay visible;
+`alloc_table` and `serialize` were recorded because they moved on purpose.
+
+**And `malloc.c` is not userland-only, which I had assumed.** The kernel's
+*test* image links it, with kernel flags and no `-Iuser/include`. The fix was
+not an include path: at EL1 there is nothing to ask, because `kosmos_map` is
+a syscall and the kernel does not make syscalls to itself. Growth is behind
+`#ifdef KOSMOS_USER` and the heap there stays what it was handed.
+
+---
+
 **`httpd` serves eight at once.** Eight simultaneous requests for a 106 KB
 file all come back complete in half a second of wall clock - about what one
 of them costs on its own - with a ninth client deliberately stuck half way

@@ -90,7 +90,7 @@ static void ipc_echo_server(void *arg)
         struct message msg;
         struct thread *sender;
 
-        if (ipc_receive(ipc_server_cap, &msg, &sender, false) != IPC_OK) {
+        if (ipc_receive(ipc_server_cap, &msg, &sender, false, 0) != IPC_OK) {
             return;
         }
 
@@ -339,7 +339,7 @@ static bool bench_in_a_process(unsigned long role, struct bench_result *out)
      * first version of this function did exactly that. Echoing what came in
      * is the one reply this side can build without a lua_State.
      */
-    if (ipc_receive(ep, &msg, &sender, false) != IPC_OK) {
+    if (ipc_receive(ep, &msg, &sender, false, 0) != IPC_OK) {
         (void)ipc_endpoint_destroy(ep);
         return false;
     }
@@ -347,7 +347,7 @@ static bool bench_in_a_process(unsigned long role, struct bench_result *out)
     out->total = msg.tag;
     (void)ipc_reply(sender, &msg);
 
-    if (ipc_receive(ep, &msg, &sender, false) != IPC_OK) {
+    if (ipc_receive(ep, &msg, &sender, false, 0) != IPC_OK) {
         (void)ipc_endpoint_destroy(ep);
         return false;
     }
@@ -378,12 +378,27 @@ static bool bench_gc_pause(struct bench_result *out)
     return bench_in_a_process(2, out);
 }
 
+/*
+ * What an allocation costs when the heap already holds something.
+ *
+ * The benchmark `roadmap.md` M4 named and nobody built, which is why
+ * `malloc.c` still says its linear scan and its 32-byte header are unfixed
+ * "because nothing has measured them". Every Lua allocation goes through
+ * `l_alloc` to `realloc`, so this is the allocator seen from the only place
+ * that uses it heavily today.
+ */
+static bool bench_alloc_table(struct bench_result *out)
+{
+    return bench_in_a_process(3, out);
+}
+
 static const struct benchmark benchmarks[] = {
     { "ipc_roundtrip",   bench_ipc_roundtrip },
     { "context_switch",  bench_context_switch },
     { "exception",       bench_exception },
     { "serialize",       bench_serialize },
     { "gc_pause_max",    bench_gc_pause },
+    { "alloc_table",     bench_alloc_table },
 };
 
 #define BENCH_COUNT (sizeof(benchmarks) / sizeof(benchmarks[0]))
