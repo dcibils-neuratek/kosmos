@@ -8,6 +8,56 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**`make WEB=1` builds the NetSurf parsing stack from a clean checkout.** The
+two perl generators, the gperf run and the 119 CSS property parsers are build
+steps now rather than shell history, and they write into `build/gen/` rather
+than beside the source. The image goes from about 3.66 MB to 4.60 MB.
+
+**No heap flag**, which is what the allocator work bought: `DOOM=1` carries
+`-DUSER_HEAP_PAGES=3072` because a fixed 2 MB heap could not hold Doom's
+zone, and a growing heap makes that whole class of compile-time workaround
+unnecessary.
+
+**Two of the four problems on the way were already in the tree.**
+
+`make` 3.81 picks the *generic* `runtime/upstream/%.c.o` over a more specific
+rule written below it. TinyGL's rule has always been above it; Doom's was
+not - so `make DOOM=1` was compiling all eighty of id's files with **zero**
+`DOOM_CFLAGS`: no `-DNORMALUNIX`, no screen size. Moved above, and it gets
+them now.
+
+And `FLAGS_NOW` was `$(CFLAGS) | $(UCFLAGS)`, so changing `DOOM_CFLAGS`,
+`TINYGL_CFLAGS` or `WEB_CFLAGS` rebuilt nothing at all. Found by adding a
+flag and watching the identical link error come back twice.
+
+**The other two were mine.** All five libraries' private `src` trees on one
+include path is a collision, not a convenience: four of them ship their own
+`utils/utils.h` and two ship `utils/parserutilserror.h`, so libcss silently
+got hubbub's headers and failed on `css_error_from_parserutils_error` while
+gcc suggested the hubbub spelling. Each object gets only its own library's
+`src` now, derived from the path it is built from; the public `include` trees
+are namespaced by library name and stay shared.
+
+And `-fcommon`, on the vendored files only. `libcss/src/stylesheet.h` ends a
+struct with `} _ALIGNED;`, where `_ALIGNED` is defined nowhere in libcss and
+appears in no other file - so it parses as a file-scope *variable* declared
+in every translation unit that includes it. Upstream links because their
+build uses the pre-GCC-10 default; `-fno-common` is mandatory here, so it
+became 180 definitions of one object. Upstream's latent bug, not Kosmos's,
+and the rule about not modifying a vendored tree is what decides the fix.
+
+**One unexplained test failure, and it is recorded rather than explained.**
+A `make test` run reported 1 of 127 failing, on the *default* build, which
+links no NetSurf code. Four consecutive runs since - one isolated and three
+repeats - are 127/127, so it is not deterministic and not the full rebuild
+surfacing something. **Which test it was is unknown**: the failing run's
+output went through a grep that discarded it. This tree has a known
+intermittent in that suite (`thread: three threads interleave`, chased
+before and confirmed not a regression) and that is the likely answer, but it
+is a guess and is written down as one.
+
+---
+
 **The NetSurf parsing stack compiles for Kosmos, and nothing was patched.**
 Five libraries vendored - libwapcaplet, libparserutils, libhubbub, libcss,
 libdom, all MIT and checked against the COPYING each tarball ships rather
