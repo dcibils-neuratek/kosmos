@@ -8,6 +8,61 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**The NetSurf parsing stack compiles for Kosmos, and nothing was patched.**
+Five libraries vendored - libwapcaplet, libparserutils, libhubbub, libcss,
+libdom, all MIT and checked against the COPYING each tarball ships rather
+than against the website. 456 objects. Every symbol resolves.
+
+The whole libc bill for a hundred and forty thousand lines of HTML parser,
+CSS engine and DOM came to **three functions**: `bsearch`, `strtoul` and
+`time`. Plus one switch that is their own (`-DWITHOUT_ICONV_FILTER`) and
+four generated files - three from perl and gperf, and 119 CSS property
+parsers from libcss's own `gen_parser`, which has a `main()` and must be
+built with the *host* compiler. Skipping it looks like 117 undefined
+`css__parse_*` symbols and looks nothing like the truth.
+
+That was the question Tier 0 existed to answer - whether this libc holds up
+under serious third-party C - and it holds up better than predicted.
+
+**`qsort` was not one of the gaps, and that is worth knowing.** It exists,
+in `misc_user.c`, and it is insertion sort with a comment saying so and
+predicting this exact moment: "if something ever sorts a large array through
+this, the profile will say so and the answer will be to write the better
+algorithm then." There is no profile yet, so it stays. That is the note to
+come back to when the browser is slow.
+
+**And `time` found a bug that has nothing to do with NetSurf.**
+`kosmos_lua.h` redirects `time()` to the monotonic counter so `lmathlib` can
+seed itself, and its comment claimed the redirection "applies only to Lua's
+translation units". It does not: the `-include` is on the catch-all rule, so
+it is in front of every user file in the system. Anything outside Lua asking
+what time it was got a tick count, silently - the "plausible wrong number"
+that same comment calls worse than stopping.
+
+Scoping the include to `lua/` was tried and fails: `user/init/main.c` embeds
+the interpreter and needs those hooks ahead of Lua's own headers, and files
+like it are not under `lua/`. So the header now says what is true, the real
+`time()` `#undef`s the macro before defining itself, and code that wants a
+wall clock and is not Lua must be compiled without that header - which the
+NetSurf rules will do anyway, because they are not Lua.
+
+**Nothing has run.** Compiling and linking are not evidence. The end of this
+is a document parsed and a selector matched *on the machine*, and the
+generated files still live in a scratch directory rather than in `build/gen/`
+with rules that reproduce them from a clean checkout. Both are next.
+
+**The shape agreed for the browser**, which is the shape the tree already
+uses twice: the engine is C behind `use("/kits/web")`, and the application
+is Lua - window, chrome, history, scroll offset, navigation policy. A click
+goes into the kit, which hit-tests and answers "that is a link to this", and
+Lua decides whether to follow it. `pdftok.c` with `pdfpage.lua`, and TinyGL
+with `cube3d`, are the same arrangement. This replaces the earlier plan of
+adapting NetSurf's framebuffer frontend through libnsfb: the plotter table
+goes straight onto `gfx`'s surface primitives instead, which is less code
+and does not drag in a frontend written for another system.
+
+---
+
 **The allocator was the slow thing, and it had said so in a comment since it
 was written.** `malloc` was a first-fit scan over one list holding every
 block, free *or allocated*, so an allocation cost what the heap already

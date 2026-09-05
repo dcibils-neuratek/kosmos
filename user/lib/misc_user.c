@@ -13,6 +13,9 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <time.h>
+
+#include "kosmos.h"
 
 /*
  * One per process, which is what `design.md` §17.3 asks for. Here it is
@@ -119,6 +122,111 @@ long strtol(const char *s, char **end, int base)
     return negative ? -value : value;
 }
 
+/*
+ * The unsigned one, which `libdom` asked for: HTML attributes are parsed
+ * through it.
+ *
+ * Written out rather than layered on `strtol` above, because the two differ
+ * in exactly the place a wrapper would have to fake - `strtoul` accepts a
+ * leading minus and returns the negation modulo `ULONG_MAX + 1`, which is a
+ * value `strtol` cannot represent or return.
+ *
+ * **Neither of them detects overflow**, and that is worth saying once here
+ * for both. The standard says to saturate at `LONG_MAX`/`ULONG_MAX` and set
+ * `ERANGE`; these wrap. Nothing in this system parses a number long enough
+ * for it to matter, and when something does, this comment is where to start.
+ */
+unsigned long strtoul(const char *s, char **end, int base)
+{
+    const char *at = s;
+    unsigned long value = 0;
+    int negative = 0;
+
+    while (*at == ' ' || *at == '\t' || *at == '\n' || *at == '\r') {
+        at++;
+    }
+
+    if (*at == '+' || *at == '-') {
+        negative = (*at == '-');
+        at++;
+    }
+
+    if ((base == 0 || base == 16)
+        && at[0] == '0' && (at[1] == 'x' || at[1] == 'X')) {
+        base = 16;
+        at += 2;
+    } else if (base == 0) {
+        base = (at[0] == '0') ? 8 : 10;
+    }
+
+    for (;;) {
+        int digit;
+
+        if (*at >= '0' && *at <= '9') {
+            digit = *at - '0';
+        } else if (*at >= 'a' && *at <= 'z') {
+            digit = *at - 'a' + 10;
+        } else if (*at >= 'A' && *at <= 'Z') {
+            digit = *at - 'A' + 10;
+        } else {
+            break;
+        }
+
+        if (digit >= base) {
+            break;
+        }
+
+        value = value * (unsigned long)base + (unsigned long)digit;
+        at++;
+    }
+
+    if (end != NULL) {
+        *end = (char *)at;
+    }
+
+    return negative ? 0UL - value : value;
+}
+
+/*
+ * What time it is, for a process.
+ *
+ * `runtime/libc/misc.c` has a `time` too and the user image does not compile
+ * that file - it is the kernel side's, and the comment at the top of this
+ * section records the link error that taught the difference once already.
+ *
+ * `sysinfo.epoch` is seconds since 1970 from the board's clock, read fresh
+ * on every call, and zero on a machine that has none. Zero is the honest
+ * answer there rather than a number counted from boot: a caller can tell
+ * "this machine does not know" from a date, and cannot tell it from a date
+ * that is wrong.
+ *
+ * Wanted by the NetSurf libraries, which stamp what they cache.
+ *
+ * **The `#undef` is not decoration.** `kosmos_lua.h` is forced in front of
+ * every user translation unit and defines `time(t)` as `kosmos_lua_time(t)`,
+ * so without this the definition below would compile as a second
+ * `kosmos_lua_time` and collide with the real one in `lua_glue.c` - which is
+ * exactly how this was found. Its own comment claims the redirection reaches
+ * only Lua's files; `kosmos_lua.h` now records that it does not.
+ */
+#undef time
+
+time_t time(time_t *t)
+{
+    struct sysinfo info;
+    time_t now = 0;
+
+    if (kosmos_sysinfo(&info) == 0) {
+        now = (time_t)info.epoch;
+    }
+
+    if (t != NULL) {
+        *t = now;
+    }
+
+    return now;
+}
+
 int atoi(const char *s)
 {
     return (int)strtol(s, NULL, 10);
@@ -178,6 +286,47 @@ void qsort(void *base, size_t count, size_t size,
             }
         }
     }
+}
+
+/*
+ * The other half of the same job, and it arrived with the NetSurf
+ * libraries: they keep their charset tables sorted and look them up this
+ * way. Nothing here had needed it before, so `stdlib.h` did not declare it
+ * and the port found out at link time.
+ *
+ * Unlike `qsort` above this is the real algorithm rather than the simple
+ * one, because a binary search *is* the simple one - there is no cheaper
+ * version to start with.
+ */
+void *bsearch(const void *key, const void *base, size_t count, size_t size,
+              int (*compare)(const void *, const void *))
+{
+    const unsigned char *a = base;
+
+    if (key == NULL || base == NULL || compare == NULL || size == 0) {
+        return NULL;
+    }
+
+    while (count != 0) {
+        size_t mid = count / 2;
+        const unsigned char *at = a + mid * size;
+        int order = compare(key, at);
+
+        if (order == 0) {
+            /* The const goes because that is what the standard returns: the
+             * array is the caller's and it may write to what it found. */
+            return (void *)at;
+        }
+
+        if (order > 0) {
+            a = at + size;
+            count -= mid + 1;
+        } else {
+            count = mid;
+        }
+    }
+
+    return NULL;
 }
 
 /*

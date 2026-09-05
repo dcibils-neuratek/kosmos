@@ -22,6 +22,7 @@ size_t heap_used(void);
 size_t heap_size(void);
 
 long   strtol(const char *s, char **end, int base);
+unsigned long strtoul(const char *s, char **end, int base);
 int    atoi(const char *s);
 double atof(const char *s);
 char  *getenv(const char *name);
@@ -36,6 +37,8 @@ int    kosmos_exit_arm(void);
 void   kosmos_exit_disarm(void);
 void   qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
+void  *bsearch(const void *key, const void *base, size_t count, size_t size,
+               int (*compare)(const void *, const void *));
 
 void  *malloc(size_t n);
 void  *calloc(size_t count, size_t size);

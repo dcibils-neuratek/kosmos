@@ -56,9 +56,20 @@ unsigned int kosmos_lua_seed(void);
  * But Lua is not asking what time it is, it is asking for something that
  * differs between states, and the monotonic counter answers that honestly.
  *
- * The redirection applies only to Lua's translation units, because this
- * header is forced in front of those and nothing else. Anything outside Lua
- * that asks for the time still gets told to read /dev/clock.
+ * **This header is forced in front of every user translation unit, not only
+ * Lua's**, and the paragraph here used to claim otherwise. So the macro
+ * below reaches all of them: anything outside Lua asking what time it is got
+ * a tick count, silently, which is the "plausible wrong number" this comment
+ * says is worse than stopping.
+ *
+ * `misc_user.c` defines the real `time()` and has to `#undef` this first;
+ * that collision is how the claim was found to be false. Code that wants the
+ * wall clock and is not Lua - the NetSurf libraries, for one - must be
+ * compiled without this header in front of it.
+ *
+ * Narrowing the `-include` to `lua/` was tried and does not work: files like
+ * `user/init/main.c` embed the interpreter and need these hooks defined
+ * before Lua's own headers are read, and they do not live under `lua/`.
  */
 long kosmos_lua_time(long *out);
 
