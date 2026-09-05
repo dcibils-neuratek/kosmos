@@ -316,6 +316,77 @@ check(kfs.find(remounted, "/anchor") ~= nil,
       "while what was already committed is untouched")
 
 --------------------------------------------------------------------------
+-- Renaming, in one directory and across two.
+--
+-- The claim being tested is not "the name changed" - it is **that nothing
+-- was copied**. A move that reads and writes the file is indistinguishable
+-- from one that does not by looking at the result, so the check is on the
+-- inode number and on the blocks: the same inode, at the same start block,
+-- under a different name in a different directory.
+--
+-- That is the whole reason a filesystem has this operation instead of
+-- leaving it to the file manager. Without it a drag of a four-megabyte song
+-- into another folder is four megabytes read and four written, and is not
+-- atomic - a failure halfway leaves two files or none.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+assert(kfs.mkdir(sb, "/from", 1))
+assert(kfs.mkdir(sb, "/to", 1))
+assert(kfs.store(sb, "/from/song", string.rep("x", 9000), 1))
+
+local before_number, before_node = kfs.find(sb, "/from/song")
+local before_start = before_node.extents[1].start
+local free_before = sb.free
+
+check(kfs.rename(sb, "/from/song", "tune"),
+      "a name changes inside one directory")
+check(kfs.find(sb, "/from/song") == nil, "and the old name is gone")
+
+local same_number, same_node = kfs.find(sb, "/from/tune")
+
+check(same_number == before_number, "the same inode, renamed in place")
+check(same_node.extents[1].start == before_start,
+      "and its blocks did not move")
+
+check(kfs.rename(sb, "/from/tune", "/to/tune"),
+      "and a path moves it to another directory")
+
+check(kfs.find(sb, "/from/tune") == nil, "gone from where it was")
+
+local moved_number, moved_node = kfs.find(sb, "/to/tune")
+
+check(moved_number == before_number, "the same inode again, after the move")
+check(moved_node.extents[1].start == before_start,
+      "still on the same blocks - nothing was copied")
+check(moved_node.size == 9000, "and still the same size")
+
+--
+-- Nothing was allocated. A copy would have taken three more blocks for the
+-- data and would show here as a smaller free count, which is the check that
+-- would fail first if this ever quietly became a copy.
+--
+check(sb.free == free_before, "and no blocks were allocated to do it")
+
+check(kfs.read_file(sb, moved_node) == string.rep("x", 9000),
+      "the contents are what they were")
+
+--
+-- The refusals. Each of these is a way to lose a subtree or a file.
+--
+assert(kfs.store(sb, "/to/taken", "in the way", 1))
+
+check(kfs.rename(sb, "/to/tune", "/to/taken") == nil,
+      "a name already in the destination is refused")
+check(kfs.rename(sb, "/to", "/to/inside") == nil,
+      "a directory cannot be moved into itself")
+check(kfs.rename(sb, "/to/tune", "/nowhere/tune") == nil,
+      "and neither can anything go to a directory that is not there")
+check(kfs.find(sb, "/to/tune") ~= nil,
+      "after all of which it is still where it was")
+
+--------------------------------------------------------------------------
 
 if failed > 0 then
   print(("\nFAIL: %d of %d checks on the format failed.")

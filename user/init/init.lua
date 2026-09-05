@@ -2309,7 +2309,8 @@ local function diskfs_handlers(state)
     end,
 
     --
-    -- A new name for the same file, in the same directory.
+    -- A new name for the same file: here, or in another directory on this
+    -- disk.
     --
     -- Also not one of the five, and here for the same reason as `mkdir`: it
     -- is a real filesystem operation, and this protocol is ours. What makes
@@ -2317,6 +2318,13 @@ local function diskfs_handlers(state)
     -- directory entry and copies nothing - renaming a four-megabyte song by
     -- copy-and-delete would read and write four megabytes to change eleven
     -- characters, and would leave two files or none if it failed halfway.
+    -- Dragging that song into another folder is the same saving again, and
+    -- is why `to` grew from a name into a name-or-path.
+    --
+    -- A destination that is not on this disk fails here rather than being
+    -- guessed at: the namespace sent this message to whoever owns the
+    -- *source*, and that server cannot write into somebody else's tree.
+    -- `files.move` copies instead when it sees the refusal.
     --
     rename = function(req)
       local sb = mounted()
@@ -2331,7 +2339,15 @@ local function diskfs_handlers(state)
         return { ok = false, error = "that name is reserved" }
       end
 
-      if type(req.to) ~= "string" or RESERVED[req.to] then
+      if type(req.to) ~= "string" then
+        return { ok = false, error = "a rename needs a name" }
+      end
+
+      -- The last component either way, so `/home/x` is refused for exactly
+      -- the names `x` is.
+      local to_name = req.to:match("([^/]+)$")
+
+      if not to_name or RESERVED[to_name] then
         return { ok = false, error = "that name is reserved" }
       end
 
@@ -2342,12 +2358,13 @@ local function diskfs_handlers(state)
       end
 
       -- Both names changed: the old one is gone and the new one is here,
-      -- and a watcher on either has to hear about it.
+      -- and a watcher on either has to hear about it. A path stands for
+      -- itself; a bare name is the old path with its last component
+      -- replaced, and the extra parentheses drop `gsub`'s count, which
+      -- would otherwise arrive as a second argument.
       touched(sb, req.path)
-      -- The new path is the old one with its last component replaced. The
-      -- extra parentheses drop `gsub`'s count, which would otherwise arrive
-      -- as a second argument.
-      touched(sb, (req.path:gsub("[^/]+$", req.to)))
+      touched(sb, req.to:find("/") and req.to
+                  or (req.path:gsub("[^/]+$", req.to)))
 
       return { ok = true }
     end,

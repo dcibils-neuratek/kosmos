@@ -33,6 +33,10 @@ filetypes.by_extension = {
   md   = "reader",
 
   png  = "photo",
+  pdf  = "pdfview",
+
+  mp3  = "music",
+  wav  = "play",
 }
 
 -- What a path is, as a type name rather than a program.

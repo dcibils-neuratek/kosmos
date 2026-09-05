@@ -176,26 +176,26 @@ local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
 -- does not carry, and saying so is better than a file that silently does
 -- nothing when you pick it.
 --
-local function wallpaper_load(path)
-  if path == nil or path == "" then
-    if wallpaper then wallpaper:free() end
-    wallpaper = nil
-    return true
-  end
-
+--
+-- A picture off the filesystem, decoded here.
+--
+-- Into a region, not a Lua string. A screen-sized photograph is a megabyte
+-- or three of PNG and this heap is two, by design. `fs.read` would build
+-- that as a string out of chunks that are themselves on the heap, and the
+-- answer was "cannot read" on a file that was plainly there. `fs.read_into`
+-- puts it in pages instead and `gfx.png` is given where it landed.
+--
+-- Written for the wallpaper and now shared with `ui.image`, which is what
+-- lets Photo open a file rather than only the pictures compiled into this
+-- image. Same reason it lives here rather than in the application: this
+-- process owns every pixel on the screen, and an application that decoded
+-- its own would be holding them.
+--
+local function picture_from_file(path)
   if not tostring(path):lower():match("%.png$") then
     return nil, "only PNG for now, and that is not one"
   end
 
-  --
-  -- Into a region, not a Lua string.
-  --
-  -- A screen-sized photograph is a megabyte or three of PNG and this heap is
-  -- two, by design. `fs.read` would build that as a string out of chunks
-  -- that are themselves on the heap, and the answer was "cannot read" on a
-  -- file that was plainly there. `fs.read_into` puts it in pages instead and
-  -- `gfx.png` is given where it landed.
-  --
   local size = (fs.getattr(path) or {}).size
 
   if not size or size == 0 then
@@ -233,6 +233,20 @@ local function wallpaper_load(path)
   if not ok or not made then
     return nil, "that PNG would not decode"
   end
+
+  return made
+end
+
+local function wallpaper_load(path)
+  if path == nil or path == "" then
+    if wallpaper then wallpaper:free() end
+    wallpaper = nil
+    return true
+  end
+
+  local made, why = picture_from_file(path)
+
+  if not made then return nil, why end
 
   -- The old one goes back only once the new one exists: a decode that fails
   -- should leave the desktop it had rather than clearing it.
@@ -360,10 +374,87 @@ local windows = {}
 local by_handle = {}
 local pending_pid = nil
 
--- Decoded pictures, by asset name. `false` means it was tried and would not
+-- Decoded pictures, by name. `false` means it was tried and would not
 -- decode, which is remembered so a broken image is not re-decoded every
 -- frame for the life of the desktop.
 local image_cache = {}
+
+--
+-- The ones that came off the filesystem, in the order they were decoded.
+--
+-- An asset is one of a handful compiled into the image, shared by every
+-- window, and keeping all of them for ever costs a few kilobytes. A *file*
+-- is whatever somebody opened, a decoded photograph is four megabytes, and
+-- there is no limit on how many somebody opens - so remembering them the
+-- same way is how the one process the whole desktop depends on runs out of
+-- memory because a person looked through a folder of holiday pictures.
+--
+-- So files get a queue with a lid on it, and the oldest is freed when a new
+-- one arrives. Four is enough for what actually happens, which is a window
+-- redrawing the picture it is showing. Insertion order rather than use
+-- order, because the case where the difference matters - five picture
+-- windows open at once, each evicting another's - costs a re-decode and
+-- nothing else.
+--
+local from_file = {}
+local FILE_PICTURES = 4
+
+--
+-- A picture by name, decoded once.
+--
+-- **A leading slash means a file; anything else is an asset.** That one
+-- distinction is the whole of it, and it is what lets Photo open something
+-- off the disk with no change to `ui.image` and no new message: the widget
+-- has always named a picture and let this process find it, and where this
+-- process looks was never the application's business.
+--
+-- `nil` for a picture that is not there or will not decode, and the
+-- negative answer is cached too - `false` in the table - so a name that is
+-- wrong is not re-read from the disk on every repaint.
+--
+-- `local ok, decoded = bytes and pcall(...)` is what the asset branch was,
+-- and it is wrong in a way Lua does not warn about: `and` truncates a
+-- multi-value expression to one value, so `ok` got pcall's first return and
+-- `decoded` got nothing. The picture decoded perfectly and was thrown away,
+-- and the window said there was no such picture.
+--
+local function picture_named(name)
+  local picture = image_cache[name]
+
+  if picture ~= nil then return picture or nil end
+
+  picture = false
+
+  if name:sub(1, 1) == "/" then
+    local made = picture_from_file(name)
+
+    if made then
+      picture = made
+      from_file[#from_file + 1] = name
+
+      while #from_file > FILE_PICTURES do
+        local old = table.remove(from_file, 1)
+        local gone = image_cache[old]
+
+        image_cache[old] = nil
+
+        if gone then gone:free() end
+      end
+    end
+  else
+    local bytes = sys.asset(name)
+
+    if bytes then
+      local ok, decoded = pcall(gfx.png, bytes)
+
+      if ok then picture = decoded end
+    end
+  end
+
+  image_cache[name] = picture
+
+  return picture or nil
+end
 
 --------------------------------------------------------------------------
 -- Applications that are waiting for something to happen.
@@ -566,28 +657,7 @@ local ops = {
   -- be a slideshow.
   --
   image = function(s, o)
-    local picture = image_cache[o.asset]
-
-    if picture == nil then
-      --
-      -- `local ok, decoded = bytes and pcall(...)` is what this was, and it
-      -- is wrong in a way Lua does not warn about: `and` truncates a
-      -- multi-value expression to one value, so `ok` got pcall's first
-      -- return and `decoded` got nothing. The picture decoded perfectly and
-      -- was thrown away, and the window said there was no such picture.
-      --
-      picture = false
-
-      local bytes = sys.asset(tostring(o.asset))
-
-      if bytes then
-        local ok, decoded = pcall(gfx.png, bytes)
-
-        if ok then picture = decoded end
-      end
-
-      image_cache[o.asset] = picture
-    end
+    local picture = picture_named(tostring(o.asset))
 
     if not picture then return end
 
@@ -698,6 +768,38 @@ local resizable, resize_window
 -- that does the reporting.
 local post
 local grabbed = nil           -- the window a press landed in, until release
+
+--------------------------------------------------------------------------
+-- Dragging something from one window into another.
+--
+-- **This process carries a payload it never looks at.** A drag is started by
+-- the window the press landed in, which says what is being dragged as a
+-- `kind` and an opaque string; on release this finds the window under the
+-- pointer and posts the string to it. Tracker puts paths in there. Nothing
+-- here knows that, and the whole reason the desktop can have a file manager
+-- at all is that it does not - `handlers.open`'s backdrop comment is the
+-- same argument, one layer along.
+--
+-- A press already grabs, so every move and the release go to the *source*
+-- window whatever the pointer is over. That is right for the source, which
+-- is drawing its own rubber band, and is exactly why the destination cannot
+-- learn about the drop by itself: it never sees the pointer. Only this
+-- process does.
+--
+-- `answering` is a one-shot right to reply, and it is a capability in the
+-- small. Without it a `dropped` message would be a way for any window to
+-- post an event to any other window by guessing a handle, which is a hole
+-- straight through everything else this system does with names. With it,
+-- the only window that can answer is the one this process just handed a
+-- drop to, once.
+--------------------------------------------------------------------------
+local drag = nil              -- { from, kind, payload, label } while held
+local answering = nil         -- { from, to } between a drop and its answer
+
+-- Where the badge sits next to the arrow, and how big the damage has to be
+-- while one is up. Both rectangles are the cursor's, widened.
+local BADGE_DX, BADGE_DY = 12, 10
+local BADGE_PAD = 4
 
 --------------------------------------------------------------------------
 -- The frame profile.
@@ -877,6 +979,30 @@ local function raised_box(x, y, w, h, face)
   back:fill(x + w - 1, y, 1, h, theme.edge_dark)
 end
 
+--
+-- How much of the screen the pointer occupies, which is not always the
+-- arrow. While something is being dragged the arrow carries a label saying
+-- what - "3 items" - and the damage rectangle has to include it.
+--
+-- One function, because the compositor and the pointer both need the answer
+-- and a badge drawn outside the rectangle that was damaged for it is a
+-- smear that stays on the screen until something else repaints over it.
+--
+local function badge_size()
+  if not (drag and drag.label) then return 0, 0 end
+
+  return gfx.measure(drag.label) + BADGE_PAD * 2, gfx.font.h + BADGE_PAD
+end
+
+local function cursor_size()
+  local bw, bh = badge_size()
+
+  if bw == 0 then return CURSOR_W, CURSOR_H end
+
+  return math.max(CURSOR_W, BADGE_DX + bw),
+         math.max(CURSOR_H, BADGE_DY + bh)
+end
+
 local function draw_cursor()
   for row = 0, CURSOR_H - 1 do
     local line = CURSOR[row + 1]
@@ -899,6 +1025,25 @@ local function draw_cursor()
         col = col + run
       end
     end
+  end
+
+  --
+  -- What is being carried, in a word, beside the arrow.
+  --
+  -- BeOS drew the icons themselves, half transparent, and that is nicer and
+  -- is also a picture this process would have to be given and hold. A label
+  -- says the one thing the person actually needs while the pointer is
+  -- moving - that a drag is happening at all, and how much of one - and it
+  -- costs a fill and a string.
+  --
+  local bw, bh = badge_size()
+
+  if bw > 0 then
+    raised_box(pointer_x + BADGE_DX, pointer_y + BADGE_DY, bw, bh,
+               theme.raised)
+    back:text(pointer_x + BADGE_DX + BADGE_PAD,
+              pointer_y + BADGE_DY + BADGE_PAD // 2,
+              drag.label, theme.text, theme.raised)
   end
 end
 
@@ -1567,6 +1712,18 @@ handlers.open = function(req, who, cap)
   win.pinned = req.pinned and true or nil
 
   --
+  -- Whether anything may be dropped on it, which decides one thing only:
+  -- whether this process outlines it while a drag is overhead.
+  --
+  -- The drop itself is posted regardless and a window that does not listen
+  -- ignores it, exactly as it ignores any event it has no handler for. What
+  -- the flag prevents is a *promise*: an outline around a window that is
+  -- going to do nothing with what lands on it is the interface lying, and
+  -- the person only finds out after letting go.
+  --
+  win.drops = req.drops and true or nil
+
+  --
   -- The backdrop: the window everything else sits on.
   --
   -- BeOS's desktop was a Tracker window - borderless, screen-sized, at the
@@ -1813,22 +1970,7 @@ end
 -- the thing the whole design is arranged to prevent.
 --
 handlers.image_size = function(req)
-  local name = tostring(req.asset or "")
-  local picture = image_cache[name]
-
-  if picture == nil then
-    picture = false
-
-    local bytes = sys.asset(name)
-
-    if bytes then
-      local ok, decoded = pcall(gfx.png, bytes)
-
-      if ok then picture = decoded end
-    end
-
-    image_cache[name] = picture
-  end
+  local picture = picture_named(tostring(req.asset or ""))
 
   if not picture then
     return { ok = false, error = "no such picture, or it would not decode" }
@@ -1971,6 +2113,77 @@ handlers.poll = function(req, who)
   return DEFER
 end
 
+--------------------------------------------------------------------------
+-- Starting a drag, and answering the drop it ends in.
+--
+-- `{ type = "drag", window = h, kind = "files", payload = "...",
+--    label = "3 items" }` - and no payload cancels one, which is what a
+-- source does if it decides mid-gesture that it was not a drag after all.
+--
+-- The payload is a string on purpose rather than a table. This process is a
+-- carrier and has no business being able to be confused by what it carries:
+-- a string is one length to check, where a table is a shape, a depth and a
+-- serialiser between two processes that never agreed on anything. Whoever
+-- sends it and whoever receives it are the two who share a format.
+--------------------------------------------------------------------------
+handlers.drag = function(req)
+  local win = by_handle[req.window]
+
+  if not win then return { ok = false, error = "no such window" } end
+
+  if req.payload == nil then
+    if drag and drag.from == win.handle then
+      add_damage(pointer_x, pointer_y, cursor_size())
+      damage_outline(outline)
+      drag, outline = nil, nil
+    end
+
+    return { ok = true }
+  end
+
+  if type(req.payload) ~= "string" then
+    return { ok = false, error = "a payload is a string" }
+  end
+
+  drag = {
+    from    = win.handle,
+    kind    = tostring(req.kind or ""),
+    payload = req.payload,
+    label   = req.label and tostring(req.label) or nil,
+  }
+
+  -- The badge appears where the pointer already is, so that rectangle has
+  -- to be redrawn even though nothing moved.
+  add_damage(pointer_x, pointer_y, cursor_size())
+
+  return { ok = true }
+end
+
+--
+-- The destination saying what became of it, which is passed back to the
+-- source so it can show the directory it no longer holds.
+--
+-- Only the window this process just handed a drop to, and only once. See
+-- `answering` above: without that check this is a way to post an event to
+-- any window whose handle you can guess.
+--
+handlers.dropped = function(req)
+  if not (answering and answering.to == req.window) then
+    return { ok = false, error = "nothing was dropped on you" }
+  end
+
+  post(by_handle[answering.from], {
+    type  = "dropped",
+    ok    = req.ok and true or false,
+    count = tonumber(req.count) or 0,
+    error = req.error and tostring(req.error) or nil,
+  })
+
+  answering = nil
+
+  return { ok = true }
+end
+
 --
 -- Answer everyone whose window has something, or whose wait is over.
 --
@@ -2000,6 +2213,20 @@ handlers.close = function(req)
 
   damage_window(win)
   by_handle[req.window] = nil
+
+  -- A drag whose source or destination has just gone. The badge would
+  -- otherwise stay under the pointer until the button came up, and the
+  -- one-shot right to answer would outlive the window it was given to.
+  if drag and drag.from == req.window then
+    add_damage(pointer_x, pointer_y, cursor_size())
+    damage_outline(outline)
+    drag, outline = nil, nil
+  end
+
+  if answering and (answering.to == req.window
+                    or answering.from == req.window) then
+    answering = nil
+  end
 
   -- Whichever list it is in. A menu is a window in every way except where
   -- it is stacked, and this is the one place that difference has to be
@@ -2488,9 +2715,14 @@ local function pointer_pass(p)
   if moved_this_pass then
     -- Both rectangles: where it was, so it is erased, and where it is going,
     -- so it is drawn. Both are composited, so neither is ever half-done.
-    add_damage(pointer_x, pointer_y, CURSOR_W, CURSOR_H)
+    --
+    -- The badge a drag carries is drawn beside the arrow, so while one is up
+    -- the rectangle has to cover both or the label smears across the screen.
+    local cw, ch = cursor_size()
+
+    add_damage(pointer_x, pointer_y, cw, ch)
     pointer_x, pointer_y = nx, ny
-    add_damage(pointer_x, pointer_y, CURSOR_W, CURSOR_H)
+    add_damage(pointer_x, pointer_y, cw, ch)
   end
 
   --------------------------------------------------------------------------
@@ -2625,6 +2857,42 @@ local function pointer_pass(p)
     end
 
     --
+    -- And where the drag ended, which is the one thing only this process
+    -- knows: the release above went to the window the press started in,
+    -- wherever the pointer had got to since.
+    --
+    -- The release first and the drop second, on purpose. The source's own
+    -- view has to come out of its drag before it is told about one - and
+    -- when a drop lands back in the window it came from, which is how you
+    -- move a file into a subfolder without opening it, those two are the
+    -- same window.
+    --
+    if drag then
+      local onto = window_at(nx, ny)
+
+      add_damage(pointer_x, pointer_y, cursor_size())
+      damage_outline(outline)
+      outline = nil
+
+      if onto and onto.drops then
+        post(onto, { type = "drop", kind = drag.kind, payload = drag.payload,
+                     x = nx - onto.x, y = ny - onto.y })
+
+        -- One reply, from that window, until the next drop. `handlers.dropped`
+        -- is the only thing that reads this.
+        answering = { from = drag.from, to = onto.handle }
+      else
+        -- Nowhere that takes it. The source is told so rather than left
+        -- waiting for an answer that is not coming.
+        post(by_handle[drag.from],
+             { type = "dropped", ok = false, count = 0,
+               error = "nothing there takes a drop" })
+      end
+
+      drag = nil
+    end
+
+    --
     -- The one resize, on release. Everything up to here was an outline.
     --
     if resizing then
@@ -2668,6 +2936,36 @@ local function pointer_pass(p)
                 w = w + BORDER * 2, h = h + TAB_H + BORDER }
 
     damage_outline(outline)
+  end
+
+  --
+  -- What would take it, outlined, while something is being carried.
+  --
+  -- The same rectangle a resize draws and for the same reason: four thin
+  -- edges cost nothing, where highlighting the *area* would recomposite
+  -- every window underneath on every pointer movement. The two can never be
+  -- up at once - a press is either on the grip or in the contents - so they
+  -- share the one variable rather than agreeing about which is on top.
+  --
+  if drag and moved_this_pass then
+    local onto = window_at(nx, ny)
+    local want = nil
+
+    if onto and onto.drops then
+      local fx, fy, fw, fh = frame_of(onto)
+
+      want = { x = fx, y = fy, w = fw, h = fh }
+    end
+
+    local same = outline and want
+                 and outline.x == want.x and outline.y == want.y
+                 and outline.w == want.w and outline.h == want.h
+
+    if not same then
+      damage_outline(outline)
+      outline = want
+      damage_outline(outline)
+    end
   end
 
   if dragging and is_down then

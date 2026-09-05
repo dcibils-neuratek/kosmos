@@ -1182,6 +1182,125 @@ function kfs.store(sb, path, data, now)
   return number
 end
 
+-- A new name for the same inode: in this directory, or in another one.
+--
+-- **A directory entry is edited; nothing is copied.** That is the whole
+-- reason a filesystem has this operation rather than leaving it to whoever
+-- is asking: renaming a four-megabyte song by copying and deleting reads and
+-- writes four megabytes to change eleven characters, and does it
+-- non-atomically, so a failure halfway leaves two files or none.
+--
+-- **`to` is a name or a path**, and the difference is a slash. A name means
+-- the same directory. A path means anywhere on this disk, and then it is the
+-- same edit twice - the entry leaves one directory and joins another, the
+-- inode is untouched, and the blocks holding the file never move. Both
+-- writes happen inside one journal transaction, so a move is atomic in the
+-- way a copy-and-delete never was.
+--
+-- Crossing to a *different* filesystem is still not this function's to do,
+-- and it says so by failing: the path walk starts at this disk's root, so a
+-- destination that is not on this disk has no parent here. `files.move`
+-- takes that as its cue to copy instead, which is honest about what it
+-- costs.
+--
+-- The destination is added before the source entry is removed. With the
+-- journal both land or neither does, so the order cannot be observed - but
+-- the order that survives losing the journal is the one that leaves two
+-- names for a file rather than none.
+--
+function kfs.rename(sb, path, to)
+  if type(to) ~= "string" or to == "" then
+    return nil, "a name cannot be empty"
+  end
+
+  local dir_number, dir_node, name = kfs.parent_of(sb, path)
+
+  if not dir_number then return nil, dir_node end
+
+  local to_number, to_node, to_name = dir_number, dir_node, to
+
+  if to:find("/") then
+    if to:sub(1, #path + 1) == path .. "/" then
+      return nil, "a directory cannot be moved into itself"
+    end
+
+    to_number, to_node, to_name = kfs.parent_of(sb, to)
+
+    if not to_number then return nil, to_node end
+  end
+
+  local entries, err = kfs.read_dir(sb, dir_node)
+
+  if not entries then return nil, err end
+
+  local at
+
+  for i, e in ipairs(entries) do
+    if e.name == name then at = i end
+  end
+
+  if not at then return nil, "no such file" end
+
+  --
+  -- Within one directory it is one edit and one write, which is worth
+  -- keeping separate: reading the same directory twice and writing it twice
+  -- would work and would be two chances for the second write to disagree
+  -- with the first.
+  --
+  if to_number == dir_number then
+    for _, e in ipairs(entries) do
+      if e.name == to_name then return nil, "that name is taken" end
+    end
+
+    entries[at].name = to_name
+
+    local ok, derr = kfs.write_dir(sb, dir_number, dir_node, entries)
+
+    if not ok then return nil, derr end
+
+    return true
+  end
+
+  if to_node.kind ~= kfs.KIND_DIR then
+    return nil, "not a directory"
+  end
+
+  local inode = entries[at].inode
+
+  local there, terr = kfs.read_dir(sb, to_node)
+
+  if not there then return nil, terr end
+
+  for _, e in ipairs(there) do
+    if e.name == to_name then return nil, "that name is taken" end
+  end
+
+  there[#there + 1] = { inode = inode, name = to_name }
+
+  local ok, derr = kfs.write_dir(sb, to_number, to_node, there)
+
+  if not ok then return nil, derr end
+
+  --
+  -- Re-read rather than reusing what was read above. `write_dir` may have
+  -- moved the destination's blocks, and if the two directories were the
+  -- same one - which cannot happen here, but would be a silent corruption
+  -- if it ever did - the copy in hand would be stale.
+  --
+  local mine, merr = kfs.read_dir(sb, dir_node)
+
+  if not mine then return nil, merr end
+
+  for i, e in ipairs(mine) do
+    if e.name == name then
+      table.remove(mine, i)
+      break
+    end
+  end
+
+  return kfs.write_dir(sb, dir_number, dir_node, mine)
+end
+
 -- Removes a name, and the file it named if nothing else names it.
 --
 -- The directory entry goes *first*, and that ordering is the mirror of the
@@ -1195,51 +1314,6 @@ end
 -- walk that fails halfway leaves a tree in a state nothing described - that
 -- is a transaction, and it belongs after the journal rather than before it.
 --
--- A new name for the same inode, in the same directory.
---
--- **A directory entry is edited; nothing is copied.** That is the whole
--- reason a filesystem has this operation rather than leaving it to whoever
--- is asking: renaming a four-megabyte song by copying and deleting reads and
--- writes four megabytes to change eleven characters, and does it
--- non-atomically, so a failure halfway leaves two files or none.
---
--- Same directory only, for now. Moving between directories is the same edit
--- twice - remove there, add here - but it also has to think about crossing a
--- filesystem boundary, and that is a second piece of work. `Cut` and `Paste`
--- in Tracker do the cross-directory case by copying, which is honest about
--- what it costs.
---
-function kfs.rename(sb, path, to)
-  if type(to) ~= "string" or to == "" or to:find("/") then
-    return nil, "a name cannot be empty or contain a slash"
-  end
-
-  local dir_number, dir_node, name = kfs.parent_of(sb, path)
-
-  if not dir_number then return nil, dir_node end
-
-  local entries, err = kfs.read_dir(sb, dir_node)
-
-  if not entries then return nil, err end
-
-  local at
-
-  for i, e in ipairs(entries) do
-    if e.name == to then return nil, "that name is taken" end
-    if e.name == name then at = i end
-  end
-
-  if not at then return nil, "no such file" end
-
-  entries[at].name = to
-
-  local ok, derr = kfs.write_dir(sb, dir_number, dir_node, entries)
-
-  if not ok then return nil, derr end
-
-  return true
-end
-
 function kfs.unlink(sb, path)
   local dir_number, dir_node, name = kfs.parent_of(sb, path)
 

@@ -1639,11 +1639,18 @@ end
 -- A picture.
 --
 --   ui.image{ x =, y =, w =, h =, asset = "test-pattern.png" }
+--   ui.image{ x =, y =, w =, h =, asset = "/home/holiday.png" }
 --
 -- The picture is *named*, not carried. A decoded image is megabytes and a
 -- message is two kilobytes, so the window manager loads it and this asks
 -- how big it is - which is the same division as everything else here: the
 -- compositor owns pixels, an application says what it wants drawn.
+--
+-- **A leading slash means a file rather than something compiled into the
+-- image**, and that is the whole of the difference from this side. The
+-- widget did not change to gain it and neither did the message: where the
+-- compositor looks for a name was never the application's business, which
+-- is exactly why it could be extended without touching a call site.
 --
 -- Bigger than its box is normal - a photograph is - so it pans rather than
 -- scaling. There is no scaler, and a nearest-neighbour one written in Lua
@@ -1658,14 +1665,30 @@ function ui.image(spec)
   v.oy = 0
 
   local iw, ih = 0, 0
-  local size = v.asset and fs.send("/app/wm", { type = "image_size",
-                                               asset = v.asset })
 
-  if size then
-    iw, ih = size.w, size.h
+  --
+  -- Which picture this shows, changed after the fact.
+  --
+  -- The size has to be asked for rather than known, because the picture
+  -- lives in the compositor - so a widget that could only be given one at
+  -- construction meant an application that could only ever show one, which
+  -- is what Photo was. Panning is reset with it: the corner of the last
+  -- picture is not a place in this one.
+  --
+  function v:set(asset)
+    self.asset = asset
+    self.ox, self.oy = 0, 0
+
+    local size = asset and fs.send("/app/wm", { type = "image_size",
+                                               asset = asset })
+
+    iw, ih = size and size.w or 0, size and size.h or 0
+    self.image_w, self.image_h = iw, ih
+
+    return iw > 0
   end
 
-  v.image_w, v.image_h = iw, ih
+  v:set(v.asset)
 
   local function clamp(self)
     local most_x = iw - self.w
@@ -1685,6 +1708,8 @@ function ui.image(spec)
 
     if self.image_w == 0 then
       g:text(6, 6, "no picture called " .. tostring(self.asset), theme.bad)
+      g:text(6, 6 + gfx.font.h + 4,
+             "PNG only, and it has to be one", theme.text_dim)
       return
     end
 
@@ -2215,6 +2240,12 @@ function ui.window(spec)
     -- And its opposite: a strip across the top, undecorated and pinned,
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,
+
+    -- Whether something dragged from another window may be let go over
+    -- this one. It decides whether the desktop outlines this window while
+    -- a drag is overhead - see `wm.lua` - so saying yes and then ignoring
+    -- the drop is a promise the window does not keep.
+    drops = spec.drops or nil,
   }, shared_cap)
 
   if not reply then
@@ -2282,11 +2313,7 @@ function ui.window(spec)
   --
   w:publish("title",
             function() return w.title end,
-            function(v)
-              w.title = tostring(v)
-              fs.send("/app/wm", { type = "retitle", window = w.handle,
-                                   title = w.title })
-            end)
+            function(v) w:retitle(v) end)
 
   w:publish("x", function() return w.x end,
                  function(v) w:move(tonumber(v) or w.x, w.y) end)
@@ -2929,6 +2956,88 @@ local function dispatch_mouse(self, ev)
   return handled and true or false
 end
 
+--
+-- Where something was let go, to whatever is under it.
+--
+-- Hit-tested exactly as a press is, so a view answers `drop` in its own
+-- coordinates and does not have to know where in the window it sits. A view
+-- that has no `drop` does not stop the search: the drop belongs to whoever
+-- can take it, and a label lying over a list should not swallow it.
+--
+-- The window's own `on_drop` is the fallback, so a window can take drops
+-- anywhere on it without giving every widget a handler.
+--
+local function dispatch_drop(self, ev)
+  local target, lx, ly = self.root:hit(ev.x, ev.y)
+
+  while target do
+    if target.drop then
+      return target:drop(ev.kind, ev.payload, lx, ly) and true or false
+    end
+
+    if not target.parent then break end
+
+    -- Up one, and the point comes with it: a child sits at `(x, y)` in its
+    -- parent, so the parent's coordinates are the child's plus that.
+    lx, ly = lx + target.x, ly + target.y
+    target = target.parent
+  end
+
+  if self.on_drop then
+    return self.on_drop(self, ev.kind, ev.payload, ev.x, ev.y) and true or false
+  end
+
+  return false
+end
+
+--
+-- Starting a drag, and calling it off.
+--
+-- `payload` is a string both ends agree about and the desktop never reads -
+-- `wm.lua` says why it is a string rather than a table. `label` is what the
+-- pointer carries while it is held, and is the only feedback there is that
+-- a drag is happening at all, so a caller that leaves it out gets none.
+--
+--
+-- A new name for a window, which is also a new label in the Deskbar.
+--
+-- A method rather than only a published property, because an application
+-- retitling *itself* should not have to go out through the namespace and
+-- back to do it. The property's setter is this function, so the two cannot
+-- disagree about what renaming means - which they did, briefly, when
+-- writing `win.title` looked like it worked and only set a field.
+--
+function window:retitle(text)
+  self.title = tostring(text)
+
+  return fs.send("/app/wm", { type = "retitle", window = self.handle,
+                              title = self.title })
+end
+
+function ui.drag(win, kind, payload, label)
+  return fs.send("/app/wm", { type = "drag", window = win.handle,
+                              kind = kind, payload = payload,
+                              label = label })
+end
+
+function ui.undrag(win)
+  return fs.send("/app/wm", { type = "drag", window = win.handle })
+end
+
+--
+-- What became of a drop, sent back to whoever started the drag.
+--
+-- Only the window that was just handed one may say this, and only once -
+-- the desktop holds that right and takes it away after. Without the answer
+-- the source cannot know its directory has changed, because nothing else
+-- tells it.
+--
+function ui.dropped(win, ok, count, err)
+  return fs.send("/app/wm", { type = "dropped", window = win.handle,
+                              ok = ok and true or false,
+                              count = count or 0, error = err })
+end
+
 function window:run()
   local decode_key = ui.key_decoder()
 
@@ -3068,6 +3177,18 @@ function window:run()
         if self:menu_mouse(ev) then changed = true end
       elseif ev.type == "mouse" then
         if dispatch_mouse(self, ev) then changed = true end
+      elseif ev.type == "drop" then
+        -- Something was let go over this window. The desktop found it; what
+        -- was carried is a string this window and whoever sent it agree
+        -- about, and the desktop never looked inside it.
+        if dispatch_drop(self, ev) then changed = true end
+      elseif ev.type == "dropped" then
+        -- The other end of that, back at the source: what the destination
+        -- did with what it was handed.
+        if self.on_dropped then
+          self.on_dropped(self, ev.ok, ev.count, ev.error)
+          changed = true
+        end
       elseif ev.type == "key" then
         -- One byte in, up to *two* codes out - see `ui.key_decoder`: an
         -- Escape that turned out not to start a sequence resolves both

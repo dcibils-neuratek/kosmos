@@ -7,6 +7,9 @@
 --   click a row       select it
 --   click it again    open it: a directory is entered, a file is opened
 --                     in the editor
+--   drag empty space  a rubber band, which selects what it touches
+--   drag a selection  onto a folder here, or into another Tracker window,
+--                     to move it there
 --   click a heading   sort by that column; again reverses it
 --   Backspace         up one level
 --
@@ -108,6 +111,11 @@ local win, err = ui.window{
   title = "Tracker", w = W, h = H,
   x = backdrop and 0 or 80, y = backdrop and 0 or 60,
   backdrop = backdrop or nil,
+
+  -- Files dragged out of another window land here. The desktop outlines
+  -- this window while one is overhead because of this flag, so it is a
+  -- promise: `rows:drop` below is what keeps it.
+  drops = true,
 }
 
 if not win then
@@ -142,6 +150,23 @@ local selected = 0
 local marked   = {}
 local band     = nil       -- { x0, y0, x1, y1 } while a rectangle is drawn
 local followed = nil       -- the cursor the view last scrolled to
+
+--
+-- A press on a row is not acted on until the button comes up.
+--
+-- Until then it might be the start of a drag, and a click that had already
+-- opened a directory cannot be taken back. So the press remembers what it
+-- landed on and the release decides what it was - which is also how the
+-- second click on the cursor row still opens.
+--
+-- `DRAG_SLOP` is how far the pointer has to move before it counts as a
+-- drag rather than a hand that is not quite steady. Four pixels is the
+-- number every desktop has settled on and there is no reason to differ.
+--
+local pending  = nil       -- { n, x, y, cursor } between press and release
+local carrying = false     -- a drag of our own is in progress
+
+local DRAG_SLOP = 4
 
 local function marked_count()
   local n = 0
@@ -182,6 +207,10 @@ local new_folder, delete_selected
 -- them because it belongs with the view, and they belong with the menu.
 local select_all, select_none, do_rename
 
+-- And the one the mouse handler starts, which is written under the view it
+-- drags out of rather than in the middle of deciding what a press was.
+local start_drag
+
 -- And the one that changes directory, because the places tree calls it and
 -- is built above it.
 local show
@@ -198,8 +227,19 @@ local scroll   = 1        -- the first row shown; the bar moves this
 local mode = as_icons and "icons" or "list"
 local reversed = false
 
-local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where }
-local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
+--
+-- Which edges each of these is pinned to, and the reason it matters.
+--
+-- A widget with no `follow` keeps the position it was given, which is right
+-- for a button and wrong for everything that is meant to sit against an
+-- edge. Without these the status line stayed at the *old* window's bottom -
+-- a band of background painted straight across the middle of the places
+-- tree - and the path never widened. `view:resize` is what applies them.
+--
+local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where,
+                         follow = { "left", "right", "top" } }
+local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "",
+                         follow = { "left", "right", "bottom" } }
 
 --
 -- Where a new name is typed. Empty and inert until Rename fills it.
@@ -209,7 +249,8 @@ local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }
 -- change made for an application. An empty box at the bottom is a smaller
 -- cost than that.
 --
-rename_field = ui.field{ x = 12, y = H - 58, w = 260, text = "" }
+rename_field = ui.field{ x = 12, y = H - 58, w = 260, text = "",
+                        follow = { "left", "bottom" } }
 
 --------------------------------------------------------------------------
 -- The columns.
@@ -374,6 +415,29 @@ local function box_of(self, n)
   return 1, (self.top_row or 0) + i * GH, w, GH
 end
 
+--
+-- Which row is at a point, or nil for none.
+--
+-- The same reason `box_of` exists: a press, a drop and the drawing all have
+-- to agree about where a thing is, and three copies of this arithmetic is
+-- three chances for one of them to be off by a row.
+--
+local function at_point(self, x, y)
+  if mode == "icons" then
+    local across = math.max(1, (self.w - 4) // CELL_W)
+    local col = (x - 2) // CELL_W
+    local row = (y - 2) // CELL_H
+
+    if col < 0 or col >= across or row < 0 then return nil end
+
+    return (self.first or 1) + row * across + col
+  end
+
+  if y < (self.top_row or 0) then return nil end
+
+  return (self.first or 1) + (y - self.top_row) // GH
+end
+
 local function draw_icons(self, g, list)
   local per_row = math.max(1, (self.w - 4) // CELL_W)
   local rows_fit = math.max(1, self.h // CELL_H)
@@ -528,7 +592,7 @@ function rows:draw(g)
 
     g:text(COLUMNS[1].x, y, files.label(e), fg, bg)
     g:text(COLUMNS[2].x, y,
-           (e.kind == "directory") and "--" or tostring(e.size), fg, bg)
+           (e.kind == "directory") and "--" or files.size(e.size), fg, bg)
     g:text(COLUMNS[3].x, y,
            (e.kind == "directory") and "folder"
            or (types.kind_of(e.name) or "file"), fg, bg)
@@ -625,35 +689,60 @@ function rows:mouse(action, x, y)
     end
   end
 
-  if action ~= "press" then return false end
+  --
+  -- A press that landed on a row, still undecided.
+  --
+  -- Far enough and it was a drag; the button coming up first and it was a
+  -- click. Both branches are here rather than in the press, because the
+  -- press cannot tell which it is yet - and opening a directory on the way
+  -- to dragging a file out of it is not a thing that can be undone.
+  --
+  if pending then
+    if action == "move" then
+      if carrying then return true end
 
-  if mode == "icons" then
-    local across = math.max(1, (self.w - 4) // CELL_W)
-    local col = (x - 2) // CELL_W
-    local row = (y - 2) // CELL_H
+      if math.abs(x - pending.x) < DRAG_SLOP
+         and math.abs(y - pending.y) < DRAG_SLOP then
+        return false
+      end
 
-    if col < 0 or col >= across or row < 0 then return true end
+      start_drag(self)
 
-    local n = (self.first or 1) + row * across + col
-
-    if not (self.shown and self.shown[n]) then
-      -- Empty space: start a rectangle rather than doing nothing.
-      band = { x0 = x, y0 = y, x1 = x, y1 = y }
-      marked = {}
-      selected = 0
       return true
     end
 
-    if n == selected then
-      open_selected()
-    else
-      mark_only(n, self.shown)
-    end
+    if action == "release" then
+      if not carrying then
+        --
+        -- A click after all. The cursor row opens; any other row collapses
+        -- the selection onto itself, which is what a plain click means.
+        --
+        -- A double click would be the BeOS answer and this kit has no
+        -- notion of one; adding it to serve a single caller would be a
+        -- widget change made for an application, which is the wrong way
+        -- round.
+        --
+        if pending.cursor then
+          open_selected()
+        else
+          mark_only(pending.n, self.shown)
+        end
+      end
 
-    return true
+      pending, carrying = nil, false
+
+      return true
+    end
   end
 
-  if y < (self.top_row or 0) then
+  if action ~= "press" then return false end
+
+  --
+  -- The heading, which is also what you click to sort. Above the rows and
+  -- only in the list layout - there are no columns to sort by when there
+  -- are no columns.
+  --
+  if mode ~= "icons" and y < (self.top_row or 0) then
     for _, c in ipairs(COLUMNS) do
       if x >= c.x - 4 and x < c.x + c.w then
         if sort_by == c.key then reversed = not reversed
@@ -666,20 +755,147 @@ function rows:mouse(action, x, y)
     return true
   end
 
-  local n = (self.first or 1) + (y - self.top_row) // GH
+  local n = at_point(self, x, y)
+  local e = n and self.shown and self.shown[n]
 
-  if not (self.shown and self.shown[n]) then
+  if not e then
+    -- Empty space: start a rectangle rather than doing nothing.
     band = { x0 = x, y0 = y, x1 = x, y1 = y }
     marked = {}
     selected = 0
     return true
   end
 
-  -- The second click on an already-selected row opens it. A double click
-  -- would be the BeOS answer and this kit has no notion of one; adding it
-  -- to serve a single caller would be a widget change made for an
-  -- application, which is the wrong way round.
-  if n == selected then open_selected() else mark_only(n, self.shown) end
+  --
+  -- Pressing something already in the selection leaves the selection alone,
+  -- so a drag takes all of it. Pressing something outside the selection
+  -- takes it over at once, so what is about to be dragged is visible before
+  -- the pointer moves.
+  --
+  pending = { n = n, x = x, y = y, cursor = (n == selected) }
+
+  if not marked[e.name] then mark_only(n, self.shown) end
+
+  return true
+end
+
+--------------------------------------------------------------------------
+-- Dragging what is selected out of this window.
+--
+-- The paths go to the desktop as one string and come back out at whichever
+-- window the pointer was over - see `wm.lua`. Nothing in between reads
+-- them: this window and whatever catches them are the two that share the
+-- format, and one path per line is the whole of it.
+--
+-- A name with a newline in it would break that, and nothing in this system
+-- makes one. Worth saying rather than defending against, because the
+-- defence - a length-prefixed frame - would be a format two programs have
+-- to agree about where a line does the job today.
+--------------------------------------------------------------------------
+
+function start_drag(self)
+  local list = marked_entries(self.shown)
+
+  if #list == 0 then return end
+
+  local paths = {}
+
+  for i, e in ipairs(list) do paths[i] = files.join(where, e.name) end
+
+  --
+  -- What the pointer carries. Long names are cut, because the badge is
+  -- drawn beside the cursor and a forty-character one would be a bar across
+  -- the screen.
+  --
+  local label
+
+  if #list == 1 then
+    label = list[1].name
+
+    if #label > 24 then label = label:sub(1, 23) .. "~" end
+  else
+    label = #list .. " items"
+  end
+
+  local ok, why = ui.drag(win, "files", table.concat(paths, "\n"), label)
+
+  if not ok then
+    -- Almost always the message being full, which is a real limit and is
+    -- said rather than silently dropping the tail of the selection.
+    status.text = "cannot drag that many at once: " .. tostring(why)
+    pending = nil
+    return
+  end
+
+  carrying = true
+  status.text = "dragging " .. label
+end
+
+--
+-- And catching one, which is the other half.
+--
+-- Where it landed decides where it goes: a directory row takes them into
+-- itself, and anything else - a file, the space below the last row, the
+-- heading - means this directory. That is BeOS's rule and every file
+-- manager's since, and it is the one that makes a drop into a window you
+-- are already looking at mean something.
+--
+function rows:drop(kind, payload, x, y)
+  if kind ~= "files" then return false end
+
+  local into = where
+  local n = at_point(self, x, y)
+  local e = n and self.shown and self.shown[n]
+
+  if e and e.kind == "directory" then into = files.join(where, e.name) end
+
+  local moved, skipped, failed, why = 0, 0, 0, nil
+
+  for path in payload:gmatch("[^\n]+") do
+    local name = path:match("([^/]+)$")
+
+    if name and files.parent(path) == into then
+      -- Already where it was dropped. Not an error and not a copy: dropping
+      -- a file back into its own directory should do nothing at all.
+      skipped = skipped + 1
+    elseif name then
+      local ok, err = files.move(path, files.join(into, name))
+
+      if ok then moved = moved + 1 else failed, why = failed + 1, err end
+    end
+  end
+
+  show(where)
+
+  if moved > 0 then
+    marked = {}
+
+    -- Selected where they landed, if that is here. Somewhere else and there
+    -- is nothing in this window to select.
+    if into == where then
+      for path in payload:gmatch("[^\n]+") do
+        local name = path:match("([^/]+)$")
+
+        if name then marked[name] = true end
+      end
+    end
+  end
+
+  --
+  -- The window they came from is told, and only this window may say so -
+  -- the desktop handed it that right with the drop and takes it back now.
+  -- Without this the source goes on showing files it no longer holds.
+  --
+  ui.dropped(win, failed == 0, moved, why)
+
+  if failed > 0 then
+    status.text = ("moved %d, then: %s"):format(moved, tostring(why))
+  elseif moved > 0 then
+    status.text = ("moved %d item%s into %s"):format(
+                    moved, moved == 1 and "" or "s", into)
+  elseif skipped > 0 then
+    status.text = "already there"
+  end
 
   return true
 end
@@ -1008,6 +1224,7 @@ end
 
 win:add(ui.menubar{
   x = 0, y = 0, w = W,
+  follow = { "left", "right", "top" },
   menus = {
     { title = "File",
       items = {
@@ -1098,6 +1315,28 @@ function rename_field:on_enter(text)
     status.text = from .. " is now " .. text
   else
     status.text = "rename: " .. tostring(why)
+  end
+end
+
+--
+-- What became of a drag that left this window.
+--
+-- The destination did the moving and this is the only way to hear about
+-- it: the files are gone from here and nothing else would say so. A window
+-- that showed a file it no longer has is a file manager that lies, and it
+-- lies until you happen to press Refresh.
+--
+function win:on_dropped(ok, count, err)
+  if ok and count > 0 then
+    show(where)
+    status.text = ("moved %d item%s"):format(count, count == 1 and "" or "s")
+  elseif ok then
+    status.text = "nothing moved"
+  else
+    -- Refreshed even so. A drop that moved four of six and then failed has
+    -- still changed this directory.
+    show(where)
+    status.text = tostring(err or "the drop was refused")
   end
 end
 

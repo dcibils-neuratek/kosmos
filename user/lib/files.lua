@@ -74,6 +74,43 @@ end
 
 
 --------------------------------------------------------------------------
+-- A size a person reads, rather than a number a filesystem counts in.
+--
+-- 4510970 is a true answer to how big that song is and a useless one: the
+-- question anybody actually asks of a size column is "big or small", and
+-- eight digits answer it more slowly than "4.3 MB" does.
+--
+-- Binary units, because that is what the filesystem allocates in - blocks
+-- are 4096 bytes and a "1 KB" that meant 1000 would put a one-block file at
+-- 4.1 KB. Written KB and MB rather than KiB and MiB, which is what every
+-- desktop shows and what the person reading it expects.
+--
+-- One decimal under 10 and none above, so the column is at most five
+-- characters wide and the numbers line up: 9.4 KB, 66 KB, 4.3 MB. Bytes
+-- stay exact below a kilobyte, where the digits are short enough to read
+-- and rounding "999 B" to "1.0 KB" would be a lie about a small file.
+--------------------------------------------------------------------------
+
+local UNITS = { "KB", "MB", "GB", "TB" }
+
+function files.size(n)
+  n = tonumber(n) or 0
+
+  if n < 1024 then return ("%d B"):format(n) end
+
+  local scaled = n / 1024
+
+  for i = 1, #UNITS do
+    if scaled < 1024 or i == #UNITS then
+      return ((scaled < 10) and "%.1f %s" or "%.0f %s")
+             :format(scaled, UNITS[i])
+    end
+
+    scaled = scaled / 1024
+  end
+end
+
+--------------------------------------------------------------------------
 -- Copying a file, which is the one thing a file manager must be able to do
 -- and this system could not.
 --
@@ -91,6 +128,130 @@ end
 -- protocol rather than to this function. Until then a file bigger than the
 -- window is refused with its size, which is a copy that did not happen
 -- rather than one that half did.
+--------------------------------------------------------------------------
+
+local COPY_PAGES = 256                    -- 1 MB
+local COPY_MAX = COPY_PAGES * 4096
+
+local buffer                              -- allocated on the first copy
+
+function files.copy(from, to)
+  local attrs = fs.getattr(from)
+
+  if not attrs then return nil, from .. ": no such file" end
+
+  if attrs.kind == "directory" then
+    return nil, "copying a directory is not done yet"
+  end
+
+  local size = attrs.size or 0
+
+  if size > COPY_MAX then
+    return nil, ("%s is %d KB and the copy window is %d KB")
+                :format(from, size // 1024, COPY_MAX // 1024)
+  end
+
+  -- Allocated once and kept. A file manager copies more than one thing, and
+  -- a region per copy is a region per copy that nothing gives back.
+  if not buffer then
+    buffer = sys.memory(COPY_PAGES)
+
+    if not buffer then return nil, "no memory for a copy buffer" end
+  end
+
+  --
+  -- The region first, and a plain read if the server does not do regions.
+  --
+  -- Not every filesystem implements `read_into`. The program store serves
+  -- `/bin` out of the image and answers `read` with the source as a value;
+  -- it has no pages to hand over, so a copy from `/bin` failed outright -
+  -- which is exactly what the first copy attempted here did, and the status
+  -- bar said "could not be read" without saying that the *path* was the
+  -- reason.
+  --
+  -- So: the efficient way when it is available, and the ordinary way when
+  -- it is not. The ordinary way puts the file through this process's heap,
+  -- which is what the region exists to avoid - hence the same size limit
+  -- applying to both.
+  --
+  local got = fs.read_into(from, buffer, 0, size)
+
+  if got then
+    local put, why = fs.write_from(to, buffer, got)
+
+    if not put then return nil, to .. ": " .. tostring(why) end
+
+    return put
+  end
+
+  local data = fs.read(from)
+
+  if type(data) ~= "string" then
+    return nil, from .. ": could not be read"
+  end
+
+  local ok, why = fs.write(to, data)
+
+  if not ok then return nil, to .. ": " .. tostring(why) end
+
+  return #data
+end
+
+--------------------------------------------------------------------------
+-- Moving one, which is not copying it and then deleting it if it can be
+-- helped.
+--
+-- **The cheap path first.** A move inside one filesystem is two directory
+-- entries being edited - the name leaves one directory and joins another -
+-- and the blocks holding the file never move at all. `rename` is that
+-- edit, it happens inside one journal transaction, and it costs the same
+-- for a four-megabyte song as for an empty file.
+--
+-- **The dear path when it has to be.** A filesystem that has no `rename`,
+-- or a destination on a *different* filesystem, cannot do that edit: the
+-- namespace sends this message to whoever owns `from`, and that server
+-- has no way to write into somebody else's tree. So the fallback copies
+-- the bytes and then removes the original - and only ever in that order,
+-- because a move that removes the source and then fails to write the
+-- destination has destroyed the file, which is the one failure a file
+-- manager must not have.
+--
+-- Which one happened is returned, because the caller usually wants to say.
+--------------------------------------------------------------------------
+
+function files.move(from, to)
+  if from == to then return nil, "it is already there" end
+
+  --
+  -- Refused here rather than by the filesystem, because only one of the
+  -- two answers is right and the filesystem does not know which. A move of
+  -- `/home/a` to `/home/a/b` would either loop or orphan a subtree, and the
+  -- string test is exact: both are absolute paths through the same tree.
+  --
+  if to:sub(1, #from + 1) == from .. "/" then
+    return nil, "a directory cannot be moved into itself"
+  end
+
+  if fs.getattr(to) then return nil, to .. " already exists" end
+
+  local ok = fs.send(from, { type = "rename", to = to })
+
+  if ok then return true, "moved" end
+
+  local put, why = files.copy(from, to)
+
+  if not put then return nil, why end
+
+  local gone, gwhy = fs.send(from, { type = "delete" })
+
+  if not gone then
+    return nil, ("copied it, but the original is still there: %s")
+                :format(tostring(gwhy))
+  end
+
+  return true, "copied"
+end
+
 --------------------------------------------------------------------------
 -- The icons.
 --

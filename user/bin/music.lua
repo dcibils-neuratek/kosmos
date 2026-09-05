@@ -26,7 +26,35 @@ local mp3   = use("/kits/mp3")
 
 local theme = ui.theme
 
+--
+-- Where to look, and what to start on.
+--
+--   wm music                      everything in /home
+--   wm music:/home/Music          everything in there
+--   wm music:/home/groove.mp3     that folder, with that track picked
+--
+-- A file rather than a folder is what Tracker sends when somebody opens an
+-- MP3, and without this it arrived, was ignored, and the window opened on
+-- `/home` showing no sign that anything had been asked for.
+--
 local FOLDER = "/home"
+local START                     -- the track named on the command line
+
+do
+  local given = tostring(args or ""):match("^%s*(%S+)")
+
+  if given and given:sub(1, 1) == "/" then
+    local attrs = fs.getattr(given)
+
+    if attrs and attrs.kind == "directory" then
+      FOLDER = given
+    else
+      FOLDER = given:match("^(.*)/") or "/home"
+      START = given:match("([^/]+)$")
+    end
+  end
+end
+
 local W, H   = 420, 300
 
 local fmt = audio.format()
@@ -305,6 +333,15 @@ if #files == 0 then
 end
 
 local list = ui.list{ x = 10, y = 10, w = W - 20, h = 150, items = files }
+
+-- On the track that was asked for, if it is here. Selected rather than
+-- played: opening a file should show it ready, not start a noise in a
+-- window that has not appeared yet.
+if START then
+  for i, f in ipairs(files) do
+    if f == START then list.selected = i break end
+  end
+end
 
 local transport = ui.view{ x = 10, y = 200, w = W - 20, h = 60 }
 
