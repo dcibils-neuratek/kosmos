@@ -32,16 +32,52 @@
  * own `dsb` and say why at the call site.
  */
 
+/*
+ * **The access is written in assembly, and the addressing mode is the
+ * reason.**
+ *
+ * `*(volatile uint32_t *)addr = value` says what to store and leaves *how*
+ * to the compiler, and `volatile` does not constrain that: it forbids
+ * eliminating, duplicating or reordering the access, and says nothing about
+ * which instruction performs it. GCC folded a run of register writes into a
+ * post-indexed store - `str wzr, [x0], #-12` - which is correct code and
+ * runs correctly on hardware.
+ *
+ * It cannot be virtualised. When a store to a device region traps to a
+ * hypervisor, the hypervisor emulates it from the syndrome register, and
+ * ARM sets ISV=0 - "no valid instruction syndrome" - for a load or store
+ * with writeback. There is nothing in the trap to say which register or
+ * which width, so the access cannot be emulated at all.
+ *
+ * What that looked like: Kosmos boots under QEMU's TCG and dies under
+ * `-accel hvf` on the *first* MMIO write, in `hal_early_init`, before a
+ * single character reaches the UART. QEMU's assertion is `isv` in
+ * `hvf_handle_exception`, which names the register and nothing else.
+ *
+ * So: one instruction, chosen here, with no addressing mode for the
+ * compiler to improve. This is what Linux's `__raw_writel` does on arm64
+ * and it is the same reasoning. `rZ` lets a constant zero use the zero
+ * register, which is the only optimisation worth keeping.
+ *
+ * It matters beyond QEMU. Any trap-and-emulate layer has the same problem -
+ * a real hypervisor, a debugger, a device model - and "works on the metal,
+ * undecodable under a hypervisor" is a bug that only appears once somebody
+ * tries.
+ */
+
 static inline void mmio_write32(uintptr_t addr, uint32_t value)
 {
     __asm__ volatile("dmb oshst" ::: "memory");
-    *(volatile uint32_t *)addr = value;
+    __asm__ volatile("str %w0, [%1]" :: "rZ"(value), "r"(addr) : "memory");
 }
 
 static inline uint32_t mmio_read32(uintptr_t addr)
 {
-    uint32_t value = *(volatile uint32_t *)addr;
+    uint32_t value;
+
+    __asm__ volatile("ldr %w0, [%1]" : "=r"(value) : "r"(addr) : "memory");
     __asm__ volatile("dmb oshld" ::: "memory");
+
     return value;
 }
 
@@ -58,14 +94,17 @@ static inline uint32_t mmio_read32(uintptr_t addr)
 static inline void mmio_write8(uintptr_t addr, uint8_t value)
 {
     __asm__ volatile("dmb oshst" ::: "memory");
-    *(volatile uint8_t *)addr = value;
+    __asm__ volatile("strb %w0, [%1]" :: "rZ"(value), "r"(addr) : "memory");
 }
 
 static inline uint8_t mmio_read8(uintptr_t addr)
 {
-    uint8_t value = *(volatile uint8_t *)addr;
+    uint32_t value;
+
+    __asm__ volatile("ldrb %w0, [%1]" : "=r"(value) : "r"(addr) : "memory");
     __asm__ volatile("dmb oshld" ::: "memory");
-    return value;
+
+    return (uint8_t)value;
 }
 
 #endif /* ARCH_AARCH64_MMIO_H */

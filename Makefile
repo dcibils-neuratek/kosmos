@@ -914,7 +914,37 @@ ZOOM_FLAG := $(if $(ZOOM),$(comma)zoom-to-fit=on,)
 AUDIO_FLAGS := $(if $(NOAUDIO),,-audiodev coreaudio$(comma)id=snd0 \
                                 -device virtio-sound-device$(comma)audiodev=snd0)
 
-QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
+#
+# **`make FAST=1 qemu` runs the guest on this Mac's own cores.**
+#
+# `hvf` is Apple's Hypervisor.framework. The guest is aarch64 and so is the
+# host, so there is nothing to translate: the instructions execute natively
+# and the only thing QEMU does is emulate the devices. `gfxbench` says 4x on
+# a fill, 5x on a blit and **14x on a circle drawn in Lua** - the interpreter
+# is branch-heavy, which is what TCG is worst at, and the interface is Lua.
+#
+# Three things travel with it and none of them is optional:
+#
+#   - `-cpu host` is required. HVF cannot pretend to be a different core, so
+#     this is the *Mac's* processor rather than a Cortex-A72 or the A76 the
+#     Pi 5 has. Fidelity and speed are two targets, not one flag.
+#   - GICv3 only. HVF refuses to emulate GICv2 and says so.
+#   - **`-icount` is TCG only**, so `make bench` cannot use this and must
+#     not: the whole reason those numbers mean anything is that instruction
+#     counting is deterministic. This is for how the desktop *feels*, which
+#     is the one question TCG cannot answer; `-icount` is for whether a
+#     change made something slower.
+#
+# It needed a kernel fix to work at all. `mmio_write32` used to be a
+# volatile store and the compiler chose a post-indexed addressing mode for
+# it, which is correct on hardware and cannot be emulated by any hypervisor:
+# ARM sets ISV=0 in the syndrome for a load or store with writeback, so
+# there is nothing in the trap to say which register or what width. See
+# `arch/aarch64/mmio.h`.
+#
+ACCEL := $(if $(FAST),-accel hvf -cpu host,-cpu cortex-a72)
+
+QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
@@ -929,14 +959,14 @@ QEMUFLAGS := -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
 # terminal is all there is - over ssh, for instance.
 # No window, and therefore no keyboard: with -display none QEMU has nowhere
 # to take key presses from, so the virtio device would sit there empty.
-QEMUFLAGS_SERIAL := -M virt,gic-version=3 -cpu cortex-a72 -m 512M -nographic \
+QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -nographic \
                     -global virtio-mmio.force-legacy=false \
                     -drive file=$(DISK),format=raw,if=none,id=disk \
                     -device virtio-blk-device,drive=disk \
                     $(BOOTARG) \
                     -kernel $(TARGET)
 
-.PHONY: all bump bump-minor bump-major qemu serial test droplet disktest powertest stress screenshot shot prepush frames bench bench-record debug disasm size clean dist release disk
+.PHONY: all bump bump-minor bump-major qemu fast serial test droplet disktest powertest stress screenshot shot prepush frames bench bench-record debug disasm size clean dist release disk
 
 # A disk image, built here, with whatever you want already in it.
 #
@@ -1085,6 +1115,11 @@ release: $(TARGET) stress
 # Ctrl-A then x to quit QEMU.
 qemu: $(TARGET) $(DISK)
 	$(QEMU) $(QEMUFLAGS)
+
+# The same machine, running on this Mac's own cores. See ACCEL above for
+# what that costs and what it cannot be used for.
+fast: $(TARGET) $(DISK)
+	$(MAKE) FAST=1 qemu
 
 # No window. The same system, serial only, which is how it ran until M6 and
 # how it will run on a board with a cable and no monitor.

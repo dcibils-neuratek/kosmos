@@ -99,6 +99,7 @@ with an empty Deskbar to show for it.
 
 ```
 make qemu        # build and run under QEMU virt, in a window
+make fast        # the same, on this Mac's own cores (hvf); 4-14x
 make FB=1920x1080 qemu   # the same, at that display size
 make serial      # the same, serial only, no window
 make test        # run the suite under QEMU, exit code 0 or 1
@@ -508,6 +509,19 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 **Nothing in Lua computes a pixel offset.** The pitch is almost never `width * 4`. All address arithmetic happens inside the C primitives. See `gfx.md` §19.3.
 
 **QEMU numbers are not performance numbers.** They are for detecting regressions (with `-icount`, which is deterministic), not for knowing whether something is fast. The PMU is not faithfully emulated under QEMU. Do not optimize against QEMU.
+
+**`make fast` is the other half of that, and it answers a different
+question.** It runs the guest under `hvf` - natively on this Mac's cores,
+with QEMU emulating only the devices - so `gfxbench` reads 4x on a fill, 5x
+on a blit and **14x on a circle drawn in Lua**, the interpreter being
+exactly what TCG is worst at. Those are not Pi 5 numbers either; what they
+are is *the desktop moving at something like a real speed*, which is the one
+question TCG cannot answer at all. Use it to feel the system, `-icount` to
+detect a regression, and neither to claim a figure.
+
+It requires `-cpu host`: HVF cannot pretend to be another core, so speed and
+fidelity are two targets rather than one flag. `make bench` stays on TCG,
+because `-icount` does not exist without it.
 
 **A binary that leaves this machine has been used for a while first.**
 `make test` says the parts work and `make screenshot` says the machine works
