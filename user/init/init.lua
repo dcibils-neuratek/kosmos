@@ -842,6 +842,25 @@ local function new_namespace()
     return net.connect(capability, to, port)
   end
 
+  -- Answering on a port, and taking whoever arrives. The listener is a
+  -- number because it holds nothing; what `accept` hands back is a
+  -- connection, which is a region somebody was given.
+  function ns.listen(path, port)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.listen(capability, port)
+  end
+
+  function ns.accept(path, listener)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.accept(capability, listener)
+  end
+
   -- One exchange, with the reply decoded and the error turned back into a
   -- sentence. Every operation below is this plus a shape.
   local function con_call(con, capability, code, text, ticks)

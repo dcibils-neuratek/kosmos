@@ -125,13 +125,20 @@
 /*
  * The states this stack has, which are not all nine of TCP's.
  *
- * There is no LISTEN, SYN_RECEIVED or CLOSING, because this end always
- * connects out and `netproto.h` says why. What is left is the client's path
- * through the diagram: ask, talk, and shut down from either side.
+ * There is no CLOSING and no simultaneous open - two ends that SYN each
+ * other at the same moment - because nothing does that on purpose and
+ * handling it is a state that exists to be correct rather than to be used.
+ *
+ * LISTEN and SYN_RECEIVED were not here either, on the grounds that this end
+ * always connects out. **An HTTP server is what changed that**, and it is
+ * the case `netproto.h` predicted would: serving needs a way to hand a
+ * caller a connection it did not ask for, which is `accept`.
  */
 #define ST_FREE         0
 #define ST_SYN_SENT     1
 #define ST_OPEN         2
+#define ST_LISTEN       7       /* a port, waiting to be connected to */
+#define ST_SYN_RCVD     8       /* answered a SYN, waiting for the ACK */
 #define ST_FIN_WAIT     3       /* we sent FIN, waiting for theirs */
 #define ST_CLOSE_WAIT   4       /* they sent FIN, we may still send */
 #define ST_LAST_ACK     5       /* both sent; waiting to be acknowledged */
@@ -198,6 +205,19 @@ struct conn {
     uint64_t waiter;                /* the caller parked in WAIT, or 0 */
     uint64_t wait_until;
 
+    /*
+     * For a listener: who is parked in ACCEPT, and nothing else. A listener
+     * has no sequence numbers, no ring and no remote address - it is a port
+     * this machine will answer on, and the connections it produces are
+     * separate entries in this same pool.
+     */
+    uint64_t accepter;
+
+    /* For a connection made by a listener: which one, and whether it has
+     * been handed over yet. */
+    int      from_listener;
+    bool     handed_over;
+
     struct net_addr remote;
     uint16_t local_port;
     uint16_t remote_port;
@@ -210,6 +230,7 @@ struct conn {
     uint64_t sent_at;               /* when the unacknowledged segment went */
     uint32_t tries;
     bool     fin_sent;
+    bool     want_close;            /* asked to close; waiting for the ring */
 
     /* The region, and where it is mapped in this process. */
     long     region;
@@ -230,6 +251,7 @@ static struct {
     struct pending   pending[NET_PENDING_MAX];
 
     uint16_t next_id;               /* the IP header's, and the echo's */
+    uint64_t hz;                    /* the counter's frequency, read once */
 
     struct conn conn[NET_CONN_MAX];
     uint16_t next_port;
@@ -458,7 +480,20 @@ static const struct net_addr *next_hop(const struct net_addr *to)
 static bool send_ip(const struct net_addr *to, uint8_t protocol,
                     const uint8_t *body, unsigned length)
 {
-    uint8_t packet[IP_HEADER + NET_PAYLOAD_MAX + ICMP_HEADER];
+    /*
+     * A whole datagram, not a whole ping.
+     *
+     * **This was `NET_PAYLOAD_MAX + ICMP_HEADER` - 156 bytes - because ICMP
+     * was the only thing that used it**, and TCP then silently could not
+     * send anything larger than a handshake. Pings worked, connections
+     * opened, and every response body was refused here and dropped: the
+     * capture showed a FIN with no data in front of it, which reads as a
+     * server that answered nothing rather than as a buffer that was the
+     * wrong size.
+     *
+     * Sized to the MTU now, which is what an IP datagram may be.
+     */
+    uint8_t packet[NET_FRAME_MAX];
     const struct net_addr *hop;
     struct arp_entry *e;
 
@@ -873,6 +908,20 @@ static void tcp_pump(struct conn *c)
     have = tcp_ring_ready(tcp_ring_acquire(&c->ring->out_write), read);
 
     if (have == 0) {
+        /*
+         * Nothing left. If a close was asked for, this is the moment it
+         * becomes legal: every byte is sent and acknowledged, so the FIN's
+         * sequence number is the one after the last of them.
+         */
+        if (c->want_close && !c->fin_sent) {
+            (void)tcp_send(c, TCP_ACK_FLAG | TCP_FIN, c->snd_nxt, NULL, 0);
+            c->snd_nxt++;
+            c->fin_sent = true;
+            c->sent_at = kosmos_ticks();
+            c->tries = 0;
+            c->state = (c->state == ST_CLOSE_WAIT) ? ST_LAST_ACK : ST_FIN_WAIT;
+        }
+
         return;
     }
 
@@ -907,6 +956,51 @@ static void tcp_pump(struct conn *c)
      * makes retransmission possible without a second buffer: `out_read` only
      * advances when the far end says it has them.
      */
+}
+
+static void wake_waiter(struct conn *c);
+static void tcp_pump(struct conn *c);
+
+/*
+ * A connection is open and nobody has it yet: give it to whoever is parked
+ * in `accept` on its listener, or leave it for whoever asks next.
+ *
+ * The capability travels with the reply, exactly as `connect`'s does - so
+ * "a socket" is a region somebody was handed rather than a number, and a
+ * program that was not given one cannot name it.
+ */
+static void hand_over(struct conn *c)
+{
+    struct conn *listener;
+    struct net_reply reply;
+    struct message msg;
+
+    if (c->handed_over || c->from_listener < 0) {
+        return;
+    }
+
+    listener = &net.conn[c->from_listener];
+
+    if (listener->state != ST_LISTEN || listener->accepter == 0) {
+        return;                     /* nobody is asking yet; it waits */
+    }
+
+    memset(&reply, 0, sizeof(reply));
+    reply.status     = NET_OK;
+    reply.handle     = (uint32_t)(c - net.conn);
+    reply.ring_bytes = TCP_RING_BYTES;
+    reply.state      = NET_TCP_OPEN;
+    reply.from       = c->remote;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(reply);
+    msg.cap_plus_one = (uint32_t)c->region + 1u;
+    memcpy(msg.data, &reply, sizeof(reply));
+
+    (void)kosmos_reply(listener->accepter, &msg);
+
+    listener->accepter = 0;
+    c->handed_over = true;
 }
 
 /* Whoever is parked in WAIT on this connection is told something happened.
@@ -977,10 +1071,22 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         return;
     }
 
+    flags   = tcp[TCP_FLAGS];
+    seq     = get32(tcp + TCP_SEQ);
+    ack     = get32(tcp + TCP_ACK);
+    payload = tcp_len - header;
+
+    /*
+     * Four fields identify a connection - both addresses and both ports -
+     * and a listener matches on the local port alone. So the exact match is
+     * tried first: a listener on port 80 must not swallow a segment for a
+     * connection it produced on that same port.
+     */
     for (i = 0; i < NET_CONN_MAX; i++) {
         struct conn *k = &net.conn[i];
 
         if (k->state != ST_FREE && k->state != ST_DEAD
+            && k->state != ST_LISTEN
             && k->local_port == get16(tcp + TCP_DPORT)
             && k->remote_port == get16(tcp + TCP_SPORT)
             && same_addr(&k->remote, from)) {
@@ -989,19 +1095,127 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
         }
     }
 
+    /*
+     * Nobody's yet. If it is a SYN and something is listening on that port,
+     * this is somebody arriving.
+     */
+    if (c == NULL && (flags & TCP_SYN) != 0 && (flags & TCP_ACK_FLAG) == 0) {
+        struct conn *listener = NULL;
+        struct conn *made = NULL;
+        long region;
+        long at;
+
+        for (i = 0; i < NET_CONN_MAX; i++) {
+            if (net.conn[i].state == ST_LISTEN
+                && net.conn[i].local_port == get16(tcp + TCP_DPORT)) {
+                listener = &net.conn[i];
+                break;
+            }
+        }
+
+        if (listener == NULL) {
+            return;                 /* a real stack would RST */
+        }
+
+        for (i = 0; i < NET_CONN_MAX; i++) {
+            if (net.conn[i].state == ST_FREE) {
+                made = &net.conn[i];
+                break;
+            }
+        }
+
+        /*
+         * No room. Dropped rather than refused, which is what a busy server
+         * does: the far end retries, and by then something may have closed.
+         * A RST here would turn a moment of load into a refusal the client
+         * reports as "connection refused", which is a different and worse
+         * lie.
+         */
+        if (made == NULL) {
+            return;
+        }
+
+        /*
+         * The region is allocated when the SYN arrives rather than when the
+         * connection is accepted, because the far end may send its request
+         * in the same breath as the final ACK - and there has to be
+         * somewhere to put it.
+         *
+         * That does mean a flood of SYNs exhausts the pool, which is what a
+         * SYN cookie exists to prevent. With four connections the pool is
+         * exhausted by four packets either way; the answer is bounded by
+         * `NET_CONN_MAX` rather than by cleverness, and it is written down
+         * rather than defended against.
+         */
+        region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
+
+        if (region < 0) {
+            return;
+        }
+
+        at = kosmos_mem_map(region);
+
+        if (at < 0) {
+            (void)kosmos_cap_drop(region);
+            return;
+        }
+
+        memset(made, 0, sizeof(*made));
+
+        made->region = region;
+        made->ring   = (struct tcp_ring *)(uintptr_t)at;
+
+        memset(made->ring, 0, TCP_RING_DATA);
+        made->ring->magic = TCP_RING_MAGIC;
+        made->ring->bytes = TCP_RING_BYTES;
+
+        made->local_port    = listener->local_port;
+        made->remote_port   = get16(tcp + TCP_SPORT);
+        made->remote        = *from;
+        made->rcv_nxt       = seq + 1;      /* their SYN takes one */
+        made->snd_una       = net.next_seq;
+        made->snd_nxt       = net.next_seq;
+        made->peer_window   = get16(tcp + TCP_WINDOW);
+        made->state         = ST_SYN_RCVD;
+        made->from_listener = (int)(listener - net.conn);
+        made->sent_at       = kosmos_ticks();
+
+        net.next_seq += 0x01000000u;
+
+        (void)tcp_send(made, TCP_SYN | TCP_ACK_FLAG, made->snd_nxt, NULL, 0);
+        made->snd_nxt++;            /* our SYN takes one too */
+
+        return;
+    }
+
     if (c == NULL) {
         return;                     /* nobody's; a real stack would RST */
     }
-
-    flags   = tcp[TCP_FLAGS];
-    seq     = get32(tcp + TCP_SEQ);
-    ack     = get32(tcp + TCP_ACK);
-    payload = tcp_len - header;
 
     if ((flags & TCP_RST) != 0) {
         conn_die(c, (c->state == ST_SYN_SENT) ? NET_ERR_REFUSED
                                               : NET_ERR_CLOSED);
         return;
+    }
+
+    /*
+     * The third leg of the handshake. Their ACK acknowledges our SYN, and
+     * from here it is an ordinary connection - except that nobody has been
+     * given it yet, which is what `accept` is for.
+     */
+    if (c->state == ST_SYN_RCVD) {
+        if ((flags & TCP_ACK_FLAG) == 0 || ack != c->snd_nxt) {
+            return;
+        }
+
+        c->snd_una = ack;
+        c->state   = ST_OPEN;
+
+        hand_over(c);
+
+        /* And whatever came with it. A client that sends its request in the
+         * same segment as the ACK is doing nothing unusual, and falling
+         * through here is what makes that work. */
     }
 
     if (c->state == ST_SYN_SENT) {
@@ -1066,6 +1280,20 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
 
             tcp_ring_publish(&c->ring->out_read,
                              c->ring->out_read + data_acked);
+
+            /*
+             * And whoever is waiting to write more.
+             *
+             * **This was missing and the symptom was a truncated file.** A
+             * client that fills the ring can only continue once the far end
+             * acknowledges some of it, and without this it parked in `wait`
+             * - which only ever woke for *incoming* bytes - until the
+             * connection died. A 152 KB image came out as the first 16 KB,
+             * which is the ring, and nothing anywhere said so.
+             */
+            if (data_acked > 0) {
+                wake_waiter(c);
+            }
         }
 
         c->snd_una = ack;
@@ -1338,8 +1566,9 @@ static void serve(const struct message *msg, uint64_t sender)
         c->snd_una     = net.next_seq;
         c->snd_nxt     = net.next_seq;
         c->peer_window = 1460;
-        c->state       = ST_SYN_SENT;
-        c->opened_by   = sender;
+        c->state         = ST_SYN_SENT;
+        c->from_listener = -1;
+        c->opened_by     = sender;
         c->sent_at     = kosmos_ticks();
 
         net.next_seq += 0x01000000u;
@@ -1406,8 +1635,18 @@ static void serve(const struct message *msg, uint64_t sender)
             return;
         }
 
+        /*
+         * Parked, with a deadline this time.
+         *
+         * `wait_until` was recorded and never looked at, so a wait that
+         * nothing woke was a caller held for ever. The deadline is in
+         * scheduler ticks like every other wait in this system, converted
+         * here because the counter is what this server measures in.
+         */
         c->waiter     = sender;
-        c->wait_until = kosmos_ticks();
+        c->wait_until = kosmos_ticks()
+                      + (uint64_t)(req.ticks ? req.ticks : 25u)
+                        * net.hz / 250u;
         return;
     }
 
@@ -1424,16 +1663,104 @@ static void serve(const struct message *msg, uint64_t sender)
          * say, which is why this is a FIN rather than a teardown: a client
          * that has sent its request and closes should still read the answer.
          */
-        if (c->state == ST_OPEN || c->state == ST_CLOSE_WAIT) {
-            (void)tcp_send(c, TCP_ACK_FLAG | TCP_FIN, c->snd_nxt, NULL, 0);
-            c->snd_nxt++;
-            c->fin_sent = true;
-            c->state = (c->state == ST_OPEN) ? ST_FIN_WAIT : ST_LAST_ACK;
-        }
+        /*
+         * **Wanted, not done.** The FIN takes a sequence number and must come
+         * *after* every byte this end has to send - and the ring may still
+         * hold some, because `write` puts bytes there and the stack sends
+         * what fits.
+         *
+         * Sending it here regardless is what truncated a 152 KB image at
+         * 141 KB: the FIN went out with the sequence number of data that had
+         * not left yet, the far end saw the connection end, and the last
+         * eleven kilobytes were never asked for again. Nothing reported it -
+         * the server logged a complete file and the client believed the
+         * connection had finished properly.
+         *
+         * So this records the wish and `tcp_pump` acts on it once there is
+         * nothing left to send.
+         */
+        c->want_close = true;
+        tcp_pump(c);
 
         reply.status = NET_OK;
         reply.handle = req.handle;
         answer(sender, &reply);
+        return;
+    }
+
+    case NET_OP_LISTEN: {
+        struct conn *c = NULL;
+        unsigned i;
+
+        if (!net.has_card || !net.configured) {
+            fail(sender, net.has_card ? NET_ERR_NO_ROUTE : NET_ERR_NO_CARD);
+            return;
+        }
+
+        /* Already listening on that port is not an error and not a second
+         * listener: it is the same one, and answering with it means a
+         * program restarted in a loop does not exhaust the pool. */
+        for (i = 0; i < NET_CONN_MAX; i++) {
+            if (net.conn[i].state == ST_LISTEN
+                && net.conn[i].local_port == (uint16_t)req.port) {
+                c = &net.conn[i];
+                break;
+            }
+        }
+
+        if (c == NULL) {
+            for (i = 0; i < NET_CONN_MAX; i++) {
+                if (net.conn[i].state == ST_FREE) {
+                    c = &net.conn[i];
+                    break;
+                }
+            }
+        }
+
+        if (c == NULL) {
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        memset(c, 0, sizeof(*c));
+        c->state         = ST_LISTEN;
+        c->local_port    = (uint16_t)req.port;
+        c->from_listener = -1;
+
+        reply.status = NET_OK;
+        reply.handle = (uint32_t)(c - net.conn);
+        answer(sender, &reply);
+        return;
+    }
+
+    case NET_OP_ACCEPT: {
+        struct conn *listener = conn_at(req.handle);
+        unsigned i;
+
+        if (listener == NULL || listener->state != ST_LISTEN) {
+            fail(sender, NET_ERR_NO_HANDLE);
+            return;
+        }
+
+        listener->accepter = sender;
+
+        /*
+         * Somebody may already be waiting - a connection that completed its
+         * handshake before anybody asked. Handed over now rather than left
+         * for the next arrival, which would be a server that answers every
+         * request one client late.
+         */
+        for (i = 0; i < NET_CONN_MAX; i++) {
+            struct conn *k = &net.conn[i];
+
+            if (!k->handed_over && k->from_listener == (int)req.handle
+                && (k->state == ST_OPEN || k->state == ST_CLOSE_WAIT)) {
+                hand_over(k);
+                return;
+            }
+        }
+
+        /* Nobody yet: the caller stays parked. */
         return;
     }
 
@@ -1482,6 +1809,13 @@ static void expire(uint64_t hz)
     for (i = 0; i < NET_CONN_MAX; i++) {
         struct conn *c = &net.conn[i];
         uint64_t wait;
+
+        /* A wait whose deadline has passed, answered so the caller can look
+         * again. Nothing has happened, which is a fact rather than an
+         * error. */
+        if (c->waiter != 0 && c->wait_until != 0 && now >= c->wait_until) {
+            wake_waiter(c);
+        }
 
         if (c->state == ST_FREE || c->state == ST_DEAD) {
             continue;
@@ -1561,9 +1895,23 @@ void net_server(long endpoint)
 
         hz = (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0)
              ? info.counter_hz : 62500000UL;
+        net.hz = hz;
     }
 
     net.next_id = 1;
+
+    /*
+     * Where sequence numbers start.
+     *
+     * Derived from the counter rather than left at zero, which is what it
+     * was: an initial sequence number of zero is one an off-path attacker
+     * knows, and knowing it is most of what is needed to inject into a
+     * connection. This is not the specification's answer either - RFC 6528
+     * wants a keyed hash of the connection's four fields - and it is better
+     * than a constant, which is the honest description of it.
+     */
+    net.next_seq  = (uint32_t)kosmos_ticks();
+    net.next_port = 49152u;
 
     for (;;) {
         struct message msg;

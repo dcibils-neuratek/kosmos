@@ -63,16 +63,26 @@
  * stack writes into `in` and the client reads it. `WAIT` is how a client
  * blocks until something happens rather than asking in a loop.
  *
- * **No LISTEN**, and that is a scope decision rather than an omission. A
- * client connects out, which is what telnet and SSH do and what this stack
- * is for today; accepting a connection needs a second half of the state
- * machine and a way to hand a caller a connection it did not ask for.
- * `roadmap.md`'s HTTP server is where that argument belongs.
+ * **LISTEN arrived with the HTTP server**, which is the argument
+ * `roadmap.md` said would settle it. It is the second half of the state
+ * machine and a way to hand a caller a connection it did not ask for, and
+ * both were cheaper than the note predicting them suggested.
  */
 #define NET_OP_CONNECT   5u       /* open one, and get its rings */
 #define NET_OP_PUSH      6u       /* there is something in `out` */
 #define NET_OP_WAIT      7u       /* block until bytes arrive or it closes */
 #define NET_OP_CLOSE     8u       /* this end is done sending */
+
+/*
+ * And the other direction, which `netproto.h` said was not here.
+ *
+ * **An HTTP server is what changed it.** `LISTEN` claims a port; `ACCEPT`
+ * parks until somebody connects and comes back with the connection, its
+ * rings, and who it is from. The connection that arrives is an ordinary one
+ * from then on - the same handle, the same ring, the same `WAIT`.
+ */
+#define NET_OP_LISTEN    9u       /* answer on this port */
+#define NET_OP_ACCEPT   10u       /* park until somebody arrives */
 
 #define NET_OK               0u
 #define NET_ERR_BAD_OP       1u

@@ -290,6 +290,9 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **Ping needs no TCP**, and half a TCP is worse than none. Ethernet, ARP, IPv4 and ICMP is what a round trip costs; `netproto.h` records where the shared ring goes when a *stream* arrives, so nobody discovers a message worked for the first ten kilobytes | netproto.h |
 | Sep 2026 | **A connection's bytes never travel in a message.** Two SPSC rings in a region both sides hold, and the receive window *is* the ring's free space - so a client that stops reading really does slow the sender down, and flow control costs nothing | tcpring.h |
 | Sep 2026 | **One segment in flight, out-of-order dropped.** A queue and a sliding window buy throughput on a long fat link and buy nothing on a line protocol; a reassembly buffer is the well-known way to get a stack wrong. One timer instead of four | user/servers/net.c |
+| Sep 2026 | **A FIN is a wish, not an act.** It takes a sequence number, so sending it while the ring still holds bytes numbers it as if they did not exist - a 152 KB image arrived as 141 KB with the server logging success and the client seeing a clean close | user/servers/net.c |
+| Sep 2026 | **A manager is not the server.** `accept` blocks and a window that blocked would stop drawing, so `httpd` is a process and `webserver` reads what it wrote to `/data` - which is why daemons have log files rather than shouting | user/bin/webserver.lua |
+| Sep 2026 | **Crypto is checked against its own specification's vectors, in `make test`.** It is the one place here where a bug is silent: a wrong counter still encrypts, and nothing about running tells you | user/lib/crypto.c |
 
 ---
 

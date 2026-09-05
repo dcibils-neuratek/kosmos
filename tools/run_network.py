@@ -91,8 +91,41 @@ def frames(path):
     return out
 
 
-def boot(image, extra, commands, seconds=90):
-    """One run, with whatever QEMU arguments the caller wants added."""
+_served = {}
+
+
+def _fetch(port):
+    """Ask the guest for a page, from here.
+
+    Retried, because the server is started by typing at a prompt and there
+    is no moment this side can observe when it has finished listening. Five
+    attempts a second apart is the difference between a test that is about
+    the network and one that is about timing.
+    """
+    import http.client
+
+    for _ in range(10):
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            c.request("GET", "/")
+            r = c.getresponse()
+            _served["code"] = r.status
+            _served["kind"] = r.getheader("Content-Type")
+            _served["body"] = r.read().decode("utf-8", "replace")
+            c.close()
+            return
+        except Exception as e:          # noqa: BLE001 - any of them means retry
+            _served["error"] = repr(e)
+            time.sleep(1)
+
+
+def boot(image, extra, commands, seconds=90, then=None):
+    """One run, with whatever QEMU arguments the caller wants added.
+
+    `then` runs while the guest is still up, after the commands have been
+    typed - which is what a server needs: the last command does not return,
+    because the server is still serving.
+    """
     saved = run_screenshot.QEMU_ARGS
     run_screenshot.QEMU_ARGS = saved + extra
 
@@ -107,7 +140,17 @@ def boot(image, extra, commands, seconds=90):
 
         for command in commands:
             guest.type(command + "\n")
+
+            if then is not None and command is commands[-1]:
+                time.sleep(3)       # let it reach its accept loop
+                break
+
             guest.wait_for(run_screenshot.PROMPT, command)
+
+        if then is not None:
+            then()
+            time.sleep(1)
+            guest._read_available()
 
         return guest.seen.replace("\r", "")
     finally:
@@ -299,6 +342,55 @@ def main():
                 "the body came back in pieces: %d of the 8 lines arrived. "
                 "The close and the last bytes can be in one segment."
                 % out.count("the quick brown fox"))
+
+        checks += 1
+
+        # ---- and serving: this machine asks the guest for a page ----
+        #
+        # The other direction, which needed the half of TCP that was left
+        # out on purpose - LISTEN, SYN_RECEIVED, and a way to hand a caller a
+        # connection it did not ask for. `roadmap.md` said an HTTP server was
+        # the argument that would settle whether to build it.
+        #
+        # `hostfwd` is what makes it reachable: slirp drops everything
+        # inbound until a port is forwarded, so without this the guest would
+        # be listening where nothing can knock.
+        #
+        # **The image is the check that matters.** A page fits in one segment
+        # and would pass with almost any bug; 150 KB does not fit in the ring,
+        # so it exercises the client waiting for space, the acknowledgement
+        # that frees it, and a FIN that must not go out until the last byte
+        # has. Both of those were wrong when this was written and neither said
+        # so - the file simply arrived short.
+        #
+        import random
+
+        forward = random.randint(20000, 60000)
+        big = bytes(range(256)) * 700          # 179,200 bytes, ring is 16 KB
+
+        out = boot(image, [
+            "-netdev", f"user,id=net0,hostfwd=tcp::{forward}-:80",
+            "-device", "virtio-net-device,netdev=net0",
+        ], [
+            'fs.write("/data/w/index.html", "<h1>Kosmos</h1>")',
+            "httpd 80 /data/w",
+        ], seconds=120, then=lambda: _fetch(forward))
+
+        if _served.get("code") != 200:
+            raise Failure(
+                "this computer could not fetch a page from the guest: "
+                f"{_served}\n{out[-900:]}")
+
+        checks += 1
+
+        if "Kosmos" not in _served.get("body", ""):
+            raise Failure(f"the page came back as {_served.get('body')!r}")
+
+        checks += 1
+
+        if _served.get("kind") != "text/html":
+            raise Failure(
+                f"served as {_served.get('kind')!r}, not text/html")
 
         checks += 1
 

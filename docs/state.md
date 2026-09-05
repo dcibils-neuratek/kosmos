@@ -8,6 +8,51 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**Kosmos serves web pages.** `httpd 80 /home` and this Mac fetches a 152 KB
+PNG from it, byte for byte identical to the file on the guest's disk.
+
+That needed the half of TCP left out on purpose - LISTEN, SYN_RECEIVED, and
+a way to hand a caller a connection it did not ask for - which `roadmap.md`
+said an HTTP server would be the argument to settle. It was cheaper than the
+note predicting it suggested.
+
+**Three bugs on the way and none of them said anything was wrong**, which is
+the reason to write them down:
+
+- `send_ip`'s buffer was `NET_PAYLOAD_MAX + ICMP_HEADER`, 156 bytes, because
+  ICMP was its only caller. TCP could send a handshake and nothing larger.
+  The capture showed a FIN with `len=0` - a server that answered nothing.
+- **A FIN is a wish, not an act.** It takes a sequence number, so sending it
+  while the ring still held bytes numbered it as if they did not exist. The
+  image arrived as 141 KB, the server logged a complete file, and the client
+  saw a clean close.
+- A client had no way to wait for *outgoing* space. `wait` only woke for
+  incoming bytes, so a client that filled the ring parked until the
+  connection died - the first truncation, at exactly 16 KB, which is the
+  ring. An ACK that frees space wakes the waiter now, and `wait` honours the
+  deadline it had been recording and ignoring.
+
+**Two apps.** `network` shows the card and edits the addresses, applies them
+live, saves to `/home/.network` for the next boot, and can ping the gateway
+to say whether any of it worked. `webserver` starts and stops `httpd` and
+shows its requests arriving.
+
+The manager is not the server and that is forced: `accept` blocks and a
+window that blocked would stop drawing. They talk through `/data` - the
+server writes its state and last forty lines, the manager reads them on a
+tick - which is a file rather than a message because the server has no idea
+anybody is watching.
+
+**SSH's primitives are written and checked**: SHA-256, HMAC-SHA256,
+ChaCha20, Poly1305 and X25519, each against the vectors in its own
+specification. Two bugs came out of that which running would never have
+shown - a nonsense shift in `fe_from_bytes`, and one apparent mismatch that
+was *the test* reusing RFC 8439 2.3.2's nonce for 2.4.2. What is left is
+Ed25519 verification, then the binary packet protocol, key exchange,
+userauth and channels.
+
+---
+
 **Kosmos is on the internet.** `ping 8.8.8.8` answers, in about 22 ms
 through QEMU's NAT.
 

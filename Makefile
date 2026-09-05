@@ -348,6 +348,7 @@ USER_SRCS := user/init/start.S \
              user/servers/ramfs.c \
              user/servers/net.c \
              user/lib/net_kosmos.c \
+             user/lib/crypto.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \
@@ -964,7 +965,17 @@ ACCEL := $(if $(FAST),-accel hvf -cpu host,-cpu cortex-a72)
 # `make NONET=1 qemu` leaves the card out, which is how the no-card branch
 # of `hal_net_init` gets exercised.
 #
-NET_FLAGS := $(if $(NONET),,-netdev user$(comma)id=net0 \
+#
+# `HTTP=8080` forwards a port *in*, which is the other direction.
+#
+# slirp NATs outbound and drops everything inbound, so a server inside the
+# machine is unreachable from this computer until a port is forwarded.
+# `make HTTP=8080 qemu` then `curl localhost:8080` reaches `httpd` on port 80
+# inside the guest - which is what makes the HTTP server testable at all.
+#
+FORWARD := $(if $(HTTP),$(comma)hostfwd=tcp::$(HTTP)-:80,)
+
+NET_FLAGS := $(if $(NONET),,-netdev user$(comma)id=net0$(FORWARD) \
                             -device virtio-net-device$(comma)netdev=net0)
 
 QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M \

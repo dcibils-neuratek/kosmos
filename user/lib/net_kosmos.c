@@ -458,6 +458,97 @@ static int l_close(lua_State *L)
     return 1;
 }
 
+/*
+ * `net.listen(cap, port)` - answer on a port.
+ *
+ * Returns a plain handle rather than a userdata, because a listener has no
+ * ring: there is nothing to map and nothing to free but the slot. What comes
+ * out of `accept` is the connection, and that is a userdata like any other.
+ */
+static int l_listen(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+
+    memset(&req, 0, sizeof(req));
+    req.op   = NET_OP_LISTEN;
+    req.port = (uint32_t)luaL_checkinteger(L, 2);
+
+    if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)rep.status);
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)rep.handle);
+    return 1;
+}
+
+/*
+ * `net.accept(cap, listener)` - park until somebody connects.
+ *
+ * **This blocks and the stack does not.** The caller sits inside `call`
+ * while the stack goes on answering everything else, which is the same
+ * arrangement `connect` and `ping` use and the reason a server written on
+ * this does not need threads to stay responsive to its own other requests.
+ */
+static int l_accept(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+    struct message msg, out;
+    struct ring_handle *h;
+    long region, at;
+
+    memset(&req, 0, sizeof(req));
+    req.op     = NET_OP_ACCEPT;
+    req.handle = (uint32_t)luaL_checkinteger(L, 2);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+
+    if (kosmos_call(cap, &msg, &out) != 0 || out.length < sizeof(rep)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the network stack did not answer");
+        return 2;
+    }
+
+    memcpy(&rep, out.data, sizeof(rep));
+
+    if (rep.status != NET_OK || out.cap_plus_one == 0) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)rep.status);
+        return 2;
+    }
+
+    region = (long)out.cap_plus_one - 1;
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(region);
+        lua_pushnil(L);
+        lua_pushliteral(L, "the rings could not be mapped");
+        return 2;
+    }
+
+    h = (struct ring_handle *)lua_newuserdatauv(L, sizeof(*h), 0);
+    h->ring    = (struct tcp_ring *)(uintptr_t)at;
+    h->cap     = region;
+    h->handle  = rep.handle;
+    h->net_cap = cap;
+
+    luaL_setmetatable(L, "kosmos.tcp");
+
+    /* And who it is from, because a server that cannot say who connected
+     * cannot keep a log worth reading. */
+    push_addr(L, &rep.from);
+
+    return 2;
+}
+
 void kosmos_net_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -465,6 +556,8 @@ void kosmos_net_kit(lua_State *L)
         { "configure", l_configure },
         { "ping",      l_ping },
         { "connect",   l_connect },
+        { "listen",    l_listen },
+        { "accept",    l_accept },
         { NULL, NULL }
     };
 

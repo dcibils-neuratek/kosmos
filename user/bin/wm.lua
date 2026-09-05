@@ -1,5 +1,11 @@
 -- kosmos: server
--- kosmos: needs processes screen
+-- kosmos: needs processes screen network
+--
+-- `network` is here so the desktop can *pass it on*. The kernel refuses a
+-- spawn that hands over authority the parent does not hold, so without this
+-- an application declaring `needs network` fails to start with "no process"
+-- - which says nothing about the card. init grants it to the shell for the
+-- same reason and the shell to this.
 -- The window manager: windows, decoration, stacking, focus, and the
 -- compositor underneath them.
 --
