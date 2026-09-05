@@ -297,7 +297,7 @@ Each milestone's definition of done becomes a test, and that test is never delet
 | M4 | A process doing `*(nil)` dies without taking the system with it |
 | M5 | Two processes see different namespaces from the same server. ~~Hot reload without the client noticing~~ — withdrawn September 2026 with the feature; `design.md` §10 |
 | M6 | Dragging a window with a hung app inside it stays smooth |
-| M7 | A live query updates without polling when another process writes. An `fs.write` into an app's namespace changes its state |
+| M7 | A live query updates without polling when another process writes. An `fs.write` into an app's namespace changes its state. **`run_queries.py` checks which paths come back, on both kinds of mount** - the milestone was signed off with no such test, and the disk had been answering `/home` with `/home/home/...` and with `/system`'s files ever since |
 | M8 | Power cut during a write and the filesystem mounts clean |
 | M9 | 60fps without a single stutter for a minute |
 | M10 | Doom at a sustained 35fps |

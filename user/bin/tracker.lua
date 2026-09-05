@@ -34,7 +34,20 @@ local files = use("/lib/files.lua")
 local types = use("/lib/filetypes.lua")
 local theme = ui.theme
 
-local W, H = 700, 460
+local W, H = 780, 520
+
+--
+-- The bands the window is divided into, measured from the top.
+--
+-- Named rather than repeated, because five widgets and two resize handlers
+-- have to agree about them and the version where they did not is what put
+-- the status line through the middle of the places tree.
+--
+local TOOLBAR_Y = 6                -- under the menu bar
+local TOOLBAR_H = 24
+local PATH_Y    = TOOLBAR_Y + TOOLBAR_H + 8
+local CONTENT_Y = PATH_Y + gfx.font.h + 8
+local FOOT_H    = 26               -- the status line at the bottom
 
 -- The menu bar's height, which everything below it is offset by. A menu bar
 -- is an ordinary widget in this window rather than a band the desktop
@@ -168,6 +181,19 @@ local carrying = false     -- a drag of our own is in progress
 
 local DRAG_SLOP = 4
 
+--
+-- Where a row's file actually is.
+--
+-- Almost always `where` plus the name, and not always: a **query** puts
+-- files from all over a volume in one window, and each of those carries its
+-- own path. One function, because every operation - open, copy, delete,
+-- drag - has to agree, and the one that guessed would act on a file in the
+-- current directory that happens to share a name with the one shown.
+--
+local function path_of(e)
+  return e and (e.path or files.join(where, e.name)) or nil
+end
+
 local function marked_count()
   local n = 0
 
@@ -213,9 +239,58 @@ local start_drag
 
 -- And the one that changes directory, because the places tree calls it and
 -- is built above it.
-local show
+local show, visit
+local go_back, go_forward, go_up
 local sort_by  = "name"
 local scroll   = 1        -- the first row shown; the bar moves this
+
+--------------------------------------------------------------------------
+-- Where this window has been.
+--
+-- Two stacks, which is what Back and Forward are - and the reason they are
+-- stacks rather than one list with a cursor is Forward: going somewhere new
+-- has to *throw away* where you could have gone, or Forward offers a branch
+-- nobody took.
+--
+-- `visit` remembers, `show` does not. That distinction is the whole of it:
+-- Refresh, and the redraw after a file is moved or renamed, are the same
+-- directory again and must not each be a step you can go Back through.
+--------------------------------------------------------------------------
+local went      = {}       -- where Back goes
+local ahead     = {}       -- where Forward goes
+
+--------------------------------------------------------------------------
+-- The search box, which is two different things wearing one hat.
+--
+-- **A plain word filters what is already on screen**, by name, as you type.
+-- It costs nothing - the entries are in hand - so it happens on every
+-- keystroke and there is no button to press.
+--
+-- **`name:value` is a query**, and a query is a message. It asks the
+-- filesystem which files carry that attribute and shows the answer as a
+-- folder: files from all over the volume, in one window, each with its own
+-- path. That is BeOS's live query and it is what M7's index was built for -
+-- `qbench` measures that the cost is the size of the answer rather than the
+-- size of the disk. It runs on Enter rather than on every keystroke,
+-- because the first costs a round trip and the second does not.
+--
+-- **The result is refreshed rather than pushed**, and the difference is
+-- worth naming. A real live query blocks in `fs.watch` until the answer
+-- changes, and this window cannot: it is already blocked in the desktop's
+-- `poll`, and there is no way to wait on two things at once. So while a
+-- query is showing the window wakes twice a second and asks again. What is
+-- missing to do it properly is a select - or a second thread - and neither
+-- exists yet.
+--
+-- **A query over names is not available and the reason is interesting.**
+-- The index is over attributes, and a file's name is not one of them. BeOS
+-- indexed `name` precisely so that `name = "*.jpg"` could be a query rather
+-- than a walk, and until this filesystem does the same, a name search is
+-- either the local filter above or a directory walk in Lua.
+--------------------------------------------------------------------------
+local filter    = nil      -- a name substring, while one is typed
+local found     = nil      -- the rows a query returned, or nil
+local asked     = nil      -- { field, value }, so it can be run again
 
 --
 -- "list" or "icons", and the View menu changes it.
@@ -236,21 +311,39 @@ local reversed = false
 -- a band of background painted straight across the middle of the places
 -- tree - and the path never widened. `view:resize` is what applies them.
 --
-local here   = ui.label{ x = 12, y = 10 + BAR_H, w = W - 24, text = where,
+local here   = ui.label{ x = 12, y = PATH_Y + BAR_H, w = W - 24, text = where,
                          follow = { "left", "right", "top" } }
-local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "",
+
+-- The left of the status line carries what just happened; the right carries
+-- how many things there are, which is the one number always worth a place
+-- of its own. Two labels rather than one string, so a message never pushes
+-- the count off the end.
+local status = ui.label{ x = 12, y = H - FOOT_H + 4, w = W - 200, text = "",
                          follow = { "left", "right", "bottom" } }
+local count  = ui.label{ x = W - 180, y = H - FOOT_H + 4, w = 168, text = "",
+                         follow = { "right", "bottom" } }
 
 --
--- Where a new name is typed. Empty and inert until Rename fills it.
+-- Where a new name is typed. Not there until Rename asks for it.
 --
--- Always on screen rather than appearing and going away, because the kit
--- has no way to hide a view and inventing one for this would be a widget
--- change made for an application. An empty box at the bottom is a smaller
--- cost than that.
+-- It used to sit under the list permanently, because the kit had no way to
+-- hide a view - which was true and was the wrong thing to work around. It
+-- has one now (`view.hidden`), and it is three lines in `ui.lua` that every
+-- panel benefits from.
 --
-rename_field = ui.field{ x = 12, y = H - 58, w = 260, text = "",
-                        follow = { "left", "bottom" } }
+rename_field = ui.field{ x = 12, y = H - FOOT_H - 30, w = 300, text = "",
+                         hidden = true, follow = { "left", "bottom" } }
+
+--
+-- The search box, top right, which is where every file manager puts it.
+--
+-- `follow` pins it to the right edge rather than the left, so widening the
+-- window widens the gap between the buttons and the box instead of leaving
+-- it stranded in the middle.
+--
+local search = ui.field{ x = W - 232, y = TOOLBAR_Y + BAR_H, w = 220,
+                         h = TOOLBAR_H, text = "", hint = "Search",
+                         follow = { "right", "top" } }
 
 --------------------------------------------------------------------------
 -- The columns.
@@ -269,10 +362,34 @@ local COLUMNS = {
   { key = "kind", title = "Kind", x = 316, w = 90  },
 }
 
+--
+-- What the view shows, which is not always what the directory holds.
+--
+-- Three sources, in order of how much they cost: a query's answer if one
+-- has been run, the directory filtered by a typed name, or the directory.
+-- One function, so sorting, drawing, hit-testing and every operation see
+-- the same list - the version where the drawing filtered and the hit test
+-- did not is a file manager that deletes the wrong file.
+--
+local function visible()
+  if found then return found end
+
+  if not filter or filter == "" then return entries end
+
+  local out = {}
+  local want = filter:lower()
+
+  for _, e in ipairs(entries) do
+    if e.name:lower():find(want, 1, true) then out[#out + 1] = e end
+  end
+
+  return out
+end
+
 local function sorted()
   local out = {}
 
-  for i, e in ipairs(entries) do out[i] = e end
+  for i, e in ipairs(visible()) do out[i] = e end
 
   table.sort(out, function(a, b)
     -- Directories stay together whatever the sort, because a directory is a
@@ -334,7 +451,8 @@ end
 -- sensible order and out of the way of a root that lists something else.
 --
 local places = ui.tree{
-  x = 12, y = 58 + BAR_H, w = PLACES_W, h = H - 128 - BAR_H,
+  x = 12, y = CONTENT_Y + BAR_H, w = PLACES_W,
+  h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
   follow = { "left", "top", "bottom" },
   roots = {
     { text = "home",   path = "/home",   children = subdirs },
@@ -344,17 +462,18 @@ local places = ui.tree{
     { text = "lib",    path = "/lib" },
     { text = "dev",    path = "/dev" },
   },
-  on_select = function(_, node) show(node.path) end,
+  on_select = function(_, node) visit(node.path) end,
 }
 
 local split = ui.splitter{
-  x = 12 + PLACES_W, y = 58 + BAR_H, w = 6, h = H - 128 - BAR_H,
+  x = 12 + PLACES_W, y = CONTENT_Y + BAR_H, w = 6,
+  h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
   follow = { "left", "top", "bottom" },
 }
 
-local rows = ui.view{ x = 12 + PLACES_W + 6, y = 58 + BAR_H,
+local rows = ui.view{ x = 12 + PLACES_W + 6, y = CONTENT_Y + BAR_H,
                       w = W - 24 - PLACES_W - 6,
-                      h = H - 128 - BAR_H,
+                      h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
                       follow = { "left", "right", "top", "bottom" } }
 
 --
@@ -473,8 +592,7 @@ local function draw_icons(self, g, list)
     local ink = on and theme.text_on
                 or (backdrop and theme.desktop_text or theme.text)
 
-    files.icon(g, x + (CELL_W - 4 - files.ICON) // 2, y + 2, e,
-               files.join(where, e.name))
+    files.icon(g, x + (CELL_W - 4 - files.ICON) // 2, y + 2, e, path_of(e))
 
     -- Trimmed to the cell rather than clipped, so a long name ends in a
     -- readable way instead of half a glyph.
@@ -601,21 +719,19 @@ function rows:draw(g)
   draw_band()
 end
 
-local show                     -- defined below; the handlers call it
-
 local function open_selected()
   local e = rows.shown and rows.shown[selected]
 
   if not e then return end
 
   if e.kind == "directory" then
-    show(files.join(where, e.name))
+    visit(path_of(e))
   else
     -- Which program opens it is `/lib/filetypes.lua`'s answer, not
     -- Tracker's. Tracker does not need to know what an editor is - only
     -- that opening a file is somebody else's job and that something knows
     -- whose.
-    local full = files.join(where, e.name)
+    local full = path_of(e)
     local opener = types.opener(full)
 
     if not opener then
@@ -800,7 +916,7 @@ function start_drag(self)
 
   local paths = {}
 
-  for i, e in ipairs(list) do paths[i] = files.join(where, e.name) end
+  for i, e in ipairs(list) do paths[i] = path_of(e) end
 
   --
   -- What the pointer carries. Long names are cut, because the badge is
@@ -843,11 +959,23 @@ end
 function rows:drop(kind, payload, x, y)
   if kind ~= "files" then return false end
 
+  --
+  -- A query result is a view of files that are elsewhere, so there is no
+  -- "here" to put something in. Refused with a sentence rather than
+  -- silently moving them into whichever directory the query was run from,
+  -- which is a place the person is not looking at.
+  --
+  if found then
+    ui.dropped(win, false, 0, "a query is not a folder to drop into")
+    status.text = "a query is not a folder to drop into"
+    return true
+  end
+
   local into = where
   local n = at_point(self, x, y)
   local e = n and self.shown and self.shown[n]
 
-  if e and e.kind == "directory" then into = files.join(where, e.name) end
+  if e and e.kind == "directory" then into = path_of(e) end
 
   local moved, skipped, failed, why = 0, 0, 0, nil
 
@@ -923,7 +1051,7 @@ function rows:key(c)
     mark_only(math.max(selected - 1, 1), self.shown)
   elseif c == 13 or c == 10 then open_selected()
   elseif c == 8 or c == 127 then
-    if where ~= "/" then show(files.parent(where)) end
+    go_up()
   else
     return false
   end
@@ -933,20 +1061,93 @@ end
 
 --------------------------------------------------------------------------
 
-function show(path)
-  local found, why = files.entries(path)
+--
+-- How many things are on screen, and how many there are to be on screen.
+--
+-- Both, when they differ, because "3 items" in a directory of ninety is a
+-- window that looks empty for a reason the person typed a moment ago and
+-- may have forgotten.
+--
+local function recount()
+  local shown = #visible()
 
-  if not found then
+  if found then
+    count.text = ("%d found"):format(shown)
+  elseif filter and filter ~= "" then
+    count.text = ("%d of %d"):format(shown, #entries)
+  elseif shown == 0 then
+    count.text = "empty"
+  else
+    count.text = ("%d item%s"):format(shown, shown == 1 and "" or "s")
+  end
+end
+
+function show(path)
+  local listed, why = files.entries(path)
+
+  if not listed then
     status.text = tostring(why)
     return
   end
 
-  where, entries = path, found
-  selected = (#found > 0) and 1 or 0
+  -- A directory listing replaces a query's answer: the two are different
+  -- windows onto the filesystem and showing one over the other would be a
+  -- list nobody could account for.
+  where, entries, found, asked = path, listed, nil, nil
+  selected = (#listed > 0) and 1 or 0
   here.text = path
 
-  status.text = (#found == 0) and "empty"
-                or ("%d item%s"):format(#found, #found == 1 and "" or "s")
+  recount()
+  status.text = ""
+end
+
+--
+-- The same, and remembered. See the two stacks above: `visit` is a step you
+-- can go Back through and `show` is not.
+--
+function visit(path)
+  if path == where then return end
+
+  local from = where
+
+  --
+  -- A move clears the search; a refresh does not. Somewhere new is a new
+  -- question, and carrying a filter into a directory you have just opened
+  -- is a window that looks empty for a reason two directories ago.
+  --
+  search.text, search.caret = "", 1
+  filter = nil
+
+  show(path)
+
+  -- Only if it worked. A path that could not be listed leaves `where` alone,
+  -- and pushing it would put a place you never reached into the history.
+  if where == path then
+    went[#went + 1] = from
+    ahead = {}
+  end
+end
+
+function go_back()
+  local to = table.remove(went)
+
+  if not to then status.text = "nowhere back" return end
+
+  local from = where
+
+  show(to)
+  ahead[#ahead + 1] = from
+end
+
+function go_forward()
+  local to = table.remove(ahead)
+
+  if not to then status.text = "nowhere forward" return end
+
+  local from = where
+
+  show(to)
+  went[#went + 1] = from
 end
 
 --
@@ -964,16 +1165,24 @@ end
 chrome(here)
 
 local function button(x, w, text, fn)
-  chrome(ui.button{ x = x, y = 28 + BAR_H, w = w, h = 24, text = text,
-                    on_click = fn })
+  chrome(ui.button{ x = x, y = TOOLBAR_Y + BAR_H, w = w, h = TOOLBAR_H,
+                    text = text, on_click = fn })
 end
 
-button(12,  50, "Up",     function()
-  if where ~= "/" then show(files.parent(where)) end
-end)
+--
+-- Back and Forward first, where every browser and every file manager has
+-- put them since 1995. Arrows rather than words because two words is a
+-- third of the toolbar for something that is understood at a glance.
+--
+button(12, 28, "<", go_back)
+button(44, 28, ">", go_forward)
 
-button(70,  60, "Home",   function() show("/home") end)
-button(138, 76, "Refresh", function() show(where) end)
+function go_up()
+  if where ~= "/" then visit(files.parent(where)) end
+end
+
+button(80,  44, "Up",   go_up)
+button(128, 56, "Home", function() visit("/home") end)
 
 --
 -- Named, because the menu and the toolbar do the same things and the same
@@ -1016,7 +1225,7 @@ function delete_selected()
   local done = 0
 
   for _, e in ipairs(list) do
-    local ok, why = fs.send(files.join(where, e.name), { type = "delete" })
+    local ok, why = fs.send(path_of(e), { type = "delete" })
 
     if not ok then
       show(where)
@@ -1033,8 +1242,8 @@ function delete_selected()
                 or ("deleted " .. done .. " items")
 end
 
-button(222, 96, "New folder", new_folder)
-button(326, 70, "Delete", delete_selected)
+button(192, 96, "New folder", new_folder)
+button(296, 62, "Delete", delete_selected)
 
 --------------------------------------------------------------------------
 -- Copying, which is the thing a file manager is for and this one could not
@@ -1063,7 +1272,7 @@ local function do_copy()
   -- files and pasting them elsewhere is one gesture rather than three.
   clipboard = {}
 
-  for i, e in ipairs(list) do clipboard[i] = files.join(where, e.name) end
+  for i, e in ipairs(list) do clipboard[i] = path_of(e) end
 
   status.text = (#list == 1) and ("copied " .. list[1].name)
                 or ("copied " .. #list .. " items")
@@ -1199,9 +1408,179 @@ function do_rename()
   rename_of = list[1].name
   rename_field.text = rename_of
   rename_field.caret = #rename_of + 1
+  rename_field.hidden = false
 
   focus_on(rename_field)
   status.text = "new name for " .. rename_of .. ", then Enter"
+end
+
+--------------------------------------------------------------------------
+-- Searching, which is the two things the box at the top does.
+--------------------------------------------------------------------------
+
+--
+-- `name:value` and nothing else. A single word is a filter; anything with a
+-- colon in it is a question for the filesystem.
+--
+-- Deliberately not an expression language. BeOS's query grammar had `and`,
+-- `or`, comparisons and wildcards, and every one of those is a thing the
+-- server would have to be taught - `fs.query` matches a value exactly,
+-- which is what the index can answer without walking. A grammar in front of
+-- an engine that cannot honour it would be a search box that silently
+-- returns the wrong answer.
+--
+local function run_query(text)
+  local field, value = text:match("^%s*([%w_]+)%s*:%s*(.-)%s*$")
+
+  if not field or value == "" then
+    status.text = "a query looks like kind:note"
+    return
+  end
+
+  local paths, why = fs.query(where, { [field] = value })
+
+  if not paths then
+    status.text = "query: " .. tostring(why)
+    return
+  end
+
+  --
+  -- Paths, turned into rows.
+  --
+  -- Each carries its own `path`, which is what makes a query result a real
+  -- folder rather than a list of strings: `path_of` hands it back, so Open,
+  -- Copy, Delete and a drag all act on the file where it actually is.
+  --
+  local rows_out = {}
+
+  for _, path in ipairs(paths) do
+    local attrs = fs.getattr(path)
+
+    if attrs then
+      rows_out[#rows_out + 1] = {
+        name = path:match("([^/]+)$") or path,
+        path = path,
+        kind = attrs.kind,
+        size = attrs.size or 0,
+      }
+    end
+  end
+
+  found, asked = rows_out, { field = field, value = value }
+  marked, selected = {}, (#rows_out > 0) and 1 or 0
+  scroll = 1
+
+  recount()
+
+  --
+  -- Nothing found is the ordinary answer today, and saying why is better
+  -- than an empty window.
+  --
+  -- The index is over attributes and **nothing in this system writes one
+  -- yet**: `filetypes.kind_of` already prefers `attrs.type` over the
+  -- extension and no file has ever had it set. `attr` at the prompt can set
+  -- one; a panel here that shows and edits them is what would make queries
+  -- mean something, and it is the next thing this window wants.
+  --
+  if #rows_out == 0 then
+    status.text = ("nothing here carries %s = %s"):format(field, value)
+  else
+    status.text = ("%s is %s, anywhere under %s"):format(field, value, where)
+  end
+end
+
+function search:on_change(text)
+  --
+  -- Typing is free while the answer is in hand. A colon means a question
+  -- for somebody else, and that waits for Enter.
+  --
+  -- The filter is dropped as soon as one appears, so the window shows the
+  -- directory while a query is being typed rather than the four files whose
+  -- names happen to contain "kind".
+  --
+  if text:find(":") then
+    filter, found, asked = nil, nil, nil
+    recount()
+    status.text = "press Enter to ask"
+    return
+  end
+
+  filter = (text ~= "") and text or nil
+  found, asked = nil, nil
+  selected = (#visible() > 0) and 1 or 0
+  scroll = 1
+
+  recount()
+end
+
+function search:on_enter(text)
+  if text:find(":") then run_query(text) else self:on_change(text) end
+end
+
+--
+-- A query's answer, asked for again.
+--
+-- Twice a second while one is showing, because a window cannot block on the
+-- filesystem and on the desktop at the same time - see the note on the
+-- search box above. `poll_wait` is what makes this a wake rather than a
+-- spin: the desktop holds the reply until something happens or the wait
+-- runs out, so between asks this process is not running at all.
+--
+local QUERY_WAIT = 125            -- scheduler ticks; TICK_HZ is 250
+
+--
+-- And a clock, because `poll_wait` is a *ceiling* rather than a period.
+--
+-- The desktop answers the poll the moment anything happens, so a pointer
+-- moving across this window returns from it many times a second - and
+-- without this, each of those would be a query. That is a message per
+-- pointer movement, which is precisely what `wm.lua` refuses to do for
+-- window drags and for the same reason.
+--
+-- The frequency is read rather than assumed: `sys.ticks` is CNTFRQ_EL0,
+-- 62.5 MHz under QEMU's TCG and 24 MHz when the same machine runs on this
+-- Mac's own cores under `hvf`. A constant here would ask twice a second in
+-- one case and once every five in the other.
+--
+local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+local ask_every  = counter_hz // 2
+local asked_at   = 0
+
+function win:on_frame()
+  if not asked then
+    win.poll_wait = nil
+    return false
+  end
+
+  win.poll_wait = QUERY_WAIT
+
+  local now = sys.ticks()
+
+  if now - asked_at < ask_every then return false end
+
+  asked_at = now
+
+  local paths = fs.query(where, { [asked.field] = asked.value })
+
+  if not paths then return false end
+
+  -- Rebuilt only when the *set* changed, so a query that is answering the
+  -- same thing costs a message and no repaint.
+  if #paths == #found then
+    local same = true
+
+    for i, path in ipairs(paths) do
+      if found[i] == nil or found[i].path ~= path then same = false break end
+    end
+
+    if same then return false end
+  end
+
+  local keep = asked
+
+  run_query(keep.field .. ":" .. keep.value)
+
+  return true
 end
 
 local function do_open()
@@ -1244,10 +1623,11 @@ win:add(ui.menubar{
       } },
     { title = "Go",
       items = {
-        { text = "Up",      on_choose = function()
-            if where ~= "/" then show(files.parent(where)) end
-          end },
-        { text = "Home",    on_choose = function() show("/home") end },
+        { text = "Back",    on_choose = go_back },
+        { text = "Forward", on_choose = go_forward },
+        { separator = true },
+        { text = "Up",      on_choose = go_up },
+        { text = "Home",    on_choose = function() visit("/home") end },
         { text = "Refresh", on_choose = function() show(where) end },
       } },
     { title = "View",
@@ -1286,6 +1666,7 @@ function rename_field:on_enter(text)
 
   rename_of = nil
   self.text = ""
+  self.hidden = true
 
   if not from then return end
 
@@ -1341,8 +1722,10 @@ function win:on_dropped(ok, count, err)
 end
 
 win:add(rows)
+chrome(search)
 chrome(rename_field)
 chrome(status)
+chrome(count)
 
 show(where)
 win:run()

@@ -91,6 +91,10 @@ static struct node *nodes;
 struct watcher {
     bool     used;
     uint64_t who;
+    /* Where it was asked, so re-evaluating it later scopes the same way the
+     * first evaluation did. Without it a watch on one subtree would start
+     * firing for changes in another. */
+    char     under[RAM_PATH_MAX];
     struct ram_attr where[RAM_ATTRS_MAX];
     unsigned nwhere;
     char     last[RAM_ENTRIES_MAX][RAM_PATH_MAX];
@@ -334,12 +338,25 @@ static bool matches(struct node *n, const struct ram_attr *where,
  * reason, and a query that returned its answers in table order returned them
  * differently between runs of the same program.
  */
-static unsigned evaluate(const struct ram_attr *where, unsigned nwhere,
+static unsigned evaluate(const char *under,
+                         const struct ram_attr *where, unsigned nwhere,
                          char out[][RAM_PATH_MAX], unsigned cap,
                          unsigned skip, bool *more)
 {
     unsigned found = 0, taken = 0;
     const char *last = NULL;
+
+    /*
+     * Under `under`, and not the whole store.
+     *
+     * A query is asked at a path and the honest reading of that is "what is
+     * below here". The root asks about everything, which is what a query at
+     * the mount point does. The same fix as the disk's, which is where the
+     * bug actually bit: one filesystem mounted at three places was answering
+     * a question about `/home` with what is under `/system`.
+     */
+    size_t under_len = (under != NULL) ? strlen(under) : 0;
+    bool whole = (under_len == 0) || (under_len == 1 && under[0] == '/');
 
     *more = false;
 
@@ -358,6 +375,13 @@ static unsigned evaluate(const struct ram_attr *where, unsigned nwhere,
             }
 
             if (nwhere > 0 && !matches(n, where, nwhere)) {
+                continue;
+            }
+
+            if (!whole
+                && (strncmp(n->path, under, under_len) != 0
+                    || (n->path[under_len] != '\0'
+                        && n->path[under_len] != '/'))) {
                 continue;
             }
 
@@ -454,7 +478,7 @@ static void notify(void)
         }
 
         memset(&rep, 0, sizeof(rep));
-        rep.count = evaluate(w->where, w->nwhere, rep.u.entries,
+        rep.count = evaluate(w->under, w->where, w->nwhere, rep.u.entries,
                              RAM_ENTRIES_MAX, 0, &more);
         rep.more = more ? 1u : 0u;
 
@@ -714,7 +738,7 @@ static void answer(const struct message *msg, uint64_t sender)
     case RAM_OP_QUERY: {
         bool more;
 
-        rep.count = evaluate(req.attrs, req.count, rep.u.entries,
+        rep.count = evaluate(path, req.attrs, req.count, rep.u.entries,
                              RAM_ENTRIES_MAX, req.offset, &more);
         rep.more = more ? 1u : 0u;
         break;
@@ -745,7 +769,7 @@ static void answer(const struct message *msg, uint64_t sender)
             req.u.known[i][RAM_PATH_MAX - 1] = '\0';
         }
 
-        rep.count = evaluate(req.attrs, nwhere, rep.u.entries,
+        rep.count = evaluate(path, req.attrs, nwhere, rep.u.entries,
                              RAM_ENTRIES_MAX, 0, &more);
         rep.more = more ? 1u : 0u;
 
@@ -770,6 +794,7 @@ static void answer(const struct message *msg, uint64_t sender)
         w->used = true;
         w->who = sender;
         w->nwhere = nwhere;
+        copy_into(w->under, RAM_PATH_MAX, path, strlen(path));
 
         for (i = 0; i < nwhere; i++) {
             w->where[i] = req.attrs[i];

@@ -414,7 +414,7 @@ local function new_namespace()
           rest = (rest == "/") and m.root or (m.root .. rest)
         end
 
-        return m.cap, rest, m.prefix, m.proto
+        return m.cap, rest, m.prefix, m.proto, m.root
       end
     end
     return nil
@@ -435,7 +435,7 @@ local function new_namespace()
     -- ordinary longest-prefix rule picks it from then on and this costs one
     -- exchange the first time and nothing afterwards.
     --
-    local cap, rest, prefix, proto = match(path)
+    local cap, rest, prefix, proto, root = match(path)
 
     for _, a in ipairs(autos) do
       if prefix == a.prefix and rest ~= "/" then
@@ -463,7 +463,7 @@ local function new_namespace()
       end
     end
 
-    if cap then return cap, rest, prefix, proto end
+    if cap then return cap, rest, prefix, proto, root end
 
     -- Nothing matched at all. Still worth asking, for a registry mounted
     -- somewhere this path only partly overlaps.
@@ -1373,21 +1373,58 @@ local function new_namespace()
   -- is the point of a namespace - so putting the prefix back on is the
   -- namespace's job, here, and not something every caller repeats.
   --
-  local function localise(paths, prefix)
+  --
+  -- **A mount may name a subtree, and then the prefix is not the whole of
+  -- it.** `match` maps `/home/doc.pdf` onto `/home/doc.pdf` in the server -
+  -- prefix `/home`, root `/home` - because one disk appears at `/system`,
+  -- `/user` and `/home` with one server behind all three. Coming back, the
+  -- root has to come off before the prefix goes on, or the answer is
+  -- `/home/home/doc.pdf`.
+  --
+  -- Which is exactly what `find /home kind=book` returned, for as long as
+  -- the disk has been able to answer a query. It went unnoticed because
+  -- every test of queries used `/data`, and `/data` is mounted with no root
+  -- - so the two paths through this function had never both been walked.
+  --
+  local function to_local(p, prefix, root)
+    if root and p:sub(1, #root) == root then
+      p = p:sub(#root + 1)
+
+      if p == "" then p = "/" end
+    end
+
+    return (p == "/") and prefix or (prefix .. p)
+  end
+
+  local function to_server(p, prefix, root)
+    if p:sub(1, #prefix) == prefix then
+      p = p:sub(#prefix + 1)
+
+      if p == "" then p = "/" end
+    end
+
+    if root then
+      p = (p == "/") and root or (root .. p)
+    end
+
+    return p
+  end
+
+  local function localise(paths, prefix, root)
     local out = {}
 
     for i, p in ipairs(paths or {}) do
-      out[i] = (p == "/") and prefix or (prefix .. p)
+      out[i] = to_local(p, prefix, root)
     end
 
     return out
   end
 
   function ns.query(path, where)
-    local _, _, prefix = resolve(path)
+    local _, _, prefix, _, root = resolve(path)
     local r, e = request("query", path, { where = where })
     if not r then return nil, e end
-    return localise(r.paths, prefix)
+    return localise(r.paths, prefix, root)
   end
 
   --
@@ -1398,7 +1435,7 @@ local function new_namespace()
   -- happened. Pass the answer you already have as `known`.
   --
   function ns.watch(path, where, known)
-    local capability, rest, prefix = resolve(path)
+    local capability, _, prefix, _, root = resolve(path)
 
     if not capability then
       return nil, "no such path: " .. path
@@ -1409,14 +1446,12 @@ local function new_namespace()
     local server_known = {}
 
     for i, p in ipairs(known or {}) do
-      server_known[i] = (p:sub(1, #prefix) == prefix)
-                        and (p:sub(#prefix + 1)) or p
-      if server_known[i] == "" then server_known[i] = "/" end
+      server_known[i] = to_server(p, prefix, root)
     end
 
     local r, e = request("watch", path, { where = where, known = server_known })
     if not r then return nil, e end
-    return localise(r.paths, prefix)
+    return localise(r.paths, prefix, root)
   end
 
   --
@@ -2538,11 +2573,31 @@ local function diskfs_handlers(state)
         return { ok = true, paths = {} }
       end
 
+      --
+      -- **Under `req.path`, and not the whole disk.**
+      --
+      -- One disk is mounted three times - at `/system`, `/user` and `/home`,
+      -- each naming a subtree of itself - so "everything that matches" is
+      -- the wrong answer to a question asked about one of them: `find /home
+      -- kind=book` was returning what is under `/system` too, and the
+      -- namespace then put `/home` in front of it.
+      --
+      -- BeOS's queries were volume-wide and this one is not, deliberately.
+      -- A namespace hands you a *path*, and the honest reading of a question
+      -- asked at a path is that it is about what is under it. Asking the
+      -- whole machine is `find` with no path, which loops over the mount
+      -- table - the design showing through rather than a feature.
+      --
+      local under = tostring(req.path or "/")
+      local scoped = (under ~= "/") and (under .. "/") or nil
+
       local out = {}
 
       for path in pairs(candidates) do
         local attrs = state.attrs[path]
         local keep = attrs ~= nil
+                     and (scoped == nil or path == under
+                          or path:sub(1, #scoped) == scoped)
 
         if keep then
           for name, value in pairs(where) do

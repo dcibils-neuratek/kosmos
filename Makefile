@@ -1146,6 +1146,12 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# Files on and off the image from this computer, which is what a
 	@# filesystem that is not FAT32 has to answer for.
 	python3 tools/run_interchange.py $(TARGET)
+	@# Attributes and the queries over them. M7's definition of done was a
+	@# live query and nothing here ever checked one: `qbench` measures how
+	@# fast a query is and would not notice it returning the wrong paths,
+	@# which is what it did on the disk for as long as the disk could
+	@# answer.
+	python3 tools/run_queries.py $(TARGET)
 
 # Used for a while, then asked whether it gave everything back.
 #

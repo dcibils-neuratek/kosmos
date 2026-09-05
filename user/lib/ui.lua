@@ -885,6 +885,21 @@ function view:resize(w, h)
 end
 
 function view:paint(g)
+  --
+  -- A view can be absent rather than empty.
+  --
+  -- There was no way to say so, and applications paid for it: Tracker's
+  -- rename box sat permanently under the list because a box you never use is
+  -- cheaper than a widget change made for one caller. It is not one caller -
+  -- any panel that appears when asked for wants this - and it is three lines
+  -- in the three places that walk the tree.
+  --
+  -- Hidden here, in `hit` and in `focusables`, which is the whole of it: not
+  -- drawn, not clickable, not reachable by Tab. A widget that was invisible
+  -- and still took the focus would be a window where Tab stops at nothing.
+  --
+  if self.hidden then return end
+
   -- A view whose size depends on what it is about to draw gets to say so
   -- first, because the clip below is its size and is applied before the
   -- drawing happens.
@@ -930,7 +945,8 @@ function view:hit(x, y)
   for i = #self.children, 1, -1 do
     local c = self.children[i]
 
-    if x >= c.x and x < c.x + c.w and y >= c.y and y < c.y + c.h then
+    if not c.hidden
+       and x >= c.x and x < c.x + c.w and y >= c.y and y < c.y + c.h then
       return c:hit(x - c.x, y - c.y)
     end
   end
@@ -941,6 +957,8 @@ end
 -- Depth first, in tree order, which is the order Tab moves in.
 function view:focusables(out)
   out = out or {}
+
+  if self.hidden then return out end
 
   if self.focusable then out[#out + 1] = self end
 
@@ -1130,6 +1148,20 @@ function ui.field(spec)
     end
 
     local room = (self.w - 8) // GW
+
+    --
+    -- What the field is for, while there is nothing in it.
+    --
+    -- In `text_dim` and gone the moment anything is typed, so it can never
+    -- be mistaken for content. A search box with no label beside it is a
+    -- box, and a box does not say what it searches.
+    --
+    if self.hint and self.text == "" and not self.focused then
+      g:text(4, (self.h - GH) // 2, tostring(self.hint):sub(1, room),
+             theme.text_dim, theme.sunken)
+      return
+    end
+
     local from = math.max(1, self.caret - room + 1)
     local shown = self.text:sub(from, from + room - 1)
 
@@ -1141,14 +1173,37 @@ function ui.field(spec)
     end
   end
 
+  --
+  -- `on_change` fires on every edit; `on_enter` only on Return.
+  --
+  -- Two callbacks because the two costs are different, and a search box is
+  -- where that shows: filtering a list already in hand is free and should
+  -- happen as you type, while asking a server is a message and should
+  -- happen when you say so.
+  --
+  local function changed(self)
+    if self.on_change then self.on_change(self, self.text) end
+  end
+
   function v:key(c)
     if c == 8 or c == 127 then
       if self.caret > 1 then
         self.text = self.text:sub(1, self.caret - 2)
                     .. self.text:sub(self.caret)
         self.caret = self.caret - 1
+        changed(self)
       end
       return true
+    end
+
+    if c == 27 then                       -- Escape empties it
+      if self.text ~= "" then
+        self.text, self.caret = "", 1
+        changed(self)
+        return true
+      end
+
+      return false
     end
 
     if c == 10 or c == 13 then
@@ -1160,6 +1215,7 @@ function ui.field(spec)
       self.text = self.text:sub(1, self.caret - 1) .. string.char(c)
                   .. self.text:sub(self.caret)
       self.caret = self.caret + 1
+      changed(self)
       return true
     end
 

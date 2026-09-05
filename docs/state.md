@@ -8,6 +8,55 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**Queries were returning the wrong paths for the whole disk, and no test
+looked.** One disk is mounted three times - `/system`, `/user`, `/home`,
+each naming a subtree of itself - so the namespace mapped `/home/doc.pdf`
+onto `/home/doc.pdf` in the server and then put the mount prefix back on the
+way out: `/home/home/doc.pdf`. And the server answered a question asked
+about `/home` with everything on the disk, `/system` included.
+
+Both survived because **every query test used `/data`**, the one mount with
+no root, so the two paths through that code had never both been walked.
+`qbench` measures how fast a query is and `latency.lua` how quickly a watch
+wakes; neither would notice the answers being wrong. M7's definition of done
+was a live query and `make test` had never checked one.
+
+`tools/run_queries.py` now does, on both kinds of mount, and it checks that
+a returned path can be *read back* - a doubled prefix is still a string and
+still looks like an answer. Verified by putting the bug back and watching it
+fail.
+
+**Kosmos runs under `hvf`**, natively on this Mac's cores: `make fast`.
+`gfxbench` reads 4x on a fill, 5x on a blit and **14x on a circle drawn in
+Lua** - the interpreter is branch-heavy, which is what TCG is worst at, and
+the interface is Lua. It needed a kernel fix. `mmio_write32` was a volatile
+store and GCC chose a post-indexed addressing mode for it, which is correct
+on hardware and cannot be emulated by any hypervisor: ARM sets ISV=0 in the
+syndrome for a load or store with writeback, so nothing in the trap says
+which register or what width. The MMIO accessors are one hand-written
+instruction each now, which is what Linux's `__raw_writel` does and for the
+same reason. `-cpu host` is required, so speed and Pi-5 fidelity are two
+targets rather than one flag, and `make bench` stays on TCG because
+`-icount` does not exist without it.
+
+**Tracker has the chrome from a Finder window**: back and forward, a search
+box top right, the count bottom right. A plain word filters what is on
+screen as you type; `name:value` is a query, run on Enter, whose answer is a
+folder of files from all over the volume. A query result is *refreshed
+twice a second rather than pushed*, because the window is already blocked in
+the desktop's poll and there is no way to wait on two things at once - what
+is missing is a select, or a second thread.
+
+Also: **the Places pane never worked.** Two `local show` declarations, and
+the tree's `on_select` closed over the one that is never assigned, so
+clicking a directory in it called a nil value.
+
+**Nothing writes an attribute yet**, so queries find nothing until you set
+one with `attr`. A Get Info panel that shows and edits them is what makes
+the feature real and is the next thing Tracker wants.
+
+---
+
 **A process holds 2224 KB where it held 7232**, and the two things that made
 the difference were both consequences of there being one userland image that
 every process is a copy of.
@@ -149,14 +198,15 @@ visible.
 
 ## Next, in order
 
-1. **Tracker's chrome and its search box**, which is the live-query UI: a
-   toolbar with back and forward, a sidebar in sections, a status line with
-   the count, and a field where a plain word filters by name and `key:value`
-   runs an attribute query. M7 built queries and Tracker exposes none of
-   them.
+1. **Get Info, showing and editing attributes.** The query engine works and
+   nothing writes an attribute, so the search box finds nothing until you
+   use `attr` at a prompt. This is what makes M7 visible.
 2. **A preferences app for file types.** `filetypes.by_extension` is
    compiled into the image; it wants to be a file in `/home` that an
    application edits, the way `.appearance` already is.
+3. **A name in the index.** A query is over attributes, so `name:*.png`
+   cannot be one and the search box filters locally instead. BeOS indexed
+   `name` precisely so that it could be a query rather than a walk.
 3. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
    and `i_sdlsound.c` is the model. Doom is silent.
 2. **An equaliser in the Mixer**, which is the first thing that will want

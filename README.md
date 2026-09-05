@@ -283,6 +283,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | The desktop **carries a drag it never reads**: a `kind` and an opaque string. It is the only process that knows what is under the pointer, and the reply is a one-shot right given to the window that was handed the drop | wm.lua |
 | Sep 2026 | **Nothing in the shared image declares storage only one role needs.** There is one userland binary, so ramfs's 2.1 MB store was `.bss` in all sixteen processes. `kosmos_map` at startup instead: 7232 KB a process becomes 5156, and ramfs pays 7308 | ramfs.c |
 | Sep 2026 | **The read-only half of the image is mapped where it lies**, one copy for the machine. Permissions live in the mapping, not the page, so sharing 2.8 MB nobody can write costs no isolation. A process holds 2224 KB where it held 7232 | design.md §4.1.1 |
+| Sep 2026 | **MMIO is one hand-written instruction**, not a volatile store. GCC chose a post-indexed store and ARM sets ISV=0 for writeback, so no hypervisor can decode it - correct on metal, unbootable under `hvf` | arch/aarch64/mmio.h |
+| Sep 2026 | **A query is scoped to the path it was asked at**, not the volume. One disk mounted at three prefixes was answering `/home` with `/system`'s files, and the namespace was putting the prefix on twice | run_queries.py |
 
 ---
 
