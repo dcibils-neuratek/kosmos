@@ -314,13 +314,30 @@ static bool test_threads_interleave(void)
      * between. Under a fair policy the trace has to be the three ids
      * repeating, not one thread running to completion and then the next: a
      * context switch that silently did nothing would produce the second.
+     *
+     * **Interrupts off, because this is about yielding and not about
+     * preemption.** The timer runs at 250 Hz and a tick landing between two
+     * yields reschedules on its own, which puts an id next to itself in the
+     * trace and fails a test that is asking a different question. It is
+     * rare, it is likelier on a busy host, and a gate that fails one run in
+     * fifty is a gate people learn to re-run instead of read.
+     *
+     * `thread_yield` does not need interrupts - it calls the scheduler
+     * directly - so removing them removes a variable rather than the thing
+     * being measured. Same reasoning and same instruction as
+     * `test_processes_have_separate_address_spaces`, which masks for the
+     * same kind of reason.
      */
     unsigned i;
+    bool ok;
 
     trace_len = 0;
 
+    __asm__ volatile("msr daifset, #2" ::: "memory");
+
     for (i = 1; i <= 3; i++) {
         if (thread_create("count", counting_thread, (void *)(uintptr_t)i) == NULL) {
+            __asm__ volatile("msr daifclr, #2" ::: "memory");
             return false;
         }
     }
@@ -331,27 +348,35 @@ static bool test_threads_interleave(void)
         thread_yield();
     }
 
-    if (trace_len != 9) {
-        return false;
-    }
-
     /* Every id appears exactly three times, and no id appears twice in a row,
      * which is what "interleaved" actually means. */
-    {
+    ok = (trace_len == 9);
+
+    if (ok) {
         unsigned counts[4] = { 0, 0, 0, 0 };
 
         for (i = 0; i < 9; i++) {
             if (trace[i] < 1 || trace[i] > 3) {
-                return false;
+                ok = false;
+                break;
             }
+
             counts[trace[i]]++;
+
             if (i > 0 && trace[i] == trace[i - 1]) {
-                return false;
+                ok = false;
+                break;
             }
         }
 
-        return counts[1] == 3 && counts[2] == 3 && counts[3] == 3;
+        ok = ok && counts[1] == 3 && counts[2] == 3 && counts[3] == 3;
     }
+
+    /* Whatever the answer. Leaving the suite with interrupts masked would
+     * make every test after this one a different test. */
+    __asm__ volatile("msr daifclr, #2" ::: "memory");
+
+    return ok;
 }
 
 static volatile bool woke;
