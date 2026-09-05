@@ -119,6 +119,50 @@ Responsibilities:
 
 It knows nothing about files, networking, graphics or Lua.
 
+### 4.1.1 One image, and what that costs
+
+**There is one userland binary, and a process is that binary with a
+different argument.** `process_spawn` copies its parent's image; there is no
+loader, no ELF parser and no relocation, because each process has its own
+address space and the image is linked at a fixed address with nothing to
+collide with. The boot word selects a role: below the Lua interpreter for
+the C servers, and inside `init.lua` for everything else.
+
+This is not only history. It is what makes the bootstrap possible at all -
+`init` spawns `binfs`, and `binfs` cannot be loaded from `binfs`. Whatever
+else changes, at least one image has to be there before there is anything to
+load one from.
+
+What it costs is that **anything the image declares, every process carries**.
+A process is 5156 KB: 3044 KB of image, a 2048 KB heap and 64 KB of stacks.
+Of the image, 2.5 MB is read-only - the Lua source of every program, the
+fonts, the icons - and 383 KB is code.
+
+That number was 7232 KB until `ramfs` stopped keeping its store in `.bss`.
+`static struct node nodes[128]` is 2.1 MB, and with one image it was 2.1 MB
+in the window manager, in Tracker, in the shell and in twelve other
+processes that will never address a byte of it - thirty-four megabytes, of
+which two used. `kosmos_map` at startup gives pages that belong to that one
+process, and the cost is now visible where it belongs: ramfs reads 7308 KB
+in the process list and everything else reads 5156.
+
+**The rule, then: nothing in the shared image declares storage that only one
+role needs.** A fixed pool is still right - that is 4.1 above, and it is
+about the kernel besides - but a pool for a role belongs in the process that
+plays it.
+
+**Separate binaries per program are the expensive answer to the smaller
+half.** They would need a spawn that names an image (the clean form is a
+region the caller filled, so the kernel still knows nothing about names), a
+build that decides each binary's subset, and the servers left in the
+built-in image anyway for the bootstrap. And they would save little: every
+Lua application needs Lua, `gfx`, the fonts and libc, which is most of the
+2.5 MB. **Mapping the read-only half from one physical copy saves the same
+2.79 MB fifteen times over with no build change and nothing observable** -
+nobody can write those pages, so nobody can tell they are shared. That is
+the next thing to do here, and it is worth roughly 42 MB on a desktop with
+sixteen processes.
+
 ### 4.2 IPC
 
 Synchronous, rendezvous, no buffering in the kernel. L4 style.

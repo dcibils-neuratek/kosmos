@@ -58,7 +58,28 @@ struct node {
     unsigned nattrs;
 };
 
-static struct node nodes[NODES];
+/*
+ * The store, asked for at startup rather than declared.
+ *
+ * **A `static struct node nodes[NODES]` was 2.1 MB of `.bss`, and every
+ * process on the machine carried a copy of it.** There is one userland
+ * image and a process is that image with a different argument, so this
+ * server's private storage was linked into the window manager, Tracker,
+ * Photo, the shell and every other process - none of which will ever
+ * address a byte of it. Sixteen processes, thirty-four megabytes, and
+ * fifteen of them wasted.
+ *
+ * `kosmos_map` gives pages that belong to this process alone, zeroed, and
+ * are returned when it exits whether or not it remembers to unmap them.
+ * They come out of the per-process budget rather than out of the image, so
+ * the cost is paid once by the one process that has a use for it.
+ *
+ * The rule this is an instance of: **nothing in a shared image should
+ * declare storage only one role needs.** A pool the kernel keeps is a
+ * different matter - `CLAUDE.md`'s "no dynamic allocator in the kernel"
+ * is about the kernel, and this is EL0.
+ */
+static struct node *nodes;
 
 /*
  * Somebody waiting for a query's answer to change.
@@ -783,7 +804,21 @@ static void answer(const struct message *msg, uint64_t sender)
 
 void ramfs_server(long endpoint)
 {
-    memset(nodes, 0, sizeof(nodes));
+    long at = kosmos_map((sizeof(struct node) * NODES + 4095u) / 4096u);
+
+    if (at < 0) {
+        /* Without a store there is no /data, and a server that ran anyway
+         * would answer every write with success and hold nothing. */
+        kosmos_write("ramfs: no memory for the store\n", 31);
+        return;
+    }
+
+    nodes = (struct node *)(uintptr_t)at;
+
+    /* `kosmos_map` zeroes what it hands over, so the store starts empty
+     * without this touching 2 MB it has just been given clean. `watchers`
+     * is still .bss and still wants clearing: a spawned process inherits
+     * whatever the image had in it. */
     memset(watchers, 0, sizeof(watchers));
 
     for (;;) {
