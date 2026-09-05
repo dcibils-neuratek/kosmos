@@ -49,6 +49,44 @@ Eight requests hung and the server logged none of them.
   memory" while four were served. It writes a ring's worth at a time now and
   streams the body with `fs.chunks`, so the file is never held.
 
+**And `fs.write` no longer raises on the disk.** Chasing the concurrency
+bug turned up a probe of mine that wrote 150 KB and read back 16 KB, which I
+put down to `/data`'s ceiling - and `/data` was innocent: it returns `false,
+"/data is full"` and always did, and I had not looked at the return value.
+The disk was not. `fs.write` above about two kilobytes reached `sys.call`
+and came back as `value does not fit in a message` - an *exception* out of
+the serialiser, from a call whose failures are otherwise values.
+
+The namespace splits a long write for `/data` and cannot for the disk, whose
+`write` takes no offset and hands the whole body to `kfs.store`. So the same
+line worked on one mount, failed with a sentence on another, and threw on a
+third - which is exactly the difference a namespace exists to hide. It sends
+a big string through a region now, which is the route `write_from` and
+`files.copy` already took and that diskfs implemented for this reason. Three
+checks in `run_interchange.py`, one of them taking the file back out of the
+image byte for byte.
+
+**And that uncovered a capability leak that had been there all along.**
+Sending a value through a region hands the server a capability, and diskfs
+kept every one: thirty-two is what a thread gets, so the thirty-second large
+write failed with `that is not a region this process can map` - which reads
+like a bad pointer rather than like a table that is full. The read side had
+paid that debt since a PDF read in 256-byte windows found it on its
+fifteenth read; the write side never had, and nothing noticed because
+`files.copy` was its only caller. `fs.write` sending large values that way
+made it an ordinary path, and a loop reaches thirty-two in a second.
+
+That is the third resource bug of this exact shape - capability slots gone on
+the sixteenth read, a region per font per size, a process table full at round
+twenty-two - which is why the check for it is a loop of forty writes rather
+than one write, and why `make stress` exists.
+
+Two ceilings are unchanged and both are deliberate: `/data` still holds 16 KB
+a file, and diskfs still refuses more than a megabyte because it assembles
+the bytes in its own heap. A big *table* still fails, because a region
+carries bytes and sending a packed table through one would break the promise
+that you get back the table you wrote.
+
 **And `accept` gained a deadline**, which makes every park in the stack
 bounded - the pings, the waits, the pollers and now this. `poll` saying
 somebody arrived and `accept` reaching the stack are two moments, and a

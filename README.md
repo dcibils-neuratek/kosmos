@@ -297,6 +297,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **Waiting to read and waiting to write are two questions.** `poll` takes two masks. One mask reported writable as "room *and* something queued", so a client that acknowledged the whole ring left the server waiting for a signal that could no longer come - eight requests hung and none were logged | netproto.h |
 | Sep 2026 | **Every park in the stack is bounded**, `accept` included. `poll` saying somebody arrived and `accept` reaching the stack are two moments, and a reset in between would wedge an event loop for good | user/servers/net.c |
 | Sep 2026 | **A drain loop must not read from the buffer it is filling.** The console's `interrupted` took a byte off the stash, put it back, and took it again - one character typed ahead and the console server span for ever, which looked like whichever program had asked having hung | user/servers/console.c |
+| Sep 2026 | **A namespace call behaves the same on every mount, or it is not one.** `fs.write` split long writes for `/data`, and *raised* out of the serialiser on the disk, which takes no offset to append at. It sends a value too big for a message through a region now - the route `write_from` and `files.copy` already used | user/init/init.lua |
+| Sep 2026 | **A server lent a buffer gives the capability back, on every path.** diskfs's read side had paid that debt since a PDF found it on its fifteenth read; the write side never had, so it worked for thirty-one writes and then refused every one after with what reads like a bad pointer | user/init/init.lua |
 
 ---
 

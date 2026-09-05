@@ -1242,6 +1242,17 @@ local function new_namespace()
     return { ok = true }
   end
 
+  --
+  -- How much of a value still goes inside the message.
+  --
+  -- A message is 2048 bytes and the request is a table - a type, a path, and
+  -- the value - so the value cannot have all of it. A thousand is well under
+  -- whatever the framing costs and needs no arithmetic that would have to
+  -- track the serialiser; being conservative here costs one region on a
+  -- write between a kilobyte and two, and being wrong costs an exception.
+  --
+  local INLINE_MAX = 1024
+
   local function request(op, path, extra, pass)
     local capability, rest, _, proto = resolve(path)
     if not capability then
@@ -1277,6 +1288,57 @@ local function new_namespace()
 
     local req = { type = op, path = rest }
     if extra then for k, v in pairs(extra) do req[k] = v end end
+
+    --
+    -- A value too big for a message goes through a region instead.
+    --
+    -- **`fs.write` used to raise here**, and only on some mounts. The
+    -- namespace splits a long write for `/data` - `ram_request` does it, a
+    -- piece per message - and diskfs cannot be written that way at all: its
+    -- `write` takes no offset and hands the whole body to `kfs.store`, so
+    -- there is nothing to append to. Everything above about two kilobytes
+    -- reached `sys.call` and came back as `value does not fit in a message`,
+    -- which is not even a returned error - it is an exception out of the
+    -- serialiser, thrown by a call whose failures are otherwise values.
+    --
+    -- So the same line worked on one mount, failed with a sentence on
+    -- another, and threw on a third. That difference is exactly what a
+    -- namespace exists to hide.
+    --
+    -- The route was already here. `write_from` puts the bytes in pages the
+    -- caller owns and sends the region, which is what `files.copy` uses and
+    -- what diskfs implemented for this reason - its own comment says a
+    -- filesystem you cannot write a large file to "works until you use it".
+    -- `fs.write` simply never reached for it.
+    --
+    -- **Strings only.** The region carries bytes, so a packed table sent
+    -- this way would come back a string and break the promise in
+    -- `help("fs")` that you get back the table you wrote. A large table
+    -- still fails, and fails loudly, which is better than reading back
+    -- wrong.
+    --
+    if op == "write" and type(req.value) == "string"
+       and #req.value > INLINE_MAX then
+      local region = sys.memory((#req.value + 4095) // 4096)
+
+      if region then
+        -- Sized to the value and given back afterwards, rather than a
+        -- buffer kept for ever: a write this large is occasional, and the
+        -- pages are worth more to everything else in between.
+        sys.region_write(region, 0, req.value)
+
+        local big = { type = op, path = rest, from = true,
+                      bytes = #req.value }
+        local reply, err = sys.call(capability, big, region)
+
+        sys.release(region)
+
+        if not reply then return nil, err end
+        if not reply.ok then return nil, reply.error end
+
+        return reply
+      end
+    end
 
     local reply, err = sys.call(capability, req, pass)
     if not reply then return nil, err end
@@ -2386,12 +2448,35 @@ local function diskfs_handlers(state)
       -- next piece rather than this one.
       --
       if req.from then
+        --
+        -- The buffer is the caller's, and this holds a capability to it
+        -- until it says otherwise - the same debt `read` takes on and pays
+        -- back a few lines above, and this side never did.
+        --
+        -- **Thirty-two is all a thread gets**, so it worked perfectly for
+        -- thirty-one writes and then refused every one after with "that is
+        -- not a region this process can map", which reads like a bad
+        -- pointer rather than like a table that is full. Nothing noticed
+        -- because the only caller was `files.copy` - somebody copying
+        -- thirty-two files in one session would have found it - until
+        -- `fs.write` started sending large values this way, which is the
+        -- ordinary path and reaches the limit in a loop.
+        --
+        -- Released on the way out of every path, not only the happy one:
+        -- an error is still a request that was handed a buffer.
+        --
+        local function done_with(answer)
+          if cap then sys.release(cap) end
+          return answer
+        end
+
         local want = tonumber(req.bytes) or 0
 
         if want > 1024 * 1024 then
-          return { ok = false,
-                   error = "more than a megabyte in one write, which this "
-                           .. "server cannot assemble yet" }
+          return done_with({ ok = false,
+                             error = "more than a megabyte in one write, "
+                                     .. "which this server cannot assemble "
+                                     .. "yet" })
         end
 
         local parts = {}
@@ -2403,7 +2488,7 @@ local function diskfs_handlers(state)
                                                        want - done))
 
           if not piece then
-            return { ok = false, error = tostring(rerr) }
+            return done_with({ ok = false, error = tostring(rerr) })
           end
 
           parts[#parts + 1] = piece
@@ -2414,13 +2499,13 @@ local function diskfs_handlers(state)
                                     table.concat(parts), sys.ticks())
 
         if not number then
-          return { ok = false, error = tostring(serr) }
+          return done_with({ ok = false, error = tostring(serr) })
         end
 
         state.writes = (state.writes or 0) + 1
         touched(sb, req.path)
 
-        return { ok = true, bytes = done }
+        return done_with({ ok = true, bytes = done })
       end
 
       -- A leading dot is ordinary. It was refused for a while, on the
