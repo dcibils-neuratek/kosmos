@@ -32,7 +32,17 @@
 
 
 /* Dereferences address zero. The classic, and M4's definition of done. */
-.balign 16
+/*
+ * **A page, because the kernel maps the read-only half where it lies.**
+ *
+ * There is one physical copy of a process image's code, mapped into every
+ * address space that runs it, and a mapping starts at a page boundary or it
+ * starts at the wrong bytes. `.balign 16` was enough while the image was
+ * copied into fresh pages; `process_create` now refuses one that is not
+ * page-aligned, which is how this said so rather than running on whatever
+ * preceded it.
+ */
+.balign 4096
 .global user_fault_null_start
 user_fault_null_start:
     IMAGE_HEADER
@@ -45,6 +55,13 @@ user_fault_null_start:
     mov     x0, #41
     mov     x8, #SYS_EXIT
     svc     #0
+/* Padded to a whole page, so the header's "4096 bytes are read-only" is a
+ * true statement about this blob rather than about it plus whatever the
+ * linker put next. The kernel maps the read-only half where it lies, so
+ * anything inside that page is readable by the process - and `process_create`
+ * refuses an image shorter than the half it declares, which is what would
+ * catch this if it were ever undone. */
+.balign 4096
 .global user_fault_null_end
 user_fault_null_end:
 
@@ -56,7 +73,17 @@ user_fault_null_end:
  * the isolation: the page is right there in this process's own tables and
  * still cannot be touched.
  */
-.balign 16
+/*
+ * **A page, because the kernel maps the read-only half where it lies.**
+ *
+ * There is one physical copy of a process image's code, mapped into every
+ * address space that runs it, and a mapping starts at a page boundary or it
+ * starts at the wrong bytes. `.balign 16` was enough while the image was
+ * copied into fresh pages; `process_create` now refuses one that is not
+ * page-aligned, which is how this said so rather than running on whatever
+ * preceded it.
+ */
+.balign 4096
 .global user_fault_kernel_start
 user_fault_kernel_start:
     IMAGE_HEADER
@@ -66,6 +93,13 @@ user_fault_kernel_start:
     mov     x0, #42
     mov     x8, #SYS_EXIT
     svc     #0
+/* Padded to a whole page, so the header's "4096 bytes are read-only" is a
+ * true statement about this blob rather than about it plus whatever the
+ * linker put next. The kernel maps the read-only half where it lies, so
+ * anything inside that page is readable by the process - and `process_create`
+ * refuses an image shorter than the half it declares, which is what would
+ * catch this if it were ever undone. */
+.balign 4096
 .global user_fault_kernel_end
 user_fault_kernel_end:
 
@@ -75,7 +109,17 @@ user_fault_kernel_end:
  * Mapped EL0 read-only and executable. A process that could rewrite its own
  * text could defeat anything the kernel checked about it beforehand.
  */
-.balign 16
+/*
+ * **A page, because the kernel maps the read-only half where it lies.**
+ *
+ * There is one physical copy of a process image's code, mapped into every
+ * address space that runs it, and a mapping starts at a page boundary or it
+ * starts at the wrong bytes. `.balign 16` was enough while the image was
+ * copied into fresh pages; `process_create` now refuses one that is not
+ * page-aligned, which is how this said so rather than running on whatever
+ * preceded it.
+ */
+.balign 4096
 .global user_fault_text_start
 user_fault_text_start:
     IMAGE_HEADER
@@ -86,6 +130,13 @@ user_fault_text_start:
     mov     x0, #43
     mov     x8, #SYS_EXIT
     svc     #0
+/* Padded to a whole page, so the header's "4096 bytes are read-only" is a
+ * true statement about this blob rather than about it plus whatever the
+ * linker put next. The kernel maps the read-only half where it lies, so
+ * anything inside that page is readable by the process - and `process_create`
+ * refuses an image shorter than the half it declares, which is what would
+ * catch this if it were ever undone. */
+.balign 4096
 .global user_fault_text_end
 user_fault_text_end:
 
@@ -97,7 +148,17 @@ user_fault_text_end:
  * the syscall path does. This one is expected to live, and to exit 0 only if
  * it was refused.
  */
-.balign 16
+/*
+ * **A page, because the kernel maps the read-only half where it lies.**
+ *
+ * There is one physical copy of a process image's code, mapped into every
+ * address space that runs it, and a mapping starts at a page boundary or it
+ * starts at the wrong bytes. `.balign 16` was enough while the image was
+ * copied into fresh pages; `process_create` now refuses one that is not
+ * page-aligned, which is how this said so rather than running on whatever
+ * preceded it.
+ */
+.balign 4096
 .global user_bad_pointer_start
 user_bad_pointer_start:
     IMAGE_HEADER
@@ -119,5 +180,12 @@ allowed:
     mov     x0, #44
     mov     x8, #SYS_EXIT
     svc     #0
+/* Padded to a whole page, so the header's "4096 bytes are read-only" is a
+ * true statement about this blob rather than about it plus whatever the
+ * linker put next. The kernel maps the read-only half where it lies, so
+ * anything inside that page is readable by the process - and `process_create`
+ * refuses an image shorter than the half it declares, which is what would
+ * catch this if it were ever undone. */
+.balign 4096
 .global user_bad_pointer_end
 user_bad_pointer_end:

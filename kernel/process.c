@@ -103,14 +103,20 @@ unsigned process_table(struct proc_info *out, unsigned max)
          * `mapped_pages` is the surfaces and buffers it took with SYS_MAP,
          * and reporting only that says zero for every process that has not
          * taken one - which is most of them, and none of which are using no
-         * memory. The image is as big as the program; the heap and the
-         * stacks are the same for everybody.
+         * memory. The heap and the stacks are the same for everybody.
          *
-         * Shared regions are deliberately not counted. A region's pages are
-         * already charged to whoever created it, and charging every process
-         * that maps one would have two processes sharing a surface paying
-         * for it twice - the same reason `next_share` is counted apart from
-         * `next_map`.
+         * **`image_page_count` is the writable half of the image, which is
+         * the only half a process has to itself.** The read-only half is one
+         * set of pages mapped into every address space, so charging each of
+         * them 2.8 MB for it would be the same memory counted sixteen times
+         * - and this column is what somebody reads to find out which process
+         * is the expensive one.
+         *
+         * Shared regions are left out for the same reason, with one
+         * difference worth stating: a region *is* charged, to whoever
+         * created it, so the total is still somewhere. The read-only image
+         * is charged to nobody, because nobody asked for it. `mem` reports
+         * what the machine actually holds and is where the two reconcile.
          */
         out[n].pages     = (uint32_t)p->mapped_pages;
         out[n].held      = (uint32_t)(p->mapped_pages + p->image_page_count
@@ -235,7 +241,55 @@ struct process *process_create(const char *name, const void *image,
     rx_bytes = (size_t)header[1];
     rx_pages = rx_bytes / PAGE_SIZE;
 
-    if ((rx_bytes & PAGE_MASK) != 0 || rx_pages == 0 || rx_pages > pages) {
+    /*
+     * `rx_bytes > len` is the one that matters now the read-only half is
+     * mapped rather than copied.
+     *
+     * `rx_pages > pages` only says the half fits in the image *rounded up to
+     * a page*, which was enough while the tail of that page was zeroed on
+     * the way in. Mapping in place has no such moment: an 80-byte blob whose
+     * header claims a 4096-byte read-only half would have the rest of the
+     * page - whatever the linker put after it - readable by the process.
+     * So the half has to be bytes the image actually has.
+     */
+    if ((rx_bytes & PAGE_MASK) != 0 || rx_pages == 0 || rx_bytes > len) {
+        return NULL;
+    }
+
+    /*
+     * The read-only half is mapped where it lies; only the writable half is
+     * copied.
+     *
+     * **This is the same physical memory in every process.** There is one
+     * userland image, so `.text`, `.rodata` - the code, the fonts, the icons
+     * and the Lua source of every program - was 2.8 MB copied per process,
+     * sixteen times, and no process could tell the difference because none
+     * of them can write a byte of it. A second mapping of the kernel's own
+     * pages at `USER_TEXT_VA`, read-only and executable at EL0, costs
+     * nothing and is exactly as isolated: the permissions live in the
+     * *mapping*, and every process has its own.
+     *
+     * The comment that stood here said the opposite - that the image's pages
+     * are the kernel's, EL1-only, and giving them EL0 permissions would give
+     * them to everything at once. That is true of the *identity* map, which
+     * is shared, and this does not touch it. `USER_TEXT_VA` is 0x80000000,
+     * an L1 slot above RAM that the kernel never uses, so the tables built
+     * here belong to this address space alone. The alias is safe because
+     * both mappings are Normal, inner-shareable, write-back - what ARM
+     * forbids is mismatched *attributes*, not different permissions.
+     *
+     * The writable half is still copied, and has to be: two processes from
+     * one image must not share their globals.
+     */
+    if (((uintptr_t)image & PAGE_MASK) != 0) {
+        /*
+         * Refused rather than rounded down, and rather than silently copying
+         * instead. An image mapped from an unaligned address maps whatever
+         * precedes it, which is a process running on somebody else's bytes -
+         * a failure that would look like anything except its cause.
+         * `bin2c.py` aligns what it generates; a loader that arrives later
+         * has to align its buffer, and this is where it will find that out.
+         */
         return NULL;
     }
 
@@ -246,24 +300,23 @@ struct process *process_create(const char *name, const void *image,
         return NULL;
     }
 
-    /*
-     * Copied rather than mapped where it sits. The image's pages inside the
-     * kernel are the kernel's: EL1-only, and shared by every process. Giving
-     * them EL0 permissions would give them to everything at once, and two
-     * processes from the same image would share their writable data.
-     */
-    p->image_pages = pmm_alloc_contiguous(pages);
-    if (p->image_pages == NULL) {
-        as_destroy(p->space);
-        return NULL;
+    p->image_page_count = pages - rx_pages;
+
+    if (p->image_page_count > 0) {
+        p->image_pages = pmm_alloc_contiguous(p->image_page_count);
+
+        if (p->image_pages == NULL) {
+            as_destroy(p->space);
+            return NULL;
+        }
+
+        memcpy(p->image_pages, (const char *)image + rx_bytes, len - rx_bytes);
+
+        /* The tail of the last page holds whatever the previous owner left,
+         * which this process would otherwise be able to read. */
+        memset((char *)p->image_pages + (len - rx_bytes), 0,
+               p->image_page_count * PAGE_SIZE - (len - rx_bytes));
     }
-    p->image_page_count = pages;
-
-    memcpy(p->image_pages, image, len);
-
-    /* The tail of the last page holds whatever the previous owner left,
-     * which this process would otherwise be able to read. */
-    memset((char *)p->image_pages + len, 0, pages * PAGE_SIZE - len);
 
     p->heap_pages = pmm_alloc_contiguous(USER_HEAP_PAGES);
     p->stack_pages = pmm_alloc_contiguous(USER_STACK_PAGES);
@@ -281,15 +334,15 @@ struct process *process_create(const char *name, const void *image,
      * A page is executable by exactly one exception level and writable by at
      * most one purpose.
      */
-    if (as_map(p->space, USER_TEXT_VA, (uintptr_t)p->image_pages,
+    if (as_map(p->space, USER_TEXT_VA, (uintptr_t)image,
                rx_pages, MAP_USER_RX) != AS_OK) {
         goto fail;
     }
 
-    if (pages > rx_pages
+    if (p->image_page_count > 0
         && as_map(p->space, USER_TEXT_VA + rx_bytes,
-                  (uintptr_t)p->image_pages + rx_bytes,
-                  pages - rx_pages, MAP_USER_RW) != AS_OK) {
+                  (uintptr_t)p->image_pages,
+                  p->image_page_count, MAP_USER_RW) != AS_OK) {
         goto fail;
     }
 
@@ -340,7 +393,7 @@ fail:
             pmm_free_page((char *)p->heap_pages + i * PAGE_SIZE);
         }
     }
-    for (i = 0; i < pages; i++) {
+    for (i = 0; p->image_pages != NULL && i < p->image_page_count; i++) {
         pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
     as_destroy(p->space);
@@ -788,7 +841,12 @@ static void release_memory(struct process *p)
         pmm_free_page((char *)p->heap_pages + i * PAGE_SIZE);
     }
 
-    for (i = 0; i < p->image_page_count; i++) {
+    /*
+     * The writable half only. The read-only half is the kernel's own image,
+     * mapped rather than copied, and freeing it would return the pages the
+     * kernel is running out of.
+     */
+    for (i = 0; p->image_pages != NULL && i < p->image_page_count; i++) {
         pmm_free_page((char *)p->image_pages + i * PAGE_SIZE);
     }
 

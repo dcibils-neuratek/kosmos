@@ -282,6 +282,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **Hot reload removed.** Not outranked - removed. Seven servers went to C and there is no dynamic linking, so nothing is left to reload. ramfs did not have to go and went anyway, at a known price: a milestone's test deleted and §9.1's only live demonstration with it | design.md §10 |
 | Sep 2026 | The desktop **carries a drag it never reads**: a `kind` and an opaque string. It is the only process that knows what is under the pointer, and the reply is a one-shot right given to the window that was handed the drop | wm.lua |
 | Sep 2026 | **Nothing in the shared image declares storage only one role needs.** There is one userland binary, so ramfs's 2.1 MB store was `.bss` in all sixteen processes. `kosmos_map` at startup instead: 7232 KB a process becomes 5156, and ramfs pays 7308 | ramfs.c |
+| Sep 2026 | **The read-only half of the image is mapped where it lies**, one copy for the machine. Permissions live in the mapping, not the page, so sharing 2.8 MB nobody can write costs no isolation. A process holds 2224 KB where it held 7232 | design.md §4.1.1 |
 
 ---
 

@@ -2,11 +2,64 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ---
 
 ## Where this left off
+
+**A process holds 2224 KB where it held 7232**, and the two things that made
+the difference were both consequences of there being one userland image that
+every process is a copy of.
+
+`ramfs` kept its store in `.bss` - `static struct node nodes[128]`, 2.1 MB -
+so the window manager, Tracker, the shell and twelve other processes each
+carried a copy of a server's private storage. It asks for the pages at
+startup now, and the cost shows against `ramfs` in the process list where it
+belongs.
+
+Then the read-only half of the image - code, fonts, icons, the Lua source of
+every program, 2.8 MB - stopped being copied at all. It is mapped where it
+lies, one set of physical pages for the machine, read-only and executable at
+EL0. Permissions live in the mapping rather than in the page, so nothing
+about isolation changes; `design.md` §4.1.1 has the argument and the two
+constraints it introduced (an image must be page-aligned, and its declared
+read-only half must be bytes the image actually has).
+
+`el0: separate address spaces` had to be rewritten and is a better test for
+it. It checked that two processes' code was a *different* physical page,
+which was a proxy for isolation and is now deliberately false. It is
+`el0: code shared, writable not`, and it asserts the sharing rather than
+tolerating it - a test that merely stopped looking would pass if the sharing
+quietly stopped happening.
+
+**A whole desktop with a 3D cube turning holds 47 MB where it held 148.**
+The heap is now 92% of what a process privately holds, so that is where to
+look next - and the answer is starting smaller and growing, not making 2 MB
+bigger, because §5.2 chose that number for the collector.
+
+**Drag and drop crosses windows.** The desktop carries a `kind` and an
+opaque string it never reads, because it is the only process that knows what
+is under the pointer - a press grabs, so the destination never sees one. The
+reply is a one-shot right given to the window that was handed the drop and
+taken back after, so that "tell the source" is not a way to post an event to
+any window whose handle you can guess.
+
+`kfs.rename` takes a path as well as a name, so a move between directories
+is two directory entries being edited inside one journal transaction rather
+than four megabytes read and written. The test checks the inode number, the
+start block and the free count, because "the name changed" is true of a copy
+too.
+
+Found on the way: **`files.copy` had not existed since `488f981`** - the
+comment block documenting it survived the icons rewrite and the function did
+not, so Tracker's Paste had been calling a nil value. And **Photo could only
+ever show pictures compiled into the kernel image**, which is why opening one
+from Tracker said "no picture called /home/lucas-k.png"; a leading slash now
+means a file, decided in the compositor, with no new message and no change to
+`ui.image`'s callers.
+
+---
 
 **Six servers are C now, and the console was the interesting one.** The
 order was audio, devices, binfs, libfs, appfs, console - each lived with
@@ -96,7 +149,15 @@ visible.
 
 ## Next, in order
 
-1. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
+1. **Tracker's chrome and its search box**, which is the live-query UI: a
+   toolbar with back and forward, a sidebar in sections, a status line with
+   the count, and a field where a plain word filters by name and `key:value`
+   runs an attribute query. M7 built queries and Tracker exposes none of
+   them.
+2. **A preferences app for file types.** `filetypes.by_extension` is
+   compiled into the image; it wants to be a file in `/home` that an
+   application edits, the way `.appearance` already is.
+3. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
    and `i_sdlsound.c` is the model. Doom is silent.
 2. **An equaliser in the Mixer**, which is the first thing that will want
    the ring to carry something other than what was written to it.

@@ -33,7 +33,17 @@
 .endm
 
 
-.balign 16
+/*
+ * **A page, because the kernel maps the read-only half where it lies.**
+ *
+ * There is one physical copy of a process image's code, mapped into every
+ * address space that runs it, and a mapping starts at a page boundary or it
+ * starts at the wrong bytes. `.balign 16` was enough while the image was
+ * copied into fresh pages; `process_create` now refuses one that is not
+ * page-aligned, which is how this said so rather than running on whatever
+ * preceded it.
+ */
+.balign 4096
 .global user_hello_start
 user_hello_start:
     IMAGE_HEADER
@@ -64,5 +74,12 @@ message:
     .ascii  "hello from EL0\n"
 message_end:
 
+/* Padded to a whole page, so the header's "4096 bytes are read-only" is a
+ * true statement about this blob rather than about it plus whatever the
+ * linker put next. The kernel maps the read-only half where it lies, so
+ * anything inside that page is readable by the process - and `process_create`
+ * refuses an image shorter than the half it declares, which is what would
+ * catch this if it were ever undone. */
+.balign 4096
 .global user_hello_end
 user_hello_end:

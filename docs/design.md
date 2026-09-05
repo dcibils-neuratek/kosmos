@@ -133,35 +133,69 @@ This is not only history. It is what makes the bootstrap possible at all -
 else changes, at least one image has to be there before there is anything to
 load one from.
 
-What it costs is that **anything the image declares, every process carries**.
-A process is 5156 KB: 3044 KB of image, a 2048 KB heap and 64 KB of stacks.
-Of the image, 2.5 MB is read-only - the Lua source of every program, the
-fonts, the icons - and 383 KB is code.
+What it costs is that **anything the image declares, every process carries**
+- for as long as every process has its own copy of it, which is the part
+that turned out to be avoidable.
 
-That number was 7232 KB until `ramfs` stopped keeping its store in `.bss`.
-`static struct node nodes[128]` is 2.1 MB, and with one image it was 2.1 MB
-in the window manager, in Tracker, in the shell and in twelve other
-processes that will never address a byte of it - thirty-four megabytes, of
-which two used. `kosmos_map` at startup gives pages that belong to that one
-process, and the cost is now visible where it belongs: ramfs reads 7308 KB
-in the process list and everything else reads 5156.
+**The read-only half is mapped where it lies.** `.text` and `.rodata` - the
+code, the fonts, the icons, the Lua source of every program - are 2.8 MB
+that no process can write a byte of, so there is one set of physical pages
+and every address space maps it at `USER_TEXT_VA`, read-only and executable
+at EL0. Only the writable half, 112 KB, is copied.
 
-**The rule, then: nothing in the shared image declares storage that only one
-role needs.** A fixed pool is still right - that is 4.1 above, and it is
-about the kernel besides - but a pool for a role belongs in the process that
-plays it.
+This is not a hole in the isolation and it is worth saying why, because the
+comment that used to sit in `process_create` said the opposite: that the
+image's pages are the kernel's, EL1-only, and giving them EL0 permissions
+would give them to everything at once. That is true of the **identity map**,
+which every address space shares, and this does not touch it. `USER_TEXT_VA`
+is 0x80000000, an L1 slot above RAM that the kernel never uses, so the tables
+built for it belong to one address space. Permissions live in the mapping,
+not in the page. The alias is safe because both mappings are Normal,
+inner-shareable, write-back: what the architecture forbids is mismatched
+*attributes*, not different permissions.
 
-**Separate binaries per program are the expensive answer to the smaller
+The one thing it does require is that an image be page-aligned and that its
+declared read-only half be bytes the image actually has. Copying had a moment
+to zero the tail of the last page; mapping has none, so an 80-byte blob whose
+header claims 4096 read-only bytes would hand the rest of that page to the
+process. `process_create` refuses both, `bin2c.py` aligns what it generates,
+and the test blobs in `hello.S` and `faulty.S` are padded to a whole page so
+their headers tell the truth.
+
+`el0: code shared, writable not` is the test, and it asserts the sharing
+rather than tolerating it - it used to check that two processes' code was a
+*different* physical page, which was the old proxy for isolation and is now
+deliberately false. The invariant it checks instead is the real one: the same
+code page, read-only to EL0 in both, and different pages for everything
+writable.
+
+The other half of the same lesson was `ramfs`. `static struct node
+nodes[128]` is 2.1 MB, and with one image that was 2.1 MB in the window
+manager, in Tracker, in the shell and in twelve other processes that will
+never address a byte of it - thirty-four megabytes, of which two used.
+`kosmos_map` at startup gives pages that belong to that one process. **The
+rule: nothing in the shared image declares storage that only one role
+needs.** A fixed pool is still right - that is 4.1 above, and it is about the
+kernel besides - but a pool for a role belongs in the process that plays it.
+
+Together those took a process from 7232 KB to **2224 KB**: a 2048 KB heap,
+64 KB of stacks and 112 KB of writable image. A whole desktop with a 3D cube
+turning in it holds 47 MB where it held 148.
+
+**The heap is now 92% of what a process privately holds**, which is where to
+look next. It is 2 MB up front because §5.2 wants a small heap that collects
+fast - the number is a deliberate choice about the collector, not an
+oversight - so the change to want is starting smaller and growing on demand,
+not making it bigger.
+
+**Separate binaries per program remain the expensive answer to the smaller
 half.** They would need a spawn that names an image (the clean form is a
 region the caller filled, so the kernel still knows nothing about names), a
-build that decides each binary's subset, and the servers left in the
-built-in image anyway for the bootstrap. And they would save little: every
-Lua application needs Lua, `gfx`, the fonts and libc, which is most of the
-2.5 MB. **Mapping the read-only half from one physical copy saves the same
-2.79 MB fifteen times over with no build change and nothing observable** -
-nobody can write those pages, so nobody can tell they are shared. That is
-the next thing to do here, and it is worth roughly 42 MB on a desktop with
-sixteen processes.
+build that decides each binary's subset - an ongoing question about which
+program needs TinyGL - and the servers left in the built-in image anyway for
+the bootstrap. And they would save little now: what a `tracker` binary would
+drop is TinyGL and minimp3, where the 2.8 MB every Lua application really
+does need is already down to one copy for the machine.
 
 ### 4.2 IPC
 

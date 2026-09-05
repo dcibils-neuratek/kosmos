@@ -1094,10 +1094,24 @@ static bool test_a_syscall_refuses_a_kernel_pointer(void)
 static bool test_processes_have_separate_address_spaces(void)
 {
     /*
-     * Two processes, both mapping their code at USER_TEXT_VA, both reaching
-     * a different physical page. Checked from the kernel by walking each
-     * space rather than from inside them, since neither can see the other
-     * by construction, which is the point.
+     * Two processes, and what they do and do not share.
+     *
+     * **This used to check that their code was a different physical page,
+     * and that is now deliberately false.** The read-only half of an image
+     * is mapped where it lies - one copy for every process that runs it -
+     * because a page nobody can write is a page nobody can use to reach
+     * anybody. So the check is the invariant rather than its old proxy:
+     * the code page is *the same* and is read-only to EL0, and everything
+     * writable is different.
+     *
+     * Asserting the sharing rather than tolerating it is the point. A test
+     * that merely stopped looking would pass just as well if the sharing
+     * quietly stopped happening, and the 2.8 MB a process it saves would go
+     * back without anything noticing.
+     *
+     * Checked from the kernel by walking each space rather than from inside
+     * them, since neither can see the other by construction, which is what
+     * is being tested.
      */
     struct process *a;
     struct process *b;
@@ -1136,18 +1150,34 @@ static bool test_processes_have_separate_address_spaces(void)
 
     ok = ea != NULL && eb != NULL
       && (*ea & 1) != 0 && (*eb & 1) != 0
-      && (*ea & DESC_ADDR_MASK) != (*eb & DESC_ADDR_MASK);
+      /* The same page, on purpose. */
+      && (*ea & DESC_ADDR_MASK) == (*eb & DESC_ADDR_MASK)
+      /*
+       * And read-only to EL0 in both, which is the whole reason sharing it
+       * is safe: AP=11 is EL1 read, EL0 read. Were this AP=01 the two
+       * processes would be writing each other's code.
+       */
+      && (*ea & ATTR_AP_RO_EL0) == ATTR_AP_RO_EL0
+      && (*eb & ATTR_AP_RO_EL0) == ATTR_AP_RO_EL0;
 
-    /* Their stacks are different pages too, so nothing is shared by
-     * accident rather than only the thing that was checked first. */
+    /* Their stacks and their heaps are different pages, which is the claim
+     * the code page used to stand in for: writable memory is never shared,
+     * and nothing is shared by accident rather than only the thing that was
+     * checked first. */
     {
         uintptr_t stack_page = USER_STACK_TOP - PAGE_SIZE;
         uint64_t *sa = as_page_entry(a->space, stack_page);
         uint64_t *sb = as_page_entry(b->space, stack_page);
+        uint64_t *ha = as_page_entry(a->space, USER_HEAP_VA);
+        uint64_t *hb = as_page_entry(b->space, USER_HEAP_VA);
 
         ok = ok && sa != NULL && sb != NULL
                 && (*sa & 1) != 0 && (*sb & 1) != 0
                 && (*sa & DESC_ADDR_MASK) != (*sb & DESC_ADDR_MASK);
+
+        ok = ok && ha != NULL && hb != NULL
+                && (*ha & 1) != 0 && (*hb & 1) != 0
+                && (*ha & DESC_ADDR_MASK) != (*hb & DESC_ADDR_MASK);
     }
 
     /*
@@ -3863,7 +3893,7 @@ static const struct test tests[] = {
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },
     { "el0: it cannot write its own code",     test_a_process_cannot_write_its_own_code },
     { "el0: a syscall refuses a kernel ptr",   test_a_syscall_refuses_a_kernel_pointer },
-    { "el0: separate address spaces",          test_processes_have_separate_address_spaces },
+    { "el0: code shared, writable not",        test_processes_have_separate_address_spaces },
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },

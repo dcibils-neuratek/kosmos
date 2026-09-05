@@ -34,9 +34,20 @@ def main():
         "",
         f"const unsigned long {symbol}_len = {len(data)}UL;",
         "",
-        # Aligned because the init image is executed after being copied, and
-        # the Lua source is handed to the parser as a string.
-        f"__attribute__((aligned(16)))",
+        # **A page, not sixteen bytes.**
+        #
+        # The kernel maps the read-only half of the init image straight out
+        # of its own copy - one set of physical pages for every process
+        # rather than one each - and a mapping starts at a page boundary or
+        # it starts at the wrong bytes. `process_create` refuses an image
+        # that is not aligned, so getting this wrong is a boot that stops
+        # and says so rather than a process that runs on somebody else's
+        # memory.
+        #
+        # It costs up to 4095 bytes of padding per blob, against 2.8 MB a
+        # process. The Lua source does not need it and gets it anyway,
+        # because one rule here is easier to keep true than two.
+        f"__attribute__((aligned(4096)))",
         f"const unsigned char {symbol}[] = {{",
     ]
 
