@@ -13,19 +13,23 @@
  * look like a frame path, and it was a period path, which is a frame path
  * with a different clock. A stack is not going to be the third case.
  *
- * **There is no TCP here and that is not an omission.** Ping needs
- * Ethernet, ARP, IPv4 and ICMP, and that is what this is. TCP is a state
- * machine, retransmission, windows and four timers - a different piece of
- * work with different mistakes in it, and half of one is worse than none.
- * `netproto.h` records where the shared ring goes when it arrives, so that
- * decision is made before somebody finds a message worked for the first ten
- * kilobytes.
+ * **TCP, and the half of it a client needs.** This end connects out; there
+ * is no LISTEN, no SYN_RECEIVED and no simultaneous open, because telnet and
+ * SSH ask and a server answers. What is here is the path a client takes
+ * through RFC 793's diagram - SYN_SENT, ESTABLISHED, and a close from either
+ * side - with one retransmission timer and a window that is the ring's free
+ * space rather than a number this end made up.
+ *
+ * **A connection's bytes never travel in a message.** `tcpring.h` is the
+ * region both sides hold, and that decision was written down before a byte
+ * moved rather than after somebody found a message worked for the first ten
+ * kilobytes. The audio server is what the rule was learned from.
  *
  * **Fixed pools, no allocator**, the same as every other server here. Eight
- * echoes in flight, sixteen ARP entries. Running out is an error at a known
- * limit rather than a failure at an unknown one.
+ * echoes in flight, sixteen ARP entries, four connections. Running out is an
+ * error at a known limit rather than a failure at an unknown one.
  *
- * **Written against RFC 791, 792 and 826 from knowledge**, so the field
+ * **Written against RFC 791, 792, 793 and 826 from knowledge**, so the field
  * offsets are the part to distrust. What establishes them is a reply coming
  * back from a real host: a wrong offset produces no answer at all rather
  * than a wrong one, because the far end is checking the same fields.
@@ -38,6 +42,7 @@
 
 #include "kosmos.h"
 #include "netproto.h"
+#include "tcpring.h"
 
 /*------------------------------------------------------------------------
  * The wire, as offsets.
@@ -89,6 +94,48 @@
 #define IP_HEADER       20
 
 #define IP_PROTO_ICMP   1u
+#define IP_PROTO_TCP    6u
+
+/*
+ * RFC 793, and the twenty-byte header this stack builds.
+ *
+ * Options are sent on the SYN only - the maximum segment size, which a far
+ * end needs in order not to send something this cannot take - and are
+ * skipped on the way in. Skipping is right here where it was wrong for IP:
+ * TCP options are ordinary and every stack sends them, where an IP option is
+ * something somebody built deliberately.
+ */
+#define TCP_SPORT       0
+#define TCP_DPORT       2
+#define TCP_SEQ         4
+#define TCP_ACK         8
+#define TCP_OFF         12
+#define TCP_FLAGS       13
+#define TCP_WINDOW      14
+#define TCP_CHECKSUM    16
+#define TCP_URGENT      18
+#define TCP_HEADER      20
+
+#define TCP_FIN         0x01u
+#define TCP_SYN         0x02u
+#define TCP_RST         0x04u
+#define TCP_PSH         0x08u
+#define TCP_ACK_FLAG    0x10u
+
+/*
+ * The states this stack has, which are not all nine of TCP's.
+ *
+ * There is no LISTEN, SYN_RECEIVED or CLOSING, because this end always
+ * connects out and `netproto.h` says why. What is left is the client's path
+ * through the diagram: ask, talk, and shut down from either side.
+ */
+#define ST_FREE         0
+#define ST_SYN_SENT     1
+#define ST_OPEN         2
+#define ST_FIN_WAIT     3       /* we sent FIN, waiting for theirs */
+#define ST_CLOSE_WAIT   4       /* they sent FIN, we may still send */
+#define ST_LAST_ACK     5       /* both sent; waiting to be acknowledged */
+#define ST_DEAD         6
 
 /* RFC 792. */
 #define ICMP_TYPE       0
@@ -130,6 +177,45 @@ struct pending {
     struct net_addr to;
 };
 
+/*
+ * One connection.
+ *
+ * `snd_una` is the oldest byte this end has sent and not had acknowledged,
+ * `snd_nxt` the next it will send, and `rcv_nxt` what it expects from the
+ * far end. Those three names are RFC 793's and are worth keeping: every
+ * sentence in that document about what is legal is written in them.
+ *
+ * **One segment in flight, retransmitted on a timer.** A real stack keeps a
+ * queue of unacknowledged segments and slides a window over it; this sends
+ * what fits, remembers where it started, and sends it again if nothing
+ * acknowledges it. That costs throughput on a long fat link and costs
+ * nothing on a line protocol, which is what this is for - and it is one
+ * timer to get right instead of four.
+ */
+struct conn {
+    unsigned state;
+    uint64_t opened_by;             /* the caller parked in CONNECT */
+    uint64_t waiter;                /* the caller parked in WAIT, or 0 */
+    uint64_t wait_until;
+
+    struct net_addr remote;
+    uint16_t local_port;
+    uint16_t remote_port;
+
+    uint32_t snd_una;
+    uint32_t snd_nxt;
+    uint32_t rcv_nxt;
+    uint32_t peer_window;
+
+    uint64_t sent_at;               /* when the unacknowledged segment went */
+    uint32_t tries;
+    bool     fin_sent;
+
+    /* The region, and where it is mapped in this process. */
+    long     region;
+    struct tcp_ring *ring;
+};
+
 static struct {
     bool     has_card;
     uint8_t  mac[6];
@@ -144,6 +230,10 @@ static struct {
     struct pending   pending[NET_PENDING_MAX];
 
     uint16_t next_id;               /* the IP header's, and the echo's */
+
+    struct conn conn[NET_CONN_MAX];
+    uint16_t next_port;
+    uint32_t next_seq;              /* where the next connection starts */
 
     uint8_t  frame[NET_FRAME_MAX];  /* one at a time; nothing here queues */
 } net;
@@ -526,6 +616,11 @@ static void icmp_receive(const uint8_t *packet, unsigned length,
     }
 }
 
+/* Written below, with the rest of TCP; declared here because a packet is
+ * dispatched before it is decoded. */
+static void tcp_receive(const uint8_t *packet, unsigned total,
+                        const struct net_addr *from);
+
 static void ip_receive(const uint8_t *packet, unsigned length)
 {
     struct net_addr from;
@@ -587,7 +682,447 @@ static void ip_receive(const uint8_t *packet, unsigned length)
 
     if (packet[IP_PROTO] == IP_PROTO_ICMP) {
         icmp_receive(packet, total, &from, packet[IP_TTL]);
+    } else if (packet[IP_PROTO] == IP_PROTO_TCP) {
+        tcp_receive(packet, total, &from);
     }
+}
+
+/*------------------------------------------------------------------------
+ * TCP.
+ *----------------------------------------------------------------------*/
+
+static uint32_t get32(const uint8_t *at)
+{
+    return ((uint32_t)at[0] << 24) | ((uint32_t)at[1] << 16)
+         | ((uint32_t)at[2] << 8)  | (uint32_t)at[3];
+}
+
+static void put32(uint8_t *at, uint32_t v)
+{
+    at[0] = (uint8_t)(v >> 24);
+    at[1] = (uint8_t)(v >> 16);
+    at[2] = (uint8_t)(v >> 8);
+    at[3] = (uint8_t)v;
+}
+
+/*
+ * Is `a` at or after `b`, in sequence space?
+ *
+ * Sequence numbers wrap at 2^32 and comparing them as plain integers is
+ * wrong exactly once per four gigabytes - which is a bug that appears after
+ * an hour of traffic and nowhere in a test. The subtraction is the standard
+ * answer: the difference is what matters and it is correct across the wrap
+ * as long as the two are within 2^31 of each other, which RFC 793 requires
+ * anyway.
+ */
+static bool seq_ge(uint32_t a, uint32_t b)
+{
+    return (int32_t)(a - b) >= 0;
+}
+
+/*
+ * TCP's checksum covers a header that is not on the wire.
+ *
+ * The pseudo-header - source, destination, protocol, length - is prepended
+ * for the sum and then thrown away. It exists so that a segment delivered to
+ * the wrong address fails its checksum rather than being accepted by
+ * whoever received it, which is a property IP alone does not give.
+ *
+ * Computed here in two passes rather than by building a buffer with the
+ * pseudo-header in front, because that buffer would be a copy of the whole
+ * segment for the sake of twelve bytes.
+ */
+static uint16_t tcp_checksum(const struct net_addr *src,
+                             const struct net_addr *dst,
+                             const uint8_t *segment, unsigned length)
+{
+    uint32_t sum = 0;
+    unsigned i;
+
+    for (i = 0; i < 4; i += 2) {
+        sum += (uint32_t)((src->byte[i] << 8) | src->byte[i + 1]);
+        sum += (uint32_t)((dst->byte[i] << 8) | dst->byte[i + 1]);
+    }
+
+    sum += IP_PROTO_TCP;
+    sum += length;
+
+    for (i = 0; i + 1 < length; i += 2) {
+        sum += get16(segment + i);
+    }
+
+    if ((length & 1u) != 0) {
+        sum += (uint32_t)segment[length - 1] << 8;
+    }
+
+    while ((sum >> 16) != 0) {
+        sum = (sum & 0xffffu) + (sum >> 16);
+    }
+
+    return (uint16_t)(~sum & 0xffffu);
+}
+
+static struct conn *conn_at(uint32_t handle)
+{
+    if (handle >= NET_CONN_MAX || net.conn[handle].state == ST_FREE) {
+        return NULL;
+    }
+
+    return &net.conn[handle];
+}
+
+/*
+ * How much this end is prepared to receive, which is the ring's free space.
+ *
+ * **Not a number this stack invented.** The window is a promise: whatever is
+ * advertised, the far end may send, and anything that arrives with nowhere
+ * to go is dropped and retransmitted - which looks exactly like a lossy
+ * network. So it is computed from the one thing that decides it, and a
+ * client that stops reading really does slow the sender down. That is flow
+ * control, and it is free when the window is the ring.
+ */
+static uint16_t window_of(const struct conn *c)
+{
+    uint32_t space;
+
+    if (c->ring == NULL) {
+        return 0;
+    }
+
+    space = tcp_ring_space(c->ring->bytes, c->ring->in_write,
+                           tcp_ring_acquire(&c->ring->in_read));
+
+    return (space > 65535u) ? 65535u : (uint16_t)space;
+}
+
+/*
+ * One segment out. `data` may be NULL for a pure ACK, a SYN or a FIN.
+ *
+ * The maximum segment size goes on the SYN and nowhere else, which is what
+ * RFC 793 says and also the only option this stack sends. Without it a far
+ * end assumes 536 bytes, which works and wastes most of every frame.
+ */
+static bool tcp_send(struct conn *c, uint32_t flags, uint32_t seq,
+                     const uint8_t *data, unsigned length)
+{
+    uint8_t segment[TCP_HEADER + 4 + 1460];
+    unsigned header = TCP_HEADER;
+
+    if (length > sizeof(segment) - TCP_HEADER - 4) {
+        return false;
+    }
+
+    memset(segment, 0, TCP_HEADER + 4);
+
+    put16(segment + TCP_SPORT, c->local_port);
+    put16(segment + TCP_DPORT, c->remote_port);
+    put32(segment + TCP_SEQ, seq);
+    put32(segment + TCP_ACK, c->rcv_nxt);
+    segment[TCP_FLAGS] = (uint8_t)flags;
+    put16(segment + TCP_WINDOW, window_of(c));
+
+    if ((flags & TCP_SYN) != 0) {
+        /* Kind 2, length 4, then the value: 1460, which is the MTU less an
+         * IP header and a TCP header. */
+        segment[TCP_HEADER + 0] = 2;
+        segment[TCP_HEADER + 1] = 4;
+        put16(segment + TCP_HEADER + 2, 1460);
+        header = TCP_HEADER + 4;
+    }
+
+    /* The data offset is in 32-bit words, in the high nibble. A stack that
+     * writes the byte count here builds a segment whose payload starts
+     * eighty bytes in, which the far end reads as garbage. */
+    segment[TCP_OFF] = (uint8_t)((header / 4u) << 4);
+
+    if (data != NULL && length > 0) {
+        memcpy(segment + header, data, length);
+    }
+
+    put16(segment + TCP_CHECKSUM, 0);
+    put16(segment + TCP_CHECKSUM,
+          tcp_checksum(&net.address, &c->remote, segment, header + length));
+
+    return send_ip(&c->remote, IP_PROTO_TCP, segment, header + length);
+}
+
+/*
+ * Whatever is waiting in `out`, up to what the far end will take.
+ *
+ * Nothing is sent while a segment is unacknowledged: this is the one-in-
+ * flight rule the structure comment describes, and it is what makes a single
+ * retransmission timer sufficient.
+ */
+static void tcp_pump(struct conn *c)
+{
+    uint32_t have;
+    uint32_t read;
+    uint32_t send;
+    unsigned i;
+    uint8_t  piece[1460];
+
+    if (c->ring == NULL || (c->state != ST_OPEN && c->state != ST_CLOSE_WAIT)) {
+        return;
+    }
+
+    if (c->snd_nxt != c->snd_una) {
+        return;                     /* something is already in flight */
+    }
+
+    read = c->ring->out_read;
+    have = tcp_ring_ready(tcp_ring_acquire(&c->ring->out_write), read);
+
+    if (have == 0) {
+        return;
+    }
+
+    send = have;
+
+    if (send > sizeof(piece)) {
+        send = sizeof(piece);
+    }
+
+    if (send > c->peer_window) {
+        send = c->peer_window;
+    }
+
+    if (send == 0) {
+        return;                     /* the far end has nowhere to put it */
+    }
+
+    for (i = 0; i < send; i++) {
+        piece[i] = tcp_ring_out(c->ring)[(read + i) % c->ring->bytes];
+    }
+
+    if (!tcp_send(c, TCP_ACK_FLAG | TCP_PSH, c->snd_nxt, piece, send)) {
+        return;
+    }
+
+    c->snd_nxt += send;
+    c->sent_at = kosmos_ticks();
+    c->tries = 0;
+
+    /*
+     * The bytes stay in the ring until they are acknowledged, which is what
+     * makes retransmission possible without a second buffer: `out_read` only
+     * advances when the far end says it has them.
+     */
+}
+
+/* Whoever is parked in WAIT on this connection is told something happened.
+ * The reply carries no data - the data is in the ring - only the state, so
+ * a client that was woken by a close knows to stop. */
+static void wake_waiter(struct conn *c)
+{
+    struct net_reply reply;
+
+    if (c->waiter == 0) {
+        return;
+    }
+
+    memset(&reply, 0, sizeof(reply));
+    reply.status = NET_OK;
+    reply.handle = (uint32_t)(c - net.conn);
+    reply.state  = (c->state == ST_OPEN || c->state == ST_FIN_WAIT)
+                   ? NET_TCP_OPEN : NET_TCP_CLOSED;
+
+    answer(c->waiter, &reply);
+    c->waiter = 0;
+}
+
+static void conn_die(struct conn *c, uint32_t status)
+{
+    if (c->opened_by != 0) {
+        fail(c->opened_by, status);
+        c->opened_by = 0;
+    }
+
+    if (c->ring != NULL) {
+        tcp_ring_publish(&c->ring->closed, 1);
+    }
+
+    c->state = ST_DEAD;
+    wake_waiter(c);
+}
+
+/*
+ * A segment arrived.
+ *
+ * The order of the checks is RFC 793's and matters: a reset is honoured
+ * before anything else, a SYN-ACK only means something in SYN_SENT, and data
+ * is only taken when it is the byte expected next. Out-of-order segments are
+ * *dropped* rather than queued, which costs a retransmission and saves a
+ * reassembly buffer - the same trade as refusing IP fragments, and defensible
+ * for the same reason.
+ */
+static void tcp_receive(const uint8_t *packet, unsigned total,
+                        const struct net_addr *from)
+{
+    const uint8_t *tcp = packet + IP_HEADER;
+    unsigned tcp_len = total - IP_HEADER;
+    unsigned header;
+    unsigned payload;
+    uint32_t flags;
+    uint32_t seq, ack;
+    struct conn *c = NULL;
+    unsigned i;
+
+    if (tcp_len < TCP_HEADER) {
+        return;
+    }
+
+    header = (unsigned)(tcp[TCP_OFF] >> 4) * 4u;
+
+    if (header < TCP_HEADER || header > tcp_len) {
+        return;
+    }
+
+    for (i = 0; i < NET_CONN_MAX; i++) {
+        struct conn *k = &net.conn[i];
+
+        if (k->state != ST_FREE && k->state != ST_DEAD
+            && k->local_port == get16(tcp + TCP_DPORT)
+            && k->remote_port == get16(tcp + TCP_SPORT)
+            && same_addr(&k->remote, from)) {
+            c = k;
+            break;
+        }
+    }
+
+    if (c == NULL) {
+        return;                     /* nobody's; a real stack would RST */
+    }
+
+    flags   = tcp[TCP_FLAGS];
+    seq     = get32(tcp + TCP_SEQ);
+    ack     = get32(tcp + TCP_ACK);
+    payload = tcp_len - header;
+
+    if ((flags & TCP_RST) != 0) {
+        conn_die(c, (c->state == ST_SYN_SENT) ? NET_ERR_REFUSED
+                                              : NET_ERR_CLOSED);
+        return;
+    }
+
+    if (c->state == ST_SYN_SENT) {
+        struct net_reply reply;
+
+        if ((flags & (TCP_SYN | TCP_ACK_FLAG)) != (TCP_SYN | TCP_ACK_FLAG)) {
+            return;                 /* not the answer to our question */
+        }
+
+        if (ack != c->snd_nxt) {
+            return;                 /* acknowledging something we never sent */
+        }
+
+        /* Their SYN takes one sequence number, so the next byte we expect is
+         * one past it. Forgetting that is a connection that opens and then
+         * acknowledges everything one short for ever. */
+        c->rcv_nxt = seq + 1;
+        c->snd_una = ack;
+        c->peer_window = get16(tcp + TCP_WINDOW);
+        c->state = ST_OPEN;
+
+        (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
+
+        memset(&reply, 0, sizeof(reply));
+        reply.status     = NET_OK;
+        reply.handle     = (uint32_t)(c - net.conn);
+        reply.ring_bytes = TCP_RING_BYTES;
+        reply.state      = NET_TCP_OPEN;
+
+        {
+            struct message msg;
+
+            memset(&msg, 0, sizeof(msg));
+            msg.length = sizeof(reply);
+            msg.cap_plus_one = (uint32_t)c->region + 1u;
+            memcpy(msg.data, &reply, sizeof(reply));
+
+            (void)kosmos_reply(c->opened_by, &msg);
+        }
+
+        c->opened_by = 0;
+        return;
+    }
+
+    if ((flags & TCP_ACK_FLAG) != 0 && seq_ge(ack, c->snd_una)
+        && seq_ge(c->snd_nxt, ack)) {
+        uint32_t acked = ack - c->snd_una;
+
+        /*
+         * The far end has these bytes, so they leave the ring. This is the
+         * only place `out_read` moves, which is what makes the client the
+         * sole writer of `out_write` and this the sole writer of
+         * `out_read` - the discipline `tcpring.h` describes.
+         */
+        if (acked > 0 && c->ring != NULL) {
+            uint32_t data_acked = acked;
+
+            /* A FIN takes a sequence number and is not a byte in the ring. */
+            if (c->fin_sent && seq_ge(ack, c->snd_nxt) && data_acked > 0) {
+                data_acked--;
+            }
+
+            tcp_ring_publish(&c->ring->out_read,
+                             c->ring->out_read + data_acked);
+        }
+
+        c->snd_una = ack;
+
+        if (c->state == ST_LAST_ACK && seq_ge(ack, c->snd_nxt)) {
+            conn_die(c, NET_OK);
+            return;
+        }
+    }
+
+    c->peer_window = get16(tcp + TCP_WINDOW);
+
+    /*
+     * Data, but only if it is the next byte expected.
+     *
+     * Anything else is dropped without acknowledging it, so the far end
+     * sends it again. That is correct and slow; queuing it would be correct
+     * and fast, and would be a reassembly buffer with a policy about
+     * overlapping pieces - which is the well-known way to get a stack wrong.
+     */
+    if (payload > 0 && seq == c->rcv_nxt && c->ring != NULL) {
+        uint32_t write = c->ring->in_write;
+        uint32_t space = tcp_ring_space(c->ring->bytes, write,
+                                        tcp_ring_acquire(&c->ring->in_read));
+        unsigned take = (payload > space) ? space : payload;
+
+        for (i = 0; i < take; i++) {
+            tcp_ring_in(c->ring)[(write + i) % c->ring->bytes]
+                = tcp[header + i];
+        }
+
+        tcp_ring_publish(&c->ring->in_write, write + take);
+        c->rcv_nxt += take;
+
+        (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
+        wake_waiter(c);
+    }
+
+    if ((flags & TCP_FIN) != 0 && seq_ge(c->rcv_nxt, seq)) {
+        /* Their FIN takes one sequence number too. */
+        c->rcv_nxt = seq + payload + 1;
+
+        if (c->ring != NULL) {
+            tcp_ring_publish(&c->ring->closed, 1);
+        }
+
+        if (c->state == ST_OPEN) {
+            c->state = ST_CLOSE_WAIT;
+        } else if (c->state == ST_FIN_WAIT) {
+            c->state = ST_LAST_ACK;
+        }
+
+        (void)tcp_send(c, TCP_ACK_FLAG, c->snd_nxt, NULL, 0);
+        wake_waiter(c);
+    }
+
+    tcp_pump(c);
 }
 
 /* Everything the card has, decoded. Drained rather than one at a time: a
@@ -733,6 +1268,175 @@ static void serve(const struct message *msg, uint64_t sender)
         return;
     }
 
+    case NET_OP_CONNECT: {
+        struct conn *c = NULL;
+        unsigned i;
+        long region;
+        long at;
+
+        if (!net.has_card || !net.configured) {
+            fail(sender, net.has_card ? NET_ERR_NO_ROUTE : NET_ERR_NO_CARD);
+            return;
+        }
+
+        for (i = 0; i < NET_CONN_MAX; i++) {
+            if (net.conn[i].state == ST_FREE) {
+                c = &net.conn[i];
+                break;
+            }
+        }
+
+        if (c == NULL) {
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        /*
+         * The region first, because a connection with nowhere to put bytes
+         * is a connection that would have to be torn down after the far end
+         * had already answered.
+         */
+        region = kosmos_mem_create((TCP_RING_REGION + 4095u) / 4096u);
+
+        if (region < 0) {
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        at = kosmos_mem_map(region);
+
+        if (at < 0) {
+            (void)kosmos_cap_drop(region);
+            fail(sender, NET_ERR_FULL);
+            return;
+        }
+
+        memset(c, 0, sizeof(*c));
+
+        c->region = region;
+        c->ring   = (struct tcp_ring *)(uintptr_t)at;
+
+        memset(c->ring, 0, TCP_RING_DATA);
+        c->ring->magic = TCP_RING_MAGIC;
+        c->ring->bytes = TCP_RING_BYTES;
+
+        /*
+         * A port nobody else is using, from the range IANA leaves to
+         * whoever is asking. Counted rather than random, which a real stack
+         * would not do - a predictable port is one an off-path attacker can
+         * guess - and there is no source of randomness here to do better
+         * with. Worth naming rather than leaving as an unexamined choice.
+         */
+        c->local_port  = net.next_port++;
+
+        if (net.next_port < 49152u) {
+            net.next_port = 49152u;
+        }
+
+        c->remote      = req.to;
+        c->remote_port = (uint16_t)req.port;
+        c->snd_una     = net.next_seq;
+        c->snd_nxt     = net.next_seq;
+        c->peer_window = 1460;
+        c->state       = ST_SYN_SENT;
+        c->opened_by   = sender;
+        c->sent_at     = kosmos_ticks();
+
+        net.next_seq += 0x01000000u;
+
+        if (!tcp_send(c, TCP_SYN, c->snd_nxt, NULL, 0)) {
+            (void)kosmos_cap_drop(region);
+            memset(c, 0, sizeof(*c));
+            fail(sender, NET_ERR_UNREACHABLE);
+            return;
+        }
+
+        /* Our SYN takes one sequence number. */
+        c->snd_nxt++;
+
+        /*
+         * And no reply. The caller stays parked until the far end answers,
+         * is refused, or the timer gives up - which is what `connect` means
+         * everywhere else, and what lets this process go on serving.
+         */
+        return;
+    }
+
+    case NET_OP_PUSH: {
+        struct conn *c = conn_at(req.handle);
+
+        if (c == NULL) {
+            fail(sender, NET_ERR_NO_HANDLE);
+            return;
+        }
+
+        tcp_pump(c);
+
+        reply.status = NET_OK;
+        reply.handle = req.handle;
+        reply.state  = (c->state == ST_OPEN || c->state == ST_CLOSE_WAIT)
+                       ? NET_TCP_OPEN : NET_TCP_CLOSED;
+        answer(sender, &reply);
+        return;
+    }
+
+    case NET_OP_WAIT: {
+        struct conn *c = conn_at(req.handle);
+        uint32_t ready;
+
+        if (c == NULL) {
+            fail(sender, NET_ERR_NO_HANDLE);
+            return;
+        }
+
+        ready = tcp_ring_ready(c->ring->in_write,
+                               tcp_ring_acquire(&c->ring->in_read));
+
+        /*
+         * Answered at once when there is something, parked when there is
+         * not. A client that always got parked would take a round trip to
+         * learn about bytes that had already arrived.
+         */
+        if (ready > 0 || c->state == ST_DEAD || c->ring->closed != 0) {
+            reply.status = NET_OK;
+            reply.handle = req.handle;
+            reply.state  = (c->state == ST_OPEN || c->state == ST_FIN_WAIT)
+                           ? NET_TCP_OPEN : NET_TCP_CLOSED;
+            answer(sender, &reply);
+            return;
+        }
+
+        c->waiter     = sender;
+        c->wait_until = kosmos_ticks();
+        return;
+    }
+
+    case NET_OP_CLOSE: {
+        struct conn *c = conn_at(req.handle);
+
+        if (c == NULL) {
+            fail(sender, NET_ERR_NO_HANDLE);
+            return;
+        }
+
+        /*
+         * This end is done *sending*. The far end may still have things to
+         * say, which is why this is a FIN rather than a teardown: a client
+         * that has sent its request and closes should still read the answer.
+         */
+        if (c->state == ST_OPEN || c->state == ST_CLOSE_WAIT) {
+            (void)tcp_send(c, TCP_ACK_FLAG | TCP_FIN, c->snd_nxt, NULL, 0);
+            c->snd_nxt++;
+            c->fin_sent = true;
+            c->state = (c->state == ST_OPEN) ? ST_FIN_WAIT : ST_LAST_ACK;
+        }
+
+        reply.status = NET_OK;
+        reply.handle = req.handle;
+        answer(sender, &reply);
+        return;
+    }
+
     default:
         fail(sender, NET_ERR_BAD_OP);
         return;
@@ -759,6 +1463,82 @@ static void expire(uint64_t hz)
         if (p->used && now - p->sent_at > hz) {
             p->used = false;
             fail(p->who, NET_ERR_UNREACHABLE);
+        }
+    }
+
+    /*
+     * And the connections.
+     *
+     * **One timer, and it does three jobs**: it retransmits what has not
+     * been acknowledged, gives up on a connection nobody answered, and
+     * pushes anything the client has written that has not gone yet.
+     *
+     * The interval doubles - one second, two, four - which is the backoff
+     * every stack does and for the reason every stack does it: a network
+     * that lost the first copy is a network that is probably busy, and
+     * retrying faster makes it busier. Five attempts and then the
+     * connection is dead, which is about thirty seconds.
+     */
+    for (i = 0; i < NET_CONN_MAX; i++) {
+        struct conn *c = &net.conn[i];
+        uint64_t wait;
+
+        if (c->state == ST_FREE || c->state == ST_DEAD) {
+            continue;
+        }
+
+        /* Anything the client wrote while a segment was in flight. */
+        tcp_pump(c);
+
+        if (c->snd_una == c->snd_nxt && c->state != ST_SYN_SENT) {
+            continue;               /* nothing outstanding */
+        }
+
+        wait = hz << (c->tries > 3 ? 3 : c->tries);
+
+        if (now - c->sent_at < wait) {
+            continue;
+        }
+
+        c->tries++;
+
+        if (c->tries > 5) {
+            conn_die(c, (c->state == ST_SYN_SENT) ? NET_ERR_TIMEOUT
+                                                  : NET_ERR_CLOSED);
+            continue;
+        }
+
+        c->sent_at = now;
+
+        /*
+         * Sent again from `snd_una`, not `snd_nxt`. That is the whole point
+         * of keeping the bytes in the ring until they are acknowledged: the
+         * retransmission is the same bytes at the same sequence number, and
+         * a stack that resent from `snd_nxt` would be sending new data with
+         * an old segment's number.
+         */
+        if (c->state == ST_SYN_SENT) {
+            (void)tcp_send(c, TCP_SYN, c->snd_una, NULL, 0);
+        } else {
+            uint32_t behind = c->snd_nxt - c->snd_una;
+            uint8_t  piece[1460];
+            uint32_t read = c->ring->out_read;
+            unsigned k;
+
+            if (c->fin_sent && behind > 0) {
+                behind--;           /* the FIN is not a byte in the ring */
+            }
+
+            if (behind > sizeof(piece)) {
+                behind = sizeof(piece);
+            }
+
+            for (k = 0; k < behind; k++) {
+                piece[k] = tcp_ring_out(c->ring)[(read + k) % c->ring->bytes];
+            }
+
+            (void)tcp_send(c, TCP_ACK_FLAG | (c->fin_sent ? TCP_FIN : 0u),
+                           c->snd_una, behind ? piece : NULL, behind);
         }
     }
 }

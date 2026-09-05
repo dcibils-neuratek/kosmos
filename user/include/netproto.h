@@ -12,14 +12,16 @@
  * connection a capability later rather than a number anybody can name, and
  * it is why this is a protocol rather than a library.
  *
- * **Small, because ICMP is small.** Ethernet, ARP, IPv4 and echo is all
- * that is behind this today, and the operations are: what am I, ping that,
- * and what came back. TCP is a different piece of work and will bring
- * operations of its own; what it must not bring is data through here.
+ * **Two halves, and the line between them is where the bytes go.**
+ * `INFO`, `CONFIG` and `PING` carry everything they need in the message,
+ * because each is one question asked once. `CONNECT` and the operations
+ * after it carry no data at all: a connection's bytes live in a region both
+ * sides hold - `tcpring.h` - and the messages say only that something
+ * happened.
  *
  * ---
  *
- * **Where the shared ring goes, and why it is not here yet.**
+ * **Where the shared ring goes.**
  *
  * `CLAUDE.md` names a packet explicitly: if it recurs because the hardware
  * says so, the bytes live in a region and the message carries only where and
@@ -41,17 +43,36 @@
  *     connection lasts. That is a period with a different clock, and it is
  *     exactly the shape that went wrong before.
  *
- * **So the ring is TCP's to add, and this header says so now** so that
- * whoever adds TCP finds the decision already made rather than finding that
- * a message worked for the first ten kilobytes. `audioring.h` is the model:
- * a single-producer, single-consumer ring with indices, nobody taking a
- * lock, and the message carrying only which slot is live.
+ * **That decision was written here before TCP existed**, so that whoever
+ * added it would find it made rather than find that a message worked for the
+ * first ten kilobytes. `tcpring.h` is what came of it, on `audioring.h`'s
+ * model: single-producer, single-consumer, indices, nobody taking a lock.
  */
 
 #define NET_OP_INFO      1u       /* what this stack is, and its addresses */
 #define NET_OP_PING      2u       /* send one echo request */
 #define NET_OP_REPLY     3u       /* collect whatever has come back */
 #define NET_OP_CONFIG    4u       /* set the addresses */
+
+/*
+ * A connection, and the four things a client does with one.
+ *
+ * `CONNECT` hands back a *capability to a region* - the two rings in
+ * `tcpring.h` - and a handle to name it by. After that the bytes never
+ * travel in a message: the client writes into `out` and says `PUSH`, the
+ * stack writes into `in` and the client reads it. `WAIT` is how a client
+ * blocks until something happens rather than asking in a loop.
+ *
+ * **No LISTEN**, and that is a scope decision rather than an omission. A
+ * client connects out, which is what telnet and SSH do and what this stack
+ * is for today; accepting a connection needs a second half of the state
+ * machine and a way to hand a caller a connection it did not ask for.
+ * `roadmap.md`'s HTTP server is where that argument belongs.
+ */
+#define NET_OP_CONNECT   5u       /* open one, and get its rings */
+#define NET_OP_PUSH      6u       /* there is something in `out` */
+#define NET_OP_WAIT      7u       /* block until bytes arrive or it closes */
+#define NET_OP_CLOSE     8u       /* this end is done sending */
 
 #define NET_OK               0u
 #define NET_ERR_BAD_OP       1u
@@ -60,6 +81,20 @@
 #define NET_ERR_UNREACHABLE  4u   /* nobody answered the ARP for it */
 #define NET_ERR_FULL         5u   /* too many pings in flight at once */
 #define NET_ERR_BAD_ADDRESS  6u
+#define NET_ERR_REFUSED      7u   /* the far end said no */
+#define NET_ERR_CLOSED       8u   /* the connection is over */
+#define NET_ERR_TIMEOUT      9u   /* nobody answered in time */
+#define NET_ERR_NO_HANDLE   10u   /* no such connection */
+
+/*
+ * How many connections at once.
+ *
+ * Four, and a fixed pool like everything else here: each carries a 36 KB
+ * region, and running out is an error at a known limit rather than a
+ * failure at an unknown one. Four is a telnet, an SSH and room to be wrong
+ * about how many somebody wants.
+ */
+#define NET_CONN_MAX     4u
 
 /*
  * How many echoes may be outstanding.
@@ -94,6 +129,9 @@ struct net_addr {
 struct net_request {
     uint32_t op;
     uint32_t seq;                   /* the echo's sequence number */
+    uint32_t handle;                /* which connection, for the TCP ops */
+    uint32_t port;                  /* where to connect */
+    uint32_t ticks;                 /* how long NET_OP_WAIT may wait */
     struct net_addr to;
 
     /* For NET_OP_CONFIG: this machine's address, its mask, and the router
@@ -119,6 +157,9 @@ struct net_request {
 struct net_reply {
     uint32_t status;
     uint32_t seq;
+    uint32_t handle;                /* the connection this is about */
+    uint32_t ring_bytes;            /* capacity of each direction */
+    uint32_t state;                 /* NET_TCP_*, for a connection */
 
     struct net_addr from;
     uint32_t ttl;
@@ -135,5 +176,16 @@ struct net_reply {
     uint32_t length;
     uint8_t  payload[NET_PAYLOAD_MAX];
 };
+
+/*
+ * What a connection is doing, as the one thing a client needs to know.
+ *
+ * Not TCP's state machine - that is the stack's business and has nine
+ * states, most of which are about closing tidily. A client wants to know
+ * whether it may write, and these are the three answers.
+ */
+#define NET_TCP_OPENING  1u
+#define NET_TCP_OPEN     2u
+#define NET_TCP_CLOSED   3u
 
 #endif /* KOSMOS_NETPROTO_H */

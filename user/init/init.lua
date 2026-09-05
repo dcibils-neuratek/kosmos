@@ -826,6 +826,22 @@ local function new_namespace()
     return net.ping(capability, to, seq, payload)
   end
 
+  --
+  -- A connection, as an object with methods.
+  --
+  -- The handle that comes back is a userdata the kit owns, holding the
+  -- region the bytes live in. A program can only have one by being given
+  -- one, which is the same rule as everything else here - there is no
+  -- number to guess and no table to index.
+  --
+  function ns.connect(path, to, port)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.connect(capability, to, port)
+  end
+
   -- One exchange, with the reply decoded and the error turned back into a
   -- sentence. Every operation below is this plus a shape.
   local function con_call(con, capability, code, text, ticks)

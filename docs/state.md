@@ -41,12 +41,38 @@ says `fs.ping("/net", ...)`, the namespace resolves and hands the kit the
 capability, exactly as `fs.wait_input` does for the console. There is
 deliberately no `fs.capability`.
 
-**No TCP, and that is not an omission.** Ping needs none of it, and half a
-TCP is worse than none. `netproto.h` records where the shared ring goes when
-a *stream* arrives - device-to-driver is already a ring, an echo is the
-one-shot case the rule allows, and a byte stream is a period with a
-different clock - so that decision is made before somebody finds a message
-worked for the first ten kilobytes.
+**And TCP.** `fetch 1.1.1.1 80 /` pulls a page off Cloudflare;
+`fetch 10.0.2.2 <port> /` pulls one off this Mac, which is what the test
+drives because slirp maps the host at 10.0.2.2 and nothing leaves the
+machine.
+
+A connection's bytes never travel in a message: `tcpring.h` is two
+single-producer rings in a region both sides hold, and that was written down
+before a byte moved rather than after somebody found a message worked for
+the first ten kilobytes.
+
+Three trades, all deliberate. **One segment in flight**, retransmitted on a
+doubling timer - a queue and a sliding window buy throughput on a long fat
+link and nothing on a line protocol, and it is one timer to get right
+instead of four. **Out-of-order segments are dropped**, which costs a
+retransmission and saves a reassembly buffer with a policy about overlapping
+pieces, the well-known way to get a stack wrong. **The receive window is the
+ring's free space**, not a number the stack invented - a window is a promise,
+and a client that stops reading really does slow the sender down.
+
+No LISTEN: this end connects out, which is telnet and SSH. Accepting needs
+the other half of the diagram and a way to hand a caller a connection it did
+not ask for, which is where the HTTP server's argument belongs.
+
+**Not good, and written down rather than left unexamined:** the local port is
+a counter. A predictable source port is one an off-path attacker can guess,
+and there is no randomness here to do better with.
+
+`telnet` is written and connects; it is half-verified, because driving it
+needs a keyboard. Its loop polls `fs.keys` because the console has one reader
+and there is no way to wait on two things at once - **the third time that
+missing `select` has come up**, after live queries and the stack's own loop.
+It is the thing to build when something needs it a fourth time.
 
 Three things that went wrong on the way, all the same shape: **a question
 asked in the wrong place.** `net_mtu` landed inside the `hal_snd_present()`
@@ -249,12 +275,13 @@ visible.
 
 ## Next, in order
 
-1. **TCP**, then telnet, then SSH. The state machine, retransmission,
-   windows and four timers, with the shared ring `netproto.h` describes
-   between the stack and its clients - a byte stream is exactly what a
-   message must not carry. Telnet first because it is a line protocol and
-   proves the whole path; SSH is that path plus cryptography, which is the
-   largest thing here and the one where a subtle bug is silent.
+1. **SSH**, in layers with a test each: the binary packet protocol, then
+   Curve25519 key exchange, then ChaCha20-Poly1305, then userauth, then
+   channels. This is the one place in the project where a bug is *silent*
+   rather than loud - a stack that gets a sequence number wrong stops
+   working, and a cipher that gets a nonce wrong keeps working and is not
+   secure - so "it connected" is not evidence and every layer needs test
+   vectors from the specification.
 2. **Get Info, showing and editing attributes.** The query engine works and
    nothing writes an attribute, so the search box finds nothing until you
    use `attr` at a prompt. This is what makes M7 visible.

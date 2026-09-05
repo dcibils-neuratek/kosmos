@@ -288,6 +288,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **The virtio transport is one file.** It was three copies of a handshake whose *order* is the protocol; the reason not to share it - "before there are two" - expired two devices ago, and the network card is the fourth | hal/qemu-virt/virtio.c |
 | Sep 2026 | **A card is a device; a stack is someone you ask.** `/net` is a server behind `SPAWN_NET` - the disk's grant pointed outwards - and the card has no name in any namespace, because nothing but the stack may reach it | user/servers/net.c |
 | Sep 2026 | **Ping needs no TCP**, and half a TCP is worse than none. Ethernet, ARP, IPv4 and ICMP is what a round trip costs; `netproto.h` records where the shared ring goes when a *stream* arrives, so nobody discovers a message worked for the first ten kilobytes | netproto.h |
+| Sep 2026 | **A connection's bytes never travel in a message.** Two SPSC rings in a region both sides hold, and the receive window *is* the ring's free space - so a client that stops reading really does slow the sender down, and flow control costs nothing | tcpring.h |
+| Sep 2026 | **One segment in flight, out-of-order dropped.** A queue and a sliding window buy throughput on a long fat link and buy nothing on a line protocol; a reassembly buffer is the well-known way to get a stack wrong. One timer instead of four | user/servers/net.c |
 
 ---
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""A frame leaves the machine, and this computer reads it off the wire.
+"""The network, from a frame on the wire to a page fetched over TCP.
 
 **Nothing inside the guest can establish this.** `sys.net_send` returning
 true says the card took the bytes, which is a statement about a virtqueue
@@ -29,11 +29,14 @@ times: a machine with no card must still reach a prompt. Every device grant
 in `init.lua` carries a comment about the time it did not.
 """
 
+import http.server
 import os
+import socket
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -218,6 +221,84 @@ def main():
 
         if "round trip min/avg/max" not in out:
             raise Failure("no round trip was reported.\n" + out[-900:])
+
+        checks += 1
+
+        # ---- and a whole TCP connection, to a server on this computer ----
+        #
+        # **The host, not the internet.** slirp maps this Mac as 10.0.2.2, so
+        # a server started here is reachable from the guest without a packet
+        # leaving the machine - which makes this deterministic, offline, and
+        # about the stack rather than about somebody else's uptime.
+        #
+        # What it exercises is everything TCP has: the three-way handshake,
+        # a segment out with data on it, sequence numbers and acknowledgement,
+        # bytes arriving through the shared ring, and a close that the far
+        # end starts. HTTP/1.0 is chosen because it *ends by ending* - the
+        # server closes rather than keeping the connection open - so the ring's
+        # `closed` flag is on the path rather than an extra.
+        #
+        body = b"the quick brown fox jumps over the lazy dog\n" * 8
+        served = {"path": None}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                served["path"] = self.path
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        httpd = http.server.HTTPServer(("0.0.0.0", 0), Handler)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+
+        try:
+            out = boot(image, [
+                "-netdev", "user,id=net0",
+                "-device", "virtio-net-device,netdev=net0",
+            ], [f"fetch 10.0.2.2 {port} /hello"], seconds=120)
+        finally:
+            httpd.shutdown()
+
+        if "connection refused" in out or "timed out" in out:
+            raise Failure(
+                "the connection never opened. The handshake is SYN, SYN-ACK "
+                f"and ACK, and the server on port {port} was listening.\n"
+                + out[-900:])
+
+        checks += 1
+
+        if served["path"] != "/hello":
+            raise Failure(
+                "the request never arrived, or arrived wrong: the server saw "
+                f"{served['path']!r}. That is a segment with data on it, so "
+                "it is the sequence number, the checksum or the data offset."
+            )
+
+        checks += 1
+
+        if "the quick brown fox" not in out:
+            raise Failure(
+                "the body did not come back through the ring.\n" + out[-900:])
+
+        checks += 1
+
+        #
+        # And all of it, which is the check that catches a stack that loses
+        # the last segment - the close and the final bytes can arrive
+        # together, and a client that stopped at `closed` would drop them.
+        #
+        if out.count("the quick brown fox") != 8:
+            raise Failure(
+                "the body came back in pieces: %d of the 8 lines arrived. "
+                "The close and the last bytes can be in one segment."
+                % out.count("the quick brown fox"))
 
         checks += 1
 

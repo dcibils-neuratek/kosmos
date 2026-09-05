@@ -32,6 +32,7 @@
 
 #include "kosmos.h"
 #include "netproto.h"
+#include "tcpring.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -227,14 +228,263 @@ static int l_ping(lua_State *L)
     return 1;
 }
 
+/*------------------------------------------------------------------------
+ * Connections.
+ *
+ * The bytes are in a region both sides hold, so what these do is arithmetic
+ * on two indices and a `memcpy`. Nothing here builds a message per byte, and
+ * `tcpring.h` says why that matters before the first one moved.
+ *----------------------------------------------------------------------*/
+
+/* The region a connection's rings live in, mapped in this process. Held in
+ * a Lua userdata so it goes when the handle does. */
+struct ring_handle {
+    struct tcp_ring *ring;
+    long             cap;
+    uint32_t         handle;
+    long             net_cap;
+};
+
+static struct ring_handle *checkring(lua_State *L, int at)
+{
+    return (struct ring_handle *)luaL_checkudata(L, at, "kosmos.tcp");
+}
+
+/*
+ * `net.connect(cap, address, port)` - open one, and get a handle.
+ *
+ * **This blocks until the far end answers or the stack gives up.** The stack
+ * does not: it parks this caller in `call` and goes on serving, the same
+ * arrangement `ping` uses. What comes back is a capability to the region
+ * holding the two rings, which is mapped here and never travels again.
+ */
+static int l_connect(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+    struct message msg, out;
+    struct ring_handle *h;
+    long at;
+    long region;
+
+    memset(&req, 0, sizeof(req));
+    req.op   = NET_OP_CONNECT;
+    req.port = (uint32_t)luaL_checkinteger(L, 3);
+
+    take_addr(L, 2, &req.to);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+
+    if (kosmos_call(cap, &msg, &out) != 0 || out.length < sizeof(rep)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the network stack did not answer");
+        return 2;
+    }
+
+    memcpy(&rep, out.data, sizeof(rep));
+
+    if (rep.status != NET_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)rep.status);
+        return 2;
+    }
+
+    if (out.cap_plus_one == 0) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the stack opened it but sent no rings");
+        return 2;
+    }
+
+    region = (long)out.cap_plus_one - 1;
+    at = kosmos_mem_map(region);
+
+    if (at < 0) {
+        (void)kosmos_cap_drop(region);
+        lua_pushnil(L);
+        lua_pushliteral(L, "the rings could not be mapped");
+        return 2;
+    }
+
+    h = (struct ring_handle *)lua_newuserdatauv(L, sizeof(*h), 0);
+    h->ring    = (struct tcp_ring *)(uintptr_t)at;
+    h->cap     = region;
+    h->handle  = rep.handle;
+    h->net_cap = cap;
+
+    luaL_setmetatable(L, "kosmos.tcp");
+
+    return 1;
+}
+
+/*
+ * `conn:write(text)` - into the ring, then tell the stack.
+ *
+ * Returns how many bytes were taken, which may be fewer than were offered:
+ * the ring is finite and a caller that is faster than the network has to
+ * find that out. Silently dropping the rest would be a connection that
+ * loses data with no error anywhere.
+ */
+static int l_write(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+    size_t len = 0;
+    const char *text = luaL_checklstring(L, 2, &len);
+    struct net_request req;
+    struct message msg, out;
+    uint32_t write = h->ring->out_write;
+    uint32_t space = tcp_ring_space(h->ring->bytes, write,
+                                    tcp_ring_acquire(&h->ring->out_read));
+    size_t take = (len > space) ? space : len;
+    size_t i;
+
+    for (i = 0; i < take; i++) {
+        tcp_ring_out(h->ring)[(write + i) % h->ring->bytes]
+            = (uint8_t)text[i];
+    }
+
+    tcp_ring_publish(&h->ring->out_write, write + (uint32_t)take);
+
+    memset(&req, 0, sizeof(req));
+    req.op     = NET_OP_PUSH;
+    req.handle = h->handle;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+
+    (void)kosmos_call(h->net_cap, &msg, &out);
+
+    lua_pushinteger(L, (lua_Integer)take);
+    return 1;
+}
+
+/*
+ * `conn:read()` - whatever has arrived, or nil.
+ *
+ * Nil means nothing is waiting, which is not an error and not the end: a
+ * closed connection is `conn:closed()`, and the bytes already in the ring
+ * are readable after it. A far end that sent a line and hung up sent that
+ * line.
+ */
+static int l_read(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+    uint32_t read = h->ring->in_read;
+    uint32_t ready = tcp_ring_ready(tcp_ring_acquire(&h->ring->in_write),
+                                    read);
+    luaL_Buffer b;
+    uint32_t i;
+
+    if (ready == 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    luaL_buffinit(L, &b);
+
+    for (i = 0; i < ready; i++) {
+        luaL_addchar(&b, (char)tcp_ring_in(h->ring)[(read + i)
+                                                    % h->ring->bytes]);
+    }
+
+    tcp_ring_publish(&h->ring->in_read, read + ready);
+    luaL_pushresult(&b);
+
+    return 1;
+}
+
+/*
+ * `conn:wait(ticks)` - block until something arrives or it closes.
+ *
+ * The alternative is a loop calling `read`, which is a process that never
+ * blocks and a core that is gone - the same measurement that put a deadline
+ * in every other server's receive.
+ */
+static int l_wait(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+    struct message msg, out;
+
+    memset(&req, 0, sizeof(req));
+    req.op     = NET_OP_WAIT;
+    req.handle = h->handle;
+    req.ticks  = (uint32_t)luaL_optinteger(L, 2, 0);
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+
+    if (kosmos_call(h->net_cap, &msg, &out) != 0 || out.length < sizeof(rep)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    memcpy(&rep, out.data, sizeof(rep));
+    lua_pushboolean(L, rep.status == NET_OK);
+
+    return 1;
+}
+
+static int l_closed(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+
+    lua_pushboolean(L, h->ring->closed != 0);
+    return 1;
+}
+
+static int l_close(lua_State *L)
+{
+    struct ring_handle *h = checkring(L, 1);
+    struct net_request req;
+    struct message msg, out;
+
+    memset(&req, 0, sizeof(req));
+    req.op     = NET_OP_CLOSE;
+    req.handle = h->handle;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(req);
+    memcpy(msg.data, &req, sizeof(req));
+
+    (void)kosmos_call(h->net_cap, &msg, &out);
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 void kosmos_net_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
         { "info",      l_info },
         { "configure", l_configure },
         { "ping",      l_ping },
+        { "connect",   l_connect },
         { NULL, NULL }
     };
+
+    static const luaL_Reg conn[] = {
+        { "write",  l_write },
+        { "read",   l_read },
+        { "wait",   l_wait },
+        { "closed", l_closed },
+        { "close",  l_close },
+        { NULL, NULL }
+    };
+
+    /* The connection type. A userdata with methods rather than a handle
+     * number, so a connection cannot be named by a program that was not
+     * given one - the same reason everything else here is a capability. */
+    luaL_newmetatable(L, "kosmos.tcp");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+    luaL_setfuncs(L, conn, 0);
+    lua_pop(L, 1);
 
     luaL_newlib(L, api);
 
