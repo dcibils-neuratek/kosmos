@@ -536,7 +536,11 @@ No fixed order. Picked up as the appetite appears.
 
   **The line about "a virtio-net driver at EL0 like every other driver" was wrong about the present** and is corrected here rather than quietly: no driver is at EL0. They are all in the HAL, and `architecture.md` says why - a driver in userland needs MMIO mapped into a process, interrupts delivered to one, and DMA memory a process can hand a device, and none of the three exists. That is a milestone about driver infrastructure and it is not this one.
 
-  Still ahead: TCP, then connections exposed as namespace nodes, Plan 9 style. The property worth testing is unchanged - mount another machine's `/net` into your local namespace, and have a process use that computer's network without knowing.
+  **TCP is done too, and so is the HTTP server that was going to settle the argument.** `tcpring.h` puts a connection's bytes in a region rather than in messages, one segment in flight, one timer; `httpd` serves static files and this Mac fetches a 152 KB image from it byte for byte. lwIP was reconsidered at TCP as this paragraph said it should be, and the answer was the same one: what a line protocol needs is small enough to write and understand, and the socket API is what §17 forbids.
+
+  **And it serves several at once**, which needed the thing this system had gone without six times: a wait on many connections. `NET_OP_POLL` is it, `httpd` runs a coroutine per connection, and eight simultaneous requests for a 106 KB file finish in about what one of them costs. That is worth recording here because the SSH client below assumed channels would need something like it - they will, and it now exists.
+
+  Still ahead: connections exposed as namespace nodes, Plan 9 style. The property worth testing is unchanged - mount another machine's `/net` into your local namespace, and have a process use that computer's network without knowing.
 
 - **Audio: virtio-sound.** See below; it moved out of the out-of-scope list and it is worth saying why rather than quietly editing the line.
 

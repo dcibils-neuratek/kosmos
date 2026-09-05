@@ -119,6 +119,78 @@ def _fetch(port):
             time.sleep(1)
 
 
+_many = {}
+
+
+def _at_once(port, how_many):
+    """Ask the guest for the same large file `how_many` times at once.
+
+    **With one client deliberately stuck half-way through its request**, which
+    is what makes this a test of concurrency rather than of speed. A server
+    that serves one conversation at a time would be inside that client's read
+    for as long as it is held, and every other request would wait behind it -
+    so this check does not depend on a timing threshold, which is the kind of
+    assertion that fails on a loaded build machine for no reason.
+
+    The file is bigger than the ring on purpose. Each answer has to fill it,
+    wait for the far end to acknowledge, and go on - and *that* wait was
+    where the deadlock was: the stack reported a connection writable only
+    when there was room **and** something still queued, so a client that
+    acknowledged the whole ring in one go left the server waiting for a
+    signal that could no longer arrive. Eight requests hung and the server
+    logged none of them.
+    """
+    import http.client
+
+    def once(timeout=40):
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        c.request("GET", "/ui.lua")
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, len(body)
+
+    # One on its own first: it says whether the server works at all, so a
+    # total failure is not reported as a concurrency failure.
+    for _ in range(10):
+        try:
+            _many["single"] = once(timeout=20)
+            break
+        except Exception as e:              # noqa: BLE001 - retry, it is starting
+            _many["single"] = ("err", repr(e)[:70])
+            time.sleep(1)
+
+    if _many["single"][0] != 200:
+        return
+
+    stalled = socket.create_connection(("127.0.0.1", port), timeout=10)
+    stalled.sendall(b"GET /ui.lua HTTP/1.0\r\nX-Half-A-Request: ")
+    time.sleep(0.5)
+
+    got = [None] * how_many
+
+    def one(i):
+        try:
+            got[i] = once()
+        except Exception as e:              # noqa: BLE001 - it is the result
+            got[i] = ("err", repr(e)[:70])
+
+    threads = [threading.Thread(target=one, args=(i,)) for i in range(how_many)]
+
+    for t in threads:
+        t.start()
+
+    for t in threads:
+        t.join()
+
+    _many["at_once"] = got
+
+    try:
+        stalled.close()
+    except Exception:                       # noqa: BLE001 - it is going away
+        pass
+
+
 def boot(image, extra, commands, seconds=90, then=None):
     """One run, with whatever QEMU arguments the caller wants added.
 
@@ -391,6 +463,53 @@ def main():
         if _served.get("kind") != "text/html":
             raise Failure(
                 f"served as {_served.get('kind')!r}, not text/html")
+
+        checks += 1
+
+        # ---- and several of them at once ----
+        #
+        # `httpd` runs a coroutine per connection and waits on all of them
+        # with one `poll`, which is what this system has instead of threads:
+        # there is no thread syscall, and a process has one `lua_State`, so
+        # two threads inside it would want a lock around the interpreter and
+        # would take turns anyway.
+        #
+        # Served out of `/lib` rather than a file written first, because
+        # `ui.lua` is a hundred kilobytes - six times the ring - and `/data`
+        # holds sixteen. A body that fits in the ring never waits for room,
+        # and waiting for room is the whole of what this checks.
+        #
+        forward = random.randint(20000, 60000)
+
+        out = boot(image, [
+            "-netdev", f"user,id=net0,hostfwd=tcp::{forward}-:80",
+            "-device", "virtio-net-device,netdev=net0",
+        ], [
+            "httpd 80 /lib",
+        ], seconds=240, then=lambda: _at_once(forward, 6))
+
+        single = _many.get("single")
+
+        if not single or single[0] != 200:
+            raise Failure(
+                f"one request on its own did not work: {single}\n{out[-900:]}")
+
+        checks += 1
+
+        if single[1] < 60000:
+            raise Failure(
+                f"/ui.lua came back as {single[1]} bytes, which is too small "
+                "to have waited for room in the ring even once")
+
+        checks += 1
+
+        at_once = _many.get("at_once") or []
+
+        if len(at_once) != 6 or any(r != single for r in at_once):
+            raise Failure(
+                "six at once, with a seventh client stuck half way through "
+                f"its request, did not all come back as {single}: "
+                f"{at_once}\n{out[-1200:]}")
 
         checks += 1
 

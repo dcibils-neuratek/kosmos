@@ -8,6 +8,61 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**`httpd` serves eight at once.** Eight simultaneous requests for a 106 KB
+file all come back complete in half a second of wall clock - about what one
+of them costs on its own - with a ninth client deliberately stuck half way
+through its request and going nowhere.
+
+There are no threads to do that with. There is no thread syscall at all:
+`SYS_SPAWN` makes a *process*, and a process has one `lua_State`, so two
+threads inside one would want a lock around the interpreter and would take
+turns anyway. What it has instead is nginx's shape - **one process, an event
+loop, and a coroutine per connection** - and the coroutine is why `serve`
+still reads as a straight line: read the request, find the file, write the
+answer, with a `yield` wherever it used to wait.
+
+**That needed the `select` this system had wanted six separate times** and
+had worked around with a timer every time. `fs.poll` is it, and the shape it
+arrived in is the interesting part: **two masks, not one.** A caller waiting
+to read wants to hear that bytes arrived; a caller waiting to write wants to
+hear that room appeared. One mask has to guess, and the version that guessed
+deadlocked - it reported a connection writable only when there was room
+*and* something still queued, so a client that acknowledged the whole ring
+in one go left the server waiting for news that could no longer arrive.
+Eight requests hung and the server logged none of them.
+
+**Two bugs underneath it, and both had been there a while:**
+
+- **The console's `interrupted` span the console server for ever.** Its
+  drain loop read through `next_byte`, which empties the *stash* before it
+  asks the hardware - so it took a byte off the stash, put it back, and took
+  it again. One character typed ahead and the console never answered anybody
+  again, which looks exactly like whichever program had asked having hung.
+  Nothing found it for months because every caller was shaped so it could not
+  happen: a status bar asks between screens with the keyboard drained, and
+  the old `httpd` asked once per request, *after* `accept` had blocked. An
+  event loop asking ten times a second hit it on the first pass.
+- **`respond` allocated the file again on every pass.** It built `head ..
+  body` and then wrote `text:sub(at)` - the whole remainder - each time
+  round, so a 106 KB file allocated 106 KB, then 90, then 74, per connection.
+  Six at once ran the heap out and two conversations died with "not enough
+  memory" while four were served. It writes a ring's worth at a time now and
+  streams the body with `fs.chunks`, so the file is never held.
+
+**And `accept` gained a deadline**, which makes every park in the stack
+bounded - the pings, the waits, the pollers and now this. `poll` saying
+somebody arrived and `accept` reaching the stack are two moments, and a
+reset in between would otherwise wedge an event loop for good.
+
+Two things worth knowing that came out of the hunt rather than out of the
+code. The first two "bugs" I chased were not bugs: a stale `build/kosmos.elf`
+and a `wait_for` that matched the *echo* of the command it had just typed.
+And a server cannot print - `sys_write` is gated on `owns_console` - so
+instrumenting one means opening that gate in the kernel for the length of the
+session. Both are worth remembering before the next silent hang.
+
+---
+
 **Kosmos serves web pages.** `httpd 80 /home` and this Mac fetches a 152 KB
 PNG from it, byte for byte identical to the file on the guest's disk.
 
@@ -168,6 +223,13 @@ folder of files from all over the volume. A query result is *refreshed
 twice a second rather than pushed*, because the window is already blocked in
 the desktop's poll and there is no way to wait on two things at once - what
 is missing is a select, or a second thread.
+
+There is a select now, and it does not help here: `fs.poll` waits on network
+connections, and what this wants is to wait on the desktop's input and a file
+watch together. The two waits live in different servers, so a select over
+both would have to be something the *namespace* offers rather than something
+`/net` does. Worth knowing before anyone reads the paragraph above and
+assumes the problem went away.
 
 Also: **the Places pane never worked.** Two `local show` declarations, and
 the tree's `on_select` closed over the one that is never assigned, so

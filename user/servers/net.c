@@ -212,6 +212,7 @@ struct conn {
      * separate entries in this same pool.
      */
     uint64_t accepter;
+    uint64_t accept_until;          /* or 0, meaning wait for ever */
 
     /* For a connection made by a listener: which one, and whether it has
      * been handed over yet. */
@@ -254,6 +255,22 @@ static struct {
     uint64_t hz;                    /* the counter's frequency, read once */
 
     struct conn conn[NET_CONN_MAX];
+
+    /*
+     * Callers parked on several connections at once.
+     *
+     * A poller is not a connection - it belongs to whoever asked and names a
+     * set - so it cannot live in the connection table. Four, because it is a
+     * poller per program that serves and there are not four of those.
+     */
+    struct {
+        bool     used;
+        uint64_t who;
+        uint32_t reading;           /* watched for bytes to read */
+        uint32_t writing;           /* watched for room to write */
+        int      listener;          /* or -1 */
+        uint64_t until;
+    } poll[4];
     uint16_t next_port;
     uint32_t next_seq;              /* where the next connection starts */
 
@@ -999,8 +1016,9 @@ static void hand_over(struct conn *c)
 
     (void)kosmos_reply(listener->accepter, &msg);
 
-    listener->accepter = 0;
-    c->handed_over = true;
+    listener->accepter     = 0;
+    listener->accept_until = 0;
+    c->handed_over         = true;
 }
 
 /* Whoever is parked in WAIT on this connection is told something happened.
@@ -1351,6 +1369,116 @@ static void tcp_receive(const uint8_t *packet, unsigned total,
     }
 
     tcp_pump(c);
+}
+
+/*
+ * Is there anything for a poller yet?
+ *
+ * Two questions, because the caller asked two. A connection it wants to
+ * *read* is ready when bytes have arrived; one it wants to *write* is ready
+ * when there is room for them. A connection that has died or been closed by
+ * the far end is ready either way - **closed counts**, and has to: a client
+ * waiting for the end of a response would otherwise wait for the deadline
+ * instead of being told at once, which is a server that is slow for the one
+ * reason it should be quick.
+ *
+ * Neither question can produce a spin, which is what the single mask was
+ * trying to avoid and got wrong. A caller only names a connection under
+ * `writing` after a write has already failed for want of room, so "there is
+ * room" is news. Asking about reading is news by construction.
+ */
+static uint32_t poll_ready(uint32_t reading, uint32_t writing,
+                           int listener, uint32_t *arrived)
+{
+    uint32_t out = 0;
+    unsigned i;
+
+    *arrived = 0;
+
+    for (i = 0; i < NET_CONN_MAX; i++) {
+        struct conn *c = &net.conn[i];
+        uint32_t bit = 1u << i;
+
+        if (((reading | writing) & bit) == 0 || c->state == ST_FREE) {
+            continue;
+        }
+
+        if (c->state == ST_DEAD) {
+            out |= bit;
+            continue;
+        }
+
+        if (c->ring == NULL) {
+            continue;
+        }
+
+        /* Over for good: whoever was waiting on it should stop waiting,
+         * whichever of the two things they were waiting for. */
+        if (c->ring->closed != 0) {
+            out |= bit;
+            continue;
+        }
+
+        if ((reading & bit) != 0
+            && tcp_ring_ready(c->ring->in_write,
+                              tcp_ring_acquire(&c->ring->in_read)) > 0) {
+            out |= bit;
+        }
+
+        if ((writing & bit) != 0
+            && tcp_ring_space(c->ring->bytes,
+                              tcp_ring_acquire(&c->ring->out_write),
+                              c->ring->out_read) > 0) {
+            out |= bit;
+        }
+    }
+
+    if (listener >= 0 && listener < (int)NET_CONN_MAX
+        && net.conn[listener].state == ST_LISTEN) {
+        for (i = 0; i < NET_CONN_MAX; i++) {
+            struct conn *k = &net.conn[i];
+
+            if (!k->handed_over && k->from_listener == listener
+                && (k->state == ST_OPEN || k->state == ST_CLOSE_WAIT)) {
+                *arrived = 1;
+                break;
+            }
+        }
+    }
+
+    return out;
+}
+
+/* Answer every poller that has something, or whose deadline has come. */
+static void poll_service(void)
+{
+    uint64_t now = kosmos_ticks();
+    unsigned i;
+
+    for (i = 0; i < 4; i++) {
+        struct net_reply reply;
+        uint32_t arrived = 0;
+        uint32_t ready;
+
+        if (!net.poll[i].used) {
+            continue;
+        }
+
+        ready = poll_ready(net.poll[i].reading, net.poll[i].writing,
+                           net.poll[i].listener, &arrived);
+
+        if (ready == 0 && arrived == 0 && now < net.poll[i].until) {
+            continue;
+        }
+
+        memset(&reply, 0, sizeof(reply));
+        reply.status  = NET_OK;
+        reply.ready   = ready;
+        reply.arrived = arrived;
+
+        answer(net.poll[i].who, &reply);
+        net.poll[i].used = false;
+    }
 }
 
 /* Everything the card has, decoded. Drained rather than one at a time: a
@@ -1760,7 +1888,63 @@ static void serve(const struct message *msg, uint64_t sender)
             }
         }
 
-        /* Nobody yet: the caller stays parked. */
+        /*
+         * Nobody yet, so the caller stays parked - for as long as it asked
+         * for, and for ever when it asked for nothing.
+         *
+         * **A deadline matters here because of the race with `poll`**, which
+         * is the only reason an event loop calls this at all: `poll` says
+         * somebody has arrived, and between that answer and this message the
+         * stack goes round its loop once more. A reset in that window kills
+         * the connection, this scan then matches nothing, and a caller that
+         * could not be woken would be a server wedged for good by a client
+         * that connected and hung up - which is not an exotic thing for a
+         * client to do.
+         *
+         * With it, every park in this file is bounded: the pings, the waits,
+         * the pollers and now this.
+         */
+        listener->accept_until = req.ticks
+                               ? kosmos_ticks()
+                                 + (uint64_t)req.ticks * net.hz / 250u
+                               : 0;
+        return;
+    }
+
+    case NET_OP_POLL: {
+        uint32_t arrived = 0;
+        uint32_t ready;
+        int listener = (req.port > 0) ? (int)req.port - 1 : -1;
+        unsigned i;
+
+        ready = poll_ready(req.handle, req.writing, listener, &arrived);
+
+        /* Answered at once when there is something, for the reason `wait`
+         * gives: a caller that always got parked would take a round trip to
+         * learn about bytes that had already arrived. */
+        if (ready != 0 || arrived != 0) {
+            reply.status  = NET_OK;
+            reply.ready   = ready;
+            reply.arrived = arrived;
+            answer(sender, &reply);
+            return;
+        }
+
+        for (i = 0; i < 4; i++) {
+            if (!net.poll[i].used) {
+                net.poll[i].used     = true;
+                net.poll[i].who      = sender;
+                net.poll[i].reading  = req.handle;
+                net.poll[i].writing  = req.writing;
+                net.poll[i].listener = listener;
+                net.poll[i].until    = kosmos_ticks()
+                                     + (uint64_t)(req.ticks ? req.ticks : 25u)
+                                       * net.hz / 250u;
+                return;
+            }
+        }
+
+        fail(sender, NET_ERR_FULL);
         return;
     }
 
@@ -1815,6 +1999,16 @@ static void expire(uint64_t hz)
          * error. */
         if (c->waiter != 0 && c->wait_until != 0 && now >= c->wait_until) {
             wake_waiter(c);
+        }
+
+        /* And an `accept` that asked to be told when nobody came. */
+        if (c->state == ST_LISTEN && c->accepter != 0
+            && c->accept_until != 0 && now >= c->accept_until) {
+            uint64_t who = c->accepter;
+
+            c->accepter     = 0;
+            c->accept_until = 0;
+            fail(who, NET_ERR_TIMEOUT);
         }
 
         if (c->state == ST_FREE || c->state == ST_DEAD) {
@@ -1930,6 +2124,7 @@ void net_server(long endpoint)
 
         drain();
         expire(hz);
+        poll_service();
 
         if (status == 0) {
             serve(&msg, sender);

@@ -22,6 +22,18 @@
 -- `Content-Length` on the way *in* and a state machine to go with it. Closing
 -- after each answer is slower and is one thing to get right; `fetch` on this
 -- machine speaks the same version for the same reason.
+--
+-- **Several at a time, without threads.** This system has none - there is no
+-- thread syscall, and a process has one `lua_State`, so two threads inside
+-- it would want a lock around the whole interpreter and would take turns
+-- anyway. What it has instead is what nginx has: **one process, an event
+-- loop, and a coroutine per connection**, resumed when that connection has
+-- something. `fs.poll` is what makes it possible and is the `select` this
+-- system had wanted six separate times.
+--
+-- So a slow client no longer blocks a fast one. What bounds it now is
+-- `NET_CONN_MAX` - sixteen slots, one of them the listener - rather than the
+-- shape of the loop.
 
 local words = {}
 
@@ -163,39 +175,96 @@ local function status_line(code)
   return ("HTTP/1.0 %d %s"):format(code, said)
 end
 
-local function respond(conn, code, kind, body)
-  local head = table.concat({
-    status_line(code),
-    "Server: Kosmos",
-    "Content-Type: " .. kind,
-    "Content-Length: " .. #body,
-    "Connection: close",
-    "", "",
-  }, "\r\n")
+--
+-- Bytes onto a connection, in pieces the ring can take.
+--
+-- `conn:write` returns how many bytes fitted, which is the whole point of
+-- the ring being finite: a page larger than 16 KB does not fit at once and a
+-- server that ignored the answer would send the first 16 KB of every image.
+--
+-- **Never more than a ring's worth at a time**, and that is about memory
+-- rather than about the wire. The first version passed `text:sub(at)` - the
+-- whole remainder - on every pass, so a hundred-kilobyte file allocated a
+-- hundred kilobytes, then ninety, then seventy-four, per connection per
+-- pass. Six at once ran the heap out and two conversations died with "not
+-- enough memory" while the other four were served. `conn:write` was only
+-- ever going to take what fitted, so everything past the first ring's worth
+-- of each of those strings was built to be thrown away.
+--
+local CHUNK = 16384
 
-  --
-  -- Written in pieces the ring can take.
-  --
-  -- `conn:write` returns how many bytes fitted, which is the whole point of
-  -- the ring being finite: a page larger than 16 KB does not fit at once and
-  -- a server that ignored the answer would send the first 16 KB of every
-  -- image. So this loops, and `conn:wait` is what blocks until the far end
-  -- has acknowledged enough for more to fit.
-  --
-  local text = head .. body
+local function send(conn, text)
   local at = 1
 
   while at <= #text do
-    local wrote = conn:write(text:sub(at))
+    local wrote = conn:write(text:sub(at, at + CHUNK - 1))
 
     if wrote > 0 then
       at = at + wrote
     elseif conn:closed() then
       return false
     else
-      -- The ring is full and the far end has not caught up. Waiting is not
-      -- optional here: a loop that retried immediately would be a spin.
-      conn:wait(5)
+      --
+      -- The ring is full and the far end has not caught up.
+      --
+      -- **A yield, not a wait.** `conn:wait` blocks this whole process,
+      -- which was fine when it served one request at a time and is exactly
+      -- wrong now: a large file being sent to a slow client would stop every
+      -- other conversation until it drained. Yielding hands control back to
+      -- the loop, which waits on all of them at once and comes back here
+      -- when *this* connection has room.
+      --
+      -- And it says *which* room it is waiting for, because the loop has to
+      -- pass that on: a connection watched for arriving bytes is never
+      -- reported ready for a server that is only trying to write.
+      --
+      coroutine.yield("write")
+    end
+  end
+
+  return true
+end
+
+local function head_for(code, kind, length)
+  return table.concat({
+    status_line(code),
+    "Server: Kosmos",
+    "Content-Type: " .. kind,
+    "Content-Length: " .. length,
+    "Connection: close",
+    "", "",
+  }, "\r\n")
+end
+
+-- An answer whose body is a sentence: the errors, and nothing else.
+local function respond(conn, code, kind, body)
+  return send(conn, head_for(code, kind, #body)) and send(conn, body)
+end
+
+--
+-- And an answer whose body is a file, which is never held.
+--
+-- `fs.chunks` walks it a message at a time, so what this process holds is
+-- one piece rather than the whole thing - which is what lets six of these
+-- run at once on a two-megabyte heap. `fs.read` would fetch it in exactly
+-- the same pieces and then concatenate them, which is the one line that
+-- undoes the streaming; `init.lua` says so where `chunks` is defined.
+--
+-- The length comes from `getattr` rather than from counting, because the
+-- header has to go out before the body is read.
+--
+local function respond_file(conn, path, kind, length, with_body)
+  if not send(conn, head_for(200, kind, length)) then
+    return false
+  end
+
+  if not with_body then
+    return true
+  end
+
+  for piece in fs.chunks(path) do
+    if not send(conn, piece) then
+      return false
     end
   end
 
@@ -215,23 +284,28 @@ note(("serving %s on %s port %d"):format(root, dotted(info.address), port))
 print("Control-C to stop.")
 publish("running")
 
-while true do
-  local conn, from = fs.accept("/net", listener)
+--------------------------------------------------------------------------
+-- One conversation, as a coroutine.
+--
+-- Written as though it had the connection to itself - read the request,
+-- find the file, write the answer - and every place it would have waited is
+-- a `yield` instead. The loop below resumes it when its connection has
+-- something, so the straight-line shape survives and nothing here is a state
+-- machine.
+--
+-- That is the whole argument for coroutines over callbacks, and it is the
+-- same one `roadmap.md` makes about SSH's channels: the code that reads like
+-- what it does is the code that can be checked against what it should do.
+--------------------------------------------------------------------------
 
-  if not conn then
-    print("httpd: accept: " .. tostring(from))
-    break
-  end
-
+local function serve(conn, from)
   --
   -- The request, up to the blank line that ends its headers.
   --
-  -- Bounded, because a client that never sends one would otherwise hold
-  -- this server for ever - which is the oldest denial of service there is
-  -- and costs one counter to avoid. Nothing here is asynchronous: one
-  -- request is served at a time, and that is a real limitation written down
-  -- rather than hidden. What it costs is a slow client blocking a fast one;
-  -- what it saves is a state machine per connection.
+  -- Bounded, because a client that never sends one would otherwise hold a
+  -- slot for ever - the oldest denial of service there is, and one counter
+  -- to avoid. It holds a *slot* now rather than the whole server, which is
+  -- what the coroutines bought.
   --
   local request = ""
   local tries = 0
@@ -244,8 +318,8 @@ while true do
     elseif conn:closed() then
       break
     else
-      conn:wait(5)
       tries = tries + 1
+      coroutine.yield("read")
     end
   end
 
@@ -253,53 +327,147 @@ while true do
 
   if not method then
     respond(conn, 400, "text/plain", "the request was not a request\n")
-  elseif method ~= "GET" and method ~= "HEAD" then
+    return
+  end
+
+  if method ~= "GET" and method ~= "HEAD" then
     respond(conn, 400, "text/plain", method .. " is not served here\n")
-  else
-    local path = resolve(target)
+    return
+  end
 
-    if not path then
-      -- Said as a refusal rather than as a miss, because they are different
-      -- facts and a log that conflates them hides the interesting one.
-      respond(conn, 403, "text/plain", "that path is not allowed\n")
-      refused = refused + 1
-      note(("%s  %s %s -> 403"):format(dotted(from), method, target))
+  local path = resolve(target)
+
+  if not path then
+    -- Said as a refusal rather than as a miss, because they are different
+    -- facts and a log that conflates them hides the interesting one.
+    refused = refused + 1
+    respond(conn, 403, "text/plain", "that path is not allowed\n")
+    note(("%s  %s %s -> 403"):format(dotted(from), method, target))
+    return
+  end
+
+  local attrs = fs.getattr(path)
+
+  if not attrs or attrs.kind == "directory" then
+    refused = refused + 1
+    respond(conn, 404, "text/html",
+            "<html><body><h1>404</h1><p>" .. target
+            .. " is not here.</p></body></html>\n")
+    note(("%s  %s %s -> 404"):format(dotted(from), method, target))
+    return
+  end
+
+  -- HEAD is the same answer without the body, which is what makes it HEAD
+  -- rather than a different request.
+  served = served + 1
+  respond_file(conn, path, content_type(path), attrs.size or 0,
+               method ~= "HEAD")
+  note(("%s  %s %s -> 200, %d bytes"):format(dotted(from), method, target,
+                                             attrs.size or 0))
+end
+
+--------------------------------------------------------------------------
+-- The loop.
+--------------------------------------------------------------------------
+
+-- What is in flight: the connection, the coroutine serving it, who it is
+-- from, and which of the two things that coroutine is waiting for.
+local live = {}
+
+while true do
+  --
+  -- One wait for everything.
+  --
+  -- The listener and every live connection, in one call - so this process is
+  -- blocked rather than running between events, and wakes for whichever of
+  -- them has something. A loop that polled each in turn would be a spin with
+  -- as many steps as there are connections.
+  --
+  -- Sorted into the two lists by what each coroutine last asked for. That is
+  -- the whole of why a coroutine yields a word: the loop cannot see where
+  -- inside a conversation it stopped, so the conversation says.
+  --
+  local reading, writing = {}, {}
+
+  for i = 1, #live do
+    local entry = live[i]
+
+    if entry.want == "write" then
+      writing[#writing + 1] = entry.conn
     else
-      local attrs = fs.getattr(path)
-
-      if not attrs or attrs.kind == "directory" then
-        respond(conn, 404, "text/html",
-                "<html><body><h1>404</h1><p>" .. target
-                .. " is not here.</p></body></html>\n")
-        refused = refused + 1
-        note(("%s  %s %s -> 404"):format(dotted(from), method, target))
-      else
-        local body = fs.read(path)
-
-        if type(body) ~= "string" then
-          respond(conn, 500, "text/plain", "could not read it\n")
-          refused = refused + 1
-          note(("%s  %s %s -> 500"):format(dotted(from), method, target))
-        else
-          -- HEAD is the same answer without the body, which is what makes it
-          -- HEAD rather than a different request.
-          respond(conn, 200, content_type(path),
-                  (method == "HEAD") and "" or body)
-          served = served + 1
-          note(("%s  %s %s -> 200, %d bytes")
-               :format(dotted(from), method, target, #body))
-        end
-      end
+      reading[#reading + 1] = entry.conn
     end
   end
 
-  conn:close()
-  publish("running")
+  local ready, arrived = fs.poll("/net", reading, writing, listener, 25)
+
+  if not ready then
+    note("httpd: poll: " .. tostring(arrived))
+    break
+  end
+
+  --
+  -- Somebody new. Accepted *before* the ready connections are served,
+  -- because a connection waiting to be accepted is a client that has already
+  -- been waiting longer than one being read from.
+  --
+  if arrived and #live < 12 then
+    -- With a deadline, because `poll` saying somebody arrived and this
+    -- message reaching the stack are two moments, and a reset in between
+    -- would otherwise park this loop for good.
+    local conn, from = fs.accept("/net", listener, 25)
+
+    if conn then
+      -- Waiting to read, because that is where `serve` begins: on a
+      -- request nobody has sent yet.
+      live[#live + 1] = {
+        conn = conn,
+        from = from,
+        want = "read",
+        run  = coroutine.create(function() serve(conn, from) end),
+      }
+    end
+  end
+
+  --
+  -- And whichever have something. Resumed rather than called: each picks up
+  -- where it yielded, which is inside whatever `read` or `write` was waiting.
+  --
+  for _, c in ipairs(ready) do
+    for at = #live, 1, -1 do
+      local entry = live[at]
+
+      if entry.conn == c then
+        -- What comes back is either what it yielded - "read" or "write" -
+        -- or, when it raised, why.
+        local ok, word = coroutine.resume(entry.run)
+
+        if ok then
+          entry.want = word
+        else
+          -- A conversation that raised takes itself down and nothing else.
+          -- That is the point of one coroutine each: this server has no
+          -- shared state a broken request could leave wrong.
+          note(("%s  error: %s"):format(dotted(entry.from), tostring(word)))
+        end
+
+        if not ok or coroutine.status(entry.run) == "dead" then
+          entry.conn:close()
+          table.remove(live, at)
+          publish("running")
+        end
+
+        break
+      end
+    end
+  end
 
   if fs.interrupted and fs.interrupted("/dev/console") then
     note("stopping")
     break
   end
 end
+
+for _, entry in ipairs(live) do entry.conn:close() end
 
 publish("stopped")

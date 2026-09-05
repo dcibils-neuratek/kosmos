@@ -853,12 +853,34 @@ local function new_namespace()
     return net.listen(capability, port)
   end
 
-  function ns.accept(path, listener)
+  -- `ticks` is how long to wait for somebody; without one it waits for
+  -- ever, which is right for a program that has nothing else to do and
+  -- wrong for an event loop.
+  function ns.accept(path, listener, ticks)
     local net, capability, why = net_at(path or "/net")
 
     if not net then return nil, why end
 
-    return net.accept(capability, listener)
+    return net.accept(capability, listener, ticks)
+  end
+
+  --
+  -- Wait on several connections at once, and on a listener.
+  --
+  -- The `select` this system has wanted six times, and the reason a server
+  -- here can serve more than one request at a time: with it a program runs a
+  -- coroutine per connection and resumes whichever is ready.
+  --
+  -- Two lists, because waiting to read and waiting to write are different
+  -- questions with different answers - `netproto.h` records what the single
+  -- list cost. A connection may be in both.
+  --
+  function ns.poll(path, reading, writing, listener, ticks)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.poll(capability, reading, writing, listener, ticks)
   end
 
   -- One exchange, with the reply decoded and the error turned back into a

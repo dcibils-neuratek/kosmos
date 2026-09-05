@@ -293,6 +293,10 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **A FIN is a wish, not an act.** It takes a sequence number, so sending it while the ring still holds bytes numbers it as if they did not exist - a 152 KB image arrived as 141 KB with the server logging success and the client seeing a clean close | user/servers/net.c |
 | Sep 2026 | **A manager is not the server.** `accept` blocks and a window that blocked would stop drawing, so `httpd` is a process and `webserver` reads what it wrote to `/data` - which is why daemons have log files rather than shouting | user/bin/webserver.lua |
 | Sep 2026 | **Crypto is checked against its own specification's vectors, in `make test`.** It is the one place here where a bug is silent: a wrong counter still encrypts, and nothing about running tells you | user/lib/crypto.c |
+| Sep 2026 | **A coroutine per connection is what this system has instead of threads.** There is no thread syscall and a process has one `lua_State`, so two threads inside it would want a lock around the interpreter and take turns anyway. `httpd` yields where it would have waited | user/bin/httpd.lua |
+| Sep 2026 | **Waiting to read and waiting to write are two questions.** `poll` takes two masks. One mask reported writable as "room *and* something queued", so a client that acknowledged the whole ring left the server waiting for a signal that could no longer come - eight requests hung and none were logged | netproto.h |
+| Sep 2026 | **Every park in the stack is bounded**, `accept` included. `poll` saying somebody arrived and `accept` reaching the stack are two moments, and a reset in between would wedge an event loop for good | user/servers/net.c |
+| Sep 2026 | **A drain loop must not read from the buffer it is filling.** The console's `interrupted` took a byte off the stash, put it back, and took it again - one character typed ahead and the console server span for ever, which looked like whichever program had asked having hung | user/servers/console.c |
 
 ---
 

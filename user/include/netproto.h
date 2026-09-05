@@ -84,6 +84,46 @@
 #define NET_OP_LISTEN    9u       /* answer on this port */
 #define NET_OP_ACCEPT   10u       /* park until somebody arrives */
 
+/*
+ * Wait on several at once - the thing this system has wanted six times.
+ *
+ * Live queries wanted it, the stack's own loop wanted it, `telnet` wanted
+ * it, the web server's log wanted it, and `httpd` reading a request wanted
+ * it. Every one of them settled for a poll on a timer, which is a wait
+ * wearing a worse hat: it costs a wake-up whether or not anything happened
+ * and it adds half a period of latency to everything that did.
+ *
+ * **A server that handles one request at a time is the shape of not having
+ * this.** With it, `httpd` runs a coroutine per connection and makes
+ * progress on whichever one is ready - which is what a "multithreaded"
+ * server is actually for, on a system that has no threads and does not want
+ * a lock around its interpreter.
+ *
+ * `handle` carries a *bitmask* of connections rather than a list, because
+ * `NET_CONN_MAX` fits in a word and a mask needs no length field. `port`
+ * carries the listener to watch, plus one, so that zero means none.
+ *
+ * **Two masks, because "ready" is not one question.** `handle` is what the
+ * caller wants to read from and `writing` is what it wants to write to, and
+ * the answer for each is a different fact: bytes have arrived, or room has
+ * appeared. One mask cannot say which, and the version that had one is worth
+ * recording because it deadlocked rather than merely being imprecise.
+ *
+ * It reported a connection writable when there was space *and* something
+ * still queued - a rule written for `wait`, where the question is "has
+ * anything happened". A server sending a page larger than the ring fills it,
+ * yields, and waits for room; if the far end then acknowledges the whole
+ * ring before the next pass, there is space and nothing queued, so nothing
+ * was reported - and nothing ever would be again, because both ends were
+ * now waiting for the other. Eight requests for a 16 KB file hung, and the
+ * server logged not one of them.
+ *
+ * With the interest declared, each side is a plain question with a plain
+ * answer, and neither can spin: a caller only asks about writing when a
+ * write has already failed for want of room.
+ */
+#define NET_OP_POLL     11u       /* wait until any of these has something */
+
 #define NET_OK               0u
 #define NET_ERR_BAD_OP       1u
 #define NET_ERR_NO_CARD      2u   /* this machine has no network */
@@ -99,12 +139,17 @@
 /*
  * How many connections at once.
  *
- * Four, and a fixed pool like everything else here: each carries a 36 KB
- * region, and running out is an error at a known limit rather than a
- * failure at an unknown one. Four is a telnet, an SSH and room to be wrong
- * about how many somebody wants.
+ * Sixteen, and a fixed pool like everything else here: each carries a 36 KB
+ * region, so the whole pool is 576 KB and running out is an error at a known
+ * limit rather than a failure at an unknown one.
+ *
+ * **It was four, which was the number a client needed.** A server needs one
+ * slot for the port it listens on and one per conversation in flight, and
+ * four meant three at a time. Sixteen because it fits in the bitmask
+ * `NET_OP_POLL` uses, which is the constraint that decides it - a
+ * seventeenth would need a list where a word does now.
  */
-#define NET_CONN_MAX     4u
+#define NET_CONN_MAX    16u
 
 /*
  * How many echoes may be outstanding.
@@ -142,6 +187,10 @@ struct net_request {
     uint32_t handle;                /* which connection, for the TCP ops */
     uint32_t port;                  /* where to connect */
     uint32_t ticks;                 /* how long NET_OP_WAIT may wait */
+
+    /* For NET_OP_POLL only: the connections to watch for *room to write*,
+     * where `handle` is the ones to watch for bytes to read. */
+    uint32_t writing;
     struct net_addr to;
 
     /* For NET_OP_CONFIG: this machine's address, its mask, and the router
@@ -170,6 +219,13 @@ struct net_reply {
     uint32_t handle;                /* the connection this is about */
     uint32_t ring_bytes;            /* capacity of each direction */
     uint32_t state;                 /* NET_TCP_*, for a connection */
+
+    /*
+     * For NET_OP_POLL: which of them are ready, as the same bitmask the
+     * request used, and whether the listener has somebody waiting.
+     */
+    uint32_t ready;
+    uint32_t arrived;
 
     struct net_addr from;
     uint32_t ttl;

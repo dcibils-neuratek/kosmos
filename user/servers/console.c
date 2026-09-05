@@ -353,19 +353,35 @@ static void answer(const struct message *msg, uint64_t sender)
          * The only question a long-running program can ask, because this is
          * the only process that may look. Anything else typed goes to the
          * stash so the next `read` begins with it.
+         *
+         * **From the device, not from `next_byte`, and that is the whole of
+         * this operation's history.** `next_byte` empties the stash before
+         * it asks the hardware - which is right for `read`, where the stash
+         * is input that arrived early. Here it is a loop that takes a byte
+         * out of the stash and puts it straight back: one character typed
+         * ahead and this never ends.
+         *
+         * It spun the console server for ever, so nothing on the machine
+         * could print or read again, and it looked like whichever program
+         * had called `interrupted` had hung. Nothing found it for months
+         * because the callers were shaped so it could not happen: a status
+         * bar asks between screens with the keyboard drained, and `httpd`
+         * asked once per request after `accept` had blocked - so the test
+         * that fetched one page and stopped never reached the second ask.
+         * An event loop asking ten times a second hit it on the first pass.
          */
         for (;;) {
-            int c = next_byte();
+            long c = kosmos_getchar();
 
             if (c < 0) {
                 break;
             }
 
-            if (c == 3) {
+            if ((c & 0xff) == 3) {
                 rep.seen = 1;
                 n_interrupts++;
             } else {
-                stash((uint8_t)c);
+                stash((uint8_t)(c & 0xff));
             }
         }
 

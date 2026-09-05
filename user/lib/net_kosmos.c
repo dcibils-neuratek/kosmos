@@ -506,6 +506,12 @@ static int l_accept(lua_State *L)
     req.op     = NET_OP_ACCEPT;
     req.handle = (uint32_t)luaL_checkinteger(L, 2);
 
+    /* How long to wait for somebody, in scheduler ticks; nothing means for
+     * ever, which is what a program with only one thing to do wants. An
+     * event loop passes a deadline - see NET_OP_ACCEPT in `net.c` for the
+     * race that makes it necessary. */
+    req.ticks = (uint32_t)luaL_optinteger(L, 3, 0);
+
     memset(&msg, 0, sizeof(msg));
     msg.length = sizeof(req);
     memcpy(msg.data, &req, sizeof(req));
@@ -549,6 +555,131 @@ static int l_accept(lua_State *L)
     return 2;
 }
 
+/*
+ * `net.poll(cap, handles, listener, ticks)` - wait on several at once.
+ *
+ * `handles` is a table of connections; the mask is built here so a caller
+ * never sees one. Returns a table of the ready connections and whether the
+ * listener has somebody waiting.
+ *
+ * **This is the `select` the system has wanted six times** and the reason a
+ * server can serve more than one request at a time here: with it, `httpd`
+ * runs a coroutine per connection and resumes whichever is ready. Without
+ * it, everything that needed to watch two things settled for a timer.
+ */
+/* The connections a table names, as a bitmask. */
+static uint32_t mask_of(lua_State *L, int index)
+{
+    uint32_t mask = 0;
+    lua_Integer n, i;
+
+    if (lua_isnoneornil(L, index)) {
+        return 0;
+    }
+
+    luaL_checktype(L, index, LUA_TTABLE);
+    n = (lua_Integer)lua_rawlen(L, index);
+
+    for (i = 1; i <= n; i++) {
+        struct ring_handle *h;
+
+        lua_rawgeti(L, index, i);
+        h = (struct ring_handle *)luaL_testudata(L, -1, "kosmos.tcp");
+
+        if (h != NULL && h->handle < NET_CONN_MAX) {
+            mask |= 1u << h->handle;
+        }
+
+        lua_pop(L, 1);
+    }
+
+    return mask;
+}
+
+/*
+ * Move the ready ones out of the table at `index` and into the result on
+ * top of the stack, which is what lets a caller use what comes back
+ * directly rather than looking numbers up in a table of its own.
+ *
+ * `taken` is carried between the two calls so a connection named in both
+ * lists appears once.
+ */
+static int collect(lua_State *L, int index, uint32_t ready,
+                   uint32_t *taken, int at)
+{
+    lua_Integer n, i;
+
+    if (lua_isnoneornil(L, index)) {
+        return at;
+    }
+
+    n = (lua_Integer)lua_rawlen(L, index);
+
+    for (i = 1; i <= n; i++) {
+        struct ring_handle *h;
+        uint32_t bit;
+
+        lua_rawgeti(L, index, i);
+        h = (struct ring_handle *)luaL_testudata(L, -1, "kosmos.tcp");
+        bit = (h != NULL && h->handle < NET_CONN_MAX) ? 1u << h->handle : 0u;
+
+        if (bit != 0 && (ready & bit) != 0 && (*taken & bit) == 0) {
+            *taken |= bit;
+            lua_rawseti(L, -2, at++);   /* moves it into the result */
+        } else {
+            lua_pop(L, 1);
+        }
+    }
+
+    return at;
+}
+
+/*
+ * poll(cap, reading, writing, listener, ticks) -> ready, arrived
+ *
+ * Two lists because they are two questions - see `NET_OP_POLL` in
+ * `netproto.h`. What comes back is one list of whichever connections are
+ * ready, in the order they were asked about, and whether somebody is
+ * waiting on the listener.
+ */
+static int l_poll(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    struct net_request req;
+    struct net_reply rep;
+
+    memset(&req, 0, sizeof(req));
+
+    req.op    = NET_OP_POLL;
+    req.ticks = (uint32_t)luaL_optinteger(L, 5, 0);
+
+    /* The listener, plus one, so that absent is zero. */
+    req.port = lua_isnoneornil(L, 4)
+               ? 0u : (uint32_t)luaL_checkinteger(L, 4) + 1u;
+
+    req.handle  = mask_of(L, 2);
+    req.writing = mask_of(L, 3);
+
+    if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)rep.status);
+        return 2;
+    }
+
+    lua_newtable(L);
+
+    {
+        uint32_t taken = 0;
+        int at = collect(L, 2, rep.ready, &taken, 1);
+
+        (void)collect(L, 3, rep.ready, &taken, at);
+    }
+
+    lua_pushboolean(L, rep.arrived != 0);
+    return 2;
+}
+
+
 void kosmos_net_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -558,6 +689,7 @@ void kosmos_net_kit(lua_State *L)
         { "connect",   l_connect },
         { "listen",    l_listen },
         { "accept",    l_accept },
+        { "poll",      l_poll },
         { NULL, NULL }
     };
 

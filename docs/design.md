@@ -238,9 +238,13 @@ query(path, pred, cb)   -> live query handle
 
 Three layers, with different costs. Do not mix them.
 
-**Lua coroutines.** Concurrency inside a process, no parallelism. Zero synchronization. One server handles 200 clients on one thread. Every `receive` is a yield, so you write sequential code over synchronous IPC. This is the design's main lever.
+**Lua coroutines.** Concurrency inside a process, no parallelism. Zero synchronization. One server serves many clients on one stack, and the conversation with each is written straight through - read the request, find the file, write the answer - with a `yield` wherever it would have waited. This is the design's main lever, and `httpd` is the first thing to use it.
 
-**Kernel threads.** Preemptive, own stack, scheduled by the scheduler. A process can have several. With one core it gives real concurrency without parallelism.
+It needs one thing from below, and the shape of that thing is the whole lesson. A coroutine yields because it cannot make progress; something has to know *when it can again*, and that is a wait on many things at once - which this system did without for a long time. `netproto.h`'s `NET_OP_POLL` is it for connections, and it takes **two masks rather than one**, because "ready" is not a single question: a caller waiting to read wants to hear that bytes arrived, and one waiting to write wants to hear that room appeared. A single mask has to guess which, and the version that guessed deadlocked - it called a connection writable only when there was room *and* something still queued, so a client that acknowledged the whole ring in one go left the server waiting for news that could no longer arrive.
+
+**Kernel threads.** There are none, and there is no syscall to make one. `SYS_SPAWN` makes a *process* - its own address space, its own capability table - which is the only unit of execution above a coroutine. This section said otherwise for a long time and was simply wrong.
+
+That is not a gap to be filled later. A process here has one `lua_State`, so two threads inside it would need a lock around the whole interpreter and would take turns anyway; what threads would actually buy - overlapping the *waiting* - is what coroutines already give. What they would not buy is overlapping the computing, and that needs a second core rather than a second thread.
 
 **SMP.** The Pi 5's four Cortex-A76s. Supported by design, off until stage 6.
 
