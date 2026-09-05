@@ -208,7 +208,10 @@ local function program_of(doc, font)
     done = done + got
   end
 
-  if done ~= length then return nil end
+  if done ~= length then
+    sys.release(raw)
+    return nil
+  end
 
   if filter[1] ~= "FlateDecode" then
     font.program = { at = raw_at, size = length,
@@ -220,13 +223,19 @@ local function program_of(doc, font)
   -- one is synthesised on the end of it; see `ensure_cmap` in docfont.c.
   local sized, want = pcall(compress.inflated_size, raw_at, length)
 
-  if not sized then return nil end
+  if not sized then
+    sys.release(raw)
+    return nil
+  end
 
   want = want + 32
 
   local out = sys.memory(pages_for(want))
 
-  if not out then return nil end
+  if not out then
+    sys.release(raw)
+    return nil
+  end
 
   local out_at = sys.memory_map(out)
   local cap    = pages_for(want) * 4096
@@ -235,12 +244,72 @@ local function program_of(doc, font)
                    size = compress.inflate_into(raw_at, length, out_at, cap),
                    cap = cap }
 
+  --
+  -- The compressed copy, given back.
+  --
+  -- `raw` is scratch: the stream lands in it, is inflated out of it, and is
+  -- never wanted again - only `out` is kept. It was never released, so every
+  -- font that loaded cost a capability for the life of the process, and a
+  -- thread gets thirty-two.
+  --
+  -- Not on the path above this, where the stream was not compressed and
+  -- `raw_at` *is* the program.
+  --
+  sys.release(raw)
+
   return font.program
 end
 
+--
 -- Everything about one font that drawing or reading a run needs.
-function pdfpage.font(doc, dict)
+--
+-- **Cached on the document, and that is the whole of a real bug.**
+--
+-- `font.program` is a region and `font.handles` are rasterisers, and the
+-- comments on both say "once per face, shared by every size". That was true
+-- of the *table they live on* and false of the document: `pdfpage.render`
+-- built a fresh font table for every page, so every page inflated every font
+-- program into a new region and made a new rasteriser for every face, and
+-- nothing freed the previous page's.
+--
+-- Measured on a 254-page book, paging forward: page 13 rendered no glyphs
+-- and lost two faces, page 23 lost three, and page 33 could not allocate the
+-- paper at all. Read a page, then it stops.
+--
+-- `Doc:get` caches by object number, so the same indirect reference resolves
+-- to the same table every time and identity is a sound key. A font
+-- dictionary written inline in a page's resources - legal, and rare - gets a
+-- fresh table per page and misses the cache, which is exactly what every
+-- font did before this and no worse.
+--
+function pdfpage.font(doc, ref)
+  --
+  -- Keyed by the object *number*, and that is the whole of it.
+  --
+  -- The first attempt keyed on the resolved table and never hit once,
+  -- because `pdfpage.render` ends with `doc:forget()` - which is
+  -- `self.cache = {}`, on purpose, to bound what a 254-page document keeps.
+  -- So every page re-parses the font dictionary into a brand new table, and
+  -- a cache keyed on that table misses every time *and* grows by an entry a
+  -- page. It looked like a fix and measured like nothing.
+  --
+  -- An object number survives `forget` because it is what the file says.
+  --
+  local key = pdf.isref(ref) and ref.num or nil
+  local dict = doc:resolve(ref)
+
+  if type(dict) ~= "table" then
+    return { two_byte = false,
+             widths = { single = {}, ranges = {} }, default_width = 500 }
+  end
+
+  doc.fonts = doc.fonts or {}
+
+  if key and doc.fonts[key] then return doc.fonts[key] end
+
   local font = { subtype = dict.Subtype, base = dict.BaseFont, two_byte = false }
+
+  if key then doc.fonts[key] = font end
 
   local descendants = doc:resolve(dict.DescendantFonts)
   local descendant  = descendants and doc:resolve(descendants[1])
@@ -378,7 +447,10 @@ function pdfpage.render(doc, page, surface, scale, colour)
   local fonts     = {}
 
   for name, dict in pairs(dicts) do
-    fonts[name] = pdfpage.font(doc, doc:resolve(dict))
+    -- The *reference*, not the resolved dictionary: `pdfpage.font` keys its
+    -- cache on the object number, which is the only thing about a font that
+    -- survives `doc:forget()`.
+    fonts[name] = pdfpage.font(doc, dict)
   end
 
   local box    = doc:resolve(page.MediaBox) or { 0, 0, 612, 792 }
@@ -459,6 +531,57 @@ function pdfpage.render(doc, page, surface, scale, colour)
       faces = faces + 1
     else
       missing = missing + 1
+    end
+  end
+
+  --
+  -- Keep only the rasterisers this page used, and let the rest go.
+  --
+  -- **The font *program* is cached for the document's life and the
+  -- rasterisers are not, and the difference is what each one costs when it
+  -- is wrong.**
+  --
+  -- A program is a region, and `sys.memory` hands back a capability index
+  -- out of the thirty-two a thread gets. Allocating one per face *per page*
+  -- ran the process out of capability slots: on a 254-page book, page 13
+  -- lost two faces and page 23 lost three. So programs are made once per
+  -- face and reused, which is bounded by how many faces a document has.
+  --
+  -- A rasteriser is a `docfont` - a userdata with a `__gc`, holding a glyph
+  -- cache on the Lua heap - and caching *those* for the document's life was
+  -- a fix that made things worse. Keyed by face and pixel size, a book
+  -- accumulates a new one every time the type changes size, and the heap
+  -- they crowd is the heap the page surface comes out of: with them pinned,
+  -- page 23 stopped being "two faces missing" and became "not enough
+  -- memory". Measured, both ways round.
+  --
+  -- So this prunes to what the page actually drew. Consecutive pages in the
+  -- same face at the same size - which is most of a book - keep their glyph
+  -- caches and pay nothing; a page that changes face drops the old one and
+  -- the collector takes it. Reuse the space, do not keep adding to it.
+  --
+  -- `false` entries stay: those are faces that will never load, remembered
+  -- so they are not retried once a page, and they hold nothing.
+  --
+  local used = {}
+
+  for _, bucket in ipairs(order) do
+    local per = used[bucket.font]
+
+    if not per then per = {} ; used[bucket.font] = per end
+
+    per[bucket.px] = true
+  end
+
+  for _, font in pairs(fonts) do
+    if font.handles then
+      local per = used[font]
+
+      for px, handle in pairs(font.handles) do
+        if handle ~= false and not (per and per[px]) then
+          font.handles[px] = nil
+        end
+      end
     end
   end
 

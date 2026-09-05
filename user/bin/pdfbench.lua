@@ -150,7 +150,7 @@ local fonts = {}
 do
   local resources = doc:resolve(page.Resources) or {}
   for name, dict in pairs(doc:resolve(resources.Font) or {}) do
-    fonts[name] = pdfpage.font(doc, doc:resolve(dict))
+    fonts[name] = pdfpage.font(doc, dict)
   end
 end
 
