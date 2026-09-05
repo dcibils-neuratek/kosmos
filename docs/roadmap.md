@@ -92,7 +92,7 @@ groundwork is already there.
 |---|---|---|---|
 | 0 | Boot under QEMU | low | Known ground, plenty of material |
 | 1 | MMU, exceptions, timer | medium | |
-| 2 | Lua in the kernel + second target | medium | First real hardware |
+| 2 | Lua in the kernel + second target | medium | First real hardware (Pi 5; x86-64 later) |
 | 3 | Microkernel | high | The heart of the system |
 | 4 | Lua to userspace | **the highest** | This is where the design gets tested |
 | 5 | Namespaces and servers | medium | Original design starts here |

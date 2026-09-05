@@ -43,7 +43,11 @@ it is a real result rather than a QEMU number.
 be a fast one.** That is what to optimise for now - not more features, and
 not another subsystem, but the speed and the feel of the ones that exist.
 
-**Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware (Pi 5, Pi 1) arrives at milestone 2, once the serial cables are here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
+**Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware arrives at milestone 2, once the serial cable is here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
+
+**Kosmos is 64-bit, and only 64-bit.** AArch64 everywhere: `HCR_EL2.RW` is set so EL1 runs AArch64 rather than AArch32, the virtual address space is 39 bits through three levels of long-descriptor tables, and processes use addresses above the 4 GB line. There is no 32-bit path and there is not going to be one.
+
+**That is a constraint on *word size*, not on architecture.** More than one `arch/` is expected: AArch64 today, **x86-64 later**, which is a second instruction set, a different interrupt controller, a different boot protocol and a different memory model - and none of that disturbs the 64-bit assumptions, which is exactly why the line is drawn here and not around ARM. A board like the Pi 5 is a new `hal/`; a machine like an x86-64 PC is a new `arch/`; a 32-bit machine is neither, because it is out of scope. `hal.md` records the Pi 1 argument and why it was answered no.
 
 - The layers and how a command crosses them: `docs/architecture.md`
 - What lives where, in the tree and at runtime: `docs/layout.md`
@@ -576,7 +580,7 @@ something you look at.
 ```
 boot/           assembly entry, linker script
 arch/           aarch64/
-hal/            qemu-virt/  (pi5/ and pi1/ arrive at milestone 2)
+hal/            qemu-virt/  (pi5/ arrives at milestone 2)
 kernel/         mmu, sched, ipc, caps, exceptions
 assets/         vendored data: fonts/ (BDF + its licence), icons/, images/
 lua/            upstream/ + kosmos/

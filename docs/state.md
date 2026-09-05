@@ -2146,7 +2146,20 @@ Found the hard way: the first `setjmp` panicked with EC 0x07, whose name ("unhan
 ## Hardware pending
 
 - [ ] 3-pin JST-SH debug UART cable (Pi 5) — blocks M2 on that target
-- [ ] 3.3V USB-serial adapter (Pi 1) — cheaper and arrives sooner
+
+**The Pi 1 is out of scope: Kosmos is 64-bit only.** `hal.md` keeps the
+argument for it and why it was answered no. What replaces it as the second
+*architecture* is x86-64 - a four-core Xeon Mac Pro, which is also the
+first real machine on which SMP would mean anything, since it is on the
+desk rather than waiting for a cable.
+
+Measured rather than assumed, because "without a refactor" is a checkable
+claim: **16 AArch64-specific sites in 8656 lines of `kernel/`**, and they
+are four things - masking interrupts (`daif`, 9), idling (`wfi`, 3),
+reading the cycle counter (`cntpct_el0`, 2) and reading the current
+exception level (1). Extracting those behind `arch/` is an afternoon and
+wants doing while it is still sixteen. Everything in `hal/qemu-virt/` is
+ARM-specific and is *supposed* to be; an x86-64 box gets its own `hal/`.
 
 ---
 

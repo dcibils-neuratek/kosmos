@@ -161,26 +161,54 @@ The plain `-M virt` this project develops against lands at EL1, so the drop is n
 
 The secondary cores start too. If you do not park them by checking the core ID in the entry code, you will see the output four times and not understand why.
 
-### Raspberry Pi 1 — the best hardware to learn on
+### Raspberry Pi 1 — the argument, and why the answer is no
 
-Counterintuitive, but probably the first real hardware worth using.
+**Decided against in September 2026: Kosmos is 64-bit only.** The section
+below was an argument *for* the Pi 1 as the first real hardware, and it is
+kept rather than deleted because it was a good argument and the cost of
+refusing it is real.
 
-**In favor:**
+**What was in favour, and all of it still true:**
 
-- **GPIO 14/15 are UART directly.** Three wires to a 3.3V USB-serial adapter and you have a console. None of the Pi 5's problem.
-- It is the hardware with the most bare-metal material in existence. Cambridge, dwelch67, the whole OSDev corpus from 2012-2015. Every BCM2835 register documented in twenty places.
+- **GPIO 14/15 are UART directly.** Three wires to a 3.3V adapter and you
+  have a console. None of the Pi 5's problem.
+- More bare-metal material than any other board in existence, and every
+  BCM2835 register documented in twenty places.
 - A single core. No temptation to do SMP, no races.
-- The BCM2835 mailbox framebuffer is the canonical example, and **the Pi 5 uses the same conceptual interface**. What you learn here transfers.
+- The BCM2835 mailbox framebuffer is the canonical example, and the Pi 5
+  uses the same conceptual interface. What you learn transfers.
 - Boot by copying a file to the SD card. Iteration in seconds.
-- QEMU emulates `raspi1ap`, so you can develop the port without touching the board.
+- QEMU emulates `raspi1ap`, so the port could be developed without the board.
 
-**Against:**
+**And the strongest point, which is what is being given up:** porting to
+ARMv6 would force `arch/` and `hal/` genuinely apart. With two AArch64
+targets that boundary stays fuzzy, because everything works the same way and
+nothing punishes an assumption. With ARMv6 in the mix the assumptions
+surface on their own - where 64 bits was assumed, where exception levels
+were, where a GIC was.
 
-- **It is ARMv6, 32-bit.** ARM1176JZF-S. A different architecture, not a variant: different instruction set, short-descriptor page tables instead of long-descriptor, CPU modes with banked registers instead of exception levels, an `arm-none-eabi` toolchain.
-- It requires a complete `arch/armv6/`. This is not "swapping the HAL".
-- 512MB and 700MHz. Lua runs fine; compositing will be slow.
+**What decided it:** the Pi 1 is ARM1176JZF-S, ARMv6, 32-bit, with no
+64-bit mode at all. Different instruction set, short-descriptor page tables
+instead of long-descriptor, CPU modes with banked registers instead of
+exception levels, a different toolchain. That is a complete second
+`arch/armv6/` - the layout has always said architectures are *reimplemented*
+rather than abstracted - and it would be written against a 700 MHz core
+where compositing is slow, for a system whose stated question is whether it
+can be made fast.
 
-**The real value:** porting to ARMv6 forces you to genuinely separate `arch/` from `hal/`. With two AArch64 targets that boundary stays fuzzy because everything works the same. With ARMv6 in the mix, the assumptions surface on their own: you will find out where you assumed 64 bits, where you assumed exception levels, where you assumed a GIC.
+**And the thing it was for arrives anyway, from a better direction.**
+x86-64 is intended at some point, and it is a second instruction set, a
+different interrupt controller, a different boot protocol and a different
+memory model. Every assumption the ARMv6 port was supposed to surface gets
+surfaced by it - with none of the Pi 1's cost, because it is 64-bit, it is
+fast, and the machines are already on the desk.
+
+So the `arch/` boundary does get tested. It gets tested by a target that
+does not require giving up the one constraint worth keeping.
+
+Recorded here rather than deleted, because a rejected option with its
+reasoning intact is worth more than a tidy document: if the reason changes,
+the argument is already written.
 
 ### Raspberry Pi 5 — the main target
 
@@ -239,6 +267,48 @@ The irony is that **x86-64 in general is a better learning target than ARM**: th
 If you ever want x86, get a cheap mini-PC **with a serial header**, and treat it as a deliberate exercise.
 
 ---
+
+### x86-64 — the second architecture, not a second board
+
+**Intended, unscheduled, and the first thing that will be a genuine
+`arch/` rather than a `hal/`.** Worth writing down now because it changes
+what "keep the layers apart" is protecting: with two AArch64 targets the
+boundary is a promise, and with x86-64 it becomes a compile error.
+
+**What is a second `arch/x86_64/`, and it is most of one:**
+
+- Page tables. Four levels, different bits, one root in `CR3` rather than
+  the `TTBR0`/`TTBR1` split - so the "everything below `USER_VA_BASE` is the
+  kernel" arrangement is expressed by a canonical-half convention instead of
+  by hardware.
+- Exception and interrupt entry. An IDT, not a sixteen-entry vector table.
+- Context switch, and a different calling convention under `setjmp`.
+- The syscall path: `syscall`/`sysret` rather than `svc`.
+- Barriers, which mostly become *nothing*: x86-64 is strongly ordered, so
+  `mmio_read32`/`mmio_write32` lose their `dmb` and keep their shape. That is
+  the accessor pair earning its existence a second time.
+- **`-mno-red-zone`, and it is not optional.** The SysV ABI lets a leaf
+  function use 128 bytes below the stack pointer without adjusting it, and an
+  interrupt arriving on that stack writes straight through them. It is the
+  x86-64 equivalent of `-mgeneral-regs-only`: a rule turned into a flag,
+  where forgetting it produces corruption rather than an error. `-mno-sse
+  -mno-mmx -mno-80387` go with it, for the same reason the kernel may not
+  touch an FP register here.
+- Lazy FP save translates directly: `CR0.TS` and `xsave` play the part
+  `CPACR_EL1.FPEN` plays now.
+
+**What is a `hal/x86_64-pc/` and nothing more:** the interrupt controller
+(local APIC and IO-APIC, or MSI, where the GIC is now), the timer (the APIC
+timer or HPET, where the generic timer is now), the console UART, and the
+framebuffer - which under UEFI arrives as a linear buffer the firmware
+chose, which is exactly the shape `hal_fb_init` already has.
+
+**What does not change, and this is the whole point of the microkernel:**
+everything above the kernel. Lua, the servers, the namespace, the window
+manager, the applications. A Lua server neither knows nor cares which
+instruction set it is running on, and the day that turns out to be false
+will be worth knowing about.
+
 
 ## The rule for choosing a target
 

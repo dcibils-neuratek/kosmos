@@ -165,7 +165,6 @@ What freestanding Lua needs from libc: `memcpy`, `memset`, `memmove`, `strlen`, 
 ## Hardware pending
 
 - [ ] **3-pin JST-SH debug UART cable** for the Pi 5. Blocks M2 on that target.
-- [ ] **3.3V USB-serial adapter** for the Pi 1, to GPIO 14/15. Cheaper and arrives sooner.
 
 Until then, all work happens under QEMU.
 
@@ -180,4 +179,4 @@ Until then, all work happens under QEMU.
 - **seL4.** For thinking about IPC and capability design.
 - **eLua.** Prior art for Lua on bare metal.
 - **ARM Architecture Reference Manual (ARMv8-A).** Enormous, but it is the source of truth for exceptions, page tables and barriers.
-- **Datasheets:** BCM2712 (Pi 5), BCM2835 (Pi 1).
+- **Datasheets:** BCM2712 (Pi 5).
