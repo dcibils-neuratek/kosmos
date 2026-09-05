@@ -266,6 +266,10 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         return SYS_ERR_DENIED;
     }
 
+    if ((flags & SPAWN_NET) != 0 && !p->owns_net) {
+        return SYS_ERR_DENIED;      /* cannot pass on what it has not got */
+    }
+
     child = process_spawn(p, arg);
     if (child == NULL) {
         return SYS_ERR_NO_ROOM;
@@ -300,6 +304,13 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
     if ((flags & SPAWN_AUDIO) != 0 && !process_grant_audio(child)) {
         /* Not fatal: a machine with no sound device still runs a program
          * that would have liked some, and it finds out by being silent. */
+    }
+
+    if ((flags & SPAWN_NET) != 0 && !process_grant_net(child)) {
+        /* Not fatal, and the same judgement as sound rather than the screen:
+         * a machine with no card still runs a stack, and the stack finds out
+         * by `SYS_NET_INFO` reporting no card. A machine with no network is
+         * a machine, where a window manager with no screen is nothing. */
     }
 
     if ((flags & SPAWN_SCREEN) != 0 && !process_grant_screen(child)) {
@@ -371,6 +382,9 @@ static long sys_screen(struct process *p, uintptr_t out_ptr)
 #define DISK_CHUNK  4096u
 
 static _Alignas(16) uint8_t disk_bounce[DISK_CHUNK];
+
+/* And the network's, for the same reason. One frame; nothing here queues. */
+static _Alignas(16) uint8_t net_bounce[HAL_NET_FRAME];
 
 static long sys_disk(struct process *p, bool writing, uint64_t sector,
                      uintptr_t buf, size_t bytes)
@@ -483,6 +497,11 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         info.audio_floor    = hal_snd_floor();
         info.audio_wakes    = hal_snd_wakes();
     }
+
+    /* Outside the sound branch, which is where it briefly was - and a
+     * machine with a network card and no speaker then reported no network.
+     * Two devices, two questions. */
+    info.net_mtu = hal_net_present() ? HAL_NET_MTU : 0u;
 
     info.threads_used     = thread_count();
     info.threads_total    = THREAD_MAX;
@@ -737,6 +756,95 @@ void syscall_dispatch(struct trapframe *tf)
     case SYS_SND_QUEUED:
         result = p->owns_audio ? (long)hal_snd_queued() : SYS_ERR_DENIED;
         break;
+
+    /*
+     * The network, three calls, and every one of them behind `owns_net`.
+     *
+     * A bounce buffer for both directions, like the disk's and for the same
+     * reason: the driver hands the device a pointer, and a pointer into a
+     * process's address space is not one the device can use - the ring lives
+     * in the kernel's identity-mapped memory and the process's does not.
+     * Copying is also what makes the length check mean something, because a
+     * process cannot change the bytes after they were checked.
+     */
+    case SYS_NET_INFO: {
+        struct netinfo info;
+        struct netdev card;
+
+        if (!p->owns_net) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (!process_may_write(p, tf->x[0], sizeof(info))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        memset(&info, 0, sizeof(info));
+
+        /* `hal_net_present` rather than a second `hal_net_init`: the card
+         * came up at boot and bringing a running device up again is a reset
+         * with frames in flight. The MAC is read back through the same
+         * `out` struct the boot used. */
+        if (hal_net_present() && hal_net_info(&card)) {
+            memcpy(info.mac, card.mac, sizeof(info.mac));
+            info.mtu     = card.mtu;
+            info.present = 1;
+        }
+
+        memcpy((void *)tf->x[0], &info, sizeof(info));
+        result = 0;
+        break;
+    }
+
+    case SYS_NET_SEND:
+        if (!p->owns_net) {
+            result = SYS_ERR_DENIED;
+        } else if (tf->x[1] == 0 || tf->x[1] > HAL_NET_FRAME) {
+            result = SYS_ERR_FAULT;
+        } else if (!process_may_read(p, tf->x[0], (size_t)tf->x[1])) {
+            result = SYS_ERR_FAULT;
+        } else {
+            memcpy(net_bounce, (const void *)tf->x[0], (size_t)tf->x[1]);
+
+            result = hal_net_send(net_bounce, (unsigned)tf->x[1])
+                     ? 0 : SYS_NO_INPUT;
+        }
+
+        break;
+
+    case SYS_NET_RECV: {
+        int got;
+
+        if (!p->owns_net) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (tf->x[1] == 0 || tf->x[1] > HAL_NET_FRAME) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        if (!process_may_write(p, tf->x[0], (size_t)tf->x[1])) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        got = hal_net_recv(net_bounce, (unsigned)tf->x[1]);
+
+        if (got > 0) {
+            memcpy((void *)tf->x[0], net_bounce, (size_t)got);
+            result = got;
+        } else if (got < 0) {
+            result = SYS_ERR_FAULT;     /* the buffer is smaller than a frame */
+        } else {
+            result = SYS_NO_INPUT;      /* nothing waiting, which is usual */
+        }
+
+        break;
+    }
 
     case SYS_POWER:
         if (!p->owns_procctl) {

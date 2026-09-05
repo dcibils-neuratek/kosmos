@@ -532,7 +532,11 @@ No fixed order. Picked up as the appetite appears.
 
 - **GPIO, I2C, SPI.** On the Pi 5 this requires an RP1 driver over PCIe, which is serious work. On the Pi 1 it is direct.
 - **USB: XHCI + HID.** A real keyboard. Tedious but bounded and well documented.
-- **Networking: ported lwIP**, with connections exposed as namespace nodes, Plan 9 style. The property worth testing: mount another machine's `/net` into your local namespace, and have a process use that computer's network without knowing.
+- **Networking. Done as far as ping, and not with lwIP.** `hal/qemu-virt/net.c` is virtio-net, `user/servers/net.c` is Ethernet, ARP, IPv4 and ICMP in about seven hundred lines, and `ping 8.8.8.8` answers. lwIP was the plan and was not taken: it is forty thousand lines whose socket API is what `design.md` §17 forbids at system level, and what ping needs is small enough to write and understand. That decision is worth revisiting *at TCP*, which is where the porting cost would buy something - and where the answer may still be no, for the same reason.
+
+  **The line about "a virtio-net driver at EL0 like every other driver" was wrong about the present** and is corrected here rather than quietly: no driver is at EL0. They are all in the HAL, and `architecture.md` says why - a driver in userland needs MMIO mapped into a process, interrupts delivered to one, and DMA memory a process can hand a device, and none of the three exists. That is a milestone about driver infrastructure and it is not this one.
+
+  Still ahead: TCP, then connections exposed as namespace nodes, Plan 9 style. The property worth testing is unchanged - mount another machine's `/net` into your local namespace, and have a process use that computer's network without knowing.
 
 - **Audio: virtio-sound.** See below; it moved out of the out-of-scope list and it is worth saying why rather than quietly editing the line.
 

@@ -46,41 +46,8 @@
 
 #include "mmio.h"
 #include "qemu-virt.h"
+#include "virtio.h"
 #include "hal.h"
-
-#define VIRTIO_ID_SOUND         25
-
-/* virtio 1.2, 4.2.2. The same offsets blk.c uses. */
-#define REG_MAGIC               0x000
-#define REG_VERSION             0x004
-#define REG_DEVICE_ID           0x008
-#define REG_DEVICE_FEATURES     0x010
-#define REG_DEVICE_FEATURES_SEL 0x014
-#define REG_DRIVER_FEATURES     0x020
-#define REG_DRIVER_FEATURES_SEL 0x024
-#define REG_QUEUE_SEL           0x030
-#define REG_QUEUE_NUM_MAX       0x034
-#define REG_QUEUE_NUM           0x038
-#define REG_QUEUE_READY         0x044
-#define REG_QUEUE_NOTIFY        0x050
-#define REG_INTERRUPT_STATUS    0x060
-#define REG_INTERRUPT_ACK       0x064
-#define REG_STATUS              0x070
-#define REG_QUEUE_DESC_LOW      0x080
-#define REG_QUEUE_DESC_HIGH     0x084
-#define REG_QUEUE_AVAIL_LOW     0x090
-#define REG_QUEUE_AVAIL_HIGH    0x094
-#define REG_QUEUE_USED_LOW      0x0a0
-#define REG_QUEUE_USED_HIGH     0x0a4
-#define REG_CONFIG              0x100
-
-#define STATUS_ACKNOWLEDGE      1u
-#define STATUS_DRIVER           2u
-#define STATUS_DRIVER_OK        4u
-#define STATUS_FEATURES_OK      8u
-
-#define VRING_DESC_F_NEXT       1u
-#define VRING_DESC_F_WRITE      2u
 
 /* virtio_snd.h: the four queues, in this order. */
 #define VQ_CONTROL              0
@@ -119,33 +86,7 @@
  */
 #define QUEUE_SIZE  32
 
-struct vring_desc {
-    uint64_t addr;
-    uint32_t len;
-    uint16_t flags;
-    uint16_t next;
-};
-
-struct vqueue {
-    _Alignas(16) struct vring_desc desc[QUEUE_SIZE];
-
-    _Alignas(2) struct {
-        uint16_t flags;
-        uint16_t idx;
-        uint16_t ring[QUEUE_SIZE];
-        uint16_t used_event;
-    } avail;
-
-    _Alignas(4) struct {
-        uint16_t flags;
-        uint16_t idx;
-        struct {
-            uint32_t id;
-            uint32_t len;
-        } ring[QUEUE_SIZE];
-        uint16_t avail_event;
-    } used;
-};
+struct vqueue { VIRTQ_FIELDS(QUEUE_SIZE); };
 
 /* virtio_snd.h, verbatim in layout. */
 struct snd_hdr { uint32_t code; };
@@ -198,8 +139,7 @@ struct snd_pcm_status { uint32_t status; uint32_t latency_bytes; };
  */
 static struct {
     bool present;
-    uintptr_t base;
-    unsigned slot;
+    struct virtio_device dev;
 
     struct vqueue q[VQ_COUNT];
     uint16_t last_used[VQ_COUNT];
@@ -234,17 +174,17 @@ static struct {
     unsigned              floor;
 } snd;
 
-static uint32_t reg_read(unsigned offset)
-{
-    return mmio_read32(snd.base + offset);
-}
-
-static void reg_write(unsigned offset, uint32_t value)
-{
-    mmio_write32(snd.base + offset, value);
-}
-
-/* Everything written before this is visible to the device after it. */
+/*
+ * Everything written before this is visible to the device after it.
+ *
+ * **`dsb sy`, not the transport's `dmb oshst`**, and the difference is
+ * deliberate rather than an oversight left behind by the refactor. `dmb`
+ * orders; `dsb` waits for completion. Everywhere else ordering is all that
+ * is needed, and this driver is the one that hands a period to a device on
+ * a 5.8 ms deadline - the stronger barrier costs a stall and buys certainty
+ * that the samples are in memory and not in a store buffer when the notify
+ * lands. Nothing has measured the difference; it has also never clicked.
+ */
 static void publish(void)
 {
     __asm__ volatile("dsb sy" ::: "memory");
@@ -260,22 +200,10 @@ static void ring_setup(unsigned n)
 {
     struct vqueue *q = &snd.q[n];
 
-    reg_write(REG_QUEUE_SEL, n);
-
-    if (reg_read(REG_QUEUE_NUM_MAX) < QUEUE_SIZE) {
-        return;
-    }
-
     memset(q, 0, sizeof(*q));
 
-    reg_write(REG_QUEUE_NUM, QUEUE_SIZE);
-    reg_write(REG_QUEUE_DESC_LOW,   (uint32_t)(uintptr_t)q->desc);
-    reg_write(REG_QUEUE_DESC_HIGH,  (uint32_t)((uint64_t)(uintptr_t)q->desc >> 32));
-    reg_write(REG_QUEUE_AVAIL_LOW,  (uint32_t)(uintptr_t)&q->avail);
-    reg_write(REG_QUEUE_AVAIL_HIGH, (uint32_t)((uint64_t)(uintptr_t)&q->avail >> 32));
-    reg_write(REG_QUEUE_USED_LOW,   (uint32_t)(uintptr_t)&q->used);
-    reg_write(REG_QUEUE_USED_HIGH,  (uint32_t)((uint64_t)(uintptr_t)&q->used >> 32));
-    reg_write(REG_QUEUE_READY, 1);
+    (void)virtio_queue_attach(&snd.dev, n, QUEUE_SIZE,
+                              q->desc, &q->avail, &q->used);
 }
 
 /*
@@ -310,14 +238,14 @@ static bool control(const void *request, unsigned request_len,
     q->avail.idx++;
     publish();
 
-    reg_write(REG_QUEUE_NOTIFY, VQ_CONTROL);
+    virtio_notify(&snd.dev, VQ_CONTROL);
 
     for (spins = 0; spins < 100000000UL; spins++) {
         consume();
 
         if (q->used.idx != snd.last_used[VQ_CONTROL]) {
             snd.last_used[VQ_CONTROL] = q->used.idx;
-            reg_write(REG_INTERRUPT_ACK, reg_read(REG_INTERRUPT_STATUS));
+            (void)virtio_ack_interrupt(&snd.dev);
             consume();
 
             return true;
@@ -399,53 +327,23 @@ static bool find_output_stream(void)
 
 bool hal_snd_init(void)
 {
-    unsigned i;
+    unsigned from = 0;
 
-    for (i = 0; i < 32; i++) {
-        uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)i * VIRTIO_MMIO_STRIDE;
-
-        if (mmio_read32(base + REG_MAGIC) != 0x74726976u) {
-            continue;
-        }
-
-        if (mmio_read32(base + REG_VERSION) != 2u) {
-            continue;
-        }
-
-        if (mmio_read32(base + REG_DEVICE_ID) != VIRTIO_ID_SOUND) {
-            continue;
-        }
-
-        snd.base = base;
-        snd.slot = i;
-
-        reg_write(REG_STATUS, 0);
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE);
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
+    while (virtio_open(VIRTIO_ID_SOUND, from, &snd.dev)) {
+        from = snd.dev.slot + 1;
 
         /*
-         * Only VIRTIO_F_VERSION_1, which is bit 32 and therefore in the
-         * upper word. Nothing sound-specific is asked for: the optional
-         * features are about message polling and shared-memory period
-         * notification, and both are optimisations for a driver that has
-         * measured something first.
+         * Only VIRTIO_F_VERSION_1, which `virtio_features` always asks for.
+         * Nothing sound-specific is: the optional features are about message
+         * polling and shared-memory period notification, and both are
+         * optimisations for a driver that has measured something first.
          */
-        reg_write(REG_DEVICE_FEATURES_SEL, 1);
-        (void)reg_read(REG_DEVICE_FEATURES);
-        reg_write(REG_DRIVER_FEATURES_SEL, 1);
-        reg_write(REG_DRIVER_FEATURES, 1u);
-        reg_write(REG_DRIVER_FEATURES_SEL, 0);
-        reg_write(REG_DRIVER_FEATURES, 0u);
-
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
-                            | STATUS_FEATURES_OK);
-
-        if ((reg_read(REG_STATUS) & STATUS_FEATURES_OK) == 0) {
+        if (!virtio_features(&snd.dev, 0)) {
             return false;               /* it would not take VERSION_1 */
         }
 
         /* virtio_snd_config: jacks, streams, chmaps, controls. */
-        snd.streams = mmio_read32(base + REG_CONFIG + 4);
+        snd.streams = virtio_config32(&snd.dev, 4);
 
         if (snd.streams == 0) {
             return false;
@@ -456,8 +354,7 @@ bool hal_snd_init(void)
         ring_setup(VQ_TX);
         ring_setup(VQ_RX);
 
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
-                            | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
+        virtio_ready(&snd.dev);
 
         if (!find_output_stream()) {
             return false;
@@ -503,7 +400,7 @@ bool hal_snd_init(void)
          * state it would touch exists - an interrupt into a half-built
          * driver is the kind of bug that only happens on a fast machine.
          */
-        gic_enable_spi(VIRTIO_INTID_BASE + snd.slot);
+        gic_enable_spi(VIRTIO_INTID_BASE + snd.dev.slot);
 
         return true;
     }
@@ -570,11 +467,11 @@ unsigned hal_snd_queued(void)
  */
 void snd_interrupt(unsigned slot)
 {
-    if (!snd.present || snd.slot != slot) {
+    if (!snd.present || snd.dev.slot != slot) {
         return;
     }
 
-    reg_write(REG_INTERRUPT_ACK, reg_read(REG_INTERRUPT_STATUS));
+    (void)virtio_ack_interrupt(&snd.dev);
 
     snd.woke++;
     snd.wants = true;
@@ -712,12 +609,12 @@ bool hal_snd_write(const void *pcm, unsigned bytes)
     q->avail.idx++;
     publish();
 
-    reg_write(REG_QUEUE_NOTIFY, VQ_TX);
+    virtio_notify(&snd.dev, VQ_TX);
 
     /* Acknowledged here rather than in an interrupt handler: nothing has
      * asked for this device's interrupt, and an unacknowledged one would be
      * redelivered for ever the moment something did. */
-    reg_write(REG_INTERRUPT_ACK, reg_read(REG_INTERRUPT_STATUS));
+    (void)virtio_ack_interrupt(&snd.dev);
 
     return true;
 }

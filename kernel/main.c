@@ -268,6 +268,40 @@ void kmain(void)
         boot_fact("no sound device; this machine is silent");
     }
 
+    /*
+     * And the network card, in the same scan and for the same reason.
+     *
+     * Brought up at boot rather than when something first wants to send,
+     * because the card has to be handed its receive buffers before a frame
+     * arrives - a device with nowhere to put one drops it, and the first
+     * thing that arrives on a network is usually somebody else's broadcast
+     * rather than an answer to us.
+     */
+    {
+        struct netdev card;
+
+        if (hal_net_init(&card)) {
+            unsigned i;
+
+            boot_fact_begin();
+            kputs("network: virtio-net, ");
+
+            for (i = 0; i < 6; i++) {
+                if (i > 0) {
+                    kputc(':');
+                }
+
+                kputx(card.mac[i], 2);
+            }
+
+            kputs(", MTU ");
+            kputu(card.mtu);
+            boot_fact_end();
+        } else {
+            boot_fact("no network card; this machine is on its own");
+        }
+    }
+
     thread_init();
     boot_stage("threads");
     boot_why("A fixed pool; two stacks each, so a stack overflow can report itself.");
@@ -412,6 +446,14 @@ void kmain(void)
          * which is not a failure of anything.
          */
         (void)process_grant_audio(init);
+
+        /*
+         * And the network card, on the same terms as the disk: init holds
+         * it so it can hand it on, and hands it to exactly one process.
+         * Ignored when it fails, because a machine with no card is a machine
+         * and everything on it still runs - which is not true of the screen.
+         */
+        (void)process_grant_net(init);
 
         /* At the indices init expects them, and checked rather than assumed:
          * a capability that lands one slot over is a server talking to the

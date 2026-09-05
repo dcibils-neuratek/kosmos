@@ -97,7 +97,28 @@ void     hal_fb_init(struct fb *out); // address, w, h, pitch, format
 void     hal_irq_init(void);
 void     hal_timer_init(uint32_t hz);
 uint64_t hal_ticks(void);
+
+// M11. Frames, and nothing above them: no addresses, no protocols, no
+// checksums. What an IP address means is not a driver's business, and a HAL
+// that grew one would be a HAL with an opinion about the internet.
+bool     hal_net_init(struct netdev *out);   // false when there is no card
+bool     hal_net_send(const void *frame, unsigned bytes);
+int      hal_net_recv(void *frame, unsigned max);   // 0 when nothing waiting
+bool     hal_net_arrived(void);
+bool     hal_net_present(void);
+bool     hal_net_info(struct netdev *out);
 ```
+
+`hal.h` is the authority and this list is a summary; where they disagree,
+that file is right and this one is stale.
+
+**And below the HAL, `virtio.c`.** Four devices on this board speak
+virtio-mmio - input, block, sound, network - and the handshake is identical
+for all four while the *rings* are not: block chains three descriptors and
+waits, input hands the device empty buffers, sound has four queues with
+different jobs. So the conversation is shared and the ring is not. That is
+not a HAL interface - no other board implements it - and it lives in
+`hal/qemu-virt/` for exactly that reason.
 
 An abstraction written against a single target is always the shape of that target with generic names. The right interface appears at milestone 2, once there is a second real target in front of you. Until then, the only rule that matters is this:
 

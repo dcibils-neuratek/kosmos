@@ -166,7 +166,29 @@
  */
 #define SYS_SLEEP      38   /* (ticks)                -> 0                  */
 
-#define SYS_MAX         39
+/*
+ * The network card: what it is, and frames both ways.
+ *
+ * **Frames, not packets.** What crosses here is an Ethernet frame with its
+ * header on it, exactly as it goes on the wire, because that is all the
+ * driver knows - `hal.h` says why. Addresses, protocols and checksums are
+ * the stack's, and the stack is a process.
+ *
+ * Only the process holding the card may ask, which is `SPAWN_NET`. A
+ * process that can send a raw frame can claim any address on the network
+ * and read every frame that reaches it, so this is a grant of the same
+ * weight as the disk: exactly one process gets it, and everything else
+ * reaches the network by asking that one.
+ *
+ * `SYS_NET_RECV` answers `SYS_NO_INPUT` when nothing is waiting, which is
+ * not an error and is what it does most of the time - the same convention
+ * `SYS_KEY_EVENT` uses.
+ */
+#define SYS_NET_INFO   39   /* (&info)                -> 0 or error         */
+#define SYS_NET_SEND   40   /* (ptr, len)             -> 0 or error         */
+#define SYS_NET_RECV   41   /* (ptr, max)             -> bytes, or none     */
+
+#define SYS_MAX         42
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -218,6 +240,19 @@
  * granted once, and listed by `ps` next to the console and the screen.
  */
 #define SPAWN_PROCCTL   8u
+
+/*
+ * The network card, handed on the same way as the disk and for a reason of
+ * the same weight.
+ *
+ * A process that can put a raw frame on the wire can claim any address on
+ * the network, answer for anybody, and read every frame that reaches the
+ * machine - whatever any namespace says about who owns what. So exactly one
+ * process gets it: the stack. Everything else reaches the network by asking
+ * that stack, which is what makes a connection a capability rather than a
+ * number anybody can name.
+ */
+#define SPAWN_NET      32u
 
 
 
@@ -431,6 +466,22 @@ struct sysinfo {
     uint32_t audio_channels;
     uint32_t audio_period;      /* bytes in one period */
     uint32_t audio_periods;     /* how many the device will hold */
+
+    /*
+     * The card's MTU, or 0 when there is none.
+     *
+     * Here rather than only in `SYS_NET_INFO` because "is there a card" and
+     * "give me the card" are different questions with different answers.
+     * `SYS_NET_INFO` is owner-only and has to be - a MAC is an identity, and
+     * a process that can read frames can read everybody's. Whether the
+     * machine has a network at all is a fact about the machine, which is
+     * what this whole struct is for, and init has to know it before it can
+     * decide who to hand the card to.
+     *
+     * The same arrangement `audio_period` has, and it exists for the same
+     * reason: `may_pass_audio` needed to ask without holding the device.
+     */
+    uint32_t net_mtu;
     uint32_t audio_dry;         /* periods that arrived at an empty device */
     uint32_t audio_floor;       /* smallest depth ever seen, in periods */
     uint32_t audio_wakes;       /* times the device raised its interrupt */
@@ -440,6 +491,28 @@ struct sysinfo {
     uint32_t current_el;
     uint32_t page_size;
 };
+
+/*
+ * What SYS_NET_INFO answers.
+ *
+ * The MAC is six bytes and a byte array rather than a number, because it is
+ * an address rather than a quantity: there is no arithmetic anybody should
+ * do on it, and the order it goes on the wire is the order it is written.
+ */
+struct netinfo {
+    uint8_t  mac[6];
+    uint16_t present;               /* 0 when there is no card */
+    uint32_t mtu;
+};
+
+/*
+ * The largest frame any board here carries, so userland can size a buffer
+ * without including the HAL. The same arrangement as
+ * `HAL_SND_PERIOD_BYTES_MAX`: a number the ABI repeats, where `hal.h` holds
+ * the board's real one and `sys.net()` reports the MTU the card actually
+ * has. They agree today because there is one board.
+ */
+#define NET_FRAME_MAX  1514u
 
 /*
  * What SYS_DISK_INFO answers.

@@ -33,6 +33,7 @@ local ROLE_LIBFS     = 13 -- serves /lib: the libraries carried in the image
 local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
 local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
 local ROLE_AUDIO     = 16 -- serves /dev/audio: the one process that may play
+local ROLE_NET       = 17 -- serves /net: the one process that holds the card
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -87,6 +88,30 @@ local function may_pass_audio()
   return audio_seen
 end
 
+--
+-- And the same question about the network card, for the fourth time.
+--
+-- Through `sys.info` rather than `sys.net`, and that is the whole lesson of
+-- this one: `sys.net` is owner-only and has to be, because a MAC is an
+-- identity and whoever can read frames can read everybody's. But *whether
+-- there is a card* is a fact about the machine, and the shell has to be able
+-- to ask it without holding one. Asking the wrong way made every launch say
+-- "this process does not hold the network card".
+--
+-- Cached like the other two because it cannot change while the machine runs.
+--
+local net_seen = nil
+
+local function may_pass_net()
+  if net_seen == nil then
+    local i = sys.info()
+
+    net_seen = (i ~= nil) and (i.net_mtu or 0) > 0
+  end
+
+  return net_seen
+end
+
 local SPAWN_CONSOLE = 1
 local SPAWN_SCREEN  = 2
 
@@ -101,6 +126,12 @@ local SPAWN_DISK    = 4
 -- the kernel when the launcher does not hold it itself.
 local SPAWN_PROCCTL = 8
 local SPAWN_AUDIO   = 16
+
+-- The network card. The disk's grant, pointed outwards: a process that can
+-- put a raw frame on the wire can claim any address on the network and read
+-- every frame that reaches the machine, whatever any namespace says. So one
+-- process gets it - the stack - and everything else asks that one.
+local SPAWN_NET     = 32
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -725,6 +756,74 @@ local function new_namespace()
     end
 
     return CON
+  end
+
+  --
+  -- The network kit, loaded the same lazy way and for the same reason: a
+  -- machine with no card still runs, and a program that never touches the
+  -- network should not pay for the kit being there.
+  --
+  local NET = nil
+
+  local function network_kit()
+    if NET == nil then
+      NET = sys.kit("network") or false
+    end
+
+    return NET
+  end
+
+  --
+  -- `/net`, through the kit, exactly as the console goes through its own.
+  --
+  -- **A program never sees the capability.** It says `fs.ping("/net", ...)`
+  -- and the namespace resolves the path, checks that what is mounted there
+  -- really is a network stack, and hands the kit the capability. That is
+  -- what keeps the rule the whole system runs on - what you were not handed,
+  -- you cannot reach - and it is why there is no `fs.capability`.
+  --
+  local function net_at(path)
+    local net = network_kit()
+    local capability, _, _, proto = resolve(path)
+
+    if not net then return nil, nil, "there is no network kit" end
+
+    if not capability or proto ~= "net" then
+      return nil, nil, "there is no network stack at " .. tostring(path)
+    end
+
+    return net, capability
+  end
+
+  function ns.net_info(path)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.info(capability)
+  end
+
+  function ns.net_configure(path, address, netmask, gateway)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.configure(capability, address, netmask, gateway)
+  end
+
+  --
+  -- One echo, and the answer.
+  --
+  -- This blocks, which is what a ping is. The *stack* does not: it parks
+  -- this caller and goes on serving, so one program waiting on a host that
+  -- is not there does not stop another from reading a file.
+  --
+  function ns.ping(path, to, seq, payload)
+    local net, capability, why = net_at(path or "/net")
+
+    if not net then return nil, why end
+
+    return net.ping(capability, to, seq, payload)
   end
 
   -- One exchange, with the reply decoded and the error turned back into a
@@ -2656,7 +2755,7 @@ end
 local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
-                          lib_cap, app_cap, disk_cap, audio_cap)
+                          lib_cap, app_cap, disk_cap, audio_cap, net_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
   ns.mount("/data", ramfs_cap, nil, "ram")
@@ -2678,6 +2777,19 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- rather than a refusal.
   --
   if audio_cap then ns.mount("/dev/audio", audio_cap) end
+
+  --
+  -- `/net`, not `/dev/net`, and the distinction is the one the window
+  -- manager settled: a *card* is a device and the stack is someone you ask.
+  -- The card is behind `SPAWN_NET` and has no name in the namespace at all,
+  -- because nothing but the stack may reach it.
+  --
+  -- Plan 9 put the whole of networking under `/net` as files - `/net/tcp/
+  -- clone`, then a `ctl` and a `data` - and `roadmap.md` M12 keeps that as
+  -- the target. What is here is the same name with a declared protocol
+  -- behind it, because there are no connections yet to be directories of.
+  --
+  if net_cap then ns.mount("/net", net_cap, nil, "net") end
 
   -- The programs this image carries. Read-only, and served by a process of
   -- its own like everything else.
@@ -3224,11 +3336,15 @@ query. `find` and `watch` are built on exactly these two calls.
       if want == "audio" and may_pass_audio() then
         flags = flags | SPAWN_AUDIO
       end
+      if want == "network" and may_pass_net() then
+        flags = flags | SPAWN_NET
+      end
     end
 
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
-                                        app_cap, disk_cap, audio_cap },
+                                        app_cap, disk_cap, audio_cap,
+                                        net_cap },
                          flags)
 
     if not id then
@@ -3240,7 +3356,7 @@ query. `find` and `watch` are built on exactly these two calls.
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7, audio = 8,
+      disk = 7, audio = 8, net = 9,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -3678,6 +3794,7 @@ if role == ROLE_INIT then
   local APPFS_EP = sys.endpoint()
   local DISKFS_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
+  local NET_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -3746,7 +3863,74 @@ if role == ROLE_INIT then
   local audio = start("the audio server", ROLE_AUDIO, { AUDIO_EP },
                       may_pass_audio() and SPAWN_AUDIO or 0)
 
+  --
+  -- And the network stack, on exactly the same terms.
+  --
+  -- One owner, for a stronger reason than sound's: a process that can put a
+  -- raw frame on the wire can claim any address on the network and read
+  -- every frame that reaches the machine. So this is the disk's grant
+  -- pointed outwards, and it goes to one process.
+  --
+  -- Guarded like the disk and the screen, because the kernel refuses a flag
+  -- this process does not hold and a machine with no card is a supported way
+  -- to run. The server starts either way and answers "there is no card",
+  -- which is what makes `ping` say something useful rather than not start.
+  --
+  local net = start("the network stack", ROLE_NET, { NET_EP },
+                    may_pass_net() and SPAWN_NET or 0)
+
+  --
+  -- And its address, which init has to give it because the stack has no
+  -- namespace to read one from.
+  --
+  -- **Static, because DHCP needs UDP** and there is none yet. The defaults
+  -- are QEMU's user-mode network, which is what this machine boots on:
+  -- 10.0.2.15 behind a NAT with the router and the DNS at 10.0.2.2 and
+  -- 10.0.2.3. `/home/.network` overrides them, so a real board is a file
+  -- rather than a rebuild - the same arrangement `.appearance` has.
+  --
+  if may_pass_net() then
+    --
+    -- init has no namespace of its own - it hands them out - so this makes
+    -- one holding only what the address needs: `/net` to configure, and the
+    -- disk to read the settings from if there is one.
+    --
+    local mine = new_namespace()
+
+    mine.mount("/net", NET_EP, nil, "net")
+
+    if DISKFS_EP then mine.mount("/home", DISKFS_EP, "/home") end
+
+    local address, netmask, gateway = "10.0.2.15", "255.255.255.0", "10.0.2.2"
+    local ok_read, saved = pcall(mine.read, "/home/.network")
+
+    if ok_read and type(saved) == "table" then
+      address = saved.address or address
+      netmask = saved.netmask or netmask
+      gateway = saved.gateway or gateway
+    end
+
+    local function bytes(text)
+      local a, b, c, d =
+        tostring(text):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+
+      if not a then return "\0\0\0\0" end
+
+      return string.char(tonumber(a) % 256, tonumber(b) % 256,
+                         tonumber(c) % 256, tonumber(d) % 256)
+    end
+
+    local ok, why = mine.net_configure("/net", bytes(address),
+                                       bytes(netmask), bytes(gateway))
+
+    if not ok then
+      line("init: the network stack would not take its address: "
+           .. tostring(why))
+    end
+  end
+
   local _ = audio
+  local _net = net
 
   -- The shell gets both endpoints, in the order it expects them, and the
   -- screen.
@@ -3764,7 +3948,7 @@ if role == ROLE_INIT then
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
-                        APPFS_EP, DISKFS_EP, AUDIO_EP },
+                        APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -3786,8 +3970,19 @@ if role == ROLE_INIT then
                       -- any real board without a framebuffer - die at boot
                       -- with the shell never starting. The same mistake,
                       -- twice, in the same function.
+                      --
+                      -- And the network card, on exactly the terms above:
+                      -- the shell holds it in order to *pass it on*, because
+                      -- the kernel refuses a flag the parent does not hold
+                      -- and the stack is started from a prompt. Guarded like
+                      -- the screen and the disk, because a machine with no
+                      -- card is a supported way to run and asking anyway
+                      -- would kill the shell at boot on one - which is the
+                      -- same mistake this function has now made four times.
+                      --
                       (may_pass_screen() and SPAWN_SCREEN or 0)
                       | (may_pass_audio() and SPAWN_AUDIO or 0)
+                      | (may_pass_net() and SPAWN_NET or 0)
                       | SPAWN_PROCCTL)
 
   -- And now it does what an init does, which is outlive everything and
@@ -3825,7 +4020,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8)
   return
 end
 
@@ -3972,6 +4167,7 @@ if role == ROLE_RUNNER then
   -- After `/dev`, because longest prefix wins and this is a different
   -- server from the one that answers the rest of it.
   if req.audio   then ns.mount("/dev/audio",   req.audio)   end
+  if req.net     then ns.mount("/net",         req.net, nil, "net") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -4032,7 +4228,7 @@ if role == ROLE_RUNNER then
     -- "nothing is playing" while two tones were running, because they were
     -- not able to reach the server to say otherwise.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
-                   req.lib, req.app, req.disk, req.audio }
+                   req.lib, req.app, req.disk, req.audio, req.net }
     local mounts = {}
 
     --
@@ -4102,6 +4298,9 @@ if role == ROLE_RUNNER then
       if want == "audio" and may_pass_audio() then
         flags = flags | SPAWN_AUDIO
       end
+      if want == "network" and may_pass_net() then
+        flags = flags | SPAWN_NET
+      end
     end
 
     local id = sys.spawn(RUNNER_ROLE, caps, flags)
@@ -4115,7 +4314,7 @@ if role == ROLE_RUNNER then
       path = path, args = argument or "", cwd = where or req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7, audio = 8,
+      disk = 7, audio = 8, net = 9,
       mounts = (#mounts > 0) and mounts or nil,
     })
 

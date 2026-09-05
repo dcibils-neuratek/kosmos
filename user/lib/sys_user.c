@@ -187,6 +187,106 @@ static int l_sound(lua_State *L)
 }
 
 /*
+ * `sys.net()` - what card this machine has, or nil.
+ *
+ * A table with `mac` as a string of six bytes and `mtu` as a number. The
+ * MAC is bytes rather than the usual colon-separated text for the reason
+ * `hal_pointer_poll` reports device units: what it *means* is the caller's
+ * business, and a driver that formatted it would be deciding how somebody
+ * else prints it.
+ */
+static int l_net(lua_State *L)
+{
+    struct netinfo info;
+    long status = kosmos_net_info(&info);
+
+    /*
+     * **Nil rather than an error when this process was not granted the
+     * card**, which is `sys.screen`'s answer to the same question and not
+     * `sys.sound`'s.
+     *
+     * The difference is what the caller is doing. Asking *whether I have a
+     * card* is a question every program may ask, and for one that was not
+     * granted one the honest answer is no - it cannot use the network, and
+     * why is not its business. Trying to *send* without holding it is a
+     * different thing: that is a program doing something it cannot do, and
+     * `net_send` says so.
+     *
+     * Raising here made a machine with no card fail differently from a
+     * program with no grant, and they are the same fact from inside the
+     * program.
+     */
+    if (status == SYS_ERR_DENIED || status != 0 || info.present == 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, 0, 2);
+    lua_pushlstring(L, (const char *)info.mac, sizeof(info.mac));
+    lua_setfield(L, -2, "mac");
+    lua_pushinteger(L, (lua_Integer)info.mtu);
+    lua_setfield(L, -2, "mtu");
+
+    return 1;
+}
+
+/*
+ * `sys.net_send(frame)` - one Ethernet frame, header included.
+ *
+ * True when the card took it, false when its ring is full - which is a fact
+ * about a busy card rather than an error, the same distinction
+ * `sys.sound` draws.
+ */
+static int l_net_send(lua_State *L)
+{
+    size_t len;
+    const char *frame = luaL_checklstring(L, 1, &len);
+    long status;
+
+    if (len == 0 || len > NET_FRAME_MAX) {
+        return luaL_error(L, "%d bytes is not a frame", (int)len);
+    }
+
+    status = kosmos_net_send(frame, (unsigned long)len);
+
+    if (status == SYS_ERR_DENIED) {
+        return luaL_error(L, "this process does not hold the network card");
+    }
+
+    lua_pushboolean(L, status == 0);
+
+    return 1;
+}
+
+/*
+ * `sys.net_recv()` - the next frame, or nil when none is waiting.
+ *
+ * Nil is the ordinary answer and not an error. A string rather than a
+ * buffer because a frame is at most 1514 bytes and one-shot: this is the
+ * case `CLAUDE.md`'s rule about streams explicitly allows, and the ring
+ * that a *stream* of them needs is between the stack and its clients rather
+ * than here.
+ */
+static int l_net_recv(lua_State *L)
+{
+    char frame[NET_FRAME_MAX];
+    long got = kosmos_net_recv(frame, sizeof(frame));
+
+    if (got == SYS_ERR_DENIED) {
+        return luaL_error(L, "this process does not hold the network card");
+    }
+
+    if (got <= 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushlstring(L, frame, (size_t)got);
+
+    return 1;
+}
+
+/*
  * `sys.sound_queued()` - periods the device has not finished with.
  *
  * The deadline as a number, which `roadmap.md` M11a promises instead of a
@@ -1357,6 +1457,7 @@ static int l_info(lua_State *L)
     SET("audio_channels",   info.audio_channels);
     SET("audio_period",     info.audio_period);
     SET("audio_periods",    info.audio_periods);
+    SET("net_mtu",          info.net_mtu);
     /* The two that say whether it is *on time*, rather than how much of it
      * there was. See `hal_snd_dry`. */
     SET("audio_dry",        info.audio_dry);
@@ -2143,6 +2244,7 @@ void kosmos_pdf_kit(lua_State *L);
 void kosmos_gl_kit(lua_State *L);
 void kosmos_console_kit(lua_State *L);
 void kosmos_mp3_kit(lua_State *L);
+void kosmos_net_kit(lua_State *L);
 
 static const struct {
     const char *name;
@@ -2153,6 +2255,7 @@ static const struct {
     { "gl",       kosmos_gl_kit },
     { "console",  kosmos_console_kit },
     { "mp3",      kosmos_mp3_kit },
+    { "network",  kosmos_net_kit },
     { NULL, NULL }
 };
 
@@ -2220,6 +2323,9 @@ static const luaL_Reg sys_functions[] = {
     { "region_write", l_region_write },
     { "region_read",  l_region_read },
     { "disk",        l_disk },
+    { "net",         l_net },
+    { "net_send",    l_net_send },
+    { "net_recv",    l_net_recv },
     { "disk_read",   l_disk_read },
     { "disk_write",  l_disk_write },
     { "boot",     l_boot_option },

@@ -285,6 +285,9 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **The read-only half of the image is mapped where it lies**, one copy for the machine. Permissions live in the mapping, not the page, so sharing 2.8 MB nobody can write costs no isolation. A process holds 2224 KB where it held 7232 | design.md §4.1.1 |
 | Sep 2026 | **MMIO is one hand-written instruction**, not a volatile store. GCC chose a post-indexed store and ARM sets ISV=0 for writeback, so no hypervisor can decode it - correct on metal, unbootable under `hvf` | arch/aarch64/mmio.h |
 | Sep 2026 | **A query is scoped to the path it was asked at**, not the volume. One disk mounted at three prefixes was answering `/home` with `/system`'s files, and the namespace was putting the prefix on twice | run_queries.py |
+| Sep 2026 | **The virtio transport is one file.** It was three copies of a handshake whose *order* is the protocol; the reason not to share it - "before there are two" - expired two devices ago, and the network card is the fourth | hal/qemu-virt/virtio.c |
+| Sep 2026 | **A card is a device; a stack is someone you ask.** `/net` is a server behind `SPAWN_NET` - the disk's grant pointed outwards - and the card has no name in any namespace, because nothing but the stack may reach it | user/servers/net.c |
+| Sep 2026 | **Ping needs no TCP**, and half a TCP is worse than none. Ethernet, ARP, IPv4 and ICMP is what a round trip costs; `netproto.h` records where the shared ring goes when a *stream* arrives, so nobody discovers a message worked for the first ten kilobytes | netproto.h |
 
 ---
 

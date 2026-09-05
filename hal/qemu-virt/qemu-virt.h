@@ -47,6 +47,9 @@ void input_interrupt(unsigned slot);
 /* The sound device has finished with a period. `slot` is which window. */
 void snd_interrupt(unsigned slot);
 
+/* A frame has arrived, or one has been sent. `slot` is which window. */
+void net_interrupt(unsigned slot);
+
 /* The interrupt to service, or 1023 when there is none. */
 unsigned gic_acknowledge(void);
 void     gic_end_of_interrupt(unsigned intid);
@@ -83,10 +86,13 @@ bool fwcfg_entry(unsigned index, char *name, size_t name_len,
 bool fwcfg_read(uint16_t select, void *buffer, uint32_t length);
 
 /*
- * The keyboard: virtio-input over virtio-mmio. See keyboard.c, which also
- * holds the virtio transport - there is one virtio device on this board, and
- * splitting the transport out before there are two would be inventing an
- * interface against a single caller.
+ * The keyboard: virtio-input over virtio-mmio. See input.c.
+ *
+ * This used to say that input.c *also holds the virtio transport*, on the
+ * grounds that there is one virtio device on this board and splitting the
+ * transport out before there are two would be inventing an interface
+ * against a single caller. There are four - input, block, sound and now the
+ * network - and the transport is `virtio.c`.
  */
 
 /* One character, or -1 when nothing is waiting. Polled, like the UART. */

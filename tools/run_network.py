@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
+"""A frame leaves the machine, and this computer reads it off the wire.
+
+**Nothing inside the guest can establish this.** `sys.net_send` returning
+true says the card took the bytes, which is a statement about a virtqueue
+and not about a network; a driver that filled the ring correctly and never
+kicked the device would pass that check for ever. So the witness is
+outside: QEMU's `filter-dump` writes a pcap, and this reads it.
+
+What it actually pins down, in order of how easy each is to get wrong:
+
+  * The **twelve-byte virtio-net header** is right. It goes in front of every
+    frame in both directions and is not part of the packet. The legacy layout
+    is ten bytes, and a driver that used the wrong length hands over a frame
+    two bytes out of alignment - which decodes as a different protocol
+    rather than as an error, so nothing complains and everything is wrong.
+    The destination address landing at byte 0 of the capture is what says
+    the header was the length the driver thought.
+  * The **descriptor flags** are the right way round. Transmit buffers are
+    read by the device and receive buffers are written by it; getting that
+    backwards is a ring that looks correct and moves nothing.
+  * The **MAC came from the card** rather than being invented. The source
+    address in the capture is what `VIRTIO_NET_F_MAC` reported, so a
+    feature that was asked for and not granted shows up here.
+
+And the second boot checks the branch this codebase has got wrong four
+times: a machine with no card must still reach a prompt. Every device grant
+in `init.lua` carries a comment about the time it did not.
+"""
+
+import os
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import run_screenshot
+
+
+ETHERTYPE = 0x88b5          # IEEE's local-experimental block; see netframe.lua
+BROADCAST = "ff:ff:ff:ff:ff:ff"
+
+
+class Failure(Exception):
+    pass
+
+
+def frames(path):
+    """Every frame in a pcap, as (destination, source, ethertype, payload)."""
+    with open(path, "rb") as f:
+        data = f.read()
+
+    if len(data) < 24:
+        raise Failure("the capture has no header: QEMU wrote nothing at all")
+
+    magic, _, _, _, _, _, link = struct.unpack("<IHHiIII", data[:24])
+
+    if magic != 0xa1b2c3d4:
+        raise Failure(f"not a little-endian pcap (magic {magic:08x})")
+
+    if link != 1:
+        raise Failure(f"link type {link}, expected 1 (Ethernet)")
+
+    out = []
+    at = 24
+
+    while at + 16 <= len(data):
+        _, _, caplen, wirelen = struct.unpack("<IIII", data[at:at + 16])
+        at += 16
+        frame = data[at:at + caplen]
+        at += caplen
+
+        if len(frame) < 14:
+            continue                # too short to be a frame; not ours
+
+        out.append((
+            ":".join("%02x" % b for b in frame[0:6]),
+            ":".join("%02x" % b for b in frame[6:12]),
+            struct.unpack(">H", frame[12:14])[0],
+            frame[14:],
+            wirelen,
+        ))
+
+    return out
+
+
+def boot(image, extra, commands, seconds=90):
+    """One run, with whatever QEMU arguments the caller wants added."""
+    saved = run_screenshot.QEMU_ARGS
+    run_screenshot.QEMU_ARGS = saved + extra
+
+    try:
+        guest = run_screenshot.Guest(image, seconds)
+    finally:
+        run_screenshot.QEMU_ARGS = saved
+
+    try:
+        guest.wait_for(run_screenshot.PROMPT, "the prompt")
+        guest.seen = ""
+
+        for command in commands:
+            guest.type(command + "\n")
+            guest.wait_for(run_screenshot.PROMPT, command)
+
+        return guest.seen.replace("\r", "")
+    finally:
+        guest.close()
+
+
+def main():
+    image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
+    checks = 0
+
+    work = tempfile.mkdtemp()
+    pcap = os.path.join(work, "frames.pcap")
+
+    try:
+        # ---- with a card: a frame goes out and is captured ----
+        out = boot(image, [
+            "-netdev", "user,id=net0",
+            "-device", "virtio-net-device,netdev=net0",
+            "-object", f"filter-dump,id=dump0,netdev=net0,file={pcap}",
+        ], ["netframe 2"])
+
+        if "no network card" in out:
+            raise Failure("the machine did not find the card it was given.\n"
+                          + out[-800:])
+
+        checks += 1
+
+        if "sent" not in out:
+            raise Failure("the card would not take the frame.\n" + out[-800:])
+
+        checks += 1
+
+        mine = [f for f in frames(pcap) if f[2] == ETHERTYPE]
+
+        if not mine:
+            everything = frames(pcap)
+            raise Failure(
+                "the frame never reached the wire. The guest said it sent "
+                f"one; the capture holds {len(everything)} frame(s), none "
+                f"with ethertype 0x{ETHERTYPE:04x}."
+            )
+
+        checks += 1
+
+        dst, src, _, payload, wirelen = mine[0]
+
+        if dst != BROADCAST:
+            raise Failure(
+                f"the destination came out as {dst}, not {BROADCAST}. The "
+                "frame is offset: almost certainly the virtio-net header is "
+                "not the twelve bytes VERSION_1 requires."
+            )
+
+        checks += 1
+
+        #
+        # The source is the card's own address, which is only true if
+        # VIRTIO_NET_F_MAC was granted and configuration space was read a
+        # byte at a time. QEMU's default for virtio-net is 52:54:00:12:34:56
+        # and this checks the shape rather than the value, because the value
+        # is QEMU's to change.
+        #
+        if not src.startswith("52:54:00"):
+            raise Failure(
+                f"the source address is {src}, which is not the card's. "
+                "Either NET_F_MAC was not granted or the MAC was read wrong."
+            )
+
+        checks += 1
+
+        if b"kosmos" not in payload:
+            raise Failure(f"the payload arrived as {payload!r}")
+
+        checks += 1
+
+        if wirelen != 14 + len(payload):
+            raise Failure(
+                f"the frame is {wirelen} bytes on the wire but its header "
+                f"and payload are {14 + len(payload)}. The length handed to "
+                "the descriptor counts the virtio header when it should not."
+            )
+
+        checks += 1
+
+        # ---- and the whole path: ARP, IP, ICMP, and an answer ----
+        #
+        # **The gateway, not the internet.** slirp answers ARP for 10.0.2.2
+        # and replies to an echo without a packet leaving this computer, so
+        # this checks the entire stack - resolve, route, build, checksum,
+        # match the reply to the caller - and still passes on a train. A test
+        # that needs 8.8.8.8 is a test that fails for a reason that has
+        # nothing to do with the code.
+        #
+        out = boot(image, [
+            "-netdev", "user,id=net0",
+            "-device", "virtio-net-device,netdev=net0",
+        ], ["ping 10.0.2.2 2"])
+
+        if "no network card" in out or "has no address" in out:
+            raise Failure("the stack did not come up.\n" + out[-900:])
+
+        checks += 1
+
+        if "2 sent, 2 received" not in out:
+            raise Failure(
+                "the gateway did not answer both echoes. Everything from ARP "
+                "to the checksum is on this path, and a wrong field produces "
+                "no answer rather than a wrong one.\n" + out[-900:])
+
+        checks += 1
+
+        if "round trip min/avg/max" not in out:
+            raise Failure("no round trip was reported.\n" + out[-900:])
+
+        checks += 1
+
+        # ---- and with no card at all ----
+        #
+        # The branch this codebase has got wrong four times, each recorded in
+        # a comment beside a device grant in `init.lua`: the kernel refuses a
+        # spawn that passes on authority the parent does not hold, so asking
+        # unconditionally kills the shell at boot on a machine without the
+        # device. A machine with no network is a machine.
+        #
+        out = boot(image, [], ["netframe"])
+
+        if "no network card" not in out:
+            raise Failure(
+                "a machine with no card did not say so.\n" + out[-800:])
+
+        checks += 1
+
+        print(f"PASS: {checks} checks on the network: a frame this computer "
+              "read out of a capture, and a host that answered.")
+        return 0
+    except Failure as e:
+        print(f"FAIL: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

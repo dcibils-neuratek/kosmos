@@ -97,6 +97,8 @@ SRCS := boot/start.S \
         hal/qemu-virt/timer.c \
         hal/qemu-virt/rtc.c \
         hal/qemu-virt/power.c \
+        hal/qemu-virt/virtio.c \
+        hal/qemu-virt/net.c \
         hal/qemu-virt/snd.c \
         hal/qemu-virt/fwcfg.c \
         hal/qemu-virt/fb.c \
@@ -344,6 +346,8 @@ USER_SRCS := user/init/start.S \
              user/servers/appfs.c \
              user/servers/console.c \
              user/servers/ramfs.c \
+             user/servers/net.c \
+             user/lib/net_kosmos.c \
              user/lib/lua_glue.c \
              user/lib/sys_user.c \
              user/lib/gfx.c \
@@ -944,11 +948,31 @@ AUDIO_FLAGS := $(if $(NOAUDIO),,-audiodev coreaudio$(comma)id=snd0 \
 #
 ACCEL := $(if $(FAST),-accel hvf -cpu host,-cpu cortex-a72)
 
+#
+# The network, and what `user` mode actually is.
+#
+# QEMU's `-netdev user` is slirp: a NAT in the emulator, no privileges
+# needed. The guest is 10.0.2.15, the gateway and DNS are 10.0.2.2 and
+# 10.0.2.3, and slirp answers ARP for them. **Guest ICMP is translated into
+# a host ping socket** rather than put on a wire, which works unprivileged
+# on macOS - so `ping 8.8.8.8` really does reach 8.8.8.8, through a
+# translation rather than as raw ICMP.
+#
+# Real layer 2 is `-netdev vmnet-shared`, which needs root. Worth knowing
+# before anybody claims a frame went out exactly as written.
+#
+# `make NONET=1 qemu` leaves the card out, which is how the no-card branch
+# of `hal_net_init` gets exercised.
+#
+NET_FLAGS := $(if $(NONET),,-netdev user$(comma)id=net0 \
+                            -device virtio-net-device$(comma)netdev=net0)
+
 QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
              $(AUDIO_FLAGS) \
+             $(NET_FLAGS) \
              -drive file=$(DISK),format=raw,if=none,id=disk \
              -device virtio-blk-device,drive=disk \
              $(BOOTARG) \
@@ -961,6 +985,7 @@ QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M \
 # to take key presses from, so the virtio device would sit there empty.
 QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -nographic \
                     -global virtio-mmio.force-legacy=false \
+                    $(NET_FLAGS) \
                     -drive file=$(DISK),format=raw,if=none,id=disk \
                     -device virtio-blk-device,drive=disk \
                     $(BOOTARG) \
@@ -1152,6 +1177,11 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# which is what it did on the disk for as long as the disk could
 	@# answer.
 	python3 tools/run_queries.py $(TARGET)
+	@# A frame off the card and onto the wire, read back out of QEMU's own
+	@# capture - because nothing inside the guest can establish that one
+	@# left. And a second boot with no card, which is the branch every
+	@# device grant in init.lua carries a comment about getting wrong.
+	python3 tools/run_network.py $(TARGET)
 
 # Used for a while, then asked whether it gave everything back.
 #

@@ -8,6 +8,57 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**Kosmos is on the internet.** `ping 8.8.8.8` answers, in about 22 ms
+through QEMU's NAT.
+
+Four pieces, each with its own test:
+
+`hal/qemu-virt/virtio.c` is **the transport, once**. It was three copies -
+`blk.c`, `input.c`, `snd.c` - of a handshake whose *order* is the protocol,
+and `qemu-virt.h` recorded the reason not to share it: "splitting the
+transport out before there are two would be inventing an interface against
+a single caller". That expired two devices ago and the card is the fourth.
+What is shared is the conversation; what is not is the ring, because block
+chains three descriptors and waits, input hands the device empty buffers,
+and sound has four queues with different jobs. A generic ring over those
+would be the same mistake one layer up.
+
+`hal/qemu-virt/net.c` is **virtio-net**: two queues running in opposite
+directions, a twelve-byte header the wire never sees, and `NET_F_MAC`
+asked for and checked rather than assumed. `run_network.py` reads QEMU's
+own pcap, because nothing inside the guest can establish that a frame left
+it - `sys.net_send` returning true is a statement about a virtqueue.
+
+`user/servers/net.c` is **Ethernet, ARP, IPv4 and ICMP**, in C because it is
+a server on the packet path. Fragments and IP options are refused rather
+than half-handled. `SPAWN_NET` is the disk's grant pointed outwards - whoever
+can send a raw frame can claim any address and read every frame that arrives
+- so one process holds the card and `/net` is what everything else asks.
+A card is a device; a stack is someone you ask.
+
+`/kits/network` and `ping`. **No capability leaves the namespace**: a program
+says `fs.ping("/net", ...)`, the namespace resolves and hands the kit the
+capability, exactly as `fs.wait_input` does for the console. There is
+deliberately no `fs.capability`.
+
+**No TCP, and that is not an omission.** Ping needs none of it, and half a
+TCP is worse than none. `netproto.h` records where the shared ring goes when
+a *stream* arrives - device-to-driver is already a ring, an echo is the
+one-shot case the rule allows, and a byte stream is a period with a
+different clock - so that decision is made before somebody finds a message
+worked for the first ten kilobytes.
+
+Three things that went wrong on the way, all the same shape: **a question
+asked in the wrong place.** `net_mtu` landed inside the `hal_snd_present()`
+branch, so a machine with a card and no speaker reported no network.
+`sys.net()` raised for a process that was not granted the card, when from
+inside a program "no card" and "not mine" are the same fact - it returns nil
+now, like `sys.screen()`. And the shell has to *hold* the card to pass it on,
+which `init.lua` has now got wrong four times; the no-card boot is a
+permanent check rather than a comment.
+
+---
+
 **Queries were returning the wrong paths for the whole disk, and no test
 looked.** One disk is mounted three times - `/system`, `/user`, `/home`,
 each naming a subtree of itself - so the namespace mapped `/home/doc.pdf`
@@ -198,13 +249,19 @@ visible.
 
 ## Next, in order
 
-1. **Get Info, showing and editing attributes.** The query engine works and
+1. **TCP**, then telnet, then SSH. The state machine, retransmission,
+   windows and four timers, with the shared ring `netproto.h` describes
+   between the stack and its clients - a byte stream is exactly what a
+   message must not carry. Telnet first because it is a line protocol and
+   proves the whole path; SSH is that path plus cryptography, which is the
+   largest thing here and the one where a subtle bug is silent.
+2. **Get Info, showing and editing attributes.** The query engine works and
    nothing writes an attribute, so the search box finds nothing until you
    use `attr` at a prompt. This is what makes M7 visible.
-2. **A preferences app for file types.** `filetypes.by_extension` is
+3. **A preferences app for file types.** `filetypes.by_extension` is
    compiled into the image; it wants to be a file in `/home` that an
    application edits, the way `.appearance` already is.
-3. **A name in the index.** A query is over attributes, so `name:*.png`
+4. **A name in the index.** A query is over attributes, so `name:*.png`
    cannot be one and the search box filters locally instead. BeOS indexed
    `name` precisely so that it could be a query rather than a walk.
 3. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`

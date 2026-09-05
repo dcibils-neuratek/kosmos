@@ -11,12 +11,11 @@
  * interrupts delivered to one, and neither exists. Building both here would
  * make the filesystem milestone a milestone about driver infrastructure.
  *
- * The bring-up is the same shape as virtio-input next door - scan the
- * windows, negotiate features, hand over a ring - and the ring structures
- * are deliberately a second copy rather than a shared header. Two devices
- * is not enough to know what the shared interface should look like, which
- * is the argument `hal.md` makes about the HAL itself, and the cost of
- * being wrong about it is a change to a working keyboard.
+ * The bring-up - scan the windows, negotiate features, hand over a ring -
+ * is `virtio.c` now. It was a second copy of input's on purpose, on the
+ * grounds that two devices is not enough to know what the shared interface
+ * should look like; there are four, and that argument expired somewhere
+ * around the third.
  *
  * What differs from input, and it is the whole of the file: input hands the
  * device empty buffers and waits to be given events. A block request is a
@@ -39,51 +38,8 @@
 
 #include "hal.h"
 #include "qemu-virt.h"
+#include "virtio.h"
 #include "mmio.h"
-
-/* virtio_mmio.h, the same registers input.c uses. */
-#define REG_MAGIC               0x000
-#define REG_VERSION             0x004
-#define REG_DEVICE_ID           0x008
-#define REG_DEVICE_FEATURES     0x010
-#define REG_DEVICE_FEATURES_SEL 0x014
-#define REG_DRIVER_FEATURES     0x020
-#define REG_DRIVER_FEATURES_SEL 0x024
-#define REG_QUEUE_SEL           0x030
-#define REG_QUEUE_NUM_MAX       0x034
-#define REG_QUEUE_NUM           0x038
-#define REG_QUEUE_READY         0x044
-#define REG_QUEUE_NOTIFY        0x050
-#define REG_INTERRUPT_STATUS    0x060
-#define REG_INTERRUPT_ACK       0x064
-#define REG_STATUS              0x070
-#define REG_QUEUE_DESC_LOW      0x080
-#define REG_QUEUE_DESC_HIGH     0x084
-#define REG_QUEUE_AVAIL_LOW     0x090
-#define REG_QUEUE_AVAIL_HIGH    0x094
-#define REG_QUEUE_USED_LOW      0x0a0
-#define REG_QUEUE_USED_HIGH     0x0a4
-#define REG_CONFIG              0x100
-
-#define VIRTIO_MAGIC        0x74726976u
-#define VIRTIO_VERSION_1    2
-#define VIRTIO_ID_BLOCK     2           /* virtio_ids.h */
-
-#define STATUS_ACKNOWLEDGE  1u
-#define STATUS_DRIVER       2u
-#define STATUS_DRIVER_OK    4u
-#define STATUS_FEATURES_OK  8u
-#define STATUS_FAILED       0x80u
-
-#define FEATURE_VERSION_1_BIT   0u      /* feature 32, in the high window */
-
-#define VRING_DESC_F_NEXT   1u
-#define VRING_DESC_F_WRITE  2u
-
-/* virtio_blk.h */
-#define VIRTIO_BLK_T_IN     0u          /* read: the device writes the data */
-#define VIRTIO_BLK_T_OUT    1u          /* write: the device reads it */
-#define VIRTIO_BLK_S_OK     0u
 
 /*
  * One request at a time, so the ring only has to be big enough for one
@@ -96,33 +52,12 @@
  */
 #define QUEUE_SIZE  8
 
-struct vring_desc {
-    uint64_t addr;
-    uint32_t len;
-    uint16_t flags;
-    uint16_t next;
-};
+struct vqueue { VIRTQ_FIELDS(QUEUE_SIZE); };
 
-struct vqueue {
-    _Alignas(16) struct vring_desc desc[QUEUE_SIZE];
-
-    _Alignas(2) struct {
-        uint16_t flags;
-        uint16_t idx;
-        uint16_t ring[QUEUE_SIZE];
-        uint16_t used_event;
-    } avail;
-
-    _Alignas(4) struct {
-        uint16_t flags;
-        uint16_t idx;
-        struct {
-            uint32_t id;
-            uint32_t len;
-        } ring[QUEUE_SIZE];
-        uint16_t avail_event;
-    } used;
-};
+/* virtio_blk.h */
+#define VIRTIO_BLK_T_IN     0u          /* read: the device writes the data */
+#define VIRTIO_BLK_T_OUT    1u          /* write: the device reads it */
+#define VIRTIO_BLK_S_OK     0u
 
 /*
  * The request header the device reads. Sixteen bytes, little endian, and
@@ -143,8 +78,7 @@ struct blk_req_header {
  * moves to TTBR1, and this file is one of the places that will have to know.
  */
 static struct {
-    uintptr_t base;
-    unsigned  slot;
+    struct virtio_device dev;
     bool      present;
     uint64_t  sectors;              /* capacity, in 512-byte sectors */
     uint16_t  last_used;
@@ -155,127 +89,44 @@ static struct {
     _Alignas(16) volatile uint8_t      status;
 } blk;
 
-static uint32_t reg_read(unsigned offset)
-{
-    return mmio_read32(blk.base + offset);
-}
-
-static void reg_write(unsigned offset, uint32_t value)
-{
-    mmio_write32(blk.base + offset, value);
-}
-
-/* Everything written must be visible before the index that publishes it. */
-static void publish(void)
-{
-    __asm__ volatile("dmb oshst" ::: "memory");
-}
-
-/* And the used ring must be in hand before anything reads what it describes. */
-static void consume(void)
-{
-    __asm__ volatile("dmb oshld" ::: "memory");
-}
-
 bool hal_blk_init(struct blkdev *out)
 {
-    unsigned i;
+    unsigned from = 0;
 
     blk.present = false;
 
-    for (i = 0; i < VIRTIO_MMIO_COUNT; i++) {
-        uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)i * VIRTIO_MMIO_STRIDE;
-        unsigned max;
+    while (virtio_open(VIRTIO_ID_BLOCK, from, &blk.dev)) {
+        from = blk.dev.slot + 1;
 
-        blk.base = base;
-
-        if (mmio_read32(base + REG_MAGIC) != VIRTIO_MAGIC) {
-            continue;
-        }
-
-        /* Modern only. QEMU's virtio-mmio defaults to the legacy interface
-         * and the Makefile passes -global virtio-mmio.force-legacy=false;
-         * reading a legacy device with these structures gives garbage
-         * rather than an error, so skipping is the safe answer. */
-        if (mmio_read32(base + REG_VERSION) != VIRTIO_VERSION_1) {
-            continue;
-        }
-
-        if (mmio_read32(base + REG_DEVICE_ID) != VIRTIO_ID_BLOCK) {
-            continue;               /* zero means the window is empty */
-        }
-
-        reg_write(REG_STATUS, 0);                       /* reset */
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE);
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
-
-        /* Feature 32 is bit 0 of the high window, which is what the
-         * selector registers are for. Without it the device speaks the
-         * legacy layout and every structure here is the wrong shape. */
-        reg_write(REG_DEVICE_FEATURES_SEL, 1);
-
-        if ((reg_read(REG_DEVICE_FEATURES)
-             & (1u << FEATURE_VERSION_1_BIT)) == 0) {
-            reg_write(REG_STATUS, STATUS_FAILED);
-            continue;
-        }
-
-        /* Nothing else is asked for. Every optional block feature - discard,
-         * write zeroes, a topology, multiple queues - is a thing this driver
-         * would then have to honour, and none is needed to read a sector. */
-        reg_write(REG_DRIVER_FEATURES_SEL, 1);
-        reg_write(REG_DRIVER_FEATURES, 1u << FEATURE_VERSION_1_BIT);
-        reg_write(REG_DRIVER_FEATURES_SEL, 0);
-        reg_write(REG_DRIVER_FEATURES, 0);
-
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
-                              | STATUS_FEATURES_OK);
-
-        /* The device may refuse. Re-reading rather than assuming is the
-         * whole point of the handshake. */
-        if ((reg_read(REG_STATUS) & STATUS_FEATURES_OK) == 0) {
-            reg_write(REG_STATUS, STATUS_FAILED);
-            continue;
-        }
-
-        reg_write(REG_QUEUE_SEL, 0);
-        max = reg_read(REG_QUEUE_NUM_MAX);
-
-        if (max == 0 || max < QUEUE_SIZE) {
-            reg_write(REG_STATUS, STATUS_FAILED);
+        /*
+         * Nothing beyond feature 32 is asked for. Every optional block
+         * feature - discard, write zeroes, a topology, multiple queues - is
+         * a thing this driver would then have to honour, and none is needed
+         * to read a sector.
+         */
+        if (!virtio_features(&blk.dev, 0)) {
             continue;
         }
 
         memset(&blk.queue, 0, sizeof(blk.queue));
         blk.last_used = 0;
 
-        reg_write(REG_QUEUE_NUM, QUEUE_SIZE);
+        if (!virtio_queue_attach(&blk.dev, 0, QUEUE_SIZE, &blk.queue.desc,
+                                 &blk.queue.avail, &blk.queue.used)) {
+            virtio_fail(&blk.dev);
+            continue;
+        }
 
-        reg_write(REG_QUEUE_DESC_LOW,   (uint32_t)(uintptr_t)&blk.queue.desc);
-        reg_write(REG_QUEUE_DESC_HIGH,
-                  (uint32_t)((uint64_t)(uintptr_t)&blk.queue.desc >> 32));
-        reg_write(REG_QUEUE_AVAIL_LOW,  (uint32_t)(uintptr_t)&blk.queue.avail);
-        reg_write(REG_QUEUE_AVAIL_HIGH,
-                  (uint32_t)((uint64_t)(uintptr_t)&blk.queue.avail >> 32));
-        reg_write(REG_QUEUE_USED_LOW,   (uint32_t)(uintptr_t)&blk.queue.used);
-        reg_write(REG_QUEUE_USED_HIGH,
-                  (uint32_t)((uint64_t)(uintptr_t)&blk.queue.used >> 32));
-
-        publish();
-        reg_write(REG_QUEUE_READY, 1);
-
-        reg_write(REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
-                              | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
+        virtio_ready(&blk.dev);
 
         /*
          * Capacity: a 64-bit count of 512-byte sectors at offset 0 of the
          * device's configuration space. Read as two 32-bit halves because
          * the window is 32 bits wide.
          */
-        blk.sectors = (uint64_t)mmio_read32(base + REG_CONFIG)
-                    | ((uint64_t)mmio_read32(base + REG_CONFIG + 4) << 32);
+        blk.sectors = (uint64_t)virtio_config32(&blk.dev, 0)
+                    | ((uint64_t)virtio_config32(&blk.dev, 4) << 32);
 
-        blk.slot    = i;
         blk.present = true;
 
         if (out != NULL) {
@@ -347,14 +198,14 @@ static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
     at = blk.queue.avail.idx % QUEUE_SIZE;
     blk.queue.avail.ring[at] = 0;       /* the head of the chain */
 
-    publish();
+    virtio_publish();
     blk.queue.avail.idx++;
-    publish();
+    virtio_publish();
 
-    reg_write(REG_QUEUE_NOTIFY, 0);
+    virtio_notify(&blk.dev, 0);
 
     for (spins = 0; spins < 100000000UL; spins++) {
-        consume();
+        virtio_consume();
 
         if (blk.queue.used.idx != blk.last_used) {
             blk.last_used = blk.queue.used.idx;
@@ -362,9 +213,9 @@ static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
             /* The interrupt is acknowledged even though nothing waited on
              * it: leaving it asserted would have the controller re-deliver
              * for ever the moment interrupts are enabled for this device. */
-            reg_write(REG_INTERRUPT_ACK, reg_read(REG_INTERRUPT_STATUS));
+            (void)virtio_ack_interrupt(&blk.dev);
 
-            consume();
+            virtio_consume();
             return blk.status == VIRTIO_BLK_S_OK;
         }
     }

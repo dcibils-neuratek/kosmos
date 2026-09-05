@@ -206,16 +206,25 @@ void hal_irq_handle(void)
          * SPI is 32 + the SPI number.
          *
          * Offered to each driver in turn rather than looked up, and every
-         * one of them returns immediately unless the slot is its own. A
-         * registry keyed by slot is the tidier answer and is what this
-         * should become if a third kind of device ever wants a line; with
-         * two it would be a table, a registration call and an indirection
-         * to save one comparison.
+         * one of them returns immediately unless the slot is its own.
+         *
+         * **This said a registry was the answer once a third kind of device
+         * wanted a line. The network card is the third, and the judgement
+         * has not changed** - a registry is a table, a registration call and
+         * an indirection, and what it saves is two comparisons on a path
+         * that runs when a device has something to say. Recorded rather than
+         * quietly ignored, because a threshold that arrives and is stepped
+         * over without comment is a threshold nobody trusts next time.
+         *
+         * What would change it is a *dynamic* set of drivers - a driver
+         * loaded at run time cannot be a line in this function - and that is
+         * the same milestone as drivers at EL0.
          */
         unsigned slot = intid - VIRTIO_INTID_BASE;
 
         input_interrupt(slot);
         snd_interrupt(slot);
+        net_interrupt(slot);
     }
 
     /*

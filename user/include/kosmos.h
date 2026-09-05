@@ -128,6 +128,29 @@ static inline long kosmos_snd_write(const void *pcm, unsigned long bytes)
     return sys2(SYS_SND_WRITE, (long)(uintptr_t)pcm, (long)bytes);
 }
 
+/*
+ * The network card: what it is, and frames both ways.
+ *
+ * Only the process holding the card may call these - `SPAWN_NET` - and what
+ * crosses is an Ethernet frame with its header on it, exactly as it goes on
+ * the wire. `SYS_NET_RECV` answers `SYS_NO_INPUT` when nothing is waiting,
+ * which is not an error and is the usual answer.
+ */
+static inline long kosmos_net_info(struct netinfo *out)
+{
+    return sys1(SYS_NET_INFO, (long)(uintptr_t)out);
+}
+
+static inline long kosmos_net_send(const void *frame, unsigned long bytes)
+{
+    return sys2(SYS_NET_SEND, (long)(uintptr_t)frame, (long)bytes);
+}
+
+static inline long kosmos_net_recv(void *frame, unsigned long max)
+{
+    return sys2(SYS_NET_RECV, (long)(uintptr_t)frame, (long)max);
+}
+
 /* Periods the device has not finished with: the refill deadline, measured. */
 static inline long kosmos_snd_queued(void)
 {

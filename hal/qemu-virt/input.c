@@ -43,57 +43,7 @@
 #include "mmio.h"
 #include "hal.h"
 #include "qemu-virt.h"
-
-/* include/standard-headers/linux/virtio_mmio.h */
-#define REG_MAGIC               0x000
-#define REG_VERSION             0x004
-#define REG_DEVICE_ID           0x008
-#define REG_DEVICE_FEATURES     0x010
-#define REG_DEVICE_FEATURES_SEL 0x014
-#define REG_DRIVER_FEATURES     0x020
-#define REG_DRIVER_FEATURES_SEL 0x024
-#define REG_QUEUE_SEL           0x030
-#define REG_QUEUE_NUM_MAX       0x034
-#define REG_QUEUE_NUM           0x038
-#define REG_QUEUE_READY         0x044
-#define REG_QUEUE_NOTIFY        0x050
-#define REG_INTERRUPT_STATUS    0x060
-#define REG_INTERRUPT_ACK       0x064
-#define REG_STATUS              0x070
-#define REG_QUEUE_DESC_LOW      0x080
-#define REG_QUEUE_DESC_HIGH     0x084
-#define REG_QUEUE_AVAIL_LOW     0x090
-#define REG_QUEUE_AVAIL_HIGH    0x094
-#define REG_QUEUE_USED_LOW      0x0a0
-#define REG_QUEUE_USED_HIGH     0x0a4
-
-#define VIRTIO_MAGIC        0x74726976u     /* 'virt', little endian */
-#define VIRTIO_VERSION_1    2               /* the modern interface */
-
-/* virtio_ids.h */
-#define VIRTIO_ID_INPUT     18
-
-/* virtio_config.h */
-#define STATUS_ACKNOWLEDGE  1u
-#define STATUS_DRIVER       2u
-#define STATUS_DRIVER_OK    4u
-#define STATUS_FEATURES_OK  8u
-#define STATUS_FAILED       0x80u
-
-/* Feature bit 32. Split across the two 32-bit feature windows, so it is bit
- * 0 of the high one - which is the entire reason those selector registers
- * exist and the one detail of feature negotiation that catches people. */
-#define FEATURE_VERSION_1_BIT   0u
-
-/* virtio_ring.h */
-#define VRING_DESC_F_WRITE  2u
-
-struct vring_desc {
-    uint64_t addr;
-    uint32_t len;
-    uint16_t flags;
-    uint16_t next;
-};
+#include "virtio.h"
 
 /*
  * How many events can be outstanding.
@@ -179,26 +129,7 @@ struct virtio_input_event {
  * board would want this non-cacheable, and that is a difference worth
  * knowing about before this file is pointed at hardware.
  */
-struct vqueue {
-    _Alignas(16) struct vring_desc desc[QUEUE_SIZE];
-
-    _Alignas(2) struct {
-        uint16_t flags;
-        uint16_t idx;
-        uint16_t ring[QUEUE_SIZE];
-        uint16_t used_event;
-    } avail;
-
-    _Alignas(4) struct {
-        uint16_t flags;
-        uint16_t idx;
-        struct {
-            uint32_t id;
-            uint32_t len;
-        } ring[QUEUE_SIZE];
-        uint16_t avail_event;
-    } used;
-};
+struct vqueue { VIRTQ_FIELDS(QUEUE_SIZE); };
 
 /*
  * One of these per device.
@@ -216,8 +147,7 @@ struct vqueue {
  * being true the day the kernel moves to TTBR1.
  */
 struct vinput {
-    uintptr_t base;                 /* the window it was found in */
-    unsigned  slot;                 /* which one, for its interrupt */
+    struct virtio_device dev;       /* the window it was found in, and its slot */
     bool      present;
     uint16_t  last_used;            /* how far through the used ring we are */
 
@@ -419,36 +349,6 @@ static const unsigned char keymap_shift[128] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 120 */
 };
 
-static uint32_t reg_read(const struct vinput *v, unsigned offset)
-{
-    return mmio_read32(v->base + offset);
-}
-
-static void reg_write(const struct vinput *v, unsigned offset, uint32_t value)
-{
-    mmio_write32(v->base + offset, value);
-}
-
-/*
- * Orders our writes to the ring against the register write that tells the
- * device to look at it.
- *
- * `oshst` and not `ishst`: the device is outside the inner shareable domain
- * the cores share, so an inner barrier would not order against it. This is
- * the same reasoning `mmio.h` gives, applied to memory the device reads
- * rather than to the register itself.
- */
-static void publish(void)
-{
-    __asm__ volatile("dmb oshst" ::: "memory");
-}
-
-/* And the other direction: the used ring has to be in hand before anything
- * reads what it points at. */
-static void consume(void)
-{
-    __asm__ volatile("dmb oshld" ::: "memory");
-}
 
 /* Hands descriptor `i` back to the device as somewhere to put an event. */
 static void offer(struct vinput *v, unsigned i)
@@ -465,7 +365,7 @@ static void offer(struct vinput *v, unsigned i)
     /* The entry has to be visible before the index that publishes it. This
      * is the barrier that is easy to leave out and produces a device reading
      * a descriptor that has not been written yet. */
-    publish();
+    virtio_publish();
     v->queue.avail.idx++;
 }
 
@@ -515,123 +415,49 @@ static void absolute_range(uintptr_t base, uint8_t axis,
  */
 static bool claim(struct vinput *v, bool want_absolute)
 {
-    unsigned i;
+    unsigned from = 0;
+    unsigned n;
 
-    for (i = 0; i < VIRTIO_MMIO_COUNT; i++) {
-        uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)i * VIRTIO_MMIO_STRIDE;
-        uint32_t status;
-        unsigned max;
-        unsigned n;
-
-        if (mmio_read32(base + REG_MAGIC) != VIRTIO_MAGIC) {
-            continue;
-        }
-
-        /*
-         * Version 2 is the modern interface. Version 1 is the legacy one,
-         * with a different ring layout reached through QUEUE_PFN and
-         * GUEST_PAGE_SIZE, and reading a legacy device with modern
-         * structures produces garbage rather than an error.
-         *
-         * **QEMU's virtio-mmio defaults to legacy.** `virt` reports version
-         * 1 unless the machine is started with
-         * `-global virtio-mmio.force-legacy=false`, which is what the
-         * Makefile passes and what Linux asks for too. Skipping rather than
-         * failing is deliberate: this is a scan, and a legacy device in one
-         * window says nothing about a modern one in another.
-         */
-        if (mmio_read32(base + REG_VERSION) != VIRTIO_VERSION_1) {
-            continue;
-        }
-
-        if (mmio_read32(base + REG_DEVICE_ID) != VIRTIO_ID_INPUT) {
-            continue;               /* zero means the window is empty */
-        }
+    while (virtio_open(VIRTIO_ID_INPUT, from, &v->dev)) {
+        from = v->dev.slot + 1;
 
         /* Not somebody else's. Two devices of one kind would otherwise both
          * be answered by whichever asked first. */
-        if ((keyboard.present && keyboard.base == base)
-            || (tablet.present && tablet.base == base)) {
+        if ((keyboard.present && keyboard.dev.base == v->dev.base)
+            || (tablet.present && tablet.dev.base == v->dev.base)) {
             continue;
         }
 
-        v->base = base;
-        v->slot = i;
-
         /*
-         * The bring-up sequence, in the order the specification requires.
-         * Each step is a promise to the device about what the driver has
-         * done, and doing them out of order is a device that stays silent.
-         */
-        reg_write(v, REG_STATUS, 0);                       /* reset */
-        reg_write(v, REG_STATUS, STATUS_ACKNOWLEDGE);
-        reg_write(v, REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
-
-        if (has_absolute_axes(base) != want_absolute) {
-            continue;               /* the other kind; leave it be */
-        }
-
-        /*
-         * Feature negotiation, and the one bit that matters.
+         * The check that separates the two callers, and it is why
+         * `virtio_open` stops where it does: configuration space may only be
+         * read once the device has been told a driver is present, so telling
+         * a keyboard from a tablet needs a place to stand in the middle of
+         * the handshake.
          *
-         * VIRTIO_F_VERSION_1 is feature 32, which is why there are selector
-         * registers: features are read and written thirty-two bits at a
-         * time, so bit 32 is bit 0 of window 1. Without it the device speaks
-         * the legacy layout and every structure here is the wrong shape.
+         * Left alone rather than failed - the other caller will want it, and
+         * claiming it starts with another reset.
          */
-        reg_write(v, REG_DEVICE_FEATURES_SEL, 1);
-        if ((reg_read(v, REG_DEVICE_FEATURES)
-             & (1u << FEATURE_VERSION_1_BIT)) == 0) {
-            reg_write(v, REG_STATUS, STATUS_FAILED);
+        if (has_absolute_axes(v->dev.base) != want_absolute) {
             continue;
         }
 
-        reg_write(v, REG_DRIVER_FEATURES_SEL, 1);
-        reg_write(v, REG_DRIVER_FEATURES, 1u << FEATURE_VERSION_1_BIT);
-        reg_write(v, REG_DRIVER_FEATURES_SEL, 0);
-        reg_write(v, REG_DRIVER_FEATURES, 0);
-
-        reg_write(v, REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
-                                 | STATUS_FEATURES_OK);
-
-        /* Read back rather than assumed: the device clears the bit to
-         * refuse. */
-        status = reg_read(v, REG_STATUS);
-        if ((status & STATUS_FEATURES_OK) == 0) {
-            reg_write(v, REG_STATUS, STATUS_FAILED);
+        /* Nothing beyond feature 32. A keyboard has no optional feature this
+         * system wants. */
+        if (!virtio_features(&v->dev, 0)) {
             continue;
         }
 
         /* Queue 0 is the event queue. Queue 1 carries status back to the
          * device - LEDs and such - and there is nothing this system wants to
          * say. */
-        reg_write(v, REG_QUEUE_SEL, 0);
-
-        max = reg_read(v, REG_QUEUE_NUM_MAX);
-        if (max == 0 || max < QUEUE_SIZE) {
-            reg_write(v, REG_STATUS, STATUS_FAILED);
-            continue;               /* absent, or smaller than we are built for */
+        if (!virtio_queue_attach(&v->dev, 0, QUEUE_SIZE, &v->queue.desc,
+                                 &v->queue.avail, &v->queue.used)) {
+            virtio_fail(&v->dev);
+            continue;
         }
 
-        reg_write(v, REG_QUEUE_NUM, QUEUE_SIZE);
-
-        reg_write(v, REG_QUEUE_DESC_LOW,
-                  (uint32_t)(uintptr_t)&v->queue.desc);
-        reg_write(v, REG_QUEUE_DESC_HIGH,
-                  (uint32_t)((uint64_t)(uintptr_t)&v->queue.desc >> 32));
-        reg_write(v, REG_QUEUE_AVAIL_LOW,
-                  (uint32_t)(uintptr_t)&v->queue.avail);
-        reg_write(v, REG_QUEUE_AVAIL_HIGH,
-                  (uint32_t)((uint64_t)(uintptr_t)&v->queue.avail >> 32));
-        reg_write(v, REG_QUEUE_USED_LOW,
-                  (uint32_t)(uintptr_t)&v->queue.used);
-        reg_write(v, REG_QUEUE_USED_HIGH,
-                  (uint32_t)((uint64_t)(uintptr_t)&v->queue.used >> 32));
-
-        reg_write(v, REG_QUEUE_READY, 1);
-
-        reg_write(v, REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER
-                                 | STATUS_FEATURES_OK | STATUS_DRIVER_OK);
+        virtio_ready(&v->dev);
 
         /* Every buffer offered at once, because a device with nowhere to put
          * an event drops it, and a dropped key is a key the person
@@ -640,8 +466,8 @@ static bool claim(struct vinput *v, bool want_absolute)
             offer(v, n);
         }
 
-        publish();
-        reg_write(v, REG_QUEUE_NOTIFY, 0);
+        virtio_publish();
+        virtio_notify(&v->dev, 0);
 
         /*
          * And its interrupt. Until this, every reader of this device had to
@@ -649,7 +475,7 @@ static bool claim(struct vinput *v, bool want_absolute)
          * keyboard in a loop is, and why an idle desktop kept a core at a
          * hundred per cent.
          */
-        gic_enable_spi(VIRTIO_INTID_BASE + v->slot);
+        gic_enable_spi(VIRTIO_INTID_BASE + v->dev.slot);
 
         v->present = true;
         return true;
@@ -673,7 +499,7 @@ static bool next_event(struct vinput *v, struct virtio_input_event *out)
         return false;
     }
 
-    consume();
+    virtio_consume();
 
     if (v->queue.used.idx == v->last_used) {
         return false;
@@ -685,8 +511,8 @@ static bool next_event(struct vinput *v, struct virtio_input_event *out)
     v->last_used++;
 
     offer(v, slot);
-    publish();
-    reg_write(v, REG_QUEUE_NOTIFY, 0);
+    virtio_publish();
+    virtio_notify(&v->dev, 0);
 
     return true;
 }
@@ -707,9 +533,9 @@ void input_interrupt(unsigned slot)
 {
     struct vinput *v = NULL;
 
-    if (keyboard.present && keyboard.slot == slot) {
+    if (keyboard.present && keyboard.dev.slot == slot) {
         v = &keyboard;
-    } else if (tablet.present && tablet.slot == slot) {
+    } else if (tablet.present && tablet.dev.slot == slot) {
         v = &tablet;
     }
 
@@ -719,7 +545,7 @@ void input_interrupt(unsigned slot)
 
     /* The device raised it; the device is told it was seen. Without the ack
      * the status bit stays set and the interrupt fires for ever. */
-    reg_write(v, REG_INTERRUPT_ACK, reg_read(v, REG_INTERRUPT_STATUS));
+    (void)virtio_ack_interrupt(&v->dev);
 
     input_arrived = true;
 }
@@ -763,8 +589,8 @@ bool hal_pointer_init(void)
      * passes the processor's ID registers out undecoded, because what they
      * mean is not the kernel's business.
      */
-    absolute_range(tablet.base, ABS_X, &cursor.min_x, &cursor.max_x);
-    absolute_range(tablet.base, ABS_Y, &cursor.min_y, &cursor.max_y);
+    absolute_range(tablet.dev.base, ABS_X, &cursor.min_x, &cursor.max_x);
+    absolute_range(tablet.dev.base, ABS_Y, &cursor.min_y, &cursor.max_y);
 
     /* Start in the middle rather than at a corner, so a cursor exists before
      * the first movement instead of appearing out of the top left. */

@@ -193,6 +193,53 @@ bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes);
 bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes);
 
 /*
+ * The network, at the only level this layer has any business at: frames in
+ * and frames out.
+ *
+ * **No addresses, no protocols, no checksums.** What crosses here is an
+ * Ethernet frame, header included, exactly as it goes on the wire - the same
+ * division `hal_pointer_poll` draws by reporting device units and leaving
+ * the scaling to whoever knows how big the screen is. What an IP address
+ * means is not a driver's business, and a HAL that grew one would be a HAL
+ * with an opinion about the internet.
+ *
+ * The MAC comes from the card because the card has one. It is *asked for*
+ * rather than assumed: `virtio_features` reports what was actually agreed,
+ * and a device that does not offer VIRTIO_NET_F_MAC leaves `mac` zeroed and
+ * whoever is above this has to invent one.
+ *
+ * `hal_net_recv` returning 0 means nothing was waiting, which is not an
+ * error and is what it does most of the time. Negative is a frame too big
+ * for the buffer offered, which is a caller with a buffer smaller than the
+ * MTU rather than a broken card.
+ */
+#define HAL_NET_MTU     1500u
+#define HAL_NET_FRAME   1514u       /* MTU plus the 14-byte Ethernet header */
+
+struct netdev {
+    uint8_t  mac[6];
+    uint32_t mtu;
+};
+
+bool hal_net_init(struct netdev *out);      /* false when there is no card */
+bool hal_net_send(const void *frame, unsigned bytes);
+int  hal_net_recv(void *frame, unsigned max);   /* 0 when nothing waiting */
+
+/* Has a frame arrived since this was last asked? Read-and-clear, the same
+ * shape as `hal_snd_dry`: the question is "is there anything", and the
+ * frames themselves are in the ring until somebody takes them. */
+bool hal_net_arrived(void);
+
+/* Whether the card came up at boot. Asked rather than re-initialising,
+ * because bringing a running device up again is a reset with frames in
+ * flight. */
+bool hal_net_present(void);
+
+/* What the card is, after it came up. The same struct `hal_net_init` filled,
+ * asked for again by whoever did not do the asking. */
+bool hal_net_info(struct netdev *out);
+
+/*
  * Is this key down right now?
  *
  * `code` is the keycode the board's keyboard uses, which on this one is

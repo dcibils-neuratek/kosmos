@@ -685,6 +685,56 @@ bool process_grant_disk(struct process *p)
     return true;
 }
 
+/*
+ * The network card.
+ *
+ * `hal_net_init` was already called at boot - the card needs its receive
+ * buffers before the first frame arrives, not when somebody first asks - so
+ * this only records who may use it. Asking the HAL again would re-run the
+ * handshake on a device that is already running, which is a reset with
+ * frames in flight.
+ */
+bool process_grant_net(struct process *p)
+{
+    if (p == NULL || !hal_net_present()) {
+        return false;
+    }
+
+    p->owns_net = true;
+    return true;
+}
+
+/*
+ * Wake whoever holds the network card, because a frame arrived.
+ *
+ * The same shape as `process_wake_audio` next door, down to the `wake_at`
+ * check that says this is the timed wait in `ipc_receive` rather than a
+ * thread blocked on something it is owed. There is exactly one such process
+ * - that is what `SPAWN_NET` means - so there is no ambiguity about who.
+ *
+ * Without it the stack has to come back and ask, which is a poll wearing a
+ * different hat: it would look at the card at a rate somebody picked, and
+ * the round-trip time it reported would be that rate rather than the
+ * network's.
+ */
+void process_wake_net(void)
+{
+    unsigned i;
+
+    for (i = 0; i < PROCESS_MAX; i++) {
+        struct process *p = &processes[i];
+
+        if (p->in_use && p->owns_net && p->thread != NULL
+            && p->thread->state == THREAD_BLOCKED
+            && p->thread->wake_at != 0) {
+            p->thread->wake_at = 0;
+            ipc_timed_out(p->thread);
+            thread_wake(p->thread);
+            return;
+        }
+    }
+}
+
 bool process_grant_screen(struct process *p)
 {
     struct fb fb;

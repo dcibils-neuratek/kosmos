@@ -64,6 +64,7 @@ void binfs_server(long endpoint, int libraries);
 void appfs_server(long endpoint);
 void console_server(long endpoint);
 void ramfs_server(long endpoint);
+void net_server(long endpoint);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -72,6 +73,7 @@ void ramfs_server(long endpoint);
 #define ROLE_APPFS    14UL
 #define ROLE_CONSOLE   4UL
 #define ROLE_RAMFS     1UL
+#define ROLE_NET      17UL
 
 static void say(const char *s)
 {
@@ -152,6 +154,11 @@ int main(unsigned long arg)
     if (arg == ROLE_RAMFS) {
         named("ramfs");
         ramfs_server(0);
+    }
+
+    if (arg == ROLE_NET) {
+        named("net");
+        net_server(0);
     }
 
     L = kosmos_lua_open();

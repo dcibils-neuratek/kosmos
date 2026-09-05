@@ -263,6 +263,11 @@ struct process {
      * the machine, under every namespace - so it goes to one process. */
     bool              owns_disk;
 
+    /* Raw frames. The same weight as the disk pointed outwards: every frame
+     * that reaches the machine, and any address it cares to claim. One
+     * process - the stack. */
+    bool              owns_net;
+
     /* May end any process, not only its own children. One process holds
      * this: the task manager. */
     bool              owns_procctl;
@@ -373,10 +378,16 @@ bool process_grant_audio(struct process *p);
  * survive rather than treat as fatal.
  */
 bool process_grant_disk(struct process *p);
+bool process_grant_net(struct process *p);
 
 /* The sound device wants a period: wake the one process that holds it, if
  * it is waiting. Called from the interrupt path. */
 void process_wake_audio(void);
+
+/* Wake whoever holds the network card, because a frame arrived. The same
+ * shape as `process_wake_audio` and for the same reason: without it the
+ * stack polls, and a stack that polls is a core. */
+void process_wake_net(void);
 
 /* Hands a process authority over every other one. Like the console, this is
  * a flag and nothing to map. Always succeeds; there is no device to be
