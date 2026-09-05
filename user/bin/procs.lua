@@ -138,6 +138,7 @@ local BANDS = { [0] = "idle", "low", "normal", "display", "input" }
 -- highlight moves with the process as the list reorders around it.
 local selected_id = nil
 local selected = 1
+local followed = nil     -- the selection the view last scrolled to
 local top = 1            -- the first row drawn, for a list taller than the view
 
 --------------------------------------------------------------------------
@@ -198,10 +199,19 @@ function table_view:draw(g)
   -- `ui.scrollbar` went in below. A list you can drag needs somewhere to
   -- drag it, and a list of thirty processes is longer than the window.
   --
-  if selected < top then
-    top = selected
-  elseif selected > top + visible - 1 then
-    top = selected - visible + 1
+  --
+  -- Follow the selection when it moves, not on every pass. Unconditionally
+  -- it makes the bar useless: select a row near the end, drag the bar up,
+  -- and the next redraw pulls it straight back. Same bug `ui.list` had.
+  --
+  if selected ~= followed then
+    if selected < top then
+      top = selected
+    elseif selected > top + visible - 1 then
+      top = selected - visible + 1
+    end
+
+    followed = selected
   end
 
   if top > #rows - visible + 1 then top = #rows - visible + 1 end

@@ -219,6 +219,30 @@ static bool node_read(const char *want, const struct sysinfo *i,
         return true;
     }
 
+    /*
+     * The wall clock, in seconds since 1970.
+     *
+     * **Restored, having been dropped when this server moved from Lua to C.**
+     * The Lua one built a `clock` node out of `sysinfo.epoch` and nothing
+     * here replaced it, so `/dev/clock` stopped existing and every clock in
+     * the system said "no clock --:--" - the Deskbar's, the `datetime`
+     * program's, and the topbar's.
+     *
+     * Only the epoch, and deliberately: `clock.lua` turns it into a civil
+     * date, applies the time zone, and names the day. That is a table lookup
+     * and a division, which belongs above this layer - the same division
+     * `sysinfo` draws when it hands back a raw MIDR instead of "Cortex-A72".
+     *
+     * `utc` says what the number is against, so a caller does not have to
+     * assume. There is no zone here: the board keeps UTC and a preference
+     * turns it into local time.
+     */
+    if (strcmp(want, "clock") == 0) {
+        put_num(r, "epoch", i->epoch);
+        put_num(r, "utc", 1);
+        return true;
+    }
+
     if (strcmp(want, "screen") == 0 && i->screen_width > 0) {
         put_num(r, "width", i->screen_width);
         put_num(r, "height", i->screen_height);
@@ -240,6 +264,7 @@ static void node_list(const struct sysinfo *i, struct dev_reply *r)
     put_text(r, "memory", "");
     put_text(r, "kernel", "");
     put_text(r, "timer", "");
+    put_text(r, "clock", "");
 
     /* Listed only when there is one: a board with no screen should not offer
      * a node that answers nothing. */

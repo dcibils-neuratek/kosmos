@@ -1217,9 +1217,26 @@ function ui.list(spec)
 
     local rows = (self.h - 4) // GH
 
-    if self.selected < self.top then self.top = self.selected end
-    if self.selected > self.top + rows - 1 then
-      self.top = self.selected - rows + 1
+    --
+    -- Follow the selection when it *moves*, and not on every pass.
+    --
+    -- This used to run unconditionally, which made the scrollbar useless the
+    -- moment anything was selected: pick the last wallpaper in a list, drag
+    -- the bar up, and the next repaint sees `selected` below the window and
+    -- pulls `top` straight back down. Scrolled to the end and stuck there.
+    --
+    -- The two are different intentions. Moving the selection with the
+    -- keyboard should bring the view along - that is what this is for.
+    -- Moving the view with the bar is a decision about the *view*, and it
+    -- should hold until the selection moves again.
+    --
+    if self.selected ~= self.followed then
+      if self.selected < self.top then self.top = self.selected end
+      if self.selected > self.top + rows - 1 then
+        self.top = self.selected - rows + 1
+      end
+
+      self.followed = self.selected
     end
 
     -- And never past the end: the keyboard can only move the selection, but
