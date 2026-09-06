@@ -8,6 +8,59 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+**There is a binary with the browser in it.**
+`builds/kosmos-0.8.32-a59fcc6-1280x800-web.elf`, gated the way `CLAUDE.md`
+asks: `make stress` for 60 rounds first, and then booted *as a released
+file* - not as the build tree's image - to check it reaches a prompt, opens
+the browser, fetches a page from this computer and paints it.
+
+Two things had to exist before it could be one:
+
+  * **`make WEB=1 release`**, and a `-web` in the name. On an ordinary image
+    the browser opens and says the build has no web kit, which reads like a
+    broken browser rather than the wrong file. One size rather than three,
+    because the five vendored libraries take an image from 1.7 MB to 5.3 MB
+    and stripping saves a quarter of a megabyte - the bulk is the userland
+    compiled in, not symbols.
+  * **A network in `run-kosmos.sh`**, which it did not have. `ping`, `fetch`
+    and the browser all ran and found nothing, which looks like a broken
+    stack rather than a missing flag - the same trap
+    `virtio-mmio.force-legacy=false` is documented for, one layer up.
+
+**And the 3D demos are not CPU-bound**, which the gallery screenshot says
+without being asked: the cube holds 50 fps with the processor at 22%. Each
+demo's frame is a render, then a *synchronous* `commit` that waits up to one
+compositor pass, then `poll` with `wait = 1` - a deliberate sleep of one
+scheduler tick, there because a loop that never blocks is a thread that is
+always runnable and an idle desktop used to read ninety per cent.
+
+A tick is **four** milliseconds, not the ten that three comments claimed:
+`TICK_HZ` is 250 and was 100 when they were written, and `wm.lua` had
+already stopped assuming and asks. At sixty frames a second that sleep is a
+quarter of a frame rather than most of one, which is a different trade than
+the comments described.
+
+**Triple buffering is not the small local change it looked like**, and the
+syscall table is what says so. There is `SYS_CALL`, `SYS_RECEIVE` and
+`SYS_REPLY` and *no asynchronous send*: every message to a server blocks for
+its reply by construction. A third buffer changes which surface is drawn
+into and removes none of the wait. Doing it properly means a new syscall, a
+bounded queue in the endpoint struct - fixed-size, since the kernel has no
+allocator - a decision about what a full queue does (for a compositor,
+dropping a stale commit in favour of the newest is right), and backpressure
+so an application cannot get more than two frames ahead. That is a change to
+the IPC model and wants deciding rather than slipping in.
+
+It would also buy less than it sounds: **window dragging is entirely inside
+`wm`**, so no application waits during one and triple buffering cannot touch
+it. What it does help is an application that draws its own pixels - the
+browser, `pdfview`, `cube3d`, Doom - and there the cheaper alternative is a
+compositor that composites in slices and drains IPC between them, which
+needs no kernel change at all.
+
+---
+
+
 **The browser was measured, and half of every frame is waiting.**
 
 Two runs of the same code: under TCG, which `CLAUDE.md` says is for
