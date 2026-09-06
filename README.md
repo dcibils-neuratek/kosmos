@@ -4,9 +4,16 @@ A microkernel desktop operating system with a userland written entirely in Lua.
 
 A personal learning project. No users to serve, no compatibility to maintain, no deadline. That is precisely what makes it possible to take decisions a commercial OS cannot take.
 
-Status: **M6, graphics.** A framebuffer, a shell on the screen, and programs
-in `/bin`. See [docs/state.md](docs/state.md), and
-[docs/architecture.md](docs/architecture.md) for how the layers fit together.
+**A desktop, a filesystem with a journal, a TCP/IP stack and a web
+browser**, on a microkernel that knows about threads, address spaces, IPC
+and capabilities and nothing else. [docs/roadmap.md](docs/roadmap.md) is
+what is built and what is wanted; [docs/state.md](docs/state.md) is where it
+actually is this week, and [docs/architecture.md](docs/architecture.md) is
+how the layers fit together.
+
+There are no milestones. There were thirteen, and the numbers went on being
+quoted long after they stopped describing anything - this line said "M6,
+graphics" while the machine had a browser in it.
 
 ---
 
@@ -119,9 +126,9 @@ If something collides with one of these, the feature gets cut, not the principle
 | [docs/ui.md](docs/ui.md) | UI kit and window manager. BeOS lineage with the corrections the design allows. |
 | [docs/beos.md](docs/beos.md) | The BeOS lineage: what is inherited, what is corrected, and where Kosmos departs on purpose. |
 | [docs/gfx.md](docs/gfx.md) | The path pixels take from Lua to the framebuffer, for apps that produce images. |
-| [docs/testing.md](docs/testing.md) | How each layer is measured and how regressions are caught milestone by milestone. |
+| [docs/testing.md](docs/testing.md) | How each layer is measured and how regressions are caught. |
 | [docs/hal.md](docs/hal.md) | How `arch/` is separated from `hal/`, the targets, and the trap in each piece of hardware. |
-| [docs/roadmap.md](docs/roadmap.md) | The 13 milestones, each with a definition of done. |
+| [docs/roadmap.md](docs/roadmap.md) | What is built, and the wishlist. |
 | [docs/setup.md](docs/setup.md) | Toolchain, build, how to debug without a debugger. |
 | [docs/glossary.md](docs/glossary.md) | The terms. Written to be re-read six months from now. |
 | [docs/state.md](docs/state.md) | Where you are today. **Updated at the end of every session.** |

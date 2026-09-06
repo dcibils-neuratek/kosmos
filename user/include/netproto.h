@@ -124,6 +124,20 @@
  */
 #define NET_OP_POLL     11u       /* wait until any of these has something */
 
+/*
+ * A name, turned into an address.
+ *
+ * The name goes in `payload` rather than in a field of its own, because
+ * there is a payload here already and a second place to put bytes is a
+ * second thing to get the length of wrong. The answer comes back in
+ * `address`, which `NET_OP_INFO` already uses for the same kind of thing.
+ *
+ * The caller parks until an answer or `ticks` runs out, the way `accept`
+ * does - a resolver is one question, and making the caller poll for it
+ * would be inventing a state machine for something that has none.
+ */
+#define NET_OP_RESOLVE  12u       /* a name -> an address */
+
 #define NET_OK               0u
 #define NET_ERR_BAD_OP       1u
 #define NET_ERR_NO_CARD      2u   /* this machine has no network */
@@ -135,6 +149,8 @@
 #define NET_ERR_CLOSED       8u   /* the connection is over */
 #define NET_ERR_TIMEOUT      9u   /* nobody answered in time */
 #define NET_ERR_NO_HANDLE   10u   /* no such connection */
+#define NET_ERR_NO_RESOLVER 11u   /* no DNS server is configured */
+#define NET_ERR_NO_NAME     12u   /* the resolver said there is no such name */
 
 /*
  * How many connections at once.
@@ -193,11 +209,12 @@ struct net_request {
     uint32_t writing;
     struct net_addr to;
 
-    /* For NET_OP_CONFIG: this machine's address, its mask, and the router
-     * to send anything outside the mask to. */
+    /* For NET_OP_CONFIG: this machine's address, its mask, the router to
+     * send anything outside the mask to, and who to ask about names. */
     struct net_addr address;
     struct net_addr netmask;
     struct net_addr gateway;
+    struct net_addr dns;
 
     uint32_t length;                /* payload bytes that follow */
     uint8_t  payload[NET_PAYLOAD_MAX];
@@ -237,6 +254,7 @@ struct net_reply {
     struct net_addr address;
     struct net_addr netmask;
     struct net_addr gateway;
+    struct net_addr dns;
     uint32_t mtu;
 
     uint32_t length;

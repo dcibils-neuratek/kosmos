@@ -10,8 +10,8 @@ that says "the kernel" means Nebula, and almost everything that says "the
 system" means Kosmos.
 
 **Versions are `major.minor.revision`, in the `VERSION` file.** A revision
-per push, a minor per milestone, and a major when we decide something was
-big enough to be one. `make bump`, `make bump-minor`, `make bump-major`.
+per push, a minor when something substantial lands, and a major when we
+decide something was big enough to be one. `make bump`, `make bump-minor`, `make bump-major`.
 
 A personal learning project. There are no users, no compatibility to maintain, no deadline. **Correctness and simplicity always win over delivery speed.**
 
@@ -43,7 +43,7 @@ it is a real result rather than a QEMU number.
 be a fast one.** That is what to optimise for now - not more features, and
 not another subsystem, but the speed and the feel of the ones that exist.
 
-**Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware arrives at milestone 2, once the serial cable is here. Do not write Pi code yet, but do respect the `arch/` vs `hal/` separation from now on.
+**Active target today: QEMU `virt` aarch64, and nothing else.** Real hardware is on the wishlist and the serial cable is not here yet. Do not write Pi code, but do respect the `arch/` vs `hal/` separation.
 
 **Kosmos is 64-bit, and only 64-bit.** AArch64 everywhere: `HCR_EL2.RW` is set so EL1 runs AArch64 rather than AArch32, the virtual address space is 39 bits through three levels of long-descriptor tables, and processes use addresses above the 4 GB line. There is no 32-bit path and there is not going to be one.
 
@@ -162,7 +162,7 @@ whether that applies here. If it does not, say so.
 
 **No dynamic allocator in the kernel.** Everything lives in statically declared fixed-size pools: an array of threads, of address spaces, of endpoints. There is no `malloc` or equivalent.
 
-**The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. No networking, no graphics, no filesystem, and no Lua inside it from milestone 4 onward.
+**The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. No networking, no graphics, no filesystem, and no Lua inside it.
 
 **The kernel stays small, and 10k lines of code is the smoke alarm — not the rule.** The rules are the two above it: the kernel knows about threads, address spaces, IPC and capabilities and nothing else, and it has no allocator. Those are what must hold. The line count is a symptom worth watching, and `make size` reports it (code only; this codebase is more than half comments on purpose, and a budget that counted them would ask for worse code in order to satisfy itself).
 
@@ -270,7 +270,7 @@ to say, and hard guarantees, which would mean bounding every kernel
 operation. Kosmos wants a desktop that feels alive, not an airbag that fires
 in time.
 
-**Single-core until milestone 6.** But the code is written SMP-ready from now: no loose mutable globals, `TPIDR_EL1` as the pointer to the per-CPU struct, a per-CPU runqueue even with a single CPU.
+**Single-core**, and SMP is on the wishlist. The code is written SMP-ready anyway: no loose mutable globals, `TPIDR_EL1` as the pointer to the per-CPU struct, a per-CPU runqueue even with a single CPU.
 
 **No hardware addresses outside `hal/`.** Not one.
 
@@ -464,7 +464,7 @@ A distinction that matters and is easy to blur:
 - **`arch/`** is "which CPU are you". Page tables, the exception vector, context switch, barriers. It is not abstracted across architectures, it is reimplemented.
 - **`hal/`** is "which peripheral do you have". UART, timer, interrupt controller, framebuffer. Common interface, one implementation per board.
 
-The HAL interface as it actually stands. Every entry arrived with the milestone that needed it and none of it was written ahead of a caller:
+The HAL interface as it actually stands. Every entry arrived with the thing that needed it and none of it was written ahead of a caller:
 
 ```c
 void          hal_early_init(void);
@@ -494,7 +494,7 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 
 `hal/hal.h` is the authority. If this list and that file disagree, that file is right and this one is stale — say so.
 
-**Do not expand the HAL speculatively.** The right interface appears once there is a second real target, at milestone 2. Writing it now with a single target produces the shape of QEMU with generic names.
+**Do not expand the HAL speculatively.** The right interface appears once there is a second real target. Writing it now with a single target produces the shape of QEMU with generic names.
 
 `hal_fb_init` is deliberately "ask the firmware for a linear framebuffer, and let it choose where the pixels live", because that is the one operation QEMU's ramfb and the Pi's mailbox both perform. virtio-gpu does not fit it — it needs an explicit flush after drawing — and that is precisely why adding virtio-gpu is what will grow the interface a `hal_fb_flush`, with two implementations in front of it rather than one.
 
@@ -502,7 +502,19 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 
 ## How to work here
 
-**One milestone at a time.** See `docs/state.md`. Do not propose or implement things from future milestones even when they look obvious or cheap.
+**One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
+is what is built and what is wanted. Do not pull something forward off the
+wishlist because it looks cheap - that is the main way a project like this
+scatters.
+
+**There are no milestones**, and there were thirteen. They were the right
+shape for a kernel that did not boot yet and stopped being it long before
+anybody noticed: the README said "M6, graphics" while the machine had a
+journalled filesystem, a TCP/IP stack and a web browser in it. A number that
+no longer means anything is worse than no number, because it is read as
+though it does. Older documents refer to them as *history* - "M5 proved it",
+"arrived inside M6" - and that is fine, because those are records of when
+something happened.
 
 **Small, verifiable scope.** "The exception vector with its 16-entry table and the sync handler" is good scope. "Implement the microkernel" is not.
 
@@ -514,7 +526,7 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 
 **When something does not work, instrument over UART first.** A well-placed `printf` beats a hypothesis.
 
-**Every closed milestone leaves a permanent test.** The definition of done becomes a test that is never deleted. `make test` must pass before the next milestone starts. See `docs/testing.md`.
+**Everything that gets finished leaves a permanent test.** What proved it works becomes a test that is never deleted, and `make test` passes before the next thing starts. See `docs/testing.md`.
 
 **Pixels never go inside a Lua table.** A surface is a userdata over flat bytes. A Lua array holding 2M pixels makes the GC walk 2M slots per cycle and the system falls apart. See `gfx.md` §19.1.
 
@@ -588,7 +600,7 @@ something you look at.
 ```
 boot/           assembly entry, linker script
 arch/           aarch64/
-hal/            qemu-virt/  (pi5/ arrives at milestone 2)
+hal/            qemu-virt/  (pi5/ when the board is here)
 kernel/         mmu, sched, ipc, caps, exceptions
 assets/         vendored data: fonts/ (BDF + its licence), icons/, images/
 lua/            upstream/ + kosmos/

@@ -95,6 +95,10 @@
 
 #define IP_PROTO_ICMP   1u
 #define IP_PROTO_TCP    6u
+#define IP_PROTO_UDP   17u
+
+/* Defined below, beside DNS - the only thing that sends one. */
+static void udp_receive(const uint8_t *packet, unsigned total);
 
 /*
  * RFC 793, and the twenty-byte header this stack builds.
@@ -185,6 +189,22 @@ struct pending {
 };
 
 /*
+ * A name asked about and not yet answered.
+ *
+ * The same shape as `pending` above and for the same reason: the caller is
+ * parked inside `call` and this process is not blocked on it, so one
+ * program can be resolving while another is reading a file. `id` is the
+ * DNS query's own, which is what matches an answer to a question - there is
+ * no connection to match on, because UDP has none.
+ */
+struct asking {
+    bool     used;
+    uint64_t who;
+    uint16_t id;
+    uint64_t until;                 /* counter ticks, or 0 for no deadline */
+};
+
+/*
  * One connection.
  *
  * `snd_una` is the oldest byte this end has sent and not had acknowledged,
@@ -250,6 +270,13 @@ static struct {
 
     struct arp_entry arp[ARP_CACHE];
     struct pending   pending[NET_PENDING_MAX];
+
+    /* Names being asked about, and who to ask. Four at once, which is more
+     * than one program resolving at a time and fewer than a table worth
+     * thinking about. */
+    struct asking    asking[4];
+    struct net_addr  dns;
+    uint16_t         dns_id;        /* the last query id handed out */
 
     uint16_t next_id;               /* the IP header's, and the echo's */
     uint64_t hz;                    /* the counter's frequency, read once */
@@ -736,7 +763,310 @@ static void ip_receive(const uint8_t *packet, unsigned length)
         icmp_receive(packet, total, &from, packet[IP_TTL]);
     } else if (packet[IP_PROTO] == IP_PROTO_TCP) {
         tcp_receive(packet, total, &from);
+    } else if (packet[IP_PROTO] == IP_PROTO_UDP) {
+        udp_receive(packet, total);
     }
+}
+
+/*------------------------------------------------------------------------
+ * UDP, and exactly as much of it as a resolver needs.
+ *
+ * There are no UDP sockets here: no bind, no sendto, no recvfrom. Nothing
+ * has asked for them. What DNS needs is to send one datagram and recognise
+ * the answer, and building the general interface first would be inventing
+ * the shape of a caller that does not exist - the same argument `hal.md`
+ * makes about not expanding the HAL before there is a second board.
+ *
+ * When something else wants UDP, the interface it wants will be visible.
+ *----------------------------------------------------------------------*/
+
+#define UDP_HEADER   8u
+#define UDP_SRC      0u
+#define UDP_DST      2u
+#define UDP_LEN      4u
+#define UDP_SUM      6u
+
+/* The port this stack asks from. Fixed, because there is one asker. */
+#define DNS_PORT     53u
+#define DNS_FROM  40000u
+
+static bool udp_send(const struct net_addr *to, uint16_t from_port,
+                     uint16_t to_port, const uint8_t *body, unsigned length)
+{
+    uint8_t datagram[UDP_HEADER + 256];
+    uint32_t sum = 0;
+    unsigned total = UDP_HEADER + length;
+    unsigned i;
+
+    if (length > sizeof(datagram) - UDP_HEADER) {
+        return false;
+    }
+
+    put16(datagram + UDP_SRC, from_port);
+    put16(datagram + UDP_DST, to_port);
+    put16(datagram + UDP_LEN, (uint16_t)total);
+    put16(datagram + UDP_SUM, 0);
+    memcpy(datagram + UDP_HEADER, body, length);
+
+    /*
+     * The checksum, over the pseudo-header the way TCP's is.
+     *
+     * It is optional in IPv4 and zero is legal, which is a tempting three
+     * lines fewer. It is computed anyway because the one thing that would
+     * make a resolver hard to debug is an answer that never comes back for
+     * a reason the other end never mentions.
+     */
+    for (i = 0; i < 4; i += 2) {
+        sum += get16(net.address.byte + i);
+        sum += get16(to->byte + i);
+    }
+
+    sum += IP_PROTO_UDP;
+    sum += total;
+
+    for (i = 0; i + 1 < total; i += 2) {
+        sum += get16(datagram + i);
+    }
+
+    if (total & 1) {
+        sum += (uint32_t)datagram[total - 1] << 8;
+    }
+
+    while (sum >> 16) {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+
+    sum = ~sum & 0xffff;
+
+    /* Zero means "not computed", so a checksum that lands on zero is sent
+     * as all ones - which is the same value in one's complement and the
+     * one case RFC 768 spells out. */
+    put16(datagram + UDP_SUM, (uint16_t)(sum == 0 ? 0xffff : sum));
+
+    return send_ip(to, IP_PROTO_UDP, datagram, total);
+}
+
+/*
+ * A name, as DNS writes one: each label with its length in front, and a
+ * zero to end. `www.example.com` becomes 3www7example3com0.
+ *
+ * Returns the bytes written, or 0 if the name will not fit or has a label
+ * longer than DNS allows.
+ */
+static unsigned dns_name(uint8_t *out, unsigned room,
+                         const char *name, unsigned len)
+{
+    unsigned at = 0, start = 0, i;
+
+    for (i = 0; i <= len; i++) {
+        if (i == len || name[i] == '.') {
+            unsigned label = i - start;
+
+            if (label == 0 || label > 63 || at + label + 1 >= room) {
+                return 0;
+            }
+
+            out[at++] = (uint8_t)label;
+            memcpy(out + at, name + start, label);
+            at += label;
+            start = i + 1;
+        }
+    }
+
+    if (at + 1 > room) {
+        return 0;
+    }
+
+    out[at++] = 0;
+
+    return at;
+}
+
+/* Somewhere to record a question. NULL when there is no room. */
+static struct asking *asking_free(void)
+{
+    unsigned i;
+
+    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
+        if (!net.asking[i].used) {
+            return &net.asking[i];
+        }
+    }
+
+    return NULL;
+}
+
+static struct asking *asking_find(uint16_t id)
+{
+    unsigned i;
+
+    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
+        if (net.asking[i].used && net.asking[i].id == id) {
+            return &net.asking[i];
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * One question, sent.
+ *
+ * Recursion desired, one question, class IN, type A. No EDNS and no
+ * anything else: this asks a resolver for an address, and every other thing
+ * DNS can carry is somebody else's question.
+ */
+static bool dns_ask(const char *name, unsigned len, uint16_t id)
+{
+    uint8_t query[12 + 256];
+    unsigned at;
+
+    put16(query + 0, id);
+    put16(query + 2, 0x0100u);      /* recursion desired */
+    put16(query + 4, 1);            /* one question */
+    put16(query + 6, 0);
+    put16(query + 8, 0);
+    put16(query + 10, 0);
+
+    at = dns_name(query + 12, sizeof(query) - 12 - 4, name, len);
+
+    if (at == 0) {
+        return false;
+    }
+
+    at += 12;
+
+    put16(query + at, 1); at += 2;  /* type A */
+    put16(query + at, 1); at += 2;  /* class IN */
+
+    return udp_send(&net.dns, DNS_FROM, DNS_PORT, query, at);
+}
+
+/*
+ * Past a name in a message, which is not simply "to the next zero".
+ *
+ * A name may end in a *pointer* into the message - two bytes with the top
+ * two bits set - which is how DNS avoids repeating the question in every
+ * answer. Following one is not needed here, because nothing reads the names
+ * back; stepping over one is, because the fields after it are what matter.
+ */
+static unsigned dns_skip(const uint8_t *msg, unsigned len, unsigned at)
+{
+    while (at < len) {
+        unsigned label = msg[at];
+
+        if (label == 0) {
+            return at + 1;
+        }
+
+        if ((label & 0xc0u) == 0xc0u) {
+            return at + 2;          /* a pointer, and it ends the name */
+        }
+
+        at += label + 1;
+    }
+
+    return len;
+}
+
+/*
+ * An answer came back. Find the first A record in it and hand the address
+ * to whoever asked.
+ */
+static void dns_receive(const uint8_t *msg, unsigned len)
+{
+    struct asking *a;
+    struct net_reply reply;
+    unsigned questions, answers, at, i;
+
+    if (len < 12) {
+        return;
+    }
+
+    a = asking_find(get16(msg + 0));
+
+    if (a == NULL) {
+        return;                     /* not ours, or already answered */
+    }
+
+    memset(&reply, 0, sizeof(reply));
+
+    /* The low four bits of the second flags byte are the response code, and
+     * 3 is "there is no such name" - which is an answer, not a failure to
+     * get one, and the caller should hear the difference. */
+    if ((msg[3] & 0x0fu) != 0) {
+        reply.status = NET_ERR_NO_NAME;
+        answer(a->who, &reply);
+        a->used = false;
+        return;
+    }
+
+    questions = get16(msg + 4);
+    answers   = get16(msg + 6);
+    at = 12;
+
+    for (i = 0; i < questions && at < len; i++) {
+        at = dns_skip(msg, len, at) + 4;        /* and its type and class */
+    }
+
+    for (i = 0; i < answers && at + 10 <= len; i++) {
+        unsigned type, length;
+
+        at = dns_skip(msg, len, at);
+
+        if (at + 10 > len) {
+            break;
+        }
+
+        type   = get16(msg + at);
+        length = get16(msg + at + 8);
+        at += 10;
+
+        if (at + length > len) {
+            break;
+        }
+
+        if (type == 1 && length == 4) {
+            reply.status = NET_OK;
+            memcpy(reply.address.byte, msg + at, 4);
+            answer(a->who, &reply);
+            a->used = false;
+            return;
+        }
+
+        at += length;               /* a CNAME, or something else */
+    }
+
+    /* It answered, and said nothing this stack can use - a name that is
+     * only a CNAME chain the resolver did not follow, most often. */
+    reply.status = NET_ERR_NO_NAME;
+    answer(a->who, &reply);
+    a->used = false;
+}
+
+static void udp_receive(const uint8_t *packet, unsigned total)
+{
+    unsigned header = (unsigned)(packet[0] & 0x0fu) * 4u;
+    const uint8_t *udp = packet + header;
+    unsigned length;
+
+    if (total < header + UDP_HEADER) {
+        return;
+    }
+
+    length = get16(udp + UDP_LEN);
+
+    if (length < UDP_HEADER || header + length > total) {
+        return;
+    }
+
+    /* The only port this stack listens on, because DNS is the only thing
+     * that sends from it. */
+    if (get16(udp + UDP_DST) != DNS_FROM) {
+        return;
+    }
+
+    dns_receive(udp + UDP_HEADER, length - UDP_HEADER);
 }
 
 /*------------------------------------------------------------------------
@@ -1509,6 +1839,57 @@ static void drain(void)
  * The protocol.
  *----------------------------------------------------------------------*/
 
+/*
+ * A name, asked about on the caller's behalf.
+ *
+ * Parks them the way `accept` does: the sender is kept and answered when
+ * the resolver replies or the deadline passes. Nothing here blocks, so a
+ * program resolving does not stop another reading a file.
+ */
+static void resolve(const struct net_request *req, uint64_t sender)
+{
+    struct asking *a;
+    uint16_t id;
+
+    if (!net.has_card) {
+        fail(sender, NET_ERR_NO_CARD);
+        return;
+    }
+
+    if (net.dns.byte[0] == 0) {
+        fail(sender, NET_ERR_NO_RESOLVER);
+        return;
+    }
+
+    if (req->length == 0 || req->length > NET_PAYLOAD_MAX) {
+        fail(sender, NET_ERR_BAD_ADDRESS);
+        return;
+    }
+
+    a = asking_free();
+
+    if (a == NULL) {
+        fail(sender, NET_ERR_FULL);
+        return;
+    }
+
+    /* Not random, and it does not need to be: this asks one resolver on a
+     * link nobody else is on, and the id is here to match an answer to a
+     * question rather than to defend against a forged one. A stack on a
+     * real network would want a random id and a random source port. */
+    id = ++net.dns_id;
+
+    if (!dns_ask((const char *)req->payload, req->length, id)) {
+        fail(sender, NET_ERR_NO_ROUTE);
+        return;
+    }
+
+    a->used  = true;
+    a->who   = sender;
+    a->id    = id;
+    a->until = req->ticks ? (kosmos_ticks() + req->ticks) : 0;
+}
+
 static void serve(const struct message *msg, uint64_t sender)
 {
     struct net_request req;
@@ -1526,6 +1907,7 @@ static void serve(const struct message *msg, uint64_t sender)
     case NET_OP_INFO:
         reply.status   = NET_OK;
         reply.has_card = net.has_card ? 1u : 0u;
+        reply.dns      = net.dns;
         reply.mtu      = net.mtu;
         reply.address  = net.address;
         reply.netmask  = net.netmask;
@@ -1539,6 +1921,7 @@ static void serve(const struct message *msg, uint64_t sender)
         net.address    = req.address;
         net.netmask    = req.netmask;
         net.gateway    = req.gateway;
+        net.dns        = req.dns;
         net.configured = true;
 
         /*
@@ -1911,6 +2294,10 @@ static void serve(const struct message *msg, uint64_t sender)
         return;
     }
 
+    case NET_OP_RESOLVE:
+        resolve(&req, sender);
+        return;                     /* parked; answered later or expired */
+
     case NET_OP_POLL: {
         uint32_t arrived = 0;
         uint32_t ready;
@@ -1974,6 +2361,21 @@ static void expire(uint64_t hz)
         if (p->used && now - p->sent_at > hz) {
             p->used = false;
             fail(p->who, NET_ERR_UNREACHABLE);
+        }
+    }
+
+    /*
+     * And the names nobody answered. Every park in this server has to have
+     * a deadline: a caller waiting on a reply that will never come is a
+     * process stopped for ever, and UDP gives no indication that anything
+     * was lost.
+     */
+    for (i = 0; i < sizeof(net.asking) / sizeof(net.asking[0]); i++) {
+        struct asking *a = &net.asking[i];
+
+        if (a->used && a->until != 0 && now > a->until) {
+            a->used = false;
+            fail(a->who, NET_ERR_TIMEOUT);
         }
     }
 

@@ -1518,53 +1518,18 @@ still inferred from three points rather than measured.
 
 ---
 
-## Current milestone
+## Where the work comes from
 
-**No milestone is the current one, and that is the honest answer.** M6, M7,
-M8 and M9 have all met their definitions of done; M2's remaining half is a
-cable. What is being built now is chosen by hand — see **Concrete next
-step** at the bottom: a PDF reader, then sound, then Doom.
+**There are no milestones**, and there were thirteen. `docs/roadmap.md` is
+two lists now - what is built and what is wanted - because a number that no
+longer means anything is read as though it does: the README said "M6,
+graphics" while the machine had a journalled filesystem, a TCP/IP stack and
+a web browser in it.
 
-**The PDF reader reads.** Not draws: `pdftext` puts a page of The Odyssey on
-the console in about 380 ms, through the object layer, the C scanner and the
-`/ToUnicode` tables. What is missing before it is a *viewer* is glyph
-rendering - `gfx` rasterises by codepoint and a CID font gives glyph
-*indices*, so `stbtt_GetGlyphBitmap` and loading a font from the document's
-own bytes are the next C additions - and then the window, which is
-`reader`'s text view with a different thing behind it.
-
-**M6 — Graphics and the app server. Done.** Its definition of done is met and
-tested: `wm hello-win,stuck` drags a window with a hung application inside it
-and the window keeps moving. There is a framebuffer, a surface type, a
-blitter, bitmap and outline fonts, a compositor with a backbuffer and damage
-tracking, a mouse, a UI kit, a Deskbar, and a Terminal.
-
-The Terminal closed the last structural problem on that list. The window
-manager could not usefully be run detached while it and the shell's line
-editor were both draining one keyboard; once the shell is a window there is
-one reader. The framebuffer half had already gone the same way — a process
-that owns the screen takes it, and the console stops drawing.
-
-**Still ahead of M6, and not blocking anything:** virtio-gpu and the
-`hal_fb_flush` it will earn the HAL. ramfb gives no dirty rectangles and no
-vblank, so damage tracking saves the drawing but not the scanout. Under
-emulation neither is the bottleneck.
-
-**M5 — Namespaces and servers. Done.** Its definition of done is met, both halves, and the last item on the list — taking Lua out of the kernel — is done as well.
-
-**M4 — Lua to userspace.** Its definition of done is met. Two of its listed pieces are not built; see below.
-
-**M3 — Microkernel. Done.**
-
-**M2 — Lua in the kernel + second target**, whose remaining half is the second target and is blocked on cables.
-
-Definition of done: a `>` prompt over serial where `2+2` returns `4`, under QEMU **and** on real hardware.
-
-**The QEMU half is done.** The prompt runs Lua 5.4.8 with coroutines, closures, the string and math libraries, and errors caught by `pcall`.
-
-**The hardware half is blocked on cables** and is the only thing left in M2.
-
-**M0 and M1 are closed.**
+What gets built next is chosen by hand, from the wishlist, by what is
+interesting and what unblocks the most. The order agreed for now: a
+resolver, then a non-blocking send, then x86-64 under QEMU, then real
+hardware.
 
 ## Active target
 

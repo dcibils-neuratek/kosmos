@@ -275,12 +275,17 @@ Deskbar.</td></tr>
 
 <h2>Where it is</h2>
 
-<p>Milestone 6, graphics. The kernel is 6,700 lines of code and has no
-architecture-specific instruction left in it, which is what makes "the
-kernel is portable" a checkable claim rather than an aspiration. Next is a
-second architecture — x86-64 under QEMU — and then real hardware, a
-Raspberry Pi 5, chosen because it is hard enough that a fast desktop on it
-would be a real result rather than an emulator number.</p>
+<p>The kernel is 6,700 lines of code and has no architecture-specific
+instruction left in it, which is what makes "the kernel is portable" a
+checkable claim rather than an aspiration. Next is a second architecture —
+x86-64 under QEMU — and then real hardware, a Raspberry Pi 5, chosen because
+it is hard enough that a fast desktop on it would be a real result rather
+than an emulator number.</p>
+
+<p>Before that, two things the browser is waiting on: a resolver, so an
+address can be a name instead of four numbers, and a non-blocking send —
+half a frame is currently the application blocked on a message whose handler
+swaps an index and returns.</p>
 
 <p>What it cannot do is a longer list than what it can, and the repository
 is specific about both. <a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/state.md">docs/state.md</a>
