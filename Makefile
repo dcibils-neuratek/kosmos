@@ -78,7 +78,17 @@ endif
 # which is the collision this name exists to prevent, arrived at from the
 # other direction.
 #
-VARIANT := $(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)
+#
+# The architecture is part of it, and only when it is not the default.
+#
+# Two architectures share this tree and their objects are not
+# interchangeable - an x86-64 `.o` in `build/kernel/` would be found by
+# make, be newer than its source, and be linked into an ARM image, which
+# fails at the link with a message about incompatible formats and no hint at
+# all about why. Left out of the name for aarch64 so that every path in
+# every document that was written before there was a second one still says
+# what it says.
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)
 
 
 # Where generated sources go. Defined here rather than beside the rules that
