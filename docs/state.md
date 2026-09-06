@@ -8,6 +8,67 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### The review before 0.9: four passes, and what prose costs
+
+**Twenty-five commits of a second architecture, reviewed as `CLAUDE.md`
+asks - not a skim, and reading the files as they now are.** The spine of it
+was a pattern the port itself created: **x86 doubled several lists, and
+nothing checks that they agree.**
+
+`X86_FLAGS` against `CFLAGS_BASE` lost three things in a row, each found
+only when something broke - the user base address, the screen size, and the
+heap size. That last one killed the TinyGL demos with a page fault at
+`USER_HEAP` plus exactly 512 pages, because the kernel mapped 512 and the
+userland compiled into it believed 3072.
+
+**What the four passes found:**
+
+*The doubled lists.* The two flag lists now differ in exactly two places
+and both are deliberate: `-Iuser`, which the userland needs through
+`UCFLAGS` and the kernel merely carries, and `TESTDEFS`, which is the
+finding - **`tests/tests.c` has never run on x86-64.** 127 checks, 4,085
+lines, the largest single test asset here, and there is no x86 test image
+target for `TEST=1` to build. `SRCS` against `X86_SRCS` is otherwise honest
+pairing - `gic.c` against `pic.c`, `el0.S` against `user.S`.
+
+*Prose that asserts hardware.* One live bug: `about.lua` said "a
+microkernel with a Lua userland, on AArch64" four lines above a `Platform:`
+field reading `QEMU q35 x86-64`, so the window disagreed with itself in one
+screenful. It asks `/dev/cpu` now. Everything else was either guarded
+already - `init.lua` does it exactly right, `c.arch == "x86-64" and "a
+calibrated TSC" or "AArch64 cannot read that"` - or a comment.
+
+*Documents against code.* `CLAUDE.md` claimed a per-CPU struct, `TPIDR_EL1`
+and a per-CPU runqueue. **All three were false, and had been since the
+repository's first commit** - written before there was a kernel to
+describe, in the present tense, and never revisited. Corrected in place
+rather than deleted, and `docs/smp.md` now counts what SMP would actually
+take. The other load-bearing claims hold: no loose `volatile` on MMIO, no
+hardware addresses outside `hal/`, hot reload genuinely gone.
+
+*Dead weight.* Clean, which is the one pass that came back empty.
+`sched_rr.c` looked like a candidate and is not - it is selectable at
+runtime through a policy list, which is the whole point of the seam. Every
+harness is reachable from a make target now; `run_disk.py` was not, and had
+been asserting behaviour `init.lua` deliberately replaced for months.
+
+**Two findings left open rather than fixed**, because both are real work
+rather than a line:
+
+- **`tests/tests.c` on x86-64.** Needs an x86 test image target. The
+  suite that most directly exercises the kernel has run on one board only.
+- **43 AArch64 references in `kernel/`'s comments**, across nine files.
+  The code was made portable and its prose was not: `process.c` still
+  explains a mapping in terms of "an L1 slot" at `0x80000000`, which is
+  the ARM number, in a file that compiles for both.
+
+**The lesson, and it is the same one four times over: code has `make test`,
+and prose has nobody.** Every wrong thing found tonight was a sentence -
+in a comment, a string, a document or a Makefile variable - that was true
+when written and was never asked again. The port did not introduce them; it
+made them visible, because a second machine is a second reader.
+
+
 ### x86-64: it runs the desktop
 
 ```

@@ -93,8 +93,13 @@ win:add(ui.text{
   blocks = {
     { style = "title", text = "What Kosmos is" },
 
+    -- The architecture is asked for rather than written down. It said "on
+    -- AArch64" for as long as there was only one, and then said it on a
+    -- q35 - four lines above a "Platform:" field reading "QEMU q35
+    -- x86-64", so the window disagreed with itself in one screenful.
     { style = "body", text =
-      "A microkernel with a Lua userland, on AArch64. The kernel knows " ..
+      ("A microkernel with a Lua userland, on %s. The kernel knows "):
+        format(cpu.arch or "this machine") ..
       "about threads, address spaces, IPC and capabilities, and about " ..
       "nothing else. There is no filesystem in it, no network, no " ..
       "graphics beyond the boot screen, and no allocator anywhere." },

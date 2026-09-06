@@ -270,7 +270,26 @@ to say, and hard guarantees, which would mean bounding every kernel
 operation. Kosmos wants a desktop that feels alive, not an airbag that fires
 in time.
 
-**Single-core**, and SMP is on the wishlist. The code is written SMP-ready anyway: no loose mutable globals, `TPIDR_EL1` as the pointer to the per-CPU struct, a per-CPU runqueue even with a single CPU.
+**Single-core**, and SMP is on the wishlist. **The code is not written
+SMP-ready, and this line said it was from the first commit onwards.**
+
+What it claimed - no loose mutable globals, `TPIDR_EL1` as the pointer to a
+per-CPU struct, a per-CPU runqueue even with one CPU - was true of none of
+them, ever. `TPIDR_EL1` has never appeared in `arch/` or `kernel/`; there is
+no per-CPU struct; the runqueue is `head[]` and `tail[]` at file scope in
+`sched_prio.c`; `current`, the running thread, is one global in
+`thread.c`; and there is not a lock or an atomic anywhere in the kernel.
+
+**It was an intention written in the present tense**, in the commit that set
+up the repository, before there was a kernel to describe - and nothing ever
+went back to it. Worth leaving the correction here rather than quietly
+deleting the sentence, because the failure is not the sentence: the rule
+below about a principle that stops being true fires when something
+*changes*, and this never changed, so nothing tripped. Code has `make test`.
+Prose has nobody, and this file is read as fact.
+
+What SMP would actually take is in `docs/smp.md`, counted rather than
+guessed.
 
 **No hardware addresses outside `hal/`.** Not one.
 

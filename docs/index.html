@@ -508,14 +508,59 @@ through QEMU's NAT.</td></tr>
 Deskbar.</td></tr>
 </table>
 
+<h2>What's new</h2>
+
+<p>Versions are <code>major.minor.revision</code>: a revision per push, a
+minor when something substantial lands. There is no release schedule and
+nothing here is stable — this is a learning project and the version number
+is a bookmark, not a promise.</p>
+
+<table>
+<tr><td>0.9</td><td><strong>A second architecture.</strong> Kosmos runs on
+x86-64 as well as AArch64, and runs the whole desktop there: window manager,
+Deskbar, Tracker, terminal, browser, network, disk and sound. All thirteen
+files in <code>kernel/</code> compile for both with no <code>#ifdef</code> in
+any of them, and the display harness passes the same sixty-two checks on each
+board in the same time. The four virtio drivers moved into a shared
+directory rather than being rewritten, with each board bringing its own
+transport underneath: fixed offsets from a device-tree window on one, a walk
+of the PCI capability list on the other.</td></tr>
+
+<tr><td>0.8</td><td><strong>A web browser, and a network under it.</strong>
+NetSurf's hubbub, libdom and libcss vendored unpatched and running on a
+freestanding libc: HTML parsed, the CSS cascade consulted, text laid out and
+painted. TCP, so a page can come off the real internet through QEMU's NAT,
+and an HTTP server to go the other way. The allocator learned to grow, so a
+program that needs memory asks for it instead of the whole system being
+rebuilt with a bigger heap. And the 64-bit-only line was drawn
+deliberately — which is what ruled the Pi 1 out.</td></tr>
+
+<tr><td>0.7</td><td><strong>The servers moved to C, one at a time.</strong>
+Audio first, because it sits on a deadline and proved the point; then the
+small ones, then the filesystem and the console. Hot reload was removed
+rather than argued for, having run out of things to reload. A journalled
+filesystem, and eight OpenGL demos each in its own address space.</td></tr>
+
+<tr><td>0.6</td><td>The desktop before either of those: a window manager, a
+widget kit, a Deskbar, and applications that are separate processes talking
+by message.</td></tr>
+</table>
+
 <h2>Where it is</h2>
 
-<p>The kernel is 6,700 lines of code and has no architecture-specific
-instruction left in it, which is what makes "the kernel is portable" a
-checkable claim rather than an aspiration. Next is a second architecture —
-x86-64 under QEMU — and then real hardware, a Raspberry Pi 5, chosen because
-it is hard enough that a fast desktop on it would be a real result rather
-than an emulator number.</p>
+<p>The kernel has no architecture-specific instruction left in it, and
+that stopped being an aspiration the day a second architecture compiled it:
+x86-64 runs the same <code>kernel/</code> as AArch64, with no
+<code>#ifdef</code> in any of the thirteen files. Next is SMP — real
+multi-core scheduling — and then real hardware, a Raspberry Pi 5, chosen
+because it is hard enough that a fast desktop on it would be a real result
+rather than an emulator number.</p>
+
+<p>SMP is further off than it looks, and the repository is specific about
+why: there is no per-CPU state and not a lock or an atomic anywhere in the
+kernel, because a uniprocessor does not need them.
+<a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/smp.md">docs/smp.md</a>
+counts what it would take.</p>
 
 <p>Before that, two things the browser is waiting on: a resolver, so an
 address can be a name instead of four numbers, and a non-blocking send —
