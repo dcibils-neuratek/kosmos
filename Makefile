@@ -1491,8 +1491,24 @@ $(X86_BUILD)/kosmos.bin: $(X86_SRCS) boot/x86_64/kosmos.ld
 	$(OBJCOPY) -O binary $(X86_BUILD)/kosmos.elf $@
 	@echo "$@: $$(wc -c < $@) bytes"
 
+# Accelerate it on a machine whose processor is the one being emulated.
+#
+# `make KVM=1 x86` on an x86-64 Linux host runs the guest on the host's own
+# cores, which is the whole point of a second architecture: a PC running
+# this natively rather than a PC emulating an ARM emulating this. It needs
+# `-cpu host`, because KVM cannot pretend to be another processor - the same
+# trade `make fast` makes on ARM, and it is why `make bench` stays on TCG.
+#
+# It does nothing on this Mac. Apple Silicon's hypervisor virtualises the
+# processor it is, and that is not an x86-64.
+ifeq ($(KVM),1)
+X86_ACCEL := -accel kvm -cpu host
+else
+X86_ACCEL :=
+endif
+
 x86: x86-build
-	qemu-system-x86_64 -M q35 -m 512M -nographic -no-reboot \
+	qemu-system-x86_64 -M q35 -m 512M -nographic -no-reboot $(X86_ACCEL) \
 	  -kernel $(X86_BUILD)/kosmos.bin
 
 # The same machine, running on this Mac's own cores. See ACCEL above for

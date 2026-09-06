@@ -10,13 +10,34 @@ Last updated: 2026-09-06
 
 ### x86-64: it boots, ticks, maps and switches
 
-**`make x86` is a second architecture, four steps in.** Long mode on QEMU's
-q35, a serial console, an IDT that reports what went wrong, a timer
-interrupt, four levels of page table built from C, and two contexts handing
-the processor back and forth. **The six headers `kernel/` includes from
-`arch/` all exist now** - `context.h`, `cpu.h`, `mmio.h`, `mmu.h`, `page.h`,
-`trap.h` - and `kernel/pmm.c` compiles here unchanged, which is the first
-evidence that "the kernel is portable" was a fact rather than a hope.
+**`make x86` is a second architecture, five steps in, and it runs a
+process.** Long mode on QEMU's q35, a serial console, an IDT that reports
+what went wrong, a timer interrupt, four levels of page table built from C,
+two contexts handing the processor back and forth, and ring 3 - where a
+program in its own address space makes a `syscall`, gets an answer back
+through `sysretq`, and is then handed the address of the kernel's own
+`.text` and told to read it:
+
+```
+process died: page fault
+  cs 0x2b   rip 0x80000015   cr2 0x101000
+  protection, read, user
+```
+
+Present, and unreadable to it - one bit in one entry is the entire distance
+between a process and the kernel's code, which is why the address was handed
+over deliberately rather than guessed at. Then the machine keeps running and
+only stops for the kernel's *own* deliberate write to read-only `.text`:
+`protection, write, kernel`. Two faults, two privilege levels, two error
+codes, one machine that stops for one of them.
+
+**The six headers `kernel/` includes from `arch/` all exist now** -
+`context.h`, `cpu.h`, `mmio.h`, `mmu.h`, `page.h`, `trap.h` - and
+`kernel/pmm.c` compiles here unchanged, which is the first evidence that
+"the kernel is portable" was a fact rather than a hope.
+
+`make KVM=1 x86` runs it on an x86-64 Linux host's own cores, which is the
+point of the exercise. It does nothing on this Mac.
 
 `arch/x86_64/main.c` is a staging `kmain`, not `kernel/main.c`, and it
 checks what each step built rather than asserting it: the three kinds of
@@ -47,12 +68,15 @@ exact only because `virt` reports a whole number of 2 MB pages. A PC does
 not. **Latent rather than wrong on ARM, and left alone rather than changed
 mid-port** - it would take a machine reporting an odd amount of RAM.
 
-**Next on this path is ring 3**: a GDT with user segments, a TSS holding
-RSP0, and `syscall`/`sysret` - the counterpart of `arch/aarch64/el0.S`.
-After that, the rest of `kernel/`, which is where the temporary `panic` and
-`thread_exit` in `arch/x86_64/main.c` go away, and then a `hal/pc/` with a
-framebuffer in it. `-accel kvm` is the point of the exercise and is not
-worth turning on until there is more than a boot stub to run.
+**Next on this path is the rest of `kernel/`** - `thread.c`, `sched.c`,
+`ipc.c`, `caps.c`, `process.c`, `syscall.c` and `console.c` - which is where
+the four temporary things in `arch/x86_64/main.c` go away: `panic`,
+`thread_exit`, `x86_syscall` and `trap_user_fault`, each of which exists to
+fill a seam the real file will fill. They are written against the arch
+headers rather than against ARM, so this is expected to be mostly a matter
+of compiling them and finding out where that is not true. Then lazy FP,
+which preemption will want, and then a `hal/pc/` with a framebuffer,
+keyboard and virtio in it.
 
 ### The browser
 
@@ -1285,10 +1309,10 @@ visible.
    in the endpoint struct - no allocator - a decision about what a full
    queue does, and backpressure. A change to the IPC model, which is why it
    is written down rather than started.
-4. **x86-64, under QEMU** - *started, and four steps in.* Boot, exceptions,
-   paging and the context switch are done and the six `arch/` headers all
-   exist; see the section at the top of this file. What is left is ring 3,
-   then compiling the rest of `kernel/` against those headers, then a
+4. **x86-64, under QEMU** - *started, and five steps in.* Boot, exceptions,
+   paging, the context switch and ring 3 are done and the six `arch/`
+   headers all exist; see the section at the top of this file. What is left
+   is compiling the rest of `kernel/` against those headers, then a
    `hal/pc/` with a framebuffer, keyboard and virtio in it. The 64-bit line
    was drawn here precisely so that this is not a refactor - `kernel/` has
    no architecture-specific instruction left in it, and `kernel/pmm.c`

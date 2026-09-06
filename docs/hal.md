@@ -5,15 +5,32 @@
 
 ## x86-64, and what a second architecture actually cost
 
-**It boots, it ticks, it maps and it switches.** `make x86` puts Kosmos into
-long mode on QEMU's q35, prints over COM1, takes a timer interrupt, builds
-four levels of page table from C and hands the processor back and forth
-between two contexts. What it does not yet do is run anything at ring 3.
+**It boots, it ticks, it maps, it switches, and it runs a process.** `make
+x86` puts Kosmos into long mode on QEMU's q35, prints over COM1, takes a
+timer interrupt, builds four levels of page table from C, hands the
+processor back and forth between two contexts, and drops into ring 3 - where
+a program in its own address space makes a `syscall`, gets an answer back
+through `sysretq`, and is then handed the address of the kernel's own
+`.text` and told to read it:
+
+```
+process died: page fault
+  cs 0x2b   rip 0x80000015   cr2 0x101000
+  protection, read, user
+```
+
+Present, and unreadable to it. Then the machine keeps running.
+
+`make KVM=1 x86` runs it on an x86-64 Linux host's own cores. It needs
+`-cpu host` - KVM cannot pretend to be another processor - which is the same
+trade `make fast` makes on ARM. It does nothing on an Apple Silicon Mac,
+whose hypervisor virtualises the processor it is.
 
 The order was the one this project used on ARM and it was worth repeating:
-print, then exceptions, then the memory map, then the switch. A kernel that
-cannot print is a kernel debugged by bisecting a hang, and an exception
-handler that has never run is an exception handler that does not work.
+print, then exceptions, then the memory map, then the switch, then ring 3. A
+kernel that cannot print is a kernel debugged by bisecting a hang, and an
+exception handler that has never run is an exception handler that does not
+work.
 
 **The shape of the problem is different in one way that decides the rest.**
 ARM hands you 64-bit execution and asks which privilege level you would
@@ -136,6 +153,47 @@ switched away.
 thread's own stack and returns - putting it back in the slot the outgoing
 `call` took it out of.
 
+### Ring 3, which needs a table AArch64 has no counterpart to
+
+A privilege level on ARM is bits in PSTATE, and dropping to EL0 is an `eret`
+with the right ones in SPSR. Here it is a property of a *segment
+descriptor*, so `arch/x86_64/gdt.c` exists and `arch/aarch64/` has nothing
+like it: five descriptors, in the one order the syscall pair will accept,
+plus a task state segment holding the stack an entry into the kernel lands
+on.
+
+**The order is arithmetic rather than convention.** `syscall` takes CS from
+`IA32_STAR[47:32]` and SS from that plus 8; `sysretq` takes SS from
+`IA32_STAR[63:48]` plus 8 and CS from that plus 16. So the kernel pair is
+adjacent one way, the user pair adjacent the other way, and 0x18 is a hole
+only a 32-bit `sysretl` would load - which this kernel does not execute and
+will not.
+
+**`syscall` does not switch the stack.** That is the whole of what makes its
+entry different from an exception's, and it is why `IA32_FMASK` has to clear
+IF: there are two instructions where the kernel is running at ring 0 on a
+stack the *process* chose, and an interrupt there would push a ring 0 frame
+onto memory the process picked. AArch64 has no equivalent exposure - the
+hardware selects SP_EL1 before the first instruction of the handler. The
+kernel stack comes out of the TSS, which is where an interrupt from ring 3
+would have got it too, so there is one answer to "which stack does an entry
+land on" rather than two that can disagree.
+
+**`gdt_init` runs before `mmu_init`, and that is load-bearing.** The
+processor *writes* the accessed bit into a descriptor when a segment
+register is loaded. `start.S`'s table is in `.rodata`, which `mmu_init`
+narrows to read-only, so a descriptor with that bit still clear would fault
+on the next interrupt, from inside the interrupt. The table `gdt_init`
+builds is in `.bss` and writable, which removes the question rather than
+relying on the first tick having already set the bit.
+
+**`user_rsp` and the TSS are per-CPU state in everything but name**, and
+`user.S` says so where `fp.c` says it about `owner`. With one core there is
+one of each; with two, both belong in a per-CPU structure reached through
+the GS base, which is what `swapgs` exists for and what this entry will
+grow. x86 forces that structure earlier than ARM does, because `syscall`
+hands the kernel no stack and there is nowhere else for the anchor to be.
+
 ### Endianness, which turned out to be free
 
 Both targets are little-endian - AArch64 *can* be big-endian through
@@ -159,9 +217,6 @@ them.
 
 In order:
 
-  * **Ring 3.** A GDT with user segments, a TSS holding RSP0, and the
-    `syscall`/`sysret` pair or an interrupt gate - the counterpart of
-    `arch/aarch64/el0.S`. Nothing runs at user level until this exists.
   * **The rest of `kernel/`.** `thread.c`, `sched.c`, `ipc.c`, `caps.c`,
     `process.c`, `syscall.c` and `console.c`, which is where the temporary
     `panic` and `thread_exit` in `arch/x86_64/main.c` go away. They are
@@ -175,8 +230,12 @@ In order:
     same hardware QEMU offers on both machines, so those drivers should move
     across rather than be rewritten - but they are reached over PCI here
     instead of the device tree's MMIO windows, and finding them is the work.
-  * **`-accel kvm`**, which is the point of the exercise: a PC running this
-    on its own cores rather than under TCG.
+  * **Preemption**, which is the first thing that will want the lazy FP
+    above: nothing here is scheduled yet, and both `context_switch` calls in
+    the bring-up are explicit.
+  * **Trying it on a PC.** `make KVM=1 x86` is there and the boot path
+    exercises `CR4.SMEP` under `-cpu host`, but there is not much to run on
+    it until `kernel/` builds.
 
 
 ---
