@@ -1,0 +1,191 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+/*
+ * Exceptions on x86-64.
+ *
+ * The counterpart of `arch/aarch64/trap.c`, and the job is the same one:
+ * when something goes wrong, say what and where, in enough detail that the
+ * next person does not have to bisect a hang. That file exists because a
+ * fault with no handler is a machine that stops with no output at all, and
+ * the reasoning carries over exactly.
+ *
+ * What does not carry over is the mechanism. ARM has a vector *table* of
+ * sixteen entries and one syndrome register that says what happened. x86
+ * has 256 gate descriptors, each holding a code selector and a handler
+ * address split across three fields, and the only thing identifying the
+ * fault is which gate the processor went through.
+ */
+
+#include <stdint.h>
+
+#include "cpu.h"
+#include "hal.h"
+#include "trap.h"
+
+#define IDT_ENTRIES  32
+
+/*
+ * A gate descriptor, and the reason it looks like this is history.
+ *
+ * The handler address is 64 bits split into three fields with the type in
+ * between them, because the 64-bit descriptor was grown from the 32-bit one
+ * by appending the high half rather than by redesigning it. There is no
+ * meaning to find in the layout; it is a shape to match exactly.
+ *
+ * Intel SDM volume 3, figure 6-8.
+ */
+struct gate {
+    uint16_t handler_low;
+    uint16_t selector;
+    uint8_t  ist;               /* 0: use the stack we are already on */
+    uint8_t  flags;
+    uint16_t handler_mid;
+    uint32_t handler_high;
+    uint32_t reserved;
+} __attribute__((packed));
+
+struct idtr {
+    uint16_t limit;
+    uint64_t base;
+} __attribute__((packed));
+
+static struct gate idt[IDT_ENTRIES];
+
+/* The stubs in `vectors.S`, which is where the vector number comes from. */
+extern void isr0(void);  extern void isr1(void);  extern void isr2(void);
+extern void isr3(void);  extern void isr4(void);  extern void isr5(void);
+extern void isr6(void);  extern void isr7(void);  extern void isr8(void);
+extern void isr9(void);  extern void isr10(void); extern void isr11(void);
+extern void isr12(void); extern void isr13(void); extern void isr14(void);
+extern void isr15(void); extern void isr16(void); extern void isr17(void);
+extern void isr18(void); extern void isr19(void); extern void isr20(void);
+extern void isr21(void); extern void isr22(void); extern void isr23(void);
+extern void isr24(void); extern void isr25(void); extern void isr26(void);
+extern void isr27(void); extern void isr28(void); extern void isr29(void);
+extern void isr30(void); extern void isr31(void);
+
+static void (*const stubs[IDT_ENTRIES])(void) = {
+    isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
+    isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
+    isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23,
+    isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
+};
+
+/*
+ * The names, because a vector number is not a diagnosis.
+ *
+ * `arch/aarch64/trap.c` decodes ESR_EL1 into a sentence for the same
+ * reason: "sync exception, EC 0x25" sends you to the manual, and
+ * "translation fault, level 2, on a write" tells you what to look at.
+ */
+static const char *const names[IDT_ENTRIES] = {
+    "divide error", "debug", "non-maskable interrupt", "breakpoint",
+    "overflow", "bound range exceeded", "invalid opcode",
+    "device not available", "double fault", "coprocessor overrun",
+    "invalid TSS", "segment not present", "stack-segment fault",
+    "general protection fault", "page fault", "reserved",
+    "x87 floating-point error", "alignment check", "machine check",
+    "SIMD floating-point error", "virtualisation exception",
+    "control protection", "reserved", "reserved", "reserved", "reserved",
+    "reserved", "reserved", "reserved", "VMM communication",
+    "security exception", "reserved",
+};
+
+static void say(const char *s)
+{
+    while (*s != '\0') {
+        hal_putchar(*s++);
+    }
+}
+
+static void say_hex(uint64_t v)
+{
+    static const char digits[] = "0123456789abcdef";
+    int shift;
+
+    say("0x");
+
+    for (shift = 60; shift >= 0; shift -= 4) {
+        hal_putchar(digits[(v >> shift) & 0xf]);
+    }
+}
+
+static void line(const char *label, uint64_t value)
+{
+    say("  ");
+    say(label);
+    say("  ");
+    say_hex(value);
+    say("\r\n");
+}
+
+void trap_init(void)
+{
+    struct idtr pointer;
+    unsigned i;
+
+    for (i = 0; i < IDT_ENTRIES; i++) {
+        uint64_t at = (uint64_t)stubs[i];
+
+        idt[i].handler_low  = (uint16_t)at;
+        idt[i].handler_mid  = (uint16_t)(at >> 16);
+        idt[i].handler_high = (uint32_t)(at >> 32);
+
+        /* 0x08 is the code selector the boot GDT put at index 1. */
+        idt[i].selector = 0x08;
+        idt[i].ist      = 0;
+
+        /* present | DPL 0 | 64-bit interrupt gate. An *interrupt* gate
+         * rather than a trap gate: it clears IF on entry, so a handler is
+         * not itself interrupted before it has saved anything. */
+        idt[i].flags    = 0x8E;
+        idt[i].reserved = 0;
+    }
+
+    pointer.limit = (uint16_t)(sizeof(idt) - 1);
+    pointer.base  = (uint64_t)idt;
+
+    __asm__ volatile("lidt %0" :: "m"(pointer));
+}
+
+void trap_handle(struct trapframe *f)
+{
+    uint64_t cr2;
+
+    __asm__ volatile("movq %%cr2, %0" : "=r"(cr2));
+
+    say("\r\n*** ");
+    say(f->vector < IDT_ENTRIES ? names[f->vector] : "unknown exception");
+    say("\r\n");
+
+    line("vector ", f->vector);
+    line("error  ", f->error);
+    line("rip    ", f->rip);
+    line("cs     ", f->cs);
+    line("rflags ", f->rflags);
+    line("rsp    ", f->rsp);
+
+    /*
+     * CR2 only means anything for a page fault - it is where the faulting
+     * access went. Printing it for every exception would be printing a
+     * stale address from the last one, which is worse than printing
+     * nothing because it looks like evidence.
+     */
+    if (f->vector == 14) {
+        line("cr2    ", cr2);
+
+        say("  ");
+        say((f->error & 1) ? "protection" : "not present");
+        say(", ");
+        say((f->error & 2) ? "write" : "read");
+        say(", ");
+        say((f->error & 4) ? "user" : "kernel");
+        say("\r\n");
+    }
+
+    say("\r\nhalted.\r\n");
+
+    for (;;) {
+        cpu_irq_disable();
+        cpu_wait_for_interrupt();
+    }
+}

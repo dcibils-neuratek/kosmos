@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "trap.h"
 
 static void say(const char *s)
 {
@@ -76,7 +77,24 @@ void kmain_x86(uint32_t multiboot)
     say(((efer >> 10) & 1) ? "  long mode active\r\n"
                            : "  LONG MODE NOT ACTIVE\r\n");
 
-    say("\r\nIt speaks. That is the whole of this step.\r\n");
+    trap_init();
+    say("  idt      installed, 32 vectors\r\n");
+
+    /*
+     * And a fault on purpose, because an exception handler that has never
+     * run is an exception handler that does not work.
+     *
+     * `arch/aarch64/trap.c` earned its detail by being the thing that
+     * explained every other failure; this one has to be shown to work
+     * before anything is built on top of it, and the cheapest way to show
+     * it is to break something deliberately. 1 GB is the first address the
+     * boot page tables do not map.
+     */
+    say("\r\nWriting to 0x40000000, which nothing maps:\r\n");
+
+    *(volatile uint64_t *)0x40000000UL = 1;
+
+    say("*** the write succeeded, which means paging is not what we think\r\n");
 
     for (;;) {
         __asm__ volatile ("hlt");

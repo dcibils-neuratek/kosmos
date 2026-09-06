@@ -1470,7 +1470,8 @@ X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
              -Ihal -Iarch/x86_64 -Ikernel
 
-X86_SRCS  := boot/x86_64/start.S hal/pc/uart.c arch/x86_64/main.c
+X86_SRCS  := boot/x86_64/start.S arch/x86_64/vectors.S \
+             arch/x86_64/trap.c hal/pc/uart.c arch/x86_64/main.c
 X86_BUILD := build/x86_64
 
 .PHONY: x86 x86-build
