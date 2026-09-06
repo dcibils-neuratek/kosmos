@@ -337,7 +337,7 @@ void kmain(void)
 
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way into EL1. Now there is a handler and a source. */
-    __asm__ volatile("msr daifclr, #2" ::: "memory");
+    cpu_irq_enable();
 
     boot_stage("timer and interrupts");
     boot_why("The heartbeat: from here a thread that never yields is interrupted.");
@@ -516,12 +516,12 @@ void kmain(void)
          * until something happens and then unmasks, which is the point at
          * which the handler runs.
          */
-        __asm__ volatile("msr daifset, #2" ::: "memory");
+        cpu_irq_disable();
 
         if (!thread_any_ready()) {
-            __asm__ volatile("wfi");
+            cpu_wait_for_interrupt();
         }
 
-        __asm__ volatile("msr daifclr, #2" ::: "memory");
+        cpu_irq_enable();
     }
 }

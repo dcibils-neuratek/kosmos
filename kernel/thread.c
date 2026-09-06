@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "cpu.h"
 #include "thread.h"
 #include "pmm.h"
 #include "page.h"
@@ -127,8 +128,7 @@ bool sched_switch_to(unsigned index)
      * re-enabled, so this is correct when called from somewhere that
      * already held them off.
      */
-    __asm__ volatile("mrs %0, daif" : "=r"(daif));
-    __asm__ volatile("msr daifset, #3" ::: "memory");
+    daif = cpu_interrupts_save();
 
     while (n < THREAD_MAX) {
         struct thread *t = policy->pick_next();
@@ -147,7 +147,7 @@ bool sched_switch_to(unsigned index)
         policy->enqueue(drained[i]);
     }
 
-    __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
+    cpu_interrupts_restore(daif);
 
     return true;
 }
@@ -686,8 +686,7 @@ void thread_yield(void)
      * stays correct when called from somewhere that already held them off -
      * the same reason `sched_switch_to` does it that way.
      */
-    __asm__ volatile("mrs %0, daif" : "=r"(daif));
-    __asm__ volatile("msr daifset, #3" ::: "memory");
+    daif = cpu_interrupts_save();
 
     /*
      * Ask before offering. Picking first and enqueuing afterwards is what
@@ -706,7 +705,7 @@ void thread_yield(void)
      * thread's own saved mask on the way back in, and this puts back what
      * the caller had.
      */
-    __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
+    cpu_interrupts_restore(daif);
 }
 
 void thread_block(void)

@@ -437,7 +437,6 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     struct cpu_info cpu;
     struct memrange ram;
     struct fb fb;
-    uint64_t el;
 
     if (!process_may_write(p, out_ptr, sizeof(info))) {
         return SYS_ERR_FAULT;
@@ -542,8 +541,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.tick_hz    = TICK_HZ;
     info.page_size  = PAGE_SIZE;
 
-    __asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
-    info.current_el = (uint32_t)((el >> 2) & 3);
+    info.current_el = (uint32_t)cpu_current_el();
 
     *(struct sysinfo *)out_ptr = info;
     return 0;
@@ -1308,10 +1306,7 @@ void syscall_dispatch(struct trapframe *tf)
          * caller was timing. The read is cheap; the barrier is the part
          * that makes the answer mean anything.
          */
-        uint64_t t;
-        __asm__ volatile("isb" ::: "memory");
-        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(t));
-        result = (long)t;
+        result = (long)cpu_cycles();
         break;
     }
 

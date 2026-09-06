@@ -303,6 +303,8 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **A heap that grows is a runtime answer to a runtime question.** 2 MB was fixed at compile time and `make DOOM=1` existed to rebuild the system with a bigger one; `malloc` asks the kernel for another arena instead, to 48 MB. Arenas are never adjacent, so each is its own physical list and coalescing cannot cross | runtime/libc/malloc.c |
 | Sep 2026 | **64-bit only, and that is a constraint on word size rather than on architecture.** The Pi 1 was the best board to learn on and is ARMv6; a second `arch/` is expected and wanted, but x86-64 buys everything ARMv6 would have and gives up nothing. 16 AArch64 sites in 8656 lines of kernel say it is not a refactor | docs/hal.md |
 | Sep 2026 | **A web page parses on Kosmos.** Hubbub, libdom and libcss running at EL0 on the freestanding libc - three `p` elements counted through a tree walk, `&amp;` decoded from a generated table, a stylesheet understood. Linking proved none of it | tools/run_web.py |
+| Sep 2026 | **The kernel has no architecture-specific instruction in it.** Sixteen sites across four files became seven inlines in `arch/aarch64/cpu.h`; the two maskings stayed two, because `DAIFSet #3` is IRQ *and* FIQ where `#2` is IRQ alone, and merging them would silently change when a fast interrupt may arrive | arch/aarch64/cpu.h |
+| Sep 2026 | **A browser window, and it says what it is not.** It fetches, parses and shows a document's text, with *text only, there is no layout engine yet* in the status line - the chrome is here early so each piece of engine has somewhere to appear when it lands | user/bin/browser.lua |
 
 ---
 

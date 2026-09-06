@@ -54,4 +54,97 @@ unsigned cpu_dcache_line(const struct cpu_info *cpu);
 /* The physical address range the core can drive, in bits. */
 unsigned cpu_pa_bits(const struct cpu_info *cpu);
 
+/*
+ * ---------------------------------------------------------------------
+ * What the CPU *does*, as opposed to what it is.
+ * ---------------------------------------------------------------------
+ *
+ * Sixteen sites in `kernel/` used to write these instructions out inline,
+ * across four files, in 8656 lines that are otherwise portable. Every one
+ * is here now, which is what makes the claim "the kernel is not
+ * architecture-specific" checkable rather than aspirational: a second
+ * `arch/` implements this header and `kernel/` does not change.
+ *
+ * That second `arch/` is expected - x86-64 - and it is why this is worth
+ * doing while it is sixteen sites. `hal.md` records the reasoning.
+ *
+ * **The two maskings are different and are kept different.** `DAIFSet`'s
+ * immediate is a bitmask - D, A, I, F from bit 3 down - so `#3` is I and F
+ * together and `#2` is I alone. The scheduler wants everything off while it
+ * moves threads between queues; the idle loop wants IRQ off around a `wfi`
+ * and nothing else. Collapsing them into one function would have been a
+ * silent change to when a fast interrupt can arrive.
+ */
+
+/*
+ * Everything off, and what was on before.
+ *
+ * Saved and restored rather than unconditionally re-enabled, because both
+ * callers can be reached from somewhere that already held interrupts off.
+ */
+static inline uint64_t cpu_interrupts_save(void)
+{
+    uint64_t daif;
+
+    __asm__ volatile("mrs %0, daif" : "=r"(daif));
+    __asm__ volatile("msr daifset, #3" ::: "memory");
+
+    return daif;
+}
+
+static inline void cpu_interrupts_restore(uint64_t daif)
+{
+    __asm__ volatile("msr daif, %0" :: "r"(daif) : "memory");
+}
+
+/* IRQ alone, which is what the idle loop and the first enable after boot
+ * are talking about. */
+static inline void cpu_irq_enable(void)
+{
+    __asm__ volatile("msr daifclr, #2" ::: "memory");
+}
+
+static inline void cpu_irq_disable(void)
+{
+    __asm__ volatile("msr daifset, #2" ::: "memory");
+}
+
+/*
+ * Sleep until something happens.
+ *
+ * Wakes on a pending interrupt even with PSTATE.I set: masking stops the
+ * exception being *taken*, not the wakeup. The idle loop depends on exactly
+ * that, and the comment there explains why the unmask comes after.
+ */
+static inline void cpu_wait_for_interrupt(void)
+{
+    __asm__ volatile("wfi");
+}
+
+/*
+ * The cycle counter, with the barrier that makes it mean anything.
+ *
+ * `isb` first, or the read can be reordered ahead of whatever the caller
+ * was timing. The read is cheap; the barrier is the part that earns it.
+ */
+static inline uint64_t cpu_cycles(void)
+{
+    uint64_t t;
+
+    __asm__ volatile("isb" ::: "memory");
+    __asm__ volatile("mrs %0, cntpct_el0" : "=r"(t));
+
+    return t;
+}
+
+/* Which exception level this is running at, decoded. */
+static inline unsigned cpu_current_el(void)
+{
+    uint64_t el;
+
+    __asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
+
+    return (unsigned)((el >> 2) & 3);
+}
+
 #endif /* ARCH_AARCH64_CPU_H */

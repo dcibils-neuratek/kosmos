@@ -8,6 +8,68 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**There is a browser window, and it shows a page fetched off the network.**
+`wm browser:10.0.2.2:8000/` opens a connection, sends a GET, parses what
+comes back with hubbub, and displays the document's text with the counts
+underneath. Every piece of that was built separately; this is the first
+thing that runs them together.
+
+**It is not a rendered page and the window says so**, in the status line
+rather than only in a comment: *text only, there is no layout engine yet*.
+The chrome is NetSurf's shape - back, reload, an address, a status line -
+and it is here early *because* the engine is unfinished. A window with
+somewhere for each piece to appear is what makes the next piece visible when
+it lands.
+
+Two defects the first screenshot showed, both mine:
+
+  - the title bar said "Browser" while the page was called something else.
+    `win.title = ...` sets a local copy; the bar belongs to the desktop, and
+    `win:retitle()` is what reaches it;
+  - the byte count was the whole HTTP response while the window showed only
+    the body, which is a number that quietly does not match the screen.
+
+The kit is only in a `WEB=1` image, so the application degrades rather than
+raising: on an ordinary build it opens and says which build it is on. An app
+that raised there would be a broken entry in every Deskbar.
+
+**And `kernel/` has no architecture-specific instruction left in it.** The
+sixteen sites are seven inlines in `arch/aarch64/cpu.h`; what remains in
+`kernel/` are two *comments* mentioning TTBR0. That is what makes "the
+kernel is portable" checkable rather than aspirational - a second `arch/`
+implements that header and `kernel/` does not change.
+
+**The two maskings stayed two.** `DAIFSet` takes a bitmask, so `#3` is IRQ
+*and* FIQ where `#2` is IRQ alone: the scheduler wants everything off while
+it moves threads between queues, and the idle loop wants only IRQ off around
+a `wfi`. One function for both would have been a silent change to when a
+fast interrupt may arrive - the kind that appears once in a thousand boots
+on real hardware and never under QEMU.
+
+**Next is selection**: a `css_select_handler`, about thirty callbacks
+answering libcss's questions about a libdom node, which turns the DOM and
+the stylesheets into a computed style per element. Then a plotter over
+`gfx` - proved against a hand-built box tree, so painting is verifiable
+before layout exists - then block layout, then inline layout and line
+breaking.
+
+**Layout will be ours rather than NetSurf's**, and the reason is where a
+simplification still leaves something recognisable. HTML5's error recovery
+and CSS's cascade are hopeless to hand-write, which is exactly why the
+vendored libraries earn their place; layout degrades gracefully. Taking
+NetSurf's would mean taking its core - content, fetch, box construction -
+and that is a large dependency graph for the part we can most afford to do
+simply. What it costs, and it is real: no floats, no tables, no absolute
+positioning, so real pages will look wrong in real ways.
+
+**Fonts are not the ceiling, which is worth recording because it was
+assumed.** `assets/fonts/` ships four outline faces and `docfont.c` already
+rasterises glyphs with a coverage cache sized for a page of two thousand -
+built for the PDF reader. Headings can be larger than body text and text can
+be proportional. Pages can look like pages.
+
+---
+
 **A web page parses on Kosmos.**
 
     kosmos> local w = sys.kit("web")

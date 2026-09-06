@@ -1,3 +1,4 @@
+#include "cpu.h"
 #include "panic.h"
 #include "console.h"
 
@@ -19,6 +20,6 @@ void panic(const char *msg)
     kputs("\n");
 
     for (;;) {
-        __asm__ volatile("wfi");
+        cpu_wait_for_interrupt();
     }
 }
