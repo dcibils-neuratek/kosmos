@@ -166,7 +166,32 @@ function gc:text(x, y, s, color, bg, role)
 
   if room <= 0 then return end
 
-  local shown = s:sub(skip + 1, skip + room)
+  --
+  -- Sliced by *character*, not by byte.
+  --
+  -- `skip` and `room` are counted in cells, and `s:sub` counts bytes, so
+  -- the two agreed only for as long as everything on screen was ASCII. On
+  -- anything else this cut the line short - and could cut through the
+  -- middle of a UTF-8 sequence, leaving a byte that is not a character.
+  --
+  -- Guarded, because `utf8.offset` raises on a continuation byte and a
+  -- browser will be handed malformed input on purpose. Falling back to the
+  -- byte slice is what this did before and is wrong in the same old way
+  -- rather than in a new one.
+  --
+  local shown
+
+  do
+    local ok, from = pcall(utf8.offset, s, skip + 1)
+
+    if ok and from then
+      local fine, stop = pcall(utf8.offset, s, skip + room + 1)
+
+      shown = (fine and stop) and s:sub(from, stop - 1) or s:sub(from)
+    else
+      shown = s:sub(skip + 1, skip + room)
+    end
+  end
 
   if shown == "" then return end
 

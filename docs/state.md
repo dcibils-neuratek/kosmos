@@ -34,9 +34,14 @@ is an *appearance* decision and `appearance.lua` already offers it.
 
 **Two things found on the way that are worth fixing and are not fixed:**
 
-`gc:text` clips with `s:sub(skip + 1, skip + room)` - a *byte* slice, where
-`skip` and `room` are counted in columns. On any multi-byte text that
-truncates the line early and can cut a UTF-8 sequence in half.
+`gc:text` clipped with `s:sub(skip + 1, skip + room)` - a *byte* slice,
+where `skip` and `room` are counted in columns. The two agreed only while
+everything on screen was ASCII; on anything else it cut the line short and
+could cut through the middle of a UTF-8 sequence. It slices by character now,
+through `utf8.offset`, guarded with a fallback to the old behaviour because
+`utf8.offset` raises on a continuation byte and a browser is handed
+malformed input on purpose - the conformance benchmark contains it
+deliberately.
 
 **The mojibake recorded here was not a bug, and the correction is the
 interesting part.** With a proportional face a page came back as `cafÃ©`
