@@ -8,6 +8,54 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+**The browser needs nothing running anywhere.** `wm browser` opens on a page
+compiled into `browser.lua`, parsed by hubbub, walked through libdom and
+painted by `web_paint.c` - the whole engine, on a document that came from
+nowhere. `builds/kosmos-0.8.33-f82c43e-1280x800-web.elf` was checked that
+way: no network device in the guest and nothing on the host.
+
+It replaced an image published an hour earlier, which could do neither of
+the things below and so gave nobody a choice worth having.
+
+**Three bugs, and the first two were only visible from outside.**
+
+*Looking at a new build meant starting a web server on the host.* Which is a
+thing an operating system has no business asking of the computer running it,
+and it took being told so to see it - the harness serves pages from this Mac
+because that makes tests offline and deterministic, and that arrangement got
+carried into the instructions as though it were a requirement. Every browser
+ever written ships a start page for this reason. A Lua string rather than a
+file, because a released image has no disk under it: `run-kosmos.sh` passes
+no drive, so `/home` is an empty ramfs at boot.
+
+*`Host` was the literal string `kosmos`.* HTTP/1.0 made the header optional
+and the web stopped being like that twenty years ago: one address serves
+hundreds of sites and this is how a server knows which was wanted. So every
+real host answered the wrong thing, and the only server that ever looked
+right was one serving a single site out of a directory - exactly what it had
+been tested against. `fetch.lua` had it right from the start.
+
+*Redirects were not followed.* Pointing it at CERN's 188.184.67.127 fetched
+twenty-one bytes and painted an empty page, because that address is a 301 to
+a path. The connection was fine; it stopped at the first thing the internet
+said. Followed now, up to five.
+
+**And an address beginning with a slash is read from the namespace** rather
+than fetched, which is what lets the browser open a document on the machine
+it is running on.
+
+`make browser` has a fifth check: Home must render with the server asked for
+*nothing*. It is the one most easily lost, because everything else on the
+page works whether or not it holds.
+
+What still stands between this and the web is two things and neither is
+small: **no resolver**, so a remote address is four numbers, and **no TLS**,
+so https is out. QEMU's NAT does give the guest real outbound internet - a
+plain-HTTP host that serves by address works today.
+
+---
+
+
 **There is a binary with the browser in it.**
 `builds/kosmos-0.8.32-a59fcc6-1280x800-web.elf`, gated the way `CLAUDE.md`
 asks: `make stress` for 60 rounds first, and then booted *as a released
