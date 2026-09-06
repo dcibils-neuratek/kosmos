@@ -68,15 +68,46 @@ exact only because `virt` reports a whole number of 2 MB pages. A PC does
 not. **Latent rather than wrong on ARM, and left alone rather than changed
 mid-port** - it would take a machine reporting an odd amount of RAM.
 
-**Next on this path is the rest of `kernel/`** - `thread.c`, `sched.c`,
-`ipc.c`, `caps.c`, `process.c`, `syscall.c` and `console.c` - which is where
-the four temporary things in `arch/x86_64/main.c` go away: `panic`,
-`thread_exit`, `x86_syscall` and `trap_user_fault`, each of which exists to
-fill a seam the real file will fill. They are written against the arch
-headers rather than against ARM, so this is expected to be mostly a matter
-of compiling them and finding out where that is not true. Then lazy FP,
-which preemption will want, and then a `hal/pc/` with a framebuffer,
-keyboard and virtio in it.
+### All thirteen kernel files compile for x86-64
+
+**And there is no `#ifdef` in any of them.** `kernel/` has never contained a
+line of assembly, which made it easy to believe it was already portable. A
+second architecture is what asks properly, and the answer was: almost, in
+six places, two of which a search for register names does not find.
+
+- `thread.c` planted seven registers by hand → `context_init`.
+- `process.c` declared and called `enter_el0` → `enter_user`.
+- `syscall.c` named x registers ninety-six times - ninety-four argument
+  reads, two result writes, one number → `struct syscall_frame`.
+- **`process.c` decoded page descriptor bits**: `*entry & 1` and
+  `(*entry >> 6) & 3`. This is `process_may_read` and `process_may_write` -
+  the check on every pointer a process hands the kernel - and on x86 bit 6
+  is Dirty and bit 7 is page-size, so it would not have crashed. It would
+  have answered wrongly about who owns a page → `as_user_may`.
+- **`struct sysinfo` carried seven AArch64 ID registers by name**, through
+  the syscall boundary to `/dev/cpu` → `cpu_arch` plus an opaque
+  `cpu_raw[]`, with each `arch/*/cpu.h` naming its own indices. The only one
+  of the six that was a decision rather than a rename; the decision log has
+  it.
+- **`kernel/main.c` printed the string "MIDR_EL1"** in the line naming the
+  machine it woke up on → the architecture composes its own identity and the
+  kernel prints what it is given.
+
+`kernel/` now contains no assembly, no register names, no descriptor bits
+and no architecture in its strings.
+
+**Next is `hal/pc/`, and it is a different kind of work.** 512 lines against
+`hal/qemu-virt/`'s 3,699: there is a UART, the 8259, the PIT and the
+multiboot memory map, and `kernel/main.c` wants `hal_fb_init`,
+`hal_keyboard_init`, `hal_pointer_init`, `hal_net_init` and `hal_snd_init`
+before it will link. virtio is the same hardware QEMU offers on both
+machines, so those drivers should move across rather than be rewritten - but
+they are found over PCI here instead of in the device tree's MMIO windows,
+and finding them is the work. An x86 `setjmp` and lazy FP are the two
+smaller things beside it, and the four temporary functions in
+`arch/x86_64/main.c` - `thread_exit`, `x86_syscall`, `trap_user_fault`, and
+`panic`, which is already gone - go away as the files that fill their seams
+arrive.
 
 ### The browser
 
@@ -1309,11 +1340,11 @@ visible.
    in the endpoint struct - no allocator - a decision about what a full
    queue does, and backpressure. A change to the IPC model, which is why it
    is written down rather than started.
-4. **x86-64, under QEMU** - *started, and five steps in.* Boot, exceptions,
-   paging, the context switch and ring 3 are done and the six `arch/`
-   headers all exist; see the section at the top of this file. What is left
-   is compiling the rest of `kernel/` against those headers, then a
-   `hal/pc/` with a framebuffer, keyboard and virtio in it. The 64-bit line
+4. **x86-64, under QEMU** - *started, and the kernel is portable.* Boot,
+   exceptions, paging, the context switch and ring 3 are done, the six
+   `arch/` headers all exist, and all thirteen `kernel/*.c` compile for it
+   with no `#ifdef`. What is left is `hal/pc/`: a framebuffer, a keyboard, a
+   pointer and virtio over PCI. See the section at the top of this file. The 64-bit line
    was drawn here precisely so that this is not a refactor - `kernel/` has
    no architecture-specific instruction left in it, and `kernel/pmm.c`
    building unchanged on the second machine is the first piece of evidence

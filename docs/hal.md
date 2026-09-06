@@ -217,12 +217,12 @@ them.
 
 In order:
 
-  * **The rest of `kernel/`.** `thread.c`, `sched.c`, `ipc.c`, `caps.c`,
-    `process.c`, `syscall.c` and `console.c`, which is where the temporary
-    `panic` and `thread_exit` in `arch/x86_64/main.c` go away. They are
-    written against the arch headers rather than against ARM, so this is
-    expected to be mostly a matter of compiling them and finding out where
-    that is not true.
+  * ~~The rest of `kernel/`.~~ **Done: all thirteen files compile for
+    x86-64, with no `#ifdef` in any of them.** It took closing six places
+    where AArch64 had leaked out of `arch/`, two of which a search for
+    register names does not find - `process.c` decoding page descriptor
+    bits in the check on every syscall pointer, and the boot log printing
+    the literal string "MIDR_EL1". `docs/state.md` lists all six.
   * **Lazy FP**, as above.
   * **A `hal/pc/` worth the name.** Today it is a 16550, the 8259, the PIT
     and the multiboot memory map. A desktop needs a framebuffer, a keyboard,
