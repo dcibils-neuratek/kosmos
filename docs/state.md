@@ -8,6 +8,68 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+**The browser was measured, and half of every frame is waiting.**
+
+Two runs of the same code: under TCG, which `CLAUDE.md` says is for
+detecting a regression rather than for claiming a speed, and under `hvf`,
+where the guest runs on this Mac's own cores and only the devices are
+emulated. Neither is a Pi 5 number. What they are good for is
+*attribution*, which was the question.
+
+Loading a 4.3 KB page:
+
+```
+            TCG      hvf
+fetch      106.6      2.9 ms
+parse       11.7      1.7
+layout      17.6      1.8
+paint        3.5      0.6
+```
+
+A scroll frame:
+
+```
+            TCG      hvf
+page blit   10.7      2.8 ms
+commit      16.3      2.8
+total       28.2      5.7
+worst       39.5     10.8-15.6
+allocated              1.02 KB
+```
+
+**Nothing is doing wasteful work.** Layout is 1.8 ms and happens once. Paint
+is 0.6 ms and happens once. The per-frame blit is 884x584 pixels and 2.8 ms
+is about the floor for a software compositor at that size.
+
+**What the split found is that the other half of a frame is not computing.**
+`commit` is a synchronous message whose handler swaps a buffer index and
+records a damage rectangle - and it costs as much as the blit. The worst
+frame moved between 10.8 and 15.6 ms across two runs of identical code,
+which is the tell: it is not a cost, it is *scheduling*. A commit that lands
+while the compositor is mid-pass waits out the rest of that pass.
+
+**And it is not the collector**, which was the first suspicion and the one
+this project has been bitten by before. 1.02 KB a frame, against the 4.2 KB
+the desktop was making before the console moved to a struct and the 0.6 KB
+it makes now. The browser is already in the good range.
+
+Two ways at the worst case, and neither has been taken:
+
+  * **Triple buffering.** The application always has a buffer to draw into
+    and never waits for the reply that says which. Fifty per cent more
+    surface memory, and local to `ui.lua`.
+  * **A shorter compositor pass**, which is what `make frames` measures and
+    what already paid for itself once on the desktop.
+
+The instrumentation stays in `browser.lua`: the status line reports fetch,
+parse, layout and paint after a load, and frame, blit, commit, worst and
+kilobytes while scrolling. `pdfview` reports its render time for the same
+reason - this is the only place in the system that can say which of four
+entirely different kinds of work a slow page is.
+
+---
+
+
 **Links work.** Click one and the browser goes there. That is six things at
 once - the layout kept its boxes, the click became a point on the page,
 `link_at` found the run under it, the relative address resolved against the

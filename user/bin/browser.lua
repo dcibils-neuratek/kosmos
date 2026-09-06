@@ -180,6 +180,63 @@ local doc
 
 local said = "an address is four numbers - there is no resolver yet"
 
+--
+-- Where the time went, along the bottom right.
+--
+-- Not decoration and not a debug switch left in by accident: this is the
+-- only place in the system that can say whether a page is slow because of
+-- the network, the parser, layout or the blitter, and those four want
+-- entirely different work. `CLAUDE.md` is clear that a number from QEMU is
+-- for detecting a regression rather than for claiming a speed - what it is
+-- honestly good for is *attribution*, which is the question here.
+--
+local timing = ""
+
+local HZ = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+
+-- Tenths of a millisecond, because a frame is single-digit milliseconds and
+-- whole ones would round most of this to zero.
+local function since(t0)
+  return ((sys.ticks() - t0) * 10000) // HZ
+end
+
+local function tenths(n)
+  return ("%d.%d"):format(n // 10, n % 10)
+end
+
+--
+-- What the last repaint cost, split three ways, and the worst so far.
+--
+-- Split because the total answers nothing. A repaint is chrome this file
+-- draws, one blit of the visible band out of the page, and a `commit` -
+-- which is a *synchronous* message to the window manager, so its cost is an
+-- IPC round trip plus however long that process took to get to it. Those
+-- want completely different work, and which of them dominates is not
+-- something to guess at.
+--
+-- It was worth asking. On this Mac's own cores a frame is 5.7 ms, of which
+-- the blit is 2.8 and the commit is 2.8 - and the commit handler swaps an
+-- index and records a rectangle. Half of every frame is spent *waiting*
+-- rather than computing, which is not a thing any amount of faster drawing
+-- would have found.
+--
+-- The worst case rather than the average, because responsiveness is a
+-- promise about the worst case and always was.
+--
+local frame_ms, frame_worst = 0, 0
+local blit_ms, commit_ms = 0, 0
+
+--
+-- And what a repaint *allocates*, in hundredths of a kilobyte.
+--
+-- `CLAUDE.md` records why this is measured next to the time rather than
+-- instead of it: the desktop's frame profile found the language question
+-- worth about a ninth of a pass and the allocation question worth four
+-- times the worst-case collector pause. A process on a deadline is judged
+-- by `gc_pause_max`, and the collector runs when it chooses.
+--
+local frame_kb = 0
+
 local address = { text = "10.0.2.2:8000/", caret = 14, from = 0,
                   focus = false }
 local here                                          -- what is on screen
@@ -389,6 +446,9 @@ local function frame()
 
   if not s then return end
 
+  local began = sys.ticks()
+  local held = collectgarbage("count")
+
   --
   -- The toolbar.
   --
@@ -429,6 +489,11 @@ local function frame()
   --
   -- The page.
   --
+  -- The chrome is measured out of the split rather than into it: it came
+  -- back at 0.1 ms against a 2.8 ms blit, which is a number that answers
+  -- nothing and takes room on the line from the two that do.
+  local drew_chrome = sys.ticks()
+
   s:fill(0, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
 
   if paper then
@@ -463,9 +528,30 @@ local function frame()
   --
   s:fill(0, H - STAT, W, STAT, theme.window)
   s:fill(0, H - STAT, W, 1, theme.line)
-  s:text(8, H - STAT + (STAT - gfx.height()) // 2, said, theme.text_dim)
+
+  local sy = H - STAT + (STAT - gfx.height()) // 2
+
+  s:text(8, sy, said, theme.text_dim)
+
+  if timing ~= "" then
+    s:text(W - 8 - gfx.measure(timing), sy, timing, theme.text_dim)
+  end
+
+  local drew_all = sys.ticks()
+
+  blit_ms = ((drew_all - drew_chrome) * 10000) // HZ
 
   win:commit()
+
+  commit_ms = since(drew_all)
+  frame_ms = since(began)
+
+  -- A negative delta means the collector ran inside this frame, which says
+  -- nothing about what the frame allocated. Kept rather than clamped,
+  -- because seeing one is itself the answer to a question.
+  frame_kb = math.floor((collectgarbage("count") - held) * 100)
+
+  if frame_ms > frame_worst then frame_worst = frame_ms end
 end
 
 local function say(text)
@@ -482,6 +568,8 @@ end
 -- glyphs. A measuring pass breaks the same lines without drawing them.
 --------------------------------------------------------------------------
 
+local laid_ms, painted_ms = 0, 0
+
 local function lay_out(doc)
   if paper then
     paper:free()
@@ -490,9 +578,19 @@ local function lay_out(doc)
 
   paper_h, content_h, top = 0, 0, 0
 
+  --
+  -- Two calls, and the split is the measurement: the first lays the page
+  -- out and keeps the boxes, the second paints them. Timing them together
+  -- would answer "the page took 90 ms" and leave the only useful question -
+  -- *which half* - unanswered.
+  --
+  local t0 = sys.ticks()
   local wanted = doc:render(nil, PAGE_W) + 16
-  local room   = PAPER_BYTES // (PAGE_W * 4)
-  local tall   = math.max(VIEW_H, math.min(wanted, room))
+
+  laid_ms = since(t0)
+
+  local room = PAPER_BYTES // (PAGE_W * 4)
+  local tall = math.max(VIEW_H, math.min(wanted, room))
 
   local made = pcall(function()
     paper = gfx.surface{ w = PAGE_W, h = tall }
@@ -504,7 +602,11 @@ local function lay_out(doc)
   end
 
   paper_h = tall
+
+  local t1 = sys.ticks()
+
   content_h = doc:render(paper, PAGE_W, tall)
+  painted_ms = since(t1)
 
   return content_h
 end
@@ -536,6 +638,7 @@ local function load(text)
 
   say("connecting to " .. text .. " ...")
 
+  local fetch_from = sys.ticks()
   local conn, why = fs.connect("/net", where, port)
 
   if not conn then
@@ -580,12 +683,15 @@ local function load(text)
     return false
   end
 
+  local fetched_ms = since(fetch_from)
   local reply = table.concat(parts)
   local body = reply:match("\r\n\r\n(.*)$") or reply
 
   say(("parsing %d bytes..."):format(#body))
 
+  local parse_from = sys.ticks()
   local fresh, bad = web.parse(body)
+  local parsed_ms = since(parse_from)
 
   if not fresh then
     say("fetched " .. total .. " bytes, but it did not parse: " .. tostring(bad))
@@ -618,6 +724,16 @@ local function load(text)
     say(counts .. " - " .. tostring(why_not))
     return false
   end
+
+  --
+  -- Four numbers, in the order the bytes go through them. Read as
+  -- proportions rather than as speeds: this is QEMU, and `CLAUDE.md` is
+  -- clear about what a number from QEMU is worth. What it is worth is
+  -- knowing which of the four to work on.
+  --
+  timing = ("fetch %s  parse %s  layout %s  paint %s ms")
+           :format(tenths(fetched_ms), tenths(parsed_ms),
+                   tenths(laid_ms), tenths(painted_ms))
 
   if content_h > paper_h then
     say(("%s - %d pixels tall, and this shows the first %d")
@@ -757,6 +873,16 @@ function sink:key(c)
   elseif c == 91 then go_back()                      -- [
   elseif c == 93 then go_forward()                   -- ]
   else return false end
+
+  --
+  -- The *previous* repaint's cost, shown by this one. A frame cannot report
+  -- its own total before it has drawn the line it would report it on, and
+  -- while a key is held down one frame behind is the same number.
+  --
+  timing = ("frame %s (page %s, commit %s) worst %s ms, %s KB")
+           :format(tenths(frame_ms), tenths(blit_ms), tenths(commit_ms),
+                   tenths(frame_worst),
+                   ("%d.%02d"):format(frame_kb // 100, frame_kb % 100))
 
   frame()
 

@@ -564,3 +564,11 @@ Two pictures come out, not one: `build/browser.png` is the page it started
 on and `build/browser-linked.png` is the page it arrived at. The server
 being asked proves the click was routed; only the second picture proves what
 came back was laid out.
+
+**The status line in those pictures is half the point of them.** It reports
+fetch, parse, layout and paint after a load, and frame, blit, commit, the
+worst frame and the kilobytes allocated while scrolling - so a picture taken
+for the record is also a profile. Run the same capture with `-accel hvf
+-cpu host` spliced into `QEMU_ARGS` and the same line reads native speeds
+instead of TCG ones; `docs/state.md` has both columns for the run that
+found the commit wait.
