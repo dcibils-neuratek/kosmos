@@ -17,9 +17,41 @@
 
 #include "cpu.h"
 #include "hal.h"
+#include "mmu.h"
+#include "page.h"
+#include "panic.h"
+#include "pmm.h"
 #include "trap.h"
 
 void hal_ram_from_multiboot(uint32_t at);
+
+static void say(const char *s);
+
+/*
+ * `panic`, on loan until `kernel/` builds here.
+ *
+ * The real one is `kernel/panic.c`, and it is four lines longer for a
+ * reason that does not exist yet: it takes the screen back from whatever
+ * compositor had it, so a machine with a desktop on it does not stop dead
+ * with the explanation going only to a serial line nobody attached. There
+ * is no screen and no compositor on this architecture, so there is nothing
+ * to take back.
+ *
+ * **This disappears the moment `kernel/console.c` compiles here**, and it
+ * is in this file rather than a plausible-looking one so that it cannot be
+ * mistaken for a second implementation that was meant to stay.
+ */
+void panic(const char *msg)
+{
+    say("\r\nPANIC: ");
+    say(msg);
+    say("\r\n");
+
+    for (;;) {
+        cpu_irq_disable();
+        cpu_wait_for_interrupt();
+    }
+}
 
 static void say(const char *s)
 {
@@ -48,6 +80,97 @@ static void say_hex(uint64_t v)
  * says it *did*. They are set in different instructions and a boot that got
  * one and not the other is exactly the failure worth naming.
  */
+extern char __text_start[], __rodata_start[], __stack_guard[];
+
+/* What the map should say about the three kinds of page it distinguishes. */
+static void check_map(void)
+{
+    struct { const char *what; uintptr_t at; uint64_t want; uint64_t mask; }
+    cases[] = {
+        { "text   ", (uintptr_t)__text_start,   MAP_TEXT, PTE_P | PTE_RW | PTE_NX },
+        { "rodata ", (uintptr_t)__rodata_start, MAP_RO,   PTE_P | PTE_RW | PTE_NX },
+    };
+    unsigned i;
+    uint64_t *guard;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        uint64_t *e = mmu_page_entry(cases[i].at);
+
+        say("  ");
+        say(cases[i].what);
+        if (e == NULL) {
+            say("  NO PAGE ENTRY\r\n");
+        } else if ((*e & cases[i].mask) != (cases[i].want & cases[i].mask)) {
+            say("  WRONG: "); say_hex(*e); say("\r\n");
+        } else {
+            say("  "); say_hex(*e); say("\r\n");
+        }
+    }
+
+    guard = mmu_page_entry((uintptr_t)__stack_guard);
+    say("  guard  ");
+    say((guard != NULL && (*guard & PTE_P) == 0) ? "  unmapped\r\n"
+                                                 : "  STILL MAPPED\r\n");
+}
+
+/*
+ * An address space, used and given back.
+ *
+ * The count either side is the part that matters. A space allocates its
+ * PML4, its PDPT and a table per level it touches; `as_destroy` has to hand
+ * back exactly those and none of the kernel's, and a leak here is the shape
+ * of bug that only shows up on the fiftieth process.
+ */
+static void check_spaces(void)
+{
+    size_t before = pmm_free_pages();
+    struct addrspace *as = as_create();
+    uint64_t *entry;
+
+    if (as == NULL) {
+        say("  as       COULD NOT CREATE\r\n");
+        return;
+    }
+
+    if (as_map(as, USER_VA_BASE, (uintptr_t)__rodata_start, 1,
+               MAP_USER_RW) != AS_OK) {
+        say("  as       MAP REFUSED\r\n");
+        return;
+    }
+
+    /* Below the user region the tables are the kernel's, and writing there
+     * would edit every space at once. It has to be refused. */
+    if (as_map(as, PAGE_SIZE, PAGE_SIZE, 1, MAP_USER_RW) != AS_ERR_RANGE) {
+        say("  as       THE KERNEL REGION WAS WRITABLE\r\n");
+        return;
+    }
+
+    entry = as_page_entry(as, USER_VA_BASE);
+    say("  as       ");
+    if (entry == NULL || (*entry & PTE_US) == 0) {
+        say("NO USER PAGE\r\n");
+    } else {
+        say_hex(*entry);
+        say("\r\n");
+    }
+
+    /* And the kernel is still in it, sharing rather than copied. */
+    say("  as text  ");
+    entry = as_page_entry(as, (uintptr_t)__text_start);
+    say((entry != NULL && *entry == *mmu_page_entry((uintptr_t)__text_start))
+        ? "shared with the kernel\r\n" : "MISSING OR DIFFERENT\r\n");
+
+    as_destroy(as);
+
+    say("  as pages ");
+    if (pmm_free_pages() == before) {
+        say("all returned\r\n");
+    } else {
+        say_hex(before - pmm_free_pages());
+        say(" LEAKED\r\n");
+    }
+}
+
 void kmain_x86(uint32_t multiboot)
 {
     uint64_t cr0, cr3, efer;
@@ -127,20 +250,50 @@ void kmain_x86(uint32_t multiboot)
     }
 
     /*
-     * And a fault on purpose, because an exception handler that has never
-     * run is an exception handler that does not work.
+     * The page allocator, and then the real address space.
      *
-     * `arch/aarch64/trap.c` earned its detail by being the thing that
-     * explained every other failure; this one has to be shown to work
-     * before anything is built on top of it, and the cheapest way to show
-     * it is to break something deliberately. 1 GB is the first address the
-     * boot page tables do not map.
+     * This order is `kernel/main.c`'s and it is forced: the page tables
+     * come out of `pmm_alloc_page`, so there has to be an allocator before
+     * there can be a map.
      */
-    say("\r\nWriting to 0x40000000, which nothing maps:\r\n");
+    pmm_init();
+    say("  pmm      ");
+    say_hex(pmm_free_pages());
+    say(" of ");
+    say_hex(pmm_total_pages());
+    say(" pages free\r\n");
 
-    *(volatile uint64_t *)0x40000000UL = 1;
+    mmu_init();
+    say("  mmu      four levels, loaded");
+    say(mmu_is_enabled() ? "\r\n" : "  BUT PAGING IS OFF\r\n");
 
-    say("*** the write succeeded, which means paging is not what we think\r\n");
+    /*
+     * Printing this sentence is most of the proof, and it is worth saying
+     * why: it went through the UART driver in .text, a string in .rodata
+     * and a stack frame in the guarded stack, all three of which are now
+     * described by tables this file built rather than by the three static
+     * ones in `start.S`.
+     */
+    check_map();
+    check_spaces();
+
+    /*
+     * And a fault on purpose, because an exception handler that has never
+     * run is an exception handler that does not work - and because a
+     * permission nothing has tested is a permission that might not be
+     * there.
+     *
+     * Writing to .text rather than to unmapped memory: the boot map made
+     * every page writable, so this fault can only come from the narrowing
+     * pass in `mmu_init`. The error code should say `protection, write,
+     * kernel` rather than `not present`, and that difference is the whole
+     * of what is being shown.
+     */
+    say("\r\nWriting to __text_start, which is mapped read-only:\r\n");
+
+    *(volatile uint64_t *)(uintptr_t)__text_start = 1;
+
+    say("*** the write succeeded, so .text is not read-only\r\n");
 
     for (;;) {
         __asm__ volatile ("hlt");

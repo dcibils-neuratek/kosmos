@@ -45,7 +45,7 @@
     .long __multiboot_header          /* where this header is */
     .long __load_start                /* where the image begins */
     .long 0                           /* 0: load to the end of the file */
-    .long __bss_end                   /* zero up to here */
+    .long __image_end                 /* reserve up to here */
     .long _start                      /* and begin here */
 
 /*
@@ -65,11 +65,6 @@
 pml4:   .skip 4096
 pdpt:   .skip 4096
 pd:     .skip 4096
-
-.align 16
-stack_bottom:
-    .skip 16384
-stack_top:
 
 .section .rodata
 .align 16
@@ -98,7 +93,7 @@ gdt_pointer:
 
 _start:
     cli
-    movl    $stack_top, %esp
+    movl    $__stack_top, %esp
 
     /* Multiboot leaves the information structure in ebx. Parked in esi,
      * which nothing below touches: edi is the destination register for
@@ -114,6 +109,10 @@ _start:
      * pdpt and pd while the processor is translating through them, and what
      * kills it is not the write but the first TLB miss after it.
      *
+     * The stack is deliberately *not* in here - it lives in its own section
+     * past __bss_end, behind a guard page - so `esp` set above survives
+     * this and does not need setting again.
+     *
      * The loader does not do this. A multiboot image is a flat file and
      * .bss is the part of it that was never in the file.
      */
@@ -123,7 +122,6 @@ _start:
     xorl    %eax, %eax
     rep stosb
 
-    movl    $stack_top, %esp        /* the stack was in what we just zeroed */
 
     /*
      * Three tables, identity mapping the first gigabyte.
@@ -187,7 +185,7 @@ long_mode:
     movw    %ax, %fs
     movw    %ax, %gs
 
-    movq    $stack_top, %rsp
+    movq    $__stack_top, %rsp
     xorq    %rbp, %rbp
 
     /* The multiboot pointer, parked in esi at entry, as the first
