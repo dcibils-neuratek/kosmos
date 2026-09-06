@@ -38,11 +38,22 @@ is an *appearance* decision and `appearance.lua` already offers it.
 `skip` and `room` are counted in columns. On any multi-byte text that
 truncates the line early and can cut a UTF-8 sequence in half.
 
-And with a proportional face the page came back as mojibake - `cafÃ©` for
-`café` - so something between `gc:text` and the blitter is still handling
-bytes where it should handle characters. `gfx.measure` decodes correctly and
-the two drawing loops in `gfx.c` decode correctly, so it is between them.
-That is where to start.
+**The mojibake recorded here was not a bug, and the correction is the
+interesting part.** With a proportional face a page came back as `cafÃ©`
+for `café`, and this file said something between `gc:text` and the blitter
+was still handling bytes. It is not. The test page had no `<meta charset>`,
+so the parser defaulted to a single-byte encoding, decoded each UTF-8 byte
+as its own character, and produced a genuinely double-encoded document. The
+renderer drew exactly what it was given.
+
+Adding the charset settles it: `café` becomes `caf` and one box, `Straße`
+becomes `Stra` and one box - **one box per character**, where before there
+were two glyphs. The decoding is right end to end, and the remaining boxes
+are only `spleen` having no glyph for those codepoints.
+
+Worth keeping because the false finding was written down with confidence and
+survived a commit. The benchmark file has a charset and never showed it;
+the page I wrote to test with did not.
 
 **A mistake to record rather than bury.** Demonstrating the font switch
 meant writing `/home/.appearance`, and it was written with a `fonts` key
