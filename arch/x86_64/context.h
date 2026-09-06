@@ -29,7 +29,8 @@
 #define CTX_RIP     56
 #define CTX_RFLAGS  64
 #define CTX_KSTACK  72
-#define CTX_SIZE    80
+#define CTX_FX      80      /* 512 bytes, and 16-byte aligned or it faults */
+#define CTX_SIZE    592
 
 #ifndef __ASSEMBLER__
 
@@ -85,6 +86,39 @@ struct context {
      * every switch *to* the thread.
      */
     uint64_t kernel_stack;
+
+    /*
+     * The x87 and SSE register file, saved on every switch.
+     *
+     * **This was deliberately absent until userland arrived, and userland
+     * is what changed the answer.** A thread that *calls* the switch needs
+     * none of this saved: System V makes every XMM register caller-saved,
+     * so the compiler already spilled whatever it cared about. A thread
+     * stopped by the timer between two instructions called nothing, and
+     * Lua's numbers are doubles - so a preempted process would resume
+     * mid-expression with the next process's values, which is a wrong
+     * answer and never a crash. AArch64 has the identical bug in its
+     * history and `test_fp_survives_a_preemption` catches it in about two
+     * spins in sixty.
+     *
+     * **Saved eagerly, and that is the order rather than the destination.**
+     * The ARM side did exactly this, measured what it cost - 36% of a
+     * context switch and 17% of an IPC round trip, for threads that mostly
+     * never touch an FP register - and then made it lazy: the switch
+     * disarms FP, the first instruction that wants it faults, and the
+     * handler moves the file. The whole mechanism exists here too, and
+     * `fp.c` writes down what it is: CR0.TS, vector 7, FXSAVE. What does
+     * not exist yet is the measurement, and this system does not push work
+     * down without one. Correct first, and 36% of a number nobody has taken
+     * is not an argument.
+     *
+     * 512 bytes, aligned to 16, because that is what FXSAVE requires of its
+     * operand - and an unaligned one is a general protection fault rather
+     * than a slow path. The alignment on this member is what gives the
+     * whole struct its alignment, which is what makes the offset above
+     * true for every thread.
+     */
+    uint8_t fx[512] __attribute__((aligned(16)));
 };
 
 _Static_assert(sizeof(struct context) == CTX_SIZE, "context size vs switch.S");
@@ -99,6 +133,8 @@ _Static_assert(offsetof(struct context, rip)    == CTX_RIP,    "CTX_RIP");
 _Static_assert(offsetof(struct context, rflags) == CTX_RFLAGS, "CTX_RFLAGS");
 _Static_assert(offsetof(struct context, kernel_stack) == CTX_KSTACK,
                "CTX_KSTACK");
+_Static_assert(offsetof(struct context, fx) == CTX_FX, "CTX_FX");
+_Static_assert(offsetof(struct context, fx) % 16 == 0, "FXSAVE wants 16");
 
 /*
  * There is no XMM state in here yet, and that is a gap rather than a
@@ -151,6 +187,34 @@ static inline void context_init(struct context *ctx, void (*entry)(void *),
     ctx->rsp = (uint64_t)(uintptr_t)stack_top;
     ctx->rflags = 0x202;
     ctx->kernel_stack = (uint64_t)(uintptr_t)exception_top;
+
+    /*
+     * A clean floating-point state, written out rather than left zero.
+     *
+     * FXRSTOR of an all-zero area does not fault - nothing reserved is set
+     * - and it is still wrong: MXCSR of zero means every SIMD exception
+     * *unmasked*, so a divide by zero in a process raises #XF instead of
+     * producing an infinity, which is not what any language expects. 0x1F80
+     * is the reset value, with all six masked, and 0x037F is the x87
+     * control word's.
+     *
+     * Copied from a template captured at boot would be the other way to do
+     * it, and it is worse: the template would hold whatever registers some
+     * thread had live, and a new process would start with another's
+     * numbers in it.
+     */
+    {
+        unsigned i;
+
+        for (i = 0; i < sizeof(ctx->fx); i++) {
+            ctx->fx[i] = 0;
+        }
+
+        ctx->fx[0] = 0x7f;      /* FCW, at offset 0  */
+        ctx->fx[1] = 0x03;
+        ctx->fx[24] = 0x80;     /* MXCSR, at offset 24 */
+        ctx->fx[25] = 0x1f;
+    }
 }
 
 /*

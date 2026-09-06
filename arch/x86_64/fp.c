@@ -31,6 +31,40 @@
  * grows the handler and this function grows a line.
  */
 
+#include <stdint.h>
+
+/*
+ * Turning the floating-point unit on, which x86 requires and ARM does not.
+ *
+ * An AArch64 core comes up able to execute FP instructions and `mmu_init`
+ * never mentions them. Here, SSE raises #UD until CR4.OSFXSR says the
+ * operating system knows how to save the state - the bit is literally an
+ * assertion by this file that `context_switch` does what it does - and
+ * CR0.EM has to be clear or every FP instruction is emulated into a trap
+ * that nothing handles.
+ *
+ * CR0.MP with EM clear means WAIT faults only when the task-switched flag
+ * is set, which is the pair the lazy scheme above would use. Setting it now
+ * costs nothing and is what the manual asks for.
+ */
+void fp_init(void)
+{
+    uint64_t cr0, cr4;
+
+    __asm__ volatile("movq %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1UL << 2);                 /* EM: no emulation */
+    cr0 |=  (1UL << 1);                 /* MP: monitor coprocessor */
+    __asm__ volatile("movq %0, %%cr0" :: "r"(cr0));
+
+    __asm__ volatile("movq %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1UL << 9) | (1UL << 10);    /* OSFXSR, OSXMMEXCPT */
+    __asm__ volatile("movq %0, %%cr4" :: "r"(cr4));
+
+    /* And a known x87 state, so the first FXSAVE writes something sane
+     * rather than whatever the firmware left. */
+    __asm__ volatile("fninit");
+}
+
 struct thread;
 
 void fp_forget(struct thread *t)

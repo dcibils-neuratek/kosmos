@@ -277,8 +277,16 @@ def main():
 
     check("all returned" in out, "an address space leaked pages")
 
-    # 6. The context switch.
+    # 6. The context switch, and the floating-point file with it.
+    #
+    #    The second half is the one worth having: the guest puts 42.0 in
+    #    xmm0, switches away, the other side overwrites it deliberately, and
+    #    it has to come back. Without the FXSAVE in `switch.S` the guest
+    #    reads back the *other* value - a wrong answer and never a crash,
+    #    which is exactly the shape of bug that survives for months.
     check("two round trips" in out, "the context switch did not round trip")
+    check("xmm0 intact" in out,
+          "the floating-point file did not survive a context switch")
 
     # 7. Ring 3, and the arithmetic done here rather than read back.
     m = re.search(r"ring3\s+0x([0-9a-f]+) from 0x([0-9a-f]+)", out)

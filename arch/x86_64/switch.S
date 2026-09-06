@@ -57,6 +57,16 @@ context_switch:
     movq    %rax, CTX_RFLAGS(%rdi)
     cli
 
+    /*
+     * The floating-point file, out and back in.
+     *
+     * `-mno-sse` stops the *compiler* emitting these; it says nothing about
+     * hand-written assembly, exactly as `-mgeneral-regs-only` does not stop
+     * the ARM switch from touching a Q register. `context.h` says why this
+     * is here at all and why it is eager.
+     */
+    fxsave  CTX_FX(%rdi)
+
     movq    %rbx, CTX_RBX(%rdi)
     movq    %rbp, CTX_RBP(%rdi)
     movq    %r12, CTX_R12(%rdi)
@@ -76,6 +86,8 @@ context_switch:
     movq    %rax, CTX_RSP(%rdi)
 
     /* From here nothing may touch the outgoing thread's stack again. */
+    fxrstor CTX_FX(%rsi)
+
     movq    CTX_RBX(%rsi), %rbx
     movq    CTX_RBP(%rsi), %rbp
     movq    CTX_R12(%rsi), %r12

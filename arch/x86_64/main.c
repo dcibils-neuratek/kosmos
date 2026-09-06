@@ -28,6 +28,7 @@
 #include "user.h"
 
 void hal_ram_from_multiboot(uint32_t at);
+void fp_init(void);
 
 
 /*
@@ -123,6 +124,36 @@ static struct context worker_ctx;
  * rsp+8 aligned to 16, and nothing called `thread_entry` to arrange that. */
 static uint8_t worker_stack[8192] __attribute__((aligned(16)));
 
+/*
+ * A value in xmm0, which is the whole reason `struct context` carries 512
+ * bytes it did not need until userland arrived.
+ *
+ * Written in assembly because this file is built `-mno-sse` - the same
+ * restriction the ARM kernel gets from `-mgeneral-regs-only`, and the same
+ * exception: the flag says what the *compiler* may emit, not what may be
+ * written by hand. `0x4045000000000000` is 42.0 as a double, which is what
+ * a Lua number is and what a preempted process would otherwise lose.
+ */
+#define FP_WORKER   0x4045000000000000ULL
+#define FP_CALLER   0x40590000000000c0ULL
+
+static void fp_set(uint64_t v)
+{
+    __asm__ volatile("movq %0, %%xmm0" :: "m"(v) : "memory");
+}
+
+static uint64_t fp_get(void)
+{
+    uint64_t v;
+
+    __asm__ volatile("movq %%xmm0, %0" : "=m"(v) :: "memory");
+
+    return v;
+}
+
+static volatile uint64_t worker_fp;
+static volatile uint64_t caller_fp;
+
 static volatile uint64_t worker_arg;
 static volatile uint64_t worker_sum;
 static volatile int worker_rounds;
@@ -161,7 +192,12 @@ static void worker(void *arg)
     worker_arg = m;
     worker_rounds++;
 
+    fp_set(FP_WORKER);
+
     context_switch(&worker_ctx, &main_ctx);
+
+    /* Read back after the caller deliberately put something else in it. */
+    worker_fp = fp_get();
 
     worker_rounds++;
     worker_sum = a + b + c + d + e + f;
@@ -193,7 +229,15 @@ static void check_switch(void)
                  &worker_stack[sizeof worker_stack], __stack_top);
 
     context_switch(&main_ctx, &worker_ctx);     /* into the worker */
+
+    /* The worker left 42.0 in xmm0. Overwrite it here, so that finding it
+     * again on the other side means the switch carried it rather than
+     * nobody having touched the register. */
+    fp_set(FP_CALLER);
+
     context_switch(&main_ctx, &worker_ctx);     /* and again, to finish it */
+
+    caller_fp = fp_get();
 
     say("  switch   ");
     if (worker_arg != marker) {
@@ -206,8 +250,14 @@ static void check_switch(void)
         say("thread_entry DID NOT REACH thread_exit\n");
     } else if (mine != 0xC0FFEE) {
         say("THE CALLER'S OWN LOCALS DID NOT SURVIVE\n");
+    } else if (worker_fp != FP_WORKER || caller_fp != FP_CALLER) {
+        say("xmm0 DID NOT SURVIVE THE SWITCH: ");
+        say_hex(worker_fp);
+        say(" / ");
+        say_hex(caller_fp);
+        say("\n");
     } else {
-        say("two contexts, two round trips, and an exit\n");
+        say("two contexts, two round trips, an exit, and xmm0 intact\n");
     }
 }
 
@@ -526,7 +576,8 @@ void kmain_x86(uint32_t multiboot)
      */
     gdt_init();
     user_init();
-    say("  gdt      5 descriptors, a tss, and syscall armed\n");
+    fp_init();
+    say("  gdt      5 descriptors, a tss, syscall armed, sse on\n");
 
     /*
      * The interrupt path, end to end, before anything depends on it.
