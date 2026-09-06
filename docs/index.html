@@ -208,9 +208,11 @@ out: the newest published image, the runner, and a disk to keep files on.</p>
   <img src="desktop.png" alt="The Kosmos desktop: a file manager, a widget
        gallery, a process list, a system monitor and a spinning 3D cube,
        with the Deskbar at the top right.">
-  <figcaption>The desktop. The cube is software-rendered at 50 fps with the
-  processor at 22% — the demos sleep between frames on purpose, so an idle
-  machine is idle.</figcaption>
+  <figcaption>Tracker, the process list, the system monitor, a
+  software-rendered bouncing sphere and the browser, laid out by
+  <code>tile</code> — arranging windows is the system's own job, and a
+  handle names exactly one window where dragging from outside would depend
+  on the stacking order.</figcaption>
 </figure>
 
 <h2>What it is trying to be</h2>
@@ -350,6 +352,22 @@ Deskbar.</td></tr>
   <figcaption>The browser. Headings, inline bold, italic and monospace on a
   shared baseline, list markers, and links you can click — laid out and
   painted by about a thousand lines of C on top of NetSurf's parsers.</figcaption>
+</figure>
+
+<figure>
+  <img src="network.png" alt="The web server, the network configuration, a
+       terminal and glgears running at once on the Kosmos desktop.">
+  <figcaption>The web server, the network settings, a terminal, and glxgears
+  at 61 fps in software. The address is 10.0.2.15 and the gateway 10.0.2.2 —
+  QEMU's NAT, which is enough to reach the real internet.</figcaption>
+</figure>
+
+<figure>
+  <img src="demos.png" alt="Six graphical demos running at once: a teapot, a
+       mech, a plasma effect, a cube and a bouncing textured sphere.">
+  <figcaption>Six things drawing at once, all of it software rasterised
+  through TinyGL, all of it at 41 fps. There is no GPU driver — the
+  compositor blits at about 6.5 ns a pixel.</figcaption>
 </figure>
 
 <h2>Where it is</h2>
