@@ -15,8 +15,11 @@
 
 #include <stdint.h>
 
+#include "cpu.h"
 #include "hal.h"
 #include "trap.h"
+
+void hal_ram_from_multiboot(uint32_t at);
 
 static void say(const char *s)
 {
@@ -77,8 +80,51 @@ void kmain_x86(uint32_t multiboot)
     say(((efer >> 10) & 1) ? "  long mode active\r\n"
                            : "  LONG MODE NOT ACTIVE\r\n");
 
+    /* Where the RAM is, before anything asks for a page of it. */
+    hal_ram_from_multiboot(multiboot);
+
+    {
+        struct memrange ram;
+
+        hal_ram_range(&ram);
+        say("  ram at   "); say_hex(ram.base);
+        say(" for ");       say_hex(ram.size);
+        say(" ("); 
+        say_hex(ram.size >> 20);
+        say(" MB)\r\n");
+    }
+
     trap_init();
-    say("  idt      installed, 32 vectors\r\n");
+    say("  idt      installed, 48 vectors\r\n");
+
+    /*
+     * The interrupt path, end to end, before anything depends on it.
+     *
+     * The controller has to be remapped before `sti` or the first tick
+     * arrives as a double fault, so the order here is not a style: PIC,
+     * then timer, then interrupts on, then wait and see whether the count
+     * moved. `hlt` rather than a spin, because a spin cannot tell the
+     * difference between a tick arriving and the loop being slow.
+     */
+    hal_irq_init();
+    hal_timer_init(100);
+    say("  pic      remapped to 32, timer at 100 Hz\r\n");
+
+    cpu_irq_enable();
+
+    {
+        unsigned long before = hal_ticks();
+        int waits;
+
+        for (waits = 0; waits < 20; waits++) {
+            __asm__ volatile ("hlt");
+        }
+
+        say("  ticks    ");
+        say_hex(hal_ticks());
+        say(hal_ticks() > before ? "  (rising)\r\n"
+                                 : "  NO TICK ARRIVED\r\n");
+    }
 
     /*
      * And a fault on purpose, because an exception handler that has never

@@ -71,6 +71,31 @@ isr\vector:
     STUB_NOCODE 31
 
 /*
+ * And the hardware interrupts, 32 upward, which the PIC was remapped to.
+ *
+ * No error code is ever pushed for these, so they all take the NOCODE form
+ * and the frame the handler sees is the same shape as an exception's. That
+ * sameness is the point: one `isr_common`, one `struct trapframe`, and
+ * `trap_handle` decides what it is looking at from the vector number.
+ */
+    STUB_NOCODE 32                  /* the timer */
+    STUB_NOCODE 33                  /* keyboard */
+    STUB_NOCODE 34
+    STUB_NOCODE 35
+    STUB_NOCODE 36
+    STUB_NOCODE 37
+    STUB_NOCODE 38
+    STUB_NOCODE 39
+    STUB_NOCODE 40
+    STUB_NOCODE 41
+    STUB_NOCODE 42
+    STUB_NOCODE 43
+    STUB_NOCODE 44
+    STUB_NOCODE 45
+    STUB_NOCODE 46
+    STUB_NOCODE 47
+
+/*
  * Everything the handler is allowed to look at, and everything it must put
  * back.
  *

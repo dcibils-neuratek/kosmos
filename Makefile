@@ -1471,7 +1471,9 @@ X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -Ihal -Iarch/x86_64 -Ikernel
 
 X86_SRCS  := boot/x86_64/start.S arch/x86_64/vectors.S \
-             arch/x86_64/trap.c hal/pc/uart.c arch/x86_64/main.c
+             arch/x86_64/trap.c hal/pc/uart.c hal/pc/memory.c \
+             hal/pc/pic.c hal/pc/timer.c \
+             arch/x86_64/main.c
 X86_BUILD := build/x86_64
 
 .PHONY: x86 x86-build

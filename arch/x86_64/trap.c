@@ -21,7 +21,17 @@
 #include "hal.h"
 #include "trap.h"
 
-#define IDT_ENTRIES  32
+/*
+ * Thirty-two exceptions and sixteen hardware interrupts.
+ *
+ * The architecture reserves 0-31 and the PIC was remapped to 32, so the
+ * table is exactly as long as there is something to put in it. There are
+ * 256 possible vectors; the rest would be entries pointing at a handler
+ * that says "this cannot happen", and it genuinely cannot until something
+ * sends one.
+ */
+#define IDT_ENTRIES  48
+#define IRQ_BASE     32
 
 /*
  * A gate descriptor, and the reason it looks like this is history.
@@ -62,12 +72,20 @@ extern void isr21(void); extern void isr22(void); extern void isr23(void);
 extern void isr24(void); extern void isr25(void); extern void isr26(void);
 extern void isr27(void); extern void isr28(void); extern void isr29(void);
 extern void isr30(void); extern void isr31(void);
+extern void isr32(void); extern void isr33(void); extern void isr34(void);
+extern void isr35(void); extern void isr36(void); extern void isr37(void);
+extern void isr38(void); extern void isr39(void); extern void isr40(void);
+extern void isr41(void); extern void isr42(void); extern void isr43(void);
+extern void isr44(void); extern void isr45(void); extern void isr46(void);
+extern void isr47(void);
 
 static void (*const stubs[IDT_ENTRIES])(void) = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
     isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
     isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23,
     isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
+    isr32, isr33, isr34, isr35, isr36, isr37, isr38, isr39,
+    isr40, isr41, isr42, isr43, isr44, isr45, isr46, isr47,
 };
 
 /*
@@ -77,7 +95,7 @@ static void (*const stubs[IDT_ENTRIES])(void) = {
  * reason: "sync exception, EC 0x25" sends you to the manual, and
  * "translation fault, level 2, on a write" tells you what to look at.
  */
-static const char *const names[IDT_ENTRIES] = {
+static const char *const names[32] = {
     "divide error", "debug", "non-maskable interrupt", "breakpoint",
     "overflow", "bound range exceeded", "invalid opcode",
     "device not available", "double fault", "coprocessor overrun",
@@ -151,10 +169,28 @@ void trap_handle(struct trapframe *f)
 {
     uint64_t cr2;
 
+    /*
+     * A hardware interrupt, which is not a failure and must not print.
+     *
+     * Same entry path, same frame, one `isr_common` for both - the vector
+     * is the only thing that tells them apart, which is why the stubs from
+     * 32 up push a zero error code they do not have: so this function can
+     * read one shape.
+     *
+     * `hal_irq_handle` is what the ARM vector calls at exactly this point,
+     * and it takes no argument on purpose. Which interrupt it was is a
+     * question for the board's controller, and asking it here would mean
+     * this file knew what a PIC is.
+     */
+    if (f->vector >= IRQ_BASE) {
+        hal_irq_handle();
+        return;
+    }
+
     __asm__ volatile("movq %%cr2, %0" : "=r"(cr2));
 
     say("\r\n*** ");
-    say(f->vector < IDT_ENTRIES ? names[f->vector] : "unknown exception");
+    say(f->vector < 32 ? names[f->vector] : "unknown exception");
     say("\r\n");
 
     line("vector ", f->vector);
