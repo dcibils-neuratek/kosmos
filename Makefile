@@ -337,16 +337,39 @@ LDFLAGS := -T boot/kosmos.ld \
            -Wl,--no-warn-rwx-segments \
            -Wl,-Map,$(BUILD)/kosmos.map
 
-# newlib's libm, for the maths that are numerical analysis rather than bit
-# manipulation: pow, fmod, sqrt and the transcendentals. The easy half is
-# ours, in runtime/libc/math.c. See math.h for where the line is and why.
-# Its only demand is __errno, which the design wanted per-process anyway.
-LIBS := -lm
+# ------------------------------------------------------------------
+# The maths that is numerical analysis rather than bit manipulation.
+#
+# **This was `-lm` and the `-lm` was newlib's**, which worked because ARM's
+# official GNU toolchain happens to bundle it. Homebrew's `x86_64-elf-gcc`
+# ships `libgcc.a` and nothing else, so the second architecture found a
+# dependency on what a toolchain vendor chose to package rather than on
+# anything this system decided. `runtime/upstream/musl-math/README.kosmos.md`
+# has the whole of it.
+#
+# Thirty-two files, compiled here rather than linked from an archive,
+# because the closure was taken over undefined symbols and every one of
+# them is reached.
+# ------------------------------------------------------------------
+MUSL := runtime/upstream/musl-math
+MUSL_SRCS := $(wildcard $(MUSL)/src/math/*.c)
+
+# `hidden` and `weak` are ELF visibility attributes musl's own build injects
+# through a generated vis.h. This system links one static binary and has no
+# use for either. Nothing in the vendored tree is modified; these come from
+# outside it, which is the same arrangement lua/upstream/ has.
+#
+# runtime/include first, so musl compiles against this system's headers.
+# See the README for why musl's own include/ is not on this list.
+MUSL_CFLAGS := -std=c99 -w -Dhidden= -Dweak= \
+               -I$(MUSL)/src/internal -I$(MUSL)/arch/$(ARCH) \
+               -I$(MUSL)/arch/generic -I$(MUSL)/include
+
+LIBS :=
 
 # The kernel links none of it. It has no floats by construction, and the one
-# caller it used to have was Lua. The test image gets it back because the
-# unit tests for our half check it against newlib's.
-KLIBS := $(if $(TEST),-lm)
+# caller it ever had was Lua.
+KLIBS :=
 
 OBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(SRCS)))
 
@@ -424,6 +447,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/lib/gl_kosmos.c \
              user/lib/con_kosmos.c \
              user/lib/mp3_kosmos.c \
+             $(MUSL_SRCS) \
              runtime/upstream/puff/puff.c \
              $(TINYGL_SRCS) \
              $(TINYGL_DEMO_SRCS) \
@@ -650,7 +674,23 @@ UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upst
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector
 
-ULDFLAGS := -T user/user.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
+#
+# Where a process image is linked, which has to agree with `USER_VA_BASE` in
+# `arch/$(ARCH)/mmu.h`. The linker cannot read a C header, so this is the
+# one place the number is written twice, and `user/user.ld` says so too.
+#
+# **The two architectures differ and the reason is the code model.** x86-64
+# addresses static data with a sign-extended 32-bit displacement by default,
+# which reaches -2GB to +2GB - and 0x80000000 is exactly the first address
+# it cannot. The whole image fails to link with `relocation truncated to
+# fit`, hundreds of times. So the user region there begins at 1 GB, which is
+# also the boundary of the first PDPT slot: the kernel gets slot 0 and a
+# process gets 1 upward, which is the same arrangement AArch64 has one level
+# up. `mmu_init` panics if RAM would reach that far.
+USER_BASE := $(if $(filter x86_64,$(ARCH)),0x40000000,0x80000000)
+
+ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
+            -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
             -Wl,-Map,$(UBUILD)/init.map
 
 # ------------------------------------------------------------------
@@ -676,7 +716,7 @@ ULDFLAGS := -T user/user.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
 # build and watching the identical link error come back twice is how this
 # was found. They expand to nothing when their variant is not selected.
 #
-FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS)
+FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS)
 FLAGS_FILE := $(BUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -758,6 +798,19 @@ $(UBUILD)/runtime/upstream/tinygl/examples/texobj.c.o: runtime/upstream/tinygl/e
 $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) -MMD -MP -c $< -o $@
+
+#
+# musl's maths.
+#
+# Note what is *not* on this line: `-include lua/kosmos/kosmos_lua.h`, which
+# the catch-all rule below adds to everything. That header redirects `time`
+# and defines a handful of names for Lua's benefit, and a vendored libm has
+# no business seeing any of it - the NetSurf and Doom rules omit it for the
+# same reason.
+#
+$(UBUILD)/$(MUSL)/src/math/%.c.o: $(MUSL)/src/math/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(MUSL_CFLAGS) -MMD -MP -c $< -o $@
 
 #
 # The NetSurf libraries, and the files their build generates.

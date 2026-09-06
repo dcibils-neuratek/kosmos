@@ -185,13 +185,46 @@ if role == R_PCALL_NEST then
 end
 
 if role == R_MATH then
-  -- Ours and newlib's, reached through Lua rather than called directly.
+  -- Ours and musl's, reached through Lua rather than called directly, which
+  -- is the only place either of them is ever called from.
   check(math.floor(2.7) == 2 and math.ceil(2.1) == 3, "floor and ceil")
   check(math.abs(-3) == 3, "abs")
   check(math.sqrt(16.0) == 4.0, "sqrt")
   check(math.max(1, 5, 3) == 5, "max")
   check(math.fmod(7, 3) == 1.0, "fmod")
   check(type(math.random()) == "number", "random")
+
+  -- And the transcendentals, which `tests/tests.c` used to check with two
+  -- calls from inside the kernel back when Lua ran there. They are musl's
+  -- now rather than newlib's, and a libm that linked but computes the wrong
+  -- thing is exactly the failure this has to catch: it is silent, and it
+  -- surfaces as a program that draws slightly wrong.
+  local function near(a, b, what)
+    check(math.abs(a - b) < 1e-12, what .. " (" .. tostring(a) .. ")")
+  end
+
+  check(2.0 ^ 10.0 == 1024.0, "pow, which is exact for this one")
+
+  near(math.sin(0.0), 0.0, "sin 0")
+  near(math.cos(0.0), 1.0, "cos 0")
+  near(math.sin(math.pi / 2), 1.0, "sin pi/2")
+  near(math.cos(math.pi), -1.0, "cos pi")
+  near(math.exp(0.0), 1.0, "exp 0")
+  near(math.log(1.0), 0.0, "log 1")
+  near(math.log(math.exp(2.0)), 2.0, "log of exp")
+  near(math.log(8.0, 2), 3.0, "log base 2")
+  near(math.log(1000.0, 10), 3.0, "log base 10")
+  near(math.atan(1.0) * 4.0, math.pi, "atan, four times")
+  near(math.asin(1.0), math.pi / 2, "asin 1")
+  near(math.acos(0.0), math.pi / 2, "acos 0")
+
+  -- Argument reduction, which is where a libm is most likely to be wrong
+  -- and where the answer is least likely to look wrong. sin(2pi) is zero
+  -- and sin of a large multiple of pi is a test of the reduction rather
+  -- than of the sine.
+  check(math.abs(math.sin(2.0 * math.pi)) < 1e-12, "sin 2pi")
+  check(math.abs(math.sin(1000.0 * math.pi)) < 1e-9, "sin of a thousand pi")
+
   sys.exit(0)
 end
 

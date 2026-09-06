@@ -328,6 +328,19 @@ void mmu_init(void)
     hal_ram_range(&ram);
     ram_end = ram.base + ram.size;
 
+    /*
+     * RAM is identity mapped, so it cannot reach into the region processes
+     * are given. `mmu.h` explains why that region starts at 1 GB here and
+     * what removes the limit.
+     *
+     * A panic rather than a clamp: a machine with more memory than this can
+     * describe should say so at boot, not run with two thirds of it and a
+     * process's first mapping landing in the kernel's page tables.
+     */
+    if (ram_end > USER_VA_BASE) {
+        panic("mmu: more RAM than the user region leaves room for");
+    }
+
     kernel_pml4 = alloc_table();
     kernel_pdpt = alloc_table();
     kernel_pml4[0] = (uint64_t)(uintptr_t)kernel_pdpt | TABLE_ATTRS;

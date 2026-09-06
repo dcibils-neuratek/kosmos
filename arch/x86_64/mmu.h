@@ -153,7 +153,31 @@ uint64_t *mmu_page_entry(uintptr_t va);
 unsigned as_count(void);
 unsigned as_total(void);
 
-#define USER_VA_BASE    0x80000000UL
+/*
+ * Where a process's own address space begins, and it is 1 GB here against
+ * AArch64's 2 GB.
+ *
+ * **The code model is what decides it.** x86-64 addresses static data with
+ * a sign-extended 32-bit displacement unless told otherwise, which reaches
+ * -2GB to +2GB - and 0x80000000 is exactly the first address it cannot
+ * express. An image linked there fails with `relocation truncated to fit`
+ * on every reference to its own `.bss`. `-mcmodel=large` is the other
+ * answer and costs a register-materialised address on every access; moving
+ * the region is free.
+ *
+ * 1 GB is not an arbitrary retreat from 2. It is the boundary of the first
+ * PDPT slot, so **the kernel gets slot 0 and a process gets 1 upward** -
+ * which is the same division AArch64 makes one level up, where the kernel
+ * holds L1 slots 0 and 1 and a process starts at 2.
+ *
+ * The cost is a ceiling: RAM is identity mapped, so a machine with more
+ * than a gigabyte of it would have the kernel's own map reaching into the
+ * process's slots. `mmu_init` panics rather than letting that happen
+ * quietly. The high-half split this header already promises - the kernel
+ * out of every process's address space entirely - is what removes both the
+ * ceiling and the reason for the division.
+ */
+#define USER_VA_BASE    0x40000000UL
 #define USER_VA_END     (512UL * 1024 * 1024 * 1024)    /* one PML4 slot */
 
 struct addrspace;

@@ -2572,9 +2572,21 @@ static bool test_our_math_matches_its_definition(void)
     if (ldexp(0.5, 4) != 8.0) return false;
     if (ldexp(1.0, 0) != 1.0) return false;
 
-    /* And newlib's half, so a broken link shows up here rather than inside
-     * Lua's arithmetic. */
-    return pow(2.0, 10.0) == 1024.0 && fmod(7.0, 3.0) == 1.0;
+    /*
+     * The vendored half is *not* checked here any more, and moving it was
+     * overdue rather than forced.
+     *
+     * This called `pow` and `fmod` so that a broken libm link showed up
+     * here rather than inside Lua's arithmetic - which was the right place
+     * when Lua ran at EL1. It has not for a long time: the comment thirty
+     * lines below this one says so. The kernel has no floating point in it
+     * by construction, so a `pow` it never calls was being linked into the
+     * test image for the sake of one assertion about somebody else's code.
+     *
+     * `user/tests/luatest.lua`'s R_MATH role checks it now, through Lua,
+     * at the privilege level Lua runs at, against musl rather than newlib.
+     */
+    return true;
 }
 
 /*

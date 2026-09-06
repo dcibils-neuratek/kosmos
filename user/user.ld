@@ -9,13 +9,19 @@
  * The gaps are deliberate. Code, then a hole, then the heap, then a hole,
  * then the stack growing down. A region that runs past its end lands in an
  * unmapped hole and faults, rather than in whatever was next.
+ *
+ * **Where it starts comes from the Makefile, not from here**, because the
+ * two architectures put it in different places and this file has no way to
+ * read `USER_VA_BASE` out of `arch/<name>/mmu.h`. `--defsym` is the seam;
+ * the Makefile's comment beside it says which header it has to agree with,
+ * and `user/init/main.c` would fault immediately if they ever did not.
  */
 
 ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x80000000;
+    . = USER_BASE;
 
     .text : {
         __image_start = .;
