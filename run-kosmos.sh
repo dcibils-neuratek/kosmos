@@ -90,7 +90,8 @@ done
 # `-r list`: what sizes are available here.
 if [ "$size" = "list" ]; then
     echo "images beside this script:"
-    for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf; do
+    for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf \
+             "$here"/build/kosmos-*.elf; do
         [ -f "$f" ] && echo "  $(basename "$f")"
     done
     exit 0
@@ -105,7 +106,7 @@ if [ -z "$image" ]; then
         # matched every ordinary build and none of those. `-r 1280x800`
         # silently found the old small image and said nothing about the one
         # that was actually being looked for.
-        for dir in "$here" "$here/builds" "build"; do
+        for dir in "$here" "$here/builds" "$here/build" "build"; do
             for f in "$dir"/kosmos-*-"$size".elf "$dir"/kosmos-*-"$size"-*.elf; do
                 [ -f "$f" ] && image="$f"
             done
@@ -149,7 +150,14 @@ if [ -z "$image" ]; then
         best_rank=-1
         best_px=0
 
-        for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf; do
+        # `build` as well as `builds`, which is not a typo either way:
+        # `builds/` is where releases are kept in the repository and
+        # `build/` is where a build tree puts things - and somebody who
+        # downloads one image and drops it next to this script may put it in
+        # either, or in neither. All three are cheap to look in.
+        for f in "$here"/kosmos-*.elf \
+                 "$here"/builds/kosmos-*.elf \
+                 "$here"/build/kosmos-*.elf; do
             [ -f "$f" ] || continue
 
             name=$(basename "$f")
@@ -206,7 +214,7 @@ if [ -z "$image" ] || [ ! -f "$image" ]; then
     # are in the wrong directory. Three different problems, one message.
     found="no"
     for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf \
-             build/kosmos.elf; do
+             "$here"/build/kosmos-*.elf build/kosmos.elf; do
         if [ -f "$f" ]; then
             [ "$found" = "no" ] && echo "Images I can see:" >&2
             found="yes"
@@ -223,33 +231,42 @@ if [ -z "$image" ] || [ ! -f "$image" ]; then
     exit 1
 fi
 
-# Passed through fw_cfg, which is how a machine is told what to do without
-# being rebuilt. Built as an array so an empty option adds no arguments at
-# all rather than an empty one.
-bootargs=""
-if [ -n "$boot" ]; then
-    bootargs="-fw_cfg name=opt/kosmos/boot,string=$boot"
-fi
+#
+# The command line, built as arguments rather than as a string.
+#
+# It used to be a string - `bootargs="-fw_cfg name=...,string=$boot"` -
+# expanded unquoted, and a shell splits that on spaces. So `-b "wm blocks"`,
+# which is this script's own documented example, reached QEMU as
+# `string=wm` followed by a stray `blocks`: the desktop started and the
+# thing you asked for did not, with nothing said. Every single-word `-b`
+# worked, which is why it survived.
+#
+# `set --` is how a POSIX shell holds a list. There are no arrays here and a
+# string is not a substitute for one.
+#
+set -- -M virt,gic-version=3 -cpu cortex-a72 -m 512M
+
+# QEMU's own NAT: no privileges, no packet on a real network, and this
+# computer is 10.0.2.2 from inside. `ping`, `fetch` and the browser all need
+# it, and all fail quietly and confusingly without it.
+set -- "$@" -netdev user,id=net0 -device virtio-net-device,netdev=net0
 
 if [ "$serial_only" = "yes" ]; then
-    # shellcheck disable=SC2086
-    exec qemu-system-aarch64 \
-        -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
-        -netdev user,id=net0 \
-        -device virtio-net-device,netdev=net0 \
-        -nographic $bootargs \
-        -kernel "$image"
+    set -- "$@" -nographic
+else
+    # -display default rather than cocoa, so this works over ssh with X or
+    # on a machine whose QEMU was built without the cocoa backend.
+    set -- "$@" -global virtio-mmio.force-legacy=false \
+                -device ramfb \
+                -device virtio-keyboard-device \
+                -device virtio-tablet-device \
+                -display default -serial mon:stdio
 fi
 
-# -display default rather than cocoa, so this works over ssh with X or on a
-# machine whose QEMU was built without the cocoa backend. QEMU picks.
-exec qemu-system-aarch64 \
-    -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
-    -global virtio-mmio.force-legacy=false \
-    -device ramfb \
-    -device virtio-keyboard-device \
-    -device virtio-tablet-device \
-    -netdev user,id=net0 \
-    -device virtio-net-device,netdev=net0 \
-    -display default -serial mon:stdio $bootargs \
-    -kernel "$image"
+# What to run once it is up, through fw_cfg - which is how a machine is told
+# what to do without being rebuilt.
+if [ -n "$boot" ]; then
+    set -- "$@" -fw_cfg "name=opt/kosmos/boot,string=$boot"
+fi
+
+exec qemu-system-aarch64 "$@" -kernel "$image"

@@ -89,6 +89,21 @@ Reading order if you come back after months: `state.md`, then `design.md`, then 
 
 ## Getting started
 
+Without building anything, and without cloning this:
+
+```
+./get-and-run-kosmos.sh -b "wm browser"
+```
+
+That one file fetches the newest image and the runner beside it and boots
+them. It needs `curl`, which macOS has, and QEMU, which it does not:
+`brew install qemu`. Nothing asks you to know a file name - a release is
+called something like `kosmos-0.8.33-f82c43e-1280x800-web.elf` and the
+version and commit in that change every time, so the list is asked for and
+the newest worked out.
+
+From the source:
+
 ```
 make qemu
 ```
@@ -312,6 +327,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **A page is drawn a word at a time, not a line at a time.** Drawing the byte range between the first word and the last is one call instead of a dozen, and it draws the markup's own newlines with it - a glyph nothing has, wider than the space the wrap budgeted, so the line overflowed as well. A word is also where a font change, a link and a selection attach | user/lib/web_paint.c |
 | Sep 2026 | **Layout keeps its boxes, and one missing data structure was six missing features.** Painting as the tree was walked threw away where each word ended up: nothing could be clicked, nothing could be bold inside a paragraph, `pre` could not keep its spaces. Layout produces an array of runs; paint is one loop over it and hit-testing is the same loop with a comparison | user/lib/web_paint.c |
 | Sep 2026 | **A rectangle is a run with no text.** A heading's rule, a list marker and a link's underline share the array the words are in, so painting is one pass in layout order and a rule cannot land on top of the line it belongs under | user/lib/web_paint.c |
+| Sep 2026 | **`-b "wm blocks"` booted `wm` and dropped `blocks`.** The script's own documented example: the boot argument was built as a string and expanded unquoted, so a shell split it and QEMU got a stray word. Every single-word `-b` worked, which is why it survived. A POSIX shell holds a list with `set --`, and a string is not a substitute for one | run-kosmos.sh |
 | Sep 2026 | **A browser ships with a page inside it.** Looking at a new build meant starting a web server on the computer running QEMU first, which an operating system has no business asking for - and it took being told so to see it, because the test harness serves pages from the host to stay offline and deterministic, and that got carried into the instructions as a requirement | user/bin/browser.lua |
 | Sep 2026 | **`Host` was the literal string `kosmos`.** HTTP/1.0 made the header optional and the web stopped being like that twenty years ago: one address serves hundreds of sites and the header is how a server knows which. Every real host answered the wrong thing, and the only server that looked right was one serving a single site out of a directory - which is what it was tested against | user/bin/browser.lua |
 | Sep 2026 | **A released image says whether it has the browser in it.** `-web` in the name, because on an ordinary one the browser opens and reports no web kit - which reads as a broken browser rather than the wrong file. One size rather than three: five vendored libraries take an image from 1.7 MB to 5.3 MB, and stripping saves a quarter of a megabyte because the bulk is the userland compiled in | Makefile |

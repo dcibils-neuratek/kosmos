@@ -2,6 +2,15 @@
 
 Images you can download and run without building anything.
 
+The short way, which fetches the newest of these and the runner and boots
+them - one file, nothing to clone:
+
+```sh
+./get-and-run-kosmos.sh -b "wm browser"
+./get-and-run-kosmos.sh --list            # what is published
+./get-and-run-kosmos.sh --plain           # the small image, no browser
+```
+
 ```sh
 ./run-kosmos.sh                 # the newest build here
 ./run-kosmos.sh -r 1920x1080    # at that size
