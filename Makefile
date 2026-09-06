@@ -1627,9 +1627,20 @@ $(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 #
 # Doom and the browser are not off here because they would fail: they are
 # off because nothing has drawn a pixel on this architecture yet.
+#
+# `FULL` is passed through rather than forced, and it has to be *passed*.
+#
+# Inside the recursive call `FULL` decides `DOOM` and `WEB`, which decide
+# `VARIANT`, which decides `UBUILD` - so leaving it out once built the
+# userland into a directory the rule below did not name, and the image
+# linked against whatever `init_bin.c` was lying there. It was one built
+# before the user region moved, and the machine faulted at an address from
+# the previous layout.
+#
+# It was `FULL=0` for as long as there was nothing to draw on. There is now.
 x86-build:
 	@mkdir -p $(X86_BUILD)
-	@$(MAKE) --no-print-directory ARCH=x86_64 FULL=0 $(X86_BUILD)/kosmos.bin
+	@$(MAKE) --no-print-directory ARCH=x86_64 FULL=$(FULL) $(X86_BUILD)/kosmos.bin
 
 # Who this is and what it was built from, for the other architecture. A
 # second rule rather than a shared one for the same reason the font has one:
