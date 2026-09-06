@@ -25,35 +25,8 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "pc.h"
 
-#define MB_FLAG_MMAP    (1u << 6)
-
-struct multiboot_info {
-    uint32_t flags;
-    uint32_t mem_lower, mem_upper;
-    uint32_t boot_device;
-    uint32_t cmdline;
-    uint32_t mods_count, mods_addr;
-    uint32_t syms[4];
-    uint32_t mmap_length;
-    uint32_t mmap_addr;
-} __attribute__((packed));
-
-/*
- * One entry of the map, and the `size` field is the trap in it.
- *
- * `size` does not include itself. Walking the list by `entry + size` steps
- * four bytes short every time and lands in the middle of the next entry,
- * which produces a plausible list of regions that do not exist. The
- * specification says so in one sentence and it is the sentence everybody
- * misses.
- */
-struct multiboot_mmap {
-    uint32_t size;
-    uint64_t base;
-    uint64_t length;
-    uint32_t type;              /* 1 is usable; everything else is not */
-} __attribute__((packed));
 
 static struct memrange found = { 0, 0 };
 

@@ -41,6 +41,47 @@ static inline uint8_t pc_in8(uint16_t port)
     return v;
 }
 
+/*
+ * What a multiboot loader leaves behind, and where.
+ *
+ * Here rather than in the one file that reads it, because two of them do
+ * now - `memory.c` wants the memory map and `boot.c` the command line -
+ * and `hal/qemu-virt/qemu-virt.h` states the rule this follows: a layout
+ * written down twice is a layout that can disagree with itself.
+ *
+ * `flags` says which of the fields below were filled in, one bit each.
+ * Multiboot specification 0.6.96, section 3.3.
+ */
+#define MB_FLAG_CMDLINE   (1u << 2)
+#define MB_FLAG_MMAP      (1u << 6)
+
+struct multiboot_info {
+    uint32_t flags;
+    uint32_t mem_lower, mem_upper;
+    uint32_t boot_device;
+    uint32_t cmdline;
+    uint32_t mods_count, mods_addr;
+    uint32_t syms[4];
+    uint32_t mmap_length;
+    uint32_t mmap_addr;
+} __attribute__((packed));
+
+/*
+ * One entry of the map, and the `size` field is the trap in it.
+ *
+ * `size` does not include itself. Walking the list by `entry + size` steps
+ * four bytes short every time and lands in the middle of the next entry,
+ * which produces a plausible list of regions that do not exist. The
+ * specification says so in one sentence and it is the sentence everybody
+ * misses.
+ */
+struct multiboot_mmap {
+    uint32_t size;
+    uint64_t base;
+    uint64_t length;
+    uint32_t type;              /* 1 is usable; everything else is not */
+} __attribute__((packed));
+
 /* Where IRQ 0 lands once the 8259s have been remapped, clear of the 32
  * vectors the architecture reserves for exceptions. `pic.c` says why. */
 #define PC_IRQ_BASE     32
@@ -50,5 +91,13 @@ void pc_irq_unmask(unsigned irq);
 
 /* What `pic.c` calls when IRQ 0 arrives. In `timer.c`, which owns the count. */
 void pc_timer_interrupt(void);
+
+/*
+ * The two things this board takes from what the loader left behind, each
+ * read by the file that needs it. Called before anything asks, from
+ * `kmain_x86`, because both answers have to exist before `kmain` runs.
+ */
+void hal_ram_from_multiboot(uint32_t at);
+void hal_boot_from_multiboot(uint32_t at);
 
 #endif /* HAL_PC_H */
