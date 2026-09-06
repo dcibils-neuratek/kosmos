@@ -1064,11 +1064,16 @@ static int l_yield(lua_State *L)
 /*
  * Stop running for a while.
  *
- * In scheduler ticks - a hundredth of a second each - and not in
- * milliseconds, which would suggest a precision this does not have. A
- * sleep of one tick is "wake me at the next tick", so it lasts anywhere
- * from nothing to ten milliseconds depending on where in the tick it was
- * asked. That is fine for what wants it and worth being honest about.
+ * In scheduler ticks rather than in milliseconds, which would suggest a
+ * precision this does not have. A sleep of one tick is "wake me at the next
+ * tick", so it lasts anywhere from nothing to a whole one depending on
+ * where in the tick it was asked. That is fine for what wants it and worth
+ * being honest about.
+ *
+ * A tick is four milliseconds at `TICK_HZ` 250. This used to say a
+ * hundredth of a second, which it was when the rate was 100 - and a caller
+ * that wants the figure should ask `sys.info().tick_hz` rather than trust a
+ * comment, for exactly the reason this one went stale.
  *
  * `sys.yield` and `sys.sleep(0)` are the same call. The difference that
  * matters is `sys.yield` in a loop, which is a spin dressed as a wait.
@@ -1811,8 +1816,9 @@ static bool region_of(long cap, uintptr_t *at, size_t *bytes)
  * Returns a table: which policy is installed, what else there is, the
  * quantum in ticks and in milliseconds, and how many priority bands exist.
  * The millisecond figure is computed here from the tick rate the kernel
- * reports rather than assumed, because the only way to get a quantum below
- * ten milliseconds is to change that rate.
+ * reports rather than assumed, because a quantum is a whole number of ticks
+ * and how long one of those is is a kernel decision - 4 ms today, 10 ms
+ * when this comment first claimed otherwise.
  */
 static int l_scheduler(lua_State *L)
 {

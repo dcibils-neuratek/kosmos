@@ -35,6 +35,21 @@
 #       to agree on with the host, so the guest cursor cannot drift away
 #       from the real one.
 #
+#   -netdev user -device virtio-net-device
+#       QEMU's own NAT, which needs no privileges and puts no packet on a
+#       real network. The guest is 10.0.2.15 and **this computer is
+#       10.0.2.2**, which is the whole of what `ping`, `fetch` and the
+#       browser need. Without these two lines they all work and find
+#       nothing, which looks like a broken network stack.
+#
+# **To browse something**, serve a directory here and ask for it there:
+#
+#   python3 -m http.server 8000          (on this computer)
+#   ./run-kosmos.sh -b "wm browser:10.0.2.2:8000/"
+#
+# There is no DNS, so an address is four numbers. That is a missing resolver
+# rather than a missing browser, and `ping` says the same thing.
+#
 set -eu
 
 here=$(dirname "$0")
@@ -129,6 +144,8 @@ if [ "$serial_only" = "yes" ]; then
     # shellcheck disable=SC2086
     exec qemu-system-aarch64 \
         -M virt,gic-version=3 -cpu cortex-a72 -m 512M \
+        -netdev user,id=net0 \
+        -device virtio-net-device,netdev=net0 \
         -nographic $bootargs \
         -kernel "$image"
 fi
@@ -141,5 +158,7 @@ exec qemu-system-aarch64 \
     -device ramfb \
     -device virtio-keyboard-device \
     -device virtio-tablet-device \
+    -netdev user,id=net0 \
+    -device virtio-net-device,netdev=net0 \
     -display default -serial mon:stdio $bootargs \
     -kernel "$image"

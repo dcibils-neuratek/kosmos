@@ -97,9 +97,13 @@ while win.running do
   --
   -- With zero this loop never blocks, which makes it a thread that is
   -- always runnable - the thing that had the processor meter reading ninety
-  -- per cent on an empty desktop before input was interrupt-driven. A tick
-  -- is ten milliseconds, so this still draws as fast as anything can be
-  -- seen, and the machine is idle in between.
+  -- per cent on an empty desktop before input was interrupt-driven.
+  --
+  -- **A tick is four milliseconds**, not the ten this used to say: `TICK_HZ`
+  -- is 250 and was 100 when the sentence was written. It matters, because
+  -- this sleep is a real part of a frame - at sixty frames a second it is a
+  -- quarter of one - and an animating window is trading that for an idle
+  -- machine when nothing is animating. Worth knowing which trade it is.
   --
   local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
                                      wait = 1 })

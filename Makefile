@@ -1341,7 +1341,22 @@ dist: $(TARGET)
 # mapping of a particular length, and a mode change is a protocol none of
 # them speak yet.
 #
-RELEASE_SIZES := 1024x768 1280x800 1920x1080
+#
+# One size for a web image and three for an ordinary one.
+#
+# The browser brings five vendored libraries with it and the image goes from
+# 1.7 MB to 5.3 MB - stripping saves a quarter of a megabyte, because the
+# bulk is the userland compiled into it rather than symbols. Three copies of
+# that in a repository is eleven megabytes to say the same thing three
+# times. The ordinary image is small enough that three is free.
+#
+RELEASE_SIZES := $(if $(WEB),1280x800,1024x768 1280x800 1920x1080)
+
+# `-web` in the name, because the two images are not interchangeable and a
+# name that did not say so is a trap: the browser opens on an ordinary image
+# and tells you the build has no web kit, which reads like a broken browser
+# rather than the wrong file.
+RELEASE_TAG := $(if $(WEB),-web,)
 
 # A binary that leaves this machine has been used for a while first.
 #
@@ -1353,8 +1368,9 @@ release: $(TARGET) stress
 	@for size in $(RELEASE_SIZES); do \
 	    rm -f $(BUILD)/hal/qemu-virt/fb.c.o $(TARGET); \
 	    $(MAKE) --no-print-directory FB=$$size $(TARGET) >/dev/null; \
-	    cp $(TARGET) builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size.elf; \
-	    echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size.elf"; \
+	    cp $(TARGET) \
+	       builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size$(RELEASE_TAG).elf; \
+	    echo "builds/kosmos-$(VERSION)-$(KOSMOS_BUILD)-$$size$(RELEASE_TAG).elf"; \
 	done
 	@rm -f $(BUILD)/hal/qemu-virt/fb.c.o $(TARGET)
 	@$(MAKE) --no-print-directory $(TARGET) >/dev/null

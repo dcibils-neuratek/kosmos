@@ -28,3 +28,29 @@ is nothing to install and nothing to mount, which is a property of not
 having a filesystem yet and will stop being true at M8.
 
 `make release` adds one.
+
+## `-web`, and why there is only one of it
+
+A file whose name ends `-web` carries the browser: hubbub, libdom, libcss
+and the two libraries under them, which is five vendored libraries and takes
+the image from 1.7 MB to 5.3 MB. Stripping saves a quarter of a megabyte,
+because the bulk is the userland compiled in rather than symbols - so there
+is **one** size of it rather than three, and the ordinary image still comes
+in all three because three of those is nearly free.
+
+The suffix is in the name because the two are not interchangeable. On an
+ordinary image the browser opens and says the build has no web kit, which
+reads like a broken browser rather than the wrong file.
+
+```sh
+python3 -m http.server 8000                     # on this computer
+./run-kosmos.sh -b "wm browser:10.0.2.2:8000/" kosmos-...-web.elf
+```
+
+**There is no DNS**, so an address is four numbers and a path. QEMU's own
+NAT maps this computer as `10.0.2.2`, which is why serving a directory here
+is enough and no packet leaves the machine. `run-kosmos.sh` passes the two
+flags that make that work; without them `ping`, `fetch` and the browser all
+run and find nothing.
+
+`make WEB=1 release` adds one.
