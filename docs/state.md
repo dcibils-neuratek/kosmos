@@ -8,6 +8,53 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**A web page parses on Kosmos.**
+
+    kosmos> local w = sys.kit("web")
+    kosmos> local d = w.parse("<html><head><title>Hello Kosmos</title>...")
+    Hello Kosmos    3    1    true
+
+Hubbub parsed the HTML, libdom built the tree, libwapcaplet interned the
+names, and libcss understood a stylesheet - all at EL0, on the freestanding
+libc, through the new allocator. `use("/kits/web")` reaches it, the same way
+`/kits/pdf` and `/kits/gl` are reached.
+
+**The `3` is the part that means something.** Three `p` elements, one of them
+nested inside the `div`, so `getElementsByTagName` walked a tree rather than
+counting tokens. Linking proved none of that; a freestanding libc can satisfy
+every symbol and still return null on the first allocation.
+
+`make web` is the permanent check - seven of them, and each is chosen to fail
+for a distinct reason:
+
+  - the title, that a document parsed and text came back out of the tree;
+  - three `p` and one `div`, that the walk is real;
+  - `&amp;` becoming `&`, that the **entity table a perl script generates
+    during the build** is present and consulted. A broken generation step
+    still links and still parses, so nothing else would notice;
+  - unclosed tags still producing a `div`, because recovering from those is
+    what an HTML5 parser is *for*;
+  - a stylesheet of eight properties, that the **119 property parsers
+    `gen_parser` emits** are there. Missing them is a link error, but a
+    *wrong* one would look like a sheet that parses and understands nothing.
+
+Its own target rather than part of `make test`, because `WEB=1` is an
+optional variant like `DOOM=1` and the ordinary image carries none of it.
+
+**The one failure on the way was the test, not the library.** The entity
+check expected `a & b` from an input I had written as `&amp;amp;` - doubly
+escaped for no reason - so hubbub correctly decoded one level and returned
+`a &amp; b`. Worth recording because the failure text accused a generated
+file of being empty, and it was the assertion that was wrong.
+
+**Still not a browser.** What runs is parsing. *Selection* - matching a
+selector against a document - needs a `css_select_handler`, about thirty
+callbacks bridging libdom's tree to libcss's questions, and that is the real
+integration between the two rather than something to smuggle into the step
+that proves the parsers work. Layout is after that, and is the bulk.
+
+---
+
 **`make WEB=1` builds the NetSurf parsing stack from a clean checkout.** The
 two perl generators, the gperf run and the 119 CSS property parsers are build
 steps now rather than shell history, and they write into `build/gen/` rather

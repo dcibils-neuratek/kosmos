@@ -2245,6 +2245,9 @@ void kosmos_gl_kit(lua_State *L);
 void kosmos_console_kit(lua_State *L);
 void kosmos_mp3_kit(lua_State *L);
 void kosmos_net_kit(lua_State *L);
+#ifdef KOSMOS_WEB
+void kosmos_web_kit(lua_State *L);
+#endif
 
 static const struct {
     const char *name;
@@ -2256,6 +2259,9 @@ static const struct {
     { "console",  kosmos_console_kit },
     { "mp3",      kosmos_mp3_kit },
     { "network",  kosmos_net_kit },
+#ifdef KOSMOS_WEB
+    { "web",      kosmos_web_kit },
+#endif
     { NULL, NULL }
 };
 
