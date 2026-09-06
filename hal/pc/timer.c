@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 
+#include "cpu.h"
 #include "hal.h"
 #include "pc.h"
 
@@ -27,6 +28,88 @@
 #define PIT_SETUP      0x36
 
 static volatile unsigned long ticks;
+
+/*
+ * How fast the cycle counter runs, measured against the one clock on this
+ * board whose frequency is a known constant.
+ *
+ * The PIT has three channels and channel 2 is the one nothing else uses -
+ * it was wired to the PC speaker, and its gate and output are two bits of
+ * port 0x61 that software can drive and watch. So: arm it for a known
+ * interval, read the TSC, wait for its output to go high, read the TSC
+ * again. The ratio is the answer.
+ *
+ * Ten milliseconds, which is long enough that the cost of the two reads is
+ * noise and short enough not to be felt in a boot. Mode 0 - interrupt on
+ * terminal count - because what is wanted is one edge at a known time
+ * rather than a wave.
+ *
+ * The speaker bit is explicitly cleared. Bit 1 of port 0x61 connects
+ * channel 2's output to a physical speaker, and calibrating the clock is
+ * not a reason to make a noise.
+ */
+#define PIT_CHANNEL2    0x42
+#define PIT_GATE2       0x61
+
+#define GATE2_ON        (1u << 0)
+#define SPEAKER_ON      (1u << 1)
+#define OUT2_HIGH       (1u << 5)
+
+#define CALIBRATE_MS    10u
+
+static uint64_t rdtsc(void)
+{
+    uint32_t lo, hi;
+
+    /* `lfence` first, for the reason `isb` is there on ARM: without it the
+     * read can be reordered ahead of what it is timing. */
+    __asm__ volatile("lfence; rdtsc" : "=a"(lo), "=d"(hi));
+
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static uint64_t calibrate(void)
+{
+    uint32_t divisor = (PIT_HZ * CALIBRATE_MS) / 1000u;
+    uint64_t start, end;
+    uint8_t gate;
+    unsigned spins;
+
+    /* Channel 2, low byte then high, mode 0, binary. */
+    pc_out8(PIT_COMMAND, 0xB0);
+    pc_out8(PIT_CHANNEL2, (uint8_t)(divisor & 0xFF));
+    pc_out8(PIT_CHANNEL2, (uint8_t)(divisor >> 8));
+
+    /* The gate low then high is what starts it counting; the speaker stays
+     * disconnected throughout. */
+    gate = (uint8_t)(pc_in8(PIT_GATE2) & ~(GATE2_ON | SPEAKER_ON));
+    pc_out8(PIT_GATE2, gate);
+    pc_out8(PIT_GATE2, (uint8_t)(gate | GATE2_ON));
+
+    start = rdtsc();
+
+    /*
+     * Bounded, because this is the boot path: a channel that never reaches
+     * terminal count must be a machine that starts with an unknown counter
+     * rather than one that never starts. Ten million spins is far longer
+     * than ten milliseconds on anything, real or emulated.
+     */
+    for (spins = 0; spins < 10000000u; spins++) {
+        if ((pc_in8(PIT_GATE2) & OUT2_HIGH) != 0) {
+            break;
+        }
+    }
+
+    end = rdtsc();
+
+    pc_out8(PIT_GATE2, gate);   /* gate off again */
+
+    if (spins >= 10000000u || end <= start) {
+        return 0;
+    }
+
+    return ((end - start) * 1000ULL) / CALIBRATE_MS;
+}
 
 void hal_timer_init(unsigned hz)
 {
@@ -57,6 +140,15 @@ void hal_timer_init(unsigned hz)
     pc_out8(PIT_CHANNEL0, (uint8_t)(divisor >> 8));
 
     pc_irq_unmask(0);
+
+    /*
+     * And what the cycle counter turned out to be running at, which the
+     * processor could not say. `arch/x86_64/cpu.h` explains why the board
+     * is the one that can answer and why the answer matters: it reaches
+     * userland as `/dev/cpu`'s `counter_hz`, and a zero there is a
+     * division nobody guarded against.
+     */
+    cpu_set_counter_hz(calibrate());
 }
 
 unsigned long hal_ticks(void)

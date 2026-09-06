@@ -141,6 +141,47 @@ RESERVED_PX = 2 * GLYPH_H
 #
 _DISK = os.environ.get("KOSMOS_DISK")
 
+#
+# Which machine, chosen from the image's own path.
+#
+# **Every harness that boots a guest goes through `Guest`**, so making this
+# one function architecture-aware is what lets `run_web.py`,
+# `run_browser.py` and `run_gallery.py` point at either board without
+# knowing there are two. The alternative was a copy of each per machine,
+# which is how two test suites drift apart.
+#
+# The path is the switch because every caller already passes one and they
+# differ: the ARM image is `build/kosmos.elf` and the other is
+# `build/x86_64/kosmos.elf`. Nothing has to be told twice.
+#
+def machine(image):
+    return "x86_64" if "x86_64" in image else "aarch64"
+
+
+#
+# The devices, per board, and they are the same devices.
+#
+# QEMU gives both machines ramfb, virtio-input and virtio-blk; what differs
+# is how a guest finds them, which is `hal/qemu-virt/virtio.c` against
+# `hal/pc/virtio.c` and none of this harness's business. What *is* its
+# business is `-vga none`: q35 adds a VGA adapter unless told not to and
+# QEMU dumps the first display device, so without it every screenshot of
+# the x86 machine is 640x480 of black while ramfb draws perfectly into
+# memory nobody looks at.
+#
+X86_ARGS = [
+    "-M", "q35",
+    "-m", "512M",
+    "-display", "none",
+    "-vga", "none",
+    "-device", "ramfb",
+    "-device", "virtio-keyboard-pci",
+    "-device", "virtio-tablet-pci",
+] + ([
+    "-drive", "file=%s,format=raw,if=none,id=disk" % _DISK,
+    "-device", "virtio-blk-pci,drive=disk",
+] if _DISK else [])
+
 QEMU_ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
@@ -206,9 +247,13 @@ class Guest:
         self.qmppath = os.path.join(self.dir.name, "qmp")
         self.seen = ""
 
+        arch = machine(image)
+        binary = "qemu-system-x86_64" if arch == "x86_64" else QEMU
+        args = X86_ARGS if arch == "x86_64" else QEMU_ARGS
+
         try:
             self.proc = subprocess.Popen(
-                [QEMU, *QEMU_ARGS,
+                [binary, *args,
                  "-monitor", f"unix:{self.sockpath},server,nowait",
                  "-qmp", f"unix:{self.qmppath},server,nowait",
                  "-serial", "stdio",
@@ -217,7 +262,7 @@ class Guest:
                 stderr=subprocess.DEVNULL, bufsize=0,
             )
         except FileNotFoundError:
-            raise Failure(f"{QEMU} not found. See docs/setup.md.")
+            raise Failure(f"{binary} not found. See docs/setup.md.")
 
         # Bytes and non-blocking, not lines.
         #

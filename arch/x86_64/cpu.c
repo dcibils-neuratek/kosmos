@@ -50,6 +50,18 @@ static struct regs cpuid(uint32_t leaf, uint32_t sub)
     return r;
 }
 
+/*
+ * What the board measured, when CPUID would not say. Written once at boot,
+ * before there is a second thread, and read-only after - the same argument
+ * `kernel/screen.c` makes about the display it found.
+ */
+static uint64_t measured_hz;
+
+void cpu_set_counter_hz(uint64_t hz)
+{
+    measured_hz = hz;
+}
+
 void cpu_identify(struct cpu_info *out)
 {
     struct regs r0 = cpuid(0, 0);
@@ -151,6 +163,23 @@ void cpu_identify(struct cpu_info *out)
                         : 0;
     } else {
         out->counter_hz = 0;
+    }
+
+    /*
+     * And the measurement, when the processor declined to state a rate.
+     *
+     * **Zero here is not harmless**, which is how this was found. It
+     * reaches userland through `/dev/cpu`, and the browser does
+     *
+     *     local HZ = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+     *
+     * where `or` catches a missing field and not a present zero - so HZ was
+     * 0, the first `// HZ` raised, and the browser died before it drew
+     * anything. The window opened, had a title bar, and stayed black. The
+     * boot log had been saying "0 MHz counter" the whole time.
+     */
+    if (out->counter_hz == 0) {
+        out->counter_hz = measured_hz;
     }
 
     /* And the same processor in the words the boot log uses. */

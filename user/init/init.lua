@@ -3680,9 +3680,17 @@ query. `find` and `watch` are built on exactly these two calls.
       out(string.format("  cache line    %d bytes\n", c.cache_line))
     end
 
-    out(string.format("  counter       %d MHz  (not the core clock: AArch64\n",
-                      c.counter_hz // 1000000))
-    out( "                has no architectural way to read that)\n")
+    -- Not the core clock on either machine, and the reason differs, so the
+    -- sentence does. AArch64 simply has no architectural way to read the
+    -- core clock; x86 has one that is not architecturally the core's speed
+    -- either, and whose rate the processor often declines to state at all -
+    -- which is why the board measures it against the PIT at boot.
+    if c.counter_hz and c.counter_hz > 0 then
+      out(string.format("  counter       %d MHz  (not the core clock: %s)\n",
+                        c.counter_hz // 1000000,
+                        c.arch == "x86-64" and "a calibrated TSC"
+                                            or "AArch64 cannot read that"))
+    end
 
     local has = {}
     for _, f in ipairs({ "fp", "simd", "aes", "sha1", "sha2", "crc32", "atomics" }) do

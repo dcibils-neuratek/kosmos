@@ -70,6 +70,23 @@ struct cpu_info {
 
 void cpu_identify(struct cpu_info *out);
 
+/*
+ * What the board measured the counter to be running at, because this
+ * architecture usually cannot say.
+ *
+ * AArch64 has CNTFRQ_EL0: firmware is required to program it and reading it
+ * is the whole of the question. The TSC has no such register. CPUID leaf
+ * 0x15 states the rate on recent parts and says nothing on the rest -
+ * including under emulation - so the only honest answer is to *measure* it
+ * against a clock whose frequency is known, and the only such clock here is
+ * a board device.
+ *
+ * So the board calibrates and tells the architecture, which is the one
+ * direction that keeps `cpu.c` free of I/O ports. Ignored when CPUID
+ * already answered: a stated rate beats a measured one.
+ */
+void cpu_set_counter_hz(uint64_t hz);
+
 unsigned cpu_arch(void);
 unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max);
 
