@@ -6,6 +6,7 @@
 #   ./run-kosmos.sh -r 1920x1080    at that size, if a build of it is here
 #   ./run-kosmos.sh -b wm           straight to the desktop
 #   ./run-kosmos.sh -b "wm blocks"  with something on it
+#   ./run-kosmos.sh -fit            scale the window down to fit this screen
 #   ./run-kosmos.sh -serial         no window, serial only
 #   ./run-kosmos.sh path.elf        a particular image
 #
@@ -70,6 +71,7 @@ set -eu
 here=$(dirname "$0")
 image=""
 serial_only="no"
+fit="no"
 size=""
 want_size="no"
 
@@ -95,6 +97,7 @@ for arg in "$@"; do
 
     case "$arg" in
         -serial) serial_only="yes" ;;
+        -fit)    fit="yes" ;;
         -r)      want_size="yes" ;;
         -b)      want_boot="yes" ;;
         -*)      echo "unknown option: $arg" >&2; exit 2 ;;
@@ -302,11 +305,34 @@ if [ "$serial_only" = "yes" ]; then
 else
     # -display default rather than cocoa, so this works over ssh with X or
     # on a machine whose QEMU was built without the cocoa backend.
+    #
+    # The display size is *compiled in* - the framebuffer is a static array,
+    # so a different size is a different build and `-r` is how you pick one.
+    # `-fit` is the escape hatch for when the only image you have is bigger
+    # than the screen you have: QEMU scales the window instead. It is lossy
+    # on a interface drawn with one-pixel bevels, which is why it is a flag
+    # and not the default.
+    #
+    # macOS only, because `zoom-to-fit` is an option of the cocoa backend
+    # and passing it to another one is an error rather than an ignored
+    # request.
+    #
+    display="default"
+
+    if [ "$fit" = "yes" ]; then
+        if [ "$(uname -s)" = "Darwin" ]; then
+            display="cocoa,zoom-to-fit=on"
+        else
+            echo "-fit needs the cocoa display, which is macOS only." >&2
+            echo "Pick a build that fits instead: $0 -r list" >&2
+        fi
+    fi
+
     set -- "$@" -global virtio-mmio.force-legacy=false \
                 -device ramfb \
                 -device virtio-keyboard-device \
                 -device virtio-tablet-device \
-                -display default -serial mon:stdio
+                -display "$display" -serial mon:stdio
 fi
 
 # What to run once it is up, through fw_cfg - which is how a machine is told

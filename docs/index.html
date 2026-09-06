@@ -50,23 +50,31 @@
     overflow: hidden;
   }
 
-  .hero img {
-    max-width: min(520px, 82%);
-    height: auto;
-    display: block;
+  /*
+   * The wordmark is the artwork itself, not a picture of it.
+   *
+   * Twelve rows of sixty block-drawing characters, in the yellow the window
+   * tabs use. As text it is crisp at any size, weighs nothing, scales with
+   * the viewport and can be selected - all of which a PNG gives up.
+   * `line-height: 1` and no letter-spacing are what make the blocks meet:
+   * any gap at all and it stops reading as solid.
+   */
+  .hero pre.logo {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+                 "DejaVu Sans Mono", monospace;
+    font-size: clamp(5px, 1.55vw, 14px);
+    line-height: 1;
+    letter-spacing: 0;
+    color: var(--tab);
+    background: none;
+    border: 0;
+    padding: 0;
     margin: 0 auto;
-    image-rendering: pixelated;   /* it is pixel art; do not smooth it */
-  }
-
-  /* If the logo is not there, this stands in rather than a broken image. */
-  .hero .wordmark {
-    font: 700 clamp(38px, 9vw, 84px)/1 ui-monospace, SFMono-Regular, Menlo,
-          Consolas, monospace;
-    color: #ff0000;
-    letter-spacing: -0.02em;
-    background: #000;
-    display: inline-block;
-    padding: 6px 18px;
+    display: block;
+    width: fit-content;
+    white-space: pre;
+    overflow: visible;
+    text-align: left;
   }
 
   .hero p {
@@ -188,9 +196,18 @@
 <div class="wrap">
 
 <div class="hero">
-  <img src="logo.png" alt="KosmOS"
-       onerror="this.replaceWith(Object.assign(document.createElement('div'),
-                {className:'wordmark',textContent:'KosmOS'}))">
+  <pre class="logo" role="img" aria-label="KosmOS"> ██   ███   ░████░    ▒████▒   ███  ███   ░████░    ▒████▒  
+ ██  ▓██    ██████   ▒██████   ███  ███   ██████   ▒██████  
+ ██ ▒██▒   ▒██  ██▒  ██▒  ▒█   ███▒▒███  ▒██  ██▒  ██▒  ▒█  
+ ██░██▒    ██▒  ▒██  ██        ███▓▓███  ██▒  ▒██  ██       
+ █████     ██    ██  ███▒      ██▓██▓██  ██    ██  ███▒     
+ █████     ██    ██  ▒█████▒   ██▒██▒██  ██    ██  ▒█████▒  
+ █████▒    ██    ██   ░█████▒  ██░██░██  ██    ██   ░█████▒ 
+ ██▒▒██    ██    ██      ▒███  ██ ██ ██  ██    ██      ▒███ 
+ ██  ██▓   ██▒  ▒██        ██  ██    ██  ██▒  ▒██        ██ 
+ ██  ▒██   ▒██  ██▒  █▒░  ▒██  ██    ██  ▒██  ██▒  █▒░  ▒██ 
+ ██   ██▓   ██████   ███████▒  ██    ██   ██████   ███████▒ 
+ ██   ▒██   ░████░   ░█████▒   ██    ██   ░████░   ░█████▒  </pre>
   <p>A microkernel operating system with a userland written entirely in Lua.</p>
 </div>
 
@@ -206,6 +223,61 @@
     experiment, and it is worth saying so before anything else.</p>
   </div>
 </header>
+
+<h2>See it running</h2>
+
+<p>Before any of the reasoning below, this is the thing itself. All of it software rendered - there is no GPU driver.</p>
+
+<figure>
+  <img src="desktop.png" alt="The Kosmos desktop: a file manager, a widget
+       gallery, a process list, a system monitor and a spinning 3D cube,
+       with the Deskbar at the top right.">
+  <figcaption>Tracker, the process list, the system monitor, a
+  software-rendered bouncing sphere and the browser, laid out by
+  <code>tile</code> — arranging windows is the system's own job, and a
+  handle names exactly one window where dragging from outside would depend
+  on the stacking order.</figcaption>
+</figure>
+<figure>
+  <img src="cern.png" alt="The Kosmos browser showing info.cern.ch, the
+       first website, with its four links.">
+  <figcaption><code>wm browser:info.cern.ch/</code> — the first website
+  there ever was, found by asking a resolver rather than by being told four
+  numbers, fetched over the guest's own TCP/IP stack, redirect followed and
+  rendered.</figcaption>
+</figure>
+<figure>
+  <img src="demos.png" alt="Six graphical demos running at once: a teapot, a
+       mech, a plasma effect, a cube and a bouncing textured sphere.">
+  <figcaption>Six things drawing at once, all of it software rasterised
+  through TinyGL, all of it at 41 fps. There is no GPU driver — the
+  compositor blits at about 6.5 ns a pixel.</figcaption>
+</figure>
+<figure>
+  <img src="network.png" alt="The web server, the network configuration, a
+       terminal and glgears running at once on the Kosmos desktop.">
+  <figcaption>The web server, the network settings, a terminal, and glxgears
+  at 61 fps in software. The address is 10.0.2.15 and the gateway 10.0.2.2 —
+  QEMU's NAT, which is enough to reach the real internet.</figcaption>
+</figure>
+<figure>
+  <img src="browser.png" alt="The Kosmos browser showing a rendered web
+       page with headings, bold and italic text, a bulleted list and a
+       link.">
+  <figcaption>The browser. Headings, inline bold, italic and monospace on a
+  shared baseline, list markers, and links you can click — laid out and
+  painted by about a thousand lines of C on top of NetSurf's parsers.</figcaption>
+</figure>
+
+<h2>Run it</h2>
+
+<p>One command. Nothing to clone, nothing to build, no toolchain:</p>
+
+<pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"</code></pre>
+
+<p>You need QEMU, and it is the only thing that command cannot fetch for
+you — <code>brew install qemu</code> on macOS. Everything else, it works
+out: the newest published image, the runner, and a disk to keep files on.</p>
 
 <h2>What this is, honestly</h2>
 
@@ -251,27 +323,6 @@ the architecture underneath is QNX's.</p>
 least — and some new ones I wanted to build, in one system.</strong> Free of
 the obligation to be compatible with any of them, which is the only reason
 that combination is possible at all.</p>
-
-<h2>Run it</h2>
-
-<p>One command. Nothing to clone, nothing to build, no toolchain:</p>
-
-<pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"</code></pre>
-
-<p>You need QEMU, and it is the only thing that command cannot fetch for
-you — <code>brew install qemu</code> on macOS. Everything else, it works
-out: the newest published image, the runner, and a disk to keep files on.</p>
-
-<figure>
-  <img src="desktop.png" alt="The Kosmos desktop: a file manager, a widget
-       gallery, a process list, a system monitor and a spinning 3D cube,
-       with the Deskbar at the top right.">
-  <figcaption>Tracker, the process list, the system monitor, a
-  software-rendered bouncing sphere and the browser, laid out by
-  <code>tile</code> — arranging windows is the system's own job, and a
-  handle names exactly one window where dragging from outside would depend
-  on the stacking order.</figcaption>
-</figure>
 
 <h2>What it is trying to be</h2>
 
@@ -402,40 +453,6 @@ through QEMU's NAT.</td></tr>
 <tr><td>wm webserver</td><td>An HTTP server, under System in the
 Deskbar.</td></tr>
 </table>
-
-<figure>
-  <img src="browser.png" alt="The Kosmos browser showing a rendered web
-       page with headings, bold and italic text, a bulleted list and a
-       link.">
-  <figcaption>The browser. Headings, inline bold, italic and monospace on a
-  shared baseline, list markers, and links you can click — laid out and
-  painted by about a thousand lines of C on top of NetSurf's parsers.</figcaption>
-</figure>
-
-<figure>
-  <img src="network.png" alt="The web server, the network configuration, a
-       terminal and glgears running at once on the Kosmos desktop.">
-  <figcaption>The web server, the network settings, a terminal, and glxgears
-  at 61 fps in software. The address is 10.0.2.15 and the gateway 10.0.2.2 —
-  QEMU's NAT, which is enough to reach the real internet.</figcaption>
-</figure>
-
-<figure>
-  <img src="demos.png" alt="Six graphical demos running at once: a teapot, a
-       mech, a plasma effect, a cube and a bouncing textured sphere.">
-  <figcaption>Six things drawing at once, all of it software rasterised
-  through TinyGL, all of it at 41 fps. There is no GPU driver — the
-  compositor blits at about 6.5 ns a pixel.</figcaption>
-</figure>
-
-<figure>
-  <img src="cern.png" alt="The Kosmos browser showing info.cern.ch, the
-       first website, with its four links.">
-  <figcaption><code>wm browser:info.cern.ch/</code> — the first website
-  there ever was, found by asking a resolver rather than by being told four
-  numbers, fetched over the guest's own TCP/IP stack, redirect followed and
-  rendered.</figcaption>
-</figure>
 
 <h2>Where it is</h2>
 

@@ -1390,7 +1390,16 @@ dist: $(TARGET)
 # repository is eighteen megabytes to say the same thing three times, and
 # the one size to pick is the one `make qemu` now defaults to.
 #
-RELEASE_SIZES := $(if $(or $(WEB),$(DOOM)),1920x1080,1024x768 1280x800 1920x1080)
+#
+# Two sizes for a full image and three for a lean one.
+#
+# 1920x1080 is what `make qemu` defaults to, and 1280x720 is there because a
+# laptop panel that size is a real thing to be testing on and a compiled-in
+# framebuffer cannot be resized: the size is the build. A downloaded image
+# too big for the screen is not a preference, it is unusable.
+#
+RELEASE_SIZES := $(if $(or $(WEB),$(DOOM)),1280x720 1920x1080,\
+                   1024x768 1280x800 1920x1080)
 
 # What is in it, in the name, because the images are not interchangeable and
 # a name that did not say so is a trap: the browser opens on an image built
