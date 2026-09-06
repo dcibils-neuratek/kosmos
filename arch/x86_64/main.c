@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 
+#include "context.h"
 #include "cpu.h"
 #include "hal.h"
 #include "mmu.h"
@@ -111,6 +112,104 @@ static void check_map(void)
     say("  guard  ");
     say((guard != NULL && (*guard & PTE_P) == 0) ? "  unmapped\r\n"
                                                  : "  STILL MAPPED\r\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* The context switch                                                   */
+/* ------------------------------------------------------------------ */
+
+static struct context main_ctx;
+static struct context worker_ctx;
+
+/* 16-aligned because `thread_entry` says why: the `call` in it needs
+ * rsp+8 aligned to 16, and nothing called `thread_entry` to arrange that. */
+static uint8_t worker_stack[8192] __attribute__((aligned(16)));
+
+static volatile uint64_t worker_arg;
+static volatile uint64_t worker_sum;
+static volatile int worker_rounds;
+static volatile int worker_returned;
+
+/*
+ * `thread_exit`, on loan alongside `panic` above.
+ *
+ * The real one is `kernel/thread.c`: it takes the thread off the runqueue
+ * and switches away for good. There is no runqueue here, so this does the
+ * one part that can be done - switch away and never come back - which is
+ * enough to show that a thread running off its own end reaches it at all.
+ */
+void thread_exit(void)
+{
+    worker_returned = 1;
+    context_switch(&worker_ctx, &main_ctx);
+
+    panic("thread_exit: switched back into a thread that had finished");
+}
+
+static void worker(void *arg)
+{
+    /*
+     * Six values that have to live across the switch, derived from `arg` so
+     * the compiler cannot fold them away and has to keep them somewhere -
+     * which under -O2 means the callee-saved registers, or the stack. This
+     * checks the round trip preserves *something*; which of the two it
+     * lands in is the compiler's choice, so the register-by-register test
+     * is `tests/tests.c`'s job once the kernel builds here.
+     */
+    uint64_t m = (uint64_t)(uintptr_t)arg;
+    uint64_t a = m + 1, b = m + 2, c = m + 3;
+    uint64_t d = m + 4, e = m + 5, f = m + 6;
+
+    worker_arg = m;
+    worker_rounds++;
+
+    context_switch(&worker_ctx, &main_ctx);
+
+    worker_rounds++;
+    worker_sum = a + b + c + d + e + f;
+
+    /* And return, so `thread_entry` falls into `thread_exit`. */
+}
+
+/*
+ * Two contexts, handed the processor back and forth.
+ *
+ * The worker's is built by hand exactly as `thread_create` will build one:
+ * a stack, `thread_entry` as the resume address, the function in rbx and
+ * its argument in r12. Nothing has ever switched away from it, so every
+ * other field is zero - which is the point of planting rip rather than
+ * relying on a `call` having happened.
+ */
+static void check_switch(void)
+{
+    const uint64_t marker = 0x5EED;
+    uint64_t mine = 0xC0FFEE;
+
+    worker_ctx.rsp = (uint64_t)(uintptr_t)&worker_stack[sizeof worker_stack];
+    worker_ctx.rip = (uint64_t)(uintptr_t)thread_entry;
+    worker_ctx.rbx = (uint64_t)(uintptr_t)worker;
+    worker_ctx.r12 = marker;
+
+    /* Bit 1 reads as 1 always; bit 9 is IF, which the worker inherits. */
+    worker_ctx.rflags = 0x202;
+
+    context_switch(&main_ctx, &worker_ctx);     /* into the worker */
+    context_switch(&main_ctx, &worker_ctx);     /* and again, to finish it */
+
+    say("  switch   ");
+    if (worker_arg != marker) {
+        say("THE ARGUMENT DID NOT ARRIVE\r\n");
+    } else if (worker_rounds != 2) {
+        say("THE WORKER DID NOT RUN TWICE\r\n");
+    } else if (worker_sum != 6 * marker + 21) {
+        say("VALUES DID NOT SURVIVE\r\n");
+    } else if (!worker_returned) {
+        say("thread_entry DID NOT REACH thread_exit\r\n");
+    } else if (mine != 0xC0FFEE) {
+        say("THE CALLER'S OWN LOCALS DID NOT SURVIVE\r\n");
+    } else {
+        say("two contexts, two round trips, and an exit\r\n");
+    }
 }
 
 /*
@@ -276,6 +375,7 @@ void kmain_x86(uint32_t multiboot)
      */
     check_map();
     check_spaces();
+    check_switch();
 
     /*
      * And a fault on purpose, because an exception handler that has never
