@@ -133,6 +133,57 @@ local function wrap(text, width)
   return out
 end
 
+--
+-- The document's blocks, as lines.
+--
+-- Structure without geometry: a heading is separated from what follows it,
+-- a list item gets a bullet and a hanging indent, a quotation is indented.
+-- None of that is layout - there are no boxes and nothing is measured
+-- twice - and it is most of what makes a page readable rather than a wall.
+--
+-- What it cannot do, and the reason a layout engine is still the next
+-- thing: every line is the same size, in the same face, because `gfx`
+-- holds one face per role and there are four roles. A heading is bigger
+-- than a paragraph on a real page, and here it is only further apart.
+--
+local function render(blocks, width)
+  local out = {}
+  local space = gfx.measure(" ")
+
+  for _, b in ipairs(blocks) do
+    local heading = b.tag:match("^h[1-6]$") ~= nil
+    local indent = ""
+    local first = ""
+
+    if b.tag == "li" then
+      first, indent = "* ", "  "
+    elseif b.tag == "blockquote" or b.tag == "pre" then
+      first, indent = "    ", "    "
+    end
+
+    if heading and #out > 0 then out[#out + 1] = "" end
+
+    local lines = wrap(b.text or "", width - gfx.measure(indent) - space)
+
+    for i, line in ipairs(lines) do
+      out[#out + 1] = (i == 1 and first or indent) .. line
+    end
+
+    -- A rule under a heading, in ASCII: the box-drawing characters are one
+    -- glyph the interface font does not have, and a row of boxes is worse
+    -- than a row of dashes.
+    if heading and #lines > 0 then
+      out[#out + 1] = string.rep("-", math.min(60, #lines[1]))
+    end
+
+    out[#out + 1] = ""
+  end
+
+  while #out > 0 and out[#out] == "" do out[#out] = nil end
+
+  return out
+end
+
 --------------------------------------------------------------------------
 
 local status = ui.label{ x = 12, y = H - 26, w = W - 24, text = "",
@@ -240,7 +291,11 @@ local function load(text, remember)
   -- a window called "Browser" displaying a page called something else.
   --
   win:retitle(title and ("Browser - " .. title) or "Browser")
-  page.items = wrap(doc:text("body") or "", math.max(80, page.w - 28))
+  local blocks = doc:blocks()
+
+  page.items = (blocks and #blocks > 0)
+               and render(blocks, math.max(80, page.w - 28))
+               or wrap(doc:text("body") or "", math.max(80, page.w - 28))
   page.top = 1
   page.selected = 0
 

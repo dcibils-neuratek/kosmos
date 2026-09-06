@@ -218,6 +218,121 @@ static int l_title(lua_State *L)
     return text_of(L, checkdoc(L), "title", 5);
 }
 
+/*
+ * The tags that carry a paragraph's worth of text.
+ *
+ * Deliberately not "every block-level element": a `div` holding three `p`s
+ * would emit the whole page and then each paragraph again, so what is
+ * listed here is the leaves - the elements a reader sees as a block rather
+ * than the ones that group them.
+ */
+static bool is_block(const char *name, size_t len)
+{
+    static const char *tags[] = {
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "p", "li", "dt", "dd", "blockquote", "pre", "figcaption",
+        NULL
+    };
+    unsigned i;
+
+    for (i = 0; tags[i] != NULL; i++) {
+        if (strlen(tags[i]) == len && memcmp(tags[i], name, len) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*
+ * Depth-first, in document order, and *bounded*.
+ *
+ * A browser is handed documents written to break it, and this process has a
+ * fixed stack with a guard page under it: a thousand nested divs would be a
+ * fault rather than an error. Sixty-four is deeper than any document a
+ * person writes and shallower than anything that could hurt.
+ */
+static void collect(lua_State *L, dom_node *node, int depth, int *n)
+{
+    dom_node *child = NULL;
+
+    if (depth > 64) {
+        return;
+    }
+
+    if (dom_node_get_first_child(node, &child) != DOM_NO_ERR) {
+        return;
+    }
+
+    while (child != NULL) {
+        dom_node *next = NULL;
+        dom_node_type type;
+
+        if (dom_node_get_node_type(child, &type) == DOM_NO_ERR
+            && type == DOM_ELEMENT_NODE) {
+            dom_string *name = NULL;
+
+            if (dom_node_get_node_name(child, &name) == DOM_NO_ERR
+                && name != NULL) {
+                dom_string *lower = NULL;
+
+                if (dom_string_tolower(name, true, &lower) == DOM_NO_ERR
+                    && lower != NULL) {
+                    if (is_block(dom_string_data(lower),
+                                 dom_string_byte_length(lower))) {
+                        dom_string *text = NULL;
+
+                        if (dom_node_get_text_content(child, &text) == DOM_NO_ERR
+                            && text != NULL) {
+                            lua_createtable(L, 0, 2);
+
+                            lua_pushlstring(L, dom_string_data(lower),
+                                            dom_string_byte_length(lower));
+                            lua_setfield(L, -2, "tag");
+
+                            lua_pushlstring(L, dom_string_data(text),
+                                            dom_string_byte_length(text));
+                            lua_setfield(L, -2, "text");
+
+                            lua_rawseti(L, -2, ++(*n));
+                            dom_string_unref(text);
+                        }
+                    }
+
+                    dom_string_unref(lower);
+                }
+
+                dom_string_unref(name);
+            }
+        }
+
+        collect(L, child, depth + 1, n);
+
+        (void)dom_node_get_next_sibling(child, &next);
+        dom_node_unref(child);
+        child = next;
+    }
+}
+
+/*
+ * blocks() -> { {tag = "h1", text = "..."}, ... } in document order.
+ *
+ * The first thing above "here is all the text" and below a layout engine:
+ * structure without geometry. An application can space a heading differently
+ * from a paragraph with it, which is most of what makes a page readable,
+ * and none of it needs a box tree.
+ */
+static int l_blocks(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    int n = 0;
+
+    lua_newtable(L);
+    collect(L, (dom_node *)d->dom, 0, &n);
+
+    return 1;
+}
+
 static int l_close(lua_State *L)
 {
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
@@ -460,7 +575,8 @@ void kosmos_web_kit(lua_State *L)
     static const luaL_Reg doc[] = {
         { "count", l_count },
         { "style", l_style },
-        { "text",  l_text },
+        { "text",   l_text },
+        { "blocks", l_blocks },
         { "title", l_title },
         { "close", l_close },
         { NULL, NULL }

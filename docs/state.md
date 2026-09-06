@@ -8,6 +8,40 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**The browser shows a document's structure, not a wall of text.** The kit
+returns the blocks in order - `blocks()` walks the tree and emits the tags
+that carry a paragraph's worth of text - and the application spaces a
+heading from what follows it, bullets a list item, indents a quotation.
+There are no boxes and nothing is measured twice, so it is not layout; it is
+most of what makes a page readable without one.
+
+Deliberately the *leaves*: a `div` holding three paragraphs would otherwise
+emit the whole page and then each paragraph again. And the walk is bounded
+at 64 deep, because a browser is handed documents written to break it and
+this process has a fixed stack with a guard page under it.
+
+**The constraint that reorders what comes next**, found while wanting a
+heading to be bigger than a paragraph: `gfx` holds **one face per role, and
+there are four roles** - `ui`, `title`, `text`, `mono`. A page needs a dozen
+combinations of family, size and weight at once. So "headings are larger" is
+not something a layout engine can express here; it is a `gfx` change first.
+
+The glyph cache added today is already per-face, so the shape is right. What
+is missing is holding more than four and addressing them by *(family, size,
+weight)* rather than by role.
+
+So the order is now:
+
+  1. a font cache keyed by family, size and weight, replacing the four
+     fixed roles. Self-contained, and everything visual waits on it;
+  2. the plotter over `gfx`, proved against a hand-built box tree - so
+     painting is verifiable *before* layout exists;
+  3. block layout, then inline layout and line breaking.
+
+Two and three were already agreed. One is new, and it blocks them.
+
+---
+
 **The text path decodes UTF-8.** It cast each byte to a codepoint, so a
 three-byte character became three lookups and three boxes - which is what
 the conformance benchmark showed, and it was never a missing font.
