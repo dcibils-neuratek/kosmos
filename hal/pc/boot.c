@@ -39,20 +39,38 @@
  * `CLAUDE.md` otherwise forbids loose mutable globals - the same argument
  * `kernel/screen.c` makes about the display it found.
  */
-static const char *cmdline;
+/*
+ * A copy, not a pointer. `pc.h` says why: the string the loader left is in
+ * memory the page allocator will hand out, and by the time anything asks it
+ * is whatever was written over it.
+ *
+ * 256 bytes because a boot option is a word or a short command line, and a
+ * longer one is refused rather than truncated - a machine doing something
+ * adjacent to what was asked is worse than one that says it did not
+ * understand.
+ */
+static char cmdline[256];
 
-void hal_boot_from_multiboot(uint32_t at)
+void pc_capture_cmdline(void)
 {
     const struct multiboot_info *info =
-        (const struct multiboot_info *)(uintptr_t)at;
+        (const struct multiboot_info *)(uintptr_t)pc_multiboot;
+    const char *from;
+    unsigned i;
 
-    cmdline = NULL;
+    cmdline[0] = '\0';
 
-    if (at == 0 || (info->flags & MB_FLAG_CMDLINE) == 0) {
+    if (pc_multiboot == 0 || (info->flags & MB_FLAG_CMDLINE) == 0) {
         return;
     }
 
-    cmdline = (const char *)(uintptr_t)info->cmdline;
+    from = (const char *)(uintptr_t)info->cmdline;
+
+    for (i = 0; i + 1 < sizeof(cmdline) && from[i] != '\0'; i++) {
+        cmdline[i] = from[i];
+    }
+
+    cmdline[i] = '\0';
 }
 
 /* The part of a fw_cfg-shaped name after the last slash. `opt/kosmos/boot`
@@ -99,7 +117,7 @@ bool hal_boot_option(const char *name, char *out, unsigned long max)
 
     out[0] = '\0';
 
-    if (cmdline == NULL) {
+    if (cmdline[0] == '\0') {
         return false;
     }
 

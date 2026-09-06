@@ -30,8 +30,16 @@
 
 static struct memrange found = { 0, 0 };
 
-void hal_ram_from_multiboot(uint32_t at)
+/*
+ * Where the loader left its structure. `start.S` writes it and `pc.h` says
+ * why it is a variable rather than an argument.
+ */
+uint32_t pc_multiboot;
+
+void pc_capture_memory(void)
 {
+    uint32_t at = pc_multiboot;
+
     const struct multiboot_info *info = (const struct multiboot_info *)(uintptr_t)at;
     uintptr_t entry, end;
 

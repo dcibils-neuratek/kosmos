@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""Boots the x86-64 image and checks what the second architecture built.
+"""Boots Kosmos on x86-64 and checks that it is the same system.
 
-`arch/x86_64/main.c` is a staging kmain: it walks through everything the
-port has - the memory map, the page tables, an address space, a context
-switch, a process at ring 3 - and prints what it found at each step. That
-made the bring-up visible and it proved nothing that would stay proved.
+This replaced a harness that read a staging `kmain`'s printed proofs. That
+one earned its keep while the port was being built a piece at a time - the
+page tables, an address space, a context switch, a process at ring 3 - and
+every one of those is now underneath a machine that boots to a shell, so
+the questions worth asking are the ones you can ask a running system.
 
-**So this does not read the sentences back.** Every check here compares two
-things that were arrived at separately: a page table entry against the
-address the linker chose for that section, the allocator's page count
-against the memory map the firmware reported, a printed answer against the
-arithmetic done here, and a fault's error code against what the *processor*
-pushed rather than against what the kernel said about it.
+**It is not a translation of `run_headless.py`.** That one exists because a
+machine with nothing plugged into it once booted to a prompt that never
+appeared; this one exists because a second architecture can be wrong in ways
+the first never was, and the checks are chosen for that: the same numbers
+arrived at through the kernel's boot log and through userland's servers, an
+answer typed at the prompt, and a program that runs and reports what it was
+handed.
 
-That distinction is the one `run_headless.py` learned the expensive way: it
-counts `/bin` on this side and on that side, because a listing that agrees
-with itself agrees with itself no matter how wrong it is.
+Typing is a check rather than a convenience. The machine reached a prompt
+and ignored everything typed at it for a while, because `hlt` with
+interrupts masked halts for ever where AArch64's `wfi` wakes - and a boot
+test that only read the boot log would have called that a pass.
 """
 
 import os
@@ -26,7 +29,6 @@ import sys
 import time
 
 QEMU = "qemu-system-x86_64"
-NM = "x86_64-elf-nm"
 
 # `make x86`'s own line. What a person runs, not a shape invented for a test.
 ARGS = [
@@ -38,36 +40,35 @@ ARGS = [
 
 PAGE_SIZE = 4096
 
-# Entry bits, from arch/x86_64/mmu.h. Repeated here on purpose: this file is
-# the second opinion, and a second opinion that includes the first one's
-# header is not one.
-PTE_P = 1 << 0
-PTE_RW = 1 << 1
-PTE_US = 1 << 2
-PTE_NX = 1 << 63
-PTE_ADDR = 0x000FFFFFFFFFF000
 
-# Page fault error code bits, Intel SDM volume 3, section 4.7.
-ERR_PRESENT = 1 << 0
-ERR_WRITE = 1 << 1
-ERR_USER = 1 << 2
+def boot(image, option, timeout, typed=()):
+    """Boots, optionally types at the prompt, and returns everything printed.
 
-
-def boot(image, timeout):
-    """Runs until the machine halts, and returns everything it printed."""
+    One line per prompt, and only after the machine has been quiet for a
+    moment: a line written into the middle of the boot log is a line the
+    console server has not been asked for yet.
+    """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
 
     if not os.path.exists(binary):
         print("FAIL: no %s beside the ELF. Run `make x86-build`." % binary)
         return None
 
-    p = subprocess.Popen([QEMU] + ARGS + ["-kernel", binary],
-                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         stdin=subprocess.DEVNULL)
+    cmd = [QEMU] + ARGS
+
+    if option:
+        cmd += ["-append", option]
+
+    cmd += ["-kernel", binary]
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         stdin=subprocess.PIPE)
     os.set_blocking(p.stdout.fileno(), False)
 
     out = b""
     start = time.time()
+    quiet = time.time()
+    sent = 0
 
     try:
         while time.time() - start < timeout:
@@ -75,16 +76,25 @@ def boot(image, timeout):
 
             if chunk:
                 out += chunk
+                quiet = time.time()
             else:
                 time.sleep(0.05)
 
-            # Either ending: the deliberate fault, or the line that says
-            # the deliberate fault did not happen. Waiting only for the
-            # first turns "CR0.WP is off" into a timeout, and a timeout
-            # names nothing - which is the opposite of what a test is for.
-            if b"halted." in out or b"the write succeeded" in out:
-                # A moment more, so nothing that arrives just after is cut off.
-                time.sleep(0.3)
+            prompts = out.count(b"kosmos>")
+
+            if (sent < len(typed) and prompts > sent
+                    and time.time() - quiet > 0.4):
+                p.stdin.write(typed[sent].encode() + b"\n")
+                p.stdin.flush()
+                sent += 1
+                quiet = time.time()
+
+            done = (prompts > len(typed)) if typed else (prompts > 0)
+
+            if sent == len(typed) and done:
+                # A moment more, so a line arriving just after the last
+                # prompt is in the output rather than cut off.
+                time.sleep(0.8)
                 out += p.stdout.read() or b""
                 break
     finally:
@@ -94,102 +104,8 @@ def boot(image, timeout):
     return out.decode("utf-8", "replace")
 
 
-def symbols(image):
-    """The addresses the linker chose, read from the ELF rather than the run.
-
-    This is the half of every comparison below that the machine under test
-    had no part in.
-    """
-    try:
-        out = subprocess.run([NM, image], capture_output=True, text=True,
-                             check=True).stdout
-    except (OSError, subprocess.CalledProcessError) as e:
-        print("FAIL: could not read symbols with %s: %s" % (NM, e))
-        return None
-
-    found = {}
-
-    for line in out.splitlines():
-        parts = line.split()
-
-        if len(parts) == 3:
-            found[parts[2]] = int(parts[0], 16)
-
-    return found
-
-
-def value(out, label):
-    """The first hex word on the line beginning `  <label>`."""
-    for line in out.splitlines():
-        stripped = line.strip()
-
-        if stripped.startswith(label):
-            m = re.search(r"0x([0-9a-f]+)", stripped[len(label):])
-
-            if m:
-                return int(m.group(1), 16)
-
-    return None
-
-
-def fault(out, which):
-    """One of the two deliberate faults, as the fields the processor pushed.
-
-    `which` is 0 for the first block in the output and 1 for the second.
-    Returns a dict of the register lines under it, or None.
-    """
-    blocks = []
-    current = None
-
-    for line in out.splitlines():
-        stripped = line.strip()
-
-        if stripped.startswith("process died:") or stripped.startswith("*** "):
-            current = {"header": stripped}
-            blocks.append(current)
-            continue
-
-        if current is None:
-            continue
-
-        m = re.match(r"([a-z0-9]+)\s+0x([0-9a-f]+)$", stripped)
-
-        if m:
-            current[m.group(1)] = int(m.group(2), 16)
-        elif stripped == "":
-            current = None
-
-    return blocks[which] if len(blocks) > which else None
-
-
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
-
-    sym = symbols(image)
-
-    if sym is None:
-        return 1
-
-    for name in ("__text_start", "__rodata_start", "__stack_guard"):
-        if name not in sym:
-            print("FAIL: the ELF has no %s. The linker script changed." % name)
-            return 1
-
-    out = boot(image, 40.0)
-
-    if out is None:
-        return 1
-
-    if "halted." not in out and "the write succeeded" not in out:
-        print("FAIL: the machine stopped before the end of its own bring-up.")
-        print("  last of what it did say: " + repr(out[-300:]))
-        return 1
-
-    if "PANIC" in out:
-        print("FAIL: it panicked: "
-              + [l for l in out.splitlines() if "PANIC" in l][0].strip())
-        return 1
-
     checks = 0
     fails = []
 
@@ -201,150 +117,108 @@ def main():
         else:
             fails.append(complaint)
 
-    # 1. Long mode, from the two bits that mean different things.
-    #
-    #    EFER.LME is what was *asked* for and CR0.PG is what the processor
-    #    did about it. They are set by different instructions, and a boot
-    #    that got one and not the other is the failure worth naming.
-    cr0 = value(out, "cr0")
-    efer = value(out, "efer")
+    # 1. It boots, all the way, and takes what is typed at it.
+    out = boot(image, None, 90.0, typed=("mem", "cpu"))
 
-    check(cr0 is not None and (cr0 >> 31) & 1, "paging is off")
-    check(efer is not None and (efer >> 10) & 1, "long mode is not active")
+    if out is None:
+        return 1
 
-    # 2. The allocator manages the RAM the firmware reported.
-    #
-    #    `ram at` comes from the multiboot memory map and `pmm` from the
-    #    allocator's own bitmap. Two answers to the same question, from two
-    #    subsystems that do not consult each other.
-    m = re.search(r"ram at\s+0x([0-9a-f]+) for 0x([0-9a-f]+)", out)
-    span = (int(m.group(1), 16), int(m.group(2), 16)) if m else None
+    if "kosmos>" not in out:
+        print("FAIL: x86-64 never reached a prompt.")
 
-    m = re.search(r"pmm\s+0x([0-9a-f]+) of 0x([0-9a-f]+) pages free", out)
-    free, total = (int(m.group(1), 16), int(m.group(2), 16)) if m else (0, 0)
+        for line in out.splitlines():
+            if ("PANIC" in line or "could not start" in line
+                    or "process died" in line):
+                print("  the machine said: " + line.strip())
 
-    check(span is not None and total == span[1] // PAGE_SIZE,
-          "the allocator manages %d pages and the memory map reports %s"
-          % (total, span[1] // PAGE_SIZE if span else "nothing"))
+        print("  last of what it did say: " + repr(out[-400:]))
+        return 1
 
-    check(0 < free < total,
-          "the allocator has %d of %d pages free, which is not a boot"
-          % (free, total))
+    checks += 1
 
-    # 3. The map is an identity map, and the two narrowed regions are
-    #    narrowed. Both entries are checked against the address the *linker*
-    #    put the section at, so a map that is self-consistently wrong fails.
-    text = value(out, "text")
-    rodata = value(out, "rodata")
+    if "PANIC" in out:
+        print("FAIL: it panicked: "
+              + [l for l in out.splitlines() if "PANIC" in l][0].strip())
+        return 1
 
-    check(text is not None and (text & PTE_ADDR) == sym["__text_start"],
-          "the entry for .text points at 0x%x and the linker put it at 0x%x"
-          % ((text or 0) & PTE_ADDR, sym["__text_start"]))
+    # 2. Nothing refused to start on the way there. A prompt can appear with
+    #    a server missing, and a shell talking to servers that are not there
+    #    is not a working machine.
+    for line in out.splitlines():
+        if "could not start" in line:
+            print("FAIL: reached a prompt, but: " + line.strip())
+            return 1
 
-    check(text is not None
-          and (text & PTE_P) and not (text & PTE_RW) and not (text & PTE_NX),
-          "'.text' is not present, read-only and executable: 0x%x" % (text or 0))
+    checks += 1
 
-    check(rodata is not None and (rodata & PTE_ADDR) == sym["__rodata_start"],
-          "the entry for .rodata points at 0x%x and the linker put it at 0x%x"
-          % ((rodata or 0) & PTE_ADDR, sym["__rodata_start"]))
+    # 3. All twelve stages. The kernel prints one per subsystem it brings
+    #    up, so a missing number is a subsystem that did not.
+    for stage in range(1, 13):
+        check("[%d/12]" % stage in out, "boot stage %d/12 is missing" % stage)
 
-    check(rodata is not None
-          and (rodata & PTE_P) and not (rodata & PTE_RW) and (rodata & PTE_NX),
-          "'.rodata' is not present, read-only and non-executable: 0x%x"
-          % (rodata or 0))
+    # 4. The processor named itself out of CPUID rather than out of a
+    #    constant in the image.
+    check(re.search(r"x86-64 f\d+m\d+s\d+\s+\(CPUID\.1:EAX 0x[0-9a-f]+\)",
+                    out) is not None,
+          "the boot log does not name an x86-64 processor from CPUID")
 
-    # 4. The stack guard, at the address the linker chose for it.
-    guard = value(out, "guard")
+    # 5. **The same memory, counted twice.** The boot log is the kernel's
+    #    own; `mem` at the prompt is userland asking a server, which asks
+    #    the kernel through a syscall. Two paths through the whole system to
+    #    one number - and the megabytes are computed here rather than
+    #    compared against a word that was printed.
+    kern = re.search(r"(\d+) MB of RAM in (\d+) pages", out)
+    user = re.search(r"(\d+) MB of RAM at 0x([0-9a-f]+), in (\d+) pages", out)
 
-    check(guard == sym["__stack_guard"],
-          "the guard page reported is 0x%x and the linker put it at 0x%x"
-          % (guard or 0, sym["__stack_guard"]))
+    check(kern is not None, "the boot log did not report the memory")
+    check(user is not None, "`mem` at the prompt printed nothing usable")
 
-    check("unmapped" in out, "the stack guard is still mapped")
+    if kern and user:
+        kmb, kn = int(kern.group(1)), int(kern.group(2))
+        umb, un = int(user.group(1)), int(user.group(3))
 
-    # 5. An address space: a page ring 3 may write, the kernel still in it,
-    #    and every page handed back.
-    user = value(out, "as ")
+        check(kn == un,
+              "the kernel manages %d pages and userland was told %d" % (kn, un))
+        check(kmb == umb, "the two paths disagree about the size in MB")
+        check(kn * PAGE_SIZE // (1024 * 1024) == kmb,
+              "%d pages of %d bytes is not %d MB" % (kn, PAGE_SIZE, kmb))
 
-    check(user is not None
-          and (user & PTE_US) and (user & PTE_RW) and (user & PTE_NX),
-          "a user page is not present, writable, user and non-executable: "
-          "0x%x" % (user or 0))
+    # 6. And that typing reached the shell at all, which is the check the
+    #    idle loop failed silently.
+    check("architecture  x86-64" in out,
+          "`cpu` at the prompt did not answer, or did not say x86-64")
 
-    check("shared with the kernel" in out,
-          "an address space does not contain the kernel")
+    # 7. A program, started from the command line the loader passed - which
+    #    also exercises `hal_boot_option`, a different mechanism from ARM's
+    #    fw_cfg answering to the same name.
+    ran = boot(image, "boot=hello", 90.0)
 
-    check("all returned" in out, "an address space leaked pages")
+    if ran is None:
+        return 1
 
-    # 6. The context switch, and the floating-point file with it.
-    #
-    #    The second half is the one worth having: the guest puts 42.0 in
-    #    xmm0, switches away, the other side overwrites it deliberately, and
-    #    it has to come back. Without the FXSAVE in `switch.S` the guest
-    #    reads back the *other* value - a wrong answer and never a crash,
-    #    which is exactly the shape of bug that survives for months.
-    check("two round trips" in out, "the context switch did not round trip")
-    check("xmm0 intact" in out,
-          "the floating-point file did not survive a context switch")
+    check("Hello from a process of my own." in ran,
+          "`-append boot=hello` did not run a program")
 
-    # 7. Ring 3, and the arithmetic done here rather than read back.
-    m = re.search(r"ring3\s+0x([0-9a-f]+) from 0x([0-9a-f]+)", out)
-    answer, marker = (int(m.group(1), 16), int(m.group(2), 16)) if m else (0, 1)
+    # What it prints is its own capability list, asked of the namespace - so
+    # this is IPC and the servers rather than a string in the image.
+    for path in ("/bin", "/dev", "/home", "/lib"):
+        check(path in ran, "a process could not see %s" % path)
 
-    check(m is not None and answer == 2 * marker,
-          "a process asked for 0x%x doubled and got 0x%x" % (marker, answer))
-
-    # 8. And what it may not do, from what the *processor* pushed.
-    #
-    #    This is the check the whole architecture exists to pass, and none
-    #    of it is the kernel's opinion: cs is the privilege level the
-    #    processor was at, cr2 is where the access went, and the error code
-    #    is its own account of why it refused.
-    user_fault = fault(out, 0)
-
-    check(user_fault is not None and (user_fault.get("cs", 0) & 3) == 3,
-          "the first fault did not come from ring 3")
-
-    check(user_fault is not None
-          and user_fault.get("cr2") == sym["__text_start"],
-          "a process faulted at 0x%x and the kernel's text is at 0x%x"
-          % ((user_fault or {}).get("cr2", 0), sym["__text_start"]))
-
-    err = (user_fault or {}).get("error", 0)
-
-    check(err & ERR_PRESENT and err & ERR_USER and not err & ERR_WRITE,
-          "the kernel's text was not present-and-unreadable to a process: "
-          "error 0x%x" % err)
-
-    # 9. And the kernel's own read-only text, which is a *different* error
-    #    code from the same address: present and written, at ring 0. Without
-    #    CR0.WP that write succeeds and there is no fault here at all.
-    kernel_fault = fault(out, 1)
-
-    check(kernel_fault is not None and (kernel_fault.get("cs", 0) & 3) == 0,
-          "the second fault did not come from ring 0")
-
-    err = (kernel_fault or {}).get("error", 0)
-
-    check(err & ERR_PRESENT and err & ERR_WRITE and not err & ERR_USER,
-          "the kernel wrote to its own read-only text without a protection "
-          "fault: error 0x%x. CR0.WP is what makes that fault." % err)
+    check("process died" not in ran, "the program faulted on its way out")
 
     if fails:
-        print("FAIL: %d of %d checks on x86-64:" % (len(fails),
-                                                    len(fails) + checks))
+        print("FAIL: %d of %d checks on x86-64:"
+              % (len(fails), len(fails) + checks))
 
         for f in fails:
             print("  " + f)
 
         return 1
 
-    print("PASS: %d checks on x86-64 (long mode, the memory map against the "
-          "allocator, an identity map with .text and .rodata narrowed, a "
-          "guard page, an address space that leaks nothing, a context "
-          "switch, and a process at ring 3 that cannot read the kernel)."
-          % checks)
+    print("PASS: %d checks on x86-64 (it boots through twelve stages, names "
+          "its processor out of CPUID, agrees with userland about the memory "
+          "by two paths, answers what is typed at it, and runs a program that "
+          "reports what it was handed)." % checks)
     return 0
 
 

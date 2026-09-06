@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "pc.h"
 
 #define COM1        0x3F8
 
@@ -70,6 +71,18 @@ void hal_early_init(void)
     outb(COM1 + UART_LCR, LCR_8N1);         /* and DLAB back off */
     outb(COM1 + UART_FCR, 0xC7);            /* FIFOs on, cleared, 14-byte */
     outb(COM1 + UART_MCR, 0x0B);            /* DTR, RTS, OUT2 */
+
+    /*
+     * And what the loader left, while it is still there.
+     *
+     * `pc.h` explains the ordering: the multiboot structure sits in RAM
+     * past the kernel image, which `pmm_init` will hand out. This is the
+     * first thing `kmain` calls, so it is the last moment both answers are
+     * readable - and reading them here means nothing later has to remember
+     * to.
+     */
+    pc_capture_memory();
+    pc_capture_cmdline();
 }
 
 void hal_putchar(char c)

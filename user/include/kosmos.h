@@ -437,8 +437,35 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 #define USER_IMAGE_MAGIC    0x534f4d534f4bUL
 #define USER_IMAGE_HEADER   16
 
-#define USER_TEXT       0x80000000UL
-#define USER_HEAP       0x81000000UL
+/*
+ * Where the image, the heap and the stack are, and **the base comes from
+ * the build** rather than being written here a third time.
+ *
+ * It was `0x80000000` on this line, matching `USER_VA_BASE` in the kernel's
+ * `arch/<name>/mmu.h` and `. = 0x80000000` in `user/user.ld` - three copies
+ * of one number, agreeing because nobody had changed one. The comment
+ * below already records what that shape cost once, with the heap size. The
+ * second architecture is what changed one: x86-64 puts a process at 1 GB,
+ * because 0x80000000 is exactly the first address its default code model
+ * cannot reach.
+ *
+ * What that looked like: every one of the twelve boot stages passed, init
+ * started at ring 3, and the first thing it touched was `0x81000018` - the
+ * old base plus the heap offset - in an address space where the heap is at
+ * `0x41000000`.
+ *
+ * So the Makefile computes it once and hands it to the compiler and the
+ * linker both. Two places still know the number, and they are the
+ * irreducible two: a linker script cannot read a C header. An `#error`
+ * rather than a default, because a default is what silently produced the
+ * fault above.
+ */
+#ifndef KOSMOS_USER_BASE
+#error "the build must say where a process is mapped: -DKOSMOS_USER_BASE"
+#endif
+
+#define USER_TEXT       ((unsigned long)KOSMOS_USER_BASE)
+#define USER_HEAP       (USER_TEXT + 0x01000000UL)
 /*
  * The heap's size, and it must be the same number the *kernel* used.
  *
@@ -463,6 +490,6 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 #endif
 
 #define USER_HEAP_SIZE  ((unsigned long)USER_HEAP_PAGES * 4096UL)
-#define USER_STACK_END  0x82000000UL
+#define USER_STACK_END  (USER_TEXT + 0x02000000UL)
 
 #endif /* KOSMOS_H */

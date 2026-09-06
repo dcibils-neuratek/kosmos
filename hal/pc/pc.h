@@ -93,11 +93,41 @@ void pc_irq_unmask(unsigned irq);
 void pc_timer_interrupt(void);
 
 /*
- * The two things this board takes from what the loader left behind, each
- * read by the file that needs it. Called before anything asks, from
- * `kmain_x86`, because both answers have to exist before `kmain` runs.
+ * Where the loader left its information structure, stored by `start.S` and
+ * read by whichever file here needs a field out of it.
+ *
+ * **A variable rather than an argument, because this is the board's
+ * business and not the processor's.** It was a pair of calls from
+ * `kmain_x86` for a while, which meant `arch/x86_64/` had to know that
+ * multiboot exists - and multiboot is a *firmware* protocol, in the same
+ * category as the device tree the ARM board reads. `arch/` is "which CPU
+ * are you"; a PC's boot handoff is not an answer to that question.
+ *
+ * Zero when there was none. Written once before there is a second thread
+ * and read-only afterwards, which is what makes a file-scope variable
+ * acceptable here - the same argument `kernel/screen.c` makes about the
+ * display it found.
  */
-void hal_ram_from_multiboot(uint32_t at);
-void hal_boot_from_multiboot(uint32_t at);
+extern uint32_t pc_multiboot;
+
+/*
+ * Read what the loader left, **before the page allocator can reuse the
+ * memory it is in**.
+ *
+ * That is the whole reason these are not read on first ask. QEMU puts the
+ * multiboot structure and the command line in RAM just past the kernel
+ * image - 0x572000 on this machine, against an image ending near 0x55e000 -
+ * and `pmm_init` quite correctly considers everything past `__image_end`
+ * free. By the time the first process asks what it should do, the string is
+ * whatever was allocated over it.
+ *
+ * What that looked like: `flags` with the command-line bit set, a plausible
+ * pointer, and an empty string behind it. A machine that ignored
+ * `-append boot=hello` and said nothing about why.
+ *
+ * `hal_early_init` calls both, which is the first thing `kmain` does.
+ */
+void pc_capture_memory(void);
+void pc_capture_cmdline(void);
 
 #endif /* HAL_PC_H */

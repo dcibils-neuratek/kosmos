@@ -90,6 +90,35 @@ endif
 # what it says.
 VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)
 
+#
+# **Defined here, beside VARIANT, and not beside the flags that use it.**
+# `UCFLAGS` and `ULDFLAGS` are `:=` assignments and expand it on the spot;
+# further down it expanded to nothing, and what that produced was a userland
+# compiled with `-DKOSMOS_USER_BASE=` and an `#error` that fires. That is
+# the good outcome - the same mistake with `X86_BUILD` silently produced a
+# generated file named `/font_8x16.c`, and with `FULL` and `VARIANT` it
+# produced an image built at the wrong size. Three times now.
+#
+# Where a process image is linked, which has to agree with `USER_VA_BASE` in
+# `arch/$(ARCH)/mmu.h`. The linker cannot read a C header, so those two are
+# the irreducible pair; everything else takes it from here.
+#
+# Three things consume it: `user/user.ld` through `--defsym`, and
+# `user/include/kosmos.h` through `-DKOSMOS_USER_BASE`, which is where the
+# userland's own idea of its heap and stack comes from. That header used to
+# write the number a third time and it went wrong the first time anything
+# changed it - see the comment there.
+#
+# **The two architectures differ and the reason is the code model.** x86-64
+# addresses static data with a sign-extended 32-bit displacement by default,
+# which reaches -2GB to +2GB - and 0x80000000 is exactly the first address
+# it cannot. The whole image fails to link with `relocation truncated to
+# fit`, hundreds of times. So the user region there begins at 1 GB, which is
+# also the boundary of the first PDPT slot: the kernel gets slot 0 and a
+# process gets 1 upward, which is the same arrangement AArch64 has one level
+# up. `mmu_init` panics if RAM would reach that far.
+USER_BASE := $(if $(filter x86_64,$(ARCH)),0x40000000,0x80000000)
+
 
 # Where generated sources go. Defined here rather than beside the rules that
 # produce them, because SRCS below is a := assignment and expands it on the
@@ -667,27 +696,13 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iuser/include -Ikernel -Iruntime/include \
            -Ilua/upstream -Ilua/kosmos \
            -fno-stack-protector
 
-#
-# Where a process image is linked, which has to agree with `USER_VA_BASE` in
-# `arch/$(ARCH)/mmu.h`. The linker cannot read a C header, so this is the
-# one place the number is written twice, and `user/user.ld` says so too.
-#
-# **The two architectures differ and the reason is the code model.** x86-64
-# addresses static data with a sign-extended 32-bit displacement by default,
-# which reaches -2GB to +2GB - and 0x80000000 is exactly the first address
-# it cannot. The whole image fails to link with `relocation truncated to
-# fit`, hundreds of times. So the user region there begins at 1 GB, which is
-# also the boundary of the first PDPT slot: the kernel gets slot 0 and a
-# process gets 1 upward, which is the same arrangement AArch64 has one level
-# up. `mmu_init` panics if RAM would reach that far.
-USER_BASE := $(if $(filter x86_64,$(ARCH)),0x40000000,0x80000000)
 
 ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
             -Wl,--build-id=none -Wl,--no-warn-rwx-segments \
@@ -1535,21 +1550,70 @@ X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
 
 X86_BUILD := build/x86_64
 
-X86_SRCS  := boot/x86_64/start.S arch/x86_64/vectors.S \
-             arch/x86_64/trap.c hal/pc/uart.c hal/pc/memory.c \
-             hal/pc/pic.c hal/pc/timer.c hal/pc/rtc.c \
-             hal/pc/power.c hal/pc/boot.c hal/pc/absent.c \
-             arch/x86_64/switch.S arch/x86_64/user.S \
-             arch/x86_64/gdt.c arch/x86_64/user.c \
-             arch/x86_64/cpu.c arch/x86_64/mmu.c arch/x86_64/fp.c \
-             kernel/pmm.c kernel/screen.c kernel/console.c kernel/panic.c \
-             runtime/libc/string.c $(X86_BUILD)/font_8x16.c \
-             arch/x86_64/main.c
+X86_SRCS  := boot/x86_64/start.S \
+             arch/x86_64/vectors.S \
+             arch/x86_64/trap.c \
+             arch/x86_64/mmu.c \
+             arch/x86_64/cpu.c \
+             arch/x86_64/switch.S \
+             arch/x86_64/fp.c \
+             arch/x86_64/gdt.c \
+             arch/x86_64/user.c \
+             arch/x86_64/user.S \
+             arch/x86_64/entry.c \
+             hal/pc/uart.c \
+             hal/pc/memory.c \
+             hal/pc/pic.c \
+             hal/pc/timer.c \
+             hal/pc/rtc.c \
+             hal/pc/power.c \
+             hal/pc/boot.c \
+             hal/pc/absent.c \
+             kernel/console.c \
+             kernel/screen.c \
+             kernel/boot.c \
+             $(X86_BUILD)/version.c \
+             $(X86_BUILD)/font_8x16.c \
+             runtime/libc/string.c \
+             runtime/libc/setjmp-x86_64.S \
+             kernel/panic.c \
+             kernel/pmm.c \
+             kernel/thread.c \
+             kernel/sched_rr.c \
+             kernel/sched_prio.c \
+             kernel/ipc.c \
+             kernel/memobj.c \
+             kernel/process.c \
+             kernel/syscall.c \
+             kernel/main.c \
+             $(X86_BUILD)/init_bin.c
+
+# The userland image, built for this architecture and turned into an array.
+# The same two steps the ARM image takes, with the arch carried through
+# `VARIANT` so the objects of the two never meet.
+# `$(UBUILD)`, not a written-out path: inside the recursive call above it is
+# `build-user-x86_64`, and naming it literally is how the two came to
+# disagree once already.
+$(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bin2c.py $< init_image $@
 
 .PHONY: x86 x86-build
+#
+# `FULL=0` is passed through, and it has to be.
+#
+# Inside the recursive call, `FULL` decides `DOOM` and `WEB`, which decide
+# `VARIANT`, which decides `UBUILD` - so leaving it out built the userland
+# into `build-user-x86_64-doom-web` while the rule below named
+# `build-user-x86_64`. The image then linked against whatever `init_bin.c`
+# happened to be lying there, which was one built before the user region
+# moved, and the machine faulted at an address from the previous layout.
+#
+# Doom and the browser are not off here because they would fail: they are
+# off because nothing has drawn a pixel on this architecture yet.
 x86-build:
 	@mkdir -p $(X86_BUILD)
-	@$(MAKE) --no-print-directory ARCH=x86_64 $(X86_BUILD)/kosmos.bin
+	@$(MAKE) --no-print-directory ARCH=x86_64 FULL=0 $(X86_BUILD)/kosmos.bin
 
 # Who this is and what it was built from, for the other architecture. A
 # second rule rather than a shared one for the same reason the font has one:

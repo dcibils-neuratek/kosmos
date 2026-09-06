@@ -97,35 +97,110 @@ enter_user:
  * ring 3 would have got it too. That keeps one answer to "which stack does
  * an entry land on" rather than two that can disagree.
  *
- * `user_rsp` is per-CPU state in everything but name, and so is the TSS.
- * `CLAUDE.md` forbids loose mutable globals for exactly this reason, and
- * `fp.c` has the same note for the same kind of variable: with one core
- * there is one of each, and when there is a second, both belong in a
- * per-CPU structure reached through the GS base - which is what `swapgs`
- * exists for and what this entry will grow.
+ * **`user_rsp` is live for exactly two instructions, and it took a bug to
+ * get it there.** It was a global the whole way through the syscall - park
+ * the process's stack pointer on the way in, restore it on the way out -
+ * and the note beside it said it was per-CPU state in everything but name,
+ * needing `swapgs` only when a second core arrived.
+ *
+ * That was wrong, and one core was enough to prove it. The state is
+ * per-*thread*: a process that blocks inside a syscall - which is every
+ * IPC - lets another process run, that process makes its own syscall and
+ * writes the global, and the first one returns to ring 3 on somebody
+ * else's stack. What it looked like was `l_call` returning with rsp four
+ * kilobytes *above* the top of the stack, in a process that had just
+ * printed its capabilities correctly.
+ *
+ * AArch64 never asks the question: an exception writes its frame onto the
+ * thread's own SP_EL1 stack, so the saved SP_EL0 is per-thread by
+ * construction. Here the fix is to get onto the kernel stack and push it
+ * there in the same breath - which is what the three instructions below
+ * do, with the global as a scratch cell across two of them, at a moment
+ * IA32_FMASK has already made uninterruptible.
  */
 .global syscall_entry
 syscall_entry:
     movq    %rsp, user_rsp(%rip)
     movq    tss+TSS_RSP0(%rip), %rsp
+    pushq   user_rsp(%rip)          /* and now it belongs to this thread */
 
     /*
-     * Both of these are the process's, not scratch: `sysretq` reads the
-     * return address out of rcx and the flags out of r11, and the C call
-     * below is free to clobber either.
+     * **Everything the process had, because `syscall` saved none of it.**
+     *
+     * This is the difference from an exception that costs the most lines.
+     * AArch64's `svc` goes through the vector table like any other
+     * exception: the entry stub writes all thirty-one general registers
+     * into the trapframe and `eret` reads them back, so `kernel/syscall.c`
+     * can do what it likes and a process notices nothing. `syscall` writes
+     * two registers - rcx and r11 - and leaves the other fifteen exactly as
+     * the process had them, which means the kernel is now running with a
+     * process's values in registers the C it is about to call will clobber.
+     *
+     * The convention is that a syscall preserves everything but rax, rcx
+     * and r11. Getting it wrong is not a crash: it is a caller whose live
+     * variable changed under it. What it looked like here was
+     *
+     *     lua_pushinteger(L, sys0(SYS_ENDPOINT));
+     *
+     * where GCC quite correctly kept `L` in rdi across the `syscall` - and
+     * this stub had put the frame pointer there.
+     *
+     * rcx and r11 first because `sysretq` needs them and the C call is free
+     * to clobber both. The rest because a process is entitled to them.
+     * Eight pushes is sixty-four bytes, which leaves rsp sixteen-aligned.
      */
-    pushq   %rcx
-    pushq   %r11
+    pushq   %rcx                    /* the return address the CPU saved */
+    pushq   %r11                    /* and the flags */
+    pushq   %r9
+    pushq   %r8
+    pushq   %r10
+    pushq   %rdx
+    pushq   %rsi
+    pushq   %rdi
 
-    /* rax holds what to do and rdi what to do it to, which is the shape a
-     * declared struct will take when there is a real protocol here. */
-    movq    %rdi, %rsi
-    movq    %rax, %rdi
-    call    x86_syscall
+    /*
+     * `struct syscall_frame`, built on the stack in the layout
+     * `kernel/syscall.h` declares: number, five arguments, then the result.
+     * Fifty-six bytes rounded to seventy-two, because the `call` below
+     * wants rsp+8 aligned to sixteen at the callee's entry: the nine pushes
+     * above leave rsp eight out, so the frame carries the odd eight rather
+     * than a padding push that would have to be explained twice.
+     *
+     * **r10 rather than rcx for argument three**, which is the one place
+     * this differs from a C call and is not a choice: `syscall` puts the
+     * return address in rcx before the kernel sees anything, so an argument
+     * passed the ABI's way would be destroyed by the instruction delivering
+     * it. `user/include/syscall-x86_64.h` puts it in r10 for this reason
+     * and Linux does the same.
+     */
+    subq    $72, %rsp
 
+    movq    %rax,  0(%rsp)          /* number */
+    movq    %rdi,  8(%rsp)          /* arg 0 */
+    movq    %rsi, 16(%rsp)          /* arg 1 */
+    movq    %rdx, 24(%rsp)          /* arg 2 */
+    movq    %r10, 32(%rsp)          /* arg 3 */
+    movq    %r8,  40(%rsp)          /* arg 4 */
+    movq    $0,   48(%rsp)          /* result */
+
+    movq    %rsp, %rdi
+    call    syscall_dispatch
+
+    movq    48(%rsp), %rax
+    addq    $72, %rsp
+
+    popq    %rdi
+    popq    %rsi
+    popq    %rdx
+    popq    %r10
+    popq    %r8
+    popq    %r9
     popq    %r11
     popq    %rcx
-    movq    user_rsp(%rip), %rsp
+
+    /* And the process's own stack, off this thread's kernel stack rather
+     * than out of a global that another thread may have written. */
+    popq    %rsp
 
     /*
      * Back to ring 3 with the answer in rax. `sysretq` rather than `sysret`

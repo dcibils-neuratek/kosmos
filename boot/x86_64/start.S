@@ -188,10 +188,20 @@ long_mode:
     movq    $__stack_top, %rsp
     xorq    %rbp, %rbp
 
-    /* The multiboot pointer, parked in esi at entry, as the first
-     * argument. Writing to a 32-bit register zeroes the top half, which is
-     * what is wanted: the pointer came from a 32-bit loader. */
-    movl    %esi, %edi
+    /*
+     * The multiboot pointer, parked in esi at entry, handed to the board
+     * rather than to the kernel.
+     *
+     * `hal/pc/pc.h` says why it is a variable and not an argument: what the
+     * firmware left is the board's business, and `arch/x86_64/` has no more
+     * need to know that multiboot exists than `arch/aarch64/` has to know
+     * about a device tree. Writing a 32-bit register zeroes the top half,
+     * which is what is wanted - the pointer came from a 32-bit loader.
+     *
+     * After the .bss zeroing above, not before: `pc_multiboot` is in there.
+     */
+    movl    %esi, pc_multiboot(%rip)
+
     call    kmain_x86
 
 hang:

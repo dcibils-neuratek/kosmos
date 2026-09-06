@@ -93,11 +93,50 @@ fix it. This is a change to the IPC model — a syscall, a fixed-size queue in
 the endpoint struct, a decision about what a full queue does, and
 backpressure.
 
-**x86-64, under QEMU.** A second architecture: a different instruction set,
-a different interrupt controller, a different boot protocol, a different
-memory model. The 64-bit line was drawn where it was precisely so this is
-not a refactor — `kernel/` has no architecture-specific instruction left in
-it, which is what makes "the kernel is portable" checkable.
+**x86-64, under QEMU — *done, and it boots to a shell*.** A second
+architecture: a different instruction set, a different interrupt controller,
+a different boot protocol, a different memory model. The 64-bit line was
+drawn where it was precisely so this would not be a refactor, and it was
+not: all thirteen `kernel/*.c` compile for it with no `#ifdef`, and the
+whole userland — fifty thousand lines of servers, libraries, applications
+and Lua — needed about a hundred and ten lines of assembly and one `#if`.
+
+What is left there is `hal/pc/`: a framebuffer, a keyboard, a pointer and
+virtio over PCI, which is a different way of *finding* the same devices
+QEMU gives the ARM board. `docs/hal.md` has the differences that were not
+cosmetic.
+
+**SMP, and real parallelism.** The next thing, and the port just paid for
+part of it in advance. Two pieces of state on x86-64 are per-CPU rather
+than per-thread — the TSS holding the stack an entry from ring 3 lands on,
+and whoever owns the floating-point registers — and finding the boundary
+was not theoretical: a global holding the interrupted stack pointer looked
+like per-CPU state, was actually per-*thread*, and produced a process
+returning to user level on another process's stack. One core was enough to
+prove it wrong. `swapgs` and the GS base are what x86 replaces that global
+with; `TPIDR_EL1` is ARM's, and neither is written yet.
+
+**PowerPC, on a G5 or a G4 iMac.** Wanted, and it changes two things this
+project has written down as settled.
+
+*It is big-endian*, and would be the first. The audit in `docs/hal.md` was
+done before there was any reason to need it and it holds: every
+`string.pack` in the on-disk format carries an explicit `<`, a tree-wide
+search for native-endian packs finds none, and the network stack builds
+big-endian by construction with byte shifts rather than by relying on the
+host. What would have to move is `runtime/include/endian.h`, which today
+says little-endian because both targets are — it becomes per-architecture,
+which is one file and the reason it exists.
+
+*The G4 is 32-bit*, and `CLAUDE.md` says Kosmos is 64-bit and only 64-bit —
+"a 32-bit machine is neither, because it is out of scope". That is a
+principle in the way, and the rule for those is to say which one, say what
+it costs, and decide deliberately rather than drift. The G5 (PPC970) is
+64-bit and needs none of that conversation. A G4 does: `runtime/include/`
+has two files that assert 64-bit outright — `inttypes.h`, whose `PRIu64` is
+`"lu"` because both targets are LP64, and `math.h`, which `#error`s on the
+`FLT_EVAL_METHOD` a 32-bit x87 machine reports. Neither is hard; both are
+places the decision would have to be made on purpose.
 
 **Real hardware**, a Raspberry Pi 5. Chosen because it is hard: a desktop
 that feels fast on it is a result rather than an emulator number. Every
@@ -114,8 +153,9 @@ the Pi", and the Pi is not here yet.
 
 ### The system
 
-- **SMP.** Single core today, but written SMP-ready: no loose mutable
-  globals, a per-CPU pointer, a per-CPU runqueue with one CPU in it.
+- **SMP.** Moved up to *Next* — see there. Single core today, but written
+  SMP-ready: no loose mutable globals, a per-CPU pointer, a per-CPU
+  runqueue with one CPU in it.
 - **An ELF loader**, so a program can be loaded rather than compiled in.
 - **SSH**, in layers with test vectors at each: the binary packet protocol,
   Curve25519, ChaCha20-Poly1305, userauth, channels. The one place here

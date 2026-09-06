@@ -74,6 +74,23 @@ bool hal_input_pending(void)
     return false;
 }
 
+/*
+ * The same question asked from inside an interrupt handler, where it must
+ * not consume anything - the kernel is deciding whether to wake a sleeper,
+ * not reading a key. There is nothing to peek at on this board yet.
+ */
+bool hal_input_pending_peek(void)
+{
+    return false;
+}
+
+bool hal_key_held(unsigned code)
+{
+    (void)code;
+
+    return false;
+}
+
 bool hal_pointer_init(void)
 {
     return false;
@@ -203,4 +220,14 @@ unsigned hal_snd_dry(void)
 unsigned hal_snd_floor(void)
 {
     return 0;
+}
+
+/*
+ * Whether the device is asking for a period, which the interrupt path asks
+ * on every tick. A board with no sound device never wants one, and the
+ * process that would have been woken does not exist.
+ */
+bool hal_snd_wants(void)
+{
+    return false;
 }

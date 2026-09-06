@@ -19,6 +19,9 @@
 
 #include "console.h"
 #include "cpu.h"
+#include "process.h"
+#include "sched.h"
+#include "thread.h"
 #include "hal.h"
 #include "trap.h"
 
@@ -166,6 +169,22 @@ void trap_init(void)
     __asm__ volatile("lidt %0" :: "m"(pointer));
 }
 
+/*
+ * A process that was killed while it was running ends here, on its way back
+ * to ring 3.
+ *
+ * `arch/aarch64/trap.c` has the same four lines and the same reasoning: a
+ * kill cannot take effect where it is asked, because the target may be
+ * anywhere at all. It is recorded, and every return to user level passes
+ * through this. `process_exit` does not return.
+ */
+static void die_if_killed(void)
+{
+    if (process_should_die()) {
+        process_exit(thread_current()->process, -1);
+    }
+}
+
 void trap_handle(struct trapframe *f)
 {
     uint64_t cr2;
@@ -185,6 +204,46 @@ void trap_handle(struct trapframe *f)
      */
     if (f->vector >= IRQ_BASE) {
         hal_irq_handle();
+
+        /*
+         * And what an interrupt *means*, which acknowledging it does not
+         * do. `arch/aarch64/trap.c` does all of this and the x86 side did
+         * none of it for a while - which is a machine that boots to a
+         * prompt, prints it, and then ignores everything typed at it,
+         * because nothing was polling the serial line and nothing was
+         * preempting the thread that had the processor.
+         *
+         * The sound device asking for a period is woken here rather than
+         * inside the driver, because waking a thread is the kernel's
+         * business and `hal/` may not reach into it - the same separation
+         * that keeps hardware addresses out of everything above it.
+         */
+        if (hal_snd_wants()) {
+            process_wake_audio();
+        }
+
+        if (hal_input_pending_peek()) {
+            thread_wake_sleepers_now();
+        }
+
+        /*
+         * The timer is the scheduler's clock, and it is the only interrupt
+         * source unmasked, so every one of these is a tick. When there is a
+         * second, `hal_irq_handle` has to say which fired rather than this
+         * assuming.
+         *
+         * `thread_tick` only records what the policy wants; the switch
+         * happens on the way out. `die_if_killed` is what a process that
+         * was killed while it ran passes through, and it must come after
+         * both - there is nothing to reschedule once it is gone.
+         */
+        thread_tick();
+        console_tick();
+
+        if (f->cs & 3) {
+            die_if_killed();
+        }
+
         return;
     }
 
@@ -213,6 +272,26 @@ void trap_handle(struct trapframe *f)
      * stale address from the last one, which is worse than printing
      * nothing because it looks like evidence.
      */
+    /*
+     * The word on top of the faulting stack, which is the return address
+     * when a function faults on its own first instruction - and that is
+     * more often than it sounds, because the first instruction is where a
+     * bad `this` pointer is dereferenced.
+     *
+     * Only for a fault from ring 3, and only after the stack pointer has
+     * been checked: reading it is reading memory a process chose, and a
+     * fault handler that faults is a double fault. `process_may_read` is
+     * the same check every syscall pointer goes through.
+     */
+    if ((f->cs & 3) != 0) {
+        struct process *p = process_current();
+
+        if (p != NULL && process_may_read(p, (uintptr_t)f->rsp,
+                                          sizeof(uint64_t))) {
+            line("caller ", *(const uint64_t *)(uintptr_t)f->rsp);
+        }
+    }
+
     if (f->vector == 14) {
         line("cr2    ", cr2);
 
@@ -225,8 +304,21 @@ void trap_handle(struct trapframe *f)
         say("\n");
     }
 
+    /*
+     * A process doing something it may not is a dead process, not a dead
+     * machine. `arch/aarch64/trap.c` does exactly this and calls it "the
+     * whole point of a microkernel, and one line of code because the
+     * hardware already did the work".
+     *
+     * From ring 3 with no process is a kernel bug rather than a process
+     * one, and falls through to the halt below.
+     */
     if (f->cs & 3) {
-        trap_user_fault(f);     /* never returns */
+        struct process *p = process_current();
+
+        if (p != NULL) {
+            process_exit(p, -1);    /* never returns */
+        }
     }
 
     say("\nhalted.\n");

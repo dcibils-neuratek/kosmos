@@ -125,6 +125,36 @@ isr_common:
     movq    %rsp, %rdi
     call    trap_handle
 
+    /*
+     * Preemption happens here and nowhere else, exactly as it does in
+     * `arch/aarch64/vectors.S`, and for exactly the same reason.
+     *
+     * It cannot be done inside `trap_handle`, because a context switch
+     * moves rsp and everything below this point reads the frame at rsp.
+     * That frame has to belong to whichever thread is about to be resumed.
+     *
+     * The mechanism falls out of that. The switch saves rsp pointing into
+     * this function's own frame on the outgoing thread's kernel stack and
+     * loads the incoming thread's, which points into *its* copy of this
+     * same function, from when it was preempted. So the pops and the
+     * `iretq` below run on the incoming thread's frame, and the outgoing
+     * thread's stays untouched on its own stack until it is scheduled
+     * again.
+     *
+     * Control may not come back from this call at all: if the incoming
+     * thread has never run, the switch returns into `thread_entry` instead
+     * and everything below is simply not executed for it, which is correct
+     * because it has no frame to restore.
+     *
+     * **Leaving it out is a machine that ticks and never switches.**
+     * `thread_tick` only records that the policy wants a different thread;
+     * this is what acts on it. What that looked like: a boot that reached a
+     * prompt, ran a program from the command line perfectly, counted its
+     * ticks correctly - and ignored everything typed at it, because the
+     * console server was never scheduled to notice.
+     */
+    call    thread_preempt_if_needed
+
     popq    %rax
     popq    %rbx
     popq    %rcx

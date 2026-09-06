@@ -155,9 +155,37 @@ static inline void cpu_irq_disable(void)
  * interrupt arriving in between. That race is real on ARM and is why the
  * idle loop there unmasks in the order it does.
  */
+/*
+ * Sleep until something happens, and **`sti` is part of the instruction**.
+ *
+ * This is the sharpest difference between the two processors in this
+ * header, and it is a difference in what "masked" means.
+ *
+ * AArch64's `wfi` wakes on a pending interrupt even with PSTATE.I set -
+ * masking stops the exception being *taken*, not the wakeup - so the idle
+ * loop in `kernel/main.c` masks interrupts across the check and the sleep,
+ * exactly to close the race where an interrupt lands between "nothing is
+ * runnable" and "sleep". Its comment says so.
+ *
+ * `hlt` has no such property. With IF clear it halts and nothing wakes it,
+ * ever. The same idle loop, unchanged, is a machine that boots, prints its
+ * prompt, and stops - which is what it did: twenty timer interrupts in the
+ * first two tenths of a second and then silence, with the shell blocked on
+ * a console server blocked on a timeout that could no longer expire.
+ *
+ * **`sti; hlt` is the answer and it is one instruction pair on purpose.**
+ * `sti` does not take effect until after the instruction that follows it -
+ * the interrupt shadow - so there is no window between enabling and
+ * halting for an interrupt to be missed in. It is the reason the shadow
+ * exists, and every x86 kernel's idle loop is these two instructions.
+ *
+ * The caller unmasks again afterwards, which is now redundant rather than
+ * wrong; leaving the caller alone is what keeps `kernel/` free of
+ * architecture.
+ */
 static inline void cpu_wait_for_interrupt(void)
 {
-    __asm__ volatile("hlt");
+    __asm__ volatile("sti; hlt");
 }
 
 /*
