@@ -8,6 +8,54 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+**Anyone can run this now, with one command and no toolchain:**
+
+```
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"
+```
+
+It asks GitHub what is published, works out the newest, fetches it and
+`run-kosmos.sh`, and boots. `builds/kosmos-0.8.34-8c8c1f5-1920x1080-full.elf`
+is what it gets: browser, Doom, network, every demo.
+
+**Five bugs came out of one person trying to use it**, and not one of them
+would have been found by any suite here. They were all in the layer nothing
+tests: the part a person types.
+
+  * `./run-kosmos.sh` found no released image at all. It looked for
+    `kosmos.elf` and `build/kosmos.elf` - the names a *build tree* has - and
+    every file anybody downloads is called `kosmos-0.8.34-<sha>-...-full.elf`.
+    `builds/README.md` had been documenting "the largest build here" the
+    whole time.
+  * It did not look in `build/`, which is where somebody who downloads one
+    image actually put it.
+  * `-b "wm blocks"` booted `wm` and dropped `blocks` - the script's own
+    documented example. The argument was built as a string and expanded
+    unquoted, so the shell split it. Every single-word `-b` worked, which is
+    why it lasted. A POSIX shell holds a list with `set --`.
+  * The downloader matched `*-web.elf` and the release had started calling
+    itself `-full`. Worse, it *exited* when its preference was missing
+    rather than taking the best of what was there.
+  * And it fetched the image and the runner every time and never looked at
+    **itself**, so the fix for the one above could not reach the person
+    hitting it. The one-line form above is the arrangement where that cannot
+    happen, and a kept copy now says when it differs from the published one.
+
+`sh -c "$(curl ...)"` rather than `curl | sh`, and that is not style: a pipe
+*is* the script's stdin, and the last thing it does is hand over to QEMU
+with `-serial mon:stdio`. Checked rather than assumed - a script whose only
+statement is `read x` gets an empty line through a pipe and the real one
+through `-c`.
+
+**The lesson is about where the tests are.** Everything in this system is
+gated by `make test`, `make screenshot`, `make web`, `make browser` - and
+`run-kosmos.sh` is what a person types, and had never been typed by anything
+but a person. Three separate bugs in one file, all of them years-obvious in
+hindsight, none of them reachable from a suite that starts by building.
+
+---
+
+
 **`make qemu` is the whole system now**: the browser, Doom, the network,
 every demo, at 1920x1080. `FULL=0` gives the lean image. The variants exist
 so a *suite* can be small and quick, not so the machine you sit in front of
@@ -1113,11 +1161,28 @@ visible.
    out at the body size. `l_style` already builds a select context per call
    and throws it away; the document should hold one, built from its own
    `<style>` elements, and layout should ask it per element.
-2. **A box model.** Margins, padding, borders and `width`, which is what
+2. **DNS**, which is what stands between `188.184.67.127/` and a name. A
+   resolver over UDP, a cache, and `/etc`-shaped configuration that the
+   network application already has fields for and remembers only.
+3. **A non-blocking send.** Half a browser frame is the application blocked
+   on a `commit` whose handler swaps an index and records a rectangle, and
+   triple buffering cannot fix that: `SYS_CALL`, `SYS_RECEIVE` and
+   `SYS_REPLY` are the whole IPC surface and every message to a server
+   blocks for its reply by construction. A new syscall, a fixed-size queue
+   in the endpoint struct - no allocator - a decision about what a full
+   queue does, and backpressure. A change to the IPC model, which is why it
+   is written down rather than started.
+4. **x86-64, under QEMU**, and then the road to real hardware. A second
+   `arch/`: a different instruction set, a different interrupt controller, a
+   different boot protocol, a different memory model. The 64-bit line was
+   drawn here precisely so that this is not a refactor - `kernel/` has no
+   architecture-specific instruction left in it, which is what makes "the
+   kernel is portable" checkable rather than aspirational.
+5. **A box model.** Margins, padding, borders and `width`, which is what
    turns "blocks stacked down the page" into layout. Images and forms both
    wait on it; the runs are already addressable, which is the half that made
    links work.
-3. **SSH**, in layers with a test each: the binary packet protocol, then
+6. **SSH**, in layers with a test each: the binary packet protocol, then
    Curve25519 key exchange, then ChaCha20-Poly1305, then userauth, then
    channels. This is the one place in the project where a bug is *silent*
    rather than loud - a stack that gets a sequence number wrong stops
