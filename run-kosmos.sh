@@ -119,10 +119,75 @@ if [ -z "$image" ]; then
             exit 1
         fi
     else
-        for candidate in "$here/build/kosmos.elf" "build/kosmos.elf" \
-                         "$here/kosmos.elf"; do
-            [ -f "$candidate" ] && image="$candidate" && break
+        #
+        # The largest image here, which is what this script has claimed to
+        # do since it was written and did not.
+        #
+        # It looked only for `kosmos.elf` and `build/kosmos.elf` - the names
+        # a *build tree* has. A released image is called
+        # `kosmos-0.8.33-f82c43e-1280x800-web.elf`, and the version and the
+        # commit in that name change every time, which is the whole reason
+        # nothing here may hardcode one. So none of the files anybody
+        # actually downloads were ever found, and `./run-kosmos.sh` on a
+        # machine holding three of them said there was no image.
+        #
+        # **Newest version first, then largest of that version.** Not
+        # largest outright, which was the first attempt and picked a
+        # months-old 1920x1080 image over the current one because it had
+        # more pixels in it. Nobody wants the biggest old thing.
+        #
+        # Not by date either: a copied file's date is when it was copied,
+        # and these are made to be copied. Not lexicographically, because
+        # `0.10.0` sorts before `0.9.0` and this project is at 0.8 - a trap
+        # with a date on it rather than a hypothetical one.
+        #
+        # `-ge` rather than `-gt` so that of two identical rankings the
+        # later name wins, which puts a `-web` image ahead of the plain one
+        # it sorts after. That is the right way round: it can do everything
+        # the plain one can.
+        #
+        best_rank=-1
+        best_px=0
+
+        for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf; do
+            [ -f "$f" ] || continue
+
+            name=$(basename "$f")
+
+            dims=$(echo "$name" \
+                   | sed -n 's/.*-\([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p')
+            [ -n "$dims" ] || continue
+
+            ver=$(echo "$name" \
+                  | sed -n 's/^kosmos-\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\)-.*/\1 \2 \3/p')
+            [ -n "$ver" ] || ver="0 0 0"
+
+            # Expansion rather than `set --`, which would overwrite this
+            # script's own arguments from inside a loop that is reading a
+            # filename. They are not needed by this point, which is not a
+            # reason to destroy them.
+            v_rest=${ver#* }
+            rank=$(( ${ver%% *} * 1000000
+                     + ${v_rest%% *} * 1000
+                     + ${v_rest##* } ))
+            px=$(( ${dims% *} * ${dims#* } ))
+
+            if [ "$rank" -gt "$best_rank" ] \
+               || { [ "$rank" -eq "$best_rank" ] && [ "$px" -ge "$best_px" ]; }
+            then
+                best_rank="$rank"
+                best_px="$px"
+                image="$f"
+            fi
         done
+
+        # A build tree, if there are no released images beside the script.
+        if [ -z "$image" ]; then
+            for candidate in "$here/build/kosmos.elf" "build/kosmos.elf" \
+                             "$here/kosmos.elf"; do
+                [ -f "$candidate" ] && image="$candidate" && break
+            done
+        fi
     fi
 fi
 

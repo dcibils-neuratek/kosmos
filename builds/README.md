@@ -3,11 +3,18 @@
 Images you can download and run without building anything.
 
 ```sh
-./run-kosmos.sh                 # the largest build here
+./run-kosmos.sh                 # the newest build here
 ./run-kosmos.sh -r 1920x1080    # at that size
 ./run-kosmos.sh -r list         # which sizes are here
 ./run-kosmos.sh kosmos-0.6-abc1234-1024x768.elf
 ```
+
+**You never have to type the file name.** It has a version and a commit in
+it and both change on every release, so nothing here hardcodes one and
+nothing asks you to know one: with no arguments the script takes the newest
+version it can find, and the largest build of that version. `-r` picks by
+size instead. The name is for telling two of them apart afterwards, not for
+starting one.
 
 Needs `qemu-system-aarch64` and nothing else. On macOS: `brew install qemu`.
 
