@@ -89,9 +89,4 @@ void timer_interrupt(void);
  * network - and the transport is `virtio.c`.
  */
 
-/* One character, or -1 when nothing is waiting. Polled, like the UART. */
-int keyboard_getchar(void);
-
-bool keyboard_present(void);
-
 #endif /* HAL_QEMU_VIRT_H */

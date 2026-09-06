@@ -198,13 +198,22 @@ def boot(image, extra, commands, seconds=90, then=None):
     typed - which is what a server needs: the last command does not return,
     because the server is still serving.
     """
-    saved = run_screenshot.QEMU_ARGS
-    run_screenshot.QEMU_ARGS = saved + extra
+    #
+    # Whichever board's list this image is for, and that is the whole of
+    # what this harness had to learn about a second architecture. It reached
+    # into `QEMU_ARGS` by name, which is the ARM board's list: on an x86
+    # image it appended a network card to a list nobody was reading and the
+    # guest reported, correctly, that it had no card.
+    #
+    board = ("X86_ARGS" if run_screenshot.machine(image) == "x86_64"
+             else "QEMU_ARGS")
+    saved = getattr(run_screenshot, board)
+    setattr(run_screenshot, board, saved + extra)
 
     try:
         guest = run_screenshot.Guest(image, seconds)
     finally:
-        run_screenshot.QEMU_ARGS = saved
+        setattr(run_screenshot, board, saved)
 
     try:
         guest.wait_for(run_screenshot.PROMPT, "the prompt")
@@ -240,7 +249,7 @@ def main():
         # ---- with a card: a frame goes out and is captured ----
         out = boot(image, [
             "-netdev", "user,id=net0",
-            "-device", "virtio-net-device,netdev=net0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
             "-object", f"filter-dump,id=dump0,netdev=net0,file={pcap}",
         ], ["netframe 2"])
 
@@ -318,7 +327,7 @@ def main():
         #
         out = boot(image, [
             "-netdev", "user,id=net0",
-            "-device", "virtio-net-device,netdev=net0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
         ], ["ping 10.0.2.2 2"])
 
         if "no network card" in out or "has no address" in out:
@@ -376,7 +385,7 @@ def main():
         try:
             out = boot(image, [
                 "-netdev", "user,id=net0",
-                "-device", "virtio-net-device,netdev=net0",
+                "-device", run_screenshot.device(image, "net") + ",netdev=net0",
             ], [f"fetch 10.0.2.2 {port} /hello"], seconds=120)
         finally:
             httpd.shutdown()
@@ -442,7 +451,7 @@ def main():
 
         out = boot(image, [
             "-netdev", f"user,id=net0,hostfwd=tcp::{forward}-:80",
-            "-device", "virtio-net-device,netdev=net0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
         ], [
             'fs.write("/data/w/index.html", "<h1>Kosmos</h1>")',
             "httpd 80 /data/w",
@@ -483,7 +492,7 @@ def main():
 
         out = boot(image, [
             "-netdev", f"user,id=net0,hostfwd=tcp::{forward}-:80",
-            "-device", "virtio-net-device,netdev=net0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
         ], [
             "httpd 80 /lib",
         ], seconds=240, then=lambda: _at_once(forward, 6))

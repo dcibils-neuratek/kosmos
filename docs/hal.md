@@ -5,21 +5,49 @@
 
 ## x86-64, and what a second architecture actually cost
 
-**It boots, it ticks, it maps, it switches, and it runs a process.** `make
-x86` puts Kosmos into long mode on QEMU's q35, prints over COM1, takes a
-timer interrupt, builds four levels of page table from C, hands the
-processor back and forth between two contexts, and drops into ring 3 - where
-a program in its own address space makes a `syscall`, gets an answer back
-through `sysretq`, and is then handed the address of the kernel's own
-`.text` and told to read it:
+**It runs the desktop.** `make x86` puts Kosmos into long mode on QEMU's
+q35 and then does everything the ARM build does: twelve boot stages, the
+whole Lua userland, a window manager, the Deskbar, Tracker, the widget
+gallery, the terminal, the browser, the network stack and the disk.
+`tools/run_screenshot.py` is the measure worth quoting, because it asks
+QEMU what is on the screen rather than asking the guest:
 
 ```
-process died: page fault
-  cs 0x2b   rip 0x80000015   cr2 0x101000
-  protection, read, user
+PASS: 62 display checks     x86-64, 108.6s in phases
+PASS: 62 display checks     aarch64, 109.0s in phases
 ```
 
-Present, and unreadable to it. Then the machine keeps running.
+The same sixty-two, and to within half a second the same time - which is
+TCG emulating both, and says nothing about either processor.
+
+**What it cost, once `kernel/` compiled, was almost entirely device
+plumbing**, and three bugs are worth recording because none of them is
+about x86:
+
+  * *`virtio_open` reset the device it had only been asked to find.* Fine
+    for a driver that wants the first card of its kind; wrong for
+    `input.c`, which walks past devices on the way to the one it wants,
+    because a keyboard and a tablet are both virtio-input and telling them
+    apart means opening each. The tablet's scan reset the running keyboard.
+    It survived on `qemu-virt` because QEMU lays virtio-mmio windows out in
+    the reverse of the order the devices are given, so the tablet came
+    first - swapping two flags on the ARM command line would have broken it
+    there identically. Finding and claiming are two calls now.
+  * *A declaration left behind in a board's header.* `keyboard_getchar`
+    moved into the shared `hal/virtio/input.c` and its declaration stayed
+    in `hal/qemu-virt/qemu-virt.h`, where the second board cannot see it -
+    so `hal/pc/uart.c` read only the 16550. The PC found a keyboard, said
+    so, and could not be typed at.
+  * *The screen size was never passed to this build.* `FB_FLAGS` sits on
+    one file's compile line on ARM, for a good reason that does not apply
+    to a build with no object files; left off, `ramfb.c` took its 1024x768
+    fallback and the machine came up at a resolution nothing had asked for.
+
+And two places where a *string* was the bug rather than the code: `/dev/cpu`
+had no x86 decoder, so `devices` printed "nil nil nil, 1 core", and the same
+listing said `/dev/console  PL011 UART, polled` on a machine whose console
+is a 16550 at port 0x3f8. Both are the mistake the boot log already made and
+this file already records, one layer up and in the userland.
 
 `make KVM=1 x86` runs it on an x86-64 Linux host's own cores. It needs
 `-cpu host` - KVM cannot pretend to be another processor - which is the same
@@ -224,18 +252,19 @@ In order:
     bits in the check on every syscall pointer, and the boot log printing
     the literal string "MIDR_EL1". `docs/state.md` lists all six.
   * **Lazy FP**, as above.
-  * **A `hal/pc/` worth the name.** Today it is a 16550, the 8259, the PIT
-    and the multiboot memory map. A desktop needs a framebuffer, a keyboard,
-    a pointer, a block device, a network card and a clock. virtio is the
-    same hardware QEMU offers on both machines, so those drivers should move
-    across rather than be rewritten - but they are reached over PCI here
-    instead of the device tree's MMIO windows, and finding them is the work.
-  * **Preemption**, which is the first thing that will want the lazy FP
-    above: nothing here is scheduled yet, and both `context_switch` calls in
-    the bring-up are explicit.
-  * **Trying it on a PC.** `make KVM=1 x86` is there and the boot path
-    exercises `CR4.SMEP` under `-cpu host`, but there is not much to run on
-    it until `kernel/` builds.
+  * ~~**A `hal/pc/` worth the name.**~~ **Done.** A framebuffer, a keyboard,
+    a pointer, a block device, a network card, a sound device and a clock.
+    The four virtio drivers did move across rather than being rewritten:
+    they live in `hal/virtio/` now and each board brings its own transport,
+    `hal/pc/virtio.c` walking PCI capabilities where `hal/qemu-virt/`
+    reads fixed offsets from a window. Same sequence, every register
+    somewhere else.
+  * ~~**Preemption.**~~ **Done**, and it needed a call the ARM vector
+    epilogue makes and `isr_common` did not: `thread_tick` only records.
+  * **Trying it on a real PC.** `make KVM=1 x86` is there and the boot path
+    exercises `CR4.SMEP` under `-cpu host`. Nothing has run on metal yet,
+    and the machine to run it on is the same one the serial cable is
+    waiting for.
 
 
 ---

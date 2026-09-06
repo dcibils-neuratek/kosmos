@@ -219,14 +219,37 @@ void virtio_enable_interrupt(const struct virtio_device *dev);
  */
 
 /*
- * The next window at or after `from_slot` holding this device, taken as far
- * as ACKNOWLEDGE|DRIVER - so configuration space may be read before the
- * caller decides whether it wants this one.
+ * The next window at or after `from_slot` holding this device, *without
+ * touching it*. False when there is no such device left.
  *
- * False when there is no such device left.
+ * **Finding a device and claiming it are two steps, and they were one.**
+ * `virtio_open` used to reset the device it found and take it to
+ * ACKNOWLEDGE|DRIVER, which is fine for a caller that wants the first
+ * device of its kind and wrong for `input.c`, which walks past devices on
+ * its way to the one it wants: a keyboard and a tablet are both
+ * virtio-input and telling them apart means opening each. The tablet's scan
+ * therefore reset the already-running keyboard, and a reset device has no
+ * queues, no DRIVER_OK, and nothing to say ever again.
+ *
+ * It worked on `qemu-virt` for a reason worth naming, because it is not a
+ * reason: QEMU lays virtio-mmio windows out in the reverse of the order the
+ * devices are given, so the tablet sat below the keyboard and the scan
+ * stopped before reaching it. Swapping two flags on the command line would
+ * have broken the ARM keyboard the same way.
  */
 bool virtio_open(uint32_t device_id, unsigned from_slot,
                  struct virtio_device *dev);
+
+/*
+ * Reset, acknowledge, and say a driver is present - the first half of the
+ * handshake, and the point at which this device becomes *ours*.
+ *
+ * Separate from `virtio_open` so that walking past a device costs it
+ * nothing. The reset is what makes a scan safe to repeat: a window may have
+ * been left acknowledged by a caller that looked at it and did not want it,
+ * and this is where that is undone.
+ */
+void virtio_begin(const struct virtio_device *dev);
 
 /*
  * Agree features. `want` is the low window; feature 32 is always asked for
@@ -305,6 +328,27 @@ void virtio_config_write8(const struct virtio_device *dev, unsigned offset,
 void input_interrupt(unsigned line);
 void snd_interrupt(unsigned line);
 void net_interrupt(unsigned line);
+
+/*
+ * One character from the keyboard, or -1 when nothing is waiting - and
+ * whether there is a keyboard at all.
+ *
+ * A board calls this from its own `hal_getchar`, because `hal.h` says a
+ * board answers from whichever of its sources has a character and the HAL
+ * deliberately has no `hal_keyboard_getchar`. Both boards have the same two
+ * sources and the same order: the keyboard first, since the person at the
+ * screen is the more likely one to be typing.
+ *
+ * **Declared here because the driver that answers it is here.** It used to
+ * be declared in `hal/qemu-virt/qemu-virt.h`, left behind when `input.c`
+ * moved into `hal/virtio/`, and a board header is exactly where the second
+ * board cannot see it: `hal/pc/uart.c` read only the 16550, so every key
+ * pressed on the PC went into a virtqueue that nothing ever drained. The
+ * machine booted, found a keyboard, said so, and could not be typed at.
+ */
+int keyboard_getchar(void);
+
+bool keyboard_present(void);
 
 /*
  * The two barriers a ring needs, and which way round they go.

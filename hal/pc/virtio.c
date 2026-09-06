@@ -256,8 +256,13 @@ bool virtio_open(uint32_t device_id, unsigned from_slot,
     dev->slot     = pci.irq;
     dev->features = 0;
 
-    /* Reset, then acknowledge, then driver: the same three steps in the
-     * same order the other transport takes, at a different address. */
+    return true;
+}
+
+/* Reset, then acknowledge, then driver: the same three steps in the same
+ * order the other transport takes, at a different address. */
+void virtio_begin(const struct virtio_device *dev)
+{
     write8(dev->base + COMMON_DEVICE_STATUS, 0);
 
     while (read8(dev->base + COMMON_DEVICE_STATUS) != 0) {
@@ -267,8 +272,6 @@ bool virtio_open(uint32_t device_id, unsigned from_slot,
     write8(dev->base + COMMON_DEVICE_STATUS, STATUS_ACKNOWLEDGE);
     write8(dev->base + COMMON_DEVICE_STATUS,
            STATUS_ACKNOWLEDGE | STATUS_DRIVER);
-
-    return true;
 }
 
 bool virtio_features(struct virtio_device *dev, uint32_t want)

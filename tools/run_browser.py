@@ -229,11 +229,11 @@ def main():
     httpd, port = serve(directory, asked)
 
     import run_screenshot
-    saved = run_screenshot.QEMU_ARGS
-    run_screenshot.QEMU_ARGS = saved + [
+    saved = (run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS)
+    run_screenshot.extra_args(args.image, [
         "-netdev", "user,id=net0",
-        "-device", "virtio-net-device,netdev=net0",
-    ]
+        "-device", run_screenshot.device(args.image, "net") + ",netdev=net0",
+    ])
 
     guest = None
 
@@ -434,7 +434,7 @@ def main():
         print("\nFAIL: %s" % why, file=sys.stderr)
         return 1
     finally:
-        run_screenshot.QEMU_ARGS = saved
+        run_screenshot.QEMU_ARGS, run_screenshot.X86_ARGS = saved
         httpd.shutdown()
 
         if guest is not None:

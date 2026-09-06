@@ -1551,9 +1551,20 @@ qemu: $(TARGET) $(DISK)
 # and an interrupt handler pushes over it. Nobody notices until there are
 # interrupts.
 #
+# $(FB_FLAGS) is here rather than on one file's compile line, and the
+# comment above it explains why that is right there and wrong here: on ARM
+# putting the screen size in CFLAGS rebuilt seventy-eight objects to change
+# a number seven of them have never heard of. This build has no objects. It
+# is one compile-and-link of every source, so there is nothing finer than
+# "all of it" to attach a flag to, and no saving to be had by trying.
+#
+# Left out, it was not a missing size but the *wrong* one: `ramfb.c` has a
+# 1024x768 fallback for a build that names none, so the machine came up at
+# a resolution nothing had asked for and the ARM build had not used in
+# months. It looked like a display bug and was a Makefile line.
 X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -Wall -Wextra -Werror -fno-common -fno-strict-aliasing -O2 -g \
-             -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+             -mno-red-zone -mno-mmx -mno-sse -mno-sse2 $(FB_FLAGS) \
              -Ihal -Ihal/virtio -Ihal/fwcfg -Iarch/x86_64 -Ikernel -Iruntime/include
 
 X86_BUILD := build/x86_64
@@ -1759,9 +1770,27 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# installed - and said out loud, because a suite that quietly runs
 	@# fewer checks on one machine than another is worse than one that does
 	@# not run them at all.
+	@#
+	@# Three of them on the other board, not one, and the choice is
+	@# about *what is board-specific* rather than about coverage for its
+	@# own sake. `run_x86.py` boots it; `run_headless.py` asks whether a
+	@# machine with no display still reaches a prompt, which is the
+	@# branch every device grant carries a comment about; `run_disk.py`
+	@# and `run_network.py` are the two that go through a driver this
+	@# board finds over PCI rather than in a device-tree window.
+	@#
+	@# `run_interchange.py` and `run_queries.py` are deliberately not
+	@# here, and this says so out loud rather than leaving a gap
+	@# somebody has to notice: their guest half is the same filesystem
+	@# `run_disk.py` has just exercised on this board, and their host
+	@# half does not boot anything. Adding them would double what this
+	@# costs to check the same code twice.
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory x86-build >/dev/null && \
-	    python3 tools/run_x86.py $(X86_BUILD)/kosmos.elf; \
+	    python3 tools/run_x86.py $(X86_BUILD)/kosmos.elf && \
+	    python3 tools/run_headless.py $(X86_BUILD)/kosmos.elf && \
+	    python3 tools/run_disk.py $(X86_BUILD)/kosmos.elf && \
+	    python3 tools/run_network.py $(X86_BUILD)/kosmos.elf; \
 	else \
 	    echo "SKIP: x86-64, because x86_64-elf-gcc is not installed."; \
 	fi
@@ -1787,8 +1816,24 @@ powertest: $(TARGET)
 # rather than the kernel. The suite proves what the kernel wrote into its own
 # memory; this proves the picture QEMU is scanning out of it, which is the
 # half no test inside the guest can reach.
+#
+# And on both boards, because the display is where the two differ most:
+# ramfb is found through fw_cfg either way, but the keyboard and the
+# pointer behind it are a device-tree window on one machine and a walk of
+# the PCI bus on the other. The sixty-two checks are the same sixty-two,
+# which is the point - a second architecture that passes a *different*
+# suite has not been shown to work, it has been shown to be different.
+#
+# Skipped rather than failed where the cross compiler is not installed, and
+# said out loud, for the reason `test` gives at greater length.
 screenshot: $(TARGET)
 	python3 tools/run_screenshot.py $(TARGET) --png build/screenshot.png
+	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
+	    $(MAKE) --no-print-directory x86-build >/dev/null && \
+	    python3 tools/run_screenshot.py $(X86_BUILD)/kosmos.elf; \
+	else \
+	    echo "SKIP: the x86-64 display, because x86_64-elf-gcc is not installed."; \
+	fi
 
 # One picture of the desktop, for the record.
 #

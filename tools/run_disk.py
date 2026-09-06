@@ -22,7 +22,6 @@ import sys
 import tempfile
 import time
 
-QEMU = "qemu-system-aarch64"
 PROMPT = "kosmos>"
 
 
@@ -30,9 +29,39 @@ class Failure(Exception):
     pass
 
 
-def qemu_args(disk):
+#
+# Which machine this image is for, told from its path.
+#
+# The same trick `run_screenshot.py` uses and for the same reason: an image
+# is the only argument these harnesses take, and `build/x86_64/` is where
+# the Makefile puts the other architecture's. Duplicated rather than
+# imported because `run_interchange` and `run_queries` build on this file
+# and nothing else here needs `run_screenshot`.
+#
+def machine(image):
+    return "x86_64" if "x86_64" in image else "aarch64"
+
+
+def qemu_args(disk, image):
+    """The board this image is for, with one disk attached.
+
+    The two lists are the same machine described twice: q35 finds its
+    devices by walking PCI, `virt` by reading a device tree, and the drive
+    behind them is the same file. `-vga none` is not optional on q35 - it
+    adds a VGA adapter unless told not to, and QEMU then scans out that one
+    instead of ramfb.
+    """
+    if machine(image) == "x86_64":
+        return [
+            "qemu-system-x86_64",
+            "-M", "q35", "-m", "512M",
+            "-nographic", "-vga", "none", "-device", "ramfb",
+            "-drive", f"file={disk},format=raw,if=none,id=disk",
+            "-device", "virtio-blk-pci,drive=disk",
+        ]
+
     return [
-        QEMU,
+        "qemu-system-aarch64",
         "-M", "virt,gic-version=3", "-cpu", "cortex-a72", "-m", "512M",
         "-nographic", "-device", "ramfb",
         "-global", "virtio-mmio.force-legacy=false",
@@ -44,15 +73,21 @@ def qemu_args(disk):
 def boot(image, disk, commands, boot_timeout=90, each=25):
     """One run of the machine. Returns everything printed after the prompt."""
     proc = subprocess.Popen(
-        [*qemu_args(disk), "-kernel", image],
+        [*qemu_args(disk, image), "-kernel", image],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, bufsize=0,
     )
 
     seen = ""
 
-    def pump(seconds, until=None):
-        """Read for a while, or until `until` shows up.
+    def pump(seconds, until=None, since=0):
+        """Read for a while, or until `until` shows up after `since`.
+
+        `since` is a length into `seen`, and it is what makes waiting for
+        the prompt work more than once: the prompt is already in `seen` from
+        the last time, so a plain `until in seen` would return instantly
+        and every command would be sent into a shell still busy with the
+        one before it.
 
         Raw bytes, never `readline`. **The shell's prompt has no trailing
         newline**, so `readline` blocks for ever on the one string this
@@ -77,7 +112,7 @@ def boot(image, disk, commands, boot_timeout=90, each=25):
 
             seen += chunk.decode("utf-8", "replace")
 
-            if until is not None and until in seen:
+            if until is not None and until in seen[since:]:
                 return
 
     try:
@@ -88,10 +123,21 @@ def boot(image, disk, commands, boot_timeout=90, each=25):
 
         start = len(seen)
 
+        #
+        # **`each` is a deadline, not a duration**, and that is worth the
+        # two lines it costs. It used to be a duration: every command
+        # waited the full twenty-five seconds whether the shell answered in
+        # a tenth of a second or not at all, so two boots of ten commands
+        # took eight minutes of doing nothing. The prompt says when the
+        # shell is ready, and it is the same signal the boot already waits
+        # on - there was no reason for the two to differ.
+        #
         for command in commands:
+            mark = len(seen)
+
             proc.stdin.write((command + "\n").encode())
             proc.stdin.flush()
-            pump(each)
+            pump(each, until=PROMPT, since=mark)
 
         return seen[start:]
     finally:
@@ -149,12 +195,44 @@ def main():
             "ls /home",
         ])
 
-        if "filesystem: none" not in first:
+        #
+        # **A blank disk formats itself, and this used to insist it did
+        # not.**
+        #
+        # The check was `filesystem: none`, and it was right when it was
+        # written: a zeroed disk reported no filesystem and somebody had to
+        # type `mkfs`. `init.lua`'s `mounted()` replaced that deliberately -
+        # a disk of all zeros has nothing to lose, and making a person
+        # perform a ceremony over an empty box was worse than theoretical,
+        # because anyone booting straight to the desktop never saw the line
+        # telling them to.
+        #
+        # So the two have contradicted each other since, on both boards.
+        # Nothing caught it because this harness is not in `make test` - it
+        # was reached only through `disktest` - which is what running it on
+        # a second architecture is good for and why it is in `make test`
+        # now.
+        #
+        # `mounted()` does print "it was blank, so it has been formatted",
+        # and that is deliberately *not* what this looks for: the mount is
+        # lazy, the first thing to touch the filesystem is init itself, and
+        # the line is written before the console server is serving anyone.
+        # It goes nowhere. The consequence is what can be checked.
+        #
+        # What the old check was really protecting is still protected, and
+        # by the other branch: a disk whose block 0 holds something that is
+        # not a superblock reports `filesystem: none (not a kosmos
+        # filesystem)` and is left alone. A superblock check that accepted
+        # anything would fail *that*, and it is the case worth having,
+        # because it is the one where somebody's data is at stake.
+        #
+        if "filesystem: version" not in first:
             raise Failure(
-                "a freshly zeroed disk did not report an empty filesystem. "
-                "Either the superblock check accepts zeroes - which would "
-                "make every unformatted disk look like a filesystem - or "
-                "diskinfo could not reach the disk server.\n" + first
+                "a freshly zeroed disk did not come up with a filesystem. "
+                "A blank disk is supposed to format itself once - see "
+                "`mounted()` in init.lua - so either it was not recognised "
+                "as blank, the format failed, or diskinfo could not reach "
+                "the disk server.\n" + first
             )
 
         checks += 1

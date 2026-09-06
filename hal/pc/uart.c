@@ -18,6 +18,7 @@
 
 #include "hal.h"
 #include "pc.h"
+#include "virtio.h"
 
 #define COM1        0x3F8
 
@@ -93,6 +94,22 @@ void hal_putchar(char c)
 
 int hal_getchar(void)
 {
+    /*
+     * Two sources, one answer - and `hal/qemu-virt/uart.c` says the same
+     * sentence for the same reason. A character is a character: the console
+     * server, the shell and every process reading a line are unchanged by a
+     * keyboard existing, which is why `hal.h` has no `hal_keyboard_getchar`
+     * for them to have to know about.
+     *
+     * The keyboard first, because the person at the screen is more likely
+     * to be the one typing; with both attached, either works.
+     */
+    int key = keyboard_getchar();
+
+    if (key >= 0) {
+        return key;
+    }
+
     if ((inb(COM1 + UART_LSR) & LSR_RX_READY) == 0) {
         return HAL_NO_INPUT;
     }

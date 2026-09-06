@@ -158,6 +158,30 @@ def machine(image):
     return "x86_64" if "x86_64" in image else "aarch64"
 
 
+def device(image, kind):
+    """What QEMU calls a virtio device on this machine.
+
+    The same hardware under two names: `virtio-net-device` is the MMIO
+    transport the ARM board finds in a window the device tree describes, and
+    `virtio-net-pci` is the same card behind a PCI capability. A harness
+    that hardcoded one of them attached nothing on the other board and the
+    guest reported, quite correctly, that there was no network card.
+    """
+    tail = "pci" if machine(image) == "x86_64" else "device"
+
+    return "virtio-%s-%s" % (kind, tail)
+
+
+def extra_args(image, more):
+    """Append device arguments to whichever board's list is in force."""
+    if machine(image) == "x86_64":
+        global X86_ARGS
+        X86_ARGS = X86_ARGS + more
+    else:
+        global QEMU_ARGS
+        QEMU_ARGS = QEMU_ARGS + more
+
+
 #
 # The devices, per board, and they are the same devices.
 #

@@ -420,22 +420,41 @@ static bool claim(struct vinput *v, bool want_absolute)
     while (virtio_open(VIRTIO_ID_INPUT, from, &v->dev)) {
         from = v->dev.index + 1;
 
-        /* Not somebody else's. Two devices of one kind would otherwise both
-         * be answered by whichever asked first. */
-        if ((keyboard.present && keyboard.dev.base == v->dev.base)
-            || (tablet.present && tablet.dev.base == v->dev.base)) {
+        /*
+         * Not somebody else's, asked *before* anything is written.
+         *
+         * Two devices of one kind would otherwise both be answered by
+         * whichever asked first - and worse, `virtio_begin` below resets
+         * what it is given, so a scan that walked over the running keyboard
+         * on its way to the tablet used to leave the keyboard with no
+         * queues and no DRIVER_OK. It typed nothing after that and said
+         * nothing about why.
+         *
+         * By ordinal rather than by address, because on virtio-pci a
+         * device's registers are wherever `mmu_map_device` put them and
+         * opening the same device twice gives two virtual addresses for one
+         * BAR. `index` is what the board counts devices by, so it is the
+         * same device both times.
+         */
+        if ((keyboard.present && &keyboard != v
+             && keyboard.dev.index == v->dev.index)
+            || (tablet.present && &tablet != v
+                && tablet.dev.index == v->dev.index)) {
             continue;
         }
 
+        /* Ours to disturb, now that nobody else holds it. */
+        virtio_begin(&v->dev);
+
         /*
-         * The check that separates the two callers, and it is why
-         * `virtio_open` stops where it does: configuration space may only be
-         * read once the device has been told a driver is present, so telling
-         * a keyboard from a tablet needs a place to stand in the middle of
-         * the handshake.
+         * The check that separates the two callers, and it is why the
+         * handshake is split in two: configuration space may only be read
+         * once the device has been told a driver is present, so telling a
+         * keyboard from a tablet needs a place to stand in the middle of
+         * it.
          *
-         * Left alone rather than failed - the other caller will want it, and
-         * claiming it starts with another reset.
+         * Left acknowledged rather than failed - the other caller will want
+         * it, and claiming it starts with another reset.
          */
         if (has_absolute_axes(&v->dev) != want_absolute) {
             continue;
@@ -528,25 +547,38 @@ static bool next_event(struct vinput *v, struct virtio_input_event *out)
  * with a deadline; this drops the deadline to now, so the key is noticed at
  * interrupt speed rather than at the end of whatever the sleeper asked for.
  */
-void input_interrupt(unsigned slot)
+/*
+ * One line, and it may belong to both of them.
+ *
+ * This was an `if`/`else if` picking a single device, which is right when a
+ * line identifies one - an MMIO window index does. **A PCI interrupt line
+ * does not.** Four pins are shared out among every slot on the bus, so a
+ * keyboard and a tablet answering on the same number is ordinary, and the
+ * `else` meant whichever was checked second was never acknowledged: its
+ * status bit stayed set, the controller saw a line still asserted, and no
+ * further interrupt arrived from either.
+ *
+ * So both are offered it and each decides from its own status byte, which
+ * is what `virtio_ack_interrupt` reads. A device that did not raise it
+ * answers zero and nothing happens.
+ */
+static void service(struct vinput *v, unsigned line)
 {
-    struct vinput *v = NULL;
-
-    if (keyboard.present && keyboard.dev.slot == slot) {
-        v = &keyboard;
-    } else if (tablet.present && tablet.dev.slot == slot) {
-        v = &tablet;
-    }
-
-    if (v == NULL) {
+    if (!v->present || v->dev.slot != line) {
         return;
     }
 
     /* The device raised it; the device is told it was seen. Without the ack
      * the status bit stays set and the interrupt fires for ever. */
-    (void)virtio_ack_interrupt(&v->dev);
+    if (virtio_ack_interrupt(&v->dev) != 0) {
+        input_arrived = true;
+    }
+}
 
-    input_arrived = true;
+void input_interrupt(unsigned line)
+{
+    service(&keyboard, line);
+    service(&tablet, line);
 }
 
 bool hal_keyboard_init(void)

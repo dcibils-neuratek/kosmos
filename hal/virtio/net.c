@@ -158,7 +158,9 @@ bool hal_net_init(struct netdev *out)
     net.present = false;
 
     while (virtio_open(VIRTIO_ID_NET, from, &net.dev)) {
-        from = net.dev.slot + 1;
+        from = net.dev.index + 1;
+
+        virtio_begin(&net.dev);
 
         if (!virtio_features(&net.dev, NET_F_MAC)) {
             continue;
@@ -372,9 +374,20 @@ void net_interrupt(unsigned slot)
         return;
     }
 
-    /* The device raised it; the device is told it was seen. Without the ack
-     * the status bit stays set and the interrupt fires for ever. */
-    (void)virtio_ack_interrupt(&net.dev);
+    /*
+     * The device raised it; the device is told it was seen. Without the ack
+     * the status bit stays set and the interrupt fires for ever.
+     *
+     * And **the answer is what decides whether anything happened**, which
+     * on virtio-mmio it did not have to be: there the line identifies the
+     * window and a driver offered its own line knows the interrupt is its
+     * own. A PCI line is shared out among the slots, so this is offered
+     * every interrupt that is not the timer, and a zero here means the
+     * device that raised it was somebody else's.
+     */
+    if (virtio_ack_interrupt(&net.dev) == 0) {
+        return;
+    }
 
     net.arrived = true;
 

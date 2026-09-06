@@ -8,7 +8,7 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
-### x86-64: it boots, and you can type at it
+### x86-64: it runs the desktop
 
 ```
 kosmos> cpu
@@ -58,12 +58,62 @@ freestanding header, and `-lm` was newlib's. musl's maths is vendored in
 `runtime/upstream/musl-math/` now and both machines compute `sin` with the
 same code.
 
-**Next is `hal/pc/`**, which is 512 lines against `hal/qemu-virt/`'s 3,699:
-a framebuffer, a keyboard, a pointer and virtio over PCI. virtio is the same
-hardware QEMU offers both boards, so those drivers should move across rather
-than be rewritten - what differs is that they are *found* through PCI
-configuration space instead of the device tree's MMIO windows. `absent.c`
-holds the honest list of what is missing and shrinks as each one arrives.
+### `hal/pc/` is done, and the drivers did move rather than being rewritten
+
+**The four virtio drivers live in `hal/virtio/` now** - block, network,
+input, sound - with each board bringing its own transport underneath them:
+`hal/qemu-virt/virtio.c` reads fixed offsets from a device-tree window,
+`hal/pc/virtio.c` walks PCI capabilities to find four structures scattered
+across a BAR. The sequence is identical and every register is somewhere
+else. `hal/fwcfg/` came out the same way, because ramfb is found through
+fw_cfg on both boards and only the two register accesses differ.
+`absent.c` is gone; there is nothing left for it to list.
+
+**The measure worth quoting is the display harness**, because it asks QEMU
+what is on the screen rather than asking the guest:
+
+```
+PASS: 62 display checks     x86-64,  108.6s in phases
+PASS: 62 display checks     aarch64, 109.0s in phases
+```
+
+The same sixty-two - a keyboard, a pointer, dragging a hung window,
+scripting a running application, a replicant moved between processes, the
+Deskbar, the terminal, an idle desktop being idle. And `make test` runs
+four harnesses on the x86 image now rather than one: the boot test, the
+headless test, the disk and the network. `make screenshot` checks both
+displays.
+
+**Three device bugs, and none of them is about x86.**
+
+- *`virtio_open` reset the device it had only been asked to find.* Fine for
+  a driver that wants the first card of its kind; wrong for `input.c`,
+  which walks past devices on the way to the one it wants - a keyboard and
+  a tablet are both virtio-input and telling them apart means opening each.
+  So the tablet's scan reset the running keyboard, leaving it with no
+  queues and no DRIVER_OK. It worked on ARM by luck: QEMU lays virtio-mmio
+  windows out in the reverse of the order the devices are given, so the
+  tablet came first, and swapping two flags on the ARM command line would
+  have broken it identically. Discovery and claiming are two calls now,
+  `virtio_open` and `virtio_begin`.
+- *A declaration left behind in a board's header.* `keyboard_getchar` moved
+  into the shared `hal/virtio/input.c`; its declaration stayed in
+  `hal/qemu-virt/qemu-virt.h`, which is exactly where the second board
+  cannot see it. `hal/pc/uart.c` read only the 16550, so the machine found
+  a keyboard, said so in the boot log, and could not be typed at.
+- *The screen size was never passed to this build.* `FB_FLAGS` is on one
+  file's compile line on ARM for a good reason that does not apply to a
+  build with no object files. Left off, `ramfb.c` took its 1024x768
+  fallback and the machine came up at a resolution nothing had asked for.
+
+**And two where a string was the bug.** `/dev/cpu` had no x86 decoder, so
+`devices` printed `nil nil nil, 1 core`; it decodes CPUID now and fills in
+the same field names, because four callers each growing a branch on the
+architecture would be four places to get it wrong. And the same listing said
+`/dev/console  PL011 UART, polled` on a machine whose console is a 16550 at
+port 0x3f8 - it says what the node *is* now, because nothing in the shell
+knows what the hardware is and the honest thing is not to claim.
+
 
 Then **SMP**, and then **PowerPC** - see `docs/roadmap.md`, which records
 what each costs. The short version: the port already found the per-CPU

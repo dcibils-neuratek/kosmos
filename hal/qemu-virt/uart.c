@@ -14,6 +14,7 @@
 #include "mmio.h"
 #include "qemu-virt.h"
 #include "hal.h"
+#include "virtio.h"
 
 #define UART0_BASE      0x09000000UL
 

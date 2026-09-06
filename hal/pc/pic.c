@@ -50,6 +50,42 @@ static inline void settle(void)
     pc_out8(0x80, 0);
 }
 
+/*
+ * Which lines have been asked for, one bit each.
+ *
+ * Held rather than read back from the chips, because `hal_irq_init` writes
+ * the mask registers outright and would otherwise lose whatever a driver
+ * opened before it ran. There is one interrupt controller on this machine,
+ * and this is written once per device at boot.
+ */
+static uint16_t wanted;
+
+static void apply_masks(void)
+{
+    pc_out8(PIC1_DATA, (uint8_t)~(wanted & 0xFF));
+    pc_out8(PIC2_DATA, (uint8_t)~((wanted >> 8) & 0xFF));
+}
+
+void pc_irq_unmask(unsigned irq)
+{
+    if (irq > 15) {
+        return;
+    }
+
+    wanted |= (uint16_t)(1u << irq);
+
+    /*
+     * A line on the slave only arrives if IRQ 2 is open, because that is
+     * the wire the slave is on. Forgetting it is a device that is silent
+     * for no visible reason.
+     */
+    if (irq >= 8) {
+        wanted |= (uint16_t)(1u << 2);
+    }
+
+    apply_masks();
+}
+
 void hal_irq_init(void)
 {
     pc_out8(PIC1_CMD, ICW1_INIT); settle();
@@ -65,34 +101,31 @@ void hal_irq_init(void)
     pc_out8(PIC2_DATA, ICW4_8086); settle();
 
     /*
-     * Everything masked, and each driver opens its own line.
+     * Everything masked but what somebody has already asked for.
      *
-     * The same rule the GIC follows, for a sharper reason here: an
-     * interrupt nobody acknowledges leaves the 8259 waiting for an EOI it
-     * will never get, and it then delivers *nothing at all* - which from
-     * the outside looks exactly like a dead machine rather than like one
+     * Masking by default is the same rule the GIC follows, for a sharper
+     * reason here: an interrupt nobody acknowledges leaves the 8259 waiting
+     * for an EOI it will never get, and it then delivers *nothing at all* -
+     * which from the outside looks like a dead machine rather than one
      * unhandled device.
+     *
+     * **`wanted` is what makes the order stop mattering**, and it took a
+     * while to find out that it did. `kmain` brings devices up at stage
+     * seven and calls this at stage eleven, so every line a driver had
+     * opened was masked again four stages later. The keyboard was found,
+     * negotiated and had its buffers offered - and never delivered a key,
+     * because the controller was told to stop listening after it was told
+     * to start.
+     *
+     * The other board does not have the problem and could not have shown
+     * it: a GIC's enable registers are write-one-to-set, so `hal_irq_init`
+     * there configures without ever clearing what is already on. Writing a
+     * mask byte is not like that. So this restores rather than resets, and
+     * a driver may open its line whenever it likes.
      */
-    pc_out8(PIC1_DATA, 0xFF);
-    pc_out8(PIC2_DATA, 0xFF);
+    apply_masks();
 }
 
-void pc_irq_unmask(unsigned irq)
-{
-    uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
-    uint8_t mask = pc_in8(port);
-
-    pc_out8(port, (uint8_t)(mask & ~(1u << (irq & 7))));
-
-    /*
-     * A line on the slave only arrives if IRQ 2 is open, because that is
-     * the wire the slave is on. Nothing has needed one yet, and this is
-     * cheaper than the evening spent finding out why the disk is silent.
-     */
-    if (irq >= 8) {
-        pc_irq_unmask(2);
-    }
-}
 
 /*
  * Which interrupt is in service, asked of the controller.

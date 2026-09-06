@@ -3624,9 +3624,15 @@ query. `find` and `watch` are built on exactly these two calls.
 
     -- Named here rather than listed by the device server, because it is not
     -- the device server that answers for it.
-    out("  /dev/console    PL011 UART, polled - served by the console\n")
-    out("                  server, not by /dev: a read of it is a line of\n")
-    out("                  input, not a description\n")
+    --
+    -- And it says what the node *is* rather than what the hardware is,
+    -- which it used to: "PL011 UART, polled", printed on a PC that has a
+    -- 16550 at port 0x3f8 and no PL011 anywhere. Nothing here knows which
+    -- - the console server does, and it answers with lines of input rather
+    -- than with descriptions - so the honest thing is not to claim.
+    out("  /dev/console    served by the console server, not by /dev: a\n")
+    out("                  read of it is a line of input, not a\n")
+    out("                  description\n")
 
     for _, name in ipairs(names) do
       local d = ns.read("/dev/" .. name)

@@ -351,7 +351,9 @@ bool hal_snd_init(void)
     unsigned from = 0;
 
     while (virtio_open(VIRTIO_ID_SOUND, from, &snd.dev)) {
-        from = snd.dev.slot + 1;
+        from = snd.dev.index + 1;
+
+        virtio_begin(&snd.dev);
 
         /*
          * Only VIRTIO_F_VERSION_1, which `virtio_features` always asks for.
@@ -492,7 +494,13 @@ void snd_interrupt(unsigned slot)
         return;
     }
 
-    (void)virtio_ack_interrupt(&snd.dev);
+    /* Zero means this interrupt was another device's: a PCI line is shared
+     * out among the slots, so the number narrows it and the status byte
+     * settles it. `hal/virtio/virtio.h` says every driver does this, and
+     * for a while only `input.c` did. */
+    if (virtio_ack_interrupt(&snd.dev) == 0) {
+        return;
+    }
 
     snd.woke++;
     snd.wants = true;

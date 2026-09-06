@@ -59,16 +59,17 @@ bool virtio_open(uint32_t device_id, unsigned from_slot,
         dev->index    = i;      /* a window index is also its own ordinal */
         dev->features = 0;
 
-        /* Reset first, because a window may have been half-configured by a
-         * driver that looked at it and did not want it. */
-        reg_write(dev, REG_STATUS, 0);
-        reg_write(dev, REG_STATUS, STATUS_ACKNOWLEDGE);
-        reg_write(dev, REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
-
         return true;
     }
 
     return false;
+}
+
+void virtio_begin(const struct virtio_device *dev)
+{
+    reg_write(dev, REG_STATUS, 0);
+    reg_write(dev, REG_STATUS, STATUS_ACKNOWLEDGE);
+    reg_write(dev, REG_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
 }
 
 bool virtio_features(struct virtio_device *dev, uint32_t want)

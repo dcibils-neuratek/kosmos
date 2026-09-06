@@ -23,23 +23,45 @@ import subprocess
 import sys
 import time
 
-QEMU = "qemu-system-aarch64"
-
 # The Makefile's serial line, which is the point: this is what a person gets
 # from `make serial`, not a shape invented for the test.
-ARGS = [
+#
+# Deliberately no `-device ramfb` on either board. That absence is the whole
+# test, and it is the one thing the two lists have to agree about: a machine
+# with no screen has to reach a prompt rather than a blank stare, and the
+# branch in `init.lua` that decides so has nothing to do with which
+# processor is running it.
+#
+# `-vga none` is on the x86 list for the opposite reason to usual. Elsewhere
+# it stops QEMU scanning out q35's own VGA adapter instead of ramfb; here it
+# is what makes "no display" true at all, because q35 adds that adapter
+# whether or not anything asked for one.
+AARCH64_ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
     "-m", "512M",
     "-nographic",
     "-global", "virtio-mmio.force-legacy=false",
-    # Deliberately no `-device ramfb`. That absence is the whole test.
 ]
+
+X86_ARGS = [
+    "-M", "q35",
+    "-m", "512M",
+    "-nographic",
+    "-vga", "none",
+]
+
+
+def machine(image):
+    return "x86_64" if "x86_64" in image else "aarch64"
 
 
 def boot(image, boot_option, want, timeout):
     """Runs until `want` appears, and returns everything printed."""
-    cmd = [QEMU] + ARGS
+    if machine(image) == "x86_64":
+        cmd = ["qemu-system-x86_64"] + X86_ARGS
+    else:
+        cmd = ["qemu-system-aarch64"] + AARCH64_ARGS
 
     if boot_option:
         cmd += ["-fw_cfg", "name=opt/kosmos/boot,string=" + boot_option]

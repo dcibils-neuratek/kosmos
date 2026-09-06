@@ -95,7 +95,9 @@ bool hal_blk_init(struct blkdev *out)
     blk.present = false;
 
     while (virtio_open(VIRTIO_ID_BLOCK, from, &blk.dev)) {
-        from = blk.dev.slot + 1;
+        from = blk.dev.index + 1;
+
+        virtio_begin(&blk.dev);
 
         /*
          * Nothing beyond feature 32 is asked for. Every optional block

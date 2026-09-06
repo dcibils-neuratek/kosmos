@@ -193,6 +193,128 @@ static void node_cpu_aarch64(const struct sysinfo *i, struct dev_reply *r)
     put_num(r, "simd", ((pfr0 >> 20) & 0xf) != 0xf);
 }
 
+/*
+ * x86-64's, decoded from CPUID rather than from ID registers.
+ *
+ * The same division and the same reason: the kernel reads the words and
+ * says nothing about them, this side knows what they mean. The indices are
+ * `arch/x86_64/cpu.h`'s, repeated here exactly as the AArch64 ones above
+ * are, with `syscall.h`'s ABI holding the two together.
+ *
+ * **The field names are deliberately the AArch64 ones.** A processor here
+ * has no implementer and no part number - it has a vendor string and a
+ * family/model/stepping - but `implementer`/`part`/`revision` are what
+ * `devices`, `cpu`, `htop` and `sysbench` read, and four callers each
+ * growing a branch on the architecture would be four places to get it
+ * wrong. It was one place, and it printed "nil nil nil, 1 core".
+ */
+#define X86_VENDOR0    0
+#define X86_VENDOR1    1
+#define X86_SIGNATURE  2
+#define X86_BRAND      3
+#define X86_FEAT1_ECX  4
+#define X86_FEAT1_EDX  5
+#define X86_FEAT7_EBX  6
+#define X86_ADDRESS    8
+
+/* The twelve bytes CPUID leaf 0 returns, in the order it returns them:
+ * EBX, then EDX, then ECX. `cpu.h` packs the first two into word 0 and the
+ * third into the low half of word 1. */
+static const char *vendor_string(char *buf, uint64_t w0, uint64_t w1)
+{
+    uint32_t part[3] = { (uint32_t)w0, (uint32_t)(w0 >> 32), (uint32_t)w1 };
+    unsigned n, b;
+
+    for (n = 0; n < 3; n++) {
+        for (b = 0; b < 4; b++) {
+            buf[n * 4 + b] = (char)((part[n] >> (b * 8)) & 0xff);
+        }
+    }
+
+    buf[12] = '\0';
+    return buf;
+}
+
+/* "f<family>m<model>s<stepping>", which is how an x86 is actually named
+ * once you are past the marketing string - and the marketing string needs
+ * three more CPUID leaves that QEMU does not always fill in. */
+static const char *signature_name(char *buf, uint32_t eax)
+{
+    static const char D[] = "0123456789";
+    unsigned family = (eax >> 8) & 0xf;
+    unsigned model  = (eax >> 4) & 0xf;
+    char *p = buf;
+    unsigned v;
+
+    /* The extended fields, which every processor since the Pentium 4 needs:
+     * family 15 adds the extended family, and families 6 and 15 put four
+     * more model bits above the four in the low nibble. */
+    if (family == 0xf) {
+        family += (eax >> 20) & 0xff;
+    }
+
+    if (family == 0x6 || family == 0xf) {
+        model += ((eax >> 16) & 0xf) << 4;
+    }
+
+    *p++ = 'f';
+    v = family;
+    if (v >= 100) { *p++ = D[v / 100]; }
+    if (v >= 10)  { *p++ = D[(v / 10) % 10]; }
+    *p++ = D[v % 10];
+
+    *p++ = 'm';
+    v = model;
+    if (v >= 100) { *p++ = D[v / 100]; }
+    if (v >= 10)  { *p++ = D[(v / 10) % 10]; }
+    *p++ = D[v % 10];
+
+    *p = '\0';
+    return buf;
+}
+
+static void node_cpu_x86_64(const struct sysinfo *i, struct dev_reply *r)
+{
+    uint32_t eax  = (uint32_t)i->cpu_raw[X86_SIGNATURE];
+    uint32_t ebx  = (uint32_t)i->cpu_raw[X86_BRAND];
+    uint32_t ecx  = (uint32_t)i->cpu_raw[X86_FEAT1_ECX];
+    uint32_t edx  = (uint32_t)i->cpu_raw[X86_FEAT1_EDX];
+    uint32_t seven = (uint32_t)i->cpu_raw[X86_FEAT7_EBX];
+    uint32_t addr = (uint32_t)i->cpu_raw[X86_ADDRESS];
+    char vendor[16], name[16], rev[12];
+    static const char D[] = "0123456789";
+    unsigned stepping = eax & 0xf;
+
+    put_text(r, "implementer",
+             vendor_string(vendor, i->cpu_raw[X86_VENDOR0],
+                           i->cpu_raw[X86_VENDOR1]));
+    put_text(r, "part", signature_name(name, eax));
+
+    rev[0] = 's';
+    rev[1] = D[stepping % 10];
+    rev[2] = '\0';
+    put_text(r, "revision", rev);
+
+    /* CPUID.1 EBX [15:8] is the line in *eight-byte* units, the way CTR_EL0
+     * counts words: the same trap on a different machine. */
+    put_num(r, "signature", eax);
+    put_num(r, "cache_line", ((ebx >> 8) & 0xff) * 8);
+    put_num(r, "pa_bits", addr & 0xff);
+
+    /* CPUID.1 ECX: AES [25], and the SHA extensions live in leaf 7 EBX
+     * [29]. CRC32 is SSE4.2, ECX [20]. */
+    put_num(r, "aes",     (ecx & (1u << 25)) != 0);
+    put_num(r, "sha1",    (seven & (1u << 29)) != 0);
+    put_num(r, "sha2",    (seven & (1u << 29)) != 0);
+    put_num(r, "crc32",   (ecx & (1u << 20)) != 0);
+    put_num(r, "atomics", (ecx & (1u << 13)) != 0);   /* CMPXCHG16B */
+
+    /* EDX [0] is the x87 unit and [25]/[26] are SSE and SSE2, which are
+     * what "SIMD" means here and are architectural in long mode. */
+    put_num(r, "fp",   (edx & (1u << 0)) != 0);
+    put_num(r, "simd", (edx & (1u << 26)) != 0);
+}
+
 static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
 {
     /*
@@ -210,6 +332,8 @@ static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
 
     if (i->cpu_arch == CPU_ARCH_AARCH64) {
         node_cpu_aarch64(i, r);
+    } else if (i->cpu_arch == CPU_ARCH_X86_64) {
+        node_cpu_x86_64(i, r);
     }
 }
 
