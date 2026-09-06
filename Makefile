@@ -310,7 +310,29 @@ TARGET := $(BUILD)/kosmos.elf
 # registers on a context switch. If something in the kernel needs a float,
 # it is badly designed, and this turns that into a compile error rather than
 # a corrupted register found three milestones later.
-CFLAGS_BASE := $(if $(DOOM),-DUSER_HEAP_PAGES=3072) \
+#
+# **How big a process's heap is, in one place, because two places drifted.**
+#
+# The kernel maps `USER_HEAP_PAGES` pages when it builds a process and the
+# userland is compiled believing the same number. They are two separate
+# compilations of one fact, and when they disagree nothing complains: the
+# kernel maps two megabytes, the program thinks it has twelve, and the
+# first allocation past the end is a page fault in a process that had been
+# running happily.
+#
+# Which is what happened. `X86_FLAGS` is its own list and never had this
+# flag, so on that board the kernel mapped 512 pages while the userland
+# inside it was built for 3072. Every Lua program stayed under two
+# megabytes and worked; the TinyGL demos allocate a framebuffer and a
+# z-buffer, crossed it after a few seconds, and died at 0x41200000 - which
+# is USER_HEAP plus exactly 512 pages.
+#
+# The same shape as the screen size going missing from that list, and the
+# same answer: name it once and let both lists read it.
+#
+HEAP_FLAGS := $(if $(DOOM),-DUSER_HEAP_PAGES=3072)
+
+CFLAGS_BASE := $(HEAP_FLAGS) \
                -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
@@ -1564,7 +1586,8 @@ qemu: $(TARGET) $(DISK)
 # months. It looked like a display bug and was a Makefile line.
 X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -Wall -Wextra -Werror -fno-common -fno-strict-aliasing -O2 -g \
-             -mno-red-zone -mno-mmx -mno-sse -mno-sse2 $(FB_FLAGS) \
+             -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+             $(FB_FLAGS) $(HEAP_FLAGS) \
              -Ihal -Ihal/virtio -Ihal/fwcfg -Iarch/x86_64 -Ikernel -Iruntime/include
 
 X86_BUILD := build/x86_64
