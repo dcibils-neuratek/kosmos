@@ -32,8 +32,15 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/ma
 ```
 
 You need QEMU, and it is the only thing this cannot fetch for you:
-`brew install qemu` on macOS. Everything else - the newest image, the
-runner, a disk to keep files on - it works out and downloads.
+`brew install qemu` on macOS, `apt install qemu-system-arm` on Debian or
+Ubuntu. Everything else - the newest image, the runner, a disk to keep files
+on - it works out and downloads.
+
+`-r 1280x720` asks for the smaller build, because the framebuffer size is
+compiled in and a different resolution is a different image. On **Windows**,
+use WSL and the same command, or run QEMU natively with the flags
+[the website](https://dcibils-neuratek.github.io/kosmos/) spells out - the
+shell script will not run there. Only macOS is actually tested.
 
 That boots straight to the desktop. Some other things to try once it is up,
 or to pass instead of `wm`:

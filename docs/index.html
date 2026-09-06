@@ -276,8 +276,62 @@
 <pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"</code></pre>
 
 <p>You need QEMU, and it is the only thing that command cannot fetch for
-you — <code>brew install qemu</code> on macOS. Everything else, it works
-out: the newest published image, the runner, and a disk to keep files on.</p>
+you — <code>brew install qemu</code> on macOS,
+<code>apt install qemu-system-arm</code> on Debian or Ubuntu. Everything
+else, it works out: the newest published image, the runner, and a disk to
+keep files on.</p>
+
+<p>If your screen is smaller than 1920&times;1080, ask for the other build —
+the framebuffer size is compiled in, so a different resolution is a
+different image:</p>
+
+<pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -r 1280x720 -b "wm"</code></pre>
+
+<h3>Windows</h3>
+
+<p><strong>WSL is the easy way.</strong> Install QEMU inside it and the
+command above works unchanged; Windows 11 puts the window on your desktop
+by itself.</p>
+
+<pre><code>wsl --install                       # if you have not already
+sudo apt install qemu-system-arm curl</code></pre>
+
+<p><strong>Or natively</strong>, with <a
+href="https://qemu.weilnetz.de/w64/">QEMU for Windows</a>. The shell script
+will not run there, so this is what it would have done — download an image
+from <a
+href="https://github.com/dcibils-neuratek/kosmos/tree/main/builds">builds/</a>,
+make a disk beside it, and start it:</p>
+
+<pre><code># A 64 MB disk. Kosmos formats a blank one itself the first time it
+# is asked for a file.
+$f = [IO.File]::Create("kosmos.img"); $f.SetLength(64MB); $f.Close()
+
+qemu-system-aarch64.exe `
+  -M virt,gic-version=3 -cpu cortex-a72 -m 512M `
+  -netdev user,id=net0 -device virtio-net-device,netdev=net0 `
+  -drive file=kosmos.img,format=raw,if=none,id=disk `
+  -device virtio-blk-device,drive=disk `
+  -global virtio-mmio.force-legacy=false `
+  -device ramfb `
+  -device virtio-keyboard-device -device virtio-tablet-device `
+  -serial mon:stdio `
+  -fw_cfg name=opt/kosmos/boot,string=wm `
+  -kernel kosmos-0.8.35-a176d31-1280x720-full.elf</code></pre>
+
+<p class="note"><strong>Two of those flags are not guessable</strong>, and
+the system is quietly diminished without them.
+<code>virtio-mmio.force-legacy=false</code>: QEMU's virtio-mmio devices
+default to the legacy interface, which this system's driver correctly
+refuses — without it there is no keyboard and no pointer, everything still
+works over the serial line, and it looks like a Kosmos bug rather than a
+missing flag. And <code>virtio-tablet-device</code> rather than a mouse: a
+tablet reports absolute position, so the guest cursor cannot drift away from
+the real one.</p>
+
+<p class="note">Only macOS is tested. Linux and Windows should both work —
+nothing in the image knows what host it is on, and QEMU is QEMU — but I have
+not run them, and saying otherwise would be pretending.</p>
 
 <h2>What this is, honestly</h2>
 
