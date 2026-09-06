@@ -43,14 +43,33 @@ ordinary image the browser opens and says the build has no web kit, which
 reads like a broken browser rather than the wrong file.
 
 ```sh
-python3 -m http.server 8000                     # on this computer
-./run-kosmos.sh -r 1280x800 -b "wm browser:10.0.2.2:8000/"
+./run-kosmos.sh -r 1280x800 -b "wm browser"
 ```
 
-`-r` finds it wherever it is, which is the point of `-r`: a path is only
-right relative to where you are standing, and these two files are meant to
-be copied somewhere else together. `./run-kosmos.sh -r list` says what is
-actually there, and so does the error if you name a file that is not.
+**Nothing has to be running anywhere.** `wm browser` opens on a page inside
+the image, parsed and painted by the same engine a fetched one is. Starting
+a web server on the computer running QEMU to look at a new build of an
+operating system is a thing this should never have asked for, and briefly
+did.
+
+`-r` finds the image wherever it is, which is the point of `-r`: a path is
+only right relative to where you are standing, and these two files are meant
+to be copied somewhere else together. `./run-kosmos.sh -r list` says what is
+there, and so does the error if you name a file that is not.
+
+Somewhere else to go, once it is up - anything beginning with a slash is
+read from this machine rather than the network:
+
+```
+  10.0.2.2:8000/            a server on the computer running QEMU
+  188.184.67.127/           somewhere on the internet, by number
+  /home/notes.html          a file on this machine
+```
+
+**No names and no https.** There is no resolver, so a remote address is four
+numbers; and there is no TLS, so most of the web refuses to speak. QEMU's
+NAT does give the guest real outbound internet, so a plain-HTTP host that
+serves by address does work.
 
 **There is no DNS**, so an address is four numbers and a path. QEMU's own
 NAT maps this computer as `10.0.2.2`, which is why serving a directory here

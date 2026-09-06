@@ -33,6 +33,11 @@ mostly a camera, and a check that goes stale is worse than no check:
     position of and a click is a comparison against it. Nothing else here
     exercises that arithmetic, and the server on this side can simply count
     how many times it was asked for the page.
+  * **Home needs nothing running anywhere.** `about:start` is a page
+    compiled into `browser.lua`, and clicking Home has to render it without
+    the server being asked for anything. That is the property that makes a
+    new build of Kosmos something you can try rather than something you have
+    to set up a web server for, and it is the one most easily lost.
   * **A link is drawn as one and can be followed.** Links are painted in a
     blue nothing else on the page uses, so the harness finds one by colour -
     which also establishes that the run knew it was inside an `<a>`. Clicking
@@ -385,11 +390,45 @@ def main():
                 f"asked for {asked[before_asked:]!r} after it. Wrote "
                 f"{args.out}.")
 
+        #
+        # And that Home needs nothing outside the image.
+        #
+        # Same row as Reload and measured the same way: the server must be
+        # asked for *nothing* and a page must still be on screen. A browser
+        # that could only show remote pages could not be tried without
+        # starting a server first, which an operating system has no business
+        # asking of the computer running it.
+        #
+        before_home = len(asked)
+        hx, hy = x0 + 108 + 60, y0 - TOOL + 16
+
+        guest.mouse_to(*_to_tablet(hx, hy, w4, h4))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+        time.sleep(2.5)
+
+        if len(asked) != before_home:
+            raise Failure(
+                "clicking Home asked the server for "
+                f"{asked[before_home:]!r}. The start page is compiled into "
+                f"browser.lua and must need nothing. Wrote {args.out}.")
+
+        w5, h5, px5 = parse_ppm(guest.screendump())
+        home_rows = dark_rows(px5, w5, x0 + 4, y0, WIN_W - SBAR - 8, band)
+
+        if sum(home_rows) == 0:
+            raise Failure(
+                "Home rendered nothing: the page inside the image is blank, "
+                f"which is the one page that cannot blame the network. "
+                f"Wrote {args.out}.")
+
         print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
-              f"({moved} rows changed), Reload asked again, and a link "
-              f"led to {followed[0]}.")
+              f"({moved} rows changed), Reload asked again, a link led to "
+              f"{followed[0]}, and Home rendered with nothing served.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)

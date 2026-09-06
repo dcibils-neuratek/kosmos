@@ -4,8 +4,10 @@
 --
 -- A web browser.
 --
---   wm browser
---   wm browser:10.0.2.2:8000/
+--   wm browser                       the page inside the image
+--   wm browser:/home/notes.html      a file on this machine
+--   wm browser:10.0.2.2:8000/        a server on the host running QEMU
+--   wm browser:188.184.67.127/       somewhere on the internet, by number
 --
 --   arrows            scroll a line
 --   space / b         a screen down, a screen up
@@ -34,8 +36,18 @@
 -- chrome is deliberately small - back, forward, reload, home, an address
 -- and a status line, which is NetSurf's own row and nothing more.
 --
--- **No DNS**, so an address is four numbers. `ping` and `fetch` say the
--- same thing for the same reason: nothing on this machine resolves a name.
+-- **It needs nothing running anywhere to be tried.** `wm browser` opens on
+-- a page compiled into this file, parsed and painted by the same engine a
+-- fetched one is - so a new build of Kosmos can be looked at without first
+-- starting a server on the computer running QEMU, which is a thing an
+-- operating system has no business asking for. Anything beginning with a
+-- slash is read from the namespace instead of the network, for the same
+-- reason.
+--
+-- **No DNS**, so a remote address is four numbers. `ping` and `fetch` say
+-- the same thing for the same reason: nothing here resolves a name. And no
+-- TLS, so `https` is out - which between them is why the reachable web is
+-- smaller than the web.
 
 local ui    = use("/lib/ui.lua")
 local theme = ui.theme
@@ -117,7 +129,7 @@ local function split(text)
 
   if a > 255 or b > 255 or c > 255 or d > 255 then return nil end
 
-  return string.char(a, b, c, d), port, path
+  return string.char(a, b, c, d), port, path, hostport
 end
 
 --
@@ -160,6 +172,70 @@ local function resolve(base, href)
 end
 
 --------------------------------------------------------------------------
+-- The page this browser starts on, which is inside it.
+--
+-- **A browser that can only show remote pages cannot be tried.** There was
+-- nothing to look at without a server somewhere - so trying a new build of
+-- Kosmos meant starting one on the host first, which is a thing an
+-- operating system should never ask of the computer running it. Every
+-- browser ever written ships a start page for this reason.
+--
+-- A Lua string rather than a file, because a released image has no disk
+-- under it: `run-kosmos.sh` passes no drive, so `/home` is an empty ramfs at
+-- boot and a file put there would have to come from somewhere. This comes
+-- from nowhere. It is parsed and laid out by exactly the same engine a
+-- fetched page is, so it is also the fastest check that the renderer works
+-- at all - `wm browser`, and there is either a page or there is not.
+--------------------------------------------------------------------------
+
+local START = [[
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Kosmos</title></head><body>
+<h1>Kosmos</h1>
+<p>This page is inside the image. Nothing was fetched to show it and
+nothing needs to be running anywhere - it is parsed by hubbub, walked
+through libdom and painted by <code>web_paint.c</code>, which is the whole
+engine, so if you can read this then the engine works.</p>
+
+<h2>What it can do</h2>
+<ul>
+  <li>Headings that step down, with a rule under the big two.</li>
+  <li><strong>Bold</strong>, <em>italic</em> and <code>monospace</code>
+      inside a sentence, sharing one baseline.</li>
+  <li>Lists with markers, quotations, and <code>pre</code> that keeps its
+      spaces.</li>
+  <li>Links you can click. Accented Latin: naive becomes na&iuml;ve,
+      Angstrom becomes &Aring;ngstr&ouml;m.</li>
+</ul>
+
+<h2>Somewhere to go</h2>
+<p>There is no name resolver, so an address is four numbers and a path.
+Type one in the bar above and press Return. A file on this machine works
+too - anything beginning with a slash is read from the namespace rather
+than the network:</p>
+<pre>  10.0.2.2:8000/            a server on the computer running QEMU
+  188.184.67.127/           somewhere on the internet, by number
+  /home/notes.html          a file on this machine</pre>
+
+<h2>What it cannot do</h2>
+<ul>
+  <li><strong>No names.</strong> DNS is a resolver this system has not
+      got, which is why the examples above are numbers.</li>
+  <li><strong>No https.</strong> There is no TLS, and most of the web now
+      refuses to speak anything else.</li>
+  <li><strong>No cascade.</strong> libcss parses and answers and nothing
+      asks it: every colour and every face here comes from the tag.</li>
+  <li>No images, no forms, no box model.</li>
+</ul>
+
+<blockquote>A word is where a font change, a link's hit rectangle and a
+selection all attach. That is why layout keeps its runs.</blockquote>
+</body></html>
+]]
+
+local HOME = "about:start"
+
+--------------------------------------------------------------------------
 -- State.
 --------------------------------------------------------------------------
 
@@ -178,7 +254,7 @@ local top      = 0           -- the pixel of it at the top of the view
 --
 local doc
 
-local said = "an address is four numbers - there is no resolver yet"
+local said = ""
 
 --
 -- Where the time went, along the bottom right.
@@ -237,7 +313,7 @@ local blit_ms, commit_ms = 0, 0
 --
 local frame_kb = 0
 
-local address = { text = "10.0.2.2:8000/", caret = 14, from = 0,
+local address = { text = HOME, caret = #HOME, from = 0,
                   focus = false }
 local here                                          -- what is on screen
 local back, forward = {}, {}
@@ -504,11 +580,7 @@ local function frame()
     end
   else
     local lines = web
-                  and { "Nothing loaded.",
-                        "",
-                        "Type an address and press Return, or start with one:",
-                        "",
-                        "    wm browser:10.0.2.2:8000/" }
+                  and { "Nothing loaded." }
                   or  { "This image was built without the web libraries.",
                         "",
                         "    make WEB=1 qemu",
@@ -619,73 +691,166 @@ end
 -- `closed` would lose them.
 --------------------------------------------------------------------------
 
+--
+-- One document off the network, following redirects.
+--
+-- Returns the body, or nil having said why. Redirects are followed because
+-- without them the internet is unreachable in practice rather than in
+-- theory: `188.184.67.127/` is a 301 to a path, and a browser that stops
+-- there fetches twenty-one bytes and paints an empty page, which is what
+-- this did. Bounded, because a pair of pages can point at each other.
+--
+local function fetch(text)
+  for _ = 1, 5 do
+    local where, port, path, host = split(text)
+
+    if not where then
+      say("that is not an address - four numbers, no names, there is no DNS")
+      return nil
+    end
+
+    say("connecting to " .. text .. " ...")
+
+    local conn, why = fs.connect("/net", where, port)
+
+    if not conn then
+      local because = ({ [4] = "no route to it",
+                         [7] = "it refused the connection",
+                         [9] = "it did not answer",
+                         [5] = "too many connections" })[why]
+
+      say(because or ("could not connect: " .. tostring(why)))
+      return nil
+    end
+
+    --
+    -- `Host` is the address that was asked for, and it used to be the
+    -- literal string "kosmos".
+    --
+    -- Not cosmetic. HTTP/1.0 made the header optional and the web stopped
+    -- being like that twenty years ago: one address serves hundreds of
+    -- sites and this header is how a server knows which was wanted. A name
+    -- no server has heard of gets the default site, an error, or a
+    -- redirect - so every real host answered the wrong thing, and the only
+    -- server that ever looked right was one serving a single site out of a
+    -- directory. Which is exactly what it was tested against.
+    --
+    -- `fetch.lua` had this right from the start and the browser did not.
+    --
+    conn:write(("GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n")
+               :format(path, host))
+
+    local parts, total = {}, 0
+
+    for _ = 1, 400 do
+      local piece = conn:read()
+
+      if piece then
+        parts[#parts + 1] = piece
+        total = total + #piece
+      end
+
+      if conn:closed() then break end
+
+      conn:wait(25)
+    end
+
+    local last = conn:read()
+
+    if last then
+      parts[#parts + 1] = last
+      total = total + #last
+    end
+
+    conn:close()
+
+    if total == 0 then
+      say("nothing came back")
+      return nil
+    end
+
+    local reply = table.concat(parts)
+    local status = tonumber(reply:match("^HTTP/%d%.%d%s+(%d%d%d)")) or 200
+    local head = reply:match("^(.-)\r\n\r\n") or ""
+
+    if status >= 300 and status < 400 then
+      local to = head:match("\r\n[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:%s*([^\r\n]+)")
+
+      if not to then
+        say(("it answered %d and said nowhere to go"):format(status))
+        return nil
+      end
+
+      local next_at, bad = resolve(text, to)
+
+      if not next_at then
+        say(("it redirected to %s: %s"):format(to, tostring(bad)))
+        return nil
+      end
+
+      say(("%d, following to %s"):format(status, next_at))
+
+      text = next_at
+      here = next_at
+      address.text = next_at
+      address.caret = #next_at
+      address.from = 0
+    else
+      return reply:match("\r\n\r\n(.*)$") or reply
+    end
+  end
+
+  say("too many redirects")
+
+  return nil
+end
+
 local function load(text)
   if web == nil then
     say("this image has no web kit - build it with `make WEB=1`")
     return false
   end
 
-  local where, port, path = split(text)
-
-  if not where then
-    say("that is not an address - four numbers, no names, there is no DNS")
-    return false
-  end
-
+  --
+  -- Three ways to get a document, and only one of them is the network.
+  --
+  -- `about:start` is the page compiled into this file, `/anything` is read
+  -- from the namespace, and the rest is fetched. A browser that could only
+  -- do the third could not be tried without a server somewhere, which is
+  -- what this arrangement exists to fix.
+  --
   here = text
   address.text = text
   address.caret = #text
+  address.from = 0
 
-  say("connecting to " .. text .. " ...")
+  local body, fetched_ms
 
-  local fetch_from = sys.ticks()
-  local conn, why = fs.connect("/net", where, port)
+  if text == HOME then
+    say("the page inside this image")
+    body, fetched_ms = START, 0
 
-  if not conn then
-    local because = ({ [4] = "no route to it",
-                       [7] = "it refused the connection",
-                       [9] = "it did not answer",
-                       [5] = "too many connections" })[why]
+  elseif text:sub(1, 1) == "/" then
+    local began = sys.ticks()
+    local got, why = fs.read(text)
 
-    say(because or ("could not connect: " .. tostring(why)))
-    return false
-  end
-
-  conn:write(("GET %s HTTP/1.0\r\nHost: kosmos\r\nConnection: close\r\n\r\n")
-             :format(path))
-
-  local parts, total = {}, 0
-
-  for _ = 1, 400 do
-    local piece = conn:read()
-
-    if piece then
-      parts[#parts + 1] = piece
-      total = total + #piece
+    if type(got) ~= "string" then
+      say(("cannot read %s: %s"):format(text, tostring(why or "not a file")))
+      return false
     end
 
-    if conn:closed() then break end
+    body, fetched_ms = got, since(began)
+    say(("read %d bytes from %s"):format(#body, text))
 
-    conn:wait(25)
+  else
+    local fetch_from = sys.ticks()
+
+    body = fetch(text)
+
+    if body == nil then return false end
+
+    fetched_ms = since(fetch_from)
   end
-
-  local last = conn:read()
-
-  if last then
-    parts[#parts + 1] = last
-    total = total + #last
-  end
-
-  conn:close()
-
-  if total == 0 then
-    say("nothing came back")
-    return false
-  end
-
-  local fetched_ms = since(fetch_from)
-  local reply = table.concat(parts)
-  local body = reply:match("\r\n\r\n(.*)$") or reply
 
   say(("parsing %d bytes..."):format(#body))
 
@@ -694,7 +859,7 @@ local function load(text)
   local parsed_ms = since(parse_from)
 
   if not fresh then
-    say("fetched " .. total .. " bytes, but it did not parse: " .. tostring(bad))
+    say(("%d bytes, and it did not parse: %s"):format(#body, tostring(bad)))
     return false
   end
 
@@ -787,7 +952,7 @@ reload = function()
 end
 
 go_home = function()
-  visit("10.0.2.2:8000/")
+  visit(HOME)
 end
 
 local ACTIONS = {
@@ -1050,11 +1215,13 @@ local start = tostring(args or ""):match("^%s*(.-)%s*$")
 if web == nil then
   said = "no web kit in this image"
   frame()
-elseif start ~= "" then
-  frame()
-  visit(start)
 else
   frame()
+
+  -- With no address, the page inside the image. A browser that opened on
+  -- nothing could not be tried without a server running somewhere, which is
+  -- a thing an operating system has no business asking for.
+  visit(start ~= "" and start or HOME)
 end
 
 win:run()
