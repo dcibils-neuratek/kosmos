@@ -810,3 +810,8 @@ bool keyboard_present(void)
 {
     return keyboard.present;
 }
+
+const char *hal_input_describe(void)
+{
+    return "Scanning thirty-two virtio windows; no PCI bus to walk.";
+}

@@ -30,4 +30,9 @@ struct trapframe {
 void trap_init(void);
 void trap_handle(struct trapframe *f);
 
+
+/* One line for the boot log, because `kernel/main.c` printed a string
+ * literal about this architecture's hardware until there were two. */
+const char *trap_describe(void);
+
 #endif /* ARCH_X86_64_TRAP_H */

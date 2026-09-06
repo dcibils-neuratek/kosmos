@@ -197,4 +197,9 @@ bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write);
 #define AS_ERR_ALIGN   (-2)     /* not page aligned */
 #define AS_ERR_NOMEM   (-3)
 
+
+/* One line for the boot log, because `kernel/main.c` printed a string
+ * literal about this architecture's hardware until there were two. */
+const char *mmu_describe(void);
+
 #endif /* ARCH_AARCH64_MMU_H */

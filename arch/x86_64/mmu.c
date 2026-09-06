@@ -705,3 +705,8 @@ void as_destroy(struct addrspace *as)
     as->pml4 = NULL;
     as->in_use = false;
 }
+
+const char *mmu_describe(void)
+{
+    return "4 KB pages, four levels, .text read-only and CR0.WP set";
+}

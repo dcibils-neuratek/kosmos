@@ -117,6 +117,10 @@ void fault_expect_unwind(jmp_buf env);
  * did; *out is untouched otherwise. */
 bool fault_expect_end(struct fault_info *out);
 
+/* One line for the boot log, because `kernel/main.c` printed a string
+ * literal about this architecture's hardware until there were two. */
+const char *trap_describe(void);
+
 #endif /* !__ASSEMBLER__ */
 
 #endif /* ARCH_AARCH64_TRAP_H */

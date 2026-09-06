@@ -101,3 +101,8 @@ int hal_getchar(void)
 
     return inb(COM1 + UART_DATA);
 }
+
+const char *hal_console_describe(void)
+{
+    return "16550 UART at 0x3f8, polled";
+}

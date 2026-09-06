@@ -122,3 +122,8 @@ int hal_getchar(void)
      */
     return (int)(mmio_read32(UART_DR) & 0xff);
 }
+
+const char *hal_console_describe(void)
+{
+    return "PL011 UART at 0x09000000, polled";
+}

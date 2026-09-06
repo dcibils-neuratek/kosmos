@@ -620,3 +620,8 @@ void as_destroy(struct addrspace *as)
     as->root = NULL;
     as->in_use = false;
 }
+
+const char *mmu_describe(void)
+{
+    return "4 KB granule, 39-bit addresses, .text read-only";
+}

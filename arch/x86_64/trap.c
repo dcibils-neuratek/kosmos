@@ -328,3 +328,8 @@ void trap_handle(struct trapframe *f)
         cpu_wait_for_interrupt();
     }
 }
+
+const char *trap_describe(void)
+{
+    return "48 gates in an IDT: 32 exceptions and 16 interrupts";
+}

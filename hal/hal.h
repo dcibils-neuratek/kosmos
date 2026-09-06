@@ -26,6 +26,29 @@
 /* The minimum required to have output. Called before anything else. */
 void hal_early_init(void);
 
+/*
+ * What this board is, in the words the boot log prints.
+ *
+ * **These exist because the log was lying.** It said "PL011 UART at
+ * 0x09000000, polled" and "250 Hz off the generic timer through a GICv3" on
+ * a PC, which has none of those - the sentences were written when there was
+ * one board and were as much a part of the machine as the addresses in
+ * them. `kernel/main.c` printing a string literal about hardware is the
+ * same mistake as `kernel/process.c` decoding a page descriptor, one layer
+ * up and in prose.
+ *
+ * The division is between the *why* and the *fact*. Why a stage exists is
+ * about the design and stays in the kernel; what this particular machine
+ * turned out to be is the board's to say, and the architecture's for the
+ * two in `arch/`.
+ *
+ * Every one of these returns a sentence fragment with no full stop and no
+ * newline, because the log decides its own punctuation.
+ */
+const char *hal_console_describe(void);     /* "PL011 UART at 0x09000000, polled" */
+const char *hal_timer_describe(void);       /* "the generic timer through a GICv3" */
+const char *hal_input_describe(void);       /* why the input scan looks as it does */
+
 /* One character out the serial port. Blocks until there is room. */
 void hal_putchar(char c);
 

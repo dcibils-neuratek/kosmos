@@ -94,14 +94,14 @@ void kmain(void)
     kputc('\n');
     boot_stage("serial port");
     boot_why("Somewhere to report from, before anything else can fail.");
-    boot_fact("PL011 UART at 0x09000000, polled");
+    boot_fact(hal_console_describe());
 
     /* Before anything else that could fault. Until this runs, VBAR_EL1 holds
      * whatever the firmware left, and any exception is a jump into nothing. */
     trap_init();
     boot_stage("exception vectors");
-    boot_why("Until VBAR_EL1 points at real code, a fault is a silent hang.");
-    boot_fact("16 entries at VBAR_EL1, four instructions each");
+    boot_why("Until the trap table is installed, a fault is a silent hang.");
+    boot_fact(trap_describe());
 
     /*
      * Who we are running on, asked of the processor.
@@ -169,7 +169,7 @@ void kmain(void)
     mmu_init();
     boot_stage("virtual memory");
     boot_why("Translation on; from here the kernel's own code is read-only.");
-    boot_fact("4 KB granule, 39-bit addresses, .text read-only");
+    boot_fact(mmu_describe());
     boot_fact("page 0 and the stack guards unmapped, so both faults name themselves");
 
     /*
@@ -221,7 +221,7 @@ void kmain(void)
     }
 
     boot_stage("input devices");
-    boot_why("Scanning thirty-two virtio windows; no PCI bus to walk.");
+    boot_why(hal_input_describe());
 
     if (hal_keyboard_init()) {
         boot_fact("keyboard: virtio-input, negotiated and polled like the serial line");
@@ -349,7 +349,9 @@ void kmain(void)
 
     boot_fact_begin();
     kputu(TICK_HZ);
-    kputs(" Hz off the generic timer through a GICv3, scheduling ");
+    kputs(" Hz off ");
+    kputs(hal_timer_describe());
+    kputs(", scheduling ");
     kputs(sched_current()->name);
     boot_fact_end();
 

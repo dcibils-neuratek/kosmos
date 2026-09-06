@@ -146,3 +146,8 @@ unsigned long hal_ticks_missed(void)
 {
     return missed;
 }
+
+const char *hal_timer_describe(void)
+{
+    return "the generic timer through a GICv3";
+}

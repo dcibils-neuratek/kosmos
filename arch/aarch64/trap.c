@@ -414,3 +414,8 @@ void trap_init(void)
         "isb\n"
         : : "r"(vectors) : "memory");
 }
+
+const char *trap_describe(void)
+{
+    return "16 entries at VBAR_EL1, four instructions each";
+}

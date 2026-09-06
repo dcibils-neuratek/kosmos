@@ -231,3 +231,8 @@ bool hal_snd_wants(void)
 {
     return false;
 }
+
+const char *hal_input_describe(void)
+{
+    return "No PCI bus walked yet; nothing here but the serial line.";
+}

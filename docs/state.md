@@ -8,106 +8,68 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
-### x86-64: it boots, ticks, maps and switches
-
-**`make x86` is a second architecture, five steps in, and it runs a
-process.** Long mode on QEMU's q35, a serial console, an IDT that reports
-what went wrong, a timer interrupt, four levels of page table built from C,
-two contexts handing the processor back and forth, and ring 3 - where a
-program in its own address space makes a `syscall`, gets an answer back
-through `sysretq`, and is then handed the address of the kernel's own
-`.text` and told to read it:
+### x86-64: it boots, and you can type at it
 
 ```
-process died: page fault
-  cs 0x2b   rip 0x80000015   cr2 0x101000
-  protection, read, user
+kosmos> cpu
+x86-64
+  architecture  x86-64
+  cores         1  (SMP is not on yet)
+kosmos> mem
+510 MB of RAM at 0x100000, in 130783 pages of 4 KB
+  32 MB used, 478 MB free
 ```
 
-Present, and unreadable to it - one bit in one entry is the entire distance
-between a process and the kernel's code, which is why the address was handed
-over deliberately rather than guessed at. Then the machine keeps running and
-only stops for the kernel's *own* deliberate write to read-only `.text`:
-`protection, write, kernel`. Two faults, two privilege levels, two error
-codes, one machine that stops for one of them.
+**Twelve boot stages, twelve processes, the whole Lua userland**, on QEMU's
+q35. `make x86` builds and runs it; `make KVM=1 x86` runs it on an x86-64
+Linux host's own cores. `tools/run_x86.py` is in `make test` and boots it
+twice - once to type at it, once to run a program from the loader's command
+line.
 
-**The six headers `kernel/` includes from `arch/` all exist now** -
-`context.h`, `cpu.h`, `mmio.h`, `mmu.h`, `page.h`, `trap.h` - and
-`kernel/pmm.c` compiles here unchanged, which is the first evidence that
-"the kernel is portable" was a fact rather than a hope.
+**The kernel was portable and the userland more so.** All thirteen
+`kernel/*.c` compile for it with no `#ifdef` in any of them, after closing
+six places where AArch64 had leaked out of `arch/` (below). The userland -
+fifty thousand lines of servers, libraries, applications and Lua - needed
+six syscall stubs, an entry stub, a `setjmp`, two ring barriers and one
+`#if`: 30 of 30 Lua files and 36 of 37 of `user/` compiled unchanged.
 
-`make KVM=1 x86` runs it on an x86-64 Linux host's own cores, which is the
-point of the exercise. It does nothing on this Mac.
+**Four differences that only showed up when it ran**, and each is a place
+where an ARM habit is silently wrong here:
 
-`arch/x86_64/main.c` is a staging `kmain`, not `kernel/main.c`, and it
-checks what each step built rather than asserting it: the three kinds of
-page read back with the attributes they were given, the stack guard reads
-back unmapped, an address space maps a user page, shares `.text` with the
-kernel, refuses a mapping below `USER_VA_BASE` and returns every page it
-took, and two contexts complete two round trips and an exit. Then it writes
-to `.text` on purpose and gets `protection, write, kernel`.
+- **`hlt` is not `wfi`.** ARM's wakes on a pending interrupt with the mask
+  set; `hlt` with IF clear halts for ever. The idle loop masks across the
+  check and the sleep on purpose, so the unchanged loop gave twenty timer
+  interrupts and then a machine that had printed its prompt and stopped.
+  `sti; hlt`.
+- **`syscall` saves nothing.** `svc` is an exception and the vector writes
+  thirty-one registers into the trapframe. `syscall` writes rcx and r11.
+  The entry stub has to preserve everything the kernel's C will clobber.
+- **The interrupted stack pointer is per-*thread*, not per-CPU.** A global
+  looked right and one core disproved it: a process that blocks in IPC lets
+  another run, which overwrites it. ARM's frame is on the thread's own
+  SP_EL1 stack and the question never arises.
+- **`thread_tick` only records.** ARM's vector epilogue calls
+  `thread_preempt_if_needed`; without the same call this counted ticks
+  correctly and never switched.
 
-**Four things this architecture does differently, and none of them cosmetic**
-(the long version is in `docs/hal.md`):
+**And two dependencies nobody had decided on**, both found because one
+toolchain bundles what the other does not: `<inttypes.h>` is not a
+freestanding header, and `-lm` was newlib's. musl's maths is vendored in
+`runtime/upstream/musl-math/` now and both machines compute `sin` with the
+same code.
 
-- **The 8259 has to be remapped before `sti`**, or a timer tick arrives as a
-  double fault - vectors 8-15 out of reset are the exception vectors.
-- **Permissions accumulate down the page walk.** A page is writable only if
-  `RW` is set at all four levels. So intermediate entries are permissive and
-  the leaf carries the policy; ARM lets the leaf speak alone.
-- **`CR0.WP`, without which every read-only mapping is decoration.** Ring 0
-  writes ignore `RW` until it is set, and there is no ARM counterpart at
-  all. Found by narrowing `.text`, reading the entry back correct, and
-  watching a deliberate store go straight through.
-- **One NX bit for two privilege levels**, where ARM has PXN and UXN.
-  `CR4.SMEP` is the answer and `mmu.c` sets it where CPUID reports it.
+**Next is `hal/pc/`**, which is 512 lines against `hal/qemu-virt/`'s 3,699:
+a framebuffer, a keyboard, a pointer and virtio over PCI. virtio is the same
+hardware QEMU offers both boards, so those drivers should move across rather
+than be rewritten - what differs is that they are *found* through PCI
+configuration space instead of the device tree's MMIO windows. `absent.c`
+holds the honest list of what is missing and shrinks as each one arrives.
 
-And the second architecture found something in the first: the ARM map
-divides the tail of RAM by 2 MB and lets the division truncate, which is
-exact only because `virt` reports a whole number of 2 MB pages. A PC does
-not. **Latent rather than wrong on ARM, and left alone rather than changed
-mid-port** - it would take a machine reporting an odd amount of RAM.
-
-### All thirteen kernel files compile for x86-64
-
-**And there is no `#ifdef` in any of them.** `kernel/` has never contained a
-line of assembly, which made it easy to believe it was already portable. A
-second architecture is what asks properly, and the answer was: almost, in
-six places, two of which a search for register names does not find.
-
-- `thread.c` planted seven registers by hand → `context_init`.
-- `process.c` declared and called `enter_el0` → `enter_user`.
-- `syscall.c` named x registers ninety-six times - ninety-four argument
-  reads, two result writes, one number → `struct syscall_frame`.
-- **`process.c` decoded page descriptor bits**: `*entry & 1` and
-  `(*entry >> 6) & 3`. This is `process_may_read` and `process_may_write` -
-  the check on every pointer a process hands the kernel - and on x86 bit 6
-  is Dirty and bit 7 is page-size, so it would not have crashed. It would
-  have answered wrongly about who owns a page → `as_user_may`.
-- **`struct sysinfo` carried seven AArch64 ID registers by name**, through
-  the syscall boundary to `/dev/cpu` → `cpu_arch` plus an opaque
-  `cpu_raw[]`, with each `arch/*/cpu.h` naming its own indices. The only one
-  of the six that was a decision rather than a rename; the decision log has
-  it.
-- **`kernel/main.c` printed the string "MIDR_EL1"** in the line naming the
-  machine it woke up on → the architecture composes its own identity and the
-  kernel prints what it is given.
-
-`kernel/` now contains no assembly, no register names, no descriptor bits
-and no architecture in its strings.
-
-**Next is `hal/pc/`, and it is a different kind of work.** 512 lines against
-`hal/qemu-virt/`'s 3,699: there is a UART, the 8259, the PIT and the
-multiboot memory map, and `kernel/main.c` wants `hal_fb_init`,
-`hal_keyboard_init`, `hal_pointer_init`, `hal_net_init` and `hal_snd_init`
-before it will link. virtio is the same hardware QEMU offers on both
-machines, so those drivers should move across rather than be rewritten - but
-they are found over PCI here instead of in the device tree's MMIO windows,
-and finding them is the work. An x86 `setjmp` and lazy FP are the two
-smaller things beside it, and the four temporary functions in
-`arch/x86_64/main.c` - `thread_exit`, `x86_syscall`, `trap_user_fault`, and
-`panic`, which is already gone - go away as the files that fill their seams
-arrive.
+Then **SMP**, and then **PowerPC** - see `docs/roadmap.md`, which records
+what each costs. The short version: the port already found the per-CPU
+boundary for SMP the hard way, PowerPC is the first big-endian target and
+the audit for that was done and holds, and a G4 is 32-bit, which contradicts
+a principle and so gets decided rather than drifted past.
 
 ### The browser
 

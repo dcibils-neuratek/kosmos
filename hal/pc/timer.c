@@ -92,3 +92,8 @@ void pc_timer_interrupt(void)
 {
     ticks++;
 }
+
+const char *hal_timer_describe(void)
+{
+    return "the 8253 through a pair of 8259s";
+}
