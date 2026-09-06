@@ -815,12 +815,29 @@ local function new_namespace()
     return net.info(capability)
   end
 
-  function ns.net_configure(path, address, netmask, gateway)
+  function ns.net_configure(path, address, netmask, gateway, dns)
     local net, capability, why = net_at(path or "/net")
 
     if not net then return nil, why end
 
-    return net.configure(capability, address, netmask, gateway)
+    return net.configure(capability, address, netmask, gateway, dns)
+  end
+
+  --
+  -- A name, as four bytes.
+  --
+  -- Blocks, which is what a lookup is, and the stack does not: it parks
+  -- this caller and goes on serving. `ticks` bounds the wait - every park
+  -- in that server has a deadline, because UDP gives no indication that
+  -- anything was lost and a caller waiting on a datagram that will never
+  -- arrive is a process stopped for ever.
+  --
+  function ns.resolve(name, ticks)
+    local net, capability, why = net_at("/net")
+
+    if not net then return nil, why end
+
+    return net.resolve(capability, name, ticks)
   end
 
   --
@@ -4104,13 +4121,22 @@ if role == ROLE_INIT then
 
     if DISKFS_EP then mine.mount("/home", DISKFS_EP, "/home") end
 
+    --
+    -- 10.0.2.3 is where QEMU's own NAT puts a resolver, the way 10.0.2.2 is
+    -- where it puts this computer. A default that works on the one machine
+    -- this runs on today is worth more than a blank field somebody has to
+    -- know to fill in - and `.network` overrides it the moment there is a
+    -- second machine.
+    --
     local address, netmask, gateway = "10.0.2.15", "255.255.255.0", "10.0.2.2"
+    local dns = "10.0.2.3"
     local ok_read, saved = pcall(mine.read, "/home/.network")
 
     if ok_read and type(saved) == "table" then
       address = saved.address or address
       netmask = saved.netmask or netmask
       gateway = saved.gateway or gateway
+      dns     = saved.dns or dns
     end
 
     local function bytes(text)
@@ -4124,7 +4150,8 @@ if role == ROLE_INIT then
     end
 
     local ok, why = mine.net_configure("/net", bytes(address),
-                                       bytes(netmask), bytes(gateway))
+                                       bytes(netmask), bytes(gateway),
+                                       bytes(dns))
 
     if not ok then
       line("init: the network stack would not take its address: "

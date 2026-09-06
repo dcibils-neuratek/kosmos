@@ -144,7 +144,44 @@ static int l_info(lua_State *L)
     return 1;
 }
 
-/* `net.configure(cap, address, netmask, gateway)` */
+/* `net.configure(cap, address, netmask, gateway [, dns])` */
+/*
+ * `net.resolve(cap, name [, ticks])` - a name, as four numbers.
+ *
+ * Blocks until the resolver answers or the stack gives up, which is what a
+ * lookup is. The stack itself does not block: it parks this caller and goes
+ * on serving everybody else, the same way `ping` and `accept` do.
+ */
+static int l_resolve(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    size_t len = 0;
+    const char *name = luaL_checklstring(L, 2, &len);
+    struct net_request req;
+    struct net_reply rep;
+
+    if (len == 0 || len > NET_PAYLOAD_MAX) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "that is not a name");
+        return 2;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.op     = NET_OP_RESOLVE;
+    req.length = (uint32_t)len;
+    req.ticks  = (uint32_t)luaL_optinteger(L, 3, 0);
+    memcpy(req.payload, name, len);
+
+    if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
+        lua_pushnil(L);
+        lua_pushinteger(L, (lua_Integer)rep.status);
+        return 2;
+    }
+
+    lua_pushlstring(L, (const char *)rep.address.byte, 4);
+    return 1;
+}
+
 static int l_configure(lua_State *L)
 {
     long cap = (long)luaL_checkinteger(L, 1);
@@ -157,6 +194,7 @@ static int l_configure(lua_State *L)
     take_addr(L, 2, &req.address);
     take_addr(L, 3, &req.netmask);
     take_addr(L, 4, &req.gateway);
+    take_addr(L, 5, &req.dns);
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
         lua_pushnil(L);
@@ -690,6 +728,7 @@ void kosmos_net_kit(lua_State *L)
         { "listen",    l_listen },
         { "accept",    l_accept },
         { "poll",      l_poll },
+        { "resolve",   l_resolve },
         { NULL, NULL }
     };
 

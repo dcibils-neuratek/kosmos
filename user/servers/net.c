@@ -1934,6 +1934,24 @@ static void serve(const struct message *msg, uint64_t sender)
          */
         (void)arp_ask(&net.gateway);
 
+        /*
+         * And the resolver, for exactly the same reason and it was missed.
+         *
+         * `send_ip` fails rather than queueing when it has no MAC for an
+         * address, so the *first* datagram to the resolver was always lost:
+         * the first name anybody looked up failed with "no route" and the
+         * second worked. That reads as a flaky network rather than as a
+         * cache nobody had filled, which is the sentence above this about
+         * the gateway, one address later.
+         *
+         * Not conditional on the resolver being on this subnet: `arp_ask`
+         * for something the router owns is answered by the router, and one
+         * frame that goes nowhere is cheaper than the question.
+         */
+        if (net.dns.byte[0] != 0) {
+            (void)arp_ask(&net.dns);
+        }
+
         reply.status = NET_OK;
         answer(sender, &reply);
         return;

@@ -123,13 +123,26 @@ local function split(text)
 
   local a, b, c, d = tostring(host):match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
 
-  if not a then return nil end
+  if a then
+    a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
 
-  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+    if a > 255 or b > 255 or c > 255 or d > 255 then
+      return nil, "those are not four numbers under 256"
+    end
 
-  if a > 255 or b > 255 or c > 255 or d > 255 then return nil end
+    return string.char(a, b, c, d), port, path, hostport
+  end
 
-  return string.char(a, b, c, d), port, path, hostport
+  --
+  -- A name. This does not look it up.
+  --
+  -- Splitting an address is arithmetic on a string and asking a resolver is
+  -- a message to another process; keeping the second out of here is what
+  -- lets this be called from anywhere, and the caller is the one that knows
+  -- how long it is prepared to wait. The name comes back as the fifth
+  -- value, which is the caller's cue to go and ask.
+  --
+  return nil, port, path, hostport, host
 end
 
 --
@@ -702,10 +715,29 @@ end
 --
 local function fetch(text)
   for _ = 1, 5 do
-    local where, port, path, host = split(text)
+    local where, port, path, host, name = split(text)
+
+    if not where and name then
+      --
+      -- Looked up per hop rather than cached: a redirect can move to
+      -- another host, and a cache that answered the old name for the new
+      -- one would be wrong in exactly the case it was meant to help with.
+      -- One datagram, and the resolver is next door.
+      --
+      say("looking up " .. name .. " ...")
+
+      local addr, why = fs.resolve(name, HZ)
+
+      if not addr then
+        say(("cannot look up %s: %s"):format(name, tostring(why)))
+        return nil
+      end
+
+      where = addr
+    end
 
     if not where then
-      say("that is not an address - four numbers, no names, there is no DNS")
+      say("that is not an address this can reach")
       return nil
     end
 
