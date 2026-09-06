@@ -47,24 +47,61 @@
 
 #include "gfx_draw.h"
 #include "web_paint.h"
+#include "web_style.h"
 
 /*
- * The faces a page needs, and there are seven.
+ * A face is now (family, weight, slant, size), asked for as needed.
  *
- * `gfx` holds twelve and the desktop's four roles are the first of them, so
- * eight are free. Headings step down in size and are bold; `strong` gets the
- * body's bold, `em` the italic, `code` and `pre` the monospace.
+ * It used to be an enum of seven, and every inline one was at the body
+ * size - so `<em>` inside an `<h1>` came out at sixteen pixels in the
+ * middle of a twenty-eight pixel heading. That was the honest limit of
+ * choosing a face by tag name, and the cascade is what removes it: the
+ * computed style says 28 pixels, italic, sans, and this asks `gfx` for
+ * exactly that.
  *
- * Every inline face is at the body size, which is a real limitation and not
- * an oversight: `<em>` inside an `<h1>` comes out at sixteen pixels in the
- * middle of a twenty-eight pixel heading. Fixing it properly means a face
- * per (family, weight, slant, size) chosen by the cascade, which is the
- * work this file is a step towards rather than a substitute for.
+ * **Sizes are rounded to a ladder**, which is the one thing standing
+ * between this and a face pool that fills on a page with fifty distinct
+ * font sizes in it. CSS sizes are continuous; a rasterised face is 8 KB and
+ * a hundred glyphs. Rounding to the nearest rung costs at most a pixel of
+ * height and turns an unbounded set into a bounded one.
  */
-enum {
-    FACE_H1, FACE_H2, FACE_H3, FACE_BODY, FACE_BOLD, FACE_ITALIC, FACE_MONO,
-    FACE_COUNT
+static const int LADDER[] = {
+    9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40, 48, 64
 };
+
+static int rung(int px)
+{
+    unsigned i;
+
+    for (i = 0; i < sizeof(LADDER) / sizeof(LADDER[0]); i++) {
+        if (px <= LADDER[i]) {
+            return LADDER[i];
+        }
+    }
+
+    return LADDER[sizeof(LADDER) / sizeof(LADDER[0]) - 1];
+}
+
+/*
+ * The asset for a look, which is the whole of this system's font matching.
+ *
+ * Six files: sans in four weights and slants, mono in two. A family libcss
+ * reports as monospace gets mono and everything else gets sans - there is
+ * no serif in the image, and pretending otherwise by picking sans for it
+ * silently is better than a page of boxes.
+ */
+static const char *asset_for(const struct web_look *look)
+{
+    if (look->mono) {
+        return look->bold ? "ibmplexmono-bold" : "ibmplexmono";
+    }
+
+    if (look->bold && look->italic) return "ibmplexsans-bolditalic";
+    if (look->bold)                 return "ibmplexsans-bold";
+    if (look->italic)               return "ibmplexsans-italic";
+
+    return "ibmplexsans";
+}
 
 /* 0xAARRGGBB, the same order `css_color` uses and `gfx` expects. */
 #define INK        0xff101010u
@@ -101,7 +138,13 @@ struct link {
 };
 
 struct web_page {
-    int      face[FACE_COUNT];
+    /* The cascade, and the interpreter a face is asked for through. Both
+     * are live only while laying out: a run keeps the face *index* it was
+     * given, so painting needs neither. */
+    lua_State        *L;
+    struct web_style *style;
+    struct web_look   base;     /* what an element inherits from nothing */
+
     int      width;             /* the content width, in pixels */
     int      y;                 /* the pen, moving down the page */
 
@@ -149,7 +192,8 @@ struct liner {
  * this is inside a link. Passed down by value, so leaving an element
  * restores what was in force outside it without a stack of its own. */
 struct inl {
-    int      face;
+    struct web_look look;       /* inherited, then overridden by the cascade */
+    int      face;              /* what `look` resolved to */
     uint32_t ink;
     int      link;
 };
@@ -307,34 +351,59 @@ static bool is_block(const char *tag)
     return in_set(tag, tags);
 }
 
-/* Elements whose text is not content. Without this a `<script>` inside the
- * body is laid out as a paragraph of JavaScript. */
-static bool is_hidden(const char *tag)
-{
-    static const char *const tags[] = {
-        "script", "style", "head", "title", "noscript", "template", NULL
-    };
+/*
+ * There is no `is_hidden` here any more.
+ *
+ * It was a list of tag names - script, style, head, title, noscript,
+ * template - and that list is four words of the user-agent stylesheet now:
+ * `display: none`. The cascade answers it, so a page that hides something
+ * of its own is hidden too, which a list in this file could never have
+ * known about.
+ */
 
-    return in_set(tag, tags);
+/*
+ * The face a look resolves to, asked of `gfx`.
+ *
+ * `gfx.face` hands back the same index for the same name and size, so this
+ * is a lookup rather than ninety-five glyphs rasterised again - which is
+ * what makes asking per element affordable. When the pool is full it
+ * answers nil and the interface font stands in, which is a worse answer
+ * than the right one and a better one than nothing.
+ */
+static int face_of(struct web_page *p, const struct web_look *look)
+{
+    int face = 0;
+
+    lua_getglobal(p->L, "gfx");
+    lua_getfield(p->L, -1, "face");
+    lua_pushstring(p->L, asset_for(look));
+    lua_pushinteger(p->L, rung(look->px));
+
+    if (lua_pcall(p->L, 2, 1, 0) == LUA_OK && lua_isinteger(p->L, -1)) {
+        face = (int)lua_tointeger(p->L, -1);
+    }
+
+    lua_pop(p->L, 2);
+
+    return face;
 }
 
-static int face_for(const struct web_page *p, const char *tag)
+/*
+ * The look an element computes to, starting from what it inherited.
+ *
+ * `in` arrives holding the parent's look and leaves holding this element's,
+ * which is the whole of inheritance here: libcss answers INHERIT for what
+ * no rule set, `web_style_of` leaves those fields alone, and what is left
+ * alone is what came down.
+ */
+static struct inl entered(struct web_page *p, dom_node *el, struct inl in)
 {
-    if (tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' && tag[2] == '\0') {
-        if (tag[1] == '1') return p->face[FACE_H1];
-        if (tag[1] == '2') return p->face[FACE_H2];
-        return p->face[FACE_H3];        /* h3..h6 share a size */
+    if (web_style_of(p->style, el, &in.look)) {
+        in.face = face_of(p, &in.look);
+        in.ink  = in.look.colour;
     }
 
-    if (is_tag(tag, "pre")) {
-        return p->face[FACE_MONO];
-    }
-
-    if (is_tag(tag, "blockquote")) {
-        return p->face[FACE_ITALIC];
-    }
-
-    return p->face[FACE_BODY];
+    return in;
 }
 
 /*--------------------------------------------------------------------------
@@ -634,34 +703,29 @@ static int href_of(struct web_page *p, dom_node *el)
     return out;
 }
 
-/* What entering this element changes about the text inside it. */
+/*
+ * What entering this element changes, beyond what the cascade says.
+ *
+ * Which is one thing: a link is a *destination* and not an appearance, so
+ * `href` is read here while the colour and the underline come from the UA
+ * sheet's `a { color: ... }` like everything else.
+ *
+ * This used to be the whole of styling - a list of tag names for bold, one
+ * for italic, one for monospace - and it carried a special case saying that
+ * `<strong>` inside a heading must not take the body's bold, or the
+ * emphasised word would come out *smaller* than the words around it. That
+ * case is gone rather than fixed: the cascade computes 28 pixels and bold
+ * together, so the face asked for is the heading's own bold and the problem
+ * it worked around cannot arise.
+ */
 static void enter(struct web_page *p, struct inl *in, dom_node *el,
                   const char *tag)
 {
-    static const char *const bold[]   = { "strong", "b", NULL };
-    static const char *const italic[] = { "em", "i", "cite", "var", NULL };
-    static const char *const mono[]   = { "code", "tt", "kbd", "samp", NULL };
-
-    if (in_set(tag, bold)) {
-        /*
-         * A heading's face is already bold, and the body's bold inside one
-         * would make the emphasised word *smaller* than the words around
-         * it - which reads as a bug rather than as emphasis.
-         */
-        if (in->face != p->face[FACE_H1] && in->face != p->face[FACE_H2]
-            && in->face != p->face[FACE_H3]) {
-            in->face = p->face[FACE_BOLD];
-        }
-    } else if (in_set(tag, italic)) {
-        in->face = p->face[FACE_ITALIC];
-    } else if (in_set(tag, mono)) {
-        in->face = p->face[FACE_MONO];
-    } else if (is_tag(tag, "a")) {
+    if (is_tag(tag, "a")) {
         int at = href_of(p, el);
 
         if (at >= 0) {
             in->link = at;
-            in->ink = LINK_INK;
         }
     }
 }
@@ -702,9 +766,9 @@ static void inline_walk(struct web_page *p, struct liner *l, dom_node *node,
 
                 (void)tag_of(child, tag, sizeof(tag));
 
-                if (!is_hidden(tag)) {
-                    struct inl inner = in;
+                struct inl inner = entered(p, child, in);
 
+                if (!inner.look.hidden) {
                     enter(p, &inner, child, tag);
                     inline_walk(p, l, child, inner, depth + 1, pre);
                 }
@@ -725,24 +789,36 @@ static void lay_out_block(struct web_page *p, dom_node *el, const char *tag)
 {
     struct liner l;
     struct inl in;
-    int face = face_for(p, tag);
     bool heading = (tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6'
                     && tag[2] == '\0');
     bool bullet = is_tag(tag, "li");
     size_t began;
     size_t i;
+    int face;
 
     memset(&l, 0, sizeof(l));
 
-    in.face = face;
-    in.ink  = INK;
+    /* From the page's own defaults, then whatever the cascade says about
+     * this element - which is where a heading gets its size and its weight
+     * now, rather than from its name being spelled `h1` in a switch. */
+    in.look = p->base;
+    in.face = 0;
     in.link = -1;
+    in = entered(p, el, in);
 
+    face = in.face;
+
+    /*
+     * Indents, which are the box model this file does not have. `margin`
+     * and `padding` are in the computed style and nothing reads them yet,
+     * so a list item and a quotation keep the two numbers they had. That
+     * is the next piece rather than an oversight, and it is why these two
+     * are still tag names when the faces and the colours are not.
+     */
     if (bullet) {
         l.indent = LI_INDENT;
     } else if (is_tag(tag, "blockquote")) {
         l.indent = QUOTE_INDENT;
-        in.ink = QUOTE_INK;
     }
 
     /* Space above a heading, so it belongs to what follows it rather than
@@ -769,7 +845,8 @@ static void lay_out_block(struct web_page *p, dom_node *el, const char *tag)
         for (i = began; i < p->nruns; i++) {
             if (p->runs[i].len > 0) {
                 push_rect(p, LI_INDENT - 14,
-                          p->runs[i].y + p->runs[i].h / 2 - 2, 4, 4, INK);
+                          p->runs[i].y + p->runs[i].h / 2 - 2, 4, 4,
+                          in.ink);
                 break;
             }
         }
@@ -780,7 +857,7 @@ static void lay_out_block(struct web_page *p, dom_node *el, const char *tag)
         push_rect(p, 0, p->y + 3, p->width, 1, RULE);
     }
 
-    p->y += gfx_draw_height(p->face[FACE_BODY]) / 2;
+    p->y += gfx_draw_height(face) / 2;
 }
 
 /*
@@ -816,7 +893,17 @@ static bool layout_blocks(struct web_page *p, dom_node *node, int depth)
 
             (void)tag_of(child, tag, sizeof(tag));
 
-            if (!is_hidden(tag)) {
+            /*
+             * `display: none`, asked of the cascade rather than read off a
+             * list of tag names. The UA sheet still says which those are -
+             * `script, style, head, title, noscript, template` - and a page
+             * that hides something of its own is now hidden too, which a
+             * list here could never have known about.
+             */
+            struct web_look look = p->base;
+            bool skip = web_style_of(p->style, child, &look) && look.hidden;
+
+            if (!skip) {
                 bool below = layout_blocks(p, child, depth + 1);
 
                 if (!below && is_block(tag)) {
@@ -840,37 +927,17 @@ static bool layout_blocks(struct web_page *p, dom_node *node, int depth)
  * The page.
  *------------------------------------------------------------------------*/
 
-static void load_faces(lua_State *L, struct web_page *p)
-{
-    static const struct { const char *font; int px; } wanted[FACE_COUNT] = {
-        { "ibmplexsans-bold",   28 },   /* h1 */
-        { "ibmplexsans-bold",   22 },   /* h2 */
-        { "ibmplexsans-bold",   18 },   /* h3 and below */
-        { "ibmplexsans",        16 },   /* body */
-        { "ibmplexsans-bold",   16 },   /* strong, b */
-        { "ibmplexsans-italic", 16 },   /* em, i, blockquote */
-        { "ibmplexmono",        15 },   /* pre, code */
-    };
-    unsigned i;
-
-    for (i = 0; i < FACE_COUNT; i++) {
-        lua_getglobal(L, "gfx");
-        lua_getfield(L, -1, "face");
-        lua_pushstring(L, wanted[i].font);
-        lua_pushinteger(L, wanted[i].px);
-
-        if (lua_pcall(L, 2, 1, 0) != LUA_OK || !lua_isinteger(L, -1)) {
-            /* No such face, or the pool is full. The interface font is a
-             * worse answer than the right one and a better one than none. */
-            p->face[i] = 0;
-            lua_pop(L, 2);
-            continue;
-        }
-
-        p->face[i] = (int)lua_tointeger(L, -1);
-        lua_pop(L, 2);
-    }
-}
+/*
+ * What a document looks like before any rule has spoken.
+ *
+ * The UA sheet sets these on `html, body` as well, and it is the sheet that
+ * matters - this is what an element inherits when the cascade declines to
+ * answer at all, which happens when libcss will not start. A page in the
+ * body face at sixteen pixels is a readable failure.
+ */
+static const struct web_look DEFAULT_LOOK = {
+    INK, 16, false, false, false, false
+};
 
 struct web_page *web_page_layout(lua_State *L, void *document, int width)
 {
@@ -882,9 +949,22 @@ struct web_page *web_page_layout(lua_State *L, void *document, int width)
 
     p->width = width;
     p->y     = 8;
+    p->L     = L;
+    p->base  = DEFAULT_LOOK;
 
-    load_faces(L, p);
+    /*
+     * The cascade, for the length of the layout and no longer. A run keeps
+     * the face *index* it was given, so painting and hit-testing need
+     * neither libcss nor the interpreter - which is what lets a page outlive
+     * both.
+     */
+    p->style = web_style_open(document);
+
     layout_blocks(p, (dom_node *)document, 0);
+
+    web_style_close(p->style);
+    p->style = NULL;
+    p->L = NULL;
 
     return p;
 }

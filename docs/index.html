@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos</title>
+<style>
+  :root {
+    --ground:  #10151c;
+    --panel:   #161d26;
+    --edge:    #263141;
+    --ink:     #d7dee7;
+    --dim:     #8b98a8;
+    --tab:     #ffc700;
+    --accent:  #6ea8ff;
+    --code-bg: #0b1017;
+  }
+
+  * { box-sizing: border-box }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px }
+
+  /* The title bar, which is the system's own most recognisable decision:
+     a tab as wide as its title rather than a bar across the window. */
+  header { padding: 72px 0 8px }
+
+  .tab {
+    display: inline-block;
+    background: var(--tab);
+    color: #101010;
+    font: 700 15px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 9px 14px;
+    border-radius: 4px 4px 0 0;
+  }
+
+  .tabbed {
+    border: 1px solid var(--tab);
+    border-radius: 0 6px 6px 6px;
+    padding: 26px 28px;
+    background: var(--panel);
+  }
+
+  h1 { font-size: 40px; line-height: 1.1; margin: 0 0 12px; letter-spacing: -0.02em }
+  h2 { font-size: 24px; margin: 56px 0 14px; letter-spacing: -0.01em }
+  h3 { font-size: 17px; margin: 30px 0 8px }
+
+  .lede { font-size: 19px; color: var(--ink); margin: 0 0 4px }
+  .sub  { color: var(--dim); margin: 6px 0 0 }
+
+  a { color: var(--accent) }
+
+  pre, code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.6;
+  }
+
+  p code, li code {
+    background: var(--code-bg);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.88em;
+  }
+
+  figure { margin: 28px 0 }
+  figure img {
+    max-width: 100%;
+    display: block;
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+  }
+  figcaption { color: var(--dim); font-size: 14px; margin-top: 10px }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 18px;
+    margin: 22px 0;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 15px }
+  .card p  { margin: 0; color: var(--dim); font-size: 14.5px }
+
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 15px }
+  td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--edge); vertical-align: top }
+  td:first-child {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; white-space: nowrap; padding-right: 20px; color: var(--tab);
+  }
+
+  .note {
+    border-left: 3px solid var(--edge);
+    padding: 2px 0 2px 18px;
+    color: var(--dim);
+    margin: 22px 0;
+  }
+
+  footer {
+    margin: 72px 0 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--edge);
+    color: var(--dim);
+    font-size: 14px;
+  }
+
+  @media (max-width: 560px) {
+    h1 { font-size: 30px }
+    header { padding-top: 44px }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="tab">Kosmos</div>
+  <div class="tabbed">
+    <h1>An operating system I wanted to exist</h1>
+    <p class="lede">A microkernel with a userland written entirely in Lua.
+    A graphical desktop, a filesystem, a TCP/IP stack, a web browser — on
+    AArch64, under QEMU, in about 6,700 lines of kernel.</p>
+    <p class="sub">This is a personal experiment, and it is worth saying so
+    before anything else.</p>
+  </div>
+</header>
+
+<h2>What this is, honestly</h2>
+
+<p>This is <strong>my own experimentation with ideas I have had and turned
+over for years</strong>, while using dozens of operating systems. It is my
+interpretation of what an operating system could be if you took the good
+practices and good ideas wherever they came from, added the ones I have
+reasoned my way to myself, and were free to ignore everything else.</p>
+
+<p>That freedom is the whole point. There are no users to serve, no
+compatibility to keep, and no deadline — which is precisely what makes it
+possible to take decisions a commercial system cannot take, and to undo them
+when they turn out to be wrong. Several have been undone. The reasoning for
+every one of them is written down, including the mistakes.</p>
+
+<p>It is not a product, not a startup, and not trying to replace anything.
+It is a thing I am building to understand how these things are built.</p>
+
+<h2>Run it</h2>
+
+<p>One command. Nothing to clone, nothing to build, no toolchain:</p>
+
+<pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"</code></pre>
+
+<p>You need QEMU, and it is the only thing that command cannot fetch for
+you — <code>brew install qemu</code> on macOS. Everything else, it works
+out: the newest published image, the runner, and a disk to keep files on.</p>
+
+<figure>
+  <img src="desktop.png" alt="The Kosmos desktop: a file manager, a widget
+       gallery, a process list, a system monitor and a spinning 3D cube,
+       with the Deskbar at the top right.">
+  <figcaption>The desktop. The cube is software-rendered at 50 fps with the
+  processor at 22% — the demos sleep between frames on purpose, so an idle
+  machine is idle.</figcaption>
+</figure>
+
+<h2>Ideas it is built out of</h2>
+
+<div class="grid">
+  <div class="card">
+    <h3>A microkernel, from QNX</h3>
+    <p>Threads, address spaces, IPC and capabilities. It does not know what
+    a file is. Everything else — the filesystem, the console, the window
+    manager — is a process.</p>
+  </div>
+  <div class="card">
+    <h3>Namespaces, from Plan 9</h3>
+    <p>Per-process, with no global names anywhere. A program that was not
+    handed <code>/dev</code> does not get permission denied — the path does
+    not exist for it.</p>
+  </div>
+  <div class="card">
+    <h3>Capabilities, from seL4</h3>
+    <p>An index into your own table, never a global identifier. What you
+    were not given, you cannot name.</p>
+  </div>
+  <div class="card">
+    <h3>Attributes and queries, from BeOS</h3>
+    <p>Files carry typed attributes, and a query over them is a first-class
+    thing rather than a search that walks the disk.</p>
+  </div>
+  <div class="card">
+    <h3>A live image, from Lisp Machines</h3>
+    <p>The system can write and run its own programs. You can script a
+    running application from the shell without it having any scripting code
+    in it.</p>
+  </div>
+  <div class="card">
+    <h3>Lua, everywhere above the line</h3>
+    <p>C is what runs on behalf of another process — the kernel, drivers,
+    servers, pixel loops. Lua is what runs for a person.</p>
+  </div>
+</div>
+
+<h2>What it holds together</h2>
+
+<p>One rule about what travels between things: <strong>the language's data
+model where the shape is the caller's to choose, a declared struct where the
+shape is agreed.</strong> IPC messages are Lua tables almost everywhere, and
+structs in a header both sides compile against at the boundary into a system
+server — for two reasons found by building it, not by planning it. A server
+has to stay correct when its caller is wrong, and a garbage collector cannot
+sit where something else's timing depends on it.</p>
+
+<p class="note">The audio server taught the second one. It took a
+1024-byte period as a message payload 172 times a second, which meant a Lua
+string allocated on each side of every one: 340 KB a second of garbage
+manufactured inside a 5.8 ms deadline. It played, and it jittered, and no
+amount of scheduling fixed it — the collector was in the audio path by
+construction. <em>Control by message, data by shared memory</em> is a rule
+in this project because of that.</p>
+
+<h2>What there is to try</h2>
+
+<p>Once it boots, the Deskbar at the top right has everything. Or pass one
+of these instead of <code>wm</code>:</p>
+
+<table>
+<tr><td>wm browser</td><td>A web browser. hubbub, libdom and libcss running
+at EL0 on a freestanding libc — it parses HTML, runs the CSS cascade, lays
+out text and paints it. It opens on a page compiled into the image, so it
+needs nothing running anywhere.</td></tr>
+<tr><td>wm tracker</td><td>A file manager, with a real filesystem and a
+journal underneath it.</td></tr>
+<tr><td>wm terminal</td><td>A terminal window. <code>help</code> lists what
+there is.</td></tr>
+<tr><td>wm cube3d</td><td>A 3D cube, rendered in software.</td></tr>
+<tr><td>wm doom</td><td>Doom, once there is a WAD at
+<code>/home/doom1.wad</code>.</td></tr>
+<tr><td>wm paint</td><td>A paint program.</td></tr>
+<tr><td>ping 8.8.8.8</td><td>The TCP/IP stack, reaching the real internet
+through QEMU's NAT.</td></tr>
+<tr><td>wm webserver</td><td>An HTTP server, under System in the
+Deskbar.</td></tr>
+</table>
+
+<figure>
+  <img src="browser.png" alt="The Kosmos browser showing a rendered web
+       page with headings, bold and italic text, a bulleted list and a
+       link.">
+  <figcaption>The browser. Headings, inline bold, italic and monospace on a
+  shared baseline, list markers, and links you can click — laid out and
+  painted by about a thousand lines of C on top of NetSurf's parsers.</figcaption>
+</figure>
+
+<h2>Where it is</h2>
+
+<p>Milestone 6, graphics. The kernel is 6,700 lines of code and has no
+architecture-specific instruction left in it, which is what makes "the
+kernel is portable" a checkable claim rather than an aspiration. Next is a
+second architecture — x86-64 under QEMU — and then real hardware, a
+Raspberry Pi 5, chosen because it is hard enough that a fast desktop on it
+would be a real result rather than an emulator number.</p>
+
+<p>What it cannot do is a longer list than what it can, and the repository
+is specific about both. <a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/state.md">docs/state.md</a>
+says where it actually is; <a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/design.md">docs/design.md</a>
+has the reasoning behind every decision, and
+<a href="https://github.com/dcibils-neuratek/kosmos#decision-log">the decision log</a>
+is a single table of every one of them with what it cost.</p>
+
+<footer>
+  <p><a href="https://github.com/dcibils-neuratek/kosmos">github.com/dcibils-neuratek/kosmos</a>
+  &nbsp;·&nbsp; MIT &nbsp;·&nbsp; Diego Cibils</p>
+  <p>Nebula is the microkernel. Kosmos is the operating system on top of it.
+  The two names are not interchangeable, and the repository is pedantic
+  about which is which.</p>
+</footer>
+
+</div>
+</body>
+</html>

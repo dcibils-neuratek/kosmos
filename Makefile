@@ -552,7 +552,7 @@ WEB_SRCS += $(NS)/libdom/bindings/hubbub/parser.c
 
 # Kosmos's own side of it, held to the ordinary flags rather than the
 # vendored ones - it is not vendored.
-WEB_SRCS += user/lib/web_kosmos.c user/lib/web_select.c \
+WEB_SRCS += user/lib/web_kosmos.c user/lib/web_select.c user/lib/web_style.c \
             user/lib/web_paint.c
 
 # The property names, read out of the same file their own build reads.

@@ -30,6 +30,7 @@
 #include <dom/bindings/hubbub/parser.h>
 #include <libcss/libcss.h>
 #include <libcss/fpmath.h>
+#include <libcss/unit.h>
 
 #include "web_select.h"
 #include "web_paint.h"

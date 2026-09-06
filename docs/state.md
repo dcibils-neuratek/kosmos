@@ -8,6 +8,71 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+**The cascade is consulted.** libcss has parsed, selected and answered since
+it was vendored and nothing asked it; `web_paint.c` chose a face by tag name
+and an ink from a `#define`. It asks now, per element.
+
+**The defaults became a stylesheet.** What was `face_for()` - h1 is 28
+pixels and bold, `pre` is monospace, a quotation is italic - is a
+user-agent sheet in `web_style.c` at UA origin. That is how a browser has
+always expressed it, and it buys the thing a switch could not: an author who
+writes `h1 { font-size: 44px }` wins, because the cascade already knows UA
+loses to author. No code knows that rule; libcss does. `is_hidden`'s list of
+tag names went the same way and is now `display: none` on six selectors, so
+a page that hides something of *its own* is hidden too.
+
+Two special cases disappeared rather than being fixed. `<strong>` inside a
+heading needed a rule saying it must not take the body's bold, or the
+emphasised word came out smaller than the words around it; the cascade
+computes 28 pixels *and* bold together, so the face asked for is the
+heading's own bold and the problem cannot arise. And a face is now
+(family, weight, slant, size) asked of `gfx` as needed, rounded to a ladder
+so that continuous CSS sizes cannot fill a pool of rasterised faces.
+
+**Inheritance without composing styles.** libcss answers `INHERIT` for a
+property no rule set, so `web_style_of` takes the look the element inherited
+and overwrites only what is specified. Leaving a field alone *is* keeping
+the parent's. Overwriting unconditionally turns inheritance into its
+opposite - a `<strong>` containing an `<a>` would have unbolded the link -
+which is why every property is guarded.
+
+**Two bugs, both invisible to the compiler.**
+
+*`css_computed_font_family(style, NULL)`* - the generated getter stores the
+name list before it returns the keyword, so NULL is a write to address zero.
+It was: `far 0x0` at `get_font_family`, on the first page rendered.
+
+*`css_unit_len2device_px(style, ctx, length, unit)`* had its last two
+arguments swapped. `css_fixed` and `css_unit` are both integers, so nothing
+warned. It converted a length of `CSS_UNIT_PX` - which is zero - using a
+unit of 45056, and answered zero; every size then fell through a range check
+to the inherited one. Colour and weight arrived from the cascade and *only*
+size did not, which is what made it findable: a probe reporting kind 10, the
+property set, and 0 pixels.
+
+**A disk, by default.** `run-kosmos.sh` makes a 64 MB one beside the image
+if there is not one already and attaches it - which `make` has always done
+for a build tree and a released binary never had. Without it there is no
+filesystem at all: Doom cannot find a WAD, nothing persists, and Tracker has
+nowhere to look. It arrives unformatted and says so, because zeroing a file
+is something any machine can do and writing a filesystem into one is `mkfs`,
+once. Checked end to end: no filesystem, format, write, power cycle, still
+there.
+
+**And there is a page**, at `docs/index.html`, which is what GitHub Pages
+serves - the setting offers the repository root or `/docs` and nothing else,
+so it lives beside the design documents rather than in a folder of its own.
+
+**One kernel check failed once and has not since.** `make test` reported 1
+of 127 and three runs after it were clean. The evidence is gone: the run
+that failed went through a `grep` that kept only the summary line, which is
+the second time in this session I have thrown away the output of the thing I
+was trying to diagnose. Recorded as intermittent rather than fixed, because
+nothing here fixed it.
+
+---
+
+
 **Anyone can run this now, with one command and no toolchain:**
 
 ```

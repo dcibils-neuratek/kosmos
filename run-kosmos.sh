@@ -35,12 +35,26 @@
 #       to agree on with the host, so the guest cursor cannot drift away
 #       from the real one.
 #
+#   -drive ... -device virtio-blk-device
+#       A disk, made here if it is not here already: 64 MB of zeros, which
+#       is what `make` does for a build tree. Without one there is no
+#       filesystem at all - `/home` is an empty ramfs that forgets
+#       everything at power off - so Doom cannot find a WAD, nothing can be
+#       saved, and Tracker has nowhere to look. An operating system with no
+#       disk is a demo.
+#
 #   -netdev user -device virtio-net-device
 #       QEMU's own NAT, which needs no privileges and puts no packet on a
 #       real network. The guest is 10.0.2.15 and **this computer is
 #       10.0.2.2**, which is the whole of what `ping`, `fetch` and the
 #       browser need. Without these two lines they all work and find
 #       nothing, which looks like a broken network stack.
+#
+# The disk is `kosmos.img` beside the image, kept between runs, and made
+# when it is missing. It arrives unformatted, because zeroing a file is
+# something any machine can do and writing a filesystem into one is not:
+# `mkfs` at the prompt does that, once, and the system says so when asked
+# for something it has no filesystem for.
 #
 # **To browse something**, serve a directory here and ask for it there:
 #
@@ -232,6 +246,32 @@ if [ -z "$image" ] || [ ! -f "$image" ]; then
 fi
 
 #
+# The disk, beside the image, made once and kept.
+#
+# `make` has always done this for a build tree - `dd` 64 MB of zeros - and
+# a released image had no disk at all, so everything that needs a
+# filesystem failed on a machine that had only downloaded a binary. Doom
+# saying it cannot find `/home/doom1.wad` is the polite version; the rest
+# is just files that do not persist.
+#
+# Never overwritten. A run that silently reformatted the disk would be a
+# run that eats whatever was on it, which is the one thing this must not do.
+#
+disk="$(dirname "$image")/kosmos.img"
+
+if [ ! -f "$disk" ]; then
+    echo "making $disk (${DISK_MB:-64} MB, empty)" >&2
+
+    if ! dd if=/dev/zero of="$disk" bs=1m count="${DISK_MB:-64}" 2>/dev/null
+    then
+        echo "could not make a disk at $disk - carrying on without one." >&2
+        disk=""
+    else
+        echo "  it has no filesystem yet: type \`mkfs\` once, inside." >&2
+    fi
+fi
+
+#
 # The command line, built as arguments rather than as a string.
 #
 # It used to be a string - `bootargs="-fw_cfg name=...,string=$boot"` -
@@ -250,6 +290,11 @@ set -- -M virt,gic-version=3 -cpu cortex-a72 -m 512M
 # computer is 10.0.2.2 from inside. `ping`, `fetch` and the browser all need
 # it, and all fail quietly and confusingly without it.
 set -- "$@" -netdev user,id=net0 -device virtio-net-device,netdev=net0
+
+if [ -n "$disk" ]; then
+    set -- "$@" -drive "file=$disk,format=raw,if=none,id=disk" \
+                -device virtio-blk-device,drive=disk
+fi
 
 if [ "$serial_only" = "yes" ]; then
     set -- "$@" -nographic

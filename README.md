@@ -10,6 +10,50 @@ in `/bin`. See [docs/state.md](docs/state.md), and
 
 ---
 
+There is a page about it at
+[dcibils-neuratek.github.io/kosmos](https://dcibils-neuratek.github.io/kosmos/),
+which is [`docs/index.html`](docs/index.html) - GitHub Pages will serve the
+repository root or `/docs` and nothing else, so the site lives beside the
+design documents rather than in a folder of its own.
+
+## Run it
+
+One command. Nothing to clone, nothing to build, no toolchain:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"
+```
+
+You need QEMU, and it is the only thing this cannot fetch for you:
+`brew install qemu` on macOS. Everything else - the newest image, the
+runner, a disk to keep files on - it works out and downloads.
+
+That boots straight to the desktop. Some other things to try once it is up,
+or to pass instead of `wm`:
+
+```sh
+-b "wm browser"      the browser, on a page inside the image
+-b "wm tracker"      the file manager
+-b "wm cube3d"       a spinning cube, in software, at 50 fps
+-b "wm doom"         Doom, once there is a WAD at /home/doom1.wad
+-serial              no window at all, just the shell on this terminal
+```
+
+**Nothing asks you to know a file name.** A release is called something like
+`kosmos-0.8.34-8c8c1f5-1920x1080-full.elf` and the version and commit in it
+change every time, so the published list is asked for and the newest worked
+out. `--list` shows what there is.
+
+`sh -c "$(curl ...)"` rather than `curl | sh`, and the difference is not
+style: a pipe *is* the script's stdin, and the last thing it does is hand
+over to QEMU with `-serial mon:stdio` - so the guest's console would read
+from an exhausted pipe and see end-of-file the moment it started.
+
+Keeping a copy of the script works too and is shorter to type afterwards.
+It will tell you when it differs from the published one.
+
+---
+
 ## The idea in one paragraph
 
 Kosmos takes the microkernel from QNX, per-process namespaces from Plan 9, attributes and live queries from BeOS, the live image from Lisp Machines, and capabilities from seL4, and puts them on top of a userland written in Lua.
@@ -87,37 +131,17 @@ Reading order if you come back after months: `state.md`, then `design.md`, then 
 
 ---
 
-## Getting started
+## Building it
 
-Without building anything, without cloning this, and without downloading
-anything first:
-
-```
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"
-```
-
-That fetches the newest image and the runner and boots them. It needs
-`curl`, which macOS has, and QEMU, which it does not: `brew install qemu`.
-Nothing asks you to know a file name - a release is called something like
-`kosmos-0.8.34-8c8c1f5-1920x1080-full.elf`, the version and commit in it
-change every time, so the list is asked for and the newest worked out.
-
-`sh -c "$(curl ...)"` rather than `curl | sh`, and the difference is not
-style: a pipe *is* the script's stdin, and the last thing it does is hand
-over to QEMU with `-serial mon:stdio` - so the guest's console would read
-from an exhausted pipe and see end-of-file the moment it started.
-
-Keeping a copy works too and is quicker to type afterwards, and it will tell
-you when it differs from the published one - which it could not do until it
-started looking at itself.
-
-From the source:
+[Running it](#run-it) needs none of this. To build:
 
 ```
 make qemu
 ```
 
-Toolchain and prerequisites in [docs/setup.md](docs/setup.md).
+That is the whole system at 1920x1080 - browser, Doom, network, every demo.
+`FULL=0` gives a leaner image. Toolchain and prerequisites in
+[docs/setup.md](docs/setup.md).
 
 ---
 
