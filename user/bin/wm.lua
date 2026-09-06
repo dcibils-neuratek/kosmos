@@ -485,6 +485,47 @@ end
 local DEFER = { "deferred" }
 local waiting = {}
 
+--
+-- **A `wait` on the wire is in scheduler ticks; a deadline here is not.**
+--
+-- `sys.ticks()` is the counter - a timestamp, tens of megahertz - and
+-- every *timeout* in this system is in scheduler ticks: `sys.sleep`,
+-- `sys.receive`, `fs.wait_input`. `poll`'s `wait` is a timeout, so it is
+-- scheduler ticks too, and every caller in the tree writes it that way:
+-- `cube3d` and `plasma` send 1 and call it a tick, `music` sets
+-- `poll_wait = 1` and comments it "4 ms, one scheduler tick".
+--
+-- It was added to `sys.ticks()` raw. At 62.5 MHz against 250 Hz that is a
+-- factor of a quarter of a million, so `wait = 1` asked for sixteen
+-- nanoseconds: every animating window's deadline was already past, and the
+-- window manager answered them all on whatever pass came next. **The pass
+-- rate was the frame rate.**
+--
+-- Which is why the cube ran faster while the mouse was moving. A pointer
+-- event cuts `wait_input` short, so passes came more often, so windows were
+-- answered sooner. Input was acting as a clock for everything that
+-- animates - and for `music`, which hands over a period when its poll
+-- returns and calls a feed later than 23 ms a hole in the sound.
+--
+-- Memoised because neither rate changes and this is on the poll path.
+--
+local per_tick
+
+local function counter_per_tick()
+  if not per_tick then
+    local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+    local rate = (sys.info() or {}).tick_hz or 100
+
+    per_tick = math.max(1, hz // rate)
+  end
+
+  return per_tick
+end
+
+local function in_counter(ticks)
+  return ticks * counter_per_tick()
+end
+
 -- How long a poll waits when the caller does not say. Long enough to be a
 -- block rather than a poll, short enough that a bug here shows up as a
 -- sluggish window rather than a dead one.
@@ -2113,7 +2154,7 @@ handlers.poll = function(req, who)
   local wait = tonumber(req.wait) or POLL_DEFAULT
 
   waiting[#waiting + 1] = {
-    who = who, win = win, deadline = sys.ticks() + wait,
+    who = who, win = win, deadline = sys.ticks() + in_counter(wait),
   }
 
   return DEFER
@@ -3190,6 +3231,40 @@ add_damage(0, 0, W, H)
 --
 local PASS = math.max(1, ((sys.info() or {}).tick_hz or 100) // 100)
 
+--
+-- **How long this pass may sleep, which is not always `PASS`.**
+--
+-- Every window waiting on a poll has a deadline it asked for, and those are
+-- answered once a pass. Sleeping the full `PASS` when one of them is due
+-- sooner means answering it late - so a window that asked for four
+-- milliseconds got eight, and the interval it named was not the interval it
+-- got.
+--
+-- This is the second half of the unit fix above and useless without it:
+-- while every deadline was already past, the soonest was always now, and
+-- this would have returned zero for ever and turned the loop into a spin.
+--
+-- Nothing waiting means nothing to be late for, and the pass sleeps the
+-- whole `PASS`. An idle desktop is still idle, which is what `PASS` is for.
+--
+local function sleep_for()
+  local shortest = PASS
+  local now = sys.ticks()
+  local scale = counter_per_tick()
+
+  for i = 1, #waiting do
+    local left = (waiting[i].deadline - now) // scale
+
+    if left < shortest then
+      shortest = left
+    end
+  end
+
+  -- Never negative: a deadline already past is answered by this very pass,
+  -- a few lines down, and sleeping through it would be the whole bug again.
+  return math.max(0, shortest)
+end
+
 while running do
   -- 1. Input, always first - and this is where the pass sleeps if there is
   -- none. One call for keys and the pointer together, because the console
@@ -3211,7 +3286,7 @@ while running do
     t = sys.ticks()
   end
 
-  local input = fs.wait_input("/dev/console", PASS) or {}
+  local input = fs.wait_input("/dev/console", sleep_for()) or {}
 
   -- Idle, and charged as such: this is the loop asleep with nothing to do,
   -- and counting it as work would make an empty desktop look busy.

@@ -35,6 +35,36 @@ local theme = use("/lib/theme.lua")
 
 local ui = { theme = theme }
 
+--
+-- The two clock rates, asked once.
+--
+-- `sys.ticks()` is the counter and every timeout is in scheduler ticks, so
+-- anything converting between them needs both. They are read on first use
+-- rather than at load: this is a library, and a process that never opens a
+-- window should not pay a `/dev/cpu` read for it. The lazy default used to
+-- do that read *every pass* of every window's loop, which is a syscall a
+-- hundred times a second to learn a number that cannot change.
+--
+local cached_tick_hz, cached_per_tick
+
+local function ui_tick_hz()
+  if not cached_tick_hz then
+    cached_tick_hz = (sys.info() or {}).tick_hz or 100
+  end
+
+  return cached_tick_hz
+end
+
+local function ui_per_tick()
+  if not cached_per_tick then
+    local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+
+    cached_per_tick = math.max(1, hz // ui_tick_hz())
+  end
+
+  return cached_per_tick
+end
+
 local GW, GH = gfx.font.w, gfx.font.h
 
 --------------------------------------------------------------------------
@@ -3149,11 +3179,33 @@ function window:run()
     -- default because it is a real cost: a window that wakes a hundred
     -- times a second is a window that is running a hundred times a second.
     --
-    local wait = self.poll_wait or self.tick_every or 0
+    --
+    -- **Three numbers, and two of them were the wrong unit.**
+    --
+    -- `wait` on the wire is a timeout, so it is scheduler ticks - the same
+    -- as `sys.sleep` and `sys.receive` and `fs.wait_input`, and the same as
+    -- `poll_wait`'s own comment above. `tick_every` is *not*: it is
+    -- compared against `sys.ticks()` further down, which is the counter, so
+    -- it is counter units at every call site that sets it. Feeding it
+    -- straight into `wait` mixed them.
+    --
+    -- The lazy default mixed them the other way. `counter_hz // 4` is a
+    -- quarter of a second in counter units and was sent as a *tick* count:
+    -- fifteen million ticks, seventeen hours. It looked like it worked only
+    -- because the window manager was adding it to a counter timestamp, so
+    -- the two errors cancelled - and the moment either was fixed alone, the
+    -- desktop would have hung or spun.
+    --
+    -- So both convert here, and nothing downstream has to know.
+    --
+    local wait = self.poll_wait
 
-    if wait <= 0 then
-      local cpu = fs.read("/dev/cpu")
-      wait = (cpu and cpu.counter_hz or 62500000) // 4
+    if not wait then
+      if self.tick_every and self.tick_every > 0 then
+        wait = math.max(1, self.tick_every // ui_per_tick())
+      else
+        wait = math.max(1, ui_tick_hz() // 4)     -- a quarter of a second
+      end
     end
 
     local reply = fs.send("/app/wm", { type = "poll", window = self.handle,

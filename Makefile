@@ -311,28 +311,34 @@ TARGET := $(BUILD)/kosmos.elf
 # it is badly designed, and this turns that into a compile error rather than
 # a corrupted register found three milestones later.
 #
-# **How big a process's heap is, in one place, because two places drifted.**
+# **No heap flag, on either board, because the allocator grows.**
 #
-# The kernel maps `USER_HEAP_PAGES` pages when it builds a process and the
-# userland is compiled believing the same number. They are two separate
-# compilations of one fact, and when they disagree nothing complains: the
-# kernel maps two megabytes, the program thinks it has twelve, and the
-# first allocation past the end is a page fault in a process that had been
-# running happily.
+# `make DOOM=1` used to carry `-DUSER_HEAP_PAGES=3072`: Doom asks for a six
+# megabyte zone before it draws anything and a fixed two megabyte heap
+# could not hold it. That is a compile-time answer to a runtime question,
+# and `runtime/libc/malloc.c` replaced it - `grow()` asks the kernel for
+# another arena when the bins run dry, so a program that needs memory asks
+# for it and one that does not never pays.
 #
-# Which is what happened. `X86_FLAGS` is its own list and never had this
-# flag, so on that board the kernel mapped 512 pages while the userland
-# inside it was built for 3072. Every Lua program stayed under two
-# megabytes and worked; the TinyGL demos allocate a framebuffer and a
-# z-buffer, crossed it after a few seconds, and died at 0x41200000 - which
-# is USER_HEAP plus exactly 512 pages.
+# **The flag outlived the reason and cost a quarter of a gigabyte.** The
+# kernel allocates *and zeroes* `USER_HEAP_PAGES` for every process it
+# builds, so twelve megabytes for Doom was twelve megabytes for the shell,
+# the Deskbar, `binfs` and eighteen others: 21 processes at 13 MB each on a
+# 507 MB machine. At the default they start at two and grow if they ever
+# need to.
 #
-# The same shape as the screen size going missing from that list, and the
-# same answer: name it once and let both lists read it.
+# It also had to be in two flag lists at once, which is how it was found.
+# `X86_FLAGS` never had it, so that kernel mapped 512 pages while the
+# userland compiled into it was built for 3072 - and `heap_init` was told
+# it managed twelve megabytes of which two were mapped. The allocator never
+# called `grow()`, because it believed it still had initial arena left. The
+# TinyGL demos died at USER_HEAP + exactly 512 pages.
 #
-HEAP_FLAGS := $(if $(DOOM),-DUSER_HEAP_PAGES=3072)
-
-CFLAGS_BASE := $(HEAP_FLAGS) \
+# One number in `user/include/kosmos.h` now, defaulted and not overridden,
+# so there is no longer a `-D` that can be passed to one side and not the
+# other.
+#
+CFLAGS_BASE := \
                -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
@@ -600,11 +606,11 @@ USER_SRCS += $(DOOM_SRCS)
 # the pointer it did not get, and the compositor goes on drawing the
 # window's last contents because it owns them.
 #
-# The kernel needs the same number, because it is the kernel that maps the
-# heap when it builds the process.
+# It needed the kernel to agree, because it is the kernel that maps the
+# heap when it builds the process - and `DOOM_HEAP` was already dead, the
+# flag having moved into CFLAGS_BASE and nothing reading this. Both are
+# gone: `grow()` asks for another arena when the first runs out.
 #
-DOOM_HEAP := -DUSER_HEAP_PAGES=3072
-
 #
 # TinyGL, compiled on its own terms.
 #
@@ -633,9 +639,10 @@ endif
 # does - and drawing that line in the build rather than in a comment is the
 # same argument, because a boundary somebody has to remember is not one.
 #
-# **No heap flag, and that is new.** `DOOM=1` carries
-# `-DUSER_HEAP_PAGES=3072` because a fixed two-megabyte heap could not hold
-# Doom's zone. The heap grows now, so a program that needs more asks for it.
+# **No heap flag**, which was once a thing worth saying about this build in
+# particular and is now true of every build: nothing carries
+# `-DUSER_HEAP_PAGES` any more, because the heap grows and a program that
+# needs more asks for it. See the note above `CFLAGS_BASE`.
 #
 ifdef WEB
 
@@ -1587,7 +1594,7 @@ qemu: $(TARGET) $(DISK)
 X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -Wall -Wextra -Werror -fno-common -fno-strict-aliasing -O2 -g \
              -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
-             $(FB_FLAGS) $(HEAP_FLAGS) \
+             $(FB_FLAGS) \
              -Ihal -Ihal/virtio -Ihal/fwcfg -Iarch/x86_64 -Ikernel -Iruntime/include
 
 X86_BUILD := build/x86_64

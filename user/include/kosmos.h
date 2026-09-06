@@ -474,16 +474,22 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
  * independent constants - 512 pages there and a literal 2 MB here - and
  * they agreed only because nobody had ever changed one.
  *
- * Changing one is exactly what `make DOOM=1` does, and what that looked
- * like was Doom saying "Unable to allocate 5 MiB of RAM for zone" on a
- * process whose kernel-side mapping was twelve megabytes: the pages were
- * there and the allocator had been told they were not.
+ * Changing one is exactly what `make DOOM=1` used to do, and what that
+ * looked like was Doom saying "Unable to allocate 5 MiB of RAM for zone" on
+ * a process whose kernel-side mapping was twelve megabytes: the pages were
+ * there and the allocator had been told they were not. The other direction
+ * is worse and is what x86-64 shipped for a day - the userland told it had
+ * twelve megabytes of which the kernel mapped two, so `malloc` handed out
+ * addresses inside its own arena that were not mapped, and never called
+ * `grow()` because it believed it still had room.
  *
- * Derived from the same macro now, with the same default, so one `-D` moves
- * both. Kept as a `#ifndef` rather than including `kernel/process.h`,
- * because that header is the kernel's own structures and userland has no
- * business seeing them - the shared fact is one number, so one number is
- * what is shared.
+ * **Nothing overrides it any more.** `runtime/libc/malloc.c` grows the heap
+ * by asking the kernel for another arena, so the size here is where a
+ * process *starts* rather than what it is limited to, and the default is
+ * what every process gets. Kept as a `#ifndef` rather than including
+ * `kernel/process.h`, because that header is the kernel's own structures
+ * and userland has no business seeing them - the shared fact is one number,
+ * so one number is what is shared.
  */
 #ifndef USER_HEAP_PAGES
 #define USER_HEAP_PAGES 512                     /* design.md 5.2: ~2 MB */
