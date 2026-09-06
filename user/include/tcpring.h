@@ -5,6 +5,26 @@
 #include <stdint.h>
 
 /*
+ * The barrier that makes an index mean the data behind it.
+ *
+ * A single-producer, single-consumer ring needs exactly two orderings: the
+ * writes must land before the index that publishes them, and the index must
+ * be read before the data behind it. AArch64's memory model reorders both,
+ * so `dmb ish` is a real instruction there.
+ *
+ * **On x86-64 it is a compiler barrier and nothing else.** TSO does not
+ * reorder stores with stores or loads with loads, so the processor already
+ * guarantees what the ARM instruction has to ask for - but the *compiler*
+ * still will, and an empty asm with a memory clobber is what stops it. The
+ * cost is zero instructions and the correctness argument is the same one.
+ */
+#if defined(__x86_64__)
+#define RING_BARRIER()  __asm__ volatile("" ::: "memory")
+#else
+#define RING_BARRIER()  __asm__ volatile("dmb ish" ::: "memory")
+#endif
+
+/*
  * A connection's bytes, in memory the stack and its client both hold.
  *
  * **`netproto.h` said this would be here and why.** A TCP stream is not the
@@ -111,7 +131,7 @@ static inline uint8_t *tcp_ring_in(struct tcp_ring *r)
  */
 static inline void tcp_ring_publish(volatile uint32_t *index, uint32_t to)
 {
-    __asm__ volatile("dmb ish" ::: "memory");
+    RING_BARRIER();
     *index = to;
 }
 
@@ -122,7 +142,7 @@ static inline uint32_t tcp_ring_acquire(const volatile uint32_t *index)
 {
     uint32_t v = *index;
 
-    __asm__ volatile("dmb ish" ::: "memory");
+    RING_BARRIER();
 
     return v;
 }

@@ -5,6 +5,26 @@
 #include <stdint.h>
 
 /*
+ * The barrier that makes an index mean the data behind it.
+ *
+ * A single-producer, single-consumer ring needs exactly two orderings: the
+ * writes must land before the index that publishes them, and the index must
+ * be read before the data behind it. AArch64's memory model reorders both,
+ * so `dmb ish` is a real instruction there.
+ *
+ * **On x86-64 it is a compiler barrier and nothing else.** TSO does not
+ * reorder stores with stores or loads with loads, so the processor already
+ * guarantees what the ARM instruction has to ask for - but the *compiler*
+ * still will, and an empty asm with a memory clobber is what stops it. The
+ * cost is zero instructions and the correctness argument is the same one.
+ */
+#if defined(__x86_64__)
+#define RING_BARRIER()  __asm__ volatile("" ::: "memory")
+#else
+#define RING_BARRIER()  __asm__ volatile("dmb ish" ::: "memory")
+#endif
+
+/*
  * A stream of samples between two processes, in memory they both hold.
  *
  * **This exists because `CLAUDE.md` says a stream never travels as a message
@@ -95,13 +115,13 @@ static inline uint8_t *audio_ring_slot(struct audio_ring *r, uint32_t index)
  */
 static inline void audio_ring_publish(struct audio_ring *r, uint32_t to)
 {
-    __asm__ volatile("dmb ish" ::: "memory");
+    RING_BARRIER();
     r->write = to;
 }
 
 static inline void audio_ring_consumed(struct audio_ring *r, uint32_t to)
 {
-    __asm__ volatile("dmb ish" ::: "memory");
+    RING_BARRIER();
     r->read = to;
 }
 
@@ -112,7 +132,7 @@ static inline uint32_t audio_ring_acquire(const volatile uint32_t *index)
 {
     uint32_t v = *index;
 
-    __asm__ volatile("dmb ish" ::: "memory");
+    RING_BARRIER();
     return v;
 }
 

@@ -165,7 +165,7 @@ SRCS := boot/start.S \
         $(GEN)/version.c \
         $(GEN)/font_8x16.c \
         runtime/libc/string.c \
-        runtime/libc/setjmp.S \
+        runtime/libc/setjmp-$(ARCH).S \
         kernel/panic.c \
         kernel/pmm.c \
         kernel/thread.c \
@@ -267,7 +267,7 @@ CFLAGS_BASE := $(if $(DOOM),-DUSER_HEAP_PAGES=3072) \
                -std=c11 -ffreestanding -nostdlib -nostartfiles \
                -Wall -Wextra -Werror -fno-common -fno-strict-aliasing \
                -O2 -g \
-               -Iarch/aarch64 -Ihal -Ikernel -Iruntime/include -Iuser \
+               -Iarch/$(ARCH) -Ihal -Ikernel -Iruntime/include -Iuser \
                $(TESTDEFS)
 
 CFLAGS := $(CFLAGS_BASE) -mgeneral-regs-only
@@ -366,7 +366,7 @@ USER_LIBC := runtime/libc/string.c \
              runtime/libc/snprintf.c \
              runtime/libc/strtod.c \
              runtime/libc/stdio.c \
-             runtime/libc/setjmp.S \
+             runtime/libc/setjmp-$(ARCH).S \
              user/lib/misc_user.c \
              user/lib/panic_user.c
 
@@ -393,7 +393,7 @@ TINYGL_DEMO_SRCS := $(patsubst %,runtime/upstream/tinygl/examples/%.c,\
 tinygl_rename = -Ddraw=$(1)_draw -Dinit=$(1)_init -Didle=$(1)_idle \
                 -Dreshape=$(1)_reshape -Dkey=$(1)_key -Dmain=$(1)_main
 
-USER_SRCS := user/init/start.S \
+USER_SRCS := user/init/start-$(ARCH).S \
              user/init/main.c \
              user/servers/audio.c \
              user/servers/devices.c \

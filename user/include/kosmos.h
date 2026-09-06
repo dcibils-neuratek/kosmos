@@ -9,80 +9,28 @@
 /*
  * What a process can reach.
  *
- * Every one of these is an `svc #0`, and there is nothing else: no shared
- * memory, no global tree, no ambient authority. A process reaches exactly
+ * Every one of these is one syscall instruction and there is nothing else:
+ * no shared memory, no global tree, no ambient authority. A process reaches exactly
  * what it was handed, which is `design.md` §4.3's argument made concrete by
  * the fact that there is no other door.
  *
  * The stubs are inline assembly rather than a library call because a syscall
  * is not a function call: the arguments are already where the ABI wants them
  * and the only work is naming the number and issuing the instruction.
+ *
+ * **They are the only thing in this header that knows which machine it is
+ * on**, and the one `#if` below is the only one in the whole userland: the
+ * fifty thousand lines above this layer reach the kernel through `sys0` to
+ * `sys5` and through nothing else, which is why moving them to a second
+ * architecture is a header rather than a project.
  */
 
-static inline long sys0(long n)
-{
-    register long x8 __asm__("x8") = n;
-    register long x0 __asm__("x0");
-    __asm__ volatile("svc #0" : "=r"(x0) : "r"(x8) : "memory", "cc");
-    return x0;
-}
+#if defined(__x86_64__)
+#include "syscall-x86_64.h"
+#else
+#include "syscall-aarch64.h"
+#endif
 
-static inline long sys1(long n, long a)
-{
-    register long x8 __asm__("x8") = n;
-    register long x0 __asm__("x0") = a;
-    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8) : "memory", "cc");
-    return x0;
-}
-
-static inline long sys2(long n, long a, long b)
-{
-    register long x8 __asm__("x8") = n;
-    register long x0 __asm__("x0") = a;
-    register long x1 __asm__("x1") = b;
-    __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1) : "memory", "cc");
-    return x0;
-}
-
-static inline long sys3(long n, long a, long b, long c)
-{
-    register long x8 __asm__("x8") = n;
-    register long x0 __asm__("x0") = a;
-    register long x1 __asm__("x1") = b;
-    register long x2 __asm__("x2") = c;
-    __asm__ volatile("svc #0"
-                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory", "cc");
-    return x0;
-}
-
-static inline long sys4(long n, long a, long b, long c, long d)
-{
-    register long x8 __asm__("x8") = n;
-    register long x0 __asm__("x0") = a;
-    register long x1 __asm__("x1") = b;
-    register long x2 __asm__("x2") = c;
-    register long x3 __asm__("x3") = d;
-    __asm__ volatile("svc #0"
-                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3)
-                     : "memory", "cc");
-    return x0;
-}
-
-/* Five arguments, for the one call that needs them: a receive with both a
- * "do not block" flag and a deadline. */
-static inline long sys5(long n, long a, long b, long c, long d, long e)
-{
-    register long x8 __asm__("x8") = n;
-    register long x0 __asm__("x0") = a;
-    register long x1 __asm__("x1") = b;
-    register long x2 __asm__("x2") = c;
-    register long x3 __asm__("x3") = d;
-    register long x4 __asm__("x4") = e;
-    __asm__ volatile("svc #0"
-                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4)
-                     : "memory", "cc");
-    return x0;
-}
 
 __attribute__((noreturn))
 static inline void kosmos_exit(int code)
@@ -177,15 +125,16 @@ static inline long kosmos_key_event(unsigned *code, unsigned *down)
 static inline long kosmos_spawn(unsigned long arg, const int *caps,
                                 unsigned long ncaps, unsigned long flags)
 {
-    register long x8 __asm__("x8") = SYS_SPAWN;
-    register long x0 __asm__("x0") = (long)arg;
-    register long x1 __asm__("x1") = (long)(uintptr_t)caps;
-    register long x2 __asm__("x2") = (long)ncaps;
-    register long x3 __asm__("x3") = (long)flags;
-    __asm__ volatile("svc #0"
-                     : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3)
-                     : "memory", "cc");
-    return x0;
+    /*
+     * `sys4`, which is what this was spelled out as - the same five
+     * registers and the same instruction, written again. It was the only
+     * hand-written stub left in this header and the only line above the
+     * syscall layer that named a register, which is how the second
+     * architecture found it: everything else in fifty thousand lines
+     * compiled for x86-64 unchanged and this did not.
+     */
+    return sys4(SYS_SPAWN, (long)arg, (long)(uintptr_t)caps,
+                (long)ncaps, (long)flags);
 }
 
 /*
