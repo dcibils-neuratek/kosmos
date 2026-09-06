@@ -13,7 +13,22 @@
 # silently changes what a bare `make` builds.
 .DEFAULT_GOAL := all
 
-CROSS   := aarch64-none-elf-
+#
+# **Which processor.** `ARCH=x86_64` builds the second one.
+#
+# The 64-bit line was drawn where it is precisely so that this is a new
+# `arch/` and not a refactor: `kernel/` has no architecture-specific
+# instruction left in it, and what a port has to supply is six headers.
+#
+# It is a *bring-up* today and the target below says so - what builds is the
+# boot path, the serial port and enough C to report that long mode is on.
+# The kernel itself follows, one piece at a time, which is the order this
+# project used on ARM and for the same reason: a kernel that cannot print is
+# a kernel debugged by bisecting a hang.
+#
+ARCH    ?= aarch64
+
+CROSS   := $(if $(filter x86_64,$(ARCH)),x86_64-elf-,aarch64-none-elf-)
 CC      := $(CROSS)gcc
 OBJDUMP := $(CROSS)objdump
 OBJCOPY := $(CROSS)objcopy
@@ -1431,6 +1446,48 @@ release: $(TARGET) stress
 # Ctrl-A then x to quit QEMU.
 qemu: $(TARGET) $(DISK)
 	$(QEMU) $(QEMUFLAGS)
+
+#
+# x86-64, under QEMU.
+#
+#   make x86            build it and boot it
+#   make x86-build      build only
+#
+# **A flat binary, not an ELF, and the reason is worth keeping.** A
+# multiboot loader parses ELF32; this image is ELF64, and QEMU refuses it
+# with "Cannot load x86-64 image, give a 32bit one." Bit 16 of the multiboot
+# flags - the a.out kludge - tells the loader to use five explicit addresses
+# from the header instead of parsing the format, and then the file may be
+# anything. `objcopy -O binary` is what makes it anything.
+#
+# `-mno-red-zone` is not optional either: the red zone is 128 bytes below
+# the stack pointer that a leaf function may use without adjusting `rsp`,
+# and an interrupt handler pushes over it. Nobody notices until there are
+# interrupts.
+#
+X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
+             -Wall -Wextra -Werror -fno-common -fno-strict-aliasing -O2 -g \
+             -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+             -Ihal -Iarch/x86_64 -Ikernel
+
+X86_SRCS  := boot/x86_64/start.S hal/pc/uart.c arch/x86_64/main.c
+X86_BUILD := build/x86_64
+
+.PHONY: x86 x86-build
+x86-build:
+	@mkdir -p $(X86_BUILD)
+	@$(MAKE) --no-print-directory ARCH=x86_64 $(X86_BUILD)/kosmos.bin
+
+$(X86_BUILD)/kosmos.bin: $(X86_SRCS) boot/x86_64/kosmos.ld
+	@mkdir -p $(X86_BUILD)
+	$(CC) $(X86_FLAGS) -T boot/x86_64/kosmos.ld -Wl,--build-id=none \
+	      -o $(X86_BUILD)/kosmos.elf $(X86_SRCS)
+	$(OBJCOPY) -O binary $(X86_BUILD)/kosmos.elf $@
+	@echo "$@: $$(wc -c < $@) bytes"
+
+x86: x86-build
+	qemu-system-x86_64 -M q35 -m 512M -nographic -no-reboot \
+	  -kernel $(X86_BUILD)/kosmos.bin
 
 # The same machine, running on this Mac's own cores. See ACCEL above for
 # what that costs and what it cannot be used for.

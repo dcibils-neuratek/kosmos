@@ -1,5 +1,67 @@
 # HAL and targets
 
+
+---
+
+## x86-64, and what a second architecture actually cost
+
+**It boots.** `make x86` puts Kosmos into long mode on QEMU's q35 and prints
+over COM1. That is the whole of the first step, and it is deliberately the
+same first step this project took on ARM: a kernel that cannot print is a
+kernel debugged by bisecting a hang.
+
+**The shape of the problem is different in one way that decides the rest.**
+ARM hands you 64-bit execution and asks which privilege level you would
+like. An x86 starts in 16-bit real mode, a multiboot loader has already put
+it in 32-bit protected mode, and long mode has to be *built*: page tables, a
+GDT with the L bit set, `CR4.PAE`, `EFER.LME`, `CR0.PG`, and a far jump - in
+that order, before one 64-bit instruction may run.
+
+**Three things were wrong on the first attempt and all three are worth
+recording**, because each looks like something else when it fails:
+
+  * *The page tables live in `.bss`, and `.bss` is zeroed by the kernel.*
+    Zeroing it after building them walks over `pml4` while the processor is
+    translating through it, and what kills the machine is not the write but
+    the first TLB miss after it. Zeroing happens first now.
+  * *`rdmsr` answers in EDX:EAX*, two 32-bit halves, always. The `"=A"`
+    constraint means that pair on 32-bit x86 and means "rax or rdx,
+    whichever" on x86-64, so asking for it reads half the register and looks
+    like it worked.
+  * *A multiboot loader parses ELF32.* This image is ELF64 and QEMU says so
+    plainly. Bit 16 of the flags - the a.out kludge - makes the loader use
+    five explicit addresses from the header instead of parsing the format,
+    and then the file may be a flat binary and its bitness stops being the
+    loader's business.
+
+**`-mno-red-zone` is not a tuning flag.** The red zone is 128 bytes below
+`rsp` that a leaf function may use without adjusting the stack pointer, and
+an interrupt handler pushes straight over it. Nothing notices until there
+are interrupts, which is the worst time to find out.
+
+### Endianness, which turned out to be free
+
+Both targets are little-endian - AArch64 *can* be big-endian through
+`SCTLR_EL1.EE` and Kosmos never sets it - but nothing here depends on that,
+which was checked rather than assumed:
+
+  * every `string.pack` in the on-disk format carries an explicit `<`, and a
+    search for native-endian packs across the whole tree finds none. A disk
+    written on one architecture reads on the other;
+  * the network stack's `put16`/`get16` do explicit byte shifts, so they are
+    big-endian by construction on any host;
+  * the IPC structs never cross architectures - both ends of a message are
+    processes on the same machine - so their layout is a local question.
+
+### What is not done
+
+Everything else. `arch/x86_64/` is a boot stub and a serial port; the six
+headers `kernel/` includes from `arch/` - `context.h`, `cpu.h`, `mmu.h`,
+`page.h`, `trap.h`, `mmio.h` - are 2,551 lines on ARM and none of them
+exists here yet. In order: an IDT and exceptions, four-level paging from C,
+the context switch, then ring 3.
+
+
 ---
 
 ## The distinction that matters
