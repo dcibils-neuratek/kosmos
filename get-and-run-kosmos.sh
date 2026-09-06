@@ -7,6 +7,7 @@
 #   ./get-and-run-kosmos.sh --plain          the small image, no browser
 #   ./get-and-run-kosmos.sh --list           what is published
 #   ./get-and-run-kosmos.sh --dir ~/kosmos   where to keep what it fetches
+#   ./get-and-run-kosmos.sh --update         fetch a newer copy of this file
 #
 # Anything it does not recognise is passed to `run-kosmos.sh`, so `-serial`
 # and `-b` work here exactly as they do there.
@@ -28,7 +29,8 @@ set -eu
 REPO="dcibils-neuratek/kosmos"
 BRANCH="main"
 API="https://api.github.com/repos/$REPO/contents/builds"
-RAW="https://raw.githubusercontent.com/$REPO/$BRANCH/builds"
+RAW_ROOT="https://raw.githubusercontent.com/$REPO/$BRANCH"
+RAW="$RAW_ROOT/builds"
 
 dir="$HOME/.kosmos"
 want="richest"
@@ -47,6 +49,7 @@ for arg in "$@"; do
         --plain) want="plain" ;;
         --web|--full) want="richest" ;;
         --list)  mode="list" ;;
+        --update) mode="update" ;;
         --dir)   want_dir="yes" ;;
         --help|-h)
             sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
@@ -72,6 +75,51 @@ fi
 # this script is that nobody has to know what the files are called. It needs
 # no token: the repository is public.
 #
+#
+# Whether this file is the published one.
+#
+# It fetches the image and `run-kosmos.sh` every time and never looked at
+# *itself*, so a bug in here was permanent for anybody holding an old copy -
+# which is exactly what happened: this looked for a name the release had
+# stopped using, was fixed, and went on failing for the one person running
+# it, because the fix was in a file they already had.
+#
+# It says rather than replacing. A script that silently overwrites the file
+# it is being executed from is a surprise, and on some shells it is a
+# corrupted read as well.
+#
+me="$0"
+published=$(curl -fsSL "$RAW_ROOT/get-and-run-kosmos.sh" 2>/dev/null || true)
+
+if [ -n "$published" ]; then
+    mine_sum=$(cksum < "$me" | cut -d" " -f1,2)
+    theirs_sum=$(printf '%s\n' "$published" | cksum | cut -d" " -f1,2)
+
+    if [ "$mine_sum" != "$theirs_sum" ]; then
+        if [ "$mode" = "update" ]; then
+            printf '%s\n' "$published" > "$me.part"
+            chmod +x "$me.part"
+            mv "$me.part" "$me"
+            echo "updated $me"
+            exit 0
+        fi
+
+        # "differs", not "is older": a checksum knows they are not the
+        # same and nothing about which came first. Claiming newer would be
+        # wrong for anybody who has edited their copy, which is a thing a
+        # shell script invites.
+        echo "note: this differs from the published $(basename "$me")." >&2
+        echo "      $me --update   takes the published one" >&2
+        echo >&2
+    elif [ "$mode" = "update" ]; then
+        echo "$(basename "$me") is already the published one."
+        exit 0
+    fi
+elif [ "$mode" = "update" ]; then
+    echo "could not fetch a copy to compare against." >&2
+    exit 1
+fi
+
 listing=$(curl -fsSL "$API" 2>/dev/null) || {
     echo "could not reach $API" >&2
     echo "Either there is no network here, or the repository moved." >&2
