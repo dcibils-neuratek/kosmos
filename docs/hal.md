@@ -5,10 +5,15 @@
 
 ## x86-64, and what a second architecture actually cost
 
-**It boots.** `make x86` puts Kosmos into long mode on QEMU's q35 and prints
-over COM1. That is the whole of the first step, and it is deliberately the
-same first step this project took on ARM: a kernel that cannot print is a
-kernel debugged by bisecting a hang.
+**It boots, it ticks, it maps and it switches.** `make x86` puts Kosmos into
+long mode on QEMU's q35, prints over COM1, takes a timer interrupt, builds
+four levels of page table from C and hands the processor back and forth
+between two contexts. What it does not yet do is run anything at ring 3.
+
+The order was the one this project used on ARM and it was worth repeating:
+print, then exceptions, then the memory map, then the switch. A kernel that
+cannot print is a kernel debugged by bisecting a hang, and an exception
+handler that has never run is an exception handler that does not work.
 
 **The shape of the problem is different in one way that decides the rest.**
 ARM hands you 64-bit execution and asks which privilege level you would
@@ -39,6 +44,98 @@ recording**, because each looks like something else when it fails:
 an interrupt handler pushes straight over it. Nothing notices until there
 are interrupts, which is the worst time to find out.
 
+**`-mno-mmx -mno-sse -mno-sse2` are this architecture's
+`-mgeneral-regs-only`**, and they are there for the same reason: the kernel
+may not touch a floating-point register at all, and a flag turns that from a
+promise into a compile error. It is what makes lazy FP save possible on
+either machine - a kernel thread never faults because it never can.
+
+### The interrupt controller has to move before interrupts are enabled
+
+The 8259 delivers IRQ 0-15 as vectors 8-15 out of reset, and vectors 8 to 15
+are *exceptions*: 8 is double fault, 13 general protection, 14 page fault. A
+timer tick would arrive as a double fault, and the report would be an
+accurate description of something that never happened. `hal/pc/pic.c`
+remaps both chips to 32 and 40 before `sti` is ever executed.
+
+`hal_irq_handle` takes no argument, and keeping it that way costs two port
+accesses a tick. The processor already knew which vector it dispatched
+through - it is in the trap frame - but the ARM side reads the GIC's IAR at
+exactly this point, so asking the 8259 which line is in service means both
+boards do the same thing in the same place and `arch/x86_64/trap.c` never
+learns what a PIC is. Widening the HAL for one board's convenience would
+have made the other invent a number to pass.
+
+`hal_ticks_missed` returns 0 here and says why in the file. On ARM the timer
+is one-shot, so a deadline already in the past is a comparison the re-arm
+was making anyway; the PIT free-runs, and the 8259 collapses any number of
+repeats into a single pending bit, so by the time the handler runs the
+evidence is gone. The APIC has a proper answer, and this is one of the
+things that will pay for moving to it.
+
+### Paging: three differences that are not cosmetic
+
+Four levels rather than three - long mode has no equivalent of the switch
+that drops AArch64 to a 39-bit address - but the bottom three are ARM's L1,
+L2 and L3 exactly, and everything Kosmos maps lives under 512 GB, so PML4
+has one live entry. The extra level costs an address space a second page
+rather than a different design.
+
+  * **Permissions accumulate down the walk.** On ARM a table descriptor's
+    attributes are optional restrictions and only the leaf normally speaks.
+    On x86 a page is writable only if `RW` is set at all four levels, and
+    reachable from ring 3 only if `US` is set at all four. So intermediate
+    entries are permissive and the leaf carries the policy - any other
+    arrangement stores one permission in four places that can disagree.
+  * **`CR0.WP`, without which every read-only mapping is decoration.** Out
+    of reset a ring 0 write to a page with `RW` clear *succeeds*: the
+    permission is enforced against ring 3 only, and there is no AArch64
+    counterpart to that at all. It was found by narrowing `.text` to
+    read-only, reading the entry back correct, and watching a deliberate
+    store go straight through. The map was right and the machine was
+    ignoring it.
+  * **One NX bit for two privilege levels**, where ARM has PXN and UXN. A
+    page a process may execute the kernel may execute too. `CR4.SMEP` is the
+    architecture's answer and `mmu.c` sets it where CPUID reports it, which
+    buys the same guarantee with a control register instead of a descriptor
+    bit. SMAP is deliberately off: the kernel reads user memory on every
+    IPC, and doing that under SMAP means `STAC`/`CLAC` around each access -
+    work that belongs with the syscall path.
+
+And one thing the second architecture found in the first. The ARM side maps
+the tail of RAM by dividing by 2 MB and letting the division truncate, which
+is exact because `virt` reports a whole number of 2 MB pages. A PC does not,
+so the x86 side maps the tail in 4 KB pages. **The ARM version is latent
+rather than wrong** - it would need a machine reporting an odd amount of RAM
+- and it is left alone rather than changed mid-port.
+
+### The context switch, where the ABI asks for less
+
+Seventy-two bytes against AArch64's six hundred and fifty-six, and the
+difference is System V rather than the processor: it makes every XMM
+register caller-saved, so a thread that *called* the switch has had the
+compiler spill its floating point already. AAPCS64 keeps `d8`-`d15` across a
+call, which is why the ARM switch has to have an answer for FP even in the
+cooperative case.
+
+There is no XMM state in `struct context` yet and that is a gap rather than
+a difference: a *preempted* thread needs it on both machines. It is written
+down instead of half-built, because the pieces only make sense together -
+`CR0.TS` is the disarm, the fault is vector 7, which the trap table already
+calls "device not available", and the handler shape is the one `fp.c`
+settled on.
+
+One stack moves rather than two. AArch64 gives a thread SP_EL0 and SP_EL1
+and has to exchange a pair and record which was selected; an x86 interrupt
+taken in ring 0 keeps the current stack and one taken in ring 3 loads RSP0
+from the TSS. So the kernel stack a thread's exceptions land on is a TSS
+field set when the thread is scheduled, not a register saved when it is
+switched away.
+
+`rip` cannot be moved to, so the restore pushes it onto the incoming
+thread's own stack and returns - putting it back in the slot the outgoing
+`call` took it out of.
+
 ### Endianness, which turned out to be free
 
 Both targets are little-endian - AArch64 *can* be big-endian through
@@ -55,11 +152,31 @@ which was checked rather than assumed:
 
 ### What is not done
 
-Everything else. `arch/x86_64/` is a boot stub and a serial port; the six
-headers `kernel/` includes from `arch/` - `context.h`, `cpu.h`, `mmu.h`,
-`page.h`, `trap.h`, `mmio.h` - are 2,551 lines on ARM and none of them
-exists here yet. In order: an IDT and exceptions, four-level paging from C,
-the context switch, then ring 3.
+**The six headers `kernel/` includes from `arch/` all exist now** -
+`context.h`, `cpu.h`, `mmio.h`, `mmu.h`, `page.h`, `trap.h` - and
+`kernel/pmm.c` compiles here unchanged. What is missing is everything above
+them.
+
+In order:
+
+  * **Ring 3.** A GDT with user segments, a TSS holding RSP0, and the
+    `syscall`/`sysret` pair or an interrupt gate - the counterpart of
+    `arch/aarch64/el0.S`. Nothing runs at user level until this exists.
+  * **The rest of `kernel/`.** `thread.c`, `sched.c`, `ipc.c`, `caps.c`,
+    `process.c`, `syscall.c` and `console.c`, which is where the temporary
+    `panic` and `thread_exit` in `arch/x86_64/main.c` go away. They are
+    written against the arch headers rather than against ARM, so this is
+    expected to be mostly a matter of compiling them and finding out where
+    that is not true.
+  * **Lazy FP**, as above.
+  * **A `hal/pc/` worth the name.** Today it is a 16550, the 8259, the PIT
+    and the multiboot memory map. A desktop needs a framebuffer, a keyboard,
+    a pointer, a block device, a network card and a clock. virtio is the
+    same hardware QEMU offers on both machines, so those drivers should move
+    across rather than be rewritten - but they are reached over PCI here
+    instead of the device tree's MMIO windows, and finding them is the work.
+  * **`-accel kvm`**, which is the point of the exercise: a PC running this
+    on its own cores rather than under TCG.
 
 
 ---

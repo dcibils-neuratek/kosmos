@@ -17,12 +17,14 @@
 
 #include "context.h"
 #include "cpu.h"
+#include "gdt.h"
 #include "hal.h"
 #include "mmu.h"
 #include "page.h"
 #include "panic.h"
 #include "pmm.h"
 #include "trap.h"
+#include "user.h"
 
 void hal_ram_from_multiboot(uint32_t at);
 
@@ -212,6 +214,200 @@ static void check_switch(void)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* Ring 3                                                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A program, in the only form there is one yet: eleven instructions and no
+ * loader.
+ *
+ * It has to be position independent, because it is copied into a fresh page
+ * and mapped at an address that has nothing to do with where it was linked
+ * - which is what every program here will be, so it is worth the constraint
+ * being real rather than arranged.
+ *
+ * It asks the kernel to double a number, checks nothing, hands the answer
+ * back with a second call that does not return, and spins if it somehow
+ * does. rax says what to do and rdi what to do it to.
+ */
+__asm__(
+    ".section .text                 \n"
+    ".globl probe_code              \n"
+    "probe_code:                    \n"
+    "    movq  $1, %rax             \n"     /* double this */
+    "    syscall                    \n"
+    "    movq  %rax, %rdi           \n"     /* and here is what you said */
+    "    movq  $2, %rax             \n"
+    "    syscall                    \n"     /* answers with a kernel address */
+    "    movq  (%rax), %rdx         \n"     /* which must not be readable */
+    "    movq  %rdx, %rdi           \n"     /* and if it was, say so */
+    "    movq  $3, %rax             \n"
+    "    syscall                    \n"
+    "1:  jmp   1b                   \n"
+    ".globl probe_code_end          \n"
+    "probe_code_end:                \n"
+);
+
+extern char probe_code[], probe_code_end[];
+
+#define PROBE_TEXT_VA   USER_VA_BASE
+#define PROBE_STACK_VA  (USER_VA_BASE + 0x10000UL)
+#define PROBE_MARKER    0x2A2A
+
+static struct context ring3_ctx;
+static struct context caller_ctx;
+static uint8_t ring3_kstack[8192] __attribute__((aligned(16)));
+static struct addrspace *ring3_space;
+
+static volatile uint64_t ring3_answer;
+static volatile int ring3_calls;
+static volatile int ring3_read_kernel_memory;
+static volatile uint64_t ring3_fault_error;
+static volatile int ring3_faulted;
+
+/*
+ * What `syscall` ends up calling, on loan like `panic` and `thread_exit`.
+ *
+ * The real one is `kernel/syscall.c` and it takes a declared struct rather
+ * than two integers. This one exists to show that the boundary works in
+ * both directions: a number goes in, an answer comes back through
+ * `sysretq`, and the second call leaves ring 3 for good.
+ */
+static void finish_ring3(void) __attribute__((noreturn));
+
+uint64_t x86_syscall(uint64_t op, uint64_t arg)
+{
+    ring3_calls++;
+
+    if (op == 1) {
+        return arg * 2;
+    }
+
+    if (op == 2) {
+        /*
+         * The answer, and then an address the process may not read.
+         *
+         * `.text` is mapped in this address space - every space contains
+         * the kernel, because there is no split like TTBR1 - so the page is
+         * present and the only thing standing between a process and the
+         * kernel's code is one bit in the entry describing it. Handing the
+         * address over deliberately is the strongest form of the test:
+         * there is nothing left for the process to fail to guess.
+         */
+        ring3_answer = arg;
+        return (uint64_t)(uintptr_t)__text_start;
+    }
+
+    /* op 3: the read succeeded, which is the one answer that is a failure. */
+    ring3_read_kernel_memory = 1;
+    finish_ring3();
+}
+
+/*
+ * What `process_exit` does, in the only part of it that exists here: put
+ * the kernel's own address space back and return to whoever started the
+ * process. It is the only way out, since `enter_ring3` does not return and
+ * the frames it left on this stack were overwritten by the first syscall.
+ */
+static void finish_ring3(void)
+{
+    as_switch(NULL);
+    context_switch(&ring3_ctx, &caller_ctx);
+
+    panic("finish_ring3: returned into a process that had finished");
+}
+
+/*
+ * A fault at ring 3, on loan alongside `panic` and `thread_exit`.
+ *
+ * `arch/aarch64/trap.c` calls `process_exit` at this point and this will
+ * too once `kernel/process.c` builds here. The report has already been
+ * printed by the time this runs; what is left is to stop the process
+ * without stopping the machine, which is the distinction the whole design
+ * rests on.
+ */
+void trap_user_fault(struct trapframe *f)
+{
+    ring3_faulted = 1;
+    ring3_fault_error = f->error;
+
+    finish_ring3();
+    panic("trap_user_fault: unreachable");
+}
+
+static void ring3_thread(void *arg)
+{
+    (void)arg;
+
+    /*
+     * Where an entry from ring 3 lands. `enter_ring3` never returns, so the
+     * frames below here are dead the moment it is called and the top of
+     * this stack is free for the syscall path to start from.
+     */
+    gdt_set_kernel_stack((uintptr_t)&ring3_kstack[sizeof ring3_kstack]);
+
+    as_switch(ring3_space);
+    enter_ring3(PROBE_TEXT_VA, PROBE_STACK_VA + PAGE_SIZE, PROBE_MARKER);
+}
+
+static void check_ring3(void)
+{
+    uint8_t *code = pmm_alloc_page();
+    void *stack = pmm_alloc_page();
+    size_t len = (size_t)(probe_code_end - probe_code);
+    size_t i;
+
+    ring3_space = as_create();
+
+    if (code == NULL || stack == NULL || ring3_space == NULL) {
+        say("  ring3    NO PAGES\r\n");
+        return;
+    }
+
+    for (i = 0; i < len; i++) {
+        code[i] = (uint8_t)probe_code[i];
+    }
+
+    if (as_map(ring3_space, PROBE_TEXT_VA, (uintptr_t)code, 1,
+               MAP_USER_RX) != AS_OK
+        || as_map(ring3_space, PROBE_STACK_VA, (uintptr_t)stack, 1,
+                  MAP_USER_RW) != AS_OK) {
+        say("  ring3    MAP REFUSED\r\n");
+        return;
+    }
+
+    ring3_ctx.rsp = (uint64_t)(uintptr_t)&ring3_kstack[sizeof ring3_kstack];
+    ring3_ctx.rip = (uint64_t)(uintptr_t)thread_entry;
+    ring3_ctx.rbx = (uint64_t)(uintptr_t)ring3_thread;
+    ring3_ctx.rflags = 0x202;
+
+    context_switch(&caller_ctx, &ring3_ctx);
+
+    say("\r\n  ring3    ");
+    if (ring3_calls < 2) {
+        say("THE PROCESS DID NOT MAKE TWO CALLS\r\n");
+    } else if (ring3_answer != 2 * PROBE_MARKER) {
+        say("THE ANSWER DID NOT COME BACK\r\n");
+    } else if (ring3_read_kernel_memory) {
+        say("A PROCESS READ THE KERNEL'S OWN TEXT\r\n");
+    } else if (!ring3_faulted) {
+        say("NEITHER FAULTED NOR REPORTED\r\n");
+    } else {
+        say_hex(ring3_answer);
+        say(" from ");
+        say_hex(PROBE_MARKER);
+        say(", doubled at ring 0 and returned to ring 3\r\n");
+
+        say("  confined ");
+        /* present | read | user: the page is there and the process is not
+         * allowed to see it, which is exactly the bit being tested. */
+        say((ring3_fault_error & 0x5) == 0x5
+            ? "the kernel's text is present and unreadable to it\r\n"
+            : "IT FAULTED, BUT NOT FOR THE RIGHT REASON\r\n");
+    }
+}
+
 /*
  * An address space, used and given back.
  *
@@ -320,6 +516,22 @@ void kmain_x86(uint32_t multiboot)
     say("  idt      installed, 48 vectors\r\n");
 
     /*
+     * The descriptor tables, before interrupts and before the map.
+     *
+     * Before interrupts because an interrupt loads CS from a GDT
+     * descriptor, and the processor *writes* the accessed bit when it does.
+     * `start.S`'s table is in .rodata, which `mmu_init` is about to narrow
+     * to read-only - and a descriptor whose accessed bit is still clear
+     * would then fault on the next interrupt, from inside the interrupt.
+     * The table `gdt_init` builds lives in .bss and is writable, which
+     * removes the question rather than relying on the first tick having
+     * already set the bit.
+     */
+    gdt_init();
+    user_init();
+    say("  gdt      5 descriptors, a tss, and syscall armed\r\n");
+
+    /*
      * The interrupt path, end to end, before anything depends on it.
      *
      * The controller has to be remapped before `sti` or the first tick
@@ -376,6 +588,7 @@ void kmain_x86(uint32_t multiboot)
     check_map();
     check_spaces();
     check_switch();
+    check_ring3();
 
     /*
      * And a fault on purpose, because an exception handler that has never

@@ -1473,7 +1473,9 @@ X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
 X86_SRCS  := boot/x86_64/start.S arch/x86_64/vectors.S \
              arch/x86_64/trap.c hal/pc/uart.c hal/pc/memory.c \
              hal/pc/pic.c hal/pc/timer.c \
-             arch/x86_64/switch.S arch/x86_64/mmu.c kernel/pmm.c \
+             arch/x86_64/switch.S arch/x86_64/user.S \
+             arch/x86_64/gdt.c arch/x86_64/user.c \
+             arch/x86_64/mmu.c kernel/pmm.c \
              arch/x86_64/main.c
 X86_BUILD := build/x86_64
 

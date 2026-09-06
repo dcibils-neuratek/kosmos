@@ -8,6 +8,54 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### x86-64: it boots, ticks, maps and switches
+
+**`make x86` is a second architecture, four steps in.** Long mode on QEMU's
+q35, a serial console, an IDT that reports what went wrong, a timer
+interrupt, four levels of page table built from C, and two contexts handing
+the processor back and forth. **The six headers `kernel/` includes from
+`arch/` all exist now** - `context.h`, `cpu.h`, `mmio.h`, `mmu.h`, `page.h`,
+`trap.h` - and `kernel/pmm.c` compiles here unchanged, which is the first
+evidence that "the kernel is portable" was a fact rather than a hope.
+
+`arch/x86_64/main.c` is a staging `kmain`, not `kernel/main.c`, and it
+checks what each step built rather than asserting it: the three kinds of
+page read back with the attributes they were given, the stack guard reads
+back unmapped, an address space maps a user page, shares `.text` with the
+kernel, refuses a mapping below `USER_VA_BASE` and returns every page it
+took, and two contexts complete two round trips and an exit. Then it writes
+to `.text` on purpose and gets `protection, write, kernel`.
+
+**Four things this architecture does differently, and none of them cosmetic**
+(the long version is in `docs/hal.md`):
+
+- **The 8259 has to be remapped before `sti`**, or a timer tick arrives as a
+  double fault - vectors 8-15 out of reset are the exception vectors.
+- **Permissions accumulate down the page walk.** A page is writable only if
+  `RW` is set at all four levels. So intermediate entries are permissive and
+  the leaf carries the policy; ARM lets the leaf speak alone.
+- **`CR0.WP`, without which every read-only mapping is decoration.** Ring 0
+  writes ignore `RW` until it is set, and there is no ARM counterpart at
+  all. Found by narrowing `.text`, reading the entry back correct, and
+  watching a deliberate store go straight through.
+- **One NX bit for two privilege levels**, where ARM has PXN and UXN.
+  `CR4.SMEP` is the answer and `mmu.c` sets it where CPUID reports it.
+
+And the second architecture found something in the first: the ARM map
+divides the tail of RAM by 2 MB and lets the division truncate, which is
+exact only because `virt` reports a whole number of 2 MB pages. A PC does
+not. **Latent rather than wrong on ARM, and left alone rather than changed
+mid-port** - it would take a machine reporting an odd amount of RAM.
+
+**Next on this path is ring 3**: a GDT with user segments, a TSS holding
+RSP0, and `syscall`/`sysret` - the counterpart of `arch/aarch64/el0.S`.
+After that, the rest of `kernel/`, which is where the temporary `panic` and
+`thread_exit` in `arch/x86_64/main.c` go away, and then a `hal/pc/` with a
+framebuffer in it. `-accel kvm` is the point of the exercise and is not
+worth turning on until there is more than a boot stub to run.
+
+### The browser
+
 **The cascade is consulted.** libcss has parsed, selected and answered since
 it was vendored and nothing asked it; `web_paint.c` chose a face by tag name
 and an ink from a `#define`. It asks now, per element.
@@ -1237,12 +1285,15 @@ visible.
    in the endpoint struct - no allocator - a decision about what a full
    queue does, and backpressure. A change to the IPC model, which is why it
    is written down rather than started.
-4. **x86-64, under QEMU**, and then the road to real hardware. A second
-   `arch/`: a different instruction set, a different interrupt controller, a
-   different boot protocol, a different memory model. The 64-bit line was
-   drawn here precisely so that this is not a refactor - `kernel/` has no
-   architecture-specific instruction left in it, which is what makes "the
-   kernel is portable" checkable rather than aspirational.
+4. **x86-64, under QEMU** - *started, and four steps in.* Boot, exceptions,
+   paging and the context switch are done and the six `arch/` headers all
+   exist; see the section at the top of this file. What is left is ring 3,
+   then compiling the rest of `kernel/` against those headers, then a
+   `hal/pc/` with a framebuffer, keyboard and virtio in it. The 64-bit line
+   was drawn here precisely so that this is not a refactor - `kernel/` has
+   no architecture-specific instruction left in it, and `kernel/pmm.c`
+   building unchanged on the second machine is the first piece of evidence
+   that this was true rather than aspirational.
 5. **A box model.** Margins, padding, borders and `width`, which is what
    turns "blocks stacked down the page" into layout. Images and forms both
    wait on it; the runs are already addressable, which is the half that made

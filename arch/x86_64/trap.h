@@ -30,4 +30,17 @@ struct trapframe {
 void trap_init(void);
 void trap_handle(struct trapframe *f);
 
+/*
+ * A fault that came from ring 3, after it has been reported.
+ *
+ * The distinction is the whole point of a microkernel and it is one line of
+ * code, because the hardware already did the work: a process doing
+ * something it may not is a dead process, not a dead machine.
+ *
+ * `arch/aarch64/trap.c` calls `process_exit` here directly, and this will
+ * too once `kernel/process.c` builds on this architecture. Until then the
+ * name is a seam and `arch/x86_64/main.c` fills it.
+ */
+void trap_user_fault(struct trapframe *f) __attribute__((noreturn));
+
 #endif /* ARCH_X86_64_TRAP_H */

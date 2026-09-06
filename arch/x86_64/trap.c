@@ -189,7 +189,13 @@ void trap_handle(struct trapframe *f)
 
     __asm__ volatile("movq %%cr2, %0" : "=r"(cr2));
 
-    say("\r\n*** ");
+    /*
+     * Who was running decides what this is. A fault at ring 0 is a broken
+     * kernel and the machine stops; a fault at ring 3 is a broken process
+     * and only the process stops. The low two bits of the saved CS are the
+     * privilege level the processor was at, which it pushed for us.
+     */
+    say((f->cs & 3) ? "\r\nprocess died: " : "\r\n*** ");
     say(f->vector < 32 ? names[f->vector] : "unknown exception");
     say("\r\n");
 
@@ -216,6 +222,10 @@ void trap_handle(struct trapframe *f)
         say(", ");
         say((f->error & 4) ? "user" : "kernel");
         say("\r\n");
+    }
+
+    if (f->cs & 3) {
+        trap_user_fault(f);     /* never returns */
     }
 
     say("\r\nhalted.\r\n");
