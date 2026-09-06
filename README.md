@@ -307,6 +307,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **A browser window, and it says what it is not.** It fetches, parses and shows a document's text, with *text only, there is no layout engine yet* in the status line - the chrome is here early so each piece of engine has somewhere to appear when it lands | user/bin/browser.lua |
 | Sep 2026 | **The text path read bytes where it needed characters.** Each byte became a codepoint, so one accented character was three failed lookups and three boxes - never a missing font. Both paths decode now, and glyphs outside ASCII rasterise on demand into a codepoint-keyed cache | user/lib/gfx.c |
 | Sep 2026 | **A face is a name and a size, not one of four roles.** A page needs a heading and a paragraph on screen at once; `gfx` held one face per role. Adding weights then broke resolution silently - `-Bold` sorts before `-Regular` and both were called `ibmplexsans`, so the terminal would have gone bold with no error | user/lib/gfx.c |
+| Sep 2026 | **A page is painted in one crossing, not one per box.** Layout and drawing both happen in C and what returns is a height; a call per box would cost more than the drawing. Lines break at a measured width and sit on a baseline rather than a top edge, which is what mixed sizes need | user/lib/web_paint.c |
 
 ---
 

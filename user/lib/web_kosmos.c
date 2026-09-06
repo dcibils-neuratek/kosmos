@@ -32,6 +32,7 @@
 #include <libcss/fpmath.h>
 
 #include "web_select.h"
+#include "web_paint.h"
 
 #define DOC_HANDLE  "kosmos.dom"
 
@@ -333,6 +334,26 @@ static int l_blocks(lua_State *L)
     return 1;
 }
 
+/*
+ * render(surface, width) -> the height it used.
+ *
+ * The whole page in one crossing: layout and painting both happen in C and
+ * what comes back is a number. A call per box would cost more than the
+ * drawing, which is the same reason `docfont.c` takes a page of glyphs at
+ * once rather than one at a time.
+ */
+static int l_render(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    struct surface *s = luaL_checkudata(L, 2, "kosmos.surface");
+    int width = (int)luaL_checkinteger(L, 3);
+    unsigned height = (unsigned)luaL_checkinteger(L, 4);
+
+    lua_pushinteger(L, web_paint_document(L, d->dom, s, width, height));
+
+    return 1;
+}
+
 static int l_close(lua_State *L)
 {
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
@@ -577,6 +598,7 @@ void kosmos_web_kit(lua_State *L)
         { "style", l_style },
         { "text",   l_text },
         { "blocks", l_blocks },
+        { "render", l_render },
         { "title", l_title },
         { "close", l_close },
         { NULL, NULL }

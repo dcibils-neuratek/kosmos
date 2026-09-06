@@ -52,6 +52,32 @@ PROBE = (
 )
 
 #
+# Painting, which is a different claim again.
+#
+# A height and some ink. Neither alone is evidence: a renderer that returned
+# a plausible height and drew nothing would pass the first, and one that
+# filled the page with a rectangle would pass the second. Together they say
+# a document was laid out and glyphs reached the surface.
+#
+# Sampled every second pixel because reading a 600x400 surface a pixel at a
+# time through the interpreter is slower than the rendering it is checking.
+#
+RENDER = (
+    'local w = sys.kit("web") '
+    'local d = w.parse("<html><body><h1>Big Heading</h1>'
+    '<p>A paragraph of ordinary body text that should wrap across more '
+    'than one line when the width is small enough.</p>'
+    '<h2>Second</h2><ul><li>an item</li></ul></body></html>") '
+    'local s = gfx.surface{ w = 600, h = 400 } '
+    'local used = d:render(s, 600, 400) '
+    'local ink = 0 '
+    'for y = 0, 399, 2 do for x = 0, 599, 2 do '
+    '  if s:get(x, y) ~= 0xffffffff then ink = ink + 1 end '
+    'end end '
+    'print("<<".."REN>>", used, ink)'
+)
+
+#
 # Selection, which is a different claim from parsing.
 #
 # Four styles, and the fourth is the one that matters: a rule that should
@@ -174,9 +200,48 @@ def main():
         # that says no when it should.
         checks += 4
 
+        # ---- and painting ----
+        guest.seen = ""
+        guest.type(RENDER)
+        guest.wait_for("<<REN>>", "the renderer to answer")
+
+        line = ""
+        for text in guest.seen.replace("\r", "").splitlines():
+            if text.startswith("<<REN>>"):
+                line = text
+                break
+
+        got = [f for f in (g.strip() for g in
+                           line.replace("<<REN>>", "").split("\t")) if f != ""]
+
+        if len(got) != 2 or not got[0].isdigit() or not got[1].isdigit():
+            raise Failure(f"the renderer answered {got!r}")
+
+        used, ink = int(got[0]), int(got[1])
+
+        # A heading, three or so wrapped lines, a subheading and an item do
+        # not fit in fifty pixels and do not need four hundred.
+        if used < 80 or used > 400:
+            raise Failure(
+                f"the page came out {used} pixels tall, which is not the "
+                "height of a heading, a wrapped paragraph, a subheading and "
+                "a list item"
+            )
+
+        checks += 1
+
+        if ink < 200:
+            raise Failure(
+                f"only {ink} sampled pixels were not white - the page was "
+                "laid out and then not drawn"
+            )
+
+        checks += 1
+
         print(
             f"PASS: {checks} checks on the web libraries: a document parsed, "
-            "its tree walked, a stylesheet understood, and the cascade run."
+            "its tree walked, a stylesheet understood, the cascade run, and "
+            "the page painted."
         )
         return 0
     except (Failure, Exception) as e:      # noqa: BLE001 - it is the result

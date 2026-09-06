@@ -8,6 +8,39 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**A document renders to pixels.** `doc:render(surface, width, height)` lays
+a page out and paints it in one crossing and returns the height it used -
+163 pixels and about six thousand of ink for a heading, a wrapped paragraph,
+a subheading and a list item.
+
+What is real in it: a face per tag (h1 at 28 bold, h2 at 22, body at 16,
+mono for `pre`, italic for `blockquote`); lines broken at a *measured*
+width, one word measured once, which is the arithmetic the inline engine
+needs; and every line placed on its **baseline** through `gfx_draw_ascent`
+rather than its top edge, which is what stops mixed sizes looking subtly
+wrong. Rules under the two biggest headings, indents for lists and quotes.
+
+**It is not CSS layout and the file says so**: no box model, no floats, no
+`width`, and a face comes from the tag rather than from the cascade - which
+is running, and is not yet consulted here. What is right is the *shape*, so
+the engine that replaces this changes how a box is chosen and not how one is
+drawn.
+
+`make web` is 13 checks now. The two new ones are a height and some ink,
+and neither alone would be evidence: a renderer returning a plausible height
+and drawing nothing passes the first, one filling the page with a rectangle
+passes the second.
+
+**Nothing displays it yet, and that is the next step rather than an
+oversight.** The browser window still shows the text list. Putting the
+rendered surface on screen means reconciling the chrome - which the window
+manager paints from draw ops - with content the application writes straight
+into the same shared surface. `win:surface()` and `blit` are the pieces;
+the question is ordering, and `cube3d` is the precedent for an application
+that owns its own pixels.
+
+---
+
 **Layout's two blockers are gone.** Neither was layout.
 
 *Faces.* `gfx` held one face per role and there were four roles, so a
