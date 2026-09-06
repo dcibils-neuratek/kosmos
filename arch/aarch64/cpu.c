@@ -7,6 +7,9 @@
 
 #include "cpu.h"
 
+/* For CPU_ARCH_AARCH64, which is an ABI number rather than a kernel fact. */
+#include "syscall.h"
+
 /* MIDR_EL1, from cputype.h: implementer [31:24], variant [23:20],
  * architecture [19:16], part [15:4], revision [3:0]. */
 #define MIDR_IMPLEMENTER(m) (((m) >> 24) & 0xff)
@@ -106,6 +109,33 @@ void cpu_identify(struct cpu_info *out)
                    ? lookup(arm_parts, sizeof(arm_parts) / sizeof(arm_parts[0]),
                             out->part)
                    : "unknown";
+
+    /*
+     * And the same thing in the words the boot log uses, which are the
+     * words the other architecture can also produce. "r0p3" is built a
+     * character at a time because the kernel has no printf and does not
+     * want one for four characters.
+     */
+    {
+        const char *from = out->implementer_name;
+        unsigned i;
+
+        for (i = 0; i + 1 < sizeof(out->vendor_name) && from[i] != '\0'; i++) {
+            out->vendor_name[i] = from[i];
+        }
+
+        out->vendor_name[i] = '\0';
+    }
+
+    out->model_name = out->part_name;
+    out->id_name    = "MIDR_EL1";
+    out->id         = midr;
+
+    out->revision_text[0] = 'r';
+    out->revision_text[1] = (char)('0' + (out->variant & 0xf));
+    out->revision_text[2] = 'p';
+    out->revision_text[3] = (char)('0' + (out->revision & 0xf));
+    out->revision_text[4] = '\0';
 }
 
 /*
@@ -129,4 +159,35 @@ unsigned cpu_pa_bits(const struct cpu_info *cpu)
     unsigned code = (unsigned)(cpu->mmfr0 & 0xf);
 
     return (code < sizeof(bits)) ? bits[code] : 0;
+}
+
+/*
+ * What this architecture is, and its identifying registers as a list.
+ *
+ * `syscall.c` used to copy six named fields across, which meant the
+ * syscall path named AArch64 registers. It copies a counted array now and
+ * the names stay here, where they are the right words.
+ */
+unsigned cpu_arch(void)
+{
+    return CPU_ARCH_AARCH64;
+}
+
+unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max)
+{
+    const uint64_t words[] = {
+        cpu->midr, cpu->mpidr, cpu->ctr, cpu->pfr0, cpu->isar0, cpu->mmfr0,
+    };
+    unsigned n = (unsigned)(sizeof(words) / sizeof(words[0]));
+    unsigned i;
+
+    if (n > max) {
+        n = max;
+    }
+
+    for (i = 0; i < n; i++) {
+        out[i] = words[i];
+    }
+
+    return n;
 }

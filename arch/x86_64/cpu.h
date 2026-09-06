@@ -5,6 +5,81 @@
 #include <stdint.h>
 
 /*
+ * Which processor this is, asked of the processor.
+ *
+ * `arch/` is "which CPU are you" and this is the most literal reading of
+ * it. Everything here comes out of CPUID, which every x86-64 implements
+ * because long mode requires it, so this file needs no board knowledge at
+ * all - the same claim `arch/aarch64/cpu.h` makes about its system
+ * registers.
+ *
+ * **The raw words travel with the decode**, everywhere they are shown, for
+ * the reason the ARM file gives: a table of part numbers goes stale the
+ * moment a part ships that is not in it, and a reader who can see the words
+ * can look them up.
+ *
+ * Intel SDM volume 2A, the CPUID instruction; AMD APM volume 3, appendix E.
+ */
+
+/* Which word is which, for whoever decodes them. `syscall.h` says why the
+ * kernel does not: the same eight words mean something else on the other
+ * machine, and `cpu_arch` is what tells them apart. */
+#define CPU_RAW_VENDOR0   0     /* CPUID.0: EBX and EDX, the vendor string */
+#define CPU_RAW_VENDOR1   1     /* CPUID.0: ECX, and the highest leaf */
+#define CPU_RAW_SIGNATURE 2     /* CPUID.1 EAX: family, model, stepping */
+#define CPU_RAW_BRAND     3     /* CPUID.1 EBX: cache line, APIC id */
+#define CPU_RAW_FEAT1_ECX 4
+#define CPU_RAW_FEAT1_EDX 5
+#define CPU_RAW_FEAT7_EBX 6
+#define CPU_RAW_FEAT7_ECX 7
+#define CPU_RAW_ADDRESS   8     /* CPUID.80000008 EAX: address widths */
+
+struct cpu_info {
+    /* Raw, exactly as read. */
+    uint64_t vendor0, vendor1;
+    uint64_t signature;
+    uint64_t brand;                 /* CPUID.1 EBX, where the cache line is */
+    uint64_t feat1_ecx, feat1_edx;
+    uint64_t feat7_ebx, feat7_ecx;
+    uint64_t address;
+    uint64_t counter_hz;
+
+    /* Decoded from the signature, with the extended fields folded in the
+     * way the manuals specify - which is not the same for the two of them
+     * and is the part people get wrong. */
+    unsigned family;
+    unsigned model;
+    unsigned stepping;
+
+    /*
+     * The same processor in the words every architecture can say. See
+     * `arch/aarch64/cpu.h`, which explains why these exist.
+     *
+     * `vendor_name` is the twelve-character vendor string, from EBX, EDX
+     * and ECX in that order - which is not the order they are returned in,
+     * and is the single most copied-wrong line in every x86 identification
+     * routine. Held rather than pointed at, because it is built from
+     * registers rather than found in a table.
+     */
+    char        vendor_name[16];
+    const char *model_name;
+    char        revision_text[16];
+    const char *id_name;
+    uint64_t    id;
+};
+
+void cpu_identify(struct cpu_info *out);
+
+unsigned cpu_arch(void);
+unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max);
+
+/* The cache line, from CPUID.1 EBX[15:8], which counts eight-byte units. */
+unsigned cpu_dcache_line(const struct cpu_info *cpu);
+
+/* The physical address range the core can drive, in bits. */
+unsigned cpu_pa_bits(const struct cpu_info *cpu);
+
+/*
  * The seven things `kernel/` asks a processor to do.
  *
  * The AArch64 twin of this file exists because sixteen sites across four

@@ -1477,7 +1477,7 @@ X86_SRCS  := boot/x86_64/start.S arch/x86_64/vectors.S \
              hal/pc/pic.c hal/pc/timer.c \
              arch/x86_64/switch.S arch/x86_64/user.S \
              arch/x86_64/gdt.c arch/x86_64/user.c \
-             arch/x86_64/mmu.c \
+             arch/x86_64/cpu.c arch/x86_64/mmu.c \
              kernel/pmm.c kernel/screen.c kernel/console.c kernel/panic.c \
              runtime/libc/string.c $(X86_BUILD)/font_8x16.c \
              arch/x86_64/main.c

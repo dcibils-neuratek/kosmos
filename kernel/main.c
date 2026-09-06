@@ -115,16 +115,21 @@ void kmain(void)
     boot_stage("processor");
     boot_why("Asking the core who it is, out of registers every part must have.");
 
+    /*
+     * Composed by `arch/<name>/cpu.c` rather than here. This line used to
+     * name MIDR_EL1 in a string literal, which made the boot log the last
+     * place in `kernel/` that knew which processor it had been written for.
+     */
     boot_fact_begin();
-    kputs(cpu.implementer_name);
+    kputs(cpu.vendor_name);
     kputc(' ');
-    kputs(cpu.part_name);
-    kputs(" r");
-    kputu(cpu.variant);
-    kputc('p');
-    kputu(cpu.revision);
-    kputs("  (MIDR_EL1 0x");
-    kputx(cpu.midr, 8);
+    kputs(cpu.model_name);
+    kputc(' ');
+    kputs(cpu.revision_text);
+    kputs("  (");
+    kputs(cpu.id_name);
+    kputs(" 0x");
+    kputx(cpu.id, 8);
     kputc(')');
     boot_fact_end();
 

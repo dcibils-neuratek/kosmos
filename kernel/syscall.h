@@ -385,17 +385,47 @@ struct pointer_info {
     uint32_t moved;
 };
 
+/*
+ * Which architecture the raw words below belong to.
+ *
+ * Without this they cannot be read at all. The kernel deliberately decodes
+ * nothing about the processor - the ID registers go out as they were read
+ * and what they mean is userland's problem - and that division only works
+ * while there is one architecture. Two of them, and "raw" is not enough
+ * information: the same eight words are MIDR_EL1 and friends on one machine
+ * and CPUID leaves on another.
+ *
+ * Numbers rather than a string because this is an ABI, and a string is a
+ * thing to get subtly wrong on both sides.
+ */
+#define CPU_ARCH_UNKNOWN  0
+#define CPU_ARCH_AARCH64  1
+#define CPU_ARCH_X86_64   2
+
+/*
+ * How many raw words `sysinfo` carries. AArch64 fills six, x86-64 nine.
+ *
+ * Sized to the larger rather than to a round number, because the rule both
+ * architectures follow is that **every word something decodes from is one
+ * of these**. A decoded cache line whose source register was not exported
+ * is a number a reader has to take on trust, which is the thing handing
+ * them over raw exists to avoid.
+ */
+#define CPU_RAW_WORDS     10
+
 struct sysinfo {
-    /* The processor, raw. arch/aarch64/cpu.c decodes the same values for
-     * the boot log; userland decodes them again for /dev/cpu, because the
-     * two want different amounts of detail and neither should constrain the
-     * other. */
-    uint64_t midr;
-    uint64_t mpidr;
-    uint64_t ctr;
-    uint64_t pfr0;
-    uint64_t isar0;
-    uint64_t mmfr0;
+    /*
+     * The processor, raw, and what to make of it.
+     *
+     * `arch/<name>/cpu.c` decodes the same words for the boot log and
+     * userland decodes them again for /dev/cpu, because the two want
+     * different amounts of detail and neither should constrain the other.
+     * What each word *is* depends on `cpu_arch`, and each architecture's
+     * cpu.h names the indices.
+     */
+    uint32_t cpu_arch;
+    uint32_t cpu_words;                 /* how many of the raw ones are set */
+    uint64_t cpu_raw[CPU_RAW_WORDS];
     uint64_t counter_hz;
 
     /* Memory, in pages of PAGE_SIZE. */

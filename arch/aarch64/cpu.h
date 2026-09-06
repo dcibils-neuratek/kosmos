@@ -43,9 +43,56 @@ struct cpu_info {
 
     const char *implementer_name;   /* never NULL; "unknown" if not in the table */
     const char *part_name;          /* never NULL */
+
+    /*
+     * The same processor, said in words every architecture can say.
+     *
+     * `kernel/main.c` prints one line naming the machine it woke up on, and
+     * it used to print `cpu.implementer_name`, `cpu.part_name` and the
+     * literal string "MIDR_EL1" - which made the boot log the last place in
+     * `kernel/` that knew which processor it was written for.
+     *
+     * So the architecture composes its own identity and the kernel prints
+     * it. `revision` is a string rather than two numbers because "r0p3" is
+     * an ARM convention and a stepping is not: what the two have in common
+     * is that there is a short way to say which version of the part this
+     * is, not how it is spelled.
+     *
+     * `vendor_name` is held rather than pointed at. On the other machine it
+     * is built from three registers, so a pointer would have to be into
+     * this struct - and a struct containing a pointer to itself is one
+     * assignment away from a dangling one.
+     */
+    char        vendor_name[16];    /* "Arm" */
+    const char *model_name;         /* never NULL; a static string */
+    char        revision_text[16];  /* "r0p3" */
+    const char *id_name;            /* "MIDR_EL1" */
+    uint64_t    id;                 /* the register that name refers to */
 };
 
 void cpu_identify(struct cpu_info *out);
+
+/*
+ * The raw registers above, in the order `struct sysinfo` carries them, and
+ * which architecture they belong to.
+ *
+ * The struct above keeps its names because `cpu.c` decodes from them and a
+ * name is what makes that readable. What crosses into `kernel/` is a
+ * numbered list, because the kernel has no business knowing that word three
+ * is called PFR0 - and on the other machine it is not.
+ *
+ * These indices are this architecture's, and userland reading /dev/cpu uses
+ * the same ones after checking `cpu_arch`.
+ */
+#define CPU_RAW_MIDR    0
+#define CPU_RAW_MPIDR   1
+#define CPU_RAW_CTR     2
+#define CPU_RAW_PFR0    3
+#define CPU_RAW_ISAR0   4
+#define CPU_RAW_MMFR0   5
+
+unsigned cpu_arch(void);
+unsigned cpu_raw(const struct cpu_info *cpu, uint64_t *out, unsigned max);
 
 /* Cache line sizes in bytes, from CTR_EL0. Both are logged as log2 of the
  * number of *words*, which is the encoding people get wrong. */

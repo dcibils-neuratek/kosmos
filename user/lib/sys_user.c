@@ -1421,13 +1421,24 @@ static int l_info(lua_State *L)
     do { lua_pushinteger(L, (lua_Integer)(value)); \
          lua_setfield(L, -2, name); } while (0)
 
-    SET("midr",             info.midr);
-    SET("mpidr",            info.mpidr);
-    SET("ctr",              info.ctr);
-    SET("pfr0",             info.pfr0);
-    SET("isar0",            info.isar0);
-    SET("mmfr0",            info.mmfr0);
+    /*
+     * The processor's identifying words, undecoded, with the architecture
+     * that says what they are. `sys.info().cpu_raw[1]` is MIDR_EL1 on an
+     * ARM and something else entirely elsewhere - which is exactly what the
+     * kernel means by handing them over raw, and why `cpu_arch` travels
+     * with them. One-based, because this is a Lua table.
+     */
+    SET("cpu_arch",         info.cpu_arch);
     SET("counter_hz",       info.counter_hz);
+
+    lua_createtable(L, (int)info.cpu_words, 0);
+
+    for (unsigned w = 0; w < info.cpu_words; w++) {
+        lua_pushinteger(L, (lua_Integer)info.cpu_raw[w]);
+        lua_rawseti(L, -2, (int)w + 1);
+    }
+
+    lua_setfield(L, -2, "cpu_raw");
 
     SET("ram_base",         info.ram_base);
     SET("ram_size",         info.ram_size);

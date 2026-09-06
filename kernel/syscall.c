@@ -463,12 +463,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     cpu_identify(&cpu);
     hal_ram_range(&ram);
 
-    info.midr       = cpu.midr;
-    info.mpidr      = cpu.mpidr;
-    info.ctr        = cpu.ctr;
-    info.pfr0       = cpu.pfr0;
-    info.isar0      = cpu.isar0;
-    info.mmfr0      = cpu.mmfr0;
+    info.cpu_arch   = cpu_arch();
+    info.cpu_words  = cpu_raw(&cpu, info.cpu_raw, CPU_RAW_WORDS);
     info.counter_hz = cpu.counter_hz;
 
     info.ram_base    = ram.base;

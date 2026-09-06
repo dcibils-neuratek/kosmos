@@ -3657,12 +3657,29 @@ query. `find` and `watch` are built on exactly these two calls.
     local c = ns.read("/dev/cpu")
     if not c then return end
 
-    out(string.format("%s %s %s\n", c.implementer, c.part, c.revision))
-    out(string.format("  MIDR_EL1      0x%08x\n", c.midr))
+    -- What every machine answers, then what only this one does. /dev/cpu
+    -- carries the architecture precisely so a reader can tell the
+    -- difference rather than printing "nil" for a field that was never
+    -- going to be there.
+    if c.implementer then
+      out(string.format("%s %s %s\n", c.implementer, c.part, c.revision))
+    else
+      out(string.format("%s\n", c.arch))
+    end
+
+    if c.midr then
+      out(string.format("  MIDR_EL1      0x%08x\n", c.midr))
+    end
+
+    out(string.format("  architecture  %s\n", c.arch))
     out(string.format("  cores         %d  (SMP is not on yet)\n", c.cores))
     out(string.format("  running at    EL%d\n", c.el))
-    out(string.format("  addresses     %d-bit physical\n", c.pa_bits))
-    out(string.format("  cache line    %d bytes\n", c.cache_line))
+
+    if c.pa_bits then
+      out(string.format("  addresses     %d-bit physical\n", c.pa_bits))
+      out(string.format("  cache line    %d bytes\n", c.cache_line))
+    end
+
     out(string.format("  counter       %d MHz  (not the core clock: AArch64\n",
                       c.counter_hz // 1000000))
     out( "                has no architectural way to read that)\n")
@@ -3671,7 +3688,10 @@ query. `find` and `watch` are built on exactly these two calls.
     for _, f in ipairs({ "fp", "simd", "aes", "sha1", "sha2", "crc32", "atomics" }) do
       if c[f] then has[#has + 1] = f end
     end
-    out("  features      " .. table.concat(has, " ") .. "\n")
+
+    if #has > 0 then
+      out("  features      " .. table.concat(has, " ") .. "\n")
+    end
   end
 
   commands.mem = function()

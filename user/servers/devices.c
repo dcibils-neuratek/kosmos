@@ -133,10 +133,32 @@ static const char *hex(char *buf, const char *prefix, uint64_t v, unsigned digit
     return buf;
 }
 
-static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
+/*
+ * AArch64's identifying registers, decoded.
+ *
+ * The words arrive as `cpu_raw` and mean nothing until `cpu_arch` says
+ * whose they are - which is the whole reason that field exists. The indices
+ * are the ones `arch/aarch64/cpu.h` names; this side repeats them rather
+ * than including a kernel-side arch header, and the ABI in `syscall.h` is
+ * what holds the two together.
+ */
+#define RAW_MIDR    0
+#define RAW_MPIDR   1
+#define RAW_CTR     2
+#define RAW_PFR0    3
+#define RAW_ISAR0   4
+#define RAW_MMFR0   5
+
+static void node_cpu_aarch64(const struct sysinfo *i, struct dev_reply *r)
 {
-    unsigned impl = (unsigned)((i->midr >> 24) & 0xff);
-    unsigned part = (unsigned)((i->midr >> 4) & 0xfff);
+    uint64_t midr  = i->cpu_raw[RAW_MIDR];
+    uint64_t ctr   = i->cpu_raw[RAW_CTR];
+    uint64_t pfr0  = i->cpu_raw[RAW_PFR0];
+    uint64_t isar0 = i->cpu_raw[RAW_ISAR0];
+    uint64_t mmfr0 = i->cpu_raw[RAW_MMFR0];
+
+    unsigned impl = (unsigned)((midr >> 24) & 0xff);
+    unsigned part = (unsigned)((midr >> 4) & 0xfff);
     const char *name = implementer(impl);
     const char *pname = (impl == 0x41) ? arm_part(part) : NULL;
     char buf[24], buf2[24], rev[12];
@@ -146,32 +168,49 @@ static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
 
     /* "r<major>p<minor>", from MIDR variant [23:20] and revision [3:0]. */
     rev[0] = 'r';
-    rev[1] = (char)('0' + (unsigned)((i->midr >> 20) & 0xf));
+    rev[1] = (char)('0' + (unsigned)((midr >> 20) & 0xf));
     rev[2] = 'p';
-    rev[3] = (char)('0' + (unsigned)(i->midr & 0xf));
+    rev[3] = (char)('0' + (unsigned)(midr & 0xf));
     rev[4] = '\0';
     put_text(r, "revision", rev);
 
-    put_num(r, "midr", i->midr);
-    put_num(r, "cores", i->cpus);
+    put_num(r, "midr", midr);
 
     /* CTR_EL0 DminLine [19:16] is log2 of the line in *words*, not bytes. */
-    put_num(r, "cache_line", 4u << ((i->ctr >> 16) & 0xf));
-    put_num(r, "pa_bits", pa_bits((unsigned)(i->mmfr0 & 0xf)));
-    put_num(r, "counter_hz", i->counter_hz);
+    put_num(r, "cache_line", 4u << ((ctr >> 16) & 0xf));
+    put_num(r, "pa_bits", pa_bits((unsigned)(mmfr0 & 0xf)));
 
     /* ID_AA64ISAR0_EL1: AES [7:4], SHA1 [11:8], SHA2 [15:12], CRC32 [19:16],
      * atomics [23:20]. Non-zero means present. */
-    put_num(r, "aes",     ((i->isar0 >> 4)  & 0xf) != 0);
-    put_num(r, "sha1",    ((i->isar0 >> 8)  & 0xf) != 0);
-    put_num(r, "sha2",    ((i->isar0 >> 12) & 0xf) != 0);
-    put_num(r, "crc32",   ((i->isar0 >> 16) & 0xf) != 0);
-    put_num(r, "atomics", ((i->isar0 >> 20) & 0xf) != 0);
+    put_num(r, "aes",     ((isar0 >> 4)  & 0xf) != 0);
+    put_num(r, "sha1",    ((isar0 >> 8)  & 0xf) != 0);
+    put_num(r, "sha2",    ((isar0 >> 12) & 0xf) != 0);
+    put_num(r, "crc32",   ((isar0 >> 16) & 0xf) != 0);
+    put_num(r, "atomics", ((isar0 >> 20) & 0xf) != 0);
 
     /* ID_AA64PFR0_EL1: FP [19:16], AdvSIMD [23:20]. 0xf means absent. */
-    put_num(r, "fp",   ((i->pfr0 >> 16) & 0xf) != 0xf);
-    put_num(r, "simd", ((i->pfr0 >> 20) & 0xf) != 0xf);
+    put_num(r, "fp",   ((pfr0 >> 16) & 0xf) != 0xf);
+    put_num(r, "simd", ((pfr0 >> 20) & 0xf) != 0xf);
+}
+
+static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
+{
+    /*
+     * What every machine can say, before anything that only one of them
+     * can. A reader of /dev/cpu on an architecture nothing here decodes yet
+     * still gets the count, the clock and the raw words - which is the
+     * point of the kernel handing them over undecoded.
+     */
+    put_text(r, "arch", i->cpu_arch == CPU_ARCH_AARCH64 ? "aarch64"
+                      : i->cpu_arch == CPU_ARCH_X86_64  ? "x86-64"
+                                                        : "unknown");
+    put_num(r, "cores", i->cpus);
+    put_num(r, "counter_hz", i->counter_hz);
     put_num(r, "el", i->current_el);
+
+    if (i->cpu_arch == CPU_ARCH_AARCH64) {
+        node_cpu_aarch64(i, r);
+    }
 }
 
 static void node_memory(const struct sysinfo *i, struct dev_reply *r)
