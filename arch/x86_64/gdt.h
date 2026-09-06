@@ -50,16 +50,14 @@
 void gdt_init(void);
 
 /*
- * The stack an entry into the kernel lands on, for the thread about to run.
+ * There is no setter for the TSS's rsp0, and that is deliberate.
  *
- * This is what AArch64 gets for free from SP_EL1: the hardware selects a
- * different stack pointer on an exception from EL0, and `context_switch`
- * already carries it because it belongs to the thread. x86 keeps it in the
- * TSS instead, so it is not switched with the thread - it is *written* when
- * the thread is scheduled, which is one more thing the scheduler has to
- * remember to do and one more thing that is silently wrong if it forgets.
+ * It is the stack an entry from ring 3 lands on, which belongs to the
+ * thread rather than to the machine - so `context_switch` writes it from
+ * `struct context`, in the same instruction the AArch64 switch spends
+ * loading SP_EL1. A setter would be a second way to change it, and a second
+ * way that the scheduler has to remember to call is one it can forget.
  */
-void gdt_set_kernel_stack(uintptr_t top);
 
 #endif /* !__ASSEMBLER__ */
 

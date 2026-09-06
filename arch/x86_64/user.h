@@ -19,16 +19,10 @@
 void user_init(void);
 
 /*
- * Drops this thread to ring 3. Does not return: the thread is a process
- * from here on, and every entry into the kernel arrives as a `syscall` or
- * an exception.
- *
- * `arg` is the only thing a process is told, and it arrives in rdi.
- * Everything else it can reach is in its capability table, which is the
- * point: what a process has is what it was handed, and one word of
- * configuration does not change that.
+ * `enter_user` is declared in `context.h`, for both architectures. It is
+ * implemented in `user.S` here and in `el0.S` there, and dropping to ring 3
+ * is what it means on this machine.
  */
-void enter_ring3(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
 
 /* What `syscall` ends up calling. Provided above `arch/`. */
 uint64_t x86_syscall(uint64_t op, uint64_t arg);

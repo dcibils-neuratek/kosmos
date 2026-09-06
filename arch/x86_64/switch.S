@@ -32,6 +32,7 @@
  */
 
 #include "context.h"
+#include "gdt.h"
 
 .section .text
 .global context_switch
@@ -84,6 +85,21 @@ context_switch:
 
     movq    CTX_RSP(%rsi), %rsp
     pushq   CTX_RIP(%rsi)
+
+    /*
+     * And the stack an entry from ring 3 will land on.
+     *
+     * This is the store the AArch64 switch makes when it loads SP_EL1 -
+     * same field, same reason, different destination. There the stack is a
+     * register the hardware selects; here it is a field in one TSS shared
+     * by the whole machine, so the switch has to put the incoming thread's
+     * there or the next syscall lands on the previous thread's stack.
+     *
+     * Read on entry from ring 3 and nowhere else, so it costs one store on
+     * a path that is already writing eight registers.
+     */
+    movq    CTX_KSTACK(%rsi), %rax
+    movq    %rax, tss+TSS_RSP0(%rip)
 
     /*
      * The incoming thread's flags, not the outgoing one's - and this is the

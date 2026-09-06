@@ -130,6 +130,55 @@ void context_switch(struct context *prev, struct context *next);
 /* Where a hand-built context starts. Never called directly. */
 void thread_entry(void);
 
+/*
+ * A context that has never run, so the first `ret` in `context_switch`
+ * starts it.
+ *
+ * **This exists so that `kernel/thread.c` does not name a register.** It
+ * used to plant x19, x20, x30, sp_el0, sp_el1, daif and spsel itself, and
+ * those seven lines were - along with two in `process.c` and the argument
+ * slots in `syscall.c` - the entire distance between "the kernel has no
+ * assembly in it" and "the kernel is portable". The second architecture is
+ * what made the difference matter.
+ *
+ * `exception_top` is the stack this thread's exceptions are taken on. On
+ * AArch64 that is SP_EL1 and the switch carries it, because the hardware
+ * selects it. Elsewhere it may be somewhere else entirely; what the caller
+ * knows is that the thread owns two stacks and this is the second.
+ */
+static inline void context_init(struct context *ctx, void (*entry)(void *),
+                                void *arg, void *stack_top,
+                                void *exception_top)
+{
+    ctx->x19 = (uint64_t)(uintptr_t)entry;
+    ctx->x20 = (uint64_t)(uintptr_t)arg;
+    ctx->x30 = (uint64_t)(uintptr_t)thread_entry;
+    ctx->sp_el0 = (uint64_t)(uintptr_t)stack_top;
+    ctx->sp_el1 = (uint64_t)(uintptr_t)exception_top;
+
+    /*
+     * A new thread starts on SP_EL0 with interrupts enabled. Both are zero
+     * and the caller's memset already produced them, but leaving either
+     * implicit makes the first thread that starts on the wrong stack, or
+     * with interrupts masked, a mystery rather than a line to read.
+     */
+    ctx->daif = 0;
+    ctx->spsel = 0;
+}
+
+/*
+ * Hands this thread to a process and does not return.
+ *
+ * `enter_el0` was its name and `process.c` declared it by hand, which was
+ * the one place the kernel said out loud which architecture it was on.
+ * What the caller means is "run at the unprivileged level", and every
+ * machine has one under a different name - EL0 here, ring 3 on x86.
+ *
+ * `arg` is the only thing a process is told. Everything else it can reach
+ * is in its capability table, which is the point.
+ */
+void enter_user(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
+
 #endif /* !__ASSEMBLER__ */
 
 #endif /* ARCH_AARCH64_CONTEXT_H */

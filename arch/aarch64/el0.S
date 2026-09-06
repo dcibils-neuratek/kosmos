@@ -1,5 +1,5 @@
 /*
- * Dropping to EL0.
+ * Dropping to EL0, which is what `enter_user` means on this machine.
  *
  * Called once per process, from the thread that will host it. It does not
  * return: the thread is at EL0 from here on, and every subsequent entry into
@@ -13,17 +13,17 @@
  */
 
 .section .text
-.global enter_el0
+.global enter_user
 
 /*
- * void enter_el0(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
+ * void enter_user(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
  *
  * `arg` is the only thing a process is told, and it arrives in x0. Everything
  * else it can reach is in its capability table, which is the point: what a
  * process has is what it was handed, and one word of configuration does not
  * change that.
  */
-enter_el0:
+enter_user:
     /*
      * Nothing may interrupt the transition.
      *

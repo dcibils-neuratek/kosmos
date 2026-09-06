@@ -599,6 +599,41 @@ uint64_t *as_page_entry(struct addrspace *as, uintptr_t va)
     return page_entry(as->pml4, va);
 }
 
+uintptr_t as_page_phys(struct addrspace *as, uintptr_t va)
+{
+    uint64_t *entry = page_entry(as->pml4, va);
+
+    if (entry == NULL || (*entry & PTE_P) == 0) {
+        return 0;
+    }
+
+    return (uintptr_t)(*entry & PTE_ADDR_MASK);
+}
+
+bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write)
+{
+    uint64_t *entry = page_entry(as->pml4, va);
+
+    if (entry == NULL || (*entry & PTE_P) == 0) {
+        return false;           /* not mapped in this space */
+    }
+
+    /*
+     * PTE_US is the whole of it, and it is one bit where AArch64 has a
+     * two-bit field. What this cannot see is the *walk*: an intermediate
+     * entry without PTE_US makes the page unreachable from ring 3 whatever
+     * the leaf says. `mmu.h` explains why that cannot happen here - every
+     * intermediate entry this file writes is permissive and the leaf
+     * carries the policy - and this function is one of the reasons that
+     * rule has to hold rather than merely usually hold.
+     */
+    if ((*entry & PTE_US) == 0) {
+        return false;
+    }
+
+    return !need_write || (*entry & PTE_RW) != 0;
+}
+
 void as_switch(struct addrspace *as)
 {
     uint64_t root = (uint64_t)(uintptr_t)

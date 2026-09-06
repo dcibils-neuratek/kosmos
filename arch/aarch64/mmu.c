@@ -535,6 +535,37 @@ uint64_t *as_page_entry(struct addrspace *as, uintptr_t va)
     return page_entry(as->root, va);
 }
 
+uintptr_t as_page_phys(struct addrspace *as, uintptr_t va)
+{
+    uint64_t *entry = page_entry(as->root, va);
+
+    if (entry == NULL || (*entry & DESC_VALID) == 0) {
+        return 0;
+    }
+
+    return (uintptr_t)(*entry & DESC_ADDR_MASK);
+}
+
+bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write)
+{
+    uint64_t *entry = page_entry(as->root, va);
+    uint64_t ap;
+
+    if (entry == NULL || (*entry & DESC_VALID) == 0) {
+        return false;           /* not mapped in this space */
+    }
+
+    /* AP=01 is EL0 read/write; AP=11 is EL0 read-only. Anything else has no
+     * EL0 access at all, which means the page is the kernel's. */
+    ap = (*entry >> 6) & 3;
+
+    if (ap != 1 && ap != 3) {
+        return false;
+    }
+
+    return !need_write || ap == 1;
+}
+
 void as_switch(struct addrspace *as)
 {
     uint64_t root = (uint64_t)(uintptr_t)((as != NULL) ? as->root : kernel_l1);

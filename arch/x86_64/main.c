@@ -71,6 +71,7 @@ static void say_hex(uint64_t v)
  * one and not the other is exactly the failure worth naming.
  */
 extern char __text_start[], __rodata_start[], __stack_guard[];
+extern char __stack_top[];
 
 /* What the map should say about the three kinds of page it distinguishes. */
 static void check_map(void)
@@ -182,13 +183,14 @@ static void check_switch(void)
     const uint64_t marker = 0x5EED;
     uint64_t mine = 0xC0FFEE;
 
-    worker_ctx.rsp = (uint64_t)(uintptr_t)&worker_stack[sizeof worker_stack];
-    worker_ctx.rip = (uint64_t)(uintptr_t)thread_entry;
-    worker_ctx.rbx = (uint64_t)(uintptr_t)worker;
-    worker_ctx.r12 = marker;
-
-    /* Bit 1 reads as 1 always; bit 9 is IF, which the worker inherits. */
-    worker_ctx.rflags = 0x202;
+    /*
+     * Through `context_init`, which is what `thread_create` will call: a
+     * bring-up that builds a context by hand tests a path nothing else
+     * uses. The worker has one stack rather than two, because a kernel
+     * thread's exceptions land wherever it already is.
+     */
+    context_init(&worker_ctx, worker, (void *)(uintptr_t)marker,
+                 &worker_stack[sizeof worker_stack], __stack_top);
 
     context_switch(&main_ctx, &worker_ctx);     /* into the worker */
     context_switch(&main_ctx, &worker_ctx);     /* and again, to finish it */
@@ -302,7 +304,7 @@ uint64_t x86_syscall(uint64_t op, uint64_t arg)
 /*
  * What `process_exit` does, in the only part of it that exists here: put
  * the kernel's own address space back and return to whoever started the
- * process. It is the only way out, since `enter_ring3` does not return and
+ * process. It is the only way out, since `enter_user` does not return and
  * the frames it left on this stack were overwritten by the first syscall.
  */
 static void finish_ring3(void)
@@ -335,15 +337,8 @@ static void ring3_thread(void *arg)
 {
     (void)arg;
 
-    /*
-     * Where an entry from ring 3 lands. `enter_ring3` never returns, so the
-     * frames below here are dead the moment it is called and the top of
-     * this stack is free for the syscall path to start from.
-     */
-    gdt_set_kernel_stack((uintptr_t)&ring3_kstack[sizeof ring3_kstack]);
-
     as_switch(ring3_space);
-    enter_ring3(PROBE_TEXT_VA, PROBE_STACK_VA + PAGE_SIZE, PROBE_MARKER);
+    enter_user(PROBE_TEXT_VA, PROBE_STACK_VA + PAGE_SIZE, PROBE_MARKER);
 }
 
 static void check_ring3(void)
@@ -372,10 +367,17 @@ static void check_ring3(void)
         return;
     }
 
-    ring3_ctx.rsp = (uint64_t)(uintptr_t)&ring3_kstack[sizeof ring3_kstack];
-    ring3_ctx.rip = (uint64_t)(uintptr_t)thread_entry;
-    ring3_ctx.rbx = (uint64_t)(uintptr_t)ring3_thread;
-    ring3_ctx.rflags = 0x202;
+    /*
+     * Its own kernel stack, and the same one twice: the thread runs on it
+     * until `enter_user`, and an entry from ring 3 restarts from the top of
+     * it - which is safe because `enter_user` does not return and the
+     * frames below are dead the moment it is called.
+     */
+    context_init(&ring3_ctx, ring3_thread, NULL,
+                 &ring3_kstack[sizeof ring3_kstack],
+                 &ring3_kstack[sizeof ring3_kstack]);
+
+    caller_ctx.kernel_stack = (uint64_t)(uintptr_t)__stack_top;
 
     context_switch(&caller_ctx, &ring3_ctx);
 

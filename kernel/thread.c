@@ -109,7 +109,7 @@ bool sched_switch_to(unsigned index)
     struct thread *drained[THREAD_MAX];
     unsigned n = 0;
     unsigned i;
-    unsigned long daif;
+    unsigned long irqstate;
 
     if (index >= sched_policy_count()) {
         return false;
@@ -128,7 +128,7 @@ bool sched_switch_to(unsigned index)
      * re-enabled, so this is correct when called from somewhere that
      * already held them off.
      */
-    daif = cpu_interrupts_save();
+    irqstate = cpu_interrupts_save();
 
     while (n < THREAD_MAX) {
         struct thread *t = policy->pick_next();
@@ -147,7 +147,7 @@ bool sched_switch_to(unsigned index)
         policy->enqueue(drained[i]);
     }
 
-    cpu_interrupts_restore(daif);
+    cpu_interrupts_restore(irqstate);
 
     return true;
 }
@@ -362,24 +362,12 @@ struct thread *thread_create_suspended(const char *name,
     t->sched.effective = SCHED_PRIO_NORMAL;
 
     /*
-     * A context built by hand so the first `ret` in context_switch lands in
-     * thread_entry, which reads the function out of x19 and its argument out
-     * of x20. The thread has never run, so there is nothing else to restore.
+     * A context that has never run, built by the architecture rather than
+     * here. What this function knows is that a thread is a function, an
+     * argument and two stacks; which register each of those goes in is the
+     * one thing about a thread that is not the same on every machine.
      */
-    t->ctx.x19 = (uint64_t)(uintptr_t)entry;
-    t->ctx.x20 = (uint64_t)(uintptr_t)arg;
-    t->ctx.x30 = (uint64_t)(uintptr_t)thread_entry;
-    t->ctx.sp_el0 = (uint64_t)(uintptr_t)stack_top;
-    t->ctx.sp_el1 = (uint64_t)(uintptr_t)exception_top;
-
-    /*
-     * A new thread starts on SP_EL0 with interrupts enabled. Both are zero
-     * and the memset already produced them, but leaving either implicit
-     * makes the first thread that starts on the wrong stack, or with
-     * interrupts masked, a mystery rather than a line to read.
-     */
-    t->ctx.daif = 0;
-    t->ctx.spsel = 0;
+    context_init(&t->ctx, entry, arg, stack_top, exception_top);
 
     t->id = next_id++;
     t->switches = 0;
@@ -651,7 +639,7 @@ bool thread_any_ready(void)
 
 void thread_yield(void)
 {
-    unsigned long  daif;
+    unsigned long  irqstate;
     struct thread *next;
 
     /*
@@ -686,7 +674,7 @@ void thread_yield(void)
      * stays correct when called from somewhere that already held them off -
      * the same reason `sched_switch_to` does it that way.
      */
-    daif = cpu_interrupts_save();
+    irqstate = cpu_interrupts_save();
 
     /*
      * Ask before offering. Picking first and enqueuing afterwards is what
@@ -705,7 +693,7 @@ void thread_yield(void)
      * thread's own saved mask on the way back in, and this puts back what
      * the caller had.
      */
-    cpu_interrupts_restore(daif);
+    cpu_interrupts_restore(irqstate);
 }
 
 void thread_block(void)

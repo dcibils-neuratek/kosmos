@@ -28,7 +28,8 @@
 #define CTX_RSP     48
 #define CTX_RIP     56
 #define CTX_RFLAGS  64
-#define CTX_SIZE    72
+#define CTX_KSTACK  72
+#define CTX_SIZE    80
 
 #ifndef __ASSEMBLER__
 
@@ -68,6 +69,22 @@ struct context {
      * would otherwise hand the next thread a backwards `memcpy`.
      */
     uint64_t rflags;
+
+    /*
+     * The stack an entry from ring 3 lands on, which is this thread's and
+     * not the switch's.
+     *
+     * AArch64 has SP_EL1 in exactly this slot and for exactly this reason,
+     * and the hardware selects it on an exception from EL0. x86 reads it
+     * out of the TSS instead, and the TSS is one structure for the whole
+     * machine - so `context_switch` writes this field into it, which is the
+     * same store the ARM switch makes and lands somewhere else.
+     *
+     * It is not loaded back into any register, so nothing in `switch.S`
+     * saves it: it is written once when the thread is built and read on
+     * every switch *to* the thread.
+     */
+    uint64_t kernel_stack;
 };
 
 _Static_assert(sizeof(struct context) == CTX_SIZE, "context size vs switch.S");
@@ -80,6 +97,8 @@ _Static_assert(offsetof(struct context, r15)    == CTX_R15,    "CTX_R15");
 _Static_assert(offsetof(struct context, rsp)    == CTX_RSP,    "CTX_RSP");
 _Static_assert(offsetof(struct context, rip)    == CTX_RIP,    "CTX_RIP");
 _Static_assert(offsetof(struct context, rflags) == CTX_RFLAGS, "CTX_RFLAGS");
+_Static_assert(offsetof(struct context, kernel_stack) == CTX_KSTACK,
+               "CTX_KSTACK");
 
 /*
  * There is no XMM state in here yet, and that is a gap rather than a
@@ -107,6 +126,42 @@ void context_switch(struct context *prev, struct context *next);
 
 /* Where a hand-built context starts. Never called directly. */
 void thread_entry(void);
+
+/*
+ * A context that has never run, so the first `ret` in `context_switch`
+ * starts it.
+ *
+ * **This exists so that `kernel/thread.c` does not name a register.** It
+ * planted seven AArch64 registers itself until the second architecture made
+ * the difference between "no assembly in the kernel" and "portable kernel"
+ * something that mattered.
+ *
+ * rbx and r12 because they are the first two slots of the saved context and
+ * so the easiest to plant, and `thread_entry` reads them from there. 0x202
+ * is IF set and bit 1, which reads as 1 always: a thread that could not be
+ * preempted would keep the machine the moment it chose not to yield.
+ */
+static inline void context_init(struct context *ctx, void (*entry)(void *),
+                                void *arg, void *stack_top,
+                                void *exception_top)
+{
+    ctx->rbx = (uint64_t)(uintptr_t)entry;
+    ctx->r12 = (uint64_t)(uintptr_t)arg;
+    ctx->rip = (uint64_t)(uintptr_t)thread_entry;
+    ctx->rsp = (uint64_t)(uintptr_t)stack_top;
+    ctx->rflags = 0x202;
+    ctx->kernel_stack = (uint64_t)(uintptr_t)exception_top;
+}
+
+/*
+ * Hands this thread to a process and does not return.
+ *
+ * `enter_ring3` was its name here and `enter_el0` on ARM, and `process.c`
+ * declared one of them by hand - the one place the kernel said out loud
+ * which architecture it was on. What the caller means is "run at the
+ * unprivileged level", and every machine has one under a different name.
+ */
+void enter_user(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
 
 #endif /* !__ASSEMBLER__ */
 

@@ -15,8 +15,6 @@
 #include "panic.h"
 #include "console.h"
 
-/* In arch/aarch64/el0.S. Does not return. */
-void enter_el0(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
 
 static struct process processes[PROCESS_MAX];
 static unsigned next_id = 1;
@@ -211,7 +209,7 @@ static void process_main(void *arg)
     as_switch(p->space);
 
     /* Past the header, which is data rather than code. */
-    enter_el0(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP, p->arg);
+    enter_user(USER_TEXT_VA + USER_IMAGE_HEADER, USER_STACK_TOP, p->arg);
 }
 
 struct process *process_create(const char *name, const void *image,
@@ -914,10 +912,10 @@ static void release_memory(struct process *p)
      * points at them.
      */
     for (va = USER_MAP_VA; va < p->next_map; va += PAGE_SIZE) {
-        uint64_t *entry = as_page_entry(p->space, va);
+        uintptr_t phys = as_page_phys(p->space, va);
 
-        if (entry != NULL && (*entry & DESC_VALID) != 0) {
-            pmm_free_page((void *)(uintptr_t)(*entry & DESC_ADDR_MASK));
+        if (phys != 0) {
+            pmm_free_page((void *)phys);
         }
     }
 
@@ -1050,22 +1048,17 @@ static bool range_ok(const struct process *p, uintptr_t va, size_t len,
     for (page = va & ~(uintptr_t)PAGE_MASK;
          page <= (last & ~(uintptr_t)PAGE_MASK);
          page += PAGE_SIZE) {
-        uint64_t *entry = as_page_entry(p->space, page);
-        uint64_t ap;
-
-        if (entry == NULL || (*entry & 1) == 0) {
-            return false;       /* not mapped in this process */
-        }
-
-        ap = (*entry >> 6) & 3;
-
-        /* AP=01 is EL0 read/write; AP=11 is EL0 read-only. Anything else has
-         * no EL0 access at all, which means it is the kernel's. */
-        if (ap != 1 && ap != 3) {
-            return false;
-        }
-
-        if (need_write && ap != 1) {
+        /*
+         * Asked of the address space rather than decoded here.
+         *
+         * This is the check on every pointer a process hands the kernel,
+         * and it used to read the descriptor's AP field directly - which
+         * meant the most security-critical line in the kernel was also the
+         * one most quietly tied to one processor. On a machine where those
+         * bits mean something else it would not crash; it would answer
+         * wrongly.
+         */
+        if (!as_user_may(p->space, page, need_write)) {
             return false;
         }
     }

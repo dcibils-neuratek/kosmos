@@ -327,7 +327,30 @@ void trap_handler(unsigned index, struct trapframe *tf)
         struct process *p = process_current();
 
         if (index == 8 && ESR_EC(tf->esr) == EC_SVC64) {
-            syscall_dispatch(tf);
+            /*
+             * The five argument registers and the number, in the shape
+             * `kernel/syscall.c` can read without knowing what an x
+             * register is. AAPCS64 puts the arguments in x0-x4 and this
+             * system puts the number in x8, and those two facts live here
+             * now rather than ninety-six times over there.
+             */
+            struct syscall_frame sc;
+            unsigned i;
+
+            for (i = 0; i < 5; i++) {
+                sc.arg[i] = tf->x[i];
+            }
+
+            sc.number = tf->x[8];
+            sc.result = 0;
+
+            syscall_dispatch(&sc);
+
+            /* x0, because that is where an eret takes a return value from.
+             * Not reached when the call was SYS_EXIT: `process_exit` does
+             * not return, and the frame it would write into is gone. */
+            tf->x[0] = sc.result;
+
             die_if_killed();
             return;
         }

@@ -27,7 +27,6 @@
 #include "thread.h"
 #include "ipc.h"
 #include "memobj.h"
-#include "trap.h"
 #include "console.h"
 #include "screen.h"
 #include "cpu.h"
@@ -614,13 +613,11 @@ static long sys_map(struct process *p, size_t pages)
 
         for (j = 0; j < i; j++) {
             uintptr_t va = base + j * PAGE_SIZE;
-            uint64_t *entry = as_page_entry(p->space, va);
+            uintptr_t phys = as_page_phys(p->space, va);
 
-            if (entry != NULL && (*entry & DESC_VALID) != 0) {
-                void *page = (void *)(uintptr_t)(*entry & DESC_ADDR_MASK);
-
+            if (phys != 0) {
                 (void)as_unmap(p->space, va, 1);
-                pmm_free_page(page);
+                pmm_free_page((void *)phys);
             }
         }
 
@@ -662,19 +659,15 @@ static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
 
     for (i = 0; i < pages; i++) {
         uintptr_t at = va + i * PAGE_SIZE;
-        uint64_t *entry = as_page_entry(p->space, at);
+        uintptr_t phys = as_page_phys(p->space, at);
 
-        if (entry == NULL || (*entry & DESC_VALID) == 0) {
+        if (phys == 0) {
             continue;           /* already gone; unmapping twice is not an error */
         }
 
-        {
-            void *page = (void *)(uintptr_t)(*entry & DESC_ADDR_MASK);
-
-            (void)as_unmap(p->space, at, 1);
-            pmm_free_page(page);
-            freed++;
-        }
+        (void)as_unmap(p->space, at, 1);
+        pmm_free_page((void *)phys);
+        freed++;
     }
 
     p->mapped_pages -= (freed < p->mapped_pages) ? freed : p->mapped_pages;
@@ -711,16 +704,16 @@ static long sys_proctable(struct process *p, uintptr_t out_ptr, size_t max)
     return (long)process_table((struct proc_info *)out_ptr, (unsigned)max);
 }
 
-void syscall_dispatch(struct trapframe *tf)
+void syscall_dispatch(struct syscall_frame *sc)
 {
     struct process *p = process_current();
-    unsigned long number = tf->x[8];
+    unsigned long number = sc->number;
     long result;
 
     if (p == NULL) {
         /* An SVC from something that is not a process. Nothing issues one,
          * so reaching here means the vector routed something wrongly. */
-        tf->x[0] = (uint64_t)(long)SYS_ERR_BADCALL;
+        sc->result = (uint64_t)(long)SYS_ERR_BADCALL;
         return;
     }
 
@@ -728,25 +721,25 @@ void syscall_dispatch(struct trapframe *tf)
     case SYS_EXIT:
         /* Never returns. The thread and everything the process owned go
          * back to their pools. */
-        process_exit(p, (int)tf->x[0]);
+        process_exit(p, (int)sc->arg[0]);
         return;
 
     case SYS_WRITE:
-        result = sys_write(p, tf->x[0], (size_t)tf->x[1]);
+        result = sys_write(p, sc->arg[0], (size_t)sc->arg[1]);
         break;
 
     case SYS_SND_WRITE:
         if (!p->owns_audio) {
             result = SYS_ERR_DENIED;
-        } else if (tf->x[1] == 0 || tf->x[1] > HAL_SND_PERIOD_BYTES) {
+        } else if (sc->arg[1] == 0 || sc->arg[1] > HAL_SND_PERIOD_BYTES) {
             result = SYS_ERR_FAULT;
-        } else if (!process_may_read(p, tf->x[0], (size_t)tf->x[1])) {
+        } else if (!process_may_read(p, sc->arg[0], (size_t)sc->arg[1])) {
             result = SYS_ERR_FAULT;
         } else {
             /* Full is not a failure. See SYS_SND_WRITE in syscall.h: a
              * caller ahead of the device is told so rather than blocked. */
-            result = hal_snd_write((const void *)tf->x[0],
-                                   (unsigned)tf->x[1]) ? 0 : SYS_NO_INPUT;
+            result = hal_snd_write((const void *)sc->arg[0],
+                                   (unsigned)sc->arg[1]) ? 0 : SYS_NO_INPUT;
         }
 
         break;
@@ -774,7 +767,7 @@ void syscall_dispatch(struct trapframe *tf)
             break;
         }
 
-        if (!process_may_write(p, tf->x[0], sizeof(info))) {
+        if (!process_may_write(p, sc->arg[0], sizeof(info))) {
             result = SYS_ERR_FAULT;
             break;
         }
@@ -791,7 +784,7 @@ void syscall_dispatch(struct trapframe *tf)
             info.present = 1;
         }
 
-        memcpy((void *)tf->x[0], &info, sizeof(info));
+        memcpy((void *)sc->arg[0], &info, sizeof(info));
         result = 0;
         break;
     }
@@ -799,14 +792,14 @@ void syscall_dispatch(struct trapframe *tf)
     case SYS_NET_SEND:
         if (!p->owns_net) {
             result = SYS_ERR_DENIED;
-        } else if (tf->x[1] == 0 || tf->x[1] > HAL_NET_FRAME) {
+        } else if (sc->arg[1] == 0 || sc->arg[1] > HAL_NET_FRAME) {
             result = SYS_ERR_FAULT;
-        } else if (!process_may_read(p, tf->x[0], (size_t)tf->x[1])) {
+        } else if (!process_may_read(p, sc->arg[0], (size_t)sc->arg[1])) {
             result = SYS_ERR_FAULT;
         } else {
-            memcpy(net_bounce, (const void *)tf->x[0], (size_t)tf->x[1]);
+            memcpy(net_bounce, (const void *)sc->arg[0], (size_t)sc->arg[1]);
 
-            result = hal_net_send(net_bounce, (unsigned)tf->x[1])
+            result = hal_net_send(net_bounce, (unsigned)sc->arg[1])
                      ? 0 : SYS_NO_INPUT;
         }
 
@@ -820,20 +813,20 @@ void syscall_dispatch(struct trapframe *tf)
             break;
         }
 
-        if (tf->x[1] == 0 || tf->x[1] > HAL_NET_FRAME) {
+        if (sc->arg[1] == 0 || sc->arg[1] > HAL_NET_FRAME) {
             result = SYS_ERR_FAULT;
             break;
         }
 
-        if (!process_may_write(p, tf->x[0], (size_t)tf->x[1])) {
+        if (!process_may_write(p, sc->arg[0], (size_t)sc->arg[1])) {
             result = SYS_ERR_FAULT;
             break;
         }
 
-        got = hal_net_recv(net_bounce, (unsigned)tf->x[1]);
+        got = hal_net_recv(net_bounce, (unsigned)sc->arg[1]);
 
         if (got > 0) {
-            memcpy((void *)tf->x[0], net_bounce, (size_t)got);
+            memcpy((void *)sc->arg[0], net_bounce, (size_t)got);
             result = got;
         } else if (got < 0) {
             result = SYS_ERR_FAULT;     /* the buffer is smaller than a frame */
@@ -853,10 +846,10 @@ void syscall_dispatch(struct trapframe *tf)
              * say anything. The console is the kernel's here, so this
              * reaches the serial line whatever userland was doing.
              */
-            kputs((tf->x[0] == 1) ? "\nkosmos: restarting\n"
+            kputs((sc->arg[0] == 1) ? "\nkosmos: restarting\n"
                                   : "\nkosmos: powering off\n");
 
-            if (tf->x[0] == 1) {
+            if (sc->arg[0] == 1) {
                 hal_restart();
             } else {
                 hal_power_off();
@@ -879,14 +872,14 @@ void syscall_dispatch(struct trapframe *tf)
 
         if (!p->owns_console) {
             result = SYS_ERR_DENIED;
-        } else if (!process_may_write(p, tf->x[0], sizeof(unsigned))
-                   || !process_may_write(p, tf->x[1], sizeof(unsigned))) {
+        } else if (!process_may_write(p, sc->arg[0], sizeof(unsigned))
+                   || !process_may_write(p, sc->arg[1], sizeof(unsigned))) {
             result = SYS_ERR_FAULT;
         } else if (!hal_key_event(&code, &down)) {
             result = SYS_NO_INPUT;
         } else {
-            *(unsigned *)tf->x[0] = code;
-            *(unsigned *)tf->x[1] = down ? 1u : 0u;
+            *(unsigned *)sc->arg[0] = code;
+            *(unsigned *)sc->arg[1] = down ? 1u : 0u;
             result = 0;
         }
 
@@ -921,12 +914,12 @@ void syscall_dispatch(struct trapframe *tf)
 
         if (!p->owns_console) {
             result = SYS_ERR_DENIED;
-        } else if (!process_may_write(p, tf->x[0], sizeof(struct pointer_info))) {
+        } else if (!process_may_write(p, sc->arg[0], sizeof(struct pointer_info))) {
             result = SYS_ERR_FAULT;
         } else if (!hal_pointer_poll(&state)) {
             result = SYS_ERR_DENIED;    /* there is no pointer on this board */
         } else {
-            struct pointer_info *out = (struct pointer_info *)tf->x[0];
+            struct pointer_info *out = (struct pointer_info *)sc->arg[0];
 
             out->x       = state.x;
             out->y       = state.y;
@@ -956,7 +949,7 @@ void syscall_dispatch(struct trapframe *tf)
         if (!p->owns_screen) {
             result = SYS_ERR_DENIED;
         } else {
-            if (tf->x[0] != 0) {
+            if (sc->arg[0] != 0) {
                 console_screen_suspend();
             } else {
                 console_screen_resume();
@@ -976,10 +969,10 @@ void syscall_dispatch(struct trapframe *tf)
             /* Granted authority over every process. See SPAWN_PROCCTL: the
              * rule is not relaxed, one process is trusted with more than
              * it. */
-            result = (process_kill_any((unsigned)tf->x[0]) == 0)
+            result = (process_kill_any((unsigned)sc->arg[0]) == 0)
                      ? 0 : SYS_ERR_NO_CHILD;
         } else {
-            result = (process_kill(p, (unsigned)tf->x[0]) == 0)
+            result = (process_kill(p, (unsigned)sc->arg[0]) == 0)
                      ? 0 : SYS_ERR_NO_CHILD;
         }
         break;
@@ -1023,7 +1016,7 @@ void syscall_dispatch(struct trapframe *tf)
              * ten thousand seconds and looks exactly like a hang. It was
              * written that way first.
              */
-            thread_sleep_until(hal_ticks() + (unsigned long)tf->x[0]);
+            thread_sleep_until(hal_ticks() + (unsigned long)sc->arg[0]);
             result = 0;
         }
         break;
@@ -1043,10 +1036,10 @@ void syscall_dispatch(struct trapframe *tf)
          * already returns immediately for a deadline that has passed, so
          * this is only about saying what happens rather than relying on it.
          */
-        if (tf->x[0] == 0) {
+        if (sc->arg[0] == 0) {
             thread_yield();
         } else {
-            unsigned long ticks = (unsigned long)tf->x[0];
+            unsigned long ticks = (unsigned long)sc->arg[0];
 
             if (ticks > (unsigned long)TICK_HZ * 3600UL) {
                 ticks = (unsigned long)TICK_HZ * 3600UL;
@@ -1072,18 +1065,18 @@ void syscall_dispatch(struct trapframe *tf)
          * If output ever carries something that should not be shared, the
          * fix is not to print it.
          */
-        size_t max = (size_t)tf->x[1];
+        size_t max = (size_t)sc->arg[1];
 
         if (max > 16384) {
             max = 16384;
         }
 
-        if (!process_may_write(p, tf->x[0], max)) {
+        if (!process_may_write(p, sc->arg[0], max)) {
             result = SYS_ERR_FAULT;
             break;
         }
 
-        result = (long)console_log((char *)tf->x[0], max);
+        result = (long)console_log((char *)sc->arg[0], max);
         break;
     }
 
@@ -1103,7 +1096,7 @@ void syscall_dispatch(struct trapframe *tf)
          * into it, and a create that also mapped would put pages in the
          * address space of a process that only wanted to hand them on.
          */
-        struct memobj *m = memobj_create((size_t)tf->x[0]);
+        struct memobj *m = memobj_create((size_t)sc->arg[0]);
 
         if (m == NULL) {
             result = SYS_ERR_NO_ROOM;
@@ -1142,7 +1135,7 @@ void syscall_dispatch(struct trapframe *tf)
          * allowed to have by asking for regions instead of pages.
          */
         struct memobj *m = ipc_resolve_memory(thread_current(),
-                                              (cap_t)tf->x[0]);
+                                              (cap_t)sc->arg[0]);
         uintptr_t base;
         size_t i;
 
@@ -1192,7 +1185,7 @@ void syscall_dispatch(struct trapframe *tf)
 
     case SYS_MEM_SIZE: {
         struct memobj *m = ipc_resolve_memory(thread_current(),
-                                              (cap_t)tf->x[0]);
+                                              (cap_t)sc->arg[0]);
 
         result = (m == NULL) ? SYS_ERR_DENIED : (long)m->pages;
         break;
@@ -1202,7 +1195,7 @@ void syscall_dispatch(struct trapframe *tf)
         struct diskinfo info;
         struct blkdev dev;
 
-        if (!process_may_write(p, (uintptr_t)tf->x[0], sizeof(info))) {
+        if (!process_may_write(p, (uintptr_t)sc->arg[0], sizeof(info))) {
             result = SYS_ERR_FAULT;
             break;
         }
@@ -1220,19 +1213,19 @@ void syscall_dispatch(struct trapframe *tf)
         }
 
         info.reserved = 0;
-        *(struct diskinfo *)(uintptr_t)tf->x[0] = info;
+        *(struct diskinfo *)(uintptr_t)sc->arg[0] = info;
         result = 0;
         break;
     }
 
     case SYS_DISK_READ:
-        result = sys_disk(p, false, tf->x[0], (uintptr_t)tf->x[1],
-                          (size_t)tf->x[2]);
+        result = sys_disk(p, false, sc->arg[0], (uintptr_t)sc->arg[1],
+                          (size_t)sc->arg[2]);
         break;
 
     case SYS_DISK_WRITE:
-        result = sys_disk(p, true, tf->x[0], (uintptr_t)tf->x[1],
-                          (size_t)tf->x[2]);
+        result = sys_disk(p, true, sc->arg[0], (uintptr_t)sc->arg[1],
+                          (size_t)sc->arg[2]);
         break;
 
     case SYS_BOOT_OPT: {
@@ -1245,16 +1238,16 @@ void syscall_dispatch(struct trapframe *tf)
          */
         char name[64];
         char value[128];
-        size_t len = (size_t)tf->x[2];
+        size_t len = (size_t)sc->arg[2];
 
-        if (!process_may_read(p, (uintptr_t)tf->x[0], 1)
-            || !process_may_write(p, (uintptr_t)tf->x[1], len)) {
+        if (!process_may_read(p, (uintptr_t)sc->arg[0], 1)
+            || !process_may_write(p, (uintptr_t)sc->arg[1], len)) {
             result = SYS_ERR_FAULT;
             break;
         }
 
         {
-            const char *from = (const char *)(uintptr_t)tf->x[0];
+            const char *from = (const char *)(uintptr_t)sc->arg[0];
             size_t i;
 
             for (i = 0; i + 1 < sizeof(name) && from[i] != '\0'; i++) {
@@ -1270,7 +1263,7 @@ void syscall_dispatch(struct trapframe *tf)
         }
 
         {
-            char *to = (char *)(uintptr_t)tf->x[1];
+            char *to = (char *)(uintptr_t)sc->arg[1];
             size_t i;
 
             for (i = 0; i + 1 < len && value[i] != '\0'; i++) {
@@ -1328,7 +1321,7 @@ void syscall_dispatch(struct trapframe *tf)
          * woken with an error rather than left waiting - which is the
          * behaviour M3 built and tested.
          */
-        result = ipc_endpoint_destroy((cap_t)tf->x[0]);
+        result = ipc_endpoint_destroy((cap_t)sc->arg[0]);
         break;
 
     case SYS_SHARE_UNMAP: {
@@ -1348,8 +1341,8 @@ void syscall_dispatch(struct trapframe *tf)
          * keeping the ability to read and write it, which is not a capability
          * system, it is a capability system with a hole in it.
          */
-        uintptr_t va    = tf->x[0];
-        size_t    pages = (size_t)tf->x[1];
+        uintptr_t va    = sc->arg[0];
+        size_t    pages = (size_t)sc->arg[1];
 
         if ((va & (PAGE_SIZE - 1)) != 0 || pages == 0) {
             result = SYS_ERR_FAULT;
@@ -1385,7 +1378,7 @@ void syscall_dispatch(struct trapframe *tf)
         struct schedinfo info;
         unsigned i;
 
-        if (!process_may_write(p, (uintptr_t)tf->x[0], sizeof(info))) {
+        if (!process_may_write(p, (uintptr_t)sc->arg[0], sizeof(info))) {
             result = SYS_ERR_FAULT;
             break;
         }
@@ -1411,7 +1404,7 @@ void syscall_dispatch(struct trapframe *tf)
             }
         }
 
-        memcpy((void *)(uintptr_t)tf->x[0], &info, sizeof(info));
+        memcpy((void *)(uintptr_t)sc->arg[0], &info, sizeof(info));
         result = 0;
         break;
     }
@@ -1432,7 +1425,7 @@ void syscall_dispatch(struct trapframe *tf)
          * If this ever needs an owner, the shape already exists: a spawn
          * grant, the way `SPAWN_DISK` hands the disk to exactly one child.
          */
-        switch ((unsigned)tf->x[0]) {
+        switch ((unsigned)sc->arg[0]) {
         case SCHED_SET_QUANTUM:
             /*
              * Refused rather than clamped. The setter clamps too, because
@@ -1441,17 +1434,17 @@ void syscall_dispatch(struct trapframe *tf)
              * get them instead of being answered "yes" and given one
              * second.
              */
-            if (tf->x[1] == 0 || tf->x[1] > SCHED_QUANTUM_MAX) {
+            if (sc->arg[1] == 0 || sc->arg[1] > SCHED_QUANTUM_MAX) {
                 result = SYS_ERR_DENIED;
                 break;
             }
 
-            sched_set_quantum((unsigned)tf->x[1]);
+            sched_set_quantum((unsigned)sc->arg[1]);
             result = 0;
             break;
 
         case SCHED_SET_POLICY:
-            result = sched_switch_to((unsigned)tf->x[1]) ? 0 : SYS_ERR_DENIED;
+            result = sched_switch_to((unsigned)sc->arg[1]) ? 0 : SYS_ERR_DENIED;
             break;
 
         default:
@@ -1473,11 +1466,11 @@ void syscall_dispatch(struct trapframe *tf)
          * SYS_ENDPOINT_DESTROY needs none: it resolves against this
          * thread's own table, so a process can only drop what it was given.
          */
-        result = ipc_cap_drop(thread_current(), (cap_t)tf->x[0]);
+        result = ipc_cap_drop(thread_current(), (cap_t)sc->arg[0]);
         break;
 
     case SYS_CALL:
-        result = sys_call(p, (cap_t)tf->x[0], tf->x[1], tf->x[2]);
+        result = sys_call(p, (cap_t)sc->arg[0], sc->arg[1], sc->arg[2]);
         break;
 
     case SYS_RECEIVE:
@@ -1491,47 +1484,47 @@ void syscall_dispatch(struct trapframe *tf)
          * it looks exactly like a hang.
          */
         {
-            unsigned long timeout = (unsigned long)tf->x[4];
+            unsigned long timeout = (unsigned long)sc->arg[4];
 
             if (timeout > (unsigned long)TICK_HZ * 3600UL) {
                 timeout = (unsigned long)TICK_HZ * 3600UL;
             }
 
-            result = sys_receive(p, (cap_t)tf->x[0], tf->x[1], tf->x[2],
-                                 (tf->x[3] & 1u) != 0, timeout);
+            result = sys_receive(p, (cap_t)sc->arg[0], sc->arg[1], sc->arg[2],
+                                 (sc->arg[3] & 1u) != 0, timeout);
         }
         break;
 
     case SYS_REPLY:
-        result = sys_reply(p, tf->x[0], tf->x[1]);
+        result = sys_reply(p, sc->arg[0], sc->arg[1]);
         break;
 
     case SYS_SPAWN:
-        result = sys_spawn(p, tf->x[0], tf->x[1], (size_t)tf->x[2], tf->x[3]);
+        result = sys_spawn(p, sc->arg[0], sc->arg[1], (size_t)sc->arg[2], sc->arg[3]);
         break;
 
     case SYS_SCREEN:
-        result = sys_screen(p, tf->x[0]);
+        result = sys_screen(p, sc->arg[0]);
         break;
 
     case SYS_SYSINFO:
-        result = sys_sysinfo(p, tf->x[0]);
+        result = sys_sysinfo(p, sc->arg[0]);
         break;
 
     case SYS_MAP:
-        result = sys_map(p, (size_t)tf->x[0]);
+        result = sys_map(p, (size_t)sc->arg[0]);
         break;
 
     case SYS_UNMAP:
-        result = sys_unmap(p, tf->x[0], (size_t)tf->x[1]);
+        result = sys_unmap(p, sc->arg[0], (size_t)sc->arg[1]);
         break;
 
     case SYS_SETNAME:
-        result = sys_setname(p, tf->x[0], (size_t)tf->x[1]);
+        result = sys_setname(p, sc->arg[0], (size_t)sc->arg[1]);
         break;
 
     case SYS_PROCTABLE:
-        result = sys_proctable(p, tf->x[0], (size_t)tf->x[1]);
+        result = sys_proctable(p, sc->arg[0], (size_t)sc->arg[1]);
         break;
 
     case SYS_WAIT: {
@@ -1541,14 +1534,14 @@ void syscall_dispatch(struct trapframe *tf)
          * of them is still running.
          */
         unsigned id = 0;
-        uintptr_t id_ptr = tf->x[0];
+        uintptr_t id_ptr = sc->arg[0];
 
         if (id_ptr != 0 && !process_may_write(p, id_ptr, sizeof(uint64_t))) {
             result = SYS_ERR_FAULT;
             break;
         }
 
-        result = process_wait(p, &id, (tf->x[1] & 1u) != 0);
+        result = process_wait(p, &id, (sc->arg[1] & 1u) != 0);
 
         if (result == -2) {
             result = SYS_NO_CHILD_READY;
@@ -1569,5 +1562,5 @@ void syscall_dispatch(struct trapframe *tf)
 
     /* Into the frame rather than into x0 directly: the eret restores every
      * register from here, so this is where a return value lives. */
-    tf->x[0] = (uint64_t)result;
+    sc->result = (uint64_t)result;
 }

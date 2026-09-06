@@ -549,11 +549,36 @@ struct diskinfo {
 
 #include <stdint.h>
 
-struct trapframe;
+/*
+ * What a syscall carries, in the one shape every architecture can fill.
+ *
+ * This used to be `struct trapframe *` and the dispatcher read `tf->x[0]`
+ * through `tf->x[4]` for the arguments and `tf->x[8]` for the number - which
+ * meant the largest file in the kernel named AArch64 registers ninety-six
+ * times. Nothing else in `kernel/` did anything of the kind: there is no
+ * assembly here and never was, and those ninety-six were most of the
+ * distance between that and being portable.
+ *
+ * Five arguments because that is what fits, not because anything counted:
+ * AArch64 passes them in x0-x4 with the number in x8, and System V on
+ * AMD64 in rdi, rsi, rdx, r10, r8 with the number in rax. The trap handler
+ * fills this from whichever those are and copies `result` back out, so the
+ * register file stays a fact about the machine and the protocol stays a
+ * fact about the system.
+ *
+ * `unsigned long` rather than `uint64_t`: it is a machine word, and that is
+ * the type that says so.
+ */
+struct syscall_frame {
+    unsigned long number;
+    unsigned long arg[5];
+    unsigned long result;
+};
 
-/* Called from the trap handler on an SVC from EL0. Writes the result back
- * into the frame, which is where the eret will take x0 from. */
-void syscall_dispatch(struct trapframe *tf);
+/* Called from the trap handler on a syscall from user level. Writes into
+ * `result`, which the handler puts back wherever that machine returns a
+ * value. */
+void syscall_dispatch(struct syscall_frame *sc);
 
 #endif /* !__ASSEMBLER__ */
 

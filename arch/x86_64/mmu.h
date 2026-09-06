@@ -183,6 +183,24 @@ void as_switch(struct addrspace *as);
  * inspection. */
 uint64_t *as_page_entry(struct addrspace *as, uintptr_t va);
 
+/*
+ * The two questions `kernel/` actually asks about a mapping.
+ *
+ * It used to read the descriptor itself - `*entry & DESC_VALID` for the
+ * first and `(*entry >> 6) & 3` for the second - which is the one piece of
+ * architecture that hid from a search for register names. **It is also the
+ * most dangerous piece**, because `process_may_read` and `process_may_write`
+ * are the check on every pointer a process hands the kernel: on a machine
+ * where bits 6 and 7 mean something else, that check does not crash, it
+ * quietly answers wrongly.
+ *
+ * `as_page_phys` returns 0 for an address that is not mapped. Physical zero
+ * is a real address and is deliberately never mapped into a user space - it
+ * is where a null dereference has to fault - so it is free to mean "no".
+ */
+uintptr_t as_page_phys(struct addrspace *as, uintptr_t va);
+bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write);
+
 #define AS_OK           0
 #define AS_ERR_RANGE   (-1)     /* outside the user region */
 #define AS_ERR_ALIGN   (-2)     /* not page aligned */

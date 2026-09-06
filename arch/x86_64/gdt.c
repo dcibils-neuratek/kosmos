@@ -148,8 +148,3 @@ void gdt_init(void)
     /* And the task register, which is what makes rsp0 mean anything. */
     __asm__ volatile("ltr %w0" :: "r"((uint16_t)SEL_TSS));
 }
-
-void gdt_set_kernel_stack(uintptr_t top)
-{
-    tss.rsp0 = (uint64_t)top;
-}

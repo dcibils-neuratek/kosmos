@@ -18,15 +18,15 @@
 #include "gdt.h"
 
 .section .text
-.global enter_ring3
+.global enter_user
 
 /*
- * void enter_ring3(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
+ * void enter_user(uintptr_t entry, uintptr_t user_sp, unsigned long arg);
  *   rdi = where ring 3 starts
  *   rsi = the process's own stack
  *   rdx = the one word it is told
  */
-enter_ring3:
+enter_user:
     /*
      * Nothing may interrupt the transition. Between the segment loads and
      * the iretq this is ring 0 code with ring 3 data selectors in ds and

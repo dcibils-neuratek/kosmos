@@ -325,7 +325,7 @@ void kmain(void)
 
     process_init();
     boot_stage("processes");
-    boot_why("An address space and a thread at EL0; the kernel is mapped, not reachable.");
+    boot_why("An address space and a thread at user level; the kernel is mapped, not reachable.");
 
     boot_fact_begin();
     kputu(PROCESS_MAX);
