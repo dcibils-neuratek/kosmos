@@ -8,6 +8,50 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**The text path decodes UTF-8.** It cast each byte to a codepoint, so a
+three-byte character became three lookups and three boxes - which is what
+the conformance benchmark showed, and it was never a missing font.
+
+Both paths were wrong and both are fixed. The outline faces decode and now
+rasterise a glyph on demand into a 128-slot codepoint-keyed cache, with the
+eager ASCII array untouched so the common path costs what it always did.
+The built-in 8x16 bitmap decodes too, and its width function counted *bytes*
+- which made one accented character two columns wide and every wrapped line
+short.
+
+Measured rather than asserted:
+
+    default (spleen)   "e" 8   "é" 8      was 8 and 16
+    arimo 15px         "iiii" 12  "MMMM" 44   proportional, and "ß" one advance
+
+62 display checks, 127/127 and every suite green.
+
+**What is still not right, and it is not the parser.** A page with accented
+Latin still draws boxes, because `theme.lua` sets all four font roles -
+`ui`, `title`, `text`, `mono` - to `spleen`, an 8x16 bitmap face with ASCII
+in it and nothing else. Switching the desktop to a proportional outline face
+is an *appearance* decision and `appearance.lua` already offers it.
+
+**Two things found on the way that are worth fixing and are not fixed:**
+
+`gc:text` clips with `s:sub(skip + 1, skip + room)` - a *byte* slice, where
+`skip` and `room` are counted in columns. On any multi-byte text that
+truncates the line early and can cut a UTF-8 sequence in half.
+
+And with a proportional face the page came back as mojibake - `cafÃ©` for
+`café` - so something between `gc:text` and the blitter is still handling
+bytes where it should handle characters. `gfx.measure` decodes correctly and
+the two drawing loops in `gfx.c` decode correctly, so it is between them.
+That is where to start.
+
+**A mistake to record rather than bury.** Demonstrating the font switch
+meant writing `/home/.appearance`, and it was written with a `fonts` key
+alone - so the `palette`, `desktop` and `wallpaper` in it were destroyed. It
+has been removed so the system boots to documented defaults, and the
+appearance will need setting again. Read-modify-write, not write.
+
+---
+
 **There is a browser window, and it shows a page fetched off the network.**
 `wm browser:10.0.2.2:8000/` opens a connection, sends a GET, parses what
 comes back with hubbub, and displays the document's text with the counts

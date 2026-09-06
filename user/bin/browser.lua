@@ -27,6 +27,20 @@
 local ui = use("/lib/ui.lua")
 local theme = ui.theme
 
+--
+-- **No `gfx.use_font` here, and that was tried.**
+--
+-- It sets the face for the calling *process*, and this process does not
+-- draw: `gc:text` puts an op in a list and the window manager rasterises
+-- it, with the four faces `theme.lua` names. So an application asking for
+-- a font asks the wrong process and nothing happens - which is exactly
+-- what a screenshot showed, twice.
+--
+-- The face a page is drawn in is `theme.fonts.text`, which every role
+-- defaults to `spleen`: an 8x16 bitmap with ASCII in it and nothing else.
+-- That is why a page with accented Latin in it shows boxes here, and it is
+-- an appearance setting rather than a browser bug.
+
 local W, H = 900, 640
 local BAR_H = gfx.font.h + 8
 
@@ -84,20 +98,36 @@ end
 -- honestly.
 --------------------------------------------------------------------------
 
-local function wrap(text, columns)
+local function wrap(text, width)
   local out = {}
+  local space = gfx.measure(" ")
 
   for line in tostring(text or ""):gmatch("[^\n]+") do
-    local tidy = line:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    local current, taken = nil, 0
 
-    while #tidy > columns do
-      local cut = tidy:sub(1, columns):match("^.*()%s") or columns
+    --
+    -- Greedy, word by word, and each word measured once.
+    --
+    -- Measuring the whole candidate line on every word would be quadratic
+    -- in the length of a paragraph; adding one advance at a time is what a
+    -- line breaker actually does, and it is the same shape the layout
+    -- engine will need when it breaks a real inline box.
+    --
+    for word in line:gmatch("%S+") do
+      local w = gfx.measure(word)
 
-      out[#out + 1] = tidy:sub(1, cut - 1)
-      tidy = tidy:sub(cut + 1)
+      if current == nil then
+        current, taken = word, w
+      elseif taken + space + w <= width then
+        current = current .. " " .. word
+        taken = taken + space + w
+      else
+        out[#out + 1] = current
+        current, taken = word, w
+      end
     end
 
-    if tidy ~= "" then out[#out + 1] = tidy end
+    if current ~= nil then out[#out + 1] = current end
   end
 
   return out
@@ -210,7 +240,7 @@ local function load(text, remember)
   -- a window called "Browser" displaying a page called something else.
   --
   win:retitle(title and ("Browser - " .. title) or "Browser")
-  page.items = wrap(doc:text("body") or "", math.max(20, (page.w - 24) // gfx.font.w))
+  page.items = wrap(doc:text("body") or "", math.max(80, page.w - 28))
   page.top = 1
   page.selected = 0
 

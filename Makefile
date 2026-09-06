@@ -512,7 +512,7 @@ WEB_SRCS += $(NS)/libdom/bindings/hubbub/parser.c
 
 # Kosmos's own side of it, held to the ordinary flags rather than the
 # vendored ones - it is not vendored.
-WEB_SRCS += user/lib/web_kosmos.c
+WEB_SRCS += user/lib/web_kosmos.c user/lib/web_select.c
 
 # The property names, read out of the same file their own build reads.
 WEB_PROPS   := $(shell sed -n 's/^\([^\#][^:]*\):.*/\1/p' \
@@ -716,7 +716,7 @@ $(UBUILD)/runtime/upstream/netsurf/%.c.o: runtime/upstream/netsurf/%.c \
 # `-Wall -Wextra -Werror` and `-fno-common`, plus the public headers of the
 # libraries it calls. `gl_kosmos.c` has the same arrangement with TinyGL.
 #
-$(UBUILD)/user/lib/web_kosmos.c.o: user/lib/web_kosmos.c $(FLAGS_FILE) | $(WEB_GEN)
+$(UBUILD)/user/lib/web_%.c.o: user/lib/web_%.c $(FLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) \
 	      $(foreach l,$(WEB_LIBS),-Iruntime/upstream/netsurf/$(l)/include) \

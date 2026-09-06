@@ -29,6 +29,9 @@
 #include <dom/dom.h>
 #include <dom/bindings/hubbub/parser.h>
 #include <libcss/libcss.h>
+#include <libcss/fpmath.h>
+
+#include "web_select.h"
 
 #define DOC_HANDLE  "kosmos.dom"
 
@@ -245,11 +248,10 @@ static css_error resolve_url(void *pw, const char *base,
     return CSS_OK;
 }
 
-/* stylesheet(css) -> true, or nil and why. */
-static int l_stylesheet(lua_State *L)
+/* One sheet, parsed and finished, or NULL. Shared by `stylesheet` and the
+ * selection below, which needs exactly the same thing. */
+static css_stylesheet *sheet_from(const char *text, size_t len)
 {
-    size_t len = 0;
-    const char *text = luaL_checklstring(L, 1, &len);
     css_stylesheet_params params;
     css_stylesheet *sheet = NULL;
     css_error error;
@@ -264,31 +266,185 @@ static int l_stylesheet(lua_State *L)
     params.resolve        = resolve_url;
 
     if (css_stylesheet_create(&params, &sheet) != CSS_OK) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "the stylesheet could not be created");
-        return 2;
+        return NULL;
     }
 
     error = css_stylesheet_append_data(sheet, (const uint8_t *)text, len);
 
-    /* CSS_NEEDDATA is what "keep going" looks like, and is not a failure:
+    /* CSS_NEEDDATA is what "keep going" looks like and is not a failure:
      * the parser says so after every chunk that did not end the sheet. */
     if (error != CSS_OK && error != CSS_NEEDDATA) {
         css_stylesheet_destroy(sheet);
+        return NULL;
+    }
+
+    if (css_stylesheet_data_done(sheet) != CSS_OK) {
+        css_stylesheet_destroy(sheet);
+        return NULL;
+    }
+
+    return sheet;
+}
+
+/*
+ * style(css, tag) -> the computed colour of the first such element.
+ *
+ * **The smallest thing that is evidence for the cascade.** Getting a colour
+ * out means the selector matched a node in the tree, the cascade ran, and a
+ * computed value came back - which is all thirty-six callbacks in
+ * `web_select.c` doing their job, or enough of them to matter.
+ */
+static int l_style(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    size_t csslen = 0, taglen = 0;
+    const char *css = luaL_checklstring(L, 2, &csslen);
+    const char *tag = luaL_checklstring(L, 3, &taglen);
+    css_select_handler *handler = web_select_handler();
+    css_stylesheet *sheet;
+    css_select_ctx *ctx = NULL;
+    css_select_results *results = NULL;
+    css_media media;
+    css_unit_ctx units;
+    dom_string *name;
+    dom_nodelist *list = NULL;
+    dom_node *node = NULL;
+    uint32_t n = 0;
+    css_color colour = 0;
+
+    if (handler == NULL) {
         lua_pushnil(L);
-        lua_pushliteral(L, "the stylesheet could not be read");
+        lua_pushliteral(L, "the selection handler could not be prepared");
         return 2;
     }
 
-    error = css_stylesheet_data_done(sheet);
-    css_stylesheet_destroy(sheet);
+    sheet = sheet_from(css, csslen);
 
-    if (error != CSS_OK) {
+    if (sheet == NULL) {
         lua_pushnil(L);
         lua_pushliteral(L, "the stylesheet did not parse");
         return 2;
     }
 
+    if (css_select_ctx_create(&ctx) != CSS_OK
+        || css_select_ctx_append_sheet(ctx, sheet, CSS_ORIGIN_AUTHOR,
+                                       NULL) != CSS_OK) {
+        if (ctx != NULL) { css_select_ctx_destroy(ctx); }
+        css_stylesheet_destroy(sheet);
+        lua_pushnil(L);
+        lua_pushliteral(L, "the stylesheet could not be applied");
+        return 2;
+    }
+
+    name = to_dom(tag, taglen);
+
+    if (name == NULL
+        || dom_document_get_elements_by_tag_name(d->dom, name, &list)
+           != DOM_NO_ERR || list == NULL) {
+        if (name != NULL) { dom_string_unref(name); }
+        css_select_ctx_destroy(ctx);
+        css_stylesheet_destroy(sheet);
+        lua_pushnil(L);
+        lua_pushliteral(L, "the document could not be searched");
+        return 2;
+    }
+
+    dom_string_unref(name);
+    (void)dom_nodelist_get_length(list, &n);
+
+    if (n == 0 || dom_nodelist_item(list, 0, &node) != DOM_NO_ERR
+        || node == NULL) {
+        dom_nodelist_unref(list);
+        css_select_ctx_destroy(ctx);
+        css_stylesheet_destroy(sheet);
+        lua_pushnil(L);
+        lua_pushliteral(L, "there is no such element");
+        return 2;
+    }
+
+    /*
+     * A screen, and a viewport to resolve `em` and percentages against.
+     * Zeroing this would leave the default font size at nothing, and every
+     * relative length would come back zero without saying why.
+     */
+    memset(&media, 0, sizeof(media));
+    memset(&units, 0, sizeof(units));
+
+    media.type = CSS_MEDIA_SCREEN;
+    media.width = INTTOFIX(800);
+    media.height = INTTOFIX(600);
+
+    units.viewport_width     = INTTOFIX(800);
+    units.viewport_height    = INTTOFIX(600);
+    units.font_size_default  = INTTOFIX(16);
+    units.font_size_minimum  = INTTOFIX(6);
+    units.device_dpi         = INTTOFIX(96);
+
+    if (css_select_style(ctx, node, &units, &media, NULL,
+                         handler, NULL, &results) != CSS_OK
+        || results == NULL
+        || results->styles[CSS_PSEUDO_ELEMENT_NONE] == NULL) {
+        if (results != NULL) { css_select_results_destroy(results); }
+        dom_node_unref(node);
+        dom_nodelist_unref(list);
+        css_select_ctx_destroy(ctx);
+        css_stylesheet_destroy(sheet);
+        lua_pushnil(L);
+        lua_pushliteral(L, "no style came back for it");
+        return 2;
+    }
+
+    (void)css_computed_color(results->styles[CSS_PSEUDO_ELEMENT_NONE], &colour);
+
+    css_select_results_destroy(results);
+    dom_node_unref(node);
+    dom_nodelist_unref(list);
+    css_select_ctx_destroy(ctx);
+    css_stylesheet_destroy(sheet);
+
+    /*
+     * `css_color` is 0xAARRGGBB; the alpha is dropped because nothing here
+     * composites yet and a caller comparing strings should not have to.
+     *
+     * Written out by hand rather than with `lua_pushfstring`, which is
+     * Lua's own miniature formatter and understands neither a width nor a
+     * zero pad - `%02x` reaches it as an invalid option and raises. It is
+     * not `snprintf` and the resemblance is the trap.
+     */
+    {
+        static const char hex[] = "0123456789abcdef";
+        char out[8];
+        unsigned i;
+
+        out[0] = '#';
+
+        for (i = 0; i < 3; i++) {
+            unsigned byte = (colour >> (16 - 8 * i)) & 0xffu;
+
+            out[1 + i * 2] = hex[byte >> 4];
+            out[2 + i * 2] = hex[byte & 0xf];
+        }
+
+        lua_pushlstring(L, out, 7);
+    }
+
+    return 1;
+}
+
+/* stylesheet(css) -> true, or nil and why. */
+static int l_stylesheet(lua_State *L)
+{
+    size_t len = 0;
+    const char *text = luaL_checklstring(L, 1, &len);
+    css_stylesheet *sheet = sheet_from(text, len);
+
+    if (sheet == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the stylesheet did not parse");
+        return 2;
+    }
+
+    css_stylesheet_destroy(sheet);
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -303,6 +459,7 @@ void kosmos_web_kit(lua_State *L)
 
     static const luaL_Reg doc[] = {
         { "count", l_count },
+        { "style", l_style },
         { "text",  l_text },
         { "title", l_title },
         { "close", l_close },

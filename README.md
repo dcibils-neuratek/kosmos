@@ -305,6 +305,7 @@ Design decisions taken outside the documents get recorded here before being prop
 | Sep 2026 | **A web page parses on Kosmos.** Hubbub, libdom and libcss running at EL0 on the freestanding libc - three `p` elements counted through a tree walk, `&amp;` decoded from a generated table, a stylesheet understood. Linking proved none of it | tools/run_web.py |
 | Sep 2026 | **The kernel has no architecture-specific instruction in it.** Sixteen sites across four files became seven inlines in `arch/aarch64/cpu.h`; the two maskings stayed two, because `DAIFSet #3` is IRQ *and* FIQ where `#2` is IRQ alone, and merging them would silently change when a fast interrupt may arrive | arch/aarch64/cpu.h |
 | Sep 2026 | **A browser window, and it says what it is not.** It fetches, parses and shows a document's text, with *text only, there is no layout engine yet* in the status line - the chrome is here early so each piece of engine has somewhere to appear when it lands | user/bin/browser.lua |
+| Sep 2026 | **The text path read bytes where it needed characters.** Each byte became a codepoint, so one accented character was three failed lookups and three boxes - never a missing font. Both paths decode now, and glyphs outside ASCII rasterise on demand into a codepoint-keyed cache | user/lib/gfx.c |
 
 ---
 

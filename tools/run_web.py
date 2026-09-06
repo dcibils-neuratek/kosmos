@@ -51,6 +51,24 @@ PROBE = (
     's1, s2, (e and e.count) and "ok")'
 )
 
+#
+# Selection, which is a different claim from parsing.
+#
+# Four styles, and the fourth is the one that matters: a rule that should
+# *not* match must not match. A handler that answered `true` to everything
+# would pass the first three and fail only that one, and it is exactly the
+# mistake thirty-six hand-written callbacks invite.
+#
+SELECT = (
+    'local w = sys.kit("web") '
+    'local d = w.parse("<html><body><div><p class=\\"warn\\">x</p></div>'
+    '<span>y</span></body></html>") '
+    'print("<<".."SEL>>", d:style("p{color:#ff0000}", "p"), '
+    'd:style(".warn{color:#00ff00}", "p"), '
+    'd:style("div p{color:#0000ff}", "p"), '
+    'd:style("p{color:#ff0000}", "span"))'
+)
+
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
@@ -129,9 +147,36 @@ def main():
 
         checks += 1
 
+        # ---- and the cascade ----
+        guest.seen = ""
+        guest.type(SELECT)
+        guest.wait_for("<<SEL>>", "the cascade to answer")
+
+        line = ""
+        for text in guest.seen.replace("\r", "").splitlines():
+            if text.startswith("<<SEL>>"):
+                line = text
+                break
+
+        got = [f for f in (g.strip() for g in
+                           line.replace("<<SEL>>", "").split("\t")) if f != ""]
+
+        if got != ["#ff0000", "#00ff00", "#0000ff", "#000000"]:
+            raise Failure(
+                f"the cascade answered {got!r}, expected a type selector, a "
+                "class selector and a descendant combinator to match, and a "
+                "rule for `p` asked about a `span` NOT to - falling back to "
+                "the UA default black"
+            )
+
+        # Four assertions in one line, and each fails for its own reason:
+        # the name lookup, the class list, the ancestor walk, and a handler
+        # that says no when it should.
+        checks += 4
+
         print(
             f"PASS: {checks} checks on the web libraries: a document parsed, "
-            "its tree walked, and a stylesheet understood."
+            "its tree walked, a stylesheet understood, and the cascade run."
         )
         return 0
     except (Failure, Exception) as e:      # noqa: BLE001 - it is the result

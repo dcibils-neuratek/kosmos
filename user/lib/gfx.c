@@ -770,7 +770,7 @@ extern const unsigned long font_8x16_len;
 /* The rows of one character, or the box the font uses for anything it does
  * not have. That glyph sits immediately after the range, which is what makes
  * "outside the range" a bounds check and not a special case. */
-static const unsigned char *glyph_of(unsigned char c)
+static const unsigned char *glyph_of(unsigned c)
 {
     unsigned index = (c >= GLYPH_FIRST && c <= GLYPH_LAST)
                    ? (unsigned)(c - GLYPH_FIRST)
@@ -845,6 +845,21 @@ static int font_table_ref = LUA_NOREF;
 #define ROLE_TITLE 3
 #define ROLE_COUNT 4
 
+/*
+ * Where a codepoint outside printable ASCII lives.
+ *
+ * The 95 below are rasterised when the font loads, because every one of
+ * them is on the screen within a second and an array indexed by
+ * `codepoint - 32` is as fast as a lookup gets. Unicode cannot be
+ * pre-rasterised, so the rest arrive on demand and stay.
+ *
+ * A hundred and twenty-eight, open-addressed, and nothing is ever evicted:
+ * a page of accented Latin, Greek or Cyrillic fits several times over, and
+ * a document that overflows it draws `?` rather than growing without a
+ * bound. Fixed pools are what this system does everywhere else.
+ */
+#define WIDE_SLOTS  128
+
 struct outline_font {
     bool  loaded;
     char  name[24];
@@ -852,7 +867,65 @@ struct outline_font {
     int   ascent, descent, line_gap;
     int   widest;
     struct glyph glyphs[GLYPH_COUNT];
+
+    /* Kept so a glyph can be rasterised long after the font was loaded.
+     * `info` points into the asset, which is in the image and static. */
+    stbtt_fontinfo info;
+    float scale;
+
+    unsigned     wide_cp[WIDE_SLOTS];       /* 0 means the slot is free */
+    struct glyph wide[WIDE_SLOTS];
 };
+
+/*
+ * One codepoint from a UTF-8 string, and how many bytes it was.
+ *
+ * **The text path used to cast each byte to a codepoint**, so a three-byte
+ * character became three lookups, each outside the cache, each drawing a
+ * box. That is what the conformance benchmark showed: not one missing
+ * glyph but three failed ones per character.
+ *
+ * Malformed input yields U+FFFD and advances one byte, which is what keeps
+ * a bad encoding from turning into an infinite loop.
+ */
+static unsigned utf8_next(const char *str, size_t len, size_t *at)
+{
+    const unsigned char *s = (const unsigned char *)str + *at;
+    size_t left = len - *at;
+    unsigned cp;
+    unsigned need;
+
+    if (s[0] < 0x80u) {
+        *at += 1;
+        return s[0];
+    }
+
+    if ((s[0] & 0xe0u) == 0xc0u)      { cp = s[0] & 0x1fu; need = 1; }
+    else if ((s[0] & 0xf0u) == 0xe0u) { cp = s[0] & 0x0fu; need = 2; }
+    else if ((s[0] & 0xf8u) == 0xf0u) { cp = s[0] & 0x07u; need = 3; }
+    else                              { *at += 1; return 0xfffdu; }
+
+    if (left <= need) {
+        *at += 1;
+        return 0xfffdu;
+    }
+
+    {
+        unsigned i;
+
+        for (i = 1; i <= need; i++) {
+            if ((s[i] & 0xc0u) != 0x80u) {
+                *at += 1;
+                return 0xfffdu;
+            }
+
+            cp = (cp << 6) | (s[i] & 0x3fu);
+        }
+    }
+
+    *at += need + 1;
+    return cp;
+}
 
 static struct outline_font outlines[ROLE_COUNT];
 
@@ -878,6 +951,66 @@ static int role_of(lua_State *L, int index)
     return ROLE_UI;
 }
 
+/*
+ * The glyph for a codepoint, rasterising it if this is the first time.
+ *
+ * ASCII takes the array and costs a subtraction, which is what it cost
+ * before and is why the common path did not change. Anything else probes
+ * the wide table and, on a miss, is rasterised once and kept.
+ *
+ * `f` is const because drawing does not change what a font *is*; the cache
+ * is a memo and the cast says so rather than pushing non-const through
+ * every caller of a drawing routine.
+ */
+static const struct glyph *glyph_for(const struct outline_font *cf, unsigned cp)
+{
+    struct outline_font *f = (struct outline_font *)cf;
+    unsigned slot, tried;
+
+    if (cp >= GLYPH_MIN && cp <= GLYPH_MAX) {
+        return &f->glyphs[cp - GLYPH_MIN];
+    }
+
+    if (cp == 0) {
+        return &f->glyphs['?' - GLYPH_MIN];
+    }
+
+    slot = cp % WIDE_SLOTS;
+
+    for (tried = 0; tried < WIDE_SLOTS; tried++) {
+        if (f->wide_cp[slot] == cp) {
+            return &f->wide[slot];
+        }
+
+        if (f->wide_cp[slot] == 0) {
+            struct glyph *gl = &f->wide[slot];
+            int adv, lsb;
+
+            /* A codepoint the face does not have rasterises to nothing, and
+             * `?` is a better answer than an empty box the width of a space:
+             * it says something is missing rather than hiding it. */
+            if (stbtt_FindGlyphIndex(&f->info, (int)cp) == 0) {
+                return &f->glyphs['?' - GLYPH_MIN];
+            }
+
+            stbtt_GetCodepointHMetrics(&f->info, (int)cp, &adv, &lsb);
+            gl->advance = (int)(adv * f->scale + 0.5f);
+            gl->coverage = stbtt_GetCodepointBitmap(&f->info, f->scale,
+                                                    f->scale, (int)cp,
+                                                    &gl->w, &gl->h,
+                                                    &gl->xoff, &gl->yoff);
+            f->wide_cp[slot] = cp;
+            return gl;
+        }
+
+        slot = (slot + 1) % WIDE_SLOTS;
+    }
+
+    /* Full. Bounded pools mean this can happen, and saying so with a `?` is
+     * better than evicting something the next character will want back. */
+    return &f->glyphs['?' - GLYPH_MIN];
+}
+
 static void outline_release(struct outline_font *f)
 {
     int i;
@@ -887,6 +1020,15 @@ static void outline_release(struct outline_font *f)
             free(f->glyphs[i].coverage);
             f->glyphs[i].coverage = NULL;
         }
+    }
+
+    for (i = 0; i < WIDE_SLOTS; i++) {
+        if (f->wide[i].coverage != NULL) {
+            free(f->wide[i].coverage);
+            f->wide[i].coverage = NULL;
+        }
+
+        f->wide_cp[i] = 0;
     }
 
     f->loaded = false;
@@ -974,6 +1116,8 @@ static bool outline_load(struct outline_font *f, const char *name, int px)
     }
 
     f->widest = 0;
+    f->info   = info;               /* points into the asset, which is static */
+    f->scale  = scale;
 
     for (ch = GLYPH_MIN; ch <= GLYPH_MAX; ch++) {
         struct glyph *gl = &f->glyphs[ch - GLYPH_MIN];
@@ -1013,18 +1157,26 @@ static long text_width(const struct outline_font *f, const char *str,
     size_t i;
     long w = 0;
 
+    /*
+     * The built-in 8x16 is a bitmap face and `stbtt` cannot load it, so this
+     * is the path every default-font measurement takes. It counted *bytes*,
+     * which made one two-byte character two columns wide and every wrapped
+     * line short.
+     */
     if (!f->loaded) {
-        return (long)len * GLYPH_W;
-    }
+        size_t at = 0;
+        long n = 0;
 
-    for (i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)str[i];
-
-        if (c < GLYPH_MIN || c > GLYPH_MAX) {
-            c = '?';
+        while (at < len) {
+            (void)utf8_next(str, len, &at);
+            n++;
         }
 
-        w += f->glyphs[c - GLYPH_MIN].advance;
+        return n * GLYPH_W;
+    }
+
+    for (i = 0; i < len; ) {
+        w += glyph_for(f, utf8_next(str, len, &i))->advance;
     }
 
     return w;
@@ -1060,16 +1212,9 @@ static void draw_outline_text(struct surface *s, const struct outline_font *f,
         }
     }
 
-    for (i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)str[i];
-        const struct glyph *gl;
+    for (i = 0; i < len; ) {
+        const struct glyph *gl = glyph_for(f, utf8_next(str, len, &i));
         int gy;
-
-        if (c < GLYPH_MIN || c > GLYPH_MAX) {
-            c = '?';
-        }
-
-        gl = &f->glyphs[c - GLYPH_MIN];
 
         for (gy = 0; gy < gl->h && gl->coverage != NULL; gy++) {
             long py = baseline + gl->yoff + gy;
@@ -1245,6 +1390,7 @@ static int l_text(lua_State *L)
     bool opaque = !lua_isnoneornil(L, 6);
     uint32_t bg = opaque ? (uint32_t)luaL_checkinteger(L, 6) : 0;
     size_t i;
+    long col;
 
     /* An outline font, when one is in force. Same call, same arguments;
      * what changes is where the glyphs come from. */
@@ -1259,9 +1405,14 @@ static int l_text(lua_State *L)
         }
     }
 
-    for (i = 0; i < len; i++) {
-        const unsigned char *rows = glyph_of((unsigned char)text[i]);
-        long cx = x + (long)i * GLYPH_W;
+    /*
+     * `col` rather than `i`, because they stopped being the same number the
+     * moment this decoded UTF-8: a character is one column wide and one to
+     * four bytes long.
+     */
+    for (i = 0, col = 0; i < len; col++) {
+        const unsigned char *rows = glyph_of(utf8_next(text, len, &i));
+        long cx = x + col * GLYPH_W;
         long row;
 
         /* Whole glyphs off either edge are skipped rather than clipped, which
@@ -1300,7 +1451,7 @@ static int l_text(lua_State *L)
         }
     }
 
-    lua_pushinteger(L, x + (lua_Integer)len * GLYPH_W);
+    lua_pushinteger(L, x + (lua_Integer)col * GLYPH_W);
     return 1;
 }
 
