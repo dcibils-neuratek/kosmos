@@ -151,7 +151,11 @@ Commands being data gives you things BeOS could not do:
 - **Inspect from the REPL** what an app is drawing right now.
 - **Redirect to another display** without the app knowing.
 
-The exception is shared memory for surfaces (an image canvas, video, a game). It is requested explicitly, justified by the use case, and is not the default path. That path is designed separately in [gfx.md](gfx.md).
+The exception is shared memory for surfaces. It is requested explicitly with `direct = true`, justified by the use case, and is not the default path. That path is designed separately in [gfx.md](gfx.md).
+
+**And there is a second reason to ask for one, which is not speed.** The first is the obvious one: an image canvas, video, a game - the whole surface changes every frame and describing it costs more than copying it. The second is *typography*. The compositor rasterises the commands it is sent, in the four faces the desktop chose, so an application that sends commands cannot have a heading at 28 pixels and a paragraph at 16 on the same screen. A document viewer needs exactly that, which is why `pdfview` and `browser` both draw their own pixels while being nobody's idea of a game.
+
+**The trade is that a direct window has no widgets**, and it is absolute rather than awkward: the compositor owns the pixels of an ordinary window and the application owns the pixels of this one, so a button drawn by the widget kit would be drawing into the copy that is not on screen. The chrome of such a window is rectangles the application knows the position of, and a click is a comparison against them. That is a real cost and it is the reason the mode is opt-in - it buys the page and charges for the toolbar.
 
 ---
 

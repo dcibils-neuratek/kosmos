@@ -335,19 +335,30 @@ static int l_blocks(lua_State *L)
 }
 
 /*
- * render(surface, width) -> the height it used.
+ * render(surface, width [, height]) -> the height it used.
  *
  * The whole page in one crossing: layout and painting both happen in C and
  * what comes back is a number. A call per box would cost more than the
  * drawing, which is the same reason `docfont.c` takes a page of glyphs at
  * once rather than one at a time.
+ *
+ * **A nil surface measures**, and the caller needs that before it can do
+ * anything else: a page is laid out once into a surface as tall as the
+ * whole document and scrolled by blitting out of it, so the height has to
+ * be known before the surface can be asked for. Measuring is the same walk
+ * with the drawing left out - the words are still measured, because where
+ * a line breaks is what decides how tall the page is.
  */
 static int l_render(lua_State *L)
 {
     struct doc *d = checkdoc(L);
-    struct surface *s = luaL_checkudata(L, 2, "kosmos.surface");
+    struct surface *s = lua_isnoneornil(L, 2)
+                        ? NULL : luaL_checkudata(L, 2, "kosmos.surface");
     int width = (int)luaL_checkinteger(L, 3);
-    unsigned height = (unsigned)luaL_checkinteger(L, 4);
+
+    /* Required with a surface and meaningless without one. Defaulted, it
+     * would mean a call that drew nothing and said it had. */
+    unsigned height = (unsigned)(s == NULL ? 0 : luaL_checkinteger(L, 4));
 
     lua_pushinteger(L, web_paint_document(L, d->dom, s, width, height));
 

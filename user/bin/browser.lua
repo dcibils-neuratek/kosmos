@@ -1,48 +1,73 @@
--- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs network
--- Fetches a page, parses it, and shows what came out.
+--
+-- A web browser.
 --
 --   wm browser
+--   wm browser:10.0.2.2:8000/
 --
--- **This is not a rendered page and the window says so.** There is no
--- layout engine yet: what it shows is the *text* of the parsed document,
--- wrapped to the window, with the counts underneath. Calling that browsing
--- would be a lie, and the status line is written to make the difference
--- visible rather than to paper over it.
+--   arrows            scroll a line
+--   space / b         a screen down, a screen up
+--   g / G             the top, the bottom
+--   Control-L         type an address
+--   r                 load it again
 --
--- What it does prove, end to end and on the machine: a connection opens, an
--- HTTP request goes out, bytes come back, hubbub parses them into a DOM,
--- and libdom answers questions about the tree. Every piece of that was built
--- separately and this is the first thing that runs them together.
+-- **A direct window** (`gfx.md` 19.4), and that is the whole difference
+-- between this and what it replaced. The first version showed a page as a
+-- list of wrapped lines in a widget, every line the same size in the same
+-- face, because an application on the ordinary path sends *drawing
+-- commands* and the compositor rasterises them - with the four faces the
+-- desktop chose, which is right for a dialog and hopeless for a document
+-- that wants a heading at 28 pixels and a paragraph at 16.
 --
--- The chrome is the shape NetSurf's own is: back, reload, an address, and a
--- status line that says what the last load cost. It is here early *because*
--- the engine is unfinished - a window with somewhere for each piece to
--- appear is what makes the next piece visible when it lands.
+-- So this process owns its pixels. `web_paint.c` lays the document out and
+-- paints it into a surface as tall as the whole page, once; a frame is one
+-- blit of the visible band out of it. Scrolling re-runs nothing - no
+-- layout, no line breaking, no glyph rasterised twice - which is the same
+-- shape `pdfview` has and for the same reason.
 --
--- **No DNS**, so an address is four numbers. `ping` and `fetch` say the same
--- thing for the same reason: nothing on this machine resolves a name yet.
+-- What it costs is that there are no widgets. A direct window owns every
+-- pixel, so a button would have nothing to draw into: the chrome here is
+-- rectangles this file knows the position of, and a click is a comparison
+-- against them. That is the trade the mode makes, and it is the reason the
+-- chrome is deliberately small - back, forward, reload, home, an address
+-- and a status line, which is NetSurf's own row and nothing more.
+--
+-- **No DNS**, so an address is four numbers. `ping` and `fetch` say the
+-- same thing for the same reason: nothing on this machine resolves a name.
 
-local ui = use("/lib/ui.lua")
+local ui    = use("/lib/ui.lua")
 local theme = ui.theme
 
---
--- **No `gfx.use_font` here, and that was tried.**
---
--- It sets the face for the calling *process*, and this process does not
--- draw: `gc:text` puts an op in a list and the window manager rasterises
--- it, with the four faces `theme.lua` names. So an application asking for
--- a font asks the wrong process and nothing happens - which is exactly
--- what a screenshot showed, twice.
---
--- The face a page is drawn in is `theme.fonts.text`, which every role
--- defaults to `spleen`: an 8x16 bitmap with ASCII in it and nothing else.
--- That is why a page with accented Latin in it shows boxes here, and it is
--- an appearance setting rather than a browser bug.
+--------------------------------------------------------------------------
+-- The window, and what is where in it.
+--------------------------------------------------------------------------
 
 local W, H = 900, 640
-local BAR_H = gfx.font.h + 8
+
+local TOOL = 34                      -- the row of buttons and the address
+local STAT = 22                      -- the status line along the bottom
+local SBAR = 16                      -- the scrollbar down the right
+local PAD  = 8                       -- white margin either side of the page
+
+local VIEW_Y = TOOL
+local VIEW_H = H - TOOL - STAT
+local VIEW_W = W - SBAR
+local PAGE_W = VIEW_W - PAD * 2
+
+--
+-- How tall a page may be laid out, in bytes rather than in pixels.
+--
+-- A process may map 48 MB and this one is already holding two window
+-- buffers, a Lua heap and a DOM. Sixteen megabytes of paper is about seven
+-- screenfuls at this width, and a document taller than that is cut off and
+-- *said to be* - which is the honest end of a fixed budget, and better than
+-- a page that renders for a while and then fails to exist.
+--
+local PAPER_BYTES = 16 * 1024 * 1024
+
+local PAPER = 0xffffffff             -- what `web_paint.c` fills a page with
 
 --
 -- The kit is only in an image built with `WEB=1`, so its absence is an
@@ -54,10 +79,17 @@ local have, web = pcall(use, "/kits/web")
 
 if not have or type(web) ~= "table" then web = nil end
 
-local win, err = ui.window{ title = "Browser", w = W, h = H, x = 80, y = 60 }
+local win, err = ui.window{
+  title = "Browser", w = W, h = H, x = 80, y = 60, direct = true,
+}
 
 if not win then
   print("browser: " .. tostring(err))
+  return
+end
+
+if not win:surface() then
+  print("browser: this window did not get a shared surface")
   return
 end
 
@@ -89,159 +121,386 @@ local function split(text)
 end
 
 --------------------------------------------------------------------------
--- Text, wrapped to the window.
---
--- The document's text content arrives as one string with whatever spacing
--- the markup had in it, so runs of blanks collapse before anything is
--- measured. Wrapped by character count rather than by pixels because the
--- font is fixed width, which is the one simplification this can make
--- honestly.
+-- State.
 --------------------------------------------------------------------------
 
-local function wrap(text, width)
-  local out = {}
-  local space = gfx.measure(" ")
+local paper                  -- the page, laid out once and scrolled by blit
+local paper_h  = 0           -- how tall that surface is
+local content_h = 0          -- how tall the document turned out to be
+local top      = 0           -- the pixel of it at the top of the view
 
-  for line in tostring(text or ""):gmatch("[^\n]+") do
-    local current, taken = nil, 0
+local said = "an address is four numbers - there is no resolver yet"
 
-    --
-    -- Greedy, word by word, and each word measured once.
-    --
-    -- Measuring the whole candidate line on every word would be quadratic
-    -- in the length of a paragraph; adding one advance at a time is what a
-    -- line breaker actually does, and it is the same shape the layout
-    -- engine will need when it breaks a real inline box.
-    --
-    for word in line:gmatch("%S+") do
-      local w = gfx.measure(word)
+local address = { text = "10.0.2.2:8000/", caret = 14, from = 0,
+                  focus = false }
+local here                                          -- what is on screen
+local back, forward = {}, {}
 
-      if current == nil then
-        current, taken = word, w
-      elseif taken + space + w <= width then
-        current = current .. " " .. word
-        taken = taken + space + w
-      else
-        out[#out + 1] = current
-        current, taken = word, w
-      end
-    end
+local dragging               -- the scrollbar thumb, while it is held
 
-    if current ~= nil then out[#out + 1] = current end
-  end
+--------------------------------------------------------------------------
+-- The chrome, drawn.
+--
+-- `theme` rather than colours of its own: the shape is NetSurf's and the
+-- palette is the desktop's, so a browser window does not become the one
+-- thing on screen that ignores the appearance setting. The *page* is white
+-- whatever the desktop is, because that is what the document asked for.
+--------------------------------------------------------------------------
 
-  return out
+local function bevel(s, x, y, w, h, sunken)
+  local hi = sunken and theme.edge_dark or theme.edge_light
+  local lo = sunken and theme.edge_light or theme.edge_dark
+
+  s:fill(x, y, w, 1, hi)
+  s:fill(x, y, 1, h, hi)
+  s:fill(x, y + h - 1, w, 1, lo)
+  s:fill(x + w - 1, y, 1, h, lo)
 end
 
 --
--- The document's blocks, as lines.
+-- A triangle, out of one-pixel rectangles.
 --
--- Structure without geometry: a heading is separated from what follows it,
--- a list item gets a bullet and a hanging indent, a quotation is indented.
--- None of that is layout - there are no boxes and nothing is measured
--- twice - and it is most of what makes a page readable rather than a wall.
+-- There is no line and no polygon on a surface - `fill`, `blit` and `text`
+-- is the whole of it - and an arrow drawn as text would need a glyph the
+-- interface font may not have. Eleven fills is cheaper than that argument.
 --
--- What it cannot do, and the reason a layout engine is still the next
--- thing: every line is the same size, in the same face, because `gfx`
--- holds one face per role and there are four roles. A heading is bigger
--- than a paragraph on a real page, and here it is only further apart.
---
-local function render(blocks, width)
-  local out = {}
-  local space = gfx.measure(" ")
-
-  for _, b in ipairs(blocks) do
-    local heading = b.tag:match("^h[1-6]$") ~= nil
-    local indent = ""
-    local first = ""
-
-    if b.tag == "li" then
-      first, indent = "* ", "  "
-    elseif b.tag == "blockquote" or b.tag == "pre" then
-      first, indent = "    ", "    "
+local function arrow(s, cx, cy, size, dir, colour)
+  for i = 0, size do
+    if dir == "left" then
+      s:fill(cx + i, cy - i, 1, 2 * i + 1, colour)
+    elseif dir == "right" then
+      s:fill(cx - i, cy - i, 1, 2 * i + 1, colour)
+    elseif dir == "up" then
+      s:fill(cx - i, cy + i, 2 * i + 1, 1, colour)
+    else
+      s:fill(cx - i, cy - i, 2 * i + 1, 1, colour)
     end
+  end
+end
 
-    if heading and #out > 0 then out[#out + 1] = "" end
+--------------------------------------------------------------------------
+-- The toolbar's buttons.
+--
+-- Laid out from their labels rather than from numbers typed in, so the row
+-- still fits when the desktop is set to a font that is not the one this was
+-- written against. `enabled` is asked at every repaint, because whether you
+-- can go back is not a fact about the button.
+--------------------------------------------------------------------------
 
-    local lines = wrap(b.text or "", width - gfx.measure(indent) - space)
+local go_back, go_forward, go_home, reload      -- filled in further down
+
+local BUTTONS = {
+  { name = "back",    arrow = "left",  wide = 30,
+    enabled = function() return #back > 0 end },
+  { name = "forward", arrow = "right", wide = 30,
+    enabled = function() return #forward > 0 end },
+  { name = "reload",  text = "Reload" },
+  { name = "home",    text = "Home" },
+}
+
+local URL = {}
+local GO  = { text = "Go" }
+
+local function lay_out_toolbar()
+  local x = 6
+
+  for _, b in ipairs(BUTTONS) do
+    b.x = x
+    b.w = b.wide or (gfx.measure(b.text) + 20)
+    b.y = 4
+    b.h = TOOL - 9
+    x = x + b.w + 4
+  end
+
+  GO.w = gfx.measure(GO.text) + 20
+  GO.h = TOOL - 9
+  GO.y = 4
+  GO.x = W - 6 - GO.w
+
+  URL.x = x + 6
+  URL.y = 4
+  URL.h = TOOL - 9
+  URL.w = GO.x - 6 - URL.x
+end
+
+local function inside(b, x, y)
+  return b.x and x >= b.x and x < b.x + b.w
+         and y >= b.y and y < b.y + b.h
+end
+
+--
+-- What of the address is visible, and from which byte.
+--
+-- A well is a fixed width and a URL is not, and `s:text` clips against the
+-- *surface* rather than against anything smaller - so a long address drawn
+-- whole would run straight over the Go button and out of the toolbar. The
+-- field scrolls instead: enough is dropped from the front to keep the caret
+-- in view, and enough from the back to stay inside the well.
+--
+-- Quadratic in the length of a URL and run once per repaint, which is once
+-- per event rather than once per frame. Sixty characters is a few thousand
+-- glyph advances and this window does not animate.
+--
+local function field_view()
+  local room = URL.w - 10
+  local from = address.from or 0
+
+  if from > address.caret then from = address.caret end
+
+  -- Back, when there is room again. A short address loaded after a long one
+  -- would otherwise keep the old offset and hide its first characters in a
+  -- well with space to spare.
+  while from > 0
+        and gfx.measure(address.text:sub(from, #address.text)) <= room do
+    from = from - 1
+  end
+
+  while from < address.caret
+        and gfx.measure(address.text:sub(from + 1, address.caret)) > room do
+    from = from + 1
+  end
+
+  address.from = from
+
+  local upto = #address.text
+
+  while upto > from
+        and gfx.measure(address.text:sub(from + 1, upto)) > room do
+    upto = upto - 1
+  end
+
+  return address.text:sub(from + 1, upto), from
+end
+
+local function draw_button(s, b, label_colour)
+  local ink = label_colour or theme.text
+
+  s:fill(b.x, b.y, b.w, b.h, theme.raised)
+  bevel(s, b.x, b.y, b.w, b.h, b.down)
+
+  local shift = b.down and 1 or 0
+
+  if b.arrow then
+    arrow(s, b.x + b.w // 2 + (b.arrow == "left" and -3 or 3) + shift,
+          b.y + b.h // 2 + shift, 5, b.arrow, ink)
+  else
+    s:text(b.x + (b.w - gfx.measure(b.text)) // 2 + shift,
+           b.y + (b.h - gfx.height()) // 2 + shift, b.text, ink)
+  end
+end
+
+--------------------------------------------------------------------------
+-- The scrollbar, which is also where scrolling is bounded.
+--------------------------------------------------------------------------
+
+local function reach()
+  return math.max(0, math.min(content_h, paper_h) - VIEW_H)
+end
+
+local function thumb()
+  local track = VIEW_H - SBAR * 2
+  local shown = math.min(content_h, paper_h)
+  local last  = reach()
+
+  if track < 8 or shown <= VIEW_H then
+    return VIEW_Y + SBAR, track           -- nothing to scroll: a full thumb
+  end
+
+  local h = math.max(20, (track * VIEW_H) // shown)
+  local y = VIEW_Y + SBAR + ((track - h) * top) // last
+
+  return y, h
+end
+
+local function draw_scrollbar(s)
+  local x = W - SBAR
+  local ty, th = thumb()
+
+  s:fill(x, VIEW_Y, SBAR, VIEW_H, theme.sunken)
+
+  -- An arrow button at each end, which is where the eye looks for one.
+  for _, a in ipairs { { y = VIEW_Y, dir = "up" },
+                       { y = VIEW_Y + VIEW_H - SBAR, dir = "down" } } do
+    s:fill(x, a.y, SBAR, SBAR, theme.raised)
+    bevel(s, x, a.y, SBAR, SBAR, false)
+    arrow(s, x + SBAR // 2, a.y + SBAR // 2 + (a.dir == "up" and -2 or 2),
+          4, a.dir, theme.text)
+  end
+
+  s:fill(x, ty, SBAR, th, theme.raised)
+  bevel(s, x, ty, SBAR, th, false)
+end
+
+--------------------------------------------------------------------------
+-- One frame.
+--------------------------------------------------------------------------
+
+local function frame()
+  local s = win:surface()
+
+  if not s then return end
+
+  --
+  -- The toolbar.
+  --
+  s:fill(0, 0, W, TOOL, theme.window)
+  s:fill(0, TOOL - 1, W, 1, theme.line)
+
+  for _, b in ipairs(BUTTONS) do
+    local on = (b.enabled == nil) or b.enabled()
+
+    draw_button(s, b, on and theme.text or theme.text_dim)
+  end
+
+  draw_button(s, GO)
+
+  --
+  -- The address, in a well.
+  --
+  s:fill(URL.x, URL.y, URL.w, URL.h, theme.sunken)
+  bevel(s, URL.x, URL.y, URL.w, URL.h, true)
+
+  local ty = URL.y + (URL.h - gfx.height()) // 2
+  local shown, from = field_view()
+
+  s:text(URL.x + 5, ty, shown, theme.text)
+
+  --
+  -- The caret. Drawn only when the field has the keys, because a caret in a
+  -- field that is not listening is the thing that makes a person type into
+  -- the wrong place.
+  --
+  if address.focus then
+    local at = URL.x + 5
+               + gfx.measure(address.text:sub(from + 1, address.caret))
+
+    s:fill(at, ty, 1, gfx.height(), theme.text)
+  end
+
+  --
+  -- The page.
+  --
+  s:fill(0, VIEW_Y, VIEW_W, VIEW_H, paper and PAPER or theme.window)
+
+  if paper then
+    local band = math.min(VIEW_H, paper_h - top)
+
+    if band > 0 then
+      s:blit(paper, 0, top, PAGE_W, band, PAD, VIEW_Y)
+    end
+  else
+    local lines = web
+                  and { "Nothing loaded.",
+                        "",
+                        "Type an address and press Return, or start with one:",
+                        "",
+                        "    wm browser:10.0.2.2:8000/" }
+                  or  { "This image was built without the web libraries.",
+                        "",
+                        "    make WEB=1 qemu",
+                        "",
+                        "builds one that has them." }
 
     for i, line in ipairs(lines) do
-      out[#out + 1] = (i == 1 and first or indent) .. line
+      s:text(PAD + 4, VIEW_Y + 16 + (i - 1) * (gfx.height() + 4), line,
+             theme.text_dim)
     end
-
-    -- A rule under a heading, in ASCII: the box-drawing characters are one
-    -- glyph the interface font does not have, and a row of boxes is worse
-    -- than a row of dashes.
-    if heading and #lines > 0 then
-      out[#out + 1] = string.rep("-", math.min(60, #lines[1]))
-    end
-
-    out[#out + 1] = ""
   end
 
-  while #out > 0 and out[#out] == "" do out[#out] = nil end
+  draw_scrollbar(s)
 
-  return out
+  --
+  -- The status line.
+  --
+  s:fill(0, H - STAT, W, STAT, theme.window)
+  s:fill(0, H - STAT, W, 1, theme.line)
+  s:text(8, H - STAT + (STAT - gfx.height()) // 2, said, theme.text_dim)
+
+  win:commit()
+end
+
+local function say(text)
+  said = text
+  frame()
 end
 
 --------------------------------------------------------------------------
+-- A document, laid out.
+--
+-- Measured first, into nothing, and then painted into a surface the right
+-- height. The other order - guess, render, discover it did not fit, render
+-- again - costs a second painting pass, and a painting pass is thousands of
+-- glyphs. A measuring pass breaks the same lines without drawing them.
+--------------------------------------------------------------------------
 
-local status = ui.label{ x = 12, y = H - 26, w = W - 24, text = "",
-                         follow = { "left", "right", "bottom" } }
+local function lay_out(doc)
+  if paper then
+    paper:free()
+    paper = nil
+  end
 
-local page = ui.list{ x = 12, y = 44 + BAR_H, w = W - 24, h = H - 90 - BAR_H,
-                      items = { "" },
-                      follow = { "left", "right", "top", "bottom" } }
+  paper_h, content_h, top = 0, 0, 0
 
--- A page is read, not chosen from, so nothing is highlighted.
-page.selected = 0
+  local wanted = doc:render(nil, PAGE_W) + 16
+  local room   = PAPER_BYTES // (PAGE_W * 4)
+  local tall   = math.max(VIEW_H, math.min(wanted, room))
 
-local history = {}
+  local made = pcall(function()
+    paper = gfx.surface{ w = PAGE_W, h = tall }
+  end)
 
-local address = ui.field{ x = 108, y = 10 + BAR_H, w = W - 200,
-                          text = "10.0.2.2:8000/",
-                          follow = { "left", "right", "top" } }
+  if not made or not paper then
+    paper = nil
+    return nil, ("no memory for a %dx%d page"):format(PAGE_W, tall)
+  end
 
-local function say(text)
-  status.text = text
+  paper_h = tall
+  content_h = doc:render(paper, PAGE_W, tall)
+
+  return content_h
 end
 
---
--- One load: connect, ask, read until the far end hangs up, parse.
+--------------------------------------------------------------------------
+-- One load: connect, ask, read until the far end hangs up, parse, lay out.
 --
 -- The read loop is `fetch`'s, including the read *after* the loop: a close
 -- and the last bytes can arrive in the same segment, and stopping at
 -- `closed` would lose them.
---
-local function load(text, remember)
+--------------------------------------------------------------------------
+
+local function load(text)
   if web == nil then
     say("this image has no web kit - build it with `make WEB=1`")
-    return
+    return false
   end
 
   local where, port, path = split(text)
 
   if not where then
     say("that is not an address - four numbers, no names, there is no DNS")
-    return
+    return false
   end
 
-  say("connecting...")
+  here = text
+  address.text = text
+  address.caret = #text
+
+  say("connecting to " .. text .. " ...")
 
   local conn, why = fs.connect("/net", where, port)
 
   if not conn then
-    local said = ({ [4] = "no route to it", [7] = "it refused the connection",
-                    [9] = "it did not answer", [5] = "too many connections" })[why]
+    local because = ({ [4] = "no route to it",
+                       [7] = "it refused the connection",
+                       [9] = "it did not answer",
+                       [5] = "too many connections" })[why]
 
-    say(said or ("could not connect: " .. tostring(why)))
-    return
+    say(because or ("could not connect: " .. tostring(why)))
+    return false
   end
 
-  local request = ("GET %s HTTP/1.0\r\nHost: kosmos\r\nConnection: close\r\n\r\n")
-                  :format(path)
-
-  conn:write(request)
+  conn:write(("GET %s HTTP/1.0\r\nHost: kosmos\r\nConnection: close\r\n\r\n")
+             :format(path))
 
   local parts, total = {}, 0
 
@@ -267,19 +526,21 @@ local function load(text, remember)
 
   conn:close()
 
+  if total == 0 then
+    say("nothing came back")
+    return false
+  end
+
   local reply = table.concat(parts)
   local body = reply:match("\r\n\r\n(.*)$") or reply
 
-  if total == 0 then
-    say("nothing came back")
-    return
-  end
+  say(("parsing %d bytes..."):format(#body))
 
   local doc, bad = web.parse(body)
 
   if not doc then
     say("fetched " .. total .. " bytes, but it did not parse: " .. tostring(bad))
-    return
+    return false
   end
 
   local title = doc:title()
@@ -291,57 +552,283 @@ local function load(text, remember)
   -- a window called "Browser" displaying a page called something else.
   --
   win:retitle(title and ("Browser - " .. title) or "Browser")
-  local blocks = doc:blocks()
 
-  page.items = (blocks and #blocks > 0)
-               and render(blocks, math.max(80, page.w - 28))
-               or wrap(doc:text("body") or "", math.max(80, page.w - 28))
-  page.top = 1
-  page.selected = 0
+  local counts = ("%d bytes, %d paragraphs, %d links, %d headings")
+                 :format(#body, doc:count("p"), doc:count("a"),
+                         doc:count("h1") + doc:count("h2") + doc:count("h3"))
 
-  if #page.items == 0 then page.items = { "(the document has no text)" } end
-
-  -- The *document*, not the response: `total` includes the HTTP headers,
-  -- and reporting those as the page's size while showing only the body is
-  -- a number that quietly does not match what is on screen.
-  say(("%d bytes, %d paragraphs, %d links, %d headings - text only, "
-       .. "there is no layout engine yet")
-      :format(#body, doc:count("p"), doc:count("a"),
-              doc:count("h1") + doc:count("h2") + doc:count("h3")))
+  local drawn, why_not = lay_out(doc)
 
   doc:close()
 
-  if remember ~= false then history[#history + 1] = text end
+  if not drawn then
+    say(counts .. " - " .. tostring(why_not))
+    return false
+  end
+
+  if content_h > paper_h then
+    say(("%s - %d pixels tall, and this shows the first %d")
+        :format(counts, content_h, paper_h))
+  else
+    say(counts)
+  end
+
+  return true
 end
 
 --------------------------------------------------------------------------
--- The chrome.
+-- Where we have been.
+--
+-- Two stacks and one current address, which is the whole of it: going back
+-- moves the current one onto the forward stack, and following a new address
+-- throws that stack away. Nothing here knows about the network.
 --------------------------------------------------------------------------
 
-win:add(ui.button{
-  x = 12, y = 8 + BAR_H, w = 40, h = 24, text = "<",
-  on_click = function()
-    if #history < 2 then
-      say("nothing to go back to")
+local function visit(text)
+  if here then back[#back + 1] = here end
+
+  forward = {}
+  load(text)
+end
+
+go_back = function()
+  if #back == 0 then
+    say("nothing to go back to")
+    return
+  end
+
+  if here then forward[#forward + 1] = here end
+
+  load(table.remove(back))
+end
+
+go_forward = function()
+  if #forward == 0 then
+    say("nothing to go forward to")
+    return
+  end
+
+  if here then back[#back + 1] = here end
+
+  load(table.remove(forward))
+end
+
+reload = function()
+  load(here or address.text)
+end
+
+go_home = function()
+  visit("10.0.2.2:8000/")
+end
+
+local ACTIONS = {
+  back = function() go_back() end,
+  forward = function() go_forward() end,
+  reload = function() reload() end,
+  home = function() go_home() end,
+}
+
+--------------------------------------------------------------------------
+-- Scrolling.
+--------------------------------------------------------------------------
+
+local function scroll_to(y)
+  local was = top
+
+  top = math.max(0, math.min(y, reach()))
+
+  return top ~= was
+end
+
+local function scroll_by(dy)
+  return scroll_to(top + dy)
+end
+
+--------------------------------------------------------------------------
+-- Events.
+--
+-- A direct window draws its own pixels, so `window:paint` has nothing to
+-- send and returns early - but the event loop is still the kit's, and it
+-- routes keys and clicks through the view tree. So there is one view here,
+-- the size of the window, and it never draws: it exists to be the thing
+-- events arrive at.
+--------------------------------------------------------------------------
+
+local sink = ui.view{ x = 0, y = 0, w = W, h = H }
+sink.focusable = true
+
+local function url_key(c)
+  if c == 13 or c == 10 then
+    address.focus = false
+    visit(address.text)
+  elseif c == 27 then
+    address.focus = false
+  elseif c == 8 or c == 127 then
+    if address.caret > 0 then
+      address.text = address.text:sub(1, address.caret - 1)
+                     .. address.text:sub(address.caret + 1)
+      address.caret = address.caret - 1
+    end
+  elseif c == ui.LEFT then
+    address.caret = math.max(0, address.caret - 1)
+  elseif c == ui.RIGHT then
+    address.caret = math.min(#address.text, address.caret + 1)
+  elseif c >= 32 and c < 127 then
+    address.text = address.text:sub(1, address.caret) .. string.char(c)
+                   .. address.text:sub(address.caret + 1)
+    address.caret = address.caret + 1
+  else
+    return false
+  end
+
+  frame()
+
+  return true
+end
+
+function sink:key(c)
+  if address.focus then return url_key(c) end
+
+  local screen = VIEW_H - gfx.height() * 2
+
+  if c == ui.UP then scroll_by(-40)
+  elseif c == ui.DOWN then scroll_by(40)
+  elseif c == 32 then scroll_by(screen)              -- space
+  elseif c == 98 then scroll_by(-screen)             -- b
+  elseif c == 103 then scroll_to(0)                  -- g
+  elseif c == 71 then scroll_to(reach())             -- G
+  elseif c == 12 then                                -- Control-L
+    address.focus = true
+    address.caret = #address.text
+  elseif c == 114 then reload()                      -- r
+  elseif c == 91 then go_back()                      -- [
+  elseif c == 93 then go_forward()                   -- ]
+  else return false end
+
+  frame()
+
+  return true
+end
+
+--
+-- Where in the address a click landed.
+--
+-- Measured prefix by prefix rather than divided by a cell width, because
+-- the interface font is whatever the desktop was set to and only two of the
+-- ones in this image are fixed width. Over what is *shown* rather than over
+-- the whole address, and offset by where the field is scrolled to, or a
+-- click in a scrolled field would place the caret near the start of a URL
+-- whose start is not on screen.
+--
+local function caret_from(px)
+  local shown, from = field_view()
+  local best = 0
+
+  for i = 0, #shown do
+    if gfx.measure(shown:sub(1, i)) <= px then best = i else break end
+  end
+
+  return from + best
+end
+
+local function toolbar_press(x, y)
+  address.focus = false
+
+  for _, b in ipairs(BUTTONS) do
+    if inside(b, x, y) then
+      b.down = true
       return
     end
+  end
 
-    table.remove(history)                 -- where we are now
-    local previous = history[#history]
+  if inside(GO, x, y) then
+    GO.down = true
+    return
+  end
 
-    address.text = previous
-    load(previous, false)
-  end,
-})
+  if inside(URL, x, y) then
+    address.focus = true
+    address.caret = caret_from(x - URL.x - 5)
+  end
+end
 
-win:add(ui.button{ x = 58, y = 8 + BAR_H, w = 44, h = 24, text = "R",
-                   on_click = function() load(address.text, false) end })
-win:add(address)
-win:add(ui.button{ x = W - 86, y = 8 + BAR_H, w = 74, h = 24, text = "Go",
-                   follow = { "right", "top" },
-                   on_click = function() load(address.text) end })
-win:add(page)
-win:add(status)
+local function toolbar_release(x, y)
+  for _, b in ipairs(BUTTONS) do
+    if b.down then
+      b.down = nil
+
+      if inside(b, x, y) and ((b.enabled == nil) or b.enabled()) then
+        ACTIONS[b.name]()
+      end
+    end
+  end
+
+  if GO.down then
+    GO.down = nil
+
+    if inside(GO, x, y) then visit(address.text) end
+  end
+end
+
+local function scrollbar_press(y)
+  local ty, th = thumb()
+
+  if y < VIEW_Y + SBAR then
+    scroll_by(-40)
+  elseif y >= VIEW_Y + VIEW_H - SBAR then
+    scroll_by(40)
+  elseif y < ty then
+    scroll_by(-(VIEW_H - gfx.height() * 2))
+  elseif y >= ty + th then
+    scroll_by(VIEW_H - gfx.height() * 2)
+  else
+    dragging = y - ty
+  end
+end
+
+--
+-- The thumb, while it is held.
+--
+-- The pointer's offset *into* the thumb is remembered at the press, so the
+-- page does not jump the moment the drag starts: what is under the pointer
+-- stays under it, which is the one thing a scrollbar has to get right.
+--
+local function scrollbar_drag(y)
+  local track = VIEW_H - SBAR * 2
+  local _, th = thumb()
+  local room = track - th
+
+  if room <= 0 then return end
+
+  scroll_to(((y - dragging - VIEW_Y - SBAR) * reach()) // room)
+end
+
+function sink:mouse(action, x, y)
+  if action == "press" then
+    if y < TOOL then
+      toolbar_press(x, y)
+    elseif y < VIEW_Y + VIEW_H and x >= W - SBAR then
+      scrollbar_press(y)
+    else
+      address.focus = false
+    end
+  elseif action == "move" then
+    if dragging then scrollbar_drag(y) end
+  elseif action == "release" then
+    dragging = nil
+    toolbar_release(x, y)
+  end
+
+  frame()
+
+  return true
+end
+
+win:add(sink)
+
+--------------------------------------------------------------------------
+
+lay_out_toolbar()
 
 --
 -- An address on the command line, which `wm browser:10.0.2.2:8000/` passes
@@ -351,15 +838,13 @@ win:add(status)
 local start = tostring(args or ""):match("^%s*(.-)%s*$")
 
 if web == nil then
-  page.items = { "This image was built without the web libraries.",
-                 "", "  make WEB=1 qemu", "",
-                 "builds one that has them." }
-  say("no web kit in this image")
+  said = "no web kit in this image"
+  frame()
 elseif start ~= "" then
-  address.text = start
-  load(start)
+  frame()
+  visit(start)
 else
-  say("an address is four numbers - there is no resolver yet")
+  frame()
 end
 
 win:run()

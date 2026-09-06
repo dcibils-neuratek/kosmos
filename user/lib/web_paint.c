@@ -6,9 +6,9 @@
  * there is no box model, no floats, no `width`, and a face is chosen by tag
  * rather than by the cascade. What it does have is the shape the real thing
  * needs - blocks stacked down the page, text broken into lines at a
- * *measured* width, and every line placed on a baseline rather than on a top
- * edge - so the engine that replaces it changes how a box is chosen and not
- * how one is drawn.
+ * *measured* width, and a line's height taken from its own face - so the
+ * engine that replaces it changes how a box is chosen and not how one is
+ * drawn.
  *
  * **One crossing for the whole page.** `doc:render(surface, width)` lays out
  * and paints inside C and returns the height it used. A call per box would
@@ -81,22 +81,23 @@ static int face_for(const struct page *p, const char *tag, size_t len)
 }
 
 /*
- * One line of text, placed on its baseline.
+ * One word, where the pen is.
  *
- * `gfx_draw_text` takes the *top* of the line, and the caller of this knows
- * only where the line begins. Ascent is what turns one into the other, and
- * it is per face: a heading and a paragraph on the same page do not share a
- * top edge, and stacking them as though they did is what makes a document
- * look subtly broken rather than obviously so.
+ * `p->y` is the *top* of the line and `gfx_draw_text` takes the top, so the
+ * two agree and there is no arithmetic here. The baseline is `gfx`'s
+ * business: it adds the face's ascent inside the drawing routine, which is
+ * the only place that knows it.
+ *
+ * That stops being enough the moment two faces share one line - an `em`
+ * inside a paragraph - because then they share a *baseline* and not a top
+ * edge. Inline layout is where that arrives, and it is not here yet.
  */
-static void put_line(struct page *p, int face, int x, const char *str,
+static void put_word(struct page *p, int face, int x, const char *str,
                      size_t len, uint32_t ink)
 {
     if (p->s != NULL && p->y >= 0 && (unsigned)p->y < p->height) {
         gfx_draw_text(p->s, face, x, p->y, str, len, ink, NULL);
     }
-
-    p->y += gfx_draw_height(face);
 }
 
 /*
@@ -106,18 +107,31 @@ static void put_line(struct page *p, int face, int x, const char *str,
  * candidate line on every word would be quadratic in a paragraph's length;
  * adding one advance at a time is what a line breaker does, and it is the
  * same arithmetic the inline engine will need for a real inline box.
+ *
+ * **Drawn a word at a time too**, and that is not a stylistic choice. This
+ * used to remember where a line started and where it ended and draw the byte
+ * range between them, which is one call instead of a dozen - and which draws
+ * the *source's* whitespace along with the words. The source of an HTML
+ * paragraph is full of newlines. A newline has no glyph, so every line break
+ * in the markup came out on the page as a missing-glyph box, and the box is
+ * wider than the space the wrap had budgeted for it, so the last word of
+ * every affected line ran off the right edge as well. One bug wearing two
+ * faces, and both of them looked like something else.
+ *
+ * Placing each word at the pen is also what the inline engine needs, which
+ * is the second reason not to go back: a word is where a font change, a
+ * link's hit rectangle and a selection all attach.
  */
 static void put_text(struct page *p, int face, int indent,
                      const char *text, size_t len, uint32_t ink)
 {
-    long room = p->width - indent;
+    long room  = p->width - indent;
     long space = gfx_draw_measure(face, " ", 1);
     size_t at = 0;
-    size_t start = 0, end = 0;      /* the line so far, in bytes */
-    long taken = 0;
-    bool any = false;
+    long pen = 0;               /* where the next word goes, from `indent` */
+    bool any = false;           /* anything on this line yet */
 
-    while (at <= len) {
+    while (at < len) {
         size_t word, wlen;
         long w;
 
@@ -141,24 +155,25 @@ static void put_text(struct page *p, int face, int indent,
 
         w = gfx_draw_measure(face, text + word, wlen);
 
-        if (!any) {
-            start = word;
-            end = at;
-            taken = w;
-            any = true;
-        } else if (taken + space + w <= room) {
-            end = at;
-            taken += space + w;
-        } else {
-            put_line(p, face, indent, text + start, end - start, ink);
-            start = word;
-            end = at;
-            taken = w;
+        if (any && pen + space + w > room) {
+            p->y += gfx_draw_height(face);
+            pen = 0;
+            any = false;
         }
+
+        if (any) {
+            pen += space;
+        }
+
+        put_word(p, face, indent + pen, text + word, wlen, ink);
+
+        pen += w;
+        any = true;
     }
 
+    /* The last line, which nothing else closes. */
     if (any) {
-        put_line(p, face, indent, text + start, end - start, ink);
+        p->y += gfx_draw_height(face);
     }
 }
 

@@ -1475,12 +1475,30 @@ web: $(HOSTDIR)/lua
 	@$(MAKE) --no-print-directory WEB=1 $(TARGET)
 	python3 tools/run_web.py $(TARGET)
 
+#
+# The browser, with a page in it.
+#
+#   make browser
+#   make browser PAGE=/somewhere/else.html
+#
+# `make web` proves the libraries parse, which says nothing about whether
+# anything is drawn - and drawing is the whole difference between a parser
+# and a browser. This boots the same image, serves a page from this computer
+# over slirp so no packet leaves the machine, points the browser at it, and
+# looks at the screen. The picture lands in `build/browser.png` either way,
+# because a failure is exactly when you want to see it.
+#
+browser: $(HOSTDIR)/lua
+	@$(MAKE) --no-print-directory WEB=1 $(TARGET)
+	python3 tools/run_browser.py $(TARGET) --out build/browser.png \
+	  $(if $(PAGE),--page $(PAGE),)
+
 prepush: test screenshot shot
 	@echo
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
 
-.PHONY: shot web
+.PHONY: shot web browser
 shot:
 	@$(MAKE) --no-print-directory FB=1920x1080 $(TARGET)
 	@mkdir -p $(SHOTDIR)

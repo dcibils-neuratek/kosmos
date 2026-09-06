@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kosmos, and a page to render it with</title>
+<style>
+  h1 { color: #103070 }
+  p  { font-size: 16px }
+</style>
+</head>
+<body>
+
+<h1>A page, laid out</h1>
+
+<p>This document exists so that a screenshot of the browser proves something.
+Every block on it is one the renderer handles differently, so a picture of it
+shows at a glance which of them are working and which are not.</p>
+
+<h2>Headings step down</h2>
+
+<p>An <code>h1</code> is set at twenty-eight pixels and an <code>h2</code> at
+twenty-two, both bold, and both carry a rule underneath. An <code>h3</code>
+shares eighteen pixels with everything below it, because a document that
+needs six distinct heading sizes is a document with a structure problem.</p>
+
+<h3>And this is one of those</h3>
+
+<p>The paragraph face is IBM Plex Sans at sixteen pixels. Accented Latin is
+here on purpose - naïve, Ångström, Grüße, Málaga, œuvre, çedilla - because
+the text path decodes UTF-8 and rasterises a glyph the first time it is
+asked for, and a row of boxes here would mean neither of those is true.</p>
+
+<ul>
+  <li>A list item is indented by twenty-four pixels.</li>
+  <li>It wraps at the same width as everything else, which is what makes a
+      hanging indent visible: the second line of a long item lines up under
+      the first rather than under the margin.</li>
+  <li>There are no bullets yet, and that is inline work.</li>
+</ul>
+
+<blockquote>A quotation is set in italic, indented by thirty-two pixels, and
+inked a little lighter than the body. Three separate signals for one idea,
+which is what a quotation on a page has always been.</blockquote>
+
+<h2>What is not here</h2>
+
+<p>There is no box model, no floats, no <code>width</code>, and no colour
+from the cascade: the stylesheet at the top of this file parses, and nothing
+on this page is drawn from it. Faces are chosen by tag. That is the next
+piece of work and the page says so rather than pretending otherwise.</p>
+
+<pre>  a monospace block
+  keeps its face
+  and loses its line breaks</pre>
+
+<p>The last one is a real limitation and not a rendering accident:
+<code>pre</code> takes the monospace face and is then wrapped like any other
+paragraph, because whitespace handling belongs to inline layout too.</p>
+
+<h2>Long enough to scroll</h2>
+
+<p>The rest of this page exists so that there is something below the fold.
+A page laid out into a surface as tall as the whole document and scrolled by
+copying a band out of it is the reason the browser draws its own pixels, and
+a test page that fits in the window would check none of that.</p>
+
+<p>Scrolling here re-runs nothing. The document was laid out once when it
+arrived: every line broken, every glyph rasterised, every block placed. What
+a keypress changes is which row of that surface is copied to the top of the
+window, which is one blit and no arithmetic anybody can get wrong.</p>
+
+<h3>What the alternative would have cost</h3>
+
+<p>Laying out on every scroll means breaking two thousand words and drawing
+several thousand glyphs, sixty times a second, for a picture that differs
+from the last one by forty pixels. That is not a slow implementation of
+scrolling; it is the wrong shape, and it is the same wrong shape the PDF
+viewer avoided for the same reason.</p>
+
+<blockquote>The surface is the caller's and is scrolled by blitting out of
+it, which is why this lays a page out once into something taller than the
+window rather than re-laying it on every scroll.</blockquote>
+
+<p>There is a ceiling, and it is honest about itself: sixteen megabytes of
+paper, which at this width is about seven screenfuls. A document taller than
+that is cut off, and the status line says by how much rather than letting
+the page simply stop.</p>
+
+<h3>And what is still missing</h3>
+
+<p>No links can be followed, because nothing hit-tests a word back to the
+element it came from. No forms, no images, no colour from the stylesheet.
+Every one of those needs the same missing piece - a layout that keeps boxes
+rather than throwing them away as it paints - which is the next thing to
+build and the reason this page lists them.</p>
+
+</body>
+</html>

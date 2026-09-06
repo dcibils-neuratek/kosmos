@@ -2,42 +2,69 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 ---
 
 ## Where this left off
 
-**A document renders to pixels.** `doc:render(surface, width, height)` lays
-a page out and paints it in one crossing and returns the height it used -
-163 pixels and about six thousand of ink for a heading, a wrapped paragraph,
-a subheading and a list item.
+**The browser draws a page.** `wm browser:10.0.2.2:8000/` fetches, parses,
+lays out and *paints* - headings at 28, 22 and 18 pixels bold with rules
+under the two biggest, a paragraph face at 16, monospace for `pre`, italic
+for `blockquote`, indents for lists and quotes, and accented Latin coming
+through the UTF-8 path rather than as boxes. `make browser` is the picture,
+and it checks three things while it is there: that the page area has ink on
+it, that more than one text size is present, and that six presses of Down
+move it.
 
-What is real in it: a face per tag (h1 at 28 bold, h2 at 22, body at 16,
-mono for `pre`, italic for `blockquote`); lines broken at a *measured*
-width, one word measured once, which is the arithmetic the inline engine
-needs; and every line placed on its **baseline** through `gfx_draw_ascent`
-rather than its top edge, which is what stops mixed sizes looking subtly
-wrong. Rules under the two biggest headings, indents for lists and quotes.
+**A direct window is what made the difference**, and it is the whole story
+of this step. An application on the ordinary path sends *drawing commands*
+and the compositor rasterises them with the four faces the desktop chose -
+right for a dialog, hopeless for a document that wants a heading at 28
+pixels and a paragraph at 16. So the browser owns its pixels: `web_paint.c`
+paints the document once into a surface as tall as the whole page, and a
+frame is one blit of the visible band out of it. Scrolling re-runs nothing.
 
-**It is not CSS layout and the file says so**: no box model, no floats, no
-`width`, and a face comes from the tag rather than from the cascade - which
-is running, and is not yet consulted here. What is right is the *shape*, so
-the engine that replaces this changes how a box is chosen and not how one is
-drawn.
+What that costs is that there are no widgets - a direct window owns every
+pixel, so a button would have nothing to draw into. The chrome is rectangles
+`browser.lua` knows the position of and a click is a comparison, which is
+`pdfview`'s arrangement and is why the row is deliberately small: back,
+forward, reload, home, an address with a caret, a scrollbar and a status
+line. NetSurf's own row, in the desktop's palette.
 
-`make web` is 13 checks now. The two new ones are a height and some ink,
-and neither alone would be evidence: a renderer returning a plausible height
-and drawing nothing passes the first, one filling the page with a rectangle
-passes the second.
+**Two bugs the picture found, and neither would have shown up any other
+way.**
 
-**Nothing displays it yet, and that is the next step rather than an
-oversight.** The browser window still shows the text list. Putting the
-rendered surface on screen means reconciling the chrome - which the window
-manager paints from draw ops - with content the application writes straight
-into the same shared surface. `win:surface()` and `blit` are the pieces;
-the question is ordering, and `cube3d` is the precedent for an application
-that owns its own pixels.
+*A missing glyph for every line break in the markup.* `put_text` remembered
+where a line started and where it ended and drew the byte range between
+them - one call instead of a dozen, and it draws the *source's* whitespace
+along with the words. The source of an HTML paragraph is full of newlines,
+a newline has no glyph, and the box that gets drawn instead is wider than
+the space the wrap had budgeted - so the last word of every affected line
+also ran off the right edge. One bug wearing two faces, each of which looked
+like something else. It now draws a word at a time, at the pen, which is
+what the inline engine needs anyway: a word is where a font change, a link's
+hit rectangle and a selection all attach.
+
+*A comment that described code that was not there.* `put_line`'s comment
+said every line was placed on its baseline through the face's ascent. The
+ascent is added inside `gfx`'s drawing routine, which is the only place that
+knows it, and `put_line` passed `p->y` straight through. `gfx_draw_ascent`
+was exported for a caller that never existed and is gone.
+
+**It is still not CSS layout and the file still says so**: no box model, no
+floats, no `width`, and a face comes from the tag rather than from the
+cascade - which is running, and is not yet consulted here. `pre` keeps its
+face and loses its line breaks, `li` has no bullet, and `<strong>` inside a
+paragraph is not reached. All four are the same missing piece: a layout that
+keeps boxes rather than throwing them away as it paints. That is the next
+thing, and it is what links, forms and hit-testing all wait on.
+
+`doc:render(nil, width)` measures without drawing, which is what the caller
+needs before it can ask for a surface: the page is laid out once into
+something as tall as the document, so the height has to be known first. The
+ceiling is sixteen megabytes of paper - about seven screenfuls at 884 wide -
+and a taller document is cut off with the status line saying by how much.
 
 ---
 
@@ -861,7 +888,14 @@ visible.
 
 ## Next, in order
 
-1. **SSH**, in layers with a test each: the binary packet protocol, then
+1. **A layout that keeps its boxes.** `web_paint.c` walks the DOM and paints
+   as it goes, throwing each box away the moment it is drawn - which is why
+   there are no links, no forms, no images, no bullets, no `pre` whitespace
+   and no `<strong>` inside a paragraph. All six are the same missing piece,
+   and none of them can be added to a painter that keeps nothing. It is also
+   where the cascade finally gets consulted: libcss is running and answering,
+   and `web_paint.c` chooses a face by tag name.
+2. **SSH**, in layers with a test each: the binary packet protocol, then
    Curve25519 key exchange, then ChaCha20-Poly1305, then userauth, then
    channels. This is the one place in the project where a bug is *silent*
    rather than loud - a stack that gets a sequence number wrong stops

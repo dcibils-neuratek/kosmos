@@ -1837,21 +1837,6 @@ int gfx_draw_height(int face)
     return f->loaded ? (f->ascent + f->descent) : GLYPH_H;
 }
 
-/*
- * Where the baseline sits below the top of a line.
- *
- * Layout needs it separately from the height: two faces of different sizes
- * on one line share a *baseline*, not a top edge, and stacking them by
- * their tops is the classic way to make a heading and its footnote look
- * like a mistake.
- */
-int gfx_draw_ascent(int face)
-{
-    const struct outline_font *f = face_at(face);
-
-    return f->loaded ? f->ascent : GLYPH_H;
-}
-
 static const luaL_Reg gfx_functions[] = {
     { "use_font", l_use_font },
     { "face",     l_face },

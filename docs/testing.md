@@ -510,3 +510,49 @@ It took three attempts and each wrong one passed. **A check that still
 passes when the rule it names is deleted is not testing that rule**, and
 the only way to find that out is to delete it and watch.
 
+
+
+## 18.13 A camera with three checks on it
+
+```
+make web                       # the NetSurf libraries, running
+make browser                   # the browser, with a page in it
+make browser PAGE=/some.html   # the same, on a page of your own
+```
+
+Both boot a `WEB=1` image, which is an optional variant like `DOOM=1`, so
+neither is part of `make test`.
+
+`make web` asks the guest to parse things and answers over serial: a title
+out of a tree, a `p` counted through a walk rather than a token count, `&amp;`
+decoded from a generated table, a stylesheet understood, the cascade run,
+and a height and some ink from the painter. Serial is enough because every
+one of those is a *number the guest can say*.
+
+`make browser` is the one that cannot be. It serves a page from this
+computer - slirp maps the Mac as 10.0.2.2, so no packet leaves the machine -
+points the browser at it and looks at the screen. What it is mostly is a
+camera, and `build/browser.png` is written whether it passes or fails,
+because a failure is exactly when the picture is wanted.
+
+The three checks are deliberately blunt, because a check that goes stale is
+worse than no check:
+
+| check | what it catches |
+| ----- | --------------- |
+| the page area has ink on it | a window that opened, filled its paper, and drew nothing. This has been the failure at every stage of the browser so far, and in a thumbnail it is indistinguishable from a working one |
+| more than one text height is present | the whole reason the browser draws its own pixels. If every line came back the same height, it is being rasterised by the compositor in one face and the direct window bought nothing |
+| six presses of Down change the picture | the page is laid out once into a surface taller than the window and scrolled by blitting a band out of it. A browser that lays out correctly and will not move is one nobody can read the bottom of |
+
+Six presses rather than one, and for the same reason the detached-program
+check sleeps 3.3 seconds rather than 3: a line is forty pixels and the check
+compares whole rows, so on a page of evenly spaced paragraphs one line's
+movement can leave a row looking much as it did. A quarter of a screen
+cannot.
+
+**What is deliberately not checked is what the page says.** Comparing
+against a reference rendering would be a check that fails every time the
+layout improves, which is every time somebody does the work. The page in
+`tools/test_page.html` describes what it is testing in its own text, so the
+picture is readable by a person and the harness only has to establish that
+there is a picture at all.
