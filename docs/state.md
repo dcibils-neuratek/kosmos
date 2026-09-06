@@ -8,6 +8,52 @@ Last updated: 2026-09-05
 
 ## Where this left off
 
+**Layout's two blockers are gone.** Neither was layout.
+
+*Faces.* `gfx` held one face per role and there were four roles, so a
+heading could not be larger than a paragraph on the same screen. Faces are a
+pool now, addressed by name and size through `gfx.face("ibmplexsans", 28)`,
+and the first four entries are still the roles - so `measure`, `height` and
+drawing were already taking an index and needed no new argument. The same
+name and size hands back the same face rather than rasterising 95 glyphs
+again, which matters when a page asks for the paragraph face on every block.
+
+*Weights.* Every file in `assets/fonts/` was `-Regular`, so `<strong>` and
+`<em>` could only ever have rendered as nothing. Four Plex weights joined
+them - Sans Bold, Italic, BoldItalic and Mono Bold, 794 KB, OFL, and the
+licence files already in the tree cover them because `assets2c.py` matches
+on the name before the first `-`.
+
+**Dropping those four files in broke font resolution, silently.**
+`font_short_name` took everything before the first `-`, which was exactly
+right while every file ended `-Regular.ttf` and became its family name. With
+a second weight present `IBMPlexSans-Bold.ttf` and `-Regular.ttf` both
+became `ibmplexsans` - and `FONT_FILES` is sorted, so *Bold sorts before
+Regular*. The desktop's monospace font would have quietly become bold with
+no error anywhere.
+
+The name keeps the whole stem now and drops only `-Regular`, so every
+existing name survives byte for byte; and `font_asset` tries exact matches
+before prefixes, because `ibmplexsans` is a prefix of `ibmplexsans-bold` and
+the shorthand would have picked the wrong weight.
+
+**And `gfx` now lends its drawing to another kit** - `gfx_draw.h`: fill,
+text, measure, height and *ascent*. The surface stays an opaque pointer, so
+unlike `docfont.c` - which repeats `struct surface`'s first four fields and
+says in a comment that two files must now agree - there is nothing to agree
+about.
+
+Two things decided inside it. `gfx_draw_text` takes an outline face only and
+draws nothing without one, because silently substituting a different size
+would make every line of a page the wrong height. And ascent is exposed
+*separately from height*, because two faces on one line share a baseline
+rather than a top edge - which is the case on every paragraph containing
+`<strong>`.
+
+62 display checks, 127/127 and 11 web checks green.
+
+---
+
 **The browser shows a document's structure, not a wall of text.** The kit
 returns the blocks in order - `blocks()` walks the tree and emits the tags
 that carry a paragraph's worth of text - and the application spaces a

@@ -38,6 +38,8 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "gfx_draw.h"
+
 #include "kosmos.h"
 
 void kosmos_png_open(lua_State *L);
@@ -927,12 +929,44 @@ static unsigned utf8_next(const char *str, size_t len, size_t *at)
     return cp;
 }
 
-static struct outline_font outlines[ROLE_COUNT];
+/*
+ * Every face this process has open.
+ *
+ * The first `ROLE_COUNT` are the desktop's roles and are what every widget
+ * draws with. The rest are asked for by *name and size* through
+ * `gfx.face`, because a page is not four faces: a heading, a paragraph and
+ * a quotation differ in size on the same screen, and layout needs all of
+ * them at once rather than one at a time.
+ *
+ * Twelve, fixed, and nothing is evicted. A face costs its 95 eager ASCII
+ * glyphs plus whatever the page reaches for, so a dozen is tens of
+ * kilobytes rather than hundreds; when they run out `gfx.face` says so and
+ * the caller uses one it already has. Fixed pools with an honest refusal
+ * are what this system does everywhere.
+ *
+ * **A face is addressed by an index into this array**, which is what lets
+ * `measure`, `height` and drawing take either a role name or a face - they
+ * were already taking an index, and a role is just one of the first four.
+ */
+#define FACES_MAX   12
 
-/* The role a call names, or the interface font when it names none. */
+static struct outline_font faces[FACES_MAX];
+
+/*
+ * Which face a call names: a role by name, or a face by the number
+ * `gfx.face` handed back. Nothing means the interface font.
+ */
 static int role_of(lua_State *L, int index)
 {
-    const char *name = luaL_optstring(L, index, "ui");
+    const char *name;
+
+    if (lua_type(L, index) == LUA_TNUMBER) {
+        int at = (int)lua_tointeger(L, index);
+
+        return (at >= 0 && at < FACES_MAX) ? at : ROLE_UI;
+    }
+
+    name = luaL_optstring(L, index, "ui");
 
     /*
      * Compared in full, which it was not.
@@ -1047,22 +1081,61 @@ static void outline_release(struct outline_font *f)
  */
 static void font_short_name(const char *file, char *out, size_t max)
 {
-    size_t i;
+    static const char regular[] = "-regular";
+    size_t i, n;
 
-    for (i = 0; i + 1 < max && file[i] != '\0'
-                && file[i] != '-' && file[i] != '.'; i++) {
+    /*
+     * The whole stem, lowercased, with `-Regular` dropped.
+     *
+     * **It used to stop at the first `-`**, which was exactly right while
+     * every file in `assets/fonts/` ended `-Regular.ttf` and became its
+     * family name. The moment a second weight arrives that rule collapses
+     * them: `IBMPlexSans-Bold.ttf` and `IBMPlexSans-Regular.ttf` both
+     * become `ibmplexsans`, and `FONT_FILES` is sorted - so "Bold" comes
+     * before "Regular" and the desktop's mono font silently becomes bold.
+     *
+     * Dropping only `-Regular` keeps every existing name byte for byte,
+     * because every existing file has it, and gives the new weights names
+     * of their own: `ibmplexsans-bold`, `ibmplexsans-italic`.
+     */
+    for (i = 0; i + 1 < max && file[i] != '\0' && file[i] != '.'; i++) {
         char c = file[i];
 
         out[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
     }
 
     out[i] = '\0';
+
+    n = sizeof(regular) - 1;
+
+    if (i > n && memcmp(out + i - n, regular, n) == 0) {
+        out[i - n] = '\0';
+    }
 }
 
 static const struct kosmos_font_asset *font_asset(const char *want)
 {
     unsigned i;
 
+    for (i = 0; fonts_table[i].name != NULL; i++) {
+        char shortname[32];
+
+        font_short_name(fonts_table[i].name, shortname, sizeof(shortname));
+
+        if (strcmp(want, shortname) == 0) {
+            return &fonts_table[i];
+        }
+    }
+
+    /*
+     * Then a prefix, and only after every exact name has been tried.
+     *
+     * A prefix is a convenience - "ibm" reaches `ibmplexsans` - and it
+     * became a hazard when weights arrived: `ibmplexsans` is a prefix of
+     * `ibmplexsans-bold`, which sorts first, so the shorthand would have
+     * quietly returned the wrong weight. An exact name now always wins over
+     * a longer one that merely starts with it.
+     */
     for (i = 0; fonts_table[i].name != NULL; i++) {
         char shortname[32];
         size_t n;
@@ -1075,9 +1148,6 @@ static const struct kosmos_font_asset *font_asset(const char *want)
             }
         }
 
-        /* A prefix is enough: "plex" would not match, but "ibm" does, and
-         * so does the whole name. Typing less than a name that is unique is
-         * a convenience, not an ambiguity, while there are five fonts. */
         if (want[n] == '\0' && n > 0) {
             return &fonts_table[i];
         }
@@ -1267,12 +1337,12 @@ static void publish_font(lua_State *L, const char *name)
      * wide - true for these two monospaced faces, and still *honest* for a
      * proportional one, where it becomes an upper bound and `gfx.measure`
      * becomes the thing to ask. */
-    lua_pushinteger(L, outlines[ROLE_UI].loaded
-                       ? outlines[ROLE_UI].widest : GLYPH_W);
+    lua_pushinteger(L, faces[ROLE_UI].loaded
+                       ? faces[ROLE_UI].widest : GLYPH_W);
     lua_setfield(L, -2, "w");
 
-    lua_pushinteger(L, outlines[ROLE_UI].loaded
-                       ? (outlines[ROLE_UI].ascent + outlines[ROLE_UI].descent)
+    lua_pushinteger(L, faces[ROLE_UI].loaded
+                       ? (faces[ROLE_UI].ascent + faces[ROLE_UI].descent)
                        : GLYPH_H);
     lua_setfield(L, -2, "h");
 
@@ -1282,6 +1352,55 @@ static void publish_font(lua_State *L, const char *name)
     lua_pop(L, 1);
 }
 
+/*
+ * face(name, px) -> a number usable anywhere a role name is, or nil.
+ *
+ * What layout asks for. A role is a *decision the desktop made* - this is
+ * the interface font, that is the terminal's - and a page has no such
+ * decisions to make: it has a heading at one size and a paragraph at
+ * another, both on screen at once, both chosen by the document.
+ *
+ * Faces are shared rather than reloaded. Opening one rasterises 95 glyphs,
+ * and a page asks for the same paragraph face on every block it lays out,
+ * so the same name and size hands back the same face every time.
+ */
+static int l_face(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    int px = (int)luaL_optinteger(L, 2, 16);
+    int i;
+
+    for (i = ROLE_COUNT; i < FACES_MAX; i++) {
+        if (faces[i].loaded && faces[i].px == px
+            && strcmp(faces[i].name, name) == 0) {
+            lua_pushinteger(L, i);
+            return 1;
+        }
+    }
+
+    for (i = ROLE_COUNT; i < FACES_MAX; i++) {
+        if (faces[i].loaded) {
+            continue;
+        }
+
+        if (!outline_load(&faces[i], name, px)) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "no such font");
+            return 2;
+        }
+
+        lua_pushinteger(L, i);
+        return 1;
+    }
+
+    /* Said rather than evicted: throwing out a face the next block wants
+     * back would rasterise it again, and a caller that hears "no" can draw
+     * with one it already holds. */
+    lua_pushnil(L);
+    lua_pushliteral(L, "no room for another face");
+    return 2;
+}
+
 static int l_use_font(lua_State *L)
 {
     const char *name = luaL_checkstring(L, 1);
@@ -1289,7 +1408,7 @@ static int l_use_font(lua_State *L)
     int role = role_of(L, 3);
 
     if (name[0] == 's') {                       /* spleen: the bitmap */
-        outline_release(&outlines[role]);
+        outline_release(&faces[role]);
 
         if (role == ROLE_UI) {
             publish_font(L, "spleen");
@@ -1299,7 +1418,7 @@ static int l_use_font(lua_State *L)
         return 1;
     }
 
-    if (!outline_load(&outlines[role], name, px)) {
+    if (!outline_load(&faces[role], name, px)) {
         lua_pushnil(L);
         lua_pushstring(L, "no such font");
         return 2;
@@ -1328,7 +1447,7 @@ static int l_use_font(lua_State *L)
  */
 static int l_height(lua_State *L)
 {
-    const struct outline_font *f = &outlines[role_of(L, 1)];
+    const struct outline_font *f = &faces[role_of(L, 1)];
 
     lua_pushinteger(L, f->loaded ? (f->ascent + f->descent) : GLYPH_H);
 
@@ -1344,7 +1463,7 @@ static int l_measure(lua_State *L)
     const char *str = luaL_checklstring(L, 1, &len);
 
     lua_pushinteger(L,
-        (lua_Integer)text_width(&outlines[role_of(L, 2)], str, len));
+        (lua_Integer)text_width(&faces[role_of(L, 2)], str, len));
     return 1;
 }
 
@@ -1395,7 +1514,7 @@ static int l_text(lua_State *L)
     /* An outline font, when one is in force. Same call, same arguments;
      * what changes is where the glyphs come from. */
     {
-        const struct outline_font *f = &outlines[role_of(L, 7)];
+        const struct outline_font *f = &faces[role_of(L, 7)];
 
         if (f->loaded) {
             draw_outline_text(s, f, x, y, text, len, fg,
@@ -1637,8 +1756,105 @@ static int l_screen(lua_State *L)
     return 1;
 }
 
+/*
+ * ---------------------------------------------------------------------
+ * What another kit borrows to draw with. See `gfx_draw.h`.
+ * ---------------------------------------------------------------------
+ *
+ * A page is thousands of boxes and glyphs, and the window manager's draw
+ * ops carry one operation each. So the web kit paints its own surface in C
+ * and calls these, exactly as `docfont.c` paints a page of a PDF - the
+ * difference being that these reuse the face pool and the glyph cache above
+ * rather than rasterising a second time.
+ */
+
+void gfx_draw_fill(struct surface *s, long x, long y, long w, long h,
+                   uint32_t colour)
+{
+    long row;
+
+    if (s == NULL || s->pixels == NULL) {
+        return;
+    }
+
+    if (!clip(s, &x, &y, &w, &h, NULL, NULL)) {
+        return;
+    }
+
+    for (row = 0; row < h; row++) {
+        uint32_t *p = row_of(s, (unsigned)(y + row)) + x;
+        long n;
+
+        for (n = 0; n < w; n++) {
+            p[n] = colour;
+        }
+    }
+}
+
+/* The face a number names, or the interface font when it names nothing
+ * this process has open. */
+static const struct outline_font *face_at(int face)
+{
+    if (face < 0 || face >= FACES_MAX) {
+        face = ROLE_UI;
+    }
+
+    return &faces[face];
+}
+
+/*
+ * **An outline face only.**
+ *
+ * The built-in 8x16 is a bitmap and its drawing lives inside `l_text`,
+ * where it is entangled with the Lua stack. A caller here has asked for a
+ * face by name and size and can be told when there was not one; drawing
+ * nothing is the honest answer rather than silently substituting a face of
+ * a different size, which would make every line of a laid-out page the
+ * wrong height.
+ */
+void gfx_draw_text(struct surface *s, int face, long x, long y,
+                   const char *str, size_t len,
+                   uint32_t fg, const uint32_t *bg)
+{
+    const struct outline_font *f = face_at(face);
+
+    if (s == NULL || s->pixels == NULL || str == NULL || !f->loaded) {
+        return;
+    }
+
+    draw_outline_text(s, f, x, y, str, len, fg, bg);
+}
+
+long gfx_draw_measure(int face, const char *str, size_t len)
+{
+    return text_width(face_at(face), str, len);
+}
+
+int gfx_draw_height(int face)
+{
+    const struct outline_font *f = face_at(face);
+
+    return f->loaded ? (f->ascent + f->descent) : GLYPH_H;
+}
+
+/*
+ * Where the baseline sits below the top of a line.
+ *
+ * Layout needs it separately from the height: two faces of different sizes
+ * on one line share a *baseline*, not a top edge, and stacking them by
+ * their tops is the classic way to make a heading and its footnote look
+ * like a mistake.
+ */
+int gfx_draw_ascent(int face)
+{
+    const struct outline_font *f = face_at(face);
+
+    return f->loaded ? f->ascent : GLYPH_H;
+}
+
 static const luaL_Reg gfx_functions[] = {
     { "use_font", l_use_font },
+    { "face",     l_face },
     { "measure",  l_measure },
     { "height",   l_height },
     { "fonts",    l_font_names },
