@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "console.h"
 #include "cpu.h"
 #include "hal.h"
 #include "trap.h"
@@ -108,23 +109,23 @@ static const char *const names[32] = {
     "security exception", "reserved",
 };
 
+/*
+ * Through the kernel's console rather than through a second private one.
+ *
+ * `arch/aarch64/trap.c` prints a fault with `kputs` for a reason this file
+ * will need as soon as there is a framebuffer: a report that goes only to
+ * the serial line is a machine that stops with a desktop on it and no
+ * explanation anywhere a person is looking.
+ */
 static void say(const char *s)
 {
-    while (*s != '\0') {
-        hal_putchar(*s++);
-    }
+    kputs(s);
 }
 
 static void say_hex(uint64_t v)
 {
-    static const char digits[] = "0123456789abcdef";
-    int shift;
-
-    say("0x");
-
-    for (shift = 60; shift >= 0; shift -= 4) {
-        hal_putchar(digits[(v >> shift) & 0xf]);
-    }
+    kputs("0x");
+    kputx(v, 16);
 }
 
 static void line(const char *label, uint64_t value)
@@ -133,7 +134,7 @@ static void line(const char *label, uint64_t value)
     say(label);
     say("  ");
     say_hex(value);
-    say("\r\n");
+    say("\n");
 }
 
 void trap_init(void)
@@ -195,9 +196,9 @@ void trap_handle(struct trapframe *f)
      * and only the process stops. The low two bits of the saved CS are the
      * privilege level the processor was at, which it pushed for us.
      */
-    say((f->cs & 3) ? "\r\nprocess died: " : "\r\n*** ");
+    say((f->cs & 3) ? "\nprocess died: " : "\n*** ");
     say(f->vector < 32 ? names[f->vector] : "unknown exception");
-    say("\r\n");
+    say("\n");
 
     line("vector ", f->vector);
     line("error  ", f->error);
@@ -221,14 +222,14 @@ void trap_handle(struct trapframe *f)
         say((f->error & 2) ? "write" : "read");
         say(", ");
         say((f->error & 4) ? "user" : "kernel");
-        say("\r\n");
+        say("\n");
     }
 
     if (f->cs & 3) {
         trap_user_fault(f);     /* never returns */
     }
 
-    say("\r\nhalted.\r\n");
+    say("\nhalted.\n");
 
     for (;;) {
         cpu_irq_disable();

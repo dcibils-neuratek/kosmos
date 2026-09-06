@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "context.h"
+#include "console.h"
 #include "cpu.h"
 #include "gdt.h"
 #include "hal.h"
@@ -28,52 +29,38 @@
 
 void hal_ram_from_multiboot(uint32_t at);
 
-static void say(const char *s);
 
 /*
- * `panic`, on loan until `kernel/` builds here.
+ * The kernel's own console, which is the first thing from `kernel/` that
+ * runs on this machine.
  *
- * The real one is `kernel/panic.c`, and it is four lines longer for a
- * reason that does not exist yet: it takes the screen back from whatever
- * compositor had it, so a machine with a desktop on it does not stop dead
- * with the explanation going only to a serial line nobody attached. There
- * is no screen and no compositor on this architecture, so there is nothing
- * to take back.
- *
- * **This disappears the moment `kernel/console.c` compiles here**, and it
- * is in this file rather than a plausible-looking one so that it cannot be
- * mistaken for a second implementation that was meant to stay.
+ * `kputs` is not `hal_putchar` in a loop: it is the serial line *and* the
+ * screen when there is one, it keeps the log a process can read back, and
+ * it is what `panic` prints through. There is no screen here yet, and
+ * `console.c` has always handled that - `attached` stays false and the
+ * screen half of it never runs - which is why it could come across before
+ * `hal/pc/` has a framebuffer.
  */
-void panic(const char *msg)
-{
-    say("\r\nPANIC: ");
-    say(msg);
-    say("\r\n");
-
-    for (;;) {
-        cpu_irq_disable();
-        cpu_wait_for_interrupt();
-    }
-}
-
 static void say(const char *s)
 {
-    while (*s != '\0') {
-        hal_putchar(*s++);
-    }
+    kputs(s);
 }
 
 static void say_hex(uint64_t v)
 {
-    static const char digits[] = "0123456789abcdef";
-    int shift;
-
-    say("0x");
-
-    for (shift = 60; shift >= 0; shift -= 4) {
-        hal_putchar(digits[(v >> shift) & 0xf]);
-    }
+    kputs("0x");
+    kputx(v, 16);
 }
+
+/*
+ * `\n` and not `\r\n` anywhere below, which is not a style choice.
+ *
+ * `kputc` writes the carriage return itself, for the serial line and for
+ * the screen separately, because a console that made every caller remember
+ * would eventually meet one that did not. Writing both here produced a
+ * blank line between every line of this file's output - the one visible
+ * symptom of a private `say` being replaced by the real one.
+ */
 
 /*
  * What long mode looks like from the inside, reported rather than assumed.
@@ -102,18 +89,26 @@ static void check_map(void)
         say("  ");
         say(cases[i].what);
         if (e == NULL) {
-            say("  NO PAGE ENTRY\r\n");
+            say("  NO PAGE ENTRY\n");
         } else if ((*e & cases[i].mask) != (cases[i].want & cases[i].mask)) {
-            say("  WRONG: "); say_hex(*e); say("\r\n");
+            say("  WRONG: "); say_hex(*e); say("\n");
         } else {
-            say("  "); say_hex(*e); say("\r\n");
+            say("  "); say_hex(*e); say("\n");
         }
     }
 
+    /*
+     * The address as well as the verdict, so that something outside this
+     * machine can check it is the address the linker chose. A test that
+     * only reads back the sentence this file printed is a restatement of
+     * it, and `tools/run_headless.py` already learned that lesson about
+     * counting `/bin` on both sides.
+     */
     guard = mmu_page_entry((uintptr_t)__stack_guard);
-    say("  guard  ");
-    say((guard != NULL && (*guard & PTE_P) == 0) ? "  unmapped\r\n"
-                                                 : "  STILL MAPPED\r\n");
+    say("  guard    ");
+    say_hex((uint64_t)(uintptr_t)__stack_guard);
+    say((guard != NULL && (*guard & PTE_P) == 0) ? "  unmapped\n"
+                                                 : "  STILL MAPPED\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -200,17 +195,17 @@ static void check_switch(void)
 
     say("  switch   ");
     if (worker_arg != marker) {
-        say("THE ARGUMENT DID NOT ARRIVE\r\n");
+        say("THE ARGUMENT DID NOT ARRIVE\n");
     } else if (worker_rounds != 2) {
-        say("THE WORKER DID NOT RUN TWICE\r\n");
+        say("THE WORKER DID NOT RUN TWICE\n");
     } else if (worker_sum != 6 * marker + 21) {
-        say("VALUES DID NOT SURVIVE\r\n");
+        say("VALUES DID NOT SURVIVE\n");
     } else if (!worker_returned) {
-        say("thread_entry DID NOT REACH thread_exit\r\n");
+        say("thread_entry DID NOT REACH thread_exit\n");
     } else if (mine != 0xC0FFEE) {
-        say("THE CALLER'S OWN LOCALS DID NOT SURVIVE\r\n");
+        say("THE CALLER'S OWN LOCALS DID NOT SURVIVE\n");
     } else {
-        say("two contexts, two round trips, and an exit\r\n");
+        say("two contexts, two round trips, and an exit\n");
     }
 }
 
@@ -361,7 +356,7 @@ static void check_ring3(void)
     ring3_space = as_create();
 
     if (code == NULL || stack == NULL || ring3_space == NULL) {
-        say("  ring3    NO PAGES\r\n");
+        say("  ring3    NO PAGES\n");
         return;
     }
 
@@ -373,7 +368,7 @@ static void check_ring3(void)
                MAP_USER_RX) != AS_OK
         || as_map(ring3_space, PROBE_STACK_VA, (uintptr_t)stack, 1,
                   MAP_USER_RW) != AS_OK) {
-        say("  ring3    MAP REFUSED\r\n");
+        say("  ring3    MAP REFUSED\n");
         return;
     }
 
@@ -384,27 +379,27 @@ static void check_ring3(void)
 
     context_switch(&caller_ctx, &ring3_ctx);
 
-    say("\r\n  ring3    ");
+    say("\n  ring3    ");
     if (ring3_calls < 2) {
-        say("THE PROCESS DID NOT MAKE TWO CALLS\r\n");
+        say("THE PROCESS DID NOT MAKE TWO CALLS\n");
     } else if (ring3_answer != 2 * PROBE_MARKER) {
-        say("THE ANSWER DID NOT COME BACK\r\n");
+        say("THE ANSWER DID NOT COME BACK\n");
     } else if (ring3_read_kernel_memory) {
-        say("A PROCESS READ THE KERNEL'S OWN TEXT\r\n");
+        say("A PROCESS READ THE KERNEL'S OWN TEXT\n");
     } else if (!ring3_faulted) {
-        say("NEITHER FAULTED NOR REPORTED\r\n");
+        say("NEITHER FAULTED NOR REPORTED\n");
     } else {
         say_hex(ring3_answer);
         say(" from ");
         say_hex(PROBE_MARKER);
-        say(", doubled at ring 0 and returned to ring 3\r\n");
+        say(", doubled at ring 0 and returned to ring 3\n");
 
         say("  confined ");
         /* present | read | user: the page is there and the process is not
          * allowed to see it, which is exactly the bit being tested. */
         say((ring3_fault_error & 0x5) == 0x5
-            ? "the kernel's text is present and unreadable to it\r\n"
-            : "IT FAULTED, BUT NOT FOR THE RIGHT REASON\r\n");
+            ? "the kernel's text is present and unreadable to it\n"
+            : "IT FAULTED, BUT NOT FOR THE RIGHT REASON\n");
     }
 }
 
@@ -423,46 +418,46 @@ static void check_spaces(void)
     uint64_t *entry;
 
     if (as == NULL) {
-        say("  as       COULD NOT CREATE\r\n");
+        say("  as       COULD NOT CREATE\n");
         return;
     }
 
     if (as_map(as, USER_VA_BASE, (uintptr_t)__rodata_start, 1,
                MAP_USER_RW) != AS_OK) {
-        say("  as       MAP REFUSED\r\n");
+        say("  as       MAP REFUSED\n");
         return;
     }
 
     /* Below the user region the tables are the kernel's, and writing there
      * would edit every space at once. It has to be refused. */
     if (as_map(as, PAGE_SIZE, PAGE_SIZE, 1, MAP_USER_RW) != AS_ERR_RANGE) {
-        say("  as       THE KERNEL REGION WAS WRITABLE\r\n");
+        say("  as       THE KERNEL REGION WAS WRITABLE\n");
         return;
     }
 
     entry = as_page_entry(as, USER_VA_BASE);
     say("  as       ");
     if (entry == NULL || (*entry & PTE_US) == 0) {
-        say("NO USER PAGE\r\n");
+        say("NO USER PAGE\n");
     } else {
         say_hex(*entry);
-        say("\r\n");
+        say("\n");
     }
 
     /* And the kernel is still in it, sharing rather than copied. */
     say("  as text  ");
     entry = as_page_entry(as, (uintptr_t)__text_start);
     say((entry != NULL && *entry == *mmu_page_entry((uintptr_t)__text_start))
-        ? "shared with the kernel\r\n" : "MISSING OR DIFFERENT\r\n");
+        ? "shared with the kernel\n" : "MISSING OR DIFFERENT\n");
 
     as_destroy(as);
 
     say("  as pages ");
     if (pmm_free_pages() == before) {
-        say("all returned\r\n");
+        say("all returned\n");
     } else {
         say_hex(before - pmm_free_pages());
-        say(" LEAKED\r\n");
+        say(" LEAKED\n");
     }
 }
 
@@ -472,7 +467,7 @@ void kmain_x86(uint32_t multiboot)
 
     hal_early_init();
 
-    say("\r\nKosmos on x86-64.\r\n");
+    say("\nKosmos on x86-64.\n");
 
     __asm__ volatile ("movq %%cr0, %0" : "=r"(cr0));
     __asm__ volatile ("movq %%cr3, %0" : "=r"(cr3));
@@ -489,14 +484,14 @@ void kmain_x86(uint32_t multiboot)
         efer = ((uint64_t)hi << 32) | lo;
     }
 
-    say("  cr0      "); say_hex(cr0);  say("\r\n");
-    say("  cr3      "); say_hex(cr3);  say("\r\n");
-    say("  efer     "); say_hex(efer); say("\r\n");
-    say("  multiboot "); say_hex(multiboot); say("\r\n");
+    say("  cr0      "); say_hex(cr0);  say("\n");
+    say("  cr3      "); say_hex(cr3);  say("\n");
+    say("  efer     "); say_hex(efer); say("\n");
+    say("  multiboot "); say_hex(multiboot); say("\n");
 
-    say(((cr0 >> 31) & 1) ? "  paging on\r\n" : "  PAGING OFF\r\n");
-    say(((efer >> 10) & 1) ? "  long mode active\r\n"
-                           : "  LONG MODE NOT ACTIVE\r\n");
+    say(((cr0 >> 31) & 1) ? "  paging on\n" : "  PAGING OFF\n");
+    say(((efer >> 10) & 1) ? "  long mode active\n"
+                           : "  LONG MODE NOT ACTIVE\n");
 
     /* Where the RAM is, before anything asks for a page of it. */
     hal_ram_from_multiboot(multiboot);
@@ -509,11 +504,11 @@ void kmain_x86(uint32_t multiboot)
         say(" for ");       say_hex(ram.size);
         say(" ("); 
         say_hex(ram.size >> 20);
-        say(" MB)\r\n");
+        say(" MB)\n");
     }
 
     trap_init();
-    say("  idt      installed, 48 vectors\r\n");
+    say("  idt      installed, 48 vectors\n");
 
     /*
      * The descriptor tables, before interrupts and before the map.
@@ -529,7 +524,7 @@ void kmain_x86(uint32_t multiboot)
      */
     gdt_init();
     user_init();
-    say("  gdt      5 descriptors, a tss, and syscall armed\r\n");
+    say("  gdt      5 descriptors, a tss, and syscall armed\n");
 
     /*
      * The interrupt path, end to end, before anything depends on it.
@@ -542,7 +537,7 @@ void kmain_x86(uint32_t multiboot)
      */
     hal_irq_init();
     hal_timer_init(100);
-    say("  pic      remapped to 32, timer at 100 Hz\r\n");
+    say("  pic      remapped to 32, timer at 100 Hz\n");
 
     cpu_irq_enable();
 
@@ -556,8 +551,8 @@ void kmain_x86(uint32_t multiboot)
 
         say("  ticks    ");
         say_hex(hal_ticks());
-        say(hal_ticks() > before ? "  (rising)\r\n"
-                                 : "  NO TICK ARRIVED\r\n");
+        say(hal_ticks() > before ? "  (rising)\n"
+                                 : "  NO TICK ARRIVED\n");
     }
 
     /*
@@ -572,11 +567,11 @@ void kmain_x86(uint32_t multiboot)
     say_hex(pmm_free_pages());
     say(" of ");
     say_hex(pmm_total_pages());
-    say(" pages free\r\n");
+    say(" pages free\n");
 
     mmu_init();
     say("  mmu      four levels, loaded");
-    say(mmu_is_enabled() ? "\r\n" : "  BUT PAGING IS OFF\r\n");
+    say(mmu_is_enabled() ? "\n" : "  BUT PAGING IS OFF\n");
 
     /*
      * Printing this sentence is most of the proof, and it is worth saying
@@ -602,11 +597,11 @@ void kmain_x86(uint32_t multiboot)
      * kernel` rather than `not present`, and that difference is the whole
      * of what is being shown.
      */
-    say("\r\nWriting to __text_start, which is mapped read-only:\r\n");
+    say("\nWriting to __text_start, which is mapped read-only:\n");
 
     *(volatile uint64_t *)(uintptr_t)__text_start = 1;
 
-    say("*** the write succeeded, so .text is not read-only\r\n");
+    say("*** the write succeeded, so .text is not read-only\n");
 
     for (;;) {
         __asm__ volatile ("hlt");

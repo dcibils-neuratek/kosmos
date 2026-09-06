@@ -1468,21 +1468,31 @@ qemu: $(TARGET) $(DISK)
 X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -Wall -Wextra -Werror -fno-common -fno-strict-aliasing -O2 -g \
              -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
-             -Ihal -Iarch/x86_64 -Ikernel
+             -Ihal -Iarch/x86_64 -Ikernel -Iruntime/include
+
+X86_BUILD := build/x86_64
 
 X86_SRCS  := boot/x86_64/start.S arch/x86_64/vectors.S \
              arch/x86_64/trap.c hal/pc/uart.c hal/pc/memory.c \
              hal/pc/pic.c hal/pc/timer.c \
              arch/x86_64/switch.S arch/x86_64/user.S \
              arch/x86_64/gdt.c arch/x86_64/user.c \
-             arch/x86_64/mmu.c kernel/pmm.c \
+             arch/x86_64/mmu.c \
+             kernel/pmm.c kernel/screen.c kernel/console.c kernel/panic.c \
+             runtime/libc/string.c $(X86_BUILD)/font_8x16.c \
              arch/x86_64/main.c
-X86_BUILD := build/x86_64
 
 .PHONY: x86 x86-build
 x86-build:
 	@mkdir -p $(X86_BUILD)
 	@$(MAKE) --no-print-directory ARCH=x86_64 $(X86_BUILD)/kosmos.bin
+
+# The same font the ARM image carries, from the same BDF through the same
+# converter. A second copy of the rule rather than a shared one, because
+# $(GEN) moves with the image variant and this build has no variants.
+$(X86_BUILD)/font_8x16.c: assets/fonts/spleen-8x16.bdf tools/bdf2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/bdf2c.py $< font_8x16 $@
 
 $(X86_BUILD)/kosmos.bin: $(X86_SRCS) boot/x86_64/kosmos.ld
 	@mkdir -p $(X86_BUILD)
@@ -1552,6 +1562,18 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# left. And a second boot with no card, which is the branch every
 	@# device grant in init.lua carries a comment about getting wrong.
 	python3 tools/run_network.py $(TARGET)
+	@# And the second architecture, which until now proved nothing that
+	@# stayed proved: a staging kmain printed what it found and a person
+	@# read it. Skipped rather than failed where the cross compiler is not
+	@# installed - and said out loud, because a suite that quietly runs
+	@# fewer checks on one machine than another is worse than one that does
+	@# not run them at all.
+	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
+	    $(MAKE) --no-print-directory x86-build >/dev/null && \
+	    python3 tools/run_x86.py $(X86_BUILD)/kosmos.elf; \
+	else \
+	    echo "SKIP: x86-64, because x86_64-elf-gcc is not installed."; \
+	fi
 
 # Used for a while, then asked whether it gave everything back.
 #
