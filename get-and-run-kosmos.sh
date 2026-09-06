@@ -31,7 +31,7 @@ API="https://api.github.com/repos/$REPO/contents/builds"
 RAW="https://raw.githubusercontent.com/$REPO/$BRANCH/builds"
 
 dir="$HOME/.kosmos"
-want="web"
+want="richest"
 mode="run"
 passthrough=""
 want_dir="no"
@@ -45,7 +45,7 @@ for arg in "$@"; do
 
     case "$arg" in
         --plain) want="plain" ;;
-        --web)   want="web" ;;
+        --web|--full) want="richest" ;;
         --list)  mode="list" ;;
         --dir)   want_dir="yes" ;;
         --help|-h)
@@ -97,7 +97,14 @@ fi
 if [ "$mode" = "list" ]; then
     echo "published in $REPO:"
     printf '%s\n' "$images" | while read -r name size; do
-        printf '  %-46s %5s MB\n' "$name" "$((size / 1048576))"
+        case "$name" in
+            *-full.elf) has="browser, Doom" ;;
+            *-web.elf)  has="browser" ;;
+            *-doom.elf) has="Doom" ;;
+            *)          has="the desktop" ;;
+        esac
+
+        printf '  %-44s %4s MB   %s\n' "$name" "$((size / 1048576))" "$has"
     done
     exit 0
 fi
@@ -113,17 +120,36 @@ fi
 best=""
 best_size=0
 best_rank=-1
+best_carries=-1
 best_px=0
 
 printf '%s\n' "$images" > "${TMPDIR:-/tmp}/kosmos-images.$$"
 
 while read -r name size; do
+    #
+    # How much is in it, from the suffix the release put there.
+    #
+    # This used to test `kind = want` with `want` fixed at "web", and the
+    # release stopped saying `-web` the day it started carrying Doom as
+    # well. So `--list` showed an image and the downloader said none was
+    # published - a matcher that had to be taught every name the build might
+    # invent, and was not.
+    #
+    # Ranked rather than matched, so a suffix nobody here has heard of is
+    # simply an image like any other. And a preference is a preference: if
+    # the wanted kind is absent, the best of what there *is* gets used
+    # rather than nothing. Refusing to run beside a working image is not a
+    # useful thing for a downloader to do.
+    #
     case "$name" in
-        *-web.elf) kind="web" ;;
-        *)         kind="plain" ;;
+        *-full.elf) carries=3 ;;
+        *-web.elf)  carries=2 ;;
+        *-doom.elf) carries=1 ;;
+        *)          carries=0 ;;
     esac
 
-    [ "$kind" = "$want" ] || continue
+    # `--plain` wants the smallest, everything else the most complete.
+    [ "$want" = "plain" ] && carries=$(( 3 - carries ))
 
     dims=$(printf '%s' "$name" \
            | sed -n 's/.*-\([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p')
@@ -137,10 +163,14 @@ while read -r name size; do
     rank=$(( ${ver%% *} * 1000000 + ${v_rest%% *} * 1000 + ${v_rest##* } ))
     px=$(( ${dims% *} * ${dims#* } ))
 
+    # Newest, then most complete, then largest.
     if [ "$rank" -gt "$best_rank" ] \
-       || { [ "$rank" -eq "$best_rank" ] && [ "$px" -ge "$best_px" ]; }
+       || { [ "$rank" -eq "$best_rank" ] && [ "$carries" -gt "$best_carries" ]; } \
+       || { [ "$rank" -eq "$best_rank" ] && [ "$carries" -eq "$best_carries" ] \
+            && [ "$px" -ge "$best_px" ]; }
     then
         best_rank="$rank"
+        best_carries="$carries"
         best_px="$px"
         best="$name"
         best_size="$size"
@@ -150,8 +180,28 @@ done < "${TMPDIR:-/tmp}/kosmos-images.$$"
 rm -f "${TMPDIR:-/tmp}/kosmos-images.$$"
 
 if [ -z "$best" ]; then
-    echo "no $want image is published. Try --list." >&2
+    echo "nothing published here looks like an image. Try --list." >&2
     exit 1
+fi
+
+#
+# Said, when what was picked is not what was asked for.
+#
+# Version outranks completeness on purpose: a `--plain` that fetched a
+# months-old image to honour a size preference would be answering the wrong
+# question, and nobody wants a stale operating system. But doing the
+# sensible thing quietly is how a script gets blamed for something else, so
+# it says which preference it could not meet and what it did instead.
+#
+case "$best" in
+    *-full.elf|*-web.elf|*-doom.elf) got="richest" ;;
+    *)                               got="plain"   ;;
+esac
+
+if [ "$want" = "plain" ] && [ "$got" != "plain" ]; then
+    echo "no lean image at this version, so this is the full one." >&2
+elif [ "$want" = "richest" ] && [ "$got" = "plain" ]; then
+    echo "the newest image here carries no browser." >&2
 fi
 
 mkdir -p "$dir"
