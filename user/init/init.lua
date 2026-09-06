@@ -4289,12 +4289,12 @@ if role == ROLE_SHELL then
 end
 
 if role == ROLE_SELFTEST then
-  -- Lua itself, at EL0, on a heap it cannot grow. No capabilities and no
+  -- Lua itself, at user level, on a heap it cannot grow. No capabilities and no
   -- server: this checks that the language works out here, which everything
   -- above quietly assumes.
   local function check(c, what) if not c then error("selftest: " .. what) end end
 
-  line("selftest: Lua " .. _VERSION .. " at EL0")
+  line("selftest: Lua " .. _VERSION .. " at user level")
   check(2 + 2 == 4, "arithmetic")
   check(1 / 2 == 0.5 and math.type(1 / 2) == "float", "floats")
   check(math.sqrt(16.0) == 4.0, "the math library")

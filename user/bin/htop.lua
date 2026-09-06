@@ -90,12 +90,14 @@ local function report(before, after)
         k.spaces, k.spaces_max, k.endpoints, k.endpoints_max))
 
   print("")
-  print("  EL1  the kernel")
-  print("       threads . address spaces . IPC . capabilities")
-  print("       It does not know what a file is, what a window is, or what")
-  print("       Lua is. Everything below this line asks it for those.")
+  -- "KERNEL" and "USER" rather than EL1 and EL0: those are AArch64's names
+  -- for the two sides of this line, and there are two architectures now.
+  print("  KERNEL  the kernel")
+  print("          threads . address spaces . IPC . capabilities")
+  print("          It does not know what a file is, what a window is, or")
+  print("          what Lua is. Everything below asks it for those.")
   print("")
-  print("  EL0  every process, in an address space of its own")
+  print("  USER    every process, in an address space of its own")
   print("")
   print("   PID  NAME       LAYER       BAND      CPU%  CAPS  OWNS            STATE")
 

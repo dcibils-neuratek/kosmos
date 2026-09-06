@@ -600,14 +600,18 @@ function sampler:tick()
 
   -- What is in this list and what is not.
   --
-  -- **Every row is a process at EL0.** There is no such thing here as a
-  -- process running in the kernel: Nebula has threads of its own - the idle
-  -- thread among them - and they are not processes and do not appear.
+  -- **Every row is a process at user level.** There is no such thing here
+  -- as a process running in the kernel: Nebula has threads of its own - the
+  -- idle thread among them - and they are not processes and do not appear.
   -- Saying so is more useful than a column that reads "user" on every line,
   -- and it is the microkernel's shape stated out loud: the filesystem, the
   -- console and the desktop are all in this list, and the kernel is not.
   -- Short enough to fit the window, which the first version was not.
-  heading.text = ("%d at EL0, %d threads; %d in the kernel, drivers too")
+  --
+  -- It said "at EL0", which is an AArch64 exception level and means ring 3
+  -- on the machine this was read on. The distinction is real and worth
+  -- drawing; the name for it was one architecture's.
+  heading.text = ("%d processes, %d threads; %d in the kernel, drivers too")
                  :format(totals.procs, totals.threads,
                          math.max(0, totals.threads - totals.procs))
 end
