@@ -2,6 +2,19 @@
 #
 # Downloads the newest Kosmos image and runs it.
 #
+# **Nothing to download first**, which is the point of it:
+#
+#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/\
+#            dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"
+#
+# `sh -c "$(...)"` rather than `curl | sh`, and the difference is not style.
+# A pipe *is* this script's stdin, and the last thing it does is hand over to
+# QEMU with `-serial mon:stdio` - so the guest's console would be reading
+# from an exhausted pipe and see end-of-file the moment it started. With
+# `-c` the terminal is still the terminal.
+#
+# Or keep a copy, which is quicker to type afterwards:
+#
 #   ./get-and-run-kosmos.sh                  the newest one, and boot it
 #   ./get-and-run-kosmos.sh -b "wm browser"  ...starting the browser
 #   ./get-and-run-kosmos.sh --plain          the small image, no browser
@@ -88,8 +101,29 @@ fi
 # it is being executed from is a surprise, and on some shells it is a
 # corrupted read as well.
 #
+#
+# There may be no file to compare: run through `sh -c "$(curl ...)"` there
+# is no copy of this anywhere, which is the arrangement that cannot go
+# stale in the first place. `$0` is then the shell, so the marker is what
+# tells a real copy of this script from a file that happens to be there.
+#
 me="$0"
-published=$(curl -fsSL "$RAW_ROOT/get-and-run-kosmos.sh" 2>/dev/null || true)
+have_copy="no"
+
+if [ -r "$me" ] && grep -q "^# Kosmos\. Copyright" "$me" 2>/dev/null; then
+    have_copy="yes"
+fi
+
+if [ "$have_copy" = "no" ]; then
+    if [ "$mode" = "update" ]; then
+        echo "there is no local copy to update: this came off the network." >&2
+        exit 0
+    fi
+
+    published=""
+else
+    published=$(curl -fsSL "$RAW_ROOT/get-and-run-kosmos.sh" 2>/dev/null || true)
+fi
 
 if [ -n "$published" ]; then
     mine_sum=$(cksum < "$me" | cut -d" " -f1,2)

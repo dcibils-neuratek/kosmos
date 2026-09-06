@@ -89,18 +89,27 @@ Reading order if you come back after months: `state.md`, then `design.md`, then 
 
 ## Getting started
 
-Without building anything, and without cloning this:
+Without building anything, without cloning this, and without downloading
+anything first:
 
 ```
-./get-and-run-kosmos.sh -b "wm browser"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"
 ```
 
-That one file fetches the newest image and the runner beside it and boots
-them. It needs `curl`, which macOS has, and QEMU, which it does not:
-`brew install qemu`. Nothing asks you to know a file name - a release is
-called something like `kosmos-0.8.33-f82c43e-1280x800-web.elf` and the
-version and commit in that change every time, so the list is asked for and
-the newest worked out.
+That fetches the newest image and the runner and boots them. It needs
+`curl`, which macOS has, and QEMU, which it does not: `brew install qemu`.
+Nothing asks you to know a file name - a release is called something like
+`kosmos-0.8.34-8c8c1f5-1920x1080-full.elf`, the version and commit in it
+change every time, so the list is asked for and the newest worked out.
+
+`sh -c "$(curl ...)"` rather than `curl | sh`, and the difference is not
+style: a pipe *is* the script's stdin, and the last thing it does is hand
+over to QEMU with `-serial mon:stdio` - so the guest's console would read
+from an exhausted pipe and see end-of-file the moment it started.
+
+Keeping a copy works too and is quicker to type afterwards, and it will tell
+you when it differs from the published one - which it could not do until it
+started looking at itself.
 
 From the source:
 

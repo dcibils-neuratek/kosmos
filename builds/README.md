@@ -3,12 +3,19 @@
 Images you can download and run without building anything.
 
 The short way, which fetches the newest of these and the runner and boots
-them - one file, nothing to clone:
+them - nothing to clone and nothing to download first:
 
 ```sh
-./get-and-run-kosmos.sh -b "wm browser"
-./get-and-run-kosmos.sh --list            # what is published
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"
+```
+
+Or keep a copy, which is quicker to type afterwards:
+
+```sh
+./get-and-run-kosmos.sh -b "wm"
+./get-and-run-kosmos.sh --list            # what is published, and what it has in it
 ./get-and-run-kosmos.sh --plain           # the small image, no browser
+./get-and-run-kosmos.sh --update          # take the published copy of itself
 ```
 
 ```sh
