@@ -24,7 +24,47 @@ SIZE    := $(CROSS)size
 # carry a Lua chunk the shipping one must not, so their user images are
 # different binaries and cannot share a directory or a generated .c with it -
 # `make` and `make test` would trade stale ones back and forth.
-VARIANT := $(if $(TEST),-test,$(if $(BENCH),-bench,$(if $(DOOM),-doom,$(if $(WEB),-web))))
+#
+# **`make qemu` is the whole system, at 1920x1080.**
+#
+# Doom, the browser, the network, every demo - because the thing you want to
+# do with an operating system you are building is use it, and a build that
+# leaves half of it out is a build that tells you about half of it. The
+# variants exist so that *a suite* can be small and quick, not so that the
+# machine you sit in front of is.
+#
+# `FULL=0` opts out and gives the lean image, which is a couple of seconds
+# quicker to link and 3.5 MB smaller. The test and bench images set their
+# own shape and are left alone: `make test` builds a chunk the shipping
+# image must not carry, and its whole value is being fast enough to run
+# without thinking about it.
+#
+FULL ?= 1
+
+ifeq ($(FULL),1)
+ifndef TEST
+ifndef BENCH
+DOOM := 1
+WEB  := 1
+FB   ?= 1920x1080
+endif
+endif
+endif
+
+#
+# **Composed, not chosen.** This was a chain of else-ifs, so `DOOM=1 WEB=1`
+# called itself `-doom` and put a build with the browser in it into the same
+# directory as one without - two different binaries under one name, which
+# `make` settles by timestamp and gets wrong.
+#
+# It has to come *after* the block above, because `:=` expands where it
+# stands: with FULL setting DOOM and WEB below this line, neither was
+# visible here and the full build went into the lean build's directory -
+# which is the collision this name exists to prevent, arrived at from the
+# other direction.
+#
+VARIANT := $(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)
+
 
 # Where generated sources go. Defined here rather than beside the rules that
 # produce them, because SRCS below is a := assignment and expands it on the
@@ -1342,21 +1382,23 @@ dist: $(TARGET)
 # them speak yet.
 #
 #
-# One size for a web image and three for an ordinary one.
+# One size for a full image and three for a lean one.
 #
-# The browser brings five vendored libraries with it and the image goes from
-# 1.7 MB to 5.3 MB - stripping saves a quarter of a megabyte, because the
-# bulk is the userland compiled into it rather than symbols. Three copies of
-# that in a repository is eleven megabytes to say the same thing three
-# times. The ordinary image is small enough that three is free.
+# A full image is 6.2 MB against 1.7 - the browser's five vendored libraries
+# and Doom - and stripping saves a quarter of a megabyte, because the bulk
+# is the userland compiled in rather than symbols. Three copies of that in a
+# repository is eighteen megabytes to say the same thing three times, and
+# the one size to pick is the one `make qemu` now defaults to.
 #
-RELEASE_SIZES := $(if $(WEB),1280x800,1024x768 1280x800 1920x1080)
+RELEASE_SIZES := $(if $(or $(WEB),$(DOOM)),1920x1080,1024x768 1280x800 1920x1080)
 
-# `-web` in the name, because the two images are not interchangeable and a
-# name that did not say so is a trap: the browser opens on an ordinary image
-# and tells you the build has no web kit, which reads like a broken browser
-# rather than the wrong file.
-RELEASE_TAG := $(if $(WEB),-web,)
+# What is in it, in the name, because the images are not interchangeable and
+# a name that did not say so is a trap: the browser opens on an image built
+# without it and reports no web kit, which reads like a broken browser
+# rather than the wrong file. `-full` is browser and Doom, which is what
+# `make release` builds unless told otherwise.
+RELEASE_TAG := $(if $(and $(DOOM),$(WEB)),-full,\
+                 $(if $(WEB),-web,$(if $(DOOM),-doom,)))
 
 # A binary that leaves this machine has been used for a while first.
 #

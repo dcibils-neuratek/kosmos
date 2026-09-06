@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section system
 -- The system log, in a window.
 --
 --   wm logview

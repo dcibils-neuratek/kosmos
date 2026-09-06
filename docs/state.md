@@ -8,6 +8,55 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+**`make qemu` is the whole system now**: the browser, Doom, the network,
+every demo, at 1920x1080. `FULL=0` gives the lean image. The variants exist
+so a *suite* can be small and quick, not so the machine you sit in front of
+is - and `make test` and `make bench` still build their own and are
+untouched.
+
+Two things had to be fixed before that was even possible, and both were
+silent.
+
+**`VARIANT` was a chain of else-ifs**, so `DOOM=1 WEB=1` called itself
+`-doom` and put a build with the browser in it into the same directory as
+one without. Two different binaries under one name, which `make` settles by
+timestamp. It composes now - `build-user-doom-web` - and it has to be
+computed *after* the block that sets DOOM and WEB, because `:=` expands
+where it stands: setting them below it made them invisible to it and the
+full build went into the *lean* build's directory, which is the same
+collision reached from the other end.
+
+**`/bin` reported 74 of its 82 programs.** A listing reply holds
+`BIN_CHUNK / BIN_NAME_MAX` = 74 names, and `BIN_OP_LIST` started at nought
+every time and stopped when the reply was full. The eight it dropped were
+the last alphabetically, and four of them were applications - so the
+Deskbar, which builds its menu from that list, could not offer Tracker, the
+Terminal, the top bar or the web server. Nothing failed. The menu was just
+short, and had been since the seventy-fifth program was added.
+
+The guard was `_Static_assert(BIN_CHUNK / BIN_NAME_MAX >= 64, "a list must
+hold every program in the image")` - which it cannot check, because the
+number of programs is not something a static assert can see. It watched the
+chunk shrinking while the image grew past it. A listing pages now, the way
+`read` always has, and `ns.list` had looped on `more` since the disk grew
+directories too big for one message; `/bin` simply never set it.
+
+**The check that replaces it counts on both sides.** `run_headless.py` reads
+`user/bin/*.lua` on this computer and `ls /bin` on that one, and fails if
+they disagree. Two independent counts of the same thing, which is what makes
+it a check rather than a restatement of the code.
+
+**And the Deskbar has a System section**, which is what the missing web
+server was found by looking for. Applications had nineteen entries and held
+the network configuration, the process list, the log and the web server
+among the calculator and the paint program. Those are not preferences
+either - a preference is a choice that stays chosen, and these are windows
+onto services running right now. Four sections: Applications, System,
+Preferences, Demos.
+
+---
+
+
 **The browser needs nothing running anywhere.** `wm browser` opens on a page
 compiled into `browser.lua`, parsed by hubbub, walked through libdom and
 painted by `web_paint.c` - the whole engine, on a document that came from

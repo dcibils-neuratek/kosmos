@@ -222,14 +222,34 @@ static void answer(const struct message *in, uint64_t sender)
 
     switch (req->op) {
     case BIN_OP_LIST: {
-        unsigned i;
+        /*
+         * From wherever the caller left off, and saying whether there is
+         * more - the same shape `read` below has always had.
+         *
+         * It used to start at nought every time and stop when the reply was
+         * full, which silently answered with the first 74 names of 82. The
+         * eight it dropped were the last alphabetically, and four of them
+         * were applications: the Deskbar listed what it was told and could
+         * not offer Tracker, the Terminal, the top bar or the web server.
+         * Nothing failed. The menu was simply short, and had been since the
+         * seventy-fifth program was added.
+         *
+         * The guard underneath this was `BIN_CHUNK / BIN_NAME_MAX >= 64`,
+         * asserting "a list must hold every program in the image" - which a
+         * static assert cannot know, because the number of programs is not
+         * a number it can see. It was checking the wrong side of the
+         * inequality: the chunk shrinking, rather than the image growing.
+         */
+        unsigned i = (req->offset < store_count) ? req->offset : store_count;
 
-        for (i = 0; i < store_count && rep->count < BIN_CHUNK / BIN_NAME_MAX;
-             i++) {
+        while (i < store_count && rep->count < BIN_CHUNK / BIN_NAME_MAX) {
             copy_word((char *)rep->data + rep->count * BIN_NAME_MAX,
                       BIN_NAME_MAX, store[i].name, strlen(store[i].name));
             rep->count++;
+            i++;
         }
+
+        rep->more = (i < store_count) ? 1u : 0u;
 
         break;
     }

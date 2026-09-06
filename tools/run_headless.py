@@ -121,9 +121,52 @@ def main():
 
     checks += 2
 
-    print("PASS: %d checks on a machine with no display "
-          "(it reaches a prompt, every server started, and a program runs)."
-          % checks)
+    # 4. And `/bin` reports every program in it.
+    #
+    #    Counted on this side from `user/bin/*.lua` and on that side from
+    #    the namespace, which is what makes it a check rather than a
+    #    restatement: two independent counts of the same thing.
+    #
+    #    It exists because they disagreed. A listing reply holds 74 names
+    #    and the image had 82 programs, so `fs.list("/bin")` answered with
+    #    the first 74 and said nothing - and the Deskbar, which builds its
+    #    menu from that list, could not offer Tracker, the Terminal, the top
+    #    bar or the web server. No error anywhere; the menu was just short,
+    #    and had been since the seventy-fifth program was added.
+    here = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
+        __file__))), "user", "bin")
+    expected = len([f for f in os.listdir(here) if f.endswith(".lua")])
+
+    #
+    # `ls /bin`, because the boot option runs a *program* rather than
+    # evaluating Lua - which is what `boot=wm` means and is the one way a
+    # program starts here. `ls` prints one entry a line, so counting them is
+    # counting lines that name a program.
+    #
+    out = boot(image, "ls /bin", b"kosmos>", 60.0)
+    # The *first* field of each line: `ls` prints "  name  size  kind", so
+    # a line ends in its kind and not in the name it is reporting.
+    said = len([l for l in out.splitlines()
+                if l.split() and l.split()[0].endswith(".lua")])
+
+    if said == 0:
+        print("FAIL: /bin would not list at all:")
+        print("  " + repr(out[-300:]))
+        return 1
+
+    if said != expected:
+        print("FAIL: /bin lists %d programs and there are %d."
+              % (said, expected))
+        print("  A listing that stops early stops silently, and the Deskbar")
+        print("  builds its menu from it - so applications go missing with")
+        print("  no error. See BIN_OP_LIST in user/servers/binfs.c.")
+        return 1
+
+    checks += 1
+
+    print("PASS: %d checks on a machine with no display (it reaches a "
+          "prompt, every server started, a program runs, and /bin lists "
+          "all %d of them)." % (checks, expected))
     return 0
 
 

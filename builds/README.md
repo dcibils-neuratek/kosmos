@@ -45,18 +45,19 @@ having a filesystem yet and will stop being true at M8.
 
 `make release` adds one.
 
-## `-web`, and why there is only one of it
+## `-full`, and why there is only one of it
 
-A file whose name ends `-web` carries the browser: hubbub, libdom, libcss
-and the two libraries under them, which is five vendored libraries and takes
-the image from 1.7 MB to 5.3 MB. Stripping saves a quarter of a megabyte,
+A file whose name ends `-full` carries everything: the browser (hubbub,
+libdom, libcss and the two libraries under them) and Doom. That takes the
+image from 1.7 MB to 6.2 MB, and stripping saves a quarter of a megabyte
 because the bulk is the userland compiled in rather than symbols - so there
-is **one** size of it rather than three, and the ordinary image still comes
-in all three because three of those is nearly free.
+is **one** size of it, 1920x1080, which is what `make qemu` defaults to. A
+lean image still comes in all three sizes, because three of those is nearly
+free.
 
-The suffix is in the name because the two are not interchangeable. On an
-ordinary image the browser opens and says the build has no web kit, which
-reads like a broken browser rather than the wrong file.
+The suffix is in the name because the images are not interchangeable. On a
+lean one the browser opens and says the build has no web kit, which reads
+like a broken browser rather than the wrong file.
 
 ```sh
 ./run-kosmos.sh -r 1280x800 -b "wm browser"
@@ -93,4 +94,4 @@ is enough and no packet leaves the machine. `run-kosmos.sh` passes the two
 flags that make that work; without them `ping`, `fetch` and the browser all
 run and find nothing.
 
-`make WEB=1 release` adds one.
+`make release` builds one; `make FULL=0 release` builds the lean three.

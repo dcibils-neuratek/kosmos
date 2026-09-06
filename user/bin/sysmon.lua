@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: section system
 -- The machine, in a window.
 --
 -- The same numbers `monitor` puts in a strip along the bottom and `htop`

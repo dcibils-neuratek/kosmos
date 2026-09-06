@@ -104,7 +104,8 @@ with an empty Deskbar to show for it.
 ```
 make qemu        # build and run under QEMU virt, in a window
 make fast        # the same, on this Mac's own cores (hvf); 4-14x
-make FB=1920x1080 qemu   # the same, at that display size
+make FB=1280x800 qemu    # the same, at that display size
+make FULL=0 qemu         # without the browser and Doom, and quicker to link
 make serial      # the same, serial only, no window
 make test        # run the suite under QEMU, exit code 0 or 1
 make screenshot  # boot, screendump, and check the picture QEMU scans out
@@ -112,6 +113,13 @@ make bench       # the benchmarks, under -icount
 make debug       # QEMU with a gdbserver on :1234
 make clean
 ```
+
+**`make qemu` is the whole system, at 1920x1080**: the browser, Doom, the
+network, every demo. The thing to do with an operating system you are
+building is use it, and a build that leaves half of it out tells you about
+half of it. `FULL=0` gives the lean image; `make test` and `make bench`
+build their own and are unaffected, because a suite's value is being quick
+enough to run without thinking about it.
 
 Toolchain: `aarch64-none-elf-gcc`, `qemu-system-aarch64`.
 

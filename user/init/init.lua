@@ -638,13 +638,25 @@ local function new_namespace()
 
     if op == "list" then
       local names = {}
+      local from = (extra and extra.offset) or 0
 
       for i = 1, count do
         local at = BIN_DATA + (i - 1) * 24
         names[i] = trim(reply:sub(at, at + 23))
       end
 
-      return { ok = true, entries = names }
+      --
+      -- `more` and where to continue, which `ns.list` has looped on since
+      -- the disk grew directories too big for one message - and which this
+      -- server answered for `read` and not for `list`. So `/bin` reported
+      -- its first 74 programs of 82 and said nothing, and the Deskbar was
+      -- four applications short with no error anywhere.
+      --
+      -- The offset is counted here rather than sent back, because the
+      -- reply has no field for it and the caller knows where it started.
+      --
+      return { ok = true, entries = names,
+               more = (more == 1) or nil, offset = from + count }
     end
 
     if op == "getattr" then

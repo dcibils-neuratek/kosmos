@@ -48,7 +48,9 @@
 
 struct bin_request {
     uint32_t op;
-    uint32_t offset;              /* where in the source, for read */
+    uint32_t offset;              /* into the source for read, into the
+                                     store for list - both continue from
+                                     where the last reply stopped */
     char     name[BIN_NAME_MAX];
 };
 
@@ -72,7 +74,19 @@ struct bin_reply {
 
 _Static_assert(sizeof(struct bin_reply) <= 2048,
                "a /bin reply must fit in one message - lower BIN_CHUNK");
-_Static_assert(BIN_CHUNK / BIN_NAME_MAX >= 64,
-               "a list must hold every program in the image");
+/*
+ * How many names a listing carries per reply, which is *not* how many
+ * programs there are.
+ *
+ * This used to read `>= 64` with the message "a list must hold every
+ * program in the image", and it could never have checked that: the number
+ * of programs is not something a static assert can see. It guarded the
+ * chunk shrinking while the image grew past it, which is what happened -
+ * 82 programs, 74 names to a reply, and the Deskbar quietly short of four
+ * applications. A listing pages now, and this only has to be enough for
+ * paging to be worth doing rather than a name at a time.
+ */
+_Static_assert(BIN_CHUNK / BIN_NAME_MAX >= 16,
+               "a listing reply should carry a useful number of names");
 
 #endif /* KOSMOS_BINPROTO_H */

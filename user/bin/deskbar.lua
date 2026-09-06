@@ -68,15 +68,24 @@ if screen then sw, sh = screen:size() end
 local launchable = {}
 
 --
--- Three sections, the way BeOS's Be menu had three folders.
+-- Four sections, and BeOS's Be menu had three folders.
 --
 -- It sorted by *directory* - /boot/apps, /boot/demos, /boot/preferences -
 -- and the menu was those folders. Kosmos has one `/bin`, so each file says
 -- which section it is in and the program store reports it; see
 -- `kosmos: section` in the header of any application.
 --
-local SECTIONS = { "applications", "demos", "preferences" }
-local by_section = { applications = {}, demos = {}, preferences = {} }
+-- **System is the fourth, and it is not Preferences.** A preference is a
+-- choice about how the machine behaves and stays chosen; the network
+-- configuration, the process list, the log and the web server are none of
+-- those. They are windows onto services that are running right now, and
+-- filing them under Applications put them among the calculator and the
+-- paint program - which is where they were, and why nobody could find the
+-- web server.
+--
+local SECTIONS = { "applications", "system", "preferences", "demos" }
+local by_section = { applications = {}, system = {},
+                     preferences = {}, demos = {} }
 
 --
 -- A group inside a section: `kosmos: section demos/GLDemos`.
