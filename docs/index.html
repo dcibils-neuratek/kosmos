@@ -29,9 +29,60 @@
 
   .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px }
 
+  /*
+   * The hero, in the logo's own colours: red on black over blue diagonals.
+   * The stripes are a repeating gradient rather than an image, so they are
+   * crisp at any size and cost nothing to load - and they carry on behind
+   * the wordmark whatever width the page is.
+   */
+  .hero {
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        #0000ee 0 14px,
+        #0000ee 14px 20px,
+        #000 20px 60px);
+    background-color: #000;
+    border-radius: 8px;
+    padding: 52px 24px 44px;
+    text-align: center;
+    margin: 56px 0 0;
+    overflow: hidden;
+  }
+
+  .hero img {
+    max-width: min(520px, 82%);
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    image-rendering: pixelated;   /* it is pixel art; do not smooth it */
+  }
+
+  /* If the logo is not there, this stands in rather than a broken image. */
+  .hero .wordmark {
+    font: 700 clamp(38px, 9vw, 84px)/1 ui-monospace, SFMono-Regular, Menlo,
+          Consolas, monospace;
+    color: #ff0000;
+    letter-spacing: -0.02em;
+    background: #000;
+    display: inline-block;
+    padding: 6px 18px;
+  }
+
+  .hero p {
+    margin: 26px auto 0;
+    max-width: 30em;
+    color: #cfd6e2;
+    background: rgba(0, 0, 0, 0.72);
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 17px;
+  }
+
   /* The title bar, which is the system's own most recognisable decision:
      a tab as wide as its title rather than a bar across the window. */
-  header { padding: 72px 0 8px }
+  header { padding: 40px 0 8px }
 
   .tab {
     display: inline-block;
@@ -135,6 +186,13 @@
 </head>
 <body>
 <div class="wrap">
+
+<div class="hero">
+  <img src="logo.png" alt="KosmOS"
+       onerror="this.replaceWith(Object.assign(document.createElement('div'),
+                {className:'wordmark',textContent:'KosmOS'}))">
+  <p>A microkernel operating system with a userland written entirely in Lua.</p>
+</div>
 
 <header>
   <div class="tab">Kosmos</div>
@@ -368,6 +426,15 @@ Deskbar.</td></tr>
   <figcaption>Six things drawing at once, all of it software rasterised
   through TinyGL, all of it at 41 fps. There is no GPU driver — the
   compositor blits at about 6.5 ns a pixel.</figcaption>
+</figure>
+
+<figure>
+  <img src="cern.png" alt="The Kosmos browser showing info.cern.ch, the
+       first website, with its four links.">
+  <figcaption><code>wm browser:info.cern.ch/</code> — the first website
+  there ever was, found by asking a resolver rather than by being told four
+  numbers, fetched over the guest's own TCP/IP stack, redirect followed and
+  rendered.</figcaption>
 </figure>
 
 <h2>Where it is</h2>
