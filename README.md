@@ -63,7 +63,9 @@ It will tell you when it differs from the published one.
 
 ## The idea in one paragraph
 
-Kosmos takes the microkernel from QNX, per-process namespaces from Plan 9, attributes and live queries from BeOS, the live image from Lisp Machines, and capabilities from seL4, and puts them on top of a userland written in Lua.
+**BeOS is the reference**, and not one influence among several: the desktop is drawn from it, and so is the standard it is held to. The tab as wide as its title, the Deskbar, replicants, typed attributes with live queries over them, and responsiveness as a design constraint rather than an optimisation.
+
+What is taken from elsewhere is what BeOS did not have an answer for: the microkernel from QNX, per-process namespaces from Plan 9, capabilities from seL4, the live image from Lisp Machines. All of it on top of a userland written in Lua.
 
 What holds it together is one rule about what travels between things: **the language's data model where the shape is the caller's to choose, a declared struct where the shape is agreed.**
 

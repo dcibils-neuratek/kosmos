@@ -2008,10 +2008,59 @@ local function diskfs_handlers(state)
   -- Not re-read per request: it does not change except at format, and a
   -- filesystem that read block 0 before every operation would double the
   -- I/O of the whole system to learn something it already knew.
+  --
+  -- Is this disk *blank*, as opposed to holding something this cannot read?
+  --
+  -- The difference decides whether formatting it is initialising an empty
+  -- disk or destroying somebody's data, and a zeroed block 0 is the one
+  -- honest way to tell: a filesystem of any kind writes something there.
+  --
+  local function blank_disk()
+    local bytes = kfs.read_block(0)
+
+    return bytes ~= nil and bytes:find("[^%z]") == nil
+  end
+
   local function mounted()
     if state.sb then return state.sb end
 
     local sb = kfs.mount()
+
+    --
+    -- **A blank disk formats itself, once, and says so.**
+    --
+    -- `.format` demands `yes, erase it` and that guard stays exactly as it
+    -- is: it protects a disk that *has* a filesystem, and asking nicely has
+    -- to be part of the request rather than a habit of one caller.
+    --
+    -- This is not that. A disk of all zeros has nothing to lose, and making
+    -- somebody type `mkfs` before the machine will keep a file is asking
+    -- them to perform a ceremony over an empty box. It was worse than
+    -- theoretical: `run-kosmos.sh` makes a disk and prints "type `mkfs`
+    -- once" on the terminal it was started from, and anyone who boots
+    -- straight to the desktop never sees that line - they see Tracker
+    -- saying there is no filesystem here, on a machine that has a disk.
+    --
+    -- A disk that is *not* blank and still will not mount is left alone and
+    -- said out loud. That one might be somebody's.
+    --
+    if not sb then
+      local disk = sys.disk()
+
+      if disk and blank_disk() then
+        local made, why = kfs.mkfs(disk.sectors, sys.ticks())
+
+        if made then
+          print("disk: it was blank, so it has been formatted")
+          sb = made
+        else
+          print("disk: it is blank and would not format: " .. tostring(why))
+        end
+      elseif disk then
+        print("disk: there is something on this disk that is not a "
+              .. "filesystem this understands, so it has been left alone")
+      end
+    end
 
     -- Before anything else looks at the disk.
     --

@@ -50,11 +50,12 @@
 #       browser need. Without these two lines they all work and find
 #       nothing, which looks like a broken network stack.
 #
-# The disk is `kosmos.img` beside the image, kept between runs, and made
-# when it is missing. It arrives unformatted, because zeroing a file is
-# something any machine can do and writing a filesystem into one is not:
-# `mkfs` at the prompt does that, once, and the system says so when asked
-# for something it has no filesystem for.
+# The disk is `kosmos.img` beside the image, kept between runs, and made when
+# it is missing. It arrives as 64 MB of zeros, and the system formats a blank
+# disk the first time something asks it for a file - a disk of all zeros has
+# nothing to lose, and making somebody type `mkfs` before the machine will
+# keep a file is a ceremony over an empty box. A disk with something on it
+# that is not a filesystem this understands is left alone and said so.
 #
 # **To browse something**, serve a directory here and ask for it there:
 #
@@ -267,7 +268,7 @@ if [ ! -f "$disk" ]; then
         echo "could not make a disk at $disk - carrying on without one." >&2
         disk=""
     else
-        echo "  it has no filesystem yet: type \`mkfs\` once, inside." >&2
+        echo "  it is blank, and the system formats a blank disk itself." >&2
     fi
 fi
 

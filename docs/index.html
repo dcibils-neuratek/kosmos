@@ -143,8 +143,9 @@
     <p class="lede">A microkernel with a userland written entirely in Lua.
     A graphical desktop, a filesystem, a TCP/IP stack, a web browser — on
     AArch64, under QEMU, in about 6,700 lines of kernel.</p>
-    <p class="sub">This is a personal experiment, and it is worth saying so
-    before anything else.</p>
+    <p class="sub">The best ideas from every system I have used — mine, at
+    least — and some new ones of my own, in one place. A personal
+    experiment, and it is worth saying so before anything else.</p>
   </div>
 </header>
 
@@ -165,6 +166,34 @@ every one of them is written down, including the mistakes.</p>
 <p>It is not a product, not a startup, and not trying to replace anything.
 It is a thing I am building to understand how these things are built.</p>
 
+<h2>What it is not</h2>
+
+<p><strong>Not Unix, and not POSIX.</strong> No <code>fork</code>, no
+<code>exec</code>, no signals, no pipes, no sockets, no
+<code>select</code>, no <code>ioctl</code>, no file descriptors, and no path
+you can reach without being handed a namespace. A libc that lives inside a
+process and resolves I/O against that process's own namespace is fine and
+necessary; a POSIX personality is not, and if a port asks for one, the port
+gets patched. <code>errno</code> is per-process, never global.</p>
+
+<p><strong>Not Windows and not macOS.</strong> Nothing here is trying to be
+familiar, and there is no compatibility layer to be kind to.</p>
+
+<p><strong>Not AmigaOS</strong>, whose ideas I like and whose lack of memory
+protection is the thing this is furthest from — every driver here is a
+process behind its own address space, which is close to the opposite of a
+shared bus everything can reach.</p>
+
+<p><strong>And not a BeOS clone</strong>, though it is the reference. BeOS
+was monolithic, with the drivers and the filesystem inside the kernel. This
+takes its concurrency model, its live queries and its design sensibility;
+the architecture underneath is QNX's.</p>
+
+<p>What it is, then: <strong>the best ideas from all of them — mine, at
+least — and some new ones I wanted to build, in one system.</strong> Free of
+the obligation to be compatible with any of them, which is the only reason
+that combination is possible at all.</p>
+
 <h2>Run it</h2>
 
 <p>One command. Nothing to clone, nothing to build, no toolchain:</p>
@@ -184,7 +213,56 @@ out: the newest published image, the runner, and a disk to keep files on.</p>
   machine is idle.</figcaption>
 </figure>
 
-<h2>Ideas it is built out of</h2>
+<h2>What it is trying to be</h2>
+
+<p><strong>Modern, secure, fast, lean, modular, and easy to write
+applications on.</strong> That last one is not an afterthought — it is what
+the other five are for.</p>
+
+<h3>C and Lua, and nothing else</h3>
+
+<p><strong>C for speed and simplicity.</strong> The kernel, the drivers, the
+servers, the pixel loops. It is a small language that compiles to what you
+expect, which is the whole requirement for the parts that run on behalf of
+someone else.</p>
+
+<p><strong>Lua for writing applications.</strong> A syntax you can hold in
+your head, fast enough for real work, and <em>no compiler</em> — an
+application here is a text file in <code>/bin</code>, and the machine can
+write and run one without a rebuild. The editor on the desktop is enough to
+add a program to the system.</p>
+
+<p>That is the idea: <strong>a blank canvas you can write applications on,
+without a toolchain</strong>. Most operating systems ask you to install
+gigabytes of compilers, headers and build systems before you can make the
+machine do something new. This one asks you to open the editor.</p>
+
+<p class="note">The line between the two is a <em>layer</em>, not a
+judgement: C is what runs on behalf of another process, Lua is what runs for
+a person. That was learned expensively — it used to be a judgement call
+about which servers were on a hot path, and the audio server was written in
+Lua because nobody recognised that a period is a frame with a different
+clock. It spun, it allocated inside a 5.8&nbsp;ms deadline, and it could not
+print a diagnostic. Every one of those was a consequence of being a Lua
+process, not of anything it was trying to do.</p>
+
+<h2>BeOS, mostly</h2>
+
+<p><strong>BeOS is the reference.</strong> Not one influence among several —
+the one the desktop is drawn from, and the operating system I keep coming
+back to. The yellow tab that is only as wide as its title rather than a bar
+across the whole window; the Deskbar in the corner; replicants, where a view
+published by one program is adopted and run by another; typed attributes on
+files with live queries over them; a system that stays responsive because
+responsiveness was a design constraint rather than an optimisation.</p>
+
+<p>The bet is BeOS's, updated: a desktop that feels instant on hardware that
+exists now. What is different is where BeOS did not have an answer — a
+microkernel underneath instead of a monolithic one, capabilities instead of
+ambient authority, per-process namespaces instead of a global filesystem.
+Those come from elsewhere, and mostly from QNX, Plan 9 and seL4.</p>
+
+<h2>And the rest of what it is built out of</h2>
 
 <div class="grid">
   <div class="card">
@@ -205,9 +283,10 @@ out: the newest published image, the runner, and a disk to keep files on.</p>
     were not given, you cannot name.</p>
   </div>
   <div class="card">
-    <h3>Attributes and queries, from BeOS</h3>
-    <p>Files carry typed attributes, and a query over them is a first-class
-    thing rather than a search that walks the disk.</p>
+    <h3>The desktop, from BeOS</h3>
+    <p>The tab as wide as its title, the Deskbar, replicants, attributes and
+    live queries. The reference this is drawn from rather than one influence
+    among several.</p>
   </div>
   <div class="card">
     <h3>A live image, from Lisp Machines</h3>
