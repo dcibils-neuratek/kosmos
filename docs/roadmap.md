@@ -93,7 +93,7 @@ fix it. This is a change to the IPC model — a syscall, a fixed-size queue in
 the endpoint struct, a decision about what a full queue does, and
 backpressure.
 
-**x86-64, under QEMU — *done, and it boots to a shell*.** A second
+**x86-64, under QEMU — *done, and it runs the desktop*.** A second
 architecture: a different instruction set, a different interrupt controller,
 a different boot protocol, a different memory model. The 64-bit line was
 drawn where it was precisely so this would not be a refactor, and it was
@@ -101,10 +101,19 @@ not: all thirteen `kernel/*.c` compile for it with no `#ifdef`, and the
 whole userland — fifty thousand lines of servers, libraries, applications
 and Lua — needed about a hundred and ten lines of assembly and one `#if`.
 
-What is left there is `hal/pc/`: a framebuffer, a keyboard, a pointer and
-virtio over PCI, which is a different way of *finding* the same devices
-QEMU gives the ARM board. `docs/hal.md` has the differences that were not
-cosmetic.
+`hal/pc/` is finished too. The four virtio drivers moved into a shared
+`hal/virtio/` rather than being rewritten, with each board bringing its own
+transport under them: fixed offsets from a device-tree window on one, a walk
+of the PCI capability list on the other. Same sequence, every register
+somewhere else. The measure is that the display harness passes the same
+sixty-two checks on both boards in the same time, and `make test` runs four
+harnesses on the x86 image.
+
+**What it cost was device plumbing and two prose bugs**, and `docs/hal.md`
+has all of them. The one worth repeating here is that none was about x86:
+the worst — a scan that reset the keyboard on its way past — was latent on
+ARM too, and survived only because QEMU happens to lay virtio-mmio windows
+out in the reverse of the order the devices are given.
 
 **SMP, and real parallelism.** The next thing, and the port just paid for
 part of it in advance. Two pieces of state on x86-64 are per-CPU rather
