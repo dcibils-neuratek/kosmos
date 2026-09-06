@@ -44,8 +44,13 @@ reads like a broken browser rather than the wrong file.
 
 ```sh
 python3 -m http.server 8000                     # on this computer
-./run-kosmos.sh -b "wm browser:10.0.2.2:8000/" kosmos-...-web.elf
+./run-kosmos.sh -r 1280x800 -b "wm browser:10.0.2.2:8000/"
 ```
+
+`-r` finds it wherever it is, which is the point of `-r`: a path is only
+right relative to where you are standing, and these two files are meant to
+be copied somewhere else together. `./run-kosmos.sh -r list` says what is
+actually there, and so does the error if you name a file that is not.
 
 **There is no DNS**, so an address is four numbers and a path. QEMU's own
 NAT maps this computer as `10.0.2.2`, which is why serving a directory here

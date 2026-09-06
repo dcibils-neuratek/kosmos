@@ -99,8 +99,14 @@ fi
 if [ -z "$image" ]; then
     if [ -n "$size" ]; then
         # The newest build for that size, wherever the images are.
+        #
+        # The trailing `*` is not decoration: an image carrying the browser
+        # is named `...-1280x800-web.elf`, and a pattern ending in the size
+        # matched every ordinary build and none of those. `-r 1280x800`
+        # silently found the old small image and said nothing about the one
+        # that was actually being looked for.
         for dir in "$here" "$here/builds" "build"; do
-            for f in "$dir"/kosmos-*-"$size".elf; do
+            for f in "$dir"/kosmos-*-"$size".elf "$dir"/kosmos-*-"$size"-*.elf; do
                 [ -f "$f" ] && image="$f"
             done
         done
@@ -128,7 +134,27 @@ fi
 
 if [ -z "$image" ] || [ ! -f "$image" ]; then
     echo "no image at $image" >&2
-    echo "Build one with \`make\`, or pass a path: ./run-kosmos.sh kosmos.elf" >&2
+    echo >&2
+
+    # What is actually here, because "no image at <path>" on its own leaves
+    # you guessing whether the file is missing, the name is wrong, or you
+    # are in the wrong directory. Three different problems, one message.
+    found="no"
+    for f in "$here"/kosmos-*.elf "$here"/builds/kosmos-*.elf \
+             build/kosmos.elf; do
+        if [ -f "$f" ]; then
+            [ "$found" = "no" ] && echo "Images I can see:" >&2
+            found="yes"
+            echo "  $f" >&2
+        fi
+    done
+
+    if [ "$found" = "no" ]; then
+        echo "There are none beside this script or in ./builds." >&2
+        echo "Build one with \`make\`, or pass a path:" >&2
+        echo "  ./run-kosmos.sh kosmos.elf" >&2
+    fi
+
     exit 1
 fi
 
