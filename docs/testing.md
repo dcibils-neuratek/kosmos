@@ -543,6 +543,8 @@ worse than no check:
 | the page area has ink on it | a window that opened, filled its paper, and drew nothing. This has been the failure at every stage of the browser so far, and in a thumbnail it is indistinguishable from a working one |
 | more than one text height is present | the whole reason the browser draws its own pixels. If every line came back the same height, it is being rasterised by the compositor in one face and the direct window bought nothing |
 | six presses of Down change the picture | the page is laid out once into a surface taller than the window and scrolled by blitting a band out of it. A browser that lays out correctly and will not move is one nobody can read the bottom of |
+| clicking Reload asks the server again | a direct window has no widgets, so every control in the chrome is a rectangle the application knows the position of and a click is a comparison against it. Nothing else here exercises that arithmetic |
+| a link, found by its colour, leads to the other page | six things at once: the layout kept its boxes, the click became a page coordinate, the run under it was found, its relative address resolved, the fetch happened, and the result was laid out. Finding it *by colour* also establishes that the run knew it was inside an `<a>` |
 
 Six presses rather than one, and for the same reason the detached-program
 check sleeps 3.3 seconds rather than 3: a line is forty pixels and the check
@@ -555,4 +557,10 @@ against a reference rendering would be a check that fails every time the
 layout improves, which is every time somebody does the work. The page in
 `tools/test_page.html` describes what it is testing in its own text, so the
 picture is readable by a person and the harness only has to establish that
-there is a picture at all.
+there is a picture at all. `tools/test_linked.html` is the other end of its
+links, and lists what the renderer still cannot do.
+
+Two pictures come out, not one: `build/browser.png` is the page it started
+on and `build/browser-linked.png` is the page it arrived at. The server
+being asked proves the click was routed; only the second picture proves what
+came back was laid out.

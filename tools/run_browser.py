@@ -33,6 +33,13 @@ mostly a camera, and a check that goes stale is worse than no check:
     position of and a click is a comparison against it. Nothing else here
     exercises that arithmetic, and the server on this side can simply count
     how many times it was asked for the page.
+  * **A link is drawn as one and can be followed.** Links are painted in a
+    blue nothing else on the page uses, so the harness finds one by colour -
+    which also establishes that the run knew it was inside an `<a>`. Clicking
+    it has to make the server serve the *other* page, which is six separate
+    things at once: boxes kept, the click turned into a page coordinate, the
+    run found, the relative address resolved, the fetch made, and the result
+    laid out.
 
 Usage: run_browser.py <image> --out <file.png> [--page <file.html>]
 """
@@ -51,6 +58,10 @@ from run_screenshot import (Guest, Failure, PROMPT, _to_tablet,  # noqa: E402
 from run_gallery import png                                      # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# What the page's own links point at, and therefore what the server must be
+# asked for once one of them is clicked.
+LINKED = "test_linked.html"
 
 # Where the page is, inside the window, and the window is opened at a size
 # this file and `browser.lua` both know. Content coordinates: the compositor
@@ -138,6 +149,35 @@ def runs_of_ink(rows, floor=2):
         out.append(run)
 
     return out
+
+
+def find_link(px, width, x0, y0, w, h):
+    """The middle of the first stretch of link-blue text, or None.
+
+    By colour rather than by position: `web_paint.c` paints a run inside an
+    `<a>` in a blue nothing else on a page uses, so finding one is also the
+    check that the run knew where it came from. The test is loose because
+    glyphs are antialiased against white - only the fully covered pixels of
+    a stem are the ink itself.
+    """
+    at = reader(px, width)
+
+    for y in range(y0, y0 + h):
+        run = None
+
+        for x in range(x0, x0 + w):
+            r, g, b = at(x, y)
+            blue = b > 130 and b > r + 60 and b > g + 40
+
+            if blue:
+                if run is None:
+                    run = x
+            elif run is not None:
+                if x - run >= 6:
+                    return (run + x) // 2, y
+                run = None
+
+    return None
 
 
 def find_page(width, height, px):
@@ -300,10 +340,56 @@ def main():
                 "direct window's chrome is a rectangle and a comparison, and "
                 f"this is the only check on that arithmetic. Wrote {args.out}.")
 
-        print(f"wrote {args.out} ({w_}x{h_})")
+        #
+        # And that a link is a link.
+        #
+        # The picture is taken again first: Reload put the page back to the
+        # top, so where the blue was before the scroll is not where it is
+        # now.
+        #
+        w3, h3, px3 = parse_ppm(guest.screendump())
+        spot = find_link(px3, w3, x0 + 4, y0, WIN_W - SBAR - 8, band)
+
+        if spot is None:
+            raise Failure(
+                "no link-blue text on the page, so either the anchor was not "
+                "recognised or its run did not carry the link. The page has "
+                f"two. Wrote {args.out}.")
+
+        before_asked = len(asked)
+        tx, ty = _to_tablet(spot[0], spot[1], w3, h3)
+
+        guest.mouse_to(tx, ty)
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+        time.sleep(4.0)
+
+        followed = [p for p in asked[before_asked:] if LINKED in p]
+
+        #
+        # The page it arrived at, saved beside the one it came from. The
+        # server being asked proves the click was routed; only a picture
+        # proves what came back was laid out.
+        #
+        w4, h4, px4 = parse_ppm(guest.screendump())
+        second = args.out.replace(".png", "-linked.png")
+
+        with open(second, "wb") as f:
+            f.write(png(w4, h4, px4))
+
+        if not followed:
+            raise Failure(
+                f"clicking the link at {spot} went nowhere: the server was "
+                f"asked for {asked[before_asked:]!r} after it. Wrote "
+                f"{args.out}.")
+
+        print(f"wrote {args.out} and {second} ({w_}x{h_})")
         print(f"PASS: a page rendered - {len(runs)} lines of text, "
               f"{short} to {tall} pixels tall, it scrolled "
-              f"({moved} rows changed), and Reload asked again.")
+              f"({moved} rows changed), Reload asked again, and a link "
+              f"led to {followed[0]}.")
 
     except Failure as why:
         print("\nFAIL: %s" % why, file=sys.stderr)

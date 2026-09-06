@@ -8,63 +8,69 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
-**The browser draws a page.** `wm browser:10.0.2.2:8000/` fetches, parses,
-lays out and *paints* - headings at 28, 22 and 18 pixels bold with rules
-under the two biggest, a paragraph face at 16, monospace for `pre`, italic
-for `blockquote`, indents for lists and quotes, and accented Latin coming
-through the UTF-8 path rather than as boxes. `make browser` is the picture,
-and it checks three things while it is there: that the page area has ink on
-it, that more than one text size is present, and that six presses of Down
-move it.
+**Links work.** Click one and the browser goes there. That is six things at
+once - the layout kept its boxes, the click became a point on the page,
+`link_at` found the run under it, the relative address resolved against the
+one the browser was on, the fetch happened, and the result was laid out -
+and the only way to know all six work is to arrive at the other page.
 
-**A direct window is what made the difference**, and it is the whole story
-of this step. An application on the ordinary path sends *drawing commands*
-and the compositor rasterises them with the four faces the desktop chose -
-right for a dialog, hopeless for a document that wants a heading at 28
-pixels and a paragraph at 16. So the browser owns its pixels: `web_paint.c`
-paints the document once into a surface as tall as the whole page, and a
-frame is one blit of the visible band out of it. Scrolling re-runs nothing.
+**One missing data structure was six missing features.** `web_paint.c` used
+to walk the tree and draw as it went, which is the shortest way to get ink
+on a page and throws away the one thing everything else needs: where each
+word ended up. Nothing could be clicked, because nothing remembered which
+element a word came from. Nothing could be bold inside a paragraph, because
+a block was flattened to one string before it was measured. `pre` could not
+keep its spaces, because there was nowhere to record that this block was
+different.
 
-What that costs is that there are no widgets - a direct window owns every
-pixel, so a button would have nothing to draw into. The chrome is rectangles
-`browser.lua` knows the position of and a click is a comparison, which is
-`pdfview`'s arrangement and is why the row is deliberately small: back,
-forward, reload, home, an address with a caret, a scrollbar and a status
-line. NetSurf's own row, in the desktop's palette.
+So layout runs first and produces an array of **runs** - a positioned slice
+of text with a face, an ink, and a link if it sits inside an `<a>`. Paint is
+one loop over that array and knows nothing about the DOM. Hit testing is the
+same loop with a comparison instead of a draw. `len == 0` is a rectangle - a
+heading's rule, a list marker, a link's underline - so painting stays one
+pass in the order things were laid out.
 
-**Two bugs the picture found, and neither would have shown up any other
-way.**
+What arrived with it, all of it falling out of the same change: `<strong>`,
+`<em>` and `<code>` inline, on a **shared baseline** rather than a shared
+top edge; `pre` keeping its spaces and its line breaks; a marker on every
+list item; and links drawn blue and underlined across the whole span rather
+than word by word.
 
-*A missing glyph for every line break in the markup.* `put_text` remembered
-where a line started and where it ended and drew the byte range between
-them - one call instead of a dozen, and it draws the *source's* whitespace
-along with the words. The source of an HTML paragraph is full of newlines,
-a newline has no glyph, and the box that gets drawn instead is wider than
-the space the wrap had budgeted - so the last word of every affected line
-also ran off the right edge. One bug wearing two faces, each of which looked
-like something else. It now draws a word at a time, at the pen, which is
-what the inline engine needs anyway: a word is where a font change, a link's
-hit rectangle and a selection all attach.
+**Two things the picture showed that reading would not have.** An underline
+per *word* rather than per link makes one link read as several. And a space
+next to a `<code>` was measured in the monospace face - a visible gap in
+front of every inline code span. Measuring it in the *previous* word's face
+instead moved the same gap to the other side of the word, which is how the
+right rule turned up: the space belongs to the text node it was written in,
+so `<code>h1</code> is set` has a paragraph-width space even though a
+monospace word is on one side of it. Neither of the two words either side
+decides it.
 
-*A comment that described code that was not there.* `put_line`'s comment
-said every line was placed on its baseline through the face's ascent. The
-ascent is added inside `gfx`'s drawing routine, which is the only place that
-knows it, and `put_line` passed `p->y` straight through. `gfx_draw_ascent`
-was exported for a caller that never existed and is gone.
+**`gfx_draw_ascent` is back, with a caller this time.** It was removed a few
+hours earlier for having none, which was right then: `gfx` adds the ascent
+inside its drawing routine because it is the only place that knows it. Two
+faces on one line is the case that needs it outside - they share a baseline,
+`gfx_draw_text` takes a top, and the difference is per face.
 
-**It is still not CSS layout and the file still says so**: no box model, no
-floats, no `width`, and a face comes from the tag rather than from the
-cascade - which is running, and is not yet consulted here. `pre` keeps its
-face and loses its line breaks, `li` has no bullet, and `<strong>` inside a
-paragraph is not reached. All four are the same missing piece: a layout that
-keeps boxes rather than throwing them away as it paints. That is the next
-thing, and it is what links, forms and hit-testing all wait on.
+**A block that contains a block is no longer drawn twice.** `layout_blocks`
+recurses first and lays an element out as a block only when nothing below it
+was, so a `<p>` inside a `<blockquote>` appears once. The cost is a `<li>`
+holding text *and* a nested list: the inner items are laid out and the outer
+item's own words are not. Real layout puts those in an anonymous block,
+which is machinery this does not have. Losing them is the smaller wrong and
+the rarer one.
 
-`doc:render(nil, width)` measures without drawing, which is what the caller
-needs before it can ask for a surface: the page is laid out once into
-something as tall as the document, so the height has to be known first. The
-ceiling is sixteen megabytes of paper - about seven screenfuls at 884 wide -
-and a taller document is cut off with the status line saying by how much.
+**`make browser` has five checks now**: ink on the page, more than one text
+height, six presses of Down moving it, Reload asking again when clicked, and
+a link found *by its colour* and followed to the other page. It writes both
+pictures - the page it started on and the page it arrived at.
+
+**Still not CSS layout.** libcss parses, selects and answers, and nothing
+asks it: colour, size, weight and slant all come from the tag's name. No box
+model, no margins, no floats, no `width`, no images, no forms. Every inline
+face is at the body size, so `<em>` inside an `<h1>` comes out small - which
+is the same missing piece as the rest, because a face should be chosen by
+(family, weight, slant, size) from the computed style.
 
 ---
 
@@ -888,14 +894,18 @@ visible.
 
 ## Next, in order
 
-1. **A layout that keeps its boxes.** `web_paint.c` walks the DOM and paints
-   as it goes, throwing each box away the moment it is drawn - which is why
-   there are no links, no forms, no images, no bullets, no `pre` whitespace
-   and no `<strong>` inside a paragraph. All six are the same missing piece,
-   and none of them can be added to a painter that keeps nothing. It is also
-   where the cascade finally gets consulted: libcss is running and answering,
-   and `web_paint.c` chooses a face by tag name.
-2. **SSH**, in layers with a test each: the binary packet protocol, then
+1. **The cascade, consulted.** libcss parses, selects and answers, and the
+   renderer chooses a face by tag name and an ink from a `#define`. The
+   piece in the way is a face per (family, weight, slant, size) rather than
+   seven fixed ones - which is also what fixes `<em>` inside an `<h1>` coming
+   out at the body size. `l_style` already builds a select context per call
+   and throws it away; the document should hold one, built from its own
+   `<style>` elements, and layout should ask it per element.
+2. **A box model.** Margins, padding, borders and `width`, which is what
+   turns "blocks stacked down the page" into layout. Images and forms both
+   wait on it; the runs are already addressable, which is the half that made
+   links work.
+3. **SSH**, in layers with a test each: the binary packet protocol, then
    Curve25519 key exchange, then ChaCha20-Poly1305, then userauth, then
    channels. This is the one place in the project where a bug is *silent*
    rather than loud - a stack that gets a sequence number wrong stops

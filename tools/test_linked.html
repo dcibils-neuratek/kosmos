@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>The other page</title>
+</head>
+<body>
+
+<h1>You followed a link</h1>
+
+<p>Which means the layout kept its boxes, the click was turned into a point
+on the page, <code>link_at</code> found the run under it, the relative
+address was resolved against the one this browser was already on, and the
+whole fetch happened again. Six separate things, and the only way to know
+all six work is to arrive here.</p>
+
+<h2>What is still missing</h2>
+
+<ul>
+  <li><strong>The cascade.</strong> libcss parses, selects and answers, and
+      nothing asks it. Colour, font size, weight and slant should come from
+      the computed style rather than from the tag's name.</li>
+  <li><strong>A box model.</strong> No margins, no padding, no borders, no
+      <code>width</code>, no floats. Blocks are stacked and inline content
+      flows; everything else about geometry is a constant in a header.</li>
+  <li><strong>Images.</strong> <code>stb_image</code> is already vendored
+      for the PDF reader, so this is plumbing rather than a decoder.</li>
+  <li><strong>Forms.</strong> A field is a box that takes keys, which needs
+      boxes to be addressable from outside the layout - the same step that
+      made this link clickable.</li>
+</ul>
+
+<blockquote>A word is where a font change, a link's hit rectangle and a
+selection all attach. That is why layout keeps its runs.</blockquote>
+
+<p><a href="test_page.html">Back to the first page</a>, which is also a link,
+so the Back button and a link are two ways to the same place and both of them
+have to work.</p>
+
+</body>
+</html>

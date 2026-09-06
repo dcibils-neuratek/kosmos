@@ -1837,6 +1837,21 @@ int gfx_draw_height(int face)
     return f->loaded ? (f->ascent + f->descent) : GLYPH_H;
 }
 
+/*
+ * Where the baseline sits below the top of a line.
+ *
+ * Drawing does not need this - `draw_outline_text` adds the ascent itself,
+ * because it is the only place that knows it. Laying *two faces on one
+ * line* does: they share a baseline and not a top edge, so the caller has
+ * to work out each one's top from the tallest ascent on the line.
+ */
+int gfx_draw_ascent(int face)
+{
+    const struct outline_font *f = face_at(face);
+
+    return f->loaded ? f->ascent : GLYPH_H;
+}
+
 static const luaL_Reg gfx_functions[] = {
     { "use_font", l_use_font },
     { "face",     l_face },

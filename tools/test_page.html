@@ -12,9 +12,10 @@
 
 <h1>A page, laid out</h1>
 
-<p>This document exists so that a screenshot of the browser proves something.
-Every block on it is one the renderer handles differently, so a picture of it
-shows at a glance which of them are working and which are not.</p>
+<p>This document exists so that a screenshot of the browser proves
+something. Every block on it is one the renderer handles differently, so a
+picture of it shows at a glance which of them are working and which are
+not.</p>
 
 <h2>Headings step down</h2>
 
@@ -30,12 +31,23 @@ here on purpose - naïve, Ångström, Grüße, Málaga, œuvre, çedilla - becau
 the text path decodes UTF-8 and rasterises a glyph the first time it is
 asked for, and a row of boxes here would mean neither of those is true.</p>
 
+<h2>Inline, which is what boxes bought</h2>
+
+<p>A word can be <strong>bold</strong>, or <em>italic</em>, or
+<code>monospace</code>, in the middle of a sentence set in none of those -
+and the four sit on <strong>one shared baseline</strong> rather than on a
+shared top edge, which is the arithmetic that stops mixed faces looking
+subtly broken. <a href="test_linked.html">This is a link</a>, and following
+it is the whole difference between a document viewer and a browser.</p>
+
 <ul>
-  <li>A list item is indented by twenty-four pixels.</li>
+  <li>A list item is indented by twenty-four pixels, with a marker.</li>
   <li>It wraps at the same width as everything else, which is what makes a
       hanging indent visible: the second line of a long item lines up under
       the first rather than under the margin.</li>
-  <li>There are no bullets yet, and that is inline work.</li>
+  <li>The marker is a disc for every item, which is wrong for an
+      <code>ol</code> - <code>list-style</code> comes from the cascade, and
+      the cascade is not consulted here yet.</li>
 </ul>
 
 <blockquote>A quotation is set in italic, indented by thirty-two pixels, and
@@ -50,12 +62,11 @@ on this page is drawn from it. Faces are chosen by tag. That is the next
 piece of work and the page says so rather than pretending otherwise.</p>
 
 <pre>  a monospace block
-  keeps its face
-  and loses its line breaks</pre>
+  keeps its spaces
+  and its line breaks</pre>
 
-<p>The last one is a real limitation and not a rendering accident:
-<code>pre</code> takes the monospace face and is then wrapped like any other
-paragraph, because whitespace handling belongs to inline layout too.</p>
+<p>That one works because a box knows which block it belongs to.
+<a href="test_linked.html">The other page</a> says what is still missing.</p>
 
 <h2>Long enough to scroll</h2>
 
@@ -85,14 +96,6 @@ window rather than re-laying it on every scroll.</blockquote>
 paper, which at this width is about seven screenfuls. A document taller than
 that is cut off, and the status line says by how much rather than letting
 the page simply stop.</p>
-
-<h3>And what is still missing</h3>
-
-<p>No links can be followed, because nothing hit-tests a word back to the
-element it came from. No forms, no images, no colour from the stylesheet.
-Every one of those needs the same missing piece - a layout that keeps boxes
-rather than throwing them away as it paints - which is the next thing to
-build and the reason this page lists them.</p>
 
 </body>
 </html>

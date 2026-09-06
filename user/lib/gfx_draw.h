@@ -39,4 +39,9 @@ void gfx_draw_text(struct surface *s, int face, long x, long y,
 long gfx_draw_measure(int face, const char *str, size_t len);
 int  gfx_draw_height(int face);
 
+/* Where the baseline sits below the top of a line. Layout needs it apart
+ * from the height: two faces on one line share a baseline, not a top edge,
+ * and `gfx_draw_text` takes the top. */
+int  gfx_draw_ascent(int face);
+
 #endif /* KOSMOS_GFX_DRAW_H */

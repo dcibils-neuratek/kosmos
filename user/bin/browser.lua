@@ -120,6 +120,45 @@ local function split(text)
   return string.char(a, b, c, d), port, path
 end
 
+--
+-- A link's address, against the page it was found on.
+--
+-- Enough of RFC 3986 to follow a link and no more: a scheme this browser
+-- does not speak is refused by name rather than attempted, an absolute path
+-- keeps the host, and a relative one is taken from the directory the page
+-- came from. `..` is not collapsed, which a real resolver does and which no
+-- page here has needed yet.
+--
+local function resolve(base, href)
+  href = tostring(href or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+  if href == "" then return nil, "that link has no address" end
+
+  -- A fragment names a place in this page, and nothing here scrolls to an
+  -- element yet.
+  if href:sub(1, 1) == "#" then
+    return nil, "that link points into this page, and there is no anchor yet"
+  end
+
+  local scheme = href:match("^(%a[%w+.%-]*):")
+
+  if scheme then
+    if scheme:lower() ~= "http" then
+      return nil, ("this browser speaks http, not %s"):format(scheme)
+    end
+
+    href = href:gsub("^%a[%w+.%-]*:", "")
+  end
+
+  if href:sub(1, 2) == "//" then return href:sub(3) end
+
+  local host = base:match("^([^/]+)") or base
+
+  if href:sub(1, 1) == "/" then return host .. href end
+
+  return (base:match("^(.*/)") or (host .. "/")) .. href
+end
+
 --------------------------------------------------------------------------
 -- State.
 --------------------------------------------------------------------------
@@ -128,6 +167,16 @@ local paper                  -- the page, laid out once and scrolled by blit
 local paper_h  = 0           -- how tall that surface is
 local content_h = 0          -- how tall the document turned out to be
 local top      = 0           -- the pixel of it at the top of the view
+
+--
+-- The document, kept rather than closed the moment it is painted.
+--
+-- The boxes live on it - `link_at` asks the layout which word is under a
+-- point - so closing it would leave a page you can read and cannot click.
+-- One document at a time: the previous one is closed when the next arrives,
+-- which is what bounds this rather than hoping nobody opens many pages.
+--
+local doc
 
 local said = "an address is four numbers - there is no resolver yet"
 
@@ -536,12 +585,18 @@ local function load(text)
 
   say(("parsing %d bytes..."):format(#body))
 
-  local doc, bad = web.parse(body)
+  local fresh, bad = web.parse(body)
 
-  if not doc then
+  if not fresh then
     say("fetched " .. total .. " bytes, but it did not parse: " .. tostring(bad))
     return false
   end
+
+  -- The one before it, and only once this one exists: a page that fails to
+  -- parse should leave what is on screen alone rather than blank it.
+  if doc then doc:close() end
+
+  doc = fresh
 
   local title = doc:title()
 
@@ -558,8 +613,6 @@ local function load(text)
                          doc:count("h1") + doc:count("h2") + doc:count("h3"))
 
   local drawn, why_not = lay_out(doc)
-
-  doc:close()
 
   if not drawn then
     say(counts .. " - " .. tostring(why_not))
@@ -803,12 +856,43 @@ local function scrollbar_drag(y)
   scroll_to(((y - dragging - VIEW_Y - SBAR) * reach()) // room)
 end
 
+--
+-- A click on the page, which may be a click on a link.
+--
+-- The layout kept its boxes, so this is a comparison rather than a search:
+-- the click is turned into a point on the *page* - the tall surface the
+-- document was laid out into, which is `top` pixels above the top of the
+-- view - and `link_at` answers with whatever href covers it.
+--
+-- Following it is a `visit`, so it joins the history like anything typed.
+--
+local function page_press(x, y)
+  address.focus = false
+
+  if not doc or not paper then return end
+
+  local href = doc:link_at(x - PAD, y - VIEW_Y + top)
+
+  if not href then return end
+
+  local where, why = resolve(here or address.text, href)
+
+  if not where then
+    say(("%s: %s"):format(href, why))
+    return
+  end
+
+  visit(where)
+end
+
 function sink:mouse(action, x, y)
   if action == "press" then
     if y < TOOL then
       toolbar_press(x, y)
     elseif y < VIEW_Y + VIEW_H and x >= W - SBAR then
       scrollbar_press(y)
+    elseif y < VIEW_Y + VIEW_H then
+      page_press(x, y)
     else
       address.focus = false
     end

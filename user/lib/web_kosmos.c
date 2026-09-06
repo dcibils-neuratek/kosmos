@@ -38,7 +38,26 @@
 
 struct doc {
     dom_document *dom;      /* NULL once closed */
+
+    /*
+     * The last layout, kept.
+     *
+     * `render` is asked twice for every page - once with no surface, to
+     * learn how tall the document is, and once with a surface that height -
+     * and laying out twice would break every line twice for one picture.
+     * The width is the key: a different one means a different set of line
+     * breaks and nothing of the old layout survives.
+     */
+    struct web_page *page;
+    int              page_width;
 };
+
+static void forget_layout(struct doc *d)
+{
+    web_page_free(d->page);
+    d->page = NULL;
+    d->page_width = 0;
+}
 
 /*
  * A document is a userdata with a metatable rather than a number, which is
@@ -115,7 +134,10 @@ static int l_parse(lua_State *L)
         return 2;
     }
 
+    /* Zeroed before anything reads it: `__gc` is `close`, and close frees a
+     * layout. An uninitialised pointer there is a free of a random word. */
     d = lua_newuserdatauv(L, sizeof(*d), 0);
+    memset(d, 0, sizeof(*d));
     d->dom = document;
     luaL_setmetatable(L, DOC_HANDLE);
 
@@ -345,9 +367,11 @@ static int l_blocks(lua_State *L)
  * **A nil surface measures**, and the caller needs that before it can do
  * anything else: a page is laid out once into a surface as tall as the
  * whole document and scrolled by blitting out of it, so the height has to
- * be known before the surface can be asked for. Measuring is the same walk
- * with the drawing left out - the words are still measured, because where
- * a line breaks is what decides how tall the page is.
+ * be known before the surface can be asked for.
+ *
+ * The layout is kept, so the second call paints the boxes the first one
+ * made rather than making them again - and `link_at` has something to
+ * answer from once the painting is done.
  */
 static int l_render(lua_State *L)
 {
@@ -360,7 +384,57 @@ static int l_render(lua_State *L)
      * would mean a call that drew nothing and said it had. */
     unsigned height = (unsigned)(s == NULL ? 0 : luaL_checkinteger(L, 4));
 
-    lua_pushinteger(L, web_paint_document(L, d->dom, s, width, height));
+    if (d->page == NULL || d->page_width != width) {
+        forget_layout(d);
+        d->page = web_page_layout(L, d->dom, width);
+
+        if (d->page == NULL) {
+            return luaL_error(L, "no memory to lay the page out");
+        }
+
+        d->page_width = width;
+    }
+
+    if (s != NULL) {
+        web_page_paint(d->page, s, height);
+    }
+
+    lua_pushinteger(L, web_page_height(d->page));
+
+    return 1;
+}
+
+/*
+ * link_at(x, y) -> the href under that point, or nil.
+ *
+ * In *page* coordinates, which is what the caller has: it laid the page out
+ * into a surface of its own and knows where in that surface the window is
+ * looking. A browser converts a click once and this answers from the boxes.
+ *
+ * The href is whatever the document said, relative or absolute. Resolving
+ * it against the page's own address is the caller's, because the caller is
+ * the one that knows what that address was.
+ */
+static int l_link_at(lua_State *L)
+{
+    struct doc *d = checkdoc(L);
+    int x = (int)luaL_checkinteger(L, 2);
+    int y = (int)luaL_checkinteger(L, 3);
+    size_t len = 0;
+    const char *href;
+
+    if (d->page == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    href = web_page_link_at(d->page, x, y, &len);
+
+    if (href == NULL) {
+        lua_pushnil(L);
+    } else {
+        lua_pushlstring(L, href, len);
+    }
 
     return 1;
 }
@@ -368,6 +442,8 @@ static int l_render(lua_State *L)
 static int l_close(lua_State *L)
 {
     struct doc *d = luaL_checkudata(L, 1, DOC_HANDLE);
+
+    forget_layout(d);
 
     if (d->dom != NULL) {
         dom_node_unref(d->dom);
@@ -609,7 +685,8 @@ void kosmos_web_kit(lua_State *L)
         { "style", l_style },
         { "text",   l_text },
         { "blocks", l_blocks },
-        { "render", l_render },
+        { "render",  l_render },
+        { "link_at", l_link_at },
         { "title", l_title },
         { "close", l_close },
         { NULL, NULL }
