@@ -122,12 +122,14 @@ extern uint32_t pc_multiboot;
  * whatever was allocated over it.
  *
  * What that looked like: `flags` with the command-line bit set, a plausible
- * pointer, and an empty string behind it. A machine that ignored
- * `-append boot=hello` and said nothing about why.
+ * pointer, and an empty string behind it - found while the command line was
+ * still where `hal_boot_option` came from. It answers out of fw_cfg now,
+ * the way the other board does, so the only thing still taken from here is
+ * the memory map. The lesson kept its file anyway: it is the same trap for
+ * the next field somebody wants.
  *
- * `hal_early_init` calls both, which is the first thing `kmain` does.
+ * `hal_early_init` calls it, which is the first thing `kmain` does.
  */
 void pc_capture_memory(void);
-void pc_capture_cmdline(void);
 
 #endif /* HAL_PC_H */

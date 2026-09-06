@@ -13,6 +13,7 @@
 extern char __text_start[], __text_end[];
 extern char __rodata_start[], __rodata_end[];
 extern char __stack_guard[];
+extern char __framebuffer_start[];
 extern char __image_end[];
 
 #define ENTRIES_PER_TABLE   512
@@ -337,8 +338,8 @@ void mmu_init(void)
      * describe should say so at boot, not run with two thirds of it and a
      * process's first mapping landing in the kernel's page tables.
      */
-    if (ram_end > USER_VA_BASE) {
-        panic("mmu: more RAM than the user region leaves room for");
+    if (ram_end > DEVICE_WINDOW_BASE) {
+        panic("mmu: more RAM than the device window leaves room for");
     }
 
     kernel_pml4 = alloc_table();
@@ -361,7 +362,17 @@ void mmu_init(void)
      * the machine panics here about a stack guard, when what actually
      * happened is that something was added to the image.
      */
-    fine_end = ((uintptr_t)__image_end + BLOCK_2M - 1) & ~(uintptr_t)(BLOCK_2M - 1);
+    /*
+     * `__framebuffer_start` rather than `__image_end`, which is what the
+     * ARM side uses and for the reason its comment gives: the framebuffer
+     * above it is megabytes that only ever want to be writable, and mapping
+     * those a page at a time is thousands of descriptors for nothing. The
+     * fine region runs to the 2 MB boundary at or above the last thing that
+     * needs page granularity, and grows by itself the next time the image
+     * does.
+     */
+    fine_end = ((uintptr_t)__framebuffer_start + BLOCK_2M - 1)
+               & ~(uintptr_t)(BLOCK_2M - 1);
 
     map_pages(kernel_pml4, ram.base, ram.base,
               (fine_end - ram.base) / PAGE_SIZE, MAP_RW);
@@ -409,6 +420,37 @@ void mmu_init(void)
     *guard = 0;
 
     enable();
+}
+
+/*
+ * A bump allocator over the device window, because devices are mapped once
+ * at boot and never unmapped. Anything cleverer would be a free list for a
+ * dozen mappings that outlive the machine.
+ */
+static uintptr_t device_next = DEVICE_WINDOW_BASE;
+
+uintptr_t mmu_map_device(uintptr_t pa, size_t bytes)
+{
+    uintptr_t offset = pa & PAGE_MASK;
+    uintptr_t start = pa - offset;
+    size_t pages = (offset + bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    uintptr_t at = device_next;
+
+    if (bytes == 0 || at + pages * PAGE_SIZE > DEVICE_WINDOW_END) {
+        return 0;
+    }
+
+    map_pages(kernel_pml4, at, start, pages, MAP_DEVICE);
+    device_next = at + pages * PAGE_SIZE;
+
+    /*
+     * Every mapping this makes is a page table this walk built after CR3
+     * was loaded, so the TLB may hold "not present" for these addresses.
+     * Reloading is the blunt answer and this happens a dozen times at boot.
+     */
+    __asm__ volatile("movq %%cr3, %%rax; movq %%rax, %%cr3" ::: "rax", "memory");
+
+    return at + offset;
 }
 
 bool mmu_is_enabled(void)

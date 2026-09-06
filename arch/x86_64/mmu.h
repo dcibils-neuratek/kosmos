@@ -116,6 +116,40 @@
 #define MAP_USER_RW (PTE_P | PTE_RW | PTE_US | PTE_NX)
 #define MAP_USER_RX (PTE_P | PTE_US)
 
+/*
+ * Where a device's registers get mapped, and why they are not identity
+ * mapped like everything else.
+ *
+ * **A PC puts its PCI windows above three gigabytes**, which on this
+ * machine is inside the region processes are given - `USER_VA_BASE` is 1 GB
+ * here, because 0x80000000 is the first address x86-64's default code model
+ * cannot reach. So the one rule the ARM map keeps, that a printed address
+ * is the address, cannot hold for devices: their physical addresses are in
+ * user space.
+ *
+ * They get a window at the top of the kernel's own PDPT slot instead. RAM
+ * is identity mapped from 1 MB up and this begins at 768 MB, so the two
+ * cannot meet on any machine `mmu_init` will accept - and it panics rather
+ * than let them, exactly as it does for the user region.
+ *
+ * The high-half split this header already promises removes the whole
+ * question: with the kernel out of every process's address space there is
+ * no user region to collide with and devices go back to being identity
+ * mapped.
+ */
+#define DEVICE_WINDOW_BASE  0x30000000UL
+#define DEVICE_WINDOW_END   USER_VA_BASE
+
+/*
+ * Maps `bytes` of device registers and answers where they landed.
+ *
+ * Uncached and never executable, a page at a time because a BAR is
+ * kilobytes rather than megabytes. Zero when the window is full, which a
+ * caller must check: a driver that writes to address zero is a null
+ * dereference with a device's name on it.
+ */
+uintptr_t mmu_map_device(uintptr_t pa, size_t bytes);
+
 /* Builds the identity map and loads it. Needs pmm_init first, because the
  * tables come out of the page allocator. */
 void mmu_init(void);

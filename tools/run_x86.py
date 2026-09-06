@@ -57,7 +57,10 @@ def boot(image, option, timeout, typed=()):
     cmd = [QEMU] + ARGS
 
     if option:
-        cmd += ["-append", option]
+        # The same flag the ARM board takes, now that this one answers out
+        # of fw_cfg too. It replaced `-append`, which could not carry a
+        # value with a space in it - `boot=ls /bin` gave the machine `ls`.
+        cmd += ["-fw_cfg", "name=opt/kosmos/boot,string=" + option]
 
     cmd += ["-kernel", binary]
 
@@ -191,13 +194,13 @@ def main():
     # 7. A program, started from the command line the loader passed - which
     #    also exercises `hal_boot_option`, a different mechanism from ARM's
     #    fw_cfg answering to the same name.
-    ran = boot(image, "boot=hello", 90.0)
+    ran = boot(image, "hello", 90.0)
 
     if ran is None:
         return 1
 
     check("Hello from a process of my own." in ran,
-          "`-append boot=hello` did not run a program")
+          "the fw_cfg boot option did not run a program")
 
     # What it prints is its own capability list, asked of the namespace - so
     # this is IPC and the servers rather than a string in the image.

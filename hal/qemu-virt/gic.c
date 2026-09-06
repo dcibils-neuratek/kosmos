@@ -21,6 +21,7 @@
 #include "mmio.h"
 #include "hal.h"
 #include "qemu-virt.h"
+#include "virtio.h"
 
 #define GICD_BASE           0x08000000UL
 #define GICR_BASE           0x080a0000UL

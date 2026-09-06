@@ -42,13 +42,10 @@ void gic_enable_spi(unsigned intid);
 #define VIRTIO_MMIO_STRIDE  0x200UL
 
 /* One of the input devices has events waiting. `slot` is which window. */
-void input_interrupt(unsigned slot);
 
 /* The sound device has finished with a period. `slot` is which window. */
-void snd_interrupt(unsigned slot);
 
 /* A frame has arrived, or one has been sent. `slot` is which window. */
-void net_interrupt(unsigned slot);
 
 /* The interrupt to service, or 1023 when there is none. */
 unsigned gic_acknowledge(void);
@@ -66,24 +63,21 @@ void timer_interrupt(void);
  * layout on Arm is not the one x86 uses.
  */
 
-/* Whether the device and its DMA interface are there at all. */
-bool fwcfg_present(void);
+#include "fwcfg.h"
 
 /* Looks an item up by name in the file directory. Returns its selector key
  * and its length, both of which the caller needs before it can touch it. */
-bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size);
+
 
 /* Writes an item whole. The DMA interface is the only one that can: writes
  * through the data register were removed in QEMU 2.4. */
-bool fwcfg_write(uint16_t select, const void *data, uint32_t length);
 
 /* The nth file the firmware carries, for a server that has to serve what it
  * was not told the name of. False when there is no nth. */
-bool fwcfg_entry(unsigned index, char *name, size_t name_len,
-                 uint16_t *select, uint32_t *size);
+
 
 /* An item's bytes, into memory the caller provides. */
-bool fwcfg_read(uint16_t select, void *buffer, uint32_t length);
+
 
 /*
  * The keyboard: virtio-input over virtio-mmio. See input.c.

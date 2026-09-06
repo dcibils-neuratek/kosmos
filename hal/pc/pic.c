@@ -24,6 +24,7 @@
 
 #include "hal.h"
 #include "pc.h"
+#include "virtio.h"
 
 #define PIC1_CMD    0x20
 #define PIC1_DATA   0x21
@@ -175,13 +176,22 @@ void hal_irq_handle(void)
 
     if (irq == 0) {
         pc_timer_interrupt();
+    } else {
+        /*
+         * Everything else is a PCI device, and **on this bus a line can
+         * belong to more than one of them** - four interrupt pins are
+         * shared out among every slot, so two devices answering on the same
+         * number is ordinary rather than a fault.
+         *
+         * So each driver is offered the line and decides from its own
+         * interrupt-status byte whether anything happened. The ARM board
+         * offers its drivers a window index, where the number alone is
+         * enough; here the number narrows it and the device settles it.
+         */
+        input_interrupt(irq);
+        snd_interrupt(irq);
+        net_interrupt(irq);
     }
-
-    /*
-     * Nothing else has a driver yet, and nothing else is unmasked, so there
-     * is no third case to write. The GIC's dispatch grew a line per device
-     * as each one arrived and this one will too.
-     */
 
     eoi(irq);
 }

@@ -56,6 +56,7 @@ bool virtio_open(uint32_t device_id, unsigned from_slot,
 
         dev->base     = base;
         dev->slot     = i;
+        dev->index    = i;      /* a window index is also its own ordinal */
         dev->features = 0;
 
         /* Reset first, because a window may have been half-configured by a
@@ -182,4 +183,20 @@ uint32_t virtio_config32(const struct virtio_device *dev, unsigned offset)
 uint8_t virtio_config8(const struct virtio_device *dev, unsigned offset)
 {
     return mmio_read8(dev->base + REG_CONFIG + offset);
+}
+
+/*
+ * On this board an interrupt is an SPI, and which one falls out of the slot:
+ * `virt` maps mmio slot i to SPI 16 + i, and a GIC interrupt ID for an SPI
+ * is 32 + the SPI number, so slot i is INTID 48 + i.
+ */
+void virtio_enable_interrupt(const struct virtio_device *dev)
+{
+    gic_enable_spi(VIRTIO_INTID_BASE + dev->slot);
+}
+
+void virtio_config_write8(const struct virtio_device *dev, unsigned offset,
+                          uint8_t value)
+{
+    mmio_write8(dev->base + REG_CONFIG + offset, value);
 }

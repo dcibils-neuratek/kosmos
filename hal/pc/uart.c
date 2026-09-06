@@ -77,12 +77,10 @@ void hal_early_init(void)
      *
      * `pc.h` explains the ordering: the multiboot structure sits in RAM
      * past the kernel image, which `pmm_init` will hand out. This is the
-     * first thing `kmain` calls, so it is the last moment both answers are
-     * readable - and reading them here means nothing later has to remember
-     * to.
+     * first thing `kmain` calls, so it is the last moment it is readable -
+     * and reading it here means nothing later has to remember to.
      */
     pc_capture_memory();
-    pc_capture_cmdline();
 }
 
 void hal_putchar(char c)

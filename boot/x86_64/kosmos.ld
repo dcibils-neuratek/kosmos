@@ -77,6 +77,25 @@ SECTIONS
         __stack_top = .;
     }
 
+    /*
+     * The framebuffer, and why it is here rather than in .bss.
+     *
+     * It is several megabytes. Put in .bss it would sit before the stack
+     * and push the guard page past the first 2 MB of RAM - and the low part
+     * of RAM is the only part `mmu_init` maps a page at a time, so a guard
+     * inside a 2 MB page cannot be punched out. `boot/kosmos.ld` says the
+     * same thing about the same section for the same reason.
+     *
+     * NOLOAD, so it costs the image file nothing. It is inside
+     * __image_end, so the page allocator treats it as taken.
+     */
+    .framebuffer (NOLOAD) : ALIGN(4096) {
+        __framebuffer_start = .;
+        *(.framebuffer)
+        . = ALIGN(4096);
+        __framebuffer_end = .;
+    }
+
     . = ALIGN(4096);
     __image_end = .;
 
