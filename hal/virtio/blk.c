@@ -232,6 +232,47 @@ bool hal_blk_present(void)
     return blk.present;
 }
 
+/*
+ * The line, offered to this device.
+ *
+ * **This driver does not wait on an interrupt and still has to answer
+ * one**, and the reason is the bus rather than the driver. `request` above
+ * spins on the used ring and never sleeps, so nothing here needs to be
+ * woken - but a PCI INTx line is *level-triggered and shared*: four pins
+ * are handed out among every slot, and a device holds its line asserted
+ * until its own interrupt-status byte is read. Reading it is what
+ * acknowledges it; there is no separate register.
+ *
+ * So a completed request asserts a line that some *other* driver's
+ * `virtio_enable_interrupt` has unmasked - net, sound and input all call
+ * it - and if nobody reads this device's ISR the line never falls. The PIC
+ * is told the interrupt was handled, the line is still asserted, and it
+ * fires again immediately. Forever.
+ *
+ * What that looked like: the first disk request in the test image notified
+ * the device, the device did the work and completed it correctly - QEMU's
+ * own trace says `virtio_blk_req_complete status 0` - and the guest made no
+ * further progress at all. Not the spin loop failing to see the used ring:
+ * an interrupt storm around it, with the machine servicing the same
+ * interrupt instead of executing the loop.
+ *
+ * **AArch64 never had this**, and not because that driver is better: there
+ * every device has an interrupt ID of its own, blk never enables its own,
+ * and a line that is never enabled is never delivered. Sharing is what
+ * turns "this driver ignores interrupts" from a choice into a defect, and
+ * PCI is where sharing arrived.
+ *
+ * Nothing is recorded and nothing is woken. Acknowledging is the whole job.
+ */
+void blk_interrupt(unsigned line)
+{
+    if (!blk.present || blk.dev.slot != line) {
+        return;
+    }
+
+    (void)virtio_ack_interrupt(&blk.dev);
+}
+
 bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes)
 {
     return request(VIRTIO_BLK_T_IN, sector, buf, bytes);

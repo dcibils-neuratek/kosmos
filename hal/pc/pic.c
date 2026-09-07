@@ -224,6 +224,7 @@ void hal_irq_handle(void)
         input_interrupt(irq);
         snd_interrupt(irq);
         net_interrupt(irq);
+        blk_interrupt(irq);
     }
 
     eoi(irq);

@@ -75,6 +75,31 @@ SECTIONS
         __stack_bottom = .;
         . += 16384;
         __stack_top = .;
+
+        /*
+         * And the stack an exception lands on, which has to be a different
+         * one from the stack being interrupted.
+         *
+         * `boot/kosmos.ld` gives AArch64 the same thing for the same
+         * reason, and gets it for free: that kernel runs on SP_EL0, so
+         * every exception switches to SP_EL1 and lands here. **x86 has no
+         * such split.** A fault from ring 0 stays on the stack that
+         * faulted unless the gate names an entry in the interrupt stack
+         * table, and every gate named none - so a kernel stack overflow
+         * pushed the fault frame onto the guard page, faulted again,
+         * failed to deliver *that*, and triple-faulted the machine.
+         *
+         * `trap.c` puts #PF and #DF on this. Its own guard page below it,
+         * because a handler that overflows its own stack should fault
+         * rather than walk into the stack it was called to report on.
+         */
+        . = ALIGN(4096);
+        __exception_guard = .;
+        . += 4096;
+
+        __exception_stack_bottom = .;
+        . += 16384;
+        __exception_stack_top = .;
     }
 
     /*

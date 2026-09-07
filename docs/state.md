@@ -8,6 +8,80 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### Both x86-64 defects fixed, and one of them was not where it looked
+
+**123 of 127 on x86-64 now**, up from 117, and the four that remain are
+about AArch64 rather than about the kernel: stepping ELR past a faulting
+instruction, execution resuming after one, SPSel, and the lazy-FP mechanism
+being disarmed until something wants it.
+
+**The interrupt stack table.** Every x86-64 vector had `ist = 0` - "use the
+stack we are already on" - so a fault from ring 0 stayed on the stack that
+faulted. Fine for a deliberate fault and fatal for an overflow: the handler
+pushed onto the guard page, faulted again delivering that, and the machine
+triple-faulted and reset with nothing printed, which is the exact failure
+the exception dump exists to eliminate. AArch64 gets this from the
+architecture, because the kernel runs on SP_EL0 and every exception
+switches to SP_EL1.
+
+`boot/x86_64/kosmos.ld` now carries a 16 KB exception stack with a guard
+page below it, matching `boot/kosmos.ld` line for line; `gdt.c` puts it in
+`tss.ist[0]`; and `trap.c` points #PF and #DF at it. **Two vectors and not
+all of them**, because an IST stack is not reentrant - the processor loads
+the same address every time, so a fault taken while one is being handled
+overwrites the frame being handled. #PF is where an overflow arrives and
+#DF is the backstop for a #PF that could not be delivered, which is now
+only possible if that stack is itself bad, and its own guard page catches
+that.
+
+The test that checks it needed one change: **it faults with a store rather
+than an undefined instruction.** An IST entry belongs to a *vector*, and
+`ud2` is a fault by code that still has a working stack. A test asking "does
+the handler have its own stack" has to fault the way a stack overflow
+faults, which is a memory access.
+
+**And the block device, which was not a block-device bug at all.**
+
+Every hypothesis was wrong and each was cheap to rule out: the mapping (the
+capacity read through it was exact), bus mastering (`pci.c` sets
+`COMMAND_MASTER`), the feature negotiation (VERSION_1 offered, taken,
+`FEATURES_OK` reading back), the queue enable, the memory barriers (both
+carry a `"memory"` clobber, so no read was being hoisted), and a double
+init. QEMU's own trace ended the guessing in one line:
+
+```
+virtio_blk_handle_write vdev ... sector 1 nsectors 1
+virtio_blk_rw_complete  vdev ... ret 0
+virtio_blk_req_complete vdev ... status 0
+virtio_notify           vdev ...
+```
+
+**The write completed.** The device did the work, wrote the used ring and
+raised its line - and the guest made no further progress at all. Not a spin
+loop failing to see a completion: an interrupt storm around it.
+
+`hal_irq_handle` offered every non-timer line to `input_interrupt`,
+`snd_interrupt` and `net_interrupt`. There was no `blk_interrupt`. **A PCI
+INTx line is level-triggered and shared** - four pins handed out among every
+slot - and a device holds its line asserted until its own interrupt-status
+byte is read, reading being what acknowledges it. So a completed request
+asserted a line that some *other* driver had unmasked, nobody read this
+device's ISR, the PIC was told the interrupt was handled, the line was still
+asserted, and it fired again immediately. Forever.
+
+**AArch64 never had this, and not because that driver is better.** There
+every device has an interrupt ID of its own, blk never enables its own, and
+a line that is never enabled is never delivered. **Sharing is what turns
+"this driver ignores interrupts" from a choice into a defect**, and PCI is
+where sharing arrived. The driver still spins on the used ring and still
+never sleeps; acknowledging is the whole of `blk_interrupt`'s job.
+
+**What this says about the exercise.** Neither defect was in code the port
+wrote. Both were in the space *between* what one board provides and what
+the other assumes - a stack the architecture hands you, an interrupt line
+the architecture keeps to itself - and neither was reachable by reading. It
+took running the suite that had only ever run on one machine.
+
 ### `tests/tests.c` runs on x86-64: 117 of 127, and the ten are named
 
 **The largest test asset here had run on one board for as long as there
@@ -1570,37 +1644,22 @@ It read as one ordered plan and was not one, which is the worst failure
 mode for the file you read at the start of every session. Rewritten as one
 list, in the order the work is actually going to be done.
 
-1. **The two defects the x86 suite just found**, in this order because the
-   first is a machine that resets and the second is a driver that hangs:
-
-   - **An interrupt stack table entry for #PF and #DF on x86-64.** Every
-     vector has `ist = 0`, so a fault from ring 0 stays on the stack that
-     faulted - and a kernel stack overflow pushes onto the guard page,
-     faults again, and triple-faults the machine. AArch64 survives this
-     because the kernel runs on SP_EL0 and an exception switches to SP_EL1.
-   - **virtio-blk in the test image on x86-64.** The disk is claimed and
-     reports the right capacity; the first request is notified and never
-     completes. Not the mapping, not bus mastering, not the features, not
-     the queue enable - and `run_disk.py` passes 26 checks on the same
-     board with the shipping kernel through the same driver. Wants QEMU's
-     virtio tracing.
-
-2. **DNS.** What stands between `188.184.67.127/` and a name. A resolver
+1. **DNS.** What stands between `188.184.67.127/` and a name. A resolver
    over UDP, a cache, and `/etc`-shaped configuration that the network
    application already has fields for and remembers only.
 
-3. **The AArch64 references in `kernel/`'s comments** - 43 across nine
+2. **The AArch64 references in `kernel/`'s comments** - 43 across nine
    files. `process.c` still explains a mapping in terms of "an L1 slot" at
    `0x80000000`, which is the ARM number, in a file that compiles for both.
    The code was made portable and its prose was not.
 
-4. **SMP, on AArch64.** `docs/smp.md` is the plan, counted rather than
+3. **SMP, on AArch64.** `docs/smp.md` is the plan, counted rather than
    guessed. Nothing here is SMP-ready today: no per-CPU struct, no
    `TPIDR_EL1` anywhere in `arch/` or `kernel/`, the runqueue is `head[]`
    and `tail[]` at file scope in `sched_prio.c`, `current` is one global in
    `thread.c`, and there is not a lock or an atomic in the kernel.
 
-5. **SMP on x86-64, and only once ARM is thoroughly tested.** One
+4. **SMP on x86-64, and only once ARM is thoroughly tested.** One
    architecture at a time on purpose: the bugs SMP introduces appear once
    every thousand boots, and chasing them on two boards at once means never
    knowing which half is at fault. `swapgs` and the GS base are what x86

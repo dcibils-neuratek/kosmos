@@ -64,6 +64,12 @@ struct idtr {
     uint64_t base;
 } __attribute__((packed));
 
+/* The two vectors that get a stack of their own, and the slot they use.
+ * `trap_init` says why these two and not the rest. */
+#define VECTOR_DOUBLE_FAULT     8
+#define VECTOR_PAGE_FAULT       14
+#define IST_EXCEPTION_STACK     1       /* tss.ist[0]; the field is 1-based */
+
 static struct gate idt[IDT_ENTRIES];
 
 /* The stubs in `vectors.S`, which is where the vector number comes from. */
@@ -164,6 +170,40 @@ void trap_init(void)
         idt[i].flags    = 0x8E;
         idt[i].reserved = 0;
     }
+
+    /*
+     * The two that land on a stack of their own.
+     *
+     * **Which is what makes a kernel stack overflow survivable**, and is
+     * the piece this architecture has to be told and AArch64 gets for
+     * free. There the kernel runs on SP_EL0, an exception switches to
+     * SP_EL1, and the handler always has a stack that is not the one that
+     * faulted. Here a fault from ring 0 stays on the faulting stack unless
+     * the gate names an entry in the interrupt stack table - and with
+     * every gate naming none, an overflow pushed the fault frame into the
+     * guard page, faulted again delivering *that*, and triple-faulted the
+     * machine. It reset with nothing printed, which is the exact failure
+     * the whole exception dump exists to eliminate.
+     *
+     * `#PF` is where an overflow arrives, so it is the one that has to
+     * move. `#DF` is the backstop: it fires when a fault could not be
+     * delivered at all, which with #PF on a good stack now means only that
+     * this stack is itself bad - and its own guard page is what catches
+     * that.
+     *
+     * **Two, and not all of them**, because an IST stack is not reentrant:
+     * the processor loads the same address every time, so a second fault
+     * taken while one is being handled writes over the frame being
+     * handled. Linux reserves IST for exactly this handful and for the
+     * same reason. Everything else - an undefined instruction, a
+     * breakpoint, a general protection fault - is a fault by something
+     * that still has a working stack, and is better handled on it.
+     *
+     * The index is 1-based here and 0-based in the TSS, so 1 selects
+     * `tss.ist[0]`. `gdt.c` sets it.
+     */
+    idt[VECTOR_DOUBLE_FAULT].ist = IST_EXCEPTION_STACK;
+    idt[VECTOR_PAGE_FAULT].ist   = IST_EXCEPTION_STACK;
 
     pointer.limit = (uint16_t)(sizeof(idt) - 1);
     pointer.base  = (uint64_t)idt;

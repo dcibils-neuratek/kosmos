@@ -2212,28 +2212,28 @@ static bool test_kernel_runs_on_sp_el0(void)
 }
 #endif /* __aarch64__ */
 
-#if defined(__aarch64__)
 /*
- * The two that need a *separate* exception stack, and are AArch64's alone
- * because only one of these boards has one.
+ * The two about a *separate* exception stack, and they run on both boards
+ * now - which they did not, and the reason is worth keeping.
  *
- * This kernel runs on SP_EL0 on purpose, so an exception switches to SP_EL1
- * and the handler stands on a stack of its own. That is what makes a stack
- * overflow survivable: the guard-page fault is handled somewhere the
- * overflowed stack cannot reach.
+ * AArch64 gets this from the architecture: the kernel runs on SP_EL0 on
+ * purpose, so every exception switches to SP_EL1 and the handler stands on
+ * a stack that is not the one that faulted. **x86 has to be told.** A fault
+ * from ring 0 stays on the faulting stack unless the gate names an entry in
+ * the interrupt stack table, and every gate named none - so a kernel stack
+ * overflow pushed the fault frame into the guard page, faulted again
+ * delivering that, and triple-faulted the machine. It reset with nothing
+ * printed, which is the exact failure the exception dump exists to
+ * eliminate. `trap.c` now puts #PF and #DF on `tss.ist[0]`.
  *
- * **x86 sets `ist = 0` for every vector** - `arch/x86_64/trap.c`, "use the
- * stack we are already on" - so a fault from ring 0 stays on the stack that
- * faulted. For an ordinary deliberate fault that is fine and is what the
- * rest of the suite exercises. For a *stack overflow* it is not: the
- * handler would push onto the guard page, take a second fault, fail to
- * handle that one too, and the machine would triple-fault and reset.
- *
- * That is a real gap in the port rather than a difference to be lived with,
- * and the fix is an interrupt stack table entry for #PF and #DF and an
- * `ist` field pointing at it. Recorded here rather than silently skipped,
- * because a test that does not run is worth nothing unless somebody knows
- * why.
+ * **The fault below is a store and not an undefined instruction**, and that
+ * is the whole of what x86 changed here. An IST entry belongs to a
+ * *vector*, and only the two that need it have one - an undefined
+ * instruction is a fault by code that still has a working stack and is
+ * better handled on it. So a test asking "does the handler have its own
+ * stack" has to fault the way a stack overflow faults, which is a memory
+ * access. On AArch64 it makes no difference; every exception lands on
+ * SP_EL1 whatever caused it.
  */
 static bool test_handler_runs_on_the_exception_stack(void)
 {
@@ -2243,7 +2243,7 @@ static bool test_handler_runs_on_the_exception_stack(void)
      */
     struct fault_info f;
 
-    FAULT_EXPECT({ TEST_UNDEFINED_INSTRUCTION(); });
+    FAULT_EXPECT({ store_to(0, 1); });
 
     if (!fault_expect_end(&f)) {
         return false;
@@ -2341,7 +2341,6 @@ static bool test_a_stack_overflow_is_survivable(void)
         && sp_after > (uint64_t)(uintptr_t)__stack_bottom
         && sp_after <= (uint64_t)(uintptr_t)__stack_top;
 }
-#endif /* __aarch64__ */
 
 /*
  * M1: the physical page allocator.
@@ -2812,12 +2811,7 @@ static bool test_gfx_text(void)                        { return luatest_role(27)
  * lies on the path between the two, and no combination of wrong ones
  * produces the bytes that went in.
  *
- * **Compiled only for AArch64 today**, and the table below says why at
- * length: on x86-64 the disk is claimed correctly and then the first
- * request never completes, in this image and not in the shipping one. A
- * defect with a name rather than a difference between the boards.
  */
-#if defined(__aarch64__)
 static uint8_t blk_out[HAL_BLK_SECTOR];
 static uint8_t blk_in[HAL_BLK_SECTOR];
 
@@ -2913,7 +2907,6 @@ static bool test_block_refuses_past_the_end(void)
         && !hal_blk_read(dev.sectors - 1, blk_in, HAL_BLK_SECTOR * 2)
         && !hal_blk_read(0, blk_in, HAL_BLK_SECTOR / 2);  /* not whole sectors */
 }
-#endif /* __aarch64__ */
 
 static bool test_gfx_triangles(void)                   { return luatest_role(30); }
 static bool test_g3d_orientation(void)                 { return luatest_role(31); }
@@ -4009,10 +4002,8 @@ static const struct test tests[] = {
 #if defined(__aarch64__)
     { "trap: the kernel runs on SP_EL0",       test_kernel_runs_on_sp_el0 },
 #endif
-#if defined(__aarch64__)
     { "trap: the handler has its own stack",   test_handler_runs_on_the_exception_stack },
     { "trap: a stack overflow is survivable",  test_a_stack_overflow_is_survivable },
-#endif
     { "thread: three threads interleave",      test_threads_interleave },
     { "thread: block and wake",                test_block_and_wake },
     { "thread: a switch preserves x19 and d8", test_context_switch_preserves_registers },
@@ -4097,34 +4088,10 @@ static const struct test tests[] = {
     { "cap: a capability travels in a message", test_a_capability_can_be_passed_in_a_message },
     { "cap: one you do not hold does not",      test_a_capability_that_is_not_held_cannot_be_sent },
     { "ipc: errors reach Lua",                 test_lua_ipc_errors_are_reported },
-#if defined(__aarch64__)
-    /*
-     * **Not run on x86-64, and it is a defect rather than a difference.**
-     *
-     * The disk is claimed correctly there - `hal_blk_init` returns true and
-     * reports the right capacity out of the device's configuration space -
-     * and then the first request is notified and never completes: the used
-     * ring does not advance and the driver spins out its hundred million
-     * tries. What has been ruled out: the mapping (the capacity read
-     * through it is exact), bus mastering (`pci.c` sets COMMAND_MASTER),
-     * the feature negotiation (VERSION_1 is offered, taken, and
-     * FEATURES_OK reads back), and the queue being enabled
-     * (COMMON_QUEUE_ENABLE is written before DRIVER_OK).
-     *
-     * And it is specific to this image. `run_disk.py` passes 26 checks on
-     * the same board with the shipping kernel, which reads and writes the
-     * same disk through the same driver - so the transport works and
-     * something about *this* build's use of it does not. Finding out which
-     * wants QEMU's own virtio tracing rather than another hypothesis.
-     *
-     * Left named and disabled rather than quietly skipped, because a test
-     * that does not run is worth nothing unless somebody knows why.
-     */
     { "blk: the disk is there",                test_block_device_is_present },
     { "blk: a sector reads back what was written", test_block_write_then_read },
     { "blk: sectors are addressed, not ignored", test_block_sectors_are_distinct },
     { "blk: past the end is refused",          test_block_refuses_past_the_end },
-#endif
     { "gfx: triangles fill and meet",          test_gfx_triangles },
     { "3d: the near faces are the drawn ones", test_g3d_orientation },
     { "kill: a sibling may not be ended",      test_kill_is_parent_only },

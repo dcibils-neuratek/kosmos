@@ -329,6 +329,12 @@ void input_interrupt(unsigned line);
 void snd_interrupt(unsigned line);
 void net_interrupt(unsigned line);
 
+/* The block driver does not wait on an interrupt and still has to
+ * answer one: a PCI line is shared and level-triggered, so a device
+ * nobody acknowledges holds it asserted for ever. `blk.c` has the
+ * whole argument. */
+void blk_interrupt(unsigned line);
+
 /*
  * One character from the keyboard, or -1 when nothing is waiting - and
  * whether there is a keyboard at all.

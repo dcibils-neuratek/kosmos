@@ -56,6 +56,8 @@ struct tss {
 _Static_assert(sizeof(struct tss) == 104, "the TSS is 104 bytes");
 _Static_assert(offsetof(struct tss, rsp0) == TSS_RSP0, "TSS_RSP0 vs user.S");
 
+extern char __exception_stack_top[];
+
 struct tss tss;
 
 /*
@@ -127,6 +129,31 @@ void gdt_init(void)
 
     tss.rsp0 = 0;
     tss.iomap_base = sizeof(struct tss);
+
+    /*
+     * The stack a fault lands on, in the first interrupt stack table slot.
+     *
+     * **This is what makes a kernel stack overflow survivable here**, and
+     * it is the one thing AArch64 gets from the architecture and x86 has to
+     * be told. That kernel runs on SP_EL0, so every exception switches to
+     * SP_EL1 and the handler stands on a stack of its own. Here a fault
+     * from ring 0 stays on the stack that faulted unless the gate names an
+     * IST entry - so an overflow pushed the fault frame into the guard
+     * page, faulted again, could not deliver that either, and the machine
+     * triple-faulted and reset.
+     *
+     * `trap.c` points #PF and #DF at this slot and nothing else at it. Not
+     * every vector, because **an IST stack is not reentrant**: the
+     * processor loads the same address every time, so a fault taken while
+     * one is being handled writes over the frame that was being handled.
+     * #PF is where a stack overflow arrives, and #DF is the backstop for a
+     * #PF that could not be delivered - which is now only possible if this
+     * stack is itself bad, and its own guard page is what catches that.
+     *
+     * The slots are numbered from 1 in a gate descriptor and from 0 here,
+     * which is the kind of off-by-one that is worth writing down once.
+     */
+    tss.ist[0] = (uint64_t)(uintptr_t)__exception_stack_top;
 
     /*
      * The TSS descriptor, which is a different shape from the others: type

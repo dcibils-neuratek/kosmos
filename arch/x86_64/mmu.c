@@ -13,6 +13,7 @@
 extern char __text_start[], __text_end[];
 extern char __rodata_start[], __rodata_end[];
 extern char __stack_guard[];
+extern char __exception_guard[];
 extern char __framebuffer_start[];
 extern char __image_end[];
 
@@ -411,11 +412,20 @@ void mmu_init(void)
     map_pages(kernel_pml4, rodata_start, rodata_start,
               ((uintptr_t)__rodata_end - rodata_start) / PAGE_SIZE, MAP_RO);
 
-    /* And punch out the stack guard, so an overflow faults rather than
-     * walking into .bss. */
+    /* And punch out both stack guards, so an overflow faults rather than
+     * walking into whatever is below it. The second is the exception
+     * stack's: `trap.c` puts #PF and #DF on it, and a handler that
+     * overflows it should fault rather than corrupt the stack it was
+     * called to report on. */
     guard = page_entry(kernel_pml4, (uintptr_t)__stack_guard);
     if (guard == NULL) {
         panic("mmu: the stack guard is not page mapped");
+    }
+    *guard = 0;
+
+    guard = page_entry(kernel_pml4, (uintptr_t)__exception_guard);
+    if (guard == NULL) {
+        panic("mmu: the exception stack guard is not page mapped");
     }
     *guard = 0;
 

@@ -84,25 +84,11 @@ unblocks.
 
 ### Being built now
 
-**Two defects the x86-64 suite found the day it first ran.** `tests.c` now
-runs on both boards — 117 of 127 there against 127 here — and the first
-thing it did was find these:
-
-- **No interrupt stack table entry on x86-64.** Every vector has `ist = 0`,
-  so a fault from ring 0 stays on the stack that faulted. A kernel stack
-  overflow therefore pushes onto the guard page, faults again, and
-  triple-faults the machine. AArch64 survives it because the kernel runs on
-  SP_EL0 and an exception switches to SP_EL1.
-- **virtio-blk hangs in the x86-64 test image.** The disk is claimed and
-  reports the right capacity, and then the first request is notified and
-  never completes — while `run_disk.py` passes 26 checks on the same board
-  with the shipping kernel through the same driver.
-
-### Next, in this order
-
 **A resolver.** An address is four numbers today, which is the single
 biggest thing between the browser and the web. UDP exists in the stack only
 as much as DNS needs — no sockets, because nothing else has asked for any.
+
+### Next, in this order
 
 **The AArch64 references in `kernel/`'s comments** — 43 of them across nine
 files. The code was made portable and its prose was not: `process.c` still

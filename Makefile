@@ -1884,11 +1884,11 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# thirty-five places, exited through ARM semihosting, and ran two
 	@# hand-written AArch64 blobs at EL0.
 	@#
-	@# 117 of it runs here against 127 there, and the ten are named
-	@# rather than skipped: six are about AArch64 itself - stepping ELR
-	@# past a faulting instruction, SPSel, the lazy-FP mechanism - and
-	@# four are the block device, which is a defect on this board with
-	@# its own comment in `tests.c`.
+	@# 123 of it runs here against 127 there, and the four that do not
+	@# are about AArch64 itself rather than about the kernel: stepping
+	@# ELR past a faulting instruction, execution resuming after one,
+	@# SPSel, and the lazy-FP mechanism being disarmed until something
+	@# wants it. Nothing is skipped for being inconvenient.
 	@#
 	@# `run_interchange.py` and `run_queries.py` are deliberately not
 	@# here, and this says so out loud rather than leaving a gap
