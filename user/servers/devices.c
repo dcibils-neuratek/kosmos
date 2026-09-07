@@ -413,8 +413,22 @@ static bool node_read(const char *want, const struct sysinfo *i,
         return true;
     }
 
+    /*
+     * The transport is deliberately not named, and it used to be:
+     * "virtio-input over virtio-mmio", on a PC where it is virtio-pci. The
+     * fifth string in this system to describe one board's hardware on
+     * both, after the boot log's PL011, /dev/console's copy of it, EL0 in
+     * `procs`, and "on AArch64" in `about`.
+     *
+     * Nothing here knows which bus it is. `sysinfo` carries `has_keyboard`
+     * and not how it was found, and inventing a field to carry a string
+     * this node is the only reader of would be the wrong trade. What is
+     * true on both machines is the driver and how it is read, so that is
+     * what it says - and `sys.build().platform` already names the board
+     * for anyone who wants it.
+     */
     if (strcmp(want, "keyboard") == 0 && i->has_keyboard != 0) {
-        put_text(r, "transport", "virtio-input over virtio-mmio");
+        put_text(r, "transport", "virtio-input, polled");
         return true;
     }
 
