@@ -365,7 +365,8 @@ unsigned long hal_rtc_seconds(void);
  * would be the wrong direction. */
 struct bus_device;
 
-bool          hal_blk_present(void);   /* a disk was found and claimed */
+bool          hal_blk_present(void);
+   /* a disk was found and claimed */
 
 unsigned      hal_bus_scan(struct bus_device *out, unsigned max);
 

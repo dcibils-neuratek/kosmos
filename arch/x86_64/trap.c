@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include <setjmp.h>
+
 #include "console.h"
 #include "cpu.h"
 #include "process.h"
@@ -185,6 +187,43 @@ static void die_if_killed(void)
     }
 }
 
+/*
+ * The armed-fault slot. A single one on purpose, for the reason
+ * `arch/aarch64/trap.c` gives: a test arms it, causes exactly one fault,
+ * and disarms. Nesting would mean a fault inside the handler, which is a
+ * double fault and should be a panic rather than a feature.
+ *
+ * Only the unwind form here - `trap.h` says why, and it is that an x86
+ * instruction has no length you can know without decoding it.
+ */
+static struct {
+    bool armed;
+    bool fired;
+    unsigned long *unwind_to;
+    struct fault_info info;
+} expected;
+
+void fault_expect_unwind(jmp_buf env)
+{
+    expected.armed = true;
+    expected.fired = false;
+    expected.unwind_to = env;
+}
+
+bool fault_expect_end(struct fault_info *out)
+{
+    bool fired = expected.fired;
+
+    if (fired && out != NULL) {
+        *out = expected.info;
+    }
+
+    expected.armed = false;
+    expected.fired = false;
+    expected.unwind_to = NULL;
+    return fired;
+}
+
 void trap_handle(struct trapframe *f)
 {
     uint64_t cr2;
@@ -248,6 +287,37 @@ void trap_handle(struct trapframe *f)
     }
 
     __asm__ volatile("movq %%cr2, %0" : "=r"(cr2));
+
+    /*
+     * An expected fault: record it and unwind, rather than report and stop.
+     *
+     * Before the report and before the ring test, because an armed fault is
+     * a fault somebody asked for and printing a panic for it would be
+     * noise. Everything below this line is the unexpected case.
+     */
+    if (expected.armed && !expected.fired) {
+        uint64_t handler_sp;
+
+        __asm__ volatile("movq %%rsp, %0" : "=r"(handler_sp));
+
+        expected.fired = true;
+        expected.info.vector = f->vector;
+        expected.info.error  = f->error;
+        expected.info.rip    = f->rip;
+        expected.info.cr2    = cr2;
+        expected.info.handler_sp = handler_sp;
+
+        /*
+         * Return into longjmp rather than into the faulting code. `iret`
+         * restores rip, cs, rflags, rsp and ss from the frame, and
+         * `isr_common` restores rdi and rsi from it on the way out - so
+         * setting rdi, rsi and rip is a complete call to longjmp(env, 1).
+         */
+        f->rdi = (uint64_t)(uintptr_t)expected.unwind_to;
+        f->rsi = 1;
+        f->rip = (uint64_t)(uintptr_t)&longjmp;
+        return;
+    }
 
     /*
      * Who was running decides what this is. A fault at ring 0 is a broken

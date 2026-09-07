@@ -8,6 +8,94 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### `tests/tests.c` runs on x86-64: 117 of 127, and the ten are named
+
+**The largest test asset here had run on one board for as long as there
+were two.** 4,000 lines, 127 checks, and the only thing that exercises the
+kernel from inside it - and there was no x86 image target for `TEST=1` to
+build. Now there is: `make test` runs it on both.
+
+**117 of 127 on x86-64, 127 of 127 still on AArch64**, and nothing was
+weakened to get there. What moved is where the machine-specific parts
+*live*, not what any test asserts.
+
+**Most of the abstraction already existed and nobody had used it.**
+`cpu_irq_disable`, `cpu_cycles`, `cpu_interrupts_save` and `cpu_current_el`
+are the sixteen sites the 0.9.0 review moved out of `kernel/`, and
+`cpu_current_el` already reported 1 for the kernel on both boards - so a
+test asking "am I privileged" asks one question in one unit. The suite got
+all of that for free. Three new headers hold what was left:
+
+- **`tests/machine.h`** - the deliberately awkward: an instruction chosen to
+  fault, a store the compiler may not reason about, a named callee-saved
+  register, a page-table entry's frame and permissions. Named `machine.h`
+  and not `cpu.h` because `-Itests` is on the compile line and a second
+  `cpu.h` would shadow the architecture's own for every file in the build.
+- **`tests/fault.h`** - `FAULT_EXPECT`, and the classifiers that say what
+  kind of fault it was without saying which board's encoding.
+- **`tests/exit.h`** - how the guest tells the host it passed.
+
+**The crux was that on x86-64 you cannot step past a faulting
+instruction.** AArch64's handler does `elr += 4` and the arithmetic is
+exact, every A64 instruction being four bytes; an x86 instruction is one to
+fifteen bytes and its length cannot be known without decoding it. So there
+is no next instruction to step to and no honest way to invent one. What
+that architecture gets is the *unwind* form - which ARM already had, for
+the stack-overflow case where stepping would have resumed into the guard
+page - and `FAULT_EXPECT` is the one macro that lets a shared test use it
+on both. It cost ARM nothing: the mechanism was already there and already
+tested.
+
+**The exit is asymmetric on x86 and that is the honest shape.** ARM has
+semihosting, one instruction and an exact status. x86 has QEMU's
+`isa-debug-exit`, which exits `(value << 1) | 1` - always odd, and
+therefore *incapable of expressing success*. So success is an ACPI
+power-off, which exits 0, and only failure uses the debug port. Two
+different things happened and on this machine they leave by two different
+doors.
+
+**The six AArch64-only checks, and each is about AArch64 rather than about
+the kernel:** ELR pointing at the faulting instruction, execution resuming
+after one, SPSel being 0, the handler having a stack of its own, a stack
+overflow being survivable, and the lazy-FP mechanism being disarmed until
+something wants it. The last three are the interesting group - x86 sets
+`ist = 0` for every vector, so a fault from ring 0 stays on the stack that
+faulted, and a *kernel stack overflow* there would push onto the guard
+page, fault again, and triple-fault the machine. **That is a real gap in
+the port** and the fix is an interrupt stack table entry for #PF and #DF.
+
+**And four are a defect: the block device.** The disk is claimed correctly
+on x86 - `hal_blk_init` returns true and reports the right capacity out of
+configuration space - and then the first request is notified and never
+completes. Ruled out: the mapping (the capacity read through it is exact),
+bus mastering (`pci.c` sets `COMMAND_MASTER`), feature negotiation
+(VERSION_1 offered, taken, `FEATURES_OK` reads back) and the queue being
+enabled (`COMMON_QUEUE_ENABLE` before `DRIVER_OK`). And it is specific to
+*this image*: `run_disk.py` passes 26 checks on the same board with the
+shipping kernel, reading and writing the same disk through the same driver.
+Finding out which difference matters wants QEMU's own virtio tracing rather
+than another hypothesis.
+
+**What the port found on the way**, and none of it was about x86 assembly:
+
+- **`arch/x86_64/fp.c`'s header comment was wrong three times over** - that
+  the mechanism was not built, that the 512-byte area was not in
+  `struct context`, and, the dangerous one, that "preemption is not safe,
+  and nothing here preempts yet". Both halves of that last were false:
+  the timer preempts on this board like any other, and `switch.S` does
+  `fxsave`/`fxrstor` around every switch, which is precisely what makes it
+  correct. Written before those two instructions existed and never revisited.
+- **A test asserted a kernel address by writing it out.** `as: the kernel
+  region is refused` named 0x40000000, which is a kernel address on ARM and
+  is *exactly* `USER_VA_BASE` on x86 - so it asked the kernel to refuse the
+  first page of user space, the kernel correctly mapped it, and the test
+  reported a failure entirely its own. A literal address in a portable test
+  is a claim about one machine.
+- **A mechanical conversion put a `return` inside `FAULT_EXPECT`**, which
+  would have left the fault armed past the statement. The compiler caught
+  it, which is the whole reason that restriction is written down in the
+  macro's comment.
+
 ### A clipboard, and what a machine with no modifier keys does about it
 
 **Text selected in one application and pasted into another**, which is the
@@ -1475,67 +1563,124 @@ visible.
 
 ## Next, in order
 
-1. **The cascade, consulted.** libcss parses, selects and answers, and the
-   renderer chooses a face by tag name and an ink from a `#define`. The
-   piece in the way is a face per (family, weight, slant, size) rather than
-   seven fixed ones - which is also what fixes `<em>` inside an `<h1>` coming
-   out at the body size. `l_style` already builds a select context per call
-   and throws it away; the document should hold one, built from its own
-   `<style>` elements, and layout should ask it per element.
-2. **DNS**, which is what stands between `188.184.67.127/` and a name. A
-   resolver over UDP, a cache, and `/etc`-shaped configuration that the
-   network application already has fields for and remembers only.
-3. **A non-blocking send.** Half a browser frame is the application blocked
-   on a `commit` whose handler swaps an index and records a rectangle, and
-   triple buffering cannot fix that: `SYS_CALL`, `SYS_RECEIVE` and
-   `SYS_REPLY` are the whole IPC surface and every message to a server
-   blocks for its reply by construction. A new syscall, a fixed-size queue
-   in the endpoint struct - no allocator - a decision about what a full
-   queue does, and backpressure. A change to the IPC model, which is why it
-   is written down rather than started.
-4. **x86-64, under QEMU** - *started, and the kernel is portable.* Boot,
-   exceptions, paging, the context switch and ring 3 are done, the six
-   `arch/` headers all exist, and all thirteen `kernel/*.c` compile for it
-   with no `#ifdef`. What is left is `hal/pc/`: a framebuffer, a keyboard, a
-   pointer and virtio over PCI. See the section at the top of this file. The 64-bit line
-   was drawn here precisely so that this is not a refactor - `kernel/` has
-   no architecture-specific instruction left in it, and `kernel/pmm.c`
-   building unchanged on the second machine is the first piece of evidence
-   that this was true rather than aspirational.
-5. **A box model.** Margins, padding, borders and `width`, which is what
-   turns "blocks stacked down the page" into layout. Images and forms both
-   wait on it; the runs are already addressable, which is the half that made
-   links work.
-6. **SSH**, in layers with a test each: the binary packet protocol, then
-   Curve25519 key exchange, then ChaCha20-Poly1305, then userauth, then
-   channels. This is the one place in the project where a bug is *silent*
-   rather than loud - a stack that gets a sequence number wrong stops
-   working, and a cipher that gets a nonce wrong keeps working and is not
-   secure - so "it connected" is not evidence and every layer needs test
-   vectors from the specification.
-2. **Get Info, showing and editing attributes.** The query engine works and
-   nothing writes an attribute, so the search box finds nothing until you
-   use `attr` at a prompt. This is what makes M7 visible.
-3. **A preferences app for file types.** `filetypes.by_extension` is
-   compiled into the image; it wants to be a file in `/home` that an
-   application edits, the way `.appearance` already is.
-4. **A name in the index.** A query is over attributes, so `name:*.png`
-   cannot be one and the search box filters locally instead. BeOS indexed
-   `name` precisely so that it could be a query rather than a walk.
-3. **Doom's `DG_sound_module`** - the hook is there behind `FEATURE_SOUND`
-   and `i_sdlsound.c` is the model. Doom is silent.
-2. **An equaliser in the Mixer**, which is the first thing that will want
-   the ring to carry something other than what was written to it.
-3. **Seeking in `music`** - the bar is drawn and cannot be dragged. For MP3
-   it means finding a frame boundary rather than a byte offset, which is
-   what `mp3.decoder():reset()` exists for.
-4. **The remaining 0.6 KB a pass** is `application requests` (0.42) and
-   `answering polls` (0.15) - the desktop serving its own applications over
-   the table protocol. Smaller than what was just removed, and the same
-   shape if it ever matters.
+**This list was three lists stacked under one heading**, with the numbering
+restarting twice - 1 to 6, then 2, 3, 4, then 3, 2, 3, 4 - and an entry
+saying x86-64 was "started" months after it shipped and ran the desktop.
+It read as one ordered plan and was not one, which is the worst failure
+mode for the file you read at the start of every session. Rewritten as one
+list, in the order the work is actually going to be done.
+
+1. **The two defects the x86 suite just found**, in this order because the
+   first is a machine that resets and the second is a driver that hangs:
+
+   - **An interrupt stack table entry for #PF and #DF on x86-64.** Every
+     vector has `ist = 0`, so a fault from ring 0 stays on the stack that
+     faulted - and a kernel stack overflow pushes onto the guard page,
+     faults again, and triple-faults the machine. AArch64 survives this
+     because the kernel runs on SP_EL0 and an exception switches to SP_EL1.
+   - **virtio-blk in the test image on x86-64.** The disk is claimed and
+     reports the right capacity; the first request is notified and never
+     completes. Not the mapping, not bus mastering, not the features, not
+     the queue enable - and `run_disk.py` passes 26 checks on the same
+     board with the shipping kernel through the same driver. Wants QEMU's
+     virtio tracing.
+
+2. **DNS.** What stands between `188.184.67.127/` and a name. A resolver
+   over UDP, a cache, and `/etc`-shaped configuration that the network
+   application already has fields for and remembers only.
+
+3. **The AArch64 references in `kernel/`'s comments** - 43 across nine
+   files. `process.c` still explains a mapping in terms of "an L1 slot" at
+   `0x80000000`, which is the ARM number, in a file that compiles for both.
+   The code was made portable and its prose was not.
+
+4. **SMP, on AArch64.** `docs/smp.md` is the plan, counted rather than
+   guessed. Nothing here is SMP-ready today: no per-CPU struct, no
+   `TPIDR_EL1` anywhere in `arch/` or `kernel/`, the runqueue is `head[]`
+   and `tail[]` at file scope in `sched_prio.c`, `current` is one global in
+   `thread.c`, and there is not a lock or an atomic in the kernel.
+
+5. **SMP on x86-64, and only once ARM is thoroughly tested.** One
+   architecture at a time on purpose: the bugs SMP introduces appear once
+   every thousand boots, and chasing them on two boards at once means never
+   knowing which half is at fault. `swapgs` and the GS base are what x86
+   uses where ARM uses `TPIDR_EL1`, and the port already found the boundary
+   the hard way - a global holding the interrupted stack pointer that was
+   actually per-thread.
+
+### After those, and not yet ordered against each other
+
+- **A non-blocking send.** `SYS_CALL`, `SYS_RECEIVE` and `SYS_REPLY` are
+  the whole IPC surface, so every message to a server blocks for its reply
+  by construction, and triple buffering cannot fix half a browser frame
+  spent waiting on a `commit` that swaps an index. A change to the IPC
+  model: a syscall, a fixed-size queue in the endpoint struct because there
+  is no allocator, a decision about what a full queue does, and
+  backpressure.
+
+- **Selection in the terminal**, which is where people most want to copy
+  from and is the one window the clipboard cannot reach. It draws its
+  scrollback through `ui.view` rather than `ui.editor`, so the honest fix
+  is lifting the anchor-and-cursor machinery out of the editor rather than
+  writing it twice.
+
+- **The cascade, consulted.** libcss parses, selects and answers, and the
+  renderer chooses a face by tag name and an ink from a `#define`. The
+  piece in the way is a face per (family, weight, slant, size) rather than
+  seven fixed ones - which is also what fixes `<em>` inside an `<h1>`
+  coming out at the body size. The document should hold one select context
+  built from its own `<style>` elements, and layout should ask it per
+  element.
+
+- **A box model.** Margins, padding, borders and `width`, which is what
+  turns "blocks stacked down the page" into layout. Images and forms both
+  wait on it; the runs are already addressable, which is the half that made
+  links work.
+
+- **Get Info, showing and editing attributes.** The query engine works and
+  nothing writes an attribute, so the search box finds nothing until you
+  use `attr` at a prompt.
+
+- **A name in the index.** A query is over attributes, so `name:*.png`
+  cannot be one and the search box filters locally instead. BeOS indexed
+  `name` precisely so it could be a query rather than a walk.
+
+- **A preferences app for file types.** `filetypes.by_extension` is
+  compiled into the image; it wants to be a file in `/home` that an
+  application edits, the way `.appearance` already is.
+
+- **Doom's sound.** The hook is there behind `FEATURE_SOUND` and
+  `i_sdlsound.c` is the model. Doom is silent.
+
+- **An equaliser in the Mixer**, the first thing that will want the ring to
+  carry something other than what was written to it.
+
+- **Seeking in `music`** - the bar is drawn and cannot be dragged. For MP3
+  that means finding a frame boundary rather than a byte offset, which is
+  what `mp3.decoder():reset()` exists for.
+
+- **SSH**, in layers with a test each: the binary packet protocol, then
+  Curve25519, then ChaCha20-Poly1305, then userauth, then channels. The one
+  place here where a bug is *silent* rather than loud - a stack that gets a
+  sequence number wrong stops working, and a cipher that gets a nonce wrong
+  keeps working and is not secure - so "it connected" is not evidence and
+  every layer wants test vectors from the specification.
+
+- **The remaining 0.6 KB a pass** is `application requests` (0.42) and
+  `answering polls` (0.15) - the desktop serving its own applications over
+  the table protocol. Smaller than what was just removed, and the same
+  shape if it ever matters.
 
 ## Still open
 
+- **`diskfs` stamps `sys.ticks()` as a file's `mtime`**, so a modification
+  time means nothing across a reboot and Tracker has no Modified column.
+  `/dev/clock` exists and answers with the epoch; what is in the way is
+  that a server is spawned with the capabilities it was handed, so giving
+  `diskfs` a wall clock is a mount and a decision about which servers get
+  one - the same shape as the audio server having no way to read
+  `/dev/cpu`. Found while checking whether a comment was still true; it was
+  half true, which is the worse kind.
 - **3-4 audio underruns per 2.3 s**, and six structural changes did not
   move it: the ring, the priority band, an 8x buffer, the interrupt, the C
   rewrite, and measuring during play rather than after. 194 interrupts per

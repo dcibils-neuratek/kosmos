@@ -15,8 +15,9 @@
 --     design.md 8.3 says why: it is derivable, and derivable state that is
 --     also stored is state that can disagree with itself, which on a
 --     filesystem means a query returning a file that is not there.
---   * **ext3's journal**, which is not here yet. Its space is reserved from
---     the start so that adding it does not move everything else.
+--   * **ext3's journal**, and its ordering rather than any cleverness -
+--     write the blocks, then one header that is the commit, then copy them
+--     home. Below, under "The journal", with the argument for each step.
 --
 -- Everything is little-endian and every structure is packed with
 -- `string.pack`, which is the reason this is Lua and readable rather than C

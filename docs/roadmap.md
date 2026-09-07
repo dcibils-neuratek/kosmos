@@ -84,11 +84,35 @@ unblocks.
 
 ### Being built now
 
+**Two defects the x86-64 suite found the day it first ran.** `tests.c` now
+runs on both boards — 117 of 127 there against 127 here — and the first
+thing it did was find these:
+
+- **No interrupt stack table entry on x86-64.** Every vector has `ist = 0`,
+  so a fault from ring 0 stays on the stack that faulted. A kernel stack
+  overflow therefore pushes onto the guard page, faults again, and
+  triple-faults the machine. AArch64 survives it because the kernel runs on
+  SP_EL0 and an exception switches to SP_EL1.
+- **virtio-blk hangs in the x86-64 test image.** The disk is claimed and
+  reports the right capacity, and then the first request is notified and
+  never completes — while `run_disk.py` passes 26 checks on the same board
+  with the shipping kernel through the same driver.
+
+### Next, in this order
+
 **A resolver.** An address is four numbers today, which is the single
 biggest thing between the browser and the web. UDP exists in the stack only
 as much as DNS needs — no sockets, because nothing else has asked for any.
 
-### Next
+**The AArch64 references in `kernel/`'s comments** — 43 of them across nine
+files. The code was made portable and its prose was not: `process.c` still
+explains a mapping in terms of "an L1 slot" at `0x80000000`, which is the
+ARM number, in a file that compiles for both.
+
+**SMP on AArch64 first, and x86-64 only once ARM is thoroughly tested.**
+One architecture at a time, on purpose: the bugs SMP introduces appear once
+every thousand boots, and finding them on two boards at once means never
+knowing which half is at fault. `docs/smp.md` is the plan.
 
 **A non-blocking send.** Half a browser frame is the application blocked on
 a `commit` whose handler swaps an index and records a rectangle. `SYS_CALL`,
@@ -111,8 +135,8 @@ and Lua — needed about a hundred and ten lines of assembly and one `#if`.
 transport under them: fixed offsets from a device-tree window on one, a walk
 of the PCI capability list on the other. Same sequence, every register
 somewhere else. The measure is that the display harness passes the same
-sixty-two checks on both boards in the same time, and `make test` runs four
-harnesses on the x86 image.
+sixty-five checks on both boards in the same time, and `make test` runs
+four harnesses on the x86 image.
 
 **What it cost was device plumbing and two prose bugs**, and `docs/hal.md`
 has all of them. The one worth repeating here is that none was about x86:

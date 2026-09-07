@@ -282,7 +282,7 @@ ifdef TEST
   BUILD     := build/test
   SRCS      += tests/tests.c
   # The EL0 fixture blobs, which only the suite runs.
-  SRCS      += user/hello.S user/faulty.S
+  SRCS      += user/hello-$(ARCH).S user/faulty-$(ARCH).S
   # The libc the kernel no longer links, because the unit tests for it are
   # here and they call it directly. The shipping image needs none of it.
   SRCS      += runtime/libc/malloc.c runtime/libc/misc.c \
@@ -1591,13 +1591,28 @@ qemu: $(TARGET) $(DISK)
 # 1024x768 fallback for a build that names none, so the machine came up at
 # a resolution nothing had asked for and the ARM build had not used in
 # months. It looked like a display bug and was a Makefile line.
+#
+# No floating point in the kernel, which is this architecture's spelling of
+# `-mgeneral-regs-only`. Kept in a variable of its own because two files in
+# the test build have to be compiled *without* it - see `X86_FLAGS_FP`.
+#
+X86_NO_FP := -mno-mmx -mno-sse -mno-sse2
+
 X86_FLAGS := -std=c11 -ffreestanding -nostdlib -nostartfiles \
              -Wall -Wextra -Werror -fno-common -fno-strict-aliasing -O2 -g \
-             -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+             -mno-red-zone $(X86_NO_FP) \
              $(FB_FLAGS) \
              -Ihal -Ihal/virtio -Ihal/fwcfg -Iarch/x86_64 -Ikernel -Iruntime/include
 
-X86_BUILD := build/x86_64
+#
+# The test image gets its own directory, exactly as the ARM one does.
+#
+# Same sources plus the suite, with `KOSMOS_TEST` defined - so the tests
+# cost the shipping image nothing and the two never share a stale object.
+# `build/test` is taken by the ARM build, which sets `BUILD` without
+# reference to the architecture, so this is the second name rather than a
+# suffix on the first.
+X86_BUILD := build/x86_64$(if $(TEST),-test)
 
 X86_SRCS  := boot/x86_64/start.S \
              arch/x86_64/vectors.S \
@@ -1645,6 +1660,53 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/main.c \
              $(X86_BUILD)/init_bin.c
 
+ifdef TEST
+  # The same additions `SRCS` gets on the other board, and for the same
+  # reasons: the suite, the ring-3 fixture blobs only it runs, and the libc
+  # the kernel no longer links because the unit tests for it call it
+  # directly.
+  X86_SRCS += tests/tests.c \
+              user/hello-x86_64.S user/faulty-x86_64.S \
+              runtime/libc/malloc.c runtime/libc/misc.c \
+              runtime/libc/math.c runtime/libc/snprintf.c \
+              runtime/libc/strtod.c
+
+  # `-Iuser` because the blobs include `syscall.h` from there, and `-Itests`
+  # for the suite's own headers. `$(TESTDEFS)` carries `-DKOSMOS_TEST`.
+  X86_FLAGS += $(TESTDEFS) -Iuser
+
+  #
+  # The four files that need floating point, compiled with it.
+  #
+  # `CFLAGS_FP` does exactly this on the other board and for the same
+  # reason: the suite tests `snprintf("%f")` and the maths library, and the
+  # unit tests for a thing have to be able to call it. **This build has no
+  # per-object rules to hang a flag on** - it is one compile-and-link of
+  # every source - so these four become objects first and are handed to the
+  # link beside the rest.
+  #
+  # It also settles a second thing, and settles it correctly rather than by
+  # accident. `runtime/include/math.h` refuses to compile where
+  # `FLT_EVAL_METHOD` is 2, which is what x87 reports and what a build
+  # without SSE gets: every `double_t` would be a `long double`, and Kosmos
+  # has decided it will not have one. Turning SSE on for these files makes
+  # the answer 0, which is the machine actually being used - x86-64 does
+  # its arithmetic in SSE and has since it was designed.
+  #
+  X86_FP_SRCS := tests/tests.c runtime/libc/math.c \
+                 runtime/libc/snprintf.c runtime/libc/strtod.c
+  X86_FP_OBJS := $(patsubst %,$(X86_BUILD)/%.o,$(X86_FP_SRCS))
+
+  X86_SRCS := $(filter-out $(X86_FP_SRCS),$(X86_SRCS)) $(X86_FP_OBJS)
+endif
+
+# Everything the kernel is built with, minus the ban on FP.
+X86_FLAGS_FP := $(filter-out $(X86_NO_FP),$(X86_FLAGS))
+
+$(X86_BUILD)/%.c.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(X86_FLAGS_FP) -MMD -MP -c $< -o $@
+
 # The userland image, built for this architecture and turned into an array.
 # The same two steps the ARM image takes, with the arch carried through
 # `VARIANT` so the objects of the two never meet.
@@ -1681,7 +1743,12 @@ $(X86_BUILD)/init_bin.c: $(UBUILD)/init.bin tools/bin2c.py
 # It was `FULL=0` for as long as there was nothing to draw on. There is now.
 x86-build:
 	@mkdir -p $(X86_BUILD)
-	@$(MAKE) --no-print-directory ARCH=x86_64 FULL=$(FULL) $(X86_BUILD)/kosmos.bin
+	@# `TEST` is passed for the same reason `FULL` is: it moves `VARIANT`,
+	@# which moves `UBUILD`, and leaving it out builds the userland into a
+	@# directory the rule below does not name. It also carries `UTESTDEFS`
+	@# to the userland, where `main.c` grows a chunk for the suite to
+	@# dispatch to.
+	@$(MAKE) --no-print-directory ARCH=x86_64 FULL=$(FULL) TEST=$(TEST) $(X86_BUILD)/kosmos.bin
 
 # Who this is and what it was built from, for the other architecture. A
 # second rule rather than a shared one for the same reason the font has one:
@@ -1801,13 +1868,27 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# fewer checks on one machine than another is worse than one that does
 	@# not run them at all.
 	@#
-	@# Three of them on the other board, not one, and the choice is
-	@# about *what is board-specific* rather than about coverage for its
-	@# own sake. `run_x86.py` boots it; `run_headless.py` asks whether a
+	@# Five of them on the other board now, and the choice is about
+	@# *what is board-specific* rather than about coverage for its own
+	@# sake. `run_x86.py` boots it; `run_headless.py` asks whether a
 	@# machine with no display still reaches a prompt, which is the
 	@# branch every device grant carries a comment about; `run_disk.py`
 	@# and `run_network.py` are the two that go through a driver this
 	@# board finds over PCI rather than in a device-tree window.
+	@#
+	@# And `run_tests.py`, which is the one that was missing and is the
+	@# largest test asset here: 4,000 lines and the only thing that
+	@# exercises the kernel from inside it. It ran on one board for as
+	@# long as there were two, which the 0.9.0 review found and could
+	@# not fix in a line - the suite was written in AArch64 assembly in
+	@# thirty-five places, exited through ARM semihosting, and ran two
+	@# hand-written AArch64 blobs at EL0.
+	@#
+	@# 117 of it runs here against 127 there, and the ten are named
+	@# rather than skipped: six are about AArch64 itself - stepping ELR
+	@# past a faulting instruction, SPSel, the lazy-FP mechanism - and
+	@# four are the block device, which is a defect on this board with
+	@# its own comment in `tests.c`.
 	@#
 	@# `run_interchange.py` and `run_queries.py` are deliberately not
 	@# here, and this says so out loud rather than leaving a gap
@@ -1817,10 +1898,12 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# costs to check the same code twice.
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory x86-build >/dev/null && \
-	    python3 tools/run_x86.py $(X86_BUILD)/kosmos.elf && \
-	    python3 tools/run_headless.py $(X86_BUILD)/kosmos.elf && \
-	    python3 tools/run_disk.py $(X86_BUILD)/kosmos.elf && \
-	    python3 tools/run_network.py $(X86_BUILD)/kosmos.elf; \
+	    python3 tools/run_x86.py build/x86_64/kosmos.elf && \
+	    python3 tools/run_headless.py build/x86_64/kosmos.elf && \
+	    python3 tools/run_disk.py build/x86_64/kosmos.elf && \
+	    python3 tools/run_network.py build/x86_64/kosmos.elf && \
+	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
+	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
 	else \
 	    echo "SKIP: x86-64, because x86_64-elf-gcc is not installed."; \
 	fi

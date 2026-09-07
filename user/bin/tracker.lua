@@ -25,9 +25,16 @@
 -- **There is no Modified column**, and the absence is deliberate rather
 -- than unfinished. A file's `mtime` is `sys.ticks()`, the counter since
 -- this machine started, so across a reboot it means nothing at all.
--- `design.md` gives dates to `/dev/clock`, which does not exist yet.
 -- Printing the number anyway would be a column that looks like a date and
 -- is not one.
+--
+-- **What is in the way is not the clock.** `/dev/clock` exists and answers
+-- with the epoch - it was dropped when `devices` moved from Lua to C and
+-- restored when every clock in the system started saying "no clock". What
+-- is in the way is that `diskfs` stamps `sys.ticks()` rather than asking
+-- it, and a server is spawned with the capabilities it was handed: giving
+-- it a wall clock is a mount, and a decision about which servers get one,
+-- rather than a line here.
 
 local ui    = use("/lib/ui.lua")
 local files = use("/lib/files.lua")

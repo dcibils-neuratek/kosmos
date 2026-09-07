@@ -30,6 +30,17 @@ import tempfile
 import sys
 import time
 
+def machine(image):
+    """Which board this image is for, from where it was built.
+
+    The same one-line rule every other harness here uses. The alternative -
+    reading the ELF header - would be more correct and would also mean this
+    file knowing what an ELF is, for a question the build already answered
+    by putting the image somewhere.
+    """
+    return "x86_64" if "x86_64" in image else "aarch64"
+
+
 QEMU = "qemu-system-aarch64"
 
 QEMU_ARGS = [
@@ -53,6 +64,34 @@ QEMU_ARGS = [
     "-semihosting-config", "enable=on,target=native",
 ]
 
+X86_QEMU = "qemu-system-x86_64"
+
+X86_ARGS = [
+    "-M", "q35",
+    "-m", "512M",
+    "-nographic",
+    # The display, so the framebuffer tests work rather than being skipped.
+    "-vga", "none",
+    "-device", "ramfb",
+    # And a keyboard, which `input: the keyboard came up` asks about.
+    "-device", "virtio-keyboard-pci",
+    #
+    # How a failing run says so.
+    #
+    # There is no semihosting here. `tests/exit.h` has the whole argument:
+    # success is an ACPI power-off, which exits 0, and failure is this
+    # device, which exits `(value << 1) | 1` and therefore cannot express
+    # success at all. Without it on the line a failing guest halts instead
+    # of exiting, which the timeout below catches and reports as a hang.
+    #
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+]
+
+# What `isa-debug-exit` turns `tests_exit(1)` into. Written down rather than
+# left as a magic 3, because the arithmetic is the device's and not ours.
+X86_FAILED_EXIT = 3
+
+
 # A disk for the block-device tests, made fresh for every run.
 #
 # Fresh because the tests write to it: a disk carried between runs would let
@@ -62,10 +101,20 @@ QEMU_ARGS = [
 DISK_SECTORS = 2048         # 1 MB, in 512-byte sectors
 
 
-def disk_args(path):
+def disk_args(image, path):
+    """The same card under the two names its transports give it.
+
+    `virtio-blk-device` is the MMIO transport the ARM board finds in a
+    window the device tree describes; `virtio-blk-pci` is the same card
+    behind a PCI capability. A harness that hardcoded one attaches nothing
+    on the other board, and the guest reports - quite correctly - that there
+    is no disk.
+    """
+    tail = "pci" if machine(image) == "x86_64" else "device"
+
     return [
         "-drive", f"file={path},format=raw,if=none,id=testdisk",
-        "-device", "virtio-blk-device,drive=testdisk",
+        "-device", f"virtio-blk-{tail},drive=testdisk",
     ]
 
 BANNER = "Kosmos"
@@ -107,9 +156,13 @@ def run_qemu(image, timeout):
     disk.truncate(DISK_SECTORS * 512)
     disk.close()
 
+    x86 = machine(image) == "x86_64"
+    binary = X86_QEMU if x86 else QEMU
+    args = X86_ARGS if x86 else QEMU_ARGS
+
     try:
         proc = subprocess.Popen(
-            [QEMU, *QEMU_ARGS, *disk_args(disk.name), "-kernel", image],
+            [binary, *args, *disk_args(image, disk.name), "-kernel", image],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
@@ -117,7 +170,7 @@ def run_qemu(image, timeout):
         )
     except FileNotFoundError:
         os.unlink(disk.name)
-        raise Failure(f"{QEMU} not found. See docs/setup.md.")
+        raise Failure(f"{binary} not found. See docs/setup.md.")
 
     lines = []
     panicked = False
@@ -157,9 +210,24 @@ def run_qemu(image, timeout):
                     lines.append(more)
                 break
     finally:
-        if proc.poll() is None:
+        #
+        # A moment to exit on its own before it is killed.
+        #
+        # **The two boards stop differently and one of them is not
+        # instant.** ARM's semihosting `SYS_EXIT` ends QEMU there and then.
+        # x86 leaves by an ACPI power-off, and between the guest writing S5
+        # and the process being reaped there is a window in which stdout has
+        # already closed - so the loop above sees the pipe end, arrives
+        # here, finds `poll()` still None and kills a machine that was
+        # shutting down correctly. That reads as "every test passed but QEMU
+        # exited -9", which is a true sentence about a harness bug.
+        #
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
             proc.kill()
-        proc.wait()
+            proc.wait()
+
         os.unlink(disk.name)
 
     output = "".join(lines)

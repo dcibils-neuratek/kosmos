@@ -156,6 +156,18 @@ Compiled with `-DKOSMOS_TEST` so they take no space in the normal image.
 
 **The special case that has to be solved:** several kernel tests verify that something *fails* correctly (a page fault, an invalid access, a destroyed endpoint). That needs an exception handler that knows "this exception was expected, record it and continue" instead of dying. It is a flag in the handler plus a `setjmp`, and it has to be anticipated when the vector is written at M1.
 
+**And "continue" means something different on each architecture, which is what it cost to run this suite on a second board.** AArch64's handler steps ELR past the faulting instruction — exact arithmetic, every A64 instruction being four bytes. **On x86-64 there is no such number:** an instruction is one to fifteen bytes and its length cannot be known without decoding it, so there is no next instruction to step to and no honest way to invent one.
+
+So the recovery both boards use is the *unwind* form, which AArch64 already had for the one case stepping could not serve — a stack overflow, where resuming would fault into the guard page again. `tests/fault.h`'s `FAULT_EXPECT` is the single macro over it, and the whole conversion cost AArch64 nothing, because the mechanism was there and already tested. The two tests that are *about* stepping stay AArch64-only and say so; written through `FAULT_EXPECT` the second would have passed by unwinding around the assignment it checks, which is a test that cannot fail.
+
+**The other three things a portable kernel suite needs**, and each was found by the suite not compiling rather than by anyone predicting it:
+
+- **`tests/machine.h`** — the deliberately awkward operations no kernel header should hold: an instruction chosen to fault, a store the compiler may not reason about, a named callee-saved register held across a switch, a page-table entry's frame and permissions. Most of what a test needs was *already* behind `arch/<board>/cpu.h` — `cpu_irq_disable`, `cpu_cycles`, `cpu_interrupts_save`, and `cpu_current_el`, which already reports 1 for the kernel on both boards.
+- **`tests/exit.h`** — how the guest sets the host's exit code, and the one place the boards differ irreconcilably. AArch64 has semihosting: one instruction, an exact status. x86-64 has QEMU's `isa-debug-exit`, which exits `(value << 1) | 1` — always odd, and therefore *incapable of expressing success*. So success is an ACPI power-off, which exits 0, and only failure uses the debug port. The asymmetry is the honest shape: two different things happened and they leave by two different doors.
+- **A per-board fixture blob.** `user/hello-<arch>.S` and `user/faulty-<arch>.S` — the four processes that each do exactly one thing they are not allowed to. What is proved belongs to the microkernel; only the instruction set differs.
+
+**A literal address in a portable test is a claim about one machine.** `as: the kernel region is refused` named 0x40000000 — a kernel address on AArch64, and *exactly* `USER_VA_BASE` on x86-64. On the second board it asked the kernel to refuse the first page of user space, the kernel correctly mapped it, and the test reported a failure entirely its own.
+
 ### Lua tests (M2 onward)
 
 As soon as there is an interpreter, tests are written in Lua and the ergonomics change completely. The C self-tests freeze: the existing ones stay, new ones go in Lua.

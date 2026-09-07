@@ -375,28 +375,66 @@ that boots QEMU and inspects the picture it scans out.
 Honest list, so this document does not describe an aspiration as though it
 were a fact.
 
-- **Drivers are still in the kernel.** See §2. This is the largest gap
-  between the diagram in `design.md` and the diagram at the top of this file.
-- **The console and the window manager share one framebuffer**, so printing
-  a line scrolls a window's pixels, and the window manager cannot usefully
-  run detached because it and the shell's line editor would both be draining
-  one keyboard. Both go away when the shell is a window.
-- **A window has no view tree and no widgets.** An application draws by
-  sending a flat list of commands. The view tree, follow modes and the
-  widget set are the rest of M6.
-- **A process cannot be ended from outside.** Control-C works by asking:
-  a program that polls can be stopped and one that does not cannot -
-  `/bin/spin.lua` is the standing counterexample. `process_exit` panics if
-  it is not the running process, and a real kill has to unlink the target
-  from three IPC queues and settle what happens to whoever holds a reply
-  handle for it.
-- **There is no filesystem on a disk.** `/data` is RAM and `/bin` is compiled
-  into the image. M8.
-- **Single core.** The code is written SMP-ready - per-CPU runqueue,
-  `TPIDR_EL1`, no loose mutable globals - but nothing has ever run on a
-  second core. It is listed under M6 as "if it fits", which is the honest
-  status: with one core the bugs are deterministic, and with four they appear
-  once every thousand boots and are debugged over a serial line.
+**This section was wrong for a long time, and that is worth saying at the
+top of it.** Every bullet below used to be joined by five more that had
+quietly become false - a window with no view tree and no widgets, no
+filesystem on a disk, no way to end a process from outside, a console
+sharing the framebuffer with the window manager, and a claim that the code
+was written SMP-ready. All five were true when written. None had been true
+for months, and nothing noticed, because *code has `make test` and prose has
+nobody* - which is the same lesson the 0.9.0 review found four times over.
+
+- **Drivers are still in the kernel.** See §2. This remains the largest gap
+  between the diagram in `design.md` and the diagram at the top of this
+  file: `hal/virtio/` and `hal/qemu-virt/` link into the kernel binary, so
+  a driver bug is a kernel bug. Everything else that was going to move out
+  of the kernel has.
+
+- **Single core, and not written for more.** Nothing has ever run on a
+  second core, and the code is not ready for one: there is no per-CPU
+  struct, `TPIDR_EL1` has never appeared in `arch/` or `kernel/`, the
+  runqueue is `head[]` and `tail[]` at file scope in `sched_prio.c`,
+  `current` is one global in `thread.c`, and there is not a lock or an
+  atomic anywhere. `docs/smp.md` counts what it would actually take.
+
+  The x86-64 port paid for part of that in advance without meaning to. Two
+  pieces of state there are per-CPU rather than per-thread - the TSS
+  holding the stack a ring-3 entry lands on, and whoever owns the
+  floating-point registers - and the boundary stopped being theoretical
+  when a global holding the interrupted stack pointer turned out to be
+  per-*thread* and returned a process onto another process's stack. One
+  core was enough to prove it wrong.
+
+- **Every message blocks.** `SYS_CALL`, `SYS_RECEIVE` and `SYS_REPLY` are
+  the whole IPC surface, so a request to a server descheduls the caller
+  until the reply comes back - by construction, with no way to say
+  otherwise. Half a browser frame is an application waiting on a `commit`
+  whose handler swaps an index and records a rectangle. A non-blocking send
+  is a change to the IPC model rather than an optimisation: a syscall, a
+  fixed-size queue in the endpoint struct because there is no allocator, a
+  decision about what a full queue does, and backpressure.
+
+- **An address is four numbers.** There is no resolver, so the browser
+  reaches `188.184.67.127/` and not a name. UDP exists in the stack only as
+  far as DNS will need it, and there are no sockets, because nothing else
+  has asked for any.
+
+- **The screen is one framebuffer with no flush.** `hal_fb_init` asks the
+  firmware for a linear framebuffer and lets it choose where the pixels
+  live, which is the one operation QEMU's ramfb and the Pi's mailbox both
+  perform. virtio-gpu does not fit it - it needs an explicit flush after
+  drawing - and that is precisely what will grow the interface a
+  `hal_fb_flush`, with two implementations behind it rather than one.
+
+- **The terminal cannot be selected from.** The clipboard reaches
+  `ui.editor` and `ui.field`; the terminal draws its own scrollback through
+  `ui.view`, so it has no anchor and no cursor. The honest fix is lifting
+  that machinery out of the editor rather than writing it twice.
+
+- **`tests/tests.c` has run on one board.** 127 checks, the largest single
+  test asset here, and no x86-64 image target builds it - so the suite that
+  most directly exercises the kernel has never run on the second
+  architecture. Everything else in `make test` runs on both.
 
 ---
 
