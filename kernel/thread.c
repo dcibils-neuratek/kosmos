@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "cpu.h"
+#include "kernel.h"
 #include "thread.h"
 #include "pmm.h"
 #include "page.h"
@@ -726,9 +727,39 @@ void thread_block(void)
  * matter, `sched.key` is already there for a deadline-ordered queue and this
  * is the function to replace.
  */
-void thread_sleep_until(unsigned long deadline)
+/*
+ * How fast the counter counts, asked once.
+ *
+ * Cached rather than passed in at boot, so there is no initialisation order
+ * to get right: the first sleep asks, and every one after it is a load.
+ * `cpu_identify` is a register read on one board and a CPUID on the other,
+ * and neither belongs on a path a syscall takes.
+ *
+ * The fallback is what `sysinfo` reports when the board could not say -
+ * never zero, because the division below would be one.
+ */
+static uint64_t counter_hz(void)
 {
-    if (deadline <= hal_ticks()) {
+    static uint64_t hz;
+
+    if (hz == 0) {
+        struct cpu_info cpu;
+
+        cpu_identify(&cpu);
+        hz = cpu.counter_hz != 0 ? cpu.counter_hz : 62500000UL;
+    }
+
+    return hz;
+}
+
+uint64_t thread_deadline_in(unsigned long ticks)
+{
+    return cpu_cycles() + (uint64_t)ticks * counter_hz() / TICK_HZ;
+}
+
+void thread_sleep_until(uint64_t deadline)
+{
+    if (deadline <= cpu_cycles()) {
         return;
     }
 
@@ -739,7 +770,7 @@ void thread_sleep_until(unsigned long deadline)
 
 void thread_wake_sleepers(void)
 {
-    unsigned long now = hal_ticks();
+    uint64_t now = cpu_cycles();
     unsigned i;
 
     for (i = 0; i < THREAD_MAX; i++) {

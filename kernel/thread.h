@@ -172,9 +172,22 @@ struct thread {
      * one thread that never stops being runnable is enough to keep a core
      * at a hundred per cent for ever.
      *
-     * Checked on the timer tick, which is the only clock there is.
+     * **A counter value, not a tick count**, and the difference is the
+     * whole of what `thread_deadline_in` exists for.
+     *
+     * It was `hal_ticks()` plus a number of scheduler ticks, which is a
+     * count of interrupts *actually taken* - and `hal_ticks_missed` exists
+     * because they are not always taken. A machine under load that misses
+     * ticks runs every sleep long by however many it missed, which is a
+     * clock that stretches exactly when something is already going wrong.
+     * The counter does not stretch.
+     *
+     * Still *checked* on the timer tick, so a wakeup is still no finer than
+     * a tick today. That is what a one-shot timer fixes, and expressing the
+     * deadline in the counter is the half of it that has to come first: you
+     * cannot program a comparator with a number of interrupts.
      */
-    unsigned long     wake_at;
+    uint64_t          wake_at;
 
     /*
      * IPC state.
@@ -284,11 +297,31 @@ bool thread_any_ready(void);
 void thread_block(void);
 
 /*
- * Blocks until `deadline` (a value of hal_ticks) or until something else
+ * Blocks until `deadline` (a counter value, from `thread_deadline_in`) or
+ * until something else
  * wakes this thread, whichever comes first. A deadline already past
  * returns at once.
  */
-void thread_sleep_until(unsigned long deadline);
+void thread_sleep_until(uint64_t deadline);
+
+/*
+ * A deadline, `ticks` scheduler ticks from now, as a counter value.
+ *
+ * **The one place the two clocks meet.** Every syscall that takes a timeout
+ * takes it in scheduler ticks - `TICK_HZ` of them a second, which is what
+ * `sys.sleep` and `fs.wait_input` have always counted in - and every
+ * deadline inside the kernel is now a counter value. This converts, once,
+ * and nothing else in the kernel does the arithmetic.
+ *
+ * That is the shape the two units bugs argue for. `wmproto.lua` has the
+ * first: a field meaning scheduler ticks in eight call sites and counter
+ * ticks in the one that read them, a factor of a quarter of a million, and
+ * every animating window asking to be woken in sixteen nanoseconds.
+ * `netproto.h` has the second, in a different subsystem, after the first
+ * was fixed. Three call sites converting correctly and a fourth forgetting
+ * is not a thing a convention prevents; one function is.
+ */
+uint64_t thread_deadline_in(unsigned long ticks);
 
 /* Wakes every sleeper whose deadline has arrived. Called from the tick. */
 void thread_wake_sleepers(void);

@@ -3593,10 +3593,19 @@ static void starve_sleeper(void *arg)
 {
     (void)arg;
 
-    /* The shape of a compositor's loop: wake, do almost nothing, sleep
-     * again for the rest of the tick. */
+    /*
+     * The shape of a compositor's loop: wake, do almost nothing, sleep
+     * again for the rest of the tick.
+     *
+     * `thread_deadline_in`, not `hal_ticks() + 1`. Deadlines are counter
+     * values now - `thread.h` says why - and a tick count is a number so
+     * small that it is always in the past, so this thread stopped sleeping
+     * and became a spinner at DISPLAY priority. It starved the NORMAL
+     * thread it was supposed to be sharing with, which is precisely what
+     * this test exists to notice, and it noticed.
+     */
     while (!starve_stop) {
-        thread_sleep_until(hal_ticks() + 1);
+        thread_sleep_until(thread_deadline_in(1));
     }
 
     thread_exit();

@@ -729,7 +729,10 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
     self->ipc.status = IPC_NO_MESSAGE;
 
     if (timeout != 0) {
-        self->wake_at = hal_ticks() + timeout;
+        /* Scheduler ticks in, a counter deadline out - `thread.h` says why
+         * the kernel keeps deadlines in the clock that does not stretch
+         * when a tick is missed. */
+        self->wake_at = thread_deadline_in(timeout);
     }
 
     queue_push(&ep->receivers, self);

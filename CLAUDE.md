@@ -209,6 +209,34 @@ looking at the same bytes. So the discipline that comes with it is
 writes, one side only reads, nobody takes a lock, and the indices are the
 only thing both touch. Anything that wants more than that wants a message.
 
+**Two clocks, and which one a number is belongs in its name.** The counter
+(`sys.ticks()`, CNTPCT_EL0 / the TSC) is for *measuring* - how long
+something took. Scheduler ticks, at `TICK_HZ`, are for *waiting* - every
+timeout in the system. They differ by a quarter of a million on one board,
+by ninety-six thousand on the same board run natively, and by four million
+on the other, so **there is no ratio to keep in your head**.
+
+Inside a function this is safe, and the reason is visible: every correct
+piece of counter arithmetic here reads `counter_hz` from `/dev/cpu` three
+lines above the sum. **A number mailed to another process arrives naked**,
+and that is where it has gone wrong twice - the window manager's `wait` in
+0.9.1, `NET_OP_RESOLVE`'s `ticks` in 0.9.6, the second one *after* the
+first was fixed and in a field that predated the fix. Both were silent: too
+large is no timeout at all and looks perfect, too small looks like the
+network is broken.
+
+So a field that crosses a boundary is `wait_ticks`, never `ticks`, and the
+conversion lives in exactly one function per side of it - `thread_deadline_in`
+in the kernel, `in_counter` in the network stack. `architecture.md` §5 has
+the whole account, including where this is going: one clock, a one-shot
+timer, and nanoseconds at the boundary, at which point the rule stops
+needing to exist.
+
+**And the cheaper half of the lesson: an operation with one caller is
+untested.** Both bugs survived because the single caller and the single
+reader agreed on something wrong, so nothing could contradict either. `host`
+is thirty lines and found one of them the afternoon it was written.
+
 **MMIO only through `mmio_read32` / `mmio_write32`.** They carry the barriers inside. No loose `volatile`.
 
 **No precompiled Lua bytecode.** Source only. The bytecode loader verifies nothing and gives arbitrary execution.

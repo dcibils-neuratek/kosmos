@@ -1012,18 +1012,26 @@ void syscall_dispatch(struct syscall_frame *sc)
             /*
              * **Timer ticks, not counter ticks.**
              *
-             * There are two clocks here and they differ by a factor of six
-             * hundred thousand. `SYS_TICKS` hands out the physical counter,
-             * which runs at CNTFRQ_EL0 - 62.5 MHz on this machine - and is
-             * what every program uses for measuring. `hal_ticks` counts
-             * scheduler ticks, at TICK_HZ, and is the only clock a sleep can
-             * be against because it is the only one that interrupts.
+             * The argument is in **scheduler ticks**, at TICK_HZ, which is
+             * what every timeout in this system has always been counted in
+             * and what `sys.sleep` and `fs.wait_input` mean by a tick.
              *
-             * Passing one where the other was meant asks for a sleep of
-             * ten thousand seconds and looks exactly like a hang. It was
-             * written that way first.
+             * `thread_deadline_in` turns it into a counter deadline, and it
+             * is the only place in the kernel that knows both clocks.
+             * Deadlines used to be `hal_ticks()` plus this number, which
+             * had two faults: `hal_ticks` counts interrupts *taken*, so a
+             * machine that misses one runs every sleep long by exactly the
+             * amount it was already struggling; and a count of interrupts
+             * cannot be handed to a comparator, which is what a one-shot
+             * timer needs.
+             *
+             * Passing the counter where scheduler ticks were meant still
+             * asks for a sleep of ten thousand seconds and still looks
+             * exactly like a hang. It was written that way first, and the
+             * cap under SYS_SLEEP below is what stops it being permanent.
              */
-            thread_sleep_until(hal_ticks() + (unsigned long)sc->arg[0]);
+            thread_sleep_until(
+                thread_deadline_in((unsigned long)sc->arg[0]));
             result = 0;
         }
         break;
@@ -1052,7 +1060,7 @@ void syscall_dispatch(struct syscall_frame *sc)
                 ticks = (unsigned long)TICK_HZ * 3600UL;
             }
 
-            thread_sleep_until(hal_ticks() + ticks);
+            thread_sleep_until(thread_deadline_in(ticks));
         }
 
         result = 0;

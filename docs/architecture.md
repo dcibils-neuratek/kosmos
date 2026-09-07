@@ -346,7 +346,139 @@ rather than accommodated, and it is the deliberate price of the rest.
 
 ---
 
-## 5. What this buys, concretely
+## 5. Time: three clocks, and which one a number means
+
+**This is here because getting it wrong has cost this system two working
+subsystems in two days** - the window manager on 6 September and the
+resolver on the 7th, in unrelated code, the second one *after* the first
+was found and fixed. Both times the bug was invisible in the same way: a
+number crossed a process boundary and its unit did not cross with it.
+
+### The three
+
+| | what it is | the question it answers | who uses it |
+|---|---|---|---|
+| **the wall clock** | `/dev/clock`, from the board's RTC, in seconds since 1970 | *"What is the date?"* | 4 files |
+| **the counter** | `sys.ticks()` / `kosmos_ticks()` - CNTPCT_EL0 on ARM, the TSC on x86 | *"How long did that take?"* | ~114 sites |
+| **the scheduler tick** | a count of timer interrupts, at `TICK_HZ` = 250 | *"Wake me later"* | every timeout |
+
+The first is a capability and is barely used: the Deskbar's clock, Tracker,
+`machine`, and `clock.lua`. It is not a duration and nothing measures with
+it. `design.md` §4.4 says why a date is a capability rather than a syscall.
+
+The other two are what get confused, because **both are called "ticks" and
+both are plain integers**.
+
+### Why there are two of them at all
+
+They need different hardware, and that is the whole reason:
+
+- **Reading the time must be cheap** - one instruction, no interrupt, no
+  lock. A free-running counter does that. `mrs cntpct_el0` and `rdtsc` are
+  the same idea on both boards.
+- **Being woken later requires an interrupt to happen.** A counter does not
+  interrupt. Something has to be programmed to fire.
+
+So two *mechanisms* are genuinely necessary. **Two *units* are not**, and
+having them is an inheritance from hardware that could only be told
+"interrupt me every N" rather than "interrupt me at time T". Unix called
+its version `jiffies`; Linux carried the same split until hrtimers and
+NO_HZ removed it. Both this kernel's timers can already be given an
+absolute deadline. `hal/qemu-virt/timer.c` already writes `CNTP_CVAL_EL0`,
+which *is* a comparator, and then adds an interval to it on every tick to
+fake periodicity - so the one-shot mechanism is not merely available, it is
+what is already running.
+
+### The rates, and why you cannot memorise the ratio
+
+```
+                        counter        scheduler tick     ratio
+QEMU virt, TCG          62.5 MHz       250 Hz             250,000
+QEMU virt, hvf          24 MHz         250 Hz              96,000
+QEMU q35, x86-64        ~1 GHz         250 Hz           ~4,000,000
+```
+
+**The same board gives two different answers** depending on whether it is
+run under `make qemu` or `make fast`. There is no constant to keep in your
+head, which is why every correct piece of counter arithmetic in this tree
+reads `counter_hz` from `/dev/cpu` three lines above the sum - where the
+unit is visible - and why the two that were wrong were the two that did
+not.
+
+### The rule
+
+> **Every timeout is scheduler ticks. Every timestamp and every measured
+> duration is the counter. A number that crosses a process boundary says
+> which in its name.**
+
+`sys.sleep(n)`, `fs.wait_input(n)`, `sys.receive(..., n)` and every server
+protocol's `wait_ticks` are scheduler ticks. `sys.ticks()`, a ping's round
+trip, a frame time and a benchmark are the counter.
+
+### Where the two meet, which is now two functions
+
+**In the kernel: `thread_deadline_in`.** Every deadline a thread carries -
+`wake_at` - is a *counter* value, and this is the only place that turns a
+caller's scheduler ticks into one. `SYS_SLEEP`, `SYS_WAIT_INPUT` and a
+receive with a timeout all go through it.
+
+They used to say `hal_ticks() + n` instead, which was wrong in two ways.
+`hal_ticks` counts interrupts **actually taken**, and `hal_ticks_missed`
+exists precisely because they are not always taken - so a machine under
+load ran every sleep long by however many it had missed, which is a clock
+that stretches exactly when something is already going wrong. And a count
+of interrupts cannot be handed to a comparator, so the periodic tick could
+never have been removed while deadlines were expressed in it.
+
+**In the network stack: `in_counter` in `user/servers/net.c`**, for the
+same reason and with the same shape.
+
+### What went wrong, twice
+
+**The window manager, 0.9.1.** A poll carried a field called `wait`.
+Eight call sites wrote `wait = 1` meaning one scheduler tick; the window
+manager added it to `sys.ticks()`. Every animating window asked to be woken
+in sixteen nanoseconds - which is to say immediately - so the cube ran
+*faster while the mouse was moving*, because pointer events cut the
+manager's sleep short and it passed more often. Fixed by naming the field
+`wait_ticks` and building the message in one place.
+
+**The resolver, 0.9.6.** `struct net_request` had one `ticks` field and
+four operations read it. Three converted; `NET_OP_RESOLVE` added it to the
+counter raw. A five-second lookup became twenty microseconds, so **the
+resolver answered whichever query beat the next sweep and timed out the
+rest** - it had never worked twice in one boot. Its only caller was the
+browser, which passed `counter_hz`, wrong in the same direction by the same
+factor, so the pair was self-consistent and nothing could contradict it.
+Writing `host` - thirty lines, a second caller - broke it immediately.
+
+**Two lessons, and the second is the cheaper one.** A convention is not a
+defence: the second bug happened after the first was fixed, in a field that
+predated the fix. And **an operation with one caller is untested no matter
+what the suite says**, because the caller and the reader can agree on
+something wrong.
+
+### Where this is going
+
+Step one is done and is what this section describes: deadlines are counter
+values, and there is one conversion.
+
+What follows removes the second unit rather than managing it. A one-shot
+timer programmed to the next deadline - which both boards' hardware
+supports, and which x86 wants the LAPIC timer for anyway, because the 8254
+PIT is one device and SMP needs a per-CPU one. Then the boundary unit
+becomes **nanoseconds**, converted once inside the kernel where
+`counter_hz` is authoritative, and userland stops needing to know the rate
+at all.
+
+Two things fall out of it. Wakeups stop being quantised to 4 ms - which
+matters for a system whose first commitment is *bounded* latency, and which
+runs audio on a 5.8 ms period. And an idle machine stops taking 250
+interrupts a second to discover it has nothing to do.
+
+---
+
+## 6. What this buys, concretely
 
 **A driver bug is a dead process, not a dead machine.** When `/bin` died
 during development - it tried to reply with a message larger than 2,048 bytes
@@ -370,7 +502,7 @@ that boots QEMU and inspects the picture it scans out.
 
 ---
 
-## 6. What is not built yet
+## 7. What is not built yet
 
 Honest list, so this document does not describe an aspiration as though it
 were a fact.

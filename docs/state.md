@@ -8,6 +8,47 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### One clock in the kernel, and a section that says how time works
+
+**Step one of three**, and the point of it is that the kernel now has one
+time base. `architecture.md` §5 is the whole account - three clocks, what
+each answers, why two of them exist, the rates and why the ratio is not
+memorable, where the two meet, what went wrong twice, and where this is
+going. `CLAUDE.md` carries the rule as a principle.
+
+**What changed is five sites.** Every deadline a thread holds - `wake_at` -
+is a *counter* value now rather than a count of scheduler ticks, and
+`thread_deadline_in` is the only place in the kernel that converts. It is
+reached from `SYS_SLEEP`, `SYS_WAIT_INPUT` and a receive with a timeout,
+and from nowhere else.
+
+**Two things were wrong with `hal_ticks() + n`, and only one of them is
+about units.**
+
+`hal_ticks` counts interrupts **actually taken**, and `hal_ticks_missed`
+exists in the HAL because they are not always taken. So a machine under
+load ran every sleep long by however many ticks it had missed - a clock
+that stretches exactly when something is already going wrong, which is the
+worst possible moment for a timeout to grow.
+
+And a count of interrupts cannot be handed to a comparator. The periodic
+tick could never have been removed while deadlines were expressed in it,
+which is why this had to come first.
+
+**What did *not* change: the granularity.** A wakeup is still checked on the
+timer tick, so it is still no finer than 4 ms. That is step three's, and it
+needs step two - the LAPIC timer on x86, which SMP wants anyway because the
+8254 PIT is one device for the whole machine.
+
+**The test caught the one caller I missed**, which is worth recording
+because it is the case the suite exists for. `starve_sleeper` in
+`tests.c` slept with `thread_sleep_until(hal_ticks() + 1)` - a tick count,
+now read as a counter value, so a number always in the past. The sleeper
+stopped sleeping and became a spinner at DISPLAY priority, starving the
+NORMAL thread it was meant to be sharing with. `sched: NORMAL runs while
+DISPLAY sleeps` is exactly the test for that and it failed on the first
+run.
+
 ### DNS was built, had one caller, and had never worked twice in a boot
 
 **The task was "write a resolver" and the resolver was already there.**
