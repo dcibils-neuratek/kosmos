@@ -14,8 +14,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "hal.h"
 #include "pci.h"
 #include "pc.h"
+#include "syscall.h"
+#include "virtio.h"
 
 #define PCI_CONFIG_ADDR     0xCF8
 #define PCI_CONFIG_DATA     0xCFC
@@ -216,4 +219,99 @@ void pci_enable(const struct pci_device *dev)
     command &= ~(uint32_t)COMMAND_IO;
 
     pci_config_write(dev->bus, dev->slot, dev->function, PCI_COMMAND, command);
+}
+
+/*
+ * Whether one of this system's drivers took this device.
+ *
+ * Only virtio is ever claimed here, so the question reduces to: is this a
+ * virtio device, of which type, and did that driver come up? The type is
+ * not simply the device id - a *transitional* device answers in the legacy
+ * range and puts its type in the subsystem id instead, which is the same
+ * trap `is_kind` in `virtio.c` documents and the reason `virtio-net-pci`
+ * was invisible until it was handled.
+ *
+ * Everything else on a q35 - the host bridge, the ISA bridge, the SATA
+ * controller QEMU puts there whether or not a disk is attached - is
+ * genuinely undriven, and saying so is the point of this file's new
+ * function.
+ */
+static uint8_t claimed_here(uint8_t slot, uint8_t fn, uint32_t id)
+{
+    uint16_t vendor = (uint16_t)(id & 0xFFFF);
+    uint16_t device = (uint16_t)((id >> 16) & 0xFFFF);
+    uint32_t type;
+
+    if (vendor != 0x1AF4) {
+        return 0;                       /* not virtio; nothing here drives it */
+    }
+
+    if (device >= 0x1040) {
+        type = device - 0x1040u;
+    } else {
+        type = (pci_config_read(0, slot, fn, 0x2C) >> 16) & 0xFFFF;
+    }
+
+    switch (type) {
+    case 1:  return hal_net_present()      ? 1u : 0u;   /* virtio-net */
+    case 2:  return hal_blk_present()      ? 1u : 0u;   /* virtio-blk */
+    case 18: return keyboard_present()     ? 1u : 0u;   /* virtio-input */
+    case 25: return hal_snd_present()      ? 1u : 0u;   /* virtio-sound */
+    default: return 0;
+    }
+}
+
+/*
+ * Everything on the bus, and whether we drive it.
+ *
+ * `pci_find` answers "is there one of these", which is what a driver wants
+ * and cannot answer the question a person asks: a slot holding a device
+ * nothing claims is invisible to it. This walks the whole of bus 0 instead
+ * and reports what is there either way.
+ *
+ * Bus 0 only, and function 0 of each slot unless the device says it is
+ * multi-function. That is every device QEMU's q35 puts in front of us, and
+ * a machine with a bridge to walk behind would need the recursion this
+ * deliberately does not have - there is no such machine here yet, and
+ * `hal.md` says not to write the interface before the second caller.
+ */
+unsigned hal_bus_scan(struct bus_device *out, unsigned max)
+{
+    unsigned n = 0;
+    uint8_t slot;
+
+    for (slot = 0; slot < 32 && n < max; slot++) {
+        uint8_t fn, functions = 1;
+
+        for (fn = 0; fn < functions && n < max; fn++) {
+            uint32_t id = pci_config_read(0, slot, fn, 0x00);
+            uint32_t cls;
+
+            if ((id & 0xFFFF) == 0xFFFF) {
+                continue;                       /* nothing in this function */
+            }
+
+            /* Header type bit 7: this slot has more than one function, so
+             * the other seven are worth reading. Asked once, on function 0,
+             * because that is the only one required to answer. */
+            if (fn == 0) {
+                uint32_t hdr = pci_config_read(0, slot, 0, 0x0C);
+
+                if (((hdr >> 16) & 0x80) != 0) {
+                    functions = 8;
+                }
+            }
+
+            cls = pci_config_read(0, slot, fn, 0x08);
+
+            out[n].id       = ((id & 0xFFFF) << 16) | ((id >> 16) & 0xFFFF);
+            out[n].class    = cls >> 8;         /* class/subclass/prog-if */
+            out[n].where    = (uint16_t)((slot << 3) | fn);
+            out[n].claimed  = claimed_here(slot, fn, id);
+            out[n].reserved = 0;
+            n++;
+        }
+    }
+
+    return n;
 }

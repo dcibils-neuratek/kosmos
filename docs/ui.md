@@ -374,6 +374,97 @@ every widget in it changed.
 
 ---
 
+## 16.11 The clipboard, and a machine with no modifier keys
+
+**One buffer, held by the window manager.** A clipboard is state shared
+between programs that are not allowed to reach each other, which is exactly
+the shape of the screen and of the console, and it gets the same answer: the
+one process both of them already talk to holds it, and everybody asks. There
+is no global name and no shared page. An application that was never handed
+`/app/wm` has no clipboard, which is the correct answer rather than a
+missing feature.
+
+`wmproto.copy(text)` and `wmproto.paste()` are the whole client side, and
+they are in `wmproto` for the reason `poll` is: it is the one module that
+knows the shape of a message to the window manager, and a second place that
+built one by hand is what cost a factor of a quarter of a million in 0.9.1.
+
+### What the keys had to work around
+
+**There are no modifier keys on this machine.** A virtio keyboard gives
+Control plus a letter and nothing else - no Alt, no Super - and keys reach
+an application as a byte stream, so shift-plus-arrow arrives as the same
+four bytes as an arrow. Two consequences, and both of them shaped the
+design:
+
+**Control-C is not available.** In this system it is the key that stops a
+program, and nine checks in `run_screenshot.py` use it to get the screen
+back from the desktop, from `plasma`, from `cube3d` and from a terminal
+window. So the CUA triple cannot be had.
+
+The alternative was to invent a triple out of whatever control codes are
+unclaimed, and every candidate carries somebody's prior - `^Y` is paste to
+half the world and copy to nobody. So they went behind the prefix that
+already exists precisely because this machine has no Meta key:
+
+```
+Control-W a    select everything in the focused control
+Control-W c    copy
+Control-W x    cut
+Control-W v    paste
+```
+
+Behind a prefix the letters can be the ones everyone already knows, which
+is the entire point of having a prefix. §16.6's argument for one reserved
+key rather than five reserved ones is the same argument, and this is the
+first thing to be added under it since the window-moving arrows.
+
+**A selection is made with the pointer, not with shift.** `ui.editor` holds
+an *anchor* and a *cursor* and nothing else: the press sets the anchor, the
+drag moves the cursor, and any key that moves the cursor on its own drops
+the anchor. That is why a click deselects without anything having to say
+so, and it is the whole model - there is no separate selecting flag and no
+state where a selection exists with the caret somewhere else.
+
+`ui.field` gets select-all and not a dragged range, and that is a decision
+rather than an unfinished job. A single line of text has one selection
+anybody actually makes - all of it, to replace it - and the machinery a
+range needs would be spent to let somebody drag over half a URL.
+
+### What crosses, and what does not
+
+**The window manager is told the intent, not the text.** The prefix posts
+`{type = "copy"}` to the focused window; the window hands it to the focused
+widget; the widget decides what its selection is and sends the bytes back
+as a `clip_put`. So the window manager holds a string it never looked
+inside, which is the same division it already keeps with pixels, and a
+widget never has to know which keys a board happens to have.
+
+### The cap, and why it is visible
+
+A message is `MSG_BYTES`, which is 2048, and the text travels inside a
+serialised table - so a copy larger than about nineteen hundred bytes
+cannot cross in one piece. §7.4's rule in `design.md` says a *stream*
+belongs in shared memory and a one-shot payload is fine as a message; a
+copy is one-shot, so a message is the right shape and the cap is the honest
+edge of it.
+
+**The cap is enforced in `wmproto`, on the way out, and that is not a
+detail.** A table too big to serialise makes `fs.send` *raise* in the
+caller: capping in the server would be too late by one process, and an
+application that copied a long report would die where it stood. The window
+manager keeps a bound of its own anyway, because a server does not get to
+assume its callers are the library.
+
+**And the truncation is shown rather than mentioned.** When more was
+selected than fits, `ui.editor` moves the highlight back to exactly the run
+that left. A selection is already a picture of a range of text, so
+shrinking it makes the limit something you can see, in the one place you
+were already looking - where a dialog saying "1900 of 4212 bytes" would be
+the same fact, later, and in the way.
+
+---
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

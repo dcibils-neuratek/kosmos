@@ -8,6 +8,86 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### A clipboard, and what a machine with no modifier keys does about it
+
+**Text selected in one application and pasted into another**, which is the
+first thing in this system that two programs have shared other than a file.
+Three pieces, and the shape of each was decided by a constraint rather than
+by taste.
+
+**The window manager holds the buffer.** A clipboard is state shared
+between programs that are not allowed to reach each other - the same shape
+as the screen and the console - so it gets the same answer: the one process
+both of them already talk to holds it, and everybody asks. No global name,
+no shared page, and an application that was never handed `/app/wm` has no
+clipboard, which is the correct answer rather than a missing feature.
+
+**The keys had to go behind the prefix, and Control-C is why.** There are
+no modifier keys here: a virtio keyboard gives Control plus a letter and
+nothing else, and Control-C is already what stops a program - nine checks
+in `run_screenshot.py` use it to get the screen back from the desktop, from
+`plasma`, from `cube3d` and from a terminal. So the CUA triple was not
+available, and the alternative was inventing one out of whatever control
+codes are unclaimed, where every candidate carries somebody's prior: `^Y`
+is paste to half the world and copy to nobody.
+
+`Control-W a c x v` instead, under the prefix that exists precisely because
+this machine has no Meta key. Behind a prefix the letters can be the ones
+everybody already knows, which is the whole point of having one - and it is
+the first thing added under it since the window-moving arrows.
+
+**What crosses is the intent, not the text.** The prefix posts
+`{type = "copy"}` to the focused window; `window:dispatch_edit` hands it to
+the focused widget; the widget decides what its selection is and sends the
+bytes back as a `clip_put`. The window manager ends up holding a string it
+never looked inside, which is the same division it already keeps with
+pixels, and no widget has to know which keys a board happens to have.
+
+**Selection is an anchor and a cursor, because shift is not readable.**
+Keys arrive as a byte stream with the arrows decoded out of `ESC [ A`-`D`,
+so shift-plus-arrow is the same four bytes as an arrow. `ui.editor` holds
+the two carets and nothing else: the press sets the anchor, the drag moves
+the cursor, and any key that moves the cursor on its own drops the anchor -
+which is why a click deselects without anything having to say so.
+`ui.field` gets select-all and no dragged range, deliberately: one line of
+text has one selection anybody actually makes.
+
+**The cap had to be enforced in the caller, and that was the one real
+bug in the design.** A clipboard entry travels inside a message, `MSG_BYTES`
+is 2048, and a table too big to serialise makes `fs.send` *raise* - so
+capping in the server would have been too late by one process, and an
+application that copied a four-kilobyte report would have died where it
+stood. `wmproto.copy` cuts at 1900 before sending. The window manager keeps
+a bound of its own anyway, because a server does not get to assume its
+callers are the library.
+
+**And the truncation is shown rather than mentioned**, which is the part
+worth keeping. When more was selected than fits, `ui.editor` moves the
+highlight back to exactly the run that left. A selection is already a
+picture of a range of text, so shrinking it makes the limit something you
+can see, in the one place you were already looking - where a dialog saying
+"1900 of 4212 bytes" would be the same fact, later, and in the way. The
+display harness checks it by measuring that the highlighted area gets
+*smaller* when you copy, which is a thing that cannot pass by accident.
+
+**65 display checks now, on both boards**, the three new ones being the
+drag, the paste into another application, and the cap.
+
+**What it does not reach yet, and it is the obvious one: the terminal.**
+That is where people most want to copy from, and it draws its own
+scrollback through `ui.view` rather than through `ui.editor` - so it has no
+anchor and no cursor and `Control-W c` does nothing in it. Answering copy
+with "all of the scrollback" would be ten lines and would be a lie about
+what copy means, since nothing would be highlighted. The honest fix is to
+lift the selection machinery out of `ui.editor` so both can hold it, and
+that is a refactor rather than a line.
+
+**`This Machine` is the first thing that needed it.** The report it prints
+is text whose one job after being read is being sent to somebody else, so
+it is a read-only `ui.editor` rather than a widget: drag over it, or
+`Control-W a`, and `Control-W c` takes it away. A read-only editor answers
+copy and select-all and refuses the keys that would change what it says.
+
 ### The review before 0.9: four passes, and what prose costs
 
 **Twenty-five commits of a second architecture, reviewed as `CLAUDE.md`

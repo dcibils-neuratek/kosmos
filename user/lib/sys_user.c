@@ -2237,6 +2237,53 @@ static int l_pointer(lua_State *L)
     return 1;
 }
 
+/*
+ * What the board found on its bus, and which of it has a driver.
+ *
+ * A list rather than a count, because the interesting row is the one with
+ * `claimed` false: a device that is physically there and that nothing in
+ * this system drives. Every other device question here answers presence,
+ * and presence alone reads a machine with an unclaimed card exactly like a
+ * machine with no card - which is how `machine` came to print "no card"
+ * beside a boot log that had found one.
+ *
+ * The numbers go out as the bus reported them and this function decodes
+ * none of them, which is `cpu_raw`'s division applied to a different set:
+ * turning 0x1af4:0x1041 into "virtio-net" is a table, and a table belongs
+ * where somebody can read it.
+ */
+static int l_bus(lua_State *L)
+{
+    struct sysinfo info;
+    unsigned i;
+
+    if (kosmos_sysinfo(&info) != 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, (int)info.bus_count, 0);
+
+    for (i = 0; i < info.bus_count && i < BUS_DEVICES_MAX; i++) {
+        lua_createtable(L, 0, 5);
+
+        lua_pushinteger(L, (lua_Integer)(info.bus[i].id >> 16));
+        lua_setfield(L, -2, "vendor");
+        lua_pushinteger(L, (lua_Integer)(info.bus[i].id & 0xFFFF));
+        lua_setfield(L, -2, "device");
+        lua_pushinteger(L, (lua_Integer)info.bus[i].class);
+        lua_setfield(L, -2, "class");
+        lua_pushinteger(L, (lua_Integer)info.bus[i].where);
+        lua_setfield(L, -2, "where");
+        lua_pushboolean(L, info.bus[i].claimed != 0);
+        lua_setfield(L, -2, "claimed");
+
+        lua_rawseti(L, -2, (lua_Integer)(i + 1));
+    }
+
+    return 1;
+}
+
 static int l_programs(lua_State *L)
 {
     lua_pushstring(L, programs_lua);
@@ -2339,6 +2386,7 @@ static const luaL_Reg sys_functions[] = {
     { "name",     l_setname },
     { "processes", l_processes },
     { "pointer",  l_pointer },
+    { "bus",      l_bus },
     { "asset",    l_asset },
     { "memory",      l_memory },
     { "memory_map",  l_memory_map },

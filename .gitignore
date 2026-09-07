@@ -12,3 +12,12 @@ build/
 
 tools/__pycache__/
 build/kosmos.img
+
+# The disk `run-kosmos.sh` makes beside whatever image it was given.
+#
+# That is right for a released binary - a downloader gets a disk without
+# being told to make one - and wrong here, because running it against an
+# ELF at the repository root leaves a 64 MB file in the working tree that
+# `git add -A` will happily commit. Which is exactly what happened in
+# 6157897, and GitHub said so on the next two pushes.
+/kosmos.img

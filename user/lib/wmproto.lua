@@ -60,4 +60,55 @@ function wmproto.poll(handle, wait_ticks)
   })
 end
 
+--
+-- The clipboard.
+--
+-- **One buffer, held by the window manager**, for the reason it holds the
+-- screen: a clipboard is shared between programs that cannot reach each
+-- other, so it belongs to the one process both of them already talk to.
+-- No global name and no shared page - an application that was not given
+-- `/app/wm` has no clipboard, which is the right answer rather than a
+-- missing feature.
+--
+-- **The cap is enforced here, on the way out, and that is not a detail.**
+-- The text travels inside a message and `MSG_BYTES` is 2048, so a copy
+-- larger than that does not arrive truncated - `fs.send` *raises*, and an
+-- application that copied a long report dies where it stood. Capping in
+-- the server would be too late by one process.
+--
+-- 1900 leaves room for the rest of the message. A table with two string
+-- fields costs a tag and a length for each of the four items plus one
+-- byte to open it and one to close, which is about thirty-five - so this
+-- is comfortable rather than exact, and being exact would mean tying a
+-- protocol constant to the serialiser's encoding.
+--
+-- `copy` returns how many bytes were actually taken, and how many were
+-- not. Both, because a clipboard that silently holds half of what you
+-- copied is worse than one that says so, and only the caller knows how to
+-- say it: `ui.editor` shrinks the highlight to what fits, which is the
+-- screen telling the truth without a word of prose.
+--
+wmproto.CLIP_MAX = 1900
+
+function wmproto.copy(text)
+  text = tostring(text or "")
+
+  local taken = text:sub(1, wmproto.CLIP_MAX)
+  local r = fs.send(wmproto.WM, { type = "clip_put", text = taken })
+
+  if not r or not r.ok then return nil end
+
+  return r.bytes, #text - #taken
+end
+
+--
+-- What was last copied, or "" when nothing has been. Never nil on success,
+-- so a caller can paste it without testing.
+--
+function wmproto.paste()
+  local r = fs.send(wmproto.WM, { type = "clip_get" })
+  if not r or not r.ok then return nil end
+  return r.text or ""
+end
+
 return wmproto

@@ -12,6 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "hal.h"
+#include "syscall.h"
 #include "qemu-virt.h"
 #include "virtio.h"
 #include "mmio.h"
@@ -200,4 +202,55 @@ void virtio_config_write8(const struct virtio_device *dev, unsigned offset,
                           uint8_t value)
 {
     mmio_write8(dev->base + REG_CONFIG + offset, value);
+}
+
+/*
+ * The thirty-two windows, and what of them is driven.
+ *
+ * The PC walks a bus; this board is handed a fixed array of virtio-mmio
+ * windows by the device tree and reads each one's magic and device id. So
+ * the same question has a different shape here and the same answer: what
+ * is there, and whether a driver took it.
+ *
+ * A window whose device id is zero is an empty slot rather than a device,
+ * and is not reported - unlike a PC, where an empty function and a device
+ * nobody drives look nothing alike. There is no class here, and no vendor
+ * either, so `id` carries the virtio type alone and `class` is zero, which
+ * `machine` reads as "this bus has no such idea".
+ */
+unsigned hal_bus_scan(struct bus_device *out, unsigned max)
+{
+    unsigned i, n = 0;
+
+    for (i = 0; i < VIRTIO_MMIO_COUNT && n < max; i++) {
+        uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)i * VIRTIO_MMIO_STRIDE;
+        uint32_t type;
+
+        if (mmio_read32(base + REG_MAGIC) != VIRTIO_MAGIC) {
+            continue;
+        }
+
+        type = mmio_read32(base + REG_DEVICE_ID);
+
+        if (type == 0) {
+            continue;                   /* an empty window, not a device */
+        }
+
+        out[n].id       = type;
+        out[n].class    = 0;
+        out[n].where    = (uint16_t)i;
+        out[n].reserved = 0;
+
+        switch (type) {
+        case VIRTIO_ID_NET:   out[n].claimed = hal_net_present()  ? 1u : 0u; break;
+        case VIRTIO_ID_BLOCK: out[n].claimed = hal_blk_present()  ? 1u : 0u; break;
+        case VIRTIO_ID_INPUT: out[n].claimed = keyboard_present() ? 1u : 0u; break;
+        case VIRTIO_ID_SOUND: out[n].claimed = hal_snd_present()  ? 1u : 0u; break;
+        default:              out[n].claimed = 0; break;
+        }
+
+        n++;
+    }
+
+    return n;
 }

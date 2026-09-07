@@ -50,6 +50,11 @@ twenty-eight pixels and a paragraph at sixteen.
 stacking; a widget kit; themes; the Deskbar; Tracker; a terminal; and
 replicants — a view published by one process and adopted by another.
 
+**A clipboard**, held by the window manager because it is the one process
+every application already talks to. Drag to select, `Control-W c` to copy,
+`Control-W v` to paste — behind the prefix rather than on Control-C, which
+on this machine is what stops a program.
+
 **Networking.** virtio-net, ARP, IP, ICMP and TCP with shared rings, an
 HTTP server, a telnet client. It reaches the real internet through QEMU's
 NAT.
@@ -186,6 +191,11 @@ the Pi", and the Pi is not here yet.
   carry something other than what was written to it.
 - Seeking in the music player: the bar is drawn and cannot be dragged.
 - A markdown viewer, for manuals inside the system.
+- **Selection in the terminal**, which is where people most want to copy
+  from and is the one window the clipboard cannot reach. It draws its
+  scrollback itself through `ui.view` rather than through `ui.editor`, so
+  it has no anchor and no cursor - and the honest fix is to lift that
+  machinery out of the editor rather than to write it twice.
 
 ---
 

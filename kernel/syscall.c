@@ -529,9 +529,20 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      */
     info.has_keyboard = hal_keyboard_init() ? 1u : 0u;
 
-    /* One, and it will stay one until M7. `CLAUDE.md` has the code written
-     * SMP-ready from the start, but written ready and actually running on
-     * more than one core are different claims and this reports the second. */
+    /*
+     * What the board's bus enumeration found, driven or not.
+     *
+     * Every other device field here answers presence, and presence cannot
+     * tell a machine with no sound card from one whose card nothing claims.
+     * The board fills this; nothing in the kernel decodes an id.
+     */
+    info.bus_count = hal_bus_scan(info.bus, BUS_DEVICES_MAX);
+
+    /* One, and it will stay one until SMP. `CLAUDE.md` used to say the code
+     * was written SMP-ready from the start and that was never true of any
+     * of it - see `docs/smp.md`, which counts what is actually missing. What
+     * this field reports is cores *running*, which is the honest number
+     * either way. */
     info.cpus       = 1;
     info.tick_hz    = TICK_HZ;
     info.page_size  = PAGE_SIZE;

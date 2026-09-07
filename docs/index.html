@@ -502,6 +502,8 @@ there is.</td></tr>
 <tr><td>wm doom</td><td>Doom, once there is a WAD at
 <code>/home/doom1.wad</code>.</td></tr>
 <tr><td>wm paint</td><td>A paint program.</td></tr>
+<tr><td>wm machine</td><td>Everything the system knows about the hardware
+it is running on, as text you can select and copy.</td></tr>
 <tr><td>ping 8.8.8.8</td><td>The TCP/IP stack, reaching the real internet
 through QEMU's NAT.</td></tr>
 <tr><td>wm webserver</td><td>An HTTP server, under System in the
@@ -520,11 +522,21 @@ is a bookmark, not a promise.</p>
 x86-64 as well as AArch64, and runs the whole desktop there: window manager,
 Deskbar, Tracker, terminal, browser, network, disk and sound. All thirteen
 files in <code>kernel/</code> compile for both with no <code>#ifdef</code> in
-any of them, and the display harness passes the same sixty-two checks on each
+any of them, and the display harness passes the same sixty-five checks on each
 board in the same time. The four virtio drivers moved into a shared
 directory rather than being rewritten, with each board bringing its own
 transport underneath: fixed offsets from a device-tree window on one, a walk
-of the PCI capability list on the other.</td></tr>
+of the PCI capability list on the other.
+
+<p>Since then, within 0.9: <strong>a clipboard</strong>, so text selected in
+one application can be pasted into another — held by the window manager,
+because it is the one process both of them already talk to. There are no
+modifier keys on this machine and <code>Control-C</code> is what stops a
+program, so copy and paste live behind the window manager's prefix:
+<code>Control-W c</code> and <code>Control-W v</code>. And <strong>This
+Machine</strong>, which writes out everything the system knows about the
+hardware it is running on — every device on the bus, whether a driver
+claimed it, and an honest list of what it cannot be asked.</p></td></tr>
 
 <tr><td>0.8</td><td><strong>A web browser, and a network under it.</strong>
 NetSurf's hubbub, libdom and libcss vendored unpatched and running on a

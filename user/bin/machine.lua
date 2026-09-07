@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: section system
 -- What this machine turned out to be.
@@ -22,15 +23,7 @@
 
 local ui = use("/lib/ui.lua")
 
-local W, H = 640, 720
-
-local win, err = ui.window{ title = "This Machine", w = W, h = H,
-                            x = 100, y = 60 }
-
-if not win then
-  print("machine: " .. tostring(err))
-  return
-end
+local W, H = 700, 720
 
 --------------------------------------------------------------------------
 -- Reading the machine.
@@ -52,29 +45,65 @@ local disk   = sys.disk()
 local net    = sys.net()
 local sb     = fs.read("/home/.super")
 
-local blocks = {}
+--
+-- **Plain text, in a column, and that is the whole change.**
+--
+-- This was `ui.text` blocks: a widget that wraps prose by splitting on
+-- `%S+` and rejoining with single spaces, which reads well for a
+-- paragraph and destroys every run of padding. So the labels could not be
+-- aligned and the report was a picture of text rather than text.
+--
+-- One string of lines instead, shown in a read-only editor with its
+-- gutter off. The editor is monospace and does not reflow, so a column is
+-- a column - and the same string is what this program prints when there
+-- is no window manager to open one, which is the only way to get it off
+-- the machine as text, there being no clipboard in this system yet.
+--
+local lines = {}
+local COL = 18                          -- where every value starts
 
-local function head(text)
-  blocks[#blocks + 1] = { style = "head", text = text }
+local function out(text)
+  lines[#lines + 1] = text or ""
 end
 
--- `name: value`, which is the boot log's own shape and not a column.
---
--- Columns were the first attempt and cannot work here: `ui.text` wraps by
--- splitting on `%S+` and rejoining with single spaces, so every run of
--- padding collapses and "Model            ARM Cortex-A72" arrives as
--- "Model ARM Cortex-A72" with nothing to say where the label ended. A
--- colon needs no alignment to be unambiguous, and stage 7 of the boot
--- already writes `-> keyboard: virtio-input, ...` this way.
+local function head(text)
+  if #lines > 0 then out("") end
+  out(text)
+  out(("-"):rep(#text))
+end
+
+-- A label in its own column, which the editor keeps and `ui.text` could
+-- not. Long values wrap under the column rather than past the window.
 local function row(label, value)
-  blocks[#blocks + 1] = { style = "body",
-                          text = label .. ": " .. tostring(value) }
+  local text = tostring(value)
+  local left = ("%-" .. COL .. "s"):format(label)
+
+  if #left + #text <= 78 then
+    out(left .. text)
+    return
+  end
+
+  -- Wrapped by hand, because nothing here is going to do it and a line
+  -- that runs off the right edge is a line nobody reads.
+  local room = 78 - COL
+  local first = true
+
+  for word in text:gmatch("%S+") do
+    local cur = lines[#lines]
+
+    if first or #cur + 1 + #word > COL + room then
+      out((" "):rep(COL) .. word)
+      if first then lines[#lines] = left .. word; first = false end
+    else
+      lines[#lines] = cur .. " " .. word
+    end
+  end
 end
 
 -- Present and absent are different sentences, and a machine that has no
 -- card should say so rather than showing an empty value.
 local function absent(what, why)
-  blocks[#blocks + 1] = { style = "body", text = what .. ": " .. why }
+  row(what, why)
 end
 
 local function commas(n)
@@ -85,10 +114,9 @@ end
 
 --------------------------------------------------------------------------
 
-blocks[#blocks + 1] = { style = "title", text = b.platform or "this machine" }
-blocks[#blocks + 1] = { style = "body",
-  text = (b.kernel or "Nebula") .. " " .. (b.version or "?") ..
-         "   " .. (b.build or "?") .. "   " .. (b.date or "?") }
+out(b.platform or "this machine")
+out((b.kernel or "Nebula") .. " " .. (b.version or "?") ..
+    "   " .. (b.build or "?") .. "   " .. (b.date or "?"))
 
 --------------------------------------------------------------------------
 head("Processor")
@@ -261,16 +289,101 @@ row("Threads", (kern.threads or 0) .. " of " .. (kern.threads_max or 0))
 row("Processes", (kern.processes or 0) .. " of " .. (kern.processes_max or 0))
 row("Endpoints", (kern.endpoints or 0) .. " of " .. (kern.endpoints_max or 0))
 row("Address spaces", (kern.spaces or 0) .. " of " .. (kern.spaces_max or 0))
-blocks[#blocks + 1] = { style = "body", text =
-  "Fixed pools, because the kernel has no allocator: running out is an " ..
-  "error at a known limit rather than a failure at an unknown one." }
+out("")
+out("  Fixed pools, because the kernel has no allocator: running out")
+out("  is an error at a known limit rather than a failure at an")
+out("  unknown one.")
+
+--------------------------------------------------------------------------
+head("On the bus")
+
+--
+-- **The section that answers a question none of the others can.**
+--
+-- Every row above reports presence, and presence cannot tell a machine
+-- with no sound card from one whose card nothing drives - both simply
+-- have no Audio section. This is what the board's own enumeration found,
+-- driven or not, so a device with no driver is a line rather than a
+-- silence.
+--
+-- The names are here and not in the kernel, which decodes none of these
+-- numbers: the same division `cpu_raw` draws, and for the same reason -
+-- turning 0x1af4:0x1041 into "virtio-net" is a table, and a table that
+-- lives in a driver is a driver deciding how somebody else prints.
+--
+local VENDORS = {
+  [0x1af4] = "Red Hat / virtio",
+  [0x8086] = "Intel",
+  [0x1b36] = "Red Hat / QEMU",
+}
+
+-- PCI class codes, high byte, and only the ones a machine here can show.
+local CLASSES = {
+  [0x01] = "storage controller",
+  [0x02] = "network controller",
+  [0x03] = "display controller",
+  [0x04] = "multimedia device",
+  [0x06] = "bridge",
+  [0x09] = "input device",
+  [0x0c] = "serial bus controller",
+}
+
+-- virtio device types, for a board whose bus reports the type directly
+-- rather than a vendor and a device. `class` is zero there, which is how
+-- this tells the two shapes apart.
+local VIRTIO = {
+  [1] = "virtio-net", [2] = "virtio-blk", [3] = "virtio-console",
+  [16] = "virtio-gpu", [18] = "virtio-input", [19] = "virtio-vsock",
+  [25] = "virtio-sound",
+}
+
+local bus = sys.bus()
+
+if bus and #bus > 0 then
+  local undriven = 0
+
+  for _, d in ipairs(bus) do
+    local name, place
+
+    if d.class == 0 then
+      -- A device-tree window: the type is the whole identity.
+      name  = VIRTIO[d.device] or ("virtio type " .. d.device)
+      place = "window " .. d.where
+    else
+      local vendor = VENDORS[d.vendor] or ("vendor 0x%04x"):format(d.vendor)
+      local kind   = CLASSES[d.class >> 16] or ("class 0x%02x"):format(d.class >> 16)
+      name  = ("%s %s (0x%04x:0x%04x)"):format(vendor, kind, d.vendor, d.device)
+      place = ("%02x:%02x.%d"):format(0, d.where >> 3, d.where & 7)
+    end
+
+    if d.claimed then
+      row(place, name .. "  -  driven")
+    else
+      row(place, name .. "  -  NO DRIVER")
+      undriven = undriven + 1
+    end
+  end
+
+  out("")
+  out(("  %d device%s found, %d driven, %d without a driver."):format(
+      #bus, (#bus == 1) and "" or "s", #bus - undriven, undriven))
+
+  if undriven > 0 then
+    out("  A device with no driver is not a fault. It is hardware this")
+    out("  system has not been taught, and on a q35 most of it never will")
+    out("  be: the bridges and the SATA controller are QEMU's, not")
+    out("  something Kosmos asked for.")
+  end
+else
+  absent("Bus", "this board reports no enumerable bus")
+end
 
 --------------------------------------------------------------------------
 head("What this machine cannot be asked")
 
-blocks[#blocks + 1] = { style = "body", text =
-  "Listed rather than left out, because a blank line reads as \"there is " ..
-  "none\" when it means \"nobody asked\"." }
+out("  Listed rather than left out, because a blank line reads as")
+out("  \"there is none\" when it means \"nobody asked\".")
+out("")
 
 absent("Memory speed", "no SMBIOS reader; the firmware knows and is not asked")
 absent("Slots and DIMMs", "the same - a count of modules needs that table")
@@ -286,6 +399,45 @@ absent("Pointer", "sys.pointer answers nil both for a board with none and " ..
 
 --------------------------------------------------------------------------
 
-win:add(ui.text{ x = 12, y = 10, w = W - 40, h = H - 56, blocks = blocks })
+--------------------------------------------------------------------------
+-- Where it goes.
+--
+-- **The same string, either way.** With a window manager this opens a
+-- read-only editor over it: monospace, so the columns above survive, and
+-- scrollable, so the whole inventory is reachable. Without one it prints,
+-- which is how the text leaves this machine at a prompt with a serial line
+-- attached, or into a file from the shell.
+--
+-- One report and two ways to show it, rather than a window that says one
+-- thing and a program that says another.
+--
+-- **Read-only, and selectable, which is the pair that makes it useful.**
+-- A report of what a machine is has one job after being read, and it is
+-- being sent to somebody else. So the text is text: drag over it and it
+-- highlights, `Control-W c` puts it on the clipboard, and nothing typed at
+-- it can change what it says. `ui.editor` refuses the editing keys when
+-- `read_only` is set and answers copy and select-all regardless, so that
+-- is the whole of it here.
+--------------------------------------------------------------------------
+
+local report = table.concat(lines, "\n")
+
+local win = ui.window{ title = "This Machine", w = W, h = H, x = 100, y = 60 }
+
+if not win then
+  print(report)
+  return
+end
+
+win:add(ui.editor{ x = 8, y = 8, w = W - 32, h = H - 74,
+                   text = report, gutter = false, read_only = true })
+
+-- Said rather than left to be discovered. There are no modifier keys on
+-- this machine, so the clipboard lives behind the window manager's prefix,
+-- and a prefix nobody mentions is a feature nobody has.
+win:add(ui.label{ x = 10, y = H - 60,
+                  text = "Drag to select, or Control-W a for all."
+                         .. "   Control-W c copies it.",
+                  color = "text_dim" })
 
 win:run()

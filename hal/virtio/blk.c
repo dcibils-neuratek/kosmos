@@ -224,6 +224,14 @@ static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
     return false;
 }
 
+/* Whether this board found a disk, asked after init the way the network
+ * and the sound device are asked. `hal_bus_scan` needs it to say whether
+ * the virtio-blk on the bus is one this system drives. */
+bool hal_blk_present(void)
+{
+    return blk.present;
+}
+
 bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes)
 {
     return request(VIRTIO_BLK_T_IN, sector, buf, bytes);

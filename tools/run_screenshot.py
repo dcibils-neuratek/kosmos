@@ -1795,6 +1795,196 @@ def check_terminal(guest):
     return 1
 
 
+# The focus ring and the selection, 0x58a6ff. `ui.editor` draws a selected
+# run on this ground for the reason the block caret uses it: a selection is
+# a widened cursor, so it is the same colour by construction.
+HIGHLIGHT = (0x58, 0xa6, 0xff)
+
+
+def _highlight_area(width, height, px):
+    """How many pixels of the screen are selection.
+
+    A count rather than a run, because a focus ring is also drawn in this
+    colour and contributes two full-width rows to any longest-run measure.
+    Its *area* is a one-pixel outline and is swamped by any real selection,
+    which is what makes the count the honest measure of the two.
+    """
+    total = 0
+
+    for y in range(0, height, 2):
+        row = y * width * 3
+
+        for x in range(0, width, 2):
+            at = row + x * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == HIGHLIGHT:
+                total += 1
+
+    return total
+
+
+def check_clipboard(guest):
+    """Text selected in one application, and pasted into another.
+
+    Three things, and they are separable on purpose because each of them
+    failed differently while it was being built.
+
+    **A drag selects.** `ui.editor` holds an anchor and a cursor and nothing
+    else - there is no shift key on this machine to extend with, because a
+    key arrives here as a byte and shift-plus-arrow is the same four bytes
+    as an arrow. So the pointer is what makes a range, the press is the
+    anchor, and the drag is the cursor.
+
+    **Control-W c and Control-W v carry it across a process.** The
+    clipboard lives in the window manager, which is the one process both
+    applications already talk to, and the keys are behind the prefix for
+    the same reason the window-moving keys are: Control-C is not available
+    here - it is what stops a program, in nine checks in this file - so the
+    letters everyone knows have to live behind something.
+
+    **A copy larger than a message shrinks to what fits, visibly.** A
+    message is 2048 bytes, so selecting a four-kilobyte report and copying
+    it cannot take all of it. What must not happen is taking part of it in
+    silence, so the highlight comes back to exactly the run that left, and
+    that is what the third measurement below is looking at: the selection
+    getting *smaller* when you copy it.
+    """
+    guest.type("wm machine,gallery")
+    started(guest)
+    time.sleep(2.0)
+
+    width, height, px = parse_ppm(guest.screendump())
+    quiet = _highlight_area(width, height, px)
+
+    #
+    # A drag inside the report. `machine` opens at 100,60 with its editor
+    # eight pixels in, so this starts a few characters into a line and ends
+    # four lines down.
+    #
+    guest.mouse_to(*_to_tablet(130, 150, width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_to(*_to_tablet(560, 214, width, height))
+    time.sleep(0.5)
+    guest.mouse_button(False)
+    time.sleep(0.8)
+
+    width, height, px = parse_ppm(guest.screendump())
+    dragged = _highlight_area(width, height, px)
+
+    if dragged <= quiet + 200:
+        raise Failure(
+            f"dragging across the report selected nothing: {quiet} "
+            f"highlighted pixels before and {dragged} after. Either the "
+            "press is not setting an anchor, or `ui.editor` is not drawing "
+            "the run between the anchor and the cursor."
+        )
+
+    def send(data, wait=0.6):
+        guest.proc.stdin.write(data)
+        guest.proc.stdin.flush()
+        time.sleep(wait)
+
+    send(b"\x17", 0.5)                       # Control-W
+    send(b"c", 1.0)                          # copy
+
+    #
+    # The gallery opened behind the report. Raised from its bottom label
+    # rather than its title bar, because the left of a tab is the close box
+    # and clicking it here closes the window this phase is about to use.
+    #
+    guest.mouse_to(*_to_tablet(75, 396, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(1.0)
+
+    # Its text field, which is `ui.field` and takes a paste at the caret.
+    guest.mouse_to(*_to_tablet(196, 231, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(0.8)
+
+    before = guest.screendump()
+
+    send(b"\x17", 0.5)                       # Control-W
+    send(b"v", 1.2)                          # paste
+
+    after = guest.screendump()
+
+    if before == after:
+        raise Failure(
+            "Control-W v changed nothing in the gallery's text field. The "
+            "copy was made in a different application, so either the "
+            "window manager is not holding the clipboard between the two "
+            "or `ui.field` is not answering a paste."
+        )
+
+    #
+    # And the cap. Back to the report, everything selected, then copied -
+    # which is more than a message holds, so the selection has to come back
+    # to the part that fits.
+    #
+    guest.mouse_to(*_to_tablet(400, 660, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(1.0)
+
+    guest.mouse_to(*_to_tablet(300, 400, width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.2)
+    guest.mouse_button(False)
+    time.sleep(0.8)
+
+    send(b"\x17", 0.5)
+    send(b"a", 1.2)                          # select everything
+
+    width, height, px = parse_ppm(guest.screendump())
+    everything = _highlight_area(width, height, px)
+
+    send(b"\x17", 0.5)
+    send(b"c", 1.5)                          # copy, which cannot take it all
+
+    width, height, px = parse_ppm(guest.screendump())
+    capped = _highlight_area(width, height, px)
+
+    if capped >= everything:
+        raise Failure(
+            f"copying a selection bigger than a message left it the same "
+            f"size on screen: {everything} highlighted pixels before the "
+            f"copy and {capped} after. A clipboard holds "
+            "less than 2048 bytes, so the highlight should have come back "
+            "to the run that actually left - and if it did not, the copy "
+            "was truncated without saying so."
+        )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after the "
+                      "clipboard.")
+
+    return 3
+
+
 def check_deskbar(guest):
     """A desktop you can start things from.
 
@@ -2395,6 +2585,7 @@ def main():
         three_d_checks = phase("3d", check_3d)
         terminal_checks = phase("terminal", check_terminal)
         deskbar_checks = phase("deskbar", check_deskbar)
+        clip_checks = phase("clipboard", check_clipboard)
         click_checks = phase("clicks", check_clicks)
         graphical_checks = phase("graphical", check_graphical_mode)
         replicant_checks = phase("replicants", check_replicants)
@@ -2415,6 +2606,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
+             + clip_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks)
     print("\nwhere the time went:")
@@ -2439,6 +2631,8 @@ def main():
           f"something else owns it, "
           f"{click_checks} on the widgets under the pointer, "
           f"{deskbar_checks} on starting an application from the Deskbar, "
+          f"{clip_checks} on copying text from one application into "
+          f"another, "
           f"{idle_checks} on an idle desktop being idle, "
           f"{terminal_checks} on a program printing into a terminal window, "
           f"{direct_checks} on an application drawing its own pixels, "

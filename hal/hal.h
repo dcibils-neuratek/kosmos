@@ -337,6 +337,38 @@ unsigned long hal_rtc_seconds(void);
 #define HAL_SND_PERIOD_BYTES  (HAL_SND_PERIOD_FRAMES * HAL_SND_FRAME_BYTES)
 #define HAL_SND_PERIODS       4u
 
+/*
+ * **What is on the bus, and what of it this system drives.**
+ *
+ * Every other entry here answers "have you got one of these", which is the
+ * question a *driver* asks. This is the question a *person* asks, and it is
+ * not the same one: a machine with a device nothing claims looks identical,
+ * from every other function in this file, to a machine without the device.
+ * `machine` printed "no card" next to a boot log that had found one, and
+ * that is the shape of the failure - absence and silence read alike.
+ *
+ * So the board reports what its bus enumeration found, whether or not a
+ * driver wanted it. `id` and `class` go out exactly as the bus reported
+ * them and this layer decodes nothing, which is `sysinfo`'s rule about ID
+ * registers applied to a different set of numbers: naming a vendor is a
+ * table, and a table belongs in userland.
+ *
+ * `where` is the board's own address for it - bus/slot/function packed on a
+ * PC, the window index on a machine with a device tree - and is only ever
+ * compared or shown, never followed.
+ *
+ * A board with no enumerable bus returns 0 and that is a complete answer.
+ */
+/* Defined by `kernel/syscall.h`, because it is part of what `sysinfo`
+ * hands to userland. Only ever a pointer here, so the declaration is all
+ * this layer needs - and including the kernel's ABI header from `hal/`
+ * would be the wrong direction. */
+struct bus_device;
+
+bool          hal_blk_present(void);   /* a disk was found and claimed */
+
+unsigned      hal_bus_scan(struct bus_device *out, unsigned max);
+
 bool          hal_snd_init(void);       /* false when there is no device */
 bool          hal_snd_present(void);    /* asked after init, by the kernel */
 bool          hal_snd_write(const void *pcm, unsigned bytes);

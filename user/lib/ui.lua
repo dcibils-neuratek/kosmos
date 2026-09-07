@@ -1193,6 +1193,21 @@ function ui.field(spec)
   v.text = v.text or ""
   v.caret = #v.text + 1
 
+  --
+  -- All of it, or none of it.
+  --
+  -- **A field gets select-all and not a dragged selection**, and that is a
+  -- decision rather than an unfinished one. A single line of text has one
+  -- selection anybody actually makes - the whole thing, to replace it -
+  -- and the machinery `ui.editor` needs for a range is an anchor, a
+  -- normaliser, a three-piece draw and five keys that have to agree about
+  -- it. Here that would be spent to let somebody drag over half a URL.
+  --
+  -- So the state is a boolean, and every one of the four edit commands has
+  -- an honest answer for it.
+  --
+  v.all = false
+
   function v:draw(g)
     -- A well: content lives in here, and the bevel says so. The focus
     -- ring goes inside it rather than over it, so a focused field is
@@ -1221,11 +1236,22 @@ function ui.field(spec)
     local from = math.max(1, self.caret - room + 1)
     local shown = self.text:sub(from, from + room - 1)
 
-    g:text(4, (self.h - GH) // 2, shown, theme.text, theme.sunken)
+    local ty = (self.h - GH) // 2
+
+    if self.all and self.text ~= "" then
+      -- The caret's own colours, for the reason `ui.editor` uses them: a
+      -- selection is a widened cursor, and every palette has already had
+      -- to make those two readable against each other.
+      g:fill(4, ty, #shown * GW, GH, theme.ring)
+      g:text(4, ty, shown, theme.sunken, theme.ring)
+      return
+    end
+
+    g:text(4, ty, shown, theme.text, theme.sunken)
 
     if self.focused then
       local cx = 4 + (self.caret - from) * GW
-      g:fill(cx, (self.h - GH) // 2, 1, GH, theme.ring)
+      g:fill(cx, ty, 1, GH, theme.ring)
     end
   end
 
@@ -1242,6 +1268,30 @@ function ui.field(spec)
   end
 
   function v:key(c)
+    --
+    -- Anything at all ends the selection, and a key that puts a character
+    -- in replaces what was selected first.
+    --
+    -- Backspace is finished once the selection is gone - taking a further
+    -- character would eat one nobody selected. A printable falls through
+    -- into the insert below, which fires `on_change` itself, so clearing
+    -- here must not fire it as well: a search box would run its filter
+    -- twice for one keystroke. And Enter is not in the list at all,
+    -- because submitting a field is not editing it.
+    --
+    if self.all then
+      self.all = false
+
+      if c == 8 or c == 127 or (c >= 32 and c < 127) then
+        self.text, self.caret = "", 1
+
+        if c == 8 or c == 127 then
+          changed(self)
+          return true
+        end
+      end
+    end
+
     if c == 8 or c == 127 then
       if self.caret > 1 then
         self.text = self.text:sub(1, self.caret - 2)
@@ -1278,6 +1328,55 @@ function ui.field(spec)
     return false
   end
 
+  --
+  -- Select-all, copy, cut and paste - the whole field, except for a paste,
+  -- which goes in at the caret like a typed character does.
+  --
+  -- A pasted newline is dropped rather than honoured. This widget is one
+  -- line by construction and there is nowhere for a second one to go;
+  -- taking the first line is what every single-line field does with a
+  -- multi-line paste, and it is better than refusing.
+  --
+  function v:edit(kind)
+    if kind == "selectall" then
+      if self.text == "" then return false end
+      self.all = true
+      return true
+    end
+
+    if kind == "copy" or kind == "cut" then
+      if self.text == "" then return false end
+      if not wmproto.copy(self.text) then return false end
+
+      if kind == "cut" then
+        self.text, self.caret, self.all = "", 1, false
+        changed(self)
+      end
+
+      return true
+    end
+
+    if kind == "paste" then
+      local text = wmproto.paste()
+
+      if not text or text == "" then return false end
+
+      if self.all then
+        self.text, self.caret, self.all = "", 1, false
+      end
+
+      text = text:match("^[^\n]*") or ""
+      self.text = self.text:sub(1, self.caret - 1) .. text
+                  .. self.text:sub(self.caret)
+      self.caret = self.caret + #text
+      changed(self)
+
+      return true
+    end
+
+    return false
+  end
+
   -- The caret where the click was, clamped to the end of the text: clicking
   -- past the last character puts it after the last character, which is what
   -- every text field does and what nobody notices until it does not.
@@ -1287,6 +1386,7 @@ function ui.field(spec)
 
       if col < 0 then col = 0 end
       self.caret = math.min(col + 1, #self.text + 1)
+      self.all = false
     end
 
     return true
@@ -1508,11 +1608,30 @@ function ui.editor(spec)
   local v = ui.view(spec)
 
   v.focusable = true
+  v.read_only = spec.read_only or false
   v.lines = {}
   v.cy = 1
   v.cx = 1
   v.top = 1
   v.dirty = false
+
+  --
+  -- Where a selection began, as `{y, x}`, or nil for none.
+  --
+  -- **A selection is two carets, and the second one is the cursor.** That
+  -- is the whole model: no separate "selecting" flag, no start-and-length,
+  -- and no third state where a selection exists but the caret is somewhere
+  -- else. Dragging moves the cursor and leaves the anchor; every key that
+  -- moves the cursor on its own drops the anchor, which is why clicking or
+  -- arrowing deselects without anything having to say so.
+  --
+  -- Nothing here reads the shift key, because there is no shift key to
+  -- read: keys arrive as a byte stream with the arrows decoded out of
+  -- `ESC [ A`-`D`, and shift-plus-arrow produces the same four bytes as an
+  -- arrow. So selection is made with the pointer or with select-all, which
+  -- is what the two of them can express.
+  --
+  v.anchor = nil
 
   for line in ((spec.text or "") .. "\n"):gmatch("([^\n]*)\n") do
     v.lines[#v.lines + 1] = line
@@ -1524,7 +1643,16 @@ function ui.editor(spec)
 
   if #v.lines == 0 then v.lines[1] = "" end
 
-  local GUTTER = 5              -- four digits and a space
+  --
+  -- Four digits and a space, unless the caller says not to.
+  --
+  -- Numbers are what an editor showing a *file* wants - a compiler names a
+  -- line and you go to it. A pane showing a report is the other case: the
+  -- numbers are noise, and they push the text right by five columns for
+  -- nothing. `gutter = false` is for that, and `machine` is the first
+  -- caller of it.
+  --
+  local GUTTER = (spec.gutter == false) and 0 or 5
 
   function v:content()
     return table.concat(self.lines, "\n") .. "\n"
@@ -1551,6 +1679,240 @@ function ui.editor(spec)
     -- no longer open and would otherwise sit past the end of this one.
     self.cy, self.cx, self.top = 1, 1, 1
     self.dirty = false
+  end
+
+  --
+  -- The selection in reading order, or nil when there is none.
+  --
+  -- Anchor and cursor can be either way round - dragging upwards is as
+  -- ordinary as dragging down - so every reader wants them sorted, and
+  -- sorting them in one place is why this exists. An anchor sitting exactly
+  -- on the cursor is *not* a selection: that is what a plain click leaves
+  -- behind, and reporting it as an empty one would make copy send nothing
+  -- rather than do nothing.
+  --
+  local function selection(self)
+    local a = self.anchor
+
+    if not a then return nil end
+
+    local y1, x1, y2, x2 = a[1], a[2], self.cy, self.cx
+
+    if y1 > y2 or (y1 == y2 and x1 > x2) then
+      y1, x1, y2, x2 = y2, x2, y1, x1
+    end
+
+    if y1 == y2 and x1 == x2 then return nil end
+
+    return y1, x1, y2, x2
+  end
+
+  --
+  -- Which characters of line `n` the selection covers, as an inclusive
+  -- pair, plus whether the newline at the end of it is in there too.
+  --
+  -- The newline matters for drawing and only for drawing: a selection that
+  -- runs through three lines should not look like three separate
+  -- selections, so a line whose end is inside the range gets one extra
+  -- highlighted cell standing for the break. Nothing about the text itself
+  -- depends on it.
+  --
+  local function span(self, n)
+    local y1, x1, y2, x2 = selection(self)
+
+    if not y1 or n < y1 or n > y2 then return nil end
+
+    local from = (n == y1) and x1 or 1
+    local to   = (n == y2) and (x2 - 1) or #self.lines[n]
+
+    return from, to, n < y2
+  end
+
+  --
+  -- Where you land `n` bytes after `(y, x)`, counting a line break as one.
+  --
+  -- Only the clipboard needs this, and it needs it because the clipboard
+  -- has a size limit and the limit has to be *shown* rather than
+  -- mentioned. Counting the break is what makes the answer agree with what
+  -- `v:selected` produced, which joined its lines with one.
+  --
+  local function advance(self, y, x, n)
+    while true do
+      local room = #self.lines[y] - (x - 1)
+
+      if n <= room then return y, x + n end
+
+      n = n - room - 1
+
+      if n < 0 or y >= #self.lines then
+        return y, #self.lines[y] + 1
+      end
+
+      y, x = y + 1, 1
+    end
+  end
+
+  --
+  -- The selected text, or nil when nothing is selected.
+  --
+  -- Joined with "\n" and never with a trailing one, because a selection is
+  -- a run of characters rather than a set of lines - copying the middle of
+  -- a paragraph and pasting it should not introduce a break that was not
+  -- in it.
+  --
+  function v:selected()
+    local y1, x1, y2, x2 = selection(self)
+
+    if not y1 then return nil end
+
+    if y1 == y2 then
+      return self.lines[y1]:sub(x1, x2 - 1)
+    end
+
+    local out = { self.lines[y1]:sub(x1) }
+
+    for n = y1 + 1, y2 - 1 do
+      out[#out + 1] = self.lines[n]
+    end
+
+    out[#out + 1] = self.lines[y2]:sub(1, x2 - 1)
+
+    return table.concat(out, "\n")
+  end
+
+  --
+  -- Take it out, leaving the caret where it was.
+  --
+  -- The two ends join into one line, which is what makes a multi-line
+  -- delete a single edit rather than a loop that has to get its indices
+  -- right as the table shrinks underneath it.
+  --
+  function v:delete_selected()
+    local y1, x1, y2, x2 = selection(self)
+
+    if not y1 or self.read_only then return false end
+
+    self.lines[y1] = self.lines[y1]:sub(1, x1 - 1)
+                     .. self.lines[y2]:sub(x2)
+
+    for _ = y1 + 1, y2 do
+      table.remove(self.lines, y1 + 1)
+    end
+
+    self.cy, self.cx = y1, x1
+    self.anchor = nil
+    self.dirty = true
+
+    return true
+  end
+
+  --
+  -- Put text in at the caret, however many lines it is.
+  --
+  -- One path for a word and for a paragraph, because a paste is a paste.
+  -- The caret lands after what was inserted, which is where the next thing
+  -- typed belongs.
+  --
+  function v:insert(text)
+    if self.read_only then return false end
+
+    local parts = {}
+
+    for part in (tostring(text or "") .. "\n"):gmatch("([^\n]*)\n") do
+      parts[#parts + 1] = part
+    end
+
+    if #parts == 0 then return false end
+
+    local line = self.lines[self.cy]
+    local head, tail = line:sub(1, self.cx - 1), line:sub(self.cx)
+
+    if #parts == 1 then
+      self.lines[self.cy] = head .. parts[1] .. tail
+      self.cx = self.cx + #parts[1]
+    else
+      self.lines[self.cy] = head .. parts[1]
+
+      for i = 2, #parts do
+        table.insert(self.lines, self.cy + i - 1, parts[i])
+      end
+
+      self.cy = self.cy + #parts - 1
+      self.cx = #parts[#parts] + 1
+      self.lines[self.cy] = self.lines[self.cy] .. tail
+    end
+
+    self.dirty = true
+
+    return true
+  end
+
+  --
+  -- Select-all, copy, cut and paste, arriving from the window manager's
+  -- prefix by way of `window:dispatch_edit`.
+  --
+  -- **A read-only pane answers copy and select-all and refuses the other
+  -- two**, which is the useful half and exactly the half that makes sense:
+  -- a report of what the machine is should be something you can take away,
+  -- and nothing you can edit. Refusing by returning false rather than by
+  -- pretending means the window falls back to its own `on_edit` and can do
+  -- something else with the keystroke if it wants to.
+  --
+  function v:edit(kind)
+    if kind == "selectall" then
+      self.anchor = { 1, 1 }
+      self.cy = #self.lines
+      self.cx = #self.lines[self.cy] + 1
+      return true
+    end
+
+    if kind == "copy" or kind == "cut" then
+      local text = self:selected()
+
+      if not text then return false end
+
+      local bytes, dropped = wmproto.copy(text)
+
+      if not bytes then return false end
+
+      --
+      -- More was selected than a clipboard holds, so the highlight moves
+      -- back to what actually left.
+      --
+      -- **The screen says it rather than a message box.** A selection is
+      -- already a picture of a range of text; shrinking it to the range
+      -- that was copied makes the limit something you can see, in the one
+      -- place you were already looking. A dialog saying "1900 of 4212
+      -- bytes" would be the same fact, later, and in the way.
+      --
+      -- A cut then removes exactly the shortened run, which is why this
+      -- happens before the delete rather than after it.
+      --
+      if dropped > 0 then
+        local y1, x1 = selection(self)
+
+        self.anchor = { y1, x1 }
+        self.cy, self.cx = advance(self, y1, x1, bytes)
+      end
+
+      if kind == "cut" then return self:delete_selected() end
+
+      return true
+    end
+
+    if kind == "paste" then
+      if self.read_only then return false end
+
+      local text = wmproto.paste()
+
+      if not text or text == "" then return false end
+
+      self:delete_selected()
+
+      return self:insert(text)
+    end
+
+    return false
   end
 
   --
@@ -1619,16 +1981,54 @@ function ui.editor(spec)
 
       if line then
         local y = 2 + row * GH
+        local x0 = 2 + GUTTER * GW
 
-        g:text(2, y, ("%4d "):format(n), theme.line, theme.sunken, "mono")
-        g:text(2 + GUTTER * GW, y, line:sub(1, columns), theme.text,
-               theme.sunken, "mono")
+        if GUTTER > 0 then
+          g:text(2, y, ("%4d "):format(n), theme.line, theme.sunken, "mono")
+        end
+
+        local vis = line:sub(1, columns)
+        local from, to, eol = span(self, n)
+
+        if not from then
+          g:text(x0, y, vis, theme.text, theme.sunken, "mono")
+        else
+          --
+          -- Three pieces, and the middle one is the caret's own colours.
+          --
+          -- **A selection is a widened cursor**, so it is drawn as one: the
+          -- same `ring` ground and `sunken` text the block caret below
+          -- uses. That is not a shortcut - it is the reason no new theme
+          -- token appears here. Every palette has already had to make those
+          -- two readable against each other, because a caret sits on a
+          -- character in all of them.
+          --
+          if from > columns then from = columns + 1 end
+          if to > columns then to = columns end
+
+          g:text(x0, y, vis:sub(1, from - 1), theme.text, theme.sunken,
+                 "mono")
+
+          if to >= from then
+            g:text(x0 + (from - 1) * GW, y, vis:sub(from, to), theme.sunken,
+                   theme.ring, "mono")
+          end
+
+          g:text(x0 + to * GW, y, vis:sub(to + 1), theme.text, theme.sunken,
+                 "mono")
+
+          -- The line break, so a run through several lines reads as one
+          -- shape rather than as a ragged stack.
+          if eol and to < columns then
+            g:fill(x0 + to * GW, y, GW, GH, theme.ring)
+          end
+        end
       end
     end
 
     -- The cursor as a block on the character it is on, which is what makes
     -- the column obvious in indented code.
-    if self.focused and self.cy >= self.top
+    if self.focused and not selection(self) and self.cy >= self.top
        and self.cy <= self.top + rows(self) - 1 then
       local px = 2 + (GUTTER + math.min(self.cx, columns + 1) - 1) * GW
       local py = 2 + (self.cy - self.top) * GH
@@ -1643,7 +2043,46 @@ function ui.editor(spec)
   end
 
   function v:key(c)
+    --
+    -- A key that moves the caret drops the selection, and a key that
+    -- changes text replaces it. Both before anything else looks at the
+    -- line, because a delete moves the caret and the line under it.
+    --
+    local moving = (c == -1 or c == -2 or c == -3 or c == -4
+                    or c == 1 or c == 5)
+    local typing = (c == 10 or c == 13 or c >= 32)
+    local erasing = (c == 8 or c == 127)
+
+    if self.anchor and not self.read_only then
+      if typing or erasing then
+        local had = self:delete_selected()
+
+        -- Backspace and Delete are *done* once the selection is gone -
+        -- taking a further character would eat one nobody selected.
+        if had and erasing then return true end
+      end
+    end
+
+    if moving or typing or erasing then self.anchor = nil end
+
     local line = self.lines[self.cy]
+
+    --
+    -- **A read-only editor is still an editor**, and that is the point: it
+    -- scrolls, it has a caret you can put on a character, and the text is
+    -- text rather than a laid-out picture of text. What it will not do is
+    -- change under a keystroke meant to navigate it - which for a pane
+    -- reporting what the machine *is* would be a lie the moment somebody
+    -- leaned on the keyboard.
+    --
+    -- Movement is handled below either way; only the keys that would
+    -- insert, split or delete are refused here.
+    --
+    local editing = (c == 10 or c == 13 or c == 8 or c == 127 or c >= 32)
+
+    if self.read_only and editing then
+      return true                       -- swallowed, so the window keeps it
+    end
 
     if c == -1 then self.cy = self.cy - 1; clamp(self); return true end
     if c == -2 then self.cy = self.cy + 1; clamp(self); return true end
@@ -1739,6 +2178,20 @@ function ui.editor(spec)
 
       if col < 0 then col = 0 end
       self.cx = math.min(col + 1, #self.lines[self.cy] + 1)
+
+      --
+      -- The press is the anchor; the drag is the cursor.
+      --
+      -- Which is why this is two lines rather than a selecting flag: the
+      -- window holds the grab from press to release - see `dispatch_mouse`
+      -- - so a `move` reaching this widget at all *means* the button is
+      -- down, and there is nothing to remember. A press that goes nowhere
+      -- leaves anchor and cursor equal, which `selection` reports as no
+      -- selection, so a plain click deselects for free.
+      --
+      if action == "press" then
+        self.anchor = { self.cy, self.cx }
+      end
     end
 
     return true
@@ -3035,6 +3488,47 @@ end
 -- what it looks like it should. That is the one place clicking and Tab have
 -- to agree.
 --
+--------------------------------------------------------------------------
+-- Select-all, copy, cut and paste.
+--
+-- **The window's part is routing, and that is deliberately all of it.**
+-- The window manager decided which keys mean this; a widget decides what
+-- its selection is and what pasting into it does; and in between there is
+-- this, which knows only that the focused widget is the one being asked.
+--
+-- A widget joins in by having an `edit` method taking one of these four
+-- names. Everything without one is unaffected, which is most of the kit -
+-- a button has no selection and a paste into it means nothing.
+--
+-- The clipboard itself is never touched here. `ui.editor` sends its own
+-- `wmproto.copy`, because the widget is what knows the bytes and this is
+-- what would have to be told them.
+--------------------------------------------------------------------------
+
+local EDITS = {
+  selectall = true, copy = true, cut = true, paste = true,
+}
+
+--
+-- Hand one of them to whatever has the focus.
+--
+-- Falls back to the window's own `on_edit`, the same way key dispatch falls
+-- back to `on_key`: a window that draws its own content rather than filling
+-- itself with widgets should still be able to answer a copy.
+--
+function window:dispatch_edit(kind)
+  local list = apply_focus(self)
+  local target = list[self.focus]
+
+  if target and target.edit and target:edit(kind) then
+    return true
+  end
+
+  if self.on_edit then return self.on_edit(self, kind) end
+
+  return false
+end
+
 local function dispatch_mouse(self, ev)
   if ev.action == "press" then
     local target, lx, ly = self.root:hit(ev.x, ev.y)
@@ -3330,6 +3824,15 @@ function window:run()
 
         if a and dispatch(self, a) then changed = true end
         if b and dispatch(self, b) then changed = true end
+      elseif EDITS[ev.type] then
+        -- Select-all, copy, cut, paste, from the window manager's prefix.
+        --
+        -- **Not a key**, even though a key is what produced it. The keys
+        -- are the window manager's - it is the process that decided this
+        -- machine has no Control-C to spare - and what arrives here is the
+        -- intent it decided on. So a widget implements `edit`, and never
+        -- has to know which keys a board happens to have.
+        if self:dispatch_edit(ev.type) then changed = true end
       end
     end
 

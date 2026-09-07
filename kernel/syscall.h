@@ -413,6 +413,28 @@ struct pointer_info {
  */
 #define CPU_RAW_WORDS     10
 
+/*
+ * One device as a bus reported it, decoded by nobody.
+ *
+ * `id` is vendor in the high half and device in the low, which is how PCI
+ * hands it over and close enough to how a virtio-mmio window does. `class`
+ * is PCI's class/subclass/interface, and zero where the bus has no such
+ * idea. Turning either into a name is a table, and a table belongs in
+ * userland - the same division `cpu_raw` draws.
+ */
+struct bus_device {
+    uint32_t id;        /* vendor << 16 | device */
+    uint32_t class;     /* PCI class/subclass/prog-if, or 0 */
+    uint16_t where;     /* bus << 8 | slot << 3 | function, or the window */
+    uint8_t  claimed;   /* a driver in this system took it */
+    uint8_t  reserved;
+};
+
+/* Enough for QEMU's q35 with every device this system knows attached, and
+ * for the thirty-two virtio-mmio windows the ARM board lays out. A machine
+ * with more says so by filling this and stopping. */
+#define BUS_DEVICES_MAX 32
+
 struct sysinfo {
     /*
      * The processor, raw, and what to make of it.
@@ -456,6 +478,20 @@ struct sysinfo {
      */
     uint32_t regions_used;
     uint32_t regions_total;
+
+    /*
+     * What the board's bus enumeration found, and which of it is driven.
+     *
+     * Carried here rather than behind a syscall of its own because this is
+     * the kernel describing the machine, which is what this struct is, and
+     * because it is read once by a window rather than in a loop.
+     *
+     * `claimed` is the whole point. Presence alone cannot distinguish a
+     * machine with no sound card from one whose card nothing drives, and
+     * every other field here answers only presence.
+     */
+    uint32_t bus_count;
+    struct bus_device bus[BUS_DEVICES_MAX];
 
     /* Devices. Zero width means there is no display. */
     uint32_t screen_width;

@@ -42,6 +42,16 @@ local KEY_ESC    = 27
 local KEY_CTRL_C = 3
 local KEY_PREFIX = 23      -- Control-W
 
+-- What a letter means after the prefix. A table rather than a chain of
+-- comparisons because it is a lookup, and because upper and lower case
+-- being the same entry is then visible rather than argued.
+local CLIP_KEYS = {
+  [97] = "selectall", [65] = "selectall",     -- a
+  [99] = "copy",      [67] = "copy",          -- c
+  [120] = "cut",      [88] = "cut",           -- x
+  [118] = "paste",    [86] = "paste",         -- v
+}
+
 local theme = use("/lib/theme.lua")
 
 --
@@ -2142,6 +2152,54 @@ local function events_for(win)
   return { ok = true, events = out }
 end
 
+--------------------------------------------------------------------------
+-- The clipboard.
+--
+-- **Here because this is the one process every window already talks to.**
+-- A clipboard is shared state between programs that must not be able to
+-- reach each other, which is the same shape as the screen and the console,
+-- and the answer is the same: a server holds it and everyone asks. No
+-- global name, no shared page, nothing an application can reach that it
+-- was not handed.
+--
+-- One buffer, not a ring of them. BeOS had numbered clipboards and almost
+-- nothing used more than the first; a second one can be added the day
+-- something wants it.
+--
+-- **It is capped, and the cap is a message.** `MSG_BYTES` is 2048 and the
+-- text travels inside a serialised table, so a selection larger than that
+-- cannot cross in one piece. `design.md` 7.4's rule says a *stream*
+-- belongs in shared memory and a one-shot payload is fine as a message - a
+-- copy is one-shot, so this is the right shape, and the cap is the honest
+-- edge of it rather than a design mistake.
+--
+-- **The cap that matters is `wmproto`'s, and this one is not it.** A
+-- message too big to serialise makes `fs.send` raise in the *caller*, so
+-- by the time anything arrives here it has already fit; `wmproto.copy` is
+-- where the text is cut and where the caller is told how much was left
+-- behind. This bound exists because a server does not get to assume its
+-- callers are the library - `design.md` 17, a server receives what it
+-- expects rather than whatever somebody sent - and it is the same number
+-- so that the two never disagree about what a full clipboard is.
+--------------------------------------------------------------------------
+
+local CLIP_MAX = 1900
+
+local clipboard = ""
+
+handlers.clip_put = function(req)
+  local text = tostring(req.text or "")
+  local taken = text:sub(1, CLIP_MAX)
+
+  clipboard = taken
+
+  return { ok = true, bytes = #taken, dropped = #text - #taken }
+end
+
+handlers.clip_get = function()
+  return { ok = true, text = clipboard }
+end
+
 handlers.poll = function(req, who)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
@@ -3103,8 +3161,34 @@ end
 --   Control-W then Tab         focus the next window
 --   Control-W then Control-W   send a literal Control-W to the application
 --
+--   Control-W then a           select everything in the focused control
+--   Control-W then c           copy the selection to the clipboard
+--   Control-W then x           cut it
+--   Control-W then v           paste
+--
 -- One key out of the application's vocabulary instead of five, and the one
 -- taken is the one applications want least.
+--
+-- **The clipboard four are here rather than as four more reserved keys**,
+-- and the reason is the paragraph above: there are no modifiers, so
+-- Control-C is a key an application can see, and in this system it is
+-- already the key that stops one. Nine checks in the display harness use
+-- it to get the screen back from the desktop, from `plasma`, from `cube3d`
+-- and from a terminal window, so it is not available and should not be.
+--
+-- Which leaves the choice between inventing a triple out of whatever
+-- control codes are unclaimed - and every candidate carries somebody's
+-- prior, `^Y` being paste to half the world and copy to nobody - or
+-- putting them behind the prefix that exists precisely because this
+-- machine has no Meta key. Behind the prefix the letters can be the ones
+-- everybody already knows, which is the whole point of a prefix.
+--
+-- **What crosses to the application is the intent, not the text.** This
+-- process does not know what a selection is; a text field does. So the
+-- prefix posts `{type = "copy"}` and the application answers by sending
+-- back a `clip_put` with whatever it decided that meant. The window
+-- manager holds the bytes and stays ignorant of them, which is the same
+-- division it already keeps with pixels.
 --
 local function prefixed(c)
   prefix = false
@@ -3124,6 +3208,15 @@ local function prefixed(c)
     -- the application, so the prefix stays on until the sequence finishes.
     prefix = true
     pending_escape = { KEY_ESC }
+    return
+  end
+
+  -- Either case of the letter, because a prefix command is a command and
+  -- nobody should have to notice the shift key to give one.
+  local edit = CLIP_KEYS[c]
+
+  if edit then
+    post(focused_window(), { type = edit })
     return
   end
 end
