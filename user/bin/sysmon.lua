@@ -22,7 +22,16 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 340, 260
+--
+-- How many processors, asked before the window is sized.
+--
+-- One meter each, so the window is as tall as the machine is wide. On a
+-- single-core machine that is exactly what it was; on the day there are
+-- four it grows by three rows rather than by a scrollbar.
+--
+local CORES = (sys.info() or {}).cpus or 1
+
+local W, H = 340, 260 + (CORES - 1) * 38
 
 local win, err = ui.window{ title = "Monitor", w = W, h = H, x = 90, y = 130 }
 
@@ -40,9 +49,15 @@ local state = {
   endpoints = 0, endpoints_max = 1,
   spaces = 0, spaces_max = 1,
   used_mb = 0, total_mb = 1, uptime = 0,
+
+  -- One percentage per core, filled by the sampler. `pct` above stays the
+  -- machine's total, because three other programs read the same two
+  -- counters and a total is what they want.
+  core = {},
 }
 
 local last_idle, last_busy
+local last_core = {}
 
 --------------------------------------------------------------------------
 -- A meter: a label, a bar, and the numbers behind it.
@@ -92,10 +107,29 @@ local function add(label, read)
   y = y + 38
 end
 
-add("processor", function()
-  return state.pct, 100, ("%d%%"):format(state.pct),
-         (state.pct > 80) and theme.bad or theme.good
-end)
+--
+-- One meter per processor, not one for the machine.
+--
+-- **A total cannot answer the question more than one core raises.** One
+-- pinned and three asleep is 25% by the sum, which is true and useless: it
+-- reads identically to four cores at a quarter each, and those are opposite
+-- machines - the first cannot use itself and the second is.
+--
+-- On a machine with one core this is the meter that was always here, with
+-- the same label. The plural only appears when there is something plural to
+-- say, which is the same rule the Deskbar's window list follows.
+--
+for c = 1, CORES do
+  local label = (CORES == 1) and "processor"
+                             or ("processor " .. tostring(c - 1))
+
+  add(label, function()
+    local pct = state.core[c] or 0
+
+    return pct, 100, ("%d%%"):format(pct),
+           (pct > 80) and theme.bad or theme.good
+  end)
+end
 
 add("memory", function()
   return state.used_mb, state.total_mb,
@@ -146,6 +180,34 @@ function sampler:tick()
   end
 
   last_idle, last_busy = k.idle_ticks, k.busy_ticks
+
+  --
+  -- And the same arithmetic per core, from `sys.cpuload`.
+  --
+  -- The same rule as the total and worth repeating because it is the one
+  -- thing every reader of these counters gets wrong once: a percentage is
+  -- the difference between two readings. A single reading says what
+  -- fraction of all time since boot was busy, which on a machine sitting at
+  -- a prompt is a number that has stopped moving.
+  --
+  local load = sys.cpuload()
+
+  if load then
+    for i = 1, #load do
+      local was = last_core[i]
+
+      if was then
+        local di = load[i].idle - was.idle
+        local db = load[i].busy - was.busy
+
+        if di + db > 0 then
+          state.core[i] = (db * 100) // (di + db)
+        end
+      end
+
+      last_core[i] = { idle = load[i].idle, busy = load[i].busy }
+    end
+  end
 
   state.threads,   state.threads_max   = k.threads, k.threads_max
   state.processes, state.processes_max = k.processes, k.processes_max

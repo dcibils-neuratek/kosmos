@@ -437,6 +437,28 @@ struct bus_device {
  * with more says so by filling this and stopping. */
 #define BUS_DEVICES_MAX 32
 
+/*
+ * What one processor has been doing, since boot.
+ *
+ * A declared shape rather than two parallel arrays, because the two numbers
+ * are one fact about one core and splitting them would be an invitation to
+ * read `idle[i]` against `busy[j]`.
+ */
+struct cpuload {
+    uint64_t idle_ticks;
+    uint64_t busy_ticks;
+};
+
+/*
+ * How many processors this interface can describe.
+ *
+ * Not how many there are - that is `cpu_count`, and `NR_CPUS` in
+ * `kernel/percpu.h` is what the kernel was built for. This is the size of
+ * the room, and it is bigger than either because a struct that crosses to
+ * userland cannot grow without everything on both sides being rebuilt.
+ */
+#define CPUS_MAX        32
+
 struct sysinfo {
     /*
      * The processor, raw, and what to make of it.
@@ -501,11 +523,32 @@ struct sysinfo {
     uint32_t screen_pitch;
     uint32_t has_keyboard;
 
-    /* Ticks charged to the idle thread and to everything else, since boot.
-     * Both only rise; a percentage is the difference between two readings,
-     * which is the only kind that can mean "recently" rather than "ever". */
+    /* Ticks charged to the idle thread and to everything else, since boot,
+     * **summed over every processor**. Both only rise; a percentage is the
+     * difference between two readings, which is the only kind that can mean
+     * "recently" rather than "ever".
+     *
+     * Kept as the machine's total because four programs read them and a
+     * total is what those four want. The per-processor split is below. */
     uint64_t idle_ticks;
     uint64_t busy_ticks;
+
+    /*
+     * And the same, per processor.
+     *
+     * **A total cannot answer the question SMP raises.** One core pinned
+     * and three asleep is 25% busy by the sum, which is true and useless:
+     * it is indistinguishable from four cores at a quarter each, and those
+     * are opposite situations - the first is a machine that cannot use
+     * itself and the second is one that is.
+     *
+     * `cpus` above says how many entries are filled - it is the same
+     * number and there is no second one. `CPUS_MAX` is the *interface*
+     * limit and is larger on purpose: this struct is an ABI, so the room
+     * has to exist before the cores do, and the largest machine
+     * `docs/targets.md` names has twenty hardware threads.
+     */
+    struct cpuload cpu[CPUS_MAX];
 
     /*
      * Seconds since 1970, from the board's clock, or 0 when it has none.
@@ -554,7 +597,10 @@ struct sysinfo {
     uint32_t audio_floor;       /* smallest depth ever seen, in periods */
     uint32_t audio_wakes;       /* times the device raised its interrupt */
 
-    uint32_t cpus;              /* cores the kernel is scheduling on */
+    /* Cores the kernel is scheduling on - `NR_CPUS`, and the number of
+     * entries filled in `cpu[]` below. It was the literal 1 until there was
+     * something to ask. */
+    uint32_t cpus;
     uint32_t tick_hz;
     uint32_t current_el;
     uint32_t page_size;

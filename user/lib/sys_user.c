@@ -2252,6 +2252,57 @@ static int l_pointer(lua_State *L)
  * turning 0x1af4:0x1041 into "virtio-net" is a table, and a table belongs
  * where somebody can read it.
  */
+/*
+ * `sys.cpuload()` - what each processor has been doing, since boot.
+ *
+ * Not `sys.cpus`, which would sit confusingly beside `sys.info().cpus` -
+ * that is the *count* and this is the detail.
+ *
+ * An array of `{ index, idle, busy }`, one per core, in ticks. **Not a
+ * percentage**, for the reason every other counter here is not one: a
+ * percentage is the difference between two readings, and only the caller
+ * knows how far apart it wants them.
+ *
+ * The machine's *total* is still `/dev/kernel`'s `idle_ticks` and
+ * `busy_ticks`, and four programs read it. This is the split, and it exists
+ * because a total cannot answer the question SMP raises: one core pinned
+ * and three asleep sums to the same number as four cores at a quarter each,
+ * and those are opposite machines.
+ *
+ * Straight from `sysinfo` rather than through `/dev/kernel`, exactly as
+ * `sys.bus` is and for the same reason - it is an array, and the table
+ * protocol a device node speaks is for flat facts.
+ */
+static int l_cpuload(lua_State *L)
+{
+    struct sysinfo info;
+    unsigned i;
+
+    if (kosmos_sysinfo(&info) != 0) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, (int)info.cpus, 0);
+
+    for (i = 0; i < info.cpus && i < CPUS_MAX; i++) {
+        lua_createtable(L, 0, 3);
+
+        lua_pushinteger(L, (lua_Integer)i);
+        lua_setfield(L, -2, "index");
+
+        lua_pushinteger(L, (lua_Integer)info.cpu[i].idle_ticks);
+        lua_setfield(L, -2, "idle");
+
+        lua_pushinteger(L, (lua_Integer)info.cpu[i].busy_ticks);
+        lua_setfield(L, -2, "busy");
+
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+
+    return 1;
+}
+
 static int l_bus(lua_State *L)
 {
     struct sysinfo info;
@@ -2387,6 +2438,7 @@ static const luaL_Reg sys_functions[] = {
     { "processes", l_processes },
     { "pointer",  l_pointer },
     { "bus",      l_bus },
+    { "cpuload",  l_cpuload },
     { "asset",    l_asset },
     { "memory",      l_memory },
     { "memory_map",  l_memory_map },

@@ -423,6 +423,19 @@ void thread_disinherit(struct thread *t);
  */
 void thread_load(unsigned long *idle, unsigned long *busy);
 
+/* How many processors this kernel is running on. `NR_CPUS` today. */
+unsigned thread_cpu_count(void);
+
+/*
+ * The same two counters, for one processor.
+ *
+ * `thread_load` sums these, and the sum is what four programs want. This is
+ * what a machine with more than one core needs instead: one pinned and
+ * three asleep sums to the same number as four at a quarter each, and those
+ * are opposite situations.
+ */
+void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
+
 /* How many capabilities a thread holds. What a process may reach is exactly
  * this many things, and no others. */
 unsigned thread_cap_count(const struct thread *t);

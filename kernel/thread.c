@@ -76,7 +76,6 @@ static unsigned next_id = 1;
  */
 /* Per core: it is a statement about *this* core's return path. `smp.md`
  * listed six things that had to move and missed this one. */
-#define preempt_pending (this_cpu()->preempt_pending)
 
 /* The effective band, worked out in one place; see below. */
 static void refresh_effective(struct thread *t);
@@ -493,16 +492,23 @@ static void switch_to(struct thread *next)
  * readings and divides the difference, which is also the only way to get a
  * number that means "recently" rather than "since boot".
  */
-/* Per core, and `percpu.h` says why the counters especially: two cores
- * summed into one pair report a machine half busy when one is pinned and
- * the other is asleep. */
-#define idle_thread (this_cpu()->idle_thread)
-#define idle_ticks  (this_cpu()->idle_ticks)
-#define busy_ticks  (this_cpu()->busy_ticks)
+/*
+ * Per core, and written out rather than hidden behind a macro.
+ *
+ * `current` gets one because it has twenty-nine call sites and because
+ * `this_cpu()->current` at every one of them would be a diff whose only
+ * content is spelling. These three have a dozen between them, and the macro
+ * bought a trap instead: `cpus[index].idle_ticks` in `thread_load_cpu`
+ * expanded to `cpus[index].(this_cpu()->idle_ticks)` and would not compile.
+ *
+ * A macro that shadows a *field name* is only safe while nothing indexes
+ * the array by hand, which is exactly what the per-CPU work is going to do
+ * more of, not less.
+ */
 
 void thread_set_idle(struct thread *t)
 {
-    idle_thread = t;
+    this_cpu()->idle_thread = t;
 
     /*
      * And into the band that only runs when nothing else will. Without
@@ -593,10 +599,42 @@ unsigned thread_cap_count(const struct thread *t)
     return n;
 }
 
+unsigned thread_cpu_count(void)
+{
+    return NR_CPUS;
+}
+
+void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy)
+{
+    if (index >= NR_CPUS) {
+        *idle = 0;
+        *busy = 0;
+        return;
+    }
+
+    *idle = cpus[index].idle_ticks;
+    *busy = cpus[index].busy_ticks;
+}
+
+/*
+ * The machine's total, which is the sum and not this core's.
+ *
+ * It read `this_cpu()->idle_ticks` - a macro over *this* processor's - which is the
+ * same number on a machine with one core and quietly the wrong one on any
+ * other. Written as a sum now, while the loop runs once and the mistake is
+ * still free to fix.
+ */
 void thread_load(unsigned long *idle, unsigned long *busy)
 {
-    *idle = idle_ticks;
-    *busy = busy_ticks;
+    unsigned i;
+
+    *idle = 0;
+    *busy = 0;
+
+    for (i = 0; i < NR_CPUS; i++) {
+        *idle += cpus[i].idle_ticks;
+        *busy += cpus[i].busy_ticks;
+    }
 }
 
 void thread_tick(void)
@@ -607,10 +645,10 @@ void thread_tick(void)
         return;
     }
 
-    if (current == idle_thread) {
-        idle_ticks++;
+    if (current == this_cpu()->idle_thread) {
+        this_cpu()->idle_ticks++;
     } else {
-        busy_ticks++;
+        this_cpu()->busy_ticks++;
     }
 
     /* Before the policy is asked anything, so a thread whose deadline has
@@ -625,7 +663,7 @@ void thread_tick(void)
     current->ticks++;
 
     if (policy->tick(current)) {
-        preempt_pending = true;
+        this_cpu()->preempt_pending = true;
     }
 }
 
@@ -633,11 +671,11 @@ void thread_preempt_if_needed(void)
 {
     struct thread *next;
 
-    if (!preempt_pending) {
+    if (!this_cpu()->preempt_pending) {
         return;
     }
 
-    preempt_pending = false;
+    this_cpu()->preempt_pending = false;
 
     if (current == NULL) {
         return;
@@ -896,7 +934,7 @@ void thread_wake(struct thread *t)
         if (current != NULL && t != current
             && t->sched.effective > current->sched.effective
             && policy->preempts != NULL && policy->preempts(current, t)) {
-            preempt_pending = true;
+            this_cpu()->preempt_pending = true;
         }
     }
 }

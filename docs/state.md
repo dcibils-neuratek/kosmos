@@ -8,6 +8,66 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### `cores`, an instrument built before the thing it measures
+
+**There is one processor, so this shows one bar.** That is the point rather
+than a limitation: `docs/smp.md` step one moved the state that belongs to a
+core into `struct percpu`, and nothing could see it. An app that would show
+a second bar is what makes the second core visible when it arrives, and
+this project builds the instrument first - `jitter` measured the noise
+floor before anybody optimised against it, and `frames` measured where a
+pass went before the window manager was touched.
+
+What it took, downwards:
+
+- **`sysinfo` grew `cpu[CPUS_MAX]`**, a `struct cpuload` per core. The
+  machine's *total* stays where it was, because `htop`, `procs`, `monitor`
+  and `sysmon` all read it and a total is what those four want. **A total
+  cannot answer the question SMP raises**: one core pinned and three asleep
+  sums to the same number as four cores at a quarter each, and those are
+  opposite machines.
+- **`info.cpus` stopped being the literal 1** and reads `thread_cpu_count()`.
+- **`sys.cpuload()`**, an array straight out of `sysinfo`, exactly as
+  `sys.bus()` is and for the same reason: it is an array, and the table
+  protocol a device node speaks is for flat facts.
+- **`sysmon` shows a meter per core**, labelled "processor" while there is
+  one and "processor 0", "processor 1" when there are more - the same rule
+  the Deskbar's window list follows.
+- **`cores`**, the app: a bar per core, and buttons that add and remove a
+  compute-bound worker so a person can watch one fill.
+
+**The worker is `/bin/spin.lua`**, which exists for exactly this and says so
+in its own first line - it burns a core and deliberately does not yield.
+Which makes the app a demonstration of the priority bands as much as of the
+cores: the window is DISPLAY and the spinner is NORMAL, so the bars keep
+moving and the buttons keep answering while a core is pinned at 100%. If
+they ever stopped, that would be the responsiveness claim failing and this
+is where it would show.
+
+**And the instrument found a bug in the plumbing it was written for**,
+which is the argument for building it. The loop filling `sysinfo.cpu[]` was
+bounded by `info.cpus` - a field assigned *seventy lines further down* - so
+the bound was zero, the array stayed as `memset` left it, and every core
+read 0% with two spinners running. Nothing else in the suite would have
+noticed: the total was right, and the total is what everything else reads.
+
+**Two more mistakes worth recording, both in the test rather than the
+code.**
+
+The check looked for `theme.good` and found nothing, because one spinner on
+one core settles at *100%* and the bar had already turned `theme.bad`. A
+test that knows only the calm colour fails exactly when the machine is
+busiest, which is the case it exists to check.
+
+And the first version left the worker running. `spin 600` is ten minutes
+and it is *detached*, so Control-C to the window manager does not touch it -
+the next phase's window never appeared and the harness blamed the window
+rather than the spinner still burning the core behind it. Taking the worker
+off is now part of the phase, and it is the better assertion anyway:
+watching the meter fall proves the kill reached a process the app started.
+
+67 display checks on each board now.
+
 ### SMP step one: the per-CPU struct, and the audit that found a seventh
 
 `docs/smp.md`'s own first step - *"the per-CPU struct and the register that

@@ -480,6 +480,24 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         thread_load(&idle, &busy);
         info.idle_ticks = idle;
         info.busy_ticks = busy;
+
+        /*
+         * And the split. `CPUS_MAX` is the room in the struct.
+         *
+         * The bound is `thread_cpu_count()` and not `info.cpus`, which is
+         * the same number and is **assigned seventy lines below this** -
+         * so reading it here bounded the loop by zero, `cpu[]` stayed as
+         * `memset` left it, and every core reported 0% busy with two
+         * spinners running. Found by the program written to show it, which
+         * is what an instrument is for.
+         */
+        for (unsigned c = 0; c < thread_cpu_count() && c < CPUS_MAX; c++) {
+            unsigned long ci, cb;
+
+            thread_load_cpu(c, &ci, &cb);
+            info.cpu[c].idle_ticks = ci;
+            info.cpu[c].busy_ticks = cb;
+        }
     }
 
     info.epoch = (uint64_t)hal_rtc_seconds();
@@ -545,7 +563,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      * of it - see `docs/smp.md`, which counts what is actually missing. What
      * this field reports is cores *running*, which is the honest number
      * either way. */
-    info.cpus       = 1;
+    info.cpus       = thread_cpu_count();
     info.tick_hz    = TICK_HZ;
     info.page_size  = PAGE_SIZE;
 

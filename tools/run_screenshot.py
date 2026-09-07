@@ -1801,6 +1801,26 @@ def check_terminal(guest):
 HIGHLIGHT = (0x58, 0xa6, 0xff)
 
 
+def _colour_area(width, height, px, want):
+    """How many pixels of the screen are this colour.
+
+    Every other pixel both ways, which is four times cheaper and cannot miss
+    anything the size of a meter bar.
+    """
+    total = 0
+
+    for y in range(0, height, 2):
+        row = y * width * 3
+
+        for x in range(0, width, 2):
+            at = row + x * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == want:
+                total += 1
+
+    return total
+
+
 def _highlight_area(width, height, px):
     """How many pixels of the screen are selection.
 
@@ -1821,6 +1841,132 @@ def _highlight_area(width, height, px):
                 total += 1
 
     return total
+
+
+#
+# What a filled meter looks like, and it is two colours.
+#
+# `theme.good` below 80% and `theme.bad` above it - which is the whole
+# reason both are here. Written against the green alone this found nothing
+# and said the meter had not moved, because one spinner on one core settles
+# at *100%* and the bar had already turned red. A test that knows only the
+# calm colour fails exactly when the machine is busiest, which is the case
+# it exists to check.
+#
+METER_CALM = (0x3f, 0xb9, 0x50)     # theme.good
+METER_BUSY = (0xda, 0x36, 0x33)     # theme.bad
+
+
+def _meter_area(width, height, px):
+    return (_colour_area(width, height, px, METER_CALM)
+            + _colour_area(width, height, px, METER_BUSY))
+
+
+def check_cores(guest):
+    """A meter that moves when the machine is given something to do.
+
+    **`cores` is an instrument built before the thing it measures.** There
+    is one processor; `docs/smp.md` is the plan for more and step one of it
+    is done. What this checks is the whole path from the kernel's per-CPU
+    counters to a bar on the screen - `struct percpu`, `sysinfo`'s `cpu[]`
+    array, `sys.cpuload`, and the subtraction every meter in this system
+    makes - because until that path works there is nothing to watch SMP
+    arrive on.
+
+    It found a bug the day it was written, which is the argument for it: the
+    loop filling `sysinfo.cpu[]` was bounded by `info.cpus`, a field
+    assigned seventy lines further down, so the array stayed as `memset`
+    left it and every core read 0% with two spinners running. Nothing else
+    in the suite would have noticed - the *total* was right, and the total
+    is what four other programs read.
+
+    A worker is `/bin/spin.lua`, which exists for exactly this and
+    deliberately does not yield. So this is also a check on the priority
+    bands: the window is DISPLAY and the spinner is NORMAL, and if the
+    button stopped answering while a core was pinned the screenshot below
+    would not change at all.
+    """
+    guest.type("wm cores")
+    started(guest)
+    time.sleep(2.0)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = _meter_area(width, height, px)
+
+    # "add a worker", at (188, 198) with the window at 120,100.
+    guest.mouse_to(*_to_tablet(188, 198, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(5.0)
+
+    width, height, px = parse_ppm(guest.screendump())
+    after = _meter_area(width, height, px)
+
+    if after <= before + 100:
+        raise Failure(
+            f"the processor meter did not move when a worker was started: "
+            f"{before} filled pixels before and {after} after. Either "
+            "`sys.cpuload` is not reporting, or the click never reached the "
+            "button - which on a machine with one core pinned by a spinner "
+            "would mean the priority bands are not holding."
+        )
+
+    checks = 1
+
+    #
+    # And take it off again, which is a check and a tidy-up at once.
+    #
+    # **The tidy-up is not optional.** A worker is `spin 600` - ten minutes,
+    # because a person looking at this window should not have it evaporate -
+    # and it is *detached*, so Control-C to the window manager does not
+    # touch it. Leaving one running poisons every phase after this one:
+    # written without this, the next phase's window never appeared and the
+    # harness blamed the window rather than the spinner still burning the
+    # core behind it.
+    #
+    # It is also the better assertion. Watching the meter fall proves the
+    # kill reached a process this program started, which is the other half
+    # of what the buttons claim.
+    #
+    guest.mouse_to(*_to_tablet(308, 198, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(4.0)
+
+    width, height, px = parse_ppm(guest.screendump())
+    ended = _meter_area(width, height, px)
+
+    if ended >= after - 100:
+        raise Failure(
+            f"the worker was not taken off: {after} filled pixels with it "
+            f"running and {ended} after asking for it to stop. A spinner "
+            "left behind here runs for ten minutes, and every phase after "
+            "this one would share a core with it."
+        )
+
+    checks += 1
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from `cores`.")
+
+    return checks
 
 
 def check_clipboard(guest):
@@ -2608,6 +2754,7 @@ def main():
         terminal_checks = phase("terminal", check_terminal)
         deskbar_checks = phase("deskbar", check_deskbar)
         clip_checks = phase("clipboard", check_clipboard)
+        cores_checks = phase("cores", check_cores)
         click_checks = phase("clicks", check_clicks)
         graphical_checks = phase("graphical", check_graphical_mode)
         replicant_checks = phase("replicants", check_replicants)
@@ -2628,7 +2775,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + clip_checks
+             + clip_checks + cores_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks)
     print("\nwhere the time went:")
@@ -2655,6 +2802,8 @@ def main():
           f"{deskbar_checks} on starting an application from the Deskbar, "
           f"{clip_checks} on copying text from one application into "
           f"another, "
+          f"{cores_checks} on a processor meter moving when the machine is "
+          f"given work, "
           f"{idle_checks} on an idle desktop being idle, "
           f"{terminal_checks} on a program printing into a terminal window, "
           f"{direct_checks} on an application drawing its own pixels, "
