@@ -69,6 +69,28 @@ struct memrange {
 
 void hal_ram_range(struct memrange *out);
 
+/*
+ * How many processors this machine has - not how many are being used.
+ *
+ * `sysinfo.cpus` is the second number and is `NR_CPUS`, which is 1. This is
+ * the first, and the gap between them is the honest measure of how far
+ * `docs/smp.md` has got.
+ *
+ * Each board answers however it can. AArch64 asks PSCI about processor 0,
+ * 1, 2 until the firmware says there is no such thing, which needs no
+ * device tree. x86-64 has no answer yet: the count is in the ACPI MADT and
+ * nothing here parses ACPI, so it says one and `hal/pc/cpus.c` says why.
+ *
+ * **A count is the right question on these two machines and the wrong one
+ * on the next.** Alder Lake and everything after it are *hybrid*: the
+ * Alienware in `docs/targets.md` has six performance cores, eight
+ * efficiency cores and twenty hardware threads, and a scheduler told only
+ * "twenty" will put the compositor on an efficiency core. This stays a
+ * count until there is a board that can answer better, and `docs/smp.md`
+ * records what the shape has to become.
+ */
+unsigned hal_cpu_count(void);
+
 /* The interrupt controller. hal_irq_handle() is called from the IRQ vector:
  * it acknowledges, services and signals end-of-interrupt. */
 void hal_irq_init(void);

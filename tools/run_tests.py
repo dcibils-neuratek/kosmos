@@ -48,6 +48,19 @@ QEMU_ARGS = [
     # GICv3. It has to match the Makefile's line.
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
+    #
+    # **Four processors, and the kernel uses one of them.**
+    #
+    # Not aspirational: the other three are parked in firmware and never
+    # enter the kernel, so the machine behaves exactly as it did on one.
+    # What it exercises is `hal_cpu_count` - the PSCI walk that asks the
+    # firmware how many there are - which on `-smp 1` cannot tell a working
+    # answer from a hardcoded one.
+    #
+    # It is also what makes the next steps of `docs/smp.md` testable at all:
+    # a second core cannot be started on a machine that has one.
+    #
+    "-smp", "4",
     "-m", "512M",
     "-nographic",
     # The display. Without it hal_fb_init reports there is none, and the
@@ -68,6 +81,13 @@ X86_QEMU = "qemu-system-x86_64"
 
 X86_ARGS = [
     "-M", "q35",
+    #
+    # And four here too, for the same reason and with less to show for it:
+    # `hal/pc/cpus.c` answers 1 regardless, because the count lives in the
+    # ACPI MADT and nothing parses ACPI yet. What this does prove is that
+    # the kernel is unbothered by a machine with processors it cannot see.
+    #
+    "-smp", "4",
     "-m", "512M",
     "-nographic",
     # The display, so the framebuffer tests work rather than being skipped.

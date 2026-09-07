@@ -3723,6 +3723,33 @@ static void percpu_looker(void *arg)
     thread_exit();
 }
 
+/*
+ * The machine has processors, and the kernel says how many of them it uses.
+ *
+ * **Two numbers that must not be one.** `hal_cpu_count` asks the firmware
+ * what the machine has; `thread_cpu_count` is `NR_CPUS`, what this kernel
+ * was built for. On `-smp 4` the first is four and the second is one, and a
+ * system that reported only the second would look finished on a machine it
+ * is using a quarter of.
+ *
+ * Asserted as a *relationship* rather than as numbers, because the harness
+ * runs this on four and a person runs it on whatever they have: a machine
+ * cannot have fewer processors than the kernel is scheduling on, and the
+ * kernel cannot be scheduling on none.
+ *
+ * What it catches is the discovery breaking. On AArch64 that is a PSCI walk
+ * - ask about processor 0, 1, 2 until the firmware says there is no such
+ * thing - and a walk that returned zero, or ran off the end, would show
+ * here rather than in a boot line nobody reads.
+ */
+static bool test_the_machine_says_how_many_processors_it_has(void)
+{
+    unsigned present = hal_cpu_count();
+    unsigned in_use  = thread_cpu_count();
+
+    return in_use >= 1 && present >= in_use && present <= 64;
+}
+
 static bool test_percpu_is_per_cpu_and_not_per_thread(void)
 {
     struct percpu *mine = this_cpu();
@@ -4293,6 +4320,7 @@ static const struct test tests[] = {
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "cpu: the machine says how many processors it has", test_the_machine_says_how_many_processors_it_has },
     { "cpu: per-CPU state is per CPU, not per thread", test_percpu_is_per_cpu_and_not_per_thread },
     { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
     { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },

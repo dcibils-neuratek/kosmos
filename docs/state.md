@@ -8,6 +8,56 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### The machine has four processors and says so
+
+**`make test` now boots a four-core machine.** The other three are parked
+in firmware and never enter the kernel, so nothing behaves differently -
+but the kernel *knows they are there*, and on `-smp 1` a working discovery
+is indistinguishable from a hardcoded 1.
+
+**PSCI has no "how many processors" call**, and there is no device-tree
+parser here to read `/cpus` from. What it has is `AFFINITY_INFO`, a
+question about a *specific* processor - on, off, or coming on - which
+answers `INVALID_PARAMETERS` for one that does not exist. Ask about 0, then
+1, then 2, and count up to the first refusal. It is a pure query: it starts
+nothing, which is why it can be asked at boot, long before anything is
+ready to have a second core running in it.
+
+```
+[3/12] processor
+       ARM Cortex-A72 r0p3  (MIDR_EL1 0x410fd083)
+       -> 4 processors, 1 in use
+```
+
+**Two numbers because they are not one.** `hal_cpu_count` is what the
+machine has; `NR_CPUS` is what this kernel was built for. Reporting only
+the second would describe a four-core laptop as a one-core machine - true
+about Kosmos and false about the computer - and the gap between them is the
+honest measure of how far this has got. `machine`, `cores` and `sysinfo`
+all carry both now.
+
+x86-64 answers 1 and `hal/pc/cpus.c` says why: the count is in the ACPI
+MADT and nothing here parses ACPI. One is *true* - the kernel schedules on
+one processor - where zero would be false and a guess would be worse than
+either.
+
+**And a design question the plan had not asked**, prompted by the fact that
+every machine after QEMU has processors that differ from each other. The
+Alder Lake in `docs/targets.md` has six performance cores of two threads
+each and eight efficiency cores of one; ARM has had the same shape for
+longer under a different name. **A count cannot describe that**, and there
+are three separate ways two hardware threads differ - kind, whether they
+are siblings on one core, and which cache they share.
+
+`docs/smp.md` has a section on it now. The conclusion is not to build it:
+it is that the *runqueue split at step 5* is the one decision that would be
+expensive to get wrong, because a design where threads are enqueued
+centrally and pulled by whichever core is free cannot express "this one
+belongs on a P-core", and retrofitting that is a rewrite rather than an
+addition. Symmetric and correct first, on cores that are all alike, which
+is what QEMU gives - with the structure not closed against the day they are
+not.
+
 ### `cores`, an instrument built before the thing it measures
 
 **There is one processor, so this shows one bar.** That is the point rather

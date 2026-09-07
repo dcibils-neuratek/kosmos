@@ -204,6 +204,68 @@ review by reading, and prefer the shape that does not need the barrier.
 
 ---
 
+## Cores that are not alike, and why a count is the wrong question
+
+**Every machine this is planned for after QEMU has processors that differ
+from each other**, and the plan above quietly assumes they do not.
+
+The Alienware in `docs/targets.md` is an Alder Lake i7-12700H: six
+performance cores with two threads each, eight efficiency cores with one,
+twenty hardware threads in total. The P-cores have 48K of L1 data cache and
+reach 4.7 GHz; the E-cores have 32K and reach 3.5, and four of them share
+one 2 MB L2. ARM has had the same shape for longer under a different name -
+big.LITTLE, and the Pi 5's four A76s happen to be uniform only because it
+is a small part.
+
+So there are **three** ways two hardware threads can differ, and they are
+not the same problem:
+
+| | what differs | what it costs to ignore |
+|---|---|---|
+| **kind** | a P-core against an E-core | the compositor lands on the slow one |
+| **siblings** | two threads on one P-core | two hot threads share one core's execution units while a whole core idles |
+| **cache** | four E-cores share an L2 | threads that share data are placed apart |
+
+`hal_cpu_count` answers none of that, and it is right not to: it exists
+because the boot log had a caller for it today, and `CLAUDE.md` is explicit
+that an interface written ahead of a second real target is the shape of the
+first target with generic names.
+
+**What matters now is not closing the design against it.** Three places
+would have to change and none of them has to change yet:
+
+- **`struct percpu` gains a kind.** It is the kernel's own struct with no
+  ABI, so this costs a field the day something sets it. Not before: a field
+  nothing reads is indistinguishable from a bug.
+- **`sysinfo` carries it out.** `cpu[]` is already an array of a declared
+  struct, and `struct cpuload` gaining a kind beside its two counters is
+  additive.
+- **The runqueue split at step 5 has to be per-CPU rather than per-band.**
+  This is the one that would be expensive to get wrong: a design where a
+  thread is enqueued centrally and pulled by whichever core is free cannot
+  express "this one belongs on a P-core", and retrofitting affinity into it
+  is a rewrite rather than an addition.
+
+**And the policy is userland's, which is the answer this system already
+has.** The microkernel keeps threads and priorities; it does not decide
+which core a thread wants, any more than it decides what a file is. Where
+each board reads the kind from is `arch/`'s business - `CPUID.1A` on x86,
+where `EAX[31:24]` is 0x40 for a core and 0x20 for an atom; the per-core
+MIDR and the device tree's `cpu-map` on ARM.
+
+**This is the part of SMP worth doing here rather than reading about.** A
+priority-banded, preempt-on-wake scheduler descended from BeOS has never
+been asked which of two unequal processors a thread should run on, because
+in 1998 there were no unequal processors. The answer is not in the
+literature this design came from.
+
+Still out of scope for the first working SMP, and deliberately: symmetric
+and correct first, on cores that are all alike, which is exactly what QEMU
+gives. The note above is so that "correct" does not quietly mean "assumes
+they are alike" in a structure that cannot later say otherwise.
+
+---
+
 ## Not in scope
 
 **Not** load balancing across cores beyond "run the highest-priority ready

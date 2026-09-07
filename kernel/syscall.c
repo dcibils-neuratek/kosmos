@@ -563,7 +563,8 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      * of it - see `docs/smp.md`, which counts what is actually missing. What
      * this field reports is cores *running*, which is the honest number
      * either way. */
-    info.cpus       = thread_cpu_count();
+    info.cpus         = thread_cpu_count();
+    info.cpus_present = hal_cpu_count();
     info.tick_hz    = TICK_HZ;
     info.page_size  = PAGE_SIZE;
 

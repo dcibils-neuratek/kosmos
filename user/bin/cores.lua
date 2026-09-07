@@ -44,7 +44,9 @@
 local ui = use("/lib/ui.lua")
 local theme = ui.theme
 
-local CORES = (sys.info() or {}).cpus or 1
+local info    = sys.info() or {}
+local CORES   = info.cpus or 1            -- what the kernel schedules on
+local PRESENT = info.cpus_present or CORES -- what the machine actually has
 
 local ROW = 40
 local W = 460
@@ -173,10 +175,25 @@ win:add(ui.button{
 -- wraps and would be the widget for a paragraph; two lines are not a
 -- paragraph.
 --
-local note = (CORES == 1)
-  and { "One core, so a second worker makes this twice as slow",
-        "rather than twice as fast. docs/smp.md is the plan." }
-  or  { tostring(CORES) .. " cores. Add workers and watch them fill.", nil }
+--
+-- And the honest line, which is about the *gap*.
+--
+-- On a machine with four processors and one in use, "one core" would be a
+-- true statement about this kernel and a misleading one about the computer
+-- it is running on. The three that are parked are the whole subject.
+--
+local note
+
+if PRESENT > CORES then
+  note = { ("%d processors here, %d in use. The other %d are parked")
+           :format(PRESENT, CORES, PRESENT - CORES),
+           "in firmware; docs/smp.md is what it takes to start them." }
+elseif CORES == 1 then
+  note = { "One core, so a second worker makes this twice as slow",
+           "rather than twice as fast. docs/smp.md is the plan." }
+else
+  note = { tostring(CORES) .. " cores. Add workers and watch them fill." }
+end
 
 for i = 1, #note do
   win:add(ui.label{

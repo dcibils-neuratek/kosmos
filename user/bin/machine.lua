@@ -133,7 +133,22 @@ else
 end
 
 row("Architecture", cpu.arch or "unknown")
-row("Cores", (cpu.cores or 1) .. (cpu.cores == 1 and "  (SMP is not on yet)" or ""))
+--
+-- Two numbers, because they are not the same one.
+--
+-- `cpus_present` is what the firmware says the machine has; `cpus` is what
+-- this kernel is scheduling on. A report that gave only the second would
+-- describe a four-core laptop as a one-core machine, which is true about
+-- Kosmos and false about the computer - and the gap is exactly what
+-- `docs/smp.md` measures its own progress by.
+--
+local present = (sys.info() or {}).cpus_present or 1
+local in_use  = (sys.info() or {}).cpus or 1
+
+row("Cores", (present == in_use)
+             and tostring(present)
+             or ("%d present, %d in use  (SMP is being built)")
+                :format(present, in_use))
 
 if cpu.counter_hz and cpu.counter_hz > 0 then
   row("Counter", ("%d MHz"):format(cpu.counter_hz // 1000000))

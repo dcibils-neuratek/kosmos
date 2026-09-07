@@ -150,6 +150,28 @@ void kmain(void)
     kputc(')');
     boot_fact_end();
 
+    /*
+     * How many processors there are, and how many are being used.
+     *
+     * **Two numbers, because they are not the same one.** The firmware is
+     * asked what the machine has; `NR_CPUS` is what this kernel was built
+     * for. Booting a four-core machine and saying "1 processor" would be
+     * true about the kernel and a lie about the computer, and the gap is
+     * the honest measure of how far `docs/smp.md` has got.
+     */
+    boot_fact_begin();
+    kputu(hal_cpu_count());
+    kputs(" processor");
+
+    if (hal_cpu_count() != 1) {
+        kputc('s');
+    }
+
+    kputs(", ");
+    kputu(thread_cpu_count());
+    kputs(" in use");
+    boot_fact_end();
+
     /* One line, not two. `cpu` at the prompt has the longer version,
      * including why the counter is not the core clock. */
     boot_fact_begin();

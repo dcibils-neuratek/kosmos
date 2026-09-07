@@ -601,6 +601,17 @@ struct sysinfo {
      * entries filled in `cpu[]` below. It was the literal 1 until there was
      * something to ask. */
     uint32_t cpus;
+
+    /*
+     * And how many the *machine* has, which is a different number.
+     *
+     * The gap between the two is the honest measure of how far
+     * `docs/smp.md` has got: four present and one in use says the firmware
+     * offers three more and the kernel is not ready for them. A system that
+     * reported only the second would look finished on a machine it is
+     * using a quarter of.
+     */
+    uint32_t cpus_present;
     uint32_t tick_hz;
     uint32_t current_el;
     uint32_t page_size;
