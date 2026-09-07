@@ -243,7 +243,7 @@ function win:on_frame()
   local now = sys.ticks()
   local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
-  self.poll_wait = 125
+  self.poll_wait_ticks = 125
 
   if now - last < hz // 2 then return false end
 

@@ -27,6 +27,7 @@
 
 local ui = use("/lib/ui.lua")
 local gl = use("/kits/gl")
+local wmproto = use("/lib/wmproto.lua")
 
 return function(name, title)
   local BG, DIM = 0xff101828, 0xff7c8ba0
@@ -95,8 +96,7 @@ return function(name, title)
 
     -- A tick of waiting rather than none: a loop that never blocks is a
     -- thread that is always runnable, and an idle desktop should be idle.
-    local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
-                                       wait = 1 })
+    local reply = wmproto.poll(win.handle, 1)
 
     if not reply then break end
 

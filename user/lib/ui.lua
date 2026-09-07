@@ -32,6 +32,7 @@
 --------------------------------------------------------------------------
 
 local theme = use("/lib/theme.lua")
+local wmproto = use("/lib/wmproto.lua")
 
 local ui = { theme = theme }
 
@@ -3175,7 +3176,7 @@ function window:run()
     -- line at a time, which is not slow, it is a window answering its
     -- children once a second.
     --
-    -- `poll_wait` is in scheduler ticks and overrides that. It is not the
+    -- `poll_wait_ticks` is in scheduler ticks and overrides that. It is not the
     -- default because it is a real cost: a window that wakes a hundred
     -- times a second is a window that is running a hundred times a second.
     --
@@ -3184,7 +3185,7 @@ function window:run()
     --
     -- `wait` on the wire is a timeout, so it is scheduler ticks - the same
     -- as `sys.sleep` and `sys.receive` and `fs.wait_input`, and the same as
-    -- `poll_wait`'s own comment above. `tick_every` is *not*: it is
+    -- `poll_wait_ticks`'s own comment above. `tick_every` is *not*: it is
     -- compared against `sys.ticks()` further down, which is the counter, so
     -- it is counter units at every call site that sets it. Feeding it
     -- straight into `wait` mixed them.
@@ -3198,7 +3199,7 @@ function window:run()
     --
     -- So both convert here, and nothing downstream has to know.
     --
-    local wait = self.poll_wait
+    local wait = self.poll_wait_ticks
 
     if not wait then
       if self.tick_every and self.tick_every > 0 then
@@ -3208,8 +3209,7 @@ function window:run()
       end
     end
 
-    local reply = fs.send("/app/wm", { type = "poll", window = self.handle,
-                                       wait = wait })
+    local reply = wmproto.poll(self.handle, wait)
 
     --
     -- The window manager went away, which is the ordinary end of an

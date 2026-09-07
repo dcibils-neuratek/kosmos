@@ -27,6 +27,7 @@
 --------------------------------------------------------------------------
 
 local ui = use("/lib/ui.lua")
+local wmproto = use("/lib/wmproto.lua")
 
 local W, H = 420, 300
 local BANDS = 60                -- horizontal strips, each one `span` call
@@ -105,8 +106,7 @@ while win.running do
   -- quarter of one - and an animating window is trading that for an idle
   -- machine when nothing is animating. Worth knowing which trade it is.
   --
-  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
-                                     wait = 1 })
+  local reply = wmproto.poll(win.handle, 1)
 
   if not reply then break end
 

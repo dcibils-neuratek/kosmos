@@ -20,6 +20,7 @@
 local ui    = use("/lib/ui.lua")
 local theme = ui.theme
 local bench = use("/lib/bench.lua")
+local wmproto = use("/lib/wmproto.lua")
 
 local W, H  = 620, 700
 local ROW   = 20
@@ -246,8 +247,7 @@ while win.running do
   -- deliberately trying to use the whole processor, and a poll that slept
   -- would be timing the sleep. Once it has a score it waits like anything
   -- else, because an idle desktop should be idle.
-  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
-                                     wait = score and 1 or 0 })
+  local reply = wmproto.poll(win.handle, score and 1 or 0)
 
   if not reply then break end
 

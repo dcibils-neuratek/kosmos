@@ -11,6 +11,8 @@
 -- side: because the pixels live in the window manager, this program can
 -- stop answering and its window carries on existing.
 
+local wmproto = use("/lib/wmproto.lua")
+
 local W, H = 360, 200
 
 local win, err = fs.send("/app/wm", {
@@ -55,7 +57,7 @@ draw()
 -- over when asked; asking is a round trip and the answer is usually empty,
 -- which is what the yield below is for.
 while true do
-  local reply = fs.send("/app/wm", { type = "poll", window = handle })
+  local reply = wmproto.poll(handle, 0)
 
   if not reply then return end            -- the manager went away
 

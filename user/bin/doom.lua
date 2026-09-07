@@ -23,6 +23,7 @@
 -- was pointing at the better design.
 
 local ui = use("/lib/ui.lua")
+local wmproto = use("/lib/wmproto.lua")
 
 if type(doom) ~= "table" then
   print("doom: this image was not built with DOOM=1")
@@ -279,7 +280,7 @@ while win.running do
   end
 
   --
-  -- `wait = 0`: do not block.
+  -- `wait_ticks = 0`: do not block.
   --
   -- cube3d asks for a tick of waiting so an idle desktop is idle, and that
   -- is right for a spinning cube, which has nowhere to be. Doom paces
@@ -287,8 +288,7 @@ while win.running do
   -- while it waits - so waiting here as well would halve the frame rate
   -- for nothing.
   --
-  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
-                                     wait = 0 })
+  local reply = wmproto.poll(win.handle, 0)
 
   if not reply then break end
 

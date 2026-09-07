@@ -20,6 +20,7 @@
 
 local ui  = use("/lib/ui.lua")
 local g3d = use("/lib/g3d.lua")
+local wmproto = use("/lib/wmproto.lua")
 
 local W, H = 400, 320
 local BG = 0xff101828
@@ -103,8 +104,7 @@ while win.running do
   -- A tick of waiting rather than none, for the reason plasma gives: a loop
   -- that never blocks is a thread that is always runnable, and an idle
   -- desktop should be idle.
-  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
-                                     wait = 1 })
+  local reply = wmproto.poll(win.handle, 1)
 
   if not reply then break end
 

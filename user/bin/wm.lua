@@ -2151,7 +2151,13 @@ handlers.poll = function(req, who)
   end
 
   -- Nothing yet. Hold the answer rather than sending an empty one.
-  local wait = tonumber(req.wait) or POLL_DEFAULT
+  --
+  -- `wait_ticks`, and the name is the fix: the field was `wait`, every
+  -- caller wrote scheduler ticks into it, and this line added that to
+  -- `sys.ticks()` - the counter, a quarter of a million times finer. See
+  -- `user/lib/wmproto.lua`, which is now the only place the message is
+  -- built.
+  local wait = tonumber(req.wait_ticks) or POLL_DEFAULT
 
   waiting[#waiting + 1] = {
     who = who, win = win, deadline = sys.ticks() + in_counter(wait),

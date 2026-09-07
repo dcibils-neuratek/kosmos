@@ -324,7 +324,7 @@ end
 -- than that; this is only the ceiling on how long a program waits to be
 -- answered.
 --
-win.poll_wait = 1
+win.poll_wait_ticks = 1
 
 win:add(view)
 

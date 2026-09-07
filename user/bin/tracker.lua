@@ -1522,14 +1522,14 @@ end
 --
 -- Twice a second while one is showing, because a window cannot block on the
 -- filesystem and on the desktop at the same time - see the note on the
--- search box above. `poll_wait` is what makes this a wake rather than a
+-- search box above. `poll_wait_ticks` is what makes this a wake rather than a
 -- spin: the desktop holds the reply until something happens or the wait
 -- runs out, so between asks this process is not running at all.
 --
 local QUERY_WAIT = 125            -- scheduler ticks; TICK_HZ is 250
 
 --
--- And a clock, because `poll_wait` is a *ceiling* rather than a period.
+-- And a clock, because `poll_wait_ticks` is a *ceiling* rather than a period.
 --
 -- The desktop answers the poll the moment anything happens, so a pointer
 -- moving across this window returns from it many times a second - and
@@ -1548,11 +1548,11 @@ local asked_at   = 0
 
 function win:on_frame()
   if not asked then
-    win.poll_wait = nil
+    win.poll_wait_ticks = nil
     return false
   end
 
-  win.poll_wait = QUERY_WAIT
+  win.poll_wait_ticks = QUERY_WAIT
 
   local now = sys.ticks()
 

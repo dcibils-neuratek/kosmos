@@ -410,7 +410,7 @@ local stop_btn = ui.button{ x = 90, y = 168, text = "Stop" }
 --
 -- Awake often while it is playing, and lazy the rest of the time.
 --
--- **Two numbers, and they are not the same number.** `poll_wait` is how
+-- **Two numbers, and they are not the same number.** `poll_wait_ticks` is how
 -- long the window is willing to *wait* for an event; `tick_every` is how
 -- often `tick` is allowed to *fire*. Setting only the first was the whole
 -- of a bug worth writing down: the loop woke every four milliseconds and
@@ -419,7 +419,7 @@ local stop_btn = ui.button{ x = 90, y = 168, text = "Stop" }
 -- periods a turn, so the machine played exactly twelve periods a second -
 -- seven-tenths of a second of music in every twelve, and audibly so.
 --
--- `poll_wait` is in scheduler ticks (4 ms each now); `tick_every` is in
+-- `poll_wait_ticks` is in scheduler ticks (4 ms each now); `tick_every` is in
 -- counter ticks, which is the other clock and six hundred thousand times
 -- finer. Two clocks and two units, which is why they were confused.
 --
@@ -427,10 +427,10 @@ local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
 local function pace()
   if stream then
-    win.poll_wait = 1                     -- 4 ms, one scheduler tick
+    win.poll_wait_ticks = 1                     -- 4 ms, one scheduler tick
     win.tick_every = counter_hz // 250    -- 4 ms, in the counter's units
   else
-    win.poll_wait = nil                   -- back to the lazy default
+    win.poll_wait_ticks = nil                   -- back to the lazy default
     win.tick_every = counter_hz
   end
 end

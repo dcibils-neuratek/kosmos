@@ -24,6 +24,7 @@
 -- that the right shape rather than a guess.
 
 local ui = use("/lib/ui.lua")
+local wmproto = use("/lib/wmproto.lua")
 
 local PAL_W  = 96
 local CANVAS_W, CANVAS_H = 520, 380
@@ -201,8 +202,7 @@ while win.running do
               w = pending.w, h = pending.h, again = true }
   end
 
-  local reply = fs.send("/app/wm", { type = "poll", window = win.handle,
-                                     wait = 1 })
+  local reply = wmproto.poll(win.handle, 1)
 
   if not reply then break end
 
