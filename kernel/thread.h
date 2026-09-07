@@ -259,8 +259,8 @@ struct thread {
      * Per thread and not a global, which was found the hard way. With one
      * process a global was indistinguishable from correct; with two, whichever
      * ran last owned it, so a syscall checked one process's pointers against
-     * the other's address space and an exception from EL0 arrived with no
-     * process at all.
+     * the other's address space, and an exception from user level arrived
+     * with no process at all.
      */
     struct process *process;
 
@@ -268,7 +268,8 @@ struct thread {
      * The address space this thread runs in, or NULL for the kernel's.
      *
      * Switched by switch_to, because it has to follow the thread. Setting
-     * TTBR0 once when a process starts leaves whichever process ran last
+     * the page table root once when a process starts leaves whichever
+     * process ran last
      * owning the page tables, and the next one to be scheduled runs with
      * somebody else's memory underneath it: its own code reads another
      * process's data, and its own instructions are fetched from addresses
@@ -430,7 +431,7 @@ unsigned thread_cap_count(const struct thread *t);
  * Performs the switch thread_tick asked for, if it asked for one.
  *
  * Called only from the vector epilogue in vectors.S. Calling it from C would
- * move SP_EL1 out from under whatever frame the caller is standing on.
+ * move the stack out from under whatever frame the caller is standing on.
  */
 void thread_preempt_if_needed(void);
 

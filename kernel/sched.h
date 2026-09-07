@@ -61,7 +61,8 @@ struct scheduler {
      * This *is* acted on. `thread_tick` records the answer and the vector's
      * epilogue calls `thread_preempt_if_needed`, which does the switch -
      * the switch cannot happen in C inside the handler, because it moves
-     * SP_EL1 and everything below that point reads the trap frame at `sp`.
+     * the stack the handler is standing on, and everything below that point
+     * is still reading the trap frame off it.
      * The comment here used to say nothing acted on it, which stopped being
      * true when preemption landed and was not corrected at the time.
      */
@@ -77,8 +78,9 @@ struct scheduler {
      * This is the difference between a system that answers input in a
      * quantum and one that answers it in a switch. It cannot do the switch
      * itself - `thread_wake` is called from inside IPC and from the
-     * interrupt path, and a switch there would move SP_EL1 out from under
-     * whatever is reading the trap frame. It sets the same flag the timer
+     * interrupt path, and a switch there would move the stack out from
+     * under whatever is reading the trap frame. It sets the same flag the
+     * timer
      * sets, and the vector's epilogue acts on it.
      */
     bool (*preempts)(const struct thread *running, const struct thread *woken);

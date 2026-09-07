@@ -90,8 +90,7 @@ unblocks.
 
 ### Being built now
 
-**The AArch64 references in `kernel/`'s comments** — 43 of them across nine
-files. The code was made portable and its prose was not.
+**SMP on AArch64.** `docs/smp.md` is the plan, counted rather than guessed.
 
 ### Next, in this order
 

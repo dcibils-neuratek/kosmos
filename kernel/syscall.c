@@ -7,7 +7,7 @@
  *
  * **Every pointer is checked before it is touched.** A process handing over
  * a kernel address is not caught by the MMU, because the kernel dereferences
- * it at EL1 where that mapping is valid and privileged. `process_may_read`
+ * it privileged, where that mapping is valid. `process_may_read`
  * and `process_may_write` are the only thing between a syscall and an
  * arbitrary read of kernel memory.
  *
@@ -100,7 +100,8 @@ static long sys_write(struct process *p, uintptr_t ptr, size_t len)
     /*
      * Checked once and then read a byte at a time, which is safe only
      * because nothing can unmap those pages in between: this process is the
-     * one running, and it is here rather than at EL0. When another thread
+     * one running, and it is here rather than out at user level. When
+     * another thread
      * can change this address space, the check and the copy have to become
      * one operation.
      */
@@ -176,7 +177,8 @@ static long sys_receive(struct process *p, cap_t cap, uintptr_t msg_ptr,
     copy_message_out((struct message *)msg_ptr, &msg);
 
     /*
-     * The sender goes back to EL0 as a kernel pointer, which is a leak: a
+     * The sender goes back to the process as a kernel pointer, which is a
+     * leak: a
      * process learns where a struct thread lives. It is written down rather
      * than hidden because it is temporary. At M5 a reply is a capability
      * like everything else, and a process will hold an index into its own
@@ -718,8 +720,9 @@ void syscall_dispatch(struct syscall_frame *sc)
     long result;
 
     if (p == NULL) {
-        /* An SVC from something that is not a process. Nothing issues one,
-         * so reaching here means the vector routed something wrongly. */
+        /* A syscall from something that is not a process. Nothing issues
+         * one, so reaching here means the entry path routed something
+         * wrongly. */
         sc->result = (uint64_t)(long)SYS_ERR_BADCALL;
         return;
     }
@@ -1302,7 +1305,8 @@ void syscall_dispatch(struct syscall_frame *sc)
          * The physical counter, straight out of the register.
          *
          * Not a wall clock and not pretending to be one: it counts from
-         * whenever the machine started, at CNTFRQ_EL0 Hz, and says nothing
+         * whenever the machine started, at whatever rate the board's
+         * counter runs, and says nothing
          * about what time it is. A date is `/dev/clock`'s job.
          *
          * No permission check. It is not authority - every process can

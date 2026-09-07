@@ -398,7 +398,8 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
  *
  * The one place a switch happens. thread_exit used to have its own copy of
  * this and the two drifted: this one learned to switch the address space and
- * that one did not, so a process exiting left TTBR0 on the kernel's tables
+ * that one did not, so a process exiting left the page table root on the
+ * kernel's tables
  * and whichever process ran next did so with somebody else's memory
  * underneath it. Duplicated control flow does not stay duplicated.
  */
@@ -836,7 +837,8 @@ void thread_wake(struct thread *t)
          *
          * The switch is not done here. `thread_wake` is called from inside
          * IPC and from the interrupt path, and switching there would move
-         * SP_EL1 while something above is still reading the trap frame at
+         * the stack while something above is still reading the trap frame
+         * at
          * `sp`. Setting the flag the timer already sets means the vector's
          * epilogue does it, at the one place where it is safe.
          */
@@ -866,7 +868,7 @@ void thread_wake(struct thread *t)
 
 /*
  * The FP registers may still be attributed to a thread that is going away.
- * From arch/aarch64/fp.c; saving into a slot that is about to be recycled
+ * From each board's `fp.c`; saving into a slot that is about to be recycled
  * is silent corruption the moment somebody else gets it.
  */
 void fp_forget(struct thread *t);

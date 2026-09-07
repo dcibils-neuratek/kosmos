@@ -194,7 +194,8 @@ static struct process *alloc_process(void)
  * The thread side of a process.
  *
  * Runs once, in kernel context, to install the address space and then hand
- * the CPU to EL0. It never comes back: from the eret onwards this thread is
+ * the CPU to user level. It never comes back: from that return onwards this
+ * thread is
  * the process, and every return into the kernel is an exception.
  */
 static void process_main(void *arg)
@@ -263,18 +264,25 @@ struct process *process_create(const char *name, const void *image,
      * and the Lua source of every program - was 2.8 MB copied per process,
      * sixteen times, and no process could tell the difference because none
      * of them can write a byte of it. A second mapping of the kernel's own
-     * pages at `USER_TEXT_VA`, read-only and executable at EL0, costs
-     * nothing and is exactly as isolated: the permissions live in the
+     * pages at `USER_TEXT_VA`, read-only and executable to the process,
+     * costs nothing and is exactly as isolated: the permissions live in the
      * *mapping*, and every process has its own.
      *
      * The comment that stood here said the opposite - that the image's pages
-     * are the kernel's, EL1-only, and giving them EL0 permissions would give
+     * are the kernel's alone, and giving them user permissions would give
      * them to everything at once. That is true of the *identity* map, which
-     * is shared, and this does not touch it. `USER_TEXT_VA` is 0x80000000,
-     * an L1 slot above RAM that the kernel never uses, so the tables built
-     * here belong to this address space alone. The alias is safe because
-     * both mappings are Normal, inner-shareable, write-back - what ARM
-     * forbids is mismatched *attributes*, not different permissions.
+     * is shared, and this does not touch it. `USER_TEXT_VA` is above RAM on
+     * both boards, in a slot of the top-level table the kernel never uses,
+     * so the tables built here belong to this address space alone.
+     *
+     * **And the alias is safe because both mappings carry the same memory
+     * attributes**, not because they carry the same permissions. Different
+     * permissions for the same physical page are the entire point. What
+     * both architectures forbid is two mappings that disagree about
+     * *cacheability* - ARM's rule is about Normal, inner-shareable,
+     * write-back memory and x86's is about the PAT and MTRR types, and they
+     * amount to the same requirement. Both mappings here are ordinary
+     * write-back memory, so both are satisfied.
      *
      * The writable half is still copied, and has to be: two processes from
      * one image must not share their globals.
@@ -843,7 +851,7 @@ int process_kill(struct process *parent, unsigned id)
          * A thread waiting on an endpoint is not running, so it cannot
          * notice the flag. Unblocking it here is what makes the kill take
          * effect on a process that is not spinning - it resumes, its IPC
-         * call fails, and the check on the way back to EL0 ends it.
+         * call fails, and the check on the way back to user level ends it.
          */
         if (c->thread != NULL) {
             ipc_abort(c->thread);
@@ -1016,7 +1024,8 @@ void process_reap(struct process *p)
  *
  * This is the check that stands between a syscall and an arbitrary read of
  * kernel memory. A process handing over a kernel pointer is not caught by
- * the MMU: the kernel dereferences it at EL1, where that mapping is valid
+ * the MMU: the kernel dereferences it privileged, where that mapping is
+ * valid
  * and privileged. Nothing about the hardware notices; only this does.
  *
  * It walks the process's own page tables rather than comparing against a

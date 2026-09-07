@@ -5,14 +5,16 @@
 /*
  * The syscall interface.
  *
- * `svc #0`, with the number in x8 and arguments in x0 through x5, and the
- * result back in x0. That is the AArch64 Linux convention, borrowed because
- * it is the one every tool and every reader already knows; nothing else about
- * it is inherited.
+ * A number and up to six arguments in registers, and the result back in
+ * one. **Which registers is the architecture's business and is written down
+ * once, at the bottom of this file**, beside the entry stubs that implement
+ * it - AArch64 borrows the Linux convention (`svc #0`, the number in x8,
+ * arguments in x0-x5) and x86-64 borrows System V's, and the reason for
+ * borrowing in both cases is the same: it is the one every tool and every
+ * reader already knows. Nothing else about either is inherited.
  *
- * x8 rather than x0 for the number so the arguments start where the C calling
- * convention already puts them, which means a syscall stub is a `mov` and an
- * `svc` rather than a shuffle.
+ * The numbering and the meaning below are the interface. The registers are
+ * how it is spelled.
  *
  * SYS_TICKS is the one that looks out of place, and is not. `design.md` §4.4
  * makes the *clock* a capability - `/dev/clock`, asked for by name, handed
@@ -24,8 +26,8 @@
  * clock stays a capability, which is the same split the design already makes
  * between entering the kernel and everything else.
  *
- * It also retires a weakness. Without it a process cannot read CNTPCT_EL0 at
- * all, and Lua's string-hash seed at EL0 came off a stack address for want of
+ * It also retires a weakness. Without it a process cannot read the counter
+ * at all, and Lua's string-hash seed came off a stack address for want of
  * anything better.
  *
  * These are not the interface Kosmos ends up with. `design.md` §4.4 has

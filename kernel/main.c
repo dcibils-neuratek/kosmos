@@ -1,6 +1,6 @@
 /*
  * Where C starts. Called from boot/start.S with the stack set up and .bss
- * zeroed, running at EL1 on core 0.
+ * zeroed, running privileged on the boot processor.
  */
 
 #include <stddef.h>
@@ -341,7 +341,7 @@ void kmain(void)
     hal_timer_init(TICK_HZ);
 
     /* Nothing has been able to interrupt this core since start.S masked
-     * everything on the way into EL1. Now there is a handler and a source. */
+     * everything on the way in. Now there is a handler and a source. */
     cpu_irq_enable();
 
     boot_stage("timer and interrupts");
@@ -482,7 +482,7 @@ void kmain(void)
      * There is no Lua behind this line any more, and no REPL. Both were in
      * the image long after the prompt moved into a process, kept there by a
      * test suite that drove the kernel through an interpreter; the tests run
-     * at EL0 now and the interpreter went with them.
+     * out at user level now, and the interpreter went with them.
      */
     /* Named as the idle thread, so that every timer tick can tell whether
      * the machine was working or waiting. It is the only thread that runs

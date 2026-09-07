@@ -13,14 +13,20 @@ struct addrspace;
 struct thread;
 
 /*
- * A process: an address space, a thread running in it at EL0, and the
+ * A process: an address space, a thread running unprivileged in it, and the
  * capabilities it was handed.
  *
  * `design.md` §2's isolation comes from the hardware, not from the language.
- * A process runs at EL0 with its own page table root, and every kernel
- * mapping is AP=00, which is EL1 read/write and no EL0 access at all. Lua
- * inside it is not sandboxed and does not need to be: if it breaks its own
- * language sandbox it breaks itself, and nothing else.
+ * A process runs at the unprivileged level with its own page table root,
+ * and every kernel mapping is one the kernel may read and write and a
+ * process cannot reach at all. Lua inside it is not sandboxed and does not
+ * need to be: if it breaks its own language sandbox it breaks itself, and
+ * nothing else.
+ *
+ * The two boards spell that privilege level differently - EL0 and EL1 on
+ * AArch64, ring 3 and ring 0 on x86-64 - and this file says neither.
+ * `cpu_current_el` is where the two are reconciled, and it reports the
+ * kernel as 1 on both.
  *
  * One thread per process for now. Several is a scheduler question rather
  * than a new mechanism, and nothing needs it yet.
@@ -60,9 +66,15 @@ struct thread;
  * The gaps between the regions are the point. A stack that grows past its
  * end, or a heap that runs off its top, lands in unmapped space and faults
  * rather than in whatever happened to be next.
+ *
+ * **The offsets are the invariant; the base is the board's.**
+ * `USER_VA_BASE` comes from `-DKOSMOS_USER_BASE` and is 0x80000000 on
+ * AArch64 and 0x40000000 on x86-64 - so these used to carry absolute
+ * addresses in their comments and half of them were wrong on the second
+ * machine. What is true on both is the distance between the regions.
  */
-#define USER_TEXT_VA     USER_VA_BASE                       /* 0x80000000 */
-#define USER_HEAP_VA     (USER_VA_BASE + 0x01000000UL)      /* 0x81000000 */
+#define USER_TEXT_VA     USER_VA_BASE                       /* base         */
+#define USER_HEAP_VA     (USER_VA_BASE + 0x01000000UL)      /* base + 16 MB */
 /*
  * Two megabytes, and overridable at build time.
  *
@@ -80,7 +92,7 @@ struct thread;
 #ifndef USER_HEAP_PAGES
 #define USER_HEAP_PAGES  512                                /* 2 MB       */
 #endif
-#define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* 0x82000000 */
+#define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* base + 32 MB */
 #define USER_STACK_PAGES 16                                 /* 64 KB      */
 
 /*
@@ -316,7 +328,7 @@ struct process {
      *
      * That bounds the wait at one timer period even for a process that has
      * stopped making syscalls entirely, which is exactly the case a kill is
-     * for - `/bin/spin.lua` is an EL0 loop that yields to nothing.
+     * for - `/bin/spin.lua` is a user-level loop that yields to nothing.
      */
     bool              killed;
 };
@@ -330,8 +342,9 @@ void process_init(void);
  * full or there are no pages.
  *
  * The blob is copied rather than mapped in place because the image's own
- * pages are the kernel's, mapped EL1-only, and shared by every process. A
- * process gets its own copy so it can be given EL0 permissions without
+ * pages are the kernel's, mapped for the kernel alone, and shared by every
+ * process. A process gets its own copy so it can be given user permissions
+ * without
  * handing them to anybody else.
  */
 /*
@@ -496,7 +509,8 @@ void process_set_name(struct process *p, const char *name, size_t len);
  *
  * Every pointer a syscall is handed has to go through this. A process that
  * passes a kernel address is not misbehaving in a way the MMU catches: the
- * kernel dereferences it at EL1, where the mapping is perfectly valid, and
+ * kernel dereferences it privileged, where the mapping is perfectly valid,
+ * and
  * the check is the only thing standing between a syscall and an arbitrary
  * read of kernel memory. `design.md` §4.3's whole argument is that a process
  * reaches exactly what it was handed.

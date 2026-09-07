@@ -202,7 +202,8 @@ static void queue_remove(struct thread **head, struct thread *t)
  * That is not a complete answer - a replier holds a raw thread pointer, so
  * once this slot is reused a stale reply could reach the thread that
  * inherits it - and it is the same leak `sys_receive` already records
- * against handing thread pointers to EL0. Killing makes it reachable rather
+ * against handing thread pointers to a process. Killing makes it reachable
+ * rather
  * than introducing it.
  */
 void ipc_abort(struct thread *t)

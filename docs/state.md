@@ -8,6 +8,45 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### The kernel's prose caught up with its code
+
+The last item the 0.9.0 review left open. `kernel/` compiles for both
+architectures with no `#ifdef` in any of its thirteen files, and its
+comments still explained it in one architecture's vocabulary: EL0 and EL1
+for the privilege levels, SP_EL1 for the stack an exception lands on, TTBR0
+for the page table root, CNTFRQ_EL0 for the counter's rate, `svc` for a
+syscall.
+
+**Thirty-seven references across nine files; about twenty-five rewritten
+and twelve left alone**, and the twelve are the interesting half: every one
+of them names *both* boards on purpose - the syscall ABI section that
+contrasts x8 with System V, `sysinfo`'s raw-register block, the note that
+AArch64 never showed the sleep bug, and one historical record of a boot-log
+string that used to say MIDR_EL1. Those are not drift; they are the file
+doing its job.
+
+**Two were wrong rather than parochial**, which is the reason this was
+worth doing rather than a tidy:
+
+- **`USER_TEXT_VA`, `USER_HEAP_VA` and `USER_STACK_TOP` carried absolute
+  addresses in their comments** - 0x80000000, 0x81000000, 0x82000000 - and
+  `USER_VA_BASE` is 0x40000000 on x86-64. All three were simply false on
+  the second board. The offsets are the invariant and the base is the
+  board's, so they say `base + 16 MB` now and the base is named once, with
+  both values.
+
+- **`process.c` explained why a shared code mapping is safe in ARM's terms
+  only**: "both mappings are Normal, inner-shareable, write-back - what ARM
+  forbids is mismatched *attributes*, not different permissions". The claim
+  is right and general - x86 has the same requirement through the PAT and
+  the MTRRs - but as written it read as an ARM guarantee the x86 build was
+  relying on without saying so. Now it says the requirement and then how
+  each architecture spells it.
+
+That second one is the shape worth remembering. A portable file explaining
+itself in one architecture's vocabulary is not merely untidy: it hides
+whether the *claim* is portable or only the code is.
+
 ### Targets: three axes, not two, and one question worth half an hour
 
 `docs/targets.md` is new and is the model for what a machine *is* here.
