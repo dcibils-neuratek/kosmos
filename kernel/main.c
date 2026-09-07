@@ -15,6 +15,7 @@
 #include "kernel.h"
 
 #include "percpu.h"
+#include "smp.h"
 #include "thread.h"
 #include "sched.h"
 #include "ipc.h"
@@ -169,7 +170,7 @@ void kmain(void)
 
     kputs(", ");
     kputu(thread_cpu_count());
-    kputs(" in use");
+    kputs(" scheduling");
     boot_fact_end();
 
     /* One line, not two. `cpu` at the prompt has the longer version,
@@ -206,6 +207,42 @@ void kmain(void)
      * .text is read-only, and address 0 and the stack guard have no
      * translation at all. */
     mmu_init();
+
+    /*
+     * And now the other processors, because now there is something for them
+     * to turn on.
+     *
+     * **After `mmu_init` and not before**, which is the one ordering this
+     * has: `boot/start.S` calls `mmu_enable_here` before a secondary runs
+     * any C at all, with the tables this core built. Started at the
+     * processor stage instead - where it
+     * reads naturally, beside the line that counts them - each one enabled
+     * translation against a `kernel_l1` that did not exist yet, and none of
+     * them ever arrived. The boot log said "1 in the kernel" and was right.
+     *
+     * They park. `kernel/smp.c` has the whole of what they do and why that
+     * is worth doing before there is a lock in this kernel.
+     */
+    smp_start_others();
+
+    /*
+     * Said only when there is something to say. On a machine with one
+     * processor the line would be "1 of them in the kernel", which is the
+     * previous line again in different words - and a boot log that repeats
+     * itself is one people stop reading.
+     */
+    if (hal_cpu_count() > 1) {
+        boot_fact_begin();
+        kputu(smp_online() - 1);
+        kputs(" of the others in the kernel too, parked in wfi");
+
+        if (smp_online() < hal_cpu_count()) {
+            kputs("; the rest are still in firmware");
+        }
+
+        boot_fact_end();
+    }
+
     boot_stage("virtual memory");
     boot_why("Translation on; from here the kernel's own code is read-only.");
     boot_fact(mmu_describe());

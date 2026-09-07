@@ -1,3 +1,5 @@
+#include "smp.h"
+
 /*
  * Kosmos entry point.
  *
@@ -152,6 +154,88 @@ at_el1:
 
     /* kmain does not return. If it ever does, park rather than run off the
      * end of the image into whatever follows. */
+/*
+ * Where a second processor arrives.
+ *
+ * PSCI `CPU_ON` starts a core here with **the MMU off, caches off, at EL1**,
+ * and with the context word this kernel passed waiting in x0 - which is the
+ * processor's index. Everything `_start` did for core 0 has to be done
+ * again, because a processor has its own copy of every system register even
+ * though the page tables are shared.
+ *
+ * What is *not* done again: the tables, .bss, and anything else that
+ * belongs to the machine rather than to a core. Those exist already.
+ *
+ * **The stack has to be found before the MMU is on**, which is why it is an
+ * array indexed by the context word rather than anything cleverer. With
+ * translation off every access is non-cacheable, so the handful of stores
+ * between here and `mmu_enable_here` are slow and, more importantly, do not
+ * share a cache with core 0 - which is safe only because this stack belongs
+ * to this core and nothing else will ever look at it. `secondary_main`
+ * turns translation on as its first act, and the window is a function
+ * prologue.
+ */
+.global _secondary_start
+_secondary_start:
+    /* The same known SCTLR_EL1 core 0 writes: MMU off, caches off, little
+     * endian, RES1 bits set. The reset value is UNKNOWN on several cores
+     * and PSCI does not promise one. */
+    movz    x1, #0x0800
+    movk    x1, #0x30d0, lsl #16
+    msr     sctlr_el1, x1
+    isb
+
+    /* Trap FP and SIMD, lazily, exactly as core 0 does. */
+    mov     x1, #(0 << 20)
+    msr     cpacr_el1, x1
+    isb
+
+    /*
+     * Two stacks, from the two arrays `kernel/smp.c` declares. x0 is this
+     * core's index, and each slot is `SECONDARY_STACK_BYTES`; the label is
+     * the *base*, so the top of slot n is base + (n + 1) * size.
+     */
+    mov     x2, #SECONDARY_STACK_BYTES
+    add     x3, x0, #1
+    mul     x3, x3, x2
+
+    adrp    x1, secondary_exception_stacks
+    add     x1, x1, :lo12:secondary_exception_stacks
+    add     x1, x1, x3
+    mov     sp, x1                  /* arrives with SPSel 1: this is SP_EL1 */
+
+    msr     spsel, #0
+    adrp    x1, secondary_stacks
+    add     x1, x1, :lo12:secondary_stacks
+    add     x1, x1, x3
+    mov     sp, x1                  /* and this is SP_EL0, the kernel's */
+
+    /*
+     * Translation on, with the tables core 0 built, before any C runs.
+     *
+     * **The last step of this architecture's entry path, and that is why it
+     * is here rather than in `kernel/smp.c`.** It used to be the first
+     * statement of `secondary_main`, which made a generic file call an
+     * AArch64 function - and the x86-64 build refused to link the moment
+     * that file was added to it. The link error was right: how a newly
+     * started core reaches a state where it can execute C is exactly what
+     * `arch/` and `boot/` are for, and the two machines do not agree on it.
+     * A secondary here arrives with the MMU off; one on x86-64 will arrive
+     * from a real-mode trampoline already in long mode, because long mode
+     * requires paging.
+     *
+     * x19 because it is callee-saved: x0 is the index and `secondary_main`
+     * wants it back.
+     */
+    mov     x19, x0
+    bl      mmu_enable_here
+    mov     x0, x19
+
+    /* x0 is still the index, which is `secondary_main`'s only argument. */
+    bl      secondary_main
+
+    /* It does not return. If it ever did, park rather than run off the end
+     * of the image into whatever follows - the same reason core 0 does. */
 park:
     wfe
     b       park

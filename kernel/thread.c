@@ -38,6 +38,11 @@ struct percpu *this_cpu(void)
     return cpu_self();
 }
 
+struct percpu *percpu_at(unsigned index)
+{
+    return (index < NR_CPUS) ? &cpus[index] : NULL;
+}
+
 void percpu_init(unsigned index)
 {
     cpus[index].index = index;
@@ -601,7 +606,20 @@ unsigned thread_cap_count(const struct thread *t)
 
 unsigned thread_cpu_count(void)
 {
-    return NR_CPUS;
+    /*
+     * One, and `NR_CPUS` is four.
+     *
+     * **They are different questions and returning the second here said
+     * "4 scheduling" on a machine where three cores were parked in `wfi`.**
+     * `NR_CPUS` is how many `struct percpu` slots exist - the room, so a
+     * core that starts has somewhere to put itself. This is how many are
+     * running threads, and until `docs/smp.md` step four gives a secondary
+     * an idle thread and a runqueue, that is one.
+     *
+     * `smp_online` is the third of the three and counts cores that have
+     * executed kernel code, parked or not.
+     */
+    return 1;
 }
 
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy)

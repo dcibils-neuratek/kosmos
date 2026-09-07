@@ -1,14 +1,16 @@
 # SMP
 
-**Step one is done. The rest is not.** This is what it would take, counted
-against the code as it stands rather than estimated, because the last thing
-written down about SMP was wrong for two years: `CLAUDE.md` claimed a
-per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the repository's
-first commit, and none of the three had ever existed.
+**Steps one and three are done. The rest is not.** This is what it would
+take, counted against the code as it stands rather than estimated, because
+the last thing written down about SMP was wrong for two years: `CLAUDE.md`
+claimed a per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the
+repository's first commit, and none of the three had ever existed.
 
 Two of those three exist now. `kernel/percpu.h` holds the struct,
 `TPIDR_EL1` holds the pointer to it on AArch64, and the runqueue is still a
-global - which is step five below.
+global - which is step five below. **And there are four instruction streams
+in the machine**, three of them parked: step three below, done out of order
+and for a reason recorded there.
 
 **And re-auditing this document against the code found something it had
 missed**, which is the argument for auditing against code rather than
@@ -31,8 +33,10 @@ uniprocessor and it is why `ipc.c` is 801 lines instead of two thousand.
 It does mean SMP is not a feature to add beside the others: it changes the
 assumption the whole kernel rests on.
 
-**The kernel is 8,683 lines.** Small enough that this is tractable, and the
-reason to do it here rather than read about it.
+**The kernel is 5,769 lines of code**, by `make size`, which counts code
+and not the comments - this codebase is more than half comments on purpose.
+Small enough that this is tractable, and the reason to do it here rather
+than read about it.
 
 ---
 
@@ -163,8 +167,45 @@ Then, in dependency order:
 2. **Locks, with one core.** Take them, release them, and let them be
    uncontended. The kernel is still correct at every step and `make test`
    still passes - which is what makes this safe to do incrementally.
-3. **A second core, doing nothing.** PSCI `CPU_ON` into a park loop. Proves
-   bring-up, the trampoline, and that the per-CPU register is right.
+
+   **Deferred, deliberately, and step three was done in front of it.** The
+   reason is that this step is *untestable* in the state the kernel is in.
+   Both boards already enter the kernel with interrupts masked - AArch64 by
+   architecture, x86 through an interrupt gate - so on one core the pools
+   genuinely need no lock, and every lock added here would be a lock that
+   is never contended, never fails, and is checked by nothing. That is not
+   incremental progress; it is a large diff on faith, with `make test`
+   unable to tell a correct one from a broken one.
+
+   Step three has the opposite property. A parked core touches no shared
+   structure, so it needs none of this, and it is the only way to find out
+   whether the per-CPU register from step one is actually per-core - which
+   step one could assert and could not check.
+
+   So the locks come back when there is a second *scheduling* core to
+   contend for them, which is step four. **This is a departure from the
+   order above and it is written here rather than quietly done**, because
+   the order was reasoned about once and this changes it.
+3. ~~**A second core, doing nothing.**~~ **Done.** PSCI `CPU_ON` into a
+   park loop, in `kernel/smp.c`, with `_secondary_start` in `boot/start.S`
+   and `hal_cpu_count` / `hal_cpu_on` under it. `-smp 4` boots four
+   processors, one scheduling; `-smp 1` boots one and says so.
+
+   It proves the four things nothing else could: the firmware call works
+   and the entry address was right; a core started this way can turn its
+   own MMU on with tables it did not build; `TPIDR_EL1` really is per-core,
+   which the suite now checks by asking core *i* for its own index; and the
+   machine survives having two instruction streams in it.
+
+   **Two bugs, and both were ordering rather than concurrency**, which is
+   worth recording because it is not what one braces for. `smp_start_others`
+   was called fifty lines before `mmu_init`, so the secondaries enabled
+   translation with tables that did not exist yet and never arrived - the
+   boot said "1 in the kernel" and nothing else went wrong, which is the
+   quietest possible failure. And `thread_cpu_count` returned `NR_CPUS`,
+   so the machine claimed to be scheduling on four cores while three of
+   them were in `wfi`; `NR_CPUS` is how many slots exist, and how many are
+   scheduling is a different number that is still one.
 4. **The idle thread on the second core.** It schedules, ticks and idles.
 5. **Per-CPU runqueues.** The scheduler is already a vtable
    (`struct scheduler` in `sched.h`), so this is a policy beside
@@ -197,6 +238,26 @@ where the time goes, and IPC is where the bugs will be.
 machine hard, then ask `sysinfo` whether it gave everything back. It becomes
 the SMP test almost unchanged, because a lost lock shows up as a leaked
 slot.
+
+**And the machine boots with four processors by default**, not only under
+`make test`: `SMP ?= 4` in the Makefile, `make SMP=1 qemu` for the one-core
+machine. Step three is the argument for it. Its worst bug produced no
+fault, no hang and no wrong behaviour - only a boot line saying 1 where it
+should have said 4 - so a bring-up path that runs only when the suite runs
+is one that is checked once a session by somebody reading a number they
+just wrote. Three cores in `wfi` cost a QEMU thread that is never
+scheduled.
+
+Two checks in the guest suite, and the second is the one that matters:
+
+- *the machine says how many processors it has* - `hal_cpu_count` against
+  what QEMU was told, which on `-smp 1` cannot distinguish a working
+  discovery from a hardcoded 1, and is why the suite boots four.
+- *every processor claimed its own slot* - `percpu_at(i)->index == i` for
+  every online core. **This is what step one could not check.** On one
+  processor every answer is the same answer, so a per-CPU register and a
+  global are indistinguishable; with four, a `TPIDR_EL1` that was somehow
+  shared would show up here and nowhere else.
 
 What it cannot do is find an ordering bug, and nothing can reliably. The
 answers are: run it a great many times, keep the discipline simple enough to

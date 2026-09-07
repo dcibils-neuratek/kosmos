@@ -221,6 +221,7 @@ SRCS := boot/start.S \
         kernel/ipc.c \
         kernel/memobj.c \
         kernel/process.c \
+        kernel/smp.c \
         kernel/syscall.c \
         kernel/main.c \
         $(GEN)/init_bin.c
@@ -1361,7 +1362,22 @@ FORWARD := $(if $(HTTP),$(comma)hostfwd=tcp::$(HTTP)-:80,)
 NET_FLAGS := $(if $(NONET),,-netdev user$(comma)id=net0$(FORWARD) \
                             -device virtio-net-device$(comma)netdev=net0)
 
-QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M \
+# How many processors the machine has, which is not how many Kosmos
+# schedules on.
+#
+# **Four, so that the machine you use is the machine the suite tests.** The
+# other three are started at boot, claim their `struct percpu` and park in
+# `wfi` - `docs/smp.md` step three - and until step four they run no
+# threads. `make SMP=1 qemu` is the single-core machine, and the difference
+# is visible in `cores`, in `sysmon`, and in the boot log's third line.
+#
+# It costs nothing to leave on: a core in `wfi` is a QEMU thread that is not
+# scheduled. What it buys is that the bring-up path runs every single time
+# somebody boots this thing, rather than only under `make test` - and the
+# one bug in it that reached a commit was invisible except in that line.
+SMP ?= 4
+
+QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
@@ -1377,7 +1393,7 @@ QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M \
 # terminal is all there is - over ssh, for instance.
 # No window, and therefore no keyboard: with -display none QEMU has nowhere
 # to take key presses from, so the virtio device would sit there empty.
-QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -nographic \
+QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) -nographic \
                     -global virtio-mmio.force-legacy=false \
                     $(NET_FLAGS) \
                     -drive file=$(DISK),format=raw,if=none,id=disk \
@@ -1632,6 +1648,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/rtc.c \
              hal/pc/power.c \
              hal/pc/cpus.c \
+             hal/pc/cpu_on.c \
              hal/fwcfg/fwcfg.c \
              hal/fwcfg/ramfb.c \
              hal/pc/fwcfg_port.c \
@@ -1657,6 +1674,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/ipc.c \
              kernel/memobj.c \
              kernel/process.c \
+             kernel/smp.c \
              kernel/syscall.c \
              kernel/main.c \
              $(X86_BUILD)/init_bin.c

@@ -532,6 +532,9 @@ bool          hal_fb_init(struct fb *out);  /* M6; false when there is no screen
 bool          hal_keyboard_init(void);      /* M6; false when there is none  */
 bool          hal_pointer_init(void);       /* M6; false when there is none  */
 bool          hal_pointer_poll(struct pointer_state *out);
+
+unsigned      hal_cpu_count(void);          /* how many processors exist */
+bool          hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long ctx);
 ```
 
 There is deliberately no `hal_keyboard_getchar`. A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. Nothing above the HAL changes because a keyboard exists.
@@ -543,6 +546,15 @@ The pointer *does* get its own pair, and the difference is the point: a characte
 `hal/hal.h` is the authority. If this list and that file disagree, that file is right and this one is stale — say so.
 
 **Do not expand the HAL speculatively.** The right interface appears once there is a second real target. Writing it now with a single target produces the shape of QEMU with generic names.
+
+The two `hal_cpu_*` entries arrived with `docs/smp.md` step three, and they
+are the board's half of a split worth naming: **the board knows how to
+start a processor and not where it should land.** PSCI here, and
+`INIT`-`SIPI`-`SIPI` on a PC; where a started core begins executing is an
+architecture fact and comes from `cpu_secondary_entry` in `arch/`. Both
+halves can say no independently, and on x86-64 today both do - which is why
+they are separate rather than one function that would have to be half
+right.
 
 `hal_fb_init` is deliberately "ask the firmware for a linear framebuffer, and let it choose where the pixels live", because that is the one operation QEMU's ramfb and the Pi's mailbox both perform. virtio-gpu does not fit it — it needs an explicit flush after drawing — and that is precisely why adding virtio-gpu is what will grow the interface a `hal_fb_flush`, with two implementations in front of it rather than one.
 

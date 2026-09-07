@@ -13,10 +13,14 @@
 --------------------------------------------------------------------------
 -- Why this exists before the thing it shows
 --
--- Kosmos runs on one core. `docs/smp.md` is the plan for more and step one
--- of it is done - the state that belongs to a processor rather than to the
--- machine now lives in `struct percpu`, reached through `TPIDR_EL1`. There
--- is still exactly one.
+-- **Kosmos schedules on one core and the machine has four.** They are not
+-- parked in firmware any more: `docs/smp.md` step three starts them, each
+-- claims its own `struct percpu` through its own `TPIDR_EL1`, and each
+-- then sits in `wfi` for ever. They are in the kernel and they run no
+-- threads, which is why there is one bar and not four - a meter for a core
+-- that never ticks would be a meter reading zero and meaning nothing.
+--
+-- Step four is the one that adds a bar.
 --
 -- So this is an instrument built before the experiment, which is what this
 -- project does: `jitter` measured the noise floor before anybody optimised
@@ -185,9 +189,9 @@ win:add(ui.button{
 local note
 
 if PRESENT > CORES then
-  note = { ("%d processors here, %d in use. The other %d are parked")
+  note = { ("%d processors, %d scheduling. The other %d are in the kernel")
            :format(PRESENT, CORES, PRESENT - CORES),
-           "in firmware; docs/smp.md is what it takes to start them." }
+           "and parked in wfi; docs/smp.md step 4 gives them threads." }
 elseif CORES == 1 then
   note = { "One core, so a second worker makes this twice as slow",
            "rather than twice as fast. docs/smp.md is the plan." }

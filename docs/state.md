@@ -2,11 +2,110 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 ---
 
 ## Where this left off
+
+### The network harness only looked like it was waiting
+
+**Found by a `make prepush` that failed once and passed three times.** The
+network suite's `boot()` types a list of commands and waits for the prompt
+after each - except `wait_for` searches the whole accumulated buffer, and
+`seen` was cleared once before the loop rather than before each command. So
+a prompt from an *earlier* command satisfied every later wait instantly:
+only the first command was ever actually waited for, and the transcript was
+a snapshot of whatever the guest had emitted by the time Python finished
+typing.
+
+It passed nearly always, because nearly every command in that file answers
+in milliseconds. The one that does not is the second `host example.com` - a
+fresh query with a round trip to a real resolver behind it - and when it
+lost the race the check reported, with confidence, a units bug in
+`NET_OP_RESOLVE` that had been fixed days earlier.
+
+**Naming a likely cause is worth a lot in a test and worth less than
+nothing when the harness is the cause.** The message now says what was
+observed, names the units bug as the known shape of it, and says to read
+the transcript before believing it.
+
+`tools/run_disk.py` already had the answer and has for months: its reader
+takes a `since` offset, with a one-line comment saying the prompt is
+already in `seen` from the last time. Same trap, same building, solved once
+- because the two harnesses were written months apart and nothing connects
+them.
+
+### SMP step three: three more instruction streams, and they do nothing
+
+**There are four processors running kernel code, and three of them are in
+`wfi`.** `docs/smp.md` step three, done *before* step two, which is the
+part of this worth arguing rather than the code.
+
+```
+[3/12] processor
+       ARM Cortex-A72 r0p3  (MIDR_EL1 0x410fd083)
+       -> 4 processors, 1 scheduling
+       -> 3 of the others in the kernel too, parked in wfi
+```
+
+**Why not the locks first.** Step two is "take locks with one core, let
+them be uncontended", and it is *untestable* in the state the kernel is in:
+both boards already enter with interrupts masked - AArch64 by architecture,
+x86 through an interrupt gate - so on one core no pool needs a lock, and
+every lock added would be one nothing contends, nothing fails on, and
+nothing checks. That is a large diff on faith. Step three has the opposite
+property: a parked core touches no shared structure, so it needs none of
+them, and it is the only way to find out whether the per-CPU register from
+step one is genuinely per-core - which step one could assert and could not
+check. The suite now asks core *i* for its own index and gets *i*.
+
+**Two bugs, and neither was concurrency.** Both were ordering, which is not
+what one braces for when starting a second processor.
+
+`smp_start_others` was called fifty lines before `mmu_init`, so the
+secondaries turned translation on with tables that did not exist yet and
+never arrived. The failure was *silent*: no fault, no hang, nothing on the
+screen. The only symptom was the boot log saying 1 where it should have
+said 4, which is exactly the line that had just been written and was
+therefore the line least likely to be believed.
+
+And `thread_cpu_count` returned `NR_CPUS`, so the machine claimed to be
+scheduling on four cores while three were parked. `NR_CPUS` is **how many
+slots exist**; how many are scheduling is a different number and is still
+one. Collapsing them would have been claiming step four.
+
+**Where the MMU gets turned on moved into assembly, and the x86-64 link
+error is what said so.** `secondary_main`'s first statement was
+`mmu_enable_here()` - an AArch64 function called from a file in `kernel/`,
+which refused to link the moment `kernel/smp.c` joined the x86 build. The
+link error was right. How a newly started core reaches a state where it can
+execute C is what `arch/` and `boot/` are for, and the two machines do not
+agree: a secondary here arrives with the MMU off, one on x86-64 will arrive
+from a real-mode trampoline already in long mode, because long mode
+requires paging. So `boot/start.S` calls it, and `kernel/smp.c` has no
+architecture in it at all.
+
+That left one thing `kernel/smp.c` still needed to know - *where* a core
+should land - and it is an architecture fact rather than a board one. The
+board knows how to **start** a processor (PSCI here, `INIT`-`SIPI`-`SIPI`
+on a PC) and not where it should begin executing. `cpu_secondary_entry` in
+`arch/` answers that, and answers **0** on x86-64, where no trampoline
+exists. Two separate refusals - `arch/x86_64/cpu.h` has no landing pad,
+`hal/pc/cpu_on.c` has no local APIC to send the sequence with - and they
+stay separate so that building one does not silently look like building
+both.
+
+**`make qemu` boots four processors now**, not just `make test`. `SMP ?= 4`
+in the Makefile, and `make SMP=1 qemu` is the one-core machine. The bug
+above is the argument: it was invisible except in a boot line, so the
+bring-up path should run every time somebody boots this thing rather than
+only when the suite does.
+
+132 checks on AArch64 and 128 on x86-64. The new one is *every processor
+claimed its own slot* - `percpu_at(i)->index == i` for every core that
+arrived - and it is the check step one could not write, because on one
+processor every answer is the same answer.
 
 ### The machine has four processors and says so
 
@@ -26,7 +125,8 @@ ready to have a second core running in it.
 ```
 [3/12] processor
        ARM Cortex-A72 r0p3  (MIDR_EL1 0x410fd083)
-       -> 4 processors, 1 in use
+       -> 4 processors, 1 scheduling
+       -> 3 of the others in the kernel too, parked in wfi
 ```
 
 **Two numbers because they are not one.** `hal_cpu_count` is what the

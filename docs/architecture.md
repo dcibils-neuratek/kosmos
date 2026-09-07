@@ -573,12 +573,26 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   a driver bug is a kernel bug. Everything else that was going to move out
   of the kernel has.
 
-- **Single core, and not written for more.** Nothing has ever run on a
-  second core, and the code is not ready for one: there is no per-CPU
-  struct, `TPIDR_EL1` has never appeared in `arch/` or `kernel/`, the
-  runqueue is `head[]` and `tail[]` at file scope in `sched_prio.c`,
-  `current` is one global in `thread.c`, and there is not a lock or an
-  atomic anywhere. `docs/smp.md` counts what it would actually take.
+- **One core schedules; three others are in the kernel doing nothing.**
+  `make qemu` boots four processors. Each of the three secondaries turns
+  translation on with core 0's tables, claims its own `struct percpu`
+  through its own `TPIDR_EL1`, and parks in `wfi` for ever - `docs/smp.md`
+  step three. **They touch no shared structure and run no thread**, which
+  is what makes it safe to have done before any lock exists.
+
+  What is still missing is most of it. The runqueue is `head[]` and
+  `tail[]` at file scope in `sched_prio.c`; `owner` in `arch/*/fp.c` is a
+  global; there is not a lock or an atomic anywhere in `kernel/`; and the
+  x86-64 board has neither a trampoline to land a core on nor a local APIC
+  to start one with. `docs/smp.md` counts the seven steps and marks the two
+  that are done.
+
+  This bullet used to say "nothing has ever run on a second core, and there
+  is no per-CPU struct" - and before that, `CLAUDE.md` claimed the opposite
+  from the repository's first commit, that the code was written SMP-ready
+  with a per-CPU pointer and a per-CPU runqueue. Neither was checked by
+  anything, which is the whole argument for the state files being audited
+  against code.
 
   The x86-64 port paid for part of that in advance without meaning to. Two
   pieces of state there are per-CPU rather than per-thread - the TSS
@@ -589,7 +603,7 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   core was enough to prove it wrong.
 
 - **Every message blocks.** `SYS_CALL`, `SYS_RECEIVE` and `SYS_REPLY` are
-  the whole IPC surface, so a request to a server descheduls the caller
+  the whole IPC surface, so a request to a server deschedules the caller
   until the reply comes back - by construction, with no way to say
   otherwise. Half a browser frame is an application waiting on a `commit`
   whose handler swaps an index and records a rectangle. A non-blocking send

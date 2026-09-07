@@ -91,6 +91,19 @@ void hal_ram_range(struct memrange *out);
  */
 unsigned hal_cpu_count(void);
 
+/*
+ * Start a processor at `entry`, with `context` waiting for it in the first
+ * argument register.
+ *
+ * **The address is physical.** The core this starts has no translation on
+ * yet and will turn it on itself, with the tables this one already built -
+ * so it is handed where the code *is* rather than where this core sees it.
+ *
+ * False when the firmware refused, which on a board that cannot do it at
+ * all is the honest answer rather than a hang.
+ */
+bool hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long context);
+
 /* The interrupt controller. hal_irq_handle() is called from the IRQ vector:
  * it acknowledges, services and signals end-of-interrupt. */
 void hal_irq_init(void);

@@ -91,6 +91,12 @@ unblocks.
 ### Being built now
 
 **SMP on AArch64.** `docs/smp.md` is the plan, counted rather than guessed.
+**Steps one and three of seven are done**: the state that belongs to a
+processor lives in `struct percpu`, found through `TPIDR_EL1`, and
+`make qemu` boots four cores of which three claim their slot and park in
+`wfi`. Step two - locks - was skipped past deliberately and `smp.md`
+records why. Next is step four, an idle thread on a secondary, which is
+where the locks become testable and therefore where they come back.
 
 ### Next, in this order
 
@@ -183,9 +189,13 @@ the Pi", and the Pi is not here yet.
 
 ### The system
 
-- **SMP.** Moved up to *Next* — see there. Single core today, but written
-  SMP-ready: no loose mutable globals, a per-CPU pointer, a per-CPU
-  runqueue with one CPU in it.
+- **SMP.** Moved up to *Being built now* — see there. **This entry used to
+  claim the kernel was "written SMP-ready: no loose mutable globals, a
+  per-CPU pointer, a per-CPU runqueue with one CPU in it", and none of the
+  three was ever true** — the same sentence `CLAUDE.md` carried from the
+  first commit and corrects. The per-CPU pointer exists now because
+  somebody wrote it; the runqueue is still `head[]` and `tail[]` at file
+  scope, and there is not a lock or an atomic anywhere in `kernel/`.
 - **An ELF loader**, so a program can be loaded rather than compiled in.
 - **SSH**, in layers with test vectors at each: the binary packet protocol,
   Curve25519, ChaCha20-Poly1305, userauth, channels. The one place here

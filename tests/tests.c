@@ -6,6 +6,7 @@
 #include "fault.h"
 #include "machine.h"
 #include "percpu.h"
+#include "smp.h"
 #include "console.h"
 #include "trap.h"
 #include "pmm.h"
@@ -3750,6 +3751,52 @@ static bool test_the_machine_says_how_many_processors_it_has(void)
     return in_use >= 1 && present >= in_use && present <= 64;
 }
 
+/*
+ * Every processor that entered the kernel claimed *its own* slot.
+ *
+ * **This is what step one could not check and step three can.** The per-CPU
+ * pointer lives in `TPIDR_EL1`, which the architecture says is banked per
+ * core - and on a machine with one core that claim is unfalsifiable,
+ * because every answer is the same answer whether the register works or
+ * not.
+ *
+ * With secondaries running there is a real test: each was started with its
+ * own index and called `percpu_init` with it, so `cpus[n].index` is `n` for
+ * every core that arrived. A register that were somehow shared, or an entry
+ * path that passed the wrong context word, would leave those slots at the
+ * zero `.bss` gave them.
+ *
+ * It also checks the three counts stay in their order, which is the thing
+ * that went wrong twice while this was being written: `hal_cpu_count` is
+ * what the machine has, `smp_online` is how many ran kernel code, and
+ * `thread_cpu_count` is how many schedule threads. Reporting `NR_CPUS` for
+ * the last said "4 scheduling" on a machine with three cores in `wfi`.
+ */
+static bool test_every_processor_claimed_its_own_slot(void)
+{
+    unsigned online  = smp_online();
+    unsigned present = hal_cpu_count();
+    unsigned i;
+
+    if (online < 1 || online > present) {
+        return false;
+    }
+
+    if (thread_cpu_count() > online) {
+        return false;           /* scheduling on cores that never arrived */
+    }
+
+    for (i = 0; i < online; i++) {
+        const struct percpu *c = percpu_at(i);
+
+        if (c == NULL || c->index != i) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool test_percpu_is_per_cpu_and_not_per_thread(void)
 {
     struct percpu *mine = this_cpu();
@@ -4321,6 +4368,7 @@ static const struct test tests[] = {
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
     { "cpu: the machine says how many processors it has", test_the_machine_says_how_many_processors_it_has },
+    { "cpu: every processor claimed its own slot", test_every_processor_claimed_its_own_slot },
     { "cpu: per-CPU state is per CPU, not per thread", test_percpu_is_per_cpu_and_not_per_thread },
     { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
     { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },

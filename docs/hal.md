@@ -366,10 +366,18 @@ Minimal on purpose. **Do not expand it speculatively.**
 ```c
 void     hal_early_init(void);        // the minimum needed to have output
 void     hal_putchar(char c);         // serial
-void     hal_fb_init(struct fb *out); // address, w, h, pitch, format
+bool     hal_fb_init(struct fb *out); // address, w, h, pitch, format
 void     hal_irq_init(void);
 void     hal_timer_init(uint32_t hz);
 uint64_t hal_ticks(void);
+
+// The processors, and only what a board can answer about them. How many
+// there are, and starting one - PSCI here, INIT-SIPI-SIPI on a PC.
+// **Not where a started core lands**, which is an architecture fact and
+// comes from `cpu_secondary_entry` in `arch/`: the board knows how to
+// start a processor and has no opinion about what it should run.
+unsigned hal_cpu_count(void);
+bool     hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long context);
 
 // M11. Frames, and nothing above them: no addresses, no protocols, no
 // checksums. What an IP address means is not a driver's business, and a HAL

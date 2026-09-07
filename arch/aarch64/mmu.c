@@ -202,6 +202,13 @@ void mmu_unmap_page(uintptr_t va)
 }
 
 
+static void enable(void);
+
+void mmu_enable_here(void)
+{
+    enable();
+}
+
 static void enable(void)
 {
     uint64_t mair;

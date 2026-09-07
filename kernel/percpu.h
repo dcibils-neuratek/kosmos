@@ -10,16 +10,19 @@
 /*
  * The state that belongs to one processor rather than to the machine.
  *
- * **This is step one of `docs/smp.md`, and the whole of it is that nothing
- * behaves differently.** `NR_CPUS` is 1, there is still exactly one core,
- * and every field below was a file-scope global in `thread.c` an hour ago.
- * What changes is that they are now *named* as per-CPU state and reached
- * through one function, so the day a second core exists there is one place
- * that has to become right rather than five.
+ * **`docs/smp.md` step one**, and every field below was a file-scope global
+ * in `thread.c` before it: they are named as per-CPU state now and reached
+ * through one function, so there is one place that has to be right rather
+ * than five.
  *
- * Doing it while it cannot fail is the point. `CLAUDE.md` claimed a per-CPU
- * struct from the repository's first commit and there was never one; the
- * correction is recorded and this is the other half of it.
+ * `CLAUDE.md` claimed a per-CPU struct from the repository's first commit
+ * and there was never one; the correction is recorded and this is the other
+ * half of it.
+ *
+ * **Step three fills more than one of these.** A secondary started by
+ * `kernel/smp.c` claims its own slot and parks, which is what finally
+ * demonstrates that the register below is per-core - step one could only
+ * assert it on a machine where every answer was the same answer.
  *
  * **Named `percpu.h` and not `cpu.h`** because `-Ikernel` and
  * `-Iarch/<name>` are both on the compile line: a second `cpu.h` here would
@@ -29,13 +32,16 @@
  */
 
 /*
- * How many processors this kernel is built for.
+ * Four, which is how many `struct percpu` slots exist - **not how many are
+ * running threads**, which is `thread_cpu_count` and is one.
  *
- * One, and every array below is sized by it, so raising it is a real
- * change rather than a flag. It is here rather than in `kernel.h` because
- * it is only meaningful beside the thing it sizes.
+ * It was 1 while nothing could start a second core. `smp.c` can now, and a
+ * core that arrives needs somewhere to put itself, so the slots have to
+ * exist first. Four because that is what `make test` boots and what a Pi 5
+ * has; the machine is asked how many it really has and the smaller of the
+ * two wins.
  */
-#define NR_CPUS     1
+#define NR_CPUS     4
 
 struct thread;
 
@@ -113,5 +119,15 @@ struct percpu *this_cpu(void);
  * it. That is the one ordering constraint this file has.
  */
 void percpu_init(unsigned index);
+
+/*
+ * Another processor's slot, by index, or NULL past the end.
+ *
+ * `this_cpu` is the fast answer for the core asking; this is how one core
+ * looks at another's, which is what a scheduler balancing across them will
+ * need and what the suite needs today to check that each secondary claimed
+ * *its own* rather than all of them landing on zero.
+ */
+struct percpu *percpu_at(unsigned index);
 
 #endif /* KERNEL_PERCPU_H */

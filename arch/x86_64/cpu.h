@@ -274,4 +274,40 @@ static inline void *cpu_self(void)
     return cpu_self_storage;
 }
 
+
+/*
+ * A hint that this core is spinning and the other one should get on with
+ * it.
+ *
+ * `yield` on AArch64 and `pause` on x86: both tell the processor that this
+ * loop is waiting rather than working, which on a machine with hardware
+ * threads lets the sibling have the pipeline and on any machine saves
+ * power. Neither is a barrier and neither orders anything - the loop still
+ * needs whatever it needed.
+ */
+/*
+ * Where a newly started core lands - and on this machine, nowhere yet.
+ *
+ * `boot/x86_64/start.S` has one entry point and it assumes the boot
+ * protocol handed it a machine in a known state. A secondary here does not
+ * arrive that way: `INIT`-`SIPI`-`SIPI` starts it in **real mode**, at a
+ * page under 1 MB, and the same long-mode climb has to happen again from
+ * there. That trampoline does not exist, so this says so and
+ * `smp_start_others` stops before asking the board for anything.
+ *
+ * The board refuses too - `hal/pc/cpu_on.c` returns false, because it has
+ * no local APIC to send the sequence with. **Two separate missing things,
+ * said separately**, so that building one does not silently look like
+ * building both. `docs/smp.md` is where they are counted.
+ */
+static inline uintptr_t cpu_secondary_entry(void)
+{
+    return 0;
+}
+
+static inline void cpu_relax(void)
+{
+    __asm__ volatile("pause" ::: "memory");
+}
+
 #endif /* ARCH_X86_64_CPU_H */

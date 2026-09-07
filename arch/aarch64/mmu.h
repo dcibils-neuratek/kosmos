@@ -92,6 +92,27 @@
  * because the tables come out of the page allocator. */
 void mmu_init(void);
 
+/*
+ * Turn translation on for *this* core, using the tables `mmu_init` already
+ * built.
+ *
+ * A processor started by PSCI arrives with the MMU off and its own copy of
+ * every system register, so it has to be told MAIR, TCR, TTBR0 and SCTLR
+ * itself - the tables are shared, the registers that point at them are not.
+ * This is the second half of `mmu_init` and nothing else: no tables are
+ * built and none are touched.
+ *
+ * **Called from `boot/start.S`, not from C.** It used to be the first
+ * statement of `secondary_main` in `kernel/smp.c`, which put an AArch64
+ * function in a file that is meant to have no architecture in it - and the
+ * x86-64 link refused it the moment that file joined the other board's
+ * build. Turning translation on is the last step of *this* architecture's
+ * entry path: a secondary here arrives with the MMU off, one on x86-64
+ * arrives from a real-mode trampoline already in long mode, because long
+ * mode requires paging.
+ */
+void mmu_enable_here(void);
+
 /* Whether SCTLR_EL1.M is set. */
 bool mmu_is_enabled(void);
 

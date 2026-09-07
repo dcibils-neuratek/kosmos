@@ -147,7 +147,7 @@ local in_use  = (sys.info() or {}).cpus or 1
 
 row("Cores", (present == in_use)
              and tostring(present)
-             or ("%d present, %d in use  (SMP is being built)")
+             or ("%d present, %d scheduling  (SMP is being built)")
                 :format(present, in_use))
 
 if cpu.counter_hz and cpu.counter_hz > 0 then

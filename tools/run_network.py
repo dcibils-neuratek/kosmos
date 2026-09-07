@@ -217,23 +217,58 @@ def boot(image, extra, commands, seconds=90, then=None):
 
     try:
         guest.wait_for(run_screenshot.PROMPT, "the prompt")
-        guest.seen = ""
+
+        #
+        # **`seen` is cleared before every command, and that is the whole of
+        # what makes the wait a wait.**
+        #
+        # `wait_for` searches the accumulated buffer, so a prompt from an
+        # *earlier* command satisfies it instantly. Clearing once before the
+        # loop meant only the first command was actually waited for: the
+        # rest were typed back to back as fast as Python could write them,
+        # and what came back was a snapshot of whatever the guest had
+        # managed to emit by then.
+        #
+        # It passed almost every time, because almost every command here
+        # answers in milliseconds. The one that does not is the second
+        # `host example.com` - a fresh query with a round trip to a real
+        # resolver behind it - and when it lost the race the transcript
+        # ended after the echo, with the check blaming a units bug in
+        # `NET_OP_RESOLVE` that had been fixed a week earlier. A test that
+        # names a cause is worth more than one that says "failed"; it is
+        # worth less than nothing when the harness is the cause.
+        #
+        # **`tools/run_disk.py` already knew.** Its reader takes a `since`
+        # offset and its comment says why in one line - *the prompt is
+        # already in `seen` from the last time, so a plain `until in seen`
+        # would return instantly*. Same trap, same building, solved once and
+        # not the second time, because the two harnesses were written months
+        # apart and nothing connects them. Worth knowing the next time a
+        # third one grows a command loop.
+        #
+        transcript = ""
 
         for command in commands:
+            guest.seen = ""
             guest.type(command + "\n")
 
             if then is not None and command is commands[-1]:
                 time.sleep(3)       # let it reach its accept loop
+                guest._read_available()
+                transcript += guest.seen
                 break
 
             guest.wait_for(run_screenshot.PROMPT, command)
+            transcript += guest.seen
 
         if then is not None:
+            guest.seen = ""
             then()
             time.sleep(1)
             guest._read_available()
+            transcript += guest.seen
 
-        return guest.seen.replace("\r", "")
+        return transcript.replace("\r", "")
     finally:
         guest.close()
 
@@ -589,11 +624,14 @@ def main():
                   "lookup itself was not checked)")
         elif lookups < 2:
             raise Failure(
-                "the first lookup answered and the second did not. That is "
-                "exactly the shape of the units bug in `NET_OP_RESOLVE`: a "
-                "deadline built from scheduler ticks added to a counter "
-                "reads as microseconds, so whichever query beats the next "
-                "sweep is answered and the rest time out.\n" + out[-900:])
+                "the first lookup of this boot answered and the second did "
+                "not, within the harness's whole timeout. The known shape "
+                "of that is the units bug in `NET_OP_RESOLVE` - a deadline "
+                "built from scheduler ticks added to a counter reads as "
+                "microseconds, so whichever query beats the next sweep is "
+                "answered and the rest time out - but check the transcript "
+                "before believing it, because a resolver that stopped "
+                "answering looks the same from here.\n" + out[-900:])
         else:
             checks += 1
 

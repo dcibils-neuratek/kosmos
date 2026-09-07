@@ -226,4 +226,41 @@ static inline void *cpu_self(void)
     return self;
 }
 
+
+/*
+ * A hint that this core is spinning and the other one should get on with
+ * it.
+ *
+ * `yield` on AArch64 and `pause` on x86: both tell the processor that this
+ * loop is waiting rather than working, which on a machine with hardware
+ * threads lets the sibling have the pipeline and on any machine saves
+ * power. Neither is a barrier and neither orders anything - the loop still
+ * needs whatever it needed.
+ */
+/*
+ * Where a newly started core lands, or 0 if this architecture has nowhere
+ * to put one yet.
+ *
+ * An address rather than a symbol, because `kernel/smp.c` hands it to
+ * `hal_cpu_on` and the board is what knows how to start a core - PSCI here,
+ * `INIT`-`SIPI`-`SIPI` on the other machine. **Neither of them knows where
+ * it should land**, which is this side of the split: the board starts a
+ * core, the architecture says what a started core should run.
+ *
+ * `static inline` so the x86-64 twin - which answers 0 - generates no
+ * reference to a symbol its `boot/` does not define. That is the whole
+ * reason this is a function and not an `extern char[]` in `smp.c`.
+ */
+static inline uintptr_t cpu_secondary_entry(void)
+{
+    extern char _secondary_start[];     /* boot/start.S */
+
+    return (uintptr_t)_secondary_start;
+}
+
+static inline void cpu_relax(void)
+{
+    __asm__ volatile("yield" ::: "memory");
+}
+
 #endif /* ARCH_AARCH64_CPU_H */

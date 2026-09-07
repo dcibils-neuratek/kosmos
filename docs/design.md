@@ -246,18 +246,15 @@ It needs one thing from below, and the shape of that thing is the whole lesson. 
 
 That is not a gap to be filled later. A process here has one `lua_State`, so two threads inside it would need a lock around the whole interpreter and would take turns anyway; what threads would actually buy - overlapping the *waiting* - is what coroutines already give. What they would not buy is overlapping the computing, and that needs a second core rather than a second thread.
 
-**SMP.** The Pi 5's four Cortex-A76s. Supported by design, off until stage 6.
+**SMP.** Being built, and `docs/smp.md` is the plan. Two of its seven steps are done: the state that belongs to a processor lives in `struct percpu` found through `TPIDR_EL1`, and the machine boots four cores of which three claim a slot and park in `wfi`.
 
-Turning SMP on early kills the project. With one core the bugs are deterministic. With four you get races that appear once every thousand boots, and you are debugging over UART.
+Turning SMP on early kills the project. With one core the bugs are deterministic. With four you get races that appear once every thousand boots, and you are debugging over UART. That argument still holds, and it is why the second core does *nothing* rather than schedule: a parked core touches no shared structure, so it proves the bring-up without introducing one race.
 
-What does get done from day one, and costs nothing:
+**This section used to promise four things "from day one, and costing nothing", and every one of them was false.** It said there were no loose mutable globals, that `TPIDR_EL1` held a per-CPU pointer from the start, that the scheduler had a per-CPU runqueue with one CPU in it, and that there was a comment at every spot a lock would go. `current` was one global in `thread.c`; `TPIDR_EL1` had never appeared in `arch/` or `kernel/`; the runqueue is `head[]` and `tail[]` at file scope in `sched_prio.c` *today*; and there were no such comments. The same claim was in `CLAUDE.md` and in `roadmap.md`, written before there was a kernel to describe and never revisited, because prose has no `make test`.
 
-- No loose mutable globals. All state hanging off an explicit struct.
-- `TPIDR_EL1` as the pointer to the per-CPU struct, from the start.
-- A per-CPU runqueue in the scheduler, even with a single CPU.
-- A comment at every spot where a lock will go.
+Half of it is now true because somebody wrote it, seven months later and as a piece of work with a document and a suite behind it. The list is left here as a correction rather than deleted, because **an intention written in the present tense reads as a fact**, and this one was read as one for two years.
 
-When SMP arrives, the hot spots will be the page allocator (fixed with per-CPU caches), TLB shootdown (on AArch64 the broadcast is hardware, with `TLBI ... IS`, which saves considerable work compared to x86), and cross-core IPC. For the last one the known solution is affinity: servers live on one core and clients migrate toward the server.
+When the rest of SMP arrives, the hot spots will be the page allocator (fixed with per-CPU caches), TLB shootdown (on AArch64 the broadcast is hardware, with `TLBI ... IS`, which saves considerable work compared to x86), and cross-core IPC. For the last one the known solution is affinity: servers live on one core and clients migrate toward the server.
 
 None of this touches userland. A Lua server neither knows nor cares which core it runs on. That is the advantage of having chosen microkernel plus message passing, and it is the opposite of what BeOS did, which pushed threads with shared memory all the way into applications and paid for it with complexity in every one.
 

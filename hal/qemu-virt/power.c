@@ -24,6 +24,9 @@
 
 #include <stdint.h>
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "hal.h"
 
 #define PSCI_SYSTEM_OFF     0x84000008u
@@ -59,22 +62,44 @@
  * loop below must stop even if a firmware answers "valid" for ever. */
 #define CPUS_ASKED_MAX      64u
 
-static long psci(uint32_t function, unsigned long a1, unsigned long a2)
+static long psci(uint32_t function, unsigned long a1, unsigned long a2,
+                 unsigned long a3)
 {
     register unsigned long x0 __asm__("x0") = function;
     register unsigned long x1 __asm__("x1") = a1;
     register unsigned long x2 __asm__("x2") = a2;
+    register unsigned long x3 __asm__("x3") = a3;
 
-    __asm__ volatile("hvc #0" : "+r"(x0) : "r"(x1), "r"(x2) : "memory");
+    __asm__ volatile("hvc #0"
+                     : "+r"(x0) : "r"(x1), "r"(x2), "r"(x3) : "memory");
 
     return (long)x0;
+}
+
+/*
+ * The 64-bit `CPU_ON`: start a processor at an address, with one word of
+ * context it will find in x0.
+ *
+ * The counterpart of `AFFINITY_INFO` above and the one that is not a query.
+ * The entry address is *physical*, because the core it starts has no
+ * translation on yet - it will turn the MMU on itself, with the tables this
+ * one already built.
+ *
+ * Returns true when the firmware accepted it. `ALREADY_ON` is -4 and is not
+ * an error worth distinguishing here: either way that processor is running.
+ */
+#define PSCI_CPU_ON         0xC4000003u
+
+bool hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long context)
+{
+    return psci(PSCI_CPU_ON, cpu, (unsigned long)entry, context) == 0;
 }
 
 unsigned hal_cpu_count(void)
 {
     unsigned n = 0;
 
-    while (n < CPUS_ASKED_MAX && psci(PSCI_AFFINITY_INFO, n, 0) >= 0) {
+    while (n < CPUS_ASKED_MAX && psci(PSCI_AFFINITY_INFO, n, 0, 0) >= 0) {
         n++;
     }
 
@@ -85,10 +110,10 @@ unsigned hal_cpu_count(void)
 
 void hal_power_off(void)
 {
-    psci(PSCI_SYSTEM_OFF, 0, 0);
+    psci(PSCI_SYSTEM_OFF, 0, 0, 0);
 }
 
 void hal_restart(void)
 {
-    psci(PSCI_SYSTEM_RESET, 0, 0);
+    psci(PSCI_SYSTEM_RESET, 0, 0, 0);
 }
