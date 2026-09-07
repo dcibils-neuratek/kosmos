@@ -506,6 +506,7 @@ there is.</td></tr>
 it is running on, as text you can select and copy.</td></tr>
 <tr><td>ping 8.8.8.8</td><td>The TCP/IP stack, reaching the real internet
 through QEMU's NAT.</td></tr>
+<tr><td>host example.com</td><td>A name, through the resolver.</td></tr>
 <tr><td>wm webserver</td><td>An HTTP server, under System in the
 Deskbar.</td></tr>
 </table>
@@ -536,7 +537,11 @@ program, so copy and paste live behind the window manager's prefix:
 <code>Control-W c</code> and <code>Control-W v</code>. And <strong>This
 Machine</strong>, which writes out everything the system knows about the
 hardware it is running on — every device on the bus, whether a driver
-claimed it, and an honest list of what it cannot be asked.</p></td></tr>
+claimed it, and an honest list of what it cannot be asked. And
+<strong>names</strong>: the resolver was written months ago with a single
+caller inside the browser, so <code>host example.com</code> is the command
+that makes it usable — and finding it had never answered twice in one boot
+is what a second caller is for.</p></td></tr>
 
 <tr><td>0.8</td><td><strong>A web browser, and a network under it.</strong>
 NetSurf's hubbub, libdom and libcss vendored unpatched and running on a

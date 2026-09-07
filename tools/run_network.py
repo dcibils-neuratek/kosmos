@@ -538,6 +538,65 @@ def main():
 
         checks += 1
 
+        # ---- the resolver, and the part of it that does not need a name ----
+        #
+        # **Two of these three run on a train and the third says so when it
+        # cannot.** The rest of this file is deliberately offline - the ping
+        # goes to slirp's gateway, the TCP connection to a server on this
+        # Mac - because a test that needs somebody else's uptime fails for
+        # reasons that are not about the code. A resolver cannot be tested
+        # that way: slirp's DNS at 10.0.2.3 forwards to whatever this
+        # computer's resolver is, and there is nothing local to ask.
+        #
+        # So the two that are about `host` itself always run, and the one
+        # that is about *the stack* runs whenever a lookup is possible at
+        # all - and what it checks is the property that was broken rather
+        # than that DNS works. `NET_OP_RESOLVE` added a caller's timeout to
+        # the counter without converting it from scheduler ticks, so a
+        # five-second deadline was twenty microseconds: **the first lookup
+        # of a boot beat the sweep and every one after it timed out.** One
+        # lookup proves nothing. Two in a row is the whole test.
+        #
+        out = boot(image, [
+            "-netdev", "user,id=net0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
+        ], [
+            "host 10.0.2.2",
+            "host",
+            "host example.com",
+            "host example.com",
+        ])
+
+        if "10.0.2.2 is an address already" not in out:
+            raise Failure(
+                "`host` asked a resolver about something that is already an "
+                "address. Four numbers and three dots is an answer, not a "
+                "question.\n" + out[-900:])
+
+        checks += 1
+
+        if "which name?" not in out:
+            raise Failure(
+                "`host` with no argument did not say what it wanted.\n"
+                + out[-900:])
+
+        checks += 1
+
+        lookups = out.count("example.com is ")
+
+        if lookups == 0:
+            print("      (no resolver reachable from this machine, so the "
+                  "lookup itself was not checked)")
+        elif lookups < 2:
+            raise Failure(
+                "the first lookup answered and the second did not. That is "
+                "exactly the shape of the units bug in `NET_OP_RESOLVE`: a "
+                "deadline built from scheduler ticks added to a counter "
+                "reads as microseconds, so whichever query beats the next "
+                "sweep is answered and the rest time out.\n" + out[-900:])
+        else:
+            checks += 1
+
         print(f"PASS: {checks} checks on the network: a frame this computer "
               "read out of a capture, and a host that answered.")
         return 0

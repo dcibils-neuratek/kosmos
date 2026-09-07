@@ -55,9 +55,15 @@ every application already talks to. Drag to select, `Control-W c` to copy,
 `Control-W v` to paste — behind the prefix rather than on Control-C, which
 on this machine is what stops a program.
 
-**Networking.** virtio-net, ARP, IP, ICMP and TCP with shared rings, an
+**Networking.** virtio-net, ARP, IP, ICMP, UDP and TCP with shared rings, an
 HTTP server, a telnet client. It reaches the real internet through QEMU's
 NAT.
+
+**A resolver**, so an address can be a name. A query, a reply, names written
+with a length in front of each label, and the compression pointers a real
+server answers with. `host example.com` at a prompt, and the browser's
+address bar. UDP exists only as far as this needs it — no sockets, because
+nothing else has asked for any.
 
 **Audio.** virtio-snd, a mixer, WAV and MP3.
 
@@ -84,16 +90,10 @@ unblocks.
 
 ### Being built now
 
-**A resolver.** An address is four numbers today, which is the single
-biggest thing between the browser and the web. UDP exists in the stack only
-as much as DNS needs — no sockets, because nothing else has asked for any.
+**The AArch64 references in `kernel/`'s comments** — 43 of them across nine
+files. The code was made portable and its prose was not.
 
 ### Next, in this order
-
-**The AArch64 references in `kernel/`'s comments** — 43 of them across nine
-files. The code was made portable and its prose was not: `process.c` still
-explains a mapping in terms of "an L1 slot" at `0x80000000`, which is the
-ARM number, in a file that compiles for both.
 
 **SMP on AArch64 first, and x86-64 only once ARM is thoroughly tested.**
 One architecture at a time, on purpose: the bugs SMP introduces appear once

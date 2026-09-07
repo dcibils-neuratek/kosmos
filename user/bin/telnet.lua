@@ -38,7 +38,8 @@ local port = tonumber(words[2]) or 23
 
 if not where then
   print("telnet: telnet <address> [port]")
-  print("        four numbers and three dots; there is no DNS yet")
+  print("        four numbers and three dots. `host " .. "<name>"
+        .. "` looks a name up.")
   return
 end
 

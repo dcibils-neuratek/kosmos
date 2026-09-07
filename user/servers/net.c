@@ -281,6 +281,14 @@ static struct {
     uint16_t next_id;               /* the IP header's, and the echo's */
     uint64_t hz;                    /* the counter's frequency, read once */
 
+    /*
+     * And the scheduler's, which is the unit a request's `wait_ticks` is
+     * in. Read rather than written out as 250: it is the kernel's number,
+     * three call sites had it as a literal, and a fourth forgot to divide
+     * by it at all.
+     */
+    uint64_t tick_hz;
+
     struct conn conn[NET_CONN_MAX];
 
     /*
@@ -789,6 +797,20 @@ static void ip_receive(const uint8_t *packet, unsigned length)
 /* The port this stack asks from. Fixed, because there is one asker. */
 #define DNS_PORT     53u
 #define DNS_FROM  40000u
+
+/*
+ * A wait, from what the caller counts in to what this server measures in.
+ *
+ * Requests carry **scheduler ticks** - `netproto.h` says why the field is
+ * named for its unit - and every deadline in this file is a `kosmos_ticks`
+ * value, which is the counter. Three call sites wrote this conversion out
+ * and a fourth forgot it, which is the whole argument for it being a
+ * function.
+ */
+static uint64_t in_counter(uint32_t wait_ticks)
+{
+    return (uint64_t)wait_ticks * net.hz / net.tick_hz;
+}
 
 static bool udp_send(const struct net_addr *to, uint16_t from_port,
                      uint16_t to_port, const uint8_t *body, unsigned length)
@@ -1887,7 +1909,9 @@ static void resolve(const struct net_request *req, uint64_t sender)
     a->used  = true;
     a->who   = sender;
     a->id    = id;
-    a->until = req->ticks ? (kosmos_ticks() + req->ticks) : 0;
+    a->until = req->wait_ticks
+             ? kosmos_ticks() + in_counter(req->wait_ticks)
+             : 0;
 }
 
 static void serve(const struct message *msg, uint64_t sender)
@@ -2174,8 +2198,7 @@ static void serve(const struct message *msg, uint64_t sender)
          */
         c->waiter     = sender;
         c->wait_until = kosmos_ticks()
-                      + (uint64_t)(req.ticks ? req.ticks : 25u)
-                        * net.hz / 250u;
+                      + in_counter(req.wait_ticks ? req.wait_ticks : 25u);
         return;
     }
 
@@ -2305,9 +2328,8 @@ static void serve(const struct message *msg, uint64_t sender)
          * With it, every park in this file is bounded: the pings, the waits,
          * the pollers and now this.
          */
-        listener->accept_until = req.ticks
-                               ? kosmos_ticks()
-                                 + (uint64_t)req.ticks * net.hz / 250u
+        listener->accept_until = req.wait_ticks
+                               ? kosmos_ticks() + in_counter(req.wait_ticks)
                                : 0;
         return;
     }
@@ -2343,8 +2365,8 @@ static void serve(const struct message *msg, uint64_t sender)
                 net.poll[i].writing  = req.writing;
                 net.poll[i].listener = listener;
                 net.poll[i].until    = kosmos_ticks()
-                                     + (uint64_t)(req.ticks ? req.ticks : 25u)
-                                       * net.hz / 250u;
+                                     + in_counter(req.wait_ticks
+                                                  ? req.wait_ticks : 25u);
                 return;
             }
         }
@@ -2507,9 +2529,13 @@ void net_server(long endpoint)
     {
         struct sysinfo info;
 
-        hz = (kosmos_sysinfo(&info) == 0 && info.counter_hz != 0)
-             ? info.counter_hz : 62500000UL;
+        bool asked = kosmos_sysinfo(&info) == 0;
+
+        hz = (asked && info.counter_hz != 0) ? info.counter_hz : 62500000UL;
         net.hz = hz;
+
+        /* Never zero, because `in_counter` divides by it. */
+        net.tick_hz = (asked && info.tick_hz != 0) ? info.tick_hz : 250UL;
     }
 
     net.next_id = 1;

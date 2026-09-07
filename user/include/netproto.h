@@ -202,7 +202,33 @@ struct net_request {
     uint32_t seq;                   /* the echo's sequence number */
     uint32_t handle;                /* which connection, for the TCP ops */
     uint32_t port;                  /* where to connect */
-    uint32_t ticks;                 /* how long NET_OP_WAIT may wait */
+    /*
+     * How long a request that parks may park, in **scheduler ticks** -
+     * `TICK_HZ` of them a second, which is what `sys.sleep` and
+     * `fs.wait_input` count in and what every other wait in this system
+     * means by a tick. Zero is "no deadline" where the operation allows
+     * one.
+     *
+     * **The unit is in the name because leaving it out cost this system a
+     * subsystem twice.** `wmproto.lua` has the first telling at length: a
+     * field called `wait` was scheduler ticks in eight call sites and
+     * counter ticks in the one that read it, a factor of a quarter of a
+     * million, and every animating window asked to be woken in sixteen
+     * nanoseconds.
+     *
+     * This field was the second. Three of the four operations that read it
+     * converted correctly - one of them with a comment saying "scheduler
+     * ticks like every other wait in this system" - and `NET_OP_RESOLVE`
+     * added it to the counter raw. A five-second lookup became twenty
+     * microseconds, so the resolver answered whichever query happened to
+     * beat the next sweep and timed out the rest. The browser was the only
+     * caller and passed `counter_hz`, which is wrong in the same direction
+     * by the same factor and therefore worked.
+     *
+     * A number that crosses to another process carries no units. Only its
+     * name can.
+     */
+    uint32_t wait_ticks;
 
     /* For NET_OP_POLL only: the connections to watch for *room to write*,
      * where `handle` is the ones to watch for bytes to read. */

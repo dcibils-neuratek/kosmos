@@ -44,10 +44,16 @@
 -- slash is read from the namespace instead of the network, for the same
 -- reason.
 --
--- **No DNS**, so a remote address is four numbers. `ping` and `fetch` say
--- the same thing for the same reason: nothing here resolves a name. And no
--- TLS, so `https` is out - which between them is why the reachable web is
--- smaller than the web.
+-- **Names work**, through `/net`'s resolver - a query, a reply, and the
+-- compression pointers a real server answers with. What does not is TLS, so
+-- `https` is out, and that alone is why the reachable web is smaller than
+-- the web.
+--
+-- This comment said "no DNS, so a remote address is four numbers" for
+-- months after the resolver was written, and so did the help page below and
+-- `ping`. The resolver had one caller - the address bar four hundred lines
+-- down - and no command a person could type, so nothing ever contradicted
+-- the prose.
 
 local ui    = use("/lib/ui.lua")
 local theme = ui.theme
@@ -222,18 +228,19 @@ engine, so if you can read this then the engine works.</p>
 </ul>
 
 <h2>Somewhere to go</h2>
-<p>There is no name resolver, so an address is four numbers and a path.
-Type one in the bar above and press Return. A file on this machine works
-too - anything beginning with a slash is read from the namespace rather
-than the network:</p>
-<pre>  10.0.2.2:8000/            a server on the computer running QEMU
+<p>A name or an address, then a path. Type one in the bar above and press
+Return. A file on this machine works too - anything beginning with a slash
+is read from the namespace rather than the network:</p>
+<pre>  example.com/              a name, looked up through /net
+  10.0.2.2:8000/            a server on the computer running QEMU
   188.184.67.127/           somewhere on the internet, by number
   /home/notes.html          a file on this machine</pre>
+<p><code>host example.com</code> at a prompt asks the same resolver on its
+own, which is how to tell a name that will not resolve from a machine that
+will not answer.</p>
 
 <h2>What it cannot do</h2>
 <ul>
-  <li><strong>No names.</strong> DNS is a resolver this system has not
-      got, which is why the examples above are numbers.</li>
   <li><strong>No https.</strong> There is no TLS, and most of the web now
       refuses to speak anything else.</li>
   <li><strong>No cascade.</strong> libcss parses and answers and nothing
@@ -282,6 +289,9 @@ local said = ""
 local timing = ""
 
 local HZ = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+
+-- The other clock. Every timeout in this system is in these.
+local TICK_HZ = (sys.info() or {}).tick_hz or 250
 
 -- Tenths of a millisecond, because a frame is single-digit milliseconds and
 -- whole ones would round most of this to zero.
@@ -726,7 +736,17 @@ local function fetch(text)
       --
       say("looking up " .. name .. " ...")
 
-      local addr, why = fs.resolve(name, HZ)
+      --
+      -- Five seconds, in *scheduler* ticks.
+      --
+      -- This passed `HZ`, the counter's frequency, and that was wrong in a
+      -- way that worked: `/net` was adding the number to a counter value
+      -- without converting, so the only caller of the resolver and the only
+      -- reader of the field agreed on the wrong unit and nothing noticed.
+      -- `host` was written, passed the documented unit, and every lookup
+      -- after the first one timed out. `netproto.h` has the whole account.
+      --
+      local addr, why = fs.resolve(name, TICK_HZ * 5)
 
       if not addr then
         say(("cannot look up %s: %s"):format(name, tostring(why)))

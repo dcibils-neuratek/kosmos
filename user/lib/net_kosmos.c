@@ -169,7 +169,7 @@ static int l_resolve(lua_State *L)
     memset(&req, 0, sizeof(req));
     req.op     = NET_OP_RESOLVE;
     req.length = (uint32_t)len;
-    req.ticks  = (uint32_t)luaL_optinteger(L, 3, 0);
+    req.wait_ticks = (uint32_t)luaL_optinteger(L, 3, 0);
     memcpy(req.payload, name, len);
 
     if (exchange(L, cap, &req, &rep) != 0 || rep.status != NET_OK) {
@@ -451,7 +451,7 @@ static int l_wait(lua_State *L)
     memset(&req, 0, sizeof(req));
     req.op     = NET_OP_WAIT;
     req.handle = h->handle;
-    req.ticks  = (uint32_t)luaL_optinteger(L, 2, 0);
+    req.wait_ticks = (uint32_t)luaL_optinteger(L, 2, 0);
 
     memset(&msg, 0, sizeof(msg));
     msg.length = sizeof(req);
@@ -548,7 +548,7 @@ static int l_accept(lua_State *L)
      * ever, which is what a program with only one thing to do wants. An
      * event loop passes a deadline - see NET_OP_ACCEPT in `net.c` for the
      * race that makes it necessary. */
-    req.ticks = (uint32_t)luaL_optinteger(L, 3, 0);
+    req.wait_ticks = (uint32_t)luaL_optinteger(L, 3, 0);
 
     memset(&msg, 0, sizeof(msg));
     msg.length = sizeof(req);
@@ -689,7 +689,7 @@ static int l_poll(lua_State *L)
     memset(&req, 0, sizeof(req));
 
     req.op    = NET_OP_POLL;
-    req.ticks = (uint32_t)luaL_optinteger(L, 5, 0);
+    req.wait_ticks = (uint32_t)luaL_optinteger(L, 5, 0);
 
     /* The listener, plus one, so that absent is zero. */
     req.port = lua_isnoneornil(L, 4)

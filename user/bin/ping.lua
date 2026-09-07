@@ -5,6 +5,10 @@
 --   ping 8.8.8.8 10           ten of them
 --   ping                      the gateway
 --
+-- An address, not a name: `host` is what turns one into the other, and
+-- keeping them apart is what lets a person tell a name that will not
+-- resolve from a machine that will not answer.
+--
 -- The oldest question on a network and still the useful one: it separates
 -- "the wire is broken" from "the program is wrong" in one command, which is
 -- why it is the first thing built on the stack rather than something added
@@ -87,7 +91,8 @@ local count = tonumber(words[2] or words[1]) or 4
 
 if words[1] and not address(words[1]) and not tonumber(words[1]) then
   print("ping: " .. words[1] .. " is not an address this understands")
-  print("      four numbers and three dots; there is no DNS yet")
+  print("      four numbers and three dots. `host " .. words[1]
+        .. "` looks a name up.")
   return
 end
 

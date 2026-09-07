@@ -8,6 +8,78 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### DNS was built, had one caller, and had never worked twice in a boot
+
+**The task was "write a resolver" and the resolver was already there.**
+`/net` has spoken DNS for as long as it has spoken TCP: a query, a reply,
+names written with a length in front of each label, the compression
+pointers a real server answers with, `NET_OP_RESOLVE`, `net.resolve` in the
+kit, `fs.resolve` in the namespace, and a default server of 10.0.2.3 that
+`init.lua` configures at boot.
+
+What it did not have was **a command**, and that absence cost three
+separate things: a lookup could not be tried on its own, a failed lookup
+could not be told from a failed route, and `make test` had nothing to
+check. The only caller was the browser's address bar, four hundred lines
+into a graphical application.
+
+So `host` exists now - `host example.com`, and `host 10.0.2.2` answers
+without asking anybody, because four numbers and three dots is an answer
+rather than a question.
+
+**And writing it found that the resolver had never worked more than once
+per boot.**
+
+```
+kosmos> host www.google.com
+www.google.com is 142.251.155.119
+kosmos> host example.com
+host: example.com: the resolver did not answer in time
+```
+
+**It is the 0.9.1 bug, in another subsystem.** `struct net_request` has one
+`ticks` field and four operations read it. Three convert it - `* net.hz /
+250`, one of them with a comment saying *"scheduler ticks like every other
+wait in this system, converted here because the counter is what this server
+measures in"* - and `NET_OP_RESOLVE` added it to `kosmos_ticks()` raw. A
+five-second deadline became **twenty microseconds**, so whichever query
+beat the next sweep was answered and every other timed out.
+
+**The browser worked because it was wrong in the same direction.** It
+passed `counter_hz` - 62,500,000 - where the documented unit is scheduler
+ticks. One caller and one reader, agreeing on the wrong unit, and nothing
+to contradict either. `host` passed the documented unit and broke
+immediately, which is what a second caller is for.
+
+Fixed the way `wmproto.lua` fixed it: **the unit is in the name.**
+`ticks` is `wait_ticks`, `netproto.h` says what it counts in and why the
+name carries it, and the conversion is one function in `net.c` rather than
+three copies and an omission. The literal 250 is gone too - the server
+reads `tick_hz` from `sysinfo`, which is the kernel's number rather than a
+fourth place to keep it in step.
+
+**And NXDOMAIN started working, having never been reached.**
+`dns_receive` reads the response code and answers `NET_ERR_NO_NAME`, and
+that code was correct all along - a name that does not exist just timed out
+before the reply could be looked at.
+
+**`make test` checks it now**, three checks in `run_network.py`, and the
+one that matters is that **two lookups in a row both answer**. One proves
+nothing: one is what passed for the whole life of the bug. The two that do
+not need a network - `host 10.0.2.2` and `host` with no argument - always
+run; the real lookup runs whenever a resolver is reachable and says out
+loud when it is not, because the rest of that file is deliberately offline
+and a test that needs somebody else's uptime is a test that fails on a
+train.
+
+**The prose said none of this.** `browser.lua`'s own help page listed "No
+names - DNS is a resolver this system has not got" under *What it cannot
+do*; its header comment said "no DNS, so a remote address is four numbers";
+`ping` and `telnet` both told the user "there is no DNS yet"; and
+`roadmap.md` had a resolver under *Being built now*. Five places describing
+the absence of something that had been there for months, because nothing a
+person could type ever said otherwise.
+
 ### Both x86-64 defects fixed, and one of them was not where it looked
 
 **123 of 127 on x86-64 now**, up from 117, and the four that remain are
