@@ -1857,6 +1857,28 @@ def check_clipboard(guest):
     quiet = _highlight_area(width, height, px)
 
     #
+    # Raise the report first, and do not assume it is already on top.
+    #
+    # **Which of the two is in front is a startup race.** `wm machine,gallery`
+    # spawns them in that order and `started` waits for the *first* window,
+    # so the one that finishes opening last is the one raised - and that is
+    # whichever took longer to build itself, not whichever was named last.
+    # `machine` usually wins because it assembles a page of text first. It
+    # does not always, and then the drag below lands on the gallery and
+    # selects nothing, which is what this said before this click existed.
+    #
+    # (600, 700) is inside the report - it opens at 100,60 and is 700x720 -
+    # and outside the gallery, which is about 460x350 near the top left. Not
+    # the title bar: the left end of a tab is the close box.
+    #
+    guest.mouse_to(*_to_tablet(600, 700, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(1.0)
+
+    #
     # A drag inside the report. `machine` opens at 100,60 with its editor
     # eight pixels in, so this starts a few characters into a line and ends
     # four lines down.

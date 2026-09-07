@@ -190,6 +190,30 @@ struct thread {
     uint64_t          wake_at;
 
     /*
+     * Whether input is what this thread is waiting *for*.
+     *
+     * **A deadline is not a reason.** `wake_at` says when a thread would
+     * like to be woken; it says nothing about what it is waiting on, and
+     * `thread_wake_sleepers_now` used to treat every thread that had one as
+     * a thread waiting for a keystroke. So an interrupt from the keyboard
+     * woke a process that had asked to sleep for a second, and on x86 -
+     * where `input_arrived` latches true and is cleared only by
+     * `SYS_WAIT_INPUT`, which nothing calls at a bare prompt - *every timer
+     * tick* woke *every* sleeper. `sys.sleep(250)` returned in under four
+     * milliseconds, and so did every server timeout in the system.
+     *
+     * AArch64 never showed it, and not because anything there is better:
+     * the flag simply never got set, so the path never ran. Measured at an
+     * idle prompt, `thread_wake_sleepers_now` fired 0 times in five seconds
+     * on one board and 1200 on the other.
+     *
+     * Set only by `thread_wait_input_until`, which is `SYS_WAIT_INPUT` and
+     * nothing else. A plain sleep and an IPC receive with a timeout both
+     * carry a deadline and neither is waiting for a key.
+     */
+    bool              wake_on_input;
+
+    /*
      * IPC state.
      *
      * `next` here is a separate link from `sched.next` and must stay
@@ -305,6 +329,16 @@ void thread_block(void);
 void thread_sleep_until(uint64_t deadline);
 
 /*
+ * The same, for a thread whose deadline is a *timeout* on waiting for
+ * input rather than the point of the wait.
+ *
+ * The only caller is `SYS_WAIT_INPUT`. It is a separate entry point rather
+ * than a flag argument so that the ordinary sleep cannot acquire the
+ * behaviour by accident, which is how it had it.
+ */
+void thread_wait_input_until(uint64_t deadline);
+
+/*
  * A deadline, `ticks` scheduler ticks from now, as a counter value.
  *
  * **The one place the two clocks meet.** Every syscall that takes a timeout
@@ -326,8 +360,15 @@ uint64_t thread_deadline_in(unsigned long ticks);
 /* Wakes every sleeper whose deadline has arrived. Called from the tick. */
 void thread_wake_sleepers(void);
 
-/* Wakes every sleeper regardless of deadline. For an interrupt that is the
- * thing they were waiting for. */
+/*
+ * Wakes the threads that were waiting *for input*, regardless of deadline,
+ * because the interrupt that just arrived is the thing they were waiting
+ * for.
+ *
+ * Not every thread with a deadline - see `wake_on_input`. That distinction
+ * is the difference between a sleep that lasts and one that returns on the
+ * next tick.
+ */
 void thread_wake_sleepers_now(void);
 
 /* Puts a blocked thread back on the runqueue. Safe to call on a thread that

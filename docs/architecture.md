@@ -458,6 +458,57 @@ predated the fix. And **an operation with one caller is untested no matter
 what the suite says**, because the caller and the reader can agree on
 something wrong.
 
+### A deadline is not a reason, and that cost x86 every timeout it had
+
+Found while checking that step one had actually worked, by timing a sleep
+from outside the guest rather than trusting a green suite - `ping` sleeps
+exactly one second between echoes, so five echoes is four seconds of
+sleeping and nothing else.
+
+```
+AArch64   4 sleeps of 250 ticks: expected 4.0s, took 4.29s
+x86-64    4 sleeps of 250 ticks: expected 4.0s, took 0.16s
+```
+
+The deadline was right - the kernel computed `want=999,292,000` counter
+ticks for one second at a counter it had correctly measured at 998.9 MHz -
+and the thread was woken after `got=3,683,000`, which is one scheduler
+tick. Something was waking it 270 times too early.
+
+**`thread_wake_sleepers_now` woke every thread that had a `wake_at`.** Its
+job is to wake threads when the interrupt that just arrived is the thing
+they were waiting for - a key. But `wake_at` says *when* a thread would
+like to be woken and nothing about *what* it is waiting on, and a
+`sys.sleep` carries one while waiting for nothing at all.
+
+**Why only x86.** `input_arrived` is set by an input interrupt and cleared
+in exactly one place - `SYS_WAIT_INPUT`, and only for the process that owns
+the console. At a bare prompt nothing calls it, so on that board the flag
+latches true and every timer interrupt runs the path. Measured at an idle
+prompt:
+
+```
+AArch64      thread_wake_sleepers_now fired     0 times in 5s
+x86-64                                       1200 times in 5s
+```
+
+AArch64 escaped it by never setting the flag, which is luck rather than
+design - the code is identical on both boards.
+
+So every timeout in the system on x86 was four milliseconds: `sys.sleep`,
+`fs.wait_input`, an IPC receive with a deadline, every server wait. It looks
+like a fast machine, which is why it survived.
+
+The fix is a `wake_on_input` flag set only by `SYS_WAIT_INPUT`, and it is
+the distinction the name was always making and the code was not.
+
+**Two tests, and the first one does not catch it.** "A sleep lasts as long
+as it asked" is a property nothing had ever checked on either board - worth
+having, and it *passed with the bug deliberately put back*, because the
+trigger is an input interrupt and the test image never has one. The second
+calls `thread_wake_sleepers_now` directly, which is exactly what a key
+does, and fails the moment the distinction is removed.
+
 ### Where this is going
 
 Step one is done and is what this section describes: deadlines are counter

@@ -8,6 +8,76 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### On x86-64, `sys.sleep` had never slept
+
+**Found by checking that step one worked**, rather than by the suite going
+red. `make test` passed on both boards before and after; what it does not
+have - did not have - is any check that a *duration* is a duration.
+
+`ping` sleeps exactly one second between echoes, so five echoes is four
+seconds of sleeping and nothing else. Timed from the host:
+
+```
+AArch64   expected 4.0s, took 4.29s     (and 2.0s -> 2.23s)
+x86-64    expected 4.0s, took 0.16s     (and 2.0s -> 0.14s)
+```
+
+The residual on AArch64 is a constant ~0.25 s of round-trip overhead rather
+than a scaling error - the two measurements are off by the same *absolute*
+amount, not the same percentage, which is the signature that says the rate
+is right. Solving both puts it within 3%.
+
+**It predates step one.** Checked against 0.9.6: same 0.16 s. Not a
+regression - a defect the change happened to make visible, because
+verifying it meant measuring something nobody had measured.
+
+**The deadline was correct and the wake was wrong.** Instrumented, x86 said
+`want=999292000 got=3683000` - one second asked for at a counter it had
+correctly measured at 998.9 MHz, and 3.7 ms delivered, which is one
+scheduler tick.
+
+`thread_wake_sleepers_now` woke **every thread carrying a `wake_at`**. Its
+purpose is to wake threads for whom an arriving key is the thing they were
+waiting for; `wake_at` says when a thread would like to be woken and
+nothing about what it is waiting on, and a `sys.sleep` carries one while
+waiting for nothing.
+
+**Why only x86, with identical code on both boards.** `input_arrived` is
+set by an input interrupt and cleared in exactly one place - `SYS_WAIT_INPUT`,
+console owner only. Nothing calls it at a bare prompt, so the flag latches
+true and every timer interrupt runs the path:
+
+```
+AArch64      thread_wake_sleepers_now fired     0 times in 5s
+x86-64                                       1200 times in 5s
+```
+
+AArch64 escaped by never setting the flag, which is luck. So on x86 every
+timeout in the system was four milliseconds - `sys.sleep`, `fs.wait_input`,
+an IPC receive with a deadline, every server wait. **It looks like a fast
+machine**, which is why it survived a port, a test suite and a display
+harness.
+
+Fixed with a `wake_on_input` flag set only by `SYS_WAIT_INPUT`, through
+`thread_wait_input_until` - a separate entry point rather than an argument,
+so an ordinary sleep cannot acquire the behaviour by accident, which is how
+it had it.
+
+**Two tests, and the interesting one is that the obvious test does not
+work.** "A sleep lasts as long as it asked" is a property nothing had ever
+checked on either board and is worth having - and it **passed with the bug
+deliberately put back**, because the trigger is an input interrupt and the
+test image never has one. `check_latency` in `run_screenshot.py` already
+records that a test which passes with the bug reinstated is worse than no
+test; this is the second instance.
+
+The one that works calls `thread_wake_sleepers_now` directly - which is
+exactly what an arriving key does - with a plain sleeper blocked. Three
+lines, deterministic, both boards, and it fails the moment the distinction
+is removed. Verified by removing it.
+
+129 checks on AArch64 now, 124 on x86-64.
+
 ### One clock in the kernel, and a section that says how time works
 
 **Step one of three**, and the point of it is that the kernel now has one

@@ -768,6 +768,19 @@ void thread_sleep_until(uint64_t deadline)
     current->wake_at = 0;
 }
 
+void thread_wait_input_until(uint64_t deadline)
+{
+    if (deadline <= cpu_cycles()) {
+        return;
+    }
+
+    current->wake_at       = deadline;
+    current->wake_on_input = true;
+    thread_block();
+    current->wake_on_input = false;
+    current->wake_at       = 0;
+}
+
 void thread_wake_sleepers(void)
 {
     uint64_t now = cpu_cycles();
@@ -796,8 +809,12 @@ void thread_wake_sleepers_now(void)
     for (i = 0; i < THREAD_MAX; i++) {
         struct thread *t = &threads[i];
 
-        if (t->state == THREAD_BLOCKED && t->wake_at != 0) {
-            t->wake_at = 0;
+        /* `wake_on_input`, not merely `wake_at`. A thread that asked to
+         * sleep is not a thread waiting for a key, and waking it here is
+         * what made every sleep on x86 last one tick. */
+        if (t->state == THREAD_BLOCKED && t->wake_on_input) {
+            t->wake_at       = 0;
+            t->wake_on_input = false;
             thread_wake(t);
         }
     }

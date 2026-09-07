@@ -3629,6 +3629,178 @@ static void starve_spinner(void *arg)
     thread_exit();
 }
 
+/*
+ * A sleep lasts as long as it asked for.
+ *
+ * **Nothing checked this, on either board, and that is how x86 shipped
+ * with every timeout in the system lasting four milliseconds.** The suite
+ * had tests for the scheduler picking the right thread, for preemption, for
+ * a wake outranking the running thread - and none for the plainest property
+ * of all, which is that `sleep(n)` takes n.
+ *
+ * It went unseen because nothing *else* checks a duration either: the
+ * display harness times its own waits from the host and tolerates seconds,
+ * `latency` measures a yield rather than a sleep, and every server that
+ * cares simply appeared to be fast. A sleep that returns early looks like a
+ * quick machine.
+ *
+ * Measured in the counter, because the counter is the clock that does not
+ * depend on the thing being tested. Bounded below and not above at the
+ * tight end: `thread_wake_sleepers` only ever wakes a thread whose deadline
+ * has *arrived*, so a sleep can be late and must never be early - which
+ * makes "at least what was asked" an exact assertion rather than a
+ * tolerance. The upper bound is loose because a woken thread still has to
+ * be scheduled.
+ */
+#define SLEEP_TEST_TICKS   25u          /* 100 ms at TICK_HZ 250 */
+
+static volatile uint64_t sleep_measured;
+static volatile bool     sleep_finished;
+
+static void sleep_measurer(void *arg)
+{
+    uint64_t began = cpu_cycles();
+
+    (void)arg;
+
+    thread_sleep_until(thread_deadline_in(SLEEP_TEST_TICKS));
+
+    sleep_measured = cpu_cycles() - began;
+    sleep_finished = true;
+    thread_exit();
+}
+
+static bool test_a_sleep_lasts_as_long_as_it_asked(void)
+{
+    struct thread *t;
+    unsigned long  guard;
+    uint64_t       want;
+
+    sleep_measured = 0;
+    sleep_finished = false;
+
+    t = thread_create_suspended("sleep-measure", sleep_measurer, NULL);
+
+    if (t == NULL) {
+        return false;
+    }
+
+    thread_wake(t);
+
+    /*
+     * This thread stays runnable while the other sleeps, which is not
+     * incidental: `thread_block` panics when nothing else can run, and
+     * during the suite there is no idle thread to fall back on.
+     */
+    guard = hal_ticks() + SLEEP_TEST_TICKS * 8u;
+
+    while (!sleep_finished && hal_ticks() < guard) {
+        thread_yield();
+    }
+
+    if (!sleep_finished) {
+        return false;
+    }
+
+    want = test_counter_hz() * SLEEP_TEST_TICKS / TICK_HZ;
+
+    /* Never early, and not absurdly late. The defect this exists for
+     * returned in about one tick against twenty-five asked for, so the
+     * lower bound is what catches it. */
+    return sleep_measured >= want && sleep_measured <= want * 5u;
+}
+
+/*
+ * And that input does not wake a thread that was not waiting for it.
+ *
+ * **This is the test the one above could not be.** A sleep of the right
+ * length is a property worth asserting and it did not catch the defect it
+ * was written for: the trigger is `thread_wake_sleepers_now`, which only
+ * runs when an input interrupt has arrived, and in the test image nothing
+ * ever sets that flag. Put the bug back and the duration test still passed
+ * - which `check_latency` in `run_screenshot.py` already says is worse than
+ * having no test at all.
+ *
+ * So this calls the path directly rather than waiting for a keyboard.
+ * `thread_wake_sleepers_now` *is* what an arriving key does, and calling it
+ * with a plain sleeper blocked is the whole defect in three lines,
+ * deterministic and on both boards.
+ *
+ * What it was: that function woke every thread carrying a `wake_at` on the
+ * grounds that a deadline meant "waiting". A `sys.sleep` carries one and is
+ * waiting for nothing. On x86 `input_arrived` latches true and is cleared
+ * only by `SYS_WAIT_INPUT`, which nothing calls at a bare prompt, so every
+ * timer tick ran this - 1200 times in five seconds, against 0 on AArch64 -
+ * and every sleep in the system lasted one tick.
+ */
+static volatile bool     plain_sleeper_done;
+static volatile uint64_t plain_sleeper_slept;
+
+static void plain_sleeper(void *arg)
+{
+    uint64_t began = cpu_cycles();
+
+    (void)arg;
+
+    thread_sleep_until(thread_deadline_in(SLEEP_TEST_TICKS));
+
+    plain_sleeper_slept = cpu_cycles() - began;
+    plain_sleeper_done  = true;
+    thread_exit();
+}
+
+static bool test_input_does_not_wake_a_plain_sleeper(void)
+{
+    struct thread *t;
+    unsigned long  guard;
+    unsigned       i;
+
+    plain_sleeper_done  = false;
+    plain_sleeper_slept = 0;
+
+    t = thread_create_suspended("plain-sleep", plain_sleeper, NULL);
+
+    if (t == NULL) {
+        return false;
+    }
+
+    thread_wake(t);
+
+    /* Let it reach the block. Until it does there is nothing to wake. */
+    for (i = 0; i < 4; i++) {
+        thread_yield();
+    }
+
+    if (plain_sleeper_done) {
+        return false;           /* it never slept at all */
+    }
+
+    /* A key arrives. This is exactly what the interrupt path does. */
+    thread_wake_sleepers_now();
+
+    /* And it is given every chance to run if it was woken. */
+    for (i = 0; i < 4; i++) {
+        thread_yield();
+    }
+
+    if (plain_sleeper_done) {
+        return false;           /* woken by input it never asked for */
+    }
+
+    /* And it still finishes on its own deadline afterwards, so the
+     * assertion above is about *when* it woke and not about a thread that
+     * was broken into never waking at all. */
+    guard = hal_ticks() + SLEEP_TEST_TICKS * 8u;
+
+    while (!plain_sleeper_done && hal_ticks() < guard) {
+        thread_yield();
+    }
+
+    return plain_sleeper_done
+        && plain_sleeper_slept >= test_counter_hz() * SLEEP_TEST_TICKS
+                                  / TICK_HZ;
+}
+
 static bool test_normal_runs_while_a_higher_band_sleeps(void)
 {
     struct thread *sleeper, *spinner;
@@ -4033,6 +4205,8 @@ static const struct test tests[] = {
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
+    { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },
     { "sched: NORMAL runs while DISPLAY sleeps", test_normal_runs_while_a_higher_band_sleeps },
     { "as: a page count that wraps is refused", test_a_space_refuses_a_page_count_that_wraps },
     { "as: switching makes a mapping real",    test_switching_to_a_space_makes_its_mapping_real },

@@ -1030,7 +1030,7 @@ void syscall_dispatch(struct syscall_frame *sc)
              * exactly like a hang. It was written that way first, and the
              * cap under SYS_SLEEP below is what stops it being permanent.
              */
-            thread_sleep_until(
+            thread_wait_input_until(
                 thread_deadline_in((unsigned long)sc->arg[0]));
             result = 0;
         }
