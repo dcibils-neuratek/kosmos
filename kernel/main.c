@@ -14,6 +14,7 @@
 #include "mmu.h"
 #include "kernel.h"
 
+#include "percpu.h"
 #include "thread.h"
 #include "sched.h"
 #include "ipc.h"
@@ -60,6 +61,22 @@ void kmain(void)
      * table, no page tables before an allocator to build them from, and no
      * process before there are threads to run it on.
      */
+    /*
+     * This core's own state, before anything that could fault.
+     *
+     * **The first line of the kernel, and it is one store.** `thread_current`
+     * reads through `this_cpu`, and the fault handler asks for the current
+     * thread on its way to reporting - so if the very first exception
+     * arrives before this has run, the report that exists to explain it
+     * takes a second fault instead. One line, at the top, and the ordering
+     * constraint disappears rather than being documented.
+     *
+     * `percpu.h` has the rest of it. There is one core, `NR_CPUS` is 1, and
+     * nothing behaves differently: this is `docs/smp.md` step one, done
+     * while it cannot fail.
+     */
+    percpu_init(0);
+
     hal_early_init();
     /*
      * The first thing anybody sees, and the only place the machine says what

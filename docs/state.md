@@ -8,6 +8,68 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### SMP step one: the per-CPU struct, and the audit that found a seventh
+
+`docs/smp.md`'s own first step - *"the per-CPU struct and the register that
+finds it. Single core still, with `NR_CPUS = 1`. Nothing behaves
+differently; everything moves."* Done, and 130 checks say nothing behaves
+differently.
+
+**Re-auditing the document against the code first was worth it twice.**
+
+It listed six things that have to become per-CPU and there are seven.
+`preempt_pending` in `thread.c` is a `volatile bool` saying a switch is owed
+on the way out of the current exception - which is a statement about *this
+core's* return path and nothing else. Found by reading `thread.c` for the
+other six.
+
+And it said of `TPIDR_EL1` and the `GS` base that "neither is written. This
+is the smallest piece of the work and it touches the most files, because
+every exception entry has to establish it." **Half of that is wrong about
+AArch64.** `TPIDR_EL1` is *banked*: EL0 cannot see it or change it, so it
+is set once per core at boot and read from anywhere afterwards, and no
+entry path is touched at all. x86 has one `GS` for both privilege levels
+and does need `swapgs` at every boundary - which is real surgery on
+`vectors.S` and `user.S`, and belongs with that board's second core rather
+than before it. So the step cost one store at the top of `kmain` instead of
+a pass over the vectors, and that asymmetry is now the strongest single
+reason `smp.md` puts AArch64 first.
+
+**Two decisions inside it.**
+
+`current` became a macro over `this_cpu()->current` rather than
+twenty-nine edited call sites. Linux's idiom, for Linux's reason: those
+sites were correct and say what they mean, and a large diff whose entire
+content is a change of spelling is exactly where a real change hides.
+
+`percpu_init(0)` is the **first line of `kmain`**, before `hal_early_init`.
+`thread_current` reads through `this_cpu`, and the fault handler asks for
+the current thread on its way to reporting - so an exception arriving
+before it would take a second fault instead of printing the first. Deleting
+that line and rebuilding panics at boot with a data abort, which is a
+better failure than a test going red.
+
+**And a test that asserts the distinction the x86 port got wrong.**
+`user_rsp` was a global holding the interrupted stack pointer; it looked
+like per-CPU state and was per-*thread*, and one core was enough to prove
+it. So `cpu: per-CPU state is per CPU, not per thread` has two threads look
+at `this_cpu()` and requires they see the same one. On a second core it
+becomes a different assertion, written when there is a second core to write
+it against.
+
+Nothing is per-CPU yet that was not a global before, `NR_CPUS` is 1, and
+the runqueue is still `head[]` and `tail[]` at file scope - that is step 5.
+
+**And a flake that turned out to be the bug the file already documents.**
+`sched: the policy is pluggable` failed once on each board today under a
+loaded host, and the cause is `run_three_and_record` waiting out twelve
+`thread_yield()` calls. Twelve yields are twelve *switches*, not twelve
+turns for the three threads being watched, so on a busy machine they
+sometimes are not enough - which is word for word the mistake
+`ipc: a receive with a deadline gives up` records twenty lines further
+down. Bounded by the clock now, which also returns the moment the three
+finish rather than always yielding twelve times.
+
 ### The kernel's prose caught up with its code
 
 The last item the 0.9.0 review left open. `kernel/` compiles for both

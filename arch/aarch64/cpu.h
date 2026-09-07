@@ -194,4 +194,36 @@ static inline unsigned cpu_current_el(void)
     return (unsigned)((el >> 2) & 3);
 }
 
+
+/*
+ * Where this core's own state lives.
+ *
+ * `TPIDR_EL1` is the architecture's answer and it is a good one: a
+ * 64-bit scratch register, banked, readable and writable only at EL1. A
+ * process cannot see it and cannot change it, so it is set once per core at
+ * boot and read from anywhere afterwards - including the first instruction
+ * of an exception handler, which is the case that matters and the reason
+ * the register exists.
+ *
+ * **Nothing on the entry path has to do anything.** x86 needs `swapgs` at
+ * every boundary because it has one `GS` for both privilege levels; this
+ * has two registers and hands the kernel its own. That asymmetry is most of
+ * why `docs/smp.md` puts AArch64 first.
+ *
+ * `kernel/percpu.h` is what this is for and holds the argument.
+ */
+static inline void cpu_set_self(void *self)
+{
+    __asm__ volatile("msr tpidr_el1, %0" : : "r"(self));
+}
+
+static inline void *cpu_self(void)
+{
+    void *self;
+
+    __asm__ volatile("mrs %0, tpidr_el1" : "=r"(self));
+
+    return self;
+}
+
 #endif /* ARCH_AARCH64_CPU_H */

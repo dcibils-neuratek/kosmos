@@ -244,4 +244,34 @@ static inline unsigned cpu_current_el(void)
     return ((cs & 3u) == 0u) ? 1u : 0u;
 }
 
+
+/*
+ * Where this core's own state lives - and on this board, not yet in a
+ * register.
+ *
+ * AArch64 has `TPIDR_EL1`: banked, invisible to a process, set once per
+ * core at boot. The equivalent here is the `GS` base, and it is not
+ * equivalent: x86 has **one** `GS` shared between ring 3 and ring 0, so
+ * using it means `swapgs` on every entry and every exit, in `vectors.S` and
+ * `user.S`, with the classic hazard that an exception arriving between the
+ * two finds the wrong one.
+ *
+ * That is real surgery on the entry path and it belongs with this board's
+ * *second core*, not before it. `docs/smp.md` does AArch64 first for
+ * exactly this kind of reason. Until then a static is correct for one
+ * processor, and this comment is what stops it being mistaken for the
+ * finished thing.
+ */
+static void *cpu_self_storage;
+
+static inline void cpu_set_self(void *self)
+{
+    cpu_self_storage = self;
+}
+
+static inline void *cpu_self(void)
+{
+    return cpu_self_storage;
+}
+
 #endif /* ARCH_X86_64_CPU_H */

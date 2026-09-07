@@ -5,6 +5,7 @@
 #include "exit.h"
 #include "fault.h"
 #include "machine.h"
+#include "percpu.h"
 #include "console.h"
 #include "trap.h"
 #include "pmm.h"
@@ -582,7 +583,8 @@ static void order_thread(void *arg)
 
 static bool run_three_and_record(const struct scheduler *policy)
 {
-    unsigned i;
+    unsigned      i;
+    unsigned long guard;
 
     /* Swapping policies is only safe with nothing queued, which is why this
      * runs each set of threads to completion before the next. */
@@ -595,7 +597,24 @@ static bool run_three_and_record(const struct scheduler *policy)
         }
     }
 
-    for (i = 0; i < 12; i++) {
+    /*
+     * Waited out by the clock and not by a count of yields.
+     *
+     * This was twelve yields, which sounds generous and is not a duration:
+     * a yield returns as soon as something ran, so twelve of them are
+     * twelve *switches* and not twelve turns for these three threads. Under
+     * a loaded host that is sometimes not enough, and the test failed for
+     * having been in a hurry - twice in one day, once on each board, which
+     * is what finally made somebody read it.
+     *
+     * The same mistake `ipc: a receive with a deadline gives up` records
+     * further down and for the same reason. Bounding by the clock also
+     * finishes the moment the three are done, so the common case is
+     * quicker rather than slower.
+     */
+    guard = hal_ticks() + 50;               /* 200 ms; they need a few */
+
+    while (trace_len < 3 && hal_ticks() < guard) {
         thread_yield();
     }
 
@@ -3670,6 +3689,75 @@ static void sleep_measurer(void *arg)
     thread_exit();
 }
 
+/*
+ * Per-CPU state is per *CPU*, not per thread.
+ *
+ * **This is the distinction the x86-64 port got wrong the expensive way**,
+ * and it is worth a test before there is a second core rather than after.
+ * `user_rsp` was a global holding the interrupted stack pointer. It looked
+ * like per-CPU state - one core, one interrupted stack - and it was
+ * per-*thread*: a process that blocked in IPC let another run, the second
+ * overwrote the first's, and a process returned to user level on somebody
+ * else's stack. One core was enough to prove it wrong.
+ *
+ * So: two threads, and they must see the *same* `this_cpu`. On one core
+ * that is the whole assertion; on two it becomes "the same as long as they
+ * are on the same core", which is a different test written when there is a
+ * second core to write it against.
+ *
+ * What it catches today is the mechanism itself. If `cpu_set_self` never
+ * ran, or `TPIDR_EL1` is not banked the way it is believed to be, or the
+ * compiler folded `this_cpu()` into something per-call, this says so - and
+ * it says so on both boards, where one uses a register and the other a
+ * static that is honest about being one.
+ */
+static volatile struct percpu *seen_by_other;
+static volatile bool           other_looked;
+
+static void percpu_looker(void *arg)
+{
+    (void)arg;
+
+    seen_by_other = this_cpu();
+    other_looked  = true;
+    thread_exit();
+}
+
+static bool test_percpu_is_per_cpu_and_not_per_thread(void)
+{
+    struct percpu *mine = this_cpu();
+    struct thread *t;
+    unsigned long  guard;
+
+    if (mine == NULL || mine->index != 0) {
+        return false;               /* percpu_init never ran */
+    }
+
+    /* And it is the same one the running thread is recorded in. */
+    if (mine->current != thread_current()) {
+        return false;
+    }
+
+    seen_by_other = NULL;
+    other_looked  = false;
+
+    t = thread_create_suspended("percpu-look", percpu_looker, NULL);
+
+    if (t == NULL) {
+        return false;
+    }
+
+    thread_wake(t);
+
+    guard = hal_ticks() + 50;
+
+    while (!other_looked && hal_ticks() < guard) {
+        thread_yield();
+    }
+
+    return other_looked && seen_by_other == mine;
+}
+
 static bool test_a_sleep_lasts_as_long_as_it_asked(void)
 {
     struct thread *t;
@@ -4205,6 +4293,7 @@ static const struct test tests[] = {
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "cpu: per-CPU state is per CPU, not per thread", test_percpu_is_per_cpu_and_not_per_thread },
     { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
     { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },
     { "sched: NORMAL runs while DISPLAY sleeps", test_normal_runs_while_a_higher_band_sleeps },

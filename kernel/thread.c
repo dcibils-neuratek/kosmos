@@ -5,6 +5,7 @@
 
 #include "cpu.h"
 #include "kernel.h"
+#include "percpu.h"
 #include "thread.h"
 #include "pmm.h"
 #include "page.h"
@@ -22,8 +23,37 @@
  */
 static struct thread threads[THREAD_MAX];
 
-/* The thread executing right now. Never NULL after thread_init. */
-static struct thread *current;
+/*
+ * This processor's own state, and the one slot there is.
+ *
+ * `NR_CPUS` is 1 and `percpu_init` claims entry zero at boot. Everything
+ * that was a file-scope global here and is really a property of *a core*
+ * lives in it now - `kernel/percpu.h` says which and why, and says what it
+ * costs to have had them here.
+ */
+static struct percpu cpus[NR_CPUS];
+
+struct percpu *this_cpu(void)
+{
+    return cpu_self();
+}
+
+void percpu_init(unsigned index)
+{
+    cpus[index].index = index;
+    cpu_set_self(&cpus[index]);
+}
+
+/*
+ * The thread executing right now. Never NULL after thread_init.
+ *
+ * **A macro over the field, rather than twenty-nine edited call sites.**
+ * They were correct and they say what they mean; rewriting every one to
+ * `this_cpu()->current` would be a large diff whose entire content is a
+ * change of spelling, and a large diff is where a real change hides. Linux
+ * spells it the same way for the same reason.
+ */
+#define current     (this_cpu()->current)
 
 /*
  * The installed policy. One of them, for one CPU: the queue it keeps is a
@@ -44,7 +74,9 @@ static unsigned next_id = 1;
  * is what lets the decision be a C function the policy owns and the switch be
  * four instructions of assembly at a point where the stack is known.
  */
-static volatile bool preempt_pending;
+/* Per core: it is a statement about *this* core's return path. `smp.md`
+ * listed six things that had to move and missed this one. */
+#define preempt_pending (this_cpu()->preempt_pending)
 
 /* The effective band, worked out in one place; see below. */
 static void refresh_effective(struct thread *t);
@@ -461,9 +493,12 @@ static void switch_to(struct thread *next)
  * readings and divides the difference, which is also the only way to get a
  * number that means "recently" rather than "since boot".
  */
-static struct thread   *idle_thread;
-static unsigned long    idle_ticks;
-static unsigned long    busy_ticks;
+/* Per core, and `percpu.h` says why the counters especially: two cores
+ * summed into one pair report a machine half busy when one is pinned and
+ * the other is asleep. */
+#define idle_thread (this_cpu()->idle_thread)
+#define idle_ticks  (this_cpu()->idle_ticks)
+#define busy_ticks  (this_cpu()->busy_ticks)
 
 void thread_set_idle(struct thread *t)
 {

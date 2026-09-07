@@ -1,10 +1,20 @@
 # SMP
 
-**Nothing here is written yet.** This is what it would take, counted against
-the code as it stands rather than estimated, because the last thing written
-down about SMP was wrong for two years: `CLAUDE.md` claimed a per-CPU
-struct, `TPIDR_EL1` and a per-CPU runqueue from the repository's first
-commit, and none of the three has ever existed.
+**Step one is done. The rest is not.** This is what it would take, counted
+against the code as it stands rather than estimated, because the last thing
+written down about SMP was wrong for two years: `CLAUDE.md` claimed a
+per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the repository's
+first commit, and none of the three had ever existed.
+
+Two of those three exist now. `kernel/percpu.h` holds the struct,
+`TPIDR_EL1` holds the pointer to it on AArch64, and the runqueue is still a
+global - which is step five below.
+
+**And re-auditing this document against the code found something it had
+missed**, which is the argument for auditing against code rather than
+against prose: the list of six things that have to become per-CPU was
+seven. `preempt_pending` in `thread.c` is a statement about *this core's*
+return path and was a file-scope `bool`.
 
 ---
 
@@ -31,19 +41,33 @@ reason to do it here rather than read about it.
 Six things, and they are all currently one global each. This is the whole
 of what "a per-CPU struct" means, made concrete:
 
-| today | where | why it is per-CPU |
+| what | why it is per-CPU | state |
 |---|---|---|
-| `current` | `thread.c:25` | which thread is running - the fundamental one |
-| `idle_thread` | `thread.c:462` | each core idles independently |
-| `idle_ticks`, `busy_ticks` | `thread.c:463` | load is measured per core or not at all |
-| `owner` | `arch/*/fp.c:37` | who owns the FP registers *on this core* |
-| the runqueue | `sched_prio.c:76` | `head[]`, `tail[]`, `occupied` |
-| the TSS / kernel stack | `arch/x86_64/gdt.c` | where a ring-3 entry lands |
+| `current` | which thread is running - the fundamental one | **moved** |
+| `idle_thread` | each core idles independently | **moved** |
+| `idle_ticks`, `busy_ticks` | load is measured per core or not at all | **moved** |
+| `preempt_pending` | a switch owed on *this core's* way out of an exception | **moved** - and this document had missed it |
+| `owner` in `arch/*/fp.c` | who owns the FP registers *on this core* | still a global |
+| the runqueue in `sched_prio.c` | `head[]`, `tail[]`, `occupied` | still globals; step 5 |
+| the TSS / kernel stack | where a ring-3 entry lands | still one; x86 only |
 
 And the register that finds them: **`TPIDR_EL1` on AArch64, the `GS` base
-with `swapgs` on x86-64.** Neither is written. This is the smallest piece of
-the work and it touches the most files, because every exception entry has to
-establish it before anything else runs.
+with `swapgs` on x86-64.** The first is written; the second is not, and the
+asymmetry is larger than it looks.
+
+`TPIDR_EL1` is *banked*: EL0 cannot see it or change it, so it is set once
+per core at boot and read from anywhere afterwards. **No entry path is
+touched at all.** x86 has one `GS` shared between ring 3 and ring 0, so the
+same trick needs `swapgs` at every entry and every exit, in `vectors.S` and
+`user.S`, with the classic hazard of an exception arriving between the two.
+That is real surgery and it belongs with x86's second core rather than
+before it - so that board answers from `cpus[0]` today and says so in
+`arch/x86_64/cpu.h`.
+
+This paragraph used to say "neither is written" and that both would touch
+every exception entry. Half of that was wrong about AArch64, which is why
+the first step turned out to cost one store at the top of `kmain` rather
+than a pass over the vectors.
 
 **The x86-64 port already paid part of this forward**, and it is the one
 thing that transfers: `user_rsp` was a global holding the interrupted stack
@@ -123,8 +147,19 @@ the concurrency is already settled.
 
 Then, in dependency order:
 
-1. **The per-CPU struct and the register that finds it.** Single core still,
-   with `NR_CPUS = 1`. Nothing behaves differently; everything moves.
+1. ~~**The per-CPU struct and the register that finds it.**~~ **Done.**
+   `kernel/percpu.h`, `NR_CPUS = 1`, `TPIDR_EL1` on AArch64 and an honest
+   static on x86-64. Nothing behaves differently and 130 checks say so.
+
+   Two things worth keeping from it. `current` became a *macro* over the
+   field rather than twenty-nine edited call sites, which is Linux's idiom
+   and for Linux's reason: the sites were correct and a large diff whose
+   only content is a change of spelling is where a real change hides. And
+   `percpu_init` is the first line of `kmain`, before `hal_early_init`,
+   because `thread_current` reads through it and the fault handler asks for
+   the current thread on its way to reporting - so an exception arriving
+   before it would take a second fault instead of printing. Removing that
+   one line panics at boot, which is the right loudness.
 2. **Locks, with one core.** Take them, release them, and let them be
    uncontended. The kernel is still correct at every step and `make test`
    still passes - which is what makes this safe to do incrementally.
