@@ -162,6 +162,13 @@ has two files that assert 64-bit outright — `inttypes.h`, whose `PRIu64` is
 `FLT_EVAL_METHOD` a 32-bit x87 machine reports. Neither is hard; both are
 places the decision would have to be made on purpose.
 
+**Real hardware.** `docs/targets.md` is the model and the two worked
+examples — a Raspberry Pi 5 and an Alienware x14, which between them make
+the case that drivers group by *what the device is* rather than by
+architecture or by board: the x14 and QEMU's q35 share an instruction set
+and almost no device, while the x14 and the Pi 5 share the entire USB stack
+and no instruction set at all.
+
 **Real hardware**, a Raspberry Pi 5. Chosen because it is hard: a desktop
 that feels fast on it is a result rather than an emulator number. Every
 performance question in this project is currently answered "measure it on

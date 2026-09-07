@@ -1,5 +1,11 @@
 # HAL and targets
 
+**This file owns the HAL interface and the boards.** `docs/targets.md` owns
+the layer above it: what a target *is*, why the tree is three axes rather
+than two - architecture, platform, and a pool of drivers matched at run
+time - and what a specific new machine would cost. The Alienware x14 and
+the Pi 5 are worked through there.
+
 
 ---
 

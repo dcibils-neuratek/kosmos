@@ -8,6 +8,56 @@ Last updated: 2026-09-06
 
 ## Where this left off
 
+### Targets: three axes, not two, and one question worth half an hour
+
+`docs/targets.md` is new and is the model for what a machine *is* here.
+Written because a target brief for an Alienware x14 arrived and reading it
+against the tree showed the obvious grid - architecture down one side,
+board along the other - is very nearly right and breaks in a specific
+place.
+
+**The evidence is three machines and what any two of them share.** QEMU's
+q35 and the x14 share an instruction set and *almost no device*: boot,
+discovery, screen, interrupts, timer, PCI access, keyboard, storage and
+network all differ. The x14 and the Pi 5 share *no* instruction set and
+will share the entire USB stack - which on both is where the keyboard, the
+disk and the network arrive, and which is thousands of lines.
+
+So drivers group by **what the device is**, not by architecture and not by
+board. Three axes: `arch/` for the instruction set, `hal/<platform>/` for
+*how a machine says what it has*, and a pool of drivers matched at run
+time.
+
+**And on a PC there is no board - there is a bus.** Embedded machines do
+not enumerate: the Pi 5's UART is at an address you are told. A PC
+enumerates itself through ACPI, PCI and USB, so a PC target is a *discovery
+mechanism* plus a driver pool, and `hal/alienware-x14.c` would be wrong for
+the next laptop and wrong for this one after a firmware update.
+
+**Two things this made honest.** `hal/pc/` is `hal/qemu-q35/` wearing a
+general name - `fwcfg_port.c` is QEMU's, the framebuffer is QEMU's ramfb,
+and `power.c` hardcodes an ACPI address its own comment calls "QEMU's, not
+a PC's". And `hal/virtio/` plus `hal_bus_scan` are already the pool and
+already the discovery: one `blk.c` drives one card over two entirely
+different transports, and the bus scan already reports what it found and
+whether a driver claimed it. What is missing is drivers, not a mechanism.
+
+**On the x14 specifically.** `arch/x86_64` is done and must not be rebuilt -
+the brief opens by saying Kosmos is AArch64-only, which stopped being true
+at 0.9.0. What is missing is the platform: a UEFI loader, ACPI without AML,
+APIC and MSI, HPET, PCI over ECAM, a framebuffer from GOP, and i8042. Very
+roughly 2800 lines, all of it developable under QEMU with OVMF, and it ends
+at a booting desktop on the panel. Then xHCI and the USB stack is 5000 to
+7000 and is a step change - the largest single thing this project would
+have attempted.
+
+**The blocking unknown, and it is cheap.** If the internal keyboard is
+i8042 the first milestone produces a machine you can type on. If it is USB
+there is no input at all until xHCI, and the milestone moves from about
+2800 lines to about 9000 - weeks against months. It is answered by booting
+any Linux stick on the machine and reading `dmesg | grep i8042`. Nothing
+else about that target should be planned first.
+
 ### On x86-64, `sys.sleep` had never slept
 
 **Found by checking that step one worked**, rather than by the suite going
