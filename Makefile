@@ -540,7 +540,8 @@ LITEXL_SRCS := user/lib/litexl_sdl.c \
                runtime/upstream/lite-xl/src/arena_allocator.c
 
 LITEXL_STAGED := runtime/upstream/lite-xl/src/rencache.c \
-                 runtime/upstream/lite-xl/src/api/renderer.c
+                 runtime/upstream/lite-xl/src/api/renderer.c \
+                 runtime/upstream/lite-xl/src/renwindow.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -1162,6 +1163,22 @@ $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 # deliberately leave it out - it opens every standard library, including the
 # ones the guest does not have - but an interpreter that cannot `require`
 # its own standard library cannot run a test.
+#
+# The Lite XL surface shim, built for *this* machine.
+#
+# It depends on `stdlib.h` and `string.h` and nothing else - no syscalls, no
+# Kosmos headers, no framebuffer - so the host compiler builds it exactly as
+# the cross one does. That is worth keeping rather than being a coincidence:
+# it is what lets the shim be tested in a second instead of in an emulator,
+# and `-Wall -Wextra -Werror` here is a second compiler's opinion of code the
+# vendored build compiles with `-w`.
+#
+$(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/lib/litexl_sdl.c \
+                        user/lib/litexl/SDL.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	    tools/test_litexl_surface.c user/lib/litexl_sdl.c
+
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
@@ -1955,7 +1972,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -1963,6 +1980,10 @@ test: $(TARGET) $(HOSTDIR)/lua
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
+	@# And the Lite XL surface shim, which is C and still needs no machine:
+	@# `make litexl` says the port's sources compile, and this says the part
+	@# of them Kosmos wrote is correct. Different claims.
+	$(HOSTDIR)/test_litexl
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,

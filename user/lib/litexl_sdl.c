@@ -387,3 +387,185 @@ int SDL_BlitScaled(SDL_Surface *src, const SDL_Rect *srcrect,
 
     return 0;
 }
+
+/* -------------------------------------------------------------- windows */
+
+/*
+ * **There is one window and it is not this file's.**
+ *
+ * `doom_kosmos.c` set this pattern and its reasoning is the one that
+ * matters: a port owning its own loop is an application that cannot be
+ * closed, which on this desktop means a window the compositor keeps drawing
+ * for ever. So the Lua side owns the window and the loop; this side is
+ * handed a surface and asked to fill it.
+ *
+ * One because Lite XL has one. `main.c` makes a single `RenWindow` and
+ * every `ren_*` call reaches it through the `window_renderer` global, so a
+ * table of windows would be a table with one entry in it and a lookup that
+ * cannot fail.
+ */
+static struct SDL_Window {
+    SDL_Surface *surface;       /* a view onto the Lua side's pixels */
+    void        *pixels;
+    int          w, h, pitch;
+    bool         shown;
+} the_window;
+
+/*
+ * Damage, accumulated between frames.
+ *
+ * **A fixed array with an overflow flag, not a growing list.** The list has
+ * one consumer, once a frame, and a compositor that is handed two hundred
+ * rectangles is slower than one handed the whole window - so past a bound
+ * the honest answer is "all of it" rather than an allocation. That is the
+ * same trade `wm.lua` makes about damage, arrived at from the other side.
+ */
+#define LITEXL_DAMAGE_MAX 64
+
+static SDL_Rect damage[LITEXL_DAMAGE_MAX];
+static int      damage_count;
+static bool     damage_whole;
+
+SDL_Window *litexl_window(void)
+{
+    return &the_window;
+}
+
+void litexl_window_attach(void *pixels, int w, int h, int pitch)
+{
+    /*
+     * Re-wrapped rather than copied. `SDL_CreateRGBSurfaceFrom` takes
+     * memory somebody else owns, so what Lite XL's renderer writes into is
+     * the window's own buffer with nothing in between - which is the whole
+     * point of a `direct` window and the reason this port is worth doing.
+     *
+     * The old wrapper is freed and the pixels are not: `owns_pixels` is
+     * false on a surface made this way, so `SDL_FreeSurface` drops the
+     * bookkeeping and leaves the buffer to whoever made it.
+     */
+    if (the_window.surface != NULL) {
+        SDL_FreeSurface(the_window.surface);
+        the_window.surface = NULL;
+    }
+
+    the_window.pixels = pixels;
+    the_window.w      = w;
+    the_window.h      = h;
+    the_window.pitch  = pitch;
+
+    if (pixels != NULL && w > 0 && h > 0) {
+        /*
+         * 0xAARRGGBB, which is what a Kosmos surface is - `gfx.md` 19.1 -
+         * and what Lite XL's `SDL_PIXELFORMAT_BGRA32` means on a
+         * little-endian machine. The masks are the agreement between the
+         * two and are written out rather than named, because a name that
+         * means different things at different endiannesses is how this
+         * goes wrong silently.
+         */
+        the_window.surface = SDL_CreateRGBSurfaceFrom(
+            pixels, w, h, 32, pitch,
+            0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
+    }
+
+    /* A new surface is entirely undrawn, so everything is damaged. */
+    damage_count = 0;
+    damage_whole = true;
+}
+
+SDL_Surface *SDL_GetWindowSurface(SDL_Window *window)
+{
+    (void)window;
+
+    if (the_window.surface == NULL) {
+        SDL_SetError("no surface attached; the Lua side has not opened a window");
+    }
+
+    return the_window.surface;
+}
+
+void SDL_UpdateWindowSurfaceRects(SDL_Window *window, const SDL_Rect *rects,
+                                  int count)
+{
+    int i;
+
+    (void)window;
+
+    /*
+     * **Recorded, not presented.** On a hosted SDL this would push pixels at
+     * the screen; here the pixels are already in the window's own buffer,
+     * so all that is left is saying which parts moved. The Lua side reads
+     * them once a frame with `litexl_damage_take` and passes them to the
+     * compositor, which is the one thing allowed to touch the framebuffer.
+     */
+    if (rects == NULL || count <= 0) {
+        return;
+    }
+
+    for (i = 0; i < count; i++) {
+        if (damage_count >= LITEXL_DAMAGE_MAX) {
+            damage_whole = true;
+            return;
+        }
+
+        damage[damage_count++] = rects[i];
+    }
+}
+
+int litexl_damage_take(SDL_Rect *out, int max, bool *whole)
+{
+    int n = damage_count;
+
+    if (whole != NULL) {
+        *whole = damage_whole;
+    }
+
+    if (n > max) {
+        n = max;
+
+        if (whole != NULL) {
+            *whole = true;      /* more than the caller can hold */
+        }
+    }
+
+    if (out != NULL && n > 0) {
+        memcpy(out, damage, (size_t)n * sizeof *out);
+    }
+
+    damage_count = 0;
+    damage_whole = false;
+
+    return n;
+}
+
+void SDL_GetWindowSize(SDL_Window *window, int *w, int *h)
+{
+    (void)window;
+
+    if (w != NULL) { *w = the_window.w; }
+    if (h != NULL) { *h = the_window.h; }
+}
+
+void SDL_ShowWindow(SDL_Window *window)
+{
+    /*
+     * Nothing to do, and it is not a stub in the sense of being unfinished.
+     * The window exists and is on screen before Lite XL is started at all -
+     * the Lua side opened it - so "show" has already happened. Recorded so
+     * that a later reader does not go looking for the missing half.
+     */
+    (void)window;
+    the_window.shown = true;
+}
+
+void SDL_DestroyWindow(SDL_Window *window)
+{
+    (void)window;
+
+    if (the_window.surface != NULL) {
+        SDL_FreeSurface(the_window.surface);
+        the_window.surface = NULL;
+    }
+
+    the_window.pixels = NULL;
+    the_window.w = the_window.h = the_window.pitch = 0;
+}

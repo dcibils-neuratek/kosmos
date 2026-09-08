@@ -159,6 +159,47 @@ uint32_t SDL_MapRGBA(const SDL_PixelFormat *format,
 void     SDL_GetRGBA(uint32_t pixel, const SDL_PixelFormat *format,
                      uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a);
 
+/* -------------------------------------------------------------- windows */
+
+/*
+ * **A Lite XL "window" is a Kosmos surface somebody else owns.**
+ *
+ * `user/lib/doom_kosmos.c` set the pattern and the reasoning is its: a port
+ * that owns its own loop is an application that cannot be closed, which on
+ * this desktop means a window the compositor keeps drawing for ever. So the
+ * Lua side owns the window and the loop, and the C side is handed a surface
+ * and asked to fill it.
+ *
+ * That is why none of these create anything. `litexl_window_attach` is
+ * called from the Lua side with the pixels of a `gfx` surface, and
+ * `SDL_GetWindowSurface` hands Lite XL a view onto exactly those - so the
+ * editor's renderer writes into the window's own buffer with no copy in
+ * between, and `SDL_UpdateWindowSurfaceRects` records which parts changed
+ * for the Lua side to pass to the compositor.
+ *
+ * **The editor never touches the framebuffer.** It is a `direct` window in
+ * the sense `user/bin/procs.lua` defines - it owns a region the compositor
+ * blits from - which is the same arrangement Doom and the cubes have.
+ */
+SDL_Surface *SDL_GetWindowSurface(SDL_Window *window);
+void         SDL_UpdateWindowSurfaceRects(SDL_Window *window,
+                                          const SDL_Rect *rects, int count);
+void         SDL_GetWindowSize(SDL_Window *window, int *w, int *h);
+void         SDL_ShowWindow(SDL_Window *window);
+void         SDL_DestroyWindow(SDL_Window *window);
+
+/*
+ * The Kosmos side of the same object. Not SDL's, and named so.
+ *
+ * `attach` is called whenever the surface changes - at startup and on every
+ * resize - and re-wraps it. `damage_take` hands the accumulated rectangles
+ * to the caller and empties the list, which is what the Lua side does once
+ * a frame before telling the compositor.
+ */
+SDL_Window *litexl_window(void);
+void        litexl_window_attach(void *pixels, int w, int h, int pitch);
+int         litexl_damage_take(SDL_Rect *out, int max, bool *whole);
+
 /* --------------------------------------------------------------- errors */
 
 const char *SDL_GetError(void);

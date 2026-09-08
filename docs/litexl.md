@@ -66,9 +66,11 @@ make a second.
       `rencache.c` and `api/renderer.c` fell out of it as predicted, both
       unmodified. **Five translation units compile; `make litexl` says so
       every time.**
-- [ ] **Step 3. The window.** `renwin_get_surface` returns a Kosmos shared
-      surface; `renwin_update_rects` becomes the damage the compositor
-      already takes.
+- [x] **Step 3. The window.** And it turned out to need no new file at
+      all: `SDL_GetWindowSurface` returns a view onto the Lua side's pixels
+      and `SDL_UpdateWindowSurfaceRects` records damage, so **upstream's
+      `renwindow.c` compiles and works unmodified**. Six translation units
+      now, and 35 checks on the shim in `make test`.
 - [ ] **Step 4. The renderer.** `renderer.c`'s 48 FreeType calls become
       `stb_truetype`, which `user/lib/docfont.c` already drives with a
       glyph cache on the PDF path. This is the step with real work in it
@@ -115,6 +117,55 @@ links; `LITEXL_STAGED` compiles and does not, because `rencache.c` and
 four will write. `make litexl` compiles both and reports where the edge is,
 so the compiler says which files are done rather than a checklist saying so
 once.
+
+## Who owns the window, which decided step three
+
+**`user/lib/doom_kosmos.c` had already answered this** and its reasoning is
+the one that matters: *a port that owns its own loop is an application that
+cannot be closed, which on this desktop means a window the compositor keeps
+drawing for ever.* So the Lua side owns the window and the loop, and the C
+side is handed a surface and asked to fill it. Doom works that way and Lite
+XL does now too.
+
+Which made step three smaller than the plan said. Rather than writing a
+Kosmos `renwindow.c`, the shim implements the two functions upstream's
+already calls - `SDL_GetWindowSurface` and `SDL_UpdateWindowSurfaceRects` -
+and upstream's file compiles and works untouched. The surface is a *view*
+onto memory the Lua side owns, made with `SDL_CreateRGBSurfaceFrom`, so
+what the editor's renderer writes goes straight into the window's own
+buffer with no copy anywhere.
+
+**The editor never touches the framebuffer**, and it is worth being plain
+about that because "writes into a surface" sounds like it might. Lite XL is
+a `direct` window in the sense `user/bin/procs.lua` defines - it owns a
+region the compositor blits from - exactly as Doom and the cubes are. The
+window manager remains the only thing that touches the screen.
+
+Damage is a fixed array of 64 rectangles with an overflow flag, not a
+growing list. Past the bound the honest answer is "all of it": a compositor
+handed two hundred rectangles is slower than one handed the whole window,
+which is the same trade `wm.lua` makes about damage, arrived at from the
+other side.
+
+## Is any of this still SDL?
+
+Barely, and it is worth saying so plainly rather than leaving the filename
+to imply otherwise.
+
+Nothing from SDL is linked, vendored or downloaded. `user/lib/litexl_sdl.c`
+is Kosmos C: a pixel buffer with fill, blit and a clip rectangle. And Lite
+XL's *hot* path never enters it - `renderer.c`'s glyph loop writes straight
+into `surface->pixels` through `->pitch`, with a comment saying it avoids
+`SDL_GetRGBA` because that was a measured regression. That is already what
+`CLAUDE.md` asks for: a loop over bytes, in C.
+
+**What the SDL shape buys is that the vendored tree stays `diff -r`
+identical to upstream.** Removing the name would mean editing about 2,300
+lines of somebody else's C to avoid 150 lines of adapter, and turning a
+vendored library into a fork. The shim is also the seam: `gfx.c` keeps its
+fill and blit `static` today, and if the duplication ever shows up in a
+profile, exporting them and calling them from here is a local change rather
+than a rewrite.
 
 ## Two things deliberately given up
 
