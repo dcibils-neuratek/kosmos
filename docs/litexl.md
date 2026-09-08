@@ -78,8 +78,12 @@ make a second.
 - [x] **Step 5. `system.c`**, replaced rather than shimmed - and for a
       different reason than step four. Ten translation units, all in the
       image, 58 checks in `make test`.
-- [ ] **Step 6. `main.c`, and then the Lua.** Which is the point: if the
-      first five are right, the nineteen thousand lines run.
+- [~] **Step 6. `main.c`, and then the Lua.** Half done, and it is the
+      half that answers the question. **The editor's Lua loads and
+      `core.init()` returns**, checked on this machine by
+      `tools/test_litexl_lua.lua` in `make test`. What is left is the image
+      integration: getting `data/`'s 78 files into the namespace, a
+      `require` over it, and the host table written for real.
 
 ## What step two turned out to be
 
@@ -242,6 +246,44 @@ absent, because Lite XL's Lua does `require "process"` at the top of files
 that may never use one: an empty table lets the require succeed and the
 *use* fail, at the point somebody asks for something impossible, with a
 sentence saying why.
+
+## Step six, and what the Lua actually needed
+
+**The editor's Lua loads.** `start.lua` runs, `require "core"` resolves the
+whole 78-file graph, and `core.init()` returns - on stock Lua 5.4 with the
+six C modules stubbed. `tools/test_litexl_lua.lua` does it in `make test`,
+on the build machine, because the editor is Lua 5.4 and so is
+`build/host/lua`: no window, no font and no emulator needed to find out
+whether the module graph still resolves.
+
+That test decided the shape of the C half rather than confirming it. Two
+things came out of the first run and neither was in the plan:
+
+- **`luaL_requiref(L, name, fn, 1)` sets each module as a *global***, and
+  `start.lua` relies on it: it says `system.get_file_info` with no
+  `require` in sight.
+- **`dirmonitor` cannot refuse.** It had been written to raise, on the
+  grounds that Kosmos cannot watch a directory. `core.init()` then died at
+  `core/dirwatch.lua:41`, because the editor makes a monitor at startup and
+  indexes it whether or not anything is ever watched. It answers the way
+  upstream's own nine-line `dummy.c` does now - "single", `-1`, nothing -
+  and the editor rescans instead of being told. **A module that refuses is
+  only honest when nobody needs it to exist.**
+
+And the list the host has to provide for startup, which is short and is
+measured rather than guessed:
+
+    absolute_path  chdir  get_file_info  get_time  list_dir  mkdir
+    set_window_bordered  set_window_hit_test
+
+Every one of those is a question for a server, which is why `system` is
+shaped the way step five left it.
+
+**What is left is integration, not discovery.** `data/`'s 78 Lua files have
+to reach the image and be findable - Kosmos has `use()` and a namespace
+where Lite XL has `require` and `package.path`, so that is a loader to
+write - and the host table has to be implemented against `fs`, the window
+manager and the clipboard rather than stubbed. Neither is unknown work now.
 
 ## Two things deliberately given up
 

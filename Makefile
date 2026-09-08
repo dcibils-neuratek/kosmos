@@ -2020,6 +2020,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl
 	@# `make litexl` says the port's sources compile, and this says the part
 	@# of them Kosmos wrote is correct. Different claims.
 	$(HOSTDIR)/test_litexl
+	@# And the port's Lua half - nineteen thousand lines of somebody else's
+	@# code - loaded and initialised with the C modules stubbed. It is the
+	@# same interpreter either way, so this needs no machine either.
+	$(HOSTDIR)/lua tools/test_litexl_lua.lua
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,

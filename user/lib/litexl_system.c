@@ -285,17 +285,61 @@ int luaopen_process(lua_State *L)
     return 1;
 }
 
+/*
+ * `dirmonitor`, which **cannot refuse**, and finding that out is what the
+ * Lua load test is for.
+ *
+ * The first version of this returned a table whose functions raised, on the
+ * grounds that Kosmos cannot watch a directory. `core.init()` then died in
+ * `core/dirwatch.lua:41`: the editor makes a monitor at startup and indexes
+ * it, whether or not anything is ever watched. A module that refuses is
+ * only honest if nobody needs it to exist.
+ *
+ * So it answers the way upstream's own `dummy.c` does - the nine-line file
+ * it ships for platforms with no inotify, kqueue or FSEvents. "single"
+ * mode, -1 from `watch`, nothing from `check`; the editor then rescans when
+ * it wants to know rather than being told.
+ */
+static int f_dirmonitor_mode(lua_State *L)
+{
+    lua_pushstring(L, "single");
+    return 1;
+}
+
+static int f_dirmonitor_watch(lua_State *L)
+{
+    lua_pushinteger(L, -1);
+    return 1;
+}
+
+static int f_dirmonitor_check(lua_State *L)
+{
+    lua_pushboolean(L, 0);      /* nothing changed, as far as anyone knows */
+    return 1;
+}
+
+static int f_dirmonitor_new(lua_State *L)
+{
+    static const luaL_Reg monitor[] = {
+        { "mode",    f_dirmonitor_mode  },
+        { "watch",   f_dirmonitor_watch },
+        { "unwatch", f_dirmonitor_watch },
+        { "check",   f_dirmonitor_check },
+        { NULL, NULL }
+    };
+
+    luaL_newlib(L, monitor);
+    return 1;
+}
+
 int luaopen_dirmonitor(lua_State *L)
 {
-    /*
-     * Watching a directory for changes. Upstream ships a nine-line
-     * `dummy.c` for platforms without inotify, kqueue or FSEvents, and this
-     * is that answer in Lua's shape: the editor rescans when asked instead
-     * of being told.
-     */
-    static const char *const names[] = { "new", "watch", "unwatch", NULL };
+    static const luaL_Reg lib[] = {
+        { "new", f_dirmonitor_new },
+        { NULL, NULL }
+    };
 
-    refuse(L, "dirmonitor", names);
+    luaL_newlib(L, lib);
     return 1;
 }
 
