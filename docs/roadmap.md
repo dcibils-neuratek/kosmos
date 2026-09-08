@@ -97,23 +97,17 @@ interrupt controller, timer, idle thread and runqueue, and an IPI worth a
 measured 25x on a cross-core wake. `make SMPWORK=4 qemu` places threads on
 all four; `thread_create_on(cpu, ...)` puts one anywhere deliberately.
 
-**This entry said the remaining work was "one afternoon and one line" -
-locking the four virtio drivers. That was done in 0.9.20 and it was not the
-end of it.** With placement on, work does not spread: six compute-bound
-processes on four processors leave three of them idle within a second while
-all six are still alive.
+**Work spreads.** Six compute-bound processes on four processors: 100% on
+every core, where before the fix three of them went idle within a second
+while all six were alive. The cause was preemption rather than placement -
+`thread_tick` returned before `policy->tick` on every core but zero, and
+`thread_wake` decided preemption about the waking core instead of the
+target. `docs/smp.md` has both, and what was ruled out first.
 
-The cause is not placement, which a trace shows to be correct, but the
-preemption path, in two confirmed pieces. `thread_tick` returns before
-`policy->tick` on every core but zero, so **only core zero preempts on a
-quantum**; and `thread_wake` compares against the *waking* core's `current`
-and sets the *waking* core's `preempt_pending`, so **a cross-core wake never
-preempts the target**. A thread on cores 1-3 is therefore never taken off by
-anything.
-
-That is the next piece of work, and it is not mechanical: making
-`thread_wake_sleepers` and `policy->tick` safe on every core is what step
-two deferred and step five only half-collected.
+**What keeps placement off by default is now one known failure**: the
+display harness fails at its editor phase under `SMPWORK=4`. The desktop
+comes up and runs; the program typed into `edit` does not come back. That
+is the next thing to find.
 
 Then a panic protocol - a core that panics has to *stop* the others rather
 than queue behind them, and today it stops neither them nor itself. Step

@@ -53,6 +53,25 @@ void percpu_init(unsigned index)
 }
 
 /*
+ * The thread running on a given processor, which is not always this one.
+ *
+ * **It exists because `current` below is a macro**, expanding to
+ * `this_cpu()->current` - so writing `p->current` for another core's slot
+ * expands into nonsense that does not compile, which is the good outcome.
+ * This function is deliberately placed *above* that definition, where the
+ * field can still be named.
+ *
+ * One caller: `thread_wake`, deciding whether a thread it has just made
+ * runnable outranks whatever is running on the core it will run on. That
+ * decision used to read `current` and was therefore about the wrong
+ * processor entirely.
+ */
+struct thread *percpu_running(struct percpu *p)
+{
+    return (p != NULL) ? p->current : NULL;
+}
+
+/*
  * The thread executing right now. Never NULL after thread_init.
  *
  * **A macro over the field, rather than twenty-nine edited call sites.**
@@ -64,10 +83,15 @@ void percpu_init(unsigned index)
 #define current     (this_cpu()->current)
 
 /*
- * The installed policy. One of them, for one CPU: the queue it keeps is a
- * per-CPU structure in everything but name, and when SMP arrives at M6 it
- * becomes one instance per core rather than being redesigned. CLAUDE.md asks
- * for that shape from the start.
+ * The installed policy. One of them, for every CPU: the queues it keeps are
+ * indexed by core - `head[NR_CPUS][SCHED_PRIORITIES]` - so the vtable takes
+ * a `cpu` and the policy is shared while its state is not.
+ *
+ * This comment used to say "one of them, for one CPU ... when SMP arrives
+ * at M6 it becomes one instance per core", which was the intention before
+ * `docs/smp.md` step five did it. It did not become one instance per core;
+ * it became one instance with per-core state, which is the cheaper shape
+ * and the one the vtable already allowed.
  */
 static const struct scheduler *policy;
 
@@ -904,19 +928,18 @@ unsigned thread_cpu_count(void)
      * `thread_place_across` sets it and `SMPWORK` reaches that from the
      * command line.
      *
-     * **It is one by default because work does not spread yet, and that is
-     * a measurement rather than a caution.** Six compute-bound processes on
-     * four processors: three go idle within a second and stay idle while
-     * all six are still alive, where the same six saturate a single core.
+     * **Work spreads now**: six compute-bound processes on four processors
+     * read 100% on every core. It did not until the two faults in the
+     * preemption path were fixed, and both are in this file - `thread_tick`
+     * returned before `policy->tick` on every core but zero, and
+     * `thread_wake` decided preemption about the waking core rather than
+     * the target. Placement was never the fault; a trace showed the six
+     * going to cpu 0,1,2,3,0,1 all along.
      *
-     * Placement is not the fault - a trace shows the six going to cpu
-     * 0,1,2,3,0,1. The preemption path is, in two pieces, and both are
-     * visible from this file: `thread_tick` returns before `policy->tick`
-     * on every core but zero, so only core zero preempts on a quantum; and
-     * `thread_wake` compares against the *waking* core's `current` and sets
-     * the *waking* core's `preempt_pending`, so a cross-core wake never
-     * preempts the target. Together: a thread on cores 1-3 is never taken
-     * off by anything.
+     * **It is still one by default because of a failure that survived
+     * both**: under `SMPWORK=4` the display harness does not get past its
+     * editor phase. The desktop comes up and runs; the program typed into
+     * `edit` does not come back.
      *
      * **This comment used to say the blocker was the four virtio drivers
      * having no locks, and said it in two contradictory blocks stacked on
@@ -988,35 +1011,45 @@ void thread_tick(void)
     }
 
     /*
-     * **Everything above is this processor's; everything below is the
-     * machine's, and only core zero may do it.**
+     * **Machine-wide work, and only core zero may do it.**
      *
-     * `thread_wake_sleepers` scans `threads[]` and moves threads into the
-     * runqueue; `policy->tick` reads and writes that queue. Neither has a
-     * lock, and four cores doing them at TICK_HZ each is four cores writing
-     * one linked list. Core zero owns them until `docs/smp.md` step two.
+     * `thread_wake_sleepers` scans the whole of `threads[]`. Four cores
+     * doing that at TICK_HZ each would be four scans a tick finding the
+     * same deadlines, and the `wake_at` it clears is not claimed under any
+     * lock - so two cores can both decide the same sleeper is due. One core
+     * owning the scan is the cheap answer and there is no reason to want
+     * another.
      *
-     * What a secondary loses by this is nothing it could use: it runs only
-     * its own idle thread, so there is no thread of its own to preempt and
-     * nothing it could switch to if there were. What it keeps is the half
-     * that makes it *visible* - its own idle and busy counts, which are what
-     * `sysinfo` reports and what Monitor draws.
-     *
-     * A temporary invariant, named so it is found when the locks arrive.
+     * First, so a thread whose deadline has arrived is runnable before any
+     * core's policy decision below is made rather than one tick later.
      */
-    if (this_cpu()->index != 0) {
-        return;
+    if (this_cpu()->index == 0) {
+        thread_wake_sleepers();
     }
 
-    /* Before the policy is asked anything, so a thread whose deadline has
-     * arrived is runnable when the decision is made rather than one tick
-     * later. */
-    thread_wake_sleepers();
-
-    /* And to the thread itself, which is what makes a per-process figure
-     * possible. One increment on the interrupt path; the alternative is
-     * reading the counter on every context switch, which is the hottest
-     * path in the kernel. */
+    /*
+     * **And everything below is this processor's, which is the fix.**
+     *
+     * This was behind the `index != 0` return above, and the comment there
+     * explained why that was safe: "a secondary runs only its own idle
+     * thread, so there is no thread of its own to preempt". It called
+     * itself "a temporary invariant, named so it is found when the locks
+     * arrive". The locks arrived at step two, the runqueues at step five,
+     * and nothing came back here.
+     *
+     * **What it cost is that only core zero ever preempted on a quantum.**
+     * A compute-bound thread on cores 1-3 could not be taken off by the
+     * timer at all: it ran until it blocked or exited. With placement on,
+     * that is most of the machine.
+     *
+     * It is safe on every core because neither line touches anything
+     * shared. `current` is `this_cpu()->current`, so `ticks++` is this
+     * core's own thread; and both policies' `tick` do nothing but decrement
+     * `running->sched.quantum` on the thread handed to them. The switch it
+     * asks for is not taken here either - `preempt_pending` is this core's
+     * flag, read by this core's exception epilogue, which is the one place
+     * where moving the stack is safe.
+     */
     current->ticks++;
 
     if (policy->tick(current)) {
@@ -1525,45 +1558,75 @@ void thread_wake(struct thread *t)
          * already asks the scheduler, which is the thing the poke exists to
          * make happen.
          */
-        if (cpu != here()) {
-            hal_cpu_wake(cpu);
+        /*
+         * **And if it outranks whoever is running *there*, say so there.**
+         *
+         * This is the second half of the same bug as the tick above, and it
+         * is the one that mattered for IPC. The comparison below used to
+         * read `current` - which is `this_cpu()->current`, the thread on the
+         * *waking* core - and set `this_cpu()->preempt_pending`, the
+         * *waking* core's flag. Neither has anything to do with the core the
+         * woken thread lives on.
+         *
+         * So a cross-core wake preempted the wrong processor, or more often
+         * nothing at all: it compared a woken thread against a thread it
+         * will never compete with, and flagged a core that is not going to
+         * run it. The woken thread then waited for the target's own quantum
+         * to expire - which, before the fix above, never happened on a
+         * secondary.
+         *
+         * Both halves are read through `percpu_at(cpu)` now, which is what
+         * that function exists for.
+         *
+         * Enqueuing alone means the woken thread waits for the running one's
+         * quantum to expire - up to a hundred milliseconds, for a thread the
+         * policy considers more important. That is the whole of why an input
+         * event could sit behind a compute-bound one.
+         *
+         * The switch is not done here on either core. `thread_wake` is
+         * called from inside IPC and from the interrupt path, and switching
+         * there would move the stack while something above is still reading
+         * the trap frame at `sp`. Setting the flag the timer already sets
+         * means the vector's epilogue does it, at the one place where it is
+         * safe - and on the target core that is exactly what the IPI below
+         * brings about.
+         *
+         * The band comparison is done here, before the policy is asked. IPC
+         * wakes a thread on every message and almost always wakes a peer -
+         * a server and its client both run at NORMAL - so the indirect call
+         * through `preempts` was paid on every round trip to be told "no".
+         * Comparing the two numbers first settles the common case without a
+         * call. It assumes a larger band outranks a smaller one, which is a
+         * property of `SCHED_PRIO_*` in sched.h rather than a secret of any
+         * one policy; the call below still has the final say.
+         */
+        {
+            struct percpu *target  = percpu_at(cpu);
+            struct thread *running = percpu_running(target);
+
+            if (running != NULL && t != running
+                && t->sched.effective > running->sched.effective
+                && policy->preempts != NULL && policy->preempts(running, t)) {
+                target->preempt_pending = true;
+            }
         }
 
         /*
-         * And if it outranks whoever is running, say so.
+         * And then tell that processor to look, which is what turns the flag
+         * above into a switch: the target takes the interrupt, and the
+         * epilogue on its way out asks the scheduler.
          *
-         * Enqueuing alone means the woken thread waits for the running
-         * one's quantum to expire - up to a hundred milliseconds, for a
-         * thread the policy considers more important. That is the whole of
-         * why an input event could sit behind a compute-bound one.
+         * **After the flag, and the barrier inside `hal_cpu_wake` is what
+         * makes that ordering visible to the other core** rather than merely
+         * written in this order here. Outside the queue lock, because the
+         * target's first act on taking the interrupt is to want it.
          *
-         * The switch is not done here. `thread_wake` is called from inside
-         * IPC and from the interrupt path, and switching there would move
-         * the stack while something above is still reading the trap frame
-         * at
-         * `sp`. Setting the flag the timer already sets means the vector's
-         * epilogue does it, at the one place where it is safe.
+         * Not sent to this core. An interrupt to oneself is a wasted
+         * exception: the epilogue on the way out of whatever is running here
+         * already asks the scheduler.
          */
-        /*
-         * The band comparison is done here, before the policy is asked.
-         *
-         * IPC wakes a thread on every message and almost always wakes a
-         * peer - a server and its client both run at NORMAL - so the
-         * indirect call through `preempts` was paid on every round trip to
-         * be told "no". Comparing the two numbers first settles the common
-         * case without a call.
-         *
-         * This does assume a larger band number outranks a smaller one,
-         * which is a property of `SCHED_PRIO_*` in sched.h rather than a
-         * secret of any one policy. A policy that disagrees is free to: the
-         * call below still has the final say, and one that wants to preempt
-         * a *peer* can say so by returning true - it just will not be asked
-         * about a thread that ranks lower.
-         */
-        if (current != NULL && t != current
-            && t->sched.effective > current->sched.effective
-            && policy->preempts != NULL && policy->preempts(current, t)) {
-            this_cpu()->preempt_pending = true;
+        if (cpu != here()) {
+            hal_cpu_wake(cpu);
         }
     }
 }

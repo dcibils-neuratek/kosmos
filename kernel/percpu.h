@@ -156,4 +156,13 @@ void percpu_init(unsigned index);
  */
 struct percpu *percpu_at(unsigned index);
 
+/*
+ * What is running on that processor.
+ *
+ * A function rather than a field access, and `thread.c` says why at the
+ * definition: `current` there is a macro over `this_cpu()->current`, so
+ * naming the field on *another* core's slot cannot be written directly.
+ */
+struct thread *percpu_running(struct percpu *p);
+
 #endif /* KERNEL_PERCPU_H */

@@ -80,19 +80,17 @@ So the switch is off by default and `SMPWORK=4` turns it on.
 `input` and `snd` each take a spinlock over their virtqueue indices, landed
 in 0.9.20.
 
-**What holds the line now is that work does not spread**, and it was found
-by measuring rather than by reasoning. Six compute-bound processes on four
-processors: three go idle within a second and stay idle while all six are
-still alive; the same six saturate a single core. Placement itself is
-correct - a trace shows them going to cpu 0,1,2,3,0,1 - and neither IPC nor
-threads dying explains it.
+**Work spreads now.** Six compute-bound processes on four processors read
+100% on every core; before the fix, three went idle within a second while
+all six were alive. Both causes were in the preemption path rather than in
+placement: `thread_tick` returned before `policy->tick` on every core but
+zero, and `thread_wake` decided preemption about the *waking* core instead
+of the target. `docs/smp.md` has the numbers and what was ruled out.
 
-Two faults in the preemption path do, and both are confirmed in the source:
-`thread_tick` returns before `policy->tick` on every core but zero, so only
-core zero preempts on a quantum; and `thread_wake` compares against the
-*waking* core's `current` and sets the *waking* core's `preempt_pending`, so
-a cross-core wake never preempts the target. Together they mean a thread on
-cores 1-3 is never taken off by anything. `docs/smp.md` has the measurement.
+**What keeps placement off by default is one known failure**: under
+`SMPWORK=4` the display harness fails at its editor phase - the program
+typed into `edit` does not come back. It survived the fix above, so it is a
+separate bug and it is the next one.
 
 ### One runqueue per processor, and a thread that has a home
 

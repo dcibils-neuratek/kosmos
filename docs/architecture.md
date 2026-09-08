@@ -589,17 +589,20 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
 
   What is still missing is no longer "one line and one afternoon", which is
   what this said while the drivers were unlocked. They were locked in
-  0.9.20, and `make SMPWORK=4 qemu` now places threads on all four
-  processors. **Work still does not spread**: six compute-bound processes
-  leave three cores idle within a second while all six are alive.
+  0.9.20, and `make SMPWORK=4 qemu` places threads on all four processors -
+  **which now use them**: six compute-bound processes read 100% on every
+  core, where three of them used to go idle within a second.
 
-  The cause is the preemption path, in two pieces. `thread_tick` returns
-  before `policy->tick` on every core but zero, so only core zero preempts
-  on a quantum; and `thread_wake` compares against the *waking* core's
-  `current` and flags the *waking* core, so a cross-core wake never preempts
-  the target. After that: a panic protocol - a core that panics has to
-  *stop* the others rather than queue behind them. `docs/smp.md` is the
-  map, and carries the measurement.
+  Both causes were in the preemption path rather than in placement.
+  `thread_tick` returned before `policy->tick` on every core but zero, so
+  only core zero preempted on a quantum; and `thread_wake` compared against
+  the *waking* core's `current` and flagged the *waking* core, so a
+  cross-core wake never preempted the target.
+
+  What is left: the display harness fails at its editor phase under
+  `SMPWORK=4`, which is why placement is still off by default; and a panic
+  protocol - a core that panics has to *stop* the others rather than queue
+  behind them. `docs/smp.md` is the map, and carries the measurement.
 
   This bullet has been wrong twice in opposite directions. It said "nothing
   has ever run on a second core, and there is no per-CPU struct"; and before

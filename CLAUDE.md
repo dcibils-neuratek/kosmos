@@ -310,20 +310,19 @@ what exists and what is left.
 core zero and `thread_create_on(cpu, ...)` is how anything crosses a core
 deliberately.
 
-What held that line was the four virtio drivers, which had no locks. **They
-were locked in 0.9.20 and that was not the end of it.** With placement on,
-work does not spread: six compute-bound processes on four processors leave
-three idle within a second while all six are still alive, where the same six
-saturate a single core.
+**Work spreads.** Six compute-bound processes on four processors read 100%
+on every core. Getting there took two fixes and neither was placement, which
+measured correct all along: `thread_tick` returned before `policy->tick` on
+every core but zero, so only core zero preempted on a quantum; and
+`thread_wake` compared against the *waking* core's `current` and set the
+*waking* core's `preempt_pending`, so a cross-core wake never preempted the
+target. `docs/smp.md` has both, and the three plausible explanations that
+were ruled out by experiment before them.
 
-The cause is the preemption path rather than placement, which measures
-correct. `thread_tick` returns before `policy->tick` on every core but zero,
-so **only core zero preempts on a quantum** - its own comment calls that "a
-temporary invariant, named so it is found when the locks arrive", and the
-locks arrived at step two. And `thread_wake` compares against the *waking*
-core's `current` and sets the *waking* core's `preempt_pending`, so **a
-cross-core wake never preempts the target.** `docs/smp.md` has the numbers
-and what was ruled out to get to them.
+**What keeps it off by default is one known failure**: under `SMPWORK=4` the
+display harness fails at its editor phase. The desktop comes up and runs;
+the program typed into `edit` does not come back. A separate bug - it
+survived the fixes above - and the next one to find.
 
 **This paragraph said the opposite for two years, and the correction is
 worth keeping.** It claimed the code was "written SMP-ready: no loose mutable

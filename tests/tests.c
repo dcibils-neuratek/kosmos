@@ -1578,6 +1578,14 @@ static bool test_destroying_a_space_returns_its_pages(void)
 static volatile bool          spinner_stop;
 static volatile unsigned long spinner_laps;
 
+/*
+ * A second lap counter, so two spinners on one processor can be told apart.
+ *
+ * Both share `spinner_stop`, which is right: one flag stops them together
+ * and there is nothing to be learned from stopping them separately.
+ */
+static volatile unsigned long spinner2_laps;
+
 static void spinner(void *arg)
 {
     (void)arg;
@@ -1588,6 +1596,21 @@ static void spinner(void *arg)
      */
     while (!spinner_stop) {
         spinner_laps++;
+    }
+}
+
+/*
+ * The same loop against the other counter. A separate function rather than
+ * an argument because the thread entry signature takes a `void *` and a
+ * pointer to a `volatile unsigned long` would be the only place in this
+ * file that does that - two lines of duplication against one of indirection.
+ */
+static void spinner2(void *arg)
+{
+    (void)arg;
+
+    while (!spinner_stop) {
+        spinner2_laps++;
     }
 }
 
@@ -1637,6 +1660,87 @@ static bool test_a_thread_that_never_yields_is_preempted(void)
     }
 
     return ran;
+}
+
+/*
+ * Two threads on *another* processor, neither of which yields.
+ *
+ * **The regression this exists for went unnoticed for three releases and
+ * was invisible to every other check here.** `thread_tick` returned before
+ * `policy->tick` on every core but zero, so a secondary never preempted on
+ * a quantum: whatever it was running ran until it blocked or exited. The
+ * suite could not see it because the suite pins itself to core zero with
+ * `thread_place_across(1)`, and core zero was the one core that worked.
+ *
+ * The shape is what makes it a test of preemption rather than of placement.
+ * Two spinners are put on the same secondary and neither ever yields, so
+ * the *only* way the second one can run a single lap is if the timer takes
+ * the processor away from the first. Waiting on the counter rather than on
+ * the scheduler keeps this thread out of the answer.
+ *
+ * `thread_create_on` rather than a placement switch, for the reason the
+ * rest of the SMP checks use it: the question is about one named
+ * processor, and a global policy would make it a question about whichever
+ * core the round robin happened to reach.
+ */
+static bool test_a_secondary_preempts_a_thread_that_never_yields(void)
+{
+    uint64_t deadline;
+    unsigned long first_before, second_before;
+    unsigned i;
+    bool both_ran;
+
+    /* A machine with one processor has nothing to ask. */
+    if (smp_online() < 2) {
+        return true;
+    }
+
+    spinner_stop = false;
+    spinner_laps = 0;
+    spinner2_laps = 0;
+
+    if (thread_create_on(1, "spin-a", spinner, NULL) == NULL) {
+        return false;
+    }
+
+    if (thread_create_on(1, "spin-b", spinner2, NULL) == NULL) {
+        spinner_stop = true;
+        return false;
+    }
+
+    first_before  = spinner_laps;
+    second_before = spinner2_laps;
+
+    /*
+     * A second, and it is a *failure* bound: the loop leaves as soon as
+     * both have run, so the passing case costs whatever it costs. Long
+     * because four vCPUs share one host thread under TCG, so a tick here
+     * buys a quarter of the instructions it would on the real machine.
+     */
+    deadline = cntpct() + cntfrq();
+
+    while (cntpct() < deadline
+           && !(spinner_laps > first_before && spinner2_laps > second_before)) {
+        /* Deliberately empty, and this thread is on core zero: yielding
+         * here would prove something about this processor instead. */
+    }
+
+    both_ran = spinner_laps > first_before && spinner2_laps > second_before;
+
+    spinner_stop = true;
+
+    /* Let them see the flag and leave. They are preempted back in to do
+     * it - which is the same mechanism, one more time. */
+    deadline = cntpct() + cntfrq() / 2;
+    while (cntpct() < deadline) {
+        /* nothing */
+    }
+
+    for (i = 0; i < 8; i++) {
+        thread_yield();
+    }
+
+    return both_ran;
 }
 
 static bool test_preemption_does_not_lose_the_preempted_thread(void)
@@ -4752,6 +4856,7 @@ static const struct test tests[] = {
     { "as: destroy returns its pages",         test_destroying_a_space_returns_its_pages },
     { "sched: a spinning thread is preempted", test_a_thread_that_never_yields_is_preempted },
     { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
+    { "smp: a secondary preempts a spinner",   test_a_secondary_preempts_a_thread_that_never_yields },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },

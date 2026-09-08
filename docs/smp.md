@@ -392,22 +392,66 @@ which is a question about *this* processor's scheduler and only means
 anything if those threads are here. Spreading them would not make the tests
 better; it would make them stop asking.
 
-### What `SMPWORK=4` actually does today, measured
+### What `SMPWORK=4` does, measured before and after
 
-**Work does not spread, and this is the thing that has to be fixed before
-placement can be the default.** Six compute-bound processes, started
-together, one reading per second:
+Six compute-bound processes, started together, one reading per second:
 
 ```
-placing 1:  cpu0 100%                                    (correct)
-placing 4:  cpu0  95%   cpu1  95%   cpu2  0%   cpu3   2%
-            cpu0   0%   cpu1   0%   cpu2  0%   cpu3  71%
-            cpu0   0%   cpu1   0%   cpu2  0%   cpu3  70%   ... and it stays there
+before:  placing 1:  cpu0 100%                                    (correct)
+         placing 4:  cpu0  95%   cpu1  95%   cpu2  0%   cpu3   2%
+                     cpu0   0%   cpu1   0%   cpu2  0%   cpu3  71%
+                     cpu0   0%   cpu1   0%   cpu2  0%   cpu3  70%   ... for ever
+
+after:   placing 4:  cpu0 100%   cpu1 100%   cpu2 100%  cpu3 100%
+                     cpu0 100%   cpu1 100%   cpu2 100%  cpu3 100%   ... for ever
 ```
 
-Three processors go idle within a second and stay idle, while all six
-processes are still alive. On one core the same six saturate it, which is
-what says the workers are fine and the placement of them is not.
+Three processors used to go idle within a second and stay idle while all six
+processes were alive. **The cause was preemption, in two halves, and neither
+was placement** - a trace showed the six threads going to cpu 0,1,2,3,0,1,
+exactly as intended:
+
+- **`thread_tick` returned before `policy->tick` on every core but zero**,
+  so only core zero ever preempted on a quantum. A compute-bound thread on
+  cores 1-3 could not be taken off by the timer at all. The early return's
+  own comment said why that was safe - "a secondary runs only its own idle
+  thread" - and called itself *"a temporary invariant, named so it is found
+  when the locks arrive"*. The locks arrived at step two, the runqueues at
+  step five, and nothing came back to it.
+
+- **`thread_wake` decided preemption about the wrong processor.** It
+  compared the woken thread against `current`, which is a macro for
+  `this_cpu()->current` - the thread on the *waking* core - and set
+  `this_cpu()->preempt_pending`, the *waking* core's flag. A cross-core
+  wake therefore compared against a thread the woken one will never compete
+  with, and flagged a core that is not going to run it. Both halves read
+  through `percpu_at(cpu)` now.
+
+The second is why it looked like the workers had vanished. They had not:
+they were enqueued on cores that had been given no reason to look, by a
+kernel that had also removed the timer's ability to make them.
+
+**What was ruled out on the way, each by an experiment rather than by
+reading**, and it is recorded because three of the four were plausible:
+placement itself; IPC (a worker touching no server behaves identically);
+threads dying (a trace on every transition to `THREAD_DEAD` printed
+nothing); and the lost-wakeup race in `thread_wake` below, which is real and
+was fixed and changed nothing here.
+
+### What is still wrong under `SMPWORK=4`
+
+**The display harness fails at its editor phase** - the program typed into
+`edit` does not come back - and that is a different bug from the one above,
+which is why placement is still off by default. It survived the fix. The
+desktop itself comes up and runs.
+
+**And the desktop does not saturate**, which is not a bug and is worth not
+misreading: eight applications leave the machine about a fifth busy, so the
+bars show naive round-robin placement rather than a fault. Placement is
+assignment by creation order - `thread_create_suspended` calls it "the
+dumbest policy that is not obviously wrong" - so the same applications land
+on the same cores every boot and one bar stays low. Load-aware placement is
+a later question and wants something to measure first.
 
 **What has been ruled out, each by an experiment rather than by reading:**
 
