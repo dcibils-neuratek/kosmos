@@ -42,6 +42,7 @@
 #include <stddef.h>
 
 #include "kernel.h"
+#include "percpu.h"
 #include "sched.h"
 #include "thread.h"
 #include "panic.h"
@@ -72,9 +73,26 @@
  */
 static unsigned quantum_ticks = TICK_HZ / 10;
 
-/* One queue per level. Level 0 runs only when nothing else wants to. */
-static struct thread *head[SCHED_PRIORITIES];
-static struct thread *tail[SCHED_PRIORITIES];
+/*
+ * One queue per level, per processor.
+ *
+ * **The second dimension is what `docs/smp.md` step five added**, and the
+ * reasoning is in `struct thread`'s `sched.cpu`: a thread has a home core
+ * and does not migrate, so each core has its own set of levels and its own
+ * occupancy mask. Two cores scheduling touch two different sets of pointers
+ * and contend for nothing.
+ *
+ * The alternative - one queue that every core pulls from - is the shape that
+ * looks simpler and cannot be undone later. It makes every scheduling
+ * decision a contended write to one list, and it has nowhere to express
+ * placement, which is the first thing a machine with unequal cores asks for.
+ *
+ * The lock belongs to the caller, not to this file: `kernel/thread.c` holds
+ * the queue's lock across both halves of a yield, and a policy that locked
+ * internally would expose a moment with neither thread in the queue.
+ */
+static struct thread *head[NR_CPUS][SCHED_PRIORITIES];
+static struct thread *tail[NR_CPUS][SCHED_PRIORITIES];
 
 /*
  * Which levels have anybody in them, one bit each.
@@ -90,7 +108,7 @@ static struct thread *tail[SCHED_PRIORITIES];
  * the highest occupied level, and `__builtin_clz` compiles to `clz`. Both
  * QNX and Linux keep exactly this, for exactly this reason.
  */
-static unsigned occupied;
+static unsigned occupied[NR_CPUS];
 
 /*
  * A thread's level. Read, not validated.
@@ -122,59 +140,62 @@ static inline unsigned level_of(const struct thread *t)
 
 static void prio_init(void)
 {
-    unsigned i;
+    unsigned c, i;
 
-    for (i = 0; i < SCHED_PRIORITIES; i++) {
-        head[i] = NULL;
-        tail[i] = NULL;
+    for (c = 0; c < NR_CPUS; c++) {
+        for (i = 0; i < SCHED_PRIORITIES; i++) {
+            head[c][i] = NULL;
+            tail[c][i] = NULL;
+        }
+
+        occupied[c] = 0;
     }
-
-    occupied = 0;
 }
 
-/* The highest level with anybody in it, or SCHED_PRIORITIES when empty. */
-static unsigned highest(void)
+/* The highest level with anybody in it on `cpu`, or SCHED_PRIORITIES when
+ * that core's queue is empty. */
+static unsigned highest(unsigned cpu)
 {
-    if (occupied == 0) {
+    if (occupied[cpu] == 0) {
         return SCHED_PRIORITIES;
     }
 
-    return 31u - (unsigned)__builtin_clz(occupied);
+    return 31u - (unsigned)__builtin_clz(occupied[cpu]);
 }
 
-static void prio_enqueue(struct thread *t)
+static void prio_enqueue(unsigned cpu, struct thread *t)
 {
     unsigned level = level_of(t);
 
     t->sched.next = NULL;
-    occupied |= 1u << level;
+    occupied[cpu] |= 1u << level;
 
-    if (tail[level] == NULL) {
-        head[level] = t;
-        tail[level] = t;
+    if (tail[cpu][level] == NULL) {
+        head[cpu][level] = t;
+        tail[cpu][level] = t;
         return;
     }
 
-    tail[level]->sched.next = t;
-    tail[level] = t;
+    tail[cpu][level]->sched.next = t;
+    tail[cpu][level] = t;
 }
 
-static struct thread *prio_pick_next(void)
+static struct thread *prio_pick_next(unsigned cpu)
 {
-    unsigned level = highest();
+    unsigned level = highest(cpu);
     struct thread *t;
 
     if (level >= SCHED_PRIORITIES) {
         return NULL;
     }
 
-    t = head[level];
+    t = head[cpu][level];
 
-    head[level] = t->sched.next;
+    head[cpu][level] = t->sched.next;
 
-    if (head[level] == NULL) {
-        tail[level] = NULL;
-        occupied &= ~(1u << level);
+    if (head[cpu][level] == NULL) {
+        tail[cpu][level] = NULL;
+        occupied[cpu] &= ~(1u << level);
     }
 
     t->sched.next = NULL;
@@ -187,9 +208,9 @@ static struct thread *prio_pick_next(void)
     return t;
 }
 
-static bool prio_ready(void)
+static bool prio_ready(unsigned cpu)
 {
-    return occupied != 0;
+    return occupied[cpu] != 0;
 }
 
 static bool prio_tick(struct thread *running)

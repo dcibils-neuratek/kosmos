@@ -179,6 +179,32 @@ struct thread {
         unsigned       effective;
         uint64_t       key;
         unsigned long  quantum;
+
+        /*
+         * Which processor's runqueue this thread belongs to.
+         *
+         * **A thread has a home, and it does not move.** That is the
+         * decision, and it is worth stating as one because the alternative -
+         * a single queue every core pulls from - looks simpler and is the
+         * thing that cannot be retrofitted.
+         *
+         * A shared queue makes every scheduling decision a contended write
+         * to one list, and it cannot express placement at all: there is
+         * nowhere to say "this thread belongs on a performance core", which
+         * is the first thing a machine with big and little cores will ask
+         * for. `docs/targets.md` names one such laptop. Migration is the
+         * expensive answer to a problem that per-core queues do not have.
+         *
+         * The cost of a home is the obvious one: a core can be idle while
+         * another has two runnable threads. Work stealing is the usual fix
+         * and it is deliberately not here - it needs a lock ordering between
+         * two cores' queues, which is the one place a deadlock could come
+         * from, and no measurement yet says it is needed.
+         *
+         * Assigned once, when the thread is created, and read on every
+         * enqueue. `docs/smp.md` step five.
+         */
+        unsigned       cpu;
     } sched;
 
     /*
@@ -339,6 +365,17 @@ bool thread_any_ready(void);
 /* Takes the current thread off the runqueue and switches away. It will not
  * run again until something calls thread_wake on it. */
 void thread_block(void);
+
+/*
+ * Block and release `lock` at the moment this thread becomes both findable
+ * and blocked. `thread.c` explains why that moment cannot be at the call
+ * site, and why releasing before the switch is safe here when it would not
+ * be in a kernel whose threads migrate.
+ *
+ * `flags` is what `spin_lock` returned for that lock.
+ */
+struct spinlock;
+void thread_block_and_release(struct spinlock *lock, unsigned long flags);
 
 /*
  * Blocks until `deadline` (a counter value, from `thread_deadline_in`) or

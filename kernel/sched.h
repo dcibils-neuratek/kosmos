@@ -35,12 +35,27 @@ struct scheduler {
     /* Called once, before any thread exists. */
     void (*init)(void);
 
-    /* This thread is runnable and wants a turn. */
-    void (*enqueue)(struct thread *t);
+    /*
+     * This thread is runnable and wants a turn, on processor `cpu`.
+     *
+     * **The queue is named rather than implied, and that is the whole of
+     * what SMP changed here.** There is one runqueue per processor, so
+     * "enqueue" is not a complete instruction without saying which - and the
+     * caller is often not the core the thread will run on. A wake from core
+     * zero's timer puts a thread on the queue of whichever core owns it.
+     *
+     * The caller holds that queue's lock. It is not taken here, because the
+     * caller frequently wants two of these operations to be one atomic step
+     * - `thread_yield` picks a successor and enqueues itself, and a policy
+     * that locked internally would let another core see the queue in between
+     * with neither thread in it.
+     */
+    void (*enqueue)(unsigned cpu, struct thread *t);
 
-    /* The thread that should run now, removed from the queue, or NULL when
-     * nothing is waiting. */
-    struct thread *(*pick_next)(void);
+    /* The thread that should run now on processor `cpu`, removed from its
+     * queue, or NULL when nothing is waiting there. The caller holds the
+     * lock. */
+    struct thread *(*pick_next)(unsigned cpu);
 
     /*
      * Is anybody waiting for a turn?
@@ -53,7 +68,7 @@ struct scheduler {
      * every yield cost a whole timer period, and every IPC round trip two
      * of them. That was twenty milliseconds a message here.
      */
-    bool (*ready)(void);
+    bool (*ready)(unsigned cpu);
 
     /*
      * One timer tick has elapsed while `running` was on the CPU. Returns

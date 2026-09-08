@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ipc.h"
+#include "spinlock.h"
 #include "hal.h"
 #include "thread.h"
 #include "memobj.h"
@@ -20,6 +21,30 @@
 
 struct endpoint {
     bool in_use;
+
+    /*
+     * One lock per endpoint, and that grain is deliberate.
+     *
+     * **No operation in this file ever touches two endpoints.** `resolve`
+     * returns exactly one, and every queue splice below works on that one -
+     * so a lock per endpoint has no ordering between two of them to get
+     * wrong, and two conversations on two endpoints proceed on two cores
+     * without meeting. A single lock for the whole subsystem would have been
+     * one line shorter and would have made every message in the machine
+     * queue behind every other, which in a microkernel is the machine.
+     *
+     * What it covers: the three queues, and the `ipc` block inside each
+     * thread on them - `msg`, `peer`, `waiting_on`, `status`. Those are one
+     * structure spread across several objects, which is what makes IPC the
+     * hard subsystem: a single operation moves two threads and an endpoint
+     * through states that have to change together or a message is delivered
+     * twice, or to a thread that has since died.
+     *
+     * It nests *outside* the runqueue lock - `deliver` wakes a thread while
+     * this is held, and waking takes that thread's queue lock. Never the
+     * other way round, which is the whole of the ordering discipline here.
+     */
+    struct spinlock lock;
 
     /*
      * A generation number, bumped on every destroy.
@@ -221,13 +246,29 @@ void ipc_abort(struct thread *t)
         return;                     /* not blocked on an endpoint */
     }
 
-    queue_remove(&ep->senders, t);
-    queue_remove(&ep->receivers, t);
-    queue_remove(&ep->awaiting_reply, t);
+    {
+        unsigned long epflags = spin_lock(&ep->lock);
 
-    t->ipc.waiting_on = NULL;
-    t->ipc.status = IPC_ERR_GONE;
-    thread_wake(t);
+        /* Re-checked under the lock: `waiting_on` was read without one,
+         * and between the read and the lock this thread may already have
+         * been taken off by a timeout or a reply. Removing it from three
+         * queues it is no longer on is harmless; clearing `waiting_on` and
+         * waking it a second time is not. */
+        if (t->ipc.waiting_on != ep) {
+            spin_unlock(&ep->lock, epflags);
+            return;
+        }
+
+        queue_remove(&ep->senders, t);
+        queue_remove(&ep->receivers, t);
+        queue_remove(&ep->awaiting_reply, t);
+
+        t->ipc.waiting_on = NULL;
+        t->ipc.status = IPC_ERR_GONE;
+        thread_wake(t);
+
+        spin_unlock(&ep->lock, epflags);
+    }
 }
 
 /*
@@ -263,11 +304,23 @@ void ipc_timed_out(struct thread *t)
         return;                     /* a plain sleep, not a receive */
     }
 
-    queue_remove(&ep->senders, t);
-    queue_remove(&ep->receivers, t);
-    queue_remove(&ep->awaiting_reply, t);
+    {
+        unsigned long epflags = spin_lock(&ep->lock);
 
-    t->ipc.waiting_on = NULL;
+        /* Same re-check as `ipc_abort`, and the same reason. */
+        if (t->ipc.waiting_on != ep) {
+            spin_unlock(&ep->lock, epflags);
+            return;
+        }
+
+        queue_remove(&ep->senders, t);
+        queue_remove(&ep->receivers, t);
+        queue_remove(&ep->awaiting_reply, t);
+
+        t->ipc.waiting_on = NULL;
+
+        spin_unlock(&ep->lock, epflags);
+    }
 }
 
 void ipc_init(void)
@@ -279,6 +332,11 @@ void ipc_init(void)
         endpoints[i].senders = NULL;
         endpoints[i].receivers = NULL;
         endpoints[i].awaiting_reply = NULL;
+
+        endpoints[i].lock.locked = 0;
+        endpoints[i].lock.holder = SPIN_NOBODY;
+        endpoints[i].lock.name   = "endpoint";
+
         /* generation is deliberately not reset: it only ever goes up. */
     }
 }
@@ -560,24 +618,40 @@ int ipc_endpoint_destroy(cap_t index)
      * server that no longer exists, and a server that cannot be restarted
      * takes the design's whole recovery story with it.
      */
-    while ((t = queue_pop(&ep->senders)) != NULL) {
-        deliver(t, IPC_ERR_GONE);
-    }
+    {
+        unsigned long epflags = spin_lock(&ep->lock);
 
-    while ((t = queue_pop(&ep->receivers)) != NULL) {
-        deliver(t, IPC_ERR_GONE);
-    }
+        /*
+         * The whole teardown under one hold, and it has to be.
+         *
+         * Emptying three queues and then invalidating the endpoint is one
+         * operation: a sender arriving between the last `queue_pop` and
+         * `in_use = false` would join a queue nobody will ever drain, and
+         * block for ever on a server that no longer exists. That is the
+         * exact failure this function was written to prevent, one core
+         * later.
+         */
+        while ((t = queue_pop(&ep->senders)) != NULL) {
+            deliver(t, IPC_ERR_GONE);
+        }
 
-    while ((t = queue_pop(&ep->awaiting_reply)) != NULL) {
-        deliver(t, IPC_ERR_GONE);
-    }
+        while ((t = queue_pop(&ep->receivers)) != NULL) {
+            deliver(t, IPC_ERR_GONE);
+        }
 
-    /*
-     * Bumped before the slot is freed, so every capability naming it is
-     * already stale by the time the slot can be handed out again.
-     */
-    ep->generation++;
-    ep->in_use = false;
+        while ((t = queue_pop(&ep->awaiting_reply)) != NULL) {
+            deliver(t, IPC_ERR_GONE);
+        }
+
+        /*
+         * Bumped before the slot is freed, so every capability naming it is
+         * already stale by the time the slot can be handed out again.
+         */
+        ep->generation++;
+        ep->in_use = false;
+
+        spin_unlock(&ep->lock, epflags);
+    }
 
     /* The granter's own capability is cleared; the others go stale on their
      * next use, which is what the generation check is for. */
@@ -592,12 +666,28 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
     struct thread *self = thread_current();
     struct endpoint *ep = resolve(self, index);
     struct thread *receiver;
+    unsigned long  epflags;
 
     if (ep == NULL) {
         return IPC_ERR_BAD_CAP;
     }
 
     message_copy(&self->ipc.msg, msg);
+
+    /*
+     * From here to the block, this endpoint is this core's.
+     *
+     * **The section has to span the block, not end at it.** Everything
+     * between here and `thread_block_and_release` is one indivisible move:
+     * the message is handed over, the receiver is woken, and this thread
+     * goes onto a list where a reply can find it. Split at any point and a
+     * receiver running on another core replies to a sender that is not yet
+     * on the list - which is not a corruption but a message that vanishes.
+     *
+     * The copy above is outside on purpose: it touches only this thread's
+     * own buffer and is the largest thing in the function.
+     */
+    epflags = spin_lock(&ep->lock);
 
     receiver = queue_pop(&ep->receivers);
 
@@ -646,7 +736,12 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
     /* Either way it is on a queue this endpoint can find, so destroying the
      * endpoint reaches it. */
     self->ipc.waiting_on = ep;
-    thread_block();
+
+    /* Blocked and findable become true together, and the endpoint is let go
+     * at exactly that moment. `thread.c` explains why the release can happen
+     * before the switch here and could not in a kernel whose threads
+     * migrate. */
+    thread_block_and_release(&ep->lock, epflags);
 
     /* Woken: with a reply, or with an error because the endpoint died. */
     if (self->ipc.status != IPC_OK) {
@@ -663,10 +758,16 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
     struct thread *self = thread_current();
     struct endpoint *ep = resolve(self, index);
     struct thread *s;
+    unsigned long  epflags;
 
     if (ep == NULL) {
         return IPC_ERR_BAD_CAP;
     }
+
+    /* The same section `ipc_call` takes, for the same reason: this either
+     * collects a waiting sender or joins the receiver queue, and both are
+     * moves another core must not see half of. */
+    epflags = spin_lock(&ep->lock);
 
     s = queue_pop(&ep->senders);
 
@@ -688,6 +789,7 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
         }
 
         queue_push(&ep->awaiting_reply, s);
+        spin_unlock(&ep->lock, epflags);
         return IPC_OK;
     }
 
@@ -704,6 +806,7 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
          * waiting. The alternative was a second thread in the server, and
          * there are no threads inside a process.
          */
+        spin_unlock(&ep->lock, epflags);
         return IPC_NO_MESSAGE;
     }
 
@@ -739,7 +842,10 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
 
     queue_push(&ep->receivers, self);
     self->ipc.waiting_on = ep;
-    thread_block();
+
+    /* On the queue and blocked together; the endpoint goes at that instant. */
+    thread_block_and_release(&ep->lock, epflags);
+
     self->wake_at = 0;
 
     if (self->ipc.status == IPC_NO_MESSAGE) {
@@ -748,10 +854,23 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
          * thread has to take itself off the queue it is still on - leaving
          * it there would let a later sender deliver into a thread that has
          * moved on, which is the worst kind of bug this file can have.
+         *
+         * Retaken, because the lock was let go at the block: this is a
+         * second visit to the endpoint rather than the tail of the first,
+         * and between the two a sender may have arrived. The status is
+         * re-read inside for exactly that reason - a delivery that landed
+         * while this was reacquiring is a real message, not a timeout.
          */
-        queue_remove(&ep->receivers, self);
-        self->ipc.waiting_on = NULL;
-        return IPC_NO_MESSAGE;
+        unsigned long again = spin_lock(&ep->lock);
+
+        if (self->ipc.status == IPC_NO_MESSAGE) {
+            queue_remove(&ep->receivers, self);
+            self->ipc.waiting_on = NULL;
+            spin_unlock(&ep->lock, again);
+            return IPC_NO_MESSAGE;
+        }
+
+        spin_unlock(&ep->lock, again);
     }
 
     if (self->ipc.status != IPC_OK) {
@@ -779,10 +898,32 @@ int ipc_reply(struct thread *sender, const struct message *msg)
         return IPC_ERR_NO_PEER;
     }
 
-    queue_remove(&ep->awaiting_reply, sender);
+    {
+        unsigned long epflags = spin_lock(&ep->lock);
 
-    message_deliver(sender, thread_current(), msg, &sender->ipc.msg);
-    deliver(sender, IPC_OK);
+        /*
+         * Read again with the lock held, because the first read was not.
+         *
+         * `waiting_on` is what names the endpoint, so it has to be read
+         * before there is a lock to take - the classic order problem, and
+         * the answer is the classic one: take the lock the unlocked read
+         * pointed at, then check that the read is still true. Between the
+         * two, the sender may have been woken by a timeout or by the
+         * endpoint being destroyed, and replying to it then would deliver
+         * into a thread that has moved on.
+         */
+        if (sender->ipc.waiting_on != ep) {
+            spin_unlock(&ep->lock, epflags);
+            return IPC_ERR_NO_PEER;
+        }
+
+        queue_remove(&ep->awaiting_reply, sender);
+
+        message_deliver(sender, thread_current(), msg, &sender->ipc.msg);
+        deliver(sender, IPC_OK);
+
+        spin_unlock(&ep->lock, epflags);
+    }
 
     /*
      * Done on somebody's behalf, so back to its own band.

@@ -1,6 +1,6 @@
 # SMP
 
-**Steps one, three and four are done. The rest is not.** This is what it would
+**Steps one to five are done. Six and seven are not.** This is what it would
 take, counted against the code as it stands rather than estimated, because
 the last thing written down about SMP was wrong for two years: `CLAUDE.md`
 claimed a per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the
@@ -311,10 +311,51 @@ Then, in dependency order:
    many run threads, `cpus_online` how many take ticks, `cpus_present` how
    many the machine has: 1, 4 and 4. Collapsing any two of them has already
    been a bug twice.
-5. **Per-CPU runqueues.** The scheduler is already a vtable
-   (`struct scheduler` in `sched.h`), so this is a policy beside
-   `sched_prio.c` rather than surgery on it - the one place the existing
-   design genuinely is ready.
+5. ~~**Per-CPU runqueues.**~~ **Done**, and with it the locking of step
+   two, because the two cannot be separated: a queue per core is only
+   meaningful if another core may put something in it.
+
+   `head[NR_CPUS][SCHED_PRIORITIES]`, one occupancy mask per core, one lock
+   per queue. The vtable now names the queue - `enqueue(cpu, t)`,
+   `pick_next(cpu)`, `ready(cpu)` - because "enqueue" is not a complete
+   instruction on a machine with more than one.
+
+   **A thread has a home and does not migrate**, recorded in
+   `t->sched.cpu` and assigned round-robin when it is created. That is the
+   decision, and it is worth stating as one because the alternative - a
+   single queue every core pulls from - looks simpler and cannot be undone
+   later. A shared queue makes every scheduling decision a contended write
+   to one list and has nowhere to express placement, which is the first
+   thing a machine with unequal cores asks for.
+
+   **And it paid for itself immediately, in the hardest place.** The audit
+   said IPC's critical section had to extend *past* `thread_block` - handed
+   to the next thread and released on the far side of `context_switch`, the
+   way Linux releases `rq->lock` in `finish_task_switch` - because a thread
+   marked blocked and findable can be woken by a second core and resumed by
+   a third on the stack the first is still saving.
+
+   With a fixed home that race cannot happen. A wake can only enqueue a
+   thread on *its own* core's queue, and only that core picks from it - and
+   that core is the one inside the switch. So `thread_block_and_release`
+   releases before the switch and is correct, and the whole hand-off
+   machinery is unnecessary. The comment on that function is where the cost
+   reappears if migration is ever added.
+
+   What it cost: `sched_switch_to`, which swaps the policy at runtime, now
+   refuses when more than one processor schedules. Draining every runnable
+   thread out of one policy and into another means holding every core's
+   queue at once, which would make it the single operation defining a global
+   lock order. It exists to demonstrate that mechanism and policy are
+   separable, which it has done; it is not something anybody needs while
+   four cores are working.
+
+   IPC took the shape the audit predicted: **one lock per endpoint**, since
+   no operation in `ipc.c` touches two, held from before the hand-off until
+   the sender is both findable and blocked. The three re-checks under the
+   lock - in `ipc_reply`, `ipc_abort`, `ipc_timed_out` - are all the same
+   pattern: `waiting_on` has to be read before there is a lock to take, so
+   the lock is taken and the read confirmed.
 6. **IPIs**, for preempting a remote core when a wake outranks what it is
    running. Without this a high-priority thread waits for the other core's
    quantum, and the whole responsiveness argument dies.

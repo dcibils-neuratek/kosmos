@@ -72,6 +72,10 @@ static const struct scheduler *policy;
 
 static unsigned next_id = 1;
 
+/* Which processor the next thread created will call home. See where it is
+ * used for what this is and is not. */
+static unsigned next_cpu;
+
 /*
  * Set by thread_tick inside the interrupt handler, acted on by
  * thread_preempt_if_needed in the vector's epilogue.
@@ -129,6 +133,37 @@ unsigned sched_policy_index(void)
 }
 
 /*
+ * One lock per processor's runqueue.
+ *
+ * **Held by the caller and never by the policy**, and never across
+ * `context_switch`. Both halves of that matter.
+ *
+ * The caller holds it because a yield is two operations that must look like
+ * one: pick a successor, then put the current thread back. A policy that
+ * locked inside each call would expose an instant with neither thread in the
+ * queue, and another core picking then would find it empty and idle while
+ * two threads were runnable.
+ *
+ * It is not held across the switch because `context_switch` returns *on a
+ * different stack* - the lock would be taken by one thread and released by
+ * another, which is not a lock. So: take it, decide, let go, then switch.
+ * That is an ordering constraint disguised as an architecture detail, and it
+ * is the reason every site below looks the shape it does.
+ *
+ * Named the same on every core; the panic prints the holder's index, which
+ * is what identifies which one. Initialised in `thread_init` rather than
+ * statically because C11 has no way to write "this initialiser, N times"
+ * without a GNU extension.
+ */
+static struct spinlock runq_lock[NR_CPUS];
+
+/* This core's queue, which is what almost every caller wants. */
+static inline unsigned here(void)
+{
+    return this_cpu()->index;
+}
+
+/*
  * Change policy with threads already queued in the old one.
  *
  * `sched_use` calls `init`, which empties the queues - correct at boot,
@@ -161,16 +196,40 @@ bool sched_switch_to(unsigned index)
     }
 
     /*
-     * Masked for the duration. A tick landing between the drain and the
-     * install would ask a policy that owns half the runnable threads which
-     * one runs next. Saved and restored rather than unconditionally
-     * re-enabled, so this is correct when called from somewhere that
-     * already held them off.
+     * **Refused once more than one processor schedules, and that is a real
+     * loss recorded as one.**
+     *
+     * Swapping the policy means draining every runnable thread out of the
+     * old one and pouring it into the new. With one runqueue that is a local
+     * operation. With one per core it is *every* core's queue at once - this
+     * core would have to hold all of them simultaneously, which makes this
+     * the single operation that defines a global lock order, and it would
+     * have to stop the other cores mid-decision to do it.
+     *
+     * The honest answer is not to make that work but to say it does not.
+     * Switching schedulers at runtime is a thing this system can do because
+     * the policy is a vtable, and it exists to demonstrate that the
+     * mechanism and the policy are genuinely separable - which it has done.
+     * It is not a thing anybody needs while the machine is running four
+     * cores' worth of work.
+     *
+     * `sysinfo` still reports the policy, `sched` still lists them, and the
+     * suite still swaps them - because the suite runs with one scheduling
+     * core. The day a secondary takes work, this returns false and says why.
      */
-    irqstate = cpu_interrupts_save();
+    if (thread_cpu_count() > 1) {
+        return false;
+    }
+
+    /*
+     * Masked for the duration, and holding this core's queue. A tick landing
+     * between the drain and the install would ask a policy that owns half
+     * the runnable threads which one runs next.
+     */
+    irqstate = spin_lock(&runq_lock[here()]);
 
     while (n < THREAD_MAX) {
-        struct thread *t = policy->pick_next();
+        struct thread *t = policy->pick_next(here());
 
         if (t == NULL) {
             break;
@@ -183,10 +242,10 @@ bool sched_switch_to(unsigned index)
     policy->init();
 
     for (i = 0; i < n; i++) {
-        policy->enqueue(drained[i]);
+        policy->enqueue(here(), drained[i]);
     }
 
-    cpu_interrupts_restore(irqstate);
+    spin_unlock(&runq_lock[here()], irqstate);
 
     return true;
 }
@@ -276,6 +335,7 @@ static void copy_name(char *dst, const char *src)
  */
 static struct spinlock threads_lock = SPINLOCK("threads");
 
+
 static struct thread *alloc_thread(void)
 {
     unsigned long flags = spin_lock(&threads_lock);
@@ -352,6 +412,13 @@ static void *alloc_stack(void **base_out)
 void thread_init(void)
 {
     struct thread *t = &threads[0];
+    unsigned c;
+
+    for (c = 0; c < NR_CPUS; c++) {
+        runq_lock[c].locked = 0;
+        runq_lock[c].holder = SPIN_NOBODY;
+        runq_lock[c].name   = "runqueue";
+    }
 
     /* Round robin unless a test or a boot option already chose otherwise. */
     if (policy == NULL) {
@@ -375,6 +442,9 @@ void thread_init(void)
     t->space = NULL;
     t->stack = NULL;
     t->exception_stack = NULL;
+
+    /* The boot thread is core zero's, and becomes its idle thread. */
+    t->sched.cpu = 0;
 
     current = t;
 
@@ -411,6 +481,11 @@ void thread_init(void)
         idle->space = NULL;
         idle->stack = NULL;
         idle->exception_stack = NULL;
+
+        /* Its own core's, by definition: an idle thread is never enqueued
+         * anywhere, but the field should say what is true rather than
+         * default to zero and mean core zero. */
+        idle->sched.cpu = i;
 
         percpu_at(i)->idle_thread = idle;
     }
@@ -518,6 +593,31 @@ struct thread *thread_create_suspended(const char *name,
         unsigned long idflags = spin_lock(&threads_lock);
 
         t->id = next_id++;
+
+        /*
+         * And where it will live, which is the whole of placement.
+         *
+         * **Round robin over the processors that schedule**, assigned once
+         * and never revisited. Today `thread_cpu_count` is one, so every
+         * thread comes home to core zero and the machine behaves exactly as
+         * it did - which is what makes this safe to put in before the thing
+         * it is for.
+         *
+         * It is deliberately the dumbest policy that is not obviously wrong.
+         * Anything cleverer needs to know something this kernel cannot see
+         * yet: which threads talk to each other (put them together, or the
+         * IPC crosses cores), which are compute-bound (spread them), and on
+         * a machine with unequal cores, which kind each one wants.
+         * `docs/targets.md` has such a laptop in it. The right time to
+         * choose is when there is something to measure.
+         *
+         * Under the pool lock because `next_cpu` is a counter two cores
+         * would otherwise increment together - the same reason the id is
+         * here, and free once the lock is already held.
+         */
+        t->sched.cpu = next_cpu % thread_cpu_count();
+        next_cpu++;
+
         spin_unlock(&threads_lock, idflags);
     }
     t->switches = 0;
@@ -843,13 +943,31 @@ void thread_preempt_if_needed(void)
         return;
     }
 
-    next = policy->pick_next();
+    /*
+     * Decide under the lock, switch outside it.
+     *
+     * `context_switch` returns on another stack, so a lock held across it
+     * would be released by a different thread than took it. Everything that
+     * touches the queue happens between these two lines and nothing else
+     * does.
+     */
+    {
+        unsigned      cpu   = here();
+        unsigned long flags = spin_lock(&runq_lock[cpu]);
+
+        next = policy->pick_next(cpu);
+
+        if (next != NULL) {
+            policy->enqueue(cpu, current);
+        }
+
+        spin_unlock(&runq_lock[cpu], flags);
+    }
 
     if (next == NULL) {
         return;     /* nothing else wants the CPU */
     }
 
-    policy->enqueue(current);
     switch_to(next);
 }
 
@@ -861,7 +979,28 @@ void thread_preempt_if_needed(void)
  */
 bool thread_any_ready(void)
 {
-    return policy->ready != NULL && policy->ready();
+    unsigned      cpu;
+    unsigned long flags;
+    bool          any;
+
+    if (policy->ready == NULL) {
+        return false;
+    }
+
+    /*
+     * This core's queue, and only this core's.
+     *
+     * The idle loop asks so that it knows whether it may sleep, and the
+     * answer it needs is about work *it* can run. Another core having a
+     * runnable thread is not a reason for this one to stay awake - that
+     * thread has a home and this is not it.
+     */
+    cpu = here();
+    flags = spin_lock(&runq_lock[cpu]);
+    any = policy->ready(cpu);
+    spin_unlock(&runq_lock[cpu], flags);
+
+    return any;
 }
 
 void thread_yield(void)
@@ -907,11 +1046,30 @@ void thread_yield(void)
      * Ask before offering. Picking first and enqueuing afterwards is what
      * makes this a yield rather than a no-op: enqueuing the caller first
      * would let a FIFO policy hand it straight back.
+     *
+     * **The lock is the other half of what the mask above buys.** Masking
+     * stops a tick on *this* core landing in the window; the lock stops
+     * another core scheduling in it. Both are needed and neither replaces
+     * the other - a mask is a statement about one processor.
+     *
+     * `spin_unlock` restores the interrupt state `spin_lock` found, which is
+     * already masked because of the save above, so the mask survives to the
+     * switch and is put back by the caller's `cpu_interrupts_restore`.
      */
-    next = policy->pick_next();
+    {
+        unsigned      cpu   = here();
+        unsigned long flags = spin_lock(&runq_lock[cpu]);
+
+        next = policy->pick_next(cpu);
+
+        if (next != NULL) {
+            policy->enqueue(cpu, current);
+        }
+
+        spin_unlock(&runq_lock[cpu], flags);
+    }
 
     if (next != NULL) {
-        policy->enqueue(current);
         switch_to(next);
     }
 
@@ -923,12 +1081,108 @@ void thread_yield(void)
     cpu_interrupts_restore(irqstate);
 }
 
+/*
+ * Block, and let go of a lock the caller was holding, at the one instant
+ * where letting go is safe.
+ *
+ * --------------------------------------------------------------------
+ * Why this exists
+ * --------------------------------------------------------------------
+ *
+ * IPC has an ordering problem that only appears with two cores. `ipc_call`
+ * hands the message to the receiver and *then* puts itself on the endpoint's
+ * `awaiting_reply` list, records `waiting_on`, and blocks. On one core that
+ * is fine, because nothing runs in between. On two, the receiver can run on
+ * another core and reply before the sender is on the list at all - and
+ * `ipc_reply` then finds no peer and returns an error, or worse, finds a
+ * sender whose state is still THREAD_RUNNING and whose wake is therefore
+ * dropped on the floor. That does not corrupt anything. It silently loses a
+ * message, which is harder to find.
+ *
+ * The fix is to hold the endpoint's lock from before the hand-off until
+ * after this thread is *both* findable and blocked - and those two facts
+ * become true at different moments, which is why the release has to happen
+ * in here rather than at the call site.
+ *
+ * --------------------------------------------------------------------
+ * Why it can release before the switch, which is the interesting part
+ * --------------------------------------------------------------------
+ *
+ * The textbook answer is that the lock must be handed to the *next* thread
+ * and released on the far side of `context_switch` - Linux does exactly
+ * that. The reason is a genuine race: this thread is marked blocked and is
+ * findable, so another core can wake it and a third can resume it, on the
+ * stack this core is still saving.
+ *
+ * **That race cannot happen here, and the reason is placement.** A thread
+ * has a home core, assigned when it is created, and never migrates. So a
+ * wake can only ever enqueue it on *its own* core's runqueue, and only that
+ * core picks from that queue - and that core is this one, which is busy
+ * inside the switch. By the time this core looks at its queue again the
+ * context is long saved.
+ *
+ * So the simple thing is correct, and it is correct *because* of a decision
+ * made somewhere else. If work stealing is ever added - or migration, or a
+ * balancer - this comment is where the cost shows up: the release would have
+ * to move to the far side of the switch, and every entry into a thread,
+ * including a brand new one starting at its trampoline, would have to know
+ * about it.
+ */
+void thread_block_and_release(struct spinlock *lock, unsigned long flags)
+{
+    struct thread *next;
+    unsigned       cpu;
+    unsigned long  rq;
+
+    cpu = here();
+    rq = spin_lock(&runq_lock[cpu]);
+
+    current->state = THREAD_BLOCKED;
+    next = policy->pick_next(cpu);
+
+    spin_unlock(&runq_lock[cpu], rq);
+
+    /*
+     * Now, and not before: this thread is on the caller's list *and* is
+     * blocked, so a waker on another core finds it and the wake sticks.
+     */
+    if (lock != NULL) {
+        spin_unlock(lock, flags);
+    }
+
+    if (next == NULL) {
+        panic("thread_block: every thread is blocked");
+    }
+
+    switch_to(next);
+}
+
 void thread_block(void)
 {
     struct thread *next;
+    unsigned       cpu;
+    unsigned long  flags;
+
+    /*
+     * The state change and the pick under one lock.
+     *
+     * **They have to be one step.** `docs/smp.md`'s audit found this: if
+     * `state = THREAD_BLOCKED` is visible before a successor is chosen,
+     * another core's timer can see a blocked thread whose `wake_at` has
+     * expired, mark it READY and enqueue it - while this core is still
+     * inside `switch_to` running on that thread's stack. A third core then
+     * picks it up and resumes it, on a stack somebody is using.
+     *
+     * The switch itself is outside, because a lock cannot be held across
+     * `context_switch`.
+     */
+    cpu = here();
+    flags = spin_lock(&runq_lock[cpu]);
 
     current->state = THREAD_BLOCKED;
-    next = policy->pick_next();
+    next = policy->pick_next(cpu);
+
+    spin_unlock(&runq_lock[cpu], flags);
 
     if (next == NULL) {
         /*
@@ -1049,8 +1303,29 @@ void thread_wake_sleepers_now(void)
 void thread_wake(struct thread *t)
 {
     if (t->state == THREAD_BLOCKED) {
+        /*
+         * Onto **its** queue, which is not necessarily this core's.
+         *
+         * A thread has a home - `t->sched.cpu`, set when it was created -
+         * and a wake can come from anywhere: core zero's timer walking the
+         * sleepers, an IPC reply on whichever core the server ran on, an
+         * input interrupt. So this is the one place where a core routinely
+         * takes *another* core's lock, and it is why the lock is per queue
+         * rather than per core in the sense of "the lock this core uses".
+         *
+         * One lock, not two: nothing here touches this core's queue, so
+         * there is no ordering between two queue locks to get wrong. That is
+         * a property worth keeping - the moment work stealing arrives it
+         * stops being true, which is one of the reasons work stealing is
+         * not here.
+         */
+        unsigned      cpu   = t->sched.cpu;
+        unsigned long flags = spin_lock(&runq_lock[cpu]);
+
         t->state = THREAD_READY;
-        policy->enqueue(t);
+        policy->enqueue(cpu, t);
+
+        spin_unlock(&runq_lock[cpu], flags);
 
         /*
          * And if it outranks whoever is running, say so.
@@ -1116,8 +1391,21 @@ void thread_exit(void)
     struct thread *next;
 
     fp_forget(current);
-    current->state = THREAD_DEAD;
-    next = policy->pick_next();
+
+    /*
+     * Dead and a successor chosen, under one lock, for the reason
+     * `thread_block` gives: a state visible before the pick lets another
+     * core act on this thread while it is still running on its own stack.
+     */
+    {
+        unsigned      cpu   = here();
+        unsigned long flags = spin_lock(&runq_lock[cpu]);
+
+        current->state = THREAD_DEAD;
+        next = policy->pick_next(cpu);
+
+        spin_unlock(&runq_lock[cpu], flags);
+    }
 
     if (next == NULL) {
         panic("thread_exit: the last thread returned");

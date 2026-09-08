@@ -546,19 +546,34 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
  * mechanism, which is a claim no amount of interface design proves on its
  * own.
  */
+/*
+ * One stack, not one per processor, and that is the point of it.
+ *
+ * The real policies keep a queue per core because a thread has a home and
+ * does not migrate. This one deliberately ignores the `cpu` it is handed and
+ * keeps everything in one place - which is legal, and is the strongest form
+ * of the claim the vtable makes: a policy decides *everything* about where
+ * threads go, including whether the machine has more than one queue at all.
+ *
+ * It only ever runs with one scheduling core, which is what makes ignoring
+ * the parameter safe rather than a bug waiting to happen.
+ */
 static struct thread *lifo_top;
 
 static void lifo_init(void)   { lifo_top = NULL; }
 
-static void lifo_enqueue(struct thread *t)
+static void lifo_enqueue(unsigned cpu, struct thread *t)
 {
+    (void)cpu;
     t->sched.next = lifo_top;
     lifo_top = t;
 }
 
-static struct thread *lifo_pick_next(void)
+static struct thread *lifo_pick_next(unsigned cpu)
 {
     struct thread *t = lifo_top;
+
+    (void)cpu;
 
     if (t == NULL) {
         return NULL;

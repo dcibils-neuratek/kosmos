@@ -19,6 +19,7 @@
 #include <stddef.h>
 
 #include "kernel.h"
+#include "percpu.h"
 #include "sched.h"
 #include "thread.h"
 #include "panic.h"
@@ -39,40 +40,49 @@
  */
 #define RR_QUANTUM  (TICK_HZ / 10)
 
-static struct thread *head;
-static struct thread *tail;
+/*
+ * One queue per processor, for the reason `sched_prio.c` gives at length: a
+ * thread has a home core and does not migrate, so two cores scheduling
+ * contend for nothing. The caller holds the queue's lock.
+ */
+static struct thread *head[NR_CPUS];
+static struct thread *tail[NR_CPUS];
 
 static void rr_init(void)
 {
-    head = NULL;
-    tail = NULL;
+    unsigned c;
+
+    for (c = 0; c < NR_CPUS; c++) {
+        head[c] = NULL;
+        tail[c] = NULL;
+    }
 }
 
-static void rr_enqueue(struct thread *t)
+static void rr_enqueue(unsigned cpu, struct thread *t)
 {
     t->sched.next = NULL;
 
-    if (tail == NULL) {
-        head = t;
-        tail = t;
+    if (tail[cpu] == NULL) {
+        head[cpu] = t;
+        tail[cpu] = t;
         return;
     }
 
-    tail->sched.next = t;
-    tail = t;
+    tail[cpu]->sched.next = t;
+    tail[cpu] = t;
 }
 
-static struct thread *rr_pick_next(void)
+static struct thread *rr_pick_next(unsigned cpu)
 {
-    struct thread *t = head;
+    struct thread *t = head[cpu];
 
     if (t == NULL) {
         return NULL;
     }
 
-    head = t->sched.next;
-    if (head == NULL) {
-        tail = NULL;
+    head[cpu] = t->sched.next;
+    if (head[cpu] == NULL) {
+        tail[cpu] = NULL;
     }
 
     t->sched.next = NULL;
@@ -84,9 +94,9 @@ static struct thread *rr_pick_next(void)
     return t;
 }
 
-static bool rr_ready(void)
+static bool rr_ready(unsigned cpu)
 {
-    return head != NULL;
+    return head[cpu] != NULL;
 }
 
 static bool rr_tick(struct thread *running)

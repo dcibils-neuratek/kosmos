@@ -8,6 +8,114 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### One runqueue per processor, and a thread that has a home
+
+`docs/smp.md` step five, and the locking of step two with it - the two cannot
+be separated, because a queue per core is only meaningful if another core may
+put something in it.
+
+The vtable now names the queue: `enqueue(cpu, t)`, `pick_next(cpu)`,
+`ready(cpu)`. "Enqueue" is not a complete instruction on a machine with more
+than one queue, and the caller is frequently not the core the thread will run
+on - a wake from core zero's timer puts a thread wherever it lives.
+
+**A thread has a home and does not migrate.** `t->sched.cpu`, assigned
+round-robin at creation. That is the decision worth stating, because the
+alternative - one queue every core pulls from - looks simpler and is the one
+that cannot be undone: it makes every scheduling decision a contended write
+to a single list, and it has nowhere to say "this belongs on a performance
+core", which is the first thing the laptop in `docs/targets.md` will ask for.
+
+The cost is honest: a core can idle while another has two runnable threads.
+Work stealing is the usual answer and is deliberately absent - it needs an
+order between two cores' queue locks, which is the one place a deadlock could
+come from here, and nothing has measured a need for it.
+
+### The placement decision paid for itself in the hardest place
+
+The audit said IPC's critical section had to extend **past** `thread_block` -
+handed to the next thread and released on the far side of `context_switch`,
+which is what Linux does in `finish_task_switch`. The reason is a genuine
+race: a thread marked blocked and findable can be woken by a second core and
+resumed by a third, on the stack the first core is still saving.
+
+**With a fixed home that race cannot happen.** A wake only ever enqueues a
+thread on its own core's queue, and only that core picks from it - and that
+core is the one inside the switch. So `thread_block_and_release` lets go
+before the switch and is correct, and none of the hand-off machinery is
+needed.
+
+That is worth recording as a *property of a decision made elsewhere*. The
+comment on that function is where the cost comes back if migration is ever
+added: the release would move to the far side of the switch, and every entry
+into a thread - including a brand new one starting at its trampoline - would
+have to know about it.
+
+### IPC took the shape the audit predicted
+
+**One lock per endpoint**, because no operation in `ipc.c` ever touches two:
+`resolve` returns exactly one and every splice works on that one. So there is
+no order between two of them to get wrong, and two conversations proceed on
+two cores without meeting. A single subsystem lock would have been shorter
+and would have made every message in the machine queue behind every other,
+which in a microkernel is the machine.
+
+Held from before the hand-off until the sender is *both* on `awaiting_reply`
+and blocked. Those become true at different moments, which is why the release
+happens inside `thread_block_and_release` rather than at the call site.
+
+Three re-checks under the lock, all the same pattern - `ipc_reply`,
+`ipc_abort`, `ipc_timed_out`. `waiting_on` names the endpoint, so it has to
+be read *before* there is a lock to take; the answer is to take the lock the
+unlocked read pointed at and then confirm the read still holds. Between the
+two the thread may have been woken by a timeout or by the endpoint being
+destroyed.
+
+### What `sched_switch_to` cost
+
+It refuses now when more than one processor schedules, and that is a real
+feature lost rather than a detail. Swapping the policy means draining every
+runnable thread out of one and into the other - with a queue per core that is
+*every* core's queue at once, which would make it the single operation
+defining a global lock order, and it would have to stop the other cores
+mid-decision.
+
+It exists to demonstrate that mechanism and policy are genuinely separable,
+and it has done that. It is not something anybody needs while four cores are
+working. The suite still swaps policies, because the suite runs with one
+scheduling core.
+
+### The console, and a deadlock I nearly built
+
+The console lock is taken around **a whole string, not a character**. The
+state would be safe either way; the *output* would not - two cores printing a
+line each with a per-character lock produce two interleaved lines and no way
+to read either.
+
+That matters most in the case that made it necessary: `spin_panic` prints
+from whichever core deadlocked. Which is also the hazard - **if the lock that
+deadlocked is the console's, reporting it through `kputs` spins on the same
+lock, panics again, and recurses until the stack runs out.** A diagnosable
+deadlock would have become a silent triple fault. `spin_panic` writes bytes
+to the UART directly now: no log, no screen, no lock.
+
+### What is still not done
+
+The drivers - `blk`, `net`, `input`, `snd` - each keep one set of virtqueue
+indices touched from both a syscall and an interrupt. They are safe today
+because every interrupt is routed to core zero (`GICD_IROUTER`, affinity 0)
+and only core zero does the machine-wide half of a tick, but that is an
+argument from routing rather than from locking and it should be one or the
+other.
+
+`panic()` itself needs a protocol rather than a lock: a core that panics has
+to *stop* the others, not queue behind them.
+
+And the switch is not thrown. `thread_cpu_count()` is still one, so every
+thread is homed on core zero and nothing contends for any of these locks.
+They are correct and they are untested under contention - which is stated
+rather than implied, and is what step six exists to change.
+
 ### The kernel has a lock
 
 **The first one it has ever had.** Mutual exclusion in Nebula has been one
