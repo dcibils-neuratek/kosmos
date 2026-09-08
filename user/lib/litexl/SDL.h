@@ -196,6 +196,20 @@ void         SDL_DestroyWindow(SDL_Window *window);
  * to the caller and empties the list, which is what the Lua side does once
  * a frame before telling the compositor.
  */
+/*
+ * A font's bytes, handed over by the Lua side.
+ *
+ * `ren_font_load` takes a *filename*, and there is no `fopen` here - a path
+ * means nothing without a namespace, and C down here has none. So the Lua
+ * side reads the file and calls this, and `ren_font_load` looks the name up
+ * among what it was given. `doom_kosmos.c` met the same wall with the WAD
+ * and answered it the same way.
+ *
+ * The bytes are borrowed, not copied: `stb_truetype` reads them for as long
+ * as the face exists, so whoever provides them keeps them alive.
+ */
+void litexl_font_provide(const char *path, const void *bytes, size_t len);
+
 SDL_Window *litexl_window(void);
 void        litexl_window_attach(void *pixels, int w, int h, int pitch);
 int         litexl_damage_take(SDL_Rect *out, int max, bool *whole);

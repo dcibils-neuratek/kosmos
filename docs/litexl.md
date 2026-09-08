@@ -71,10 +71,10 @@ make a second.
       and `SDL_UpdateWindowSurfaceRects` records damage, so **upstream's
       `renwindow.c` compiles and works unmodified**. Six translation units
       now, and 35 checks on the shim in `make test`.
-- [ ] **Step 4. The renderer.** `renderer.c`'s 48 FreeType calls become
-      `stb_truetype`, which `user/lib/docfont.c` already drives with a
-      glyph cache on the PDF path. This is the step with real work in it
-      and the least new risk.
+- [x] **Step 4. The renderer.** `user/lib/litexl_render.c`, on
+      `stb_truetype`. **The whole rendering half now links into a Kosmos
+      image** - seven translation units, nothing waiting - and 49 checks in
+      `make test` rasterise a real font and look at the pixels.
 - [ ] **Step 5. `system.c`.** Events from the window manager, the clipboard,
       the clock, the cursor. The window operations Kosmos has no concept of
       - opacity, hit-test, an icon - are stubbed and say so, rather than
@@ -166,6 +166,47 @@ vendored library into a fork. The shim is also the seam: `gfx.c` keeps its
 fill and blit `static` today, and if the duplication ever shows up in a
 profile, exporting them and calling them from here is a local change rather
 than a rewrite.
+
+## Why step four replaced a file instead of shimming under it
+
+**`renderer.c` does not merely call FreeType - it edits glyph outlines.**
+`FT_Outline_Translate` for subpixel positioning, `FT_Outline_Embolden` for
+synthetic bold, `FT_Outline_Transform` with a shear matrix for synthetic
+italic. `stb_truetype` rasterises straight from the font's glyph data and
+has no editable outline to hand back, so an `ft2build.h` shim of the kind
+`SDL.h` is would mean *implementing a font engine* rather than adapting
+one.
+
+So the build leaves `renderer.c` out and `user/lib/litexl_render.c`
+provides `renderer.h`'s interface instead. **That is still not a fork**:
+the vendored tree is byte for byte what upstream released and one more file
+simply is not compiled, exactly as `api/process.c` and `api/dirmonitor/`
+are not.
+
+What it costs, and it should be read rather than discovered:
+
+- **No subpixel (LCD) antialiasing.** `FONT_ANTIALIASING_SUBPIXEL` is
+  accepted and rendered grayscale. Slightly softer on an LCD, identical
+  everywhere else.
+- **No synthetic bold or italic**, those being the outline transforms. A
+  bold face has to be a bold *file*, which is how `assets/fonts/` is
+  organised anyway - IBM Plex ships four.
+- **No hinting.** At the sizes an editor uses, on this framebuffer, that is
+  a difference somebody would have to be told about to notice.
+
+And a font's bytes come from the Lua side through `litexl_font_provide`,
+because `ren_font_load` takes a *filename* and there is no `fopen` here: a
+path means nothing without a namespace. `doom_kosmos.c` met the same wall
+with the WAD and answered it the same way. Lite XL asks for a path built
+out of a `DATADIR` that does not exist, so the match is on the file's name.
+
+**The tests rasterise rather than assert.** They load a real
+`IBMPlexSans-Regular.ttf`, draw into a surface and count lit pixels, check
+that ten glyphs are wider than one, and check that text stops at its clip
+rectangle. One of them failed on the first run and the renderer was right:
+`RenColor` is `{ b, g, r, a }`, blue first, so a positional initialiser
+asks for a different colour than it reads back. The check uses designated
+initialisers now and says why.
 
 ## Two things deliberately given up
 

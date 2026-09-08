@@ -536,12 +536,16 @@ LITEXL_CFLAGS := -w -Wno-error \
 # checklist in a document saying so once.
 #
 LITEXL_SRCS := user/lib/litexl_sdl.c \
+               user/lib/litexl_render.c \
                runtime/upstream/lite-xl/src/api/utf8.c \
-               runtime/upstream/lite-xl/src/arena_allocator.c
+               runtime/upstream/lite-xl/src/arena_allocator.c \
+               runtime/upstream/lite-xl/src/renwindow.c \
+               runtime/upstream/lite-xl/src/rencache.c \
+               runtime/upstream/lite-xl/src/api/renderer.c
 
-LITEXL_STAGED := runtime/upstream/lite-xl/src/rencache.c \
-                 runtime/upstream/lite-xl/src/api/renderer.c \
-                 runtime/upstream/lite-xl/src/renwindow.c
+# Nothing is waiting on the renderer any more. `api/system.c` and `main.c`
+# join this when step five writes their half of the shim.
+LITEXL_STAGED :=
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -931,6 +935,20 @@ $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) -MMD -MP -c $< -o $@
 
 #
+# Kosmos's own half of the Lite XL port, which needs upstream's headers on
+# the path: `litexl_render.c` implements `renderer.h`, so it has to see it.
+# An explicit rule each, because the generic `user/lib` one carries only
+# `UCFLAGS` and this is the one place under `user/lib` that needs more.
+#
+$(UBUILD)/user/lib/litexl_sdl.c.o: user/lib/litexl_sdl.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/lib/litexl_render.c.o: user/lib/litexl_render.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
+
+#
 # Lite XL. Two patterns because its sources are one directory deep in
 # places - `src/api/utf8.c` - and a single `%` does not cross a slash.
 #
@@ -1174,10 +1192,15 @@ $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 # vendored build compiles with `-w`.
 #
 $(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/lib/litexl_sdl.c \
-                        user/lib/litexl/SDL.h
+                        user/lib/litexl_render.c user/lib/litexl/SDL.h \
+                        runtime/upstream/lite-xl/src/renwindow.c
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
-	    tools/test_litexl_surface.c user/lib/litexl_sdl.c
+	$(HOST_CC) -std=c11 -Wall -Wextra -O1 -o $@ \
+	    -Iuser/lib/litexl -Iruntime/upstream/lite-xl/src \
+	    -Iruntime/upstream/stb \
+	    tools/test_litexl_surface.c user/lib/litexl_sdl.c \
+	    user/lib/litexl_render.c runtime/upstream/stb/stb_impl.c \
+	    runtime/upstream/lite-xl/src/renwindow.c -lm
 
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)

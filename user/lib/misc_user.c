@@ -553,3 +553,35 @@ double atof(const char *s)
 {
     return strtod(s, NULL);
 }
+
+/*
+ * `rand` and `srand`, which is the generator printed in the C standard.
+ *
+ * A linear congruential generator with the constants from C99 7.20.2.2's
+ * own example, so that what it produces is exactly what the standard says a
+ * conforming implementation may produce, and nobody has to wonder whether
+ * this one is unusual.
+ *
+ * **Here rather than in `runtime/libc/misc.c`**, which is the *kernel's*
+ * half of the libc: the userland links `user/lib/misc_user.c` and the
+ * kernel has no business with a random number generator - `CLAUDE.md` is
+ * clear about what belongs in there and this is not on the list.
+ *
+ * **It is not for anything that must not be guessed.** Sixteen bits of
+ * output from a thirty-two bit state, entirely determined by the seed:
+ * `crypto.c` is where randomness with a requirement on it lives. This is
+ * for a debug overlay picking a colour, which is what asked for it.
+ */
+static unsigned long rand_state = 1;
+
+int rand(void)
+{
+    rand_state = rand_state * 1103515245UL + 12345UL;
+
+    return (int)((rand_state / 65536UL) % 32768UL);
+}
+
+void srand(unsigned seed)
+{
+    rand_state = seed;
+}

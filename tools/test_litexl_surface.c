@@ -23,7 +23,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdlib.h>
+
 #include "../user/lib/litexl/SDL.h"
+#include "../runtime/upstream/lite-xl/src/renderer.h"
 
 static int checks;
 static int failures;
@@ -237,13 +240,159 @@ int main(void)
         ok(owned[0] == 0xFFABCDEFu, "without freeing memory it did not own");
     }
 
+    /*----------------------------------------------------- the renderer */
+    {
+        /*
+         * **A real font, rasterised, and pixels checked.** Everything above
+         * tests the surface; this tests that text arrives on it, which is
+         * the whole of step four and the part that `make litexl` cannot
+         * see - it reports that the port *compiles*, and compiling has
+         * never been the same claim as working.
+         *
+         * The font is read with `fopen` because this runs on the build
+         * machine. On the target there is no such call and the bytes come
+         * from the Lua side through `litexl_font_provide`, which is the
+         * function being exercised either way.
+         */
+        static const char *const path =
+            "assets/fonts/IBMPlexSans-Regular.ttf";
+        FILE          *fp = fopen(path, "rb");
+        unsigned char *bytes;
+        long           len;
+        RenFont       *font;
+        RenFont       *group[FONT_FALLBACK_MAX];
+        SDL_Surface   *s;
+        static uint32_t canvas[64 * 32];
+        int             i;
+
+        ok(fp != NULL, "the test font is where it is expected");
+
+        if (fp != NULL) {
+            fseek(fp, 0, SEEK_END);
+            len = ftell(fp);
+            fseek(fp, 0, SEEK_SET);
+            bytes = malloc((size_t)len);
+            ok(fread(bytes, 1, (size_t)len, fp) == (size_t)len,
+               "and it reads");
+            fclose(fp);
+
+            litexl_font_provide(path, bytes, (size_t)len);
+
+            /* Lite XL asks by a path that does not exist here, so the match
+             * is on the file's name. That is the case worth checking. */
+            font = ren_font_load(NULL, "/lite-xl/fonts/IBMPlexSans-Regular.ttf",
+                                 16.0f, FONT_ANTIALIASING_GRAYSCALE,
+                                 FONT_HINTING_SLIGHT, 0);
+            ok(font != NULL, "a font loads by its name, not its whole path");
+
+            ok(ren_font_load(NULL, "NoSuchFont.ttf", 16.0f,
+                             FONT_ANTIALIASING_GRAYSCALE,
+                             FONT_HINTING_SLIGHT, 0) == NULL,
+               "and one nobody provided does not");
+
+            for (i = 0; i < FONT_FALLBACK_MAX; i++) { group[i] = NULL; }
+            group[0] = font;
+
+            ok(ren_font_group_get_height(group) > 8
+               && ren_font_group_get_height(group) < 40,
+               "the line height is plausible for 16 pixels");
+            ok(ren_font_group_get_size(group) == 16.0f, "and the size is 16");
+
+            {
+                double one = ren_font_group_get_width(NULL, group, "i", 1, NULL);
+                double many = ren_font_group_get_width(NULL, group,
+                                                       "iiiiiiiiii", 10, NULL);
+
+                ok(one > 0, "a glyph has a width");
+                ok(many > one * 5, "and ten of them are wider than one");
+            }
+
+            /* Now draw, and look. */
+            litexl_window_attach(canvas, 64, 32, 64 * 4);
+            s = SDL_GetWindowSurface(litexl_window());
+            ok(s != NULL, "the window has a surface to draw into");
+
+            SDL_FillRect(s, NULL, 0xFF000000u);
+
+            {
+                RenSurface rs = { s, 1 };
+                double     end;
+                int        lit = 0;
+                int        x, y;
+
+                end = ren_draw_text(&rs, group, "Hi", 2, 2.0f, 2,
+                                    (RenColor){ .r = 255, .g = 255, .b = 255, .a = 255 });
+
+                ok(end > 2.0, "drawing advances the pen");
+
+                for (y = 0; y < 32; y++) {
+                    for (x = 0; x < 64; x++) {
+                        if (at(s, x, y) != 0xFF000000u) { lit++; }
+                    }
+                }
+
+                ok(lit > 0, "and puts ink on the surface");
+
+                /* Clipped drawing must stay inside the clip. */
+                SDL_FillRect(s, NULL, 0xFF000000u);
+                {
+                    SDL_Rect clip = { 0, 0, 64, 4 };
+                    int      below = 0;
+
+                    SDL_SetClipRect(s, &clip);
+                    ren_draw_text(&rs, group, "Hi", 2, 2.0f, 2,
+                                  (RenColor){ .r = 255, .g = 255, .b = 255, .a = 255 });
+                    SDL_SetClipRect(s, NULL);
+
+                    for (y = 4; y < 32; y++) {
+                        for (x = 0; x < 64; x++) {
+                            if (at(s, x, y) != 0xFF000000u) { below++; }
+                        }
+                    }
+
+                    ok(below == 0, "text does not draw past its clip");
+                }
+
+                /* ren_draw_rect, both ways. */
+                SDL_FillRect(s, NULL, 0xFF000000u);
+                /*
+                 * **Named, because `RenColor` is `{ b, g, r, a }`.**
+                 *
+                 * Blue first, which is not what anybody writing
+                 * `{0x10, 0x20, 0x30, 255}` means - the first version of
+                 * this check asked for one colour and tested for another,
+                 * and the renderer was right both times. Designated
+                 * initialisers cost nothing and make the trap unsteppable.
+                 */
+                ren_draw_rect(&rs, (RenRect){ 1, 1, 4, 4 },
+                              (RenColor){ .r = 0x10, .g = 0x20, .b = 0x30,
+                                          .a = 255 });
+                ok(at(s, 2, 2) == 0xFF102030u, "an opaque rect is its colour");
+
+                SDL_FillRect(s, NULL, 0xFF000000u);
+                ren_draw_rect(&rs, (RenRect){ 1, 1, 4, 4 },
+                              (RenColor){ .r = 255, .g = 255, .b = 255, .a = 128 });
+                {
+                    unsigned r = (at(s, 2, 2) >> 16) & 0xFFu;
+
+                    ok(r >= 0x7Eu && r <= 0x81u,
+                       "and a translucent one blends");
+                }
+            }
+
+            ren_font_free(font);
+            SDL_DestroyWindow(litexl_window());
+            free(bytes);
+        }
+    }
+
     if (failures == 0) {
-        printf("PASS: %d checks on the Lite XL surface shim, on this machine.\n",
+        printf("PASS: %d checks on the Lite XL shim and renderer, on this machine.\n",
                checks);
         return 0;
     }
 
-    printf("FAIL: %d of %d checks on the Lite XL surface shim.\n",
+    printf("FAIL: %d of %d checks on the Lite XL shim and renderer.\n",
            failures, checks);
     return 1;
 }
