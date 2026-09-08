@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * Lua's environment inside a process.
  *

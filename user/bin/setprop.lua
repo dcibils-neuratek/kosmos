@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Change a property of something that is running.
 --
 --   setprop /app/gallery/title  a different name

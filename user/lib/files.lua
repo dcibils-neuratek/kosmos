@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Listing a directory, in the one place that has to know how.
 --
 -- Every path question a file manager and a file panel both ask: what is in

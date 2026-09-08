@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The benchmarks that measure Lua, at EL0.
 --
 -- `serialize` and `gc_pause_max` used to run inside the kernel, against a

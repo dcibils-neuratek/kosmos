@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef TESTS_TEST_H
 #define TESTS_TEST_H
 

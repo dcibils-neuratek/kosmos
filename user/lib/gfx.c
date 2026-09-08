@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * `gfx`: surfaces, and the only place a pixel offset is ever computed.
  *

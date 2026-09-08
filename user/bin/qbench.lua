@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Query time against file count. The most important number in M7.
 --
 --   qbench          the three sizes below

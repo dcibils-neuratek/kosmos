@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * `sys`, from inside a process.
  *

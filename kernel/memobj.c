@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * Memory two processes can both see. See memobj.h for why it is a
  * capability rather than a handle.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """How big is the kernel?
 
 Reported, not enforced. `CLAUDE.md` is explicit that the 10,000-line figure

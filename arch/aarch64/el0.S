@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * Dropping to EL0, which is what `enter_user` means on this machine.
  *

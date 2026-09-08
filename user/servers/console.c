@@ -228,6 +228,24 @@ static void drain_keys(struct con_reply *rep)
     }
 }
 
+/*
+ * Whatever key transitions the device has, up to what the reply holds.
+ *
+ * Its own function because `wait` calls it twice - once before deciding
+ * whether to sleep, and once after being woken.
+ */
+static void drain_key_events(struct con_reply *rep)
+{
+    unsigned code, down;
+
+    while (rep->nevents < CON_EVENTS_MAX
+           && kosmos_key_event(&code, &down) == 0) {
+        rep->events[rep->nevents].code = code;
+        rep->events[rep->nevents].down = down;
+        rep->nevents++;
+    }
+}
+
 static void fill_pointer(struct con_reply *rep)
 {
     struct pointer_info where;
@@ -294,18 +312,8 @@ static void answer(const struct message *msg, uint64_t sender)
         break;
 
     case CON_OP_WAIT: {
-        unsigned code, down;
-
         drain_keys(&rep);
-
-        while (rep.nevents < CON_EVENTS_MAX
-               && kosmos_key_event(&code, &down) == 0) {
-            rep.events[rep.nevents].code = code;
-            rep.events[rep.nevents].down = down;
-            rep.nevents++;
-        }
-
-        fill_pointer(&rep);
+        drain_key_events(&rep);
 
         /*
          * Sleep only when there was nothing, and only here.
@@ -322,7 +330,45 @@ static void answer(const struct message *msg, uint64_t sender)
          */
         if (rep.nkeys == 0 && rep.nevents == 0) {
             (void)kosmos_wait_input(req.ticks);
+
+            /*
+             * And again, because whatever woke this is the answer.
+             *
+             * Filling the reply before the sleep and not after meant a key
+             * that arrived during it was left for the *next* call: the
+             * caller got an empty reply, came straight back, and read it
+             * then. One pass late, and invisible, because the wake itself
+             * is what makes the next pass happen immediately.
+             */
+            drain_keys(&rep);
+            drain_key_events(&rep);
         }
+
+        /*
+         * The pointer last, and this is the bug that made a button stop
+         * working.
+         *
+         * **A key is an event and a position is a state.** Keys queue, so
+         * reading them a pass late loses nothing - they are all still
+         * there. The pointer does not queue: `kosmos_pointer` answers where
+         * it is *now*, and the window manager samples it once per pass. So
+         * a reply carrying the state from before the sleep meant every
+         * sample was one wake stale, and a press and its release could fall
+         * entirely between two samples - the button went down on screen and
+         * never came up, `on_click` never fired, and the window looked
+         * frozen because nothing else made the manager take another sample.
+         *
+         * It survived for as long as it did because a wake makes the next
+         * pass happen at once, so one stale sample was usually corrected a
+         * millisecond later. What broke it was a window whose repaint takes
+         * a dozen messages: the release then arrives while the manager is
+         * draining those, and the next sample is the one after the pointer
+         * has already stopped generating events.
+         *
+         * Sampled once, here, after the wait, which is the state the caller
+         * asked about when it said "wait".
+         */
+        fill_pointer(&rep);
 
         break;
     }

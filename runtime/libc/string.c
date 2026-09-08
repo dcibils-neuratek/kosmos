@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>   /* strdup allocates */

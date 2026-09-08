@@ -2,11 +2,139 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 ---
 
 ## Where this left off
+
+### The diagnostics, and the bug that was not there
+
+**An application that raised died in complete silence, and every graphical
+application is launched the way that makes it silent.** `run`'s detached
+path was `pcall(chunk)` with the result never read, and the window manager
+launches everything detached. A second silence compounded it: a window whose
+process had gone stayed on the screen for ever, fully drawn, because the
+compositor owns the pixels and nothing told the desktop otherwise.
+
+Together those two make **a dead application and a busy one identical from
+the outside**, which is why an afternoon went into a `cores` window that had
+supposedly frozen. It was read as a hang, then as a lost mouse event, then
+as an op-count limit, then as a message-size limit. Every one of those was
+wrong.
+
+**With the first diagnostic in place it took three runs.** The application
+receives the press *and* the release, `on_click` fires, `run` returns true
+and `spin` is in the process list; the window draws 206 ops in 18 batches
+and loops. There was no freeze. What was wrong was the *check*:
+`check_cores` slept exactly five seconds and took one reading, and the new
+segmented bar climbs a segment at a time where a solid fill crossed the
+threshold at once. At five seconds it was under; at ten it reads 236 against
+68.
+
+Then it failed again on the next run, on the way *down* - the same fixed
+sleep after "take one off". One property, two places, and fixing the first
+made the second look like flakiness.
+
+Both diagnostics have a permanent test now: a program written by the machine
+that opens a window and raises, checked for the reason on the serial line
+and for the window going away. 70 display checks.
+
+**The trap in the fix itself is worth keeping.** The first attempt reported
+the error with `print`, and nothing appeared - in the runner's own scope
+`print` is Lua's stock one and goes nowhere. The child's `print` is
+`env.print`, which writes to the console through the namespace. It had to be
+`out`, and it took a probe that printed successfully from inside the program
+three lines away to see the difference.
+
+### A flaky test that was two assertions in a trenchcoat
+
+`as: one space per possible process` created all thirty-two address spaces
+and checked none refused. That is the constant it documents *and* an
+undeclared assertion that nothing anywhere in the machine holds a single
+slot - and the suite creates and destroys processes behind waits bounded by
+a count of yields.
+
+It went red in two runs of three once the suite started booting `-smp 4`.
+Not for memory: thirty-two slots against about a hundred and twenty-eight
+thousand free pages, so the margin on pages is four thousandfold and the
+margin on slots is exactly zero.
+
+It asks `as_total()` its size now, and separately takes only what is *free*,
+which keeps the property that the pool really hands them out without the
+hidden assumption. And one real leak was behind it:
+`test_destroying_a_space_returns_its_pages` had a failure path that returned
+without `as_destroy`, taking a slot out of circulation for the rest of the
+run - one red line turning into a second one somewhere else, which is the
+one people go and look at.
+
+### `volatile` is not a barrier
+
+Step three's own code had it. A secondary fills its `struct percpu` and then
+increments a `volatile unsigned online` that core 0 spins on. `volatile`
+stops the compiler caching the variable and says nothing to the processor
+about the order two stores become visible in, so on AArch64 core 0 was
+architecturally allowed to see the count rise before the slot was written -
+and `cpu: every processor claimed its own slot` would read a zeroed slot,
+once in some thousands of boots, on a machine nobody was watching.
+
+`cpu_publish` is `dmb ishst` and `cpu_observe` is `dmb ishld`: named, paired,
+stores-only and loads-only, inner shareable. Not `dsb sy`. On x86-64 they are
+compiler barriers and say so, because total store ordering already provides
+the rest - and an architecture where the barrier is free is exactly where a
+missing one stays invisible.
+
+**No test can prove this one.** It passes either way. It is in the tree
+because it was reasoned about and reviewed, which is the honest status.
+
+### The tree, cleaned
+
+- **Ten build directories at the top level became one.** `build-user$(VARIANT)`
+  sat beside `arch/` and `kernel/` in every listing, at 802 MB, and
+  `make clean` named four of the ten - which is how the other six
+  accumulated. The Makefile said a distinct top-level directory was
+  necessary because `build/user/x.c.o` would also match the kernel's
+  `build/%.c.o` pattern. It does not: an object keeps its source's path, so
+  a userland object is `build/user/user/lib/gfx.c.o` and the kernel's
+  pattern matches that only with a stem whose prerequisite does not exist.
+  Make discards such a rule. Checked by building every variant rather than
+  by arguing.
+- **`graphify-out/` is no longer tracked** - 284 files and 8.9 MB of caches
+  and reports, a derived artefact of the source committed beside the source.
+- **166 files were missing the licence line** the first rule in `CLAUDE.md`
+  demands, including all of `arch/aarch64/`. A rule nothing checks is a rule
+  followed by whoever remembers it.
+- The stray 64 MB `kosmos.img` at the root is gone.
+
+### What the four investigations found, and what survived being challenged
+
+Four read-only investigations, each then handed to a skeptic told to refute
+it against the code. Three of the four were refuted on real points, which is
+the argument for doing it that way:
+
+- **`follow` modes: not refuted, and my own claim was wrong.** I had said no
+  application uses them. Six do - `tracker`, `network`, `webserver`,
+  `photo`, `mixer`, and `procs`'s table view - and five resize correctly.
+  The blocker for Monitor and Cores is narrower than it looked:
+  `pulse.panel` builds its view from a fresh table and never forwards
+  `spec.follow`, so a declaration at the call site is silently dropped. The
+  kit has no proportional mode, so `procs`'s four meters cannot be expressed
+  by follow at all.
+- **The x86 core clock: refuted on three counts.** `struct cpu_info`
+  already has a `brand` member and `CPU_RAW_BRAND` is already 3, so the
+  proposed names collide; and packing leaf 0x16's three fields into one word
+  is *decoding in the kernel*, which `syscall.h` explicitly forbids - the ID
+  registers cross as raw words and userland decodes them. Also settled: leaf
+  0x16 is Intel-only and returns the *maximum basic leaf's* data where
+  unimplemented, so an unguarded read prints a plausible wrong frequency;
+  and under `make x86` on this Mac both sources return nothing at all.
+- **SMP step four: the diagnosis survived, the plan gained three
+  omissions.** The ARM generic timer is per-PE by architecture, so it
+  already reaches every core; what does not is each core's redistributor,
+  the four per-core `ICC_*` writes, and `timer.c`'s machine-wide tick state.
+  The challenger added cache maintenance across the MMU-off window, the
+  second board's `hal/pc`, and an unbounded `GICR_WAKER` spin that would
+  hang a secondary silently. Written up for the next session.
 
 ### The network harness only looked like it was waiting
 

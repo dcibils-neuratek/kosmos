@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * Four processes that each do exactly one thing they are not allowed to,
  * on x86-64.

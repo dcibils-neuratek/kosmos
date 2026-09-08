@@ -95,6 +95,17 @@ void secondary_main(unsigned long index)
      */
     percpu_init((unsigned)index);
 
+    /*
+     * The slot before the count, and the barrier is what makes it so.
+     *
+     * `online` is what core 0 waits on, and `arch/<name>/cpu.h` says why a
+     * `volatile` on it was never enough: it stops the compiler caching the
+     * variable and says nothing about the order two stores become visible
+     * in. Without this a weakly ordered machine may show core 0 the count
+     * rising before the slot is written, which is a suite that passes every
+     * time until it does not.
+     */
+    cpu_publish();
     online++;
 
     /*
@@ -151,5 +162,9 @@ void smp_start_others(void)
         for (spins = 0; spins < 100000000UL && online == was; spins++) {
             cpu_relax();
         }
+
+        /* The other half of the pair. Everything the secondary wrote before
+         * its `cpu_publish` is visible to this core from here on. */
+        cpu_observe();
     }
 }

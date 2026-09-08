@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: server
 -- kosmos: needs processes screen network
 --
@@ -2204,6 +2205,12 @@ handlers.poll = function(req, who)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
 
+  -- The last time this application said anything. `collect_closing` uses it
+  -- to tell a window whose process has died from one that is merely busy,
+  -- and polling is the right thing to measure because it is what every
+  -- window does whether or not anything is happening.
+  win.last_poll = sys.ticks()
+
   if #win.events > 0 then
     return events_for(win)
   end
@@ -2638,9 +2645,16 @@ end
 
 local close_grace = 0
 
+--
+-- How long a window may say nothing before this asks whether it is still
+-- alive. Five seconds, in counter units.
+--
+local silent_grace = 0
+
 do
   local cpu = fs.read("/dev/cpu")
-  close_grace = (cpu and cpu.counter_hz or 62500000)
+  close_grace  = (cpu and cpu.counter_hz or 62500000)
+  silent_grace = close_grace * 5
 end
 
 --------------------------------------------------------------------------
@@ -2724,8 +2738,62 @@ handlers.end_process = function(req)
            error = "that is not an application this desktop started" }
 end
 
+--
+-- Windows whose process has gone, and the reason this exists.
+--
+-- **A dead application's window stayed on the screen for ever**, fully
+-- drawn, exactly as it was when the process died - because the compositor
+-- owns the pixels and nothing ever told this loop otherwise. It is not a
+-- cosmetic leak: the window, its surface and its handle are all still held,
+-- and the desktop is showing something that is not there.
+--
+-- It is also the reason an afternoon went into a bug that did not exist. A
+-- window that has died and a window that is busy look *identical* from the
+-- outside, so the first question anyone asks - "is it still running?" - had
+-- no way to be answered by looking. Now it does: if the window is gone, it
+-- had died; if it is still there, it is working.
+--
+-- Only asked about windows that have said nothing for five seconds, and the
+-- process list is fetched at most once per pass, because a message per
+-- window per pass to answer a question that is almost always "yes" is the
+-- kind of cost that turns a diagnostic into a regression.
+--
+local function collect_dead(now)
+  local suspect = false
+
+  for i = 1, #windows do
+    local w = windows[i]
+
+    if w.pid and w.last_poll and (now - w.last_poll) > silent_grace then
+      suspect = true
+      break
+    end
+  end
+
+  if not suspect then return end
+
+  local list = sys.processes and sys.processes() or nil
+
+  if not list then return end
+
+  local alive = {}
+
+  for i = 1, #list do alive[list[i].id] = true end
+
+  for i = #windows, 1, -1 do
+    local win = windows[i]
+
+    if win.pid and win.last_poll and not alive[win.pid]
+       and (now - win.last_poll) > silent_grace then
+      handlers.close{ window = win.handle }
+    end
+  end
+end
+
 local function collect_closing()
   local now = sys.ticks()
+
+  collect_dead(now)
 
   for i = #windows, 1, -1 do
     local win = windows[i]

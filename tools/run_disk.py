@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Does what was written to the disk survive the machine being turned off?
 
 That question cannot be answered inside one boot, which is why this is a

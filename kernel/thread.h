@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef KERNEL_THREAD_H
 #define KERNEL_THREAD_H
 

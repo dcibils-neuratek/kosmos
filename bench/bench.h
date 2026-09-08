@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef BENCH_BENCH_H
 #define BENCH_BENCH_H
 

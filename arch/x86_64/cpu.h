@@ -286,6 +286,33 @@ static inline void *cpu_self(void)
  * needs whatever it needed.
  */
 /*
+ * The two halves of handing a structure to another processor.
+ *
+ * The AArch64 twin of this explains what they are for and why `volatile`
+ * was not enough. Here they are compiler barriers and nothing more, and the
+ * reason is the strongest reason there is: **x86-64 is total-store-ordered.**
+ * Stores are not reordered with other stores and loads are not reordered
+ * with other loads, so the processor already provides both. What it does
+ * not provide is any promise from the *compiler*, which is free to sink a
+ * store past the flag that publishes it - so the empty asm with a memory
+ * clobber is the whole of the work.
+ *
+ * Written out rather than left absent, because an architecture where the
+ * barrier happens to be free is exactly where a missing one is invisible
+ * until the code is read on the other board. `docs/smp.md` does SMP on
+ * AArch64 first for this class of reason.
+ */
+static inline void cpu_publish(void)
+{
+    __asm__ volatile("" ::: "memory");
+}
+
+static inline void cpu_observe(void)
+{
+    __asm__ volatile("" ::: "memory");
+}
+
+/*
  * Where a newly started core lands - and on this machine, nowhere yet.
  *
  * `boot/x86_64/start.S` has one entry point and it assumes the boot

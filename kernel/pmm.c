@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

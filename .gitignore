@@ -21,3 +21,11 @@ build/kosmos.img
 # `git add -A` will happily commit. Which is exactly what happened in
 # 6157897, and GitHub said so on the next two pushes.
 /kosmos.img
+
+# The knowledge graph the `/graphify` skill builds from this tree.
+#
+# It was tracked - 284 files and 8.9 MB of caches, reports and JSON - which
+# is a derived artefact of the source committed beside the source. It is
+# rebuilt by running the skill again, and it changes on every run, so every
+# run made a diff.
+graphify-out/

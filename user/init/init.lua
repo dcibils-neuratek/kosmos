@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The first Lua outside the kernel, and the first servers.
 --
 -- One image, several roles. The kernel starts a process per role and hands
@@ -4734,9 +4735,44 @@ if role == ROLE_RUNNER then
   -- Detached: answer now, work afterwards. The caller wanted it started,
   -- not finished, and holding it until the program ends would make
   -- "start four of these" mean "run four of these one at a time".
+  --
+  -- **The error is said out loud, and it used to be thrown away.**
+  --
+  -- `pcall(chunk)` with the result unused, which is a detached program
+  -- dying in complete silence: nothing on the screen, nothing on the serial
+  -- line, and - because the window manager does not reap a window whose
+  -- process has gone - a window still sitting there looking perfectly
+  -- normal. Every graphical application is launched this way, so this was
+  -- the silence behind every application crash this desktop has ever had.
+  --
+  -- It cost an afternoon: a window that had died on its first pass was read
+  -- as a window that was hung, then as a lost mouse event, then as a
+  -- message-size limit, and the one thing that would have said otherwise in
+  -- ten seconds was this line.
+  --
+  -- The attached path four lines below has always reported - it hands the
+  -- error back in the reply, which is how a program run from the shell
+  -- prints its own traceback. Detaching is not a reason to stop saying why
+  -- something failed; it is only a reason not to *wait* for it.
   if req.detach then
     sys.reply(who, { ok = true })
-    pcall(chunk)
+
+    local ok, e = pcall(chunk)
+
+    if not ok then
+      --
+      -- `out`, not `print`.
+      --
+      -- The child's `print` is `env.print`, which writes to the console
+      -- through the namespace; this scope is the *runner's* and its `print`
+      -- is Lua's own, which in a freestanding build goes nowhere at all.
+      -- The first version of this fix used it and was as silent as the bug
+      -- it was fixing - and it took a probe that printed successfully from
+      -- inside the program, three lines away, to see the difference.
+      --
+      out(path .. ": " .. tostring(e) .. "\n")
+    end
+
     return
   end
 

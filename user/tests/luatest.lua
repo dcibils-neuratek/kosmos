@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The Lua tests, at EL0.
 --
 -- Every test here used to live in `tests/tests.c`, driving a `lua_State`

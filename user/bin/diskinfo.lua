@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What is on the disk.
 --
 -- Reads `/disk/super`, which is served by the one process holding the block

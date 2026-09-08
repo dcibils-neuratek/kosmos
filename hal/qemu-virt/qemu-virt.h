@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef HAL_QEMU_VIRT_H
 #define HAL_QEMU_VIRT_H
 

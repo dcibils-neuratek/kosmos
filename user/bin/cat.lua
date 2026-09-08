@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- cat: read a thing and print it.
 --
 --   cat /data/notes

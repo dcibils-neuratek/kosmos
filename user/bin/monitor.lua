@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: needs screen
 -- A status bar along the bottom of the screen, kept up to date.
 --

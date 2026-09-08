@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Markdown, in the part of it that a manual actually uses.
 --
 -- Headings, paragraphs, bullet lists, code blocks, block quotes, horizontal

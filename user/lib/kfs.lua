@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The on-disk filesystem: its layout, and reading and writing the parts of
 -- it that are structure rather than contents.
 --

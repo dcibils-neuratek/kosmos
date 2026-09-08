@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """
 Turns a file into a C array.
 

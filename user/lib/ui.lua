@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The UI kit: a view tree, follow modes, and widgets.
 --
 --   local ui = use("/lib/ui.lua")
@@ -562,6 +563,90 @@ function ui.scrollbar_mouse(w_, action, x, y, w, h, total, shown, top)
 end
 
 ui.scrollbar = draw_scrollbar
+
+--------------------------------------------------------------------------
+-- A processor meter, drawn the way BeOS drew one.
+--
+-- Discrete segments on a dark ground rather than a smooth fill - Pulse's
+-- look, and the reason to take it is not nostalgia. **A segmented bar has
+-- a resolution you can see.** A smooth fill at 61% and one at 66% are two
+-- pictures nobody can tell apart; twenty-two lit segments against
+-- twenty-four is a thing the eye reads without measuring, and a meter that
+-- moves in steps makes a *change* visible where a continuous one only makes
+-- a level visible. That is the difference between a display you glance at
+-- and one you have to study, which is the whole argument for having it on
+-- screen at all.
+--
+-- Green and red, not green alone. The reference is all green because BeOS
+-- had nothing to say with a second colour; this system does - `sysmon`
+-- turning red above eighty per cent is what `check_idle` measures, and what
+-- proves the claim that nothing in this desktop polls. Keeping the colour
+-- rule and taking the segmentation is taking the part of the reference that
+-- was about *how a meter reads*, and not the part that was about what BeOS
+-- happened to know.
+--
+-- The dark green ground is constant across both palettes on purpose. An
+-- unlit LED is a colour, not an absence, and the light palette is BeOS
+-- panel grey - which is exactly the surface Pulse's dark green panel sat
+-- on.
+--
+-- Derived from `theme.good` rather than named, so a theme that moves its
+-- green takes the ground with it. Two numbers instead of two more palette
+-- entries, for the same reason `theme.chrome` derives its gradient.
+--
+local function leds(g, x, y, w, h, frac, colour)
+  if frac < 0 then frac = 0 end
+  if frac > 1 then frac = 1 end
+
+  --
+  -- **Far darker than they look like they should be**, and the first
+  -- attempt got this wrong in a way only a screenshot showed. Ninety off
+  -- the green channel leaves 85 against the lit 185, which is under two to
+  -- one - and at the size a meter actually is, an unlit bar read as a lit
+  -- one. A meter that says a hundred per cent when the machine is idle is
+  -- worse than no meter, so the ratio has to be obvious rather than
+  -- measurable: 30 against 185 is six to one, and the segments now read as
+  -- off.
+  --
+  local ground = theme.lift(theme.good, -170)
+  local unlit  = theme.lift(theme.good, -155)
+
+  g:fill(x, y, w, h, ground)
+
+  --
+  -- Six lit and two dark, which is what makes them read as segments rather
+  -- than as a bar with a texture. The count falls out of the width instead
+  -- of being chosen, so the same meter is right in a 300-pixel window and
+  -- in a 120-pixel one.
+  --
+  local pitch = 8
+  local seg   = 6
+  local n     = (w + (pitch - seg)) // pitch
+
+  if n < 1 then n = 1 end
+
+  --
+  -- Round *up*, so that any work at all lights a segment.
+  --
+  -- One per cent of twenty-four segments is a quarter of one, and rounding
+  -- down draws an empty bar on a machine that is doing something - which is
+  -- the one reading a meter must never give. Full is still full: at
+  -- `frac == 1` this is exactly `n`.
+  --
+  local lit = math.ceil(n * frac)
+
+  for i = 0, n - 1 do
+    local sx = x + i * pitch
+
+    if sx + seg > x + w then
+      break                       -- a part-segment at the end is not one
+    end
+
+    g:fill(sx, y, seg, h, (i < lit) and colour or unlit)
+  end
+end
+
+ui.leds = leds
 
 --------------------------------------------------------------------------
 -- Keys, decoded.

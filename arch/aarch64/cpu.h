@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef ARCH_AARCH64_CPU_H
 #define ARCH_AARCH64_CPU_H
 
@@ -261,6 +262,41 @@ static inline uintptr_t cpu_secondary_entry(void)
 static inline void cpu_relax(void)
 {
     __asm__ volatile("yield" ::: "memory");
+}
+
+/*
+ * The two halves of handing a structure to another processor.
+ *
+ * **`volatile` is not a barrier**, and that is the bug these exist to fix.
+ * `kernel/smp.c` had a secondary fill its `struct percpu` and then increment
+ * a `volatile unsigned online`, with core 0 spinning on that variable and
+ * reading the slot once it rose. `volatile` tells the *compiler* not to cache
+ * the variable; it says nothing to the processor about the order the two
+ * stores become visible in. On AArch64, which is weakly ordered, core 0 was
+ * architecturally allowed to see the count rise before the slot was written -
+ * and `cpu: every processor claimed its own slot` would then read a zeroed
+ * slot and fail, once in some number of thousands of boots, on a machine
+ * nobody was watching.
+ *
+ * `cpu_publish` is the release: everything this core wrote before it is
+ * visible to anyone who observes what it writes after. `dmb ishst` and not
+ * `dsb sy` - stores only, inner shareable, which is the whole of what is
+ * needed and is what the principle about naming the barrier asks for.
+ *
+ * `cpu_observe` is the acquire, and it is `dmb ishld`: loads after it cannot
+ * be hoisted above the load that satisfied the wait.
+ *
+ * A pair, always. A release with no matching acquire orders one side of a
+ * conversation, which is worth nothing.
+ */
+static inline void cpu_publish(void)
+{
+    __asm__ volatile("dmb ishst" ::: "memory");
+}
+
+static inline void cpu_observe(void)
+{
+    __asm__ volatile("dmb ishld" ::: "memory");
 }
 
 #endif /* ARCH_AARCH64_CPU_H */

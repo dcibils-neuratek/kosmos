@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #include "cpu.h"
 #include "panic.h"
 #include "console.h"

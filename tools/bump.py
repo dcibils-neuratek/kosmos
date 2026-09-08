@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """Moves the version in VERSION.
 
 major.minor.revision, and which one moves is a decision rather than a

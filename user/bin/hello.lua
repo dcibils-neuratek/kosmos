@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The smallest program there is, and a demonstration of what one gets.
 --
 -- It runs in its own address space, with its own lua_State and its own

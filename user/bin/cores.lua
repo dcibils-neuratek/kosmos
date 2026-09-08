@@ -5,22 +5,26 @@
 -- What every processor in this machine is doing, and a way to give them
 -- something to do.
 --
--- A bar per core, live, and two buttons that add and remove a
+-- A bar per processor, live, and two buttons that add and remove a
 -- compute-bound process. Put a worker on and watch a bar fill; put another
--- on and watch what happens to the second bar. **That second bar is the
--- whole point of this program**, and today it does not exist.
+-- on and watch what happens to the second bar. **That second bar moving is
+-- the whole point of this program**, and today it cannot.
 --
 --------------------------------------------------------------------------
 -- Why this exists before the thing it shows
 --
--- **Kosmos schedules on one core and the machine has four.** They are not
--- parked in firmware any more: `docs/smp.md` step three starts them, each
--- claims its own `struct percpu` through its own `TPIDR_EL1`, and each
--- then sits in `wfi` for ever. They are in the kernel and they run no
--- threads, which is why there is one bar and not four - a meter for a core
--- that never ticks would be a meter reading zero and meaning nothing.
+-- **Kosmos schedules on one processor and the machine has four.** The other
+-- three are not in firmware: `docs/smp.md` step three starts them, each
+-- claims its own `struct percpu` through its own `TPIDR_EL1`, and each then
+-- sits in `wfi` for ever. They are in the kernel and they run no threads.
 --
--- Step four is the one that adds a bar.
+-- So all four get a row and only one of them gets a number. A parked
+-- processor's `idle_ticks` and `busy_ticks` are zero because nothing ever
+-- wrote them - the timer interrupt does not reach it - and a bar sitting at
+-- 0% would claim that processor was measured and found idle. Its chip is
+-- dark and its segments are unlit, which says the other thing.
+--
+-- Step four is the one that makes a second row move.
 --
 -- So this is an instrument built before the experiment, which is what this
 -- project does: `jitter` measured the noise floor before anybody optimised
@@ -47,14 +51,35 @@
 --
 local ui = use("/lib/ui.lua")
 local theme = ui.theme
+local pulse = use("/lib/pulse.lua")
 
-local info    = sys.info() or {}
-local CORES   = info.cpus or 1            -- what the kernel schedules on
-local PRESENT = info.cpus_present or CORES -- what the machine actually has
+--
+-- Two numbers, and the rows are the larger one.
+--
+-- `cpus_present` is what the machine has and `cpus` is what this kernel
+-- schedules on. **A row per processor that exists**, because the three that
+-- are parked are the subject of this program rather than an omission from
+-- it - the same call `sysmon` makes, and the reason the chip beside each
+-- bar is lit or dark.
+--
+local info       = sys.info() or {}
+local SCHEDULING = info.cpus or 1
+local CORES      = info.cpus_present or SCHEDULING
 
-local ROW = 40
-local W = 460
-local H = 160 + CORES * ROW
+--------------------------------------------------------------------------
+-- The panel is `/lib/pulse.lua`, which `sysmon` draws too.
+--
+-- Identity box, one segmented bar per processor, a numbered chip on each.
+-- That library says why the layout is BeOS's and why it is worth copying;
+-- what this program adds is the two buttons under it, which are the whole
+-- difference between the monitor you leave open and the one you open to
+-- find something out.
+--------------------------------------------------------------------------
+
+local ident = pulse.identity()
+
+local W = 470
+local H = 48 + pulse.height(CORES, #ident) + 62
 
 local win, err = ui.window{ title = "Cores", w = W, h = H, x = 120, y = 100 }
 
@@ -62,6 +87,9 @@ if not win then
   print("cores: " .. tostring(err))
   return
 end
+
+local pct  = {}
+local last = {}
 
 --------------------------------------------------------------------------
 -- The workers.
@@ -99,11 +127,27 @@ local function spin_ids()
   return ids
 end
 
+--
+-- **A control that fails silently is a control that lies.**
+--
+-- This used to be `if run(...) then workers = workers + 1 end`, so a
+-- refusal looked exactly like a click that never landed - and when one
+-- actually started refusing, an afternoon went into the pointer, the
+-- button's hit box and the window's coordinates before anybody asked the
+-- one question the program could have answered by itself.
+--
+local why = nil
+
 local function add_worker()
   -- A long spin, so it outlives a look. It is killed rather than waited
   -- out; `spin 600` is ten minutes and nobody watches for ten minutes.
-  if run("/bin/spin.lua", "600", true) then
+  local ok, err = run("/bin/spin.lua", "600", true)
+
+  if ok then
     workers = workers + 1
+    why = nil
+  else
+    why = tostring(err or "run refused")
   end
 end
 
@@ -118,80 +162,59 @@ local function remove_worker()
 end
 
 --------------------------------------------------------------------------
--- The bars.
---------------------------------------------------------------------------
 
-local pct = {}
-local last = {}
-
-local function meter(index, y)
-  local v = ui.view{ x = 14, y = y, w = W - 28, h = 26 }
-
-  function v:draw(g)
-    local value = pct[index] or 0
-    local label = (CORES == 1) and "processor"
-                               or ("core " .. tostring(index - 1))
-    local right = ("%d%%"):format(value)
-
-    g:text(0, 0, label, "text_dim")
-    g:text(self.w - #right * gfx.font.w, 0, right, "text")
-
-    local top = gfx.font.h + 4
-
-    g:fill(0, top, self.w, 10, "sunken")
-    g:frame(0, top, self.w, 10, "line")
-
-    local filled = (self.w - 2) * value // 100
-
-    if filled > 0 then
-      g:fill(1, top + 1, filled, 8,
-             (value > 80) and theme.bad or theme.good)
-    end
-  end
-
-  return v
-end
-
-for c = 1, CORES do
-  win:add(meter(c, 14 + (c - 1) * ROW))
-end
-
-local y = 14 + CORES * ROW + 8
-
-local count = ui.label{ x = 14, y = y, text = "no workers" }
-win:add(count)
-
+--
+-- **The controls go above the panel, and that is a decision the test
+-- forced.**
+--
+-- Underneath, their y depended on how many processors the machine has -
+-- four rows on this board and one on the other - so the display harness,
+-- which drives a real pointer at real coordinates, needed a different
+-- number per board to click the same button. A control whose position
+-- depends on the data above it is a control nothing can reliably aim at,
+-- and that is true of a person on a strange machine as much as of a test.
+--
+-- Above, they are at a fixed offset from the window's own corner on every
+-- machine, at any core count. A row of controls across the top is Tracker's
+-- shape anyway.
+--
 win:add(ui.button{
-  x = 14, y = y + 24, w = 110, text = "add a worker",
+  x = 14, y = 14, w = 110, h = 24, text = "add a worker",
   on_click = add_worker,
 })
 
 win:add(ui.button{
-  x = 134, y = y + 24, w = 110, text = "take one off",
+  x = 134, y = 14, w = 110, h = 24, text = "take one off",
   on_click = remove_worker,
 })
 
+local count = ui.label{ x = 258, y = 20, text = "no workers",
+                        color = "text_dim" }
+win:add(count)
+
+win:add(pulse.panel{
+  x = 14, y = 48, w = W - 28,
+  cores = CORES, scheduling = SCHEDULING, ident = ident,
+  read = function(c) return pct[c] end,
+})
+
+local y = 48 + pulse.height(CORES, #ident)
+
 --
--- Said plainly rather than left to be inferred from one bar.
+-- Said plainly rather than left to be inferred from a dark chip.
 --
 -- Two labels and not one wrapped string: `ui.label` does not wrap, and a
 -- line longer than the window is a line with its end cut off. `ui.text`
--- wraps and would be the widget for a paragraph; two lines are not a
--- paragraph.
---
---
--- And the honest line, which is about the *gap*.
---
--- On a machine with four processors and one in use, "one core" would be a
--- true statement about this kernel and a misleading one about the computer
--- it is running on. The three that are parked are the whole subject.
+-- wraps and would be the widget for a paragraph; two lines are not one.
 --
 local note
 
-if PRESENT > CORES then
-  note = { ("%d processors, %d scheduling. The other %d are in the kernel")
-           :format(PRESENT, CORES, PRESENT - CORES),
-           "and parked in wfi; docs/smp.md step 4 gives them threads." }
+if CORES > SCHEDULING then
+  -- Kept inside the window on purpose: `ui.label` does not wrap, and the
+  -- first version of this line ran off the right edge and ended in "kern".
+  note = { ("%d processors, %d scheduling. The other %d are parked")
+           :format(CORES, SCHEDULING, CORES - SCHEDULING),
+           "in wfi; docs/smp.md step 4 gives them threads." }
 elseif CORES == 1 then
   note = { "One core, so a second worker makes this twice as slow",
            "rather than twice as fast. docs/smp.md is the plan." }
@@ -201,7 +224,7 @@ end
 
 for i = 1, #note do
   win:add(ui.label{
-    x = 14, y = y + 58 + (i - 1) * (gfx.font.h + 3),
+    x = 14, y = y + 10 + (i - 1) * (gfx.font.h + 3),
     text = note[i], color = "text_dim",
   })
 end
@@ -234,9 +257,10 @@ function sampler:tick()
   -- tally, so a worker that ended on its own is noticed.
   workers = #spin_ids()
 
-  count.text = (workers == 0) and "no workers"
-               or (tostring(workers) .. " worker"
-                   .. ((workers == 1) and "" or "s") .. " running")
+  count.text = why
+               or ((workers == 0) and "no workers"
+                   or (tostring(workers) .. " worker"
+                       .. ((workers == 1) and "" or "s") .. " running"))
 end
 
 win:add(sampler)

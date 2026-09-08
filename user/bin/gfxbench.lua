@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- How many pixels a second this machine can actually move.
 --
 --   gfxbench

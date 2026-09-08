@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- A clock, as a replicant: source, state, and what it needs.
 --
 -- This file is never `use`d. It is *read* - as text - by whatever wants to

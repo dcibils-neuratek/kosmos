@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Writes a file to the disk, and reads it back to prove it is there.
 --
 --   save notes.txt Hello from before the reboot

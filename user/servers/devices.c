@@ -326,7 +326,19 @@ static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
     put_text(r, "arch", i->cpu_arch == CPU_ARCH_AARCH64 ? "aarch64"
                       : i->cpu_arch == CPU_ARCH_X86_64  ? "x86-64"
                                                         : "unknown");
+    /*
+     * Two counts, because they are two questions.
+     *
+     * `cores` is what this kernel schedules on and `cores_present` is what
+     * the machine has. They were one number here, and every reader of this
+     * node therefore said "1 core" on a four-processor machine - `About
+     * Kosmos` said it in as many words while `Monitor`, two windows away,
+     * drew four rows. A node that answers half the question makes every
+     * caller wrong in the same way, which is the argument for fixing it
+     * here rather than in the three programs that read it.
+     */
     put_num(r, "cores", i->cpus);
+    put_num(r, "cores_present", i->cpus_present);
     put_num(r, "counter_hz", i->counter_hz);
     put_num(r, "el", i->current_el);
 

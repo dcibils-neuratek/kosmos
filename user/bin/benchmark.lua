@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Puts the machine under load, so the meters have something to say.
 --
 --   benchmark        one busy process for ten seconds

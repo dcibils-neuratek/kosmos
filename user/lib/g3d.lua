@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- A software 3D engine. The part that is not pixels.
 --
 -- `CLAUDE.md` names this milestone as the way to decide what belongs in C:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """
 Host-side test runner.
 
@@ -49,13 +50,27 @@ QEMU_ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
     #
-    # **Four processors, and the kernel uses one of them.**
+    # **Four processors, and the kernel schedules on one of them.**
     #
-    # Not aspirational: the other three are parked in firmware and never
-    # enter the kernel, so the machine behaves exactly as it did on one.
+    # The other three are *in the kernel*, and this comment said they were
+    # parked in firmware until `docs/smp.md` step three made that stale on
+    # the same day it was written. Each one turns translation on with core
+    # zero's tables, claims its own `struct percpu`, and parks in `wfi`:
+    # kernel code, on a second instruction stream, from the moment the suite
+    # boots. They run no threads, so the machine still behaves as it did on
+    # one core - which is the property, not the mechanism.
+    #
     # What it exercises is `hal_cpu_count` - the PSCI walk that asks the
     # firmware how many there are - which on `-smp 1` cannot tell a working
-    # answer from a hardcoded one.
+    # answer from a hardcoded one, and `percpu_at(i)->index == i`, which on
+    # one processor cannot be told from a global.
+    #
+    # It also means the suite's timing is not what it was. Four vCPUs under
+    # TCG round-robin, and this runner passes no `-icount`, so any wait in
+    # the suite bounded by a count of yields rather than by the clock now
+    # lands differently. That is a live hazard rather than a theory: it is
+    # what `as: one space per possible process` was reporting when it went
+    # red - somebody else's process still leaving.
     #
     # It is also what makes the next steps of `docs/smp.md` testable at all:
     # a second core cannot be started on a machine that has one.

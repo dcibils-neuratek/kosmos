@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Burns a core for a while, so there is something for a meter to show.
 --
 -- Deliberately does not yield. A process that hands the core back politely

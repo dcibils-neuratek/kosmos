@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Attributes: what a node is, as opposed to what is in it.
 --
 --   attr /data/notes.txt                  show them

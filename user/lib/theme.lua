@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The palette, in one file, and now more than one of them.
 --
 -- `ui.md` 16.8b, which was reversed in September 2026: the look is

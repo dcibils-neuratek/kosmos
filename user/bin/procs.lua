@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: section system
 -- kosmos: needs processes
@@ -23,7 +24,18 @@ local ui = use("/lib/ui.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 790, 440
+--
+-- The counter's rate, read once.
+--
+-- `sys.ticks()` counts at whatever this board runs its counter at - 62.5
+-- MHz under TCG, 24 under hvf, a thousand on the other machine - and there
+-- is no ratio to carry in your head, which is why every correct piece of
+-- counter arithmetic in this system reads the rate three lines above the
+-- sum. `architecture.md` §5 is the whole account.
+--
+local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+
+local W, H = 790, 482
 
 -- The menu bar's height, which everything below it is offset by. A menu bar
 -- is an ordinary widget in this window rather than a band the window
@@ -153,8 +165,8 @@ local top = 1            -- the first row drawn, for a list taller than the view
 -- Follows all four edges, so it grows with the window. The first widget in
 -- Kosmos to use a follow mode for real - see `ui.md` 16.4 for why that took
 -- until something could be resized.
-local table_view = ui.view{ x = 12, y = 70 + BAR_H, w = W - 24,
-                            h = H - 116 - BAR_H,
+local table_view = ui.view{ x = 12, y = 112 + BAR_H, w = W - 24,
+                            h = H - 158 - BAR_H,
                             follow = { "left", "right", "top", "bottom" } }
 
 --
@@ -381,6 +393,96 @@ win:add(ui.menubar{
 })
 
 win:add(table_view)
+
+--------------------------------------------------------------------------
+-- What the machine has left, above the list of what is using it.
+--
+-- **These came from `sysmon`, and they are in the right place now.** That
+-- window was five unrelated numbers keeping one another company because
+-- they happened to arrive in the same `/dev/kernel` reply - and it has
+-- become the processor monitor alone, which is one thing rather than six.
+--
+-- A total belongs beside the detail it is the total *of*. The table under
+-- these says which process holds how much memory; the bar says how much
+-- there is. "Seventeen of thirty-two processes" is a sentence about the row
+-- count directly beneath it, and reading them apart, in two windows, was
+-- always a small act of arithmetic nobody should have been doing.
+--
+-- Drawn as a continuous fill and not as the segments a processor gets, and
+-- that difference is deliberate: `/lib/pulse.lua` says why. A processor is
+-- *watched* and wants to show change; a pool is *read* and wants to show a
+-- level.
+--------------------------------------------------------------------------
+
+local totals_state = {
+  used_mb = 0, total_mb = 1,
+  threads = 0, threads_max = 1,
+  processes = 0, processes_max = 1,
+  endpoints = 0, endpoints_max = 1,
+  spaces = 0, spaces_max = 1,
+}
+
+local function meter(spec)
+  local v = ui.view{ x = spec.x, y = spec.y, w = spec.w, h = 34 }
+
+  v.label = spec.label
+  v.read  = spec.read
+
+  function v:draw(g)
+    local value, of, text = self.read()
+    local frac = (of > 0) and (value / of) or 0
+
+    if frac < 0 then frac = 0 end
+    if frac > 1 then frac = 1 end
+
+    g:text(0, 0, self.label, "text_dim")
+
+    local right = text or (tostring(value) .. " of " .. tostring(of))
+    g:text(self.w - #right * gfx.font.w, 0, right, "text")
+
+    local top = gfx.font.h + 4
+
+    g:fill(0, top, self.w, 10, "sunken")
+    g:frame(0, top, self.w, 10, "line")
+
+    local filled = (self.w - 2) * frac // 1
+
+    if filled > 0 then
+      g:fill(1, top + 1, filled, 8, "accent")
+    end
+  end
+
+  return v
+end
+
+do
+  local n    = 4
+  local gap  = 14
+  local each = (W - 24 - gap * (n - 1)) // n
+  local ty   = 70 + BAR_H
+
+  local rows = {
+    { "memory", function()
+        return totals_state.used_mb, totals_state.total_mb,
+               ("%d of %d MB"):format(totals_state.used_mb,
+                                      totals_state.total_mb)
+      end },
+    { "threads", function()
+        return totals_state.threads, totals_state.threads_max
+      end },
+    { "processes", function()
+        return totals_state.processes, totals_state.processes_max
+      end },
+    { "endpoints", function()
+        return totals_state.endpoints, totals_state.endpoints_max
+      end },
+  }
+
+  for i = 1, n do
+    win:add(meter{ x = 12 + (i - 1) * (each + gap), y = ty, w = each,
+                   label = rows[i][1], read = rows[i][2] })
+  end
+end
 
 local heading = ui.label{ x = 12, y = 12 + BAR_H, text = "", color = "text" }
 win:add(heading)
@@ -611,9 +713,36 @@ function sampler:tick()
   -- It said "at EL0", which is an AArch64 exception level and means ring 3
   -- on the machine this was read on. The distinction is real and worth
   -- drawing; the name for it was one architecture's.
-  heading.text = ("%d processes, %d threads; %d in the kernel, drivers too")
+  --
+  -- The machine's own totals, which used to be a second window.
+  --
+  -- `/dev/memory` is a second read and it is worth it: this sampler already
+  -- reads `/dev/kernel` every tick for the idle and busy counters, and the
+  -- memory node is the only other place the free page count lives.
+  --
+  local m = fs.read("/dev/memory")
+
+  if k then
+    totals_state.threads,   totals_state.threads_max   = k.threads, k.threads_max
+    totals_state.processes, totals_state.processes_max = k.processes, k.processes_max
+    totals_state.endpoints, totals_state.endpoints_max = k.endpoints, k.endpoints_max
+    totals_state.spaces,    totals_state.spaces_max    = k.spaces, k.spaces_max
+  end
+
+  if m then
+    totals_state.used_mb  = m.total_mb - m.free_mb
+    totals_state.total_mb = m.total_mb
+  end
+
+  local up = sys.ticks() // counter_hz
+
+  heading.text = ("%d processes, %d threads; %d in the kernel, drivers too"
+                  .. "   -   %d address space%s, up %d:%02d")
                  :format(totals.procs, totals.threads,
-                         math.max(0, totals.threads - totals.procs))
+                         math.max(0, totals.threads - totals.procs),
+                         totals_state.spaces,
+                         (totals_state.spaces == 1) and "" or "s",
+                         up // 60, up % 60)
 end
 
 win:add(sampler)

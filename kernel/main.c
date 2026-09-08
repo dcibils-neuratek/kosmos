@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
  * Where C starts. Called from boot/start.S with the stack set up and .bss
  * zeroed, running privileged on the boot processor.

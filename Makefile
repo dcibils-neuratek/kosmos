@@ -449,15 +449,34 @@ DEPS := $(OBJS:.o=.d)
 # libc is correct on both sides of the boundary and panic() means something
 # different on each, so it is compiled twice rather than linked once.
 #
-# A distinct top-level directory rather than build/user, because
-# build/user/x.c.o would also match the kernel's build/%.c.o pattern and
-# which rule won would depend on how make breaks ties.
+# Under build/, with everything else this repository generates.
 # ------------------------------------------------------------------
 
 # Varies with the image for the same reason GEN does: the test and bench
 # init.bin files are different binaries, and sharing a directory would mean
 # sharing objects compiled with different flags.
-UBUILD := build-user$(VARIANT)
+#
+# **This was `build-user$(VARIANT)` at the top level, and it made ten
+# directories.** One per variant - `build-user-doom-web`,
+# `build-user-x86_64-test`, and so on - each beside `arch/`, `kernel/` and
+# `user/` in every file listing, and 802 MB of them. `make clean` removed
+# four of the ten, which is how the other six accumulated.
+#
+# The comment here used to say a distinct top-level directory was necessary,
+# because `build/user/x.c.o` would also match the kernel's `build/%.c.o`
+# pattern "and which rule won would depend on how make breaks ties". That
+# reasoning does not survive looking at the paths. An object keeps its
+# source's path under the build root, so the userland's are
+# `build/user/user/lib/gfx.c.o` - and the kernel's pattern matches that only
+# with a stem of `user/user/lib/gfx`, whose prerequisite
+# `user/user/lib/gfx.c` does not exist. Make discards a pattern rule whose
+# prerequisites cannot be made, so there is no tie to break.
+#
+# It is also checked rather than argued: the kernel is built with
+# `-mgeneral-regs-only`, so a userland file compiled by the wrong rule does
+# not silently succeed - the first `float` in musl's math is a compile
+# error. Every variant builds.
+UBUILD := build/user$(VARIANT)
 
 USER_LIBC := runtime/libc/string.c \
              runtime/libc/malloc.c \
@@ -2078,8 +2097,13 @@ size: $(TARGET)
 	@echo
 	@python3 tools/kernel_size.py
 
+# One directory now, so this removes everything rather than the four of ten
+# it happened to name. That is the other half of moving the userland's
+# objects under `build/`: a clean that misses some of what a build makes is
+# a clean you cannot trust, and the six it left behind are what made the
+# tree look the way it did.
 clean:
-	rm -rf build build-user build-user-test build-user-bench
+	rm -rf build
 
 -include $(DEPS)
 -include $(USER_DEPS)

@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Formats the disk.
 --
 --   mkfs            says what is there and what it would do

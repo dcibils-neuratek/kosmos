@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef KOSMOS_SERIALIZE_H
 #define KOSMOS_SERIALIZE_H
 

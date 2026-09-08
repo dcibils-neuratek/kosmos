@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #ifndef ARCH_AARCH64_PAGE_H
 #define ARCH_AARCH64_PAGE_H
 

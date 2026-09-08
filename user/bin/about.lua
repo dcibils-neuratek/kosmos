@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- About Kosmos.
 --
@@ -71,9 +72,22 @@ local function fact(label, value)
 end
 
 fact("Platform:", b.platform)
-fact("Processor:", ("%s, %d core%s"):format(cpu.part or "unknown",
-                                            cpu.cores or 1,
-                                            (cpu.cores == 1) and "" or "s"))
+--
+-- Both numbers when they differ, which on this machine they do.
+--
+-- It said "1 core" on a four-processor machine, because `/dev/cpu`'s
+-- `cores` is what the kernel schedules on. That is a true sentence about
+-- Kosmos and a false one about the computer, and `About Kosmos` is a window
+-- about the computer.
+--
+local present = cpu.cores_present or cpu.cores or 1
+local using   = cpu.cores or 1
+
+fact("Processor:", (present == using)
+     and ("%s, %d core%s"):format(cpu.part or "unknown", using,
+                                  (using == 1) and "" or "s")
+     or  ("%s, %d cores, %d scheduling"):format(cpu.part or "unknown",
+                                                present, using))
 fact("Kernel:", ("%s %s, %s"):format(b.kernel or "Nebula", b.version,
                                      b.build))
 fact("Running:", "just started")

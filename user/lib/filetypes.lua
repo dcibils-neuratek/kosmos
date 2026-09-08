@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What opens what.
 --
 -- One table, in one place, so that Tracker, the file panel and anything

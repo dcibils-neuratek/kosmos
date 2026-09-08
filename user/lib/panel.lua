@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- A file panel: choosing where something goes, or which one to open.
 --
 -- BeOS called this a BFilePanel and Tracker provided it, so that every

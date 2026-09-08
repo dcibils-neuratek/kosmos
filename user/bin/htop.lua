@@ -1,3 +1,4 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- htop: what this machine is doing, in layers.
 --
 -- A program, in /bin, running in an address space of its own. It reads

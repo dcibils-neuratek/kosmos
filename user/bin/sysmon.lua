@@ -1,16 +1,27 @@
+-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
 -- kosmos: section system
--- The machine, in a window.
+-- The processors, in a window.
 --
--- The same numbers `monitor` puts in a strip along the bottom and `htop`
--- prints a screenful of, drawn as meters instead. They all read the same
--- three nodes - /dev/kernel, /dev/memory, /dev/cpu - because that is where
--- the numbers are; none of them is a special case with a private way in.
+-- **This used to be the whole machine and is now one thing.** It carried
+-- meters for memory, threads, processes, endpoints and address spaces
+-- alongside the processor, and those have moved to `procs`, where they sit
+-- above a table of the processes that are using them. A total belongs
+-- beside the detail it is the total *of*; here it was five unrelated
+-- numbers keeping one another company because they happened to arrive in
+-- the same reply.
 --
--- CPU is the one that needs care and it is the same care in all three: a
--- percentage is the difference between two readings. A single reading says
--- what fraction of all time since boot was busy, which on a machine that
--- has been sitting at a prompt is a number that stops moving.
+-- What is left is BeOS's Pulse: an identity box saying what processor this
+-- is, and one segmented bar per processor. `/lib/pulse.lua` draws it and
+-- says why the layout is worth copying - `cores` draws the same panel with
+-- buttons under it.
+--
+-- The care this needs is the care every reader of these counters needs
+-- once: **a percentage is the difference between two readings.** A single
+-- reading says what fraction of all time since boot was busy, which on a
+-- machine that has been sitting at a prompt is a number that stopped
+-- moving. `sys.cpuload` reports totals since boot, per processor, and the
+-- subtraction below is the whole of what makes them a meter.
 
 local ui = use("/lib/ui.lua")
 -- The *kit's* palette, not a copy of it.
@@ -21,17 +32,25 @@ local ui = use("/lib/ui.lua")
 -- every widget around it changed - which is exactly what Monitor, Processes,
 -- Photo and the Terminal did.
 local theme = ui.theme
+local pulse = use("/lib/pulse.lua")
 
 --
--- How many processors, asked before the window is sized.
+-- Two numbers, and the rows are the larger one.
 --
--- One meter each, so the window is as tall as the machine is wide. On a
--- single-core machine that is exactly what it was; on the day there are
--- four it grows by three rows rather than by a scrollbar.
+-- `cpus_present` is what the machine has; `cpus` is what this kernel
+-- schedules on. Today that is four and one - `docs/smp.md` step three
+-- starts the other three, each claims its own `struct percpu`, and each
+-- parks in `wfi`. **A row per processor that exists**, because the three
+-- that are parked are the subject rather than an omission.
 --
-local CORES = (sys.info() or {}).cpus or 1
+local info       = sys.info() or {}
+local SCHEDULING = info.cpus or 1
+local CORES      = info.cpus_present or SCHEDULING
 
-local W, H = 340, 260 + (CORES - 1) * 38
+local ident = pulse.identity()
+
+local W = 380
+local H = 14 + pulse.height(CORES, #ident) + 14
 
 local win, err = ui.window{ title = "Monitor", w = W, h = H, x = 90, y = 130 }
 
@@ -40,186 +59,48 @@ if not win then
   return
 end
 
-local cpu = fs.read("/dev/cpu")
-local hz = cpu and cpu.counter_hz or 62500000
+local pct = {}
+local last = {}
 
-local state = {
-  pct = 0, threads = 0, threads_max = 1,
-  processes = 0, processes_max = 1,
-  endpoints = 0, endpoints_max = 1,
-  spaces = 0, spaces_max = 1,
-  used_mb = 0, total_mb = 1, uptime = 0,
-
-  -- One percentage per core, filled by the sampler. `pct` above stays the
-  -- machine's total, because three other programs read the same two
-  -- counters and a total is what they want.
-  core = {},
-}
-
-local last_idle, last_busy
-local last_core = {}
-
---------------------------------------------------------------------------
--- A meter: a label, a bar, and the numbers behind it.
---
--- A view rather than four labels, because what it draws is one thing and
--- the arithmetic that turns a fraction into a width has to live somewhere
--- that knows the width. Nothing in here computes a pixel offset - `fill`
--- takes a rectangle - which is the rule `gfx.md` 19.3 exists for.
---------------------------------------------------------------------------
-
-local function meter(spec)
-  local v = ui.view{ x = spec.x, y = spec.y, w = spec.w, h = 34 }
-
-  v.label = spec.label
-  v.read = spec.read
-
-  function v:draw(g)
-    local value, of, text, colour = self.read()
-    local frac = (of > 0) and (value / of) or 0
-
-    if frac < 0 then frac = 0 end
-    if frac > 1 then frac = 1 end
-
-    g:text(0, 0, self.label, "text_dim")
-
-    local right = text or (tostring(value) .. " of " .. tostring(of))
-    g:text(self.w - #right * gfx.font.w, 0, right, "text")
-
-    local top = gfx.font.h + 4
-    g:fill(0, top, self.w, 10, "sunken")
-    g:frame(0, top, self.w, 10, "line")
-
-    local filled = (self.w - 2) * frac // 1
-
-    if filled > 0 then
-      g:fill(1, top + 1, filled, 8, colour or "accent")
-    end
-  end
-
-  return v
-end
-
-local y = 12
-
-local function add(label, read)
-  win:add(meter{ x = 14, y = y, w = W - 28, label = label, read = read })
-  y = y + 38
-end
-
---
--- One meter per processor, not one for the machine.
---
--- **A total cannot answer the question more than one core raises.** One
--- pinned and three asleep is 25% by the sum, which is true and useless: it
--- reads identically to four cores at a quarter each, and those are opposite
--- machines - the first cannot use itself and the second is.
---
--- On a machine with one core this is the meter that was always here, with
--- the same label. The plural only appears when there is something plural to
--- say, which is the same rule the Deskbar's window list follows.
---
-for c = 1, CORES do
-  local label = (CORES == 1) and "processor"
-                             or ("processor " .. tostring(c - 1))
-
-  add(label, function()
-    local pct = state.core[c] or 0
-
-    return pct, 100, ("%d%%"):format(pct),
-           (pct > 80) and theme.bad or theme.good
-  end)
-end
-
-add("memory", function()
-  return state.used_mb, state.total_mb,
-         ("%d of %d MB"):format(state.used_mb, state.total_mb)
-end)
-
-add("threads", function()
-  return state.threads, state.threads_max,
-         ("%d of %d"):format(state.threads, state.threads_max)
-end)
-
-add("processes", function()
-  return state.processes, state.processes_max,
-         ("%d of %d"):format(state.processes, state.processes_max)
-end)
-
-add("endpoints", function()
-  return state.endpoints, state.endpoints_max,
-         ("%d of %d"):format(state.endpoints, state.endpoints_max)
-end)
-
-local uptime = ui.label{ x = 14, y = H - 26, text = "", color = "text_dim" }
-win:add(uptime)
+win:add(pulse.panel{
+  x = 14, y = 14, w = W - 28,
+  cores = CORES, scheduling = SCHEDULING, ident = ident,
+  read = function(c) return pct[c] end,
+})
 
 --------------------------------------------------------------------------
 -- The sampling, on the window kit's own clock.
 --
 -- A view with a `tick` is woken twice a second by the window it is in, so
--- this needs no timer and no loop of its own - and it costs three round
--- trips at a rate a person can read rather than at the rate a loop spins.
+-- this needs no timer and no loop of its own - and it costs one round trip
+-- at a rate a person can read rather than at the rate a loop spins.
+--
+-- One, and it used to be three: `/dev/kernel` and `/dev/memory` were read
+-- here every tick for meters that have moved to `procs`.
 --------------------------------------------------------------------------
 
 local sampler = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function sampler:tick()
-  local k = fs.read("/dev/kernel")
-  local m = fs.read("/dev/memory")
-
-  if not k or not m then return end
-
-  if last_idle then
-    local di = k.idle_ticks - last_idle
-    local db = k.busy_ticks - last_busy
-
-    if di + db > 0 then
-      state.pct = (db * 100) // (di + db)
-    end
-  end
-
-  last_idle, last_busy = k.idle_ticks, k.busy_ticks
-
-  --
-  -- And the same arithmetic per core, from `sys.cpuload`.
-  --
-  -- The same rule as the total and worth repeating because it is the one
-  -- thing every reader of these counters gets wrong once: a percentage is
-  -- the difference between two readings. A single reading says what
-  -- fraction of all time since boot was busy, which on a machine sitting at
-  -- a prompt is a number that has stopped moving.
-  --
   local load = sys.cpuload()
 
   if load then
     for i = 1, #load do
-      local was = last_core[i]
+      local was = last[i]
 
       if was then
         local di = load[i].idle - was.idle
         local db = load[i].busy - was.busy
 
         if di + db > 0 then
-          state.core[i] = (db * 100) // (di + db)
+          pct[i] = (db * 100) // (di + db)
         end
       end
 
-      last_core[i] = { idle = load[i].idle, busy = load[i].busy }
+      last[i] = { idle = load[i].idle, busy = load[i].busy }
     end
   end
 
-  state.threads,   state.threads_max   = k.threads, k.threads_max
-  state.processes, state.processes_max = k.processes, k.processes_max
-  state.endpoints, state.endpoints_max = k.endpoints, k.endpoints_max
-  state.spaces,    state.spaces_max    = k.spaces, k.spaces_max
-  state.used_mb    = m.total_mb - m.free_mb
-  state.total_mb   = m.total_mb
-  state.uptime     = sys.ticks() // hz
-
-  uptime.text = ("up %d:%02d, %d address space%s"):format(
-    state.uptime // 60, state.uptime % 60,
-    state.spaces, (state.spaces == 1) and "" or "s")
 end
 
 win:add(sampler)

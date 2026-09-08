@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 """
 Host-side display check, in two phases.
 
@@ -210,6 +211,20 @@ QEMU_ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
     "-m", "512M",
+    #
+    # Four, which is what `make qemu` boots and what `run_tests.py` boots.
+    #
+    # This harness ran on one for as long as one was all the kernel could
+    # use, and that stopped being true at `docs/smp.md` step three: three
+    # secondaries start, claim a `struct percpu` and park in `wfi`. A
+    # display test on a one-core machine is a display test of a machine
+    # nobody runs - and it showed up immediately, because `cores` and
+    # `sysmon` draw a row per processor and drew one.
+    #
+    # The other three park and schedule nothing, so nothing here should
+    # behave differently. That is the assertion.
+    #
+    "-smp", "4",
     "-display", "none",
     "-device", "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports
@@ -1485,6 +1500,16 @@ def check_idle(guest):
     that steps by two can miss it entirely, and the phase then fails on a
     machine that is behaving perfectly.
 
+    **The run tolerates gaps of two pixels, because the bar has them now.**
+    A processor meter is drawn in segments - six lit, two dark, BeOS Pulse's
+    look, `/lib/pulse.lua` - so the longest unbroken run of red in a meter
+    that is completely full is six. Left alone, this check would have gone
+    on passing and stopped meaning anything, which is worse than failing:
+    the threshold below is forty, and six can never reach it. Bridging the
+    dark pixel between segments keeps the question the same one it was -
+    *is there a long red bar on this screen* - against a bar that is no
+    longer continuous.
+
     This is the regression check for the thing that made it true, which is
     that nothing polls any more. The desktop used to ask the console for
     keys, get none, yield and ask again; every window did the same to the
@@ -1505,19 +1530,29 @@ def check_idle(guest):
 
     longest = 0
 
+    # Two, which is the dark gap between two lit segments. Three would
+    # start bridging things that are not one bar.
+    GAP = 2
+
     for y in range(height):
         run = 0
+        gap = 0
 
         for x in range(width):
             at = (y * width + x) * 3
 
             if (px[at], px[at + 1], px[at + 2]) == (0xda, 0x36, 0x33):
-                run += 1
+                run += 1 + gap          # the gap was inside the bar
+                gap = 0
 
                 if run > longest:
                     longest = run
             else:
-                run = 0
+                gap += 1
+
+                if gap > GAP:
+                    run = 0
+                    gap = 0
 
     # The bar is a little over three hundred pixels wide, so a busy meter is
     # a run of that order. Forty is far above any red incidental to the
@@ -1893,16 +1928,52 @@ def check_cores(guest):
     width, height, px = parse_ppm(guest.screendump())
     before = _meter_area(width, height, px)
 
-    # "add a worker", at (188, 198) with the window at 120,100.
-    guest.mouse_to(*_to_tablet(188, 198, width, height))
+    # "add a worker", at (188, 126) with the window at 120,100.
+    #
+    # **The buttons are above the panel, and this test is why.** They used
+    # to sit under it, where their y depended on how many processors the
+    # machine has - four rows on the ARM board, one on x86-64, which cannot
+    # count its own yet. One hardcoded coordinate cannot hit a button that
+    # is in two places, and a control whose position depends on the data
+    # above it is one nothing can reliably aim at: a person on a strange
+    # machine has the same problem as a harness driving a real pointer.
+    guest.mouse_to(*_to_tablet(188, 126, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
-    time.sleep(5.0)
 
-    width, height, px = parse_ppm(guest.screendump())
-    after = _meter_area(width, height, px)
+    #
+    # Waited *for*, not waited out.
+    #
+    # This was `sleep(5)` and one reading, which is a fixed count standing in
+    # for a duration - the same shape as the twelve `thread_yield()` calls
+    # that made a kernel test flake on both boards. It held for as long as
+    # the bar was a solid fill: a spinner takes a second or two to move the
+    # average, and a filled rectangle crosses a hundred sampled pixels the
+    # moment it starts.
+    #
+    # A segmented bar does not. Six pixels lit and two dark is three
+    # quarters of the pixels, the reading climbs a segment at a time, and at
+    # five seconds it was at a tenth of the width - real, visible on screen,
+    # and under the threshold. The check then reported that the meter had
+    # not moved, which was false, and sent an afternoon after a bug that was
+    # not there.
+    #
+    # So: read until it has moved, and give up on the clock rather than on a
+    # count. Twenty seconds is far longer than it needs and costs nothing
+    # when it passes on the second read.
+    #
+    after = before
+    deadline = time.monotonic() + 20.0
+
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        width, height, px = parse_ppm(guest.screendump())
+        after = _meter_area(width, height, px)
+
+        if after > before + 100:
+            break
 
     if after <= before + 100:
         raise Failure(
@@ -1930,15 +2001,36 @@ def check_cores(guest):
     # kill reached a process this program started, which is the other half
     # of what the buttons claim.
     #
-    guest.mouse_to(*_to_tablet(308, 198, width, height))
+    guest.mouse_to(*_to_tablet(308, 126, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
-    time.sleep(4.0)
 
-    width, height, px = parse_ppm(guest.screendump())
-    ended = _meter_area(width, height, px)
+    #
+    # Waited for, on the way down as well as on the way up.
+    #
+    # This half was still `sleep(4)` and one reading after the other half
+    # was fixed, and it failed on the very next run: 716 pixels with the
+    # worker running and 716 four seconds after killing it. A meter that
+    # climbs a segment at a time falls a segment at a time, and the average
+    # it is showing has to decay before any of them go out.
+    #
+    # Worth writing down because the first fix looked complete. The reading
+    # rises slowly *and* falls slowly - one property, two places - and
+    # fixing the first without the second is the shape of bug that gets
+    # called flakiness for a week.
+    #
+    ended = after
+    deadline = time.monotonic() + 20.0
+
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        width, height, px = parse_ppm(guest.screendump())
+        ended = _meter_area(width, height, px)
+
+        if ended < after - 100:
+            break
 
     if ended >= after - 100:
         raise Failure(
@@ -2592,6 +2684,111 @@ def check_latency(guest):
     return 1
 
 
+def check_reaped(guest):
+    """An application that dies says why, and loses its window.
+
+    **Both halves of this were silent, and the silence cost a day.** A
+    detached program - which is every graphical application, because the
+    window manager launches them that way - had its error thrown away by a
+    `pcall(chunk)` whose result nothing read. And a window whose process had
+    gone stayed on the screen for ever, fully drawn, because the compositor
+    owns the pixels and nothing told the desktop otherwise.
+
+    Together those two make a dead application and a busy one *identical*
+    from the outside. An afternoon went into a window that had died on its
+    first pass, read as a hang, then as a lost mouse event, then as a
+    message-size limit; the one thing that would have said otherwise in ten
+    seconds is the line this now checks for.
+
+    So this writes a program that opens a window and then raises, runs it,
+    and asks for both: the reason on the serial line, and the window gone
+    from the screen.
+    """
+    #
+    # Written by the machine rather than carried in /bin, because a program
+    # whose whole purpose is to crash is not one to ship - and `edit` has
+    # already proved the machine can write its own.
+    #
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Dying', w = 220, h = 90, "
+        "x = 300, y = 300 } "
+        "if not w then return end "
+        "local v = ui.view{ x = 0, y = 0, w = 0, h = 0 } "
+        "function v:tick() error('deliberate, for the harness') end "
+        "w:add(v) w:run()"
+    )
+
+    guest.type("fs.write('/data/dying.lua', %r)" % program)
+    time.sleep(2)
+
+    mark = len(guest.seen)
+    guest.type("wm /data/dying.lua")
+
+    # It has to appear before it can be missed. If it never opens, the check
+    # below would pass for the wrong reason.
+    started(guest)
+    checks = 1
+
+    #
+    # Five seconds of silence plus a pass, which is what the desktop waits
+    # before it asks whether a quiet window still has a process behind it.
+    #
+    deadline = time.monotonic() + 25.0
+    gone = False
+
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        width, height, px = parse_ppm(guest.screendump())
+
+        if count_windows(width, height, px) == 0:
+            gone = True
+            break
+
+    if not gone:
+        raise Failure(
+            "an application raised on its first tick and its window is "
+            "still on the screen. A dead window and a busy one look the "
+            "same from outside, which is exactly the confusion this "
+            "checks against."
+        )
+
+    checks += 1
+
+    guest._read_available()
+    said = guest.seen[mark:]
+
+    if "deliberate, for the harness" not in said:
+        raise Failure(
+            "the application died without saying why. A detached program's "
+            "error is reported by the runner in `init.lua`; if that is "
+            "silent again, every application crash on this desktop is "
+            "invisible.\n" + said[-600:]
+        )
+
+    checks += 1
+
+    # Control-C back to the shell, the way every phase here ends.
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after the "
+                      "reaping check.")
+
+    return checks
+
+
 def check_editor(guest):
     """The machine writes and runs its own program.
 
@@ -2755,6 +2952,7 @@ def main():
         deskbar_checks = phase("deskbar", check_deskbar)
         clip_checks = phase("clipboard", check_clipboard)
         cores_checks = phase("cores", check_cores)
+        reaped_checks = phase("reaped", check_reaped)
         click_checks = phase("clicks", check_clicks)
         graphical_checks = phase("graphical", check_graphical_mode)
         replicant_checks = phase("replicants", check_replicants)
@@ -2775,7 +2973,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + clip_checks + cores_checks
+             + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks)
     print("\nwhere the time went:")
@@ -2802,6 +3000,8 @@ def main():
           f"{deskbar_checks} on starting an application from the Deskbar, "
           f"{clip_checks} on copying text from one application into "
           f"another, "
+          f"{reaped_checks} on an application that dies saying why and "
+          "losing its window, "
           f"{cores_checks} on a processor meter moving when the machine is "
           f"given work, "
           f"{idle_checks} on an idle desktop being idle, "

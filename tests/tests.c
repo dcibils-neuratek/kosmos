@@ -1,3 +1,4 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -1513,6 +1514,18 @@ static bool test_destroying_a_space_returns_its_pages(void)
     }
 
     if (pmm_free_pages() >= before) {
+        /*
+         * **Destroyed before returning, and it was not.**
+         *
+         * This path returns the verdict without giving the space back, so a
+         * failure here took one of the thirty-two address-space slots out
+         * of circulation permanently - and the next test to want all of
+         * them, `as: one space per possible process`, then failed for a
+         * reason that had nothing to do with it. A test that leaks on its
+         * failure path turns one red line into two, and the second one is
+         * the one people go and look at.
+         */
+        as_destroy(as);
         return false;   /* it allocated nothing, so there is nothing to test */
     }
 
@@ -3181,11 +3194,60 @@ static bool test_enough_address_spaces_for_every_process(void)
      * what happened: the pools said 16 of 32 processes and 17 of 48 threads
      * with 469 MB free, and the spawn still refused.
      */
+    /*
+     * **Asked of the pool, not taken from it, and that is the fix.**
+     *
+     * This used to create PROCESS_MAX spaces and check that none of them
+     * refused. That is a stronger statement than the one above it and a
+     * different one: taking *all* thirty-two slots only succeeds if nothing
+     * anywhere in the machine is holding a single address space at that
+     * instant. So the check was two assertions in a trenchcoat - the
+     * constants agree, which is what it documents, and the whole machine is
+     * idle, which it never said and nobody knew it was making.
+     *
+     * The second one is not this test's business and is not reliably true.
+     * The suite creates and destroys processes before reaching here, several
+     * behind waits bounded by a fixed number of yields, and one process that
+     * has not finished leaving is one slot short.
+     *
+     * What was observed: it failed in two runs out of three, having been
+     * green for months, and memory was never close - the pool is thirty-two
+     * slots against roughly a hundred and twenty-eight thousand free pages,
+     * so the margin on pages is four thousandfold and the margin on slots is
+     * exactly zero. Why the timing moved is not established; `-smp 4` on the
+     * runner is the obvious suspect, because TCG round-robins four vCPUs and
+     * the suite runs without `-icount`, but that is a suspicion and is
+     * written here as one.
+     *
+     * `as_total` is the pool's size and `as_count` is how much of it is
+     * spoken for; both already exist and are exported for exactly this.
+     * Comparing the first against PROCESS_MAX is the assertion the comment
+     * above describes, and it cannot be perturbed by anything else running.
+     */
+    if (as_total() < PROCESS_MAX) {
+        return false;
+    }
+
+    /*
+     * And the property that the pool really hands them out, measured
+     * against what is already taken rather than against zero.
+     *
+     * Kept because "the constants agree" would not have caught a pool that
+     * refuses on the last slot, and that is a real failure mode. Asking for
+     * everything that is *free* is the same question without the hidden
+     * assumption: on an idle machine it is still all thirty-two.
+     */
+    unsigned baseline = as_count();
+    unsigned want = as_total() - baseline;
     struct addrspace *made[PROCESS_MAX];
     unsigned i;
     bool ok = true;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
+    if (want > PROCESS_MAX) {
+        want = PROCESS_MAX;
+    }
+
+    for (i = 0; i < want; i++) {
         made[i] = as_create();
 
         if (made[i] == NULL) {

@@ -659,8 +659,8 @@ something you look at.
 
 ```
 boot/           assembly entry, linker script
-arch/           aarch64/
-hal/            qemu-virt/  (pi5/ when the board is here)
+arch/           aarch64/ and x86_64/
+hal/            qemu-virt/, pc/  (pi5/ when the board is here)
 kernel/         mmu, sched, ipc, caps, exceptions
 assets/         vendored data: fonts/ (BDF + its licence), icons/, images/
 lua/            upstream/ + kosmos/
@@ -677,7 +677,26 @@ tests/          guest-side tests, in C
 bench/          benchmarks and baselines.json
 tools/          host-side test runner, scripts
 docs/
+book/           the long-form account, written alongside
+builds/         released images somebody can download and run
+build/          everything generated, and nothing else. Ignored.
 ```
+
+**Everything this repository generates goes under `build/`, and that is a
+rule rather than a habit.** The userland's objects were in
+`build-user$(VARIANT)` at the top level, which is *ten* directories -
+`build-user-doom-web`, `build-user-x86_64-test` and the rest - sitting
+beside `arch/` and `kernel/` in every listing, at 802 MB. `make clean`
+named four of them and left six, which is how they accumulated.
+
+The Makefile said a distinct top-level directory was necessary because
+`build/user/x.c.o` would also match the kernel's `build/%.c.o` rule. It does
+not: an object keeps its source's path under the build root, so a userland
+object is `build/user/user/lib/gfx.c.o`, and the kernel's pattern matches
+that only with a stem whose prerequisite does not exist. Make discards such
+a rule, so there was never a tie to break - and the kernel's
+`-mgeneral-regs-only` means a userland file compiled by the wrong rule
+fails loudly rather than quietly.
 
 **There is no top-level `servers/`, `apps/` or `lib/`.** There were, holding
 nothing but a `.gitkeep` each, and both this file and `README.md` documented
