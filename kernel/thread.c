@@ -7,6 +7,7 @@
 #include "cpu.h"
 #include "kernel.h"
 #include "percpu.h"
+#include "smp.h"
 #include "spinlock.h"
 #include "thread.h"
 #include "pmm.h"
@@ -643,6 +644,42 @@ struct thread *thread_create(const char *name, void (*entry)(void *), void *arg)
 }
 
 /*
+ * A thread that runs on a processor of the caller's choosing.
+ *
+ * **The only way anything crosses a core today**, and it exists because the
+ * alternative - spreading every new thread automatically - has one thing
+ * left in its way, which `thread_cpu_count` names.
+ *
+ * The home is set between creating and waking, which is the only window
+ * where it can be: before creation there is no thread, and after waking it
+ * is already on a queue and moving it would be migration.
+ *
+ * Everything a cross-core thread depends on is exercised by using this
+ * once - placement, the target core's runqueue and its lock, the IPI that
+ * wakes it out of `wfi`, and the idle loop that picks it up. That is the
+ * whole of `docs/smp.md` steps five and six on one thread, which is what
+ * the suite does with it.
+ */
+struct thread *thread_create_on(unsigned cpu, const char *name,
+                                void (*entry)(void *), void *arg)
+{
+    struct thread *t;
+
+    if (cpu >= smp_online()) {
+        return NULL;
+    }
+
+    t = thread_create_suspended(name, entry, arg);
+
+    if (t != NULL) {
+        t->sched.cpu = cpu;
+        thread_wake(t);
+    }
+
+    return t;
+}
+
+/*
  * Hands the CPU to `next`, from `prev`.
  *
  * The one place a switch happens. thread_exit used to have its own copy of
@@ -832,6 +869,37 @@ unsigned thread_cpu_count(void)
      * `smp_online` is the third of the three and counts cores that have
      * executed kernel code, parked or not.
      */
+    /*
+ * **One, and the line below is what changes it.**
+ *
+ * Every processor that reached `secondary_main` has its own runqueue, its own
+ * idle thread and its own timer, and runs the same loop core zero runs -
+ * `thread_create_on` puts a thread on any of them and it runs there. So the
+ * mechanism is finished, and this number is the *policy*: how many cores new
+ * threads are spread across by default.
+ *
+ * It returns one, and what is holding it there is named rather than vague:
+ * **the four virtio drivers have no locks.** `blk`, `net`, `input` and `snd`
+ * each keep one set of virtqueue indices touched from a syscall and from an
+ * interrupt handler, and they are safe today only because every device
+ * interrupt is routed to core zero and every thread runs there too. Spread
+ * threads across four cores and a disk read on core two races core zero's
+ * completion handler over the same ring.
+ *
+ * That is one afternoon of mechanical work and it is the whole of what stands
+ * between this line and `return smp_online()`. Turning it on before then
+ * would be trading a scheduler that works for a machine that corrupts a
+ * filesystem occasionally.
+ *
+ * **It was turned on once, deliberately, to find out what breaks.** Three
+ * things did, in the first second: `thread_block` panicked on a core whose
+ * queue was empty, because "every thread is blocked" had been a statement
+ * about the machine and is now about one processor; and a dozen tests failed
+ * because they are single-core tests of the mechanism - they mask interrupts
+ * and drive three threads by yielding, which only works if those threads are
+ * here. Both are recorded: the first is fixed, the second is why
+ * `thread_create_on` exists rather than a global switch.
+ */
     return 1;
 }
 
@@ -1150,8 +1218,27 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
         spin_unlock(lock, flags);
     }
 
+    /*
+     * Nothing to run here means idle, not deadlock.
+     *
+     * **That panic was a statement about the machine and is now a statement
+     * about one processor.** With a single runqueue, "nothing is runnable"
+     * really did mean every thread in the system was blocked with nobody
+     * left to wake anybody - a deadlock, and saying so beat hanging. With a
+     * queue per core it means this core has nothing to do, which is the
+     * ordinary state of an idle processor and happens constantly.
+     *
+     * So it falls back to this core's idle thread, which is what an idle
+     * thread is for. It was the first thing to break when placement was
+     * turned on: three cores went to the panic within a second of getting
+     * their first thread.
+     */
     if (next == NULL) {
-        panic("thread_block: every thread is blocked");
+        next = this_cpu()->idle_thread;
+    }
+
+    if (next == NULL || next == current) {
+        panic("thread_block: this processor has no idle thread");
     }
 
     switch_to(next);
@@ -1184,14 +1271,14 @@ void thread_block(void)
 
     spin_unlock(&runq_lock[cpu], flags);
 
+    /* This core's idle thread when its queue is empty; see
+     * `thread_block_and_release` for why that is not a deadlock any more. */
     if (next == NULL) {
-        /*
-         * Everything is blocked and nothing can wake anybody, because
-         * waking happens in thread context and there is no thread left to
-         * run. Until there are interrupts that wake threads, this is a
-         * deadlock and saying so beats hanging.
-         */
-        panic("thread_block: every thread is blocked");
+        next = this_cpu()->idle_thread;
+    }
+
+    if (next == NULL || next == current) {
+        panic("thread_block: this processor has no idle thread");
     }
 
     switch_to(next);
@@ -1328,6 +1415,32 @@ void thread_wake(struct thread *t)
         spin_unlock(&runq_lock[cpu], flags);
 
         /*
+         * And if it lives somewhere else, tell that processor to look.
+         *
+         * **Outside the lock, and after the enqueue**, both deliberately.
+         * After, because the poke is only meaningful once the thread is
+         * findable - the barrier inside `hal_cpu_wake` is what makes that
+         * ordering visible to the other core rather than merely written
+         * here. Outside, because the target takes the interrupt immediately
+         * and its first act is to want this same lock.
+         *
+         * Without this the wake is not lost, it is late: the target notices
+         * at its own next tick, up to four milliseconds away. For a
+         * background thread that is nothing. For IPC it is everything - a
+         * shell command is dozens of round trips, and a tick each way would
+         * make four processors slower than one, which is the way this whole
+         * exercise could have been got exactly wrong.
+         *
+         * Not sent to this core. An interrupt to oneself is a wasted
+         * exception: the epilogue on the way out of whatever is running
+         * already asks the scheduler, which is the thing the poke exists to
+         * make happen.
+         */
+        if (cpu != here()) {
+            hal_cpu_wake(cpu);
+        }
+
+        /*
          * And if it outranks whoever is running, say so.
          *
          * Enqueuing alone means the woken thread waits for the running
@@ -1407,7 +1520,13 @@ void thread_exit(void)
         spin_unlock(&runq_lock[cpu], flags);
     }
 
+    /* The same fallback `thread_block_and_release` explains: a core with an
+     * empty queue idles rather than panicking. */
     if (next == NULL) {
+        next = this_cpu()->idle_thread;
+    }
+
+    if (next == NULL || next == current) {
         panic("thread_exit: the last thread returned");
     }
 

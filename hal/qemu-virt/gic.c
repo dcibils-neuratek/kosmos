@@ -21,6 +21,7 @@
 
 #include "mmio.h"
 #include "hal.h"
+#include "percpu.h"
 #include "panic.h"
 #include "qemu-virt.h"
 #include "virtio.h"
@@ -70,6 +71,18 @@
  * last one in the array. */
 #define GICR_TYPER_LAST     (1u << 4)
 
+/*
+ * The interrupt one processor sends another, and there are sixteen to choose
+ * from.
+ *
+ * INTIDs 0 to 15 are Software Generated Interrupts: they have no device
+ * behind them, they are raised by writing a system register, and like a PPI
+ * they are private to the core that receives one. Zero is the only one this
+ * kernel uses and it means exactly one thing - *look at your runqueue* -
+ * which is why the handler for it is empty. The message is the interruption.
+ */
+#define IPI_INTID           0u
+
 /* GICD_CTLR, as seen with a single security state. */
 #define GICD_CTLR_ENABLE_G0     (1u << 0)
 #define GICD_CTLR_ENABLE_G1     (1u << 1)
@@ -97,6 +110,20 @@
  * machine that booted and is therefore a panic at the call site rather than
  * a silent zero.
  */
+/*
+ * Each processor's MPIDR, recorded by that processor as it comes up.
+ *
+ * **A sender needs the receiver's affinity, and only the receiver can read
+ * it.** `MPIDR_EL1` describes the core that reads it, so there is no way for
+ * core zero to ask what core two's affinity is - it has to be told, and the
+ * moment it is told is when core two runs `hal_irq_init_here` for itself.
+ *
+ * Which is also why the array is indexed by `struct percpu`'s index rather
+ * than by anything the GIC knows: the kernel's numbering is the one both
+ * sides already agree on.
+ */
+static uint64_t cpu_affinity[NR_CPUS];
+
 static uintptr_t gicr_here(void)
 {
     uint64_t mpidr;
@@ -229,6 +256,80 @@ void hal_irq_init_here(void)
     /* And finally let Group 1 interrupts reach this core. */
     __asm__ volatile("msr icc_igrpen1_el1, %0" : : "r"((uint64_t)1));
     __asm__ volatile("isb" ::: "memory");
+
+    /*
+     * Say who this core is, so another one can address it, and open the door
+     * it will be knocked on.
+     *
+     * Both belong here rather than in a separate call because both are facts
+     * about *this* processor that only this processor can establish, and
+     * this is the function every processor runs for itself.
+     */
+    {
+        uint64_t mpidr;
+
+        __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+        cpu_affinity[this_cpu()->index] = mpidr;
+    }
+
+    gic_enable_ppi(IPI_INTID);
+}
+
+/*
+ * Knock on another processor.
+ *
+ * **The point is the interruption, not the message.** There is nothing to
+ * say: the sender has already put a thread on the receiver's runqueue and
+ * the only thing missing is for that core to look. A core sitting in `wfi`
+ * wakes on any interrupt, takes this one, does nothing with it, and returns
+ * through the exception epilogue - which is where `thread_preempt_if_needed`
+ * runs. So an empty handler is the whole implementation.
+ *
+ * Without it a wake is not lost, it is *late*: the target notices at its own
+ * next timer tick, up to four milliseconds away. That is nothing for a
+ * background thread and it is everything for IPC, where a shell command is
+ * dozens of round trips - four milliseconds each would make a machine with
+ * four processors slower than one with a single core, which is the way this
+ * step could have been got exactly wrong.
+ *
+ * `ICC_SGI1R_EL1` is a system register, not MMIO: the affinity of the target
+ * in three fields, a *bitmask* of cores within the last affinity level, and
+ * the INTID. The bitmask is why Aff0 is shifted rather than written - the
+ * hardware addresses up to sixteen cores at a time and this always names
+ * exactly one.
+ */
+void hal_cpu_wake(unsigned cpu)
+{
+    uint64_t mpidr;
+    uint64_t sgi;
+
+    if (cpu >= NR_CPUS) {
+        return;
+    }
+
+    mpidr = cpu_affinity[cpu];
+
+    if (mpidr == 0 && cpu != 0) {
+        return;     /* that processor has not come up and said who it is */
+    }
+
+    sgi = ((mpidr >> 32) & 0xffULL) << 48       /* Aff3 */
+        | ((mpidr >> 16) & 0xffULL) << 32       /* Aff2 */
+        | ((mpidr >>  8) & 0xffULL) << 16       /* Aff1 */
+        | ((uint64_t)IPI_INTID & 0xfULL) << 24  /* which SGI */
+        | (1ULL << (mpidr & 0xfULL));           /* Aff0, as a bitmask */
+
+    /*
+     * The barrier is not optional and is not decoration. The sender has just
+     * written a thread into the receiver's runqueue; if that write is still
+     * in this core's store buffer when the interrupt arrives, the receiver
+     * wakes, looks at its queue, finds it empty and goes back to sleep - a
+     * lost wakeup that happens once in a very long while and is
+     * indistinguishable from a hang.
+     */
+    __asm__ volatile("dsb ishst" ::: "memory");
+    __asm__ volatile("msr icc_sgi1r_el1, %0" :: "r"(sgi));
+    __asm__ volatile("isb" ::: "memory");
 }
 
 void gic_enable_ppi(unsigned intid)
@@ -322,7 +423,19 @@ void hal_irq_handle(void)
         return;
     }
 
-    if (intid == TIMER_INTID) {
+    if (intid == IPI_INTID) {
+        /*
+         * Nothing to do, and that is the whole of it.
+         *
+         * The sender put a thread on this core's runqueue before knocking.
+         * Taking the interrupt is what got this core out of `wfi` and into
+         * the exception path, and the epilogue runs
+         * `thread_preempt_if_needed` on the way out - which is where the
+         * decision actually happens. An IPI with a payload would be a
+         * message, and messages between processors are what a runqueue and
+         * a lock already are.
+         */
+    } else if (intid == TIMER_INTID) {
         timer_interrupt();
     } else if (intid >= VIRTIO_INTID_BASE
                && intid < VIRTIO_INTID_BASE + VIRTIO_MMIO_COUNT) {

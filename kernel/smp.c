@@ -165,13 +165,45 @@ void secondary_main(unsigned long index)
     cpu_irq_enable();
 
     /*
-     * `wfi` rather than a spin, so a parked core costs nothing and QEMU can
-     * tell it is idle. It wakes on its own timer now, notices there is
-     * nothing to do, and goes back - which is exactly what an idle thread
-     * does, and is why step four is a small change from here.
+     * And now it is a processor like any other.
+     *
+     * **The same loop core zero runs**, and it is worth saying that this is
+     * the whole of what step five did to this file: run what is on this
+     * core's queue, and sleep only when there is nothing.
+     *
+     * `thread_any_ready` asks about *this* core's runqueue. Another core
+     * having work is not a reason for this one to stay awake - a thread has
+     * a home and this is not it - which is why there is no scanning and no
+     * stealing here.
+     *
+     * The masking around the check and the sleep is the same three-line
+     * hazard core zero's loop documents at length: an interrupt landing
+     * between "nothing is runnable" and `wfi` would make something runnable
+     * and then this would sleep through it until the next tick. `wfi` wakes
+     * on a pending interrupt even with PSTATE.I set - masking stops the
+     * exception being *taken*, not the wakeup - so the sleep is safe and the
+     * unmask afterwards is where the handler actually runs.
+     *
+     * What gets this core out of `wfi` when another one gives it work is
+     * `hal_cpu_wake`, sent by `thread_wake` the instant the thread is
+     * enqueued here. Without it this loop would still be correct and would
+     * notice at its own next tick, up to four milliseconds later - which for
+     * IPC is the difference between four processors being faster than one
+     * and being slower.
      */
     for (;;) {
-        cpu_wait_for_interrupt();
+        if (thread_any_ready()) {
+            thread_yield();
+            continue;
+        }
+
+        cpu_irq_disable();
+
+        if (!thread_any_ready()) {
+            cpu_wait_for_interrupt();
+        }
+
+        cpu_irq_enable();
     }
 }
 

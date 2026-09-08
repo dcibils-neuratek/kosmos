@@ -344,6 +344,16 @@ void thread_init(void);
 struct thread *thread_create(const char *name, void (*entry)(void *), void *arg);
 
 /*
+ * The same, on a processor of the caller's choosing.
+ *
+ * Returns NULL for a processor that has not come up. `thread.c` says why
+ * this is the only way a thread crosses a core today, and what has to be
+ * finished before every thread does it automatically.
+ */
+struct thread *thread_create_on(unsigned cpu, const char *name,
+                                void (*entry)(void *), void *arg);
+
+/*
  * The same, but not yet runnable. `thread_wake` starts it.
  *
  * For anything that is not fully built by the time thread_create returns. A

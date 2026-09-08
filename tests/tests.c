@@ -4051,6 +4051,76 @@ static bool test_every_processor_takes_its_own_ticks(void)
  * ever charged busy time something has scheduled work onto a core that
  * cannot run it.
  */
+/*
+ * A thread that runs on another processor, and reports which one.
+ *
+ * **This is the whole of `docs/smp.md` steps five and six on one thread.**
+ * Everything a cross-core thread depends on has to work for this to pass,
+ * and each of them fails differently:
+ *
+ *   - placement, or the thread comes home to this core and the check that
+ *     it ran *elsewhere* fails;
+ *   - the target core's runqueue and its lock, or the enqueue lands
+ *     nowhere;
+ *   - the IPI, or it is not lost but *late* - which is why this waits on
+ *     the clock and would still pass without one, so the timing is measured
+ *     rather than asserted below;
+ *   - the target's idle loop, which has to notice a queue that was empty a
+ *     moment ago;
+ *   - and `thread_block`'s idle fallback, because the thread exits and
+ *     leaves that core with nothing to run, which used to be a panic.
+ *
+ * It records `this_cpu()->index` from inside the thread, which is the only
+ * evidence that cannot be faked by the thread having run here.
+ */
+static volatile unsigned elsewhere_ran_on = (unsigned)-1;
+static volatile bool     elsewhere_done;
+
+static void elsewhere_thread(void *arg)
+{
+    (void)arg;
+
+    elsewhere_ran_on = this_cpu()->index;
+    elsewhere_done = true;
+}
+
+static bool test_a_thread_runs_on_another_processor(void)
+{
+    unsigned long start;
+    unsigned      target = 1;
+
+    if (smp_online() <= 1) {
+        return true;            /* one processor; nothing to run elsewhere */
+    }
+
+    elsewhere_ran_on = (unsigned)-1;
+    elsewhere_done = false;
+
+    if (thread_create_on(target, "elsewhere", elsewhere_thread, NULL) == NULL) {
+        return false;
+    }
+
+    /*
+     * Waited out on this core's clock, and **this core never yields**.
+     *
+     * That is the point rather than an oversight: if the thread only ran
+     * because this processor gave up the CPU, it would prove nothing about
+     * the other one. Core zero sits here doing nothing at all, and the work
+     * still has to get done.
+     */
+    start = hal_ticks();
+
+    while (!elsewhere_done && hal_ticks() - start < 250UL) {
+        cpu_relax();
+    }
+
+    if (!elsewhere_done) {
+        return false;           /* never ran anywhere */
+    }
+
+    return elsewhere_ran_on == target;
+}
+
 static bool test_every_processor_idles_as_a_thread(void)
 {
     unsigned online = smp_online();
@@ -4672,6 +4742,7 @@ static const struct test tests[] = {
     { "cpu: every processor claimed its own slot", test_every_processor_claimed_its_own_slot },
     { "cpu: every processor takes its own ticks",  test_every_processor_takes_its_own_ticks },
     { "cpu: every processor idles as a thread",     test_every_processor_idles_as_a_thread },
+    { "smp: a thread runs on another processor",    test_a_thread_runs_on_another_processor },
     { "cpu: per-CPU state is per CPU, not per thread", test_percpu_is_per_cpu_and_not_per_thread },
     { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
     { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },

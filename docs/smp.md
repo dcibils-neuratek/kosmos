@@ -1,6 +1,6 @@
 # SMP
 
-**Steps one to five are done. Six and seven are not.** This is what it would
+**Steps one to six are done. Seven is not, and step five is built but not switched on.** This is what it would
 take, counted against the code as it stands rather than estimated, because
 the last thing written down about SMP was wrong for two years: `CLAUDE.md`
 claimed a per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the
@@ -149,6 +149,39 @@ corrupts memory; it is a message that is silently lost.
 an ordering constraint disguised as an architecture detail: `context_switch`
 returns on a different stack, so a lock taken before it is released by a
 different thread than took it. Pick under the lock, let go, then switch.
+
+## What is left, and what is holding it
+
+**The mechanism is finished and the policy is not switched on.**
+`thread_cpu_count()` returns one, so new threads are all homed on core zero;
+`thread_create_on` puts a thread anywhere and it runs there, which is what
+the suite uses.
+
+What holds the line is named rather than vague: **the four virtio drivers
+have no locks.** `blk`, `net`, `input` and `snd` each keep one set of
+virtqueue indices touched from a syscall and from an interrupt handler, and
+they are safe today only because every device interrupt is routed to core
+zero and every thread runs there. Spread threads across four cores and a disk
+read on core two races core zero's completion handler over the same ring.
+That is an afternoon of mechanical work, and it is the whole of what stands
+between one line and `return smp_online()`.
+
+**It was switched on once, deliberately, to find out what breaks.** Two
+things did, within a second:
+
+- `thread_block` panicked. "Every thread is blocked" was a statement about
+  the *machine* and is now a statement about one processor - an empty
+  runqueue is the ordinary state of an idle core. It falls back to that
+  core's idle thread now, which is what an idle thread is for.
+- A dozen tests failed, and they were right to. They are single-core tests
+  of the mechanism: they mask interrupts, create three threads and drive
+  them by yielding, which only works if those threads are *here*. That is
+  why `thread_create_on` exists rather than a global switch - a suite that
+  had to be rewritten to tolerate placement would be a suite that had
+  stopped asking its original question.
+
+`panic()` also still needs a protocol rather than a lock: a core that panics
+has to *stop* the others, not queue behind them.
 
 ### The five it used to say, which are still true
 
@@ -356,9 +389,33 @@ Then, in dependency order:
    lock - in `ipc_reply`, `ipc_abort`, `ipc_timed_out` - are all the same
    pattern: `waiting_on` has to be read before there is a lock to take, so
    the lock is taken and the read confirmed.
-6. **IPIs**, for preempting a remote core when a wake outranks what it is
-   running. Without this a high-priority thread waits for the other core's
-   quantum, and the whole responsiveness argument dies.
+6. ~~**IPIs.**~~ **Done, and measured.** `hal_cpu_wake(cpu)` sends SGI 0
+   through `ICC_SGI1R_EL1`, and the handler for it is *empty* - the sender
+   has already put a thread on the target's runqueue and the only thing
+   missing is for that core to look. Taking the interrupt is what gets it
+   out of `wfi` and into the exception epilogue, where
+   `thread_preempt_if_needed` already runs. An IPI with a payload would be a
+   message, and messages between processors are what a runqueue and a lock
+   already are.
+
+   **Worth 25x, and the number matches the reasoning exactly.** A cross-core
+   wake, measured on the counter under TCG:
+
+   | | counter ticks | wall clock |
+   |---|---|---|
+   | with the IPI | 11,688 | ~0.19 ms |
+   | without | 293,688 | ~4.7 ms |
+
+   4.7 ms is one scheduler tick at 250 Hz, which is precisely the prediction:
+   without a poke the target notices at its own next timer interrupt. The
+   `dsb ishst` before the register write is what makes the enqueue visible
+   before the interrupt arrives - without it the target can wake, find an
+   empty queue and go back to sleep, which is a lost wakeup that happens
+   rarely and looks exactly like a hang.
+
+   Nothing depends on it for *correctness*: the check for a thread running
+   on another processor passes with the IPI removed. That is deliberate, and
+   it is why the value is a measurement rather than an assertion.
 7. **TLB shootdown.** `as_switch` invalidates locally (`tlbi vmalle1`);
    with two cores in one address space, unmapping needs the other core told.
 

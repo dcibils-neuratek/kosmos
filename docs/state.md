@@ -8,6 +8,77 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### A thread runs on another processor, and the IPI is worth 25x
+
+`docs/smp.md` step six. `hal_cpu_wake(cpu)` sends SGI 0 through
+`ICC_SGI1R_EL1` - an interrupt one processor raises on another, with no
+device behind it - and **the handler is empty.**
+
+That is the design rather than an omission. The sender has already put the
+thread on the target's runqueue; the only thing missing is for that core to
+look. Taking the interrupt is what gets it out of `wfi` and into the
+exception epilogue, which is where `thread_preempt_if_needed` already runs.
+An IPI carrying a payload would be a message, and messages between
+processors are what a runqueue and a lock already are.
+
+**The number matches the reasoning exactly**, which is the satisfying part.
+A cross-core wake, measured on the counter under TCG:
+
+```
+with the IPI      11,688 counter ticks   ~0.19 ms
+without          293,688 counter ticks   ~4.7 ms
+```
+
+4.7 ms is one scheduler tick at 250 Hz. That is precisely what was predicted
+from reading the code - without a poke the target notices at its own next
+timer interrupt - and it is the difference between four processors being
+faster than one and being slower, because a shell command here is dozens of
+IPC round trips.
+
+**Nothing depends on it for correctness**, and that was checked: the new test
+passes with the IPI removed. The wake is late, not lost. So the value is a
+measurement rather than an assertion, which is the right shape for something
+whose whole purpose is latency.
+
+The `dsb ishst` before the register write is not decoration. Without it the
+enqueue can still be in this core's store buffer when the interrupt lands,
+the target wakes, finds an empty queue and goes back to sleep - a lost wakeup
+that happens rarely and is indistinguishable from a hang.
+
+### `smp: a thread runs on another processor`
+
+One test, and it exercises the whole of steps five and six at once. Placement,
+the target's runqueue and its lock, the IPI, the target's idle loop, and
+`thread_block`'s new idle fallback - each fails differently and the test
+catches placement being broken (confirmed by breaking it).
+
+**Core zero never yields while it waits.** That is the point rather than an
+oversight: if the thread only ran because this processor gave up the CPU, it
+would prove nothing about the other one. Core zero sits doing nothing and the
+work still gets done.
+
+### It was switched on once, to find out what breaks
+
+Turning `thread_cpu_count()` into `smp_online()` spreads every new thread
+across four cores. Two things broke inside a second:
+
+- **`thread_block` panicked.** "Every thread is blocked" was a statement
+  about the machine, and with a queue per core it is a statement about one
+  processor - an empty runqueue is the ordinary state of an idle core. It
+  falls back to that core's idle thread now, which is what an idle thread is
+  for.
+- **A dozen tests failed, and they were right to.** They are single-core
+  tests of the mechanism: they mask interrupts, create three threads and
+  drive them by yielding, which only works if those threads are *here*. A
+  suite rewritten to tolerate placement would be a suite that had stopped
+  asking its original question.
+
+So the switch is off and `thread_create_on` is how anything crosses a core.
+What holds the line is named: **the four virtio drivers have no locks.** They
+are safe only because every device interrupt is routed to core zero and every
+thread runs there. That is an afternoon of mechanical work and it is the
+whole of what stands between one line and `return smp_online()`.
+
 ### One runqueue per processor, and a thread that has a home
 
 `docs/smp.md` step five, and the locking of step two with it - the two cannot

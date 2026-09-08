@@ -32,3 +32,16 @@ void hal_irq_init_here(void)
 void hal_timer_init_here(void)
 {
 }
+
+/*
+ * And nobody to knock on.
+ *
+ * Interrupting another processor on a PC means the local APIC's interrupt
+ * command register, which is the same missing driver as everything else
+ * here. Doing nothing is correct rather than unfinished: this board has one
+ * processor, every thread is homed on it, and a wake never crosses a core.
+ */
+void hal_cpu_wake(unsigned cpu)
+{
+    (void)cpu;
+}

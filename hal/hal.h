@@ -132,6 +132,27 @@ void hal_irq_init(void);
  */
 void hal_irq_init_here(void);
 void hal_timer_init_here(void);
+
+/*
+ * Interrupt another processor, so that it looks at its runqueue now rather
+ * than at its next tick.
+ *
+ * **There is no message.** The caller has already put a thread where the
+ * target will find it; this is only the poke that makes it look. A core in
+ * `wfi` wakes on any interrupt and runs its exception epilogue, which is
+ * where the scheduler decides - so the handler for this is deliberately
+ * empty and the interruption is the entire content.
+ *
+ * Without it a cross-core wake is not lost but *late*, by up to one tick.
+ * That is nothing for a background thread and everything for IPC, where a
+ * single shell command is dozens of round trips: four milliseconds each
+ * would make four processors slower than one.
+ *
+ * A board that cannot do this does nothing, and the system still works -
+ * more slowly, and only for threads that live on another core. `hal/pc/`
+ * is such a board, because a PC's answer is the local APIC.
+ */
+void hal_cpu_wake(unsigned cpu);
 void hal_irq_handle(void);
 
 /* The tick source. hal_timer_init needs hal_irq_init first. */
