@@ -38,6 +38,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
       runtime/upstream/tinygl/COPYING, with the vendoring recorded in
       README.kosmos.md beside it
 
+  Lite XL, by rxi, Francesco Abbate and the Lite XL Team, MIT
+      runtime/upstream/lite-xl/LICENSE, with the vendoring recorded in
+      README.kosmos.md beside it
+
   minimp3, by lieff, CC0 1.0 (public domain)
       runtime/upstream/minimp3/LICENSE, and the notice at the top of
       minimp3.h

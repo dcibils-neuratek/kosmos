@@ -88,7 +88,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -489,6 +489,31 @@ USER_LIBC := runtime/libc/string.c \
              user/lib/misc_user.c \
              user/lib/panic_user.c
 
+#
+# Lite XL, vendored, and this is step one of a port rather than a finished
+# one. `runtime/upstream/lite-xl/README.kosmos.md` is the account.
+#
+# **What is built here is only what needs nothing that does not exist.**
+# `api/utf8.c` and `arena_allocator.c` call no SDL function and include no
+# SDL header, and they compile against this toolchain unmodified - which is
+# the fact that said the port was worth starting, and is worth having in the
+# build so that it stays true rather than being remembered.
+#
+# Everything else in `src/` stops at one line, `#include <SDL.h>`, and waits
+# for the shim. `rencache.c`, `api/renderer.c` and `renderer.c` join this
+# list when it exists; `api/process.c`, `api/dirmonitor/` and
+# `src/bundle_open.m` never will, for the reasons the README gives.
+#
+# `-w -Wno-error` for the reason every vendored thing here gets it: these
+# are somebody else's warnings and this build has no business failing on
+# them.
+#
+LITEXL_CFLAGS := -w -Wno-error \
+                 -Iruntime/upstream/lite-xl/src
+
+LITEXL_SRCS := runtime/upstream/lite-xl/src/api/utf8.c \
+               runtime/upstream/lite-xl/src/arena_allocator.c
+
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
                  -Iruntime/upstream/tinygl/source
@@ -578,6 +603,10 @@ endif
 # are compiled with different flags and `make` compares timestamps, not
 # command lines.
 #
+ifdef LITEXL
+USER_SRCS += $(LITEXL_SRCS)
+endif
+
 ifdef DOOM
 #
 # The 79 objects doomgeneric's own Makefile names, and not one more.
@@ -789,7 +818,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 # build and watching the identical link error come back twice is how this
 # was found. They expand to nothing when their variant is not selected.
 #
-FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS)
+FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)
 FLAGS_FILE := $(BUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -871,6 +900,18 @@ $(UBUILD)/runtime/upstream/tinygl/examples/texobj.c.o: runtime/upstream/tinygl/e
 $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) -MMD -MP -c $< -o $@
+
+#
+# Lite XL. Two patterns because its sources are one directory deep in
+# places - `src/api/utf8.c` - and a single `%` does not cross a slash.
+#
+$(UBUILD)/runtime/upstream/lite-xl/src/%.c.o: runtime/upstream/lite-xl/src/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/runtime/upstream/lite-xl/src/api/%.c.o: runtime/upstream/lite-xl/src/api/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
 #
 # musl's maths.

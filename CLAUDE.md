@@ -61,6 +61,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Measurement and regressions: `docs/testing.md`
 - BeOS lineage: `docs/beos.md`
 - Toolchain and build: `docs/setup.md`
+- Porting Lite XL, a real editor: `docs/litexl.md`
 - Glossary: `docs/glossary.md`
 
 ---
