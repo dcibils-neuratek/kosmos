@@ -26,7 +26,7 @@ Written to be re-read six months from now without having to look anything up.
 
 **GIC** — Generic Interrupt Controller. ARM's interrupt controller. GICv2 and GICv3 are quite different from each other; the Pi 5 and QEMU virt use v3.
 
-**TPIDR_EL1** — A general-purpose register reserved by convention to point at the per-CPU struct. Using it from day one makes SMP cheap later.
+**TPIDR_EL1** — A register reserved to point at this processor's `struct percpu`. *Banked*: EL0 cannot see or change it, so it is set once per core at boot and read for ever, and no exception entry path is touched. The x86-64 equivalent is the `GS` base, and there is one `GS` shared between ring 3 and ring 0 — so the same trick there needs `swapgs` at every entry and exit. That asymmetry is why SMP was done on ARM first.
 
 **AltiVec / NEON** — The SIMD units on PowerPC and ARM. They process several values per instruction. Useful for the blitter, optional.
 
@@ -161,7 +161,21 @@ else.
 
 **Context switch** — Saving the outgoing thread's registers and loading the incoming one's. Written in assembly, and getting it wrong corrupts things that only show up five functions later.
 
-**SMP** — Symmetric Multiprocessing. Several cores running at once.
+**SMP** — Symmetric Multiprocessing. Several processors that are equals: same instruction set, same view of memory, any of them able to run any code. It buys *throughput*, not speed — one thread runs no faster on four cores. What it buys this system is that when the machine is busy there is a processor free to answer you.
+
+**Concurrency vs parallelism** — Concurrency is structure: several things in progress, interleaved. Parallelism is execution: several things at the same instant. Kosmos was concurrent for a year before it was parallel, and almost every SMP bug is code that was correct as the first and wrong as the second.
+
+**Spinlock** — The kernel's only lock (`kernel/spinlock.h`). A word one core owns at a time, taken with an atomic and spun on by anyone else. **Every one of them masks interrupts**, because the structures worth locking are reached from a syscall and from an interrupt handler alike, and a lock held with interrupts on is a self-deadlock waiting for a tick.
+
+**Acquire and release** — The two halves of publishing something to another processor. A release barrier before the store that announces it (`dmb ishst`), an acquire after the load that observes it (`dmb ishld`). Always a pair: a release with no matching acquire orders one side of a conversation. `volatile` is neither — it constrains the compiler and says nothing to the processor.
+
+**IPI** — Inter-processor interrupt. On GICv3 a *Software Generated Interrupt*, IDs 0–15, raised by writing `ICC_SGI1R_EL1`. Kosmos sends one to make another core look at its runqueue; the handler is empty, because the interruption is the whole message. Worth 25x on a cross-core wake, measured.
+
+**Affinity** — How the interrupt controller names a processor: the value in that core's `MPIDR_EL1`. A core can only read its own, so a sender has to be *told* — each records its affinity as it comes up.
+
+**Redistributor** — The per-core half of a GICv3. One per processor, and the trap is that code addressing "the" redistributor configures core zero's for everybody.
+
+**Home core** — The processor a thread's runqueue belongs to (`t->sched.cpu`), assigned at creation and never changed. Kosmos does not migrate threads. That is what lets IPC release its lock before the context switch instead of handing it to the next thread — and it is the decision that work stealing would undo.
 
 **IPI** — Inter-Processor Interrupt. An interrupt one core sends to another. Needed for cross-core IPC and for TLB shootdown.
 

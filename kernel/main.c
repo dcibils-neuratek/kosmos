@@ -405,6 +405,42 @@ void kmain(void)
     smp_start_others();
 
     /*
+     * How many processors new threads are spread across.
+     *
+     * **Off by default, and that is a policy rather than a limitation.**
+     * Every processor that came up can run threads and does - the mechanism
+     * is finished. What is not finished is the confidence: spreading every
+     * thread across four cores is the first configuration in which two
+     * processors are inside the kernel at the same instant on a real
+     * workload, and `docs/smp.md` is honest that the locks below have never
+     * been contended.
+     *
+     * `make qemu SMPWORK=4` turns it on, which is the whole point of it
+     * being an option: somebody can run the desktop on four processors
+     * without editing the kernel, and turn it off again when something
+     * looks wrong. That is how the next set of bugs gets found.
+     *
+     * The number is read rather than a flag, so `SMPWORK=2` is a way of
+     * halving the search space when something does break.
+     */
+    {
+        char value[16];
+
+        if (hal_boot_option("opt/kosmos/smp", value, sizeof(value))) {
+            unsigned n = 0;
+            unsigned i;
+
+            for (i = 0; value[i] >= '0' && value[i] <= '9'; i++) {
+                n = n * 10 + (unsigned)(value[i] - '0');
+            }
+
+            thread_place_across(n);
+        } else {
+            thread_place_across(1);
+        }
+    }
+
+    /*
      * Said only when there is something to say. On a machine with one
      * processor the line would be "1 of them in the kernel", which is the
      * previous line again in different words - and a boot log that repeats

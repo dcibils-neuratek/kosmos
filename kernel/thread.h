@@ -502,6 +502,15 @@ void thread_load(unsigned long *idle, unsigned long *busy);
 unsigned thread_cpu_count(void);
 
 /*
+ * How many processors `thread_create` spreads new threads across.
+ *
+ * Defaults to every processor that came up. The test image sets it to one,
+ * because a dozen of its checks are questions about *this* processor's
+ * scheduler and only mean anything if the threads they create are here.
+ */
+void thread_place_across(unsigned cores);
+
+/*
  * The same two counters, for one processor.
  *
  * `thread_load` sums these, and the sum is what four programs want. This is

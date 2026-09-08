@@ -48,6 +48,23 @@
 #include "mmio.h"
 #include "virtio.h"
 #include "hal.h"
+#include "spinlock.h"
+
+/*
+ * The device's lock.
+ *
+ * **Four queues, a used index per queue, and a period counter**, and the
+ * sound path is the one place in this system with a *deadline*: a period is
+ * 5.8 ms and the device drains whether or not anybody refilled it.
+ * `hal_snd_write` fills from a syscall and `snd_interrupt` retires buffers
+ * from the interrupt handler, which is exactly the pair that needs a lock.
+ *
+ * The critical sections here are the shortest of the four drivers on
+ * purpose: an audio path that masks interrupts for long is an audio path
+ * that misses its own deadline, and the whole reason the mixer was moved to
+ * C was to stop something else in the machine deciding when it runs.
+ */
+static struct spinlock snd_lock = SPINLOCK("virtio-snd");
 
 /* virtio_snd.h: the four queues, in this order. */
 #define VQ_CONTROL              0
@@ -319,7 +336,8 @@ static bool find_output_stream(void)
         return false;
     }
 
-    /*
+    
+/*
      * The reply is a status word and then the array, so the entries do not
      * start at `rsp.info[0]` - they start after the header. Reading them
      * from the top of the union is the mistake this comment exists to stop.
@@ -489,7 +507,7 @@ unsigned hal_snd_queued(void)
  * written back, and an unacknowledged interrupt fires again immediately and
  * for ever, which presents as a machine that has hung with the fans on.
  */
-void snd_interrupt(unsigned slot)
+static void snd_interrupt_locked(unsigned slot)
 {
     if (!snd.present || snd.dev.slot != slot) {
         return;
@@ -505,6 +523,17 @@ void snd_interrupt(unsigned slot)
 
     snd.woke++;
     snd.wants = true;
+}
+
+/*
+ * Retires finished periods and counts them. The other half of the pair.
+ */
+void snd_interrupt(unsigned slot)
+{
+    unsigned long flags = spin_lock(&snd_lock);
+
+    snd_interrupt_locked(slot);
+    spin_unlock(&snd_lock, flags);
 }
 
 /*
@@ -547,7 +576,7 @@ unsigned hal_snd_floor(void)
  * point of the queue depth. A caller that finds this returning false is a
  * caller that is *ahead*, which is the good problem.
  */
-bool hal_snd_write(const void *pcm, unsigned bytes)
+static bool hal_snd_write_locked(const void *pcm, unsigned bytes)
 {
     struct vqueue *q = &snd.q[VQ_TX];
     unsigned slot, head, at;
@@ -647,4 +676,17 @@ bool hal_snd_write(const void *pcm, unsigned bytes)
     (void)virtio_ack_interrupt(&snd.dev);
 
     return true;
+}
+
+/*
+ * Fills a period into the transmit queue from a syscall; `snd_interrupt`
+ * retires them from the handler. That is the pair.
+ */
+bool hal_snd_write(const void *pcm, unsigned bytes)
+{
+    unsigned long flags = spin_lock(&snd_lock);
+    bool r = hal_snd_write_locked(pcm, bytes);
+
+    spin_unlock(&snd_lock, flags);
+    return r;
 }

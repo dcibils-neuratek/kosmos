@@ -38,6 +38,7 @@
 #include <string.h>
 
 #include "hal.h"
+#include "spinlock.h"
 #include "virtio.h"
 #include "mmio.h"
 
@@ -141,6 +142,26 @@ bool hal_blk_init(struct blkdev *out)
 
     return false;
 }
+
+/*
+ * The device's lock.
+ *
+ * **One request is in flight at a time and the structure says so**: one
+ * queue, one header, one status byte. Two cores in `hal_blk_read` at once
+ * would overwrite each other's descriptor chain and then both read the one
+ * status byte, and whichever lost would report the other's result for its
+ * own sectors. On a filesystem that is silent corruption.
+ *
+ * It masks, like every lock here, and that costs nothing it was not already
+ * paying: `request` is reached from a syscall, and the kernel already runs
+ * with interrupts masked from the moment one is taken. The long spin below
+ * has always happened with them off.
+ *
+ * `blk_interrupt` takes it too. It only acknowledges, but acknowledging is a
+ * read-modify-write of the device's interrupt register and `request` does
+ * the same thing on its completion path.
+ */
+static struct spinlock blk_lock = SPINLOCK("virtio-blk");
 
 /*
  * One request, start to finish.
@@ -267,16 +288,24 @@ bool hal_blk_present(void)
  */
 void blk_interrupt(unsigned line)
 {
+    unsigned long flags;
+
     if (!blk.present || blk.dev.slot != line) {
         return;
     }
 
+    flags = spin_lock(&blk_lock);
     (void)virtio_ack_interrupt(&blk.dev);
+    spin_unlock(&blk_lock, flags);
 }
 
 bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes)
 {
-    return request(VIRTIO_BLK_T_IN, sector, buf, bytes);
+    unsigned long flags = spin_lock(&blk_lock);
+    bool ok = request(VIRTIO_BLK_T_IN, sector, buf, bytes);
+
+    spin_unlock(&blk_lock, flags);
+    return ok;
 }
 
 bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes)
@@ -284,5 +313,9 @@ bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes)
     /* The device only reads this one, which the descriptor says by not
      * being marked writable. The cast is losing a const the interface
      * keeps for the caller's sake. */
-    return request(VIRTIO_BLK_T_OUT, sector, (void *)(uintptr_t)buf, bytes);
+    unsigned long flags = spin_lock(&blk_lock);
+    bool ok = request(VIRTIO_BLK_T_OUT, sector, (void *)(uintptr_t)buf, bytes);
+
+    spin_unlock(&blk_lock, flags);
+    return ok;
 }

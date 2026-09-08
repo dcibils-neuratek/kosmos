@@ -573,26 +573,35 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   a driver bug is a kernel bug. Everything else that was going to move out
   of the kernel has.
 
-- **One core schedules; three others are in the kernel doing nothing.**
-  `make qemu` boots four processors. Each of the three secondaries turns
-  translation on with core 0's tables, claims its own `struct percpu`
-  through its own `TPIDR_EL1`, and parks in `wfi` for ever - `docs/smp.md`
-  step three. **They touch no shared structure and run no thread**, which
-  is what makes it safe to have done before any lock exists.
+- **Four processors, and the placement policy is not switched on.**
+  `make qemu` boots four. Each one installs its own exception vector, wakes
+  its own GIC redistributor, arms its own generic timer, claims its own
+  `struct percpu` through `TPIDR_EL1`, adopts its own idle thread and runs
+  its own runqueue with its own lock. `thread_create_on(cpu, ...)` puts a
+  thread on any of them and it runs there.
 
-  What is still missing is most of it. The runqueue is `head[]` and
-  `tail[]` at file scope in `sched_prio.c`; `owner` in `arch/*/fp.c` is a
-  global; there is not a lock or an atomic anywhere in `kernel/`; and the
-  x86-64 board has neither a trampoline to land a core on nor a local APIC
-  to start one with. `docs/smp.md` counts the seven steps and marks the two
-  that are done.
+  The kernel has locks now - the pools, every endpoint, every runqueue, the
+  console - and one rule: **every lock masks interrupts**, because the
+  things worth locking are reached from a syscall and from an interrupt
+  handler alike. A thread has a home and does not migrate, which is what
+  lets IPC release its endpoint before the context switch rather than
+  handing it to the next thread.
 
-  This bullet used to say "nothing has ever run on a second core, and there
-  is no per-CPU struct" - and before that, `CLAUDE.md` claimed the opposite
-  from the repository's first commit, that the code was written SMP-ready
-  with a per-CPU pointer and a per-CPU runqueue. Neither was checked by
-  anything, which is the whole argument for the state files being audited
-  against code.
+  What is still missing is one line and one afternoon. `thread_cpu_count()`
+  returns 1, so new threads all come home to core zero, and what holds it
+  there is that **the four virtio drivers have no locks**: each keeps one
+  set of virtqueue indices touched from a syscall and from an interrupt,
+  safe only because every device interrupt is routed to core zero. After
+  that: TLB shootdown, and a panic protocol - a core that panics has to
+  *stop* the others rather than queue behind them. `docs/smp.md` is the
+  map.
+
+  This bullet has been wrong twice in opposite directions. It said "nothing
+  has ever run on a second core, and there is no per-CPU struct"; and before
+  that `CLAUDE.md` claimed from the repository's first commit that the code
+  was written SMP-ready with a per-CPU pointer and a per-CPU runqueue.
+  Neither was checked by anything, which is the whole argument for auditing
+  the state files against the code.
 
   The x86-64 port paid for part of that in advance without meaning to. Two
   pieces of state there are per-CPU rather than per-thread - the TSS

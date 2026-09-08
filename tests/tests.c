@@ -4865,7 +4865,27 @@ static const struct test tests[] = {
 void tests_run(void)
 {
     unsigned failed = 0;
-    void *heap = pmm_alloc_contiguous(TEST_HEAP_PAGES);
+    void *heap;
+
+    /*
+     * Everything this suite creates comes home to this processor.
+     *
+     * **Not a hedge, and not a limitation of the kernel** - a machine
+     * somebody uses spreads threads across every core that came up. It is
+     * the honest reading of what most of these checks ask. A dozen of them
+     * mask interrupts, create three threads and drive them by yielding, and
+     * that is a question about *this* processor's scheduler which only means
+     * anything if those threads are here. Spreading them would not make the
+     * tests better; it would make them stop asking.
+     *
+     * The checks that are about SMP say so by using `thread_create_on`, and
+     * they still cross cores. `smp: a thread runs on another processor` is
+     * the one that matters, and this line is what makes it a deliberate
+     * crossing rather than an accident of placement.
+     */
+    thread_place_across(1);
+
+    heap = pmm_alloc_contiguous(TEST_HEAP_PAGES);
 
     if (heap == NULL) {
         kputs("not ok 1 - the suite could not get a heap\n");

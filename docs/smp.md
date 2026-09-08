@@ -1,37 +1,427 @@
 # SMP
 
-**Steps one to six are done. Seven is not, and step five is built but not switched on.** This is what it would
-take, counted against the code as it stands rather than estimated, because
-the last thing written down about SMP was wrong for two years: `CLAUDE.md`
-claimed a per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the
-repository's first commit, and none of the three had ever existed.
+**Where this stands: six of seven steps are done. The kernel is SMP-aware
+and the placement policy is not switched on.** The map of what exists is
+*As built*, further down; what is left and what is holding it is *What is
+left*. Everything before those two sections is the reasoning, because this
+is the hardest thing in the kernel and the reasoning is most of the value.
 
-Two of those three exist now. `kernel/percpu.h` holds the struct,
-`TPIDR_EL1` holds the pointer to it on AArch64, and the runqueue is still a
-global - which is step five below. **And there are four instruction streams
-in the machine**, three of them parked: step three below, done out of order
-and for a reason recorded there.
+---
 
-**And re-auditing this document against the code found something it had
-missed**, which is the argument for auditing against code rather than
-against prose: the list of six things that have to become per-CPU was
-seven. `preempt_pending` in `thread.c` is a statement about *this core's*
-return path and was a file-scope `bool`.
+## 1. The four words this document rests on
+
+If you have the tree open and know the kernel, skip to *As built*. This
+section exists because SMP is where four ideas that have been quietly
+separate for the whole project suddenly interact, and the interaction is the
+hard part rather than any one of them.
+
+### A thread
+
+**A thread is one instruction stream and the stack it runs on.** In Kosmos
+it is `struct thread` in `kernel/thread.h`: a saved register context, two
+stacks (its own and one for exceptions), a state, a priority, and a pointer
+to the process it belongs to. Threads are taken from a fixed array,
+`threads[THREAD_MAX]` — there is no allocator in this kernel, so there is a
+pool and nothing else.
+
+A thread is either **running** (on a processor now), **ready** (wants a
+processor), or **blocked** (waiting for something and not asking). Those
+three words do the whole of the work in this document, because SMP is
+largely the question of *who may change that word, and when*.
+
+Two things about threads here are unusual and both matter later:
+
+- **A process has exactly one thread.** There are no threads inside a
+  process; a Lua program that wants concurrency uses coroutines. So "thread"
+  and "process" are nearly the same population, and parallelism across cores
+  means *different processes* running at once rather than one program
+  spreading itself.
+- **The kernel has threads of its own**, and the idle thread is one of them.
+  Which turns out to matter enormously: an idle thread per processor is what
+  makes a core with nothing to do a normal state rather than an error.
+
+### Scheduling
+
+**Scheduling is choosing which ready thread runs next.** The mechanism in
+Kosmos is a *runqueue* — a linked list of ready threads — and a *policy*
+that decides the order. The policy is a vtable (`struct scheduler` in
+`kernel/sched.h`) with four operations: put a thread in, take the next one
+out, is there anybody waiting, and has this one had long enough.
+
+The default policy is **strict priority bands with immediate preemption**,
+borrowed from QNX. Five bands; the highest ready thread runs; a thread that
+becomes ready and outranks the running one takes the processor at the next
+exception rather than when a quantum expires. That last property is the
+whole responsiveness argument, and it is the one SMP threatens most
+directly — "the next exception" is a statement about *a* processor, and
+with four of them the thread that should preempt may be looking at a core
+that is not the one it is on.
+
+A **context switch** saves one thread's registers and restores another's
+(`arch/aarch64/switch.S`). The subtle part, and it becomes load-bearing
+later: **`context_switch` returns on a different stack.** The instruction
+after it executes as the *new* thread. Anything you were holding across it
+is now held by somebody else.
+
+### IPC
+
+**IPC is how two processes talk, and in a microkernel it is how everything
+happens.** There is no shared memory by default and no global namespace: a
+process reaches another only through an *endpoint* it was handed, and
+reaching it means sending a message and waiting for a reply.
+
+Kosmos's IPC is a **rendezvous**: nothing is buffered in the kernel. A
+sender blocks until a receiver takes the message; a receiver blocks until
+one arrives. Each endpoint keeps three queues — senders waiting to be
+collected, receivers waiting for work, and senders whose message was taken
+and who are now waiting for a reply.
+
+This is why IPC is the hard subsystem for SMP, and the reason is worth
+stating precisely: **a single IPC operation moves two threads and an
+endpoint through states that have to change together.** A send takes a
+thread off one queue, puts it on another, writes a message into a second
+thread, marks that thread ready, and blocks the first — five changes that
+are one event. Interleave them wrongly and a message is delivered twice, or
+to a thread that has moved on, or to nobody.
+
+And the volume matters. A shell command here is dozens of round trips: the
+shell asks the filesystem, which asks the block device, and the answer comes
+back the same way. Anything that makes a round trip slower makes the whole
+system slower, which is why the locking decisions later are so concerned
+with what is *not* shared.
+
+### Interrupts, and what "masked" means
+
+An interrupt is the hardware taking the processor away from what it was
+doing. The timer raises one at 250 Hz and that is the scheduler's heartbeat;
+a device raises one when it has something to say.
+
+**A processor can mask them** — refuse to be interrupted for a while. That
+one fact is the whole of how this kernel has stayed correct until now:
+
+> The kernel runs with interrupts masked, so whoever is inside it cannot be
+> interrupted, and there is only one processor, so nobody else is inside it
+> either.
+
+Every data structure in `kernel/` was written under that sentence. Masking
+is a statement about **one** processor, which is exactly why it stops being
+enough.
+
+---
+
+## 2. What SMP is, and how it is achieved
+
+**Symmetric multiprocessing**: several processors that are equals — same
+instruction set, same view of memory, any of them able to run any code. The
+word *symmetric* distinguishes it from arrangements where one processor is
+in charge and the others are subordinate.
+
+What it buys is **throughput**, not speed. One thread runs at exactly the
+same rate on four cores as on one, and a program that cannot be divided
+gains nothing. What it buys *this* project is different and is the reason
+it is worth the trouble:
+
+> When the machine is busy, is there a processor free to answer me?
+
+That is a responsiveness question, not a throughput one. It is why a
+four-core machine can feel dramatically better while being no faster at
+anything you can measure, and it is the same bet BeOS made in 1995 when it
+shipped on a dual-processor box and made responsiveness its entire pitch.
+
+### Concurrency is not parallelism
+
+Kosmos was concurrent for a year before it was parallel. Dozens of threads,
+preemption, priority bands, IPC — all of it worked on one core.
+
+- **Concurrency is structure**: several things in progress, interleaved.
+- **Parallelism is execution**: several things happening at the same instant.
+
+Almost every bug in this document is code that was correct as the first and
+wrong as the second. Interleaving means a switch happens *between* two
+instructions; two processors means two instructions happen *at once*.
+
+### How it is achieved, in four parts
+
+Making a machine symmetric is not one thing. It is four, and Kosmos does
+them in this order because each can be checked before the next:
+
+1. **Start the other processors.** They come out of reset held, and firmware
+   (PSCI on ARM) starts one at an address you give it. It arrives with
+   nothing: no page tables enabled, no exception vectors, no idea who it is.
+2. **Give each one what is private to it.** A surprising amount of a
+   processor is per-processor and the code reads identically either way: its
+   exception vector, its interrupt controller interface, its timer
+   comparator, and a register pointing at its own state. Anything the kernel
+   kept as one global that is really per-processor is a bug the moment there
+   are two.
+3. **Protect what is genuinely shared.** The pools, the queues, the device
+   rings. This needs an *atomic* — an operation that reads and writes with
+   nothing able to intervene — because masking interrupts no longer excludes
+   anybody but yourself.
+4. **Let them talk.** A processor that puts work where another will find it
+   has to be able to say so, or the other notices at its own next tick. That
+   is an inter-processor interrupt, and it is worth a measured 25x here.
+
+### Why it is the hardest change a kernel makes
+
+Adding a filesystem is a new directory. Adding a second architecture cost
+this project about a hundred and ten lines of assembly and one `#if`,
+because it was the same design against different registers.
+
+SMP is not that. **It changes the invariant every file in `kernel/` was
+written against**, and the work is spread thin across all of them rather
+than concentrated anywhere. There is no `smp/` directory. There is a line in
+the thread pool, a line in the page allocator, three in IPC, and a hundred
+places where nothing needs to change and you have to read them to know that.
+
+And the failures do not announce themselves:
+
+- A pool slot handed out twice is not a crash. It is two processes sharing
+  an address space and a fault somewhere else, minutes later.
+- A lost wakeup is not an error. It is a thread that never runs again, which
+  looks exactly like a hang.
+- A stale TLB entry is not a fault. It is a *successful* read of somebody
+  else's memory.
+- A message delivered to a thread that has moved on is not a panic. It is
+  data going to the wrong place.
+
+All of them are rare — a window three instructions wide, hit by a timer at
+250 Hz — which means a passing test suite is evidence of very little. That
+is why the audit in this document exists, and why several of the fixes here
+were confirmed by deliberately breaking them.
+
+---
+
+## 3. How Kosmos does it, and why
+
+The philosophy in `CLAUDE.md` decided most of this before any of it was
+written. Four principles did the work:
+
+**No allocator in the kernel** meant every shared structure is a fixed pool
+with a scan-and-claim allocator — and *every one of them* had the same bug:
+scan for a free slot, build in it, mark it taken last. That is a window
+hundreds of instructions wide. One shape of bug, five places, one fix.
+
+**Control by message, data by shared memory** meant the kernel is small —
+under six thousand lines of code — and most of the operating system is at
+user level sharing nothing. So the locking here covers the kernel and *not*
+the filesystem, the desktop or the browser. The hard part of SMP in a
+monolithic kernel is that every subsystem is in one address space touching
+the same structures; here they are separate processes that a second core can
+simply run.
+
+**Responsiveness is a design goal, not a later optimisation** decided the
+IPI. A cross-core wake that waits for the target's next timer tick costs
+4.7 ms; a shell command is dozens of round trips; four processors would have
+been *slower* than one. So the interrupt exists, and its value is a
+measurement rather than an argument.
+
+**One thing at a time, small and verifiable** decided the order — and the
+order was the most important decision in the whole exercise. The plan's own
+second step was *take locks with one core and let them be uncontended*, and
+it was **skipped**, because it is the one increment nothing can check: a
+lock that does nothing passes every test on a machine where nothing
+contends. The step that came instead — a second core that parks and touches
+nothing — needs no locks at all and is the only way to find out whether the
+per-CPU register is genuinely per-core.
+
+Two decisions of Kosmos's own follow from all that, and they are the ones a
+reader should take away:
+
+- **Every lock masks interrupts**, and there is no second flavour, because
+  the structures worth locking are reached from a syscall *and* an interrupt
+  handler alike.
+- **A thread has a home processor and does not migrate**, which is what lets
+  IPC release its lock *before* the context switch instead of handing it to
+  the next thread — the textbook answer, and unnecessary here.
+
+Both are argued at length in *The decisions* below.
+
+---
+
+---
+
+## As built
+
+**What exists, in the tree, today.** The rest of this document is the plan
+and the reasoning; this section is the map. Every claim here is a file you
+can open.
+
+### A processor's own state
+
+`struct percpu` in `kernel/percpu.h`, found through `TPIDR_EL1` on AArch64
+and a static on x86-64, which is honest for one processor and says so.
+`NR_CPUS` is 4 — how many *slots* exist, which is not how many the machine
+has (`hal_cpu_count`), nor how many run kernel code (`smp_online`), nor how
+many schedule threads (`thread_cpu_count`). Those four numbers are different
+questions and three of them cross to userland in `sysinfo`.
+
+Per core: `current`, the idle thread, `idle_ticks`/`busy_ticks`,
+`preempt_pending`, and the lazy-FP owner. Per core in hardware and now in
+software too: the exception vector (`VBAR_EL1`), the GIC redistributor and
+CPU interface, and the generic timer's comparator and tick counts.
+
+### How a processor comes up
+
+`kernel/smp.c`, `boot/start.S`, `hal/qemu-virt/power.c`.
+
+1. `hal_cpu_count()` asks PSCI `AFFINITY_INFO` about processor 0, 1, 2 …
+   until the firmware refuses. There is no "how many" call and no
+   device-tree parser here; counting up to the first refusal *is* the count,
+   and it starts nothing.
+2. `smp_start_others()` calls `hal_cpu_on(cpu, entry, cpu)` — PSCI `CPU_ON`
+   — with the entry address from `cpu_secondary_entry()` in `arch/`. **The
+   board knows how to start a processor and not where it should land**;
+   x86-64 refuses at both, separately, and says why in each place.
+3. `_secondary_start` sets a known `SCTLR_EL1`, traps FP, takes its two
+   stacks out of `secondary_stacks[]` by index, calls `mmu_enable_here()`
+   and jumps to C. Turning translation on is the last step of the
+   *architecture's* entry path and lives in `boot/`, not in `kernel/smp.c`
+   — which is how the x86-64 link error found it.
+4. `secondary_main()` claims its `struct percpu`, installs its own vector
+   table, runs `hal_irq_init_here()` and `hal_timer_init_here()`, adopts the
+   idle thread core zero reserved for it, publishes itself with a release
+   barrier, unmasks, and enters the same idle loop core zero runs.
+
+Ordering matters exactly once: `smp_start_others()` must be called after
+`mmu_init()` and after `hal_timer_init()`, and `kernel/main.c` says so at
+the call site because both failures are silent.
+
+### The lock
+
+`kernel/spinlock.h`, on `cpu_lock_try` / `cpu_lock_release` in
+`arch/<name>/cpu.h`.
+
+- **Every lock masks interrupts.** There is no second flavour. The
+  structures worth locking are reached from a syscall *and* from an
+  interrupt handler, so a lock held with interrupts on is a self-deadlock
+  waiting for a tick.
+- The spin is **bounded**, and the panic names the lock and the processor
+  holding it — two different failures.
+- `spin_panic` writes to the UART directly, past the console, because the
+  lock that deadlocked might be the console's.
+
+Locked today: `threads[]`, `processes[]`, `objects[]`, `spaces[]` on both
+boards, the physical page bitmap, every endpoint, every runqueue, and the
+console.
+
+**Every pool claims its slot inside the lock.** They all used to scan, build,
+and mark taken *last* — a window hundreds of instructions wide. `THREAD_CLAIMED`
+exists to be neither of the two states the allocator scans for.
+
+### The scheduler
+
+`kernel/sched.h`, `sched_prio.c`, `sched_rr.c`, `kernel/thread.c`.
+
+One runqueue per processor. The vtable names the queue —
+`enqueue(cpu, t)`, `pick_next(cpu)`, `ready(cpu)` — because "enqueue" is not
+a complete instruction on a machine with more than one, and the caller is
+frequently not the core the thread will run on.
+
+**A thread has a home** (`t->sched.cpu`), assigned when it is created, and
+does not migrate. The queue lock is held by `kernel/thread.c` and never by a
+policy, and **never across `context_switch`**, which returns on a different
+stack.
+
+`thread_block_and_release(lock, flags)` is how IPC blocks: it marks the
+thread blocked, picks a successor, releases the caller's lock at the instant
+the thread is both findable and blocked, and only then switches. It can
+release *before* the switch — where the textbook answer is to hand the lock
+to the next thread — precisely because a thread has a fixed home. The
+comment on it is where that cost returns if migration is ever added.
+
+An empty runqueue is not a deadlock any more; it is an idle processor, and
+`thread_block` falls back to that core's idle thread.
+
+### IPC
+
+`kernel/ipc.c`. **One lock per endpoint**, because no operation touches two.
+Held from before the hand-off until the sender is both on `awaiting_reply`
+and blocked — those become true at different moments, which is why the
+release happens inside `thread_block_and_release`.
+
+Three re-checks under the lock, all one pattern: `waiting_on` names the
+endpoint, so it must be read *before* there is a lock to take; take the lock
+the unlocked read pointed at, then confirm the read still holds.
+
+### Talking between processors
+
+`hal_cpu_wake(cpu)` in `hal/qemu-virt/gic.c` sends SGI 0 through
+`ICC_SGI1R_EL1`, addressed by the target's `MPIDR_EL1` affinity — which the
+target recorded for itself, because a core can only read its own.
+
+**The handler is empty.** The sender has already enqueued the thread; the
+interrupt exists to make that core *look*, and the exception epilogue
+already runs the scheduler. A `dsb ishst` before the register write is what
+makes the enqueue visible before the interrupt arrives.
+
+`thread_wake` sends one when the woken thread lives elsewhere. Not to this
+core — an interrupt to oneself is a wasted exception.
+
+### What userland sees
+
+`sysinfo` carries `cpus`, `cpus_online` and `cpus_present`; `/dev/cpu` adds
+`cores`, `cores_online` and `cores_present`. Monitor and `cores` draw one
+segmented meter per processor, all of them measured — `sys.cpuload()`
+returns a `{idle, busy}` pair per online core, and every core charges its own
+ticks. `machine` and `About Kosmos` report present against scheduling.
+
+### The switch, and how to throw it
+
+```
+make qemu                 one processor places work; the default
+make SMPWORK=4 qemu       four processors place work
+make SMPWORK=2 qemu       two, for halving the search space
+```
+
+`SMPWORK` is a boot option (`opt/kosmos/smp` through fw_cfg), read once in
+`kmain` and handed to `thread_place_across`. It is separate from `SMP`,
+which is how many processors the *machine* has — that is always four. This
+is whether the kernel puts work on them.
+
+**Off by default, and that is a policy rather than a limitation.** Every
+processor that came up can run threads, and does: `thread_create_on(cpu, …)`
+puts one anywhere and the suite crosses a core on every run. What is not
+finished is the *confidence* — spreading every thread is the first
+configuration in which two processors are inside the kernel at the same
+instant on a real workload, and the locks here have never been contended.
+
+The test image always places on one, set by the suite itself. A dozen of its
+checks mask interrupts, create three threads and drive them by yielding,
+which is a question about *this* processor's scheduler and only means
+anything if those threads are here. Spreading them would not make the tests
+better; it would make them stop asking.
+
+**Known, with `SMPWORK=4`:** the desktop comes up and runs, `sysinfo`
+reports four placing of four, and the display harness fails in its editor
+phase — the program typed into `edit` does not come back. Spawning is not
+the problem (`procs` runs and reports correctly); it looks like keyboard
+input across cores, and it is the next thing to look at. Written down here
+rather than left as a surprise.
 
 ---
 
 ## Where it stands
 
-One number that matters: **there is not a lock or an atomic anywhere in
-`kernel/` or `arch/`.** Not an `ldxr`/`stxr`, not a `lock cmpxchg`, not a
-compare-and-swap. Mutual exclusion today is a single sentence - *there is
-one core, and the kernel runs with interrupts masked* - and every data
-structure in the kernel is built on it.
+**What this replaced was a single sentence**, and it is worth keeping because
+everything above is the cost of no longer being able to say it:
 
-That is not a criticism of the code. It is the correct design for a
-uniprocessor and it is why `ipc.c` is 801 lines instead of two thousand.
-It does mean SMP is not a feature to add beside the others: it changes the
-assumption the whole kernel rests on.
+> There is one core, and the kernel runs with interrupts masked.
+
+That was mutual exclusion in Nebula from the first commit until 0.9.16. Not a
+criticism of the code - it is the correct design for a uniprocessor and it is
+why `ipc.c` is eight hundred lines instead of two thousand. It does mean SMP
+was never a feature to add beside the others: it changes the assumption every
+file in `kernel/` was written against, and the work is spread thin across all
+of them rather than concentrated in a new directory.
+
+The failures are the other reason it is hard. A slot handed out twice is not
+a crash, it is two processes sharing an address space and a fault somewhere
+else minutes later. A lost wakeup is not an error, it is a thread that never
+runs again. A stale TLB entry is not a fault, it is a *successful* read of
+somebody else's memory. And all of them are rare enough that a suite passing
+is evidence of very little - which is why the audit below exists and why
+several of the fixes here were confirmed by deliberately breaking them.
 
 **The kernel is 5,769 lines of code**, by `make size`, which counts code
 and not the comments - this codebase is more than half comments on purpose.

@@ -90,13 +90,22 @@ unblocks.
 
 ### Being built now
 
-**SMP on AArch64.** `docs/smp.md` is the plan, counted rather than guessed.
-**Steps one and three of seven are done**: the state that belongs to a
-processor lives in `struct percpu`, found through `TPIDR_EL1`, and
-`make qemu` boots four cores of which three claim their slot and park in
-`wfi`. Step two - locks - was skipped past deliberately and `smp.md`
-records why. Next is step four, an idle thread on a secondary, which is
-where the locks become testable and therefore where they come back.
+**SMP on AArch64 - the mechanism is finished; the policy is one line away.**
+`docs/smp.md` is the map. **Six of seven steps are done**: per-CPU state,
+the locks, four processors each with their own vector table, interrupt
+controller, timer, idle thread and runqueue, and an IPI worth a measured
+25x on a cross-core wake. `thread_create_on(cpu, ...)` puts a thread on any
+core and it runs there.
+
+**What is left before every thread is placed automatically is one afternoon
+and one line.** `thread_cpu_count()` returns 1 because the four virtio
+drivers have no locks - each keeps one set of virtqueue indices touched from
+a syscall and from an interrupt handler, safe today only because every
+device interrupt is routed to core zero. Lock those and the line becomes
+`return smp_online()`.
+
+Then step seven, TLB shootdown, and a panic protocol: a core that panics has
+to *stop* the others rather than queue behind them.
 
 ### Next, in this order
 
@@ -189,13 +198,13 @@ the Pi", and the Pi is not here yet.
 
 ### The system
 
-- **SMP.** Moved up to *Being built now* — see there. **This entry used to
-  claim the kernel was "written SMP-ready: no loose mutable globals, a
-  per-CPU pointer, a per-CPU runqueue with one CPU in it", and none of the
-  three was ever true** — the same sentence `CLAUDE.md` carried from the
-  first commit and corrects. The per-CPU pointer exists now because
-  somebody wrote it; the runqueue is still `head[]` and `tail[]` at file
-  scope, and there is not a lock or an atomic anywhere in `kernel/`.
+- **SMP.** Moved up to *Being built now* — see there, and `docs/smp.md` for
+  the map. **This entry used to claim the kernel was "written SMP-ready: no
+  loose mutable globals, a per-CPU pointer, a per-CPU runqueue with one CPU
+  in it", and none of the three was ever true** — the same sentence
+  `CLAUDE.md` carried from the first commit and corrects. All three are true
+  now because somebody wrote them, seven months later, which is the
+  difference between an intention and a fact.
 - **An ELF loader**, so a program can be loaded rather than compiled in.
 - **SSH**, in layers with test vectors at each: the binary packet protocol,
   Curve25519, ChaCha20-Poly1305, userauth, channels. The one place here

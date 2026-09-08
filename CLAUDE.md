@@ -299,26 +299,48 @@ to say, and hard guarantees, which would mean bounding every kernel
 operation. Kosmos wants a desktop that feels alive, not an airbag that fires
 in time.
 
-**Single-core**, and SMP is on the wishlist. **The code is not written
-SMP-ready, and this line said it was from the first commit onwards.**
+**The kernel is SMP-aware, and the machine boots four processors.** Each one
+installs its own exception vector, wakes its own GIC redistributor, arms its
+own generic timer, claims its own `struct percpu` through `TPIDR_EL1`, adopts
+its own idle thread and runs its own runqueue. `docs/smp.md` is the map of
+what exists and what is left.
 
-What it claimed - no loose mutable globals, `TPIDR_EL1` as the pointer to a
-per-CPU struct, a per-CPU runqueue even with one CPU - was true of none of
-them, ever. `TPIDR_EL1` has never appeared in `arch/` or `kernel/`; there is
-no per-CPU struct; the runqueue is `head[]` and `tail[]` at file scope in
-`sched_prio.c`; `current`, the running thread, is one global in
-`thread.c`; and there is not a lock or an atomic anywhere in the kernel.
+**What is not switched on is the placement policy.** `thread_cpu_count()`
+returns 1, so new threads are all homed on core zero and
+`thread_create_on(cpu, ...)` is how anything crosses a core. What holds that
+line is named rather than vague: the four virtio drivers keep one set of
+virtqueue indices each, touched from a syscall and from an interrupt handler,
+and are safe only because every device interrupt is routed to core zero.
+
+**This paragraph said the opposite for two years, and the correction is
+worth keeping.** It claimed the code was "written SMP-ready: no loose mutable
+globals, `TPIDR_EL1` as the pointer to a per-CPU struct, a per-CPU runqueue
+even with one CPU", and none of the three was ever true. `TPIDR_EL1` had
+never appeared in `arch/` or `kernel/`; there was no per-CPU struct; the
+runqueue was `head[]` and `tail[]` at file scope; and there was not a lock or
+an atomic anywhere.
 
 **It was an intention written in the present tense**, in the commit that set
 up the repository, before there was a kernel to describe - and nothing ever
-went back to it. Worth leaving the correction here rather than quietly
-deleting the sentence, because the failure is not the sentence: the rule
-below about a principle that stops being true fires when something
-*changes*, and this never changed, so nothing tripped. Code has `make test`.
-Prose has nobody, and this file is read as fact.
+went back to it. The rule below about a principle that stops being true fires
+when something *changes*; this never changed, so nothing tripped. Code has
+`make test`. Prose has nobody, and this file is read as fact.
 
-What SMP would actually take is in `docs/smp.md`, counted rather than
-guessed.
+Half of it is true now because somebody wrote it, seven months later, as a
+piece of work with a document and a suite behind it - which is the difference
+between an intention and a fact.
+
+**Two rules the kernel now runs under, and both are load-bearing:**
+
+- **Every lock masks interrupts.** There is no second flavour. The
+  structures worth locking are reached from both a syscall and an interrupt
+  handler, so a lock held with interrupts on is a self-deadlock waiting for
+  a tick. A critical section is therefore short, always.
+- **A thread has a home and does not migrate.** One runqueue per processor,
+  a thread assigned to one when it is created. That is what lets IPC release
+  its lock before the context switch rather than handing it to the next
+  thread, and it is what would have to be revisited before any kind of
+  balancing or work stealing.
 
 **No hardware addresses outside `hal/`.** Not one.
 

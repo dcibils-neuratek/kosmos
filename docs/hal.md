@@ -379,6 +379,24 @@ uint64_t hal_ticks(void);
 unsigned hal_cpu_count(void);
 bool     hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long context);
 
+// The half of irq_init and timer_init that belongs to *this* processor: its
+// GIC redistributor and CPU interface, its own generic timer. Both are
+// per-core by architecture, so no core can do them for another - and
+// `hal_irq_init`/`hal_timer_init` call them for the core that runs them, so
+// a board with one processor never sees the difference.
+void     hal_irq_init_here(void);
+void     hal_timer_init_here(void);
+
+// Interrupt another processor so it looks at its runqueue now rather than at
+// its next tick. There is no message: the caller has already enqueued the
+// thread. Worth 25x on a cross-core wake, measured. A board that cannot do
+// it does nothing and the system still works, more slowly.
+void     hal_cpu_wake(unsigned cpu);
+
+// Another processor's tick count, which is the only way to tell a live
+// secondary from one that started and died.
+unsigned long hal_ticks_on(unsigned cpu);
+
 // M11. Frames, and nothing above them: no addresses, no protocols, no
 // checksums. What an IP address means is not a driver's business, and a HAL
 // that grew one would be a HAL with an opinion about the internet.

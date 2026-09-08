@@ -854,6 +854,35 @@ unsigned thread_cap_count(const struct thread *t)
     return n;
 }
 
+/*
+ * How many processors new threads are spread across.
+ *
+ * **The mechanism and the policy are different questions, and this is the
+ * policy.** Every processor that arrived can run threads - `thread_create_on`
+ * puts one on any of them and it does. This says how many `thread_create`
+ * spreads across by default, and it exists as a variable because the answer
+ * is not the same for every image.
+ *
+ * `smp_online()` for a machine somebody uses. **One for the test image**,
+ * set by the suite before it runs anything, and that is not a hedge - it is
+ * the honest reading of what those tests ask. A dozen of them mask
+ * interrupts, create three threads and drive them by yielding, which is a
+ * question about *this* processor's scheduler and only means anything if
+ * those threads are here. Spreading them would not make the tests better,
+ * it would make them stop asking. The checks that are about SMP say so by
+ * using `thread_create_on`.
+ */
+static unsigned placement_cores;
+
+void thread_place_across(unsigned cores)
+{
+    if (cores == 0) {
+        cores = 1;
+    }
+
+    placement_cores = (cores > NR_CPUS) ? NR_CPUS : cores;
+}
+
 unsigned thread_cpu_count(void)
 {
     /*
@@ -900,7 +929,21 @@ unsigned thread_cpu_count(void)
  * here. Both are recorded: the first is fixed, the second is why
  * `thread_create_on` exists rather than a global switch.
  */
-    return 1;
+    /*
+     * Zero means "however many are online", asked *now* rather than latched.
+     *
+     * It was latched on the first call, and the first call happens inside
+     * `thread_init` - which runs before `smp_start_others`, when
+     * `smp_online()` is still one. So the machine cached the answer from
+     * before the other processors existed and placed every thread on core
+     * zero for ever, while reporting "1 runs threads" on a screen showing
+     * four. A cache whose first read is guaranteed to be wrong.
+     */
+    if (placement_cores != 0) {
+        return placement_cores;
+    }
+
+    return smp_online();
 }
 
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy)

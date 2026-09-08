@@ -46,8 +46,30 @@
 #include <string.h>
 
 #include "hal.h"
+#include "spinlock.h"
 #include "virtio.h"
 #include "process.h"
+
+/*
+ * The card's lock.
+ *
+ * **Two rings and two indices, and every one of them is touched from a
+ * syscall and from an interrupt handler.** `hal_net_send` publishes into the
+ * transmit ring, `hal_net_recv` consumes from the receive ring and hands a
+ * buffer back, and `net_interrupt` acknowledges - which is a read-modify-
+ * write of the same device register the other two touch on their completion
+ * paths.
+ *
+ * A frame is not a filesystem, so the failure here is milder than the block
+ * device's: a corrupted index loses or duplicates a packet, and every
+ * protocol above it is built to survive that. It is still a device driver
+ * writing a ring from two processors, which is not a thing to leave to the
+ * protocol.
+ *
+ * Masking costs nothing new - the whole path is reached from a syscall, and
+ * a syscall already runs masked.
+ */
+static struct spinlock net_lock = SPINLOCK("virtio-net");
 
 /*
  * virtio_net.h, the features worth naming.
@@ -145,7 +167,8 @@ static void offer(unsigned i)
 
     net.rx.avail.ring[at] = (uint16_t)i;
 
-    /* The entry has to be visible before the index that publishes it. */
+    
+/* The entry has to be visible before the index that publishes it. */
     virtio_publish();
     net.rx.avail.idx++;
 }
@@ -226,7 +249,7 @@ bool hal_net_init(struct netdev *out)
     return false;
 }
 
-bool hal_net_send(const void *frame, unsigned bytes)
+static bool hal_net_send_locked(const void *frame, unsigned bytes)
 {
     struct packet *p;
     uint16_t at;
@@ -281,7 +304,20 @@ bool hal_net_send(const void *frame, unsigned bytes)
     return true;
 }
 
-int hal_net_recv(void *frame, unsigned max)
+/*
+ * Publishes into the transmit ring and reaps it; two cores doing that at
+ * once corrupt the index. See the lock.
+ */
+bool hal_net_send(const void *frame, unsigned bytes)
+{
+    unsigned long flags = spin_lock(&net_lock);
+    bool r = hal_net_send_locked(frame, bytes);
+
+    spin_unlock(&net_lock, flags);
+    return r;
+}
+
+static int hal_net_recv_locked(void *frame, unsigned max)
 {
     unsigned slot;
     uint32_t len;
@@ -342,6 +378,19 @@ int hal_net_recv(void *frame, unsigned max)
     return (int)len;
 }
 
+/*
+ * Consumes the receive ring and offers the buffer back, which is a
+ * read-modify-write of two indices.
+ */
+int hal_net_recv(void *frame, unsigned max)
+{
+    unsigned long flags = spin_lock(&net_lock);
+    int r = hal_net_recv_locked(frame, max);
+
+    spin_unlock(&net_lock, flags);
+    return r;
+}
+
 bool hal_net_present(void)
 {
     return net.present;
@@ -368,7 +417,7 @@ bool hal_net_arrived(void)
     return was;
 }
 
-void net_interrupt(unsigned slot)
+static void net_interrupt_locked(unsigned slot)
 {
     if (!net.present || net.dev.slot != slot) {
         return;
@@ -394,4 +443,16 @@ void net_interrupt(unsigned slot)
     /* And whoever is waiting for one. The card said so, rather than the
      * stack asking at a rate somebody picked. */
     process_wake_net();
+}
+
+/*
+ * The interrupt half of the pair: it acknowledges on the same device
+ * register the two above touch.
+ */
+void net_interrupt(unsigned slot)
+{
+    unsigned long flags = spin_lock(&net_lock);
+
+    net_interrupt_locked(slot);
+    spin_unlock(&net_lock, flags);
 }

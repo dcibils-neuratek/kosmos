@@ -189,6 +189,68 @@ This is where the system's properties get tested, not its functions: that a serv
 
 ---
 
+## 18.2b Testing more than one processor
+
+**A lock is the one thing in a kernel that cannot be tested by using it.**
+Every structure a lock protects works perfectly well with a lock that does
+nothing at all, on a machine where nothing contends — which is why the plan's
+own second step, "take locks with one core and let them be uncontended", was
+skipped: it is the one increment nothing can check.
+
+So the SMP checks are about *mechanism*, and each was confirmed by breaking
+it. That last part is not ceremony. A test for a race that has never fired is
+indistinguishable from a test that asserts nothing, and the only way to tell
+them apart is to make the thing fail on purpose and watch the test notice.
+
+| Check | Fails when |
+|---|---|
+| `lock: a spinlock excludes, names its holder and masks` | it does not mask (interrupts still on inside), or it hands the same word to two callers |
+| `cpu: the machine says how many processors it has` | `hal_cpu_count` is hardcoded — which `-smp 1` cannot detect |
+| `cpu: every processor claimed its own slot` | `TPIDR_EL1` is not really per-core |
+| `cpu: every processor takes its own ticks` | a secondary never armed its comparator |
+| `cpu: every processor idles as a thread` | a secondary ticks but has no `current` to charge it to |
+| `smp: a thread runs on another processor` | placement, the target's runqueue, its lock, or its idle loop |
+
+Three things about that table are deliberate.
+
+**The suite boots `-smp 4`.** On one processor a working discovery is
+indistinguishable from a hardcoded 1, and `percpu_at(i)->index == i` cannot
+be told from a global. The whole first half of the table needs a second core
+to mean anything.
+
+**It also changed the suite's timing**, which caught the project out twice.
+Four vCPUs round-robin in one TCG thread, so core zero executes roughly a
+quarter of the instructions per tick that it used to. Two tests that were
+bounded by the clock still failed, because a tick is *wall-clock* time and
+how much work fits inside one had changed. A third failed because it consumed
+a whole fixed pool and was therefore an undeclared assertion that nothing
+else in the machine held a slot.
+
+**`smp: a thread runs on another processor` never yields.** Core zero sits
+doing nothing while it waits. If the thread only ran because this processor
+gave up the CPU, it would prove nothing about the other one.
+
+### What cannot be checked here, and what is done instead
+
+Mutual exclusion **under real contention** is not tested, and cannot be while
+`thread_cpu_count()` returns 1. Two things stand in for it:
+
+- **An audit.** Four readers over `kernel/`, `arch/` and `hal/`, each handed
+  to a second reader told to refute it. About sixty structures, and it found
+  three things nothing else would have: an interrupt path missing a
+  core-zero guard, a TLB invalidation that was local where it had to be
+  broadcast, and a comment that had been wrong since it was written.
+- **Deliberately switching placement on** to see what breaks, then off
+  again. Two things did, inside a second, and both are recorded rather than
+  quietly fixed.
+
+And one fix is in the tree that **no test can confirm**: the release/acquire
+pair around publishing a secondary's `struct percpu`. It passes whether or
+not it is correct. It is there because it was reasoned about and reviewed,
+and saying so is the honest status of it.
+
+---
+
 ## 18.3 QEMU and hardware measure different things
 
 **This has to be clear before looking at any number.**

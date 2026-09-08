@@ -1397,7 +1397,19 @@ NET_FLAGS := $(if $(NONET),,-netdev user$(comma)id=net0$(FORWARD) \
 # one bug in it that reached a commit was invisible except in that line.
 SMP ?= 4
 
-QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) \
+# How many processors new threads are spread across, inside the guest.
+#
+# **Separate from `SMP`, which is how many the machine has.** The machine
+# always boots four; this says whether the kernel places work on them.
+# `make SMPWORK=4 qemu` runs the desktop on four processors,
+# `make SMPWORK=2 qemu` halves the search space when something breaks, and
+# the default is one - the mechanism is finished and the confidence is not,
+# and `docs/smp.md` says which is which.
+SMPWORK ?=
+
+SMPARG := $(if $(SMPWORK),-fw_cfg 'name=opt/kosmos/smp$(comma)string=$(SMPWORK)',)
+
+QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG) \
              -global virtio-mmio.force-legacy=false \
              -device ramfb -device virtio-keyboard-device \
              -device virtio-tablet-device \
@@ -1413,7 +1425,7 @@ QEMUFLAGS := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) \
 # terminal is all there is - over ssh, for instance.
 # No window, and therefore no keyboard: with -display none QEMU has nowhere
 # to take key presses from, so the virtio device would sit there empty.
-QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) -nographic \
+QEMUFLAGS_SERIAL := -M virt,gic-version=3 $(ACCEL) -m 512M -smp $(SMP) $(SMPARG) -nographic \
                     -global virtio-mmio.force-legacy=false \
                     $(NET_FLAGS) \
                     -drive file=$(DISK),format=raw,if=none,id=disk \

@@ -43,7 +43,23 @@
 
 #include "mmio.h"
 #include "hal.h"
+#include "spinlock.h"
 #include "virtio.h"
+
+/*
+ * The input devices' lock.
+ *
+ * **A queue of key transitions and a cursor position**, filled by
+ * `input_interrupt` and drained by `keyboard_getchar` and
+ * `hal_pointer_poll` - the clearest interrupt-versus-syscall pair in the
+ * tree, and the one whose failure a person would actually see: a torn
+ * head and tail index is a keystroke that arrives twice or not at all.
+ *
+ * One lock for both devices rather than one each. They share the decode
+ * state and the queue, and two locks over one queue is two ways to be
+ * wrong.
+ */
+static struct spinlock input_lock = SPINLOCK("virtio-input");
 
 /*
  * How many events can be outstanding.
@@ -569,17 +585,30 @@ static void service(struct vinput *v, unsigned line)
         return;
     }
 
-    /* The device raised it; the device is told it was seen. Without the ack
+    
+/* The device raised it; the device is told it was seen. Without the ack
      * the status bit stays set and the interrupt fires for ever. */
     if (virtio_ack_interrupt(&v->dev) != 0) {
         input_arrived = true;
     }
 }
 
-void input_interrupt(unsigned line)
+static void input_interrupt_locked(unsigned line)
 {
     service(&keyboard, line);
     service(&tablet, line);
+}
+
+/*
+ * Fills the key queue and the cursor from the handler; the three below
+ * drain them from a syscall.
+ */
+void input_interrupt(unsigned line)
+{
+    unsigned long flags = spin_lock(&input_lock);
+
+    input_interrupt_locked(line);
+    spin_unlock(&input_lock, flags);
 }
 
 bool hal_keyboard_init(void)
@@ -646,7 +675,7 @@ bool hal_input_pending(void)
     return pending;
 }
 
-bool hal_pointer_poll(struct pointer_state *out)
+static bool hal_pointer_poll_locked(struct pointer_state *out)
 {
     struct virtio_input_event event;
 
@@ -702,7 +731,19 @@ bool hal_pointer_poll(struct pointer_state *out)
     return true;
 }
 
-int keyboard_getchar(void)
+/*
+ * Drains every pending event into the cursor and reports where it is.
+ */
+bool hal_pointer_poll(struct pointer_state *out)
+{
+    unsigned long flags = spin_lock(&input_lock);
+    bool r = hal_pointer_poll_locked(out);
+
+    spin_unlock(&input_lock, flags);
+    return r;
+}
+
+static int keyboard_getchar_locked(void)
 {
     /* Whatever the last key still owes. An arrow is three bytes and they
      * leave one at a time, in order, like any other input. */
@@ -836,6 +877,18 @@ int keyboard_getchar(void)
             return (int)c;
         }
     }
+}
+
+/*
+ * Takes one byte out of the queue the interrupt fills.
+ */
+int keyboard_getchar(void)
+{
+    unsigned long flags = spin_lock(&input_lock);
+    int r = keyboard_getchar_locked();
+
+    spin_unlock(&input_lock, flags);
+    return r;
 }
 
 bool keyboard_present(void)
