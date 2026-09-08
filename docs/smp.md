@@ -85,6 +85,73 @@ found.
 
 ## What has to be locked
 
+**Audited against the code rather than remembered, and the list is about
+sixty rather than five.** Four readers went through `kernel/`, `arch/` and
+`hal/` and each was then handed to a second reader told to find what it
+missed. What follows is the shape of the answer; the code carries the
+detail, because a list in a document is the thing that goes stale.
+
+**The centre of gravity is not the runqueue.** That is the part everyone
+expects, and the vtable in `sched.h` already makes it the easiest to move.
+What actually needs care is thread *state* - `t->state`, the three priority
+fields, `wake_at` - and the allocation pools underneath everything.
+
+Four groups, and they want different things:
+
+- **The pools want a lock each, and the claim must be inside it.** Every one
+  of them - `threads[]`, `processes[]`, `objects[]`, `spaces[]` on both
+  boards - used the same pattern: scan for a free slot, build in it, mark it
+  taken. The window between finding a slot and claiming it is *hundreds of
+  instructions* long, including page allocation and a 512-entry table copy,
+  and two cores in `SYS_SPAWN` at once get the same thread, the same process
+  and the same address space with nothing anywhere noticing. `memobj_create`
+  was the one that already claimed first, and its comment says why.
+
+  **Done**, and it found a bug in the doing. Moving the claim inside
+  `alloc_process` was not enough, because `process_create` then ran
+  `memset(p, 0, sizeof *p)` over the slot - clearing the very flag that
+  claims it, and reopening the window for the length of a 160-byte memset.
+  The suite caught it on the first run.
+
+- **Some things want to be per-CPU rather than locked.** The lazy-FP
+  `owner`, whose own comment predicted this. The armed-fault slot in
+  `trap.c`. On x86-64: the TSS and its `rsp0`, the `user_rsp` scratch cell,
+  and the `syscall`/`sysret` MSRs - none of which matters until that board
+  starts a second core, and all of which is why it should not.
+
+- **The drivers want locks and are reached from interrupt handlers.**
+  `blk`, `net`, `input` and `snd` each keep one set of virtqueue indices,
+  and every one of them is touched from both a syscall and an interrupt.
+  Nothing here is subtle; there is just a lot of it.
+
+- **Two things want a protocol rather than a lock.** `panic()` on one core
+  while another is running is not a mutual-exclusion problem - the second
+  core has to be stopped, not queued. And the console's screen state can be
+  locked, but a lock taken by a panicking core is a lock nobody releases.
+
+### IPC, which is still the hard one
+
+The audit's answer is one sentence: **the endpoint is the right lock, one
+per endpoint rather than one for the subsystem, and the critical section has
+to extend across `thread_block()`** - handed to the next thread and released
+on the far side of the switch.
+
+Per-endpoint costs nothing, because no operation in `ipc.c` touches two
+endpoints: `resolve` returns exactly one and every splice works on that one.
+What makes the section span the block is the order `ipc_call` does things
+in. It wakes the receiver and only *then* pushes itself onto
+`awaiting_reply`, records `waiting_on` and blocks - so on two cores the peer
+can reply before the sender has blocked, and `ipc_reply` reads a NULL
+`waiting_on` and returns `IPC_ERR_NO_PEER`. That is not a race that
+corrupts memory; it is a message that is silently lost.
+
+**And the runqueue lock cannot be held across the context switch**, which is
+an ordering constraint disguised as an architecture detail: `context_switch`
+returns on a different stack, so a lock taken before it is released by a
+different thread than took it. Pick under the lock, let go, then switch.
+
+### The five it used to say, which are still true
+
 Five shared structures, and they are not equally hard.
 
 **The easy ones are the pools.** `threads[]`, `processes[]`, `endpoints[]`,

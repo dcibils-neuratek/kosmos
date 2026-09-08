@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "page.h"
 #include "pmm.h"
+#include "spinlock.h"
 #include "panic.h"
 #include "hal.h"
 
@@ -524,8 +525,22 @@ unsigned as_total(void)
     return ADDRSPACE_MAX;
 }
 
+/*
+ * The address-space pool's lock. The AArch64 twin explains the shape: the
+ * claim happens inside, and the page allocation outside, so this lock is
+ * never held while the PMM's is taken.
+ *
+ * This board cannot start a second core - `hal/pc/cpu_on.c` has no local
+ * APIC - so nothing here ever contends. It is written anyway, because the
+ * two files are the same design against different tables and a lock present
+ * in one and absent in the other is exactly the difference nobody notices
+ * until the second board grows a second core.
+ */
+static struct spinlock spaces_lock = SPINLOCK("address spaces");
+
 struct addrspace *as_create(void)
 {
+    unsigned long flags = spin_lock(&spaces_lock);
     unsigned i;
 
     for (i = 0; i < ADDRSPACE_MAX; i++) {
@@ -535,15 +550,30 @@ struct addrspace *as_create(void)
             continue;
         }
 
+        spaces[i].in_use = true;
+        spaces[i].pml4 = NULL;
+        spaces[i].pdpt = NULL;
+        spin_unlock(&spaces_lock, flags);
+
         spaces[i].pml4 = pmm_alloc_page();
         if (spaces[i].pml4 == NULL) {
+            unsigned long back = spin_lock(&spaces_lock);
+
+            spaces[i].in_use = false;
+            spin_unlock(&spaces_lock, back);
             return NULL;
         }
 
         spaces[i].pdpt = pmm_alloc_page();
         if (spaces[i].pdpt == NULL) {
+            unsigned long back;
+
             pmm_free_page(spaces[i].pml4);
             spaces[i].pml4 = NULL;
+
+            back = spin_lock(&spaces_lock);
+            spaces[i].in_use = false;
+            spin_unlock(&spaces_lock, back);
             return NULL;
         }
 
@@ -570,10 +600,10 @@ struct addrspace *as_create(void)
 
         spaces[i].pml4[0] = (uint64_t)(uintptr_t)spaces[i].pdpt | TABLE_ATTRS;
 
-        spaces[i].in_use = true;
         return &spaces[i];
     }
 
+    spin_unlock(&spaces_lock, flags);
     return NULL;
 }
 

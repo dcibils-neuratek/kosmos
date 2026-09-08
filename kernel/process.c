@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "process.h"
+#include "spinlock.h"
 #include "screen.h"
 #include "syscall.h"
 #include "sched.h"
@@ -178,16 +179,53 @@ unsigned process_slots_used(void)
     return n;
 }
 
+/*
+ * The process pool's lock.
+ *
+ * Same shape as the thread pool's and for the same reason: the scan and the
+ * claim are one operation, and splitting them leaves a window where two
+ * cores are handed the same slot. `in_use` is set here rather than by the
+ * caller, which is what closes it.
+ *
+ * `process_count` reads the pool without taking this, deliberately. It is a
+ * statistic - `procs` and `sysinfo` show it - and a count that is one out
+ * because a process was being created while it was read is a count that was
+ * true a microsecond earlier. Taking a lock to make a number briefly more
+ * accurate would put every reader of `sysinfo` in the way of every process
+ * that starts.
+ */
+static struct spinlock processes_lock = SPINLOCK("processes");
+
 static struct process *alloc_process(void)
 {
+    unsigned long flags = spin_lock(&processes_lock);
     unsigned i;
 
     for (i = 0; i < PROCESS_MAX; i++) {
         if (!processes[i].in_use) {
+            /*
+             * Zeroed here, inside the lock, and that is not tidiness.
+             *
+             * `process_create` used to `memset` the slot itself, right after
+             * this returned - which cleared the very `in_use` flag that
+             * claims it. The slot read as free again for the length of a
+             * 160-byte memset, and a second core scanning in that window
+             * took it: two processes on one slot, the second overwriting the
+             * first's address space, and a translation fault at the user
+             * text base a moment later with nothing to say why.
+             *
+             * It was caught by the suite the first time it ran, which is the
+             * argument for locking the pools before anything contends for
+             * them rather than after.
+             */
+            memset(&processes[i], 0, sizeof(processes[i]));
+            processes[i].in_use = true;
+            spin_unlock(&processes_lock, flags);
             return &processes[i];
         }
     }
 
+    spin_unlock(&processes_lock, flags);
     return NULL;
 }
 
@@ -217,7 +255,7 @@ static void process_main(void *arg)
 struct process *process_create(const char *name, const void *image,
                                size_t len, unsigned long arg)
 {
-    struct process *p = alloc_process();
+    struct process *p = alloc_process();   /* zeroed and claimed */
     const uint64_t *header = image;
     size_t pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
     size_t rx_bytes;
@@ -300,7 +338,6 @@ struct process *process_create(const char *name, const void *image,
         return NULL;
     }
 
-    memset(p, 0, sizeof(*p));
 
     p->space = as_create();
     if (p->space == NULL) {
@@ -368,9 +405,23 @@ struct process *process_create(const char *name, const void *image,
         goto fail;
     }
 
-    p->in_use = true;
+    /*
+     * `in_use` is already true - `alloc_process` set it when it claimed the
+     * slot - and this says so rather than setting it again, because a reader
+     * finding it set here would reasonably conclude the claim happens at
+     * this line and that the window above is open.
+     */
     p->exited = false;
-    p->id = next_id++;
+
+    /* The id under the pool's lock, for the reason the thread id is: two
+     * cores creating a process at once would otherwise be handed the same
+     * one, and an id is what `procs` and `kill` name a process by. */
+    {
+        unsigned long idflags = spin_lock(&processes_lock);
+
+        p->id = next_id++;
+        spin_unlock(&processes_lock, idflags);
+    }
     p->arg = arg;
     p->image = image;
     p->image_len = len;

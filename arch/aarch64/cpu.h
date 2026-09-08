@@ -2,6 +2,7 @@
 #ifndef ARCH_AARCH64_CPU_H
 #define ARCH_AARCH64_CPU_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -262,6 +263,76 @@ static inline uintptr_t cpu_secondary_entry(void)
 static inline void cpu_relax(void)
 {
     __asm__ volatile("yield" ::: "memory");
+}
+
+/*
+ * Whether interrupts are currently taken on this core.
+ *
+ * Read rather than assumed. `PSTATE.I` set means IRQ is masked, so this is
+ * the negation of a bit - written out because "I" reads like "interrupts on"
+ * and means the opposite, which is the kind of thing that is right in the
+ * head of whoever wrote it and wrong in everybody else's.
+ *
+ * Exists for one assertion: that a lock really does mask, which is the
+ * property the whole locking design rests on and is invisible from anywhere
+ * else.
+ */
+static inline bool cpu_interrupts_enabled(void)
+{
+    uint64_t daif;
+
+    __asm__ volatile("mrs %0, daif" : "=r"(daif));
+
+    return (daif & (1UL << 7)) == 0;    /* PSTATE.I */
+}
+
+/*
+ * The one instruction pair a lock is built from.
+ *
+ * **This is the first atomic in this kernel**, and it arrives with
+ * `docs/smp.md` step five - a second core running threads - because until
+ * now mutual exclusion here was one sentence: there is one core, and the
+ * kernel runs with interrupts masked.
+ *
+ * `ldaxr` is a load-acquire *exclusive*: it reads the word, takes the
+ * exclusive monitor, and orders everything after it. `stxr` stores only if
+ * nothing else touched the address in between, and reports whether it won.
+ * The pair is how AArch64 spells compare-and-swap, and the retry loop lives
+ * in the caller because a failed `stxr` is not a held lock - it is a lost
+ * race, and the difference matters for how long you spin.
+ *
+ * `clrex` on the giving-up path, because a `ldaxr` with no matching store
+ * leaves the monitor set and the next unrelated exclusive sequence would
+ * inherit it.
+ *
+ * The release is `stlr`, a store-release: everything this core did inside
+ * the critical section is visible before the word reads as free. Not a `dmb`
+ * and then a plain store, which is the same thing written less clearly and
+ * one instruction slower.
+ */
+static inline bool cpu_lock_try(volatile unsigned *word)
+{
+    unsigned prev;
+    unsigned failed;
+
+    __asm__ volatile(
+        "   ldaxr   %w0, [%2]       \n"
+        "   cbnz    %w0, 1f         \n"
+        "   stxr    %w1, %w3, [%2]  \n"
+        "   b       2f              \n"
+        "1: clrex                   \n"
+        "   mov     %w1, #1         \n"
+        "2:                         \n"
+        : "=&r"(prev), "=&r"(failed)
+        : "r"(word), "r"(1u)
+        : "memory", "cc");
+
+    return (prev == 0u) && (failed == 0u);
+}
+
+static inline void cpu_lock_release(volatile unsigned *word)
+{
+    __asm__ volatile("stlr wzr, [%0]" :: "r"(word) : "memory");
 }
 
 /*

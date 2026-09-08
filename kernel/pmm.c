@@ -5,6 +5,7 @@
 
 #include "pmm.h"
 #include "panic.h"
+#include "spinlock.h"
 #include "page.h"
 #include "hal.h"
 
@@ -95,8 +96,25 @@ void pmm_init(void)
     }
 }
 
+/*
+ * The bitmap's lock.
+ *
+ * **One lock for the whole allocator, and that is the right grain here.**
+ * The bitmap is one array, the cursor is one word, and the free count is one
+ * number - there is nothing to partition. Per-CPU free lists are the usual
+ * next step and they are an optimisation for contention that does not exist
+ * yet: a page is allocated when a process starts or a region is made, not on
+ * any hot path. `docs/smp.md` names it as the thing to do if this ever shows
+ * up in a profile.
+ *
+ * Held across the scan *and* the `set_used`, because those two together are
+ * the claim - the same window `alloc_thread` had.
+ */
+static struct spinlock pmm_lock = SPINLOCK("pmm");
+
 void *pmm_alloc_page(void)
 {
+    unsigned long flags = spin_lock(&pmm_lock);
     size_t words = bitmap_words();
     size_t n;
 
@@ -119,14 +137,17 @@ void *pmm_alloc_page(void)
 
         set_used(i);
         cursor = w;
+        spin_unlock(&pmm_lock, flags);
         return (void *)(ram_base + i * PAGE_SIZE);
     }
 
+    spin_unlock(&pmm_lock, flags);
     return NULL;
 }
 
 void *pmm_alloc_contiguous(size_t count)
 {
+    unsigned long flags;
     size_t start;
     size_t i;
 
@@ -144,6 +165,8 @@ void *pmm_alloc_contiguous(size_t count)
      * first-fit scan over a bitmap is the easiest thing to reason about when
      * it goes wrong.
      */
+    flags = spin_lock(&pmm_lock);
+
     for (start = 0; start + count <= total; start++) {
         if (!page_is_free(start)) {
             continue;
@@ -165,14 +188,17 @@ void *pmm_alloc_contiguous(size_t count)
             set_used(start + i);
         }
 
+        spin_unlock(&pmm_lock, flags);
         return (void *)(ram_base + start * PAGE_SIZE);
     }
 
+    spin_unlock(&pmm_lock, flags);
     return NULL;
 }
 
 void pmm_free_page(void *page)
 {
+    unsigned long flags;
     uintptr_t addr = (uintptr_t)page;
     size_t i;
 
@@ -190,7 +216,19 @@ void pmm_free_page(void *page)
         panic("pmm_free_page: address is past the end of RAM");
     }
 
+    /*
+     * The checks above are on the address and need no lock; from here it is
+     * the bitmap.
+     *
+     * The double-free check is inside, because it is a *read of the bitmap*
+     * and the panic it raises has to be true - reading it unlocked would let
+     * two cores freeing two different pages in the same word race the
+     * read-modify-write in `set_free` and lose one of them.
+     */
+    flags = spin_lock(&pmm_lock);
+
     if (page_is_free(i)) {
+        spin_unlock(&pmm_lock, flags);
         panic("pmm_free_page: double free");
     }
 
@@ -201,6 +239,8 @@ void pmm_free_page(void *page)
     if (i / 64 < cursor) {
         cursor = i / 64;
     }
+
+    spin_unlock(&pmm_lock, flags);
 }
 
 size_t pmm_free_pages(void)

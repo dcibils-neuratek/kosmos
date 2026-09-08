@@ -2,6 +2,7 @@
 #ifndef ARCH_X86_64_CPU_H
 #define ARCH_X86_64_CPU_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -285,6 +286,57 @@ static inline void *cpu_self(void)
  * power. Neither is a barrier and neither orders anything - the loop still
  * needs whatever it needed.
  */
+/*
+ * Whether interrupts are currently taken on this core.
+ *
+ * RFLAGS.IF, bit 9, and here the bit reads the way it sounds: set means
+ * interrupts are enabled. The AArch64 twin is the negation of a mask, which
+ * is the trap that one names.
+ */
+static inline bool cpu_interrupts_enabled(void)
+{
+    uint64_t flags;
+
+    __asm__ volatile("pushfq; popq %0" : "=r"(flags) :: "memory");
+
+    return (flags & (1UL << 9)) != 0;   /* RFLAGS.IF */
+}
+
+/*
+ * The one instruction a lock is built from.
+ *
+ * `xchg` to memory is atomic whether or not it is written with a `lock`
+ * prefix - the prefix is implied for this one instruction - and it carries
+ * full ordering with it, so there is no separate acquire to write. The
+ * prefix is here anyway because a reader should not have to know that.
+ *
+ * The release is a plain store, and that is not a shortcut: **x86-64 is
+ * total-store-ordered**, so every write this core made inside the critical
+ * section is already visible before a later store is. What is missing is a
+ * promise from the *compiler*, which is what the empty asm with a memory
+ * clobber buys - the same bargain `cpu_publish` makes two functions up.
+ *
+ * The AArch64 twin needs `ldaxr`/`stxr` and a retry loop, because a weakly
+ * ordered machine gives neither the atomicity nor the ordering for free.
+ * That asymmetry is why `docs/smp.md` does SMP on ARM first.
+ */
+static inline bool cpu_lock_try(volatile unsigned *word)
+{
+    unsigned prev = 1u;
+
+    __asm__ volatile("lock xchgl %0, %1"
+                     : "+r"(prev), "+m"(*word)
+                     :: "memory");
+
+    return prev == 0u;
+}
+
+static inline void cpu_lock_release(volatile unsigned *word)
+{
+    __asm__ volatile("" ::: "memory");
+    *word = 0u;
+}
+
 /*
  * The two halves of handing a structure to another processor.
  *

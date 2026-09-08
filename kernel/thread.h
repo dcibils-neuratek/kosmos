@@ -77,7 +77,25 @@ enum thread_state {
     THREAD_READY,       /* on the runqueue, waiting for a turn */
     THREAD_RUNNING,     /* the one executing right now */
     THREAD_BLOCKED,     /* waiting on something; not on the runqueue */
-    THREAD_DEAD         /* returned from its entry function */
+    THREAD_DEAD,        /* returned from its entry function */
+
+    /*
+     * Taken out of the pool and not yet a thread.
+     *
+     * **It exists to be neither of the two states the allocator looks
+     * for.** `alloc_thread` scans for `THREAD_UNUSED` and then for
+     * `THREAD_DEAD`, and used to hand the slot back with its state
+     * untouched - so between being chosen and being filled in, the slot was
+     * still whatever the scan had matched, and a second core scanning in
+     * that window was handed the same one. Nothing faults when that
+     * happens: the second caller simply overwrites the first's thread, and
+     * there is one thread where there were two.
+     *
+     * The window was invisible on one core, because there was no second
+     * scanner. It is the smallest possible change that closes it: claim
+     * inside the lock, and let the state say so.
+     */
+    THREAD_CLAIMED
 };
 
 struct process;

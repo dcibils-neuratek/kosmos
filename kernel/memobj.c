@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "memobj.h"
+#include "spinlock.h"
 #include "pmm.h"
 #include "page.h"
 #include "panic.h"
@@ -59,6 +60,22 @@ static void unwind(struct memobj *m, size_t built)
     m->in_use = false;
 }
 
+/*
+ * The region pool's lock.
+ *
+ * This file already understood the shape of the problem before there were
+ * two cores: the comment below claims the slot before building in it,
+ * because a syscall runs with interrupts on and can be *preempted* between
+ * finding a slot and finishing with it. That is the same window a second
+ * core opens, one step wider - preemption interleaves two callers on one
+ * core, and a second core runs them at the same instant.
+ *
+ * So the lock covers exactly what the comment already identified: the scan
+ * and the claim. Everything after - hundreds of page allocations - happens
+ * outside it, on a slot nobody else can now find.
+ */
+static struct spinlock objects_lock = SPINLOCK("regions");
+
 struct memobj *memobj_create(size_t pages)
 {
     unsigned i;
@@ -71,8 +88,10 @@ struct memobj *memobj_create(size_t pages)
         struct memobj *m = &objects[i];
         size_t indexes = (pages + MEMOBJ_PER_INDEX - 1) / MEMOBJ_PER_INDEX;
         size_t k, n;
+        unsigned long flags = spin_lock(&objects_lock);
 
         if (m->in_use) {
+            spin_unlock(&objects_lock, flags);
             continue;
         }
 
@@ -91,6 +110,8 @@ struct memobj *memobj_create(size_t pages)
          * release it again, which is what `unwind` does.
          */
         m->in_use = true;
+        spin_unlock(&objects_lock, flags);
+
         m->pages = pages;
         m->indexes = 0;
 

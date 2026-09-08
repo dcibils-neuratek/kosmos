@@ -393,6 +393,28 @@ void trap_handler(unsigned index, struct trapframe *tf)
             hal_irq_handle();
 
             /*
+             * The same guard vector 1 has, and it was missing here.
+             *
+             * **Dormant rather than harmless.** This is the interrupt taken
+             * from EL0, and a secondary today runs only its idle thread,
+             * which is kernel code - so no core but zero ever reaches this
+             * path at all. The moment `docs/smp.md` step five puts a user
+             * thread on a secondary, every core runs
+             * `thread_wake_sleepers_now` and `console_tick` from here, which
+             * are the two calls the other path guards against for exactly
+             * the reason it names.
+             *
+             * Found by auditing the code rather than by running it, which is
+             * the only way this class of thing is ever found: the failure it
+             * would have caused does not exist yet.
+             */
+            if (this_cpu()->index != 0) {
+                thread_tick();
+                die_if_killed();
+                return;
+            }
+
+            /*
              * An input interrupt is a reason for somebody to stop sleeping,
              * and the only thing that knows a thread asked to sleep is the
              * scheduler. Waking every sleeper is right rather than lazy:

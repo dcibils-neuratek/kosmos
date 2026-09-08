@@ -12,13 +12,18 @@
  * not pays nothing at all, and most do not: the kernel's own C cannot emit
  * an FP instruction, so every kernel thread is in the second group.
  *
- * `owner` is per-CPU state in everything but name. `CLAUDE.md` forbids loose
- * mutable globals for exactly this reason and this is one until there is a
- * second core to give it to; when SMP arrives it belongs beside the
- * runqueue in the per-CPU structure, and the FP registers of a thread that
- * last ran on another core have to be recalled from that core rather than
- * assumed present. That is written here because it is the kind of thing
- * that is obvious now and invisible later.
+ * **The owner is per-CPU, and it took its own advice.** This comment used to
+ * say that `owner` was per-CPU state in everything but name, that
+ * `CLAUDE.md` forbids loose mutable globals for exactly this reason, and
+ * that when SMP arrived it belonged in the per-CPU structure. It does, and
+ * it is there: `this_cpu()->fp_owner`.
+ *
+ * The rest of what that note predicted has not happened yet and is not
+ * solved by moving the field. A thread whose registers were last loaded on
+ * another core would have to have them recalled from that core rather than
+ * assumed present - and today it cannot arise, because each core has its own
+ * runqueue and nothing migrates between them. `kernel/percpu.h` says where
+ * the recall goes when something does.
  */
 
 #include <stddef.h>
@@ -26,6 +31,7 @@
 
 #include "context.h"
 #include "cpu.h"
+#include "percpu.h"
 
 #include "thread.h"
 
@@ -33,8 +39,14 @@
 void fp_save(struct context *ctx);
 void fp_restore(struct context *ctx);
 
-/* The thread whose values are in the registers right now, or none. */
-static struct thread *owner;
+/*
+ * Whose values are in *this* core's registers, or none.
+ *
+ * A macro over the per-CPU field rather than twenty edited call sites -
+ * Linux's idiom, and the same one `current` already uses in `thread.c` for
+ * the same reason: the sites were correct and say what they mean.
+ */
+#define owner   (*(struct thread **)&this_cpu()->fp_owner)
 
 static inline void fpen_allow(void)
 {

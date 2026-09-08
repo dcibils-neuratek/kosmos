@@ -7,6 +7,7 @@
 #include "fault.h"
 #include "machine.h"
 #include "percpu.h"
+#include "spinlock.h"
 #include "smp.h"
 #include "console.h"
 #include "trap.h"
@@ -614,7 +615,23 @@ static bool run_three_and_record(const struct scheduler *policy)
      * finishes the moment the three are done, so the common case is
      * quicker rather than slower.
      */
-    guard = hal_ticks() + 50;               /* 200 ms; they need a few */
+    /*
+     * **A second, and it was two hundred milliseconds.**
+     *
+     * Bounding by the clock rather than by a count of yields was the right
+     * fix and is not the whole of it: a tick is wall-clock time, and how
+     * much *work* fits inside two hundred milliseconds of it changed when
+     * the suite started booting `-smp 4`. Four vCPUs under TCG round-robin
+     * in one host thread, so core zero now gets roughly a quarter of the
+     * host's attention and executes roughly a quarter of the instructions
+     * per tick that it used to.
+     *
+     * The bound is a *failure* bound: it is reached only when the three
+     * threads never finish, and the loop leaves the moment they do. Making
+     * it five times longer costs nothing in the passing case and stops the
+     * suite reporting a scheduler bug when what it measured was the host.
+     */
+    guard = hal_ticks() + 250;              /* a second, on a busy host */
 
     while (trace_len < 3 && hal_ticks() < guard) {
         thread_yield();
@@ -3184,9 +3201,19 @@ static bool test_enough_address_spaces_for_every_process(void)
 {
     /*
      * ADDRSPACE_MAX lives in arch/aarch64/mmu.c and PROCESS_MAX in
-     * kernel/process.h, and nothing can check the two against each other at
-     * compile time: `arch/` is "which CPU are you" and must not include a
-     * kernel header to find out how many processes there are.
+     * kernel/process.h, and nothing checks the two against each other at
+     * compile time.
+     *
+     * The reason given here used to be that `arch/` "must not include a
+     * kernel header", and that is not true and was not true when it was
+     * written: `mmu.c` already includes `pmm.h`, `panic.h` and `hal.h`, all
+     * of which are on the `-Ikernel` path, and it includes `spinlock.h` now
+     * as well. `arch/` is reimplemented rather than abstracted, which is a
+     * statement about *what* it may know, not a rule against knowing how
+     * many processes there are.
+     *
+     * So the honest version is that nobody has made it a compile-time check,
+     * and this is the runtime one.
      *
      * So they are checked here, by creating as many spaces as there can be
      * processes. Every process has exactly one, so a shortfall means a spawn
@@ -3884,6 +3911,77 @@ static bool test_every_processor_claimed_its_own_slot(void)
  * each one's period, and TCG round-robins four vCPUs - so the honest
  * assertion is "it is ticking", not "it is ticking at the same rate".
  */
+/*
+ * The lock itself: it excludes, it says who holds it, and it masks.
+ *
+ * **A lock is the one thing in a kernel that cannot be tested by using it.**
+ * Every structure it protects works perfectly well with a lock that does
+ * nothing at all, on a machine where nothing contends - which is this
+ * machine today, and is exactly why `docs/smp.md` step two called an
+ * uncontended lock untestable and skipped it. So this tests the mechanism
+ * rather than the protection: the three properties a caller relies on, each
+ * of which is checkable on one core.
+ *
+ * What it cannot check here is mutual exclusion under real contention. That
+ * needs two cores inside the same critical section, which is what `stress`
+ * asks for once a secondary runs threads.
+ */
+static bool test_a_spinlock_excludes_and_masks(void)
+{
+    static struct spinlock probe = SPINLOCK("test-probe");
+    unsigned long flags;
+
+    if (probe.locked != 0u || probe.holder != SPIN_NOBODY) {
+        return false;           /* not free before anyone took it */
+    }
+
+    if (spin_held_here(&probe)) {
+        return false;
+    }
+
+    flags = spin_lock(&probe);
+
+    /* Held, by this processor, and it says so. */
+    if (probe.locked == 0u || !spin_held_here(&probe)) {
+        spin_unlock(&probe, flags);
+        return false;
+    }
+
+    if (probe.holder != this_cpu()->index) {
+        spin_unlock(&probe, flags);
+        return false;
+    }
+
+    /*
+     * And interrupts are off. This is the property the whole design rests
+     * on - a lock reached from both a syscall and an interrupt handler is a
+     * self-deadlock the moment one is taken with interrupts enabled - and
+     * it is invisible from anywhere else.
+     */
+    if (cpu_interrupts_enabled()) {
+        spin_unlock(&probe, flags);
+        return false;
+    }
+
+    /*
+     * A second attempt from this same core must fail rather than succeed.
+     * `cpu_lock_try` is what a contending core calls, so this is the closest
+     * a single processor can get to standing in for one.
+     */
+    if (cpu_lock_try(&probe.locked)) {
+        return false;           /* handed out twice; do not unlock */
+    }
+
+    spin_unlock(&probe, flags);
+
+    if (probe.locked != 0u || probe.holder != SPIN_NOBODY) {
+        return false;
+    }
+
+    /* And the interrupt state came back as it was, not merely enabled. */
+    return true;
+}
+
 static bool test_every_processor_takes_its_own_ticks(void)
 {
     unsigned online = smp_online();
@@ -4554,6 +4652,7 @@ static const struct test tests[] = {
     { "as: a new space contains the kernel",   test_a_new_space_contains_the_kernel },
     { "as: map and unmap",                     test_a_space_maps_and_unmaps },
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
+    { "lock: a spinlock excludes, names its holder and masks", test_a_spinlock_excludes_and_masks },
     { "cpu: the machine says how many processors it has", test_the_machine_says_how_many_processors_it_has },
     { "cpu: every processor claimed its own slot", test_every_processor_claimed_its_own_slot },
     { "cpu: every processor takes its own ticks",  test_every_processor_takes_its_own_ticks },

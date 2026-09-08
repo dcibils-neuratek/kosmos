@@ -8,6 +8,137 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### The kernel has a lock
+
+**The first one it has ever had.** Mutual exclusion in Nebula has been one
+sentence since the first commit - *there is one core, and the kernel runs
+with interrupts masked* - and `docs/smp.md` step five is where that stops
+being true.
+
+`struct spinlock` in `kernel/spinlock.h`, built on one atomic per
+architecture: `ldaxr`/`stxr` with a `stlr` release on AArch64, `lock xchgl`
+with a plain store on x86-64, where total store ordering already provides
+the release and the only missing piece is a promise from the compiler.
+
+**Every lock masks interrupts, and there is no second flavour.** The reason
+is specific rather than cautious: the structures worth locking are reached
+from both a syscall and an interrupt handler - the runqueue from
+`thread_yield` and from `thread_tick` - so a core holding one with
+interrupts enabled can be interrupted into code that wants the same lock, on
+the same core. No amount of spinning resolves that, and it is silent.
+Masking on this core is enough; a different core spins and gets it.
+
+The spin is bounded and the panic **names the lock and the processor holding
+it**, which are two different failures: another core is a critical section
+that never ended, this core is a path that took it twice.
+
+**A lock is the one thing in a kernel that cannot be tested by using it** -
+every structure it protects works perfectly with a lock that does nothing, on
+a machine where nothing contends, which is exactly why step two called an
+uncontended lock untestable and skipped it. So the test checks the mechanism:
+it excludes, it names its holder, and it masks. Confirmed by breaking it both
+ways - a lock that does not mask fails the check, and one that always wins
+hangs the guest.
+
+### The pools, and the bug that found itself
+
+Every pool used the same pattern: **scan for a free slot, build in it, mark
+it taken.** The window between finding and claiming is hundreds of
+instructions - page allocation, a 512-entry table copy - so two cores in
+`SYS_SPAWN` at once get the same thread, the same process and the same
+address space, and nothing anywhere notices.
+
+`threads[]`, `processes[]`, `objects[]`, the PMM bitmap and `spaces[]` on
+both boards now claim inside the lock. `THREAD_CLAIMED` exists for exactly
+that: a state that is neither of the two the allocator scans for.
+
+**It found a bug in the doing.** Moving the claim into `alloc_process` was
+not enough, because `process_create` then ran `memset(p, 0, sizeof *p)` over
+the slot - clearing the flag that claims it, and reopening the window for the
+length of a 160-byte memset. The suite caught it on the first run, with a
+translation fault at the user text base and nothing to say why. The zeroing
+now happens inside the allocator, under the lock.
+
+`memobj_create` was the one that already claimed first, and its comment
+explains why in terms of *preemption* - a syscall runs with interrupts on and
+can be preempted between finding a slot and finishing with it. A second core
+is the same window one step wider, which is a good illustration of how much
+of SMP is already visible on one processor if you look.
+
+### Two more that were per-CPU all along
+
+- **The lazy-FP owner.** `arch/aarch64/fp.c`'s own comment said it was
+  per-CPU state in everything but name, that `CLAUDE.md` forbids loose
+  mutable globals for exactly this reason, and that it belonged in the
+  per-CPU struct when SMP arrived. It is there now. The x86 board needs
+  nothing: it saves eagerly, so it has no lazy owner to share.
+- **`as_switch` now broadcasts.** It used `tlbi vmalle1` and `dsb nsh`, the
+  local forms, while `invalidate()` two hundred lines up already used the
+  broadcast ones. With two cores, a process whose pages change on one leaves
+  the other holding translations for a space it thinks it has left - and a
+  stale TLB entry is not a fault, it is a read of somebody else's memory that
+  succeeds.
+
+### The audit, which is the map for what is left
+
+Four readers went through `kernel/`, `arch/` and `hal/`, each then handed to
+a second reader told to find what it missed. About sixty structures, in four
+groups, and `docs/smp.md` now carries the shape.
+
+The headline: **the centre of gravity is not the runqueue.** That is the part
+everyone expects and the part the vtable already makes easy. What needs care
+is thread *state* and the pools underneath everything.
+
+And the answer for IPC, which is the hard one: **the endpoint is the right
+lock, one per endpoint, and the critical section has to extend across
+`thread_block()`** - handed to the next thread and released on the far side
+of the switch. `ipc_call` wakes the receiver and only then records
+`waiting_on` and blocks, so on two cores the peer can reply before the sender
+has blocked and `ipc_reply` reads a NULL `waiting_on`. That does not corrupt
+memory; it silently loses a message.
+
+**Also established: the runqueue lock cannot be held across the context
+switch.** `context_switch` returns on a different stack, so a lock taken
+before it would be released by a different thread than took it. Pick under
+the lock, let go, then switch.
+
+### Three the audit found that nothing else would have
+
+None of these can fail today. All three are the same shape: correct while one
+core schedules, wrong the moment one does not, and invisible to any test that
+could be written now.
+
+- **The EL0 interrupt path had no core-zero guard.** `arch/aarch64/trap.c`
+  guards the machine-wide half of a tick for interrupts taken at EL1, with a
+  comment explaining the invariant - and the *other* vector, an interrupt
+  taken from EL0, called `thread_wake_sleepers_now` and `console_tick`
+  unconditionally. Dormant because a secondary runs only its idle thread,
+  which is kernel code, so no core but zero reaches it. It fires on every
+  core the moment a user thread lands on a secondary.
+- **`split_block` invalidated only its own core** while editing `kernel_l1`,
+  the table every address space copies its top level from. `as_switch` had
+  the same bug and both are broadcast now.
+- **A comment that had been wrong since it was written.** The address-space
+  test said `arch/` "must not include a kernel header", which is why
+  `ADDRSPACE_MAX` could not be checked against `PROCESS_MAX` at compile time.
+  `mmu.c` already included three of them. `arch/` being reimplemented rather
+  than abstracted is a statement about what it may *know*, not a rule against
+  knowing how many processes there are.
+
+### What is not done
+
+Per-CPU runqueues, IPC, the console and the drivers. A secondary still runs
+only its idle thread, so nothing contends for any of the locks above - they
+are correct and they are untested under contention, and that is stated rather
+than implied.
+
+One flake fixed on the way: `sched: the policy is pluggable` was already
+bounded by the clock rather than by a count of yields, and still failed twice
+- because a tick is *wall-clock* time and how much work fits inside one
+changed when the suite started booting `-smp 4`. Four vCPUs round-robin in
+one TCG thread, so core zero executes about a quarter of the instructions per
+tick it used to. The bound is a failure bound; it is a second now.
+
 ### The diagnostics, and the bug that was not there
 
 **An application that raised died in complete silence, and every graphical

@@ -222,6 +222,7 @@ SRCS := boot/start.S \
         kernel/memobj.c \
         kernel/process.c \
         kernel/smp.c \
+        kernel/spinlock.c \
         kernel/syscall.c \
         kernel/main.c \
         $(GEN)/init_bin.c
@@ -1695,6 +1696,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/memobj.c \
              kernel/process.c \
              kernel/smp.c \
+             kernel/spinlock.c \
              kernel/syscall.c \
              kernel/main.c \
              $(X86_BUILD)/init_bin.c

@@ -7,6 +7,7 @@
 #include "cpu.h"
 #include "kernel.h"
 #include "percpu.h"
+#include "spinlock.h"
 #include "thread.h"
 #include "pmm.h"
 #include "page.h"
@@ -258,23 +259,62 @@ static void copy_name(char *dst, const char *src)
  * genuinely full, which keeps a use-after-exit bug visible for as long as
  * possible rather than being masked by an immediate recycle.
  */
+/*
+ * The thread pool's lock.
+ *
+ * **It covers the scan and the claim together, and it has to.** `alloc_thread`
+ * used to return a slot and leave the caller to fill it in, which is a
+ * window: two cores scanning at once both see the same `THREAD_UNUSED` slot,
+ * both are handed it, and the second quietly overwrites the first's thread -
+ * its stacks, its capability table, its id. Nothing faults. There is simply
+ * one thread where there were two, and the one that vanished was in the
+ * middle of something.
+ *
+ * So the claim happens *inside* this function, under the lock, before it
+ * returns. The state it writes is `THREAD_CLAIMED`, which exists only to be
+ * neither of the two states the scan looks for.
+ */
+static struct spinlock threads_lock = SPINLOCK("threads");
+
 static struct thread *alloc_thread(void)
 {
+    unsigned long flags = spin_lock(&threads_lock);
     unsigned i;
 
     for (i = 0; i < THREAD_MAX; i++) {
         if (threads[i].state == THREAD_UNUSED) {
+            threads[i].state = THREAD_CLAIMED;
+            spin_unlock(&threads_lock, flags);
             return &threads[i];
         }
     }
 
     for (i = 0; i < THREAD_MAX; i++) {
         if (threads[i].state == THREAD_DEAD) {
+            threads[i].state = THREAD_CLAIMED;
+            spin_unlock(&threads_lock, flags);
             return &threads[i];
         }
     }
 
+    spin_unlock(&threads_lock, flags);
     return NULL;
+}
+
+/*
+ * A slot claimed and then not wanted, given back.
+ *
+ * `thread_create_suspended` can fail after `alloc_thread` succeeds - it runs
+ * out of stacks - and a claimed slot that is never filled in is a slot lost
+ * for the life of the machine. It was not a leak before this change only
+ * because nothing marked the slot at all.
+ */
+static void release_thread(struct thread *t)
+{
+    unsigned long flags = spin_lock(&threads_lock);
+
+    t->state = THREAD_DEAD;     /* not UNUSED: its stacks may exist */
+    spin_unlock(&threads_lock, flags);
 }
 
 /*
@@ -418,6 +458,7 @@ struct thread *thread_create_suspended(const char *name,
     } else {
         stack_top = alloc_stack(&t->stack);
         if (stack_top == NULL) {
+            release_thread(t);
             return NULL;
         }
 
@@ -427,6 +468,7 @@ struct thread *thread_create_suspended(const char *name,
              * would mean re-mapping its guard page, and this path only
              * happens when memory has already run out, where leaking four
              * pages matters far less than a half-undone unmap. */
+            release_thread(t);
             return NULL;
         }
     }
@@ -467,7 +509,17 @@ struct thread *thread_create_suspended(const char *name,
      */
     context_init(&t->ctx, entry, arg, stack_top, exception_top);
 
-    t->id = next_id++;
+    /*
+     * Under the pool's lock, because two cores creating a thread at the same
+     * instant would otherwise be handed the same id - and an id is what
+     * `procs`, `kill` and every capability check name a thread by.
+     */
+    {
+        unsigned long idflags = spin_lock(&threads_lock);
+
+        t->id = next_id++;
+        spin_unlock(&threads_lock, idflags);
+    }
     t->switches = 0;
 
     copy_name(t->name, name);

@@ -89,6 +89,30 @@ struct percpu {
      * for doing the audit against the code rather than against the document.
      */
     volatile bool preempt_pending;
+
+    /*
+     * Whose values are in *this* processor's floating-point registers.
+     *
+     * `struct thread *`, kept as `void *` so that `percpu.h` does not have
+     * to know what a thread is - `arch/<name>/fp.c` is the only reader and it
+     * casts.
+     *
+     * **Per-CPU because the registers are.** It was a file-scope `owner` in
+     * `arch/aarch64/fp.c`, whose own comment said it was per-CPU state in
+     * everything but name and that it belonged here when SMP arrived. Two
+     * cores sharing it means core one's first FP fault saves core zero's
+     * registers into core zero's thread and hands that thread's values to
+     * whatever is running here - silent, and wrong in a way no test that
+     * does not use floating point on two cores would ever see.
+     *
+     * The other half of what that comment predicted is still true and is
+     * *not* solved by moving it: a thread whose registers were last loaded
+     * on another core cannot simply be given them here. Today it cannot
+     * happen, because a thread never moves between cores - `docs/smp.md`
+     * step five gives each core its own runqueue and nothing migrates. When
+     * something does, this is where the recall goes.
+     */
+    void *fp_owner;
 };
 
 /*

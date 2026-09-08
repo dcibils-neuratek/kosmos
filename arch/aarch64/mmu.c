@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "page.h"
 #include "pmm.h"
+#include "spinlock.h"
 #include "panic.h"
 #include "hal.h"
 
@@ -89,10 +90,17 @@ static uint64_t *split_block(uint64_t *entry)
 
     *entry = (uint64_t)(uintptr_t)table | DESC_TABLE;
 
-    /* The old block descriptor may be cached in the TLB covering all 2 MB. */
+    /*
+     * The old block descriptor may be cached in the TLB covering all 2 MB.
+     *
+     * **Broadcast, because the table being split is `kernel_l1`** - the one
+     * every address space copies its top level from, so a stale 2 MB block
+     * cached on another core covers memory this split has just re-described.
+     * It was the local form, which was correct while one core had a TLB.
+     */
     __asm__ volatile("dsb ishst" ::: "memory");
-    __asm__ volatile("tlbi vmalle1" ::: "memory");
-    __asm__ volatile("dsb nsh" ::: "memory");
+    __asm__ volatile("tlbi vmalle1is" ::: "memory");
+    __asm__ volatile("dsb ish" ::: "memory");
     __asm__ volatile("isb" ::: "memory");
 
     return table;
@@ -419,8 +427,24 @@ unsigned as_total(void)
     return ADDRSPACE_MAX;
 }
 
+/*
+ * The address-space pool's lock.
+ *
+ * **Held for the claim and released before the page**, which is a lock
+ * ordering decision rather than tidiness. `as_create` allocates a page for
+ * the top-level table, and doing that inside this lock would mean holding
+ * the space lock while taking the PMM's - a nesting, and nestings are where
+ * deadlocks come from. There is only one order here today and it would be
+ * safe, but the cheapest way to keep it safe is not to have an order at all.
+ *
+ * So: take a slot, mark it used, let go, and then do the slow part. If the
+ * page allocation fails, hand the slot back.
+ */
+static struct spinlock spaces_lock = SPINLOCK("address spaces");
+
 struct addrspace *as_create(void)
 {
+    unsigned long flags = spin_lock(&spaces_lock);
     unsigned i;
 
     for (i = 0; i < ADDRSPACE_MAX; i++) {
@@ -428,8 +452,23 @@ struct addrspace *as_create(void)
             continue;
         }
 
+        /*
+         * Claimed here, before the lock is dropped. Marking it used only
+         * after the page is allocated would leave the slot visible to
+         * another core for the whole of that allocation, and both would take
+         * it - the same window `alloc_thread` had.
+         */
+        spaces[i].in_use = true;
+        spaces[i].root = NULL;
+        spin_unlock(&spaces_lock, flags);
+
         spaces[i].root = pmm_alloc_page();
+
         if (spaces[i].root == NULL) {
+            unsigned long back = spin_lock(&spaces_lock);
+
+            spaces[i].in_use = false;
+            spin_unlock(&spaces_lock, back);
             return NULL;
         }
 
@@ -441,15 +480,18 @@ struct addrspace *as_create(void)
          * The copy shares every table below it. That is what confines user
          * mappings to slots the kernel does not use: writing into one it
          * does would edit the kernel's own map, in every space at once.
+         *
+         * Outside the lock: this slot is nobody else's now, so there is
+         * nothing to exclude.
          */
         for (unsigned e = 0; e < ENTRIES_PER_TABLE; e++) {
             spaces[i].root[e] = kernel_l1[e];
         }
 
-        spaces[i].in_use = true;
         return &spaces[i];
     }
 
+    spin_unlock(&spaces_lock, flags);
     return NULL;
 }
 
@@ -585,10 +627,22 @@ void as_switch(struct addrspace *as)
      * The whole TLB, because there are no ASIDs yet: every entry in it
      * belongs to the space being left. Tagging spaces with an ASID is what
      * makes a switch cheap, and it is worth doing when there are processes
-     * switching often, which is M4.
+     * switching often.
+     *
+     * **`vmalle1is` and `dsb ish`, the broadcast forms**, which this was not
+     * and `invalidate()` two hundred lines up already was. The local form
+     * invalidates only the core that runs it, and that is correct exactly
+     * while one core exists. With two, a process whose pages change on one
+     * core leaves the other holding translations for the space it thinks it
+     * has left - and a stale TLB entry is not a fault, it is a read of
+     * somebody else's memory that succeeds.
+     *
+     * Strictly stronger than what it replaces, so it cannot break the
+     * single-core case; the cost is that the invalidation is seen by every
+     * core in the inner shareable domain, which is the point.
      */
-    __asm__ volatile("tlbi vmalle1" ::: "memory");
-    __asm__ volatile("dsb nsh" ::: "memory");
+    __asm__ volatile("tlbi vmalle1is" ::: "memory");
+    __asm__ volatile("dsb ish" ::: "memory");
     __asm__ volatile("isb" ::: "memory");
 }
 
