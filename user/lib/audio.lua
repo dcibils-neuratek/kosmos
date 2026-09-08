@@ -111,6 +111,62 @@ function stream:space()
 end
 
 --
+-- Where this stream has actually got to, in frames out of the speaker.
+--
+-- Not the same as what has been handed over, and the gap between the two is
+-- the point: the ring holds periods the server has not taken yet and the
+-- device holds periods it has taken and not played. A position built from
+-- what this process knows would be ahead by both of them - about seventy
+-- milliseconds - which is enough to put a progress bar visibly wrong and
+-- far too much to sync anything to.
+--
+-- The server publishes it into this stream's own ring, so reading it is a
+-- load rather than a round trip, and `music` can ask on every pass without
+-- thinking about it.
+--
+function stream:position()
+  local played = sys.ring_position(self.ring)
+
+  return played or 0
+end
+
+--
+-- How many frames between a sample written now and that sample being heard.
+--
+-- This is the number to divide by `self.rate` for a latency in seconds, and
+-- it is the honest one: it counts the ring and the device together, because
+-- it is a subtraction of two frame counts rather than a sum of two things
+-- somebody has to remember to add.
+--
+-- Zero before anything has been written, and zero rather than negative if
+-- the two halves are read across an update.
+--
+function stream:delay()
+  local played, written = sys.ring_position(self.ring)
+  local ahead = (written or 0) * self.frames - (played or 0)
+
+  if ahead < 0 then return 0 end
+
+  return ahead
+end
+
+--
+-- The worst latency this stream can ever have, in frames.
+--
+-- The ring plus the device, because those are the only two places a frame
+-- can be waiting. `delay` is what the latency *is* at this instant; this is
+-- what it cannot exceed, and the gap between them is slack the client has
+-- chosen not to use.
+--
+-- Worth having as a number rather than a comment: it is what a caller
+-- checks its own `delay` against, and a delay past the bound means the
+-- position and the indices disagree rather than that the machine is busy.
+--
+function stream:bound()
+  return (self.ring_periods + self.periods) * self.frames
+end
+
+--
 -- Declared here and defined in the protocol block below, because `open` and
 -- `close` need it and the layout it depends on reads better next to the
 -- rest of the wire format than scattered up here.
@@ -140,12 +196,27 @@ end
 -- memory safe to use here at all: it is not "shared memory", it is one
 -- region, named by a capability, given away deliberately.
 --
-function audio.open(name)
+--
+-- `periods` is how deep the ring should be, and it is the client's call
+-- because the right answer is different for different clients.
+--
+-- **A shallow ring is low latency and a deep one is safe, and nothing can
+-- be both.** A game wants the sound to arrive with the frame that caused
+-- it and would rather risk a gap; a video player wants a clock it can hang
+-- pictures on and would far rather be 200 ms behind than skip - a gap
+-- desynchronises everything after it, where latency is a constant you
+-- schedule against. One number cannot serve both, so it stops being a
+-- constant.
+--
+-- Omitted means the default in `audioring.h`, which is what every caller
+-- got before this argument existed.
+--
+function audio.open(name, periods)
   local fmt = audio.format()
 
   if fmt.period == 0 then return nil, "this machine has no sound device" end
 
-  local cap, at = sys.ring_create(fmt.period)
+  local cap, at = sys.ring_create(fmt.period, periods)
 
   if not cap then return nil, tostring(at) end
 
@@ -160,8 +231,28 @@ function audio.open(name)
     return nil, tostring(why)
   end
 
-  return setmetatable({ id = r.stream, period = r.period,
-                        periods = r.periods, ring = at, cap = cap }, stream)
+  -- `frames` and `rate` are carried because `delay` is in frames and a
+  -- caller wanting milliseconds should not have to ask the machine again
+  -- for what this function already had in its hand.
+  --
+  -- `periods` is the *device's* depth, which is what the server replies
+  -- with; `ring_periods` is this ring's, which is a different number and
+  -- now a different number per stream.
+  local s = setmetatable({ id = r.stream, period = r.period,
+                           periods = r.periods, ring = at, cap = cap,
+                           frames = fmt.frames, rate = fmt.rate }, stream)
+
+  --
+  -- Asked of the ring rather than taken from what was requested.
+  --
+  -- `ring_create` has limits of its own and quietly uses the default when
+  -- it does not like a number, so a client that believed its own argument
+  -- would compute a bound that was wrong and never find out. Nothing has
+  -- been written yet, so what is free is the whole ring.
+  --
+  s.ring_periods = s:queued() + s:space()
+
+  return s
 end
 
 --------------------------------------------------------------------------

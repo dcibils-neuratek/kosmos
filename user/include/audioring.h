@@ -2,6 +2,7 @@
 #ifndef KOSMOS_AUDIORING_H
 #define KOSMOS_AUDIORING_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -84,9 +85,66 @@ struct audio_ring {
     /* Written by the client, read by the server. */
     volatile uint32_t write;
 
-    /* Written by the server, read by the client. */
+    /*
+     * Written by the server, read by the client.
+     *
+     * `frames_played` counts the frames of *this stream* that have come out
+     * of the speaker, and it is the one number here that needs no
+     * conversion at all: a frame is the audio clock, so it means the same
+     * thing on both sides of this region without anybody reading
+     * `counter_hz` first.
+     *
+     * **The name carries the unit because the rule says it must.**
+     * `CLAUDE.md`: a field that crosses a boundary is `wait_ticks`, never
+     * `ticks`. This one crosses the widest boundary there is - two
+     * processes reading the same page - and it was called `played` for an
+     * afternoon, which is exactly the shape of the two timeout bugs that
+     * rule was written after. A number that arrives naked gets read in
+     * whatever unit the reader assumed.
+     *
+     * A position and a latency are both made of it. Where a stream has got
+     * to is `frames_played`; how long until what is written now is heard
+     * is `write * period_frames - frames_played`, which is the ring and
+     * the device's
+     * own queue together and does not have to know how the total is split
+     * between them.
+     *
+     * Sixty-four bits because Kosmos is: an aligned 64-bit store is one
+     * instruction on both architectures, so a client cannot read half of an
+     * update. Thirty-two would have wrapped after twenty-seven hours at
+     * 44100 - not a case anybody would reach, and therefore a special case
+     * nobody would have tested either.
+     *
+     * It lands at 24 with no padding, because `read` ends there and 24 is
+     * already eight-aligned. That is luck rather than design, and the
+     * assertions below are what turn it into design: this struct is a
+     * region two processes read, so where a field starts is part of the
+     * agreement between them, and an agreement the compiler could silently
+     * change is not one. A `uint32_t` inserted anywhere above moves
+     * `frames_played` and fails the build rather than the sound.
+     */
     volatile uint32_t read;
+    volatile uint64_t frames_played;
 };
+
+/*
+ * The layout, asserted rather than assumed.
+ *
+ * `audioproto.h` does the same for its messages and says why: the field
+ * somebody will change without thinking is the one whose failure is silent.
+ * A moved `frames_played` is worse than a moved message field - the server
+ * writes
+ * one offset and the client reads another, so the position reads as a
+ * plausible number that is simply never right.
+ */
+_Static_assert(offsetof(struct audio_ring, write) == 16,
+               "the client's index moved; both sides must be rebuilt");
+_Static_assert(offsetof(struct audio_ring, read) == 20,
+               "the server's index moved; both sides must be rebuilt");
+_Static_assert(offsetof(struct audio_ring, frames_played) == 24,
+               "the position moved, or needs padding it does not have");
+_Static_assert(sizeof(struct audio_ring) <= AUDIO_RING_DATA,
+               "the header has grown into the samples");
 
 static inline uint32_t audio_ring_ready(const struct audio_ring *r)
 {
@@ -134,6 +192,75 @@ static inline uint32_t audio_ring_acquire(const volatile uint32_t *index)
 
     RING_BARRIER();
     return v;
+}
+
+/*
+ * What has been heard, from what was taken and what is still held.
+ *
+ * Pure arithmetic, and separate from the server for exactly one reason:
+ * `tools/test_audioring.c` can call it on this machine. It is the same
+ * argument that keeps `kfs.lua` runnable on the host - the part that can be
+ * wrong *silently* is the part that should not need an emulator to check,
+ * and an off-by-one in a position reads as perfectly plausible audio.
+ *
+ * **Exact while a stream is feeding, and conservative after it starves.**
+ * `held` is what the device still has, and this assumes all of it is this
+ * stream. After a turn where the ring was empty the server mixed without
+ * it, so some of what the device holds is somebody else's and this
+ * subtracts too much: the position reads a little behind, never ahead, and
+ * by at most the depth of the device.
+ *
+ * That is the right way round rather than a shrug. A progress bar that
+ * pauses for a moment after an underrun is a glitch you already had; one
+ * that jumps backwards is a bug report.
+ */
+static inline uint64_t audio_frames_played(uint64_t consumed, uint64_t held)
+{
+    return (consumed > held) ? consumed - held : 0;
+}
+
+/*
+ * The position, published.
+ *
+ * **No barrier, deliberately.** `audio_ring_publish` needs one because the
+ * index it writes is a promise about samples nobody may read early. This
+ * promises nothing: there is no data behind it, it *is* the datum, and a
+ * client that reads a stale one computes a slightly pessimistic latency and
+ * then reads a fresh one a period later.
+ *
+ * `CLAUDE.md` asks for a barrier to be named and justified rather than
+ * sprinkled. The honest justification here is that there is not one.
+ */
+static inline void audio_ring_position(struct audio_ring *r, uint64_t frames)
+{
+    r->frames_played = frames;
+}
+
+static inline uint64_t audio_ring_played(const struct audio_ring *r)
+{
+    return r->frames_played;
+}
+
+/*
+ * How long between a frame written now and that frame being heard.
+ *
+ * Both terms are frames, so this is exact and involves no clock: `write` is
+ * how many periods the client has published, `frames_played` how many have
+ * been heard, and the difference is everything still in flight.
+ *
+ * Clamped rather than trusted. The two are written by different processes
+ * and read here without a lock, so a client can pair a `write` with a
+ * `frames_played` from just after it. The error is under one period; the
+ * unclamped answer would be an enormous unsigned number, which is the
+ * failure mode this system has already had twice with timeouts.
+ */
+static inline uint64_t audio_ring_delay(const struct audio_ring *r,
+                                        uint32_t period_frames)
+{
+    uint64_t written = (uint64_t)r->write * period_frames;
+    uint64_t heard = r->frames_played;
+
+    return (written > heard) ? written - heard : 0;
 }
 
 static inline int audio_ring_valid(const struct audio_ring *r)

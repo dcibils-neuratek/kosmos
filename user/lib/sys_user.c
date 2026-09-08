@@ -456,6 +456,28 @@ static int l_ring_space(lua_State *L)
 }
 
 /*
+ * `sys.ring_position(ring)` -> frames heard, periods written
+ *
+ * Two numbers from one call because they are read together and a caller
+ * that took them separately could pair a `frames_played` with a `write` from
+ * either side of a period boundary. That is a small error and it is the
+ * kind that shows up as a latency that occasionally reads negative.
+ *
+ * Periods rather than frames for the second, because this side does not
+ * know how many frames a period holds - `audio.format()` does, and the
+ * multiplication belongs where the channel count already is rather than
+ * behind a constant repeated here.
+ */
+static int l_ring_position(lua_State *L)
+{
+    struct audio_ring *r = ring_at(L, 1);
+
+    lua_pushinteger(L, r ? (lua_Integer)audio_ring_played(r) : 0);
+    lua_pushinteger(L, r ? (lua_Integer)r->write : 0);
+    return 2;
+}
+
+/*
  * `sys.ring_put(at, bytes)` -> true, or false when the ring is full.
  *
  * One period from a Lua string, for sources that generate their samples in
@@ -2466,6 +2488,7 @@ static const luaL_Reg sys_functions[] = {
     { "ring_map",    l_ring_map },
     { "ring_ready",  l_ring_ready },
     { "ring_space",  l_ring_space },
+    { "ring_position", l_ring_position },
     { "ring_put",    l_ring_put },
     { "pcm_into",    l_pcm_into },
     { "sleep",    l_sleep },

@@ -383,7 +383,35 @@ def main():
         # offered on the first boot and has to have been refused: a stored
         # size is a second copy of a fact, and the failure it produces is a
         # listing that disagrees with the file months later.
-        if "999" in after:
+        #
+        # Read out of the listing rather than searched for. This was
+        # `if "999" in after`, over everything the rest of the boot printed,
+        # and it failed for a reason that had nothing to do with the disk:
+        # `attr` also prints `mtime`, which is `sys.ticks()` and therefore a
+        # nine-digit number that changes every run, so a run whose clock
+        # happened to read 478999000 reported that the size had been stored.
+        # A test that fails at random gets believed the first time and
+        # ignored the second, which is worse than not having it.
+        block = after.split("kosmos>")[0]
+        size = None
+
+        for line in block.splitlines():
+            parts = line.split()
+
+            if len(parts) >= 2 and parts[0] == "size":
+                size = parts[1]
+                break
+
+        if size is None:
+            raise Failure(
+                "the attribute listing reported no `size` at all. It is "
+                "derived from the inode and should always be there, so "
+                "either `attr` stopped printing it or the block being read "
+                "here is not the listing.\n"
+                + second
+            )
+
+        if size == "999":
             raise Failure(
                 "`size` was stored as an attribute. It is read out of the "
                 "inode, so there are now two answers to how big this file "

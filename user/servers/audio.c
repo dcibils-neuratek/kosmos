@@ -42,6 +42,7 @@ struct stream {
     int32_t            balance;         /* -100 .. +100 */
     bool               muted;
     uint32_t           peak;            /* from the last mix, before gain */
+    uint64_t           consumed;        /* frames taken from this ring, ever */
     char               name[AUDIO_NAME_MAX];
 };
 
@@ -50,6 +51,7 @@ static uint32_t      next_id = 1;
 static int32_t       master  = 256;
 
 static unsigned      period_bytes;
+static unsigned      period_frames;     /* that period, in the position's unit */
 static unsigned      device_depth;
 static unsigned long counter_hz;
 
@@ -154,6 +156,11 @@ static bool refill(void)
 
         s->peak = (uint32_t)peak;
         audio_ring_consumed(s->ring, s->ring->read + 1);
+
+        /* Taken, which is not yet heard: the device is holding some of what
+         * was taken before this. `publish_positions` is where the two are
+         * subtracted, and it is the only place that knows both. */
+        s->consumed += period_frames;
         mixed++;
     }
 
@@ -178,6 +185,39 @@ static bool refill(void)
     kosmos_snd_write(out, (unsigned long)samples * 2);
     mixes++;
     return true;
+}
+
+/*
+ * Tell each client where its stream has actually got to.
+ *
+ * **The device queue is the whole difficulty**, and it is why this cannot
+ * live on the client's side of the region. A client knows what it wrote and
+ * the ring says what was taken, but between "taken" and "heard" sit up to
+ * `device_depth` periods that only this process can see. Without this, a
+ * position is wrong by the depth of the device - about 23 ms - which is
+ * small enough to look right and large enough to be useless for the two
+ * things a position is for.
+ *
+ * Every open stream, every turn of the loop. Eight streams and two stores
+ * each against a mixing pass that touches a thousand samples: this is not
+ * where the time goes, and a position that is fresh only when somebody asks
+ * for it would need somebody to ask.
+ */
+static void publish_positions(void)
+{
+    unsigned held = (unsigned)kosmos_snd_queued() * period_frames;
+    unsigned i;
+
+    for (i = 0; i < STREAM_MAX; i++) {
+        struct stream *s = &streams[i];
+
+        if (!s->open || !audio_ring_valid(s->ring)) {
+            continue;
+        }
+
+        audio_ring_position(s->ring,
+                            audio_frames_played(s->consumed, (uint64_t)held));
+    }
 }
 
 static void do_open(const struct audio_request *req, long cap,
@@ -222,6 +262,12 @@ static void do_open(const struct audio_request *req, long cap,
     streams[i].balance = 0;
     streams[i].muted = false;
     streams[i].peak = 0;
+    streams[i].consumed = 0;
+
+    /* Zeroed here as well as in the client's `ring_create`, because a slot
+     * that has been used before is carrying the last stream's position and
+     * the client would read it before the first period was ever mixed. */
+    audio_ring_position(streams[i].ring, 0);
 
     /* The name is the client's own and nothing checks it: two copies of one
      * program get two streams called the same thing, which is right - they
@@ -390,6 +436,7 @@ void audio_server(long endpoint)
     struct sysinfo info;
     unsigned long last_turn = 0;
     unsigned long us;
+    unsigned channels;
 
     memset(streams, 0, sizeof(streams));
     memset(&info, 0, sizeof(info));
@@ -397,6 +444,16 @@ void audio_server(long endpoint)
 
     period_bytes = info.audio_period;
     device_depth = info.audio_periods;
+
+    /*
+     * Sixteen bits a sample is what the device takes and what `refill`
+     * assumes two lines into its loop, so the 2 here is that fact rather
+     * than a magic number - and the channel count is asked for because
+     * `sysinfo` reports it and a constant would be a second answer to a
+     * question the machine already answers.
+     */
+    channels = info.audio_channels ? info.audio_channels : 2u;
+    period_frames = period_bytes / (2u * channels);
     counter_hz = info.counter_hz ? info.counter_hz : 62500000UL;
     us = counter_hz / 1000000UL;
 
@@ -430,6 +487,8 @@ void audio_server(long endpoint)
         } else {
             last_turn = 0;
         }
+
+        publish_positions();
 
         if (refill()) {
             continue;                   /* there may be room for another */

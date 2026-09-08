@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Where the time goes when a period is handed to the audio server.
 --
--- An instrument rather than a test: it plays a hundred periods of silence
+-- An instrument rather than a test: it plays four hundred periods of silence
 -- and reports how many of the writes came back at once and how long the
 -- rest waited. The number that matters is the last one - if the mean wait
 -- is a whole tick, the pipeline is running at the tick rate instead of the
@@ -11,12 +11,6 @@ local audio = use("/lib/audio.lua")
 
 local fmt = audio.format()
 if fmt.period == 0 then print("audiolag: no sound device") return end
-
-local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
-local us = hz // 1000000
-
-local chunk = string.rep("\0", fmt.period)
-local out = assert(audio.open("audiolag"))
 
 --
 -- Deadlines, not throughput.
@@ -32,14 +26,29 @@ local N = 400                        -- about 2.3 seconds
 local before = sys.info() or {}
 local dry0 = before.audio_dry or 0
 
+--
+-- `audiolag [periods]`, and the argument is the whole point of having one.
+--
+-- The ring's depth is the one number that trades latency against
+-- underruns, and until now it was a constant nobody could argue with. A
+-- shallow ring is less to wait behind and less to survive a late turn; a
+-- deep one is the other way round. Run this at 2, at 8 and at 32 and the
+-- two figures below - worst latency and UNDERRUNS - move in opposite
+-- directions, which is the curve worth knowing before choosing a default.
+--
+-- Omitted means the default, so the ordinary run is the ordinary run.
+--
+local want = tonumber(args)
+
 local chunk = string.rep("\0", fmt.period)
-local out = assert(audio.open("audiolag"))
+local out = assert(audio.open("audiolag", want))
 
 local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 local us = hz // 1000000
 
 local worst, over, sent = 0, 0, 0
 local worst_gap = 0                 -- between iterations, while playing
+local worst_delay = 0               -- frames between writing and hearing
 local began = sys.ticks()
 local prev_iter = began
 
@@ -55,6 +64,25 @@ for _ = 1, N do
   end
 
   sent = sent + 1
+
+  --
+  -- The latency itself, which this program has never been able to do
+  -- anything but infer.
+  --
+  -- Every other number here is a *timing* - how long a write took, how long
+  -- a turn took - and a timing is evidence about latency rather than the
+  -- thing itself. This is the thing itself: the server publishes how many
+  -- frames of this stream have left the speaker, so the distance between
+  -- that and what has been handed over is the whole pipe, the ring and the
+  -- device's own queue together.
+  --
+  -- No clock in it and nothing to convert, which is the point: it is a
+  -- subtraction of two frame counts, and a frame is the only unit in this
+  -- system that means the same thing on both sides of a boundary.
+  --
+  local delay = out:delay()
+
+  if delay > worst_delay then worst_delay = delay end
 
   local took = (sys.ticks() - t0) // us
 
@@ -107,6 +135,28 @@ end
 
 local after_play = sys.info() or {}
 
+--
+-- The position, read from the far end before the stream goes away.
+--
+-- The loop above waits until the ring is empty, so everything handed over
+-- is either heard or still inside the device. `heard` is the server's
+-- count, arrived at by watching the device drain; `handed` is this
+-- program's, arrived at by counting a loop. Two ends of the same pipe that
+-- never consulted each other.
+--
+-- They should differ by no more than what the device is holding right now.
+-- A larger gap means the position is *drifting*, and that is the number to
+-- watch on real hardware: a position that drifts is a video player that
+-- desynchronises slowly enough to look like something else's fault.
+--
+local heard = out:position()
+local handed = sent * fmt.frames
+
+-- Read while the stream is still open, so the report below does not depend
+-- on what a closed stream happens to leave in its table.
+local bound = out:bound()
+local ring_periods = out.ring_periods
+
 out:close()
 
 local after = after_play
@@ -118,6 +168,23 @@ print(("audiolag: UNDERRUNS %d   worst write %d us   stalls over two periods %d"
       :format((after.audio_dry or 0) - dry0, worst, over))
 print(("audiolag: worst gap between turns while playing %d us")
       :format(worst_gap))
+
+--
+-- And the bound it should never have crossed.
+--
+-- The ring holds `fmt.periods` and the device holds its own, so the pipe
+-- cannot be longer than the two of them added up. A figure at the bound is
+-- a client that keeps the ring full, which is what this one does on
+-- purpose; a figure *past* it means the position and the indices disagree,
+-- and `tools/test_audioring.c` is where to go and find out why.
+--
+print(("audiolag: worst latency %d frames, %d us "
+       .. "(bound %d frames: ring %d + device %d periods)")
+      :format(worst_delay, worst_delay * 1000000 // fmt.rate,
+              bound, ring_periods, fmt.periods))
+print(("audiolag: position %d frames, handed %d, behind by %d "
+       .. "(the device holds %d)")
+      :format(heard, handed, handed - heard, fmt.periods * fmt.frames))
 
 --
 -- And the same question asked of the server, which is the only process that

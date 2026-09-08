@@ -8,6 +8,176 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### The audio ring carries a position, and a frame is the only honest unit
+
+`frames_played` in `struct audio_ring`: a 64-bit count of the frames of *that*
+stream that have come out of the speaker, written by the server and read by
+the client out of shared memory. `audioring.h` has the reasoning and
+`tools/test_audioring.c` has 29 checks of it that need no machine.
+
+**The device queue is the whole reason it cannot live on the client's
+side.** A client knows what it wrote and the ring says what was taken, but
+between "taken" and "heard" sit up to `device_depth` periods that only the
+audio server can see. A position built from the ring alone is ahead by the
+depth of the device - about 23 ms - which is small enough to look right and
+large enough to be useless for the two things a position is for.
+
+**It needs no clock, and that is the point rather than a convenience.**
+`CLAUDE.md`'s two-clocks rule is about a number that arrives naked at
+another process; a frame count cannot, because the unit is in the name and
+there is nothing to divide by. Latency is `write * period_frames - frames_played`,
+which is the ring and the device together without either side having to
+know how the total is split. This is the first number that crosses a
+boundary here and needs no `counter_hz` three lines above it.
+
+What it is exact about, and what it is not: exact while a stream is feeding,
+and *behind* the truth by at most the device's depth after that stream has
+been starved, because the server mixed other streams into periods this one
+is not in and the subtraction takes all of them off. Under-reporting is the
+right way round - a progress bar that pauses is a glitch you already had,
+one that jumps backwards is a bug report. The host test asserts both
+directions rather than trusting the sentence.
+
+**`audiolag` is the first caller and it found the thing worth finding.**
+Every other number that program prints is a *timing* - how long a write
+took, how long a turn took - and a timing is evidence about latency rather
+than latency. It now prints the worst end-to-end figure and the bound it
+must not cross, which is the ring's depth plus the device's.
+
+Also fixed there, and it had been there a while: the program declared `hz`,
+`us`, `chunk` and `out` **twice**, so it called `audio.open` twice and
+leaked the first stream - a slot out of eight, a region and a capability -
+for the whole run. It measured correctly anyway, which is why nobody saw
+it.
+
+### And the ring's depth stopped being a constant
+
+`audio.open(name, periods)`. The plumbing was already there and unused:
+`sys.ring_create` has always taken a depth, and the server reads
+`r->periods` everywhere rather than the constant, so variable depth worked
+end to end and nothing had ever asked for it. `AUDIO_RING_PERIODS` is now
+only a default.
+
+**Why it has to be the client's call.** A shallow ring is less to wait
+behind and less to survive a late turn with; a deep one is the reverse.
+A game wants the sound to arrive with the frame that caused it and would
+rather risk a gap. A video player wants a clock to hang pictures on and
+would far rather be 200 ms behind than skip - a gap desynchronises
+everything after it, where latency is a constant you can schedule against.
+No single number serves both, which is what made it stop being one.
+
+`open` reads the depth back off the ring rather than trusting what was
+asked for, because `ring_create` quietly substitutes the default for a
+number it does not like, and a client computing a bound from its own
+argument would be wrong without ever finding out.
+
+**A `periods_for_ms` helper was written here and then deleted**, which is
+worth recording because the deletion is the interesting part. It converted
+a slack in milliseconds to a number of periods, it was four lines, and it
+had no caller - and `hal.md`'s practice, which `CLAUDE.md` quotes, is that
+every entry arrived with the thing that needed it and none of it was
+written ahead of a caller. Two lines the video player can write once it
+knows whether it wants milliseconds, frames or periods; guessing now would
+have been an interface to keep rather than a convenience.
+
+`stream:bound()` is the worst latency the stream can have - the ring plus
+the device. `delay()` is what it *is*; `bound()` is what it cannot exceed,
+and a `delay` past the bound means the position and the indices disagree
+rather than that the machine is busy.
+
+**`audiolag [periods]` is the instrument**, and the argument is the point of
+having one: run it at 2, 8 and 32 and worst-latency and UNDERRUNS move in
+opposite directions. That curve is what a sensible default should come
+from, and nobody has ever been able to plot it. **Not plotted here** - see
+below.
+
+The host test is parameterised by depth now for the same reason, and it
+earns it: breaking `audio_ring_space` to use the constant instead of
+`r->periods` passes every fixed-depth check and fails four of the swept
+ones.
+
+### What is still missing, and it is not code
+
+**None of this can be tuned on the current target.** The known failure
+above it stands: 3-4 underruns per 2.3 s, and 194 interrupts per 400
+periods, which is the device model servicing about two periods a raise.
+Sweeping the depth under QEMU will produce a curve, and the curve will be
+QEMU's rather than the design's - which is exactly what `CLAUDE.md` warns
+about, in the subsystem where it matters most, because a real-time claim is
+a claim about the worst case.
+
+So the depth argument exists to be *used on hardware*. The Pi 5 is the
+missing instrument, and it is now the thing standing between this pipeline
+and being able to say anything about its latency at all.
+
+**Not done, and deliberately:** `music` still draws its progress bar from a
+local of its own also called `played`, meaning *bytes of source handed
+over* - `music.lua:91` - so the
+bar is ahead of the sound by the whole pipe. That is a two-line fix now and
+it belongs with the seek work that is already wanted there, rather than
+bolted on here.
+
+**Also not done:** `design.md` has no audio section, so the reasoning lives
+in `audioring.h` and here. It wants one, and writing it is its own piece of
+work rather than a paragraph appended to §7.4, which is about drawing.
+
+### A test that failed at random, and the reason was in the test
+
+`make test` failed once during this work with
+
+    FAIL: `size` was stored as an attribute. It is read out of the inode,
+    so there are now two answers to how big this file is...
+
+and the filesystem was fine. `run_disk.py` writes `size=999` on the first
+boot, expects it to be refused, and checked the second boot's output with
+`if "999" in after` - over *everything* printed after the `attr` command,
+not the listing. `attr` also prints `mtime`, which is `sys.ticks()` and so
+a nine-digit number that is different every run. That run's clock read
+`478999000`.
+
+    author       diego
+    extents      1
+    kind         note
+    mtime        478999000     <- the "999" it found
+    size         25            <- the answer it was actually looking for
+
+**The check was right and the method was wrong**, which is the dangerous
+combination: it passes for years, fails for a reason unrelated to what it
+tests, and the failure is a confident sentence about a bug that is not
+there. It now reads the `size` line out of the listing and compares the
+value, and it is scoped to the block rather than the rest of the boot.
+
+Worth connecting to two things already written down. `diskfs` stamping
+`sys.ticks()` as `mtime` is listed under **Still open**, and this is a
+second cost of it - a wall clock would not have produced the digits. And
+the note above about *one kernel check that failed once and never again,
+with the evidence destroyed by a grep* is the same shape: an intermittent
+failure gets believed once, ignored twice, and deleted third. This one was
+caught only because the whole log was kept.
+
+### A fresh clone of this repository cannot build the full image
+
+Found by making a worktree, which is the first time in a while anything
+started from what is actually committed.
+
+`.gitignore` line 1 is `build/`, with no leading slash - so it matches a
+directory of that name at *any* depth, including three vendored ones:
+`runtime/upstream/netsurf/{libcss,libhubbub,libparserutils}/build/`. They
+exist in the working checkout and are untracked, so `make qemu` and
+`make test` both fail in a fresh worktree at
+`build/gen-doom-web/netsurf/aliases.inc`.
+
+Two problems in one: the published path is broken, since `make release`
+builds the full target and `builds/` is what somebody downloads; and part of
+three vendored libraries is silently not in the tree, which is the one thing
+the vendoring rule exists to prevent. Anchoring the pattern to `/build/` is
+the fix - `CLAUDE.md` already says everything generated goes in exactly one
+top-level directory, so the unanchored form was never buying anything.
+
+Worked around locally to get the suite to run; **not fixed here**, because
+it is a `.gitignore` decision plus three directories of somebody else's
+files and it did not belong in an audio change.
+
 ### A thread runs on another processor, and the IPI is worth 25x
 
 `docs/smp.md` step six. `hal_cpu_wake(cpu)` sends SGI 0 through

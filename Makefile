@@ -1215,6 +1215,18 @@ $(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/lib/litexl_sdl.c \
 	    runtime/upstream/stb/stb_impl.c \
 	    runtime/upstream/lite-xl/src/renwindow.c -lm
 
+#
+# The audio ring's arithmetic, on this machine.
+#
+# `audioring.h` is a header two processes agree on and nothing but `stdint.h`
+# underneath it, so the host compiler builds it exactly as the cross compiler
+# does - and a position that is wrong is a *number* that is wrong, which no
+# amount of listening to QEMU would find.
+#
+$(HOSTDIR)/test_audioring: tools/test_audioring.c user/include/audioring.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ tools/test_audioring.c
+
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
@@ -2008,7 +2020,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2016,6 +2028,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
+	@# And the audio ring's position arithmetic. It models the client, the
+	@# server and the device queue, because the thing worth asserting is
+	@# that a period taken out of the ring is not yet a period heard.
+	$(HOSTDIR)/test_audioring
 	@# And the Lite XL surface shim, which is C and still needs no machine:
 	@# `make litexl` says the port's sources compile, and this says the part
 	@# of them Kosmos wrote is correct. Different claims.
