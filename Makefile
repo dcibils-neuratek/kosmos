@@ -541,7 +541,10 @@ LITEXL_SRCS := user/lib/litexl_sdl.c \
                runtime/upstream/lite-xl/src/arena_allocator.c \
                runtime/upstream/lite-xl/src/renwindow.c \
                runtime/upstream/lite-xl/src/rencache.c \
-               runtime/upstream/lite-xl/src/api/renderer.c
+               runtime/upstream/lite-xl/src/api/renderer.c \
+               runtime/upstream/lite-xl/src/api/api.c \
+               user/lib/litexl_system.c \
+               user/lib/litexl_match.c
 
 # Nothing is waiting on the renderer any more. `api/system.c` and `main.c`
 # join this when step five writes their half of the shim.
@@ -948,6 +951,14 @@ $(UBUILD)/user/lib/litexl_render.c.o: user/lib/litexl_render.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
+$(UBUILD)/user/lib/litexl_system.c.o: user/lib/litexl_system.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
+
+$(UBUILD)/user/lib/litexl_match.c.o: user/lib/litexl_match.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
+
 #
 # Lite XL. Two patterns because its sources are one directory deep in
 # places - `src/api/utf8.c` - and a single `%` does not cross a slash.
@@ -1192,14 +1203,16 @@ $(HOSTDIR)/luac: lua/upstream/luac.c $(LUA_HOST_SRCS)
 # vendored build compiles with `-w`.
 #
 $(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/lib/litexl_sdl.c \
-                        user/lib/litexl_render.c user/lib/litexl/SDL.h \
+                        user/lib/litexl_render.c user/lib/litexl_match.c \
+                        user/lib/litexl/SDL.h \
                         runtime/upstream/lite-xl/src/renwindow.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -O1 -o $@ \
 	    -Iuser/lib/litexl -Iruntime/upstream/lite-xl/src \
 	    -Iruntime/upstream/stb \
 	    tools/test_litexl_surface.c user/lib/litexl_sdl.c \
-	    user/lib/litexl_render.c runtime/upstream/stb/stb_impl.c \
+	    user/lib/litexl_render.c user/lib/litexl_match.c \
+	    runtime/upstream/stb/stb_impl.c \
 	    runtime/upstream/lite-xl/src/renwindow.c -lm
 
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)

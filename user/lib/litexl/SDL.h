@@ -210,6 +210,21 @@ void         SDL_DestroyWindow(SDL_Window *window);
  */
 void litexl_font_provide(const char *path, const void *bytes, size_t len);
 
+/*
+ * The two parts of `system` that are computation rather than a question for
+ * a server, separated from their Lua bindings so they can be tested without
+ * a `lua_State` - which is what `tools/test_litexl_surface.c` does.
+ *
+ * `fuzzy_match` runs over every file in the project on every keystroke of
+ * the command palette, and `path_before` orders every listing. Both are the
+ * shape `CLAUDE.md` sends to C: a loop over bytes on a path somebody waits
+ * on.
+ */
+bool litexl_fuzzy_match(const char *hay, const char *needle, bool file,
+                        int *score_out);
+bool litexl_path_before(const char *a, bool a_dir,
+                        const char *b, bool b_dir);
+
 SDL_Window *litexl_window(void);
 void        litexl_window_attach(void *pixels, int w, int h, int pitch);
 int         litexl_damage_take(SDL_Rect *out, int max, bool *whole);

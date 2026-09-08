@@ -75,10 +75,9 @@ make a second.
       `stb_truetype`. **The whole rendering half now links into a Kosmos
       image** - seven translation units, nothing waiting - and 49 checks in
       `make test` rasterise a real font and look at the pixels.
-- [ ] **Step 5. `system.c`.** Events from the window manager, the clipboard,
-      the clock, the cursor. The window operations Kosmos has no concept of
-      - opacity, hit-test, an icon - are stubbed and say so, rather than
-      pretending.
+- [x] **Step 5. `system.c`**, replaced rather than shimmed - and for a
+      different reason than step four. Ten translation units, all in the
+      image, 58 checks in `make test`.
 - [ ] **Step 6. `main.c`, and then the Lua.** Which is the point: if the
       first five are right, the nineteen thousand lines run.
 
@@ -207,6 +206,42 @@ rectangle. One of them failed on the first run and the renderer was right:
 `RenColor` is `{ b, g, r, a }`, blue first, so a positional initialiser
 asks for a different colour than it reads back. The check uses designated
 initialisers now and says why.
+
+## Step five, where the port met the central rule
+
+**`api/system.c` is two things, and only one of them is SDL.** The other is
+a POSIX filesystem: it includes `<unistd.h>`, `<dirent.h>` and
+`<sys/stat.h>`, and calls `opendir`, `stat`, `chdir`, `realpath`, `mkdir`
+and `remove`. `CLAUDE.md` names most of that list explicitly as the
+personality this system will not have.
+
+And shimming it would not merely be disallowed, it would be **impossible to
+do honestly**: `stat("/foo")` has no meaning here, because there is no
+global tree for the path to be in. A shim would have to invent one.
+
+So it is replaced. What fell out is worth recording, because it was not the
+shape expected:
+
+**Almost none of `system` is computation.** Reading a directory, taking the
+clipboard, moving a window, waiting for a key - every one is a conversation
+with a server, and on this system a conversation is had from Lua, where the
+namespace and the window manager's endpoint are. So `litexl_system.c` is a
+*shape*: it registers the thirty-two names Lite XL expects and forwards
+most of them to a host table the Kosmos side installs. C keeps the
+interface; Lua does the talking, which is the same division
+`doom_kosmos.c` arrived at one layer down.
+
+Two functions are genuinely computation and live in `litexl_match.c`, away
+from Lua so they can be tested without a machine: `fuzzy_match`, which runs
+over every file in the project on every keystroke of the command palette,
+and `path_before`, which orders every listing.
+
+Three modules are registered as tables whose functions refuse with a
+reason - `process`, `dirmonitor` and `regex`. Registered rather than
+absent, because Lite XL's Lua does `require "process"` at the top of files
+that may never use one: an empty table lets the require succeed and the
+*use* fail, at the point somebody asks for something impossible, with a
+sentence saying why.
 
 ## Two things deliberately given up
 

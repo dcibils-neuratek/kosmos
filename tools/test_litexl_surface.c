@@ -386,6 +386,44 @@ int main(void)
         }
     }
 
+    /*-------------------------------------------- the two that are algorithm */
+    {
+        /*
+         * `system`'s other thirty functions are questions for a server and
+         * cannot be checked without a machine. These two are loops over
+         * bytes, and `user/lib/litexl_match.c` keeps them away from Lua so
+         * that they can be checked here instead.
+         */
+        int score, worse;
+
+        ok(litexl_fuzzy_match("readme.md", "rme", false, &score),
+           "letters in order match, with gaps");
+        ok(!litexl_fuzzy_match("readme.md", "zq", false, &score),
+           "letters that are not there do not");
+        ok(!litexl_fuzzy_match("abc", "abcd", false, &score),
+           "and a needle longer than its haystack does not");
+
+        /* Consecutive letters must beat the same letters scattered. */
+        litexl_fuzzy_match("readme", "rea", false, &score);
+        litexl_fuzzy_match("roeoaom", "rea", false, &worse);
+        ok(score > worse, "a run scores better than the same letters spread");
+
+        /* Exact case beats the wrong case, which is what makes typing
+         * `Init` find `Init` before `init`. */
+        litexl_fuzzy_match("Init", "In", false, &score);
+        litexl_fuzzy_match("init", "In", false, &worse);
+        ok(score > worse, "matching case scores higher");
+
+        ok(litexl_path_before("a", true, "b", false),
+           "a directory sorts before a file");
+        ok(!litexl_path_before("b", false, "a", true),
+           "and a file does not sort before a directory");
+        ok(litexl_path_before("apple", false, "Banana", false),
+           "names compare without regard to case");
+        ok(!litexl_path_before("same", false, "same", false),
+           "and equal is not before");
+    }
+
     if (failures == 0) {
         printf("PASS: %d checks on the Lite XL shim and renderer, on this machine.\n",
                checks);
