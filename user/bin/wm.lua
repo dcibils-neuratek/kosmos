@@ -927,7 +927,7 @@ local pass_busy = 0
 local profile_waiting = nil
 
 local function prof_reset()
-  prof = { passes = 0, frames = 0, rects = 0, px = 0,
+  prof = { passes = 0, frames = 0, rects = 0, px = 0, drawn = 0,
            busy = { total = 0, max = 0 },
            gc = { collections = 0, worst = 0 } }
 
@@ -982,7 +982,7 @@ end
 local function profile_report()
   local out = { ok = true, profiling = profiling,
                 passes = prof.passes, frames = prof.frames,
-                rects = prof.rects, px = prof.px,
+                rects = prof.rects, px = prof.px, drawn = prof.drawn,
                 busy_total = prof.busy.total, busy_max = prof.busy.max,
                 collections = prof.gc.collections, gc_worst = prof.gc.worst,
                 heap = collectgarbage("count") }
@@ -1113,7 +1113,16 @@ end
 -- blending between them and the order is the whole of the occlusion.
 --------------------------------------------------------------------------
 
-local function compose_rect(r)
+--
+-- The desktop under everything: the wallpaper, or the flat colour, and the
+-- stamp in the corner.
+--
+-- Split out of `compose_rect` when occlusion culling arrived, because it
+-- stopped being something that happens once per damage rectangle and became
+-- something that happens once per *piece of a rectangle that no window
+-- covers*. On a busy screen that is often nothing at all.
+--
+local function draw_desktop(r)
   --
   -- The desktop: a picture if there is one, the flat colour if not.
   --
@@ -1162,7 +1171,16 @@ local function compose_rect(r)
     back:text(sx, sy, stamp, stamp_colour(), desktop_colour())
   end
 
-  for i = 1, #windows do
+end
+
+--
+-- One window, clipped to `r`.
+--
+-- Lifted out of `compose_rect` unchanged - the parameter is named `r` for
+-- exactly that reason, so that two hundred lines of drawing and the
+-- reasoning attached to it did not have to be re-read to be moved.
+--
+local function draw_window(i, r)
     local win = windows[i]
     local focused = (i == #windows)
     local fx, fy, fw, fh = frame_of(win)
@@ -1405,6 +1423,136 @@ local function compose_rect(r)
         end
       end
     end
+end
+
+--
+-- `a` with `b` cut out of it, appended to `out` as up to four rectangles.
+--
+-- The pieces are taken in bands - above, below, then left and right of what
+-- is left - so they never overlap. Overlapping pieces would be drawn twice,
+-- which is what this whole exercise exists to stop.
+--
+local function subtract_into(out, a, bx0, by0, bx1, by1)
+  local ax1, ay1 = a.x + a.w, a.y + a.h
+
+  if by0 > a.y then
+    out[#out + 1] = { x = a.x, y = a.y, w = a.w, h = by0 - a.y }
+  end
+
+  if by1 < ay1 then
+    out[#out + 1] = { x = a.x, y = by1, w = a.w, h = ay1 - by1 }
+  end
+
+  local y0 = (by0 > a.y) and by0 or a.y
+  local y1 = (by1 < ay1) and by1 or ay1
+
+  if y1 > y0 then
+    if bx0 > a.x then
+      out[#out + 1] = { x = a.x, y = y0, w = bx0 - a.x, h = y1 - y0 }
+    end
+
+    if bx1 < ax1 then
+      out[#out + 1] = { x = bx1, y = y0, w = ax1 - bx1, h = y1 - y0 }
+    end
+  end
+end
+
+--
+-- Everything that is visible in one damage rectangle, and nothing that is
+-- not.
+--
+-- **This used to be a painter's algorithm with nothing taken out of it.**
+-- The comment it replaces said so plainly - "windows are opaque, so there
+-- is no blending between them and the order is the whole of the occlusion"
+-- - and the order *is* enough to make the picture right. It is not enough
+-- to make it cheap: a window completely behind another was blitted in full
+-- and then painted over, and so was the wallpaper underneath both.
+--
+-- What that costs is not theoretical. Six Doom windows and four cubes, all
+-- animating and heavily overlapped: the compositor took 17% of four
+-- processors while each Doom took one or two. The compositor's cost scales
+-- with window *area*, not with how hard anything is working, so it grows
+-- fastest exactly when the machine is busiest - and most of that area was
+-- pixels nobody would ever see.
+--
+-- So: two passes. The first walks **front to back** and works out which
+-- pieces of the rectangle each window actually shows, cutting away what the
+-- windows above it cover. The second draws **back to front**, as before.
+--
+-- The order of the two matters and is not interchangeable. Culling has to
+-- be front to back, because occlusion accumulates downwards. Drawing has to
+-- be back to front, because not every primitive here clips to the rectangle
+-- it was given - the title text does not - and back to front is what makes
+-- that harmless: whatever a lower window paints outside its piece, a higher
+-- one paints over. Drawing front to back with the same culling would be
+-- faster still and would need every primitive audited first.
+--
+-- Each window is drawn once, clipped to the *bounding box* of its visible
+-- pieces rather than once per piece. A window split into an L is then still
+-- redrawing a little of what is hidden, which is the cheap ninety per cent
+-- of this: the expensive case is a window that is entirely hidden, and that
+-- one is skipped outright.
+--
+local function compose_rect(r)
+  --
+  -- What each window still shows, and what is left for the desktop.
+  --
+  local visible  = {}
+  local remaining = { r }
+
+  for i = #windows, 1, -1 do
+    if #remaining == 0 then break end
+
+    local win = windows[i]
+
+    if not win.hidden then
+      local fx, fy, fw, fh = frame_of(win)
+      local mine, keep = nil, {}
+
+      for _, piece in ipairs(remaining) do
+        local x0 = (fx > piece.x) and fx or piece.x
+        local y0 = (fy > piece.y) and fy or piece.y
+        local x1 = math.min(fx + fw, piece.x + piece.w)
+        local y1 = math.min(fy + fh, piece.y + piece.h)
+
+        if x1 > x0 and y1 > y0 then
+          if mine then
+            if x0 < mine.x0 then mine.x0 = x0 end
+            if y0 < mine.y0 then mine.y0 = y0 end
+            if x1 > mine.x1 then mine.x1 = x1 end
+            if y1 > mine.y1 then mine.y1 = y1 end
+          else
+            mine = { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
+          end
+
+          subtract_into(keep, piece, x0, y0, x1, y1)
+        else
+          keep[#keep + 1] = piece
+        end
+      end
+
+      visible[i] = mine
+      remaining  = keep
+    end
+  end
+
+  -- The desktop, only where no window reaches. Often nowhere.
+  for _, piece in ipairs(remaining) do
+    if measuring then prof.drawn = prof.drawn + piece.w * piece.h end
+    draw_desktop(piece)
+  end
+
+  -- And the windows, bottom to top, each clipped to what it shows.
+  for i = 1, #windows do
+    local v = visible[i]
+
+    if v then
+      if measuring then
+        prof.drawn = prof.drawn + (v.x1 - v.x0) * (v.y1 - v.y0)
+      end
+
+      draw_window(i, { x = v.x0, y = v.y0, w = v.x1 - v.x0, h = v.y1 - v.y0 })
+    end
   end
 
   --
@@ -1462,6 +1610,20 @@ local function compose()
   end
 
   for _, r in ipairs(damage) do
+    --
+    -- **`px` is what the compositor was asked for; `drawn` is what it did.**
+    --
+    -- They used to be one number, and that number was this one - the area
+    -- of the damage rectangle - which cannot see occlusion culling by
+    -- construction. It reported 170714 pixels a frame before culling and
+    -- 170395 after, identical to the noise, because the damage did not
+    -- change: what changed was how much of it got painted more than once.
+    --
+    -- A metric that answers a different question than the one being asked
+    -- is worse than no metric, because it is read as an answer. So both are
+    -- reported now, and the ratio between them is the interesting figure:
+    -- overdraw.
+    --
     if measuring then prof.px = prof.px + r.w * r.h end
     compose_rect(r)
   end

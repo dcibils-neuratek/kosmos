@@ -16,6 +16,10 @@ be read against each other rather than in isolation:
   dragging   a window pulled across the screen, which is the largest
              damage the compositor ever sees and the case a person would
              actually call slow.
+  stacked    four animating windows piled on one another. The case
+             occlusion culling exists for, and the one none of the other
+             three can see - with a single window there is nothing to be
+             hidden behind.
 
 **These are QEMU numbers**, so `CLAUDE.md` applies: they catch regressions
 and they do not say whether something is fast. What survives the emulator
@@ -99,6 +103,28 @@ def scenario_animating(guest, seconds):
     return collect(guest, "collections,", seconds)
 
 
+def scenario_stacked(guest, seconds):
+    """Four animating windows piled on top of one another.
+
+    **The other three scenarios cannot see occlusion at all**, and that is
+    why this exists. `idle` has one window, `animating` has one window, and
+    `dragging` moves one window over the desktop - in none of them is
+    anything hidden behind anything, so a compositor that redraws what
+    nobody can see costs exactly the same as one that does not. The pixel
+    counts came out identical to the digit across a change that was
+    supposed to halve them, which is the benchmark reporting honestly that
+    it was measuring something else.
+
+    The desktop cascades windows, so four of these overlap heavily and each
+    one covers most of the one below. What should fall is `px a frame`:
+    the pixels actually composed, which is the number this whole exercise
+    is about.
+    """
+    guest.type("wm deskbar,plasma,plasma,plasma,plasma,"
+               f"frames:{seconds}")
+    return collect(guest, "collections,", seconds)
+
+
 def scenario_dragging(guest, seconds, w, h):
     """A window dragged across the screen while the profile runs.
 
@@ -138,7 +164,7 @@ def main():
     ap.add_argument("--seconds", type=int, default=6)
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--only", default=None,
-                    help="idle, animating or dragging")
+                    help="idle, animating, stacked or dragging")
     args = ap.parse_args()
 
     guest = Guest(args.image, args.timeout)
@@ -157,6 +183,9 @@ def main():
         if wanted in (None, "animating"):
             runs.append(("animating - a plasma redrawing continuously",
                          lambda: scenario_animating(guest, args.seconds)))
+        if wanted in (None, "stacked"):
+            runs.append(("stacked - four animating windows, overlapping",
+                         lambda: scenario_stacked(guest, args.seconds)))
         if wanted in (None, "dragging"):
             runs.append(("dragging - a window pulled across the screen",
                          lambda: scenario_dragging(guest, args.seconds, w, h)))

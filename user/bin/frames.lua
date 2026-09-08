@@ -152,6 +152,16 @@ local function report(p)
     print(string.format("  composed %d rects, %.1f Mpx, %.0f px a frame",
                         p.rects, p.px / 1000000.0, per))
 
+    --
+    -- Asked for, and actually painted. The gap is overdraw: pixels the
+    -- compositor wrote and something else then covered up.
+    --
+    if p.drawn and p.drawn > 0 then
+      print(string.format("  drew %.1f Mpx, %.0f px a frame  (%.2fx the damage)",
+                          p.drawn / 1000000.0, p.drawn / p.frames,
+                          p.drawn / p.px))
+    end
+
     -- What a pixel cost, which is the number that can be compared against
     -- the C primitives measured on their own. The difference between the
     -- two is what the Lua around them is worth.
