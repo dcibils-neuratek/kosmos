@@ -276,6 +276,24 @@
 #define SCHED_SET_POLICY   1
 
 /*
+ * Lower *this* process's own band. Never raise it.
+ *
+ * The handler's comment explains at length why setting a priority is not a
+ * syscall: bands are handed out by capability so that nothing can promote
+ * itself. **This does not promote.** It gives up a band the process was
+ * handed, which is the one direction that grants nothing - the same shape
+ * as closing a capability you were given.
+ *
+ * It exists because `process_grant_screen` promotes to DISPLAY and the
+ * screen is handed to every program, so a compute worker like `/bin/spin.lua`
+ * runs in the compositor's own band and starves the desktop it is supposed
+ * to be a workload for. The real fix is to stop granting the screen to
+ * everything, and `user/init/init.lua` says why that is a larger change than
+ * it looks. This lets the one program that is *deliberately* a hog say so.
+ */
+#define SCHED_SET_MY_BAND  2
+
+/*
  * What SYS_SCREEN reports.
  *
  * The address is in the *caller's* address space, because the framebuffer is

@@ -1519,6 +1519,25 @@ void syscall_dispatch(struct syscall_frame *sc)
             result = sched_switch_to((unsigned)sc->arg[1]) ? 0 : SYS_ERR_DENIED;
             break;
 
+        case SCHED_SET_MY_BAND:
+            /*
+             * **Down only, and the comparison is the whole security of it.**
+             *
+             * A process may give up a band it was handed and may not take
+             * one it was not, so the rule above - nothing promotes itself -
+             * is untouched. Asking for a higher band is refused rather than
+             * ignored, for the reason the quantum is: a caller that is told
+             * "yes" and given nothing has no way to find out.
+             */
+            if ((unsigned)sc->arg[1] >= thread_current()->sched.priority) {
+                result = SYS_ERR_DENIED;
+                break;
+            }
+
+            thread_set_priority(thread_current(), (unsigned)sc->arg[1]);
+            result = 0;
+            break;
+
         default:
             result = SYS_ERR_DENIED;
             break;

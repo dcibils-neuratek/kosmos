@@ -2056,6 +2056,87 @@ def check_cores(guest):
 
     checks += 1
 
+    #
+    # **Two workers, taken off one at a time - and the count is the check.**
+    #
+    # The pair above passed for months while the button was broken, because
+    # one add and one remove is the single sequence that cannot meet the
+    # bug. A killed process keeps its row in `sys.processes()` until it is
+    # reaped - name, id and all - and `cores` counted by name, taking
+    # `ids[#ids]` as the one to end.
+    #
+    # With one worker that is the live one and it works. With two, the first
+    # removal ends the *last* started, and its corpse stays at the end of
+    # the list - so every removal after that aims at the same dead process.
+    # `sys.kill` answers *true* for one of those, the kernel's "already
+    # gone; nothing to do", so the button reports success for ever while the
+    # remaining worker keeps its core.
+    #
+    # Measured on the machine with five workers: the first click took one
+    # off, and clicks two through five all aimed at id 17, which had died on
+    # click one. The count stuck at four and the meter never came down -
+    # which is what a person reports as not being able to take workers off.
+    #
+    # Three seconds apart, not one. Two clicks in quick succession on the
+    # same control are a double-click to anything that looks for one, and
+    # this needs two separate presses to be seen as two.
+    for _ in range(2):
+        guest.mouse_to(*_to_tablet(188, 126, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+        guest.mouse_button(False)
+        time.sleep(3.0)
+
+    two = ended
+    deadline = time.monotonic() + 20.0
+
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        width, height, px = parse_ppm(guest.screendump())
+        two = _meter_area(width, height, px)
+
+        if two > ended + 100:
+            break
+
+    if two <= ended + 100:
+        raise Failure(
+            f"two workers did not start: {ended} filled pixels before and "
+            f"{two} after. The first add/remove pair worked, so this is "
+            "about the state they left behind rather than about the button."
+        )
+
+    for _ in range(2):
+        guest.mouse_to(*_to_tablet(308, 126, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True)
+        time.sleep(0.3)
+        guest.mouse_button(False)
+        time.sleep(3.0)
+
+    settled = two
+    deadline = time.monotonic() + 40.0
+
+    while time.monotonic() < deadline:
+        time.sleep(1.0)
+        width, height, px = parse_ppm(guest.screendump())
+        settled = _meter_area(width, height, px)
+
+        if settled < ended + 100:
+            break
+
+    if settled >= ended + 100:
+        raise Failure(
+            f"the second worker could not be taken off: {two} filled pixels "
+            f"with two running, {settled} after asking for both to stop, "
+            f"against {ended} with none. One came off and one did not - "
+            "which is `cores` aiming its second kill at the corpse of the "
+            "first, because an exited process keeps its row in "
+            "`sys.processes()` and it was counting by name."
+        )
+
+    checks += 1
+
     mark = len(guest.seen)
     guest.proc.stdin.write(b"\x03")
     guest.proc.stdin.flush()

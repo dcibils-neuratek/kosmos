@@ -116,16 +116,67 @@ local last = {}
 
 local workers = 0
 
+--
+-- **`exited` is the whole of this function, and leaving it out broke the
+-- button in a way that looked like the button.**
+--
+-- `sys.processes()` lists a process until it is reaped, and a killed one is
+-- reaped some time later - so a dead `spin` keeps its row, its name and its
+-- id. Counting by name alone therefore counted the dead, and two things
+-- followed, neither of which looks like a counting bug from the outside:
+--
+--   - the label never came down. Five workers ended and it still said five,
+--     because `tick` recounts from this list every pass.
+--   - and worse, `remove_worker` takes `ids[#ids]` - the last - which after
+--     the first kill is a process that has already exited. `sys.kill`
+--     answers *true* for one of those (the kernel's "already gone; nothing
+--     to do"), so the button reported success, decremented nothing that
+--     stayed decremented, and left every live worker running.
+--
+-- So "take one off" appeared to do nothing at all, while doing exactly what
+-- it was told to a process that was already dead.
+--
+--
+-- **And `dying` is the other half, because `exited` arrives late.**
+--
+-- A kill is a *mark*: `process_kill` sets a flag and the process dies on its
+-- own next entry into the kernel, which is a syscall or the next timer tick.
+-- Until it does, its row still says `exited=false` - so a second click a
+-- moment later finds the same process at the end of the list and kills it
+-- again. `sys.kill` says true, nothing new stops, and clicking faster makes
+-- it worse rather than better.
+--
+-- Which is the same failure as counting the dead, one window earlier, and it
+-- is the one a person actually meets: nobody waits five seconds between
+-- clicks on a button called "take one off".
+--
+-- So an id this program has already asked to stop is not a worker any more,
+-- whatever the process table still says. Entries are dropped when the row
+-- goes, which is when the parent reaps it.
+--
+local dying = {}
+
 local function spin_ids()
   local list = sys.processes and sys.processes() or nil
   local ids = {}
+  local seen = {}
 
   if not list then return ids end
 
   for i = 1, #list do
     if list[i].name == "spin" then
-      ids[#ids + 1] = list[i].id
+      seen[list[i].id] = true
+
+      if not list[i].exited and not dying[list[i].id] then
+        ids[#ids + 1] = list[i].id
+      end
     end
+  end
+
+  -- Whatever is no longer listed at all has been reaped; stop remembering
+  -- it, so an id the kernel later hands to a new process is not skipped.
+  for id in pairs(dying) do
+    if not seen[id] then dying[id] = nil end
   end
 
   return ids
@@ -158,10 +209,24 @@ end
 local function remove_worker()
   local ids = spin_ids()
 
-  if #ids > 0 and sys.kill(ids[#ids]) then
+  if #ids == 0 then
+    why = "no workers to take off"
+    return
+  end
+
+  local id = ids[#ids]
+  local ok, err = sys.kill(id)
+
+  if ok then
+    dying[id] = true
+    why = nil
     workers = workers - 1
 
     if workers < 0 then workers = 0 end
+  else
+    -- The same rule `add_worker` learned: a control that fails silently is
+    -- a control that lies.
+    why = tostring(err or "kill refused")
   end
 end
 

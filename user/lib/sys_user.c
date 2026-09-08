@@ -1888,6 +1888,29 @@ static int l_set_quantum(lua_State *L)
 }
 
 /*
+ * `sys.step_down(band)` - give up scheduling band, and never take one.
+ *
+ * Named for what it does rather than for the field it writes, because the
+ * one thing a caller must understand is that it only goes one way. Asking
+ * for a band at or above the current one is refused.
+ *
+ * `sys.scheduler().bands` says how many there are; NORMAL is 2 and the
+ * compositor's DISPLAY is 3. `/bin/spin.lua` is the caller this exists for.
+ */
+static int l_step_down(lua_State *L)
+{
+    long band = (long)luaL_checkinteger(L, 1);
+    long status = kosmos_sched_set(SCHED_SET_MY_BAND, band);
+
+    if (status != 0) {
+        return fail(L, status);
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/*
  * `sys.set_policy(n)` - which scheduler runs the machine, changed underneath
  * it. The runnable threads are moved across rather than dropped; see
  * `sched_switch_to`.
@@ -2470,6 +2493,7 @@ static const luaL_Reg sys_functions[] = {
     { "scheduler",   l_scheduler },
     { "set_quantum", l_set_quantum },
     { "set_policy",  l_set_policy },
+    { "step_down",   l_step_down },
     { "kit",       l_kit },
     { "kit_names", l_kit_names },
     { "call",     l_call },

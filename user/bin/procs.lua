@@ -492,11 +492,17 @@ local note = ui.label{ x = 12, y = 16, text = "", color = "text_dim" }
 --------------------------------------------------------------------------
 -- Ending one.
 --
--- Only what this process started may be ended by it, which is nothing: the
--- kernel allows a kill from a parent and this is nobody's parent. So the
--- button says what it can and cannot do rather than failing quietly, which
--- is the honest version of a control that is present because it looks like
--- it should be.
+-- **This program may end anything, and that is the point of it.**
+--
+-- `-- kosmos: needs processes` in the header becomes `SPAWN_PROCCTL`, which
+-- becomes `owns_procctl`, which makes `SYS_KILL` take the
+-- `process_kill_any` branch instead of the parent-only one. So the button
+-- works on a process this program did not start, which is every process on
+-- the machine and is what a task manager is for.
+--
+-- The comment here used to say the opposite - "only what this process
+-- started may be ended by it, which is nothing" - and it was describing the
+-- program before the grant existed.
 --------------------------------------------------------------------------
 
 -- In the bar at the top, with the path and the heading, rather than under
@@ -507,31 +513,39 @@ function end_selected()
 
     if not r then return end
 
-    -- Some processes are the ground you are standing on.
     --
-    -- The grant makes ending *anything* possible, which is what a task
-    -- manager needs and is also enough rope to end the desktop you are
-    -- clicking in, or the console every program prints to. Both take the
-    -- whole session with them and neither is what anybody meant.
+    -- **There used to be a refusal here and it refused everything.**
     --
-    -- The check is what a process *holds*, not what it is called: the one
-    -- with the screen is the desktop whatever it was named, and a list of
-    -- trusted names would be wrong the first time somebody wrote another
-    -- window manager.
+    -- It declined to end any process holding `OWNS_CONSOLE` or
+    -- `OWNS_SCREEN`, on the reasoning that the one with the screen is the
+    -- desktop and ending it takes the session down. The reasoning was
+    -- sound; the premise was not. `init.lua` hands `SPAWN_SCREEN` to
+    -- *every* program it launches - its own comment calls that "the screen
+    -- to everything, which is wrong and is staying for now" - so
+    -- `OWNS_SCREEN` is set on all of them, and a guard meant for the window
+    -- manager rejected `spin`.
     --
-    -- init is refused by the kernel and does not need a check here.
-    local OWNS_CONSOLE, OWNS_SCREEN = 1, 2
+    -- What it looked like from the outside was an End button that never did
+    -- anything, on the one program in the system whose entire job is ending
+    -- things, with a message explaining that a compute worker holds the
+    -- screen.
+    --
+    -- **So it is gone, and this is an administrator's tool.** It ends what
+    -- it is pointed at. The two real protections are elsewhere and are
+    -- enough: the kernel refuses a process with no parent, which is init;
+    -- and ending the desktop is a thing a person can mean, on a machine
+    -- with a serial console and a reset button, in a system whose whole
+    -- argument is that you are allowed to look at how it works.
+    --
+    -- A guard that fires on everything protects nothing and teaches the
+    -- user that the button is broken.
+    --
+    -- `sys.kill` first, which with the grant above reaches any process; the
+    -- desktop is asked only if the kernel says no, for a process it started
+    -- and this one somehow cannot name.
+    local killed, why_not = sys.kill(r.id)
 
-    if r.owns and (r.owns & (OWNS_CONSOLE | OWNS_SCREEN)) ~= 0 then
-      note.text = r.name .. " holds the screen or the console; ending it "
-                  .. "would take the session with it"
-      return
-    end
-
-    -- Through the desktop, because it started the applications and only a
-    -- parent may end a child. `sys.kill` is tried first for the case this
-    -- program ever does have children of its own.
-    if sys.kill(r.id) then
+    if killed then
       note.text = "ended " .. r.name
       return
     end
@@ -541,7 +555,7 @@ function end_selected()
     if ok then
       note.text = "asked the desktop to end " .. r.name
     else
-      note.text = r.name .. ": " .. tostring(why)
+      note.text = r.name .. ": " .. tostring(why_not or why)
     end
 end
 
