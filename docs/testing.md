@@ -232,8 +232,12 @@ gave up the CPU, it would prove nothing about the other one.
 
 ### What cannot be checked here, and what is done instead
 
-Mutual exclusion **under real contention** is not tested, and cannot be while
-`thread_cpu_count()` returns 1. Two things stand in for it:
+Mutual exclusion **under real contention** is not tested. It is no longer
+`thread_cpu_count()` that prevents it - that returns `smp_online()` under
+`SMPWORK` - but the suite, which pins itself to one core with
+`thread_place_across(1)` because a dozen of its checks mask interrupts,
+create three threads and drive them by yielding, and only mean anything if
+those threads are here. Two things stand in for it:
 
 - **An audit.** Four readers over `kernel/`, `arch/` and `hal/`, each handed
   to a second reader told to refute it. About sixty structures, and it found

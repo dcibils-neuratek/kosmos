@@ -2,14 +2,18 @@
 /*
  * Starting the other processors, and stopping there.
  *
- * **`docs/smp.md` step three: a second core, doing nothing.** It is brought
- * up, it turns translation on with the tables core 0 built, it claims its
- * own `struct percpu`, it says so, and it parks. It touches no shared
- * structure, takes no lock, and runs no thread - which is exactly why it
- * can be done before there are any locks to take.
+ * **This file was written for `docs/smp.md` step three - a second core
+ * doing nothing - and the core it starts has not done nothing since step
+ * five.** It is brought up, it turns translation on with the tables core 0
+ * built, it claims its own `struct percpu`, it installs its own vector
+ * table, wakes its own GIC redistributor, arms its own timer, adopts its
+ * own idle thread, and then runs the same scheduling loop core zero runs.
  *
- * That sounds like very little and it proves the four things that are
- * genuinely hard to be sure of otherwise:
+ * The comments below still describe the parked version in places, and
+ * where they do they are describing history rather than the code. What
+ * step three proved is worth keeping, because it is what made everything
+ * after it safe to attempt - four things that are genuinely hard to be
+ * sure of otherwise:
  *
  *   - the firmware call works and the entry address was right;
  *   - a processor started this way can turn its own MMU on with tables it
@@ -20,9 +24,13 @@
  *     first time this kernel has had two instruction streams in it.
  *
  * **Nothing here is on the path of a running system.** `smp_start_others`
- * is called once at boot and never again; after it, the secondaries are in
- * `wfi` for ever and the machine behaves exactly as it did on one core.
- * That is the property `make test` checks by still passing.
+ * is called once at boot and never again.
+ *
+ * What comes after it has changed and this sentence used to deny it: the
+ * secondaries are *not* in `wfi` for ever. They idle when their runqueue is
+ * empty, which on the default placement is always, so the machine behaves
+ * as it did on one core - and that is the property `make test` checks by
+ * still passing. Give them work with `SMPWORK` and they run it.
  */
 
 #include <stdbool.h>
@@ -50,9 +58,11 @@
  * shape that allows it. Core 0's stay in the linker script, where they can
  * have a guard page beneath them; these do not, and that is a real
  * difference worth naming rather than a detail: a secondary that overflows
- * walks into the slot below it instead of faulting. It parks in `wfi`, so
- * it never comes close, and the day one runs threads it wants the linker
- * script treatment too.
+ * walks into the slot below it instead of faulting. That day has arrived -
+ * a secondary runs real threads under `SMPWORK` - so this wants the linker
+ * script treatment now, and it is a real gap rather than a future one. It
+ * has not bitten because a kernel stack here carries an idle loop and an
+ * exception frame, not a deep call chain.
  *
  * `_Alignas(16)` because AArch64 requires a 16-byte-aligned stack pointer
  * and the entry code does no rounding.
@@ -64,9 +74,10 @@ _Alignas(16) uint8_t secondary_exception_stacks[NR_CPUS][SECONDARY_STACK_BYTES];
  * How many processors have run kernel code.
  *
  * One before any of this - core 0 counts itself. **Not the same number as
- * how many are scheduling**, which is `thread_cpu_count` and is still one:
- * a parked core is in the kernel and is not running threads, and collapsing
- * those two would be claiming step four before it is done.
+ * how many are given work**, which is `thread_cpu_count` and is one unless
+ * `SMPWORK` says otherwise. Every core counted here can run threads and
+ * does when it is given any; the two numbers stay apart because one is a
+ * fact about the machine and the other is a policy about it.
  *
  * `volatile` because a secondary writes it and core 0 reads it in a loop
  * below, which is the first time in this kernel that a variable is touched

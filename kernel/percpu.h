@@ -21,9 +21,10 @@
  * half of it.
  *
  * **Step three fills more than one of these.** A secondary started by
- * `kernel/smp.c` claims its own slot and parks, which is what finally
- * demonstrates that the register below is per-core - step one could only
- * assert it on a machine where every answer was the same answer.
+ * `kernel/smp.c` claims its own slot, which is what finally demonstrates
+ * that the register below is per-core - step one could only assert it on a
+ * machine where every answer was the same answer. It parked then; since
+ * step five it runs threads.
  *
  * **Named `percpu.h` and not `cpu.h`** because `-Ikernel` and
  * `-Iarch/<name>` are both on the compile line: a second `cpu.h` here would
@@ -34,7 +35,7 @@
 
 /*
  * Four, which is how many `struct percpu` slots exist - **not how many are
- * running threads**, which is `thread_cpu_count` and is one.
+ * given work**, which is `thread_cpu_count` and is one by default.
  *
  * It was 1 while nothing could start a second core. `smp.c` can now, and a
  * core that arrives needs somewhere to put itself, so the slots have to

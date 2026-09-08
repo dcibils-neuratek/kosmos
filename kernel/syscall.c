@@ -499,9 +499,10 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
          * They are different questions and this is the one that has an
          * answer per core: `smp_online` counts processors running kernel
          * code, every one of which takes its own timer interrupt and charges
-         * its own idle or busy tick. `thread_cpu_count` is how many *run
-         * threads*, which is still one - a secondary has an idle thread and
-         * no runqueue to take work from.
+         * its own idle or busy tick. `thread_cpu_count` is how many are
+         * *given* work, which is one unless `SMPWORK` says otherwise - and
+         * that is a policy rather than a capability: a secondary has its own
+         * runqueue and takes work from it whenever anything is placed there.
          *
          * Bounding by the smaller of the two reported three cores as zero
          * when they were measurably idle, which is a different claim.

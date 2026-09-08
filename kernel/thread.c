@@ -887,49 +887,42 @@ void thread_place_across(unsigned cores)
 unsigned thread_cpu_count(void)
 {
     /*
-     * One, and `NR_CPUS` is four.
+     * **How many processors new threads are spread across.** Three numbers
+     * are easy to confuse here and all three exist:
      *
-     * **They are different questions and returning the second here said
-     * "4 scheduling" on a machine where three cores were parked in `wfi`.**
-     * `NR_CPUS` is how many `struct percpu` slots exist - the room, so a
-     * core that starts has somewhere to put itself. This is how many are
-     * running threads, and until `docs/smp.md` step four gives a secondary
-     * an idle thread and a runqueue, that is one.
+     *   `NR_CPUS`      how many `struct percpu` slots exist - the room, so
+     *                  a core that starts has somewhere to put itself. Four.
+     *   `smp_online()` how many have executed kernel code. Four.
+     *   this           how many are given work. One, unless asked otherwise.
      *
-     * `smp_online` is the third of the three and counts cores that have
-     * executed kernel code, parked or not.
+     * Returning `NR_CPUS` here once said "4 scheduling" on a machine where
+     * three cores were parked in `wfi`, which is why they are kept apart.
+     *
+     * Every processor that reached `secondary_main` has its own runqueue,
+     * its own idle thread and its own timer, and runs the same loop core
+     * zero runs. So the mechanism is finished and this is the *policy*;
+     * `thread_place_across` sets it and `SMPWORK` reaches that from the
+     * command line.
+     *
+     * **It is one by default because work does not spread yet, and that is
+     * a measurement rather than a caution.** Six compute-bound processes on
+     * four processors: three go idle within a second and stay idle while
+     * all six are still alive, where the same six saturate a single core.
+     *
+     * Placement is not the fault - a trace shows the six going to cpu
+     * 0,1,2,3,0,1. The preemption path is, in two pieces, and both are
+     * visible from this file: `thread_tick` returns before `policy->tick`
+     * on every core but zero, so only core zero preempts on a quantum; and
+     * `thread_wake` compares against the *waking* core's `current` and sets
+     * the *waking* core's `preempt_pending`, so a cross-core wake never
+     * preempts the target. Together: a thread on cores 1-3 is never taken
+     * off by anything.
+     *
+     * **This comment used to say the blocker was the four virtio drivers
+     * having no locks, and said it in two contradictory blocks stacked on
+     * top of each other.** They were locked in 0.9.20. `docs/smp.md` has
+     * the measurement and what was ruled out to reach it.
      */
-    /*
- * **One, and the line below is what changes it.**
- *
- * Every processor that reached `secondary_main` has its own runqueue, its own
- * idle thread and its own timer, and runs the same loop core zero runs -
- * `thread_create_on` puts a thread on any of them and it runs there. So the
- * mechanism is finished, and this number is the *policy*: how many cores new
- * threads are spread across by default.
- *
- * It returns one, and what is holding it there is named rather than vague:
- * **the four virtio drivers have no locks.** `blk`, `net`, `input` and `snd`
- * each keep one set of virtqueue indices touched from a syscall and from an
- * interrupt handler, and they are safe today only because every device
- * interrupt is routed to core zero and every thread runs there too. Spread
- * threads across four cores and a disk read on core two races core zero's
- * completion handler over the same ring.
- *
- * That is one afternoon of mechanical work and it is the whole of what stands
- * between this line and `return smp_online()`. Turning it on before then
- * would be trading a scheduler that works for a machine that corrupts a
- * filesystem occasionally.
- *
- * **It was turned on once, deliberately, to find out what breaks.** Three
- * things did, in the first second: `thread_block` panicked on a core whose
- * queue was empty, because "every thread is blocked" had been a statement
- * about the machine and is now about one processor; and a dozen tests failed
- * because they are single-core tests of the mechanism - they mask interrupts
- * and drive three threads by yielding, which only works if those threads are
- * here. Both are recorded: the first is fixed, the second is why
- * `thread_create_on` exists rather than a global switch.
- */
     /*
      * Zero means "however many are online", asked *now* rather than latched.
      *

@@ -478,8 +478,9 @@ of what "a per-CPU struct" means, made concrete:
 | `idle_thread` | each core idles independently | **moved** |
 | `idle_ticks`, `busy_ticks` | load is measured per core or not at all | **moved** |
 | `preempt_pending` | a switch owed on *this core's* way out of an exception | **moved** - and this document had missed it |
-| `owner` in `arch/*/fp.c` | who owns the FP registers *on this core* | still a global |
-| the runqueue in `sched_prio.c` | `head[]`, `tail[]`, `occupied` | still globals; step 5 |
+| `owner` in `arch/<name>/fp.c` | who owns the FP registers *on this core* | **moved** - `fp_owner`, as `void *` so `percpu.h` need not know what a thread is |
+| the runqueue in `sched_prio.c` | `head[]`, `tail[]`, `occupied` | **moved** - indexed `[NR_CPUS][SCHED_PRIORITIES]`, one lock each |
+| the armed-fault slot in `trap.c` | a fault this core is expecting | still one global, and every core's handler reads it |
 | the TSS / kernel stack | where a ring-3 entry lands | still one; x86 only |
 
 And the register that finds them: **`TPIDR_EL1` on AArch64, the `GS` base
@@ -541,15 +542,19 @@ Four groups, and they want different things:
   The suite caught it on the first run.
 
 - **Some things want to be per-CPU rather than locked.** The lazy-FP
-  `owner`, whose own comment predicted this. The armed-fault slot in
-  `trap.c`. On x86-64: the TSS and its `rsp0`, the `user_rsp` scratch cell,
+  `owner`, whose own comment predicted this - **done**, and it is
+  `fp_owner` in `struct percpu`. The armed-fault slot in `trap.c`, which is
+  **not** done and is still one machine-wide static that every core's fault
+  handler consults. On x86-64: the TSS and its `rsp0`, the `user_rsp` scratch cell,
   and the `syscall`/`sysret` MSRs - none of which matters until that board
   starts a second core, and all of which is why it should not.
 
-- **The drivers want locks and are reached from interrupt handlers.**
-  `blk`, `net`, `input` and `snd` each keep one set of virtqueue indices,
-  and every one of them is touched from both a syscall and an interrupt.
-  Nothing here is subtle; there is just a lot of it.
+- ~~**The drivers want locks and are reached from interrupt handlers.**~~
+  **Done**, in 0.9.20. `blk`, `net`, `input` and `snd` each take a spinlock
+  over the virtqueue indices they own. A worker function plus a thin
+  wrapper rather than wholesale wrapping, because several of them have more
+  than one `return` and a lock taken at the top of a function with four
+  exits is a lock leaked at three of them.
 
 - **Two things want a protocol rather than a lock.** `panic()` on one core
   while another is running is not a mutual-exclusion problem - the second
@@ -579,22 +584,23 @@ different thread than took it. Pick under the lock, let go, then switch.
 
 ## What is left, and what is holding it
 
-**The mechanism is finished and the policy is not switched on.**
-`thread_cpu_count()` returns one, so new threads are all homed on core zero;
-`thread_create_on` puts a thread anywhere and it runs there, which is what
-the suite uses.
+**The mechanism is finished and the policy is not correct yet**, which is
+a different sentence from the one that stood here for months and a worse
+one. `thread_cpu_count()` returns `smp_online()` when `SMPWORK` asks it to;
+`thread_create_on` puts a thread anywhere and it runs there.
 
-What holds the line is named rather than vague: **the four virtio drivers
-have no locks.** `blk`, `net`, `input` and `snd` each keep one set of
-virtqueue indices touched from a syscall and from an interrupt handler, and
-they are safe today only because every device interrupt is routed to core
-zero and every thread runs there. Spread threads across four cores and a disk
-read on core two races core zero's completion handler over the same ring.
-That is an afternoon of mechanical work, and it is the whole of what stands
-between one line and `return smp_online()`.
+**What used to hold the line was the drivers, and that is done.** `blk`,
+`net`, `input` and `snd` each take a spinlock over the virtqueue indices
+they own, landed in 0.9.20. This section named them as the single blocker
+for months, and went on naming them in the release that removed them.
 
-**It was switched on once, deliberately, to find out what breaks.** Two
-things did, within a second:
+**What holds the line now is that work does not spread**, which was found
+by measuring rather than by reasoning and is written up under *What
+`SMPWORK=4` actually does today* above. Six compute-bound processes, four
+processors, three of them idle within a second.
+
+**It was switched on once before that, deliberately, to find out what
+breaks.** Two things did, within a second:
 
 - `thread_block` panicked. "Every thread is blocked" was a statement about
   the *machine* and is now a statement about one processor - an empty
@@ -631,8 +637,18 @@ which is the one path that needs care.
 `send`, `receive` and `reply` each touch *two threads and an endpoint* at
 once, and the states they move through - blocked-sending, blocked-receiving,
 ready - have to change together or a message is delivered twice, or to a
-thread that has since died. 801 lines of it, and every one of them currently
-assumes nothing else is running.
+thread that has since died. 947 lines of it, and they no longer assume
+nothing else is running: **there is a spinlock per endpoint**, taken across
+`ipc_call`, `ipc_receive`, `ipc_reply`, `ipc_abort`, `ipc_timed_out` and
+`ipc_endpoint_destroy`, with `waiting_on` re-checked under it in three
+places.
+
+Two things in that path are still open and are named rather than implied.
+`ipc_endpoint_create` claims its slot in the endpoint pool with no lock at
+all - the one pool that never got one, while `threads[]`, `processes[]` and
+the rest did. And neither `ipc_call` nor `ipc_receive` re-checks
+`ep->in_use` after taking the lock, so a call can park on an endpoint that
+was destroyed between the capability lookup and the lock.
 
 One thing about the current design helps and is worth keeping: **`deliver`
 wakes the peer and enqueues it rather than switching straight to it.** A
@@ -691,7 +707,10 @@ Then, in dependency order:
    the current thread on its way to reporting - so an exception arriving
    before it would take a second fault instead of printing. Removing that
    one line panics at boot, which is the right loudness.
-2. **Locks, with one core.** Take them, release them, and let them be
+2. ~~**Locks, with one core.**~~ **Done**, and done out of order - it
+   arrived with step five rather than before step three, for the reason
+   recorded below. `kernel/spinlock.h`, and every lock masks interrupts.
+   Take them, release them, and let them be
    uncontended. The kernel is still correct at every step and `make test`
    still passes - which is what makes this safe to do incrementally.
 
@@ -709,10 +728,11 @@ Then, in dependency order:
    whether the per-CPU register from step one is actually per-core - which
    step one could assert and could not check.
 
-   So the locks come back when there is a second *scheduling* core to
-   contend for them, which is step four. **This is a departure from the
-   order above and it is written here rather than quietly done**, because
-   the order was reasoned about once and this changes it.
+   So the locks came back when there was a second *scheduling* core to
+   contend for them. **This was a departure from the order above and it is
+   written here rather than quietly done**, because the order was reasoned
+   about once and this changed it. They landed with step five, where the
+   per-CPU runqueues gave them something to guard and something to test.
 3. ~~**A second core, doing nothing.**~~ **Done.** PSCI `CPU_ON` into a
    park loop, in `kernel/smp.c`, with `_secondary_start` in `boot/start.S`
    and `hal_cpu_count` / `hal_cpu_on` under it. `-smp 4` boots four
@@ -843,8 +863,29 @@ Then, in dependency order:
    Nothing depends on it for *correctness*: the check for a thread running
    on another processor passes with the IPI removed. That is deliberate, and
    it is why the value is a measurement rather than an assertion.
-7. **TLB shootdown.** `as_switch` invalidates locally (`tlbi vmalle1`);
-   with two cores in one address space, unmapping needs the other core told.
+7. **TLB shootdown - and the premise this step was written on is wrong.**
+   It said `as_switch` invalidates locally with `tlbi vmalle1`. It does
+   not, and has not for some time: `arch/aarch64/mmu.c` issues
+   `tlbi vmalle1is` in `as_switch` and `tlbi vaae1is` in `invalidate`, and
+   the `is` suffix is *inner shareable* - the hardware broadcasts the
+   invalidate to every core in the domain and the instruction does not
+   retire until they have all seen it.
+
+   So the expensive half of a shootdown - an IPI, a handshake, and a wait -
+   is not needed on this architecture, and the entry that said it was would
+   have had somebody build one. The only local `tlbi vmalle1` left is in
+   `enable()`, which runs before any other core matters and is right to be
+   local.
+
+   **What is actually left here is narrower and still real.** Two things:
+   whether every path that changes a live mapping goes through `invalidate`
+   at all rather than editing a descriptor and moving on; and
+   `split_block`, which replaces a live 2 MB block with a table descriptor
+   without break-before-make - legal on one core by luck and not by
+   architecture, because another core may hold both translations at once
+   and the manual says that is a permitted TLB conflict abort. x86-64,
+   when it gets a second core, has no broadcast invalidate and does need
+   the IPI.
 
 ---
 

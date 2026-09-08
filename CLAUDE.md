@@ -305,12 +305,25 @@ own generic timer, claims its own `struct percpu` through `TPIDR_EL1`, adopts
 its own idle thread and runs its own runqueue. `docs/smp.md` is the map of
 what exists and what is left.
 
-**What is not switched on is the placement policy.** `thread_cpu_count()`
-returns 1, so new threads are all homed on core zero and
-`thread_create_on(cpu, ...)` is how anything crosses a core. What holds that
-line is named rather than vague: the four virtio drivers keep one set of
-virtqueue indices each, touched from a syscall and from an interrupt handler,
-and are safe only because every device interrupt is routed to core zero.
+**What is not switched on by default is the placement policy.**
+`make SMPWORK=4 qemu` turns it on; without it every thread comes home to
+core zero and `thread_create_on(cpu, ...)` is how anything crosses a core
+deliberately.
+
+What held that line was the four virtio drivers, which had no locks. **They
+were locked in 0.9.20 and that was not the end of it.** With placement on,
+work does not spread: six compute-bound processes on four processors leave
+three idle within a second while all six are still alive, where the same six
+saturate a single core.
+
+The cause is the preemption path rather than placement, which measures
+correct. `thread_tick` returns before `policy->tick` on every core but zero,
+so **only core zero preempts on a quantum** - its own comment calls that "a
+temporary invariant, named so it is found when the locks arrive", and the
+locks arrived at step two. And `thread_wake` compares against the *waking*
+core's `current` and sets the *waking* core's `preempt_pending`, so **a
+cross-core wake never preempts the target.** `docs/smp.md` has the numbers
+and what was ruled out to get to them.
 
 **This paragraph said the opposite for two years, and the correction is
 worth keeping.** It claimed the code was "written SMP-ready: no loose mutable

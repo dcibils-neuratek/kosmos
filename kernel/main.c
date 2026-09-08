@@ -169,10 +169,23 @@ void kmain(void)
         kputc('s');
     }
 
-    kputs(", ");
-    kputu(thread_cpu_count());
-    kputs(" scheduling");
     boot_fact_end();
+
+    /*
+     * **How many are *given work* is deliberately not said here**, and this
+     * line said it for a while and was wrong every time.
+     *
+     * `thread_cpu_count()` is a policy set from a boot option, and the
+     * option is not read until after `smp_start_others()` some three
+     * hundred lines below. Reading it at this point in the boot returns the
+     * value it has before anything has been decided, which is one - so
+     * `make SMPWORK=4 qemu` printed "4 processors, 1 scheduling" while
+     * placing threads on all four.
+     *
+     * A number that is right only in the default configuration is worse
+     * than no number, because it is read as a report. It is said once,
+     * lower down, at the point where it is known.
+     */
 
     /* One line, not two. `cpu` at the prompt has the longer version,
      * including why the counter is not the core clock. */
@@ -453,6 +466,20 @@ void kmain(void)
 
         if (smp_online() < hal_cpu_count()) {
             kputs("; the rest are still in firmware");
+        }
+
+        boot_fact_end();
+
+        /*
+         * And the placement policy, here because here it is known: the
+         * boot option was read a few lines above.
+         */
+        boot_fact_begin();
+        kputu(thread_cpu_count());
+        kputs(" of them given new threads");
+
+        if (thread_cpu_count() == 1) {
+            kputs("; SMPWORK=4 spreads them");
         }
 
         boot_fact_end();

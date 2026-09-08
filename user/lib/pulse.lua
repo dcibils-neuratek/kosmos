@@ -127,16 +127,24 @@ function pulse.panel(spec)
       local lit   = (value > 80) and theme.bad or theme.good
 
       --
-      -- The chip. Lit when this processor is scheduling, dark when it is in
-      -- the kernel and parked.
+      -- The chip. Lit when this processor has reached the kernel, dark
+      -- when it never started.
+      --
+      -- **The comment here used to say "lit when this processor is
+      -- scheduling", and the line below has always said `c <= self.online`,
+      -- which is a different question.** Every core that reaches the kernel
+      -- arms its own timer and charges its own ticks, so it has a real
+      -- reading whether or not anything was placed on it. Whether it is
+      -- *given work* is placement, and that is what the note at the bottom
+      -- of `cores` says in words.
       --
       -- Pulse's numbers were buttons that took a processor offline. This
       -- kernel cannot stop a core, so they are indicators - and they carry
       -- the one thing this machine has to say that Pulse's did not. **A
-      -- parked processor gets a row and not a number**: its `idle_ticks`
-      -- and `busy_ticks` are zero because nothing ever wrote them, the
-      -- timer interrupt does not reach it, and a bar at 0% would claim it
-      -- was measured and found idle. Those are different facts.
+      -- processor that never started gets a row and not a number**: its
+      -- `idle_ticks` and `busy_ticks` were never written by anything, and a
+      -- bar at 0% would claim it was measured and found idle. Those are
+      -- different facts.
       --
       local chip = live and theme.good or theme.lift(theme.good, -100)
 
@@ -154,7 +162,10 @@ function pulse.panel(spec)
       -- characters reserved, which is `parked` and is the longest thing
       -- this can say.
       --
-      local text = live and ("%d%%"):format(value) or "parked"
+      -- "parked" was the word while a secondary started and sat in `wfi`.
+      -- One that is not `live` never reached the kernel at all, which is
+      -- the stronger statement and the one this branch means.
+      local text = live and ("%d%%"):format(value) or "no data"
       local room = 6 * gfx.font.w + 6
 
       local barx = bx + CHIP_W + 6

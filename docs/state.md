@@ -73,11 +73,26 @@ across four cores. Two things broke inside a second:
   suite rewritten to tolerate placement would be a suite that had stopped
   asking its original question.
 
-So the switch is off and `thread_create_on` is how anything crosses a core.
-What holds the line is named: **the four virtio drivers have no locks.** They
-are safe only because every device interrupt is routed to core zero and every
-thread runs there. That is an afternoon of mechanical work and it is the
-whole of what stands between one line and `return smp_online()`.
+So the switch is off by default and `SMPWORK=4` turns it on.
+`thread_create_on` is how anything crosses a core deliberately.
+
+**What held the line was the drivers, and that is done.** `blk`, `net`,
+`input` and `snd` each take a spinlock over their virtqueue indices, landed
+in 0.9.20.
+
+**What holds the line now is that work does not spread**, and it was found
+by measuring rather than by reasoning. Six compute-bound processes on four
+processors: three go idle within a second and stay idle while all six are
+still alive; the same six saturate a single core. Placement itself is
+correct - a trace shows them going to cpu 0,1,2,3,0,1 - and neither IPC nor
+threads dying explains it.
+
+Two faults in the preemption path do, and both are confirmed in the source:
+`thread_tick` returns before `policy->tick` on every core but zero, so only
+core zero preempts on a quantum; and `thread_wake` compares against the
+*waking* core's `current` and sets the *waking* core's `preempt_pending`, so
+a cross-core wake never preempts the target. Together they mean a thread on
+cores 1-3 is never taken off by anything. `docs/smp.md` has the measurement.
 
 ### One runqueue per processor, and a thread that has a home
 

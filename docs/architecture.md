@@ -587,14 +587,19 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   lets IPC release its endpoint before the context switch rather than
   handing it to the next thread.
 
-  What is still missing is one line and one afternoon. `thread_cpu_count()`
-  returns 1, so new threads all come home to core zero, and what holds it
-  there is that **the four virtio drivers have no locks**: each keeps one
-  set of virtqueue indices touched from a syscall and from an interrupt,
-  safe only because every device interrupt is routed to core zero. After
-  that: TLB shootdown, and a panic protocol - a core that panics has to
+  What is still missing is no longer "one line and one afternoon", which is
+  what this said while the drivers were unlocked. They were locked in
+  0.9.20, and `make SMPWORK=4 qemu` now places threads on all four
+  processors. **Work still does not spread**: six compute-bound processes
+  leave three cores idle within a second while all six are alive.
+
+  The cause is the preemption path, in two pieces. `thread_tick` returns
+  before `policy->tick` on every core but zero, so only core zero preempts
+  on a quantum; and `thread_wake` compares against the *waking* core's
+  `current` and flags the *waking* core, so a cross-core wake never preempts
+  the target. After that: a panic protocol - a core that panics has to
   *stop* the others rather than queue behind them. `docs/smp.md` is the
-  map.
+  map, and carries the measurement.
 
   This bullet has been wrong twice in opposite directions. It said "nothing
   has ever run on a second core, and there is no per-CPU struct"; and before

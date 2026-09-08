@@ -13,18 +13,20 @@
 --------------------------------------------------------------------------
 -- Why this exists before the thing it shows
 --
--- **Kosmos schedules on one processor and the machine has four.** The other
--- three are not in firmware: `docs/smp.md` step three starts them, each
--- claims its own `struct percpu` through its own `TPIDR_EL1`, and each then
--- sits in `wfi` for ever. They are in the kernel and they run no threads.
+-- **This header described a machine that no longer exists, and the version
+-- it described is worth keeping one line of: all four processors used to
+-- start, claim a `struct percpu`, and sit in `wfi` for ever.**
 --
--- So all four get a row and only one of them gets a number. A parked
--- processor's `idle_ticks` and `busy_ticks` are zero because nothing ever
--- wrote them - the timer interrupt does not reach it - and a bar sitting at
--- 0% would claim that processor was measured and found idle. Its chip is
--- dark and its segments are unlit, which says the other thing.
+-- They do not. Since `docs/smp.md` step five each has its own runqueue,
+-- idle thread and timer, and runs the same loop core zero runs. All four
+-- take ticks, so all four have real `idle_ticks` and `busy_ticks` and every
+-- row is measured rather than assumed.
 --
--- Step four is the one that makes a second row move.
+-- What decides whether a row *moves* is placement, which is a policy and is
+-- off by default: `make SMPWORK=4 qemu` spreads new threads over all four.
+-- A dark chip still means a processor that never reached the kernel, which
+-- is a different statement from one that is measured and idle - and on this
+-- machine there are none.
 --
 -- So this is an instrument built before the experiment, which is what this
 -- project does: `jitter` measured the noise floor before anybody optimised
@@ -32,11 +34,12 @@
 -- rewrote the window manager. **You cannot see SMP arrive without something
 -- that would show it.**
 --
--- And it is honest in the meantime rather than aspirational. With one core
--- it says one core, it says so in words at the bottom, and two workers on
--- one core produce one full bar and a machine that is exactly twice as slow
--- - which is a real thing to have watched before there is a second core to
--- compare it against.
+-- And it is honest rather than aspirational. With placement off it says one
+-- core in words at the bottom, and two workers produce one full bar and a
+-- machine exactly twice as slow. With placement on it currently shows the
+-- open bug rather than a working machine: three bars carry work and one
+-- will not rise, because only core zero preempts. `docs/smp.md` has the
+-- measurement. Watching that is the point of having built this first.
 --
 --------------------------------------------------------------------------
 -- What a bar actually means
@@ -214,9 +217,9 @@ local note
 if ONLINE > SCHEDULING then
   -- Kept inside the window on purpose: `ui.label` does not wrap, and the
   -- first version of this line ran off the right edge and ended in "kern".
-  note = { ("%d processors, all ticking and idle. %d runs threads;")
+  note = { ("%d processors, all ticking. %d given work;")
            :format(ONLINE, SCHEDULING),
-           "docs/smp.md step 5 gives the others a runqueue." }
+           "run with SMPWORK=4 to place threads on all of them." }
 elseif CORES > ONLINE then
   note = { ("%d processors, %d in the kernel. The other %d are still")
            :format(CORES, ONLINE, CORES - ONLINE),

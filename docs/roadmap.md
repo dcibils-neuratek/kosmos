@@ -90,22 +90,36 @@ unblocks.
 
 ### Being built now
 
-**SMP on AArch64 - the mechanism is finished; the policy is one line away.**
-`docs/smp.md` is the map. **Six of seven steps are done**: per-CPU state,
-the locks, four processors each with their own vector table, interrupt
-controller, timer, idle thread and runqueue, and an IPI worth a measured
-25x on a cross-core wake. `thread_create_on(cpu, ...)` puts a thread on any
-core and it runs there.
+**SMP on AArch64 - the mechanism is finished; the policy is not correct
+yet.** `docs/smp.md` is the map. **Six of seven steps are done**: per-CPU
+state, the locks, four processors each with their own vector table,
+interrupt controller, timer, idle thread and runqueue, and an IPI worth a
+measured 25x on a cross-core wake. `make SMPWORK=4 qemu` places threads on
+all four; `thread_create_on(cpu, ...)` puts one anywhere deliberately.
 
-**What is left before every thread is placed automatically is one afternoon
-and one line.** `thread_cpu_count()` returns 1 because the four virtio
-drivers have no locks - each keeps one set of virtqueue indices touched from
-a syscall and from an interrupt handler, safe today only because every
-device interrupt is routed to core zero. Lock those and the line becomes
-`return smp_online()`.
+**This entry said the remaining work was "one afternoon and one line" -
+locking the four virtio drivers. That was done in 0.9.20 and it was not the
+end of it.** With placement on, work does not spread: six compute-bound
+processes on four processors leave three of them idle within a second while
+all six are still alive.
 
-Then step seven, TLB shootdown, and a panic protocol: a core that panics has
-to *stop* the others rather than queue behind them.
+The cause is not placement, which a trace shows to be correct, but the
+preemption path, in two confirmed pieces. `thread_tick` returns before
+`policy->tick` on every core but zero, so **only core zero preempts on a
+quantum**; and `thread_wake` compares against the *waking* core's `current`
+and sets the *waking* core's `preempt_pending`, so **a cross-core wake never
+preempts the target**. A thread on cores 1-3 is therefore never taken off by
+anything.
+
+That is the next piece of work, and it is not mechanical: making
+`thread_wake_sleepers` and `policy->tick` safe on every core is what step
+two deferred and step five only half-collected.
+
+Then a panic protocol - a core that panics has to *stop* the others rather
+than queue behind them, and today it stops neither them nor itself. Step
+seven turns out to be smaller than it was written: `as_switch` already uses
+`tlbi vmalle1is`, which the hardware broadcasts, so there is no shootdown
+IPI to build on this architecture.
 
 ### Next, in this order
 
