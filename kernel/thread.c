@@ -620,6 +620,7 @@ struct thread *thread_create_suspended(const char *name,
         next_cpu++;
 
         spin_unlock(&threads_lock, idflags);
+
     }
     t->switches = 0;
 
@@ -1432,6 +1433,44 @@ void thread_wake_sleepers_now(void)
 
 void thread_wake(struct thread *t)
 {
+    /*
+     * **This look is a hint. The decision is made again under the lock**,
+     * fifteen lines down, and the difference between those two sentences
+     * was three cores going idle with runnable threads on them.
+     *
+     * `t->state` is read here with nothing held, and a thread becomes
+     * BLOCKED only under `runq_lock[t->sched.cpu]` - so between this test
+     * and that lock the answer can change, and when two cores are waking
+     * the same thread they can both be told yes. Both then enqueued it.
+     *
+     * What that does to the queue is worse than it sounds, because
+     * `prio_enqueue` begins by writing `t->sched.next = NULL`. Enqueuing a
+     * thread that is already *in* the list therefore cuts the list at that
+     * thread while `tail` still points past the cut: everything after it
+     * becomes unreachable from `head` and is never scheduled again. The
+     * queue then drains to empty, `occupied` clears, and the core parks in
+     * `wfi` holding threads that are ready to run and can no longer be
+     * found.
+     *
+     * It is not subtle when it happens. Six spinners placed across four
+     * processors: within a second, three of the four read 0% and stay
+     * there, and the machine that was using four cores is using one. The
+     * desktop showed the same thing more quietly - one bar that would not
+     * rise - and the display harness showed it as an editor that never ran
+     * the program typed into it.
+     *
+     * The second waker is real rather than theoretical, and `ipc.c` is
+     * where it comes from: `deliver` clears `waiting_on` and then wakes,
+     * while core zero's tick is inside `thread_wake_sleepers` for the same
+     * thread, and `ipc_timed_out` returns immediately once `waiting_on` is
+     * NULL without ever taking the endpoint lock. Nothing serialises the
+     * two, and nothing did.
+     *
+     * The fast path is kept because it is worth keeping: almost every call
+     * here is a wake of a thread that really is blocked, and the ones that
+     * are not - a wake racing a wake - are exactly the ones that must not
+     * take the cheap answer.
+     */
     if (t->state == THREAD_BLOCKED) {
         /*
          * Onto **its** queue, which is not necessarily this core's.
@@ -1451,6 +1490,20 @@ void thread_wake(struct thread *t)
          */
         unsigned      cpu   = t->sched.cpu;
         unsigned long flags = spin_lock(&runq_lock[cpu]);
+
+        /*
+         * And now, holding the lock that guards the transition, ask again.
+         *
+         * Whoever else was waking this thread either has not started or has
+         * finished; if they finished, it is READY or RUNNING by now and this
+         * call has nothing left to do. Returning here rather than falling
+         * through also skips the poke and the preemption check below, which
+         * is right: the core has already been told, by the waker that won.
+         */
+        if (t->state != THREAD_BLOCKED) {
+            spin_unlock(&runq_lock[cpu], flags);
+            return;
+        }
 
         t->state = THREAD_READY;
         policy->enqueue(cpu, t);

@@ -225,6 +225,20 @@ QEMU_ARGS = [
     # behave differently. That is the assertion.
     #
     "-smp", "4",
+    #
+    # And, when asked, the boot option that makes those four *place work*
+    # rather than merely exist. `KOSMOS_SMPWORK=4 make screenshot` is how
+    # this harness is run against placement; without it the kernel puts
+    # every new thread on core zero and this file measures what it always
+    # measured.
+    #
+    # An environment variable rather than a flag because the harness is
+    # invoked from the Makefile in five places and a flag would have to be
+    # threaded through all of them to be used in one.
+    #
+] + ([
+    "-fw_cfg", "name=opt/kosmos/smp,string=" + os.environ["KOSMOS_SMPWORK"],
+] if os.environ.get("KOSMOS_SMPWORK") else []) + [
     "-display", "none",
     "-device", "ramfb",
     # force-legacy=false is not optional: QEMU's virtio-mmio transports

@@ -392,12 +392,49 @@ which is a question about *this* processor's scheduler and only means
 anything if those threads are here. Spreading them would not make the tests
 better; it would make them stop asking.
 
-**Known, with `SMPWORK=4`:** the desktop comes up and runs, `sysinfo`
-reports four placing of four, and the display harness fails in its editor
-phase — the program typed into `edit` does not come back. Spawning is not
-the problem (`procs` runs and reports correctly); it looks like keyboard
-input across cores, and it is the next thing to look at. Written down here
-rather than left as a surprise.
+### What `SMPWORK=4` actually does today, measured
+
+**Work does not spread, and this is the thing that has to be fixed before
+placement can be the default.** Six compute-bound processes, started
+together, one reading per second:
+
+```
+placing 1:  cpu0 100%                                    (correct)
+placing 4:  cpu0  95%   cpu1  95%   cpu2  0%   cpu3   2%
+            cpu0   0%   cpu1   0%   cpu2  0%   cpu3  71%
+            cpu0   0%   cpu1   0%   cpu2  0%   cpu3  70%   ... and it stays there
+```
+
+Three processors go idle within a second and stay idle, while all six
+processes are still alive. On one core the same six saturate it, which is
+what says the workers are fine and the placement of them is not.
+
+**What has been ruled out, each by an experiment rather than by reading:**
+
+- *Placement itself.* A trace in `thread_create_suspended` shows the six
+  threads going to cpu 0, 1, 2, 3, 0, 1 — round robin, exactly as intended.
+- *IPC.* A worker that does no IPC at all after it loads — no `fs.read`, no
+  `/dev/cpu`, no server — behaves identically.
+- *Threads dying.* A trace on every transition to `THREAD_DEAD` prints
+  nothing. The workers are alive the whole time.
+- *The lost-wakeup race below.* Fixing it changed nothing here, which is why
+  it is recorded as a separate bug rather than as the cause of this one.
+
+**And one structural fault found while looking**, which is real whether or
+not it is this symptom: `thread_tick` returns early on every core but zero,
+*before* it reaches `policy->tick`. **So only core zero ever preempts.** A
+compute-bound thread on cores 1–3 can never be taken off by the timer. The
+comment there says why that was safe — "a secondary runs only its own idle
+thread" — and calls itself "a temporary invariant, named so it is found when
+the locks arrive". The locks arrived at step two and nobody came back to it.
+
+The desktop shows the same fault more quietly: with eight applications
+running it reads roughly 27 / 25 / 2 / 37 per core, and the third bar is the
+one that never rises.
+
+**This is why placement is off by default**, and it is a better reason than
+the one written here before, which was that the confidence was missing. The
+mechanism is finished; the policy is not correct yet.
 
 ---
 
