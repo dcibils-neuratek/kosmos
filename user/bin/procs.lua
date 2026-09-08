@@ -35,7 +35,7 @@ local theme = ui.theme
 --
 local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
-local W, H = 790, 482
+local W, H = 850, 482
 
 -- The menu bar's height, which everything below it is offset by. A menu bar
 -- is an ordinary widget in this window rather than a band the window
@@ -179,8 +179,20 @@ local COLUMNS = {
   { x = 190, text = "kind" },
   { x = 266, text = "draws" },
   { x = 356, text = "priority" },
-  { x = 440, text = "memory" },
-  { x = 516, text = "processor" },
+  --
+  -- **"core" is a fact, not a sample, and that is why it is worth a
+  -- column.**
+  --
+  -- On a system that migrates threads this would be the core it happened to
+  -- be on when the list was built, different on the next pass and useless
+  -- to look at. Kosmos does not migrate: `t->sched.cpu` is set once when
+  -- the thread is created and never changes, so this is where the process
+  -- lives for its whole life. `docs/smp.md` has why the kernel is built
+  -- that way and what it buys.
+  --
+  { x = 440, text = "core" },
+  { x = 500, text = "memory" },
+  { x = 576, text = "processor" },
 }
 
 function table_view:draw(g)
@@ -280,14 +292,23 @@ function table_view:draw(g)
     -- What it holds: the image, the heap, the stacks and any surface it
     -- asked for. Right-aligned, because a column of numbers is read down
     -- its last digit.
+    --
+    -- Its home processor. Blank rather than a number when the process has
+    -- no thread to have one - an exited process that has not been reaped
+    -- is not on core zero, it is nowhere, and printing 0 would say the
+    -- first of those.
+    --
+    g:text(444, y + 2, r.cpu and tostring(r.cpu) or "",
+           on and theme.text_on or "text_dim", bg)
+
     if not r.synthetic then
       local kb = ("%d KB"):format(r.kb or 0)
 
-      g:text(500 - gfx.measure(kb), y + 2, kb,
+      g:text(560 - gfx.measure(kb), y + 2, kb,
              on and theme.text_on or "text_dim", bg)
     end
 
-    local bar_x = 516
+    local bar_x = 576
     local bar_w = edge - bar_x - 60
 
     g:fill(bar_x, y + 3, bar_w, ROW - 6, "window")
@@ -648,6 +669,7 @@ function sampler:tick()
       band = BANDS[p.priority or 2] or tostring(p.priority),
       kb = ((p.held or p.pages or 0) * 4096) // 1024,
       exited = p.exited,
+      cpu    = p.cpu,
       pct = (elapsed > 0) and math.min(100, delta * 100 // elapsed) or 0,
     }
   end

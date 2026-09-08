@@ -126,6 +126,11 @@ unsigned process_table(struct proc_info *out, unsigned max)
                            ? thread_effective_priority(p->thread)
                            : 0u;
 
+        /* Its home, which does not move. See `struct proc_info`. */
+        out[n].cpu       = (p->thread != NULL)
+                           ? (uint32_t)p->thread->sched.cpu
+                           : PROC_CPU_NONE;
+
         out[n].owns      = (p->owns_console ? 1u : 0u)
                          | (p->owns_screen ? 2u : 0u)
                          | (p->owns_disk ? 4u : 0u)

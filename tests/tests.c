@@ -1743,6 +1743,146 @@ static bool test_a_secondary_preempts_a_thread_that_never_yields(void)
     return both_ran;
 }
 
+/*
+ * A new thread goes where there is room, not where the counter points.
+ *
+ * **Placement used to be `next_cpu % cores` - round robin over creation
+ * events - and that deals out *creations* rather than work.** It counts
+ * every thread the machine has ever made, so where the next one lands
+ * depends on how many have been made before it and not at all on what any
+ * processor is doing. Two threads that end together free their cores and
+ * the next two land somewhere else entirely.
+ *
+ * Measured, with four workers on four cores, killing the two on the highest
+ * cores and starting two more:
+ *
+ *     round robin   per-core 2 2 0 0     both onto the busy pair
+ *     least loaded  per-core 1 1 1 1     onto the two that were freed
+ *
+ * And on the desktop it was one core at 91% with two under 3%, because two
+ * 3D demos and the window manager had been dealt onto the same processor.
+ *
+ * The check fills every core but the last by hand, then asks for one more
+ * and requires it to land on the empty one. It is deterministic under the
+ * policy - an empty core is strictly emptier than the rest, whatever the
+ * rotation offset - and fails most of the time under round robin, which is
+ * what a regression test wants.
+ *
+ * Suspended rather than running, so this measures placement and nothing
+ * else: a thread that never wakes cannot finish early and free its core
+ * underneath the assertion.
+ */
+/*
+ * A thread that occupies a processor without doing anything on it.
+ *
+ * `short_thread` cannot be used for this: it returns at once, so by the
+ * time the thread being measured is created its "filler" is already DEAD
+ * and the core it was meant to occupy is empty again. That is what made
+ * the first version of the check below fail against the very policy it
+ * was written for.
+ *
+ * Blocked rather than spinning, deliberately. A spinning filler would
+ * compete with the thread running this test and turn a question about
+ * placement into a question about scheduling; a blocked one holds its slot
+ * and its core assignment and costs nothing. It is woken at the end and
+ * returns from here to exit.
+ */
+static void parks(void *arg)
+{
+    (void)arg;
+    thread_block();
+}
+
+static bool test_placement_avoids_a_loaded_processor(void)
+{
+    unsigned cores = smp_online();
+    unsigned loaded;
+
+    if (cores < 2) {
+        return true;              /* nothing to choose between */
+    }
+
+    /* The suite pins itself to one core; this is about the policy that runs
+     * when it is not pinned, so it turns it on and puts it back. */
+    thread_place_across(cores);
+
+    /*
+     * **Loading one core and requiring the next thread to go elsewhere**,
+     * rather than emptying one and requiring it to go there.
+     *
+     * The other way round was written first and could not work: core zero
+     * carries the thread running this test, and several others carry
+     * whatever the machine started with, so no core is ever *empty* and
+     * the assertion was against a state that does not exist.
+     *
+     * Piling threads onto one core is a state this test can create
+     * outright, and it is the same question asked from the other side. It
+     * is deterministic for least-loaded - three extra threads make that
+     * core strictly the worst choice, whatever the rotation offset - and
+     * for round robin it is a one-in-four coincidence per core, so
+     * repeating it for every core is what makes this a regression test
+     * rather than a lucky pass.
+     *
+     * Blocked fillers, not spinning ones: a spinner would compete with the
+     * thread running this and turn a question about placement into a
+     * question about scheduling.
+     */
+    for (loaded = 0; loaded < cores; loaded++) {
+        struct thread *fill[3];
+        struct thread *placed;
+        unsigned i;
+        unsigned landed;
+
+        for (i = 0; i < 3; i++) {
+            fill[i] = thread_create_on(loaded, "fill", parks, NULL);
+
+            if (fill[i] == NULL) {
+                thread_place_across(1);
+                return false;
+            }
+        }
+
+        /* Let each reach `thread_block`: a filler still on its way to its
+         * core is not yet occupying it. */
+        for (i = 0; i < 64; i++) {
+            thread_yield();
+        }
+
+        placed = thread_create_suspended("placed", short_thread, NULL);
+
+        if (placed == NULL) {
+            thread_place_across(1);
+            return false;
+        }
+
+        landed = placed->sched.cpu;
+
+        /*
+         * Everything woken before the verdict is returned. A blocked thread
+         * left behind holds a pool slot for the rest of the run, and the
+         * `as:` checks would notice later and blame something else.
+         */
+        thread_wake(placed);
+
+        for (i = 0; i < 3; i++) {
+            thread_wake(fill[i]);
+        }
+
+        for (i = 0; i < 64; i++) {
+            thread_yield();
+        }
+
+        if (landed == loaded) {
+            thread_place_across(1);
+            return false;
+        }
+    }
+
+    thread_place_across(1);
+
+    return true;
+}
+
 static bool test_preemption_does_not_lose_the_preempted_thread(void)
 {
     /*
@@ -4857,6 +4997,7 @@ static const struct test tests[] = {
     { "sched: a spinning thread is preempted", test_a_thread_that_never_yields_is_preempted },
     { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
     { "smp: a secondary preempts a spinner",   test_a_secondary_preempts_a_thread_that_never_yields },
+    { "smp: a new thread avoids a loaded core", test_placement_avoids_a_loaded_processor },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },

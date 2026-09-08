@@ -1536,6 +1536,17 @@ static int l_processes(lua_State *L)
         SETI("caps",      table[i].caps);
         SETI("owns",      table[i].owns);
         SETI("priority",  table[i].priority);
+
+        /*
+         * Which processor, counted from zero, and absent rather than wrong
+         * when the process has no thread. `NR_CPUS` is the kernel's "no
+         * thread" answer and there is no reason to make Lua know that
+         * number: a missing field is the same statement and reads better at
+         * the call site.
+         */
+        if (table[i].cpu != PROC_CPU_NONE) {
+            SETI("cpu", table[i].cpu);
+        }
 #undef SETI
 
         lua_pushboolean(L, table[i].exited != 0);

@@ -102,6 +102,104 @@ static unsigned next_id = 1;
 static unsigned next_cpu;
 
 /*
+ * Which processor a new thread should live on.
+ *
+ * **Least loaded, with a rotating tie-break**, and both halves are needed.
+ *
+ * This was `next_cpu % thread_cpu_count()` - round robin over creations -
+ * and that is a fair way to deal out *creation events* rather than work. It
+ * counts every thread the machine has ever made, including the twenty-odd
+ * servers started at boot and every short-lived helper since, so where the
+ * fifth application lands depends on how many processes have been made
+ * before it and not at all on what any processor is doing.
+ *
+ * What that looks like on a desktop, measured: four 3D demos, and round
+ * robin put two of them on core 3 and two on core 1, leaving cores 0 and 2
+ * holding nothing but blocked servers. One core at 91%, two under 3%, and
+ * a machine 27% busy that felt like a machine with one processor - because
+ * for the things doing the work, it was.
+ *
+ * So: count what is actually competing on each core, and take the smallest.
+ * `THREAD_READY` and `THREAD_RUNNING` are the threads that want the CPU; a
+ * server blocked on an endpoint wants nothing and should not make a core
+ * look busy, which is most of what is in the table at any moment.
+ *
+ * **The scan is not locked, and that is a decision rather than an
+ * oversight.** It reads `state` and `sched.cpu` for threads owned by other
+ * cores while they are running. Both are aligned words, so a read is torn
+ * by nothing on either architecture; and the value is *advisory* - a count
+ * that is one out of date produces a slightly worse placement and never an
+ * incorrect one, because the only thing done with it is choosing an index.
+ * Taking four runqueue locks to place one thread would be a real cost for
+ * an answer that is stale the instant it is returned anyway.
+ *
+ * **The rotation is what keeps an idle machine spreading out.** With every
+ * core equally empty - which is the whole of boot, and any quiet moment -
+ * a plain "lowest index wins" would put everything on core zero. Starting
+ * the scan at a moving point and only replacing on a *strictly* smaller
+ * count means an idle machine deals round robin exactly as before, and a
+ * busy one stops.
+ *
+ * What this is not: balancing. Nothing moves once placed - `sched.cpu` is
+ * fixed for the life of the thread, and `thread_block_and_release` depends
+ * on that for its correctness. This only chooses better at the one moment
+ * the choice is free. Two heavy threads that both land on core 1 and then
+ * turn heavy stay there, and the answer to that is migration, which costs
+ * the single-runqueue-lock property and wants its own evidence first.
+ */
+static unsigned place_new_thread(void)
+{
+    unsigned cores = thread_cpu_count();
+    unsigned start = next_cpu++;
+    unsigned best  = start % cores;
+    /* Larger than any possible count: `load` and `live` are bounded by the
+     * size of the pool, so this is the natural "nothing examined yet"
+     * without dragging <limits.h> into a freestanding kernel. */
+    unsigned best_load = THREAD_MAX + 1;
+    unsigned best_live = THREAD_MAX + 1;
+    unsigned n;
+
+    if (cores <= 1) {
+        return 0;
+    }
+
+    for (n = 0; n < cores; n++) {
+        unsigned c = (start + n) % cores;
+        struct percpu *pc = percpu_at(c);
+        unsigned i, load = 0, live = 0;
+
+        for (i = 0; i < THREAD_MAX; i++) {
+            const struct thread *t = &threads[i];
+
+            if (t->state == THREAD_UNUSED || t->state == THREAD_DEAD
+                || t->sched.cpu != c) {
+                continue;
+            }
+
+            /* The idle thread is on every core and is what "nothing to do"
+             * looks like; counting it would make every core equal again. */
+            if (pc != NULL && (const struct thread *)pc->idle_thread == t) {
+                continue;
+            }
+
+            live++;
+
+            if (t->state == THREAD_READY || t->state == THREAD_RUNNING) {
+                load++;
+            }
+        }
+
+        if (load < best_load || (load == best_load && live < best_live)) {
+            best      = c;
+            best_load = load;
+            best_live = live;
+        }
+    }
+
+    return best;
+}
+
+/*
  * Set by thread_tick inside the interrupt handler, acted on by
  * thread_preempt_if_needed in the vector's epilogue.
  *
@@ -640,8 +738,7 @@ struct thread *thread_create_suspended(const char *name,
          * would otherwise increment together - the same reason the id is
          * here, and free once the lock is already held.
          */
-        t->sched.cpu = next_cpu % thread_cpu_count();
-        next_cpu++;
+        t->sched.cpu = place_new_thread();
 
         spin_unlock(&threads_lock, idflags);
 

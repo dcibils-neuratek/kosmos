@@ -271,6 +271,9 @@
 #define SCHED_NAME_MAX   16
 #define SCHED_POLICY_MAX  4
 
+/* `struct proc_info.cpu` when the process has no thread to have a home. */
+#define PROC_CPU_NONE  0xFFFFFFFFu
+
 /* What SYS_SCHED_SET changes. */
 #define SCHED_SET_QUANTUM  0
 #define SCHED_SET_POLICY   1
@@ -387,6 +390,30 @@ struct proc_info {
      * look at what that did to any particular process.
      */
     uint32_t priority;
+
+    /*
+     * Which processor it runs on, and it is worth saying why this is a
+     * fixed number rather than a sample.
+     *
+     * **Kosmos has strict affinity.** `t->sched.cpu` is assigned once in
+     * `thread_create_suspended` and never changes: there is no migration,
+     * no balancing and no work stealing, and `thread_block_and_release`
+     * depends on that for its correctness - it releases the caller's lock
+     * before the context switch, which is only safe because the thread can
+     * be enqueued on one core's queue and no other.
+     *
+     * So this is not the "which core did it happen to be on when you
+     * looked" that a migrating scheduler would report and that nothing
+     * could usefully display. It is where the process lives for its whole
+     * life, and it is the same answer every time it is asked.
+     *
+     * `PROC_CPU_NONE` when there is no thread, which reads as "nowhere"
+     * rather than as core zero - the two are different and zero is a real
+     * core. A sentinel rather than `NR_CPUS`, so that userland does not
+     * have to know how many processor slots the kernel was built with in
+     * order to recognise the answer "none".
+     */
+    uint32_t cpu;
 
     char     name[16];
 };
