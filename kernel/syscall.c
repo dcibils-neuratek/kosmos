@@ -25,6 +25,7 @@
 #include "syscall.h"
 #include "process.h"
 #include "sched.h"
+#include "smp.h"
 #include "thread.h"
 #include "ipc.h"
 #include "memobj.h"
@@ -492,7 +493,20 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
          * spinners running. Found by the program written to show it, which
          * is what an instrument is for.
          */
-        for (unsigned c = 0; c < thread_cpu_count() && c < CPUS_MAX; c++) {
+        /*
+         * And the bound is `smp_online`, not `thread_cpu_count`.
+         *
+         * They are different questions and this is the one that has an
+         * answer per core: `smp_online` counts processors running kernel
+         * code, every one of which takes its own timer interrupt and charges
+         * its own idle or busy tick. `thread_cpu_count` is how many *run
+         * threads*, which is still one - a secondary has an idle thread and
+         * no runqueue to take work from.
+         *
+         * Bounding by the smaller of the two reported three cores as zero
+         * when they were measurably idle, which is a different claim.
+         */
+        for (unsigned c = 0; c < smp_online() && c < CPUS_MAX; c++) {
             unsigned long ci, cb;
 
             thread_load_cpu(c, &ci, &cb);
@@ -564,7 +578,25 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      * of it - see `docs/smp.md`, which counts what is actually missing. What
      * this field reports is cores *running*, which is the honest number
      * either way. */
+    /*
+     * Three numbers, because there are three questions.
+     *
+     *   cpus_present   what the machine has, from the firmware
+     *   cpus_online    how many are running kernel code and taking ticks
+     *   cpus           how many run threads
+     *
+     * On this machine today they are 4, 4 and 1, and the gaps are the honest
+     * measure of how far `docs/smp.md` has got: three processors are awake,
+     * ticking and idle, and none of them can be given work until there is a
+     * runqueue per core and a lock around what they share.
+     *
+     * Two of these were one number for a while, and the collapse was the
+     * bug: a parked core and a working one both reported as "not
+     * scheduling", so nothing could tell a secondary that had died from one
+     * that was simply not being asked to do anything.
+     */
     info.cpus         = thread_cpu_count();
+    info.cpus_online  = smp_online();
     info.cpus_present = hal_cpu_count();
     info.tick_hz    = TICK_HZ;
     info.page_size  = PAGE_SIZE;

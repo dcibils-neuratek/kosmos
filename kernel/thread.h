@@ -388,6 +388,15 @@ void thread_wake(struct thread *t);
 void thread_tick(void);
 
 /*
+ * This processor adopts the idle thread core zero reserved for it.
+ *
+ * Called once by each secondary in `secondary_main`, after it has its own
+ * vector table, interrupt controller and timer. Until it runs, `current` is
+ * NULL on that core and `thread_tick` has nothing to charge time to.
+ */
+void thread_adopt_idle_here(void);
+
+/*
  * Names the thread that runs when there is nothing to do, so that the tick
  * can tell working from waiting. Called once, by kmain, about itself.
  */

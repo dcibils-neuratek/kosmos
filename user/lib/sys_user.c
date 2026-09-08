@@ -1481,6 +1481,7 @@ static int l_info(lua_State *L)
     SET("audio_floor",      info.audio_floor);
     SET("audio_wakes",      info.audio_wakes);
     SET("cpus",             info.cpus);
+    SET("cpus_online",      info.cpus_online);
     SET("cpus_present",     info.cpus_present);
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);

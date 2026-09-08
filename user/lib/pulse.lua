@@ -87,6 +87,7 @@ function pulse.panel(spec)
                      h = pulse.height(spec.cores, #spec.ident) }
 
   v.cores      = spec.cores
+  v.online     = spec.online or spec.scheduling
   v.scheduling = spec.scheduling
   v.read       = spec.read
   v.ident      = spec.ident
@@ -116,7 +117,12 @@ function pulse.panel(spec)
 
     for c = 1, self.cores do
       local ry    = 4 + (c - 1) * ROW
-      local live  = (c <= self.scheduling)
+      -- Online, not scheduling. A processor that takes its own timer
+      -- interrupt and charges its own idle time has a real reading to show,
+      -- whether or not anything is ever scheduled onto it - and `parked` for
+      -- one of those would be the same collapse of two facts into one number
+      -- that `kernel/syscall.h` records.
+      local live  = (c <= self.online)
       local value = live and (self.read(c) or 0) or 0
       local lit   = (value > 80) and theme.bad or theme.good
 

@@ -209,41 +209,6 @@ void kmain(void)
      * translation at all. */
     mmu_init();
 
-    /*
-     * And now the other processors, because now there is something for them
-     * to turn on.
-     *
-     * **After `mmu_init` and not before**, which is the one ordering this
-     * has: `boot/start.S` calls `mmu_enable_here` before a secondary runs
-     * any C at all, with the tables this core built. Started at the
-     * processor stage instead - where it
-     * reads naturally, beside the line that counts them - each one enabled
-     * translation against a `kernel_l1` that did not exist yet, and none of
-     * them ever arrived. The boot log said "1 in the kernel" and was right.
-     *
-     * They park. `kernel/smp.c` has the whole of what they do and why that
-     * is worth doing before there is a lock in this kernel.
-     */
-    smp_start_others();
-
-    /*
-     * Said only when there is something to say. On a machine with one
-     * processor the line would be "1 of them in the kernel", which is the
-     * previous line again in different words - and a boot log that repeats
-     * itself is one people stop reading.
-     */
-    if (hal_cpu_count() > 1) {
-        boot_fact_begin();
-        kputu(smp_online() - 1);
-        kputs(" of the others in the kernel too, parked in wfi");
-
-        if (smp_online() < hal_cpu_count()) {
-            kputs("; the rest are still in firmware");
-        }
-
-        boot_fact_end();
-    }
-
     boot_stage("virtual memory");
     boot_why("Translation on; from here the kernel's own code is read-only.");
     boot_fact(mmu_describe());
@@ -416,6 +381,46 @@ void kmain(void)
 
     hal_irq_init();
     hal_timer_init(TICK_HZ);
+
+    /*
+     * And now the other processors.
+     *
+     * **After the interrupt controller and the clock, and this is the one
+     * ordering the whole step has.** A secondary's own setup asks the GIC
+     * for its redistributor and arms its comparator with the interval
+     * `hal_timer_init` just computed, so starting one before this point is
+     * starting it into a machine that has neither.
+     *
+     * It was fifty lines earlier than this, beside the line that counts the
+     * processors, where it reads naturally and was wrong twice over: once
+     * before `mmu_init`, where the secondaries enabled translation against
+     * page tables that did not exist yet and none of them ever arrived; and
+     * then here, where they would panic on an interval of zero. Both
+     * failures are silent in their own way, which is the argument for the
+     * comment rather than the line.
+     *
+     * Still before `cpu_irq_enable` below, so core zero is not taking
+     * interrupts while it waits for them.
+     */
+    smp_start_others();
+
+    /*
+     * Said only when there is something to say. On a machine with one
+     * processor the line would be "1 of them in the kernel", which is the
+     * previous line again in different words - and a boot log that repeats
+     * itself is one people stop reading.
+     */
+    if (hal_cpu_count() > 1) {
+        boot_fact_begin();
+        kputu(smp_online() - 1);
+        kputs(" of the others in the kernel too, ticking and idle");
+
+        if (smp_online() < hal_cpu_count()) {
+            kputs("; the rest are still in firmware");
+        }
+
+        boot_fact_end();
+    }
 
     /* Nothing has been able to interrupt this core since start.S masked
      * everything on the way in. Now there is a handler and a source. */

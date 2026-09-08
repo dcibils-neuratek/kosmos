@@ -173,6 +173,17 @@ unsigned long hal_ticks(void)
  * wrong in a direction nobody knows. The APIC has a proper answer and this
  * is one of the things that will pay for moving to it.
  */
+/*
+ * One processor on this board, so core 0's count is the only one there is.
+ *
+ * `hal/pc/cpu_here.c` says why: there is no local APIC, so nothing here can
+ * start a second core and no core but this one ever ticks.
+ */
+unsigned long hal_ticks_on(unsigned cpu)
+{
+    return (cpu == 0) ? hal_ticks() : 0;
+}
+
 unsigned long hal_ticks_missed(void)
 {
     return 0;

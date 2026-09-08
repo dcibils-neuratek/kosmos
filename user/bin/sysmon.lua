@@ -45,7 +45,8 @@ local pulse = use("/lib/pulse.lua")
 --
 local info       = sys.info() or {}
 local SCHEDULING = info.cpus or 1
-local CORES      = info.cpus_present or SCHEDULING
+local ONLINE     = info.cpus_online or SCHEDULING
+local CORES      = info.cpus_present or ONLINE
 
 local ident = pulse.identity()
 
@@ -64,7 +65,8 @@ local last = {}
 
 win:add(pulse.panel{
   x = 14, y = 14, w = W - 28,
-  cores = CORES, scheduling = SCHEDULING, ident = ident,
+  cores = CORES, online = ONLINE, scheduling = SCHEDULING,
+  ident = ident,
   read = function(c) return pct[c] end,
 })
 

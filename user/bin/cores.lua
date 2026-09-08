@@ -64,7 +64,8 @@ local pulse = use("/lib/pulse.lua")
 --
 local info       = sys.info() or {}
 local SCHEDULING = info.cpus or 1
-local CORES      = info.cpus_present or SCHEDULING
+local ONLINE     = info.cpus_online or SCHEDULING
+local CORES      = info.cpus_present or ONLINE
 
 --------------------------------------------------------------------------
 -- The panel is `/lib/pulse.lua`, which `sysmon` draws too.
@@ -194,7 +195,8 @@ win:add(count)
 
 win:add(pulse.panel{
   x = 14, y = 48, w = W - 28,
-  cores = CORES, scheduling = SCHEDULING, ident = ident,
+  cores = CORES, online = ONLINE, scheduling = SCHEDULING,
+  ident = ident,
   read = function(c) return pct[c] end,
 })
 
@@ -209,12 +211,16 @@ local y = 48 + pulse.height(CORES, #ident)
 --
 local note
 
-if CORES > SCHEDULING then
+if ONLINE > SCHEDULING then
   -- Kept inside the window on purpose: `ui.label` does not wrap, and the
   -- first version of this line ran off the right edge and ended in "kern".
-  note = { ("%d processors, %d scheduling. The other %d are parked")
-           :format(CORES, SCHEDULING, CORES - SCHEDULING),
-           "in wfi; docs/smp.md step 4 gives them threads." }
+  note = { ("%d processors, all ticking and idle. %d runs threads;")
+           :format(ONLINE, SCHEDULING),
+           "docs/smp.md step 5 gives the others a runqueue." }
+elseif CORES > ONLINE then
+  note = { ("%d processors, %d in the kernel. The other %d are still")
+           :format(CORES, ONLINE, CORES - ONLINE),
+           "in firmware; docs/smp.md is what it takes to start them." }
 elseif CORES == 1 then
   note = { "One core, so a second worker makes this twice as slow",
            "rather than twice as fast. docs/smp.md is the plan." }

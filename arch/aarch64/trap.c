@@ -16,6 +16,7 @@
 #include "trap.h"
 #include "console.h"
 #include "hal.h"
+#include "percpu.h"
 #include "thread.h"
 #include "process.h"
 #include "syscall.h"
@@ -281,6 +282,37 @@ void trap_handler(unsigned index, struct trapframe *tf)
         hal_irq_handle();
 
         /*
+         * **The machine's half of a tick belongs to one processor, and that
+         * is a temporary invariant rather than a design.**
+         *
+         * Everything below this is machine-wide: the audio wake walks the
+         * process table, `thread_tick` wakes sleepers by scanning
+         * `threads[]`, and `console_tick` drains a device. All three write
+         * structures no lock protects, and running them on four cores at
+         * TICK_HZ each is four cores writing them at once. Core zero owns
+         * them until `docs/smp.md` step two puts locks in.
+         *
+         * What a secondary keeps is `hal_irq_handle` above - it rearms its
+         * own comparator, which is what stops the interrupt reasserting, and
+         * is why this returns after rather than before.
+         *
+         * Named here so it is found when the locks arrive: this is one of
+         * the two places that has to change, the other being the runqueue.
+         */
+        /*
+         * Every core, and it decides for itself what is its own.
+         *
+         * `thread_tick` charges this core's idle or busy count and then
+         * stops on any core but zero - the split is in the kernel, where the
+         * knowledge of what is machine-wide lives, rather than here.
+         */
+        thread_tick();
+
+        if (this_cpu()->index != 0) {
+            return;
+        }
+
+        /*
          * The sound device asked for a period. Woken here rather than inside
          * the driver because waking a thread is the kernel's business and
          * `hal/` may not reach into it - the same separation that keeps
@@ -299,7 +331,6 @@ void trap_handler(unsigned index, struct trapframe *tf)
          * It only records what the policy wants. The switch itself happens
          * in the epilogue, after this returns.
          */
-        thread_tick();
         console_tick();
         return;
     }

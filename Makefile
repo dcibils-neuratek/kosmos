@@ -1668,6 +1668,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/power.c \
              hal/pc/cpus.c \
              hal/pc/cpu_on.c \
+             hal/pc/cpu_here.c \
              hal/fwcfg/fwcfg.c \
              hal/fwcfg/ramfb.c \
              hal/pc/fwcfg_port.c \

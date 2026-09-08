@@ -338,6 +338,7 @@ static void node_cpu(const struct sysinfo *i, struct dev_reply *r)
      * here rather than in the three programs that read it.
      */
     put_num(r, "cores", i->cpus);
+    put_num(r, "cores_online", i->cpus_online);
     put_num(r, "cores_present", i->cpus_present);
     put_num(r, "counter_hz", i->counter_hz);
     put_num(r, "el", i->current_el);

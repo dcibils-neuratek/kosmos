@@ -35,6 +35,8 @@
 #include "kernel.h"
 #include "percpu.h"
 #include "smp.h"
+#include "thread.h"
+#include "trap.h"
 
 /*
  * A stack per secondary, and two of them each.
@@ -105,17 +107,68 @@ void secondary_main(unsigned long index)
      * rising before the slot is written, which is a suite that passes every
      * time until it does not.
      */
+    /*
+     * Its own vector table, before anything can fault.
+     *
+     * `VBAR_EL1` is banked per core like `TPIDR_EL1`, so core zero setting
+     * it in `kmain` did nothing for this one: a secondary was running with
+     * whatever VBAR reset to, and any exception before this point - a fault
+     * in `mmu_enable_here`, an interrupt that should not have been routed
+     * here - went to an address nobody chose. It survived because a parked
+     * core with interrupts masked takes no exceptions at all, which is luck
+     * that runs out the moment it is given something to do.
+     */
+    trap_init();
+
+    /*
+     * This core's half of the interrupt controller and its own comparator.
+     *
+     * Both are per-processor by architecture and `hal/hal.h` says why. Until
+     * they run, this core receives nothing; after them it takes PPI 30 at
+     * TICK_HZ like any other.
+     */
+    hal_irq_init_here();
+    hal_timer_init_here();
+
+    /*
+     * And a thread to be, so that this core has a `current`.
+     *
+     * Core zero reserved one per processor in `thread_init`, before any
+     * secondary existed, because `alloc_thread` walks a pool no lock
+     * protects. This picks up the one with this core's index.
+     *
+     * It matters for more than tidiness: `thread_tick` charges every tick to
+     * `current`, and a core whose `current` is NULL is a core that returns
+     * from `thread_tick` before recording anything - so an unadopted
+     * secondary would tick and stay invisible, which is the state this whole
+     * step exists to leave behind.
+     */
+    thread_adopt_idle_here();
+
     cpu_publish();
     online++;
 
     /*
-     * And that is all it does.
+     * And now it takes interrupts.
      *
+     * **Unmasked, and it is the tick that makes this core observable.** A
+     * parked core with interrupts masked is indistinguishable from a core
+     * that started and died - `hal_ticks_on` can now tell them apart, which
+     * is what the test for this step asserts.
+     *
+     * What it does with a tick is almost nothing: `arch/aarch64/trap.c`
+     * returns immediately on any core but zero, having rearmed this core's
+     * comparator. The machine-wide half of a tick - waking sleepers,
+     * draining the console, the audio wake - stays on core zero until there
+     * are locks to make it safe anywhere else.
+     */
+    cpu_irq_enable();
+
+    /*
      * `wfi` rather than a spin, so a parked core costs nothing and QEMU can
-     * tell it is idle. It wakes on any interrupt - none is routed here -
-     * and goes straight back, which is the correct shape for "this core has
-     * nothing to do" and is what the idle thread will do when step four
-     * gives it one.
+     * tell it is idle. It wakes on its own timer now, notices there is
+     * nothing to do, and goes back - which is exactly what an idle thread
+     * does, and is why step four is a small change from here.
      */
     for (;;) {
         cpu_wait_for_interrupt();

@@ -108,6 +108,30 @@ bool hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long context);
 /* The interrupt controller. hal_irq_handle() is called from the IRQ vector:
  * it acknowledges, services and signals end-of-interrupt. */
 void hal_irq_init(void);
+
+/*
+ * The half of the two above that belongs to *this* processor.
+ *
+ * **A machine has one interrupt controller and one clock; a processor has
+ * its own interface to both.** On AArch64 that is this core's GIC
+ * redistributor and its four `ICC_*` system registers, and its own generic
+ * timer - CNTP_CVAL_EL0 and CNTP_CTL_EL0 are banked per core by
+ * architecture, so every core arms its own comparator and receives its own
+ * PPI. None of that can be done for a core by another core.
+ *
+ * `hal_irq_init` and `hal_timer_init` still do the machine's part and then
+ * call these for the processor that runs them, so core zero's boot is
+ * unchanged and a board with one processor never sees the difference.
+ * `kernel/smp.c` calls them on each secondary as it arrives.
+ *
+ * Separate from the two above rather than folded into them because a board
+ * can honestly implement one and not the other, which is the same split
+ * `hal_cpu_count` and `hal_cpu_on` already make - and `hal/pc/` implements
+ * neither, because a PC's per-core interrupt controller is the local APIC
+ * and there is no driver for it.
+ */
+void hal_irq_init_here(void);
+void hal_timer_init_here(void);
 void hal_irq_handle(void);
 
 /* The tick source. hal_timer_init needs hal_irq_init first. */
@@ -124,6 +148,17 @@ unsigned long hal_ticks(void);
  * clock; ticks are a heartbeat.
  */
 unsigned long hal_ticks_missed(void);
+
+/*
+ * Another processor's tick count, or 0 for one that does not exist.
+ *
+ * `hal_ticks` answers for the core that asks, which is what everything above
+ * wants. This is the one question only a machine with more than one
+ * processor can ask, and it exists because nothing else can tell a secondary
+ * that is alive and taking interrupts from one that started, parked, and
+ * quietly died.
+ */
+unsigned long hal_ticks_on(unsigned cpu);
 
 /*
  * The display.

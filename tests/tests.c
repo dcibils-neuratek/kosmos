@@ -3859,6 +3859,131 @@ static bool test_every_processor_claimed_its_own_slot(void)
     return true;
 }
 
+/*
+ * Every processor that arrived is taking its own timer interrupt.
+ *
+ * **The first check in this project that can tell a live secondary from a
+ * dead one.** Until now a core that started, claimed its slot and then
+ * wedged looked exactly like one parked in `wfi`: `smp_online` counts cores
+ * that reached `secondary_main`, and nothing afterwards ever asked whether
+ * they were still there. The boot log said "ticking and idle" on the
+ * strength of having called the function.
+ *
+ * The generic timer is per-PE by architecture - each core arms its own
+ * CNTP_CVAL_EL0 and takes its own PPI 30 - so a secondary's tick count
+ * rising is proof that it woke, took an exception through a vector table it
+ * installed itself, found its own redistributor, and rearmed. Four separate
+ * things, and one counter shows all of them.
+ *
+ * Bounded by this core's own clock rather than by a count of yields, which
+ * is the lesson `as: one space per possible process` cost: a fixed number of
+ * iterations is a duration only until the machine's timing changes.
+ *
+ * Half of core zero's ticks is the threshold, and it is deliberately loose.
+ * The cores are not synchronised, this test starts at an arbitrary point in
+ * each one's period, and TCG round-robins four vCPUs - so the honest
+ * assertion is "it is ticking", not "it is ticking at the same rate".
+ */
+static bool test_every_processor_takes_its_own_ticks(void)
+{
+    unsigned online = smp_online();
+    unsigned long before[NR_CPUS];
+    unsigned long start;
+    unsigned i;
+
+    if (online <= 1) {
+        return true;            /* one processor; nothing to compare against */
+    }
+
+    for (i = 0; i < online && i < NR_CPUS; i++) {
+        before[i] = hal_ticks_on(i);
+    }
+
+    start = hal_ticks();
+
+    /*
+     * Wait on this core's own tick count, which is the clock this test is
+     * allowed to trust. `cpu_wait_for_interrupt` rather than a spin so the
+     * wait costs nothing and cannot be optimised into one.
+     */
+    while (hal_ticks() - start < 50UL) {
+        cpu_wait_for_interrupt();
+    }
+
+    for (i = 1; i < online && i < NR_CPUS; i++) {
+        if (hal_ticks_on(i) - before[i] < 25UL) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/*
+ * Every processor is idling as a thread, and charging the time to itself.
+ *
+ * `docs/smp.md` step four is "the idle thread on the second core: it
+ * schedules, ticks and idles", and this is the half the tick test above
+ * cannot see. A core can take timer interrupts with `current` still NULL -
+ * that is exactly what step three's cores did - and `thread_tick` then
+ * returns before charging anything, so the core is alive and invisible.
+ *
+ * Three things at once, and each has failed on its own during this step:
+ * that a secondary has a `current` at all; that it is *its own* idle thread
+ * rather than core zero's, which is what a shared global would have given;
+ * and that the time is landing in that core's counters rather than core
+ * zero's, which is what `thread_tick` charging `this_cpu()` buys.
+ *
+ * Idle and not busy, deliberately. A secondary has no runqueue, so if it is
+ * ever charged busy time something has scheduled work onto a core that
+ * cannot run it.
+ */
+static bool test_every_processor_idles_as_a_thread(void)
+{
+    unsigned online = smp_online();
+    unsigned long before[NR_CPUS];
+    unsigned long start;
+    unsigned i;
+
+    if (online <= 1) {
+        return true;
+    }
+
+    for (i = 1; i < online && i < NR_CPUS; i++) {
+        const struct percpu *c = percpu_at(i);
+
+        if (c == NULL || c->idle_thread == NULL) {
+            return false;
+        }
+
+        if (c->current != c->idle_thread) {
+            return false;       /* not adopted, or adopted somebody else's */
+        }
+
+        if (c->idle_thread == percpu_at(0)->idle_thread) {
+            return false;       /* one idle thread shared by two processors */
+        }
+
+        before[i] = c->idle_ticks;
+    }
+
+    start = hal_ticks();
+
+    while (hal_ticks() - start < 50UL) {
+        cpu_wait_for_interrupt();
+    }
+
+    for (i = 1; i < online && i < NR_CPUS; i++) {
+        const struct percpu *c = percpu_at(i);
+
+        if (c->idle_ticks - before[i] < 25UL) {
+            return false;       /* ticking, but charging it nowhere */
+        }
+    }
+
+    return true;
+}
+
 static bool test_percpu_is_per_cpu_and_not_per_thread(void)
 {
     struct percpu *mine = this_cpu();
@@ -4431,6 +4556,8 @@ static const struct test tests[] = {
     { "as: the kernel region is refused",      test_a_space_refuses_the_kernel_region },
     { "cpu: the machine says how many processors it has", test_the_machine_says_how_many_processors_it_has },
     { "cpu: every processor claimed its own slot", test_every_processor_claimed_its_own_slot },
+    { "cpu: every processor takes its own ticks",  test_every_processor_takes_its_own_ticks },
+    { "cpu: every processor idles as a thread",     test_every_processor_idles_as_a_thread },
     { "cpu: per-CPU state is per CPU, not per thread", test_percpu_is_per_cpu_and_not_per_thread },
     { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
     { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },

@@ -337,6 +337,66 @@ void thread_init(void)
     t->exception_stack = NULL;
 
     current = t;
+
+    /*
+     * And one for every other processor, reserved here and adopted there.
+     *
+     * A secondary's idle thread is the same shape as this one: not created,
+     * but the code already running becoming a thread. It cannot adopt a slot
+     * for itself, because `alloc_thread` walks a pool that no lock protects
+     * and two cores arriving at once would take the same one - so core zero
+     * reserves them all now, while it is the only processor in the machine,
+     * and each secondary picks up the one with its own index.
+     *
+     * `THREAD_RUNNING` rather than a state of their own, and that is what
+     * keeps them reserved: `alloc_thread` hands out only `THREAD_UNUSED` and
+     * `THREAD_DEAD` slots, so a running one is invisible to it. They are
+     * running - or will be, in a few hundred microseconds - which makes this
+     * the true state rather than a convenient one.
+     *
+     * Stacks are NULL for the reason thread zero's are: they came from
+     * `boot/start.S` rather than the page allocator, and nothing may ever
+     * hand them back.
+     */
+    for (unsigned i = 1; i < NR_CPUS; i++) {
+        struct thread *idle = &threads[i];
+
+        idle->state = THREAD_RUNNING;
+        idle->id = i;
+        strcpy(idle->name, "idle");
+        idle->name[4] = (char)('0' + i);
+        idle->name[5] = '\0';
+        idle->sched.next = NULL;
+        idle->process = NULL;
+        idle->space = NULL;
+        idle->stack = NULL;
+        idle->exception_stack = NULL;
+
+        percpu_at(i)->idle_thread = idle;
+    }
+}
+
+/*
+ * This processor's idle thread, adopted by the code that is running.
+ *
+ * Called once by each secondary as it comes up. Everything it needs was
+ * reserved by core zero in `thread_init`; all this does is point `current`
+ * at it, which is what makes `thread_current` answer on this core and what
+ * lets `thread_tick` tell idle from busy here.
+ *
+ * It runs no other thread. There is one runqueue and it is core zero's, so
+ * a secondary has nothing to switch to - `docs/smp.md` step five is what
+ * changes that, and it needs the locks step two skipped.
+ */
+void thread_adopt_idle_here(void)
+{
+    struct thread *idle = this_cpu()->idle_thread;
+
+    if (idle == NULL) {
+        panic("thread: this processor was given no idle thread");
+    }
+
+    current = idle;
 }
 
 struct thread *thread_create_suspended(const char *name,
@@ -668,6 +728,27 @@ void thread_tick(void)
         this_cpu()->idle_ticks++;
     } else {
         this_cpu()->busy_ticks++;
+    }
+
+    /*
+     * **Everything above is this processor's; everything below is the
+     * machine's, and only core zero may do it.**
+     *
+     * `thread_wake_sleepers` scans `threads[]` and moves threads into the
+     * runqueue; `policy->tick` reads and writes that queue. Neither has a
+     * lock, and four cores doing them at TICK_HZ each is four cores writing
+     * one linked list. Core zero owns them until `docs/smp.md` step two.
+     *
+     * What a secondary loses by this is nothing it could use: it runs only
+     * its own idle thread, so there is no thread of its own to preempt and
+     * nothing it could switch to if there were. What it keeps is the half
+     * that makes it *visible* - its own idle and busy counts, which are what
+     * `sysinfo` reports and what Monitor draws.
+     *
+     * A temporary invariant, named so it is found when the locks arrive.
+     */
+    if (this_cpu()->index != 0) {
+        return;
     }
 
     /* Before the policy is asked anything, so a thread whose deadline has

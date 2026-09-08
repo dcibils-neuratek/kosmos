@@ -1,6 +1,6 @@
 # SMP
 
-**Steps one and three are done. The rest is not.** This is what it would
+**Steps one, three and four are done. The rest is not.** This is what it would
 take, counted against the code as it stands rather than estimated, because
 the last thing written down about SMP was wrong for two years: `CLAUDE.md`
 claimed a per-CPU struct, `TPIDR_EL1` and a per-CPU runqueue from the
@@ -206,7 +206,44 @@ Then, in dependency order:
    so the machine claimed to be scheduling on four cores while three of
    them were in `wfi`; `NR_CPUS` is how many slots exist, and how many are
    scheduling is a different number that is still one.
-4. **The idle thread on the second core.** It schedules, ticks and idles.
+4. ~~**The idle thread on the second core.**~~ **Done.** Every processor
+   that arrives installs its own vector table, wakes its own GIC
+   redistributor, arms its own generic timer, adopts an idle thread core
+   zero reserved for it, and unmasks. It then takes PPI 30 at `TICK_HZ` and
+   charges the time to its own `struct percpu`.
+
+   **Three things were per-core by architecture and written as if they were
+   the machine's.** `VBAR_EL1` is banked, so a secondary was running with
+   whatever it reset to - survivable only because a masked core takes no
+   exceptions at all. The GIC redistributor is one per core and `gic.c`
+   named only the first, so a secondary configuring "the" redistributor
+   configured core zero's. And `timer.c` kept `deadline`, `ticks` and
+   `missed` as file statics, which is four cores writing one comparator.
+
+   `gicr_here()` finds this core's redistributor by walking GICR_TYPER and
+   matching MPIDR, rather than indexing by a stride - the architecture has
+   each redistributor declare its own affinity, which is the GIC saying not
+   to guess. The stride is still needed to step between them and was
+   measured rather than remembered: QEMU's device tree gives the region as
+   base 0x080a0000 size 0xf60000, and 0xf60000 / 0x20000 is exactly 123.
+
+   **What a secondary does *not* do is the machine's half of a tick.**
+   `thread_wake_sleepers` scans `threads[]`, `policy->tick` reads and writes
+   the runqueue, `console_tick` drains a device - none of them has a lock,
+   and four cores doing them at `TICK_HZ` each is four cores writing one
+   linked list. Core zero owns them until step two. A secondary keeps its
+   own accounting, which is what makes it visible.
+
+   Two checks, and both were confirmed by breaking them: *every processor
+   takes its own ticks* (fails if a secondary does not arm its comparator)
+   and *every processor idles as a thread* (fails if it does not adopt one).
+   They are the first checks in this project that can tell a live secondary
+   from a dead one.
+
+   **`sysinfo` grew a third count** and it is not padding. `cpus` is how
+   many run threads, `cpus_online` how many take ticks, `cpus_present` how
+   many the machine has: 1, 4 and 4. Collapsing any two of them has already
+   been a bug twice.
 5. **Per-CPU runqueues.** The scheduler is already a vtable
    (`struct scheduler` in `sched.h`), so this is a policy beside
    `sched_prio.c` rather than surgery on it - the one place the existing

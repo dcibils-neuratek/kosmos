@@ -598,20 +598,32 @@ struct sysinfo {
     uint32_t audio_floor;       /* smallest depth ever seen, in periods */
     uint32_t audio_wakes;       /* times the device raised its interrupt */
 
-    /* Cores the kernel is scheduling on - `NR_CPUS`, and the number of
-     * entries filled in `cpu[]` below. It was the literal 1 until there was
-     * something to ask. */
-    uint32_t cpus;
-
     /*
-     * And how many the *machine* has, which is a different number.
+     * Three counts of processors, because there are three questions.
      *
-     * The gap between the two is the honest measure of how far
-     * `docs/smp.md` has got: four present and one in use says the firmware
-     * offers three more and the kernel is not ready for them. A system that
-     * reported only the second would look finished on a machine it is
-     * using a quarter of.
+     * **They are not interchangeable and collapsing any two of them has
+     * already been a bug twice.** On this machine today they read 1, 4 and
+     * 4, and each gap says something different about how far
+     * `docs/smp.md` has got.
+     *
+     *   `cpus`          how many run *threads*. One: a secondary has an
+     *                   idle thread and no runqueue to take work from, so
+     *                   nothing can be scheduled onto it.
+     *   `cpus_online`   how many are running kernel code and taking their
+     *                   own timer interrupt. Four. This is the bound on
+     *                   `cpu[]` below - every one of them charges its own
+     *                   idle or busy tick, so every one has a real reading.
+     *   `cpus_present`  how many the firmware says the machine has. Four.
+     *                   The gap above this one is what is left to build.
+     *
+     * `cpus` was `NR_CPUS` once and reported four cores scheduling with
+     * three of them parked in `wfi`; `cpus_online` did not exist, so a core
+     * that had started and died was indistinguishable from one that was
+     * simply not being asked to do anything. Both were the same mistake -
+     * one number standing in for two facts.
      */
+    uint32_t cpus;
+    uint32_t cpus_online;
     uint32_t cpus_present;
     uint32_t tick_hz;
     uint32_t current_el;
