@@ -59,10 +59,13 @@ make a second.
       `runtime/upstream/lite-xl/`, byte for byte, checked with `diff -r`.
       `make LITEXL=1` puts `api/utf8.c` and `arena_allocator.c` into the
       image, which links and boots.
-- [ ] **Step 2. `SDL.h`.** The types and the software-surface operations:
-      `SDL_Surface`, `SDL_Rect`, `FillRect`, `BlitScaled`, `MapRGB`,
-      clip rects, `IntersectRect`. `rencache.c` and `api/renderer.c` fall
-      out of this one.
+- [x] **Step 2. `SDL.h`.** `user/lib/litexl/SDL.h` and
+      `user/lib/litexl_sdl.c`: the types, and the software surface -
+      `SDL_Surface` over ordinary memory, `FillRect`, `BlitScaled`,
+      `MapRGB`/`MapRGBA`/`GetRGBA`, clip rects, `IntersectRect`.
+      `rencache.c` and `api/renderer.c` fell out of it as predicted, both
+      unmodified. **Five translation units compile; `make litexl` says so
+      every time.**
 - [ ] **Step 3. The window.** `renwin_get_surface` returns a Kosmos shared
       surface; `renwin_update_rects` becomes the damage the compositor
       already takes.
@@ -76,6 +79,42 @@ make a second.
       pretending.
 - [ ] **Step 6. `main.c`, and then the Lua.** Which is the point: if the
       first five are right, the nineteen thousand lines run.
+
+## What step two turned out to be
+
+**`-Iuser/lib/litexl` is the whole mechanism.** Upstream says
+`#include <SDL.h>` in three headers and every source file reaches SDL
+through them, so putting a directory with that name on the include path
+turns "port the editor" into "write these functions" - and the vendored
+tree stays byte for byte what upstream released.
+
+Three things worth recording, because none was in the plan:
+
+**The shim has to include the C headers.** `rencache.c` calls `realloc` and
+`rand` without including `<stdlib.h>`, which is not sloppiness: SDL's own
+`SDL_stdinc.h` promises them. A shim that left them out would make upstream
+look broken and the fix would have to be a patch to a vendored file - which
+is the thing this arrangement exists to avoid.
+
+**`rand` and `srand` were missing from the libc**, and that is where they
+went rather than into the shim. They are C, not SDL; the first caller
+reached them through `<SDL.h>` the way every SDL program does, and the next
+will reach them through `<stdlib.h>` like everybody else. The generator is
+the one printed in the C standard, and `runtime/libc/misc.c` says plainly
+that it is not for anything that must not be guessed.
+
+**`SDL_BlitScaled` has exactly one caller and one shape.** `ren_draw_rect`
+makes a one-pixel surface, writes a colour into it and stretches it over a
+rectangle - which is how Lite XL fills with alpha. Nearest-neighbour is not
+an approximation for that, it is exact, and the alpha has to be honoured or
+every translucent overlay turns opaque.
+
+The build now carries two lists. `LITEXL_SRCS` goes into the image and
+links; `LITEXL_STAGED` compiles and does not, because `rencache.c` and
+`api/renderer.c` call the `ren_*` and `renwin_*` functions steps three and
+four will write. `make litexl` compiles both and reports where the edge is,
+so the compiler says which files are done rather than a checklist saying so
+once.
 
 ## Two things deliberately given up
 

@@ -508,11 +508,39 @@ USER_LIBC := runtime/libc/string.c \
 # are somebody else's warnings and this build has no business failing on
 # them.
 #
+# **`-Iuser/lib/litexl` is the whole mechanism of this port.** The shim
+# directory is on the include path, so the vendored `#include <SDL.h>` -
+# which appears in three of upstream's headers and reaches every source
+# file through them - resolves to `user/lib/litexl/SDL.h`, and not one line
+# of what upstream released has to be touched.
 LITEXL_CFLAGS := -w -Wno-error \
-                 -Iruntime/upstream/lite-xl/src
+                 -Iruntime/upstream/lite-xl/src \
+                 -Iuser/lib/litexl \
+                 -Iuser/lib
 
-LITEXL_SRCS := runtime/upstream/lite-xl/src/api/utf8.c \
+#
+# **Two lists, because a port has a front edge.**
+#
+# `LITEXL_SRCS` goes into the image, and everything in it links: the shim,
+# and the upstream files that call nothing which does not exist yet.
+#
+# `LITEXL_STAGED` compiles and does not link. `rencache.c` and
+# `api/renderer.c` are *finished* as far as compiling goes - they have no
+# SDL in them at all and never needed a line changed - but they call the
+# `ren_*` and `renwin_*` functions that steps three and four will write, so
+# putting them in the image would break the link for everybody.
+#
+# `make litexl` compiles both lists and says where the edge is. That is the
+# difference between a port that is progressing and one that is asserted to
+# be: the compiler says which files are done, every time, rather than a
+# checklist in a document saying so once.
+#
+LITEXL_SRCS := user/lib/litexl_sdl.c \
+               runtime/upstream/lite-xl/src/api/utf8.c \
                runtime/upstream/lite-xl/src/arena_allocator.c
+
+LITEXL_STAGED := runtime/upstream/lite-xl/src/rencache.c \
+                 runtime/upstream/lite-xl/src/api/renderer.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -2139,6 +2167,37 @@ bench:
 bench-record:
 	@$(MAKE) --no-print-directory BENCH=1 build/bench/kosmos.elf
 	python3 tools/run_bench.py build/bench/kosmos.elf --record
+
+#
+# How far Lite XL has got: every file that compiles, and every one that
+# does not yet.
+#
+# Compiles rather than links, deliberately. The staged files call functions
+# steps three and four have not written, so a link would fail for a reason
+# that says nothing about whether the *porting* is working. What this
+# answers is the one question worth asking between steps: does upstream's C
+# still build against the shim as it stands.
+#
+.PHONY: litexl
+litexl:
+	@mkdir -p build/litexl
+	@ok=0; fail=0; \
+	for f in $(LITEXL_SRCS) $(LITEXL_STAGED); do \
+	    if $(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -c $$f \
+	         -o build/litexl/$$(basename $$f).o 2>build/litexl/err; then \
+	        printf "  ok    %-52s %s bytes\n" "$$f" \
+	               "$$(wc -c < build/litexl/$$(basename $$f).o | tr -d ' ')"; \
+	        ok=$$((ok + 1)); \
+	    else \
+	        printf "  FAIL  %s\n" "$$f"; \
+	        head -3 build/litexl/err | sed 's/^/        /'; \
+	        fail=$$((fail + 1)); \
+	    fi; \
+	done; \
+	echo; \
+	echo "  $$ok of $$((ok + fail)) Lite XL translation units compile."; \
+	echo "  In the image: $(words $(LITEXL_SRCS)).  Waiting on ren_*/renwin_*: $(words $(LITEXL_STAGED))."; \
+	test $$fail -eq 0
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234

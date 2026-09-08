@@ -41,6 +41,23 @@ void   qsort(void *base, size_t count, size_t size,
 void  *bsearch(const void *key, const void *base, size_t count, size_t size,
                int (*compare)(const void *, const void *));
 
+/*
+ * The standard pseudo-random pair.
+ *
+ * Here rather than in a port's shim because they are C, not SDL: the first
+ * caller was Lite XL's `rencache.c`, which reaches them through `<SDL.h>`
+ * the way every SDL program does, but the next one will reach them through
+ * `<stdlib.h>` like everybody else.
+ *
+ * Not for anything that must not be guessed. `crypto.c` is where randomness
+ * with a requirement on it lives; this is the one from the C standard, and
+ * it is the C standard's own example generator.
+ */
+#define RAND_MAX 32767
+
+int    rand(void);
+void   srand(unsigned seed);
+
 void  *malloc(size_t n);
 void  *calloc(size_t count, size_t size);
 void  *realloc(void *p, size_t n);
