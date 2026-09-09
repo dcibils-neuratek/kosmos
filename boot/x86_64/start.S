@@ -35,7 +35,17 @@
  * header is and everything else is measured from the load address.
  */
 #define MB_MAGIC     0x1BADB002
-#define MB_FLAGS     0x00010002          /* memory map | a.out kludge */
+/*
+ * Memory map, the a.out kludge, and a *video mode*.
+ *
+ * Bit 2 asks the loader to set a graphics mode and report where it put the
+ * framebuffer. On a real PC that is the only way to get a screen: there is
+ * no ramfb to point anywhere, and the firmware has already chosen a mode by
+ * the time anything of ours runs. A loader that ignores the request simply
+ * leaves bit 12 of the info flags clear, and `hal/pc/fb.c` falls back - so
+ * asking costs nothing on a machine that will not answer.
+ */
+#define MB_FLAGS     0x00010006          /* memory map | video | a.out kludge */
 #define MB_CHECKSUM  -(MB_MAGIC + MB_FLAGS)
 
 .section .multiboot, "a"
@@ -48,6 +58,18 @@
     .long 0                           /* 0: load to the end of the file */
     .long __image_end                 /* reserve up to here */
     .long _start                      /* and begin here */
+
+    /*
+     * The mode being asked for. Zero for width and height means "whatever
+     * you think is best", which is the right answer on a laptop whose panel
+     * the firmware already knows about; 32 bits per pixel is not a
+     * preference but a requirement, because everything above `struct fb`
+     * treats a pixel as one 32-bit word.
+     */
+    .long 0                           /* 0: a linear framebuffer */
+    .long 0                           /* width:  no preference */
+    .long 0                           /* height: no preference */
+    .long 32                          /* depth */
 
 /*
  * The page tables that get us into long mode.

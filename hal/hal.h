@@ -79,8 +79,15 @@ void hal_ram_range(struct memrange *out);
  *
  * Each board answers however it can. AArch64 asks PSCI about processor 0,
  * 1, 2 until the firmware says there is no such thing, which needs no
- * device tree. x86-64 has no answer yet: the count is in the ACPI MADT and
- * nothing here parses ACPI, so it says one and `hal/pc/cpus.c` says why.
+ * device tree. x86-64 reads the ACPI MADT, one entry per local APIC -
+ * `hal/pc/acpi.c` - and falls back to one on a machine whose firmware left
+ * no tables.
+ *
+ * **Counting is not starting on either board.** The PC can say twelve and
+ * still schedule on one, because `cpu_on.c` wants a local APIC and
+ * `cpu_secondary_entry` wants a trampoline below 1 MB, and neither exists.
+ * That gap is the honest measure of how far the port has got, which is
+ * exactly what the paragraph above says this number is for.
  *
  * **A count is the right question on these two machines and the wrong one
  * on the next.** Alder Lake and everything after it are *hybrid*: the
@@ -219,6 +226,9 @@ struct fb {
  * the other.
  */
 bool hal_fb_init(struct fb *out);
+
+/* Which framebuffer answered, for the boot log. See `hal/pc/fb.c`. */
+const char *hal_fb_describe(void);
 
 /*
  * Brings up a keyboard, if the board has one. False is not an error: input

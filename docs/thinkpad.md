@@ -198,6 +198,51 @@ addresses, and the ECAM base. That last one is what lets `pci.c` reach the
 0xCF8 can address - and everything PCIe added, including where MSI-X tables
 live, is above the first 256.
 
+### `hal/pc/fb.c` - a screen on a machine with no ramfb
+
+**M0's code path.** `ramfb` is QEMU's - the guest allocates memory and tells
+the hypervisor to scan it out - and a ThinkPad has nothing of the kind. What
+it has is firmware that set a mode before anything of ours ran, and a loader
+that can be asked to pass the address on. `boot/x86_64/start.S` now asks:
+bit 2 of the multiboot header flags requests a linear framebuffer at 32 bits
+per pixel with no size preference, because the firmware knows the panel
+better than this does.
+
+`hal_fb_init` takes the loader's answer first and ramfb second, so QEMU is
+unchanged and a laptop takes the other branch.
+
+**The framebuffer is captured early, and that matters more than the code.**
+`pc.h` already warned that the multiboot structure sits in RAM the page
+allocator considers free - it ate the command line once - and the comment
+ended "it is the same trap for the next field somebody wants". This was that
+field: `hal_fb_init` runs at boot stage six, long after the allocator, so an
+address read then would be plausible and wrong. On a machine with no serial
+port that is a black panel and no way to ask why.
+
+**QEMU's `-kernel` does not answer the video request.** Measured rather than
+assumed: the flag stays clear, the fallback runs, and the display is the
+1920x1080 it always was. So the one path that cannot be exercised under
+emulation is the one a laptop depends on entirely - which is why the
+decision is a pure function and `tools/test_loaderfb.c` asks it the awkward
+questions on the host: **14 checks**, every rejection something a loader has
+really done. The flag set with nothing behind it, a palette, EGA text,
+24bpp, zero dimensions, and a pitch narrower than its own row - that last
+one against 7744 and 1920, because `gfx.md` insists the pitch is almost
+never width * 4 and a driver that tidied it would shear every line.
+
+What is left for the machine is one question - *does GRUB fill the fields
+in* - rather than a driver to debug on a dark screen. The boot log answers
+it in one line:
+
+```
+-> from ramfb, which is QEMU's and has no equivalent on hardware
+-> from the loader's, from the multiboot video request
+```
+
+Two failures that look identical from outside: a laptop that fell back has
+no screen because there is no ramfb, and a laptop whose loader ignored the
+request has no screen for a different reason and a different fix.
+
 ### The boot log stopped naming the wrong driver
 
 `kernel/main.c` printed `keyboard: virtio-input, negotiated and polled like
@@ -307,8 +352,8 @@ works, and not before.
 
 | | | rough size |
 |---|---|---|
-| Multiboot2 header, or a UEFI stub - depends on question 2 | new | ~300, or ~1000 |
-| Framebuffer from the loader's boot information | `hal_fb_init` has the shape | ~100 |
+| Multiboot2 header, or a UEFI stub - depends on question 2 | not needed if CSM exists | ~300, or ~1000 |
+| Framebuffer from the loader's boot information | **written**, 14 host checks | done |
 | i8042 keyboard | **in the build**, exercised by the display harness | done |
 | i8042 auxiliary port | written, does not deliver under QEMU | blocked, §6 |
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |

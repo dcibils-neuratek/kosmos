@@ -22,6 +22,7 @@
  * Multiboot specification 0.6.96, section 3.3.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "hal.h"
@@ -36,6 +37,43 @@ static struct memrange found = { 0, 0 };
  */
 uint32_t pc_multiboot;
 
+/*
+ * The framebuffer the loader set up, copied out while it is still there.
+ *
+ * **The comment in `pc.h` said this file's lesson was "the same trap for
+ * the next field somebody wants", and this is that field.** The multiboot
+ * structure sits in RAM just past the kernel image, which `pmm_init`
+ * correctly considers free - so anything read from it after the allocator
+ * starts is whatever was allocated over it. The memory map is copied out
+ * here for that reason and so is this.
+ *
+ * It matters more than the map did. `hal_fb_init` runs at boot stage six,
+ * long after the allocator, and a framebuffer address read then would be
+ * plausible and wrong - which on a machine with no serial port means a
+ * black screen and no way to ask why.
+ */
+static struct {
+    uint64_t addr;
+    uint32_t pitch;
+    uint32_t width, height;
+    bool     valid;
+} loader_fb;
+
+bool pc_loader_framebuffer(uint64_t *addr, uint32_t *pitch,
+                           uint32_t *width, uint32_t *height)
+{
+    if (!loader_fb.valid) {
+        return false;
+    }
+
+    *addr = loader_fb.addr;
+    *pitch = loader_fb.pitch;
+    *width = loader_fb.width;
+    *height = loader_fb.height;
+
+    return true;
+}
+
 void pc_capture_memory(void)
 {
     uint32_t at = pc_multiboot;
@@ -43,7 +81,30 @@ void pc_capture_memory(void)
     const struct multiboot_info *info = (const struct multiboot_info *)(uintptr_t)at;
     uintptr_t entry, end;
 
-    if (at == 0 || (info->flags & MB_FLAG_MMAP) == 0) {
+    if (at == 0) {
+        return;
+    }
+
+    /*
+     * The framebuffer first, because it is the field this machine cannot
+     * report the loss of. Checked here rather than at use: a loader that
+     * set the flag and filled in nothing, or answered with a palette, is a
+     * loader whose answer must not reach `struct fb` - everything above it
+     * treats a pixel as one 32-bit word.
+     */
+    {
+        struct pc_loader_fb got;
+
+        if (pc_framebuffer_from(info, &got)) {
+            loader_fb.addr = got.addr;
+            loader_fb.pitch = got.pitch;
+            loader_fb.width = got.width;
+            loader_fb.height = got.height;
+            loader_fb.valid = true;
+        }
+    }
+
+    if ((info->flags & MB_FLAG_MMAP) == 0) {
         return;
     }
 

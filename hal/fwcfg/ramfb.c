@@ -152,7 +152,7 @@ _Static_assert(sizeof(struct ramfb_cfg) == 28, "RAMFBCfg is 28 bytes");
 
 #define DRM_FORMAT_XRGB8888 FOURCC('X', 'R', '2', '4')
 
-bool hal_fb_init(struct fb *out)
+bool ramfb_init(struct fb *out)
 {
     struct ramfb_cfg cfg;
     uint16_t select;

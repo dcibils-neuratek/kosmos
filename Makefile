@@ -203,6 +203,7 @@ SRCS := boot/start.S \
         hal/fwcfg/fwcfg.c \
         hal/qemu-virt/fwcfg_mmio.c \
         hal/fwcfg/ramfb.c \
+        hal/qemu-virt/fb.c \
         hal/virtio/input.c \
         hal/qemu-virt/input_bind.c \
         hal/keys.c \
@@ -1229,6 +1230,19 @@ $(HOSTDIR)/test_audioring: tools/test_audioring.c user/include/audioring.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ tools/test_audioring.c
 
+#
+# The framebuffer a loader hands over, checked without a machine.
+#
+# QEMU's `-kernel` ignores multiboot's video request, so nothing under
+# emulation ever takes that branch - and on a laptop it is the only way to
+# get a screen. Same split as `kfs.lua`: the decision is a pure function and
+# this is where it is asked the awkward questions.
+#
+$(HOSTDIR)/test_loaderfb: tools/test_loaderfb.c hal/pc/loader_fb.c hal/pc/multiboot.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_loaderfb.c hal/pc/loader_fb.c
+
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
@@ -1851,6 +1865,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/cpu_here.c \
              hal/fwcfg/fwcfg.c \
              hal/fwcfg/ramfb.c \
+             hal/pc/fb.c \
+             hal/pc/loader_fb.c \
              hal/pc/fwcfg_port.c \
              hal/pc/acpi.c \
              hal/pc/pci.c \
@@ -2063,7 +2079,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2075,6 +2091,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.
 	$(HOSTDIR)/test_audioring
+	$(HOSTDIR)/test_loaderfb
 	@# And the Lite XL surface shim, which is C and still needs no machine:
 	@# `make litexl` says the port's sources compile, and this says the part
 	@# of them Kosmos wrote is correct. Different claims.

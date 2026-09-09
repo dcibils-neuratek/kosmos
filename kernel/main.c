@@ -266,6 +266,11 @@ void kmain(void)
         boot_fact_end();
 
         boot_fact_begin();
+        kputs("from ");
+        kputs(hal_fb_describe());
+        boot_fact_end();
+
+        boot_fact_begin();
         kputu(fb.pitch);
         kputs(" bytes a row, not ");
         kputu(fb.width * 4);
