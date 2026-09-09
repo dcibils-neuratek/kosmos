@@ -8,6 +8,96 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### A prompt you can work at
+
+`ls`, `cat`, `mkdir` and `find` were the whole of the shell. It now has
+`cp`, `mv`, `rm`, `touch`, `head`, `tail`, `wc`, `grep`, `tree`, `du` - and
+an up-arrow, which is the one that changes how the machine feels to use.
+
+**They are thin, and that is the point.** `files.copy` and `files.move`
+already existed and Tracker had used them for months; the filesystem already
+had `mkdir` and `delete`. `cp` is thirty lines, most of them comment, and
+nothing new went into a server. `/bin` went from 87 programs to 97 without
+the kernel changing.
+
+`use("/lib/text.lua")` holds the two questions four of them share: where
+lines end, and how `-n 3` is spelled. `grep` takes a Lua pattern and says
+so - inventing a second pattern language here so the spelling matched a
+different operating system would mean carrying a regex engine to do it.
+
+### The up-arrow, in two line editors
+
+`user/servers/console.c` for the boot prompt, `user/bin/terminal.lua` for
+the window, with the same semantics: 0 is the line being typed, 1 is the
+most recent, anything that ends a line resets it. They cannot share a ring -
+one is in another process - and the thing they must not do is disagree.
+
+A serial terminal sends ESC [ A and `hal/virtio/input.c` already maps the
+keyboard's arrows to the same three bytes, so reassembling them once in the
+console server gave the graphical console history for nothing.
+
+### /ramfs, and the three operations it never had
+
+`/data` is `/ramfs`, and it now answers `mkdir`, `delete` and `rename`.
+
+**Everything that had ever used that mount published.** A replicant writing
+its own source for `adopt`, the web server writing its status, a benchmark
+tagging files to query for - nothing ever took anything back out, so an
+operation with no caller was never written. `rm` is what turned an absence
+into a bug: a verb that works on one mount and not another is the namespace
+failing at the one thing it exists for.
+
+The name went at the same time. Every other mount is named for its role and
+`/data` was the only one whose name said nothing, while implying the one
+thing that was false - data is what you least want to lose, and this mount
+is gone at power off. `/ram` was rejected for reading like a device you
+write raw bytes to.
+
+### Tracker browses what it holds
+
+The sidebar is `fs.mounts()` now. Six strings were written out in the source
+and had fallen behind: `/user`, `/app` and `/ramfs` were all mounted and
+none was offered, so a file manager could not reach places its own process
+could see. After the rename one of them read `data` beside a path saying
+`/ramfs`, which is the same rot one step on.
+
+Two filters, both about what a browser can use: a mount inside another is
+not a root, and a mount that will not answer a listing is not offered.
+`/net` is a protocol rather than a tree, and so is the disk on a machine
+that has none.
+
+**The first version probed with `files.entries`**, which adds a `getattr`
+per name - ninety-one for `/bin` - and Tracker opened empty and stayed that
+way while it worked through them. `fs.list` answers the same question in one
+round trip.
+
+### `help fs` had never worked
+
+Writing the cheat sheet found it. `help` also names a value in the shell's
+environment, so `shadows_lua` sends the line to Lua and Lua has no such
+expression. The overview has told people to type it since topics existed,
+and the shell's own comment used `help gfx` as its example *of a command*.
+`help "fs"` and `/help fs` work; all three places now say so.
+
+### What is not done
+
+**No pipes and no redirection**, and the tools that want them are the ones
+not written: `sort`, `uniq`, `cut`, `tr`, `sed`, `xargs` would each have to
+take a path and print, which is half of what they are for. They are waiting
+on a decision about composition rather than on anybody writing them - a pipe
+needs a stream between two processes, and what this system has between
+processes is messages and shared memory.
+
+Still wanted, and none of them blocked: `kill` (the syscall exists and only
+the graphical Processes app uses it), `df` across every mount (nothing
+reports how full `/ramfs` is), `mounts` (what `/` is made of and what serves
+each), `which`, `stat`, `rmdir`, `less`, `diff`.
+
+**The website is rewritten and unpublished.** 604 lines to 453, with the
+version history and the program tables cut; it says SMP is done rather than
+next, and no longer claims there is not a lock or an atomic in the kernel.
+It waits on three screenshots that have not been taken.
+
 ### A console write was handing a capability over, and the text's length picked it
 
 Three defects came out of one question - why the `neofetch` banner was slow
