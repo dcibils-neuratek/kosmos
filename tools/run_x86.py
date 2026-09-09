@@ -239,7 +239,21 @@ def sound(image, check):
     if raised:
         lines, periods = int(raised.group(1)), int(raised.group(2))
 
-        check(lines >= periods,
+        #
+        # **About one per period, not exactly one.** The count is read
+        # after the last period is queued and before the device has
+        # necessarily finished with it, so the boundary moves by one or two
+        # between runs - 401 and 399 have both been seen for 400 periods.
+        # An exact comparison failed on the second of those and said the
+        # handler was not running, which was not true of anything.
+        #
+        # The tolerance is wide enough for the boundary and nowhere near
+        # wide enough to miss what this is for: virtio-sound raises 194
+        # times for the same 400 periods, because that device services two
+        # periods per interrupt. Half is the failure; a couple either way
+        # is the measurement.
+        #
+        check(lines >= periods * 9 // 10,
               "the controller raised its line %d times for %d periods; the "
               "handler is not running once per period" % (lines, periods))
 
@@ -318,15 +332,31 @@ def main():
     #    the kernel through a syscall. Two paths through the whole system to
     #    one number - and the megabytes are computed here rather than
     #    compared against a word that was printed.
-    kern = re.search(r"(\d+) MB of RAM in (\d+) pages", out)
-    user = re.search(r"(\d+) MB of RAM at 0x([0-9a-f]+), in (\d+) pages", out)
+    # **Anchored so that the two cannot be the same line.**
+    #
+    # The kernel's boot fact and userland's `mem` now print the same three
+    # numbers in the same words, because the base was added to the boot log
+    # where it was already in `mem` - and at that moment a search for the
+    # shorter pattern found the longer line and this check compared a line
+    # with itself. The boot fact carries `-> `; `mem` starts at the margin.
+    kern = re.search(r"-> (\d+) MB of RAM at 0x([0-9a-f]+), in (\d+) pages",
+                     out)
+    user = re.search(r"^(\d+) MB of RAM at 0x([0-9a-f]+), in (\d+) pages",
+                     out, re.MULTILINE)
 
     check(kern is not None, "the boot log did not report the memory")
     check(user is not None, "`mem` at the prompt printed nothing usable")
 
     if kern and user:
-        kmb, kn = int(kern.group(1)), int(kern.group(2))
+        kmb, kn = int(kern.group(1)), int(kern.group(3))
         umb, un = int(user.group(1)), int(user.group(3))
+
+        # And where it starts, which is the third number and the one a PC
+        # can get wrong on its own: `virt` has RAM at a constant and a PC
+        # has it wherever the firmware left room.
+        check(int(kern.group(2), 16) == int(user.group(2), 16),
+              "the kernel says RAM begins at 0x%s and userland was told 0x%s"
+              % (kern.group(2), user.group(2)))
 
         check(kn == un,
               "the kernel manages %d pages and userland was told %d" % (kn, un))
@@ -436,7 +466,7 @@ def main():
               "the machine did not report the memory it cannot map; the cap "
               "is silent, which is how it would be found on hardware")
 
-        used = re.search(r"(\d+) MB of RAM in \d+ pages", big)
+        used = re.search(r"(\d+) MB of RAM at 0x[0-9a-f]+, in \d+ pages", big)
 
         check(used is not None and 700 < int(used.group(1)) < 768,
               "the usable memory is not the region below the device window, "

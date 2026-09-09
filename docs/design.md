@@ -632,6 +632,38 @@ The division M8 introduces is therefore narrower than it looks:
 
 That is a scale judgement and it is written down as one, so it can be revisited honestly: it holds while a mount scan is cheaper than the complexity it avoids, and stops holding at a file count this system is nowhere near.
 
+### 8.3a `/home` always exists, and says which kind it is
+
+`/system`, `/user` and `/home` are three subtrees of one disk filesystem -
+what the operating system ships, what somebody installed, and what somebody
+made. `/home` is the persistent one by definition.
+
+**On a machine with no disk it is backed by memory instead**, and that is a
+decision rather than a fallback that crept in. The alternative was `/home`
+simply not existing there, and it fails on the machine this is aimed at:
+`docs/thinkpad.md`'s ThinkPad has NVMe and no NVMe driver, so it is a
+diskless machine for now - and Tracker makes `/home/Desktop` when it is
+missing, so no `/home` means no desktop at all. A first boot with no
+desktop is not a first boot worth having.
+
+**The principle it has to answer is `init.lua`'s**, written about read-only
+`/bin`: *a write that appeared to work would vanish at the next boot, which
+is worse than being told no.* That is exactly what a volatile `/home` does,
+so it is answered rather than ignored: **the failure that principle guards
+against is a silent one, and this one is announced.** The boot log, `df`,
+`machine` and `neofetch` all say "in memory and will not survive" - and they
+said it for a long time before it was true, which is how the gap was found.
+
+The shape that makes this safe is that **the decision is taken once, at
+boot, and inherited.** A process that worked out for itself where `/home`
+was could disagree with the process that started it, and then `ls /home`
+would answer differently depending on who asked. The shell probes for a
+formatted disk, mounts accordingly, and every process it spawns is told -
+including the window manager, and the Tracker the window manager starts.
+
+When there is an NVMe driver, `/home` becomes persistent and nothing else in
+the system changes.
+
 ### 8.4 A large file is mapped, not copied
 
 `read` returning a string is right for a configuration file and wrong for a picture. A 936 KB PNG through `fs.read` gives `not enough memory`, because the string is accumulated on a 2 MB process heap.

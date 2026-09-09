@@ -229,9 +229,19 @@ void kmain(void)
     boot_stage("physical memory");
     boot_why("A bitmap of every page: page tables are themselves made of pages.");
 
+    /*
+     * **With the address it starts at**, which is not decoration on a PC.
+     * `virt` puts RAM at one constant; a PC's usable memory is wherever the
+     * firmware left room, and where it begins decides whether the kernel
+     * image is inside it. That is a question `pmm_init` answers with a
+     * panic, so the number belongs in the log above it rather than in a
+     * debugger afterwards.
+     */
     boot_fact_begin();
     kputu(pmm_total_pages() * (PAGE_SIZE / 1024) / 1024);
-    kputs(" MB of RAM in ");
+    kputs(" MB of RAM at 0x");
+    kputx(pmm_ram_base(), 8);
+    kputs(", in ");
     kputu(pmm_total_pages());
     kputs(" pages of ");
     kputu(PAGE_SIZE / 1024);

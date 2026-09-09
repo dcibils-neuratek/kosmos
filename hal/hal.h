@@ -229,6 +229,30 @@ unsigned long hal_ticks_on(unsigned cpu);
  */
 struct fb {
     volatile uint32_t *pixels;
+
+    /*
+     * The same pixels, as the address the *hardware* knows them by.
+     *
+     * **Not the same number, and assuming it was cost an afternoon.** For
+     * as long as the only framebuffer was ramfb the two were identical:
+     * the guest allocates those pixels out of its own RAM and the kernel
+     * is identity mapped, so a pointer to them *is* their physical
+     * address. A firmware framebuffer is not in RAM at all - it is behind
+     * a graphics aperture - so it has to be mapped, and from that moment
+     * `pixels` is a kernel virtual address in the device window.
+     *
+     * `process_grant_screen` hands the compositor the pages the display
+     * controller is scanning out, and a page table wants physical
+     * addresses. It read `pixels`, which had been right for two years, and
+     * mapped the process onto whatever RAM happened to live at 0x3xxxxxxx:
+     * the window manager came up, drew a whole desktop into memory nobody
+     * was looking at, and the console stayed on the screen underneath it.
+     *
+     * A board sets both. Where the pixels are in RAM they are the same
+     * value, which is what made the bug invisible.
+     */
+    uintptr_t phys;
+
     unsigned width;
     unsigned height;
     unsigned pitch;             /* bytes per row; never assume width * 4 */

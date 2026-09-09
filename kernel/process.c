@@ -815,6 +815,10 @@ bool process_grant_screen(struct process *p)
      * and a copy would need three megabytes somewhere and a flush after
      * every frame.
      *
+     * **`fb.phys`, not `fb.pixels`.** They are the same number on a board
+     * whose framebuffer is in RAM and are not on a board whose firmware
+     * provided one; `struct fb` has the whole account.
+     *
      * Rounded up from pitch * height rather than from width * height * 4,
      * because the pitch is padded and the last row runs to the end of its
      * stride. Getting this wrong leaves the bottom row unmapped, and the
@@ -824,7 +828,7 @@ bool process_grant_screen(struct process *p)
     bytes = (size_t)fb.pitch * fb.height;
     pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    if (as_map(p->space, USER_SCREEN_VA, (uintptr_t)fb.pixels,
+    if (as_map(p->space, USER_SCREEN_VA, fb.phys,
                pages, MAP_USER_RW) != AS_OK) {
         return false;
     }

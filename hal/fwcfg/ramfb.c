@@ -202,6 +202,10 @@ bool ramfb_init(struct fb *out)
     }
 
     out->pixels = (volatile uint32_t *)framebuffer;
+
+    /* The guest chose this memory out of its own RAM and the kernel is
+     * identity mapped, so the two are the same number here. */
+    out->phys = (uintptr_t)framebuffer;
     out->width  = FB_WIDTH;
     out->height = FB_HEIGHT;
     out->pitch  = FB_PITCH;

@@ -32,6 +32,8 @@
 #include "pc.h"
 #include "ramfb.h"
 
+static const char *source = "none";
+
 static bool from_loader(struct fb *out)
 {
     uint64_t addr;
@@ -65,31 +67,50 @@ static bool from_loader(struct fb *out)
      * screen, and the deadlock means it is dead in a way that cannot even
      * reach a serial port.
      *
-     * Uncached, which is what `mmu_map_device` gives and is not what a
-     * framebuffer wants: write-combining is, and it needs the PAT set up.
-     * That is a real piece of work and this is the first boot; the desktop
-     * will say plainly whether it is worth doing.
+     * **Write-combining rather than uncached.** Uncached is what a device
+     * register wants, where the write is the command; a framebuffer is
+     * eight megabytes a compositor rewrites sixty times a second, and
+     * making every store its own bus transaction is the difference between
+     * a desktop and a slideshow. `mmu.h`'s `MAP_FRAMEBUFFER` has the whole
+     * argument, including why this is a correctness question and not only a
+     * speed one.
      */
-    mapped = mmu_map_device((uintptr_t)addr, (size_t)pitch * height);
+    mapped = mmu_map_framebuffer((uintptr_t)addr, (size_t)pitch * height);
 
     if (mapped == 0) {
         return false;           /* the device window is full */
     }
 
     out->pixels = (volatile uint32_t *)mapped;
+
+    /* Where the display controller reads from, which is not where this
+     * kernel writes to. See `struct fb`. */
+    out->phys = (uintptr_t)addr;
+
     out->width = width;
     out->height = height;
     out->pitch = pitch;
 
+    /*
+     * Said here rather than by the caller, because there are three of them
+     * now - `hal_fb_init`, `hal_fb_remap`, and whichever runs first - and
+     * only this function knows which memory type the mapping got. It said
+     * the wrong thing for exactly one revision, on the path that matters:
+     * the early screen means `hal_fb_init` is never called on a machine
+     * with a firmware framebuffer, so the sentence the boot log printed was
+     * the one set before any mapping had happened.
+     */
+    source = mmu_write_combining()
+           ? "the loader's, from the multiboot video request, write-combining"
+           : "the loader's, from the multiboot video request, uncached "
+             "because this processor has no PAT";
+
     return true;
 }
-
-static const char *source = "none";
 
 bool hal_fb_init(struct fb *out)
 {
     if (from_loader(out)) {
-        source = "the loader's, from the multiboot video request";
         return true;
     }
 
@@ -145,12 +166,37 @@ bool hal_fb_early(struct fb *out)
         return false;           /* outside what start.S mapped */
     }
 
+    /*
+     * **And not write-back**, which is what `start.S` left it as.
+     *
+     * The boot page tables map the first four gigabytes with plain
+     * present-and-writable 2 MB entries, and plain means write-back cached -
+     * the one memory type MMIO may not have. Under QEMU it makes no
+     * difference, because TCG models no cache and every store lands at
+     * once; on a machine with a real one the boot log would sit in cache
+     * and reach the panel when a line happened to be evicted, which is
+     * exactly the failure this early screen exists to prevent.
+     */
+    mmu_boot_uncached((uintptr_t)addr, (size_t)pitch * height);
+
     out->pixels = (volatile uint32_t *)(uintptr_t)addr;
+
+    /* Identical before `mmu_init`, because the boot page tables identity
+     * map everything the loader can describe. */
+    out->phys = (uintptr_t)addr;
+
     out->width = width;
     out->height = height;
     out->pitch = pitch;
 
-    source = "the loader's, from the multiboot video request";
+    /*
+     * Uncached, not write-combining: this runs before `mmu_init` has
+     * programmed the PAT, and the boot page tables name a memory type with
+     * different bits at a 2 MB entry. A few kilobytes of boot log is not
+     * worth a second encoding to get wrong.
+     */
+    source = "the loader's, from the multiboot video request, uncached "
+             "until the page tables are the kernel's";
 
     return true;
 }

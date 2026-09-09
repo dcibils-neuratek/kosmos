@@ -318,6 +318,62 @@ static void enable(void)
                      : "memory");
 }
 
+/*
+ * Does this processor have a PAT at all?
+ *
+ * CPUID.01H:EDX bit 16. Every processor since the Pentium III does; the
+ * check exists so that the answer to "what if it does not" is uncached
+ * rather than a write-combining mapping that means something else.
+ */
+static bool has_pat(void)
+{
+    uint32_t eax, ebx, ecx, edx;
+
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(1u), "c"(0u));
+
+    return (edx & (1u << 16)) != 0;
+}
+
+/*
+ * Slot 4 of the PAT becomes write-combining; slots 0 to 3 keep the meanings
+ * they have out of reset.
+ *
+ * **That division is the whole design.** PCD and PWT alone select among the
+ * first four, so every mapping written before this existed - and every one
+ * written since that does not set `PTE_PAT` - names a slot this does not
+ * touch and means exactly what it always meant. Only `MAP_FRAMEBUFFER`
+ * reaches slot 4.
+ *
+ * Intel SDM volume 3 §11.12.4 asks for the caches and TLB to be flushed
+ * around the write. Here it happens inside `mmu_init` before the new tables
+ * are loaded and while the only mappings in existence are the boot
+ * identity map, so there is nothing cached under a type that is about to
+ * change meaning - but the sequence is written out anyway, because the next
+ * person to move this call will not have that guarantee.
+ */
+static void pat_init(void)
+{
+    uint32_t low, high;
+    uint64_t pat;
+
+    if (!has_pat()) {
+        return;
+    }
+
+    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(IA32_PAT));
+
+    pat = ((uint64_t)high << 32) | low;
+    pat &= ~((uint64_t)0xff << (PAT_SLOT_WC * 8));
+    pat |= (uint64_t)PAT_TYPE_WC << (PAT_SLOT_WC * 8);
+
+    __asm__ volatile("wbinvd" ::: "memory");
+    __asm__ volatile("wrmsr" :: "c"(IA32_PAT),
+                     "a"((uint32_t)pat), "d"((uint32_t)(pat >> 32)));
+    __asm__ volatile("wbinvd" ::: "memory");
+}
+
 void mmu_init(void)
 {
     uintptr_t fine_start;
@@ -347,6 +403,13 @@ void mmu_init(void)
     if (ram_end > DEVICE_WINDOW_BASE) {
         panic("mmu: the board reported RAM the address space has no room for");
     }
+
+    /*
+     * The PAT first, before a single entry is written, so that
+     * `MAP_FRAMEBUFFER` means write-combining from the first mapping that
+     * uses it rather than from whenever this happened to run.
+     */
+    pat_init();
 
     kernel_pml4 = alloc_table();
     kernel_pdpt = alloc_table();
@@ -465,6 +528,86 @@ void mmu_init(void)
  * dozen mappings that outlive the machine.
  */
 static uintptr_t device_next = DEVICE_WINDOW_BASE;
+
+/*
+ * The page tables that are loaded right now, which before `mmu_init` are
+ * the ones `start.S` built: one PML4, one PDPT, four page directories of
+ * 2 MB entries covering the first four gigabytes.
+ *
+ * Reached through CR3 rather than through the assembler's symbols, because
+ * every one of those tables is inside the identity map that describes
+ * itself - so following the physical addresses in them is exactly following
+ * the pointers.
+ */
+void mmu_boot_uncached(uintptr_t base, size_t bytes)
+{
+    uint64_t cr3;
+    uintptr_t at;
+    uintptr_t last;
+
+    if (bytes == 0) {
+        return;
+    }
+
+    __asm__ volatile("movq %%cr3, %0" : "=r"(cr3));
+
+    last = base + bytes - 1;
+
+    for (at = base & ~(BLOCK_2M - 1); at <= last; at += BLOCK_2M) {
+        uint64_t *table = (uint64_t *)(uintptr_t)(cr3 & PTE_ADDR_MASK);
+        uint64_t *entry;
+        unsigned level;
+
+        /* PML4, then PDPT, then the page directory. Three steps rather than
+         * four: what covers this address is a 2 MB leaf, not a page. */
+        for (level = 0; level < 2; level++) {
+            unsigned index = (unsigned)((at >> (39 - level * 9)) & 511);
+
+            if ((table[index] & PTE_P) == 0) {
+                return;
+            }
+
+            table = (uint64_t *)(uintptr_t)(table[index] & PTE_ADDR_MASK);
+        }
+
+        entry = &table[(at >> 21) & 511];
+
+        if ((*entry & PTE_P) == 0 || (*entry & PTE_PS) == 0) {
+            return;                     /* not the map this expects */
+        }
+
+        *entry |= PTE_PCD | PTE_PWT;
+        invalidate(at);
+    }
+}
+
+bool mmu_write_combining(void)
+{
+    return has_pat();
+}
+
+uintptr_t mmu_map_framebuffer(uintptr_t pa, size_t bytes)
+{
+    uintptr_t offset = pa & PAGE_MASK;
+    uintptr_t start = pa - offset;
+    size_t pages = (offset + bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    uintptr_t at = device_next;
+
+    if (!has_pat()) {
+        return mmu_map_device(pa, bytes);
+    }
+
+    if (bytes == 0 || at + pages * PAGE_SIZE > DEVICE_WINDOW_END) {
+        return 0;
+    }
+
+    map_pages(kernel_pml4, at, start, pages, MAP_FRAMEBUFFER);
+    device_next = at + pages * PAGE_SIZE;
+
+    __asm__ volatile("movq %%cr3, %%rax; movq %%rax, %%cr3" ::: "rax", "memory");
+
+    return at + offset;
+}
 
 uintptr_t mmu_map_device(uintptr_t pa, size_t bytes)
 {

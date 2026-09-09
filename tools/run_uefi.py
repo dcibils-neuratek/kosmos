@@ -194,6 +194,25 @@ def main():
     # says so. That is a line that changes rather than a picture nobody
     # compared.
     #
+    #
+    # **And the framebuffer is write-combining**, which is the half of that
+    # question emulation can answer.
+    #
+    # How *fast* it is cannot be measured here: QEMU's framebuffer is host
+    # memory and TCG models no cache, so uncached and write-combining run
+    # identically. Whether the mapping is the right one is not a measurement
+    # at all - it is the PAT programmed, a bit set in a page table entry,
+    # and the architecture manual. The machine says which it got.
+    #
+    # The same line catches the fault underneath it: `start.S` maps the
+    # first four gigabytes plain present-and-writable, which is write-back,
+    # and write-back is the one memory type MMIO may not have.
+    #
+    check("write-combining" in serial,
+          "the framebuffer is not write-combining: "
+          + next((l.strip() for l in serial.splitlines()
+                  if "from the loader" in l), "and the loader did not answer"))
+
     check("the panel has had this log since stage two" in serial,
           "the screen was attached at the display stage rather than at the "
           "second one, so stages one to five reached nothing but a serial "

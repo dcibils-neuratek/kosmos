@@ -219,6 +219,7 @@ SRCS := boot/start.S \
         runtime/libc/setjmp-$(ARCH).S \
         kernel/panic.c \
         kernel/pmm.c \
+        kernel/pmm_place.c \
         kernel/thread.c \
         kernel/sched_rr.c \
         kernel/sched_prio.c \
@@ -1244,6 +1245,21 @@ $(HOSTDIR)/test_loaderfb: tools/test_loaderfb.c hal/pc/loader_fb.c hal/pc/multib
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_loaderfb.c hal/pc/loader_fb.c
 
+#
+# And where the page bitmap goes, for the same reason one layer down.
+#
+# `pmm_init` put its bitmap immediately after the kernel image and panicked
+# if the memory the board reported began above it - right for every machine
+# whose largest usable block is the one the kernel was loaded into, which is
+# what `-kernel` gives and what firmware does not promise. OVMF reports
+# 0x900000 at every memory size from 512 MB to 32 GB, below the image end at
+# 0xf98000, so no QEMU configuration here reaches the case at all.
+#
+$(HOSTDIR)/test_pmmplace: tools/test_pmmplace.c kernel/pmm_place.c kernel/pmm_place.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_pmmplace.c kernel/pmm_place.c
+
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
@@ -1891,6 +1907,7 @@ X86_SRCS  := boot/x86_64/start.S \
              runtime/libc/setjmp-x86_64.S \
              kernel/panic.c \
              kernel/pmm.c \
+             kernel/pmm_place.c \
              kernel/thread.c \
              kernel/sched_rr.c \
              kernel/sched_prio.c \
@@ -2123,12 +2140,58 @@ x86-iso: x86-build
 OVMF_CODE := $(shell brew --prefix qemu 2>/dev/null)/share/qemu/edk2-x86_64-code.fd
 OVMF_VARS := $(shell brew --prefix qemu 2>/dev/null)/share/qemu/edk2-i386-vars.fd
 
+#
+# **The closest thing to the ThinkPad that exists on this desk**, and the
+# device list is a statement rather than a convenience.
+#
+# `make x86` is the whole system: ramfb, a virtio tablet, virtio networking,
+# a virtio disk. Every one of those is QEMU's own and none of them is on a
+# laptop. This machine has what the T14 has and nothing else - firmware that
+# sets a mode, a loader, a panel, an i8042, and an Intel HDA controller - so
+# anything that quietly depends on virtio fails here rather than on the
+# hardware.
+#
+# What it therefore does *not* have, deliberately: a pointer, because the
+# i8042's auxiliary port does not deliver yet and the TrackPoint is what it
+# will be; a disk, because the T14's is NVMe and there is no driver; and a
+# network card, because the I219 is not written either. The desktop comes up
+# keyboard-only with `/home` in memory, which is exactly what the first real
+# boot will look like.
+#
+# 16 GB and 1920x1080 because that is the machine. Both were faults once:
+# more than a gigabyte faulted at boot stage three until the boot page
+# tables covered four, and the panel's 8 MB framebuffer is four times what
+# OVMF offers by default.
+#
+PANEL ?= 1920x1080
+PANEL_W := $(word 1,$(subst x, ,$(PANEL)))
+PANEL_H := $(word 2,$(subst x, ,$(PANEL)))
+
+#
+# The stick, in one line.
+#
+# Builds the image and then hands it to `tools/mkusb.sh`, which is where
+# every check lives: only external physical drives are offered, the answer
+# is re-checked against that list, an internal drive and the running
+# system's own disk are refused by two further routes, and the confirmation
+# is the drive's name typed out rather than a `y`.
+#
+# A make target rather than a documented `dd` line, for the reason the
+# script's own header gives: a `dd` copied out of a README is one keystroke
+# from the disk this Mac boots from, and it gives no warning at all.
+#
+usb: x86-iso
+	@bash tools/mkusb.sh $(ISO)
+
 x86-uefi: x86-iso
 	@cp $(OVMF_VARS) $(X86_BUILD)/ovmf-vars.fd
-	qemu-system-x86_64 -M q35 -m 4G -no-reboot \
+	qemu-system-x86_64 -M q35 -m $(if $(MEM),$(MEM),16G) -no-reboot \
 	  -drive if=pflash,format=raw,unit=0,readonly=on,file=$(OVMF_CODE) \
 	  -drive if=pflash,format=raw,unit=1,file=$(X86_BUILD)/ovmf-vars.fd \
-	  -vga std $(if $(SERIAL),-nographic,-display $(X86_DISPLAY) -serial mon:stdio) \
+	  -vga none -device VGA,xres=$(PANEL_W),yres=$(PANEL_H) \
+	  -device ich9-intel-hda -device hda-output,audiodev=a0 \
+	  -audiodev coreaudio,id=a0 \
+	  $(if $(SERIAL),-display none -serial stdio,-display $(X86_DISPLAY) -serial mon:stdio) \
 	  -cdrom $(ISO)
 
 x86: x86-build $(DISK)
@@ -2151,7 +2214,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2163,6 +2226,11 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.
 	$(HOSTDIR)/test_audioring
+	@#
+	@# And where the page bitmap goes, which is the same shape of test one
+	@# layer down: arithmetic with an awkward case that firmware produces
+	@# and QEMU does not.
+	$(HOSTDIR)/test_pmmplace
 	$(HOSTDIR)/test_loaderfb
 	@# And the Lite XL surface shim, which is C and still needs no machine:
 	@# `make litexl` says the port's sources compile, and this says the part

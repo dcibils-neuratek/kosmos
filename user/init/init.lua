@@ -2077,9 +2077,17 @@ end
 -- /bin: the programs this image carries.
 --
 -- Read-only, and that is not a limitation being apologised for. The
--- programs are compiled into the image because there is no disk until M8,
--- so a write that appeared to work would vanish at the next boot - which is
--- worse than being told no.
+-- programs are compiled into the image, so a write that appeared to work
+-- would vanish at the next boot - which is worse than being told no.
+--
+-- **It said "because there is no disk until M8", and that stopped being
+-- the reason.** There has been a disk for a long time and `/bin` is still
+-- in the image, because carrying the whole system in one file turns out to
+-- be the better arrangement rather than the temporary one: the loader
+-- reads a single file and jumps, there is no root filesystem to mount, and
+-- starting a program never touches storage at all. `design.md` 8.3a is
+-- where `/home` picks up the other half of that - the one place that is
+-- writable, on a disk when there is one and in memory when there is not.
 --
 -- It is an ordinary server answering the ordinary protocol. `ls /bin` and
 -- `cat /bin/htop.lua` are the same requests the filesystem answers, sent
@@ -3173,6 +3181,54 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   ns.mount("/user",   disk_cap, "/user")
   ns.mount("/home",   disk_cap, "/home")
 
+  --
+  -- ...and `/home` moves into memory when there is no disk under it.
+  --
+  -- **Three programs told you it already worked this way.** `neofetch`,
+  -- `machine` and `df` all printed "/home is in memory and will not
+  -- survive" on a machine with no disk, and it was an intention written in
+  -- the present tense: `/home` was mounted on the disk server whatever
+  -- happened, and that server answers every request with "there is no
+  -- filesystem here". The sentence was true about what somebody meant and
+  -- false about what the machine did.
+  --
+  -- What found it was the machine it matters on. `make x86-uefi` is a
+  -- ThinkPad-shaped QEMU - firmware, a loader, an i8042, no virtio
+  -- anything - and on that machine the desktop does not come up at all:
+  -- Tracker makes `/home/Desktop` if it is missing, the disk refuses, and
+  -- there is no backdrop. A laptop with no NVMe driver is exactly that
+  -- machine, so this was the first real boot arriving without a desktop.
+  --
+  -- The same server that serves `/ramfs`, at a different root - so a file
+  -- written to `/home/notes` is `/ramfs/home/notes` as well, which is
+  -- honest rather than a coincidence: it *is* the same memory, and it goes
+  -- away for the same reason.
+  --
+  local home_in_memory = false
+
+  do
+    local sb = ns.read("/home/.super")
+
+    if type(sb) ~= "table" or not sb.formatted then
+      ns.mount("/home", ramfs_cap, "/home", "ram")
+      home_in_memory = true
+
+      --
+      -- And the directory itself, which is the part that looked like the
+      -- mount not working.
+      --
+      -- `/ramfs` is mounted with no root, so its prefix names the server's
+      -- own root and that always exists. This one is a *subtree*: `/home`
+      -- resolves to the path `/home` inside the same server, and a path
+      -- inside `ramfs` exists only once something has made it. So the mount
+      -- was there and correct, and `ls /home` answered `no such path`
+      -- because there was no such node - which reads exactly like a mount
+      -- that did not happen.
+      --
+      ns.send("/home", { type = "mkdir" })
+    end
+  end
+
   local function out(s) write_text(ns, "/dev/console", s) end
   local function readline() return ns.read("/dev/console") end
 
@@ -3793,6 +3849,7 @@ query. `find` and `watch` are built on exactly these two calls.
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9,
+      home_in_memory = home_in_memory or nil,
     })
 
     -- A private channel for one message. There are ninety-six of them, and
@@ -4712,6 +4769,14 @@ if role == ROLE_RUNNER then
     ns.mount("/home",   req.disk, "/home")
   end
 
+  -- After the disk, because this replaces what that mounted. The shell
+  -- decided once, at boot, whether there is a filesystem to put `/home` on;
+  -- a program that decided for itself could disagree with the shell that
+  -- started it, and then `ls /home` would depend on who was asking.
+  if req.home_in_memory and req.data then
+    ns.mount("/home", req.data, "/home", "ram")
+  end
+
   -- After `/dev`, because longest prefix wins and this is a different
   -- server from the one that answers the rest of it.
   if req.audio   then ns.mount("/dev/audio",   req.audio)   end
@@ -4864,6 +4929,13 @@ if role == ROLE_RUNNER then
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9,
       mounts = (#mounts > 0) and mounts or nil,
+
+      -- Inherited rather than decided again. This is a program starting a
+      -- program - the window manager starting Tracker is the case that
+      -- matters - and a child that worked out for itself where `/home` is
+      -- could disagree with its parent, which would mean `ls /home`
+      -- answering differently depending on who asked.
+      home_in_memory = req.home_in_memory or nil,
     })
 
     -- Destroyed either way. It was a private channel for one message and

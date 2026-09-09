@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "pmm.h"
+#include "pmm_place.h"
 #include "panic.h"
 #include "spinlock.h"
 #include "page.h"
@@ -52,28 +53,38 @@ static inline void set_used(size_t i)
     freecount--;
 }
 
+uintptr_t pmm_ram_base(void)
+{
+    return ram_base;
+}
+
 void pmm_init(void)
 {
     struct memrange ram;
-    uintptr_t bitmap_start;
-    uintptr_t first_free;
     size_t i;
+
+    struct pmm_layout at;
 
     hal_ram_range(&ram);
 
-    ram_base = ram.base;
-    total    = ram.size / PAGE_SIZE;
-
     /*
-     * The bitmap has to live somewhere, and there is no allocator yet to ask
-     * — this is the allocator. It goes directly after the kernel image, and
-     * the pages it occupies are then marked used like any others.
+     * The bitmap has to live somewhere and there is no allocator yet to ask
+     * - this is the allocator. Where it goes is arithmetic with an awkward
+     * case in it, so it lives in `pmm_place.c` where the host can ask it
+     * questions this machine's firmware never will.
      *
-     * 512 MB of 4 KB pages is 131072 bits, so 16 KB of bitmap. Four pages to
-     * describe half a gigabyte.
+     * 512 MB of 4 KB pages is 131072 bits, so 16 KB of bitmap. Four pages
+     * to describe half a gigabyte.
      */
-    bitmap_start = PAGE_ALIGN_UP((uintptr_t)__image_end);
-    bitmap       = (uint64_t *)bitmap_start;
+    if (!pmm_place((uintptr_t)__image_end, ram.base, ram.size, PAGE_SIZE,
+                   &at)) {
+        panic("pmm_init: no room for the page bitmap in the memory the "
+              "board reported");
+    }
+
+    ram_base = at.base;
+    total    = at.pages;
+    bitmap   = (uint64_t *)at.bitmap;
 
     /*
      * Everything starts used, and the pages above the bitmap are then handed
@@ -85,13 +96,7 @@ void pmm_init(void)
     }
     freecount = 0;
 
-    first_free = PAGE_ALIGN_UP(bitmap_start + bitmap_words() * sizeof(uint64_t));
-
-    if (first_free < ram_base || (first_free - ram_base) / PAGE_SIZE >= total) {
-        panic("pmm_init: the kernel image does not fit in RAM");
-    }
-
-    for (i = (first_free - ram_base) / PAGE_SIZE; i < total; i++) {
+    for (i = at.reserved; i < total; i++) {
         set_free(i);
     }
 }

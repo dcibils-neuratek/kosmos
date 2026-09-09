@@ -44,6 +44,10 @@
 #define PTE_A           (1UL << 5)      /* accessed */
 #define PTE_D           (1UL << 6)      /* dirty */
 #define PTE_PS          (1UL << 7)      /* a large page, at PD and PDPT */
+#define PTE_PAT         (1UL << 7)      /* ...and the PAT selector, on a 4 KB
+                                         * leaf. The same bit means two
+                                         * things at two levels and the two
+                                         * never meet. */
 #define PTE_G           (1UL << 8)      /* global: survives a CR3 reload */
 #define PTE_NX          (1UL << 63)     /* no execute; needs EFER.NXE */
 
@@ -87,9 +91,46 @@
  * Device-nGnRnE's nearest equivalent and is what it is used for.
  */
 #define MAP_DEVICE  (PTE_P | PTE_RW | PTE_PCD | PTE_PWT | PTE_NX)
+
 #define MAP_RW      (PTE_P | PTE_RW | PTE_NX)
 #define MAP_RO      (PTE_P | PTE_NX)
 #define MAP_TEXT    (PTE_P)                     /* read-only and executable */
+
+/*
+ * **A framebuffer is not a register file, and giving it `MAP_DEVICE` is
+ * correct and slow.**
+ *
+ * Uncached means every store is its own bus transaction. That is exactly
+ * right for a device register, where the write *is* the command and merging
+ * two of them would be a bug that looks like flaky hardware. It is wrong
+ * for eight megabytes of pixels a compositor rewrites sixty times a second.
+ *
+ * Write-combining is the type the architecture provides for this: stores
+ * accumulate in a fill buffer and leave as whole cache lines, with no
+ * ordering promised between them - which a framebuffer does not need,
+ * because nothing reads it back and the only deadline is the next frame.
+ *
+ * Selected through the PAT rather than through PCD and PWT alone: with
+ * `PTE_PAT` set and both of the others clear this names slot 4, which
+ * `mmu_init` programs to write-combining. The four slots below it keep
+ * their reset meanings, so every existing mapping in the system means what
+ * it always meant.
+ *
+ * **Not merely an optimisation, and this is the part that was nearly
+ * missed.** The early framebuffer is reached through `start.S`'s identity
+ * map, whose 2 MB entries are plain present-and-writable - which is
+ * *write-back cached*. Under QEMU that is invisible, because TCG models no
+ * cache and every store lands at once. On a machine with a real one the
+ * boot log would sit in cache and reach the panel when a line happened to
+ * be evicted, which is the failure the early screen exists to prevent.
+ */
+#define MAP_FRAMEBUFFER (PTE_P | PTE_RW | PTE_PAT | PTE_NX)
+
+/* IA32_PAT, and the slot this kernel reprograms. Intel SDM volume 3,
+ * table 11-10 for the encodings and 11-12 for what selects which. */
+#define IA32_PAT        0x277u
+#define PAT_SLOT_WC     4u
+#define PAT_TYPE_WC     0x01u
 
 /*
  * And the two a process gets.
@@ -149,6 +190,43 @@
  * dereference with a device's name on it.
  */
 uintptr_t mmu_map_device(uintptr_t pa, size_t bytes);
+
+/*
+ * The same window, write-combining rather than uncached. For a linear
+ * framebuffer and nothing else - see `MAP_FRAMEBUFFER` above for why a
+ * device register must not be mapped this way.
+ *
+ * Falls back to `mmu_map_device` on a processor with no PAT, which is
+ * every 486 and nothing since; the fallback is correct and slow rather
+ * than absent.
+ */
+uintptr_t mmu_map_framebuffer(uintptr_t pa, size_t bytes);
+
+/*
+ * Whether `mmu_map_framebuffer` gives write-combining or falls back.
+ *
+ * For the boot log, and it is the only way to know from outside: the two
+ * paths return an address that works either way, and the difference is a
+ * bit in a page table entry and a byte in a model-specific register.
+ * `run_uefi.py` reads this line, because the speed it buys cannot be
+ * measured under emulation and the *correctness* of it can be asserted.
+ */
+bool mmu_write_combining(void);
+
+/*
+ * Marks a range uncached in the page tables that are loaded *now*.
+ *
+ * One caller: the early framebuffer, which is reached through `start.S`'s
+ * identity map before `mmu_init` builds anything. Those entries are plain
+ * present-and-writable, which is write-back cached, and write-back is the
+ * one memory type MMIO may not have.
+ *
+ * Uncached rather than write-combining because the early log is a few
+ * kilobytes of text and because a 2 MB entry names its PAT slot with a
+ * different bit than a 4 KB one - a second encoding to get right for no
+ * measurable gain.
+ */
+void mmu_boot_uncached(uintptr_t base, size_t bytes);
 
 /* Builds the identity map and loads it. Needs pmm_init first, because the
  * tables come out of the page allocator. */

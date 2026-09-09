@@ -3,6 +3,7 @@
 #define KERNEL_PMM_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * The physical page allocator.
@@ -46,5 +47,9 @@ void pmm_free_page(void *page);
  * bitmap itself. */
 size_t pmm_free_pages(void);
 size_t pmm_total_pages(void);
+
+/* Where the memory this allocator owns begins. On a PC that is wherever
+ * the firmware left the largest usable block, not a constant. */
+uintptr_t pmm_ram_base(void);
 
 #endif /* KERNEL_PMM_H */

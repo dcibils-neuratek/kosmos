@@ -255,6 +255,42 @@ wants real hardware.
 was destroyed by a `grep` that kept only the summary line. Recorded as
 intermittent rather than fixed, because nothing fixed it.
 
+**Three framebuffer checks failed once on x86-64, and the run ended in a
+page fault.** September 2026, in a `make prepush` on 0.10.13. Recorded in
+full, because the entry above it is a lesson about not doing that:
+
+```
+ok 116 - boot: every stage was announced
+not ok 117 - fb: the display comes up
+not ok 118 - console: a write carries its colour, and UTF-8
+not ok 119 - fb: the pitch is not width * 4
+ok 120 - fb: page aligned and inside RAM
+ok 121 - fb: every row is writable
+*** page fault  cr2 0x00000000994fe000  not present, write, kernel
+```
+
+**The shape says more than the failures do.** 117 through 119 use the
+framebuffer descriptor and failed; 120 and 121 use it and passed; then 122
+wrote through a pointer to 0x994fe000, which is 2.5 GB and nothing this
+machine maps. A descriptor that is bad for three tests, good for two, and
+garbage for the sixth is not a driver that is wrong - it is state that
+differs between calls.
+
+**What was ruled out.** The same binary passed five times afterwards: three
+plain runs, and two with `hal_fb_init` called three hundred extra times per
+run comparing every field against the first answer. It is idempotent, and
+it is not the obvious candidate - `ramfb_init` writing its configuration
+through `fw_cfg` on every call.
+
+**What is still open** is whether the descriptor or the *screen* is what
+moved. Tests 117 to 119 include the console's colour check, which counts
+pixels rather than reading a struct, so a display that was scrolled or
+half-drawn at that moment would fail exactly those three and leave 120 and
+121 - which check alignment and writability - passing. That would make the
+page fault the only real fault and the other three its symptom.
+
+Seen once in six runs of the same image; not reproduced since.
+
 ---
 
 ## What to do when you get stuck
