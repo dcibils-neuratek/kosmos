@@ -1785,9 +1785,9 @@ def check_terminal(guest):
 
     width, height, px = parse_ppm(guest.screendump())
 
-    # The window is opened at 90,70 by terminal.lua. Count the pixels that
-    # are neither its background nor its frame, well below the banner.
-    x0, y0, w, h = 100, 140, 600, 300
+    # The window is opened at 90,40 by terminal.lua. Count the pixels in it
+    # that are neither its background nor its frame.
+    x0, y0, w, h = 100, 100, 600, 500
 
     def ink(pixels):
         n = 0
@@ -1803,14 +1803,36 @@ def check_terminal(guest):
 
         return n
 
-    before = ink(px)
-
     guest.mouse_to(*_to_tablet(300, 200, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
     time.sleep(0.6)
+
+    #
+    # **`clear` first, and this check was wrong without it.**
+    #
+    # A terminal opens with the `neofetch` banner in it, so the box sampled
+    # above starts full of banner. `before` was taken the moment the window
+    # appeared - while the banner was still being painted - so ink in that
+    # box went on climbing by hundreds whether or not anything else ran, and
+    # the assertion below was satisfied by the banner arriving rather than
+    # by `hello` printing. It passed for the wrong reason for as long as the
+    # terminal was slow enough, and stopped the day it got fast.
+    #
+    # Emptying the window first is what makes the growth attributable: after
+    # this, everything drawn in there was drawn by the program.
+    #
+    for ch in "clear\n":
+        guest.proc.stdin.write(ch.encode())
+        guest.proc.stdin.flush()
+        time.sleep(0.08)
+
+    time.sleep(1.5)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = ink(px)
 
     for ch in "hello\n":
         guest.proc.stdin.write(ch.encode())

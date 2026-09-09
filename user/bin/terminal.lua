@@ -335,13 +335,64 @@ end
 --
 local con = use("/kits/console")
 
+--------------------------------------------------------------------------
+-- A burst of writes is one repaint, not one repaint each.
+--
+-- **This loop served exactly one message per pass, and that made a
+-- screenful quadratic.** The drain was non-blocking, so after answering a
+-- write it asked again immediately - before the child it had just woken
+-- could possibly have been scheduled and sent its next one. Nothing was
+-- there, the loop returned, the window repainted, and `poll` waited a tick.
+-- One write, one full repaint, every time.
+--
+-- A repaint sends the *whole* window as drawing commands, in 1200-byte
+-- batches at `96 + #text` bytes an op, so a window holding `n` runs costs
+-- about `n / 11` round trips to draw. Answering `n` writes with `n`
+-- repaints is therefore `n^2 / 11` of them: `neofetch` is 165 writes -
+-- eight runs a line, because a line in several colours is several writes -
+-- which measured **24.0 seconds** to put twenty-three lines on a screen,
+-- with the processor idle throughout. None of that is work; it is waiting.
+--
+-- So: **wait briefly for the next message once one has arrived.** A child
+-- mid-burst is a few microseconds from sending again, and `receive_raw`
+-- takes a timeout. The banner is then absorbed in a pass or two and painted
+-- once or twice, which is all a screen could have shown anyway. Measured
+-- the same way afterwards: complete before the window is first visible.
+--
+-- The first receive of a pass stays non-blocking, so an idle terminal costs
+-- exactly what it did. And the burst is bounded in *time* rather than in
+-- messages: a window is also a window, and one that stopped answering the
+-- desktop while a chatty program ran would have traded one complaint for a
+-- worse one. One frame is the bound, because one frame is all it could have
+-- displayed.
+--------------------------------------------------------------------------
+local BURST_WAIT = 1        -- scheduler ticks: how long to wait mid-burst
+
+-- Counter units, and read rather than assumed: `sys.ticks()` is the counter
+-- and the two clocks differ by a quarter of a million on this board. The
+-- same read `tile` does, with the same fallback.
+local BURST_SPAN = ((fs.read("/dev/cpu") or {}).counter_hz or 62500000) // 60
+
 local function serve_console()
   local changed = false
+  local until_ = nil
 
   while true do
-    local bytes, who = sys.receive_raw(ep, true)
+    local bytes, who
+
+    if until_ == nil then
+      -- The first of a pass. Nothing waiting means nothing to do, and this
+      -- must not be the thing that makes an idle window cost a tick.
+      bytes, who = sys.receive_raw(ep, true)
+    elseif sys.ticks() < until_ then
+      bytes, who = sys.receive_raw(ep, false, BURST_WAIT)
+    end
 
     if not bytes then return changed end
+
+    -- Started on the first message rather than at the top, so the span
+    -- measures the burst and not the pass.
+    until_ = until_ or (sys.ticks() + BURST_SPAN)
 
     local req = con.decode_request(bytes)
     local reply
