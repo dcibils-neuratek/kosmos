@@ -14,7 +14,7 @@ namespace maps `/home/doc.pdf` onto `/home/doc.pdf` in the server and put
 the mount prefix back on the way out, giving `/home/home/doc.pdf`; and the
 server answered a question asked about `/home` with everything on the disk,
 `/system` included. Both were invisible because every query test used
-`/data`, which is the one mount with no root - so the two paths through
+`/ramfs`, which is the one mount with no root - so the two paths through
 that code had never both been walked.
 
 So the checks below are all about *which* paths come back, on both kinds of
@@ -57,11 +57,11 @@ def main():
             # mount are exercised by the same run.
             'fs.write("/home/a.txt", "one") '
             'fs.write("/system/b.txt", "two") '
-            'fs.write("/data/c.txt", "three")',
+            'fs.write("/ramfs/c.txt", "three")',
 
             'fs.setattr("/home/a.txt", { kind = "book" }) '
             'fs.setattr("/system/b.txt", { kind = "book" }) '
-            'fs.setattr("/data/c.txt", { kind = "book", size = "small" })',
+            'fs.setattr("/ramfs/c.txt", { kind = "book", size = "small" })',
 
             'print("Q-HOME", table.concat(fs.query("/home", '
             '{ kind = "book" }) or {}, ","))',
@@ -69,11 +69,11 @@ def main():
             'print("Q-SYSTEM", table.concat(fs.query("/system", '
             '{ kind = "book" }) or {}, ","))',
 
-            'print("Q-DATA", table.concat(fs.query("/data", '
+            'print("Q-DATA", table.concat(fs.query("/ramfs", '
             '{ kind = "book" }) or {}, ","))',
 
             # Two terms, and the second one is what narrows it.
-            'print("Q-TWO", table.concat(fs.query("/data", '
+            'print("Q-TWO", table.concat(fs.query("/ramfs", '
             '{ kind = "book", size = "small" }) or {}, ","))',
 
             'print("Q-NONE", table.concat(fs.query("/home", '
@@ -100,10 +100,10 @@ def main():
             ("Q-SYSTEM /system/b.txt",
              "and the same disk answers a different mount with that mount's "
              "files"),
-            ("Q-DATA /data/c.txt",
+            ("Q-DATA /ramfs/c.txt",
              "a mount with no root still works, which is the case that used "
              "to be the only one tested"),
-            ("Q-TWO /data/c.txt",
+            ("Q-TWO /ramfs/c.txt",
              "a second term narrows rather than widens"),
             ("Q-NONE ",
              "and a value nothing carries finds nothing"),
@@ -128,6 +128,61 @@ def main():
                     "a query asked about /home answered with files under "
                     "/system. One disk is mounted three times and a question "
                     "asked at one of them is about that subtree.\n" + line)
+
+        checks += 1
+
+        #
+        # ---- the file verbs, on the mount that had none -----------------
+        #
+        # `mkdir`, `delete` and `rename` did not exist in `ramproto.h` at
+        # all, because everything that had ever used /ramfs *published* - a
+        # replicant writing its own source, the web server writing its
+        # status - and nothing took anything back out. An operation with no
+        # caller does not get written.
+        #
+        # What made that a bug rather than an absence is `rm`: a verb that
+        # works on one mount and not another is the namespace failing at the
+        # one thing it exists for. So this is the same session the disk
+        # suite runs, on the other kind of mount, and the answers have to
+        # match line for line.
+        #
+        verbs = run_disk.boot(image, disk, [
+            "cd /ramfs",
+            "touch alpha.txt",
+            "mkdir box",
+            "cp alpha.txt box",
+            "mv alpha.txt beta.txt",
+            "rm box",
+            "rm -r box",
+            "rm beta.txt",
+            "ls",
+        ])
+
+        for marker, what in [
+            ("made /ramfs/alpha.txt",
+             "touch did not make a file in memory"),
+            ("made /ramfs/box",
+             "mkdir did not make a directory in memory"),
+            ("copied to /ramfs/box/alpha.txt",
+             "cp did not copy into a directory in memory"),
+            ("moved to /ramfs/beta.txt",
+             "rename did not move a file in memory"),
+            ("is a directory; use -r",
+             "a directory with something in it was removed without -r"),
+            ("removed 2",
+             "rm -r did not remove the directory and what was in it"),
+        ]:
+            if marker not in verbs:
+                raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
+                              + verbs[-1200:])
+            checks += 1
+
+        # Emptied, and said so by the listing rather than by the verbs'
+        # own reports: what is there at the end is the only claim that
+        # cannot be made by a program that did nothing.
+        if "(empty)" not in verbs.split("rm beta.txt")[-1]:
+            raise Failure("what /ramfs holds at the end is not what the "
+                          "session did to it.\n" + verbs[-1200:])
 
         checks += 1
 

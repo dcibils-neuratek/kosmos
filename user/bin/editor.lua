@@ -3,9 +3,9 @@
 -- A text editor, in a window.
 --
 --   wm editor                     a new file
---   wm editor:/data/hello.lua     one that exists
+--   wm editor:/ramfs/hello.lua     one that exists
 --
--- Save with the button or Control-S. `run /data/hello.lua` from the shell
+-- Save with the button or Control-S. `run /ramfs/hello.lua` from the shell
 -- runs what you wrote, which is the point: the machine can change itself
 -- without a rebuild.
 --
@@ -25,7 +25,7 @@ local panel = use("/lib/panel.lua")
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local path = tostring(args or ""):match("^%s*(%S+)") or "/data/untitled.lua"
+local path = tostring(args or ""):match("^%s*(%S+)") or "/ramfs/untitled.lua"
 
 local W, H = 560, 420
 

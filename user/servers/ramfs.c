@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * /data: files, attributes and live queries, in memory.
+ * /ramfs: files, attributes and live queries, in memory.
  *
  * The seventh server to move and the last one that will. It is also the one
  * whose conversion cost something rather than only buying: ramfs was what
@@ -36,7 +36,7 @@
 
 #define NODES        128u
 /*
- * The biggest thing /data will hold.
+ * The biggest thing /ramfs will hold.
  *
  * 4096 was the first guess and it was too small by inspection rather than by
  * failure: a replicant publishes a table holding its own source, and
@@ -126,7 +126,7 @@ static void copy_into(char *dst, size_t cap, const char *src, size_t n)
  * Callers send "/a/b", "a/b" and "/a/b/" for the same thing, and the leading
  * slash has to survive rather than be stripped - the namespace joins a
  * mount's prefix onto whatever comes back, so a path returned as "a" becomes
- * "/dataa" instead of "/data/a". Found by a query, which is the only
+ * "/dataa" instead of "/ramfs/a". Found by a query, which is the only
  * operation that hands whole paths back.
  */
 static void normalise(char *dst, const char *src)
@@ -198,6 +198,26 @@ static const char *child_of(const char *dir, const char *path)
     }
 
     return rest;
+}
+
+/*
+ * Is there anything inside `dir`?
+ *
+ * One scan, and it stops at the first hit. A flat table makes this the same
+ * shape as listing - `child_of` is the whole of both - where a tree would
+ * have asked a node how many children it had.
+ */
+static bool has_children(const char *dir)
+{
+    unsigned i;
+
+    for (i = 0; i < NODES; i++) {
+        if (nodes[i].used && child_of(dir, nodes[i].path) != NULL) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /*
@@ -810,6 +830,127 @@ static void answer(const struct message *msg, uint64_t sender)
         return;
     }
 
+    case RAM_OP_DELETE:
+        if (is_root(path)) {
+            fail(sender, RAM_ERR_NO_PATH);   /* the root is not a file */
+            return;
+        }
+
+        n = find(path);
+
+        if (n == NULL) {
+            fail(sender, RAM_ERR_NO_PATH);
+            return;
+        }
+
+        /*
+         * A directory goes only when it is empty, which is the disk's rule
+         * and is worth being the same here: it is the one thing between a
+         * mistyped path and a subtree. `rm -r` is the caller agreeing to do
+         * the walk, and every step of it is a delete this would allow.
+         */
+        if (n->directory && has_children(path)) {
+            fail(sender, RAM_ERR_NOT_EMPTY);
+            return;
+        }
+
+        n->used = false;
+        notify();
+        break;
+
+    case RAM_OP_MKDIR:
+        if (is_root(path)) {
+            fail(sender, RAM_ERR_EXISTS);    /* the root is always there */
+            return;
+        }
+
+        if (find(path) != NULL) {
+            fail(sender, RAM_ERR_EXISTS);
+            return;
+        }
+
+        ensure_parents(path);
+        n = claim(path);
+
+        if (n == NULL) {
+            fail(sender, RAM_ERR_FULL);
+            return;
+        }
+
+        n->directory = true;
+        notify();
+        break;
+
+    case RAM_OP_RENAME: {
+        char to[RAM_PATH_MAX];
+        size_t from_len;
+
+        normalise(to, req.u.data);
+
+        if (is_root(path) || is_root(to)) {
+            fail(sender, RAM_ERR_NO_PATH);
+            return;
+        }
+
+        n = find(path);
+
+        if (n == NULL) {
+            fail(sender, RAM_ERR_NO_PATH);
+            return;
+        }
+
+        if (find(to) != NULL) {
+            fail(sender, RAM_ERR_EXISTS);
+            return;
+        }
+
+        from_len = strlen(path);
+
+        /*
+         * A directory into itself, refused here because only this side can
+         * see it: `/a` to `/a/b` would either loop or orphan everything
+         * under it, and the string test is exact because both are absolute
+         * paths through the same flat table.
+         */
+        if (strncmp(to, path, from_len) == 0 && to[from_len] == '/') {
+            fail(sender, RAM_ERR_NO_PATH);
+            return;
+        }
+
+        /*
+         * **Everything underneath moves too, and that is the price of a flat
+         * table.** A tree renames one node and the children come along
+         * because they hang off it; here a child is a *string* that starts
+         * with the parent's, so each one has to be rewritten. `/a/b` under a
+         * rename of `/a` to `/c` becomes `/c/b` by replacing the prefix.
+         */
+        for (i = 0; i < NODES; i++) {
+            char rebuilt[RAM_PATH_MAX];
+
+            if (!nodes[i].used) {
+                continue;
+            }
+
+            if (strncmp(nodes[i].path, path, from_len) != 0
+                || nodes[i].path[from_len] != '/') {
+                continue;
+            }
+
+            copy_into(rebuilt, sizeof(rebuilt), to, strlen(to));
+            copy_into(rebuilt + strlen(rebuilt),
+                      sizeof(rebuilt) - strlen(rebuilt),
+                      nodes[i].path + from_len,
+                      strlen(nodes[i].path + from_len));
+
+            copy_into(nodes[i].path, RAM_PATH_MAX, rebuilt, strlen(rebuilt));
+        }
+
+        copy_into(n->path, RAM_PATH_MAX, to, strlen(to));
+        ensure_parents(n->path);
+        notify();
+        break;
+    }
+
     case RAM_OP_WATCHERS:
         for (i = 0; i < WATCHERS; i++) {
             if (watchers[i].used) {
@@ -832,7 +973,7 @@ void ramfs_server(long endpoint)
     long at = kosmos_map((sizeof(struct node) * NODES + 4095u) / 4096u);
 
     if (at < 0) {
-        /* Without a store there is no /data, and a server that ran anyway
+        /* Without a store there is no /ramfs, and a server that ran anyway
          * would answer every write with success and hold nothing. */
         kosmos_write("ramfs: no memory for the store\n", 31);
         return;

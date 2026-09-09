@@ -43,7 +43,7 @@ audio period is 5.8 ms and a frame is 16. Not speed — structure-shaped Lua
 costs about 2%, measured, which is nothing. The worst case is what decides.
 
 Seven servers speak structs declared in `user/include/`: `/dev/audio`,
-`/dev`, `/bin`, `/lib`, `/app`, `/dev/console`, `/data`. Five headers, about
+`/dev`, `/bin`, `/lib`, `/app`, `/dev/console`, `/ramfs`. Five headers, about
 3,700 lines with the servers themselves. Everything above them is still Lua
 tables, and that is most of the system.
 

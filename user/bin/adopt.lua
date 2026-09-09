@@ -1,6 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
--- Adopts whatever replicant was left in /data, and runs it.
+-- Adopts whatever replicant was left in /ramfs, and runs it.
 --
 -- Called `tracker` until it was pointed out that Tracker is BeOS's *file
 -- manager* and this is nothing of the kind. Adopting a replicant is what
@@ -25,7 +25,7 @@ if not win then
   return
 end
 
-win:add(ui.label{ x = 12, y = 10, text = "adopted from /data:" })
+win:add(ui.label{ x = 12, y = 10, text = "adopted from /ramfs:" })
 
 -- The publisher may not have got there yet: `wm` starts everything at once
 -- and there is no ordering between them.
@@ -34,7 +34,7 @@ local until_ = sys.ticks() + hz * 5
 local description
 
 repeat
-  description = fs.read("/data/replicants/clock")
+  description = fs.read("/ramfs/replicants/clock")
   if description then break end
   sys.yield()
 until sys.ticks() > until_
@@ -79,7 +79,7 @@ win:add(ui.label{ x = 12, y = 92,
                                           or "bad" })
 
 win:add(ui.label{ x = 12, y = 108,
-                  text = "/data, which it did not:  "
+                  text = "/ramfs, which it did not:  "
                          .. (inside.escaped and "REACHED IT" or "no such path"),
                   color = inside.escaped and ui.theme.bad or "good" })
 

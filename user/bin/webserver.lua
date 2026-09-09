@@ -12,7 +12,7 @@
 -- drawing. Two processes is what lets one of them wait and the other stay
 -- alive.
 --
--- So the two of them talk through `/data`. `httpd` writes its state and its
+-- So the two of them talk through `/ramfs`. `httpd` writes its state and its
 -- last forty lines there; this reads them on a tick. That is a file rather
 -- than a message because the server has no idea anybody is watching, and
 -- should not have to.
@@ -23,8 +23,8 @@ local theme = ui.theme
 local W, H = 560, 460
 local BAR_H = gfx.font.h + 8
 
-local STATUS = "/data/httpd/status"
-local LOG    = "/data/httpd/log"
+local STATUS = "/ramfs/httpd/status"
+local LOG    = "/ramfs/httpd/log"
 
 local win, err = ui.window{ title = "Web Server", w = W, h = H, x = 120, y = 80 }
 
@@ -228,7 +228,7 @@ win:add(said)
 --
 -- Re-read on a tick rather than on a change.
 --
--- `/data` can be *watched* - `fs.watch` blocks until a query's answer
+-- `/ramfs` can be *watched* - `fs.watch` blocks until a query's answer
 -- changes, which is what M7 built - and this does not use it, because this
 -- window is already blocked in the desktop's poll and there is no way to
 -- wait on two things at once. **The fourth time that missing `select` has

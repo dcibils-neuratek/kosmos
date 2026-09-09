@@ -17,7 +17,7 @@ if not name then
   return
 end
 
--- Against where you are, which it did not do: `cd /data` then `mkdir box`
+-- Against where you are, which it did not do: `cd /ramfs` then `mkdir box`
 -- asked for `box` and was told there is no such path, because a name with
 -- no slash in it is not a path at all until somebody says where from.
 local path = files.abs(name, cwd)

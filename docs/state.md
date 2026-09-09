@@ -2622,13 +2622,13 @@ Eight requests hung and the server logged none of them.
 
 **And `fs.write` no longer raises on the disk.** Chasing the concurrency
 bug turned up a probe of mine that wrote 150 KB and read back 16 KB, which I
-put down to `/data`'s ceiling - and `/data` was innocent: it returns `false,
-"/data is full"` and always did, and I had not looked at the return value.
+put down to `/ramfs`'s ceiling - and `/ramfs` was innocent: it returns `false,
+"/ramfs is full"` and always did, and I had not looked at the return value.
 The disk was not. `fs.write` above about two kilobytes reached `sys.call`
 and came back as `value does not fit in a message` - an *exception* out of
 the serialiser, from a call whose failures are otherwise values.
 
-The namespace splits a long write for `/data` and cannot for the disk, whose
+The namespace splits a long write for `/ramfs` and cannot for the disk, whose
 `write` takes no offset and hands the whole body to `kfs.store`. So the same
 line worked on one mount, failed with a sentence on another, and threw on a
 third - which is exactly the difference a namespace exists to hide. It sends
@@ -2652,7 +2652,7 @@ the sixteenth read, a region per font per size, a process table full at round
 twenty-two - which is why the check for it is a loop of forty writes rather
 than one write, and why `make stress` exists.
 
-Two ceilings are unchanged and both are deliberate: `/data` still holds 16 KB
+Two ceilings are unchanged and both are deliberate: `/ramfs` still holds 16 KB
 a file, and diskfs still refuses more than a megabyte because it assembles
 the bytes in its own heap. A big *table* still fails, because a region
 carries bytes and sending a packed table through one would break the promise
@@ -2702,7 +2702,7 @@ to say whether any of it worked. `webserver` starts and stops `httpd` and
 shows its requests arriving.
 
 The manager is not the server and that is forced: `accept` blocks and a
-window that blocked would stop drawing. They talk through `/data` - the
+window that blocked would stop drawing. They talk through `/ramfs` - the
 server writes its state and last forty lines, the manager reads them on a
 tick - which is a file rather than a message because the server has no idea
 anybody is watching.
@@ -2801,7 +2801,7 @@ onto `/home/doc.pdf` in the server and then put the mount prefix back on the
 way out: `/home/home/doc.pdf`. And the server answered a question asked
 about `/home` with everything on the disk, `/system` included.
 
-Both survived because **every query test used `/data`**, the one mount with
+Both survived because **every query test used `/ramfs`**, the one mount with
 no root, so the two paths through that code had never both been walked.
 `qbench` measures how fast a query is and `latency.lua` how quickly a watch
 wakes; neither would notice the answers being wrong. M7's definition of done
@@ -2935,7 +2935,7 @@ in C and one in Lua for a feature's sake, at a price known in advance -
 `ROLE_RELOAD` deleted and `help("demos")`'s watchable reload with it.
 `design.md` §10 is the record, and the honest word is *removed*.
 
-Three things that conversion found, none visible by reading: `/data` had
+Three things that conversion found, none visible by reading: `/ramfs` had
 always stored **Lua values, not bytes** - `help("fs")` promises you get back
 the table you wrote - so the namespace packs and the server holds bytes with
 a flag saying what they are; the two M4/M5 test clients mount it and had to
@@ -4216,8 +4216,8 @@ There is a display check that reads the meter.
   be untenable in one screenshot.
 
 - **`edit`, a screen editor.** The machine can write and run its own Lua
-  without a rebuild. `edit /data/x.lua`, Control-S, Control-Q, then
-  `run /data/x.lua`.
+  without a rebuild. `edit /ramfs/x.lua`, Control-S, Control-Q, then
+  `run /ramfs/x.lua`.
 
 - **The scheduler was costing every yield a timer period.** The idle loop
   slept with runnable threads in the queue. A yield went from 10 ms to
@@ -4258,15 +4258,15 @@ There is a display check that reads the meter.
 
 ```
 Kosmos shell. A process, talking to servers.
-Try: fs.list("/data")   fs.read("/data/sensor")   2+2
+Try: fs.list("/ramfs")   fs.read("/ramfs/sensor")   2+2
 
 kosmos> 2+2
 4
-kosmos> fs.write("/data/sensor", { celsius = 47.2, unit = "C" })
+kosmos> fs.write("/ramfs/sensor", { celsius = 47.2, unit = "C" })
 true	nil
-kosmos> fs.read("/data/sensor").celsius
+kosmos> fs.read("/ramfs/sensor").celsius
 47.2
-kosmos> fs.list("/data")[1]
+kosmos> fs.list("/ramfs")[1]
 sensor
 kosmos> sys.write("direct")
 -102
@@ -4327,7 +4327,7 @@ The first version of this used four to six lines a stage and was worse, not bett
 
 **The endpoint leak is closed.** `SYS_ENDPOINT_DESTROY` exposes what the kernel could already do and nothing could ask for: every program run consumed one of ninety-six for ever. No permission check beyond the capability itself — the index resolves against the caller's own table, so a process can only destroy one it was given.
 
-**The working directory travels with a program.** It is the shell's idea and no server knows about it, so it goes in the request rather than being asked for. `cd /data` then `cat notes` works, and `cat` is a program that has never heard of the shell.
+**The working directory travels with a program.** It is the shell's idea and no server knows about it, so it goes in the request rather than being asked for. `cd /ramfs` then `cat notes` works, and `cat` is a program that has never heard of the shell.
 
 **A slice-based edit silently deleted `run_program` for the third time.** The first cost nine test functions, the second cost `tests_run()` and looked like a hang, and this one left the shell calling a function that no longer existed — which killed the shell, silently, because the shell prints by asking the console server. It is written down here three times now; the rule is narrow anchors, and I keep not following it.
 
@@ -4360,11 +4360,11 @@ Costs, measured: 134 KB of `.bss` for all three pools, up from 44 KB. A process 
 
 **A blinking cursor**, driven from the timer tick — the one thing on the screen that has to change without anybody printing. Every path that writes a cell hides it first, so the block is never left sitting on top of a character somebody just printed, and it follows `cx`/`cy` rather than remembering where it was, so scrolling does not leave a second cursor behind.
 
-**The namespace has a root now, and it is the one thing no server can answer.** `ls /` used to say "no such path" while `/data` and `/dev` both plainly existed — because nothing is mounted at `/`, and a path with no server behind it does not resolve. A server knows what it holds; only the namespace knows what has been *attached* to it and where, and that table lives in the process.
+**The namespace has a root now, and it is the one thing no server can answer.** `ls /` used to say "no such path" while `/ramfs` and `/dev` both plainly existed — because nothing is mounted at `/`, and a path with no server behind it does not resolve. A server knows what it holds; only the namespace knows what has been *attached* to it and where, and that table lives in the process.
 
 So `ns.list` returns whatever the server said **plus** whatever is mounted below the path, both being true: `/dev` holds `cpu` because the device server says so, and holds `console` because something else was attached there. A path with no server but with mounts under it — which is exactly what `/` is — is a directory made entirely of mount points.
 
-Worth being clear about what this is not: there is a filesystem, and it is `servers`-in-memory. The ramfs at `/data` is a real server answering the real protocol; what M8 adds is persistence, attributes and queries, not the idea.
+Worth being clear about what this is not: there is a filesystem, and it is `servers`-in-memory. The ramfs at `/ramfs` is a real server answering the real protocol; what M8 adds is persistence, attributes and queries, not the idea.
 
 **`ls`, `cd`, `pwd`, `cat`, and a working directory that lives in the shell.** Not in the kernel and not in a server: a server is always told a whole path and knows nothing about where anybody thinks they are, which is what keeps `fs.read` the same operation for every caller. And "is this a directory" is answered by asking whether whoever serves it will list it — the only definition that means anything across three different servers.
 

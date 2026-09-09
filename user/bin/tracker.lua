@@ -19,7 +19,7 @@
 --
 -- It knows nothing about disks. Every question it asks is the ordinary
 -- filesystem protocol through its own namespace, so it browses `/home` on
--- the disk, `/data` in memory and `/bin` in the image with the same code,
+-- the disk, `/ramfs` in memory and `/bin` in the image with the same code,
 -- and would browse a directory served from another machine without
 -- noticing which it was.
 --
@@ -454,7 +454,7 @@ end
 
 --
 -- The roots are the mounts, because those are the places this machine
--- actually has - `/bin` in the image, `/data` in memory, `/home` on the
+-- actually has - `/bin` in the image, `/ramfs` in memory, `/home` on the
 -- disk. Naming them here rather than reading `/` keeps the pane in a
 -- sensible order and out of the way of a root that lists something else.
 --
@@ -465,7 +465,7 @@ local places = ui.tree{
   roots = {
     { text = "home",   path = "/home",   children = subdirs },
     { text = "system", path = "/system", children = subdirs },
-    { text = "data",   path = "/data",   children = subdirs },
+    { text = "data",   path = "/ramfs",   children = subdirs },
     { text = "bin",    path = "/bin" },
     { text = "lib",    path = "/lib" },
     { text = "dev",    path = "/dev" },

@@ -4,7 +4,7 @@
 -- kosmos: section demos
 --
 --   wm doom                    /home/doom1.wad
---   wm doom:/data/other.wad    somewhere else
+--   wm doom:/ramfs/other.wad    somewhere else
 --
 -- Only in an image built with `make DOOM=1`; see
 -- `runtime/upstream/doom/README.md` for why that is a build option and not

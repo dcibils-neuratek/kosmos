@@ -30,7 +30,7 @@ return function(state)
   -- two fields are the only honest evidence about what this environment is.
   --
   clock.declared = cpu ~= nil
-  clock.escaped = fs.read("/data/replicants/clock") ~= nil
+  clock.escaped = fs.read("/ramfs/replicants/clock") ~= nil
 
   function clock:tick()
     self.since = ticks() // self.hz

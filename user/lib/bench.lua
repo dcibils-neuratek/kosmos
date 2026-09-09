@@ -354,12 +354,12 @@ end)
 -- zero for a thing the machine does not have is a benchmark that says a
 -- machine with no drive is slow, which is not a fact about speed.
 --
--- The path is under /data and every file it makes is removed at the end.
+-- The path is under /ramfs and every file it makes is removed at the end.
 -- A benchmark that leaves a thousand files behind is a benchmark you run
 -- once.
 --------------------------------------------------------------------------
 
--- **`/home`, not `/data`.** `/data` is the ramfs - a server keeping nodes
+-- **`/home`, not `/ramfs`.** `/ramfs` is the ramfs - a server keeping nodes
 -- in its own heap - and timing it would produce a filesystem score that
 -- said nothing about the disk. The disk is mounted at `/home`, and the
 -- first version of this measured the wrong one and reported a thousand

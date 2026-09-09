@@ -132,7 +132,7 @@ still compiled into the image rather than read from a disk.
 | the servers | one C file each in `user/servers/`, chosen by a role number that `user/init/main.c` dispatches before Lua is opened | see below |
 | fonts and images | inside the image, ~700 KB of it | write them to the disk; the wallpaper case wants this first |
 | `/home` | a real disk, real files, journalled | done |
-| `/tmp` | the ramfs, at `/data` today | rename |
+| `/tmp` | the ramfs, at `/ramfs` today | rename |
 
 **A disk this Mac cannot mount is still a disk this Mac can write.**
 `tools/kfs.lua` runs the filesystem on the development machine, over the

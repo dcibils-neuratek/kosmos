@@ -319,7 +319,7 @@ local ICONS = {
 -- they are places rather than containers, and Tango ships both.
 local BY_PATH = {
   ["/home"] = "user-home",
-  ["/data"] = "drive-harddisk",
+  ["/ramfs"] = "drive-harddisk",
 }
 
 --

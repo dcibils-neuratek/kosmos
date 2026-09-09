@@ -16,7 +16,7 @@
 -- answer one - the program store, the device server - say so and are
 -- skipped, which is also just the protocol working.
 --
--- It used to ask `/data` and only `/data`, which was the ramfs. Once the
+-- It used to ask `/ramfs` and only `/ramfs`, which was the ramfs. Once the
 -- disk could answer queries as well, a hard-coded mount meant the files a
 -- person actually keeps were the ones `find` could not see.
 

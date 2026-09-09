@@ -192,8 +192,7 @@
   }
 </style>
 </head>
-<body>
-<div class="wrap">
+<body><div class="wrap">
 
 <div class="hero">
   <pre class="logo" role="img" aria-label="KosmOS"> ██   ███   ░████░    ▒████▒   ███  ███   ░████░    ▒████▒  
@@ -216,380 +215,199 @@
   <div class="tabbed">
     <h1>An operating system I wanted to exist</h1>
     <p class="lede">A microkernel with a userland written entirely in Lua.
-    A graphical desktop, a filesystem, a TCP/IP stack, a web browser — on
-    AArch64, under QEMU, in about 6,700 lines of kernel.</p>
-    <p class="sub">The best ideas from every system I have used — mine, at
-    least — and some new ones of my own, in one place. A personal
-    experiment, and it is worth saying so before anything else.</p>
+    A graphical desktop, a journalled filesystem, a TCP/IP stack and a web
+    browser — on AArch64 and x86-64, in under 6,500 lines of kernel.</p>
+    <p class="sub">A personal experiment, and it is worth saying so first.
+    No users, no compatibility to keep, no deadline — which is exactly what
+    makes it possible to take decisions a commercial system cannot, and to
+    undo them when they turn out to be wrong.</p>
   </div>
 </header>
 
 <h2>See it running</h2>
 
-<p>Before any of the reasoning below, this is the thing itself. All of it software rendered - there is no GPU driver.</p>
+<p>All of it software rendered. There is no GPU driver.</p>
 
 <figure>
   <img src="desktop.png" alt="The Kosmos desktop: a file manager, a widget
        gallery, a process list, a system monitor and a spinning 3D cube,
        with the Deskbar at the top right.">
-  <figcaption>Tracker, the process list, the system monitor, a
-  software-rendered bouncing sphere and the browser, laid out by
-  <code>tile</code> — arranging windows is the system's own job, and a
-  handle names exactly one window where dragging from outside would depend
-  on the stacking order.</figcaption>
+  <figcaption>The desktop. Every window is a separate process, and they were
+  arranged by the system rather than by dragging.</figcaption>
 </figure>
+
 <figure>
-  <img src="cern.png" alt="The Kosmos browser showing info.cern.ch, the
-       first website, with its four links.">
-  <figcaption><code>wm browser:info.cern.ch/</code> — the first website
-  there ever was, found by asking a resolver rather than by being told four
-  numbers, fetched over the guest's own TCP/IP stack, redirect followed and
-  rendered.</figcaption>
+  <img src="cores.png" alt="The Kosmos desktop with the system monitor
+       showing all four processors busy while several programs run.">
+  <figcaption>Four processors, each running its own queue. Work spreads
+  across all of them.</figcaption>
 </figure>
+
+<figure>
+  <img src="terminal.png" alt="A Kosmos terminal window showing the neofetch
+       banner in blue and red, above the machine's details.">
+  <figcaption>A terminal. The colour travels with the bytes it applies to,
+  because a console has more than one writer.</figcaption>
+</figure>
+
 <figure>
   <img src="demos.png" alt="Six graphical demos running at once: a teapot, a
        mech, a plasma effect, a cube and a bouncing textured sphere.">
-  <figcaption>Six things drawing at once, all of it software rasterised
-  through TinyGL, all of it at 41 fps. There is no GPU driver — the
-  compositor blits at about 6.5 ns a pixel.</figcaption>
+  <figcaption>Six things drawing at once, software rasterised, at 41 fps.
+  The compositor blits at about 6.5&nbsp;ns a pixel.</figcaption>
 </figure>
-<figure>
-  <img src="network.png" alt="The web server, the network configuration, a
-       terminal and glgears running at once on the Kosmos desktop.">
-  <figcaption>The web server, the network settings, a terminal, and glxgears
-  at 61 fps in software. The address is 10.0.2.15 and the gateway 10.0.2.2 —
-  QEMU's NAT, which is enough to reach the real internet.</figcaption>
-</figure>
+
 <figure>
   <img src="browser.png" alt="The Kosmos browser showing a rendered web
        page with headings, bold and italic text, a bulleted list and a
        link.">
-  <figcaption>The browser. Headings, inline bold, italic and monospace on a
-  shared baseline, list markers, and links you can click — laid out and
-  painted by about a thousand lines of C on top of NetSurf's parsers.</figcaption>
+  <figcaption>The browser: NetSurf's parsers on a freestanding libc, laid
+  out and painted by about a thousand lines of C.</figcaption>
 </figure>
 
 <h2>Run it</h2>
 
-<p>One command. Nothing to clone, nothing to build, no toolchain:</p>
+<p>One command. Nothing to clone, nothing to build, no toolchain — you need
+only QEMU, which is the one thing it cannot fetch for you.</p>
 
 <pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -b "wm"</code></pre>
 
-<p>You need QEMU, and it is the only thing that command cannot fetch for
-you — <code>brew install qemu</code> on macOS,
-<code>apt install qemu-system-arm</code> on Debian or Ubuntu. Everything
-else, it works out: the newest published image, the runner, and a disk to
-keep files on.</p>
+<p>The framebuffer size is compiled in, so a smaller screen wants the other
+build: add <code>-r 1280x720</code>. On Windows, WSL runs the line above
+unchanged. The <a
+href="https://github.com/dcibils-neuratek/kosmos#running-it">repository</a>
+has the native route and the flags that are not guessable.</p>
 
-<p>If your screen is smaller than 1920&times;1080, ask for the other build —
-the framebuffer size is compiled in, so a different resolution is a
-different image:</p>
+<h2>The idea</h2>
 
-<pre><code>sh -c "$(curl -fsSL https://raw.githubusercontent.com/dcibils-neuratek/kosmos/main/get-and-run-kosmos.sh)" -- -r 1280x720 -b "wm"</code></pre>
+<p><strong>The bet is BeOS's, updated: a desktop that feels instant on
+hardware that exists now.</strong> Not fast on average — <em>bounded</em>.
+Input reaches the thing that draws without waiting behind whatever else is
+running, because responsiveness was a design constraint rather than an
+optimisation done later.</p>
 
-<h3>Windows</h3>
+<p>What is different is where BeOS had no answer. BeOS was monolithic, with
+the drivers and the filesystem inside the kernel; underneath this one is a
+microkernel, capabilities instead of ambient authority, and a namespace per
+process instead of a global filesystem. Those come from QNX, seL4 and
+Plan&nbsp;9.</p>
 
-<p><strong>WSL is the easy way.</strong> Install QEMU inside it and the
-command above works unchanged; Windows 11 puts the window on your desktop
-by itself.</p>
+<p><strong>It is not Unix and not POSIX.</strong> No <code>fork</code>, no
+<code>exec</code>, no signals, no pipes, no sockets, no file descriptors,
+and no path you can reach without being handed a namespace. If a port asks
+for one of those, the port gets patched.</p>
 
-<pre><code>wsl --install                       # if you have not already
-sudo apt install qemu-system-arm curl</code></pre>
+<p>That freedom is the whole point. It is not a product and not trying to
+replace anything — it is a thing built to understand how these things are
+built, and the reasoning behind every decision is written down, including
+the ones that turned out wrong and were undone.</p>
 
-<p><strong>Or natively</strong>, with <a
-href="https://qemu.weilnetz.de/w64/">QEMU for Windows</a>. The shell script
-will not run there, so this is what it would have done — download an image
-from <a
-href="https://github.com/dcibils-neuratek/kosmos/tree/main/builds">builds/</a>,
-make a disk beside it, and start it:</p>
-
-<pre><code># A 64 MB disk. Kosmos formats a blank one itself the first time it
-# is asked for a file.
-$f = [IO.File]::Create("kosmos.img"); $f.SetLength(64MB); $f.Close()
-
-qemu-system-aarch64.exe `
-  -M virt,gic-version=3 -cpu cortex-a72 -m 512M `
-  -netdev user,id=net0 -device virtio-net-device,netdev=net0 `
-  -drive file=kosmos.img,format=raw,if=none,id=disk `
-  -device virtio-blk-device,drive=disk `
-  -global virtio-mmio.force-legacy=false `
-  -device ramfb `
-  -device virtio-keyboard-device -device virtio-tablet-device `
-  -serial mon:stdio `
-  -fw_cfg name=opt/kosmos/boot,string=wm `
-  -kernel kosmos-0.8.35-a176d31-1280x720-full.elf</code></pre>
-
-<p class="note"><strong>Two of those flags are not guessable</strong>, and
-the system is quietly diminished without them.
-<code>virtio-mmio.force-legacy=false</code>: QEMU's virtio-mmio devices
-default to the legacy interface, which this system's driver correctly
-refuses — without it there is no keyboard and no pointer, everything still
-works over the serial line, and it looks like a Kosmos bug rather than a
-missing flag. And <code>virtio-tablet-device</code> rather than a mouse: a
-tablet reports absolute position, so the guest cursor cannot drift away from
-the real one.</p>
-
-<p class="note">Only macOS is tested. Linux and Windows should both work —
-nothing in the image knows what host it is on, and QEMU is QEMU — but I have
-not run them, and saying otherwise would be pretending.</p>
-
-<h2>What this is, honestly</h2>
-
-<p>This is <strong>my own experimentation with ideas I have had and turned
-over for years</strong>, while using dozens of operating systems. It is my
-interpretation of what an operating system could be if you took the good
-practices and good ideas wherever they came from, added the ones I have
-reasoned my way to myself, and were free to ignore everything else.</p>
-
-<p>That freedom is the whole point. There are no users to serve, no
-compatibility to keep, and no deadline — which is precisely what makes it
-possible to take decisions a commercial system cannot take, and to undo them
-when they turn out to be wrong. Several have been undone. The reasoning for
-every one of them is written down, including the mistakes.</p>
-
-<p>It is not a product, not a startup, and not trying to replace anything.
-It is a thing I am building to understand how these things are built.</p>
-
-<h2>What it is not</h2>
-
-<p><strong>Not Unix, and not POSIX.</strong> No <code>fork</code>, no
-<code>exec</code>, no signals, no pipes, no sockets, no
-<code>select</code>, no <code>ioctl</code>, no file descriptors, and no path
-you can reach without being handed a namespace. A libc that lives inside a
-process and resolves I/O against that process's own namespace is fine and
-necessary; a POSIX personality is not, and if a port asks for one, the port
-gets patched. <code>errno</code> is per-process, never global.</p>
-
-<p><strong>Not Windows and not macOS.</strong> Nothing here is trying to be
-familiar, and there is no compatibility layer to be kind to.</p>
-
-<p><strong>Not AmigaOS</strong>, whose ideas I like and whose lack of memory
-protection is the thing this is furthest from — every driver here is a
-process behind its own address space, which is close to the opposite of a
-shared bus everything can reach.</p>
-
-<p><strong>And not a BeOS clone</strong>, though it is the reference. BeOS
-was monolithic, with the drivers and the filesystem inside the kernel. This
-takes its concurrency model, its live queries and its design sensibility;
-the architecture underneath is QNX's.</p>
-
-<p>What it is, then: <strong>the best ideas from all of them — mine, at
-least — and some new ones I wanted to build, in one system.</strong> Free of
-the obligation to be compatible with any of them, which is the only reason
-that combination is possible at all.</p>
-
-<h2>What it is trying to be</h2>
-
-<p><strong>Modern, secure, fast, lean, modular, and easy to write
-applications on.</strong> That last one is not an afterthought — it is what
-the other five are for.</p>
-
-<h3>C and Lua, and nothing else</h3>
-
-<p><strong>C for speed and simplicity.</strong> The kernel, the drivers, the
-servers, the pixel loops. It is a small language that compiles to what you
-expect, which is the whole requirement for the parts that run on behalf of
-someone else.</p>
-
-<p><strong>Lua for writing applications.</strong> A syntax you can hold in
-your head, fast enough for real work, and <em>no compiler</em> — an
-application here is a text file in <code>/bin</code>, and the machine can
-write and run one without a rebuild. The editor on the desktop is enough to
-add a program to the system.</p>
-
-<p>That is the idea: <strong>a blank canvas you can write applications on,
-without a toolchain</strong>. Most operating systems ask you to install
-gigabytes of compilers, headers and build systems before you can make the
-machine do something new. This one asks you to open the editor.</p>
-
-<p class="note">The line between the two is a <em>layer</em>, not a
-judgement: C is what runs on behalf of another process, Lua is what runs for
-a person. That was learned expensively — it used to be a judgement call
-about which servers were on a hot path, and the audio server was written in
-Lua because nobody recognised that a period is a frame with a different
-clock. It spun, it allocated inside a 5.8&nbsp;ms deadline, and it could not
-print a diagnostic. Every one of those was a consequence of being a Lua
-process, not of anything it was trying to do.</p>
-
-<h2>BeOS, mostly</h2>
-
-<p><strong>BeOS is the reference.</strong> Not one influence among several —
-the one the desktop is drawn from, and the operating system I keep coming
-back to. The yellow tab that is only as wide as its title rather than a bar
-across the whole window; the Deskbar in the corner; replicants, where a view
-published by one program is adopted and run by another; typed attributes on
-files with live queries over them; a system that stays responsive because
-responsiveness was a design constraint rather than an optimisation.</p>
-
-<p>The bet is BeOS's, updated: a desktop that feels instant on hardware that
-exists now. What is different is where BeOS did not have an answer — a
-microkernel underneath instead of a monolithic one, capabilities instead of
-ambient authority, per-process namespaces instead of a global filesystem.
-Those come from elsewhere, and mostly from QNX, Plan 9 and seL4.</p>
-
-<h2>And the rest of what it is built out of</h2>
+<h2>What it is built out of</h2>
 
 <div class="grid">
   <div class="card">
     <h3>A microkernel, from QNX</h3>
     <p>Threads, address spaces, IPC and capabilities. It does not know what
-    a file is. Everything else — the filesystem, the console, the window
-    manager — is a process.</p>
-  </div>
-  <div class="card">
-    <h3>Namespaces, from Plan 9</h3>
-    <p>Per-process, with no global names anywhere. A program that was not
-    handed <code>/dev</code> does not get permission denied — the path does
-    not exist for it.</p>
+    a file is. Every driver is a process behind its own address space.</p>
   </div>
   <div class="card">
     <h3>Capabilities, from seL4</h3>
-    <p>An index into your own table, never a global identifier. What you
-    were not given, you cannot name.</p>
+    <p>A syscall takes an index into your own table. What you were not
+    handed, you cannot name — so you cannot reach it.</p>
+  </div>
+  <div class="card">
+    <h3>Namespaces, from Plan 9</h3>
+    <p>There is no global filesystem. A process sees the paths it was given,
+    and a terminal can be its child's <code>/dev/console</code> without the
+    child being able to tell.</p>
   </div>
   <div class="card">
     <h3>The desktop, from BeOS</h3>
-    <p>The tab as wide as its title, the Deskbar, replicants, attributes and
-    live queries. The reference this is drawn from rather than one influence
-    among several.</p>
+    <p>A tab only as wide as its title, the Deskbar in the corner,
+    replicants, and typed attributes on files with live queries over
+    them.</p>
   </div>
   <div class="card">
     <h3>A live image, from Lisp Machines</h3>
-    <p>The system can write and run its own programs. You can script a
-    running application from the shell without it having any scripting code
-    in it.</p>
+    <p>An application is a text file. The editor on the desktop is enough to
+    add a program to the running system — there is no compiler to
+    install.</p>
   </div>
   <div class="card">
-    <h3>Lua, everywhere above the line</h3>
-    <p>C is what runs on behalf of another process — the kernel, drivers,
-    servers, pixel loops. Lua is what runs for a person.</p>
+    <h3>Four processors</h3>
+    <p>Each installs its own vector, arms its own timer and runs its own
+    queue. A thread has a home and does not migrate, which is what keeps the
+    locking honest.</p>
   </div>
 </div>
 
-<h2>What it holds together</h2>
+<h2>Two rules that decide most arguments</h2>
 
-<p>One rule about what travels between things: <strong>the language's data
-model where the shape is the caller's to choose, a declared struct where the
-shape is agreed.</strong> IPC messages are Lua tables almost everywhere, and
-structs in a header both sides compile against at the boundary into a system
-server — for two reasons found by building it, not by planning it. A server
-has to stay correct when its caller is wrong, and a garbage collector cannot
-sit where something else's timing depends on it.</p>
+<p><strong>C is what runs on behalf of another process; Lua is what runs for
+a person.</strong> The kernel, the drivers, the servers and the pixel loops
+are C. Applications are Lua. The line is a <em>layer</em> rather than a
+judgement about what looks hot — it used to be a judgement, and the audio
+server is what that cost.</p>
 
-<p class="note">The audio server taught the second one. It took a
-1024-byte period as a message payload 172 times a second, which meant a Lua
-string allocated on each side of every one: 340 KB a second of garbage
-manufactured inside a 5.8 ms deadline. It played, and it jittered, and no
-amount of scheduling fixed it — the collector was in the audio path by
-construction. <em>Control by message, data by shared memory</em> is a rule
-in this project because of that.</p>
+<p><strong>Control by message, data by shared memory.</strong> A message
+says what to do; a region holds what to do it to. If it recurs because the
+hardware says so — a frame, a period, a packet, a block — the bytes live in
+a region and the message carries only where and how much.</p>
 
-<h2>What there is to try</h2>
-
-<p>Once it boots, the Deskbar at the top right has everything. Or pass one
-of these instead of <code>wm</code>:</p>
-
-<table>
-<tr><td>wm browser</td><td>A web browser. hubbub, libdom and libcss running
-at EL0 on a freestanding libc — it parses HTML, runs the CSS cascade, lays
-out text and paints it. It opens on a page compiled into the image, so it
-needs nothing running anywhere.</td></tr>
-<tr><td>wm tracker</td><td>A file manager, with a real filesystem and a
-journal underneath it.</td></tr>
-<tr><td>wm terminal</td><td>A terminal window. <code>help</code> lists what
-there is.</td></tr>
-<tr><td>wm cube3d</td><td>A 3D cube, rendered in software.</td></tr>
-<tr><td>wm doom</td><td>Doom, once there is a WAD at
-<code>/home/doom1.wad</code>.</td></tr>
-<tr><td>wm paint</td><td>A paint program.</td></tr>
-<tr><td>wm machine</td><td>Everything the system knows about the hardware
-it is running on, as text you can select and copy.</td></tr>
-<tr><td>ping 8.8.8.8</td><td>The TCP/IP stack, reaching the real internet
-through QEMU's NAT.</td></tr>
-<tr><td>host example.com</td><td>A name, through the resolver.</td></tr>
-<tr><td>wm webserver</td><td>An HTTP server, under System in the
-Deskbar.</td></tr>
-</table>
-
-<h2>What's new</h2>
-
-<p>Versions are <code>major.minor.revision</code>: a revision per push, a
-minor when something substantial lands. There is no release schedule and
-nothing here is stable — this is a learning project and the version number
-is a bookmark, not a promise.</p>
-
-<table>
-<tr><td>0.9</td><td><strong>A second architecture.</strong> Kosmos runs on
-x86-64 as well as AArch64, and runs the whole desktop there: window manager,
-Deskbar, Tracker, terminal, browser, network, disk and sound. All thirteen
-files in <code>kernel/</code> compile for both with no <code>#ifdef</code> in
-any of them, and the display harness passes the same sixty-five checks on each
-board in the same time. The four virtio drivers moved into a shared
-directory rather than being rewritten, with each board bringing its own
-transport underneath: fixed offsets from a device-tree window on one, a walk
-of the PCI capability list on the other.
-
-<p>Since then, within 0.9: <strong>a clipboard</strong>, so text selected in
-one application can be pasted into another — held by the window manager,
-because it is the one process both of them already talk to. There are no
-modifier keys on this machine and <code>Control-C</code> is what stops a
-program, so copy and paste live behind the window manager's prefix:
-<code>Control-W c</code> and <code>Control-W v</code>. And <strong>This
-Machine</strong>, which writes out everything the system knows about the
-hardware it is running on — every device on the bus, whether a driver
-claimed it, and an honest list of what it cannot be asked. And
-<strong>names</strong>: the resolver was written months ago with a single
-caller inside the browser, so <code>host example.com</code> is the command
-that makes it usable — and finding it had never answered twice in one boot
-is what a second caller is for.</p></td></tr>
-
-<tr><td>0.8</td><td><strong>A web browser, and a network under it.</strong>
-NetSurf's hubbub, libdom and libcss vendored unpatched and running on a
-freestanding libc: HTML parsed, the CSS cascade consulted, text laid out and
-painted. TCP, so a page can come off the real internet through QEMU's NAT,
-and an HTTP server to go the other way. The allocator learned to grow, so a
-program that needs memory asks for it instead of the whole system being
-rebuilt with a bigger heap. And the 64-bit-only line was drawn
-deliberately — which is what ruled the Pi 1 out.</td></tr>
-
-<tr><td>0.7</td><td><strong>The servers moved to C, one at a time.</strong>
-Audio first, because it sits on a deadline and proved the point; then the
-small ones, then the filesystem and the console. Hot reload was removed
-rather than argued for, having run out of things to reload. A journalled
-filesystem, and eight OpenGL demos each in its own address space.</td></tr>
-
-<tr><td>0.6</td><td>The desktop before either of those: a window manager, a
-widget kit, a Deskbar, and applications that are separate processes talking
-by message.</td></tr>
-</table>
+<p class="note">Both rules were learned the expensive way, from the same
+subsystem. The audio server took a 1024-byte period as a message payload 172
+times a second: a Lua string allocated on each side of every one, 340&nbsp;KB
+of garbage a second manufactured inside a 5.8&nbsp;ms deadline. It played,
+and it jittered, and no amount of scheduling fixed it, because the collector
+was in the audio path by construction.</p>
 
 <h2>Where it is</h2>
 
-<p>The kernel has no architecture-specific instruction left in it, and
-that stopped being an aspiration the day a second architecture compiled it:
-x86-64 runs the same <code>kernel/</code> as AArch64, with no
-<code>#ifdef</code> in any of the thirteen files. Next is SMP — real
-multi-core scheduling — and then real hardware, a Raspberry Pi 5, chosen
+<p><strong>Two architectures.</strong> x86-64 runs the same
+<code>kernel/</code> as AArch64, with no <code>#ifdef</code> in any of its
+files, and the display harness passes the same 71 checks on each.</p>
+
+<p><strong>Four processors, and work spreads across them.</strong> Six
+compute-bound processes read 100% on every core. Getting there took two
+fixes and neither was placement: a quantum only preempted on core zero, and
+a cross-core wake looked at the wrong processor's idea of what was running.
+Placement is still behind a build flag rather than on by default, because
+one known failure remains — the repository says which.</p>
+
+<p>Next is <strong>real hardware</strong>: a Raspberry Pi&nbsp;5, chosen
 because it is hard enough that a fast desktop on it would be a real result
-rather than an emulator number.</p>
+rather than an emulator number. Alongside it, a port of the Lite&nbsp;XL
+editor, which is currently as far as its constructor and does not draw
+yet.</p>
 
-<p>SMP is further off than it looks, and the repository is specific about
-why: there is no per-CPU state and not a lock or an atomic anywhere in the
-kernel, because a uniprocessor does not need them.
-<a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/smp.md">docs/smp.md</a>
-counts what it would take.</p>
-
-<p>Before that, two things the browser is waiting on: a resolver, so an
-address can be a name instead of four numbers, and a non-blocking send —
-half a frame is currently the application blocked on a message whose handler
-swaps an index and returns.</p>
-
-<p>What it cannot do is a longer list than what it can, and the repository
-is specific about both. <a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/state.md">docs/state.md</a>
-says where it actually is; <a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/design.md">docs/design.md</a>
+<p><strong>What it cannot do is a longer list than what it can</strong>, and
+the repository is specific about both.
+<a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/state.md">docs/state.md</a>
+says where it actually is;
+<a href="https://github.com/dcibils-neuratek/kosmos/blob/main/docs/design.md">docs/design.md</a>
 has the reasoning behind every decision, and
 <a href="https://github.com/dcibils-neuratek/kosmos#decision-log">the decision log</a>
-is a single table of every one of them with what it cost.</p>
+is a single table of all of them with what each one cost.</p>
+
+<h2>What to try once it boots</h2>
+
+<p>The Deskbar at the top right has everything. Or pass one of these instead
+of <code>wm</code>:</p>
+
+<table>
+<tr><td>wm browser</td><td>A web browser, on a page compiled into the image
+— so it needs nothing running anywhere.</td></tr>
+<tr><td>wm tracker</td><td>A file manager, with a journalled filesystem
+underneath it.</td></tr>
+<tr><td>wm terminal</td><td>A terminal. <code>help</code> lists what there
+is.</td></tr>
+<tr><td>wm doom</td><td>Doom, given a WAD at
+<code>/home/doom1.wad</code>.</td></tr>
+<tr><td>wm machine</td><td>Everything the system knows about the hardware it
+is on, including an honest list of what it cannot be asked.</td></tr>
+<tr><td>ping 8.8.8.8</td><td>The TCP/IP stack, reaching the real internet
+through QEMU's NAT.</td></tr>
+</table>
 
 <footer>
   <p><a href="https://github.com/dcibils-neuratek/kosmos">github.com/dcibils-neuratek/kosmos</a>

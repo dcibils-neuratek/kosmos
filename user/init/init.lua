@@ -146,7 +146,7 @@ local function line(s) sys.write(s .. "\n") end
 --
 -- Splitting belongs here and not in `ns.write`, because a console is a
 -- stream and a file is not: two writes to /dev/console are one line after
--- another, and two writes to /data/notes are the second replacing the
+-- another, and two writes to /ramfs/notes are the second replacing the
 -- first. Only the caller knows which it meant.
 --------------------------------------------------------------------------
 local CONSOLE_CHUNK = 1400
@@ -232,7 +232,7 @@ end
 --
 -- **What carries those verbs depends on who answers**, and that is the
 -- change this file has been through. Six servers are C and take a *declared
--- struct*: `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/data`, each
+-- struct*: `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/ramfs`, each
 -- with a header in `user/include/` that both sides compile against. A mount
 -- names which, and `request` below branches on it.
 --
@@ -363,7 +363,7 @@ local function serve(endpoint, state, make_handlers)
 end
 
 --------------------------------------------------------------------------
--- /data is `user/servers/ramfs.c`, and `main.c` dispatches role 1 to it
+-- /ramfs is `user/servers/ramfs.c`, and `main.c` dispatches role 1 to it
 -- before the interpreter is opened.
 --
 -- The seventh and last to move, and the only one whose conversion cost a
@@ -1059,7 +1059,7 @@ local function new_namespace()
   end
 
   --------------------------------------------------------------------------
-  -- /data, which is C and speaks `ramproto.h`.
+  -- /ramfs, which is C and speaks `ramproto.h`.
   --
   -- `string.pack` rather than a kit, and the difference from the console is
   -- the whole reason that one needed a kit: ramfs has exactly one
@@ -1076,18 +1076,21 @@ local function new_namespace()
   local RAM_ENTRIES_MAX, RAM_DATA_MAX = 8, 1024
 
   assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, "") == 1044,
-         "namespace: the /data reply layout does not match ramproto.h")
+         "namespace: the /ramfs reply layout does not match ramproto.h")
 
   local RAM_OPS = { list = 1, read = 2, write = 3, getattr = 4,
-                    setattr = 5, query = 6, watch = 7, watchers = 8 }
+                    setattr = 5, query = 6, watch = 7, watchers = 8,
+                    delete = 9, rename = 10, mkdir = 11 }
 
   local RAM_ERRORS = {
     [1] = "no such path",
     [2] = "not a directory",
     [3] = "not readable",
-    [4] = "/data did not understand that",
-    [5] = "/data is full",
+    [4] = "/ramfs did not understand that",
+    [5] = "/ramfs is full",
     [6] = "too many attributes on one node",
+    [7] = "the directory is not empty",
+    [8] = "it is already there",
   }
 
   -- A string cut to exactly what a fixed field holds. `c128` pads a short
@@ -1169,12 +1172,12 @@ local function new_namespace()
     local raw, why = sys.call_raw(capability, bytes)
 
     if not raw then return nil, tostring(why) end
-    if #raw < 1044 then return nil, "a /data reply of the wrong size" end
+    if #raw < 1044 then return nil, "a /ramfs reply of the wrong size" end
 
     local err, more, count, length, packed, blob = string.unpack(RAM_REPLY, raw)
 
     if err ~= 0 then
-      return nil, RAM_ERRORS[err] or ("/data error " .. tostring(err))
+      return nil, RAM_ERRORS[err] or ("/ramfs error " .. tostring(err))
     end
 
     return { more = more ~= 0, count = count, length = length,
@@ -1190,9 +1193,28 @@ local function new_namespace()
 
     extra = extra or {}
 
+    --
+    -- The three that only move names around: nothing to pack but a path, and
+    -- nothing to read back but whether it worked.
+    --
+    -- `rename` carries its destination in the union rather than in a field
+    -- of its own, and it arrives here already translated into the server's
+    -- own path space - `ns.send` does that, because it is the only place
+    -- that knows what this process mounted where.
+    --
+    if op == "delete" or op == "mkdir" or op == "rename" then
+      local to = (op == "rename") and tostring(extra.to or "") or ""
+      local _, err = ram_call(capability,
+                              ram_pack(code, rest, 0, #to, 0, nil, to))
+
+      if err then return nil, err end
+
+      return { ok = true }
+    end
+
     if op == "write" then
       --
-      -- /data holds Lua values, and this is where that survives the move to
+      -- /ramfs holds Lua values, and this is where that survives the move to
       -- C. A string goes as itself; anything else - a table, a float, a
       -- boolean - goes as `sys.pack` and comes back through `sys.unpack`, so
       -- `help("fs")`'s promise still holds: you get back the table you wrote.
@@ -1388,7 +1410,7 @@ local function new_namespace()
     -- A value too big for a message goes through a region instead.
     --
     -- **`fs.write` used to raise here**, and only on some mounts. The
-    -- namespace splits a long write for `/data` - `ram_request` does it, a
+    -- namespace splits a long write for `/ramfs` - `ram_request` does it, a
     -- piece per message - and diskfs cannot be written that way at all: its
     -- `write` takes no offset and hands the whole body to `kfs.store`, so
     -- there is nothing to append to. Everything above about two kilobytes
@@ -1448,7 +1470,7 @@ local function new_namespace()
   -- holds; only the namespace knows what has been attached to it and where,
   -- and the mount table lives in this process and nowhere else. Without it
   -- `/` is not a directory at all - there is no server for it, so listing it
-  -- returns "no such path" while `/data` and `/dev` both plainly exist.
+  -- returns "no such path" while `/ramfs` and `/dev` both plainly exist.
   --
   -- Only the immediate child: with `/dev/console` mounted, `/` contains
   -- `dev` and not `dev/console`, which is what a directory means.
@@ -1706,7 +1728,7 @@ local function new_namespace()
   --
   -- Which is exactly what `find /home kind=book` returned, for as long as
   -- the disk has been able to answer a query. It went unnoticed because
-  -- every test of queries used `/data`, and `/data` is mounted with no root
+  -- every test of queries used `/ramfs`, and `/ramfs` is mounted with no root
   -- - so the two paths through this function had never both been walked.
   --
   local function to_local(p, prefix, root)
@@ -1839,6 +1861,39 @@ local function new_namespace()
     if proto == "app" then
       return app_request(capability, tostring(message.type or ""),
                          tostring(message.name or ""), pass)
+    end
+
+    --
+    -- `mkdir`, `delete` and `rename` on /ramfs.
+    --
+    -- The refusal below is right for everything else this protocol speaks -
+    -- a struct server must not be handed an arbitrary table - and wrong for
+    -- these three, which are the filesystem verbs every mount is supposed to
+    -- have. Routed rather than passed through: what crosses is still a
+    -- declared shape, and the table never reaches the server.
+    --
+    -- **A rename's destination is resolved here**, because `rest` is a path
+    -- in the *server's* space and only this process knows what it mounted
+    -- where. Both ends have to land on the same capability: a rename that
+    -- crossed mounts would be a copy and a delete, which is a different
+    -- operation with a different failure.
+    --
+    if proto == "ram" then
+      local op = tostring(message.type or "")
+
+      if op == "rename" then
+        local other, elsewhere = match(tostring(message.to or ""))
+
+        if other ~= capability then
+          return nil, "a rename cannot cross a mount"
+        end
+
+        return ram_request(capability, op, rest, { to = elsewhere })
+      end
+
+      if op == "mkdir" or op == "delete" then
+        return ram_request(capability, op, rest)
+      end
     end
 
     if proto then
@@ -3054,7 +3109,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
-  ns.mount("/data", ramfs_cap, nil, "ram")
+  ns.mount("/ramfs", ramfs_cap, nil, "ram")
 
   -- Longest prefix wins, so /dev/console keeps going to the console server
   -- while everything else under /dev goes to the device server. Two servers
@@ -3185,10 +3240,10 @@ are - which is what keeps `fs.read` the same operation for everybody.
 mount does not exist; that is not a permission check, there is simply
 nothing there to deny.
 
-  fs.list("/data")                     -> a table of names
-  fs.read("/data/sensor")              -> whatever was written
-  fs.write("/data/x", { n = 1 })       -> true
-  fs.getattr("/data/x")                -> { size = ... }
+  fs.list("/ramfs")                     -> a table of names
+  fs.read("/ramfs/sensor")              -> whatever was written
+  fs.write("/ramfs/x", { n = 1 })       -> true
+  fs.getattr("/ramfs/x")                -> { size = ... }
   fs.read("/nowhere")                  -> nil, "no such path: /nowhere"
 
 Values are Lua values, not bytes. A read gives you back the table you
@@ -3287,7 +3342,7 @@ Aliases:
 another; `def` compiles a line of Lua and gives it a name, so anything
 you can type here can become a command:
 
-  def hot = local d = fs.read("/data/sensor")
+  def hot = local d = fs.read("/ramfs/sensor")
             return d.celsius > 40 and "hot" or "cold"
   /hot
 
@@ -3338,9 +3393,9 @@ The serialiser, which is how every message travels:
 
 Attributes, and a query that finds by them rather than by name:
 
-  fs.write("/data/a", "one")
-  fs.setattr("/data/a", { kind = "note" })
-  fs.query("/data", { kind = "note" })
+  fs.write("/ramfs/a", "one")
+  fs.setattr("/ramfs/a", { kind = "note" })
+  fs.query("/ramfs", { kind = "note" })
 
 BeOS's idea: the filesystem is a database, and a folder is a saved
 query. `find` and `watch` are built on exactly these two calls.
@@ -3513,7 +3568,7 @@ query. `find` and `watch` are built on exactly these two calls.
   -- prompt can be given a name and a place in `/commands`.
   --
   --   def ls2 = for _, n in ipairs(fs.list(...)) do print(n) end
-  --   /ls2 /data
+  --   /ls2 /ramfs
   --
   -- The argument string arrives as `...`, so a program can take one. It is
   -- compiled once, when defined, so a syntax error is reported then rather
@@ -4528,7 +4583,7 @@ if role == ROLE_RUNNER then
   -- through the same kit, which is the whole reason that kit exists. The
   -- runner cannot tell the two apart and must not need to.
   if req.console then ns.mount("/dev/console", req.console, nil, "console") end
-  if req.data    then ns.mount("/data",        req.data, nil, "ram") end
+  if req.data    then ns.mount("/ramfs",        req.data, nil, "ram") end
   if req.bin     then ns.mount("/bin",         req.bin, nil, "bin") end
   if req.devices then ns.mount("/dev",         req.devices, nil, "dev") end
   if req.lib     then ns.mount("/lib",         req.lib, nil, "bin") end
@@ -4914,7 +4969,7 @@ end
 -- A client. The name it mounts the filesystem under is its own business,
 -- and is the whole demonstration: the same server, two processes, two
 -- different worlds.
-local mount_point = (role == ROLE_CLIENT_B) and "/files" or "/data"
+local mount_point = (role == ROLE_CLIENT_B) and "/files" or "/ramfs"
 
 local fs = new_namespace()
 
@@ -4958,7 +5013,7 @@ check(attrs ~= nil and attrs.size == 5, "getattr returned the wrong size")
 -- server somewhere else. That name does not exist here, and the answer is
 -- "no such path" rather than "denied": nothing was refused, because there was
 -- nothing to refuse.
-local other = (mount_point == "/data") and "/files" or "/data"
+local other = (mount_point == "/ramfs") and "/files" or "/ramfs"
 local value, err = fs.read(other .. "/sensor")
 check(value == nil, "the other client's mount point was visible")
 check(err:find("no such path") ~= nil, "the wrong error for an unmounted path")

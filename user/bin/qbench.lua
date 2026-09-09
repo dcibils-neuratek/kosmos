@@ -38,7 +38,7 @@ local made = 0
 local function grow_to(total)
   while made < total do
     made = made + 1
-    local ok, err = fs.setattr(("/data/bench/f%d"):format(made),
+    local ok, err = fs.setattr(("/ramfs/bench/f%d"):format(made),
                                { kind = "filler", n = made })
     if not ok then
       print(("qbench: could not create node %d: %s"):format(made, tostring(err)))
@@ -50,7 +50,7 @@ end
 
 -- The five that always match, made once and never touched again.
 for i = 1, TARGET do
-  local ok, err = fs.setattr(("/data/bench/target%d"):format(i),
+  local ok, err = fs.setattr(("/ramfs/bench/target%d"):format(i),
                              { kind = "qbench-target" })
   if not ok then
     print("qbench: " .. tostring(err))
@@ -71,13 +71,13 @@ for _, size in ipairs(SIZES) do
 
   -- One of each first, so the measured rounds are not paying for whatever
   -- the first call after a growth spurt costs.
-  fs.getattr("/data")
-  fs.query("/data", { kind = "qbench-target" })
+  fs.getattr("/ramfs")
+  fs.query("/ramfs", { kind = "qbench-target" })
 
   local start = sys.ticks()
 
   for _ = 1, ROUNDS do
-    fs.getattr("/data")
+    fs.getattr("/ramfs")
   end
 
   local control = (sys.ticks() - start) / ROUNDS
@@ -86,7 +86,7 @@ for _, size in ipairs(SIZES) do
   local found = 0
 
   for _ = 1, ROUNDS do
-    local paths = fs.query("/data", { kind = "qbench-target" })
+    local paths = fs.query("/ramfs", { kind = "qbench-target" })
     found = paths and #paths or -1
   end
 

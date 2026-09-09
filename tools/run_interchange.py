@@ -91,7 +91,7 @@ def main():
             # `fs.write` used to *raise* on this - `value does not fit in a
             # message`, out of the serialiser, from a call whose failures
             # are otherwise return values. The namespace splits a long write
-            # for `/data` and diskfs takes no offset to append at, so
+            # for `/ramfs` and diskfs takes no offset to append at, so
             # everything above about two kilobytes could not be written to
             # the disk at all. It goes through a region now, the way
             # `files.copy` always did.
@@ -107,12 +107,12 @@ def main():
             '#(back or ""), back == big)',
             #
             # And the ceiling that is real, which must be a value and not an
-            # exception. `/data` is a fixed pool - 16 KB a file - so this
+            # exception. `/ramfs` is a fixed pool - 16 KB a file - so this
             # cannot succeed; what it must not do is throw.
             #
-            'local ok, err = fs.write("/data/big", string.rep("z", 150000)) '
+            'local ok, err = fs.write("/ramfs/big", string.rep("z", 150000)) '
             'print("GUEST" .. "-RAM", ok, tostring(err), '
-            '#(fs.read("/data/big") or ""))',
+            '#(fs.read("/ramfs/big") or ""))',
             #
             # And more large writes than a thread has capability slots.
             #
@@ -189,9 +189,9 @@ def main():
         checks += 1
 
         # ---- and a ceiling that is a value rather than an exception ----
-        if "GUEST-RAM false /data is full 16384" not in flat:
+        if "GUEST-RAM false /ramfs is full 16384" not in flat:
             raise Failure(
-                "a write past what /data holds should come back as false "
+                "a write past what /ramfs holds should come back as false "
                 "and a sentence, not as a raise.\n" + out[-900:]
             )
 

@@ -1316,7 +1316,7 @@ def check_replicants(guest):
     """A view moved between processes, still running, with what it declared.
 
     roadmap.md M7's second definition of done, minus the dragging - there is
-    no pointer yet, so `clock` offers the replicant through /data and
+    no pointer yet, so `clock` offers the replicant through /ramfs and
     `adopt` picks it up. The mechanism is the whole of it either way; the
     pointer is the part that is missing.
 
@@ -1333,7 +1333,7 @@ def check_replicants(guest):
         `adopt` re-runs the same source with its own state, so the two
         read differently and neither is a copy of the other's pixels.
       * `adopt` also prints what the replicant's restricted namespace
-        actually answers - it tries /dev/cpu, which was declared, and /data,
+        actually answers - it tries /dev/cpu, which was declared, and /ramfs,
         which was not - so the sandbox line on screen is a measurement and
         not a claim. That line is green only when the refusal happened.
     """
@@ -1348,7 +1348,7 @@ def check_replicants(guest):
             f"expected three bands of replicant green - a clock in each of "
             f"two windows and the sandbox result - and found {len(bands)}. "
             "Either the replicant did not load in one of them, or the "
-            "restricted namespace let /data through, which turns that line "
+            "restricted namespace let /ramfs through, which turns that line "
             "red."
         )
 
@@ -2836,11 +2836,11 @@ def check_reaped(guest):
         "w:add(v) w:run()"
     )
 
-    guest.type("fs.write('/data/dying.lua', %r)" % program)
+    guest.type("fs.write('/ramfs/dying.lua', %r)" % program)
     time.sleep(2)
 
     mark = len(guest.seen)
-    guest.type("wm /data/dying.lua")
+    guest.type("wm /ramfs/dying.lua")
 
     # It has to appear before it can be missed. If it never opens, the check
     # below would pass for the wrong reason.
@@ -2920,7 +2920,7 @@ def check_editor(guest):
 
     Before the window manager phase, which takes the screen for good.
     """
-    guest.type("edit /data/sum.lua")
+    guest.type("edit /ramfs/sum.lua")
     time.sleep(3)
 
     program = (
@@ -2955,7 +2955,7 @@ def check_editor(guest):
     time.sleep(1.5)
 
     mark = len(guest.seen)
-    guest.type("run /data/sum.lua")
+    guest.type("run /ramfs/sum.lua")
 
     deadline = time.monotonic() + 20
 

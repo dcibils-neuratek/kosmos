@@ -1,12 +1,12 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- cat: read a thing and print it.
 --
---   cat /data/notes
+--   cat /ramfs/notes
 --   cat /dev/cpu
 --   cat /bin/hello.lua
 --
 -- The name is Linux's and the behaviour is not quite: what a server
--- returns here is a *value*, not a stream of bytes. `cat /data/sensor`
+-- returns here is a *value*, not a stream of bytes. `cat /ramfs/sensor`
 -- gives back the table that was written, with its numbers still numbers,
 -- because `design.md` §1 makes the protocol between servers the data model
 -- of the language. So this prints a table as a table and a string as a
@@ -22,7 +22,7 @@ local path = name and (name:sub(1, 1) == "/" and name
 
 if not path then
   print("usage: cat <path>")
-  print("  try /data/notes, /dev/cpu, or /bin/hello.lua")
+  print("  try /ramfs/notes, /dev/cpu, or /bin/hello.lua")
   return
 end
 

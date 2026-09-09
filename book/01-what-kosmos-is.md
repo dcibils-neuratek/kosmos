@@ -255,7 +255,7 @@ On Kosmos it is one. Each of those is a path you read, and each answers
 with a table. These are real, and they work today:
 
 ```lua
-    fs.read("/data/notes.txt")   -- a file, on the actual disk
+    fs.read("/ramfs/notes.txt")   -- a file, on the actual disk
     fs.read("/dev/cpu")          -- which processor this turned out to be
     fs.read("/dev/memory")       -- how much there is, and how much is left
     fs.read("/dev/screen")       -- the display's size and layout
@@ -288,8 +288,8 @@ security means here.
 
 A process on Kosmos has a **namespace**: a small list of what it can reach.
 Not a view of a big global tree with permissions on the branches. There is
-no big global tree. If `/data` was not put into a process's namespace, then
-for that process `/data` does not exist - not "permission denied", but *no
+no big global tree. If `/ramfs` was not put into a process's namespace, then
+for that process `/ramfs` does not exist - not "permission denied", but *no
 such path*.
 
 This is not a description of how it ought to work. There is a program in
@@ -299,7 +299,7 @@ this is what it says:
 ```
     Hello from a process of my own.
 
-      what I was given:  /app  /bin  /data  /dev  /dev/console  /home  /lib
+      what I was given:  /app  /bin  /ramfs  /dev  /dev/console  /home  /lib
 
     I cannot reach anything that is not on that list. There is no
     global filesystem to walk and no name to guess: a capability is an

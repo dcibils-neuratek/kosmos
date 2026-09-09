@@ -1,9 +1,9 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Attributes: what a node is, as opposed to what is in it.
 --
---   attr /data/notes.txt                  show them
---   attr /data/notes.txt kind=note        set one
---   attr /data/ada  kind=person email=ada@example.org
+--   attr /ramfs/notes.txt                  show them
+--   attr /ramfs/notes.txt kind=note        set one
+--   attr /ramfs/ada  kind=person email=ada@example.org
 --
 -- A node with attributes and no content is a perfectly good node - the BeOS
 -- People file, which is a named entity with an address and a phone number

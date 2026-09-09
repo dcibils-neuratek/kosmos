@@ -2,14 +2,14 @@
 -- kosmos: needs screen
 -- A screen editor, so the machine can write its own Lua.
 --
---   edit /data/hello.lua       open it, or start it empty
+--   edit /ramfs/hello.lua       open it, or start it empty
 --
 --   arrows          move            Ctrl-S   save
 --   Home / End      line ends       Ctrl-Q   quit
 --   Backspace       delete back     Ctrl-C   quit
 --   Enter           split the line
 --
--- Then `run /data/hello.lua` from the shell.
+-- Then `run /ramfs/hello.lua` from the shell.
 --
 --------------------------------------------------------------------------
 -- Why this exists this early.

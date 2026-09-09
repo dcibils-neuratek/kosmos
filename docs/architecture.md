@@ -59,7 +59,7 @@ shell rather than underneath it.
        .   +---------+                                                  .
        .   |  shell  |          servers, in C                            .
        .   +---------+     +---------+ +---------+ +---------+ +------+ .
-       .        ^          | console | |  /data  | |  /bin   | | /dev | .
+       .        ^          | console | |  /ramfs  | |  /bin   | | /dev | .
        .        |          +---------+ +---------+ +---------+ +------+ .
        .        |               ^           ^           ^          ^    .
        .        +-------- IPC --+-----------+-----------+----------+    .
@@ -131,7 +131,7 @@ and that is a limitation rather than a principle. See `hal.md`.
 Three differences from the first picture, and they are the whole design.
 
 **The kernel does not know what a file is.** There is no `open` in the list of
-eighteen syscalls, because there is nothing for it to open. `/data` is a
+eighteen syscalls, because there is nothing for it to open. `/ramfs` is a
 process. `/bin` is a process. When `cat` reads a file it sends a message to
 another program and waits for the answer, exactly as it would over a network.
 
@@ -248,7 +248,7 @@ number it is spawned with decides what it becomes.
 **Where that number is answered moved in September 2026.** `user/init/main.c`
 dispatches the server roles *before* the Lua interpreter is opened, so those
 processes have no collector at all rather than a promise not to allocate:
-`/dev/audio`, `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/data` are
+`/dev/audio`, `/dev`, `/bin`, `/lib`, `/app`, `/dev/console` and `/ramfs` are
 each one file in `user/servers/`, speaking a struct declared in
 `user/include/`.
 

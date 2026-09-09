@@ -58,20 +58,20 @@ end
 --------------------------------------------------------------------------
 -- What this server is doing, where something else can read it.
 --
--- **In `/data` rather than printed, because a manager cannot read a
+-- **In `/ramfs` rather than printed, because a manager cannot read a
 -- console.** The desktop launches this as a process of its own and its
 -- output goes wherever that process's console goes, which is not a window.
 -- So the state and the log are *written*, and `webserver` reads them - the
 -- same arrangement any service manager has with any service, and the reason
 -- daemons have log files rather than shouting.
 --
--- `/data` and not `/home`: ramfs is always there, a disk is not, and a log
+-- `/ramfs` and not `/home`: ramfs is always there, a disk is not, and a log
 -- that vanishes when the machine stops is the right lifetime for a log
 -- about what the machine did while it was running.
 --------------------------------------------------------------------------
 
-local STATUS = "/data/httpd/status"
-local LOG    = "/data/httpd/log"
+local STATUS = "/ramfs/httpd/status"
+local LOG    = "/ramfs/httpd/log"
 
 --
 -- The last forty lines and no more.

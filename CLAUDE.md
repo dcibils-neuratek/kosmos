@@ -443,7 +443,7 @@ same ABI; then `ramfs`, which cost hot reload.
 **Living with each before starting the next is what found the bugs**, and
 every one of them was a thing no amount of reading would have shown: a reply
 that dropped the pointer's range, a share that did not carry its protocol,
-five servers that had quietly stopped naming themselves, and a `/data` that
+five servers that had quietly stopped naming themselves, and a `/ramfs` that
 had always stored Lua values rather than bytes.
 
 **`diskfs` is the one left, and the one to leave alone**, for a reason that

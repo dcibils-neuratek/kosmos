@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /*
- * /data: a filesystem that lives in memory, written down.
+ * /ramfs: a filesystem that lives in memory, written down.
  *
  * The largest of these headers, because ramfs is the only server here that
  * is a filesystem *and* an attribute store *and* a query engine. Every piece
@@ -34,6 +34,28 @@
 #define RAM_OP_WATCH     7u
 #define RAM_OP_WATCHERS  8u
 
+/*
+ * The three that make this a filesystem rather than a place to publish.
+ *
+ * They were missing for a reason worth recording: everything that had ever
+ * used /ramfs *published* - a replicant writing its own source, the web
+ * server writing its status, a benchmark tagging files to query for. Nothing
+ * ever took anything back out, so nothing asked for these, and an operation
+ * with no caller does not get written.
+ *
+ * What made them missing rather than absent is `rm`. A shell where a verb
+ * works on one mount and not another is a namespace failing at the one thing
+ * it is for, and `help("fs")` promises this mount behaves like a filesystem.
+ *
+ * **`rename` carries its destination in `u.data`** rather than in a field of
+ * its own. A `to[RAM_PATH_MAX]` would be 128 bytes copied twice on every
+ * list, read and write that never looks at it - which is the same argument
+ * the union is already here for.
+ */
+#define RAM_OP_DELETE    9u
+#define RAM_OP_RENAME   10u
+#define RAM_OP_MKDIR    11u
+
 #define RAM_OK               0u
 #define RAM_ERR_NO_PATH      1u
 #define RAM_ERR_NOT_DIR      2u
@@ -41,6 +63,8 @@
 #define RAM_ERR_BAD_OP       4u
 #define RAM_ERR_FULL         5u   /* the node pool, or a path too long */
 #define RAM_ERR_TOO_MANY     6u   /* more attributes than a node may hold */
+#define RAM_ERR_NOT_EMPTY    7u   /* a directory with something still in it */
+#define RAM_ERR_EXISTS       8u   /* the destination is already taken */
 
 #define RAM_PATH_MAX     128u     /* a whole path, not one component */
 #define RAM_NAME_MAX      32u     /* an attribute's name */
@@ -70,7 +94,7 @@ struct ram_attr {
 /*
  * Whether the bytes of a value are text or a serialised Lua value.
  *
- * /data is a *value* store, not a byte store, and that is a documented
+ * /ramfs is a *value* store, not a byte store, and that is a documented
  * property rather than an accident: `help("fs")` promises that a read gives
  * back the table you wrote, integers still integers and floats still floats.
  * The Lua ramfs got it for free by keeping the deserialised value in a table.
@@ -118,8 +142,8 @@ struct ram_reply {
 };
 
 _Static_assert(sizeof(struct ram_request) <= 2048,
-               "a /data request must fit in one message");
+               "a /ramfs request must fit in one message");
 _Static_assert(sizeof(struct ram_reply) <= 2048,
-               "a /data reply must fit in one message");
+               "a /ramfs reply must fit in one message");
 
 #endif /* KOSMOS_RAMPROTO_H */
