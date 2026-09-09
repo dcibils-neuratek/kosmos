@@ -48,18 +48,25 @@ local cwd = "/home"
 local theme = ui.theme
 
 --
--- Tall enough for the banner it opens with.
+-- Tall enough for the banner it opens with, and no taller.
 --
 -- 420 was the right height when the first thing in the window was one line
--- of greeting. `neofetch` runs here now and its art is twenty-two rows, so a
--- window that could not hold it would scroll the banner off while it was
--- still being drawn - which looks like a fault rather than a picture.
+-- of greeting. `neofetch` runs here now, so a window that could not hold its
+-- art would scroll the banner off while it was still being drawn - which
+-- looks like a fault rather than a picture.
 --
--- Forty-two rows at the default sixteen-pixel mono cell, against forty-one
--- for the banner and the first prompt. If the banner is ever trimmed this
--- comes back down; it is a constant precisely so that it can.
+-- **Measured rather than counted.** 700 was arithmetic on a twenty-two-row
+-- banner; the art is fourteen rows now, and a freshly opened window draws
+-- its last row - the prompt - at y=578 against a console that ran to y=726.
+-- A hundred and forty-eight pixels of black under the cursor is not a
+-- margin, it is a window that was sized for a different picture.
 --
-local W, H = 640, 700
+-- 580 leaves the prompt with a row and a half beneath it, which is the same
+-- slack the old number had. The banner is the only reason this is not the
+-- 420 it was, so it moves whenever the banner does - it is a constant
+-- precisely so that it can.
+--
+local W, H = 640, 580
 local SCROLLBACK = 400          -- lines kept
 
 local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 40 }
