@@ -173,6 +173,54 @@ def main():
 
         checks += 1
 
+        #
+        # ---- naming and ending things ------------------------------------
+        #
+        # `kill` is run through `run` with an id found at the prompt rather
+        # than a number written here: process ids depend on what started,
+        # and a check that hardcoded one would be testing the boot order.
+        #
+        tools = run_disk.boot(image, handle.name, [
+            "which grep",
+            "which nosuchthing",
+            "cd /ramfs",
+            "touch s.txt",
+            "stat s.txt",
+            "df",
+            "say 90 later &",
+            "kill say",
+            "kill say",
+            "ps",
+        ])
+
+        for marker, what in [
+            ("/bin/grep.lua", "which did not find a program that is there"),
+            ("is not in /bin", "which claimed a program that does not exist"),
+            ("kind      file", "stat did not report what the node is"),
+            ("blocks free of",
+             "df did not read the superblock for a real free count"),
+            ("ended ", "kill did not end the process it was given"),
+        ]:
+            if marker not in tools:
+                raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
+                              + tools[-1500:])
+            checks += 1
+
+        # df measured the mounts by asking, so /bin - which is in the image
+        # and always there - has to appear with a count.
+        if "/bin" not in tools.split("df")[-1]:
+            raise Failure("df did not list the mounts it can measure.\n"
+                          + tools[-1500:])
+
+        checks += 1
+
+        # And `ps` names processes now, which is where `kill` gets an id
+        # from. It printed pool counts and nothing else for a long time.
+        if "band" not in tools or "shell" not in tools.split("band")[-1]:
+            raise Failure("ps did not list the processes.\n" + tools[-1500:])
+
+        checks += 1
+
         print(f"PASS: {checks} checks on the shell as a place to work "
               "(a file made at the prompt, then counted, read from both "
               "ends, searched, walked and measured - each verb agreeing "

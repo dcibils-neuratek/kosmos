@@ -3261,11 +3261,16 @@ CHANGING
   edit <path>          the editor, in a window
 
 WHAT A FILE IS, RATHER THAN WHAT IS IN IT
+  stat <path>          kind, size, and where the bytes are
+  which <name>         where a program is, if it is anywhere
   attr <path>          its attributes
   attr <path> k=v      set one
   find kind=note       everything that matches, anywhere that can answer
 
 THE MACHINE
+  ps                   what is running, with an id and a band each
+  kill <id or name>    end one; two of a name is a refusal, not a guess
+  df                   what each mount holds, and what the disk has left
   neofetch             the short answer
   machine              the long one, including what it cannot be asked
   ps / mem / cpu       processes, memory, processors
@@ -3932,6 +3937,39 @@ query. `find` and `watch` are built on exactly these two calls.
   commands.ps = function()
     local k = ns.read("/dev/kernel")
     if not k then return end
+
+    --
+    -- **What is running, before how much of the machine is left.**
+    --
+    -- This printed the pool counts and nothing else, which made it a
+    -- summary wearing the name of the command that lists processes. The
+    -- numbers were never the hard part to get: `sys.processes` answers
+    -- from this shell and always has, and the Processes application has
+    -- listed them since it was written. So the prompt had a `kill` with
+    -- nowhere to read an id from, and a `ps` that could not tell you what
+    -- to kill.
+    --
+    local rows = sys.processes()
+
+    if rows then
+      -- The bands by name. A number here would be five values nobody can
+      -- read; `help "sys"` is where the scheduler is explained.
+      local BAND = { [0] = "idle", "low", "normal", "display", "input" }
+
+      out(("%-4s %-16s %-8s %6s %8s\n")
+          :format("id", "name", "band", "cpu", "caps"))
+
+      for _, r in ipairs(rows) do
+        out(("%-4d %-16s %-8s %5d%% %8d%s\n")
+            :format(r.id, tostring(r.name or "?"),
+                    BAND[r.priority] or tostring(r.priority),
+                    tonumber(r.cpu) or 0, tonumber(r.caps) or 0,
+                    r.exited and "  (exited)" or ""))
+      end
+
+      out("\n")
+    end
+
     out(string.format("threads    %d of %d\n", k.threads, k.threads_max))
     out(string.format("processes  %d of %d\n", k.processes, k.processes_max))
     out(string.format("endpoints  %d of %d\n", k.endpoints, k.endpoints_max))
