@@ -59,6 +59,8 @@ local R_KILL_VICTIM  = 34
 local R_CAP_RELEASE  = 35
 local R_INFLATE      = 36
 local R_PDF_SCAN     = 37
+local R_CONWRITE     = 38
+local R_CONWRITE_PEER = 39
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -1188,6 +1190,65 @@ if role == R_INFLATE then
   if n ~= #plain or sys.region_read(dst, 0, n) ~= plain then
     sys.write(("inflate_into: %d bytes, expected %d\n"):format(n, #plain))
     sys.exit(1)
+  end
+
+  sys.exit(0)
+end
+
+--------------------------------------------------------------------------
+-- A console write carries text, and nothing else.
+--
+-- `con.encode_request` used to return the bytes *and* how many of them were
+-- taken. Lua expands a call in final argument position to all of its return
+-- values, so
+--
+--     sys.call_raw(capability, con.encode_request{ ... })
+--
+-- was `sys.call_raw(capability, bytes, length)` - and `call_raw`'s third
+-- argument is `pass`, the capability to send with the message. A write of
+-- three characters handed over capability 3.
+--
+-- **The damage was quiet and pointed both ways.** The writer gave away
+-- authority nobody asked it for, chosen by the length of what it printed;
+-- and the reader's capability table filled with the proceeds, so a terminal
+-- could no longer start a program after about eighty short writes. It went
+-- unnoticed because an ordinary line of text is longer than any index the
+-- writer holds, so the transfer failed harmlessly - it took a banner drawn
+-- in short coloured runs to make every write a valid index.
+--
+-- The peer is spawned holding five capabilities so that lengths 0 to 3 all
+-- name one. Under the bug every one of these four writes transferred.
+--------------------------------------------------------------------------
+if role == R_CONWRITE then
+  local con = sys.kit("console")
+  check(con, "no console kit")
+
+  local ep = sys.endpoint()
+  check(ep, "no endpoint")
+
+  spawn(R_CONWRITE_PEER, { ep, ep, ep, ep, ep })
+
+  for _ = 1, 4 do
+    local bytes, who, cap = sys.receive_raw(ep)
+
+    check(bytes, "a console write never arrived")
+    check(cap == -1,
+          "a console write arrived carrying capability " .. tostring(cap))
+
+    local reply = con.encode_reply{}
+    sys.reply_raw(who, reply)
+  end
+
+  wait_all(1)
+  sys.exit(0)
+end
+
+if role == R_CONWRITE_PEER then
+  local con = sys.kit("console")
+
+  -- Lengths 0 to 3, which are exactly the indices this process was given.
+  for _, text in ipairs { "", "a", "ab", "abc" } do
+    sys.call_raw(0, con.encode_request{ op = con.WRITE, text = text })
   end
 
   sys.exit(0)

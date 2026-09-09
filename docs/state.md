@@ -8,6 +8,77 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### A console write was handing a capability over, and the text's length picked it
+
+Three defects came out of one question - why the `neofetch` banner was slow
+in a Terminal - and the third is the one that mattered.
+
+**`con.encode_request` returned two values.** The bytes, and how many of them
+were taken. Lua expands a call in final argument position to all of its
+returns, so
+
+```lua
+sys.call_raw(capability, con.encode_request{ ... })
+```
+
+was `sys.call_raw(capability, bytes, length)`, and `call_raw`'s third
+argument is `pass` - the capability to send with the message. **A write of
+three characters handed over capability 3.**
+
+It points both ways. The reader's capability table filled with the proceeds,
+which is why a Terminal could not start a program after about eighty short
+writes (`hello: no endpoint`); and the writer was giving away authority
+nobody asked it for, in a system whose first principle is that you cannot
+reach what you were not handed.
+
+**It hid because an ordinary line of text is longer than any index a writer
+holds**, so the transfer failed harmlessly and nothing looked wrong. The
+banner is the first thing that writes in short coloured runs - one, two,
+three characters - and every one of those is a valid index. The feature did
+not cause the bug; it was the first thing able to show it.
+
+The second return had no user: `con_request` chunks by `TEXT_MAX` and
+advances by `#piece`. It is gone, and the caller binds the result to a local
+so a future second return cannot do this again.
+
+`con: a write carries no capability` is the permanent test - a peer holding
+five capabilities writes texts of length 0 to 3 and the receiver asserts none
+came attached. Checked the only way that means anything: with the bug put
+back it fails, and under the bug all four writes transferred.
+
+### The terminal paints once per burst, not once per write
+
+`serve_console` drained non-blocking, so after answering a write it asked
+again before the child it had just woken could have been scheduled. Nothing
+was there, so it returned and repainted - one write, one full repaint, and a
+repaint ships the whole window as drawing commands in 1200-byte batches.
+Answering `n` writes with `n` repaints is about `n^2 / 11` round trips.
+
+Measured by counting the banner's own blue every half second: **24.0 seconds
+to draw twenty-three lines**, at about 950 pixels a second, with the
+processor idle throughout - none of it was work. `receive_raw` already took a
+timeout and this was not using it. Afterwards the banner is complete before
+the window is first visible, with the same 23,136 pixels at the end.
+
+### A display check that was passing for the wrong reason
+
+`check_terminal` sampled its "before" ink the moment the window opened -
+while the banner was still painting - so ink in its box climbed by hundreds
+whether or not anything else ran, and the assertion was satisfied by the
+banner arriving rather than by `hello` printing. It passed for as long as the
+terminal was slow and failed the day it got fast, which is how the capability
+leak surfaced at all. It now empties the window first.
+
+**Worth keeping as a lesson about tests rather than about terminals**: the
+check had been green for its whole life while the thing it named was broken.
+
+### Still open
+
+**`ipc_error` cannot say which resource ran out.** `sys.endpoint()` failing
+reports `out of endpoints or capability slots`, one message for two very
+different exhaustions - a global pool of 96 and a per-thread table of 32.
+That cost two builds during the hunt above, and the fix is to split the code.
+
 ### The audio ring carries a position, and a frame is the only honest unit
 
 `frames_played` in `struct audio_ring`: a 64-bit count of the frames of *that*

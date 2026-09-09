@@ -969,10 +969,20 @@ local function new_namespace()
   -- One exchange, with the reply decoded and the error turned back into a
   -- sentence. Every operation below is this plus a shape.
   local function con_call(con, capability, code, text, ticks, colour)
-    local raw, why = sys.call_raw(capability,
-                                  con.encode_request{ op = code, text = text,
-                                                      ticks = ticks or 0,
-                                                      colour = colour or 0 })
+    --
+    -- **Bound to a local, and that is not a style preference.**
+    --
+    -- A call in final argument position expands to all its return values, so
+    -- passing `con.encode_request{...}` straight in made its *second* return
+    -- the third argument of `call_raw` - which is `pass`, the capability to
+    -- send with the message. See the note in `con_kosmos.c`: it gave one of
+    -- this program's capabilities away on every short write.
+    --
+    local bytes = con.encode_request{ op = code, text = text,
+                                      ticks = ticks or 0,
+                                      colour = colour or 0 }
+
+    local raw, why = sys.call_raw(capability, bytes)
 
     if not raw then return nil, tostring(why) end
 

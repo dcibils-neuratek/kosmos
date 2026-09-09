@@ -107,10 +107,35 @@ static int l_encode_request(lua_State *L)
 
     lua_pushlstring(L, (const char *)&req, sizeof(req));
 
-    /* How much of the string was taken, so a caller splitting a long write
-     * knows where to carry on from. */
-    lua_pushinteger(L, (lua_Integer)req.length);
-    return 2;
+    /*
+     * **One value, and the second one cost an evening.**
+     *
+     * This used to return the bytes *and* how much of the string was taken,
+     * on the grounds that a caller splitting a long write would want to know
+     * where to carry on from. No caller ever did - `con_request` chunks by
+     * `TEXT_MAX` and advances by `#piece` - so it was an unused return.
+     *
+     * It was not harmless. Lua expands a call in final argument position to
+     * *all* its return values, so
+     *
+     *     sys.call_raw(capability, con.encode_request{ ... })
+     *
+     * was really `sys.call_raw(capability, bytes, length)` - and `call_raw`'s
+     * third argument is `pass`, the capability to send along with the
+     * message. Every console write whose text was short enough to be a valid
+     * index handed one of the writer's own capabilities to whatever was
+     * behind `/dev/console`.
+     *
+     * A terminal ran out of capability slots after about eighty short writes
+     * and could no longer start a program. That is the visible half; the
+     * other half is that a program was giving its authority away, chosen by
+     * the length of what it printed.
+     *
+     * So: one value. The caller below also binds it to a local, because a
+     * function that returns one value today can return two tomorrow and
+     * nothing would complain.
+     */
+    return 1;
 }
 
 static int l_decode_reply(lua_State *L)

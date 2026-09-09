@@ -3224,6 +3224,13 @@ static bool test_cap_release_frees_slots(void)         { return luatest_role(35)
 static bool test_inflate_round_trip(void)              { return luatest_role(36); }
 static bool test_pdf_scanner(void)                     { return luatest_role(37); }
 
+/*
+ * A console write must carry text and nothing else. The role spawns a writer
+ * holding five capabilities and asserts that four short writes arrive with
+ * none of them attached; see the note beside it for what used to happen.
+ */
+static bool test_console_write_carries_no_capability(void) { return luatest_role(38); }
+
 static bool test_shared_memory_is_freed_once(void)
 {
     size_t before = pmm_free_pages();
@@ -5144,6 +5151,7 @@ static const struct test tests[] = {
     { "cap: forty regions, made and released", test_cap_release_frees_slots },
     { "inflate: a stream from elsewhere",      test_inflate_round_trip },
     { "pdf: the scanner reads what it should", test_pdf_scanner },
+    { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
