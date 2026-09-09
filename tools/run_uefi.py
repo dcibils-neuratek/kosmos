@@ -85,12 +85,25 @@ def capture(iso, moments):
 
     shutil.copy(varsfd, writable)
 
+    #
+    # **As a USB stick, not as a CD**, and the difference is the whole
+    # point of this harness.
+    #
+    # `-cdrom` puts the image on the SATA controller and the firmware boots
+    # it as an optical device. Nothing on a ThinkPad does that: the image
+    # goes on a stick, the firmware finds it over xHCI with its own USB
+    # stack, and boots it as `UEFI QEMU USB HARDDRIVE`. Two different
+    # firmware paths to the same GRUB, and only one of them is the one that
+    # matters - which was worth finding out here rather than at the machine.
+    #
     cmd = [QEMU, "-M", "q35", "-m", "4G", "-no-reboot",
            "-vga", "std", "-display", "none", "-serial", "stdio",
            "-monitor", "unix:%s,server,nowait" % mon,
            "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=" + code,
            "-drive", "if=pflash,format=raw,unit=1,file=" + writable,
-           "-cdrom", iso]
+           "-device", "qemu-xhci,id=xhci",
+           "-drive", "if=none,id=stick,format=raw,file=" + iso,
+           "-device", "usb-storage,bus=xhci.0,drive=stick"]
 
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
@@ -262,6 +275,12 @@ def main():
     #    thing it should say is the virtual memory stage.
     check("[5/12]" in serial,
           "it did not reach the virtual memory stage on the serial line")
+
+    # And that the firmware really did take the USB path rather than
+    # falling back to something else that happened to work.
+    check("USB" in serial,
+          "the firmware did not boot this as a USB device, so the path a "
+          "stick takes is not the path this checked")
 
     # 6. And the pitch fact is about this machine rather than a guess. It
     #    read `7680 bytes a row, not 7680: padded` for a while, which is a

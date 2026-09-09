@@ -279,7 +279,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
      * Vector 9 joins it when userland arrives at M4.
      */
     if (index == 1) {
-        hal_irq_handle();
+        bool tick = hal_irq_handle();
 
         /*
          * **The machine's half of a tick belongs to one processor, and that
@@ -300,13 +300,21 @@ void trap_handler(unsigned index, struct trapframe *tf)
          * the two places that has to change, the other being the runqueue.
          */
         /*
-         * Every core, and it decides for itself what is its own.
+         * Every core, and it decides for itself what is its own - **but
+         * only when the tick is what fired.**
          *
          * `thread_tick` charges this core's idle or busy count and then
          * stops on any core but zero - the split is in the kernel, where the
          * knowledge of what is machine-wide lives, rather than here.
+         *
+         * The `if` is what the comment further down asked for on the day it
+         * was written: this board has four virtio devices raising lines as
+         * well as a timer, and each of those was charging a tick nobody had
+         * spent. `hal.h` has the account.
          */
-        thread_tick();
+        if (tick) {
+            thread_tick();
+        }
 
         if (this_cpu()->index != 0) {
             return;
@@ -390,7 +398,7 @@ void trap_handler(unsigned index, struct trapframe *tf)
 
 
         if (index == 9) {
-            hal_irq_handle();
+            bool tick = hal_irq_handle();
 
             /*
              * The same guard vector 1 has, and it was missing here.
@@ -409,7 +417,10 @@ void trap_handler(unsigned index, struct trapframe *tf)
              * would have caused does not exist yet.
              */
             if (this_cpu()->index != 0) {
-                thread_tick();
+                if (tick) {
+                    thread_tick();
+                }
+
                 die_if_killed();
                 return;
             }
@@ -425,7 +436,10 @@ void trap_handler(unsigned index, struct trapframe *tf)
                 thread_wake_sleepers_now();
             }
 
-            thread_tick();
+            if (tick) {
+                thread_tick();
+            }
+
             console_tick();
             die_if_killed();
             return;

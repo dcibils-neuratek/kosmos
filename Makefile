@@ -1874,6 +1874,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/uart.c \
              hal/pc/memory.c \
              hal/pc/pic.c \
+             hal/pc/apic.c \
+             hal/pc/irq_bind.c \
              hal/pc/timer.c \
              hal/pc/rtc.c \
              hal/pc/power.c \

@@ -472,6 +472,43 @@ def main():
               "the usable memory is not the region below the device window, "
               "so the board chose a block on the far side of the PCI hole")
 
+    #
+    # **Both interrupt controllers, because this machine has two and a
+    # laptop may have one.**
+    #
+    # Intel has been removing the legacy 8259 pair and the 8253 from
+    # UEFI-only platforms, and a kernel that hard-wired them gets no
+    # scheduler tick there - a boot that prints all twelve stages and then
+    # stops, with nothing else visibly wrong. So the controller is chosen at
+    # run time from what the firmware described, and `opt/kosmos/irq=pic`
+    # forces the other one.
+    #
+    # Checked because a fallback nobody runs is a fallback that rots, and
+    # the machine it would fail on is the one with least to debug with. q35
+    # has both, so both are exercised on every gate.
+    #
+    legacy = boot(image, None, 90.0,
+                  extra=("-fw_cfg", "name=opt/kosmos/irq,string=pic"))
+
+    check(legacy is not None and "kosmos>" in legacy,
+          "forced onto the 8259 pair, the machine did not reach a prompt")
+
+    if legacy:
+        check("8259" in legacy,
+              "the machine was forced onto the legacy pair and did not say "
+              "so; the boot log is the only instrument a laptop has")
+
+        check("PANIC" not in legacy,
+              "the legacy interrupt path panicked: "
+              + next((l.strip() for l in legacy.splitlines() if "PANIC" in l),
+                     "?"))
+
+    # And that the default took the other one, so the two checks above are
+    # about a path this machine is not otherwise using.
+    check("I/O APIC" in out,
+          "the default boot did not take the APIC, so this machine only "
+          "ever tests one of the two controllers")
+
     # And the sound, which is the one subsystem this board does not take
     # from virtio. `hal/pc/hda.c` says why an emulated Intel controller is
     # worth more here than an emulated virtio one: it is the same silicon

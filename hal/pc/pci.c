@@ -16,6 +16,7 @@
 
 #include "hal.h"
 #include "pci.h"
+#include "apic.h"
 #include "pc.h"
 #include "syscall.h"
 #include "hda.h"
@@ -31,6 +32,16 @@
 #define PCI_BAR0            0x10
 #define PCI_CLASS            0x08
 #define PCI_INTERRUPT_LINE  0x3C
+#define PCI_INTERRUPT_PIN   0x3D
+#define PCI_CAP_POINTER     0x34
+#define PCI_STATUS_REG      0x04
+#define PCI_STATUS_CAPS     (1u << 20)
+
+#define CAP_ID_MSI          0x05
+
+/* Message Control, at +2 into the capability. */
+#define MSI_ENABLE          (1u << 0)
+#define MSI_64BIT           (1u << 7)
 
 #define COMMAND_IO          (1u << 0)
 #define COMMAND_MEMORY      (1u << 1)
@@ -177,6 +188,45 @@ bool pci_find_class(uint8_t class, uint8_t subclass, unsigned from,
     return find(&want, from, out, found_at);
 }
 
+/*
+ * The line this device will actually arrive on.
+ *
+ * **Two different numbers depending on which controller is running, and
+ * that is the part with no shortcut.** The Interrupt Line register at 0x3C
+ * holds what the firmware assigned for the 8259 pair, and it is what the
+ * legacy path wants. Under an I/O APIC that register means nothing: the
+ * device's INTx pin goes to one of the chipset's four interrupt links, and
+ * which input those links land on is described in ACPI's `_PRT` - which is
+ * AML, and `acpi.h` says plainly that there is no interpreter here and
+ * there is not going to be one.
+ *
+ * So the standard PCIe arrangement is computed instead: the four pins are
+ * swizzled by device number so that the four functions of a slot do not all
+ * land on the same link, and the links occupy the four inputs above the
+ * sixteen legacy ones. `GSI = 16 + ((device + pin - 1) mod 4)`, which is
+ * what q35 implements and what the PCI Express specification's routing
+ * recommendation describes.
+ *
+ * **It is a convention rather than a promise**, and this is the one place
+ * in the APIC path that could be wrong on a machine nobody has tried. A
+ * board that routes differently would give a device that never interrupts -
+ * which is why `hal_irq_describe` says which controller is running, and why
+ * `opt/kosmos/irq=pic` exists to put a machine back on the legacy path
+ * without a rebuild.
+ */
+static uint8_t interrupt_of(uint8_t bus, uint8_t slot, uint8_t fn)
+{
+    uint32_t word = pci_config_read(bus, slot, fn, PCI_INTERRUPT_LINE);
+    uint8_t line = (uint8_t)(word & 0xFF);
+    uint8_t pin = (uint8_t)((word >> 8) & 0xFF);
+
+    if (!pc_irq_on_apic() || pin == 0 || pin > 4) {
+        return line;            /* the legacy path, or a device with no pin */
+    }
+
+    return (uint8_t)(16u + ((slot + pin - 1u) & 3u));
+}
+
 static bool find(const struct match *want, unsigned from,
                  struct pci_device *out, unsigned *found_at)
 {
@@ -240,11 +290,8 @@ static bool find(const struct match *want, unsigned from,
                 out->function = (uint8_t)fn;
                 out->vendor   = v;
                 out->device   = d;
-                out->irq      = (uint8_t)(pci_config_read((uint8_t)bus,
-                                                          (uint8_t)slot,
-                                                          (uint8_t)fn,
-                                                          PCI_INTERRUPT_LINE)
-                                          & 0xFF);
+                out->irq      = interrupt_of((uint8_t)bus, (uint8_t)slot,
+                                             (uint8_t)fn);
                 read_bars(out);
 
                 if (found_at != NULL) {
@@ -259,7 +306,121 @@ static bool find(const struct match *want, unsigned from,
     return false;
 }
 
-void pci_enable(const struct pci_device *dev)
+/*
+ * The vectors an MSI may be delivered on, and why they are a range of their
+ * own.
+ *
+ * Inputs 16 to 19 of the I/O APIC are the chipset's four PCI links and are
+ * reached by the swizzle in `interrupt_of`; these are above them. Both
+ * arrangements exist at once because both are needed: a device with no MSI
+ * capability still has to arrive somehow, and a chipset's own integrated
+ * devices are exactly the ones whose link routing only AML describes.
+ */
+#define MSI_IRQ_FIRST   20u
+#define MSI_IRQ_LAST    23u
+
+static unsigned next_msi = MSI_IRQ_FIRST;
+
+/*
+ * Switches a device to Message Signalled Interrupts.
+ *
+ * **An MSI is not a wire.** The device writes a word to an address, and the
+ * address is the local APIC's - so the interrupt arrives with a vector this
+ * kernel chose, at a processor this kernel named, with nothing in between.
+ * There is no routing table to consult, no `_PRT` in AML to interpret, and
+ * no line shared with three other devices that each have to be asked
+ * whether it was theirs.
+ *
+ * That last part is why this is the answer rather than a shortcut. The
+ * I/O APIC path needs to know which of the chipset's four interrupt links a
+ * device's pin lands on, and on an integrated device - the HDA controller
+ * being exactly one - that is described only in AML. `acpi.h` says there is
+ * no interpreter here. With MSI the question does not arise.
+ *
+ * Address and data, from the Intel SDM volume 3 §11.11: the address is
+ * 0xFEE00000 with the destination's local APIC id in bits 19:12, and the
+ * data is the vector, delivered as a fixed edge-triggered interrupt.
+ *
+ * False when the device has no MSI capability, when the APIC is not what
+ * this machine is driving, or when the vectors have run out - and in every
+ * one of those cases the caller keeps the line it already had.
+ */
+static bool msi_enable(struct pci_device *dev)
+{
+    uint8_t at;
+    unsigned guard;
+    unsigned irq;
+
+    if (!pc_irq_on_apic() || next_msi > MSI_IRQ_LAST) {
+        return false;
+    }
+
+    if ((pci_config_read(dev->bus, dev->slot, dev->function, PCI_STATUS_REG)
+         & PCI_STATUS_CAPS) == 0) {
+        return false;           /* no capability list at all */
+    }
+
+    at = (uint8_t)(pci_config_read(dev->bus, dev->slot, dev->function,
+                                   PCI_CAP_POINTER) & 0xFC);
+
+    /* Bounded: a capability list is a linked list in memory a device
+     * controls, and a loop in it would be a hang at boot. */
+    for (guard = 0; at != 0 && guard < 48u; guard++) {
+        uint32_t head = pci_config_read(dev->bus, dev->slot, dev->function,
+                                        at);
+
+        if ((head & 0xFF) == CAP_ID_MSI) {
+            break;
+        }
+
+        at = (uint8_t)((head >> 8) & 0xFC);
+    }
+
+    if (at == 0 || guard >= 48u) {
+        return false;
+    }
+
+    irq = next_msi;
+
+    {
+        uint32_t control = pci_config_read(dev->bus, dev->slot, dev->function,
+                                           at);
+        uint16_t message = (uint16_t)(control >> 16);
+        uint32_t address = 0xFEE00000u | ((uint32_t)apic_id() << 12);
+        uint32_t data = PC_IRQ_BASE + irq;
+
+        pci_config_write(dev->bus, dev->slot, dev->function, at + 4, address);
+
+        /*
+         * Where the data word sits depends on whether the device can take a
+         * 64-bit address, because the upper half is only present when it
+         * can. Getting this wrong writes the vector into the address.
+         */
+        if ((message & MSI_64BIT) != 0) {
+            pci_config_write(dev->bus, dev->slot, dev->function, at + 8, 0);
+            pci_config_write(dev->bus, dev->slot, dev->function, at + 12, data);
+        } else {
+            pci_config_write(dev->bus, dev->slot, dev->function, at + 8, data);
+        }
+
+        /*
+         * One message, and enabled. Bits 6:4 are how many the device may
+         * use and are left at zero: a driver that wanted a vector per queue
+         * would ask for more, and none does.
+         */
+        message = (uint16_t)((message & ~(uint16_t)0x0070) | MSI_ENABLE);
+
+        pci_config_write(dev->bus, dev->slot, dev->function, at,
+                         (control & 0xFFFFu) | ((uint32_t)message << 16));
+    }
+
+    next_msi++;
+    dev->irq = (uint8_t)irq;
+
+    return true;
+}
+
+void pci_enable(struct pci_device *dev)
 {
     uint32_t command = pci_config_read(dev->bus, dev->slot, dev->function,
                                        PCI_COMMAND);
@@ -274,6 +435,12 @@ void pci_enable(const struct pci_device *dev)
     command &= ~(uint32_t)COMMAND_IO;
 
     pci_config_write(dev->bus, dev->slot, dev->function, PCI_COMMAND, command);
+
+    /*
+     * And an MSI if this machine and this device can both do one. `dev->irq`
+     * changes when it can, which is the whole reason this takes a pointer.
+     */
+    (void)msi_enable(dev);
 }
 
 /*

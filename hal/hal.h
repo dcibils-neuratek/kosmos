@@ -180,7 +180,36 @@ void hal_timer_init_here(void);
  * is such a board, because a PC's answer is the local APIC.
  */
 void hal_cpu_wake(unsigned cpu);
-void hal_irq_handle(void);
+/*
+ * Serves whatever interrupt arrived, and answers **whether that was the
+ * tick**.
+ *
+ * The board is the only thing that knows: `arch/` sees one vector for every
+ * hardware interrupt, on purpose, so that it does not have to know what a
+ * PIC or a GIC is.
+ *
+ * **Both trap handlers assumed the answer was always yes**, and both said
+ * so in a comment that named the day it would stop being true - "the timer
+ * is the only interrupt source, so every IRQ is a tick; when there is a
+ * second, hal_irq_handle has to say which one fired rather than this
+ * assuming." There is a second, and a third: a keyboard, a sound controller
+ * asking for a period 172 times a second, a network card. Every one of them
+ * was charging the scheduler a tick it had not spent - shortening quanta,
+ * inflating the busy and idle counts every processor meter reads, and
+ * running a full scan of the thread table for sleepers whose deadlines had
+ * not moved.
+ */
+bool hal_irq_handle(void);
+
+/*
+ * Which interrupt controller this machine turned out to have.
+ *
+ * A board with one answer returns a constant; a PC has two and chooses at
+ * boot - see `hal/pc/irq_bind.c`. In the boot log for `hal_fb_describe`'s
+ * reason: "no tick" looks the same whether the controller is missing, the
+ * line is routed to an input nothing is on, or the timer never counted.
+ */
+const char *hal_irq_describe(void);
 
 /* The tick source. hal_timer_init needs hal_irq_init first. */
 void hal_timer_init(unsigned hz);

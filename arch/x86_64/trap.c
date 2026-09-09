@@ -36,7 +36,7 @@
  * that says "this cannot happen", and it genuinely cannot until something
  * sends one.
  */
-#define IDT_ENTRIES  48
+#define IDT_ENTRIES  64
 #define IRQ_BASE     32
 
 /*
@@ -90,6 +90,12 @@ extern void isr38(void); extern void isr39(void); extern void isr40(void);
 extern void isr41(void); extern void isr42(void); extern void isr43(void);
 extern void isr44(void); extern void isr45(void); extern void isr46(void);
 extern void isr47(void);
+extern void isr48(void);  extern void isr49(void);  extern void isr50(void);
+extern void isr51(void);  extern void isr52(void);  extern void isr53(void);
+extern void isr54(void);  extern void isr55(void);  extern void isr56(void);
+extern void isr57(void);  extern void isr58(void);  extern void isr59(void);
+extern void isr60(void);  extern void isr61(void);  extern void isr62(void);
+extern void isr63(void);
 
 static void (*const stubs[IDT_ENTRIES])(void) = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
@@ -98,6 +104,8 @@ static void (*const stubs[IDT_ENTRIES])(void) = {
     isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
     isr32, isr33, isr34, isr35, isr36, isr37, isr38, isr39,
     isr40, isr41, isr42, isr43, isr44, isr45, isr46, isr47,
+    isr48, isr49, isr50, isr51, isr52, isr53, isr54, isr55,
+    isr56, isr57, isr58, isr59, isr60, isr61, isr62, isr63,
 };
 
 /*
@@ -282,7 +290,7 @@ void trap_handle(struct trapframe *f)
      * this file knew what a PIC is.
      */
     if (f->vector >= IRQ_BASE) {
-        hal_irq_handle();
+        bool tick = hal_irq_handle();
 
         /*
          * And what an interrupt *means*, which acknowledging it does not
@@ -306,17 +314,26 @@ void trap_handle(struct trapframe *f)
         }
 
         /*
-         * The timer is the scheduler's clock, and it is the only interrupt
-         * source unmasked, so every one of these is a tick. When there is a
-         * second, `hal_irq_handle` has to say which fired rather than this
-         * assuming.
+         * **Only when the tick is what fired**, which is what the board now
+         * answers rather than what this used to assume.
+         *
+         * The comment here said the timer was the only unmasked source, so
+         * every interrupt was a tick, and named the day that would stop
+         * being true. It stopped: a keyboard, a sound controller asking for
+         * a period 172 times a second, a network card. Each of those was
+         * charging a tick nobody had spent - shortening quanta, inflating
+         * the busy and idle counts every processor meter reads, and sending
+         * core zero through a full scan of the thread table for sleepers
+         * whose deadlines had not moved.
          *
          * `thread_tick` only records what the policy wants; the switch
          * happens on the way out. `die_if_killed` is what a process that
          * was killed while it ran passes through, and it must come after
          * both - there is nothing to reschedule once it is gone.
          */
-        thread_tick();
+        if (tick) {
+            thread_tick();
+        }
         console_tick();
 
         if (f->cs & 3) {
@@ -441,5 +458,6 @@ void trap_handle(struct trapframe *f)
 
 const char *trap_describe(void)
 {
-    return "48 gates in an IDT: 32 exceptions and 16 interrupts";
+    return "64 gates in an IDT: 32 exceptions, 24 interrupt lines "
+           "and the local APIC's spurious vector";
 }

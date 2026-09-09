@@ -428,6 +428,94 @@ harness reads that line. Verified by reinstating the fault: with
 `hal_fb_early` returning false the check fails, and it is the only one that
 does.
 
+### `hal/pc/apic.c` - the controller a machine built this decade has
+
+**The 8259 pair is from 1981 and may not be there.** Intel has been removing
+the legacy PIC and the 8253 from UEFI-only platforms, and a kernel driving
+only those gets no scheduler tick on such a machine - which presents as a
+boot that prints all twelve stages and then stops, with nothing else visibly
+wrong. That was the one failure on this target with no workaround: writing
+an APIC driver with the laptop sitting idle is a day's work.
+
+Both exist now and neither is chosen at build time. `irq_bind.c` asks ACPI
+whether this machine described an I/O APIC and takes that path when it did.
+`opt/kosmos/irq=pic` forces the other, so **both are exercised on every
+gate** rather than the fallback rotting until the first old machine.
+
+```
+-> 250 Hz off the local APIC's own timer, calibrated against the 8253
+-> interrupts: an I/O APIC and the local APIC's own timer
+
+-> 250 Hz off the 8253 through a pair of 8259s
+-> interrupts: a pair of 8259s, remapped clear of the exceptions
+```
+
+**MSI is the answer to a problem with no other one.** Under the 8259 a
+device's Interrupt Line register says which line it uses. Under an I/O APIC
+that register means nothing: the pin goes to one of the chipset's four
+interrupt links, and which input those land on is described in ACPI's
+`_PRT` - **which is AML**, and `acpi.h` says there is no interpreter here.
+The standard PCIe swizzle was tried first and is right for slots and wrong
+for a chipset's own integrated devices, which is exactly what the HDA
+controller is. With MSI the question does not arise: the device writes a
+word to the local APIC's address, with a vector this kernel chose, at a
+processor this kernel named. No routing table, no interpreter, and no line
+shared with three other devices that each have to be asked whether it was
+theirs.
+
+**And an ordering bug underneath it, which is the interesting half.**
+`pci_enable` switches a device to MSI where it can, and that is only
+possible on the APIC path - so it asks which controller is running. It was
+asking at stage seven and the controller was not decided until stage eleven,
+so every device was told *no*, took a line the I/O APIC was not routing, and
+the tone played for three times its length because nothing ever retired a
+period. The binding decides on first use now.
+
+**Reordering the boot was the other answer and the worse one.** The display
+exists at stage six precisely so that a failure after it is visible on a
+machine with no serial port, and moving the riskiest new code ahead of the
+only instrument there is would be the wrong trade.
+
+**What this unblocks.** `hal/pc/cpu_on.c` has refused to start a second
+processor because a processor is started by sending INIT and two STARTUP
+inter-processor interrupts *through the local APIC*, and there was not one.
+There is now. This machine has eight cores and Kosmos uses one.
+
+### ACPI is invisible under UEFI, and that is the next thing to fix
+
+**Measured, and it corrects something written above.** The same image, the
+same machine, four processors, booted two ways:
+
+```
+UEFI, through GRUB:   -> 1 processor
+                      -> interrupts: a pair of 8259s
+
+BIOS, through -kernel: -> 4 processors
+                      -> interrupts: an I/O APIC and the local APIC's own timer
+```
+
+`find_rsdp` looks in the two places a BIOS leaves the pointer: the word at
+0x40E that names the Extended BIOS Data Area, and the read-only area from
+0xE0000. **Both are legacy conventions.** UEFI hands the RSDP to the loader
+in the EFI Configuration Table and is not obliged to leave a copy anywhere a
+scan would find it. OVMF does not.
+
+So on the machine this target exists for, booted the way it will actually
+boot, Kosmos gets no processor count, no ECAM, and **no APIC** - falling
+back to the legacy chips that may not be there. That is precisely the hang
+the APIC was written to prevent, arriving by a different door.
+
+**This section previously said a Multiboot 2 header was "not needed at
+all".** That was right about booting and wrong about everything after it.
+Multiboot 1 has no way to carry an RSDP; Multiboot 2 has a tag for exactly
+this - two of them, one per ACPI revision - and GRUB fills them in from the
+firmware it was launched by.
+
+It is the next thing to build, and it is not large: a second header beside
+the first, a different information structure to walk, and `multiboot2`
+rather than `multiboot` in the generated `grub.cfg`. The image can carry
+both headers and let the loader pick.
+
 ### The boot log stopped naming the wrong driver
 
 `kernel/main.c` printed `keyboard: virtio-input, negotiated and polled like
@@ -557,14 +645,14 @@ works, and not before.
 
 | | | rough size |
 |---|---|---|
-| ~~Multiboot2 header, or a UEFI stub~~ | **not needed at all**: GRUB under UEFI boots a Multiboot 1 kernel, proven under OVMF | none |
+| **Multiboot 2** | **needed after all**, and it is the next thing: not to boot - Multiboot 1 boots fine under UEFI - but because ACPI cannot be found without it | ~300 |
 | Framebuffer from the loader's boot information | **written and proven end to end** under GRUB + OVMF; 14 host checks and 7 boot checks | done |
 | i8042 keyboard | **in the build**, exercised by the display harness | done |
 | More than a gigabyte of RAM | **fixed**: 4 GB of boot page tables, and the low region chosen by what can be mapped | done |
 | A bootable stick | **`make x86-iso`**, hybrid GRUB image | done |
 | i8042 auxiliary port | written, does not deliver under QEMU | blocked, §6 |
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
-| Local APIC / IOAPIC / MSI | new | ~600 |
+| ~~Local APIC / IOAPIC / MSI~~ | **written and in the build**, both paths chosen at run time and both tested | done |
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |
 | NVMe | new | ~800 |
 | Intel I219, which is the e1000e family | new | ~1500 |

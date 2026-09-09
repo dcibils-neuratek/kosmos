@@ -638,6 +638,11 @@ void kmain(void)
     kputu(TICK_HZ);
     kputs(" Hz off ");
     kputs(hal_timer_describe());
+    boot_fact_end();
+
+    boot_fact_begin();
+    kputs("interrupts: ");
+    kputs(hal_irq_describe());
     kputs(", scheduling ");
     kputs(sched_current()->name);
     boot_fact_end();

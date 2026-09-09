@@ -75,6 +75,7 @@ struct madt {
 } __attribute__((packed));
 
 #define MADT_LAPIC      0u
+#define MADT_OVERRIDE   2u
 #define MADT_IOAPIC     1u
 #define MADT_LAPIC_X2   9u
 
@@ -94,6 +95,16 @@ static unsigned cpus;
 static uint64_t lapic;
 static uint64_t ioapic;
 static uint64_t ecam;
+
+/*
+ * Sixteen is every ISA line there is, so a table that size cannot overflow
+ * on a well-formed machine - and a malformed one stops at the edge rather
+ * than writing past it.
+ */
+#define OVERRIDE_MAX 16
+
+static struct acpi_override overrides[OVERRIDE_MAX];
+static unsigned override_count;
 
 /*
  * A table is what it says it is when its bytes sum to zero.
@@ -250,6 +261,19 @@ static void read_madt(const struct madt *m)
             if ((flags & (LAPIC_ENABLED | LAPIC_ONLINE)) != 0) {
                 cpus++;
             }
+        } else if (type == MADT_OVERRIDE && length >= 10
+                   && override_count < OVERRIDE_MAX) {
+            struct acpi_override *o = &overrides[override_count];
+            uint32_t gsi;
+            uint16_t flags;
+
+            memcpy(&gsi, at + 4, sizeof(gsi));
+            memcpy(&flags, at + 8, sizeof(flags));
+
+            o->source = at[3];
+            o->gsi = gsi;
+            o->flags = flags;
+            override_count++;
         } else if (type == MADT_IOAPIC && length >= 12 && ioapic == 0) {
             uint32_t address;
 
@@ -331,7 +355,23 @@ static void walk(uintptr_t address, bool wide)
 
 bool acpi_init(void)
 {
-    const struct rsdp *r = find_rsdp();
+    const struct rsdp *r;
+
+    /*
+     * Idempotent, because there are two callers now and neither can know
+     * whether it is first: `cpus.c` wants the processor count and `apic.c`
+     * wants the controller addresses, and which runs first depends on the
+     * board's boot order rather than on anything either of them decides.
+     *
+     * Without this the second call walks the MADT again and counts every
+     * processor twice, which is a machine that reports eight cores and has
+     * four.
+     */
+    if (found) {
+        return true;
+    }
+
+    r = find_rsdp();
 
     if (r == NULL) {
         return false;
@@ -368,6 +408,21 @@ uint64_t acpi_lapic_base(void)
 uint64_t acpi_ioapic_base(void)
 {
     return ioapic;
+}
+
+unsigned acpi_overrides(struct acpi_override *out, unsigned max)
+{
+    unsigned i;
+
+    if (!found) {
+        return 0;
+    }
+
+    for (i = 0; i < override_count && i < max; i++) {
+        out[i] = overrides[i];
+    }
+
+    return i;
 }
 
 uint64_t acpi_ecam_base(void)

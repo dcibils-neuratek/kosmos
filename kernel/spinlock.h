@@ -80,6 +80,8 @@ struct spinlock {
  */
 #define SPIN_GIVE_UP    10000000UL
 
+#include "panic.h"
+
 void spin_panic(const struct spinlock *lock);
 
 /*
@@ -93,6 +95,15 @@ static inline unsigned long spin_lock(struct spinlock *lock)
 {
     unsigned long flags = cpu_interrupts_save();
     unsigned long spins;
+
+    /*
+     * A machine that is halting takes no locks. `panic.h` says why, and it
+     * is not a nicety: the panic worth printing most is the one raised
+     * inside a console write, and that one owns the console lock already.
+     */
+    if (panicking()) {
+        return flags;
+    }
 
     for (spins = 0; spins < SPIN_GIVE_UP; spins++) {
         if (cpu_lock_try(&lock->locked)) {
@@ -109,6 +120,13 @@ static inline unsigned long spin_lock(struct spinlock *lock)
 
 static inline void spin_unlock(struct spinlock *lock, unsigned long flags)
 {
+    /* Nothing was taken, so there is nothing to give back - and releasing a
+     * lock this processor does not hold would be worse than holding it. */
+    if (panicking()) {
+        cpu_interrupts_restore(flags);
+        return;
+    }
+
     lock->holder = SPIN_NOBODY;
     cpu_lock_release(&lock->locked);
     cpu_interrupts_restore(flags);

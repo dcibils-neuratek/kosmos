@@ -3,8 +3,28 @@
 #include "panic.h"
 #include "console.h"
 
+/*
+ * Set once, never cleared: there is no coming back from here, and a second
+ * core arriving in `panic` must find it already true rather than race to
+ * set it.
+ */
+static volatile bool in_panic;
+
+bool panicking(void)
+{
+    return in_panic;
+}
+
 void panic(const char *msg)
 {
+    /*
+     * **Before anything that could take a lock**, which is everything
+     * below. `panic.h` has the account: a fault inside a console write
+     * holds the console lock, and a panic that waits for it deadlocks
+     * against its own caller.
+     */
+    in_panic = true;
+
     /*
      * The screen back, whatever had it.
      *

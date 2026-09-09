@@ -73,10 +73,18 @@ bool pci_find(uint16_t vendor, uint16_t device, unsigned from,
 bool pci_find_class(uint8_t class, uint8_t subclass, unsigned from,
                     struct pci_device *out, unsigned *found_at);
 
-/* Turns on the two bits a driver needs before a BAR means anything: memory
+/*
+ * Turns on the two bits a driver needs before a BAR means anything: memory
  * space decoding, and bus mastering so the device may fetch its own
  * descriptors. Off out of reset, and a device with them off is one that
- * answers nothing and blames nobody. */
-void pci_enable(const struct pci_device *dev);
+ * answers nothing and blames nobody.
+ *
+ * **And switches the device to MSI where it can**, which is why `dev` is
+ * no longer const: `dev->irq` afterwards is the number the device will
+ * actually interrupt on, and with MSI that is a vector this kernel chose
+ * rather than a line the firmware assigned. A driver that copies `irq`
+ * before calling this gets the wrong one.
+ */
+void pci_enable(struct pci_device *dev);
 
 #endif /* HAL_PC_PCI_H */

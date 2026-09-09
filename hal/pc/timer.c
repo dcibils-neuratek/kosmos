@@ -13,10 +13,12 @@
  * everyone remembers came from.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "cpu.h"
 #include "hal.h"
+#include "apic.h"
 #include "pc.h"
 
 #define PIT_CHANNEL0   0x40
@@ -28,6 +30,9 @@
 #define PIT_SETUP      0x36
 
 static volatile unsigned long ticks;
+
+/* Which chip is producing them, for the boot log. */
+static bool on_apic_timer;
 
 /*
  * How fast the cycle counter runs, measured against the one clock on this
@@ -66,6 +71,55 @@ static uint64_t rdtsc(void)
     __asm__ volatile("lfence; rdtsc" : "=a"(lo), "=d"(hi));
 
     return ((uint64_t)hi << 32) | lo;
+}
+
+/*
+ * A busy wait of some milliseconds, on the 8253's channel two.
+ *
+ * **The one clock that is running before any other is trusted.** Channel
+ * two is the one wired to the speaker rather than to an interrupt line, so
+ * it can be started and watched without disturbing anything - which is why
+ * `calibrate` below has always used it to measure the TSC, and why the
+ * local APIC's timer is measured against it too.
+ *
+ * The divisor is sixteen bits, so at 1.193 MHz this tops out around 54 ms.
+ * Nothing asks for more; a caller that did would get a shorter wait than it
+ * wanted, so the argument is clamped rather than silently wrapped.
+ */
+void pc_timer_wait_ms(unsigned ms)
+{
+    uint32_t divisor;
+    uint8_t gate;
+    unsigned spins;
+
+    if (ms == 0) {
+        return;
+    }
+
+    if (ms > 50u) {
+        ms = 50u;
+    }
+
+    divisor = (PIT_HZ * ms) / 1000u;
+
+    pc_out8(PIT_COMMAND, 0xB0);         /* channel 2, mode 0, binary */
+    pc_out8(PIT_CHANNEL2, (uint8_t)(divisor & 0xFF));
+    pc_out8(PIT_CHANNEL2, (uint8_t)(divisor >> 8));
+
+    gate = (uint8_t)(pc_in8(PIT_GATE2) & ~(GATE2_ON | SPEAKER_ON));
+    pc_out8(PIT_GATE2, gate);
+    pc_out8(PIT_GATE2, (uint8_t)(gate | GATE2_ON));
+
+    /* Bounded for `calibrate`'s reason: a channel that never reaches
+     * terminal count is a machine with an unknown counter, not a machine to
+     * hang on. */
+    for (spins = 0; spins < 10000000u; spins++) {
+        if ((pc_in8(PIT_GATE2) & OUT2_HIGH) != 0) {
+            break;
+        }
+    }
+
+    pc_out8(PIT_GATE2, gate);
 }
 
 static uint64_t calibrate(void)
@@ -117,6 +171,34 @@ void hal_timer_init(unsigned hz)
 
     if (hz == 0) {
         hz = 100;
+    }
+
+    /*
+     * **The local APIC's own timer, when this machine is driving one.**
+     *
+     * The 8253 is one counter for a whole machine; the local APIC has one
+     * inside every processor, which is what a per-core scheduler tick
+     * needs and what `docs/smp.md` has been waiting for on this
+     * architecture. It is also the only tick a platform that has dropped
+     * the legacy chips can offer at all.
+     *
+     * Calibrated against the 8253 rather than computed, because nothing
+     * says how fast the bus clock it counts is - the same reason the TSC
+     * below is calibrated rather than read from a table. The PIT is still
+     * running at this point; `irq_bind.c` masks the 8259 pair, which is a
+     * different chip from the counter.
+     *
+     * Falling through on failure is deliberate: a local APIC whose timer
+     * did not count is a machine that still has a PIT, and a slower tick
+     * is better than none.
+     */
+    if (pc_irq_on_apic() && apic_timer_init(hz)) {
+        on_apic_timer = true;
+
+        /* The cycle counter still wants measuring, and against the same
+         * channel two, which the APIC's calibration has finished with. */
+        cpu_set_counter_hz(calibrate());
+        return;
     }
 
     divisor = PIT_HZ / hz;
@@ -198,5 +280,7 @@ void pc_timer_interrupt(void)
 
 const char *hal_timer_describe(void)
 {
-    return "the 8253 through a pair of 8259s";
+    return on_apic_timer
+         ? "the local APIC's own timer, calibrated against the 8253"
+         : "the 8253 through a pair of 8259s";
 }

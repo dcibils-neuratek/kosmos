@@ -255,6 +255,31 @@ wants real hardware.
 was destroyed by a `grep` that kept only the summary line. Recorded as
 intermittent rather than fixed, because nothing fixed it.
 
+**A tick charged by every interrupt, fixed without a test that catches it.**
+Both trap handlers called `thread_tick` on every hardware interrupt, on the
+grounds that the timer was the only source - and both said in a comment that
+this would stop being true. It did: a keyboard, a sound controller asking
+for a period 172 times a second, a network card. Each charged a tick nobody
+had spent, which shortens quanta, inflates the busy and idle counts every
+processor meter reads, and sends core zero through a full scan of the thread
+table for sleepers whose deadlines have not moved.
+
+`hal_irq_handle` answers whether the tick fired now, and all four call sites
+across the two architectures are gated on it.
+
+**What is missing is a check that would have caught it**, and the first
+attempt did not: `idle + busy <= hal_ticks()` passed with the bug
+deliberately reinstated, because the guest suite's machine raises almost no
+device interrupts and there was nothing for the invariant to notice. It was
+removed rather than kept - a check that cannot fail is worse than none.
+
+The test wants two things this system does not have yet: a **scheduler tick
+count exposed to userland** beside `idle_ticks` and `busy_ticks`, and a
+moment when the machine is under **device load**. Both exist separately -
+`run_x86.py` already boots `audiolag`, which drives 400 HDA interrupts
+through the machine - so the check is one `sysinfo` field away from being
+real.
+
 **Three framebuffer checks failed once on x86-64, and the run ended in a
 page fault.** September 2026, in a `make prepush` on 0.10.13. Recorded in
 full, because the entry above it is a lesson about not doing that:

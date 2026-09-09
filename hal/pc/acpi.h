@@ -43,6 +43,28 @@ uint64_t acpi_lapic_base(void);
 uint64_t acpi_ioapic_base(void);
 
 /*
+ * Where an ISA interrupt actually arrives on the I/O APIC.
+ *
+ * **The one part of routing that cannot be assumed.** The sixteen legacy
+ * lines are wired to the first sixteen I/O APIC inputs on most machines and
+ * on almost none of them exactly: the timer is the usual exception, wired
+ * to input 2 while the world calls it IRQ 0, and firmware announces every
+ * such difference as an override entry in the MADT.
+ *
+ * A machine with no overrides is one where the identity mapping is right.
+ * A machine whose timer is overridden and whose driver ignored it is a
+ * machine with no scheduler tick, which on a laptop looks like a boot that
+ * stops after the last stage and never reaches a prompt.
+ */
+struct acpi_override {
+    uint8_t  source;            /* the ISA IRQ everyone names it by */
+    uint32_t gsi;               /* the input it is really on */
+    uint16_t flags;             /* polarity in 1:0, trigger in 3:2 */
+};
+
+unsigned acpi_overrides(struct acpi_override *out, unsigned max);
+
+/*
  * PCIe configuration space, from MCFG, or 0 when the firmware did not say.
  *
  * The difference this makes is not speed. Port 0xCF8 reaches 256 bytes of

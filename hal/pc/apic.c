@@ -1,0 +1,432 @@
+/* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+/*
+ * See `apic.h` for what these two chips are and why both paths exist.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "acpi.h"
+#include "apic.h"
+#include "hal.h"
+#include "mmio.h"
+#include "mmu.h"
+#include "pc.h"
+#include "virtio.h"
+
+/*------------------------------------------------------------------------
+ * The local APIC. Intel SDM volume 3, table 11-1.
+ *----------------------------------------------------------------------*/
+
+#define LAPIC_ID            0x020
+#define LAPIC_VERSION       0x030
+#define LAPIC_TPR           0x080   /* task priority: 0 accepts everything */
+#define LAPIC_EOI           0x0b0
+#define LAPIC_SVR           0x0f0   /* spurious vector, and the enable bit */
+#define LAPIC_ISR           0x100   /* eight registers, 16 bytes apart */
+#define LAPIC_ESR           0x280
+#define LAPIC_LVT_TIMER     0x320
+#define LAPIC_TIMER_INIT    0x380
+#define LAPIC_TIMER_CURRENT 0x390
+#define LAPIC_TIMER_DIVIDE  0x3e0
+
+#define SVR_ENABLE          (1u << 8)
+
+#define LVT_MASKED          (1u << 16)
+#define LVT_PERIODIC        (1u << 17)
+
+/*
+ * Divide by sixteen, which is the encoding's awkwardness rather than a
+ * choice: the field is three bits split across bits 3 and 1:0, so 0b1011 is
+ * "by one" and 0b0011 is "by sixteen". Sixteen keeps the count inside 32
+ * bits on a fast processor - a 4 GHz bus at 100 Hz would overflow at "by
+ * one" - and costs nothing, because the tick is calibrated rather than
+ * computed.
+ */
+#define TIMER_DIVIDE_16     0x3u
+
+/*
+ * The vector the processor raises when an interrupt is withdrawn between
+ * being sent and being taken.
+ *
+ * 0x3F rather than a tidier number: some processors require the low four
+ * bits of this field to be set, and 0x3F is the highest vector the IDT
+ * reaches. It has a stub and a gate like any other, and `apic_handle`
+ * recognises it by there being nothing in service.
+ */
+#define SPURIOUS_VECTOR     0x3fu
+
+/*------------------------------------------------------------------------
+ * The I/O APIC. 82093AA datasheet, section 3.2.
+ *
+ * Two registers rather than a register file: write an index to the select
+ * window and the data appears in the other. Every entry is 64 bits and is
+ * therefore two of these.
+ *----------------------------------------------------------------------*/
+
+#define IOAPIC_SELECT       0x00
+#define IOAPIC_WINDOW       0x10
+
+#define IOAPIC_REG_VERSION  0x01
+#define IOAPIC_REG_ENTRY    0x10    /* entry n is 0x10 + 2n */
+
+#define ENTRY_MASKED        (1u << 16)
+#define ENTRY_LEVEL         (1u << 15)
+#define ENTRY_ACTIVE_LOW    (1u << 13)
+
+/*
+ * The first vector an interrupt line raises, and it is `PC_IRQ_BASE`
+ * because the 8259 path already put IRQ n at 32 + n. Keeping them the same
+ * means the IDT, the stubs and everything in `trap.c` do not know or care
+ * which controller is running.
+ */
+#define VECTOR_OF(irq)      (PC_IRQ_BASE + (irq))
+#define IRQ_OF(vector)      ((vector) - PC_IRQ_BASE)
+
+#define ISA_LINES           16u
+
+/* Kept in step with `pci.c`, which allocates them. */
+#define MSI_IRQ_FIRST       20u
+#define OVERRIDE_MAX        16u
+
+static struct {
+    bool      present;
+    uintptr_t lapic;
+    uintptr_t ioapic;
+    unsigned  id;               /* this processor's local APIC id */
+    unsigned  inputs;           /* how many the I/O APIC has */
+
+    struct acpi_override overrides[OVERRIDE_MAX];
+    unsigned  override_count;
+
+    unsigned  hz;
+} apic;
+
+static const char *description = "the 8259 pair, because ACPI described no "
+                                 "I/O APIC";
+
+static uint32_t lapic_read(unsigned reg)
+{
+    return mmio_read32(apic.lapic + reg);
+}
+
+static void lapic_write(unsigned reg, uint32_t value)
+{
+    mmio_write32(apic.lapic + reg, value);
+}
+
+static uint32_t ioapic_read(unsigned reg)
+{
+    mmio_write32(apic.ioapic + IOAPIC_SELECT, reg);
+
+    return mmio_read32(apic.ioapic + IOAPIC_WINDOW);
+}
+
+static void ioapic_write(unsigned reg, uint32_t value)
+{
+    mmio_write32(apic.ioapic + IOAPIC_SELECT, reg);
+    mmio_write32(apic.ioapic + IOAPIC_WINDOW, value);
+}
+
+/*
+ * Which I/O APIC input an ISA interrupt is really on, and how it is wired.
+ *
+ * The identity mapping is the default and the overrides are the exceptions
+ * the firmware announced. `acpi.h` has why this cannot be assumed: the
+ * timer is usually IRQ 0 to everybody and input 2 to the chipset, and a
+ * driver that programmed input 0 would unmask a line nothing is attached
+ * to and never see a tick.
+ */
+static unsigned input_of(unsigned irq, uint32_t *extra)
+{
+    unsigned i;
+
+    *extra = 0;
+
+    for (i = 0; i < apic.override_count; i++) {
+        if (apic.overrides[i].source != irq) {
+            continue;
+        }
+
+        /*
+         * Bits 1:0 are the polarity and 3:2 the trigger mode, each with 0
+         * meaning "whatever the bus normally does" - which for ISA is
+         * active high and edge triggered, so only the explicit values move
+         * anything.
+         */
+        if ((apic.overrides[i].flags & 0x3u) == 0x3u) {
+            *extra |= ENTRY_ACTIVE_LOW;
+        }
+
+        if (((apic.overrides[i].flags >> 2) & 0x3u) == 0x3u) {
+            *extra |= ENTRY_LEVEL;
+        }
+
+        return (unsigned)apic.overrides[i].gsi;
+    }
+
+    return irq;
+}
+
+void apic_unmask(unsigned irq)
+{
+    uint32_t extra;
+    unsigned input;
+
+    if (!apic.present) {
+        return;
+    }
+
+    /*
+     * Above the sixteen legacy lines the number *is* the input: those are
+     * the PCI links, computed by `pci.c` rather than named by firmware, and
+     * an override table only ever describes ISA sources.
+     *
+     * PCI is also level triggered and active low, where ISA is edge and
+     * active high - and a level-triggered line programmed as edge is an
+     * interrupt that arrives once and then never again, because nothing
+     * ever sees the transition a second time.
+     */
+    if (irq >= MSI_IRQ_FIRST) {
+        /*
+         * An MSI has nothing to unmask. The device writes to the local
+         * APIC directly, so there is no I/O APIC entry and no line - which
+         * is exactly why `pci.c` reaches for one where it can.
+         */
+        return;
+    }
+
+    if (irq >= ISA_LINES) {
+        input = irq;
+        extra = ENTRY_LEVEL | ENTRY_ACTIVE_LOW;
+    } else {
+        input = input_of(irq, &extra);
+    }
+
+    if (input >= apic.inputs) {
+        return;
+    }
+
+    /* The destination first, then the entry that becomes live - so the
+     * line is never briefly unmasked and aimed at processor zero by
+     * default on a machine where that is not this one. */
+    ioapic_write(IOAPIC_REG_ENTRY + input * 2 + 1, apic.id << 24);
+    ioapic_write(IOAPIC_REG_ENTRY + input * 2, VECTOR_OF(irq) | extra);
+}
+
+static void mask_everything(void)
+{
+    unsigned i;
+
+    for (i = 0; i < apic.inputs; i++) {
+        ioapic_write(IOAPIC_REG_ENTRY + i * 2, ENTRY_MASKED);
+        ioapic_write(IOAPIC_REG_ENTRY + i * 2 + 1, 0);
+    }
+}
+
+/*
+ * The vector currently being serviced, or zero.
+ *
+ * The in-service register is eight 32-bit words describing 256 vectors, and
+ * the highest bit set is the one the processor is in. Searched from the top
+ * because that is the one that interrupted; anything below it is a lower
+ * priority interrupt that has not been taken yet.
+ */
+static unsigned in_service(void)
+{
+    int word;
+
+    for (word = 7; word >= 0; word--) {
+        uint32_t bits = lapic_read(LAPIC_ISR + (unsigned)word * 0x10);
+
+        if (bits != 0) {
+            int bit;
+
+            for (bit = 31; bit >= 0; bit--) {
+                if ((bits & (1u << bit)) != 0) {
+                    return (unsigned)(word * 32 + bit);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+bool apic_handle(void)
+{
+    unsigned vector = in_service();
+    unsigned irq;
+    bool tick;
+
+    /*
+     * Nothing in service is the spurious interrupt, and it is the one case
+     * that must **not** be acknowledged: the processor withdrew it before
+     * it was taken, so there is no in-service bit to clear and an EOI would
+     * clear somebody else's.
+     */
+    if (vector < PC_IRQ_BASE) {
+        return false;
+    }
+
+    irq = IRQ_OF(vector);
+    tick = (irq == 0);
+
+    if (tick) {
+        pc_timer_interrupt();
+    } else {
+        /*
+         * Offered to every driver, exactly as the 8259 path does and for
+         * the same reason: PCI lines are shared, so the number narrows it
+         * and each device's own status register settles it.
+         */
+        input_interrupt(irq);
+        snd_interrupt(irq);
+        net_interrupt(irq);
+        blk_interrupt(irq);
+    }
+
+    lapic_write(LAPIC_EOI, 0);
+
+    return tick;
+}
+
+/*
+ * The tick, calibrated rather than computed.
+ *
+ * **The local APIC timer counts the bus clock, and nothing says how fast
+ * that is.** There is a CPUID leaf on recent processors and there is not on
+ * the ones this might meet, so the honest way is the way `timer.c` already
+ * calibrates the TSC: run the thing that is known against the thing that is
+ * not. The 8253 is still there at this point in the boot - it is what this
+ * is replacing, and it has not been silenced yet - so it is what the local
+ * APIC is measured against.
+ *
+ * A machine with no 8253 at all is the case this cannot serve, and it is
+ * the case that has not arrived: a platform that drops the PIT keeps the
+ * HPET, which is the next thing to measure against when one turns up.
+ */
+bool apic_timer_init(unsigned hz)
+{
+    uint32_t before, after, per_tick;
+
+    if (!apic.present || hz == 0) {
+        return false;
+    }
+
+    apic.hz = hz;
+
+    lapic_write(LAPIC_TIMER_DIVIDE, TIMER_DIVIDE_16);
+
+    /* Free-running from the top while the 8253 measures a known interval. */
+    lapic_write(LAPIC_LVT_TIMER, LVT_MASKED);
+    lapic_write(LAPIC_TIMER_INIT, 0xffffffffu);
+
+    before = lapic_read(LAPIC_TIMER_CURRENT);
+    pc_timer_wait_ms(10);
+    after = lapic_read(LAPIC_TIMER_CURRENT);
+
+    lapic_write(LAPIC_TIMER_INIT, 0);
+
+    if (before <= after) {
+        return false;               /* it did not count */
+    }
+
+    /* Ticks in ten milliseconds, scaled to the period asked for. */
+    per_tick = (before - after) * 100u / hz;
+
+    if (per_tick == 0) {
+        return false;
+    }
+
+    lapic_write(LAPIC_LVT_TIMER, VECTOR_OF(0) | LVT_PERIODIC);
+    lapic_write(LAPIC_TIMER_INIT, per_tick);
+
+    return true;
+}
+
+unsigned apic_id(void)
+{
+    return apic.id;
+}
+
+bool apic_present(void)
+{
+    return apic.present;
+}
+
+const char *apic_describe(void)
+{
+    return description;
+}
+
+bool apic_init(void)
+{
+    uint64_t lapic_base;
+    uint64_t ioapic_base;
+    uint32_t version;
+
+    /*
+     * **The tables are not parsed here, and that is not tidiness.**
+     *
+     * `find_rsdp` reads the word at 0x40E - the BIOS data area's pointer to
+     * the EBDA - and 0x40E is inside page 0, which `mmu_init` leaves
+     * unmapped on purpose so that a null dereference faults and says so.
+     * So ACPI can only be read *before* the kernel builds its own address
+     * space, and `hal/pc/cpus.c` does exactly that at the processor stage.
+     *
+     * Calling it again from here cost a page fault at stage eleven with
+     * `cr2` reading 0x40e, on the one boot path that matters - and it was
+     * only reached at all because the early parse had already failed and
+     * left nothing cached to short-circuit the second attempt.
+     */
+    lapic_base = acpi_lapic_base();
+    ioapic_base = acpi_ioapic_base();
+
+    /*
+     * **Either the firmware reported one or it did not.** No probing, no
+     * guessing at 0xFEC00000 because that is where it usually is: a machine
+     * that does not describe an I/O APIC in its MADT is a machine this must
+     * not program one on.
+     */
+    if (lapic_base == 0 || ioapic_base == 0) {
+        return false;
+    }
+
+    apic.lapic = mmu_map_device((uintptr_t)lapic_base, 0x1000);
+    apic.ioapic = mmu_map_device((uintptr_t)ioapic_base, 0x1000);
+
+    if (apic.lapic == 0 || apic.ioapic == 0) {
+        description = "an I/O APIC and no room in the device window to map it";
+        return false;
+    }
+
+    apic.override_count = acpi_overrides(apic.overrides, OVERRIDE_MAX);
+
+    /* Bits 23:16 of the version register are the highest input, so the
+     * count is one more than that. */
+    version = ioapic_read(IOAPIC_REG_VERSION);
+    apic.inputs = ((version >> 16) & 0xffu) + 1u;
+
+    if (apic.inputs == 0 || apic.inputs > 64u) {
+        description = "an I/O APIC that reported an impossible size";
+        return false;
+    }
+
+    apic.id = (lapic_read(LAPIC_ID) >> 24) & 0xffu;
+
+    apic.present = true;
+    mask_everything();
+
+    /* Accept every priority, and switch the thing on. The enable bit lives
+     * in the same register as the spurious vector, so this is one write and
+     * the order inside it does not matter. */
+    lapic_write(LAPIC_TPR, 0);
+    lapic_write(LAPIC_SVR, SPURIOUS_VECTOR | SVR_ENABLE);
+    lapic_write(LAPIC_ESR, 0);
+
+    description = "an I/O APIC and the local APIC's own timer";
+
+    return true;
+}

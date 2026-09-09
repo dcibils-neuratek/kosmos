@@ -66,7 +66,23 @@ static void apply_masks(void)
     pc_out8(PIC2_DATA, (uint8_t)~((wanted >> 8) & 0xFF));
 }
 
-void pc_irq_unmask(unsigned irq)
+/*
+ * Every line masked, for a machine that is about to drive the other
+ * controller.
+ *
+ * **Masked rather than left alone, and that is the whole point.** The 8259
+ * pair is still wired to the same devices whatever the I/O APIC is doing,
+ * and a chip nobody is listening to will still assert a line into a
+ * processor - where an interrupt nobody acknowledges is a line held down
+ * for ever. Silencing it is one write per chip and removes the whole class.
+ */
+void pic_silence(void)
+{
+    wanted = 0;
+    apply_masks();
+}
+
+void pic_unmask(unsigned irq)
 {
     if (irq > 15) {
         return;
@@ -86,7 +102,7 @@ void pc_irq_unmask(unsigned irq)
     apply_masks();
 }
 
-void hal_irq_init(void)
+void pic_init(void)
 {
     pc_out8(PIC1_CMD, ICW1_INIT); settle();
     pc_out8(PIC2_CMD, ICW1_INIT); settle();
@@ -203,9 +219,10 @@ static void eoi(unsigned irq)
     pc_out8(PIC1_CMD, PIC_EOI);
 }
 
-void hal_irq_handle(void)
+bool pic_handle(void)
 {
     unsigned irq = in_service();
+    bool tick = (irq == 0);
 
     if (irq == 0) {
         pc_timer_interrupt();
@@ -228,4 +245,6 @@ void hal_irq_handle(void)
     }
 
     eoi(irq);
+
+    return tick;
 }

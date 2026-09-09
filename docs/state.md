@@ -8,6 +8,56 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### The interrupt controller a laptop actually has
+
+`hal/pc/apic.c` is a local APIC and I/O APIC driver, and which controller
+this board drives is decided when it boots from what the firmware described.
+**That was the one failure on this target with no workaround**: Intel has
+been removing the 8259 pair and the 8253 from UEFI-only platforms, and a
+kernel driving only those gets no scheduler tick there - a boot that prints
+all twelve stages and then stops.
+
+`opt/kosmos/irq=pic` forces the legacy path, so both are exercised on every
+gate rather than the fallback rotting until the first machine that needs it.
+
+**MSI is how a PCI device reaches it.** Under an I/O APIC a device's
+Interrupt Line register means nothing, and which input the chipset's links
+land on is in ACPI's `_PRT`, which is AML. The PCIe swizzle is right for
+slots and wrong for a chipset's own integrated devices - the HDA controller
+being exactly one. An MSI is not a wire: the device writes to the local APIC
+with a vector this kernel chose.
+
+**The bug underneath it is the one worth remembering.** `pci_enable` asks
+which controller is running, at stage seven; the controller was not decided
+until stage eleven. Every device was told *no*, took a line nothing was
+routing, and the tone played for three times its length. The binding decides
+on first use now - rather than reordering the boot, because the display
+exists at stage six so that a failure after it is visible on a machine with
+no serial port.
+
+**What it unblocks:** `hal/pc/cpu_on.c` has refused to start a second
+processor for want of a local APIC to send INIT and STARTUP through. The
+ThinkPad has eight cores and Kosmos uses one.
+
+Also in: `hal_irq_handle` now says whether the tick fired, which stops every
+device interrupt charging the scheduler a tick on both architectures; and a
+panic stops taking locks on its first line, which turns the console-lock
+deadlock seen twice today into a message.
+
+x86-64 is 46 checks.
+
+**And the thing that matters most, found while testing it: ACPI is invisible
+under UEFI.** `find_rsdp` scans the EBDA pointer at 0x40E and the BIOS area
+from 0xE0000, which are both legacy conventions; UEFI passes the RSDP in the
+EFI Configuration Table and OVMF leaves nothing where a scan would find it.
+The same image with four processors reports four and takes the APIC under
+`-kernel`, and reports one and falls back to the 8259 pair under GRUB.
+
+On the ThinkPad, booted the way it will actually boot, that means no
+processor count, no ECAM and no APIC. **Multiboot 2 is the fix** - it has a
+tag for the RSDP where Multiboot 1 has no way to carry one - and it is the
+next thing to build.
+
 ### Kosmos boots the way the ThinkPad will
 
 `make x86-iso` builds a GRUB image; `make x86-uefi` runs it under OVMF, the

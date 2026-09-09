@@ -96,6 +96,34 @@ isr\vector:
     STUB_NOCODE 47
 
 /*
+ * And eight more lines than the 8259 pair could offer, plus room for the
+ * local APIC's spurious vector.
+ *
+ * An I/O APIC has twenty-four inputs where the two 8259s between them had
+ * fifteen, so a machine driving the APIC can route interrupts this IDT had
+ * no gate for. **63 is the spurious vector** and is chosen rather than
+ * convenient: the local APIC's spurious-interrupt register wants a vector
+ * whose low four bits are set on some processors, and 0x3F is the highest
+ * one this table reaches.
+ */
+    STUB_NOCODE 48
+    STUB_NOCODE 49
+    STUB_NOCODE 50
+    STUB_NOCODE 51
+    STUB_NOCODE 52
+    STUB_NOCODE 53
+    STUB_NOCODE 54
+    STUB_NOCODE 55
+    STUB_NOCODE 56
+    STUB_NOCODE 57
+    STUB_NOCODE 58
+    STUB_NOCODE 59
+    STUB_NOCODE 60
+    STUB_NOCODE 61
+    STUB_NOCODE 62
+    STUB_NOCODE 63
+
+/*
  * Everything the handler is allowed to look at, and everything it must put
  * back.
  *

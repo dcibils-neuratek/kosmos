@@ -413,15 +413,21 @@ void gic_end_of_interrupt(unsigned intid)
     __asm__ volatile("isb" ::: "memory");
 }
 
-void hal_irq_handle(void)
+bool hal_irq_handle(void)
 {
     unsigned intid = gic_acknowledge();
+    bool tick;
 
     /* The GIC hands back 1023 when the interrupt went away before it was
      * acknowledged. Nothing to service, and nothing to signal. */
     if (intid == GIC_SPURIOUS) {
-        return;
+        return false;
     }
+
+    /* Whether the scheduler is owed a tick, decided here because here is
+     * the only place that knows which interrupt this was. `hal.h` has the
+     * account of what assuming it cost. */
+    tick = (intid == TIMER_INTID);
 
     if (intid == IPI_INTID) {
         /*
@@ -471,4 +477,18 @@ void hal_irq_handle(void)
      * handlers is for when there are more kinds than this, which is M11.
      */
     gic_end_of_interrupt(intid);
+
+    return tick;
+}
+
+/*
+ * One answer on this board, and a constant is the honest way to say so.
+ *
+ * `virt` has a GICv3 and nothing else; the PC has two possible controllers
+ * and chooses at boot, which is why this question exists at all. See
+ * `hal/pc/irq_bind.c`.
+ */
+const char *hal_irq_describe(void)
+{
+    return "a GICv3: a distributor, and a redistributor per core";
 }

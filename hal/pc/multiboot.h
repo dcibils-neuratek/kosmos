@@ -93,6 +93,25 @@ void pc_irq_unmask(unsigned irq);
 /* What `pic.c` calls when IRQ 0 arrives. In `timer.c`, which owns the count. */
 void pc_timer_interrupt(void);
 
+/* A busy wait on the 8253's channel two, for whoever needs a known interval
+ * before there is a tick. `timer.c` calibrates the TSC with it and
+ * `apic.c` measures the local APIC's timer against it. */
+void pc_timer_wait_ms(unsigned ms);
+
+/* Masks every line on the 8259 pair. For a machine driving the I/O APIC
+ * instead - see `apic.c`, which explains why silence is not the same as
+ * being ignored. */
+void pic_silence(void);
+
+/* The 8259 pair under its own names, for `irq_bind.c` to choose between. */
+void pic_init(void);
+bool pic_handle(void);
+void pic_unmask(unsigned irq);
+
+/* Whether this machine took the APIC path. `timer.c` asks, because the
+ * tick comes from a different chip on each. */
+bool pc_irq_on_apic(void);
+
 /*
  * Where the loader left its information structure, stored by `start.S` and
  * read by whichever file here needs a field out of it.
