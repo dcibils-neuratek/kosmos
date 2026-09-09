@@ -1,0 +1,126 @@
+<html>
+<head>
+<title>Kosmos - the prompt</title>
+<style>
+body { background: #f7f5ef; color: #1b1b1b; margin: 24px; }
+ul { margin: 0 0 12px 0; }
+li { margin: 0 0 2px 0; }
+h1 { color: #b03020; font-size: 22px; margin: 0 0 4px 0; }
+h2 { color: #205090; font-size: 15px; margin: 22px 0 6px 0; }
+p { margin: 0 0 10px 0; }
+b { color: #205090; }
+i { color: #555555; }
+hr { border: 1px solid #ddd8cc; margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<h1>Kosmos</h1>
+<p><i>The prompt, as a place to work. The same page is in the machine:
+type <b>help "shell"</b> - and the quotes are not decoration, which is
+explained at the bottom.</i></p>
+
+<hr>
+
+<h2>The line you are typing</h2>
+<ul>
+<li><b>up</b> and <b>down</b> - the lines typed before, thirty-two of them</li>
+<li><b>backspace</b> - the only editing there is; there is no cursor</li>
+<li><b>Control-C</b> - abandon the line and start a fresh one</li>
+</ul>
+
+<h2>Moving around</h2>
+<ul>
+<li><b>pwd</b> - where you are</li>
+<li><b>cd path</b> - somewhere else; cd alone goes to /</li>
+<li><b>ls path</b> - one level</li>
+<li><b>tree path</b> - all of them, from here down</li>
+</ul>
+
+<h2>Reading</h2>
+<ul>
+<li><b>cat path</b> - the whole thing; a value, so a table prints as one</li>
+<li><b>head -n 5 path</b> - the first lines, ten by default</li>
+<li><b>tail -n 5 path</b> - the last ones</li>
+<li><b>wc path</b> - lines, words and bytes</li>
+<li><b>grep pattern path</b> - the lines that match, with their numbers</li>
+<li><b>du path</b> - how much is under each directory in here</li>
+</ul>
+
+<h2>Changing</h2>
+<ul>
+<li><b>touch path</b> - an empty file</li>
+<li><b>mkdir path</b> - one directory, no -p</li>
+<li><b>cp from to</b> - a directory as the destination means "into it"</li>
+<li><b>mv from to</b> - rename and move are the same operation</li>
+<li><b>rm -r path</b> - -r is the program walking, not a flag a server has</li>
+<li><b>save path text</b> - write a line and read it back</li>
+<li><b>edit path</b> - the editor, in a window</li>
+</ul>
+
+<h2>What a file is, rather than what is in it</h2>
+<ul>
+<li><b>stat path</b> - kind, size, and where the bytes are</li>
+<li><b>which name</b> - where a program is, if it is anywhere</li>
+<li><b>attr path</b> - its attributes</li>
+<li><b>attr path kind=note</b> - set one</li>
+<li><b>find kind=note</b> - everything that matches, anywhere that can answer</li>
+</ul>
+
+<h2>The machine</h2>
+<ul>
+<li><b>ps</b> - what is running, with an id and a band each</li>
+<li><b>kill id or name</b> - end one; two of a name is a refusal, not a guess</li>
+<li><b>df</b> - what each mount holds, and what the disk has left</li>
+<li><b>neofetch</b> - the short answer</li>
+<li><b>machine</b> - the long one, including what it cannot be asked</li>
+<li><b>mem</b> and <b>cpu</b> - memory, processors</li>
+<li><b>devices</b> - every device, and whether a driver claimed it</li>
+<li><b>diskinfo</b> - what is on the disk</li>
+</ul>
+
+<hr>
+
+<h2>Where things live</h2>
+<ul>
+<li><b>/bin /lib</b> - the programs and libraries in the image</li>
+<li><b>/home /user /system</b> - the disk; these survive a reboot</li>
+<li><b>/ramfs</b> - memory; this does not</li>
+<li><b>/dev /net /app</b> - devices, the network, the running applications</li>
+</ul>
+
+<p><b>/ is not a filesystem.</b> It is a list of mounts, each answered by a
+different server, and <b>ls /</b> shows exactly the ones the process asking
+was handed.</p>
+
+<h2>Two rules that will catch you</h2>
+
+<p><b>A line with Lua punctuation in it is Lua, not a command.</b>
+<i>grep [ f</i> is evaluated and fails; <i>/grep [ f</i> runs the program.
+The same rule is why <i>help fs</i> is a syntax error while
+<i>help "fs"</i> and <i>/help fs</i> both work - help names a value in the
+shell, so a bare word naming it goes to Lua.</p>
+
+<p><b>There are no pipes and no redirection.</b> The bar and the angle
+bracket are not spelled differently here, they are absent - a shell that
+composed programs that way needs a stream between two processes, and what
+this system has between processes is messages and shared memory.</p>
+
+<h2>Deliberately missing</h2>
+
+<p><b>chmod, chown, sudo, useradd</b> - there are no users and no permission
+bits. What you may reach is decided by the capabilities you were handed,
+which is not something a command can change.</p>
+
+<p><b>man</b> is help. <b>ln</b> - no links in the filesystem.
+<b>hostname</b> - nothing here has a global name. <b>env</b> and
+<b>export</b> - no environment variables. <b>sort, cut, sed, awk, tee</b> -
+pipeline tools, and there are no pipes yet.</p>
+
+<hr>
+
+<p><i>Kosmos 0.10.3. /commands lists the words the shell answers to
+itself.</i></p>
+
+</body>
+</html>
