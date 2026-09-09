@@ -22,6 +22,23 @@ function files.parent(path)
   return up
 end
 
+--
+-- A path as typed, made absolute against where the caller is.
+--
+-- Every command that takes a path needs this, and each one was writing the
+-- same three lines out again - `ls` and `cat` still have their own copy. A
+-- name is relative unless it starts with a slash, and `cwd` is the shell's
+-- idea of where you are: servers know nothing about it, which is why it
+-- travels with the request rather than being asked for.
+--
+function files.abs(name, where)
+  if not name or name == "" then return where or "/" end
+  if name:sub(1, 1) == "/" then return name end
+
+  where = where or "/"
+  return (where == "/" and "/" or where .. "/") .. name
+end
+
 function files.join(dir, name)
   if dir == "/" then return "/" .. name end
 

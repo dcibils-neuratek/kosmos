@@ -8,12 +8,19 @@
 -- "leave the ones it made" or "undo them", both of which are a transaction
 -- and neither of which belongs here before there is a journal.
 
-local path = args:match("^%s*(%S+)")
+local files = use("/lib/files.lua")
 
-if not path then
+local name = args:match("^%s*(%S+)")
+
+if not name then
   print("mkdir: mkdir <path>")
   return
 end
+
+-- Against where you are, which it did not do: `cd /data` then `mkdir box`
+-- asked for `box` and was told there is no such path, because a name with
+-- no slash in it is not a path at all until somebody says where from.
+local path = files.abs(name, cwd)
 
 local ok, err = fs.send(path, { type = "mkdir" })
 

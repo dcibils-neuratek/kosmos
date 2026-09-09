@@ -262,6 +262,86 @@ def main():
 
         checks += 1
 
+        # ---- the file verbs, on a real filesystem ------------------------
+        #
+        # `cp`, `mv`, `rm`, `touch` and `mkdir` are what makes a prompt a
+        # place you can work rather than a place you can look. They are thin
+        # programs over `files.copy`, `files.move` and the filesystem's own
+        # `mkdir` and `delete`, so what this checks is the *session*: that a
+        # file made at the prompt can be copied, copied into a directory,
+        # renamed, and removed, and that the directory refuses to go while
+        # something is still in it.
+        #
+        # Relative to `cwd` throughout, deliberately. Every one of these took
+        # a path as typed and resolved it against where you are, and `mkdir`
+        # did not - `cd /home` then `mkdir box` asked for `box` and was told
+        # there was no such path.
+        #
+        verbs = boot(image, disk, [
+            "cd /home",
+            "touch alpha.txt",
+            "mkdir box",
+            "cp alpha.txt beta.txt",
+            "cp alpha.txt box",
+            "mv beta.txt gamma.txt",
+            "rm box",
+            "rm -r box",
+            "rm gamma.txt",
+            "ls",
+        ])
+
+        if "made /home/alpha.txt" not in verbs:
+            raise Failure("touch did not make the file.\n" + verbs)
+
+        checks += 1
+
+        if "made /home/box" not in verbs:
+            raise Failure(
+                "mkdir did not resolve a name against the working "
+                "directory.\n" + verbs
+            )
+
+        checks += 1
+
+        # Into the directory rather than onto it: the destination exists and
+        # is a directory, so the name comes along.
+        if "copied to /home/box/alpha.txt" not in verbs:
+            raise Failure("cp did not copy into the directory.\n" + verbs)
+
+        checks += 1
+
+        if "moved to /home/gamma.txt" not in verbs:
+            raise Failure("mv did not rename the file.\n" + verbs)
+
+        checks += 1
+
+        # The refusal is the filesystem's and `rm` passes it on rather than
+        # working around it. It is the one thing between a mistyped path and
+        # a subtree.
+        if "is a directory; use -r" not in verbs:
+            raise Failure(
+                "rm removed a directory without being asked to.\n" + verbs
+            )
+
+        checks += 1
+
+        # Two: the file inside it, then the directory itself. Depth first,
+        # because a directory can only go once it is empty.
+        if "removed 2" not in verbs:
+            raise Failure("rm -r did not remove the directory.\n" + verbs)
+
+        checks += 1
+
+        tail = verbs.split("rm gamma.txt")[-1]
+
+        if "alpha.txt" not in tail or "beta.txt" in tail or "box" in tail:
+            raise Failure(
+                "what the listing shows at the end is not what the session "
+                "did to the directory.\n" + verbs
+            )
+
+        checks += 1
+
         # ---- second boot: a machine that has never seen this disk --------
         second = boot(image, disk, ["diskinfo", "ls /home", "ls /home/papers",
                                     "cat /home/notes.txt",
