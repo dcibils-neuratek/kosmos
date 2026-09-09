@@ -441,11 +441,18 @@ short until it emitted a newline.
 
 ### What is not done
 
-**`sched: the policy is pluggable` fails about one run in three.** It has
-now done it twice on an unchanged tree, with every other run of the same
-build green - so it is the test or the scheduler and not this work, and
-"intermittent" is the whole of what is known about it. Written down because
-a flake nobody records is a flake everybody re-discovers.
+**Two scheduler tests flake, and it is the same shape both times.**
+`sched: the policy is pluggable` failed twice on an unchanged tree, and
+`sched: the higher priority runs first` once, each with three green runs of
+the same build either side. Both are timing tests about which thread runs
+next, so the suspicion is the harness's load rather than the scheduler -
+but that is a suspicion and not a diagnosis. Written down because a flake
+nobody records is a flake everybody re-discovers.
+
+**Some of it was self-inflicted and that is worth separating out.** A gate
+that failed on `timer: the period matches the rate` on x86-64 failed
+because screenshots were being taken against the same machine while it ran.
+A timing check under a load the harness did not ask for is not a result.
 
 **`screen_putc` still loses the character that wraps.** Its own comment says
 "wrap, then draw the character below" and it returns instead, so the

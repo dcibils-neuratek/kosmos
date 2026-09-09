@@ -2165,7 +2165,13 @@ handlers.windows = function(req)
                -- started or can switch to, so it filters on this rather
                -- than on titles - which is what it did for its own window
                -- and does not scale to a second one.
-               chrome = (win.backdrop or win.strip) and true or nil }
+               chrome = (win.backdrop or win.strip) and true or nil,
+
+               -- Which *kind* of chrome, because "is there a desktop
+               -- already" is a question with an answer only this process
+               -- has. `desktop` asks it before starting a second one, and
+               -- `chrome` cannot answer it: the strip is chrome too.
+               backdrop = win.backdrop or nil }
   end
 
   return { ok = true, windows = out }
@@ -3505,13 +3511,31 @@ end
 -- - without this having to understand a shell's quoting rules, which it is
 -- not and should not become.
 --
--- With nothing asked for, the Deskbar. A desktop with no way to start
--- anything is a desktop you can only look at, and every other system starts
--- something for the same reason.
+-- **With nothing asked for, a desktop**: the Tracker that draws it and the
+-- Deskbar that starts things.
+--
+-- It used to be the Deskbar alone, on the reasoning that a desktop with no
+-- way to start anything is one you can only look at. True, and it left out
+-- the other half: a desktop with nothing *behind* the windows is one you
+-- cannot put anything on.
+--
+-- **The Tracker is the desktop**, which is BeOS's arrangement and Finder's
+-- and Explorer's - one program is the file manager and the backdrop both,
+-- and closing it closes the desktop. Here the backdrop was reachable only
+-- by knowing to type `wm tracker:desktop`, so nobody had one.
+--
+-- What that cost was not decoration. **The desktop is where a drag lands.**
+-- With no backdrop the area behind the windows belongs to no window at all:
+-- `window_at` finds nothing there and a file dragged out of a Tracker
+-- window is answered "nothing there takes a drop", which reads exactly like
+-- drag and drop being unimplemented.
+--
+-- Only the empty case changes. Every harness and every scripted run names
+-- what it wants, so what they start is what they started before.
 --
 local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
 
-if wanted == "" then wanted = "deskbar" end
+if wanted == "" then wanted = "desktop,deskbar" end
 
 for entry in wanted:gmatch("[^,]+") do
   entry = entry:match("^%s*(.-)%s*$")

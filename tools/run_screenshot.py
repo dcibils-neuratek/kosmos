@@ -2365,13 +2365,19 @@ def check_clipboard(guest):
 def check_deskbar(guest):
     """A desktop you can start things from.
 
-    `wm` with nothing asked for starts the Deskbar, top right, which lists
-    every window on the desktop and every program that declared itself an
-    application. Clicking one of those launches it.
+    `wm` with nothing asked for starts a desktop: the Tracker that draws the
+    backdrop, and the Deskbar top right, which lists every window on the
+    desktop and every program that declared itself an application. Clicking
+    one of those launches it.
 
     Checked by counting tabs rather than by reading the lists: every window
     has exactly one tab, as wide as its title, so the count is the number of
     windows and does not depend on knowing where anything was placed.
+
+    **The backdrop is not one of them**, and that is why this count is still
+    one. A backdrop is undecorated - `wm.lua` gives no tab to a menu, a
+    backdrop or the strip - so the thing that draws the desktop does not
+    appear in a census of windows any more than the desktop itself would.
 
     The Deskbar asks the window manager what is on screen rather than asking
     /app what registered. The difference is real: a program that opens a
