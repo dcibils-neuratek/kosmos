@@ -3216,11 +3216,81 @@ sometimes means the function is a shell you cannot write anything in.
   ls /bin        the programs this image carries
   run <name>     run one, in a process of its own (a bare name works too)
 
-  help fs        files, through this process's namespace
-  help gfx       surfaces, the screen, and text
-  help sys       what a process can ask the kernel for
-  help dev       what hardware was found, and the status bar
-  help demos     things worth typing
+  help "shell"   every command worth typing, in one page
+  help "fs"      files, through this process's namespace
+  help "gfx"     surfaces, the screen, and text
+  help "sys"     what a process can ask the kernel for
+  help "dev"     what hardware was found, and the status bar
+  help "demos"   things worth typing
+
+**The quotes are not decoration.** `help` names a value in this shell, so
+a bare `help fs` is Lua and Lua has no such expression. `help "fs"` is the
+call, and `/help fs` is the command; the overview said `help fs` for months
+and it has never once worked.
+]=]
+
+  topics.shell = [=[
+The prompt, as a place to work.
+
+MOVING AROUND
+  pwd                  where you are
+  cd <path>            somewhere else; `cd` alone goes to /
+  ls [path]            one level
+  tree [path]          all of them, from here down
+
+READING
+  cat <path>           the whole thing - a value, so a table prints as one
+  head [-n 5] <path>   the first lines, ten by default
+  tail [-n 5] <path>   the last ones
+  wc <path>            lines, words and bytes
+  grep <pat> <path>    the lines that match, with their numbers
+  du [path]            how much is under each directory in here
+
+CHANGING
+  touch <path>         an empty file
+  mkdir <path>         one directory, no -p
+  cp <from> <to>       a directory as the destination means "into it"
+  mv <from> <to>       rename and move are the same operation
+  rm [-r] <path>...    -r is this program walking, not a flag a server has
+  save <path> <text>   write a line and read it back
+  edit <path>          the editor, in a window
+
+WHAT A FILE IS, RATHER THAN WHAT IS IN IT
+  attr <path>          its attributes
+  attr <path> k=v      set one
+  find kind=note       everything that matches, anywhere that can answer
+
+THE MACHINE
+  neofetch             the short answer
+  machine              the long one, including what it cannot be asked
+  ps / mem / cpu       processes, memory, processors
+  devices              every device, and whether a driver claimed it
+  diskinfo             what is on the disk
+
+WHERE THINGS LIVE
+  /bin /lib            the programs and libraries in the image
+  /home /user /system  the disk; these survive a reboot
+  /ramfs               memory; this does not
+  /dev /net /app       devices, the network, the running applications
+
+`/` is not a filesystem. It is a list of mounts, each answered by a
+different server, and `ls /` shows exactly the ones this process was
+handed.
+
+TWO RULES THAT WILL CATCH YOU
+  A line with Lua punctuation in it is Lua, not a command. `grep [ f`
+  is evaluated and fails; `/grep [ f` runs the program.
+
+  There are no pipes and no redirection. `|` and `>` are not spelled
+  differently here, they are absent - a shell that composed programs
+  that way would need a stream between two processes, and what this
+  system has between processes is messages and shared memory.
+
+WHAT IS DELIBERATELY MISSING
+  chmod, chown, sudo, useradd - there are no users and no permission
+  bits. What you may reach is decided by the capabilities you were
+  handed, which is not something a command can change.
+  man - it is `help`.
 ]=]
 
   topics.fs = [=[
@@ -3471,8 +3541,13 @@ query. `find` and `watch` are built on exactly these two calls.
   -- The prompt is a Lua REPL and stays one; this is a layer in front of it so
   -- that the common things are words rather than programs. A line is treated
   -- as a command when its first word names one **and the rest contains no
-  -- Lua punctuation** - so `help` and `help gfx` are commands while
-  -- `help("gfx")` is an expression, and both work.
+  -- Lua punctuation** - so `devices` and `devices all` are commands while
+  -- `devices("x")` is an expression.
+  --
+  -- `help` is *not* one of them, and this comment used it as the example
+  -- for months while being wrong about it: `help` also names a value in
+  -- the environment, so `shadows_lua` sends it to Lua and `help gfx` is a
+  -- syntax error. `help "gfx"` and `/help gfx` are the spellings.
   --
   -- Aliases are a table from word to word, which is all an alias needs to be.
   --------------------------------------------------------------------------
@@ -3933,7 +4008,7 @@ query. `find` and `watch` are built on exactly these two calls.
     __call = function(_, what)
       return topics[what or "overview"]
           or ("no help for " .. tostring(what) ..
-              "; try fs, gfx, sys or demos")
+              "; try shell, fs, gfx, sys or demos")
     end,
   })
 
@@ -3942,7 +4017,7 @@ query. `find` and `watch` are built on exactly these two calls.
   -- there is no privileged view to hand out.
   commands.help = function(arg)
     out((topics[arg ~= "" and arg or "overview"]
-         or ("no help for " .. arg .. "; try fs, gfx, sys, dev or demos\n")))
+         or ("no help for " .. arg .. "; try shell, fs, gfx, sys, dev or demos\n")))
   end
 
   env = {
@@ -4045,7 +4120,7 @@ query. `find` and `watch` are built on exactly these two calls.
       -- Looking only at the first character is the whole trick, and the
       -- first version got it wrong by testing the entire rest for
       -- punctuation. `help("gfx")` and `help = 3` are Lua because the rest
-      -- begins with `(` and `=`; `help gfx` is a command. But
+      -- begins with `(` and `=`; `devices all` is a command. But
       -- `alias m=monitor` is *also* a command, and rejecting it because an
       -- equals sign appears somewhere in the middle broke a spelling this
       -- shell's own help had already promised.

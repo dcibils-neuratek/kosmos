@@ -105,6 +105,31 @@ def main():
 
         checks += 1
 
+        #
+        # The cheat sheet, and the two spellings that reach it.
+        #
+        # `help` names a value in the shell's environment, so a bare
+        # `help shell` is Lua and fails - which the overview told people to
+        # type for months. Both working spellings are checked here so that
+        # the page cannot quietly stop being reachable.
+        #
+        sheet = run_disk.boot(image, handle.name, [
+            "/help shell",
+            'help "fs"',
+        ])
+
+        for marker, what in [
+            ("MOVING AROUND", "the cheat sheet is not reachable as a command"),
+            ("WHAT IS DELIBERATELY MISSING",
+             "the cheat sheet does not say what this system does not have"),
+            ("fs - this process's namespace",
+             'help "fs" - the call spelling - does not reach a topic'),
+        ]:
+            if marker not in sheet:
+                raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
+                              + sheet[-1200:])
+            checks += 1
+
         print(f"PASS: {checks} checks on the shell as a place to work "
               "(a file made at the prompt, then counted, read from both "
               "ends, searched, walked and measured - each verb agreeing "

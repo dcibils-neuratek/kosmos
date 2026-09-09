@@ -4374,7 +4374,7 @@ Worth being clear about what this is not: there is a filesystem, and it is `serv
 
 Sampling at the tick rather than accumulating real time per thread is deliberate: accumulating would mean reading the counter twice on every context switch — a cost on the hottest path in the kernel to answer a question nobody asks more than once a second.
 
-**The shell takes commands as well as Lua**, with aliases. A line is a command when its first word names one *and the rest has no Lua punctuation in it* — so `help` and `help gfx` are commands while `help("gfx")` stays an expression. Both work, which matters because the parentheses are simultaneously what people forget and what they reach for.
+**The shell takes commands as well as Lua**, with aliases. A line is a command when its first word names one *and the rest has no Lua punctuation in it* — so `devices` and `devices all` are commands while `devices("x")` stays an expression. **`help` is the exception that this sentence used to get wrong**: it also names a value in the environment, so it is always Lua - `help "gfx"` and `/help gfx` work and `help gfx` is a syntax error.
 
 **A status bar, in the rows the kernel console reserves.** Two writers on one framebuffer with no compositor, which is only honest because the regions cannot overlap by construction — and is exactly the arrangement a compositor exists to stop needing.
 
