@@ -2086,6 +2086,11 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring
 	@# which is what it did on the disk for as long as the disk could
 	@# answer.
 	python3 tools/run_queries.py $(TARGET)
+	@# And the prompt as a place to work rather than a place to look. The
+	@# verbs check each other rather than a constant written in the
+	@# harness: `wc` says five lines, so `head` and `tail` have to name
+	@# the first and last two of exactly those.
+	python3 tools/run_shell.py $(TARGET)
 	@# A frame off the card and onto the wire, read back out of QEMU's own
 	@# capture - because nothing inside the guest can establish that one
 	@# left. And a second boot with no card, which is the branch every
