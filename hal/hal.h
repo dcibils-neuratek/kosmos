@@ -247,6 +247,48 @@ struct fb {
  */
 bool hal_fb_init(struct fb *out);
 
+/*
+ * The same screen, asked for before there is a page allocator.
+ *
+ * **This exists because a laptop has no serial port.** The boot log reaches
+ * the screen from stage six, and the three faults that stood between this
+ * kernel and its first real machine were at stages three, four and five -
+ * each of them, on that machine, a black panel with nothing to read. A
+ * board that can answer this turns every one of them into a log you can
+ * watch stop.
+ *
+ * It can only be answered where the pixels are reachable *before* the
+ * kernel builds its own address space: a framebuffer the firmware set up,
+ * inside what the boot page tables already cover. ramfb cannot - the guest
+ * allocates those pixels and there is nothing to allocate from yet - so
+ * `qemu-virt` says no and loses nothing, having a serial port and a cable
+ * already attached to it.
+ *
+ * **The address it gives is not the address `hal_fb_init` will give**, and
+ * that is the whole subtlety. The identity map that makes this possible is
+ * replaced by `mmu_init`, after which the same pixels answer at a different
+ * virtual address - so a board that says yes here expects
+ * `console_rebase_screen` afterwards, and the console must not repaint,
+ * because what is on the screen is in the memory both addresses name.
+ */
+bool hal_fb_early(struct fb *out);
+
+/*
+ * The same framebuffer, at the address it answers on once the kernel has
+ * built its own map. Only meaningful where `hal_fb_early` said yes.
+ *
+ * **It must be asked the instant `mmu_init` returns, before anything is
+ * printed.** The identity map that the early screen used is gone from that
+ * instruction onward, and the console is still pointing into it: the next
+ * line of the boot log faults inside a console write, the fault handler
+ * blocks on the lock that write is holding, and the machine says `spinlock:
+ * console held by 0, wanted by 0` for ever. That is not a hypothetical - it
+ * is what the first version of the early screen did.
+ *
+ * It does not clear. The pixels are the ones already on the screen.
+ */
+bool hal_fb_remap(struct fb *out);
+
 /* Which framebuffer answered, for the boot log. See `hal/pc/fb.c`. */
 const char *hal_fb_describe(void);
 

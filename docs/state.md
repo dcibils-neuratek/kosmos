@@ -39,9 +39,23 @@ canonical address space, all of physical RAM at a fixed offset, the whole low
 half to the process - and it is now the biggest single thing left on this
 target.
 
-`run_uefi.py` is 7 checks on the picture rather than on the serial line,
-because a machine whose framebuffer works stops talking to the serial line at
-stage six.
+**And the panel has the log from stage two now.** The display was stage six,
+and all three faults above were at three, four and five - on that machine, a
+black panel with nothing to read. `hal_fb_early` asks for a framebuffer the
+firmware already set up; `hal_fb_remap` is asked the instant `mmu_init`
+returns and before the next character is printed, because the identity map
+that made the early screen possible is gone by then and one `kputs` into it
+is a deadlock rather than a message.
+
+`run_uefi.py` is 9 checks, on the picture and on what the machine says about
+itself rather than on the serial line, because a machine whose framebuffer
+works stops talking to the serial line at stage six. The early-screen check
+is the second one in this project to have passed for the wrong reason
+first - a stopwatch, where the whole boot takes under two seconds - and it
+was verified by reinstating the fault.
+
+Tested at 1920x1080 as well as OVMF's own 1280x800: an 8 MB framebuffer maps
+into the device window and draws.
 
 ### Sound on the machine a laptop is
 

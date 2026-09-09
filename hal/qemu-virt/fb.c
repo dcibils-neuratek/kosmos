@@ -25,3 +25,27 @@ const char *hal_fb_describe(void)
 {
     return "ramfb, the way the Pi's mailbox will be";
 }
+
+/*
+ * Not on this board, and nothing is lost by it.
+ *
+ * ramfb is the guest allocating pixels and telling the hypervisor to scan
+ * them out, and "the guest allocating" is exactly what does not exist
+ * before `pmm_init`. The board this matters on is the one with no serial
+ * port; `virt` has one, and every boot here already reads its whole log
+ * over a cable.
+ */
+bool hal_fb_early(struct fb *out)
+{
+    (void)out;
+
+    return false;
+}
+
+/* Nothing said yes to `hal_fb_early` here, so nothing can need remapping. */
+bool hal_fb_remap(struct fb *out)
+{
+    (void)out;
+
+    return false;
+}

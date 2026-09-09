@@ -44,6 +44,33 @@ void kputx(unsigned long v, unsigned digits);
  */
 void console_attach_screen(const struct fb *fb, const char *title);
 
+/*
+ * The same screen, at a different address.
+ *
+ * **Not a second attach, and the difference is the whole point.** A board
+ * that answered `hal_fb_early` gave an address the boot page tables
+ * describe; `mmu_init` then replaces those tables and the same pixels
+ * answer somewhere else. What is already drawn is *in the memory both
+ * addresses name*, so this changes where the console writes and repaints
+ * nothing - where attaching again would clear the screen and replay a
+ * buffer that has already been consumed.
+ *
+ * The geometry must not have changed. It is the same framebuffer; if a
+ * board ever hands back a different size here, that is a bug in the board
+ * rather than something this should try to absorb.
+ */
+void console_rebase_screen(const struct fb *fb);
+
+/*
+ * Stop writing to the screen; the serial line keeps everything.
+ *
+ * One caller: a board whose early framebuffer could not be remapped after
+ * `mmu_init`. Without this the console would go on writing into an address
+ * that no longer translates, which is a fault inside a console write and
+ * therefore a deadlock rather than a message.
+ */
+void console_detach_screen(void);
+
 /* The colour of subsequent text on the screen, as 0xAARRGGBB. The serial
  * side has no opinion and ignores it. */
 void console_colour(unsigned long foreground);

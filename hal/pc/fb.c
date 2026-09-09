@@ -115,3 +115,55 @@ const char *hal_fb_describe(void)
 {
     return source;
 }
+
+/*
+ * The loader's framebuffer at the address it already answers on.
+ *
+ * **No mapping, because there is nothing yet to map with** - and none is
+ * needed: `boot/x86_64/start.S` identity maps the first four gigabytes, and
+ * a multiboot loader hands over a 32-bit pointer, so everything it can
+ * describe is inside that. The check below says so rather than assuming it,
+ * because `framebuffer_addr` is a 64-bit field and a firmware is entitled
+ * to put a framebuffer above the line even if none yet has.
+ *
+ * ramfb is deliberately not tried. It needs fw_cfg, a DMA setup and memory
+ * the guest allocates, and the allocator does not exist at this point in
+ * the boot - which is the whole reason this is a separate question.
+ */
+#define BOOT_IDENTITY_END   0x100000000ULL
+
+bool hal_fb_early(struct fb *out)
+{
+    uint64_t addr;
+    uint32_t pitch, width, height;
+
+    if (!pc_loader_framebuffer(&addr, &pitch, &width, &height)) {
+        return false;
+    }
+
+    if (addr + (uint64_t)pitch * height > BOOT_IDENTITY_END) {
+        return false;           /* outside what start.S mapped */
+    }
+
+    out->pixels = (volatile uint32_t *)(uintptr_t)addr;
+    out->width = width;
+    out->height = height;
+    out->pitch = pitch;
+
+    source = "the loader's, from the multiboot video request";
+
+    return true;
+}
+
+/*
+ * `from_loader` again, which is the whole of it: that function maps the
+ * firmware's framebuffer into the device window and answers where it
+ * landed, and calling it a second time simply maps it a second time.
+ *
+ * Deliberately not `hal_fb_init`. That would try ramfb when the loader had
+ * nothing, and a board reaching here has already been told the loader did.
+ */
+bool hal_fb_remap(struct fb *out)
+{
+    return from_loader(out);
+}

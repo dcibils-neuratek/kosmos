@@ -389,6 +389,45 @@ no longer blocking: this GRUB is built for `x86_64-efi` only, and it boots a
 Multiboot 1 kernel under UEFI perfectly well. If the T14's firmware has no
 CSM at all, the plan is unchanged.
 
+### The panel has the boot log from stage two
+
+**§8 says the constraint that shapes everything is the missing serial port.
+This is the part of the system that finally answers it.**
+
+The display was stage six of twelve, so stages one to five went to a cable.
+The three faults above were at stages three, four and five. On the machine
+this is aimed at, each of them is a black panel and nothing to read - not a
+message that is hard to find, *nothing*, with no way to tell a bad loader
+from a bad page table from a bad memory map.
+
+`hal_fb_early` asks the board for a framebuffer before there is a page
+allocator. Only a board whose firmware already set one up can answer, which
+is exactly the board that needs to: ramfb is the guest allocating pixels,
+and there is nothing to allocate from yet, so `qemu-virt` says no and loses
+nothing.
+
+**The subtlety is the address.** What makes the early screen possible is the
+identity map in `start.S`, and `mmu_init` replaces it - after which the same
+pixels answer somewhere else. So `hal_fb_remap` is asked the instant
+`mmu_init` returns, **before the next character is printed**, and
+`console_rebase_screen` moves the console's pointer without repainting,
+because what is on the screen is in the memory both addresses name.
+
+The first version left a three-line gap between the two, and it deadlocked
+exactly as an unmapped framebuffer does: the fault is inside a console
+write, the handler blocks on the lock that write is holding, and the machine
+says `spinlock: console held by 0, wanted by 0` for ever.
+
+**And the check for it is asked of the machine rather than of a stopwatch.**
+The first attempt screendumped seven seconds in, on the theory that the
+display stage had not been reached - and passed with the whole feature
+disabled, because OVMF, GRUB and twelve boot stages together take under two
+seconds. Sampling every half second from two seconds found no window at all.
+The boot log now says which of the two ways the panel got it, and the
+harness reads that line. Verified by reinstating the fault: with
+`hal_fb_early` returning false the check fails, and it is the only one that
+does.
+
 ### The boot log stopped naming the wrong driver
 
 `kernel/main.c` printed `keyboard: virtio-input, negotiated and polled like

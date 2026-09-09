@@ -65,8 +65,14 @@ def firmware():
     return (code, varsfd), None
 
 
-def capture(iso, seconds):
-    """Boots the image and returns (width, height, pixels, serial)."""
+def capture(iso, moments):
+    """Boots once and screendumps at each moment; returns frames and serial.
+
+    **One boot, several pictures.** The early screen and the finished
+    desktop are two claims about the same machine, and booting twice to make
+    them would double what this costs and still not prove they were the same
+    boot.
+    """
     fw, why = firmware()
 
     if fw is None:
@@ -75,7 +81,6 @@ def capture(iso, seconds):
     code, varsfd = fw
     work = tempfile.mkdtemp()
     mon = os.path.join(work, "mon")
-    ppm = os.path.join(work, "screen.ppm")
     writable = os.path.join(work, "vars.fd")
 
     shutil.copy(varsfd, writable)
@@ -92,39 +97,44 @@ def capture(iso, seconds):
     os.set_blocking(p.stdout.fileno(), False)
 
     out = b""
+    frames = []
     start = time.time()
 
     try:
-        while time.time() - start < seconds:
-            chunk = p.stdout.read()
+        for n, moment in enumerate(moments):
+            while time.time() - start < moment:
+                chunk = p.stdout.read()
 
-            if chunk:
-                out += chunk
+                if chunk:
+                    out += chunk
 
-            time.sleep(0.2)
+                time.sleep(0.2)
 
-        s = socket.socket(socket.AF_UNIX)
-        s.connect(mon)
-        time.sleep(0.4)
-        s.recv(65536)
-        s.sendall(("screendump %s\n" % ppm).encode())
-        time.sleep(3.0)
-        s.close()
+            ppm = os.path.join(work, "screen%d.ppm" % n)
+
+            s = socket.socket(socket.AF_UNIX)
+            s.connect(mon)
+            time.sleep(0.4)
+            s.recv(65536)
+            s.sendall(("screendump %s\n" % ppm).encode())
+            time.sleep(2.5)
+            s.close()
+
+            if not os.path.exists(ppm):
+                return None, "the monitor wrote no screendump"
+
+            with open(ppm, "rb") as f:
+                raw = f.read()
+
+            # P6\n<w> <h>\n255\n then three bytes a pixel.
+            parts = raw.split(b"\n", 3)
+            width, height = (int(x) for x in parts[1].split())
+            frames.append((width, height, parts[3]))
     finally:
         p.kill()
         p.wait()
 
-    if not os.path.exists(ppm):
-        return None, None, None, "the monitor wrote no screendump"
-
-    with open(ppm, "rb") as f:
-        raw = f.read()
-
-    # P6\n<w> <h>\n255\n then three bytes a pixel.
-    parts = raw.split(b"\n", 3)
-    width, height = (int(x) for x in parts[1].split())
-
-    return width, height, parts[3], out.decode("utf-8", "replace")
+    return frames, out.decode("utf-8", "replace")
 
 
 def share(pixels, colour):
@@ -156,11 +166,38 @@ def main():
         print("SKIP: no %s. Run `make x86-iso`." % iso)
         return 0
 
-    width, height, pixels, serial = capture(iso, 30.0)
+    frames, serial = capture(iso, (30.0,))
 
-    if width is None:
+    if frames is None:
         print("SKIP: %s" % serial)
         return 0
+
+    width, height, pixels = frames[0]
+
+    #
+    # **The boot log reached the panel before the display stage.**
+    #
+    # `hal_fb_early` exists because a laptop has no serial port, and the
+    # three faults that stood between this kernel and its first real machine
+    # were at stages three, four and five - each of them, on that machine, a
+    # black panel with nothing to read.
+    #
+    # **Asked of the machine rather than of a stopwatch**, and the first
+    # version of this check was a stopwatch: a screendump seven seconds in,
+    # on the theory that the display stage had not been reached yet. It
+    # passed with the whole feature disabled, because OVMF, GRUB and twelve
+    # boot stages take under two seconds together - so by any moment worth
+    # sampling the screen is Kosmos's either way. Sampling every half second
+    # from two seconds found no window at all.
+    #
+    # The machine knows which of the two ways its panel got the log, and now
+    # says so. That is a line that changes rather than a picture nobody
+    # compared.
+    #
+    check("the panel has had this log since stage two" in serial,
+          "the screen was attached at the display stage rather than at the "
+          "second one, so stages one to five reached nothing but a serial "
+          "port that a laptop does not have")
 
     # 1. The loader answered the video request, and the mode says which one
     #    did: ramfb is asked for 1920x1080 and the firmware's GOP is its
@@ -206,6 +243,13 @@ def main():
     #    thing it should say is the virtual memory stage.
     check("[5/12]" in serial,
           "it did not reach the virtual memory stage on the serial line")
+
+    # 6. And the pitch fact is about this machine rather than a guess. It
+    #    read `7680 bytes a row, not 7680: padded` for a while, which is a
+    #    boot fact contradicting itself in one line.
+    check("bytes a row, not " not in serial
+          or "bytes a row, which is width" not in serial,
+          "the boot log claims the pitch is both padded and not")
 
     if fails:
         print("FAIL: %d of %d checks booting through GRUB under UEFI:"

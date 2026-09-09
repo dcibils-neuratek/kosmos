@@ -508,6 +508,29 @@ static void replay(const char *s)
     }
 }
 
+void console_detach_screen(void)
+{
+    attached = false;
+}
+
+void console_rebase_screen(const struct fb *fb)
+{
+    if (!attached) {
+        return;
+    }
+
+    /*
+     * Geometry unchanged, so the cursor and the character grid carry over
+     * untouched. Only the address moves.
+     */
+    if (fb->width != screen.width || fb->height != screen.height
+        || fb->pitch != screen.pitch) {
+        return;
+    }
+
+    screen.pixels = fb->pixels;
+}
+
 void console_attach_screen(const struct fb *fb, const char *title)
 {
     screen = *fb;

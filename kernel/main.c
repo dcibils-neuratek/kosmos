@@ -123,6 +123,33 @@ void kmain(void)
     boot_fact(trap_describe());
 
     /*
+     * And the screen, as early as the board can give one.
+     *
+     * **This is the whole answer to "a laptop has no serial port".** The
+     * display stage is number six, and the three faults that stood between
+     * this kernel and its first real machine were at three, four and five -
+     * the loader's information structure outside the boot page tables, a
+     * subtraction that wrapped, a framebuffer nobody had mapped. Each of
+     * them, on that machine, is a black panel and nothing to read.
+     *
+     * Only a board with a framebuffer the firmware already set up can
+     * answer, which is exactly the board that needs it: `hal_fb_early` is
+     * false under QEMU's ramfb, where there is a cable instead.
+     *
+     * `console_attach_screen` replays what has already been printed, so
+     * nothing is lost by the screen arriving three lines in rather than at
+     * the first instruction.
+     */
+    bool early_screen = false;
+
+    have_display = hal_fb_early(&fb);
+
+    if (have_display) {
+        screen_init(&fb);
+        console_attach_screen(&fb, "Kosmos");
+    }
+
+    /*
      * Who we are running on, asked of the processor.
      *
      * Before the allocator, because it needs nothing: every value comes out
@@ -247,6 +274,28 @@ void kmain(void)
      * translation at all. */
     mmu_init();
 
+    /*
+     * **Before the next character is printed.**
+     *
+     * The identity map the early screen was using is gone as of the line
+     * above, and the console is still pointing into it. One `kputs` between
+     * here and the remap is a fault inside a console write, which blocks on
+     * the lock that write is holding: `spinlock: console held by 0, wanted
+     * by 0`, for ever, and on a laptop a black screen that cannot even
+     * reach a serial port. The first version of this had exactly that gap,
+     * three lines wide.
+     */
+    if (have_display) {
+        if (hal_fb_remap(&fb)) {
+            screen_init(&fb);
+            console_rebase_screen(&fb);
+            early_screen = true;
+        } else {
+            console_detach_screen();
+            have_display = false;
+        }
+    }
+
     boot_stage("virtual memory");
     boot_why("Translation on; from here the kernel's own code is read-only.");
     boot_fact(mmu_describe());
@@ -259,23 +308,27 @@ void kmain(void)
      * a board may have no monitor attached, and a system that cannot come up
      * without a screen is a system that cannot be debugged over a cable.
      */
-    have_display = hal_fb_init(&fb);
+    /*
+     * The screen, for a board that could not give one early.
+     *
+     * ramfb is that board: the guest allocates the pixels, so there is
+     * nothing to ask before `pmm_init`. Here it is an ordinary question with
+     * an ordinary answer, and `console_attach_screen` replays the log so far
+     * rather than leaving the same log looking like two different ones.
+     */
+    if (!have_display) {
+        have_display = hal_fb_init(&fb);
+
+        if (have_display) {
+            /* Remembered, because a process granted the screen needs these
+             * pages mapped and hal_fb_init cannot be asked again: it clears
+             * the framebuffer. */
+            screen_init(&fb);
+            console_attach_screen(&fb, "Kosmos");
+        }
+    }
 
     if (have_display) {
-        /* Remembered, because a process granted the screen needs these pages
-         * mapped and hal_fb_init cannot be asked again: it clears the
-         * framebuffer. */
-        screen_init(&fb);
-
-        /*
-         * And from here the kernel's own output goes to both. Everything
-         * already printed above went to the serial port alone, which is why
-         * the screen starts at this line rather than at the first - the
-         * alternative is buffering the boot log to replay it, and a buffer
-         * that exists only to make the start look tidy is a buffer that can
-         * overflow during a panic.
-         */
-        console_attach_screen(&fb, "Kosmos");
         console_progress(boot_stages_done(), BOOT_STAGES);
     }
 
@@ -295,11 +348,49 @@ void kmain(void)
         kputs(hal_fb_describe());
         boot_fact_end();
 
+        /*
+         * **Which of the two ways the panel got the log**, and it is a fact
+         * about this machine rather than a note to the reader.
+         *
+         * On a board with a serial port the difference is cosmetic. On the
+         * one this exists for it is everything: a screen that arrives here
+         * has shown nothing at all for stages one to five, and those are
+         * where a first boot on unfamiliar firmware fails. Printed so that
+         * a regression is a line that changed rather than a picture nobody
+         * compared - a harness cannot time this, because the whole boot to
+         * here takes under two seconds.
+         */
+        boot_fact(early_screen
+                  ? "the panel has had this log since stage two"
+                  : "attached here; everything above it was replayed");
+
+        /*
+         * The pitch, and whether it is the number anybody would guess.
+         *
+         * **This said "padded" whichever it was**, so a 1920x1080 panel
+         * handed over by firmware read `7680 bytes a row, not 7680:
+         * padded`, which is a boot fact contradicting itself in one line.
+         * It was written when ramfb was the only source and ramfb always
+         * pads; a loader's framebuffer is whatever the firmware chose.
+         *
+         * Both halves are worth printing. Padding is the case `gfx.md`
+         * exists to protect against, and equality is the more dangerous
+         * one, because it is where code that computes `width * 4` works
+         * perfectly and keeps working until the machine changes.
+         */
         boot_fact_begin();
         kputu(fb.pitch);
-        kputs(" bytes a row, not ");
-        kputu(fb.width * 4);
-        kputs(": padded, so width * 4 shears here and not later");
+        kputs(" bytes a row");
+
+        if (fb.pitch != fb.width * 4) {
+            kputs(", not ");
+            kputu(fb.width * 4);
+            kputs(": padded, so width * 4 shears here and not later");
+        } else {
+            kputs(", which is width * 4 exactly on this machine "
+                  "and is not a thing anything may assume");
+        }
+
         boot_fact_end();
     } else {
         boot_fact("none attached; the serial line is the only console");
