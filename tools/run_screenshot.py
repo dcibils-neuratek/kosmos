@@ -200,7 +200,11 @@ X86_ARGS = [
     "-display", "none",
     "-vga", "none",
     "-device", "ramfb",
-    "-device", "virtio-keyboard-pci",
+    #
+    # No virtio keyboard: q35's i8042 is this board's, so `sendkey` has to
+    # reach the PS/2 controller for the check to mean anything. The tablet
+    # stays, because the i8042's auxiliary port does not deliver yet.
+    #
     "-device", "virtio-tablet-pci",
 ] + ([
     "-drive", "file=%s,format=raw,if=none,id=disk" % _DISK,

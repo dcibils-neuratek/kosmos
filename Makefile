@@ -204,6 +204,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/fwcfg_mmio.c \
         hal/fwcfg/ramfb.c \
         hal/virtio/input.c \
+        hal/qemu-virt/input_bind.c \
         hal/keys.c \
         hal/qemu-virt/input_describe.c \
         hal/virtio/blk.c \
@@ -1857,6 +1858,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/virtio/blk.c \
              hal/virtio/net.c \
              hal/virtio/input.c \
+             hal/pc/i8042.c \
+             hal/pc/input_bind.c \
              hal/keys.c \
              hal/pc/input_describe.c \
              hal/virtio/snd.c \
@@ -2026,8 +2029,14 @@ endif
 # on this Mac and falls back to something sane elsewhere.
 X86_DISPLAY := $(if $(filter Darwin,$(shell uname)),cocoa$(ZOOM_FLAG)$(FULLSCREEN_FLAG),gtk)
 
+#
+# **A tablet but no virtio keyboard.** q35's i8042 is the keyboard on this
+# board - see `hal/pc/input_bind.c` - and leaving a virtio one attached
+# would mean QEMU delivering keys to it instead, so the driver that has to
+# work on a laptop would be the one never exercised. The tablet stays
+# because the i8042's auxiliary port does not yet deliver.
+#
 X86_DEVICES := -device ramfb \
-               -device virtio-keyboard-pci \
                -device virtio-tablet-pci \
                -device virtio-net-pci,netdev=n0 -netdev user,id=n0 \
                -drive file=$(DISK),format=raw,if=none,id=d0 \

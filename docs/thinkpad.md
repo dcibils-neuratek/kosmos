@@ -116,8 +116,22 @@ In the build, on both architectures.
 
 ### `hal/pc/i8042.c` - the keyboard and the TrackPoint
 
-Written; **the keyboard half is proven and the pointer half is blocked.**
-See §5 and §6.
+**The keyboard is in the build and is what the x86 board types with.** The
+pointer half is written and blocked; see §5 and §6.
+
+That took a split. Both input drivers defined the same nine HAL functions,
+so a board could take *both* its keyboard and its pointer from one of them
+or neither - which is why this driver sat out of the build for a while.
+Each driver now has its own names, and a per-board file binds them:
+`hal/qemu-virt/input_bind.c` takes both from virtio, and
+`hal/pc/input_bind.c` takes the keyboard from the i8042 and the pointer
+from virtio.
+
+**When the auxiliary port works, one line in that file changes.** Until
+then the real keyboard driver is exercised every time the display harness
+types anything, which is what stops it rotting while the other half is
+worked out - and the x86 board keeps a pointer, which eleven display checks
+need.
 
 Design decisions worth keeping:
 
@@ -295,7 +309,8 @@ works, and not before.
 |---|---|---|
 | Multiboot2 header, or a UEFI stub - depends on question 2 | new | ~300, or ~1000 |
 | Framebuffer from the loader's boot information | `hal_fb_init` has the shape | ~100 |
-| i8042 keyboard and auxiliary port | **written**, keyboard proven | done, unwired |
+| i8042 keyboard | **in the build**, exercised by the display harness | done |
+| i8042 auxiliary port | written, does not deliver under QEMU | blocked, §6 |
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
 | Local APIC / IOAPIC / MSI | new | ~600 |
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |

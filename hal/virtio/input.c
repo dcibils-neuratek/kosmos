@@ -44,6 +44,7 @@
 #include "mmio.h"
 #include "hal.h"
 #include "keys.h"
+#include "input.h"
 #include "spinlock.h"
 #include "virtio.h"
 
@@ -261,7 +262,7 @@ static void keyq_put(unsigned code, int down)
     }
 }
 
-bool hal_key_event(unsigned *code, bool *down)
+bool virtio_key_event(unsigned *code, bool *down)
 {
     if (keyq_head == keyq_tail) {
         return false;
@@ -274,7 +275,7 @@ bool hal_key_event(unsigned *code, bool *down)
     return true;
 }
 
-bool hal_key_held(unsigned code)
+bool virtio_key_held(unsigned code)
 {
     if (code >= 128) {
         return false;
@@ -521,7 +522,7 @@ static void input_interrupt_locked(unsigned line)
  * Fills the key queue and the cursor from the handler; the three below
  * drain them from a syscall.
  */
-void input_interrupt(unsigned line)
+void virtio_input_interrupt(unsigned line)
 {
     unsigned long flags = spin_lock(&input_lock);
 
@@ -529,7 +530,7 @@ void input_interrupt(unsigned line)
     spin_unlock(&input_lock, flags);
 }
 
-bool hal_keyboard_init(void)
+bool virtio_keyboard_init(void)
 {
     /*
      * Idempotent, and it has to be said rather than assumed. Running the
@@ -548,7 +549,7 @@ bool hal_keyboard_init(void)
     return claim(&keyboard, false);
 }
 
-bool hal_pointer_init(void)
+bool virtio_pointer_init(void)
 {
     if (tablet.present) {
         return true;
@@ -580,12 +581,12 @@ bool hal_pointer_init(void)
     return true;
 }
 
-bool hal_input_pending_peek(void)
+bool virtio_input_pending_peek(void)
 {
     return input_arrived;
 }
 
-bool hal_input_pending(void)
+bool virtio_input_pending(void)
 {
     bool pending = input_arrived;
 
@@ -652,7 +653,7 @@ static bool hal_pointer_poll_locked(struct pointer_state *out)
 /*
  * Drains every pending event into the cursor and reports where it is.
  */
-bool hal_pointer_poll(struct pointer_state *out)
+bool virtio_pointer_poll(struct pointer_state *out)
 {
     unsigned long flags = spin_lock(&input_lock);
     bool r = hal_pointer_poll_locked(out);
@@ -765,7 +766,7 @@ static int keyboard_getchar_locked(void)
 /*
  * Takes one byte out of the queue the interrupt fills.
  */
-int keyboard_getchar(void)
+int virtio_keyboard_getchar(void)
 {
     unsigned long flags = spin_lock(&input_lock);
     int r = keyboard_getchar_locked();
@@ -774,7 +775,7 @@ int keyboard_getchar(void)
     return r;
 }
 
-bool keyboard_present(void)
+bool virtio_keyboard_present(void)
 {
     return keyboard.present;
 }

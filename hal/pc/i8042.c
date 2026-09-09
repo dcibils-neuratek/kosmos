@@ -70,6 +70,7 @@
 
 #include "hal.h"
 #include "keys.h"
+#include "i8042.h"
 #include "pc.h"
 
 #define DATA        0x60
@@ -510,7 +511,7 @@ static bool aux_command(uint8_t c)
     return read_data() == DEV_ACK;
 }
 
-bool hal_keyboard_init(void)
+bool i8042_keyboard_init(void)
 {
     int config;
 
@@ -564,7 +565,7 @@ bool hal_keyboard_init(void)
     return true;
 }
 
-bool hal_pointer_init(void)
+bool i8042_pointer_init(void)
 {
     if (!present) {
         return false;
@@ -602,7 +603,7 @@ bool hal_pointer_init(void)
  * The questions `hal.h` asks.
  *----------------------------------------------------------------------*/
 
-int keyboard_getchar(void)
+int i8042_getchar(void)
 {
     drain();
 
@@ -618,12 +619,12 @@ int keyboard_getchar(void)
     }
 }
 
-bool keyboard_present(void)
+bool i8042_present(void)
 {
     return present;
 }
 
-bool hal_key_event(unsigned *code, bool *down)
+bool i8042_key_event(unsigned *code, bool *down)
 {
     drain();
 
@@ -638,7 +639,7 @@ bool hal_key_event(unsigned *code, bool *down)
     return true;
 }
 
-bool hal_key_held(unsigned code)
+bool i8042_key_held(unsigned code)
 {
     if (code >= 128) {
         return false;
@@ -647,7 +648,7 @@ bool hal_key_held(unsigned code)
     return (held[code >> 5] & (1u << (code & 31))) != 0;
 }
 
-bool hal_pointer_poll(struct pointer_state *out)
+bool i8042_pointer_poll(struct pointer_state *out)
 {
     if (!aux_present) {
         return false;
@@ -678,7 +679,7 @@ bool hal_pointer_poll(struct pointer_state *out)
  * chip until somebody reads them. The virtio driver's pair differ because
  * one clears an interrupt flag; here they are the same question.
  */
-bool hal_input_pending_peek(void)
+bool i8042_input_pending_peek(void)
 {
     if (!present) {
         return false;
@@ -689,9 +690,9 @@ bool hal_input_pending_peek(void)
     return chars_head != chars_tail || keyq_head != keyq_tail || pointer_moved;
 }
 
-bool hal_input_pending(void)
+bool i8042_input_pending(void)
 {
-    return hal_input_pending_peek();
+    return i8042_input_pending_peek();
 }
 
 /*
@@ -707,7 +708,7 @@ bool hal_input_pending(void)
  * polling - reading the bytes is the right answer and dropping them is not.
  * The queues are the same ones the polled path fills.
  */
-void input_interrupt(unsigned line)
+void i8042_interrupt(unsigned line)
 {
     if (line == 1 || line == 12) {
         drain();

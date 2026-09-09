@@ -13,12 +13,15 @@ const char *hal_keyboard_describe(void)
 }
 
 /*
- * "Made absolute here", because it is the one thing about this pointer that
- * is not the hardware's doing. A TrackPoint reports how far it moved; the
- * driver keeps the position and reports a range it invented, which `hal.h`
- * permits so long as the range is stated rather than assumed.
+ * **The pointer is virtio's and the keyboard is not**, which is what
+ * `input_bind.c` decided and this has to agree with. Saying "i8042
+ * auxiliary port" here while the binding takes the pointer from virtio
+ * would be the same kind of lie the kernel used to tell about the keyboard,
+ * one layer down.
+ *
+ * It changes the day the auxiliary port delivers.
  */
 const char *hal_pointer_describe(void)
 {
-    return "i8042 auxiliary port, relative counts made absolute over 0..";
+    return "virtio-input with absolute axes, reporting 0..";
 }
