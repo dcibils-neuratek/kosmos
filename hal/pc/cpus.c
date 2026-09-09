@@ -22,9 +22,44 @@
  * the shape of the interface rather than only its value.
  */
 
+#include <stdbool.h>
+
+#include "acpi.h"
 #include "hal.h"
 
+/*
+ * **This returned 1 with a comment explaining why, and the comment was
+ * right.** There was no way to know: the count is in the ACPI MADT, one
+ * entry per local APIC, and nothing parsed it - so one was the honest
+ * answer rather than a guess, because the kernel really was scheduling on
+ * one processor.
+ *
+ * `hal/pc/acpi.c` is the asking. What comes back is what the firmware
+ * listed and marked usable, which on the ThinkPad this is aimed at is eight
+ * or twelve against the four this kernel has ever seen.
+ *
+ * **Counting them is not starting them**, and the two are deliberately
+ * still apart. `cpu_on.c` refuses until there is a local APIC driver, and
+ * `cpu_secondary_entry` refuses until there is a trampoline below 1 MB for
+ * a core to land on. A count that arrived before either would make the
+ * machine claim processors it cannot use - so `smp_start_others` will try,
+ * be refused, and say so, which is the failure that reads correctly.
+ *
+ * Falls back to one, and it is the same one for the same reason: a machine
+ * whose firmware has no tables has a processor this kernel is running on,
+ * whatever it cannot enumerate.
+ */
 unsigned hal_cpu_count(void)
 {
-    return 1;
+    static bool asked;
+    unsigned n;
+
+    if (!asked) {
+        asked = true;
+        (void)acpi_init();
+    }
+
+    n = acpi_cpu_count();
+
+    return (n > 0) ? n : 1u;
 }

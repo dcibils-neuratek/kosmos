@@ -41,7 +41,7 @@ ARGS = [
 PAGE_SIZE = 4096
 
 
-def boot(image, option, timeout, typed=()):
+def boot(image, option, timeout, typed=(), extra=()):
     """Boots, optionally types at the prompt, and returns everything printed.
 
     One line per prompt, and only after the machine has been quiet for a
@@ -54,7 +54,7 @@ def boot(image, option, timeout, typed=()):
         print("FAIL: no %s beside the ELF. Run `make x86-build`." % binary)
         return None
 
-    cmd = [QEMU] + ARGS
+    cmd = [QEMU] + ARGS + list(extra)
 
     if option:
         # The same flag the ARM board takes, now that this one answers out
@@ -217,6 +217,33 @@ def main():
             print("  " + f)
 
         return 1
+
+    #
+    # **The processor count comes out of the firmware's tables.**
+    #
+    # This board answered 1 for as long as it existed, and the comment in
+    # `hal/pc/cpus.c` was right to: the count is in the ACPI MADT, one entry
+    # per local APIC, and nothing parsed it. AArch64 gets it from PSCI,
+    # which will say whether a processor exists without starting it; x86 has
+    # no equivalent and has to read a table.
+    #
+    # Four, asked for on the command line, so what is checked is that the
+    # machine found what QEMU was told to give it - not that it printed a
+    # number. A hardcoded 1 would fail this, and so would a count that came
+    # from CPUID's core count, which is a different question with a
+    # different answer on a hybrid processor.
+    #
+    smp = boot(image, None, 90.0, extra=("-smp", "4"))
+
+    check(smp is not None and "-> 4 processors" in smp,
+          "the machine did not find the four processors it was given; "
+          "the MADT is the only place that number is")
+
+    # And it does not claim to be *using* them. Counting is not starting:
+    # `cpu_on.c` refuses until there is a local APIC, and there is not.
+    check(smp is not None and "1 of them given new threads" in smp,
+          "the machine claimed more than one processor is scheduling, and "
+          "nothing can start a second one yet")
 
     print("PASS: %d checks on x86-64 (it boots through twelve stages, names "
           "its processor out of CPUID, agrees with userland about the memory "

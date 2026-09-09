@@ -50,7 +50,10 @@
  *   - no auxiliary byte ever arrives, whether the movement is sent with
  *     `input-send-event` or the monitor's own `mouse_move`;
  *   - `info mice` names the PS/2 mouse as current, and `vmport=off` - the
- *     obvious suspect, since q35 carries a vmmouse - changes nothing.
+ *     obvious suspect, since q35 carries a vmmouse - changes nothing;
+ *   - and enabling both interrupts in the configuration byte, in case the
+ *     model only pushes auxiliary bytes to the output buffer when the line
+ *     is armed, changes nothing either.
  *
  * So the board stays on virtio input until that is understood, because a
  * desktop with no pointer is not a desktop and the display harness says so

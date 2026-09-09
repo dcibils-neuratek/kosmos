@@ -140,6 +140,50 @@ Design decisions worth keeping:
   units *with the range beside them*. A made-up range is honest as long as
   it is stated rather than assumed.
 
+### `hal/pc/acpi.c` - the machine says how many processors it has
+
+**This board answered "one processor" for as long as it existed**, and the
+comment in `hal/pc/cpus.c` was right to: the count is in the ACPI MADT, one
+entry per local APIC, and nothing parsed it. AArch64 asks PSCI, which will
+say whether a processor exists without starting it. x86 has no equivalent
+and has to read a table.
+
+It now reads them. RSDP out of the EBDA or the BIOS area, then the XSDT -
+or the RSDT on a machine old enough to have only that - then MADT for the
+processors and the I/O APIC, and MCFG for where PCIe keeps its
+configuration space.
+
+```
+[3/12] processor
+       -> 4 processors
+       -> 1 of them given new threads; SMPWORK=4 spreads them
+```
+
+Three things worth keeping:
+
+- **No AML**, and that is the line. These tables are fixed-layout
+  structures a C compiler can describe; the ACPI namespace is a bytecode
+  language with its own interpreter, and nothing here needs one.
+- **Everything is checksummed before it is believed.** A table is a
+  structure at an address the firmware chose, in memory this kernel did not
+  write. A table that fails its sum is skipped, and a missing table is a
+  fact rather than a failure.
+- **Counting is not starting, and the two are still apart.** `cpu_on.c`
+  refuses until there is a local APIC driver and `cpu_secondary_entry`
+  refuses until there is a trampoline below 1 MB - so the machine reports
+  four and schedules on one, and says so. A count that arrived before
+  either would make it claim processors it cannot use.
+
+Two checks in the x86-64 suite, which went from 27 to 29: the machine finds
+the four processors QEMU was told to give it, and does *not* claim to be
+scheduling on them.
+
+**What it also found and nothing uses yet**: the local APIC and I/O APIC
+addresses, and the ECAM base. That last one is what lets `pci.c` reach the
+4096 bytes of configuration space PCIe has rather than the 256 that port
+0xCF8 can address - and everything PCIe added, including where MSI-X tables
+live, is above the first 256.
+
 ### The boot log stopped naming the wrong driver
 
 `kernel/main.c` printed `keyboard: virtio-input, negotiated and polled like
@@ -252,7 +296,7 @@ works, and not before.
 | Multiboot2 header, or a UEFI stub - depends on question 2 | new | ~300, or ~1000 |
 | Framebuffer from the loader's boot information | `hal_fb_init` has the shape | ~100 |
 | i8042 keyboard and auxiliary port | **written**, keyboard proven | done, unwired |
-| ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | new | ~400 |
+| ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
 | Local APIC / IOAPIC / MSI | new | ~600 |
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |
 | NVMe | new | ~800 |
@@ -293,9 +337,15 @@ right depends on a fact about the laptop's firmware.
 
 ## 11. Next three things
 
-1. **Find out why QEMU's PS/2 mouse will not stream.** One reading of
-   `pckbd.c`, and it decides nothing else.
-2. **Split the keyboard entry points out of `hal/virtio/input.c`**, so a
-   board can take its keyboard from one driver and its pointer from another.
-   The PC board wants that either way.
-3. **ACPI**, which is what turns four processors into twelve.
+1. **The local APIC**, now that ACPI says where it is. It is what a real
+   machine needs for a per-core timer, and it is the first half of starting
+   a second processor.
+2. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
+   bytes per function through port 0xCF8 and PCIe has 4096.
+3. **Split the keyboard entry points out of `hal/virtio/input.c`**, so a
+   board can take its keyboard from one driver and its pointer from
+   another - which is what lets the i8042 into the build before the
+   auxiliary port is understood.
+
+And still open, whenever it is cheap: **why QEMU's PS/2 mouse will not
+stream.** One reading of `pckbd.c`, and it decides nothing else.

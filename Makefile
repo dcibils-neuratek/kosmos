@@ -1851,6 +1851,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/fwcfg/fwcfg.c \
              hal/fwcfg/ramfb.c \
              hal/pc/fwcfg_port.c \
+             hal/pc/acpi.c \
              hal/pc/pci.c \
              hal/pc/virtio.c \
              hal/virtio/blk.c \
