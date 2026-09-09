@@ -48,6 +48,27 @@ void console_attach_screen(const struct fb *fb, const char *title);
  * side has no opinion and ignores it. */
 void console_colour(unsigned long foreground);
 
+/*
+ * A run of text in one colour, written as one operation.
+ *
+ * **The colour travels with the bytes rather than being a mode somebody
+ * sets**, and that is the whole reason this exists next to `console_colour`.
+ * The kernel can set a colour, print and set it back because the kernel is
+ * the only writer; the console server is not - it serves every program at
+ * once, and a Terminal serves its children while they interleave. Two
+ * writers doing set-print-restore race over one `fg` and each other's colour
+ * lands in the wrong line. A colour attached to the bytes cannot.
+ *
+ * `colour` of zero means "whatever the console is already using", so a
+ * caller with no opinion says nothing and nothing changes for it.
+ *
+ * One lock for the whole run, which `kputc` in a loop was not: `sys_write`
+ * took and released the console lock once per byte, so a four-kilobyte
+ * write was four thousand acquisitions and two cores could interleave
+ * halfway through a word.
+ */
+void kwrite_colour(const char *s, unsigned long len, unsigned long colour);
+
 /* The boot progress bar, in the rows at the bottom that text never scrolls
  * through. A no-op with no screen. */
 void console_progress(unsigned done, unsigned total);

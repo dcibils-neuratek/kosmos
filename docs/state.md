@@ -8,6 +8,118 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### The console has colours, and a `neofetch`
+
+Two pieces of work, in that order, because the second needs the first.
+
+**A console write carries a colour.** `struct con_request` gained a
+`uint32_t colour` - `0xAARRGGBB`, zero meaning the console's own, so every
+caller that has no opinion is unchanged and none of them were touched.
+`SYS_WRITE` gained a third argument to match, `kernel/console.c` gained
+`kwrite_colour`, and any Lua program can now say:
+
+```lua
+write("KOSMOS", 0xffcc2233)     -- one run, no newline added
+write(" ok\n", "good")          -- or a name, against a fixed palette
+```
+
+`design.md` §4.4.1 has the argument in full. The short version is that two
+other shapes were available and both are wrong: **a mode** loses, because the
+console has several writers and set-then-write is two operations another
+process can get between; **an escape code** loses, because this system had
+already refused in-band escapes once, for the boot log, and the reason is
+still written where it was decided.
+
+The third shape - a run list in the message - is the one that looks necessary
+and is not. A line in several colours is several writes, because the far side
+appends until a newline arrives.
+
+**`kwrite_colour` also replaced `kputc` in a loop**, which was one spinlock
+acquisition per byte. That was not the point of the change and it is the
+better half of it.
+
+### The kernel's console reads UTF-8
+
+`tools/bdf2c.py` now emits the Block Elements - U+2580 to U+259F, the whole
+block - beside printable ASCII, and `kernel/console.c` decodes UTF-8 in a
+two-word state machine on the way to the screen. `gfx.md` §19.11.1 is the
+account.
+
+It mattered because the console indexed the font *by byte*, so a three-byte
+character became three hollow boxes on screen while the serial line showed it
+correctly - the same output looking like two different outputs, which is the
+complaint the early-run colour list answers in the other direction.
+
+`user/lib/gfx.c` carries the same lookup, and the size check at the top of
+`luaopen_gfx` is what forced it to: it panicked on the first boot after the
+font grew, which is exactly what it exists for.
+
+### `neofetch`
+
+`user/bin/neofetch.lua`. The banner is `assets/kosmos-ascii-art.txt`, carried
+in the image through `sys.asset` - which is already "a small file compiled
+in" and so needed one line in the Makefile rather than a mechanism.
+
+**Neither colour is written in the art file, and it does not need markup.**
+The diagonals are Block Elements and the wordmark is ASCII line art, so which
+is which is a property of the glyphs: blocks go out blue, everything else
+red, and the three shades take care of themselves because the light shade
+simply covers fewer pixels. The picture stays something you can open in an
+editor.
+
+It runs in two places, through `run_program` and `launch` respectively, so
+`neofetch` typed at a prompt and `neofetch` at boot are the same program with
+the same authority:
+
+- the boot shell, wrapped in `pcall` - a banner may never be the reason a
+  machine cannot reach a prompt
+- every Terminal window, which grew to 640x700 to hold it
+
+Three of neofetch's fields are deliberately missing, and each says something.
+There is no `user@host`, because nothing here has a global name. There is no
+`Terminal:`, because a program **cannot** find out - it prints to whatever it
+was handed as `/dev/console` and a Terminal window mounts itself there
+speaking the same protocol the server does. And where the colour bars go
+there are the kernel's fixed pools instead, which is the number this system
+actually wants somebody to have seen.
+
+### What was checked
+
+`make test` 139/139 and 135/135, `make screenshot` 71 display checks on both
+architectures, and the x86-64 build. Two tests are new and both are exact
+rather than approximate:
+
+- `console: a write carries its colour, and UTF-8` counts framebuffer pixels
+  of an unlikely colour after writing U+2588. The answer is 128 and not "more
+  than before": three unknown boxes is a different number, a block found at
+  the wrong index is a different number, and a block in the console's own
+  colour is zero. A third write with no colour then proves the console's
+  default survived, which is the half a *mode* would fail.
+- The Lua font test draws the full block, the light shade, the first of the
+  range, and a codepoint in neither range, and checks the rows against the
+  BDF.
+
+The first one taught something about the harness: it draws, so those glyphs
+reach the serial line too, and a TAP result printed on the end of them does
+not begin a line. A run in which every test passed was reported one test
+short until it emitted a newline.
+
+### What is not done
+
+**The version has not been bumped.** This is a syscall ABI change and a
+protocol change, so it is at least a minor - but nothing has been committed
+or pushed, and that is the moment for it.
+
+**`screen_putc` still loses the character that wraps.** Its own comment says
+"wrap, then draw the character below" and it returns instead, so the
+character that caused the wrap is dropped. Pre-existing, found while making
+that function take a codepoint, and deliberately not fixed in the same change
+- it is a behaviour change the display harness has opinions about.
+
+**`kits <name>` has never worked.** `user/bin/kits.lua` does `args[1]`, and
+`args` is a string, so indexing it reaches the `string` table and returns
+nil. Unrelated to any of this; found while reading for `neofetch`.
+
 ### A thread runs on another processor, and the IPI is worth 25x
 
 `docs/smp.md` step six. `hal_cpu_wake(cpu)` sends SGI 0 through

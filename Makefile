@@ -1265,10 +1265,25 @@ KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
 # to avoid using a decoder this system needs anyway.
 ICON_FILES := $(sort $(wildcard assets/icons/*.png))
 
-$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) tools/assets2c.py
+# Not a picture, and in the same table anyway.
+#
+# `assets/*.txt` is the project's own artwork rather than something
+# vendored - the banner `neofetch` draws. It is here because the table is
+# already "small files carried inside the image", which is exactly what it
+# is, and `sys.asset` is already the door to them. A second mechanism for
+# one text file would be a second mechanism.
+#
+# Text, so it *could* have travelled as Lua source. It does not, because
+# then it would be a program in /bin or a library in /lib - two places whose
+# listings are meant to be things you can run and things you can load - and
+# a picture is neither.
+ART_FILES := $(sort $(wildcard assets/*.txt))
+
+$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) \
+                 tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
-	        assets/images/test-pattern.png $(ICON_FILES)
+	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES)
 
 # The outline fonts, embedded the same way.
 #

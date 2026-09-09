@@ -266,6 +266,48 @@ the rows is what transfers.
 
 ---
 
+## 19.11.1 The bitmap font, and what UTF-8 costs it
+
+`tools/bdf2c.py` turns the vendored BDF into a C array, and for a long time
+it emitted printable ASCII and one hollow box for everything else. The
+kernel's console indexed that array *by byte*.
+
+That was fine while nothing printed anything else, and it stopped being fine
+the moment something did. A character outside ASCII is two or three bytes in
+UTF-8, so it arrived on screen as two or three hollow boxes - while the
+serial line, whose far end decodes for itself, showed the character
+perfectly. **The same output looking like two different outputs** is the
+exact complaint the early-run colour list in `kernel/console.c` was written
+to answer, in the other direction, and it is the reason this was worth
+fixing rather than living with.
+
+Two halves:
+
+- **`bdf2c.py` emits U+2580 to U+259F as well** - the Block Elements, whole.
+  They are what ASCII art is drawn with: the full and fractional blocks and
+  the three shades. A whole Unicode block rather than the two glyphs the
+  first caller wanted, so that "which of them" is not a judgement anybody has
+  to make a second time. With ASCII that is 127 glyphs, about two kilobytes.
+  A second array names the codepoint of each glyph past the box, because
+  those are not contiguous with ASCII and so have to be said rather than
+  computed.
+- **`kernel/console.c` decodes UTF-8** in a two-word state machine, because
+  bytes arrive there one at a time - `kputc` is one character. The serial
+  side never goes through it: it has had the raw bytes already.
+
+`user/lib/gfx.c` carries the same lookup, and it has to: both read the same
+generated array, so a font whose layout only one of them understood would
+draw one picture at the boot console and a different one in a window. The
+check at the top of `luaopen_gfx` is what enforces that - it fired on the
+first build after the font grew, which is what it is for.
+
+**A broken sequence draws the replacement character and then reconsiders the
+byte that broke it.** Dropping that byte instead would turn one bad byte into
+a swallowed character after it, which is how a decoder turns a corrupted line
+into a corrupted screen. Overlong forms are not rejected: they cannot reach a
+glyph, since a lookup that misses draws the box, so the check would buy a
+differently wrong picture rather than a right one.
+
 ## 19.12 Outline fonts, and why there are three of them
 
 The bitmap font is still here and still the default. It is exact, it costs

@@ -43,9 +43,27 @@ static inline void kosmos_exit(int code)
     for (;;) { }
 }
 
+/*
+ * A run of text on the console, in a colour.
+ *
+ * `colour` is 0xAARRGGBB and zero means the console's own default, so
+ * `kosmos_write` below is this with no opinion. The colour travels with the
+ * bytes rather than being a mode: the console has several writers and a
+ * set-print-restore pair from two of them at once puts one's colour on the
+ * other's line. `kernel/console.h` has the argument in full.
+ *
+ * `sys3` and not `sys2`, even for the plain form, because the kernel now
+ * reads a third register and an unset one holds whatever was left in it.
+ */
+static inline long kosmos_write_colour(const char *s, size_t len,
+                                       unsigned long colour)
+{
+    return sys3(SYS_WRITE, (long)(uintptr_t)s, (long)len, (long)colour);
+}
+
 static inline long kosmos_write(const char *s, size_t len)
 {
-    return sys2(SYS_WRITE, (long)(uintptr_t)s, (long)len);
+    return kosmos_write_colour(s, len, 0);
 }
 
 /* One byte from the console, or negative when nothing is waiting. Only the

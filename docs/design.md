@@ -234,6 +234,43 @@ query(path, pred, cb)   -> live query handle
 
 `read` returns a table, not a string. `fs.read("/dev/temp")` gives `{celsius = 47.2}`, not `"47200\n"` to be parsed. This is where BeOS typed attributes go inside the Plan 9 primitive, and that fusion is what makes Kosmos Kosmos rather than two ideas taped together.
 
+### 4.4.1 Colour on the console, and why it is a field
+
+`write` to `/dev/console` carries a colour: `0xAARRGGBB`, with zero meaning
+the console's own. It is worth writing down because two other shapes were
+available and both are wrong here.
+
+**Not a mode.** The obvious spelling is set-a-colour, then print, then set it
+back - which is exactly what the kernel does internally, and the kernel can,
+because the kernel is the only writer. The console server is not: it serves
+every program at once, and a Terminal window serves its children while they
+interleave. Set-then-write is two operations another process can get between,
+so one program's colour ends up on another program's line. A colour attached
+to the bytes it applies to cannot do that.
+
+**Not an escape code.** This system had already refused in-band escapes once,
+for the boot log, and `kernel/console.c` still carries the reason: colour is
+kept there as a *run list* beside the text, because the alternative was "an
+escape language inside a boot log". The same argument holds one layer up and
+is the same argument as every other declared shape here - a server should not
+have to parse its payload to discover what the payload means.
+
+**And not a run list either, which is the part that is not obvious.** A line
+in several colours looks like it needs one, and it does not: the far side
+appends until a newline arrives, so several writes join into one line on
+their own. The protocol can already say everything a run array would say, and
+adding one would be a second way to say it. The banner `neofetch` draws is
+the case that proves it - its wordmark has diagonals either side and through
+it, so each of those rows goes out as five or six writes.
+
+**Names resolve before the message leaves the program.** `ns.write` accepts
+`good` or `bad` as well as a number, and turns it into one. That is not
+laziness about theming: a console program has no theme - it never loads
+`ui.lua` - and the console it is writing to may be the kernel's, which exists
+before the desktop and has no palette to consult. What it costs is output
+that does not follow a theme change, and the field is already wide enough to
+carry a name instead if that ever matters more than the simplicity does.
+
 ### 4.5 Concurrency
 
 Three layers, with different costs. Do not mix them.
