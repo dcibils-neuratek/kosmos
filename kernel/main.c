@@ -279,7 +279,10 @@ void kmain(void)
     boot_why(hal_input_describe());
 
     if (hal_keyboard_init()) {
-        boot_fact("keyboard: virtio-input, negotiated and polled like the serial line");
+        boot_fact_begin();
+        kputs("keyboard: ");
+        kputs(hal_keyboard_describe());
+        boot_fact_end();
     } else {
         boot_fact("no keyboard; input comes over the serial line");
     }
@@ -294,7 +297,8 @@ void kmain(void)
         struct pointer_state where;
 
         boot_fact_begin();
-        kputs("pointer: virtio-input with absolute axes, reporting 0..");
+        kputs("pointer: ");
+        kputs(hal_pointer_describe());
 
         if (hal_pointer_poll(&where)) {
             kputu(where.max_x);

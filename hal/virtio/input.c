@@ -43,6 +43,7 @@
 
 #include "mmio.h"
 #include "hal.h"
+#include "keys.h"
 #include "spinlock.h"
 #include "virtio.h"
 
@@ -97,34 +98,6 @@ struct virtio_input_event {
 #define ABS_Y           0x01
 #define BTN_LEFT        0x110
 #define BTN_RIGHT       0x111
-/*
- * The keys that are not characters.
- *
- * A keymap has one byte per keycode, and an arrow is not one byte: over a
- * serial line it arrives as escape, '[', and a letter, because that is what
- * a terminal sends. On a real keyboard it is a single keycode with no
- * character at all - so with a keymap alone, `keymap_plain[108]` is zero,
- * the key produces nothing, and arrows work over the cable and do nothing
- * in the window.
- *
- * That is exactly what happened, and it hid for a while: every automated
- * check types over the serial line, where arrows had always worked.
- */
-#define KEY_HOME        102
-#define KEY_UP          103
-#define KEY_PAGEUP      104
-#define KEY_LEFT        105
-#define KEY_RIGHT       106
-#define KEY_END         107
-#define KEY_DOWN        108
-#define KEY_PAGEDOWN    109
-#define KEY_DELETE      111
-
-#define KEY_LEFTCTRL    29
-#define KEY_LEFTSHIFT   42
-#define KEY_RIGHTSHIFT  54
-#define KEY_CAPSLOCK    58
-#define KEY_RIGHTCTRL   97
 
 /*
  * The split virtqueue.
@@ -212,23 +185,6 @@ static void queue(const char *s)
 
     pending_len = n;
     pending_at = 0;
-}
-
-/* The escape sequence for a key that is not a character, or NULL. */
-static const char *sequence_for(unsigned code)
-{
-    switch (code) {
-    case KEY_UP:       return "\x1b[A";
-    case KEY_DOWN:     return "\x1b[B";
-    case KEY_RIGHT:    return "\x1b[C";
-    case KEY_LEFT:     return "\x1b[D";
-    case KEY_HOME:     return "\x1b[H";
-    case KEY_END:      return "\x1b[F";
-    case KEY_PAGEUP:   return "\x1b[5~";
-    case KEY_PAGEDOWN: return "\x1b[6~";
-    case KEY_DELETE:   return "\x1b[3~";
-    default:           return NULL;
-    }
 }
 
 /* Modifier state, which belongs to the keyboard and to nothing else. */
@@ -326,44 +282,6 @@ bool hal_key_held(unsigned code)
 
     return (held[code >> 5] & (1u << (code & 31))) != 0;
 }
-
-static const unsigned char keymap_plain[128] = {
-    0x00, 0x1b, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,   /*   0  esc 1234567 */
-    0x37, 0x38, 0x39, 0x30, 0x2d, 0x3d, 0x08, 0x09,   /*   8  890-= bs tab */
-    0x71, 0x77, 0x65, 0x72, 0x74, 0x79, 0x75, 0x69,   /*  16  qwertyui */
-    0x6f, 0x70, 0x5b, 0x5d, 0x0a, 0x00, 0x61, 0x73,   /*  24  op[] enter ctrl as */
-    0x64, 0x66, 0x67, 0x68, 0x6a, 0x6b, 0x6c, 0x3b,   /*  32  dfghjkl; */
-    0x27, 0x60, 0x00, 0x5c, 0x7a, 0x78, 0x63, 0x76,   /*  40  '` shift \ zxcv */
-    0x62, 0x6e, 0x6d, 0x2c, 0x2e, 0x2f, 0x00, 0x00,   /*  48  bnm,./ shift */
-    0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  56  alt space caps */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  64 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  72 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  80 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  88 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  96 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 104 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 112 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 120 */
-};
-
-static const unsigned char keymap_shift[128] = {
-    0x00, 0x1b, 0x21, 0x40, 0x23, 0x24, 0x25, 0x5e,   /*   0  esc !@#$%^ */
-    0x26, 0x2a, 0x28, 0x29, 0x5f, 0x2b, 0x08, 0x09,   /*   8  &*()_+ bs tab */
-    0x51, 0x57, 0x45, 0x52, 0x54, 0x59, 0x55, 0x49,   /*  16  QWERTYUI */
-    0x4f, 0x50, 0x7b, 0x7d, 0x0a, 0x00, 0x41, 0x53,   /*  24  OP{} enter ctrl AS */
-    0x44, 0x46, 0x47, 0x48, 0x4a, 0x4b, 0x4c, 0x3a,   /*  32  DFGHJKL: */
-    0x22, 0x7e, 0x00, 0x7c, 0x5a, 0x58, 0x43, 0x56,   /*  40  "~ shift | ZXCV */
-    0x42, 0x4e, 0x4d, 0x3c, 0x3e, 0x3f, 0x00, 0x00,   /*  48  BNM<>? shift */
-    0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  56  alt space caps */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  64 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  72 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  80 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  88 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /*  96 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 104 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 112 */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   /* 120 */
-};
 
 
 /* Hands descriptor `i` back to the device as somewhere to put an event. */
@@ -764,7 +682,7 @@ static int keyboard_getchar_locked(void)
      */
     for (;;) {
         struct virtio_input_event event;
-        unsigned char c;
+        int c;
 
         if (!next_event(&keyboard, &event)) {
             return -1;              /* nothing waiting */
@@ -822,7 +740,7 @@ static int keyboard_getchar_locked(void)
          * terminal would have sent, and handed out a byte at a time.
          */
         {
-            const char *sequence = sequence_for(event.code);
+            const char *sequence = hal_key_sequence(event.code);
 
             if (sequence != NULL) {
                 queue(sequence);
@@ -830,51 +748,16 @@ static int keyboard_getchar_locked(void)
             }
         }
 
-        c = shift ? keymap_shift[event.code] : keymap_plain[event.code];
-
         /*
-         * Caps lock is not a second shift: it applies to letters and to
-         * nothing else, so 1 stays 1 rather than becoming !. Checking the
-         * unshifted letter rather than the result is what makes shift and
-         * caps together give a lower-case letter, which is what a keyboard
-         * does.
+         * The rules are the same on every keyboard, so they live in
+         * `hal/keys.c` with the tables: caps lock is not a second shift,
+         * and control names a control character. -1 is a key that says
+         * nothing, which is not the same as a key with no character.
          */
-        if (caps) {
-            unsigned char plain = keymap_plain[event.code];
+        c = hal_key_char(event.code, shift, ctrl, caps);
 
-            if (plain >= 'a' && plain <= 'z') {
-                c = shift ? plain : keymap_shift[event.code];
-            }
-        }
-
-        /*
-         * Control turns a letter into the control character it names: C
-         * becomes 3, D becomes 4, and so on down the first 32 codes. That
-         * mapping is not a convention somebody chose here - it is what the
-         * ASCII table is arranged for, which is why clearing bit 6 of the
-         * upper-case letter is the whole of it.
-         *
-         * Only letters. Control-1 is not a character, and inventing one
-         * would put a byte on the wire that no program is expecting.
-         *
-         * The serial line already does this, because the terminal on the
-         * other end does it before the byte ever arrives. Without these ten
-         * lines Control-C works over the cable and does nothing in the
-         * window, which is the kind of difference that gets blamed on the
-         * program rather than on the driver.
-         */
-        if (ctrl) {
-            unsigned char plain = keymap_plain[event.code];
-
-            if (plain >= 'a' && plain <= 'z') {
-                return (int)((plain - 'a') + 1);
-            }
-
-            continue;               /* control-anything-else says nothing */
-        }
-
-        if (c != 0) {
-            return (int)c;
+        if (c >= 0) {
+            return c;
         }
     }
 }

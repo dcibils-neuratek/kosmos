@@ -62,6 +62,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - BeOS lineage: `docs/beos.md`
 - Toolchain and build: `docs/setup.md`
 - Porting Lite XL, a real editor: `docs/litexl.md`
+- The first real machine, a ThinkPad T14: `docs/thinkpad.md`
 - Glossary: `docs/glossary.md`
 
 ---

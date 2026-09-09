@@ -204,6 +204,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/fwcfg_mmio.c \
         hal/fwcfg/ramfb.c \
         hal/virtio/input.c \
+        hal/keys.c \
         hal/qemu-virt/input_describe.c \
         hal/virtio/blk.c \
         kernel/console.c \
@@ -1855,6 +1856,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/virtio/blk.c \
              hal/virtio/net.c \
              hal/virtio/input.c \
+             hal/keys.c \
              hal/pc/input_describe.c \
              hal/virtio/snd.c \
              kernel/console.c \

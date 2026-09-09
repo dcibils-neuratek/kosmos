@@ -233,6 +233,24 @@ bool hal_fb_init(struct fb *out);
 bool hal_keyboard_init(void);
 
 /*
+ * What the keyboard and the pointer turned out to be, in the words the boot
+ * log uses.
+ *
+ * **The kernel had these as string literals and they went stale the moment a
+ * second driver existed.** `kernel/main.c` said "virtio-input, negotiated
+ * and polled like the serial line" on a machine whose keyboard is an i8042 -
+ * a boot log that names the wrong driver is worse than one that says
+ * nothing, because it is the first thing anybody reads when a board does not
+ * work.
+ *
+ * A prefix rather than a whole sentence: the kernel appends the range the
+ * pointer actually reported, which is a fact it gets by asking rather than
+ * from a board.
+ */
+const char *hal_keyboard_describe(void);
+const char *hal_pointer_describe(void);
+
+/*
  * Where the pointer is, in the device's own units.
  *
  * Undecoded on purpose. An absolute pointing device reports in a range of

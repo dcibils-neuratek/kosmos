@@ -145,6 +145,7 @@ piece of work with its own tests.
 | QEMU `virt` | aarch64 | device tree | **the development target.** Everything runs here first. |
 | QEMU `q35` | x86-64 | fw_cfg, multiboot | **runs the desktop.** 125 in-guest checks, 65 display checks, disk, network, sound. |
 | Alienware x14 R1 | x86-64 | UEFI + ACPI | **not started.** §6. |
+| ThinkPad T14 Gen 1 | x86-64 | UEFI + ACPI | **started.** §7, and `docs/thinkpad.md`. |
 | Raspberry Pi 5 | aarch64 | firmware + mailbox | **not started**, and blocked on a serial cable that is not here. §7. |
 
 ---
@@ -452,3 +453,18 @@ loader is right depends on a fact about the laptop's firmware.
    twelve, against the four this kernel has ever seen - and an APIC timer.
 4. **Storage.** NVMe, so `/home` outlives the boot.
 5. **The rest.** I219, then HDA, then xHCI, then the touchpad.
+
+### Where the work has got to
+
+**`docs/thinkpad.md` is the log** - what has been built, what is proven,
+what is blocked and exactly what is known about it. Kept there rather than
+here because this document is about what a target *costs* and that one is
+about what a target has *done*, and a fact written in two places is a fact
+that can disagree with itself.
+
+The short version: `hal/pc/i8042.c` is written and its keyboard half is
+proven under QEMU - `sendkey` types at the prompt and the arrows walk the
+shell's history - which is §6's blocking question answered. Its auxiliary
+port sends nothing under emulation and that is not yet understood, so the
+board stays on virtio input until it is. `hal/keys.c` came out of the same
+work and is in the build on both architectures.
