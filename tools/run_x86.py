@@ -394,6 +394,54 @@ def main():
           "nothing can start a second one yet")
 
     #
+    # **A machine with a real amount of memory in it.**
+    #
+    # Every x86 boot in this file until now asked for 512 MB, which is the
+    # one size where a PC's memory looks simple: one usable block, the
+    # kernel inside it, and nothing above the four-gigabyte line. No machine
+    # built this decade has that shape, and the port would have met the real
+    # one for the first time on a laptop with no serial port - which is a
+    # black screen and nothing to ask.
+    #
+    # Two faults, both found here and neither a driver:
+    #
+    #   - the boot page tables mapped one gigabyte, and a multiboot loader
+    #     may leave its information structure anywhere below four. QEMU put
+    #     it at 0x7ffe2349 and reading it faulted at boot stage three;
+    #   - the largest usable region on a machine with a PCI hole is the one
+    #     *above* four gigabytes, so the board chose the block the kernel is
+    #     not loaded into. `pmm_init: the kernel image does not fit in RAM`.
+    #
+    # Sixteen gigabytes rather than four, because that is a ThinkPad and
+    # because both faults get worse rather than better with size.
+    #
+    big = boot(image, None, 120.0, extra=("-m", "16G"))
+
+    if big is None:
+        check(False, "the machine would not boot with 16 GB of memory")
+    else:
+        check("kosmos>" in big,
+              "16 GB of memory did not reach a prompt: "
+              + next((l.strip() for l in big.splitlines()
+                      if "PANIC" in l or "fault" in l),
+                     "and said nothing about why"))
+
+        # It says what it gave up. A kernel that identity maps RAM below the
+        # process region cannot describe a laptop's memory, and a number
+        # that is quietly five per cent of the truth has to be printed
+        # rather than discovered.
+        told = re.search(r"of (\d+) MB this machine has", big)
+
+        check(told is not None and int(told.group(1)) > 16000,
+              "the machine did not report the memory it cannot map; the cap "
+              "is silent, which is how it would be found on hardware")
+
+        used = re.search(r"(\d+) MB of RAM in \d+ pages", big)
+
+        check(used is not None and 700 < int(used.group(1)) < 768,
+              "the usable memory is not the region below the device window, "
+              "so the board chose a block on the far side of the PCI hole")
+
     # And the sound, which is the one subsystem this board does not take
     # from virtio. `hal/pc/hda.c` says why an emulated Intel controller is
     # worth more here than an emulated virtio one: it is the same silicon

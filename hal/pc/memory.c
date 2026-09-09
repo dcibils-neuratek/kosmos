@@ -26,10 +26,25 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "mmu.h"
 #include "pc.h"
 
 
 static struct memrange found = { 0, 0 };
+
+/* Every usable byte the loader listed, mappable or not. */
+static unsigned long whole;
+
+/*
+ * And the part of it the line above puts out of reach.
+ *
+ * Kept separately because "the machine has more than the kernel uses" is
+ * true on every PC and means nothing: the first usable region is the 640 KB
+ * under the BIOS data area, and not choosing it is the scan working. What
+ * is worth reporting is memory lost to the *address space* rather than to
+ * the choice, and that is only ever what sits past the line.
+ */
+static unsigned long beyond;
 
 /*
  * Where the loader left its structure. `start.S` writes it and `pc.h` says
@@ -114,9 +129,48 @@ void pc_capture_memory(void)
     while (entry < end) {
         const struct multiboot_mmap *m = (const struct multiboot_mmap *)entry;
 
-        if (m->type == 1 && m->length > found.size) {
-            found.base = (unsigned long)m->base;
-            found.size = (unsigned long)m->length;
+        if (m->type == 1) {
+            unsigned long lo = (unsigned long)m->base;
+            unsigned long hi = lo + (unsigned long)m->length;
+
+            whole += (unsigned long)m->length;
+
+            /*
+             * **Clipped to what this kernel can map, before it competes to
+             * be the largest.**
+             *
+             * RAM is identity mapped and a process's space begins at
+             * `USER_VA_BASE`, so nothing past `DEVICE_WINDOW_BASE` has
+             * anywhere to live that is not already somebody's - and a
+             * region entirely above the line is not a candidate at all.
+             *
+             * **Clipping after choosing was the bug, and it is the
+             * interesting one.** A PC with four gigabytes or more does not
+             * have one block of memory: the PCI hole splits it, so there is
+             * a piece below two gigabytes and a larger piece above four -
+             * and "the largest usable region" is the one the kernel is not
+             * loaded into and cannot reach. `pmm_init` said `the kernel
+             * image does not fit in RAM` and it was exactly right.
+             *
+             * Every machine this is aimed at has that shape. QEMU with the
+             * five hundred megabytes the tests use does not, which is why
+             * it took booting one with sixteen gigabytes to see it.
+             */
+            if (hi > DEVICE_WINDOW_BASE) {
+                beyond += hi - (lo > DEVICE_WINDOW_BASE
+                                ? lo : DEVICE_WINDOW_BASE);
+            }
+
+            if (lo < DEVICE_WINDOW_BASE) {
+                if (hi > DEVICE_WINDOW_BASE) {
+                    hi = DEVICE_WINDOW_BASE;
+                }
+
+                if (hi - lo > found.size) {
+                    found.base = lo;
+                    found.size = hi - lo;
+                }
+            }
         }
 
         entry += m->size + 4;       /* `size` does not count itself */
@@ -126,4 +180,31 @@ void pc_capture_memory(void)
 void hal_ram_range(struct memrange *out)
 {
     *out = found;
+}
+
+/*
+ * **The cap is a kernel limit rather than a machine one, and saying so is
+ * the whole reason this exists.**
+ *
+ * A ThinkPad has sixteen gigabytes and this kernel can describe the first
+ * 768 megabytes of them. Until the scan above clipped, that machine either
+ * panicked to a serial port a laptop does not have or faulted before there
+ * was a screen to fault on - so the first thing anybody would have seen was
+ * nothing at all.
+ *
+ * It runs on what it can reach now. Kosmos is six and a half megabytes and
+ * holds a desktop in five hundred, so a laptop on 766 of its 16384 is a
+ * laptop running - and `mmu.h`'s high-half split is what lifts the ceiling
+ * for good. A number that is quietly five per cent of the truth is exactly
+ * the kind of thing that has to be printed rather than discovered.
+ */
+bool hal_ram_capped(unsigned long *whole_bytes)
+{
+    if (beyond == 0) {
+        return false;
+    }
+
+    *whole_bytes = whole;
+
+    return true;
 }

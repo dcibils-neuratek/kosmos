@@ -2069,6 +2069,68 @@ X86_DEVICES := -device ramfb \
                -device ich9-intel-hda -device hda-output,audiodev=a0 \
                -audiodev coreaudio,id=a0
 
+#
+# A stick somebody can boot, which is the thing `-kernel` is not.
+#
+# **QEMU's `-kernel` is not a loader**, and every x86 boot in this project
+# went through it until now. It reads the multiboot header, copies the image
+# in and jumps - and it does not answer the video request, so the one path a
+# laptop depends on entirely had never run. `docs/thinkpad.md` has what that
+# hid: three faults, none of them a driver, all of them fatal and silent on
+# a machine with no serial port.
+#
+# So this builds the real thing: GRUB, a filesystem, and an image that boots
+# the way the ThinkPad will.
+#
+# **`insmod efi_gop` rather than `all_video`, and it is not a detail.** With
+# every video driver loaded GRUB picks its own - under QEMU that is the
+# bochs one, which hands over 800x600 at *24* bits per pixel, and
+# `loader_fb.c` refuses it because everything above `struct fb` treats a
+# pixel as one 32-bit word. Asking the firmware's own GOP gives the panel's
+# mode at 32 bits, which is what a laptop has and what OVMF reports here.
+#
+# UEFI only, because that is what this GRUB was built for and because it is
+# the half that matters: a 2020 ThinkPad may have no CSM at all, and GRUB
+# under UEFI boots a multiboot 1 kernel perfectly well - which this proves
+# rather than assumes.
+#
+GRUB_MKRESCUE := x86_64-elf-grub-mkrescue
+ISO           := $(X86_BUILD)/kosmos.iso
+
+#
+# The recipe hangs off `x86-build` rather than off `kosmos.bin`, because a
+# prerequisite on that file asks *this* make to build it - and this make is
+# the AArch64 one, which greets `-mno-sse` with `did you mean -fno-dse`.
+# The x86 image is built by a sub-make with its own toolchain, and the only
+# honest way to say so is to depend on the target that runs it.
+#
+x86-iso: x86-build
+	@rm -rf $(X86_BUILD)/iso
+	@mkdir -p $(X86_BUILD)/iso/boot/grub
+	@cp $(X86_BUILD)/kosmos.bin $(X86_BUILD)/iso/boot/
+	@printf 'set timeout=0\nset default=0\n\nmenuentry "Kosmos" {\n  insmod efi_gop\n  multiboot /boot/kosmos.bin\n  boot\n}\n' \
+	  > $(X86_BUILD)/iso/boot/grub/grub.cfg
+	$(GRUB_MKRESCUE) -o $(ISO) $(X86_BUILD)/iso 2>/dev/null
+	@ls -l $(ISO)
+
+#
+# And booting it the way the machine will: firmware, a loader, an image.
+#
+# `edk2-x86_64-code.fd` is OVMF, the same EDK II a ThinkPad's firmware is
+# built from. `-vga std` gives it something to put a GOP on; a laptop has a
+# panel and needs no equivalent.
+#
+OVMF_CODE := $(shell brew --prefix qemu 2>/dev/null)/share/qemu/edk2-x86_64-code.fd
+OVMF_VARS := $(shell brew --prefix qemu 2>/dev/null)/share/qemu/edk2-i386-vars.fd
+
+x86-uefi: x86-iso
+	@cp $(OVMF_VARS) $(X86_BUILD)/ovmf-vars.fd
+	qemu-system-x86_64 -M q35 -m 4G -no-reboot \
+	  -drive if=pflash,format=raw,unit=0,readonly=on,file=$(OVMF_CODE) \
+	  -drive if=pflash,format=raw,unit=1,file=$(X86_BUILD)/ovmf-vars.fd \
+	  -vga std $(if $(SERIAL),-nographic,-display $(X86_DISPLAY) -serial mon:stdio) \
+	  -cdrom $(ISO)
+
 x86: x86-build $(DISK)
 	qemu-system-x86_64 -M q35 -m 512M -no-reboot $(X86_ACCEL) -vga none \
 	  $(if $(SERIAL),-nographic,-display $(X86_DISPLAY) -serial mon:stdio) \
@@ -2164,6 +2226,18 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# SPSel, and the lazy-FP mechanism being disarmed until something
 	@# wants it. Nothing is skipped for being inconvenient.
 	@#
+	@# **`run_uefi.py` is the one that boots the way a machine will**, and
+	@# it is here because everything above it goes through QEMU's
+	@# `-kernel`, which is not a loader. It reads the multiboot header,
+	@# copies the image in and jumps - and it does not answer the video
+	@# request, so the path a laptop depends on entirely had never run
+	@# while fourteen host checks on the decision all passed. Three
+	@# faults were hiding behind that and none was a driver.
+	@#
+	@# It also checks the *screen* rather than the serial line, because a
+	@# machine whose framebuffer works stops talking to the serial line at
+	@# stage six. Skipped where GRUB or OVMF is not installed, out loud.
+	@#
 	@# `run_interchange.py` and `run_queries.py` are deliberately not
 	@# here, and this says so out loud rather than leaving a gap
 	@# somebody has to notice: their guest half is the same filesystem
@@ -2176,6 +2250,8 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	    python3 tools/run_headless.py build/x86_64/kosmos.elf && \
 	    python3 tools/run_disk.py build/x86_64/kosmos.elf && \
 	    python3 tools/run_network.py build/x86_64/kosmos.elf && \
+	    $(MAKE) --no-print-directory x86-iso >/dev/null 2>&1 && \
+	    python3 tools/run_uefi.py build/x86_64/kosmos.iso && \
 	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
 	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
 	else \

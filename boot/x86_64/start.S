@@ -74,20 +74,38 @@
 /*
  * The page tables that get us into long mode.
  *
- * One gigabyte, identity mapped, with 2 MB pages: enough to run the kernel
- * and reach every device QEMU puts below 1 GB, and small enough to be three
- * static tables rather than an allocator that does not exist yet. `mmu.c`
- * builds the real address space later, from C, with four levels.
+ * **Four gigabytes, identity mapped, with 2 MB pages**, and the size is the
+ * whole point of this comment. It was one gigabyte, which is enough for
+ * every device QEMU puts below that line and is *not* enough for a machine
+ * with real memory in it: a multiboot loader may leave its information
+ * structure anywhere below 4 GB, and `pc_capture_memory` reads it at boot
+ * stage three.
+ *
+ * Measured rather than reasoned about. With `-m 4G` QEMU put the structure
+ * at 0x7ffe2349 and the first read of it was a page fault at stage three -
+ * before the framebuffer exists, on a machine whose only other output is a
+ * serial port a laptop does not have. A black screen and nothing to ask.
+ *
+ * Four gigabytes is the ceiling because a multiboot 1 loader hands over a
+ * *32-bit* pointer in `ebx`, so nothing it describes can be above that
+ * line. Four PDs of 512 entries each, 16 KB of `.bss`, and no CPUID check -
+ * 1 GB pages would do this in four entries and are an optional feature,
+ * where 2 MB pages have been mandatory since PAE.
+ *
+ * `mmu.c` builds the real address space later, from C, with four levels.
  *
  * 4096-byte alignment is architectural: the low twelve bits of a table
  * entry are flags, so a table that is not page-aligned has its address
  * silently truncated into them.
  */
+#define BOOT_GIGABYTES  4
+#define BOOT_PD_ENTRIES (BOOT_GIGABYTES * 512)
+
 .section .bss, "aw", @nobits
 .align 4096
 pml4:   .skip 4096
 pdpt:   .skip 4096
-pd:     .skip 4096
+pd:     .skip 4096 * BOOT_GIGABYTES
 
 .section .rodata
 .align 16
@@ -147,24 +165,37 @@ _start:
 
 
     /*
-     * Three tables, identity mapping the first gigabyte.
+     * Identity mapping the first four gigabytes.
      *
-     * PML4[0] -> PDPT, PDPT[0] -> PD, and PD's 512 entries each map 2 MB
-     * with PS=1 (a large page, so there is no fourth level to fill in).
-     * Present | writable throughout.
+     * PML4[0] -> PDPT; PDPT[0..3] -> one PD each; and every PD entry maps
+     * 2 MB with PS=1 (a large page, so there is no fourth level to fill
+     * in). Present | writable throughout.
      */
     movl    $pdpt, %eax
     orl     $0x03, %eax
     movl    %eax, pml4
 
+    movl    $pdpt, %edi
     movl    $pd, %eax
     orl     $0x03, %eax
-    movl    %eax, pdpt
+    movl    $BOOT_GIGABYTES, %ecx
+
+fill_pdpt:
+    movl    %eax, (%edi)
+    movl    $0, 4(%edi)
+    addl    $4096, %eax                  /* the next page directory */
+    addl    $8, %edi
+    loop    fill_pdpt
 
     movl    $pd, %edi
     movl    $0, %eax                     /* physical address being mapped */
-    movl    $512, %ecx
+    movl    $BOOT_PD_ENTRIES, %ecx
 
+    /*
+     * The address stays in 32 bits throughout: the last entry written maps
+     * 0xFFE00000, and the add that would carry past four gigabytes is the
+     * one the counter stops before.
+     */
 fill_pd:
     movl    %eax, %edx
     orl     $0x83, %edx                  /* present | write | 2 MB page */

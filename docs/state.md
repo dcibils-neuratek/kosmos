@@ -8,6 +8,41 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### Kosmos boots the way the ThinkPad will
+
+`make x86-iso` builds a GRUB image; `make x86-uefi` runs it under OVMF, the
+same EDK II a laptop's firmware is built from. It reaches the desktop on a
+**1280x800 framebuffer the firmware set up**, handed over through the
+multiboot video request - a path that had never once run, because QEMU's
+`-kernel` is not a loader and does not answer that request.
+
+**Three faults were hiding behind it and not one is a driver.** All three are
+fatal on a machine with more than a gigabyte of memory and silent on a
+machine with no serial port:
+
+- the boot page tables mapped one gigabyte, and the loader's information
+  structure may be anywhere below four. Page fault at stage three;
+- the largest usable low region under UEFI starts *above* the kernel image,
+  so `fine_end - ram.base` wrapped and the map asked for four quadrillion
+  pages;
+- the framebuffer was never mapped, because ramfb's pixels are in RAM and a
+  firmware's are not. The first pixel faulted, the handler tried to report
+  it, and the console lock was already held by the write that faulted:
+  `spinlock: console held by 0, wanted by 0`, for ever.
+
+**And a fourth that is a design limit rather than a bug.** RAM is identity
+mapped below the region processes get, so this kernel can describe 768 MB and
+a laptop has sixteen gigabytes. It used to panic; it caps now and prints what
+it gave up, because the panic reached a serial port and the machine has none.
+**The high-half split is what lifts the ceiling** - kernel at the top of the
+canonical address space, all of physical RAM at a fixed offset, the whole low
+half to the process - and it is now the biggest single thing left on this
+target.
+
+`run_uefi.py` is 7 checks on the picture rather than on the serial line,
+because a machine whose framebuffer works stops talking to the serial line at
+stage six.
+
 ### Sound on the machine a laptop is
 
 `hal/pc/hda.c` is an Intel High Definition Audio driver, and it is **the

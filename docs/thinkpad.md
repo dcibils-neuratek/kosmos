@@ -333,6 +333,62 @@ driver that has to work on a laptop should be the one that is exercised
 every time somebody runs the system. `virt` still runs virtio-sound, so
 neither driver is orphaned.
 
+### The boot path, end to end - and the three faults it was hiding
+
+**`-kernel` is not a loader, and every x86 boot in this project went through
+it.** QEMU reads the multiboot header, copies the image in and jumps. It does
+not answer the video request - measured, not assumed - so the one path a
+laptop depends on entirely had never run once, while `test_loaderfb.c` asked
+the decision fourteen careful questions on the host and every one passed.
+
+`make x86-iso` builds the real artifact: GRUB, a filesystem, and an image
+that boots the way the ThinkPad will. `make x86-uefi` runs it under OVMF -
+the same EDK II a ThinkPad's firmware is built from. It works, and the
+screenshot in `docs/screenshots/` is a 1280x800 framebuffer the *firmware*
+set up.
+
+**Three faults came out of it and not one of them is a driver.** Every one is
+fatal on a machine with more than a gigabyte of memory, and every one is
+silent on a machine with no serial port.
+
+**1. The boot page tables mapped one gigabyte.** A multiboot loader hands
+over a 32-bit pointer, so its information structure may be anywhere below
+four. With `-m 4G` QEMU put it at 0x7ffe2349 and the first read of it faulted
+at boot stage three - before the framebuffer exists. `start.S` builds four
+page directories now, which is 16 KB of `.bss` and no CPUID check, because
+2 MB pages have been mandatory since PAE where 1 GB pages are optional.
+
+**2. `fine_end - ram.base` wrapped.** `mmu_init` mapped the bottom of RAM a
+page at a time and started from `ram.base`, which worked for as long as the
+largest usable region was the one the kernel had been loaded into. That is
+what `-kernel` gives: RAM at 1 MB with the image at the bottom of it. Booted
+through GRUB under UEFI the same machine reports its largest low region at
+**0x900000**, because the firmware has its own allocations below that, and
+the image sits at 0x100000 *outside* it. `fine_end` was 0x800000, the
+subtraction wrapped, and the map asked for four quadrillion pages.
+
+**3. The framebuffer was never mapped.** ramfb's pixels are memory the guest
+allocated, so they are inside the identity map and a raw pointer works -
+which is why the line did not exist and why nothing missed it. A firmware
+framebuffer is at 0x80000000. The first pixel written faulted, the fault
+handler tried to say so, and the console lock was already held by the write
+that faulted: **`spinlock: console held by 0, wanted by 0`**, for ever. On a
+laptop that is a dead black screen, dead in a way that cannot even reach a
+serial port. It goes through `mmu_map_device` now.
+
+**And one thing about GRUB worth writing down.** With `insmod all_video` it
+picks its own driver - under QEMU the bochs one - and hands over **800x600
+at 24 bits per pixel**, which `loader_fb.c` refuses because everything above
+`struct fb` treats a pixel as one 32-bit word. `insmod efi_gop` asks the
+firmware's own GOP instead and gives the panel's mode at 32 bits. A laptop
+has no bochs, so this may be a QEMU artifact; it costs one line to be sure.
+
+**What this settles about the CSM question.** `docs/targets.md` listed "is
+there a CSM" as a blocking unknown worth half an hour on the machine. It is
+no longer blocking: this GRUB is built for `x86_64-efi` only, and it boots a
+Multiboot 1 kernel under UEFI perfectly well. If the T14's firmware has no
+CSM at all, the plan is unchanged.
+
 ### The boot log stopped naming the wrong driver
 
 `kernel/main.c` printed `keyboard: virtio-input, negotiated and polled like
@@ -462,9 +518,11 @@ works, and not before.
 
 | | | rough size |
 |---|---|---|
-| Multiboot2 header, or a UEFI stub - depends on question 2 | not needed if CSM exists | ~300, or ~1000 |
-| Framebuffer from the loader's boot information | **written**, 14 host checks | done |
+| ~~Multiboot2 header, or a UEFI stub~~ | **not needed at all**: GRUB under UEFI boots a Multiboot 1 kernel, proven under OVMF | none |
+| Framebuffer from the loader's boot information | **written and proven end to end** under GRUB + OVMF; 14 host checks and 7 boot checks | done |
 | i8042 keyboard | **in the build**, exercised by the display harness | done |
+| More than a gigabyte of RAM | **fixed**: 4 GB of boot page tables, and the low region chosen by what can be mapped | done |
+| A bootable stick | **`make x86-iso`**, hybrid GRUB image | done |
 | i8042 auxiliary port | written, does not deliver under QEMU | blocked, §6 |
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
 | Local APIC / IOAPIC / MSI | new | ~600 |

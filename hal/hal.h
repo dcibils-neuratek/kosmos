@@ -71,6 +71,26 @@ struct memrange {
 void hal_ram_range(struct memrange *out);
 
 /*
+ * Whether the board is reporting less RAM than the machine has, and how
+ * much there really is.
+ *
+ * **A separate question because the answer is not a failure.** A kernel
+ * that identity maps RAM below the region it gives processes cannot
+ * describe a machine with more memory than that region starts at - which
+ * is every laptop built this decade - and the choice is between refusing
+ * to boot and running on the part it can reach. It runs, and this is how
+ * it says so: `hal_ram_range` stays the truth about what may be used, and
+ * this is the truth about what was there.
+ *
+ * A total rather than a range, because what was given up is usually
+ * several regions and no single one of them is the answer.
+ *
+ * False on a board that is reporting everything, which is the ordinary
+ * case and the one where there is nothing to say.
+ */
+bool hal_ram_capped(unsigned long *whole_bytes);
+
+/*
  * How many processors this machine has - not how many are being used.
  *
  * `sysinfo.cpus` is the second number and is `NR_CPUS`, which is 1. This is

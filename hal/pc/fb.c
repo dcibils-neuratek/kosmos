@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "mmu.h"
 #include "pc.h"
 #include "ramfb.h"
 
@@ -35,6 +36,7 @@ static bool from_loader(struct fb *out)
 {
     uint64_t addr;
     uint32_t pitch, width, height;
+    uintptr_t mapped;
 
     /*
      * Asked of `pc_capture_memory`'s copy rather than of the multiboot
@@ -45,7 +47,36 @@ static bool from_loader(struct fb *out)
         return false;
     }
 
-    out->pixels = (volatile uint32_t *)(uintptr_t)addr;
+    /*
+     * **Mapped, because it is not in RAM and nothing else was going to map
+     * it.**
+     *
+     * ramfb's pixels are memory the guest allocated, so they are inside the
+     * identity map and a pointer to them simply works - which is why this
+     * line did not exist and why nothing missed it. A firmware framebuffer
+     * is somewhere else entirely: booted through GRUB under UEFI this
+     * machine reported 0x80000000, two gigabytes up, where there is no RAM
+     * and no mapping.
+     *
+     * The failure was worth the trip. The first pixel written faulted, the
+     * fault handler tried to say so, the console lock was already held by
+     * the write that faulted - and the machine printed `spinlock: console
+     * held by 0, wanted by 0` for ever. On a laptop that is a dead black
+     * screen, and the deadlock means it is dead in a way that cannot even
+     * reach a serial port.
+     *
+     * Uncached, which is what `mmu_map_device` gives and is not what a
+     * framebuffer wants: write-combining is, and it needs the PAT set up.
+     * That is a real piece of work and this is the first boot; the desktop
+     * will say plainly whether it is worth doing.
+     */
+    mapped = mmu_map_device((uintptr_t)addr, (size_t)pitch * height);
+
+    if (mapped == 0) {
+        return false;           /* the device window is full */
+    }
+
+    out->pixels = (volatile uint32_t *)mapped;
     out->width = width;
     out->height = height;
     out->pitch = pitch;

@@ -320,6 +320,7 @@ static void enable(void)
 
 void mmu_init(void)
 {
+    uintptr_t fine_start;
     uintptr_t fine_end;
     uintptr_t ram_end;
     uintptr_t blocks_end;
@@ -336,12 +337,15 @@ void mmu_init(void)
      * are given. `mmu.h` explains why that region starts at 1 GB here and
      * what removes the limit.
      *
-     * A panic rather than a clamp: a machine with more memory than this can
-     * describe should say so at boot, not run with two thirds of it and a
-     * process's first mapping landing in the kernel's page tables.
+     * **The board has already capped its answer to fit**, in
+     * `cap_to_what_can_be_mapped`, which is where the argument for capping
+     * rather than refusing is written down. This is the assertion that it
+     * did: a range past the line at this point is a board that reported
+     * more than the architecture can describe, and mapping it would put a
+     * process's first page inside the kernel's own tables.
      */
     if (ram_end > DEVICE_WINDOW_BASE) {
-        panic("mmu: more RAM than the device window leaves room for");
+        panic("mmu: the board reported RAM the address space has no room for");
     }
 
     kernel_pml4 = alloc_table();
@@ -376,8 +380,30 @@ void mmu_init(void)
     fine_end = ((uintptr_t)__framebuffer_start + BLOCK_2M - 1)
                & ~(uintptr_t)(BLOCK_2M - 1);
 
-    map_pages(kernel_pml4, ram.base, ram.base,
-              (fine_end - ram.base) / PAGE_SIZE, MAP_RW);
+    /*
+     * **From the image, not from the RAM base**, and the two are not the
+     * same address on a machine whose firmware fragments low memory.
+     *
+     * This read `ram.base` and worked for as long as the largest usable
+     * region was the one the kernel had been loaded into - which is what
+     * QEMU's `-kernel` gives, where RAM begins at 1 MB and the image is at
+     * the bottom of it. Booted through GRUB under UEFI the same machine
+     * reports its largest low region at 0x900000, because the firmware has
+     * its own allocations below that, and the image sits at 0x100000
+     * *outside* it. `fine_end` was 0x800000, the subtraction wrapped, and
+     * the map asked for four quadrillion pages: `mmu: out of pages while
+     * building the page tables`, at boot stage four, on a machine with no
+     * serial port.
+     *
+     * The lower of the two is the right start either way. Where they are
+     * the same address this is exactly what it was; where they differ, the
+     * span between them is the firmware's and identity mapping it costs a
+     * few page tables and keeps one rule instead of two.
+     */
+    fine_start = ram.base < LOW_END ? ram.base : LOW_END;
+
+    map_pages(kernel_pml4, fine_start, fine_start,
+              (fine_end - fine_start) / PAGE_SIZE, MAP_RW);
 
     /*
      * Everything above it is anonymous memory and gets 2 MB pages, which is

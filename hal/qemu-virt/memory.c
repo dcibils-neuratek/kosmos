@@ -29,3 +29,16 @@ void hal_ram_range(struct memrange *out)
     out->base = RAM_BASE;
     out->size = RAM_SIZE;
 }
+
+/*
+ * Never, on this board. `virt` is given its memory on the command line and
+ * `make qemu` asks for 512 MB, which is comfortably inside what AArch64's
+ * identity map describes - so there has never been anything to cap and the
+ * question has one answer.
+ */
+bool hal_ram_capped(unsigned long *whole_bytes)
+{
+    (void)whole_bytes;
+
+    return false;
+}

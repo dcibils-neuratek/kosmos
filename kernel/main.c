@@ -216,6 +216,31 @@ void kmain(void)
     kputs(" pages already the kernel's: its image, its bitmap and its stacks");
     boot_fact_end();
 
+    /*
+     * And what the machine had that this kernel cannot reach.
+     *
+     * **Said out loud because the alternative was not booting at all.** A
+     * kernel that identity maps RAM below the region it gives processes
+     * cannot describe a laptop's memory, and until this line existed the
+     * machine either panicked to a serial port a laptop does not have or -
+     * with more than a gigabyte - faulted before there was a screen to
+     * fault on. It runs on what it can reach now, and a number that is
+     * quietly two per cent of the truth is exactly the kind of thing that
+     * has to be printed rather than left to be discovered.
+     */
+    {
+        unsigned long whole;
+
+        if (hal_ram_capped(&whole)) {
+            boot_fact_begin();
+            kputs("of ");
+            kputu(whole / (1024 * 1024));
+            kputs(" MB this machine has, that is all this kernel can map: "
+                  "RAM is identity mapped below the process region");
+            boot_fact_end();
+        }
+    }
+
     /* Translation on. Everything above ran with the MMU off, where every
      * access is uncached Device memory. From here the kernel runs cached,
      * .text is read-only, and address 0 and the stack guard have no
