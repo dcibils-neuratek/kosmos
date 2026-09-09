@@ -106,9 +106,11 @@ short until it emitted a newline.
 
 ### What is not done
 
-**The version has not been bumped.** This is a syscall ABI change and a
-protocol change, so it is at least a minor - but nothing has been committed
-or pushed, and that is the moment for it.
+**`sched: the policy is pluggable` fails about one run in three.** It has
+now done it twice on an unchanged tree, with every other run of the same
+build green - so it is the test or the scheduler and not this work, and
+"intermittent" is the whole of what is known about it. Written down because
+a flake nobody records is a flake everybody re-discovers.
 
 **`screen_putc` still loses the character that wraps.** Its own comment says
 "wrap, then draw the character below" and it returns instead, so the
