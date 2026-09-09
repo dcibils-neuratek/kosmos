@@ -453,23 +453,67 @@ local function subdirs(node)
 end
 
 --
--- The roots are the mounts, because those are the places this machine
--- actually has - `/bin` in the image, `/ramfs` in memory, `/home` on the
--- disk. Naming them here rather than reading `/` keeps the pane in a
--- sensible order and out of the way of a root that lists something else.
+-- The roots are the mounts this process was handed, asked for rather than
+-- listed here.
 --
+-- **Six strings used to be written out at this spot, and they fell
+-- behind.** `/user`, `/app` and `/ramfs` are all mounted and none of them
+-- was offered, so a file manager could not reach places its own process
+-- could see - which reads as the system hiding things from you and is
+-- really a hardcoded list going stale. The rename of `/data` left the
+-- label saying `data` beside a path saying `/ramfs`, which is the same
+-- rot one step further on.
+--
+-- Two filters, and both are about what a *browser* can use:
+--
+-- **A mount inside another one is not a root.** `/dev/console` and
+-- `/dev/audio` are mounts and already appear inside `/dev`; offering them
+-- again would be a pane that disagrees with the tree underneath it.
+--
+-- **A mount that cannot be listed is not offered.** `/net` is a protocol
+-- rather than a tree and answers a listing with an error, and so does the
+-- disk on a machine that has none. Asking is the only way to tell them
+-- apart - nothing on a mount says "browsable" - and a root that did
+-- nothing when clicked would be worse than one that is not there.
+--
+-- The order is the namespace's own, which is alphabetical. That is a
+-- deliberate non-choice: any order picked here is one more thing to edit
+-- the next time a mount appears.
+--
+local function mount_roots()
+  local all = fs.mounts()
+  local out = {}
+
+  for _, prefix in ipairs(all) do
+    local nested = false
+
+    for _, other in ipairs(all) do
+      if other ~= prefix and prefix:sub(1, #other + 1) == other .. "/" then
+        nested = true
+        break
+      end
+    end
+
+    -- `fs.list` and not `files.entries`, which is the difference between
+    -- one round trip and one per file in there. The first version asked
+    -- `files.entries`, which adds a `getattr` for every name - ninety-one
+    -- of them for `/bin` alone - and the window opened empty and stayed
+    -- that way while it worked through them. The question here is only
+    -- whether the mount answers a listing at all.
+    if not nested and fs.list(prefix) then
+      out[#out + 1] = { text = prefix:sub(2), path = prefix,
+                        children = subdirs }
+    end
+  end
+
+  return out
+end
+
 local places = ui.tree{
   x = 12, y = CONTENT_Y + BAR_H, w = PLACES_W,
   h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
   follow = { "left", "top", "bottom" },
-  roots = {
-    { text = "home",   path = "/home",   children = subdirs },
-    { text = "system", path = "/system", children = subdirs },
-    { text = "data",   path = "/ramfs",   children = subdirs },
-    { text = "bin",    path = "/bin" },
-    { text = "lib",    path = "/lib" },
-    { text = "dev",    path = "/dev" },
-  },
+  roots = mount_roots(),
   on_select = function(_, node) visit(node.path) end,
 }
 

@@ -70,6 +70,7 @@ static uint64_t reader;
 
 static uint32_t n_bytes, n_lines, n_interrupts;
 
+
 /*
  * `colour` is 0xAARRGGBB and zero is the console's own, which is what every
  * write that has no opinion sends. Handed straight to the kernel rather than
@@ -79,6 +80,122 @@ static uint32_t n_bytes, n_lines, n_interrupts;
 static void put(const char *s, size_t n, unsigned long colour)
 {
     (void)kosmos_write_colour(s, n, colour);
+}
+
+/*------------------------------------------------------------------------
+ * What was typed before.
+ *
+ * A prompt without this is one you can demonstrate and not one you can work
+ * at: every other verb on the machine saves you a workaround once, and this
+ * saves you retyping everything you have already run.
+ *
+ * **A ring of whole lines, and no file.** Thirty-two of them at
+ * `CON_TEXT_MAX` is 32 KB in a server that already refuses to allocate, and
+ * it goes when the machine does - which is the right lifetime for it, since
+ * a history that outlived the boot would be state this server has nowhere
+ * to keep and no business owning.
+ *
+ * `recall` is where the up-arrow has walked to: 0 is the line being typed,
+ * 1 is the most recent, and it is reset by anything that ends a line. That
+ * is what makes up-up-down land where a person expects rather than where a
+ * cursor happens to be.
+ *
+ * Both sources already speak the same language, which is why this is one
+ * implementation rather than two: a serial terminal sends ESC [ A, and
+ * `hal/virtio/input.c` maps the keyboard's own up-arrow to the same three
+ * bytes on the way in.
+ *----------------------------------------------------------------------*/
+
+#define HISTORY  32u
+
+static char     past[HISTORY][CON_TEXT_MAX];
+static unsigned past_len[HISTORY];
+static unsigned past_n;            /* how many are kept, up to HISTORY */
+static unsigned past_next;         /* where the next one goes */
+static unsigned recall;            /* 0 is the line being typed */
+
+/*
+ * The `k`th line back, newest first. NULL past the end.
+ */
+static const char *nth_past(unsigned k, unsigned *len)
+{
+    unsigned at;
+
+    if (k == 0 || k > past_n) {
+        return NULL;
+    }
+
+    at = (past_next + HISTORY - k) % HISTORY;
+    *len = past_len[at];
+
+    return past[at];
+}
+
+/*
+ * Keep a line, unless it is empty or the one before it.
+ *
+ * Consecutive duplicates are dropped because the up-arrow is for finding
+ * something, and a history of `ls` eleven times is a history you have to
+ * walk past rather than one that helps.
+ */
+static void remember(const char *text, unsigned len)
+{
+    unsigned last_len = 0;
+    const char *last;
+
+    if (len == 0) {
+        return;
+    }
+
+    last = nth_past(1, &last_len);
+
+    if (last != NULL && last_len == len && memcmp(last, text, len) == 0) {
+        return;
+    }
+
+    memcpy(past[past_next], text, len);
+    past_len[past_next] = len;
+
+    past_next = (past_next + 1) % HISTORY;
+
+    if (past_n < HISTORY) {
+        past_n++;
+    }
+}
+
+/*
+ * Put a remembered line on the screen in place of whatever is there.
+ *
+ * Erasing is `\b \b` per character, the same three bytes backspace already
+ * uses, because that is the only way to unprint on a terminal that has no
+ * idea it is one - and it is what makes this work identically on the serial
+ * line and on a framebuffer that has never heard of a cursor address.
+ */
+static void recall_to(unsigned k)
+{
+    const char *text;
+    unsigned len = 0, i;
+
+    if (k > past_n) {
+        return;                    /* already at the oldest; stay there */
+    }
+
+    text = nth_past(k, &len);
+
+    for (i = 0; i < line_len; i++) {
+        put("\b \b", 3, 0);
+    }
+
+    line_len = 0;
+    recall = k;
+
+    if (text == NULL) {
+        return;                    /* k is 0: back to an empty line */
+    }
+
+    memcpy(line, text, len);
+    line_len = len;
+    put(line, len, 0);
 }
 
 static void stash(uint8_t c)
@@ -142,8 +259,11 @@ static void deliver(void)
     rep.length = line_len;
     memcpy(rep.line, line, line_len);
 
+    remember(line, line_len);
+
     reading  = false;
     line_len = 0;
+    recall   = 0;
 
     reply_with(reader, &rep);
 }
@@ -156,11 +276,45 @@ static void deliver(void)
  */
 static void edit(void)
 {
+    /*
+     * Where an arrow key has got to. Three bytes arrive one at a time
+     * through `next_byte`, so the sequence is a state rather than a peek:
+     * ESC, then `[` or `O` - terminals disagree about which - then a
+     * letter. Anything else abandons it, which is what makes a lone ESC
+     * harmless instead of swallowing the character after it.
+     */
+    static unsigned esc;
+
     for (;;) {
         int c = next_byte();
 
         if (c < 0) {
             return;
+        }
+
+        if (esc == 1) {
+            esc = (c == '[' || c == 'O') ? 2u : 0u;
+            continue;
+        }
+
+        if (esc == 2) {
+            esc = 0;
+
+            if (c == 'A') {
+                recall_to(recall + 1);
+            } else if (c == 'B') {
+                recall_to(recall > 0 ? recall - 1 : 0);
+            }
+
+            /* Left and right arrive here too and are ignored: this editor
+             * has no cursor to move, and a line that jumped when you
+             * pressed one would be worse than one that did nothing. */
+            continue;
+        }
+
+        if (c == 27) {
+            esc = 1;
+            continue;
         }
 
         if (c == '\n' || c == '\r') {
@@ -177,6 +331,7 @@ static void edit(void)
             put("^C\n", 3, 0);
             n_interrupts++;
             line_len = 0;
+            recall = 0;
             deliver();
             return;
         }

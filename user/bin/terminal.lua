@@ -454,6 +454,41 @@ win.poll_wait_ticks = 1
 
 win:add(view)
 
+--------------------------------------------------------------------------
+-- What was typed into this window before.
+--
+-- The same shape as the console server's, deliberately: 0 is the line being
+-- typed, 1 is the most recent, anything that ends a line puts it back to 0.
+-- Two implementations because there are two line editors - a Terminal does
+-- its own, since the window is where the keys arrive - and the one thing
+-- they must not do is disagree about what up-up-down means.
+--
+-- Consecutive duplicates are dropped: the arrow is for finding something,
+-- and a history of `ls` eleven times is one you walk past rather than use.
+--
+-- Not shared with the console's, and could not be: that ring lives in
+-- another process, and a window asking it for the lines somebody typed
+-- somewhere else would be reaching for state it was never handed.
+--------------------------------------------------------------------------
+local HISTORY = 32
+
+local past, recall = {}, 0
+
+local function remember(text)
+  if text == "" or past[#past] == text then return end
+
+  past[#past + 1] = text
+
+  if #past > HISTORY then table.remove(past, 1) end
+end
+
+local function walk(to)
+  if to < 0 or to > #past then return end
+
+  recall = to
+  input = (to == 0) and "" or past[#past - to + 1]
+end
+
 function win:on_key(c)
   --
   -- Typing is never blocked, even while something is running.
@@ -468,9 +503,17 @@ function win:on_key(c)
     emit("> " .. input .. "\n")
     local text = input
     input = ""
+    remember(text)
+    recall = 0
     launch(text)
     return true
   end
+
+  -- `ui.key_decoder` hands arrows back as negative codes, so an up-arrow is
+  -- a key here rather than three bytes to reassemble. The console server
+  -- does that reassembly because it is handed the bytes.
+  if c == -1 then walk(recall + 1) return true end
+  if c == -2 then walk(recall - 1) return true end
 
   if c == 8 or c == 127 then
     input = input:sub(1, #input - 1)

@@ -130,6 +130,49 @@ def main():
                               + sheet[-1200:])
             checks += 1
 
+        #
+        # ---- the up-arrow ------------------------------------------------
+        #
+        # **Checked by what the recalled line does, not by what appears on
+        # the screen.** An echo test would pass on a console that printed
+        # the text and forgot it; running the line is the only evidence that
+        # the editor really replaced what it holds.
+        #
+        # `boot` sends each string followed by a newline, so an escape
+        # sequence here means "walk back, then press enter". Two files with
+        # different names make each landing identifiable: a `touch` of one
+        # that exists says so, and says *which*.
+        #
+        # **A recalled line is itself remembered**, which is what the second
+        # sequence has to account for - after the first one the newest entry
+        # is `touch one.txt` again, so reaching `two` from there is up three
+        # and down one. The first version of this check assumed the ring
+        # stood still and failed for a reason that was in the test.
+        #
+        # A serial terminal sends ESC [ A and `hal/virtio/input.c` maps the
+        # keyboard's own arrow to the same three bytes, so this covers the
+        # graphical console too.
+        #
+        history = run_disk.boot(image, handle.name, [
+            "cd /ramfs",
+            "touch one.txt",
+            "touch two.txt",
+            "\x1b[A\x1b[A",              # up up: touch one.txt
+            "\x1b[A\x1b[A\x1b[A\x1b[B",  # up up up down: touch two.txt
+        ])
+
+        if "/ramfs/one.txt is already there" not in history:
+            raise Failure("the up-arrow did not recall and run the line two "
+                          "back.\n" + history[-1500:])
+
+        checks += 1
+
+        if "/ramfs/two.txt is already there" not in history:
+            raise Failure("the down-arrow did not walk back towards the line "
+                          "being typed.\n" + history[-1500:])
+
+        checks += 1
+
         print(f"PASS: {checks} checks on the shell as a place to work "
               "(a file made at the prompt, then counted, read from both "
               "ends, searched, walked and measured - each verb agreeing "

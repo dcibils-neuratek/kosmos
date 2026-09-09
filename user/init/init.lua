@@ -3232,6 +3232,11 @@ and it has never once worked.
   topics.shell = [=[
 The prompt, as a place to work.
 
+THE LINE YOU ARE TYPING
+  up / down            the lines typed before, thirty-two of them
+  backspace            the only editing there is - there is no cursor
+  Control-C            abandon the line and start a fresh one
+
 MOVING AROUND
   pwd                  where you are
   cd <path>            somewhere else; `cd` alone goes to /

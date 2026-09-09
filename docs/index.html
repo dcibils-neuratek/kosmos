@@ -389,6 +389,37 @@ has the reasoning behind every decision, and
 <a href="https://github.com/dcibils-neuratek/kosmos#decision-log">the decision log</a>
 is a single table of all of them with what each one cost.</p>
 
+<h2>A prompt you can work at</h2>
+
+<p>The file verbs are ordinary programs — Lua text files in
+<code>/bin</code>, thirty lines each. There is no compiler to install and
+nothing to link:</p>
+
+<pre><code>kosmos> cd /home
+kosmos> touch alpha.txt          made /home/alpha.txt
+kosmos> mkdir box                made /home/box
+kosmos> cp alpha.txt box         copied to /home/box/alpha.txt
+kosmos> mv alpha.txt beta.txt    moved to /home/beta.txt
+kosmos> rm box                   rm: is a directory; use -r
+kosmos> grep three notes.txt        3  three</code></pre>
+
+<p><code>help "shell"</code> is the whole list, in the machine — including
+the part a cheat sheet copied from elsewhere would not have: what is
+deliberately missing. There is no <code>chmod</code>, <code>chown</code> or
+<code>sudo</code>, because there are no users and no permission bits; what
+you may reach is decided by the capabilities you were handed, which is not
+something a command can change. There are no pipes and no redirection
+either — composing programs that way needs a stream between two processes,
+and what this system has between processes is messages and shared
+memory.</p>
+
+<p class="note"><code>/</code> is not a filesystem. It is a list of mounts,
+each answered by a different server — the disk, the in-memory store, the
+devices, the programs in the image — and <code>ls /</code> shows exactly the
+ones the process asking was handed. <code>/ramfs</code> is named for what it
+is, because the one thing you must know about it is that it does not survive
+a reboot.</p>
+
 <h2>What to try once it boots</h2>
 
 <p>The Deskbar at the top right has everything. Or pass one of these instead
