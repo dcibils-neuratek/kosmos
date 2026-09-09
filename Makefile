@@ -819,7 +819,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iuser/include -Ikernel -Iruntime/include \
@@ -1301,9 +1301,25 @@ $(GEN)/programs.c: $(wildcard user/bin/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
 # separate store rather than a directory inside /bin, because a program is
 # something you run and a library is something you load, and a `/bin` that
 # lists both is a `/bin` where `ls` lies about what you can type.
-$(GEN)/libraries.c: $(wildcard user/lib/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
+#
+# Lite XL's Lua, when it is being built: 78 files that are the editor.
+#
+# They go into the *library* store rather than a store of their own, and
+# that is the honest place for them - they are libraries carried in the
+# image, which is what `/lib` is. It also costs nothing: `binfs.c` finds an
+# entry with `strcmp`, so a key with slashes reads straight out, and no
+# server, role or capability had to be invented to serve them.
+#
+LITEXL_DATA := $(if $(LITEXL),$(shell find runtime/upstream/lite-xl/data \
+                                   -name '*.lua' 2>/dev/null))
+
+LITEXL_ROOTED := $(if $(LITEXL),--rooted runtime/upstream/lite-xl/data litexl/)
+
+$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) tools/progs2c.py \
+                    $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
-	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua)
+	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
+	    $(LITEXL_ROOTED) $(LITEXL_DATA)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)

@@ -94,7 +94,32 @@ struct thread;
 #define USER_HEAP_PAGES  512                                /* 2 MB       */
 #endif
 #define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* base + 32 MB */
-#define USER_STACK_PAGES 16                                 /* 64 KB      */
+/*
+ * A process's stack. **Sixty-four pages, and it was sixteen.**
+ *
+ * 64 KB was enough for everything this system had run, and stopped being
+ * enough the first time it ran somebody else's program: Lite XL's
+ * `core.init()` overflowed it, and the symptom was the good one - a write
+ * fault exactly at `sp`, on the guard page that exists to make this a bug
+ * you can find rather than one that quietly writes into whatever is below.
+ *
+ * That is the guard doing its whole job, and it is why the number could be
+ * raised in confidence rather than guessed at: the fault named the address.
+ *
+ * **The cost is real memory, not merely address space**, and the first
+ * version of this comment said otherwise. A stack is mapped when the
+ * process is made rather than on the fault that touches it, so every
+ * process pays all of it: `make stress` reports 117406 free pages where it
+ * reported 117999, which is 2.4 MB across the thirteen processes a running
+ * desktop has - 48 pages each, exactly the increase.
+ *
+ * Worth the arithmetic rather than an assurance. On a 512 MB machine that
+ * is half a per cent and the editor could not run without it; on a machine
+ * with 32 MB it would be eight per cent and the answer would have to be a
+ * per-process size instead of one constant. There is no such thing today,
+ * and this is the note that says what to build if it is ever needed.
+ */
+#define USER_STACK_PAGES 64                                 /* 256 KB     */
 
 /*
  * Where the framebuffer lands in a process that holds the screen.

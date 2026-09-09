@@ -57,13 +57,41 @@ ENVIRONMENTS = {
     # that has Doom in it". The application checks for itself before using
     # it, because a program that assumes an optional global is a program
     # that fails with a nil index instead of a sentence.
+    #
+    # `write` is `print`'s coloured sibling: one run of text, no newline
+    # added. It is here rather than under `sys` because a program has no
+    # console capability of its own - the runner hands it one and this is
+    # the only door to it, exactly as `print` is.
+    #
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
-                  "interrupted", "use", "doom"},
+                  "interrupted", "use", "doom", "write"},
 
     # A library is loaded into the environment of whoever asked for it, so it
     # sees the same names a program does - minus `args`, which belongs to the
     # program and not to what it loaded.
-    "user/lib/": {"sys", "gfx", "fs", "cwd", "run", "interrupted", "use"},
+    "user/lib/": {"sys", "gfx", "fs", "cwd", "run", "interrupted", "use",
+                  "write"},
+
+    #
+    # `litexl.lua` builds an environment for somebody else's program, which
+    # no other file here does.
+    #
+    # Lite XL is nineteen thousand lines of vendored Lua that expects a
+    # hosted interpreter: `os`, `debug`, `package`, `require`, `dofile`, and
+    # the globals `main.c` would have set. This program provides all of
+    # them, deliberately, so that the vendored tree needs no patch - which
+    # means it assigns names that would be a mistake anywhere else.
+    #
+    # Listed rather than exempted, so that the check still does its job on
+    # everything not in this list. `docs/litexl.md` explains why each one is
+    # here.
+    #
+    "litexl.lua": {"os", "debug", "package", "require", "dofile",
+                   "ARGS", "PLATFORM", "ARCH", "EXEFILE", "HOME", "SCALE",
+                   "VERSION", "MOD_VERSION", "PATHSEP", "EXEDIR",
+                   "DATADIR", "USERDIR", "MACOS_RESOURCES",
+                   "system", "renderer", "regex", "process", "dirmonitor",
+                   "utf8extra"},
 }
 
 

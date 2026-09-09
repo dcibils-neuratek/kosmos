@@ -602,10 +602,23 @@ local function new_namespace()
   -- /bin, which is C and speaks `binproto.h`.
   --------------------------------------------------------------------------
 
-  local BIN_REQUEST = "<I4I4c24"                    -- op, offset, name[24]
-  local BIN_HEAD    = "<I4I4I4I4I4I4c16c16c16c16c16c16"
+  --
+  -- **One constant, three uses.** It was written out three times - the
+  -- request's format string, the assertion on its size, and the stride a
+  -- listing is cut into - and raising `BIN_NAME_MAX` in `binproto.h` from
+  -- 24 to 48 left all three saying 24.
+  --
+  -- What that looked like was not a truncated name. `string.pack` refused
+  -- the field outright, so a read of a perfectly ordinary file failed with
+  -- "bad argument #4 to 'pack'" from a line about packing, and the two
+  -- files whose names still fitted kept working - which is the worst
+  -- version of this, because it looks like a problem with those files.
+  --
+  local BIN_NAME_MAX = 48                 -- has to match binproto.h
+  local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16"
 
-  assert(#string.pack(BIN_REQUEST, 0, 0, "") == 32,
+  assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
   local BIN_DATA = 24 + 96 + 1        -- past the header, 1-based
@@ -642,8 +655,8 @@ local function new_namespace()
       local from = (extra and extra.offset) or 0
 
       for i = 1, count do
-        local at = BIN_DATA + (i - 1) * 24
-        names[i] = trim(reply:sub(at, at + 23))
+        local at = BIN_DATA + (i - 1) * BIN_NAME_MAX
+        names[i] = trim(reply:sub(at, at + BIN_NAME_MAX - 1))
       end
 
       --

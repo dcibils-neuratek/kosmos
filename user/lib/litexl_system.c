@@ -361,3 +361,125 @@ int luaopen_regex(lua_State *L)
     lua_setfield(L, -2, "ANCHORED");
     return 1;
 }
+
+/*--------------------------------------------------------------------------
+ * The kit, which is how Lite XL reaches a Kosmos program at all
+ *
+ * **`main.c` is not compiled, and `api_load_libs` was its job.** Nothing
+ * else calls it, so in a Kosmos process the modules Lite XL's Lua expects -
+ * `system`, `renderer`, `utf8extra` and the rest - simply would not exist.
+ *
+ * A kit is the door this system already has for that: `use("/kits/litexl")`
+ * asks `sys.kit`, which calls the function below, and it registers the same
+ * six modules `main.c` would have. They arrive as globals, which is what
+ * `luaL_requiref(L, name, fn, 1)` does and what `start.lua` relies on.
+ *
+ * Reached through the namespace rather than as a global, like every other
+ * kit, so the rule holds: a program that was not handed this cannot get an
+ * editor's worth of C by naming it.
+ *------------------------------------------------------------------------*/
+
+void api_load_libs(lua_State *L);
+
+/*
+ * A font's bytes have to outlive the call.
+ *
+ * `stb_truetype` reads the file for as long as the face exists and does not
+ * copy it, so the Lua string handed in here must not be collected. It is
+ * anchored in a registry table; nothing removes it, which is correct for
+ * the two or three faces an editor opens and would not be for a font
+ * manager.
+ */
+static const char *const FONTS_KEY = "kosmos.litexl.fonts";
+
+static int l_provide_font(lua_State *L)
+{
+    const char *path = luaL_checkstring(L, 1);
+    size_t      len;
+    const char *bytes = luaL_checklstring(L, 2, &len);
+
+    lua_getfield(L, LUA_REGISTRYINDEX, FONTS_KEY);
+
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, FONTS_KEY);
+    }
+
+    lua_pushvalue(L, 2);
+    lua_setfield(L, -2, path);      /* anchored for as long as the state */
+    lua_pop(L, 1);
+
+    litexl_font_provide(path, bytes, len);
+    return 0;
+}
+
+/* `attach_window(pixels, w, h, pitch)` - a `gfx` surface's own memory. */
+uint32_t *kosmos_surface_pixels(lua_State *L, int index,
+                                unsigned *w, unsigned *h, unsigned *pitch);
+
+static int l_attach_window(lua_State *L)
+{
+    unsigned  w, h, pitch;
+    uint32_t *pixels = kosmos_surface_pixels(L, 1, &w, &h, &pitch);
+
+    litexl_window_attach(pixels, (int)w, (int)h, (int)pitch);
+    return 0;
+}
+
+/*
+ * `take_damage()` - what changed since the last frame, as a flat list of
+ * x, y, w, h, or `true` when it is the whole window.
+ *
+ * Flat rather than a table per rectangle: this is called once a frame and
+ * four numbers in a table each is four allocations per rectangle for the
+ * collector to walk. `CLAUDE.md`'s note about `wait_input` allocating 3.6 KB
+ * a pass is the same lesson.
+ */
+static int l_take_damage(lua_State *L)
+{
+    SDL_Rect rects[64];
+    bool     whole = false;
+    int      n     = litexl_damage_take(rects, 64, &whole);
+    int      i;
+
+    if (whole) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+
+    lua_createtable(L, n * 4, 0);
+
+    for (i = 0; i < n; i++) {
+        lua_pushinteger(L, rects[i].x); lua_rawseti(L, -2, i * 4 + 1);
+        lua_pushinteger(L, rects[i].y); lua_rawseti(L, -2, i * 4 + 2);
+        lua_pushinteger(L, rects[i].w); lua_rawseti(L, -2, i * 4 + 3);
+        lua_pushinteger(L, rects[i].h); lua_rawseti(L, -2, i * 4 + 4);
+    }
+
+    return 1;
+}
+
+static int l_set_host(lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    litexl_set_host(L, 1);
+    return 0;
+}
+
+void kosmos_litexl_kit(lua_State *L)
+{
+    static const luaL_Reg lib[] = {
+        { "set_host",      l_set_host      },
+        { "attach_window", l_attach_window },
+        { "provide_font",  l_provide_font  },
+        { "take_damage",   l_take_damage   },
+        { NULL, NULL }
+    };
+
+    /* The six modules `main.c` would have registered, as globals. */
+    api_load_libs(L);
+
+    luaL_newlib(L, lib);
+}
