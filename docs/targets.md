@@ -143,7 +143,7 @@ piece of work with its own tests.
 | Target | Arch | Platform | Status |
 |---|---|---|---|
 | QEMU `virt` | aarch64 | device tree | **the development target.** Everything runs here first. |
-| QEMU `q35` | x86-64 | fw_cfg, multiboot | **runs the desktop.** 125 in-guest checks, 65 display checks, disk, network, sound. |
+| QEMU `q35` | x86-64 | fw_cfg, multiboot | **runs the desktop.** 125 in-guest checks, 65 display checks, disk, network, and sound through an Intel HDA controller rather than virtio - the device a laptop has. |
 | Alienware x14 R1 | x86-64 | UEFI + ACPI | **not started.** §6. |
 | ThinkPad T14 Gen 1 | x86-64 | UEFI + ACPI | **started.** §7, and `docs/thinkpad.md`. |
 | Raspberry Pi 5 | aarch64 | firmware + mailbox | **not started**, and blocked on a serial cable that is not here. §7. |
@@ -185,7 +185,7 @@ Everything between those two, which is to say the platform:
 | **subtotal - boots and shows the desktop** | | **~2800** |
 | xHCI + USB core + hub + mass storage + HID | new | **~5000-7000** |
 | USB CDC-ECM networking | new | ~500 |
-| Intel HDA audio | new | ~1500 |
+| Intel HDA audio | **written**, in `hal/pc/hda.c` | ~590 |
 | LPSS I2C + HID-over-I2C touchpad | new | ~1000 |
 
 **Those numbers are rough and the kind that are wrong by a factor of two.**
@@ -391,7 +391,7 @@ and expensive to assume.
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |
 | NVMe | new | ~800 |
 | Intel I219, which is the e1000e family | new | ~1500 |
-| Intel HDA and the ALC3287 codec | new | ~1500 |
+| ~~Intel HDA~~ | **written and in the build**; the codec graph is walked two levels, a tone is captured and measured | done, ~590 |
 | xHCI and the USB core | new | ~5000-7000 |
 
 **The first milestone is smaller than §6's ~2800**, for two reasons that
@@ -452,7 +452,10 @@ loader is right depends on a fact about the laptop's firmware.
 3. **Cores and time.** ACPI MADT for the real processor count - eight or
    twelve, against the four this kernel has ever seen - and an APIC timer.
 4. **Storage.** NVMe, so `/home` outlives the boot.
-5. **The rest.** I219, then HDA, then xHCI, then the touchpad.
+5. **The rest.** I219, then xHCI, then the touchpad. HDA is done - it was
+   pulled forward because it is entirely testable under emulation and the
+   ordering above was about what a *machine* needs rather than about what
+   could be built without one.
 
 ### Where the work has got to
 

@@ -18,6 +18,8 @@
 #include "pci.h"
 #include "pc.h"
 #include "syscall.h"
+#include "hda.h"
+#include "snd.h"
 #include "virtio.h"
 
 #define PCI_CONFIG_ADDR     0xCF8
@@ -27,6 +29,7 @@
 #define PCI_COMMAND         0x04
 #define PCI_HEADER_TYPE     0x0E
 #define PCI_BAR0            0x10
+#define PCI_CLASS            0x08
 #define PCI_INTERRUPT_LINE  0x3C
 
 #define COMMAND_IO          (1u << 0)
@@ -119,8 +122,63 @@ static void read_bars(struct pci_device *out)
     }
 }
 
+/*
+ * What a caller is looking for.
+ *
+ * Two ways to name a device and they are not interchangeable. A virtio
+ * device is found by its vendor because that is what makes it virtio. **A
+ * sound controller has to be found by its class**, because every chipset
+ * gives its own the vendor's own identifier - QEMU's is 8086:2668 and Comet
+ * Lake's is something else entirely - and a driver that matched on one of
+ * them would work on exactly one machine.
+ *
+ * One scan either way. The alternative was a second copy of the walk below,
+ * and `pc.h` says what this project thinks of a fact written twice.
+ */
+struct match {
+    bool     by_class;
+    uint16_t vendor, device;
+    uint8_t  class, subclass;
+};
+
+static bool matches(const struct match *m, uint8_t bus, uint8_t slot,
+                    uint8_t fn, uint16_t v, uint16_t d)
+{
+    if (m->by_class) {
+        uint32_t cls = pci_config_read(bus, slot, fn, PCI_CLASS);
+
+        return (uint8_t)(cls >> 24) == m->class
+            && (uint8_t)(cls >> 16) == m->subclass;
+    }
+
+    if (v != m->vendor) {
+        return false;
+    }
+
+    return m->device == PCI_NONE || d == m->device;
+}
+
+static bool find(const struct match *want, unsigned from,
+                 struct pci_device *out, unsigned *found_at);
+
 bool pci_find(uint16_t vendor, uint16_t device, unsigned from,
               struct pci_device *out, unsigned *found_at)
+{
+    struct match want = { false, vendor, device, 0, 0 };
+
+    return find(&want, from, out, found_at);
+}
+
+bool pci_find_class(uint8_t class, uint8_t subclass, unsigned from,
+                    struct pci_device *out, unsigned *found_at)
+{
+    struct match want = { true, 0, 0, class, subclass };
+
+    return find(&want, from, out, found_at);
+}
+
+static bool find(const struct match *want, unsigned from,
+                 struct pci_device *out, unsigned *found_at)
 {
     unsigned seen = 0;
     unsigned bus;
@@ -168,11 +226,8 @@ bool pci_find(uint16_t vendor, uint16_t device, unsigned from,
                     }
                 }
 
-                if (v != vendor) {
-                    continue;
-                }
-
-                if (device != PCI_NONE && d != device) {
+                if (!matches(want, (uint8_t)bus, (uint8_t)slot,
+                             (uint8_t)fn, v, d)) {
                     continue;
                 }
 
@@ -224,12 +279,16 @@ void pci_enable(const struct pci_device *dev)
 /*
  * Whether one of this system's drivers took this device.
  *
- * Only virtio is ever claimed here, so the question reduces to: is this a
- * virtio device, of which type, and did that driver come up? The type is
- * not simply the device id - a *transitional* device answers in the legacy
- * range and puts its type in the subsystem id instead, which is the same
- * trap `is_kind` in `virtio.c` documents and the reason `virtio-net-pci`
- * was invisible until it was handled.
+ * Two drivers can claim something. The sound controller is found by its
+ * class, so it is answered by its class here too - and it is the only
+ * device in this system that is neither virtio nor firmware.
+ *
+ * For virtio the question reduces to: is this a virtio device, of which
+ * type, and did that driver come up? The type is not simply the device id -
+ * a *transitional* device answers in the legacy range and puts its type in
+ * the subsystem id instead, which is the same trap `is_kind` in `virtio.c`
+ * documents and the reason `virtio-net-pci` was invisible until it was
+ * handled.
  *
  * Everything else on a q35 - the host bridge, the ISA bridge, the SATA
  * controller QEMU puts there whether or not a disk is attached - is
@@ -240,7 +299,12 @@ static uint8_t claimed_here(uint8_t slot, uint8_t fn, uint32_t id)
 {
     uint16_t vendor = (uint16_t)(id & 0xFFFF);
     uint16_t device = (uint16_t)((id >> 16) & 0xFFFF);
+    uint32_t cls = pci_config_read(0, slot, fn, PCI_CLASS);
     uint32_t type;
+
+    if ((uint8_t)(cls >> 24) == 0x04 && (uint8_t)(cls >> 16) == 0x03) {
+        return hda_present() ? 1u : 0u;
+    }
 
     if (vendor != 0x1AF4) {
         return 0;                       /* not virtio; nothing here drives it */
@@ -256,7 +320,7 @@ static uint8_t claimed_here(uint8_t slot, uint8_t fn, uint32_t id)
     case 1:  return hal_net_present()      ? 1u : 0u;   /* virtio-net */
     case 2:  return hal_blk_present()      ? 1u : 0u;   /* virtio-blk */
     case 18: return keyboard_present()     ? 1u : 0u;   /* virtio-input */
-    case 25: return hal_snd_present()      ? 1u : 0u;   /* virtio-sound */
+    case 25: return virtio_snd_present()      ? 1u : 0u;   /* virtio-sound */
     default: return 0;
     }
 }

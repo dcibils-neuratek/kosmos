@@ -62,6 +62,17 @@ void     pci_config_write(uint8_t bus, uint8_t slot, uint8_t fn,
 bool pci_find(uint16_t vendor, uint16_t device, unsigned from,
               struct pci_device *out, unsigned *found_at);
 
+/*
+ * The same, by what a device *is* rather than who made it.
+ *
+ * A sound controller has to be found this way: every chipset gives its own
+ * the vendor's identifier, so QEMU's is 8086:2668 and a Comet Lake's is
+ * something else, and matching on either would work on exactly one machine.
+ * Class 4 subclass 3 is High Definition Audio wherever it is fitted.
+ */
+bool pci_find_class(uint8_t class, uint8_t subclass, unsigned from,
+                    struct pci_device *out, unsigned *found_at);
+
 /* Turns on the two bits a driver needs before a BAR means anything: memory
  * space decoding, and bus mastering so the device may fetch its own
  * descriptors. Off out of reset, and a device with them off is one that

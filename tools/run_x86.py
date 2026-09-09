@@ -24,8 +24,10 @@ test that only read the boot log would have called that a pass.
 
 import os
 import re
+import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 QEMU = "qemu-system-x86_64"
@@ -105,6 +107,152 @@ def boot(image, option, timeout, typed=(), extra=()):
         p.wait()
 
     return out.decode("utf-8", "replace")
+
+
+#
+# **The sound the machine made, read back off the wire.**
+#
+# Everything else in this file is a string the machine printed, which is the
+# machine's own account of itself. Audio is the one subsystem where that is
+# not enough: a driver that programs the controller wrongly prints exactly
+# what a working one prints, and the whole of the difference is in bytes
+# nobody in the guest ever sees again.
+#
+# So QEMU's `wav` backend writes what it was handed to a file, and this
+# reads it. 440 Hz for a third of a second, and silence on either side -
+# which is three separate claims about the driver:
+#
+#   - the samples arrived at all, and in the right format, since a wrong
+#     sample rate or channel count reads as the wrong pitch rather than as
+#     an error;
+#   - they arrived *once*, so the cyclic buffer is not repeating a period
+#     it has already played, which is what an HDA ring does when nobody
+#     zeroes a period behind the read pointer;
+#   - and the silence before and after is real silence, which is the same
+#     claim from the other side.
+#
+# Killing QEMU leaves the header's length fields stale - it writes those on
+# a clean exit - so the samples are read from the fixed 44-byte offset
+# rather than from the header. Everything that matters is in the data.
+#
+WAV_HEADER = 44
+TONE_HZ = 440
+TONE_MS = 333
+
+
+def tone(path):
+    """(milliseconds, hertz, stray) of the loudest run in a captured WAV."""
+    with open(path, "rb") as f:
+        data = f.read()[WAV_HEADER:]
+
+    frames = len(data) // 4
+    left = [struct.unpack_from("<h", data, i * 4)[0] for i in range(frames)]
+
+    live = [i for i, v in enumerate(left) if v != 0]
+
+    if not live:
+        return 0, 0, 0
+
+    first, last = live[0], live[-1]
+    segment = left[first:last + 1]
+
+    crossings = sum(1 for i in range(1, len(segment))
+                    if (segment[i - 1] < 0) != (segment[i] < 0))
+
+    seconds = len(segment) / 44100.0
+
+    # Samples outside the run: silence that is not silent, which is a period
+    # played twice or a buffer that was never cleared.
+    stray = len(live) - sum(1 for v in segment if v != 0)
+
+    return int(seconds * 1000), int(crossings / 2 / seconds), stray
+
+
+def sound(image, check):
+    """Boots with a real HDA controller, plays a tone, and listens."""
+    wav = os.path.join(tempfile.gettempdir(), "kosmos-x86-hda.wav")
+
+    if os.path.exists(wav):
+        os.remove(wav)
+
+    out = boot(image, "beep", 90.0, extra=(
+        "-device", "ich9-intel-hda",
+        "-device", "hda-output,audiodev=a0",
+        "-audiodev", "wav,id=a0,path=" + wav,
+    ))
+
+    if out is None:
+        check(False, "the machine would not boot with an HDA controller")
+        return
+
+    check("sound: Intel HDA" in out,
+          "an ich9-intel-hda was on the bus and the driver did not take it: "
+          + next((l.strip() for l in out.splitlines() if "sound" in l),
+                 "nothing was said about sound at all"))
+
+    check(re.search(r"beep: %d Hz, \d+ ms of sound" % TONE_HZ, out) is not None,
+          "`beep` did not report that it had played anything")
+
+    if not os.path.exists(wav):
+        check(False, "nothing was written to the capture file at all")
+        return
+
+    ms, hz, stray = tone(wav)
+    os.remove(wav)
+
+    check(abs(hz - TONE_HZ) <= 4,
+          "the captured tone is %d Hz and `beep` played %d" % (hz, TONE_HZ))
+    check(abs(ms - TONE_MS) <= 25,
+          "the captured tone is %d ms and `beep` played %d" % (ms, TONE_MS))
+    check(stray == 0,
+          "%d samples outside the tone are not silent, which is a period "
+          "the ring played more than once" % stray)
+
+    #
+    # **And that the controller is raising its line**, which the capture
+    # above cannot tell you.
+    #
+    # A cyclic buffer plays whether or not anybody is listening for the
+    # interrupt, so a driver whose handler never runs produces a tone that
+    # sounds correct - the ring is refilled by whoever polls the read
+    # pointer. What it does *not* produce is a period retired on time, and
+    # what nothing produces is the zeroing that keeps an underrun silent.
+    #
+    # `audiolag` asks the machine directly: one line raised per period, and
+    # the queue floor above zero rather than the four-out-of-four a stream
+    # that never filled would report.
+    #
+    lag = boot(image, "audiolag", 120.0, extra=(
+        "-device", "ich9-intel-hda",
+        "-device", "hda-output,audiodev=a0",
+        "-audiodev", "none,id=a0",
+    ))
+
+    if lag is None:
+        check(False, "the machine would not run `audiolag` with HDA")
+        return
+
+    raised = re.search(r"raised its line (\d+) times for (\d+) periods", lag)
+
+    check(raised is not None, "`audiolag` did not report the interrupt count")
+
+    if raised:
+        lines, periods = int(raised.group(1)), int(raised.group(2))
+
+        check(lines >= periods,
+              "the controller raised its line %d times for %d periods; the "
+              "handler is not running once per period" % (lines, periods))
+
+    check("UNDERRUNS 0" in lag,
+          "the HDA ring underran: "
+          + next((l.strip() for l in lag.splitlines() if "UNDERRUNS" in l),
+                 "and said nothing about it"))
+
+    floor = re.search(r"queue floor (\d+) of (\d+) periods", lag)
+
+    check(floor is not None and 0 < int(floor.group(1)) <= int(floor.group(2)),
+          "the queue floor is not a number between one and the device depth, "
+          "which means the depth this driver reports is not the HAL's")
 
 
 def main():
@@ -245,10 +393,28 @@ def main():
           "the machine claimed more than one processor is scheduling, and "
           "nothing can start a second one yet")
 
+    #
+    # And the sound, which is the one subsystem this board does not take
+    # from virtio. `hal/pc/hda.c` says why an emulated Intel controller is
+    # worth more here than an emulated virtio one: it is the same silicon
+    # interface a ThinkPad has, so what passes here is what will run there.
+    #
+    sound(image, check)
+
+    if fails:
+        print("FAIL: %d of %d checks on x86-64:"
+              % (len(fails), len(fails) + checks))
+
+        for f in fails:
+            print("  " + f)
+
+        return 1
+
     print("PASS: %d checks on x86-64 (it boots through twelve stages, names "
           "its processor out of CPUID, agrees with userland about the memory "
-          "by two paths, answers what is typed at it, and runs a program that "
-          "reports what it was handed)." % checks)
+          "by two paths, answers what is typed at it, runs a program that "
+          "reports what it was handed, and plays a tone an Intel HDA "
+          "controller hands back at the right pitch)." % checks)
     return 0
 
 

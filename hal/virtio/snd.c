@@ -48,6 +48,7 @@
 #include "mmio.h"
 #include "virtio.h"
 #include "hal.h"
+#include "snd.h"
 #include "spinlock.h"
 
 /*
@@ -56,7 +57,7 @@
  * **Four queues, a used index per queue, and a period counter**, and the
  * sound path is the one place in this system with a *deadline*: a period is
  * 5.8 ms and the device drains whether or not anybody refilled it.
- * `hal_snd_write` fills from a syscall and `snd_interrupt` retires buffers
+ * `virtio_snd_write` fills from a syscall and `virtio_snd_interrupt` retires buffers
  * from the interrupt handler, which is exactly the pair that needs a lock.
  *
  * The critical sections here are the shortest of the four drivers on
@@ -183,7 +184,7 @@ static struct {
     uint8_t               period[QUEUE_SIZE / 3][HAL_SND_PERIOD_BYTES];
     unsigned              next_slot;
 
-    /* Deadlines missed, and the closest it came. See `hal_snd_dry`. */
+    /* Deadlines missed, and the closest it came. See `virtio_snd_dry`. */
     bool                  primed;     /* the queue has been full at least once */
     volatile bool         wants;      /* the device raised its line */
     volatile unsigned     woke;       /* how many times it has */
@@ -365,7 +366,7 @@ static bool find_output_stream(void)
     return false;
 }
 
-bool hal_snd_init(void)
+bool virtio_snd_init(void)
 {
     unsigned from = 0;
 
@@ -458,12 +459,12 @@ bool hal_snd_init(void)
  * run dry and whatever comes out next has a click in it. Something above
  * this layer has to watch it, and cannot if this does not say.
  */
-bool hal_snd_present(void)
+bool virtio_snd_present(void)
 {
     return snd.present;
 }
 
-unsigned hal_snd_queued(void)
+unsigned virtio_snd_queued(void)
 {
     struct vqueue *q = &snd.q[VQ_TX];
 
@@ -498,7 +499,7 @@ unsigned hal_snd_queued(void)
  * The device has finished with a period, and says so.
  *
  * **This is what turns "usually fine" into a deadline.** Everything above
- * used to ask - `hal_snd_queued` on a timer, at whatever rate somebody had
+ * used to ask - `virtio_snd_queued` on a timer, at whatever rate somebody had
  * chosen - and a poll is a guess about when the answer changed. The device
  * knows exactly when, and virtio-mmio has had a line for saying so since
  * before this driver existed; it simply was not wired up.
@@ -528,7 +529,7 @@ static void snd_interrupt_locked(unsigned slot)
 /*
  * Retires finished periods and counts them. The other half of the pair.
  */
-void snd_interrupt(unsigned slot)
+void virtio_snd_interrupt(unsigned slot)
 {
     unsigned long flags = spin_lock(&snd_lock);
 
@@ -543,7 +544,7 @@ void snd_interrupt(unsigned slot)
  * something true": leaving it set would have the server come straight back
  * round a loop it has already served.
  */
-bool hal_snd_wants(void)
+bool virtio_snd_wants(void)
 {
     bool w = snd.wants;
 
@@ -554,17 +555,17 @@ bool hal_snd_wants(void)
 /* How many times the device has raised its line. Nothing depends on it; it
  * is here so that "the interrupt is not arriving" and "the interrupt is
  * arriving and something else is slow" are different observations. */
-unsigned hal_snd_wakes(void)
+unsigned virtio_snd_wakes(void)
 {
     return snd.woke;
 }
 
-unsigned hal_snd_dry(void)
+unsigned virtio_snd_dry(void)
 {
     return snd.dry;
 }
 
-unsigned hal_snd_floor(void)
+unsigned virtio_snd_floor(void)
 {
     return snd.floor;
 }
@@ -576,7 +577,7 @@ unsigned hal_snd_floor(void)
  * point of the queue depth. A caller that finds this returning false is a
  * caller that is *ahead*, which is the good problem.
  */
-static bool hal_snd_write_locked(const void *pcm, unsigned bytes)
+static bool virtio_snd_write_locked(const void *pcm, unsigned bytes)
 {
     struct vqueue *q = &snd.q[VQ_TX];
     unsigned slot, head, at;
@@ -586,7 +587,7 @@ static bool hal_snd_write_locked(const void *pcm, unsigned bytes)
         return false;
     }
 
-    if (hal_snd_queued() >= (QUEUE_SIZE / 3) - 1) {
+    if (virtio_snd_queued() >= (QUEUE_SIZE / 3) - 1) {
         return false;
     }
 
@@ -596,7 +597,7 @@ static bool hal_snd_write_locked(const void *pcm, unsigned bytes)
      * means it did not.
      */
     {
-        unsigned depth = hal_snd_queued();
+        unsigned depth = virtio_snd_queued();
 
         /*
          * **Not counted until the pipeline has filled once.**
@@ -679,13 +680,13 @@ static bool hal_snd_write_locked(const void *pcm, unsigned bytes)
 }
 
 /*
- * Fills a period into the transmit queue from a syscall; `snd_interrupt`
+ * Fills a period into the transmit queue from a syscall; `virtio_snd_interrupt`
  * retires them from the handler. That is the pair.
  */
-bool hal_snd_write(const void *pcm, unsigned bytes)
+bool virtio_snd_write(const void *pcm, unsigned bytes)
 {
     unsigned long flags = spin_lock(&snd_lock);
-    bool r = hal_snd_write_locked(pcm, bytes);
+    bool r = virtio_snd_write_locked(pcm, bytes);
 
     spin_unlock(&snd_lock, flags);
     return r;

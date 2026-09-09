@@ -315,9 +315,11 @@ void kmain(void)
     }
 
     /*
-     * Sound, in the same scan and reported here for the same reason: it is
-     * another virtio device in another of the thirty-two windows, and what
-     * a machine turned out to have is worth saying once, at the start.
+     * Sound, and what a machine turned out to have is worth saying once, at
+     * the start - which is why the board is asked to name the device rather
+     * than this printing one. On `virt` there is one possible answer and on
+     * a PC there are two, an HDA controller and a virtio device, and the
+     * three ways a machine can end up silent are worth telling apart.
      *
      * Started at boot rather than when something first wants to play,
      * because the setup is four synchronous control requests and doing them
@@ -325,7 +327,9 @@ void kmain(void)
      */
     if (hal_snd_init()) {
         boot_fact_begin();
-        kputs("sound: virtio-sound, 44100 Hz stereo, ");
+        kputs("sound: ");
+        kputs(hal_snd_describe());
+        kputs(", 44100 Hz stereo, ");
         kputu(HAL_SND_PERIOD_FRAMES);
         kputs("-frame periods (");
         kputu(HAL_SND_PERIOD_FRAMES * 1000u / HAL_SND_RATE);
@@ -334,7 +338,10 @@ void kmain(void)
         kputs(" deep");
         boot_fact_end();
     } else {
-        boot_fact("no sound device; this machine is silent");
+        boot_fact_begin();
+        kputs("no sound: ");
+        kputs(hal_snd_describe());
+        boot_fact_end();
     }
 
     /*

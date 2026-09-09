@@ -243,6 +243,96 @@ Two failures that look identical from outside: a laptop that fell back has
 no screen because there is no ramfb, and a laptop whose loader ignored the
 request has no screen for a different reason and a different fix.
 
+### `hal/pc/hda.c` - the sound controller a laptop actually has
+
+**The first driver in this tree written for hardware rather than for QEMU.**
+Everything before it either exists on both machines - the i8042, the PIC,
+the PIT - or is QEMU's own with no counterpart on a laptop, which is what
+`ramfb` is. Intel HDA is neither: it is a specification Intel has shipped in
+every chipset since 2004, and QEMU emulates the controller faithfully enough
+to develop against. That combination is worth more than either half.
+
+**Found by class, not by identifier.** `pci_find` matched a vendor and a
+device id, which is right for virtio - being virtio is what a virtio device
+*is* - and useless here: QEMU's controller answers 8086:2668 and a Comet
+Lake's answers something else, so a driver written against either id would
+work on exactly one machine. `pci_find_class` shares the same bus walk and
+asks class 4 subclass 3, which is High Definition Audio wherever it is
+fitted.
+
+**The shape is not virtio's shape, and everything else follows.** A virtio
+sound device is a queue: hand over a period, the device consumes it, and the
+queue depth is how much is in hand. HDA is a cyclic buffer that never stops -
+the controller walks a descriptor list for ever, playing whatever bytes are
+under it when it arrives. So:
+
+- the **read position is the hardware's**, in `SDLPIB`, and the depth is
+  derived from it rather than from a counter this driver keeps. Two
+  interrupts coalescing is all it takes for a counter to disagree with a
+  device, and the way that bug presents is audio written into the period
+  being played;
+- **one slot is always left free**, which is what makes the depth
+  unambiguous - `write - play` is zero for empty and never wraps to zero for
+  full;
+- **a finished period is zeroed** in the interrupt handler. A queue that
+  runs dry goes quiet; a ring that runs dry *repeats*, and an underrun here
+  would be the last 5.8 ms of audio played over and over at 172 Hz.
+
+**What it cost, and it is written into the driver because nothing would ever
+have found it by reading.** `GET_PARAMETER` on the root node answered
+correctly and the same call on the function group underneath it timed out,
+with the registers saying the command pointer had moved and the controller's
+had not. `RINTCNT` is not only an interrupt threshold: it is also how many
+responses the controller will write before it treats the response ring as
+full and stops consuming commands, and what restarts it is the driver
+acknowledging `RIRBSTS`. With the response interrupt disabled there is no
+status to acknowledge, so the count never clears and the controller answers
+exactly one verb and then nothing, for ever. The interrupt is enabled and
+`INTCTL.CIE` is left clear, so the status bit is set, every response clears
+it, and the pin never moves.
+
+**The codec graph is walked for the hard case rather than the easy one.**
+QEMU's codec has one function group, one DAC and one output pin whose
+connection list holds the DAC directly - so a driver written against it
+alone would look one level deep and find nothing at all on a laptop, where
+the pin's list holds a mixer and the mixer's list holds the converter. Two
+levels are walked, a selector is selected and a mixer's input for that entry
+is unmuted, and amplifiers are set to the **offset field of their own
+capabilities** - which is 0 dB, the one setting that means the same loudness
+on two different codecs, where the maximum on a laptop's speaker amplifier
+is distortion.
+
+**A pin that is wired to nothing is skipped**, from the configuration
+default's port-connectivity field. That is the field that will decide which
+of the ALC3287's pins is the speaker and which is the headphone jack, and it
+is the one thing here that QEMU cannot test, because its codec has one pin
+and every answer is the same answer.
+
+**The stream runs from initialisation and is never stopped**, which is 172
+interrupts a second for as long as the machine is on. It buys the thing the
+audio server is built around - a device that says when it wants more - and
+the fix when it matters is named rather than guessed: stop `RUN` after some
+number of consecutive silent periods and start it again on the next write.
+That is a state machine and it is not worth writing before there is a
+battery to measure it against.
+
+**A board binds the HAL, and sound is the second subsystem to need it.**
+`hal/virtio/snd.c` used to define `hal_snd_*` directly, which was fine while
+both boards took sound from the same file. `hal/pc/snd_bind.c` now asks the
+HDA controller first and virtio second, exactly as `fb.c` asks the loader
+first and ramfb second, and `hal/qemu-virt/snd_bind.c` is the same file with
+one answer in it. `hal_snd_describe()` is what the boot log prints, for
+`hal_fb_describe`'s reason: "no sound" covers a controller that is not
+there, a controller with no codec on its link, and a codec whose output pin
+is wired to nothing, and those are three different faults with three
+different fixes that all sound identical.
+
+**`make x86` now gives the machine an HDA controller instead of a virtio
+sound device**, for the argument `input_bind.c` makes about the keyboard: the
+driver that has to work on a laptop should be the one that is exercised
+every time somebody runs the system. `virt` still runs virtio-sound, so
+neither driver is orphaned.
+
 ### The boot log stopped naming the wrong driver
 
 `kernel/main.c` printed `keyboard: virtio-input, negotiated and polled like
@@ -286,6 +376,26 @@ because the up-arrow arrives as 0xE0 0x48 and has to come out as `ESC [ A`.
 
 `sendkey` goes through QEMU's own input plumbing rather than the serial
 line, so what it proves is the driver rather than the console.
+
+**And the sound, read back off the wire rather than off the boot log.**
+Every other check in `run_x86.py` is a string the machine printed, which is
+the machine's own account of itself. Audio is the one subsystem where that
+is not enough: a driver that programs the controller wrongly prints exactly
+what a working one prints, and the whole of the difference is in bytes
+nobody in the guest ever sees again. So QEMU's `wav` backend writes what it
+was handed to a file and the harness reads it:
+
+```
+beep: 440 Hz, 333 ms of sound in 311 ms, 58 periods
+   -> 333 ms of tone, 440 Hz measured from the zero crossings,
+      and 0 samples outside it that are not silent
+```
+
+Three claims about the driver in one capture. The samples arrived, and in
+the right format - a wrong rate or channel count reads back as the wrong
+pitch rather than as an error. They arrived **once**, so the cyclic buffer
+is not repeating a period it has already played. And the silence on either
+side is real silence, which is the same claim from the other direction.
 
 ---
 
@@ -361,7 +471,8 @@ works, and not before.
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |
 | NVMe | new | ~800 |
 | Intel I219, which is the e1000e family | new | ~1500 |
-| Intel HDA and the ALC3287 codec | new | ~1500 |
+| Intel HDA | **written and in the build**, tone captured and measured | done |
+| The ALC3287's pin layout - which pin is the speaker | needs the machine | §6 |
 | xHCI and the USB core | new | ~5000-7000 |
 
 **Almost all of it is testable under QEMU before the machine is touched**,
@@ -397,15 +508,14 @@ right depends on a fact about the laptop's firmware.
 
 ## 11. Next three things
 
-1. **The local APIC**, now that ACPI says where it is. It is what a real
+1. **xHCI and the USB core**, which is the largest thing left and the one
+   the user's ordering puts next: this machine can run from a USB stick with
+   no storage of its own, so USB comes before NVMe.
+2. **The local APIC**, now that ACPI says where it is. It is what a real
    machine needs for a per-core timer, and it is the first half of starting
    a second processor.
-2. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
+3. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
    bytes per function through port 0xCF8 and PCIe has 4096.
-3. **Split the keyboard entry points out of `hal/virtio/input.c`**, so a
-   board can take its keyboard from one driver and its pointer from
-   another - which is what lets the i8042 into the build before the
-   auxiliary port is understood.
 
 And still open, whenever it is cheap: **why QEMU's PS/2 mouse will not
 stream.** One reading of `pckbd.c`, and it decides nothing else.

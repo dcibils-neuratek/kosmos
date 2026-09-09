@@ -200,6 +200,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/virtio.c \
         hal/virtio/net.c \
         hal/virtio/snd.c \
+        hal/qemu-virt/snd_bind.c \
         hal/fwcfg/fwcfg.c \
         hal/qemu-virt/fwcfg_mmio.c \
         hal/fwcfg/ramfb.c \
@@ -1879,6 +1880,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/keys.c \
              hal/pc/input_describe.c \
              hal/virtio/snd.c \
+             hal/pc/hda.c \
+             hal/pc/snd_bind.c \
              kernel/console.c \
              kernel/screen.c \
              kernel/boot.c \
@@ -2052,12 +2055,19 @@ X86_DISPLAY := $(if $(filter Darwin,$(shell uname)),cocoa$(ZOOM_FLAG)$(FULLSCREE
 # work on a laptop would be the one never exercised. The tablet stays
 # because the i8042's auxiliary port does not yet deliver.
 #
+# **And an Intel HDA controller rather than a virtio sound device**, for
+# exactly that argument a second time. A laptop has an HDA controller and no
+# virtio anything, `hal/pc/hda.c` is the driver that has to work there, and
+# a machine configured with the easy device would leave it untested.
+# `hal/qemu-virt/` still runs virtio-sound, so neither driver is orphaned.
+#
 X86_DEVICES := -device ramfb \
                -device virtio-tablet-pci \
                -device virtio-net-pci,netdev=n0 -netdev user,id=n0 \
                -drive file=$(DISK),format=raw,if=none,id=d0 \
                -device virtio-blk-pci,drive=d0 \
-               -device virtio-sound-pci,audiodev=a0 -audiodev coreaudio,id=a0
+               -device ich9-intel-hda -device hda-output,audiodev=a0 \
+               -audiodev coreaudio,id=a0
 
 x86: x86-build $(DISK)
 	qemu-system-x86_64 -M q35 -m 512M -no-reboot $(X86_ACCEL) -vga none \

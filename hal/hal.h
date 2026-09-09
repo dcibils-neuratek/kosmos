@@ -517,6 +517,18 @@ unsigned      hal_snd_dry(void);
 unsigned      hal_snd_floor(void);
 
 /*
+ * Which device answered, in the words the boot log uses.
+ *
+ * The same argument `hal_fb_describe` makes and the same shape. A PC has
+ * two possible sources of sound - an HDA controller soldered to it, and a
+ * virtio device when QEMU was told to add one - and "no sound" covers a
+ * controller that is not there, a controller with no codec on its link, and
+ * a codec whose output pin is wired to nothing. Those are three different
+ * faults with three different fixes and they all sound identical.
+ */
+const char   *hal_snd_describe(void);
+
+/*
  * Stop, or start again.
  *
  * Neither returns when it works. There is no `bool` here for the same

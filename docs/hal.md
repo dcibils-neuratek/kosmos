@@ -359,6 +359,39 @@ ring now belong to a `struct vinput`, because two devices of the same kind
 cannot share them.
 
 
+## A board binds the HAL; a driver does not define it
+
+For a long time a driver *was* the HAL: `hal/virtio/input.c` defined
+`hal_keyboard_init` and `hal/virtio/snd.c` defined `hal_snd_init`, and that
+was exactly right while every board took that subsystem from the same file.
+
+**It stopped being right the moment a board had a choice.** The PC takes its
+keyboard from an i8042 and its pointer from virtio; it takes its sound from
+an Intel HDA controller when there is one and from virtio when there is not.
+Two drivers cannot both define the same nine symbols, and neither of them
+should have to know the other exists.
+
+So the driver exports its own names - `virtio_keyboard_init`,
+`virtio_snd_write`, `hda_write` - and a small file per board maps them onto
+the HAL. `hal/pc/input_bind.c` and `hal/qemu-virt/input_bind.c` are the same
+file with different answers; so are the two `snd_bind.c`. Each is a few
+lines long and each is the one place a board's decision is written down.
+
+**The choice is made once, at initialisation, and remembered.** `snd_bind.c`
+asks HDA first and virtio second - the order `hal/pc/fb.c` uses for the
+loader and ramfb, and for the same reason: asking for the real device costs
+nothing on a machine that does not have one, and is the difference between
+sound on hardware and silence.
+
+**Each of these has a `describe`**, and it is not decoration.
+`hal_fb_describe`, `hal_keyboard_describe`, `hal_pointer_describe` and
+`hal_snd_describe` exist because a board with two possible answers has more
+than one way to fail, and those ways look identical from outside: a laptop
+with no sound may have no controller, a controller with no codec on its
+link, or a codec whose output pin is wired to nothing. Three different
+faults, three different fixes, one silence. On a machine with no serial port
+the boot log is the only instrument there is.
+
 ## The interface
 
 Minimal on purpose. **Do not expand it speculatively.**

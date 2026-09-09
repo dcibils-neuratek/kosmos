@@ -8,6 +8,62 @@ Last updated: 2026-09-08
 
 ## Where this left off
 
+### Sound on the machine a laptop is
+
+`hal/pc/hda.c` is an Intel High Definition Audio driver, and it is **the
+first driver in this tree written for hardware rather than for QEMU**.
+Everything before it either exists on both machines - the i8042, the PIC,
+the PIT - or is QEMU's own with no counterpart on a laptop, which is what
+ramfb is. HDA is neither: a specification Intel has shipped in every chipset
+since 2004, emulated faithfully enough to develop against.
+
+`make x86` gives the machine an `ich9-intel-hda` instead of a virtio sound
+device now, for the argument the i8042 already won: the driver that has to
+work on a laptop should be the one exercised every time somebody runs the
+system.
+
+**The shape is not virtio's shape.** A virtio sound device is a queue; HDA
+is a cyclic buffer that never stops, so there is no handing over and no
+running out - only being late. The depth comes from `SDLPIB`, the
+hardware's own read pointer, rather than from a counter the driver keeps;
+one slot is always left free so that write-equals-play means empty; and a
+finished period is zeroed in the interrupt handler, because a ring that runs
+dry repeats the last thing anybody wrote at 172 Hz.
+
+**What it cost was one sentence in the specification.** `RINTCNT` is not
+only an interrupt threshold: it is also how many responses the controller
+writes before it treats the response ring as full and stops consuming
+commands, and what restarts it is the driver acknowledging `RIRBSTS`. With
+the response interrupt disabled there is nothing to acknowledge, so
+`GET_PARAMETER` on the root node answered correctly and the same call one
+node down timed out, for ever. The interrupt is enabled and `INTCTL.CIE`
+left clear, so the status is set, every response clears it, and the pin
+never moves.
+
+**The audio is read back off the wire, not off the boot log.** Every other
+check in `run_x86.py` is a string the machine printed; a driver that
+programs the controller wrongly prints exactly what a working one prints.
+QEMU's `wav` backend writes what it was handed to a file and the harness
+measures it: 333 ms of tone, 440 Hz from the zero crossings, and zero
+samples outside the run that are not silent - which is the samples arriving,
+arriving once, and the silence being real, in one capture.
+
+**And a board binds the HAL now.** `hal/virtio/snd.c` used to *be* the sound
+HAL, which was right while both boards took sound from it. `snd_bind.c` per
+board asks HDA first and virtio second, exactly as `fb.c` asks the loader
+first and ramfb second; `hal_snd_describe()` is what the boot log prints,
+because "no sound" covers three different faults that all sound identical.
+
+The harness is **38 checks on x86-64**, from 29 - the tone, the pitch, the
+silence around it, one interrupt per period, no underrun, and a queue floor
+that is a number between one and the device depth rather than the
+four-out-of-four a stream that never filled would report.
+
+**Next on this target, in the order the machine decides:** xHCI and the USB
+core, because Kosmos can run from a stick with no storage of its own; then
+the local APIC, now that ACPI says where it is; then PCI over ECAM, now that
+MCFG does. `docs/thinkpad.md` is the log.
+
 ### A prompt you can work at
 
 `ls`, `cat`, `mkdir` and `find` were the whole of the shell. It now has
