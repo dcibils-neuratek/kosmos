@@ -18,13 +18,21 @@ so glyph `c` starts at (c - first) * height and row `r` of it is one byte
 whose bit 0x80 is the pixel at x = 0. That is the VGA ROM layout, and it is
 what makes the rasteriser a shift and a test rather than a lookup.
 
-Only the printable ASCII range is emitted. The font has a thousand glyphs;
-carrying all of them would be sixteen kilobytes for a system that cannot yet
-type anything outside 0x20 to 0x7e. When there is a terminal that can, the
-range widens here and nothing else changes.
+Printable ASCII, then the Block Elements, and nothing else. The font has a
+thousand glyphs and carrying all of them would be sixteen kilobytes.
 
-A final glyph is appended for anything outside the range: a hollow box, so a
-character the font does not have is visibly a character the font does not
+The two ranges are chosen rather than convenient. ASCII is what anyone can
+type. U+2580 to U+259F is what ASCII art is drawn with - the full and
+fractional blocks and the three shades - and it is a whole Unicode block, so
+"which of them" is not a judgement anybody has to make again. Together they
+are 127 glyphs, about two kilobytes.
+
+A second array, `<symbol>_extra`, gives the codepoint of each glyph past the
+ASCII run, in order, because those are not contiguous with it. The console
+searches it; there are 32 entries and only a non-ASCII character ever looks.
+
+A glyph is appended between the two for anything in neither: a hollow box, so
+a character the font does not have is visibly a character the font does not
 have rather than a space.
 
 Usage: bdf2c.py <font.bdf> <symbol> <out.c>
@@ -98,6 +106,10 @@ def provenance(path):
 
 FIRST, LAST, HEIGHT = 0x20, 0x7E, 16
 
+# The Block Elements, whole. See the note at the top for why the whole block
+# rather than the two the first caller wanted.
+EXTRA = list(range(0x2580, 0x25A0))
+
 # A hollow box, for anything the font does not have. Deliberately not a
 # space: a missing character should look missing.
 UNKNOWN = [0x00, 0x00, 0x7E, 0x42, 0x42, 0x42, 0x42, 0x42,
@@ -111,7 +123,8 @@ def main():
     source, symbol, out = sys.argv[1], sys.argv[2], sys.argv[3]
     glyphs = parse(source)
 
-    missing = [c for c in range(FIRST, LAST + 1) if c not in glyphs]
+    missing = [c for c in list(range(FIRST, LAST + 1)) + EXTRA
+               if c not in glyphs]
     if missing:
         raise SystemExit(
             f"{source}: no glyph for " +
@@ -127,14 +140,15 @@ def main():
     lines += [f" * {l}" for l in provenance(source)]
     lines += [
         " *",
-        f" * Glyphs U+{FIRST:04X} to U+{LAST:04X}, then one for anything else.",
+        f" * Glyphs U+{FIRST:04X} to U+{LAST:04X}, one for anything else, then"
+        f" U+{EXTRA[0]:04X} to U+{EXTRA[-1]:04X}.",
         f" * {HEIGHT} bytes each, one byte per row, MSB is the leftmost pixel.",
         " */",
         "",
         f"const unsigned char {symbol}[] = {{",
     ]
 
-    for c in list(range(FIRST, LAST + 1)) + [None]:
+    for c in list(range(FIRST, LAST + 1)) + [None] + EXTRA:
         rows = UNKNOWN if c is None else glyphs[c]
 
         if len(rows) != HEIGHT:
@@ -163,12 +177,29 @@ def main():
         "",
         f"const unsigned long {symbol}_len = sizeof({symbol});",
         "",
+        "/*",
+        " * What each glyph past the unknown box is, so a lookup can find it.",
+        " * Ascending, and the console relies on nothing but that it matches",
+        " * the order above.",
+        " */",
+        f"const unsigned short {symbol}_extra[] = {{",
+    ]
+
+    for c in EXTRA:
+        lines.append(f"    0x{c:04x},  /* {chr(c)!r} */")
+
+    lines += [
+        "};",
+        "",
+        f"const unsigned long {symbol}_extra_len ="
+        f" sizeof({symbol}_extra) / sizeof({symbol}_extra[0]);",
+        "",
     ]
 
     with open(out, "w") as f:
         f.write("\n".join(lines))
 
-    count = LAST - FIRST + 2
+    count = LAST - FIRST + 2 + len(EXTRA)
     print(f"{out}: {count} glyphs, {count * HEIGHT} bytes")
 
 

@@ -765,19 +765,44 @@ static int l_blend(lua_State *L)
 extern const unsigned char font_8x16[];
 extern const unsigned long font_8x16_len;
 
+/*
+ * What each glyph past the unknown box is. `tools/bdf2c.py` emits printable
+ * ASCII, then one hollow box, then the Block Elements - which are not
+ * contiguous with ASCII and so have to be named rather than computed.
+ */
+extern const unsigned short font_8x16_extra[];
+extern const unsigned long  font_8x16_extra_len;
+
 #define GLYPH_W     8
 #define GLYPH_H     16
 #define GLYPH_FIRST 0x20
 #define GLYPH_LAST  0x7e
 
-/* The rows of one character, or the box the font uses for anything it does
- * not have. That glyph sits immediately after the range, which is what makes
- * "outside the range" a bounds check and not a special case. */
+/*
+ * The rows of one character, or the box the font uses for anything it does
+ * not have. That glyph sits immediately after the ASCII range, which is what
+ * makes "outside the range" a bounds check and not a special case - and the
+ * Block Elements sit after *it*, which is why they are a search.
+ *
+ * The same lookup as `kernel/console.c`, and it has to be: they read the
+ * same generated array, so a font whose layout only one of them understood
+ * would draw one picture at the boot console and another in a window.
+ */
 static const unsigned char *glyph_of(unsigned c)
 {
-    unsigned index = (c >= GLYPH_FIRST && c <= GLYPH_LAST)
-                   ? (unsigned)(c - GLYPH_FIRST)
-                   : (unsigned)(GLYPH_LAST - GLYPH_FIRST + 1);
+    unsigned index = (unsigned)(GLYPH_LAST - GLYPH_FIRST + 1);
+    unsigned long i;
+
+    if (c >= GLYPH_FIRST && c <= GLYPH_LAST) {
+        index = (unsigned)(c - GLYPH_FIRST);
+    } else {
+        for (i = 0; i < font_8x16_extra_len; i++) {
+            if (font_8x16_extra[i] == c) {
+                index = (unsigned)(GLYPH_LAST - GLYPH_FIRST + 2 + i);
+                break;
+            }
+        }
+    }
 
     return font_8x16 + (size_t)index * GLYPH_H;
 }
@@ -1872,10 +1897,12 @@ int luaopen_gfx(lua_State *L)
      * so a mismatch means the converter and this file disagree about the
      * layout - and that produces a plausible wrong picture rather than a
      * failure. */
-    if (font_8x16_len != (GLYPH_LAST - GLYPH_FIRST + 2) * GLYPH_H) {
+    if (font_8x16_len
+        != (GLYPH_LAST - GLYPH_FIRST + 2 + font_8x16_extra_len) * GLYPH_H) {
         return luaL_error(L, "the font is %d bytes and this expects %d",
                           (int)font_8x16_len,
-                          (int)((GLYPH_LAST - GLYPH_FIRST + 2) * GLYPH_H));
+                          (int)((GLYPH_LAST - GLYPH_FIRST + 2
+                                 + font_8x16_extra_len) * GLYPH_H));
     }
 
     luaL_newmetatable(L, SURFACE_MT);

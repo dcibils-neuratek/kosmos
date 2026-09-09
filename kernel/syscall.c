@@ -74,10 +74,21 @@ static void copy_message_out(struct message *dst, const struct message *src)
  * inside a polled UART. */
 #define WRITE_MAX   4096
 
-static long sys_write(struct process *p, uintptr_t ptr, size_t len)
+/*
+ * `colour` is 0xAARRGGBB, and zero means "whatever the console is already
+ * using" - so a caller with no opinion passes nothing new and nothing about
+ * its output changes. It is a third argument rather than a mode because the
+ * console has several writers; `console.h` has the argument in full.
+ *
+ * **Every caller must pass three registers**, including the ones that do not
+ * care, because an unset register holds whatever the caller left in it. That
+ * is why `kosmos_write` uses `sys3` with an explicit zero and why the four
+ * assembly test programs zero it by hand.
+ */
+static long sys_write(struct process *p, uintptr_t ptr, size_t len,
+                      unsigned long colour)
 {
     const char *s = (const char *)ptr;
-    size_t i;
 
     /*
      * Only the process that owns the console. Everything else reaches it the
@@ -107,9 +118,7 @@ static long sys_write(struct process *p, uintptr_t ptr, size_t len)
      * can change this address space, the check and the copy have to become
      * one operation.
      */
-    for (i = 0; i < len; i++) {
-        kputc(s[i]);
-    }
+    kwrite_colour(s, (unsigned long)len, colour);
 
     return (long)len;
 }
@@ -788,7 +797,7 @@ void syscall_dispatch(struct syscall_frame *sc)
         return;
 
     case SYS_WRITE:
-        result = sys_write(p, sc->arg[0], (size_t)sc->arg[1]);
+        result = sys_write(p, sc->arg[0], (size_t)sc->arg[1], sc->arg[2]);
         break;
 
     case SYS_SND_WRITE:

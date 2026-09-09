@@ -49,6 +49,7 @@ user_hello_start:
     IMAGE_HEADER
     leaq    message(%rip), %rdi
     movq    $(message_end - message), %rsi
+    xorq    %rdx, %rdx              /* the colour: the console's own */
     movq    $SYS_WRITE, %rax
     syscall
 

@@ -3327,6 +3327,84 @@ static bool fb_get(struct fb *out)
     return hal_fb_init(out);
 }
 
+/*
+ * The console's colour, and UTF-8 with it.
+ *
+ * One assertion covering both, because on this path they are one thing: a
+ * write says what colour it is in, and the bytes it carries are decoded
+ * before they reach a glyph. Counting pixels of an unlikely colour is what
+ * makes it exact rather than plausible.
+ *
+ * **128 and not "more than before".** U+2588 FULL BLOCK is every pixel of
+ * one 8x16 cell, so the right answer is the only answer: three unknown
+ * boxes - which is what this console drew for a three-byte character until
+ * `screen_byte` decoded them - is a different number, a block found at the
+ * wrong index in the font is a different number, and a block drawn in the
+ * console's own colour is zero.
+ *
+ * The third write is the half that a mode would fail. `kputs` has no
+ * opinion about colour, so if the previous write had *set* one rather than
+ * carried it, this would go on painting in it and the count would climb.
+ */
+static unsigned long fb_pixels_of(const struct fb *fb, uint32_t want)
+{
+    unsigned long found = 0;
+    unsigned y, x;
+
+    for (y = 0; y < fb->height; y++) {
+        const volatile uint32_t *row = (const volatile uint32_t *)
+            ((const volatile unsigned char *)fb->pixels
+             + (size_t)y * fb->pitch);
+
+        for (x = 0; x < fb->width; x++) {
+            if (row[x] == want) {
+                found++;
+            }
+        }
+    }
+
+    return found;
+}
+
+static bool test_console_colour_and_utf8(void)
+{
+    /* Nothing else on this screen is drawn in it, and `before` covers the
+     * chance that something is. */
+    const uint32_t ODD = 0xff123456u;
+    const unsigned long CELL = 8u * 16u;    /* one glyph, in pixels */
+
+    struct fb fb;
+    unsigned long before, after, again;
+    bool ok;
+
+    if (!fb_get(&fb)) {
+        return false;
+    }
+
+    before = fb_pixels_of(&fb, ODD);
+
+    kwrite_colour("\xe2\x96\x88", 3, ODD);        /* U+2588, in that colour */
+    after = fb_pixels_of(&fb, ODD);
+
+    kputs("\xe2\x96\x88");                        /* the same block, no colour */
+    again = fb_pixels_of(&fb, ODD);
+
+    /*
+     * A newline before returning, and it is not tidiness.
+     *
+     * This test draws, which means those two blocks go to the serial line
+     * as well - and the runner reads that line for TAP, where a result has
+     * to begin a line. Without this the next `ok` was printed on the end of
+     * them, did not match, and a run in which every test passed was
+     * reported as one test short.
+     */
+    kputs("\n");
+
+    ok = (after - before == CELL) && (again == after);
+
+    return ok;
+}
+
 static bool test_the_display_comes_up(void)
 {
     struct fb fb;
@@ -5071,6 +5149,8 @@ static const struct test tests[] = {
     { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
+    { "console: a write carries its colour, and UTF-8",
+                                               test_console_colour_and_utf8 },
     { "fb: the pitch is not width * 4",        test_the_pitch_is_not_the_width },
     { "fb: page aligned and inside RAM",       test_the_framebuffer_is_page_aligned_and_in_ram },
     { "fb: every row is writable",             test_the_framebuffer_is_writable_end_to_end },

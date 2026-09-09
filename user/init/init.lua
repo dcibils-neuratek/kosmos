@@ -151,16 +151,56 @@ local function line(s) sys.write(s .. "\n") end
 --------------------------------------------------------------------------
 local CONSOLE_CHUNK = 1400
 
-local function write_text(ns, path, text)
+--------------------------------------------------------------------------
+-- The colours a console program may ask for, by name.
+--
+-- The wire carries 0xAARRGGBB and nothing else, so this is resolved on the
+-- way out rather than travelling as a name. That is a decision and not a
+-- shortcut: **a console program has no theme.** It never loads `ui.lua`,
+-- and the console it is writing to may be the kernel's, which exists before
+-- the desktop and has no palette to consult. Sending a name would mean
+-- every reader of the protocol carrying a table like this one, and the
+-- kernel is not going to.
+--
+-- The names and values are the theme's dark palette, because a console is
+-- dark in both themes - `console` is 0xff0b0b0b either way.
+--
+-- What this gives up, and it is worth naming: output does not follow the
+-- theme when it changes. If that turns out to matter, the field is already
+-- the right width to carry a name instead, and the decision moves rather
+-- than the protocol.
+--------------------------------------------------------------------------
+local CONSOLE_COLOURS = {
+  text   = 0xffd8d8d8,          -- what the console draws in anyway
+  dim    = 0xff8b949e,
+  good   = 0xff3fb950,
+  bad    = 0xffda3633,
+  accent = 0xff1f6feb,
+  tab    = 0xffffc700,          -- the BeOS yellow
+  ring   = 0xff58a6ff,
+}
+
+--
+-- A colour argument, however it was spelled. `nil` and an unknown name both
+-- come back as 0, which every reader takes to mean "the console's own" - so
+-- a typo is plain text rather than an error, which is the right failure for
+-- something whose whole job is decoration.
+--
+local function colour_of(want)
+  if type(want) == "number" then return want end
+  return CONSOLE_COLOURS[want] or 0
+end
+
+local function write_text(ns, path, text, colour)
   if #text <= CONSOLE_CHUNK then
-    return ns.write(path, text)
+    return ns.write(path, text, colour)
   end
 
   local at = 1
 
   while at <= #text do
     local piece = text:sub(at, at + CONSOLE_CHUNK - 1)
-    local ok, err = ns.write(path, piece)
+    local ok, err = ns.write(path, piece, colour)
 
     if not ok then return nil, err end
     at = at + #piece
@@ -602,10 +642,23 @@ local function new_namespace()
   -- /bin, which is C and speaks `binproto.h`.
   --------------------------------------------------------------------------
 
-  local BIN_REQUEST = "<I4I4c24"                    -- op, offset, name[24]
-  local BIN_HEAD    = "<I4I4I4I4I4I4c16c16c16c16c16c16"
+  --
+  -- **One constant, three uses.** It was written out three times - the
+  -- request's format string, the assertion on its size, and the stride a
+  -- listing is cut into - and raising `BIN_NAME_MAX` in `binproto.h` from
+  -- 24 to 48 left all three saying 24.
+  --
+  -- What that looked like was not a truncated name. `string.pack` refused
+  -- the field outright, so a read of a perfectly ordinary file failed with
+  -- "bad argument #4 to 'pack'" from a line about packing, and the two
+  -- files whose names still fitted kept working - which is the worst
+  -- version of this, because it looks like a problem with those files.
+  --
+  local BIN_NAME_MAX = 48                 -- has to match binproto.h
+  local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16"
 
-  assert(#string.pack(BIN_REQUEST, 0, 0, "") == 32,
+  assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
   local BIN_DATA = 24 + 96 + 1        -- past the header, 1-based
@@ -642,8 +695,8 @@ local function new_namespace()
       local from = (extra and extra.offset) or 0
 
       for i = 1, count do
-        local at = BIN_DATA + (i - 1) * 24
-        names[i] = trim(reply:sub(at, at + 23))
+        local at = BIN_DATA + (i - 1) * BIN_NAME_MAX
+        names[i] = trim(reply:sub(at, at + BIN_NAME_MAX - 1))
       end
 
       --
@@ -915,10 +968,11 @@ local function new_namespace()
 
   -- One exchange, with the reply decoded and the error turned back into a
   -- sentence. Every operation below is this plus a shape.
-  local function con_call(con, capability, code, text, ticks)
+  local function con_call(con, capability, code, text, ticks, colour)
     local raw, why = sys.call_raw(capability,
                                   con.encode_request{ op = code, text = text,
-                                                      ticks = ticks or 0 })
+                                                      ticks = ticks or 0,
+                                                      colour = colour or 0 })
 
     if not raw then return nil, tostring(why) end
 
@@ -958,11 +1012,12 @@ local function new_namespace()
     --
     if op == "write" then
       local text = tostring(extra and extra.value or "")
+      local colour = extra and extra.colour or 0
       local at = 1
 
       repeat
         local piece = text:sub(at, at + con.TEXT_MAX - 1)
-        local _, err = con_call(con, capability, code, piece)
+        local _, err = con_call(con, capability, code, piece, 0, colour)
 
         if err then return nil, err end
 
@@ -1575,8 +1630,18 @@ local function new_namespace()
     end
   end
 
-  function ns.write(path, value)
-    local r, e = request("write", path, { value = value })
+  --
+  -- `colour` is for a console and is ignored by everything else. It is put
+  -- in the request only when there is one, so a file server never receives
+  -- a field it has no opinion about - the same reason `getattr` does not
+  -- carry one either.
+  --
+  function ns.write(path, value, colour)
+    local extra = { value = value }
+
+    if colour ~= nil then extra.colour = colour_of(colour) end
+
+    local r, e = request("write", path, extra)
     return r ~= nil, e
   end
 
@@ -3818,6 +3883,21 @@ query. `find` and `watch` are built on exactly these two calls.
   env = {
     fs = ns,
     help = help,
+    --
+    -- One run of text, in a colour. No newline is added, because a run is
+    -- not a line: a line in several colours is several of these, and the
+    -- console joins them because it appends until a newline arrives.
+    --
+    --   write("KOSMOS", 0xffcc2222)
+    --   write(" ok\n", "good")
+    --
+    -- A number is 0xAARRGGBB; a name is one of text, dim, good, bad,
+    -- accent, tab, ring. Anything else is plain text rather than an error -
+    -- a misspelled colour should cost you a colour, not your output.
+    --
+    write = function(text, colour)
+      return write_text(ns, "/dev/console", tostring(text), colour)
+    end,
     print = function(...)
       local parts = {}
       for i = 1, select("#", ...) do
@@ -3828,7 +3908,27 @@ query. `find` and `watch` are built on exactly these two calls.
   }
   setmetatable(env, { __index = _G })
 
-  out("\nKosmos shell. A process, talking to servers.\n")
+  --------------------------------------------------------------------------
+  -- What machine this turned out to be, before what to type at it.
+  --
+  -- A *program*, run through the same path a typed name goes through,
+  -- rather than a block of printing inside the shell. That is the same
+  -- argument the autostart below makes and it is worth making twice: there
+  -- is one way a program starts, so `neofetch` at the prompt and `neofetch`
+  -- at boot are the same thing running with the same authority, and a
+  -- banner that wanted a fact the shell does not hold would be refused
+  -- exactly as any other program would.
+  --
+  -- **Wrapped, because a banner may not be able to stop the machine
+  -- reaching a prompt.** That is the argument the autostart already makes
+  -- about `-fw_cfg opt/kosmos/boot` - a machine you cannot get a prompt on
+  -- is a machine you cannot fix from the prompt - and it applies harder
+  -- here, since nobody asked for this and it runs on every boot. A failure
+  -- is silence and a prompt, never a stop.
+  --------------------------------------------------------------------------
+  pcall(run_program, "neofetch", "", false)
+
+  out("Kosmos shell. A process, talking to servers.\n")
   out("Type `help` for what there is, `commands` for what you can type,\n")
   out("or `devices` for what this machine turned out to be.\n\n")
 
@@ -4623,6 +4723,21 @@ if role == ROLE_RUNNER then
     --
     interrupted = function()
       return ns.interrupted("/dev/console") == true
+    end,
+    --
+    -- One run of text, in a colour. No newline is added, because a run is
+    -- not a line: a line in several colours is several of these, and the
+    -- console joins them because it appends until a newline arrives.
+    --
+    --   write("KOSMOS", 0xffcc2222)
+    --   write(" ok\n", "good")
+    --
+    -- A number is 0xAARRGGBB; a name is one of text, dim, good, bad,
+    -- accent, tab, ring. Anything else is plain text rather than an error -
+    -- a misspelled colour should cost you a colour, not your output.
+    --
+    write = function(text, colour)
+      return write_text(ns, "/dev/console", tostring(text), colour)
     end,
     print = function(...)
       local parts = {}

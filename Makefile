@@ -819,7 +819,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iuser/include -Ikernel -Iruntime/include \
@@ -1277,10 +1277,25 @@ KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
 # to avoid using a decoder this system needs anyway.
 ICON_FILES := $(sort $(wildcard assets/icons/*.png))
 
-$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) tools/assets2c.py
+# Not a picture, and in the same table anyway.
+#
+# `assets/*.txt` is the project's own artwork rather than something
+# vendored - the banner `neofetch` draws. It is here because the table is
+# already "small files carried inside the image", which is exactly what it
+# is, and `sys.asset` is already the door to them. A second mechanism for
+# one text file would be a second mechanism.
+#
+# Text, so it *could* have travelled as Lua source. It does not, because
+# then it would be a program in /bin or a library in /lib - two places whose
+# listings are meant to be things you can run and things you can load - and
+# a picture is neither.
+ART_FILES := $(sort $(wildcard assets/*.txt))
+
+$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) \
+                 tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
-	        assets/images/test-pattern.png $(ICON_FILES)
+	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES)
 
 # The outline fonts, embedded the same way.
 #
@@ -1313,9 +1328,25 @@ $(GEN)/programs.c: $(wildcard user/bin/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
 # separate store rather than a directory inside /bin, because a program is
 # something you run and a library is something you load, and a `/bin` that
 # lists both is a `/bin` where `ls` lies about what you can type.
-$(GEN)/libraries.c: $(wildcard user/lib/*.lua) tools/progs2c.py $(HOSTDIR)/lua.ok
+#
+# Lite XL's Lua, when it is being built: 78 files that are the editor.
+#
+# They go into the *library* store rather than a store of their own, and
+# that is the honest place for them - they are libraries carried in the
+# image, which is what `/lib` is. It also costs nothing: `binfs.c` finds an
+# entry with `strcmp`, so a key with slashes reads straight out, and no
+# server, role or capability had to be invented to serve them.
+#
+LITEXL_DATA := $(if $(LITEXL),$(shell find runtime/upstream/lite-xl/data \
+                                   -name '*.lua' 2>/dev/null))
+
+LITEXL_ROOTED := $(if $(LITEXL),--rooted runtime/upstream/lite-xl/data litexl/)
+
+$(GEN)/libraries.c: $(wildcard user/lib/*.lua) $(LITEXL_DATA) tools/progs2c.py \
+                    $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)
-	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua)
+	python3 tools/progs2c.py libraries_lua $@ $(wildcard user/lib/*.lua) \
+	    $(LITEXL_ROOTED) $(LITEXL_DATA)
 
 $(GEN)/luatest_lua.c: user/tests/luatest.lua tools/bin2c.py $(HOSTDIR)/lua.ok
 	@mkdir -p $(dir $@)

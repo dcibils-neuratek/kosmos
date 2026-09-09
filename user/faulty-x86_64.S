@@ -113,6 +113,7 @@ user_bad_pointer_start:
     IMAGE_HEADER
     movq    $KERNEL_ADDRESS, %rdi   /* a kernel address */
     movq    $16, %rsi               /* a plausible length */
+    xorq    %rdx, %rdx              /* the colour: the console's own */
     movq    $SYS_WRITE, %rax
     syscall
 

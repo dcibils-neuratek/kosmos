@@ -70,9 +70,15 @@ static uint64_t reader;
 
 static uint32_t n_bytes, n_lines, n_interrupts;
 
-static void put(const char *s, size_t n)
+/*
+ * `colour` is 0xAARRGGBB and zero is the console's own, which is what every
+ * write that has no opinion sends. Handed straight to the kernel rather than
+ * interpreted here: this server owns the console, it does not own a palette,
+ * and deciding what "red" is belongs to whoever is showing it to a person.
+ */
+static void put(const char *s, size_t n, unsigned long colour)
 {
-    (void)kosmos_write(s, n);
+    (void)kosmos_write_colour(s, n, colour);
 }
 
 static void stash(uint8_t c)
@@ -158,7 +164,7 @@ static void edit(void)
         }
 
         if (c == '\n' || c == '\r') {
-            put("\n", 1);
+            put("\n", 1, 0);
             n_lines++;
             deliver();
             return;
@@ -168,7 +174,7 @@ static void edit(void)
             /* Control-C ends the line as an empty one. The caller sees a
              * blank line rather than an error, which is what a shell wants:
              * print a fresh prompt and carry on. */
-            put("^C\n", 3);
+            put("^C\n", 3, 0);
             n_interrupts++;
             line_len = 0;
             deliver();
@@ -181,7 +187,7 @@ static void edit(void)
                 /* Back over it, paint a space, back again: the only way to
                  * unprint a character on a terminal that has no idea it is
                  * one. */
-                put("\b \b", 3);
+                put("\b \b", 3, 0);
             }
 
             continue;
@@ -194,7 +200,7 @@ static void edit(void)
             char ch = (char)c;
 
             line[line_len++] = ch;
-            put(&ch, 1);
+            put(&ch, 1, 0);
         }
     }
 }
@@ -280,7 +286,7 @@ static void answer(const struct message *msg, uint64_t sender)
         uint32_t n = (req.length > CON_TEXT_MAX) ? CON_TEXT_MAX : req.length;
 
         n_bytes += n;
-        put(req.text, n);
+        put(req.text, n, req.colour);
         break;
     }
 

@@ -78,12 +78,11 @@ make a second.
 - [x] **Step 5. `system.c`**, replaced rather than shimmed - and for a
       different reason than step four. Ten translation units, all in the
       image, 58 checks in `make test`.
-- [~] **Step 6. `main.c`, and then the Lua.** Half done, and it is the
-      half that answers the question. **The editor's Lua loads and
-      `core.init()` returns**, checked on this machine by
-      `tools/test_litexl_lua.lua` in `make test`. What is left is the image
-      integration: getting `data/`'s 78 files into the namespace, a
-      `require` over it, and the host table written for real.
+- [~] **Step 6. `main.c`, and then the Lua.** **`core.init()` returns on
+      the machine.** The 78 files are in the image, `require` runs over the
+      namespace, and the editor's core initialises with real fonts through
+      `stb_truetype`. It does **not** draw: `core.run()` has never been
+      called, no window is opened and no event is delivered.
 
 ## What step two turned out to be
 
@@ -284,6 +283,72 @@ to reach the image and be findable - Kosmos has `use()` and a namespace
 where Lite XL has `require` and `package.path`, so that is a loader to
 write - and the host table has to be implemented against `fs`, the window
 manager and the clipboard rather than stubbed. Neither is unknown work now.
+
+## Step six, on the machine
+
+    kosmos> run /home/lxstart.lua
+    kit: ok, system=true renderer=true
+    font JetBrainsMono-Regular.ttf: 112172 bytes
+    start.lua:    true
+    require core: true
+    core.init(): true
+
+**That is the editor's constructor completing, not the editor running.**
+`core.run()` has never been called, nothing is drawn, and no keystroke is
+delivered. Worth stating plainly, because "it initialises" reads like more
+than it is.
+
+Five things had to give, and each was a real limit rather than a guess:
+
+**`require`, over `use`.** A module name becomes candidate paths and the
+namespace answers - about fifteen lines. They are not the same function:
+`use` takes a *path* and reads what this program was handed, `require`
+takes a *name* and searches a global `package.path`. Building the second
+out of the first is what keeps Lite XL's modules inside the capability
+rule, rather than giving 19,000 lines of vendored Lua an ambient loader.
+
+**`BIN_NAME_MAX` was 24**, and the longest key here is 36 -
+`litexl/core/commands/findreplace.lua`. The symptom pointed elsewhere:
+`string.pack` refused the field, so reading a perfectly ordinary file
+failed with *"bad argument #4 to 'pack'"* from a line about packing, while
+the short-named files kept working. `init.lua` now derives the format
+string, its size assertion and the listing stride from one constant, which
+is what stopped three copies of `24` from disagreeing.
+
+**The stack.** 64 KB, and `core.init()` ran out of it. The symptom was the
+good one - a write fault exactly at `sp`, on the guard page that exists to
+make this findable - so the number could be raised in confidence rather
+than guessed. `kernel/process.h` carries the arithmetic: 2.4 MB across
+thirteen processes, measured, because the first version of that comment
+claimed the cost was address space and it is not.
+
+**No `os`, `debug` or `dofile`** in a Kosmos sandbox. Provided by
+`litexl.lua` deliberately, so the vendored tree needs no patch, and
+declared in `tools/luaglobals.py` so the check that guards against stray
+globals still guards everything else.
+
+**A kit is the door.** `main.c` is not compiled and `api_load_libs` was its
+job, so nothing would have registered `system` or `renderer` in a Kosmos
+process. `use("/kits/litexl")` does it, through the namespace like every
+other kit.
+
+The 78 files went into the **library** store rather than one of their own,
+which is the honest place for them and cost nothing: `binfs.c` finds an
+entry with `strcmp`, so a key with slashes reads straight out and no
+server, role or capability had to be invented.
+
+### What is between here and an editor
+
+1. Open a window, attach its surface, and drive `core.run()` a frame at a
+   time rather than letting it block.
+2. `poll_event` for real - the window manager's keys and pointer in Lite
+   XL's shape. It returns nil today.
+3. Push `take_damage()` to the compositor each frame.
+4. The fonts into the image; they come off a scratch disk today, which a
+   `/bin` program cannot depend on.
+
+Steps 1 to 3 are the substance, and they are also the first test of whether
+step four's renderer draws readable text - nothing has put it on a screen.
 
 ## Two things deliberately given up
 

@@ -41,7 +41,25 @@
 #define BIN_ERR_READ_ONLY   2u    /* it is in the image */
 #define BIN_ERR_BAD_OP      3u
 
-#define BIN_NAME_MAX    24u       /* a program's name, padded */
+/*
+ * A name, padded. **Forty-eight because a name stopped being a name.**
+ *
+ * Twenty-four was generous for `/bin`, where every entry is one file with
+ * a flat name - `tracker.lua` is twelve. It stopped being enough when the
+ * library store started carrying a *tree*: Lite XL's Lua is 78 files with
+ * paths like `litexl/core/commands/findreplace.lua`, which is thirty-six.
+ *
+ * The failure was not a truncated name, which would have been the good
+ * outcome. `string.pack` in `init.lua` refused the field outright - "bad
+ * argument #4 to 'pack'" from a line that has nothing to do with names -
+ * so the first two files read and the third produced an error about
+ * packing. Worth the sentence, because the next person to see it will be
+ * looking at the wrong file.
+ *
+ * The assert below still holds at 48: 1792 / 48 is 37 names to a listing
+ * reply, against the sixteen it asks for.
+ */
+#define BIN_NAME_MAX    48u
 #define BIN_WORD_MAX    16u       /* a kind, a section, one `needs` word */
 #define BIN_NEEDS_MAX    4u       /* authorities one program may declare */
 #define BIN_CHUNK     1792u       /* source bytes, or 74 names, per reply */

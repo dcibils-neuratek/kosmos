@@ -50,6 +50,7 @@ user_hello_start:
     IMAGE_HEADER
     adr     x0, message
     mov     x1, #(message_end - message)
+    mov     x2, #0                  /* the colour: the console's own */
     mov     x8, #SYS_WRITE
     svc     #0
 

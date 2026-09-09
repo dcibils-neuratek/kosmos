@@ -2422,6 +2422,9 @@ void kosmos_net_kit(lua_State *L);
 #ifdef KOSMOS_WEB
 void kosmos_web_kit(lua_State *L);
 #endif
+#ifdef KOSMOS_LITEXL
+void kosmos_litexl_kit(lua_State *L);
+#endif
 
 static const struct {
     const char *name;
@@ -2435,6 +2438,9 @@ static const struct {
     { "network",  kosmos_net_kit },
 #ifdef KOSMOS_WEB
     { "web",      kosmos_web_kit },
+#endif
+#ifdef KOSMOS_LITEXL
+    { "litexl",   kosmos_litexl_kit },
 #endif
     { NULL, NULL }
 };

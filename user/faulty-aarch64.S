@@ -165,6 +165,7 @@ user_bad_pointer_start:
     IMAGE_HEADER
     movz    x0, #0x4008, lsl #16    /* a kernel address */
     mov     x1, #16                 /* a plausible length */
+    mov     x2, #0                  /* the colour: the console's own */
     mov     x8, #SYS_WRITE
     svc     #0
 

@@ -37,6 +37,14 @@
  * does not have. */
 extern const unsigned char font_8x16[];
 
+/*
+ * What each glyph past the unknown box is. `tools/bdf2c.py` emits printable
+ * ASCII, then one hollow box, then the Block Elements - which are not
+ * contiguous with ASCII and so need saying rather than computing.
+ */
+extern const unsigned short font_8x16_extra[];
+extern const unsigned long  font_8x16_extra_len;
+
 #define GLYPH_W     8
 #define GLYPH_H     16
 #define GLYPH_FIRST 0x20
@@ -245,13 +253,37 @@ static void hide_cursor(void)
     }
 }
 
-static void draw_glyph(unsigned col, unsigned line, char c)
+/*
+ * Where a codepoint's rows are, in the one font the kernel has.
+ *
+ * ASCII is arithmetic, and everything else is a search of 32 entries that
+ * only a non-ASCII character ever reaches - so the common path is what it
+ * always was and the uncommon one costs a walk nobody will measure. A
+ * codepoint in neither range gets the hollow box between them, which is the
+ * whole point of that glyph: a character the font does not have should look
+ * like one.
+ */
+static unsigned glyph_index(unsigned cp)
 {
-    unsigned index = ((unsigned char)c >= GLYPH_FIRST
-                      && (unsigned char)c <= GLYPH_LAST)
-                   ? (unsigned)((unsigned char)c - GLYPH_FIRST)
-                   : (unsigned)(GLYPH_LAST - GLYPH_FIRST + 1);
-    const unsigned char *glyph = font_8x16 + (size_t)index * GLYPH_H;
+    unsigned long i;
+
+    if (cp >= GLYPH_FIRST && cp <= GLYPH_LAST) {
+        return cp - GLYPH_FIRST;
+    }
+
+    for (i = 0; i < font_8x16_extra_len; i++) {
+        if (font_8x16_extra[i] == cp) {
+            return (unsigned)(GLYPH_LAST - GLYPH_FIRST + 2 + i);
+        }
+    }
+
+    return (unsigned)(GLYPH_LAST - GLYPH_FIRST + 1);
+}
+
+static void draw_glyph(unsigned col, unsigned line, unsigned cp)
+{
+    const unsigned char *glyph = font_8x16
+                               + (size_t)glyph_index(cp) * GLYPH_H;
     unsigned y;
 
     for (y = 0; y < GLYPH_H; y++) {
@@ -286,7 +318,12 @@ static void scroll(void)
     fill_rect(0, (rows - 1) * GLYPH_H, cols * GLYPH_W, GLYPH_H, bg);
 }
 
-static void screen_putc(char c)
+/*
+ * One codepoint on the screen. The serial side never comes through here: it
+ * has had the raw bytes already, and whatever is on the other end of the
+ * wire decodes UTF-8 better than this can.
+ */
+static void screen_putc(unsigned c)
 {
     hide_cursor();
 
@@ -334,6 +371,76 @@ static void screen_putc(char c)
 
     draw_glyph(cx, cy, c);
     cx++;
+}
+
+/*------------------------------------------------------------------------
+ * UTF-8, on the way to the screen only.
+ *
+ * This console took a byte and drew it, so anything outside ASCII arrived as
+ * two or three hollow boxes where one character was meant - while the serial
+ * line, whose far end decodes UTF-8 itself, showed the character perfectly.
+ * The same output looking like two different outputs is the complaint the
+ * early-run colour list above was written to answer, in the other direction.
+ *
+ * A state machine rather than a decoder taking a string, because bytes
+ * arrive here one at a time: `kputc` is one character and `kwrite_colour` is
+ * a loop over one. The state is two words, and it is safe at file scope for
+ * the same reason `cx` and `cy` are - every path into here holds the console
+ * lock.
+ *
+ * **A broken sequence draws the replacement character and then reconsiders
+ * the byte that broke it.** Dropping that byte instead would turn one bad
+ * byte into a swallowed character after it, which is how a decoder turns a
+ * corrupted line into a corrupted screen.
+ *
+ * Overlong forms are not rejected, and that is a decision rather than an
+ * omission. They cannot reach a glyph - the font has 127 and a lookup that
+ * misses draws the box - so the check would buy a differently wrong picture
+ * rather than a right one, in a console that is deliberately the smallest
+ * thing that can show text.
+ *----------------------------------------------------------------------*/
+
+#define UTF8_REPLACEMENT  0xfffdu
+
+static unsigned utf8_cp;        /* what has been assembled so far */
+static unsigned utf8_left;      /* continuation bytes still wanted */
+
+static void screen_byte(char ch)
+{
+    unsigned b = (unsigned char)ch;
+
+    if (utf8_left > 0) {
+        if ((b & 0xc0u) == 0x80u) {
+            utf8_cp = (utf8_cp << 6) | (b & 0x3fu);
+
+            if (--utf8_left == 0) {
+                screen_putc(utf8_cp);
+            }
+
+            return;
+        }
+
+        /* Not a continuation, so the sequence never finished. */
+        utf8_left = 0;
+        screen_putc(UTF8_REPLACEMENT);
+    }
+
+    if (b < 0x80u) {
+        screen_putc(b);
+    } else if ((b & 0xe0u) == 0xc0u) {
+        utf8_cp = b & 0x1fu;
+        utf8_left = 1;
+    } else if ((b & 0xf0u) == 0xe0u) {
+        utf8_cp = b & 0x0fu;
+        utf8_left = 2;
+    } else if ((b & 0xf8u) == 0xf0u) {
+        utf8_cp = b & 0x07u;
+        utf8_left = 3;
+    } else {
+        /* A stray continuation byte, or 0xfe / 0xff, which UTF-8 never
+         * uses. */
+        screen_putc(UTF8_REPLACEMENT);
+    }
 }
 
 /*
@@ -397,7 +504,7 @@ void console_tick(void)
 static void replay(const char *s)
 {
     for (; *s != '\0'; s++) {
-        screen_putc(*s);
+        screen_byte(*s);
     }
 }
 
@@ -429,10 +536,10 @@ void console_attach_screen(const struct fb *fb, const char *title)
 
         fg = 0xff58a6ff;
         for (; *title != '\0'; title++) {
-            screen_putc(*title);
+            screen_byte(*title);
         }
-        screen_putc('\n');
-        screen_putc('\n');
+        screen_byte('\n');
+        screen_byte('\n');
         fg = was;
     }
 
@@ -460,7 +567,7 @@ void console_attach_screen(const struct fb *fb, const char *title)
             console_colour(early_run[i].colour);
 
             while (n-- > 0 && *at != '\0') {
-                screen_putc(*at++);
+                screen_byte(*at++);
             }
         }
 
@@ -475,7 +582,12 @@ void console_attach_screen(const struct fb *fb, const char *title)
     early_len = 0;
 }
 
-void console_colour(unsigned long foreground)
+/*
+ * The body, without the lock, so that a caller already holding it can change
+ * colour mid-run. `kwrite_colour` is that caller and it is why this is split
+ * out; nothing else should need it.
+ */
+static void colour_locked(unsigned long foreground)
 {
     /* A new run in the early buffer, so the replay can put this colour back.
      * Opened even when nothing is printed in it: an empty run costs one slot
@@ -489,6 +601,18 @@ void console_colour(unsigned long foreground)
     }
 
     fg = (uint32_t)foreground;
+}
+
+void console_colour(unsigned long foreground)
+{
+    /*
+     * Deliberately not locked, and that is not an oversight to fix later.
+     * Every caller is the kernel itself during boot, on one core, with the
+     * console lock untaken - `console_attach_screen` is one of them, and
+     * taking the lock here would be a second acquisition inside whatever
+     * called it. The locked path for anything that races is `kwrite_colour`.
+     */
+    colour_locked(foreground);
 }
 
 void console_progress(unsigned done, unsigned total)
@@ -578,10 +702,10 @@ static void putc_locked(char c)
 
     if (can_draw()) {
         if (c == '\n') {
-            screen_putc('\r');
+            screen_byte('\r');
         }
 
-        screen_putc(c);
+        screen_byte(c);
         return;
     }
 
@@ -607,6 +731,35 @@ void kputc(char c)
     unsigned long flags = spin_lock(&console_lock);
 
     putc_locked(c);
+    spin_unlock(&console_lock, flags);
+}
+
+/*
+ * A run of bytes in one colour. See the note in `console.h` for why the
+ * colour is an argument rather than a mode.
+ *
+ * The colour is put back before the lock is released, so the console's
+ * default survives a coloured write and the next caller with no opinion
+ * gets what it expects.
+ */
+void kwrite_colour(const char *s, unsigned long len, unsigned long colour)
+{
+    unsigned long flags = spin_lock(&console_lock);
+    unsigned long was = fg;
+    unsigned long i;
+
+    if (colour != 0) {
+        colour_locked(colour);
+    }
+
+    for (i = 0; i < len; i++) {
+        putc_locked(s[i]);
+    }
+
+    if (colour != 0) {
+        colour_locked(was);
+    }
+
     spin_unlock(&console_lock, flags);
 }
 

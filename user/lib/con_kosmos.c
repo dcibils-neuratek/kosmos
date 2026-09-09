@@ -92,8 +92,9 @@ static int l_encode_request(lua_State *L)
     luaL_checktype(L, 1, LUA_TTABLE);
     memset(&req, 0, sizeof(req));
 
-    req.op    = field_u32(L, 1, "op", 0);
-    req.ticks = field_u32(L, 1, "ticks", 0);
+    req.op     = field_u32(L, 1, "op", 0);
+    req.ticks  = field_u32(L, 1, "ticks", 0);
+    req.colour = field_u32(L, 1, "colour", 0);
 
     lua_getfield(L, 1, "text");
 
@@ -211,13 +212,18 @@ static int l_decode_request(lua_State *L)
 
     memcpy(&req, bytes, sizeof(req));
 
-    lua_createtable(L, 0, 3);
+    lua_createtable(L, 0, 4);
 
     lua_pushinteger(L, (lua_Integer)req.op);
     lua_setfield(L, -2, "op");
 
     lua_pushinteger(L, (lua_Integer)req.ticks);
     lua_setfield(L, -2, "ticks");
+
+    /* Zero when the caller had no opinion, which is what a terminal draws
+     * its ordinary output in. */
+    lua_pushinteger(L, (lua_Integer)req.colour);
+    lua_setfield(L, -2, "colour");
 
     /* Clamped: `length` is a number another process chose. */
     lua_pushlstring(L, req.text,

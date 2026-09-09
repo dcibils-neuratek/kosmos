@@ -47,10 +47,22 @@ local cwd = "/home"
 -- Photo and the Terminal did.
 local theme = ui.theme
 
-local W, H = 640, 420
+--
+-- Tall enough for the banner it opens with.
+--
+-- 420 was the right height when the first thing in the window was one line
+-- of greeting. `neofetch` runs here now and its art is twenty-two rows, so a
+-- window that could not hold it would scroll the banner off while it was
+-- still being drawn - which looks like a fault rather than a picture.
+--
+-- Forty-two rows at the default sixteen-pixel mono cell, against forty-one
+-- for the banner and the first prompt. If the banner is ever trimmed this
+-- comes back down; it is a constant precisely so that it can.
+--
+local W, H = 640, 700
 local SCROLLBACK = 400          -- lines kept
 
-local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 70 }
+local win, err = ui.window{ title = "Terminal", w = W, h = H, x = 90, y = 40 }
 
 if not win then
   print("terminal: " .. tostring(err))
@@ -68,27 +80,57 @@ end
 -- What is on screen.
 --------------------------------------------------------------------------
 
--- A trailing empty line, because `emit` appends to the last one. Without
--- it the first thing typed lands on the end of the banner.
+--------------------------------------------------------------------------
+-- What is on screen, now that a write carries a colour.
+--
+-- **A line is a list of runs, not a string.** `con_request` has a colour on
+-- it, so two writes to the same line can want two colours, and a string has
+-- nowhere to keep the second one. A run is `{ text, colour }`, and a line
+-- with one colour in it - which is almost every line - is one run, so the
+-- ordinary case costs one table more than it did.
+--
+-- The colour is whatever the writer sent: a number, or nil for the console's
+-- own. Nothing here maps names; `ns.write` did that before the message left
+-- the program, because a name means nothing to the kernel's console and this
+-- window has to behave like that one.
+--
+-- A trailing empty line, because `emit` appends to the last one. Without it
+-- the first thing typed lands on the end of the banner.
+--------------------------------------------------------------------------
 local lines = {
-  "Kosmos terminal. Type a program's name; `help` lists them.",
-  "",
+  { { text = "Kosmos terminal. Type a program's name; `help` lists them." } },
+  {},
 }
 local input = ""
 local busy = nil                -- the child that currently owns this console
 
-local function emit(text)
+local function emit(text, colour)
   -- Whatever arrives, split on newlines and appended to the last line if it
   -- did not start with one. A `write` is a stream, not a line: `print` sends
   -- one ending in a newline and `write_text` splits long output into pieces
   -- that can end anywhere.
   for piece, newline in tostring(text):gmatch("([^\n]*)(\n?)") do
     if piece ~= "" then
-      lines[#lines] = (lines[#lines] or "") .. piece
+      if #lines == 0 then lines[1] = {} end
+
+      local line = lines[#lines]
+      local last = line[#line]
+
+      --
+      -- Joined onto the run before it when the colour is the same, which is
+      -- what keeps this from growing a run per message. `write_text` splits
+      -- anything over 1400 bytes, and a program printing a screenful in one
+      -- colour would otherwise arrive as a run for every piece of it.
+      --
+      if last and last.colour == colour then
+        last.text = last.text .. piece
+      else
+        line[#line + 1] = { text = piece, colour = colour }
+      end
     end
 
     if newline == "\n" then
-      lines[#lines + 1] = ""
+      lines[#lines + 1] = {}
     end
   end
 
@@ -122,12 +164,34 @@ function view:draw(g)
     shown[#shown + 1] = lines[i]
   end
 
+  --
+  -- Laid out in *pixels* and not in columns, and that is the change UTF-8
+  -- forces.
+  --
+  -- This drew `line:sub(1, columns)`, and `#text` in Lua is bytes: one block
+  -- character is three of them, so a run holding any would be cut a third of
+  -- the way along and every run after it would start in the wrong place.
+  -- `gfx.measure` decodes UTF-8 and answers in pixels, which is the ruler
+  -- that was always meant here.
+  --
+  -- Nothing is truncated any more either. A view is clipped to itself, so a
+  -- line running past the right edge stops at the edge - which is what the
+  -- `sub` was for and what the view was already doing underneath it.
+  --
   for i, line in ipairs(shown) do
-    -- `console_text`, not `text`: `text` is chosen to read against the
-    -- window colour, and in a light theme that is black - which on a black
-    -- console is nothing at all.
-    g:text(4, 3 + (i - 1) * MH, line:sub(1, columns),
-           "console_text", "console", "mono")
+    local y = 3 + (i - 1) * MH
+    local x = 4
+
+    for _, run in ipairs(line) do
+      if x >= self.w then break end
+
+      -- `console_text`, not `text`: `text` is chosen to read against the
+      -- window colour, and in a light theme that is black - which on a
+      -- black console is nothing at all. A run with a colour of its own
+      -- overrides it, and that is the only reason this is not a constant.
+      g:text(x, y, run.text, run.colour or "console_text", "console", "mono")
+      x = x + gfx.measure(run.text, "mono")
+    end
   end
 
   local y = 3 + #shown * MH
@@ -205,7 +269,7 @@ local function launch(text)
   end
 
   if name == "clear" then
-    lines = { "" }
+    lines = { {} }
     return
   end
 
@@ -286,7 +350,10 @@ local function serve_console()
       reply = { error = con.ERR_BAD_OP }
 
     elseif req.op == con.WRITE then
-      emit(req.text)
+      -- Zero is "no opinion", and it has to become nil rather than be
+      -- passed on: `emit` compares colours to decide whether to join two
+      -- runs, and a run drawn in colour 0 would be invisible.
+      emit(req.text, (req.colour ~= 0) and req.colour or nil)
       changed = true
       reply = {}
 
@@ -397,5 +464,24 @@ function win:on_frame()
 
   return changed
 end
+
+--------------------------------------------------------------------------
+-- What machine this is, before the first prompt.
+--
+-- The same program the boot shell runs, started the same way anything
+-- typed into this window is started - so a window opened here and the
+-- console the machine came up on say the same thing, and neither of them
+-- has a copy of how to say it.
+--
+-- It goes through `launch` rather than being echoed as a typed line: this
+-- window did not type it, and printing `> neofetch` above the output would
+-- be the window claiming somebody did. `busy` shows "running neofetch" in
+-- the corner for the pass it takes, which is true.
+--
+-- Nothing waits for it. `launch` detaches, the output arrives as `write`
+-- messages that `on_frame` is already serving, and a Terminal whose banner
+-- failed is a Terminal with a prompt in it.
+--------------------------------------------------------------------------
+launch("neofetch")
 
 win:run()

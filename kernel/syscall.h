@@ -39,7 +39,7 @@
  */
 
 #define SYS_EXIT        0   /* (code)                    never returns */
-#define SYS_WRITE       1   /* (ptr, len)             -> bytes written */
+#define SYS_WRITE       1   /* (ptr, len, colour)     -> bytes written */
 #define SYS_YIELD       2   /* ()                                      */
 #define SYS_ENDPOINT    3   /* ()                     -> cap or error  */
 #define SYS_CALL        4   /* (cap, msg, reply)      -> 0 or error    */

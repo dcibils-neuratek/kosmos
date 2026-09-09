@@ -720,6 +720,41 @@ if role == R_TEXT then
   row_is("\1", 2, ".######.", "the unknown glyph")
   row_is("\1", 3, ".#....#.", "the unknown glyph")
 
+  --------------------------------------------------------------------------
+  -- The Block Elements, which are past the ASCII run and are why the font
+  -- carries a table of codepoints beside it.
+  --
+  -- These are three bytes each in UTF-8, so a text path that walked bytes
+  -- would draw three unknown boxes here instead of one block - which is
+  -- exactly what the kernel's console did until `screen_byte` decoded them,
+  -- and the reason this is worth asserting on both sides.
+  --------------------------------------------------------------------------
+
+  -- U+2588 FULL BLOCK is every pixel, top to bottom, which is also the one
+  -- glyph a wrong index cannot accidentally produce.
+  row_is("\u{2588}", 0, "########", "the full block")
+  row_is("\u{2588}", 15, "########", "the full block")
+
+  -- U+2591 LIGHT SHADE alternates, and the two rows differ - so an
+  -- off-by-one in the lookup lands on a neighbour and is caught.
+  row_is("\u{2591}", 0, "...#...#", "the light shade")
+  row_is("\u{2591}", 1, ".#...#..", "the light shade")
+
+  -- U+2580 UPPER HALF BLOCK is the first of the range: solid above, empty
+  -- below. It is the one whose index is the base of the table.
+  row_is("\u{2580}", 0, "########", "the upper half block")
+  row_is("\u{2580}", 8, "........", "the upper half block")
+
+  -- And a codepoint that is neither ASCII nor a block still gets the box.
+  -- Without this the lookup could return anything for a miss and the two
+  -- assertions above would not notice.
+  row_is("\u{00e9}", 2, ".######.", "a codepoint the font does not have")
+
+  -- One character, one cell, whatever it took to spell it. A block advances
+  -- exactly as far as an `A` does.
+  check(s:text(0, 0, "\u{2588}", FG) == gfx.font.w,
+        "a three-byte character did not advance one cell")
+
   -- The advance is the only number about the font a caller should need.
   local x = s:text(0, 0, "hello", FG)
   check(x == 5 * gfx.font.w, "text returned " .. x .. " for five characters")

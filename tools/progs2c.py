@@ -83,10 +83,41 @@ def main():
 
     symbol, out_path, programs = sys.argv[1], sys.argv[2], sys.argv[3:]
 
+    #
+    # `--rooted ROOT PREFIX` changes how the *following* files are named.
+    #
+    # A Kosmos library is one file and is keyed by its basename, because
+    # `/lib` is flat and every name in it is distinct. A vendored tree is
+    # not: Lite XL has `core/init.lua`, `core/doc/init.lua` and
+    # `core/ime.lua`, and three of its files are called `init.lua`. So the
+    # key has to be the path *relative to the tree's root*, with a prefix
+    # saying which tree it came from.
+    #
+    # `binfs.c` looks entries up with `strcmp`, so a key with slashes in it
+    # needs nothing from the server at all - `/lib/litexl/core/init.lua`
+    # simply reads.
+    #
+    rooted = None
+    files  = []
+    i      = 0
+
+    while i < len(programs):
+        if programs[i] == "--rooted":
+            rooted = (programs[i + 1], programs[i + 2])
+            i += 3
+            continue
+
+        files.append((programs[i], rooted))
+        i += 1
+
     entries = []
     sources = []              # (name, text), for the C table below
-    for path in sorted(programs):
-        name = os.path.basename(path)
+    for path, root in sorted(files):
+        if root is None:
+            name = os.path.basename(path)
+        else:
+            name = root[1] + os.path.relpath(path, root[0])
+
         with open(path) as f:
             text = f.read()
         sources.append((name, text))

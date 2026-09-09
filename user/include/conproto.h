@@ -71,6 +71,32 @@ struct con_request {
     uint32_t op;
     uint32_t ticks;             /* how long `wait` may sleep */
     uint32_t length;            /* bytes of `text`, for write */
+
+    /*
+     * What colour to write it in, as 0xAARRGGBB. Zero means the console's
+     * own, which is what every caller that has no opinion sends without
+     * having to know this field is here.
+     *
+     * **A field rather than an escape code in the text, and that decision
+     * was already taken once.** `kernel/console.c` keeps the boot log's
+     * colours as a run list beside the bytes, and says why: the alternative
+     * was "an escape language inside a boot log", and it was right to refuse
+     * it. A server should not have to parse its payload to find out what the
+     * payload means, which is the same argument as every other declared
+     * shape here.
+     *
+     * **And a field rather than a mode**, because the console has more than
+     * one writer. Set-colour-then-write is two operations that another
+     * process can get between, so one program's colour ends up on another's
+     * line. Attached to the bytes it applies to, that cannot happen.
+     *
+     * A line in several colours is therefore several writes, not a run list
+     * in this struct. `emit` on the far side appends until a newline
+     * arrives, so the pieces join up on their own - and a run list here
+     * would be a second way to say something the protocol can already say.
+     */
+    uint32_t colour;
+
     char     text[CON_TEXT_MAX];
 };
 
