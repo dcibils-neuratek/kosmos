@@ -8,6 +8,75 @@ Last updated: 2026-09-10
 
 ## Where this left off
 
+### Nine vendored files no commit had, and the unanchored `build/` that hid them
+
+Found during the audio ring work by making a worktree - the first thing in a
+while to start from what was actually committed - and recorded then as not
+fixed, because it did not belong in an audio change. Fixed in 0.10.21, which
+was to have been 0.10.20 until the TLB shootdown landed with that number
+first.
+
+`.gitignore` line 1 was `build/`. Without a leading slash git reads that as a
+name rather than a path, and matches a directory called `build` at any depth;
+NetSurf's libparserutils, libhubbub and libcss each ship one, and it holds
+sources. So nine files were in no commit from 7e56bca, the day NetSurf was
+vendored, and nothing could say so: the checkout that vendored them still had
+them, and a pattern that keeps a file out of a commit keeps it out of
+`git status` as well. In a fresh worktree both perl generators failed, not
+only the one first noticed - `make` stops at the first, and `make -k` shows
+the second:
+
+    cp: runtime/upstream/netsurf/libparserutils/build/Aliases: No such file or directory
+    cp: runtime/upstream/netsurf/libparserutils/build/make-aliases.pl: No such file or directory
+    make: *** [build/gen-doom-web/netsurf/aliases.inc] Error 1
+    cp: runtime/upstream/netsurf/libhubbub/build/Entities: No such file or directory
+    cp: runtime/upstream/netsurf/libhubbub/build/make-entities.pl: No such file or directory
+    make: *** [build/gen-doom-web/netsurf/entities.inc] Error 1
+
+Two problems in one, as the note that found it put it. The published path was
+broken, since `make release` builds the full image and `builds/` is what
+somebody downloads - and `make test` and `make prepush` build that image too,
+which a dry run of `make test` confirms. And part of three vendored libraries
+was silently not in the tree, which is the one thing the vendoring rule exists
+to prevent.
+
+- **The rule is `/build/`**, with the reason written above it, and
+  `build/kosmos.img` is gone: it was inside `build/` from the day 205a294
+  added it.
+- **What else anchoring changed was measured rather than assumed.** Both
+  rule sets were run over the main checkout's whole tree with
+  `git ls-files --others --ignored --exclude-from`, which reads a tree
+  without touching its index: 6,382 ignored paths before, 6,373 after, and
+  the nine are the whole difference. Nothing named `build` exists under
+  `lua/upstream/` or `assets/`.
+- **The nine are as released.** They are byte-identical to the working
+  checkout's copies, and those carry the release date, 27 December 2023 - as
+  do all 4,036 files of the vendored tree except the README this project
+  wrote. Three are executable and are committed so. Only `Aliases`,
+  `Entities` and the two scripts that read them are used here; `Doxyfile`,
+  `conv.pl`, `get-entities/` and libcss's `mkprops.pl` are in the tree
+  anyway, because the rule is what was released and not what is used.
+- **Proved from a checkout with nothing else to find.** A scratch worktree
+  of the commit, made outside the repository's directory so that no tool
+  could reach a working checkout by walking up into one, ran `make prepush`
+  from nothing - once before the rebase onto the TLB shootdown, and again
+  on this revision's own commit after it. Both times the generators ran
+  from the committed inputs, every suite passed with the same counts as the
+  working tree, and afterwards `git status --ignored` showed `build/`,
+  `tools/__pycache__/` and the picture `make shot` takes, and nothing else.
+
+**It had been fixed once already, in a commit that never reached main.**
+`65fe147` on the worktree branch `claude/nice-torvalds-701f77` is this change
+with the same nine blobs, made on 8 September and numbered 0.9.33; main took
+0.9.33 for Lite XL thirty-seven minutes later, and nothing landed the branch
+after that. A version number is a lock nobody holds - two sessions can take
+the same one, and the one that loses is not told.
+
+**The same shape is still there, and hides nothing today.** `*.o`, `*.d`,
+`*.elf`, `*.bin` and `*.map` are names too, matched at any depth. The
+comparison above says none of them hides a file now; a vendored `.bin` or
+`.map` would vanish exactly as these did, and only a fresh clone would notice.
+
 ### The first machine runs the desktop, and the last two faults were one missing port
 
 The ThinkPad T14 boots to a desktop that draws, ticks and follows the
@@ -607,28 +676,6 @@ taking from it - not that flakes should be written down, which the other
 two already establish, but that a `grep` for the summary line is what
 decides whether writing it down is all you will ever be able to do.
 
-### A fresh clone of this repository cannot build the full image
-
-Found by making a worktree, which is the first time in a while anything
-started from what is actually committed.
-
-`.gitignore` line 1 is `build/`, with no leading slash - so it matches a
-directory of that name at *any* depth, including three vendored ones:
-`runtime/upstream/netsurf/{libcss,libhubbub,libparserutils}/build/`. They
-exist in the working checkout and are untracked, so `make qemu` and
-`make test` both fail in a fresh worktree at
-`build/gen-doom-web/netsurf/aliases.inc`.
-
-Two problems in one: the published path is broken, since `make release`
-builds the full target and `builds/` is what somebody downloads; and part of
-three vendored libraries is silently not in the tree, which is the one thing
-the vendoring rule exists to prevent. Anchoring the pattern to `/build/` is
-the fix - `CLAUDE.md` already says everything generated goes in exactly one
-top-level directory, so the unanchored form was never buying anything.
-
-Worked around locally to get the suite to run; **not fixed here**, because
-it is a `.gitignore` decision plus three directories of somebody else's
-files and it did not belong in an audio change.
 ### The console has colours, and a `neofetch`
 
 Two pieces of work, in that order, because the second needs the first.

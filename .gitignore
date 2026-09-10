@@ -1,4 +1,13 @@
-build/
+# What the build makes, and nothing else - which is why it is anchored.
+#
+# Without the leading slash this is a name rather than a path, and it matches
+# a directory called `build` at any depth. Upstream projects use that name for
+# sources: NetSurf's libparserutils, libhubbub and libcss each ship one, and
+# two of them hold the tables their generated headers are made from. So nine
+# vendored files were left out of 7e56bca and of every commit after it, the
+# checkout that vendored them went on building because it still had them, and
+# a fresh clone could not build the full image.
+/build/
 *.o
 *.d
 *.elf
@@ -11,7 +20,6 @@ build/
 !builds/*.elf
 
 tools/__pycache__/
-build/kosmos.img
 
 # The disk `run-kosmos.sh` makes beside whatever image it was given.
 #
