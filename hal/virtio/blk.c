@@ -41,6 +41,7 @@
 #include "spinlock.h"
 #include "virtio.h"
 #include "mmio.h"
+#include "blk.h"
 
 /*
  * One request at a time, so the ring only has to be big enough for one
@@ -90,7 +91,7 @@ static struct {
     _Alignas(16) volatile uint8_t      status;
 } blk;
 
-bool hal_blk_init(struct blkdev *out)
+bool virtio_blk_init(struct blkdev *out)
 {
     unsigned from = 0;
 
@@ -249,7 +250,7 @@ static bool request(uint32_t type, uint64_t sector, void *buf, uint32_t bytes)
 /* Whether this board found a disk, asked after init the way the network
  * and the sound device are asked. `hal_bus_scan` needs it to say whether
  * the virtio-blk on the bus is one this system drives. */
-bool hal_blk_present(void)
+bool virtio_blk_present(void)
 {
     return blk.present;
 }
@@ -299,7 +300,7 @@ void blk_interrupt(unsigned line)
     spin_unlock(&blk_lock, flags);
 }
 
-bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes)
+bool virtio_blk_read(uint64_t sector, void *buf, uint32_t bytes)
 {
     unsigned long flags = spin_lock(&blk_lock);
     bool ok = request(VIRTIO_BLK_T_IN, sector, buf, bytes);
@@ -308,7 +309,7 @@ bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes)
     return ok;
 }
 
-bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes)
+bool virtio_blk_write(uint64_t sector, const void *buf, uint32_t bytes)
 {
     /* The device only reads this one, which the descriptor says by not
      * being marked writable. The cast is losing a const the interface

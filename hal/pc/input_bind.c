@@ -39,15 +39,44 @@ bool hal_key_event(unsigned *code, bool *down)
 bool hal_key_held(unsigned code) { return i8042_key_held(code); }
 
 /*
- * The pointer is virtio's, and it has to be initialised even though the
- * keyboard came from elsewhere: `virtio_pointer_init` is what walks the bus
- * and negotiates with the device, and nothing else does it.
+ * **virtio if this machine has one, and the i8042's auxiliary port if it
+ * does not.**
+ *
+ * The order is not a preference between two devices - it is which machine
+ * this is. A virtio tablet exists only under QEMU, so finding one says "an
+ * emulator gave me a pointer" and the eleven display checks that need one
+ * keep working exactly as they did. Finding none says "this is a real PC",
+ * and on a real PC the pointing device is on the auxiliary port of the same
+ * i8042 the keyboard is on.
+ *
+ * **The TrackPoint driver has never run.** It was written months ago, sends
+ * nothing under emulation for reasons `i8042.c` sets out and five ruled-out
+ * causes, and until now the board bound the pointer to virtio
+ * unconditionally - so on a laptop there was no pointer at all *and* the
+ * driver that might have provided one was never asked. The comment this
+ * replaces said "when the auxiliary port works, one line here changes";
+ * the honest version is that the line had to change before anyone could
+ * find out whether it works.
  */
-bool hal_pointer_init(void)      { return virtio_pointer_init(); }
+bool pc_pointer_on_virtio(void);
+
+static bool on_virtio_pointer;
+
+bool hal_pointer_init(void)
+{
+    on_virtio_pointer = virtio_pointer_init();
+
+    if (on_virtio_pointer) {
+        return true;
+    }
+
+    return i8042_pointer_init();
+}
 
 bool hal_pointer_poll(struct pointer_state *out)
 {
-    return virtio_pointer_poll(out);
+    return on_virtio_pointer ? virtio_pointer_poll(out)
+                             : i8042_pointer_poll(out);
 }
 
 /*
@@ -75,4 +104,9 @@ void input_interrupt(unsigned line)
 {
     i8042_interrupt(line);
     virtio_input_interrupt(line);
+}
+
+bool pc_pointer_on_virtio(void)
+{
+    return on_virtio_pointer;
 }

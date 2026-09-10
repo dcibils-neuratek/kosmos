@@ -66,6 +66,49 @@ decision to find a sound controller by class rather than by identifier was
 made against QEMU's `8086:2668`; this machine's is `8086:A0C8`, and it needs
 no change at all.
 
+## 0a. The first boot on it, and what the stick had to become
+
+**It booted, and GRUB ran.** The firmware found the stick, read its
+partition table and launched `BOOTX64.EFI` - so Secure Boot was off and the
+image was acceptable to real firmware. Then:
+
+```
+error: file '/boot/grub/x86_64-efi/boot.mod' not found.
+Entering rescue mode...
+grub rescue>
+```
+
+**GRUB could not load its own modules.** `grub-mkrescue` keeps them only
+inside the El Torito FAT image and leaves nothing at that path on the
+ISO9660 filesystem beside it. Under QEMU, GRUB's idea of its own root
+resolved to the FAT image and the modules were there; on this firmware it
+resolved somewhere else and they were not. **The ISO passed thirteen checks
+here and failed on the machine**, which is the sharpest possible argument
+for testing the artifact that ships.
+
+So the stick is built here now - `tools/mkusb_image.py` - and nothing in it
+depends on which filesystem GRUB thinks it booted from: a GPT with one EFI
+System Partition, FAT, holding the loader, its configuration, its modules
+and the kernel. One filesystem, the one a UEFI firmware is required to be
+able to read.
+
+**Two further things went wrong while fixing it, and both are worth
+keeping.**
+
+Assigning a twelve-byte partition name into a seventy-two-byte slice of a
+Python `bytearray` *resizes* it. The GPT's entry table came out ten bytes
+short, its CRC was computed over the wrong buffer, and firmware that checks
+that CRC ignored the disk entirely - the machine fell through to the EFI
+shell with nothing on screen to say why.
+
+And linking twenty-two modules into the core image, `efi_gop` among them,
+left GRUB unable to set a video mode at all: Kosmos came up with `none
+attached` on a machine whose firmware had a perfectly good panel. Dropping
+`grub-mkrescue`'s own 200 KB binary into the same image fixed it at once, so
+it was the core rather than the layout. The core is minimal now - what is
+needed to read the partition and run `grub.cfg`, and nothing else, because
+a module that fails to load cannot be the module that loads modules.
+
 ## 1. The machine
 
 From Lenovo's PSREF for the T14 Gen 1 (Intel), March 2022.
@@ -709,7 +752,7 @@ works, and not before.
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
 | ~~Local APIC / IOAPIC / MSI~~ | **written and in the build**, both paths chosen at run time and both tested | done |
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |
-| NVMe | new | ~800 |
+| ~~NVMe~~ | **written and in the build**, a file written, the machine killed, and the file read back | done |
 | Intel I219, which is the e1000e family | new | ~1500 |
 | Intel HDA | **written and in the build**, tone captured and measured | done |
 | The ALC3287's pin layout - which pin is the speaker | needs the machine | §6 |
@@ -741,16 +784,22 @@ right depends on a fact about the laptop's firmware.
    photograph worth taking, and it is a few hundred lines away.
 3. **Cores and time.** ACPI MADT for the real processor count - eight or
    twelve, against the four this kernel has ever seen - and an APIC timer.
-4. **Storage.** NVMe, so `/home` outlives the boot.
+4. ~~**Storage.** NVMe, so `/home` outlives the boot.~~ **Written.** It has
+   still never seen this machine's Micron drive - and the one thing it
+   refuses is a namespace whose blocks are not 512 bytes, which it says
+   rather than failing quietly.
 5. **The rest.** I219, then HDA, then xHCI, then the touchpad.
 
 ---
 
 ## 11. Next three things
 
-1. **xHCI and the USB core**, which is the largest thing left and the one
-   the user's ordering puts next: this machine can run from a USB stick with
-   no storage of its own, so USB comes before NVMe.
+1. **xHCI and the USB core**, which is the largest thing left. The ordering
+   argument for it - "this machine can run from a USB stick with no storage
+   of its own, so USB comes before NVMe" - has expired: NVMe is written, so
+   the reason to do USB first is now the keyboard and the touchpad rather
+   than storage, and this machine's keyboard turned out to be an i8042. What
+   USB buys here is the trackpad and anything plugged in.
 2. **The local APIC**, now that ACPI says where it is. It is what a real
    machine needs for a per-core timer, and it is the first half of starting
    a second processor.

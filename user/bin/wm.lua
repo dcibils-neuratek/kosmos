@@ -314,6 +314,129 @@ local back = gfx.surface{ w = W, h = H }
 --
 sys.screen_take(true)
 
+--
+-- **What the desktop is doing, in the kernel's log, whether or not the
+-- desktop can draw.**
+--
+-- The first machine this ran on had no serial port, and every instrument
+-- built for it needed a window - which meant asking the window manager to
+-- report on the window manager, and getting silence exactly when there was
+-- something to say. `print` here does not need a window: it reaches the
+-- console server and so the kernel's ring, which `log` prints at the prompt
+-- after Control-C has ended the desktop. The one channel that kept working
+-- on that laptop was the shell, so this is the channel the narration uses.
+--
+-- **Bounded rather than switched on, because a flag has to be remembered by
+-- somebody already having a bad evening.** `args` is the list of programs
+-- to start, so `wm trace` would try to run `/bin/trace.lua`; and a machine
+-- that hangs on the third pass is one nobody gets to type a flag into
+-- twice. Forty passes is about a third of a second of a healthy desktop and
+-- some eight kilobytes of the sixty-four in the ring - it costs a blink at
+-- startup and nothing at all afterwards, and if the loop stops early the
+-- last line printed is the stage it stopped in.
+--
+--
+-- **Off unless asked for, and that is not caution - it is a measurement.**
+--
+-- With this on unconditionally the display harness failed at its last
+-- phase: the compositor was six passes into its life several seconds after
+-- starting, and the trace said why. `hello-win` polls with `wait_ticks = 0`,
+-- so it is answered immediately and asks again immediately, and every one
+-- of those turns into two lines here - two calls to the console server,
+-- which is two round trips the compositor spends not compositing. The
+-- window being dragged did not move because the manager had not looked at
+-- the pointer yet.
+--
+-- Which is the whole argument for making it opt-in rather than cheap: an
+-- instrument that changes the thing it measures is worse than none, and a
+-- desktop being investigated for slowness is exactly where that matters.
+--
+--     wm trace
+--
+-- `trace` is a reserved word in the program list rather than a separate
+-- argument, because `args` here *is* the list and there is no room for a
+-- flag beside it. It is taken out of the list before anything is started,
+-- so `wm trace` opens the same desktop `wm` does.
+--
+local TRACE = false
+
+local passes = 0
+
+local function step(what)
+  if TRACE and passes <= 40 then
+    print(("wm: %d %s"):format(passes, what))
+  end
+end
+
+--
+-- **A poll and its answer get their own budget, and they have to.**
+--
+-- `step` stops at pass forty, which on a healthy desktop is about a third
+-- of a second - and an application asks to be woken in a quarter of a
+-- second to a second, so almost every *answer* falls outside that window.
+-- Measured: forty passes caught five polls and one answer, which would have
+-- said nothing at all about whether the answers were arriving.
+--
+-- Sixty lines rather than a pass count, so both halves of several seconds
+-- of conversation are on the record however slowly the passes are going -
+-- which on the machine this is for is the whole question.
+--
+--
+-- **Recorded here, printed at the top of the next pass, and the difference
+-- is not tidiness.**
+--
+-- `print` is a call to the console server: the compositor blocks until
+-- another process answers. `step` does that from the loop body and is
+-- harmless - measured, the display harness passes with it. Doing the same
+-- thing from *inside* `answer_waiting` and the message drain is not: with
+-- these lines printed where they are generated, dragging a hung
+-- application's window stopped working entirely - the window did not move
+-- at all - and putting them back in a queue fixed it with nothing else
+-- changed. Twice, deterministically, at the same coordinates.
+--
+-- Which is a small demonstration of the rule this system already holds
+-- about servers on a deadline: the cost of a round trip is not the
+-- microseconds it takes, it is where in the loop you spend them.
+--
+local said = 0
+local queued = {}
+
+--
+-- **Bounded by passes as well as by count, and the pass bound is the one
+-- that matters.**
+--
+-- Sixty lines alone kept this printing for several seconds on a healthy
+-- desktop - long enough to still be going during a drag, and a compositor
+-- that does a round trip to another process while a window is being dragged
+-- loses the drag. Measured: the display harness failed at the same
+-- coordinates twice with these lines on and passed with them off, and
+-- queueing them changed nothing, which is what says the cost is *when* they
+-- happen rather than where.
+--
+-- Forty passes is a third of a second here and a long time on a machine
+-- whose desktop is in trouble - which is the machine this exists for. A
+-- healthy desktop gives up a poll or two of detail nobody needed; a
+-- crawling one fills the budget with exactly the conversation in question.
+--
+local function note(what)
+  if TRACE and said < 60 and passes <= 40 then
+    said = said + 1
+    queued[#queued + 1] = what
+  end
+end
+
+local function flush_notes()
+  for i = 1, #queued do
+    print("wm: " .. queued[i])
+  end
+
+  if #queued > 0 then
+    queued = {}
+  end
+end
+
+
+
 -- Whatever appearance was chosen last time, before the first pixel is
 -- drawn. After `screen_take` because a failure to read it must not stop the
 -- desktop starting, and before compositing because otherwise the first
@@ -1881,27 +2004,157 @@ handlers.open = function(req, who, cap)
   -- few steps rather than walking off the screen - past that, landing on
   -- top of something is better than landing outside.
   --
-  if req.kind ~= "menu" then
-    for _ = 1, 8 do
-      local taken = false
-
+  -- Scenery places itself: the backdrop and the strip are pinned to 0,0 a
+  -- few lines below, so searching for somewhere free for them is work
+  -- whose answer is thrown away.
+  if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top" then
+    --
+    -- **Taken means hidden, not "in the same spot".**
+    --
+    -- This compared origins: two windows counted as colliding only if their
+    -- top-left corners were within a title bar of each other. That is the
+    -- right question for a cascade and the wrong one for a screen. Two
+    -- 850-pixel windows whose origins are 110 apart pass it and cover each
+    -- other by seven hundred pixels - which is what four applications
+    -- opening at login actually looked like: a pile, every one of them
+    -- technically in a different place and none of them readable.
+    --
+    -- So the test is how much of the *new* window would be buried. Over
+    -- half, and it goes somewhere else. That is the thing a person means by
+    -- "I cannot see it", and it is the same rule whichever window sizes an
+    -- application happens to ask for.
+    --
+    -- **The backdrop and the menu strip are not in the way.** Tracker's
+    -- desktop window is the whole screen and lives under everything by
+    -- construction, so counting it would make every position on the machine
+    -- "taken" and this whole search a no-op that quietly fell through to the
+    -- cascade - which is exactly what it did the first time it ran. The
+    -- same flags `focusable` already uses, for the same reason: these are
+    -- scenery rather than windows you are being hidden behind.
+    local function taken_at(x, y)
       for _, other in ipairs(windows) do
-        if math.abs(other.x - win.x) < CASCADE
-           and math.abs(other.y - win.y) < CASCADE then
-          taken = true
+        if not (other.backdrop or other.strip or other.kind == "menu") then
+          local ox = math.min(x + win.w, other.x + other.w) - math.max(x, other.x)
+          local oy = math.min(y + win.h, other.y + other.h) - math.max(y, other.y)
+
+          --
+          -- **Only the new window, and deliberately not the other one.**
+          --
+          -- Asking "would either be buried" reads better and is wrong: the
+          -- Deskbar is 210x266, so *any* large window covers more than half
+          -- of it, and every window on the machine started jumping into a
+          -- quarter to avoid a panel it is perfectly entitled to overlap.
+          -- That moved windows the display harness clicks on, which is how
+          -- it was caught.
+          --
+          -- The case symmetry was meant to fix - a large window landing
+          -- exactly on a small one - is handled where it belongs, in the
+          -- quarter search below: a quarter already holding a window is not
+          -- offered to the next one.
+          --
+          -- A third rather than a half, and the difference is a real
+          -- window: the log is 620x420 and Tracker is 780x520, so opening
+          -- one over the other buries 48% of it - under a half by two
+          -- points, and unreadable by any standard a person would use.
+          -- A third is about where "I cannot see it" starts.
+          if ox > 0 and oy > 0 and ox * oy * 3 > win.w * win.h then
+            return true
+          end
+        end
+      end
+
+      return false
+    end
+
+    if taken_at(win.x, win.y) then
+      --
+      -- **The quarters first, and the cascade only when they are gone.**
+      --
+      -- A cascade steps by `CASCADE`, which is a title bar and a little -
+      -- about thirty pixels. That is the right amount to prove two windows
+      -- are not the same window, and it is nowhere near enough to *read*
+      -- the one underneath: four windows opened at login came up in a stack
+      -- with an inch of each showing, which on a 1920x1080 panel is a
+      -- desktop mostly made of wallpaper with everything piled in one
+      -- corner of it.
+      --
+      -- The login set is what made this matter. One window at a time,
+      -- opened by hand, wants to land near the last one; four opened at
+      -- once want to be *visible*, which means using the screen there
+      -- already is. So the free quarters are tried first and the cascade is
+      -- what happens when they are used up.
+      --
+      -- Bottom-left before top-right on purpose: the Deskbar lives in the
+      -- top right corner, so that quarter is the one most likely to be
+      -- spoken for and is therefore the last offered.
+      --
+      local top = top_limit()
+      local midx = BORDER + (W - BORDER * 2) // 2
+      local midy = top + (H - BORDER - top) // 2
+
+      local placed = false
+
+      --
+      -- **In a slot, the question is whether anybody gets buried - either
+      -- way round.**
+      --
+      -- The trigger above asks only about the new window, because a window
+      -- is entitled to overlap a panel. Here the opposite case matters:
+      -- Processes is 850x482 and Monitor is 380x112, so dropping Processes
+      -- on Monitor's slot covers Monitor completely while leaving nine
+      -- tenths of Processes showing - not "buried" by the trigger's rule,
+      -- and plainly wrong on a screen.
+      --
+      -- This was a test of whether the *quarter* was occupied, which is
+      -- simpler and threw away a quarter of the screen: the Deskbar is a
+      -- 210x266 panel in the top right, and counting it as the owner of
+      -- that whole quarter sent every window that would have fitted beside
+      -- it into the cascade instead.
+      --
+      local function slot_ok(x, y)
+        for _, other in ipairs(windows) do
+          if not (other.backdrop or other.strip or other.kind == "menu") then
+            local ox = math.min(x + win.w, other.x + other.w) - math.max(x, other.x)
+            local oy = math.min(y + win.h, other.y + other.h) - math.max(y, other.y)
+
+            if ox > 0 and oy > 0
+               and (ox * oy * 3 > win.w * win.h
+                    or ox * oy * 3 > other.w * other.h) then
+              return false
+            end
+          end
+        end
+
+        return true
+      end
+
+      for _, slot in ipairs({ { BORDER, top }, { BORDER, midy },
+                              { midx, midy }, { midx, top } }) do
+        -- Pulled back to fit rather than skipped: a window taller than half
+        -- the screen still belongs in the left half of it.
+        local x = math.min(slot[1], W - BORDER - win.w)
+        local y = math.min(slot[2], H - BORDER - win.h)
+
+        if x >= BORDER and y >= top and slot_ok(x, y) then
+          win.x, win.y = x, y
+          placed = true
           break
         end
       end
 
-      if not taken then break end
+      if not placed then
+        for _ = 1, 8 do
+          if not taken_at(win.x, win.y) then break end
 
-      win.x = win.x + CASCADE
-      win.y = win.y + CASCADE
+          win.x = win.x + CASCADE
+          win.y = win.y + CASCADE
 
-      -- Back to the top left rather than off the bottom right.
-      if win.x + win.w > W - BORDER or win.y + win.h > H - BORDER then
-        win.x, win.y = BORDER + CASCADE, top_limit() + CASCADE
-        break
+          -- Back to the top left rather than off the bottom right.
+          if win.x + win.w > W - BORDER or win.y + win.h > H - BORDER then
+            win.x, win.y = BORDER + CASCADE, top + CASCADE
+            break
+          end
+        end
       end
     end
   end
@@ -1977,6 +2230,19 @@ handlers.open = function(req, who, cap)
     win.x, win.y = 0, 0
     reserved_top = win.h
   end
+
+  -- Where it ended up, which is the other half of "started": a program that
+  -- started and never opened a window is a different fault from one whose
+  -- window landed under another, and the log has to tell them apart on a
+  -- machine nobody can see.
+  --
+  -- After the backdrop and strip are pinned rather than before, because
+  -- before is where the search left them and not where they end up - which
+  -- made this line report a desktop at 30,48 that was about to be moved to
+  -- the origin. A diagnostic that prints a number nothing else will ever
+  -- use is worse than none.
+  print(("wm: window %s at %d,%d %dx%d"):format(
+        tostring(win.title), win.x, win.y, win.w, win.h))
 
   if req.kind == "menu" then
     win.kind = "menu"
@@ -2392,6 +2658,15 @@ handlers.poll = function(req, who)
   -- built.
   local wait = tonumber(req.wait_ticks) or POLL_DEFAULT
 
+  -- **Both halves of a poll are narrated, and that is the point of them.**
+  --
+  -- An application that never redraws is either one that never asked, or
+  -- one that asked and was never answered, and from a photograph of a
+  -- frozen desktop those look identical. `wait` is in *scheduler* ticks
+  -- here, so a number in the millions is the unit bug this file has been
+  -- bitten by twice and the log would say so at a glance.
+  note(("poll %s wait=%s"):format(tostring(win.title), tostring(wait)))
+
   waiting[#waiting + 1] = {
     who = who, win = win, deadline = sys.ticks() + in_counter(wait),
   }
@@ -2484,6 +2759,8 @@ local function answer_waiting()
       -- reply nobody is going to send.
       pcall(sys.reply, w.who, { ok = true, events = {} })
     elseif #w.win.events > 0 or now >= w.deadline then
+      note(("answer %s %s"):format(tostring(w.win.title),
+           #w.win.events > 0 and "events" or "due"))
       pcall(sys.reply, w.who, events_for(w.win))
     else
       still[#still + 1] = w
@@ -3537,6 +3814,34 @@ local wanted = tostring(args or ""):match("^%s*(.-)%s*$")
 
 if wanted == "" then wanted = "desktop,deskbar" end
 
+--
+-- `trace` first, so it is a setting rather than a program: it has to be out
+-- of the list before the loop below tries to start `/bin/trace.lua`, and it
+-- has to be *set* before the first window opens or the opening is the one
+-- thing the trace misses.
+--
+do
+  local rest = {}
+
+  for entry in wanted:gmatch("[^,]+") do
+    entry = entry:match("^%s*(.-)%s*$")
+
+    if entry == "trace" then
+      TRACE = true
+    elseif entry ~= "" then
+      rest[#rest + 1] = entry
+    end
+  end
+
+  wanted = table.concat(rest, ",")
+
+  if wanted == "" then wanted = "desktop,deskbar" end
+
+  if TRACE then
+    print(("wm: tracing, screen %dx%d"):format(W, H))
+  end
+end
+
 for entry in wanted:gmatch("[^,]+") do
   entry = entry:match("^%s*(.-)%s*$")
 
@@ -3551,6 +3856,11 @@ for entry in wanted:gmatch("[^,]+") do
     if not ok then
       print(("wm: could not start %s: %s"):format(path, tostring(err)))
     else
+      -- Said even when it worked. "Started" and "drew a window" are two
+      -- events and the gap between them is where a desktop that looks hung
+      -- actually is, so both are in the log and the missing one names the
+      -- program that never arrived.
+      print(("wm: started %s as %s"):format(path, tostring(id)))
       pending_pid = id
     end
   end
@@ -3619,6 +3929,8 @@ local function sleep_for()
 end
 
 while running do
+  passes = passes + 1
+  flush_notes()
   -- 1. Input, always first - and this is where the pass sleeps if there is
   -- none. One call for keys and the pointer together, because the console
   -- has to be asked anyway and two round trips to learn nothing is one
@@ -3639,12 +3951,14 @@ while running do
     t = sys.ticks()
   end
 
+  step("wait")
   local input = fs.wait_input("/dev/console", sleep_for()) or {}
 
   -- Idle, and charged as such: this is the loop asleep with nothing to do,
   -- and counting it as work would make an empty desktop look busy.
   if measuring then t, heap = charge("wait", t, heap, true) end
 
+  step("keys")
   for _, c in ipairs(input.keys or {}) do
     key(c)
   end
@@ -3656,6 +3970,7 @@ while running do
 
   if measuring then t, heap = charge("keys", t, heap) end
 
+  step("messages")
   -- 2. Whatever the applications have asked for, and not one message more
   -- than has already arrived.
   while true do
@@ -3688,12 +4003,14 @@ while running do
 
   if measuring then t, heap = charge("messages", t, heap) end
 
+  step("pointer")
   -- 3. The pointer, before the picture: a click can raise a window and a
   -- drag can move one, and both are damage that this pass should draw.
   pointer_pass(input.pointer)
 
   if measuring then t, heap = charge("pointer", t, heap) end
 
+  step("waiting")
   -- 4. Anybody who has been waiting long enough, or now has something.
   answer_waiting()
 
@@ -3716,6 +4033,7 @@ while running do
 
   if measuring then t, heap = charge("collect", t, heap) end
 
+  step("compose")
   -- 6. The picture, cursor included.
   compose()
 

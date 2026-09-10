@@ -828,9 +828,46 @@ bool process_grant_screen(struct process *p)
     bytes = (size_t)fb.pitch * fb.height;
     pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 
+    /*
+     * **`MAP_USER_FB`, not `MAP_USER_RW`**, and the difference is the
+     * memory type rather than the permissions.
+     *
+     * These are the same physical pages the kernel mapped write-combining,
+     * and a second mapping of them does not inherit that: the type lives in
+     * the page table entry, so two mappings of one framebuffer can disagree
+     * about it. This one did, and on a machine with a real cache it meant
+     * the console was quick and the desktop was unusable - the console
+     * draws through the kernel's mapping and the compositor through this
+     * one. `arch/x86_64/mmu.h` has the account and the assertion that stops
+     * the two drifting apart again.
+     */
     if (as_map(p->space, USER_SCREEN_VA, fb.phys,
-               pages, MAP_USER_RW) != AS_OK) {
+               pages, MAP_USER_FB) != AS_OK) {
         return false;
+    }
+
+    /*
+     * **Read back, because "the constant is right" and "this call used it"
+     * are two claims and only one of them was ever true.**
+     *
+     * `arch/` asserts at compile time that `MAP_USER_FB` carries the
+     * framebuffer's memory type. That says nothing about whether this line
+     * passed it - which is precisely the mistake that happened, and it went
+     * unnoticed for as long as it did because every suite here runs under
+     * an emulator that models no cache and so cannot tell the two types
+     * apart. So the entry the mapping actually produced is asked.
+     *
+     * It reports rather than refusing. A desktop drawing through the wrong
+     * memory type works and is slow, and a machine that says so on its own
+     * boot log is worth much more than one that will not start.
+     */
+    {
+        const uint64_t *entry = as_page_entry(p->space, USER_SCREEN_VA);
+
+        if (entry == NULL || !mmu_entry_matches_framebuffer(*entry)) {
+            kputs("screen: the compositor's mapping does not carry the "
+                  "framebuffer's memory type; the desktop will be slow\n");
+        }
     }
 
     p->owns_screen = true;

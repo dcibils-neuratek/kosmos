@@ -103,6 +103,39 @@ The cost is memory: a double-buffered full-screen surface is 16MB. Acceptable, a
 
 ---
 
+## 19.4b The memory type belongs to the mapping, not to the memory
+
+A framebuffer handed over by firmware is not RAM. It lives behind a PCIe
+aperture, and how a processor treats writes to it is a property of **the
+page-table entry**, not of the pages - so the same physical framebuffer
+mapped twice can be two different things, and for a long time here it was.
+
+The kernel maps it write-combining: stores accumulate in a fill buffer and
+leave as whole cache lines, which is exactly what a framebuffer wants
+because nothing reads it back and the only deadline is the next frame. The
+*compositor* was handed the same pages with the ordinary user read-write
+attributes, which is write-back - and write-back on a PCIe aperture combines
+with the firmware's MTRR to give **uncached**: one bus transaction per four
+bytes. A 1920x1080 composite is two million of them.
+
+What made it survive was that the two halves of the system disagreed
+*invisibly*. The boot console draws through the kernel's mapping and stayed
+quick; the desktop drew through its own and did not. So the machine
+presented as "a slow desktop" rather than "a wrong page table", and the boot
+log's memory-type line agreed with it, because that line reports the kernel's
+mapping and was telling the truth about the wrong thing.
+
+**None of this is visible under emulation, by construction.** QEMU's
+framebuffer is host memory and TCG models no cache, so both memory types run
+identically - which is why the guard is a compile-time assertion that the
+two constants agree plus a run-time read-back of the entry the mapping
+actually produced, rather than a measurement. A number nothing here can
+measure needs an invariant instead.
+
+The rule generalises past this one bug: **whenever a region is mapped into a
+second address space, the memory type has to be chosen again.** It is not
+inherited, and nothing warns.
+
 ## 19.5 Cache coherency before the blit
 
 This is the gap that appears in no other document and the one that produces bugs that look random.

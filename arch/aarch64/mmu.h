@@ -89,6 +89,29 @@
 #define MAP_USER_RX (ATTR_IDX(MAIR_IDX_NORMAL) | ATTR_AF | ATTR_SH_INNER | \
                      ATTR_AP_RO_EL0 | ATTR_PXN)   /* UXN clear: EL0 executes */
 
+/*
+ * The screen, granted to the compositor.
+ *
+ * The same as `MAP_USER_RW` here, and that is a fact about this board
+ * rather than a shortcut: ramfb's pixels are ordinary RAM the guest
+ * allocated, so normal cacheable memory is both correct and the fastest
+ * thing on offer. x86-64 needs a different constant because a firmware
+ * framebuffer is not RAM, and that header has what it cost to find out.
+ *
+ * Named separately even though it expands to the same bits, so that a
+ * board whose framebuffer *is* a device - a Pi's mailbox buffer,
+ * virtio-gpu - has one line to change instead of a search through
+ * `process.c` for which of its mappings happened to be the screen.
+ */
+#define MAP_USER_FB MAP_USER_RW
+
+/* The same invariant the x86-64 header asserts, and for the same reason:
+ * the kernel's mapping of the framebuffer is `MAP_RW`, and a compositor
+ * drawing through a different memory type is a bug no suite here can see. */
+_Static_assert((MAP_USER_FB & ATTR_IDX(7)) == (MAP_RW & ATTR_IDX(7)),
+               "the compositor's framebuffer mapping must carry the "
+               "kernel's memory type");
+
 /* Builds the identity map and turns translation on. Needs pmm_init first,
  * because the tables come out of the page allocator. */
 void mmu_init(void);
@@ -192,6 +215,11 @@ void as_switch(struct addrspace *as);
 /* The level 3 descriptor for an address in this space, or NULL. For tests
  * and inspection. */
 uint64_t *as_page_entry(struct addrspace *as, uintptr_t va);
+
+/* Whether an entry carries the memory type the kernel's framebuffer mapping
+ * has. The x86-64 header has the account of why two mappings of one
+ * framebuffer must be asked rather than assumed. */
+bool mmu_entry_matches_framebuffer(uint64_t entry);
 
 /*
  * The two questions `kernel/` actually asks about a mapping.

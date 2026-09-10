@@ -108,7 +108,22 @@ static bool        suspended;
  * and what neither the serial line nor the screen can give it after the
  * fact.
  */
-#define LOG_BYTES 16384
+/*
+ * **16 KB, and it was not "a whole boot" - which is the claim the paragraph
+ * above made and the first real machine disproved.**
+ *
+ * A boot on hardware is the twelve stages, the wordmark, and `neofetch`,
+ * and by the time a person can open a window and look, the stages are the
+ * part that has already gone past. That is exactly backwards: the boot
+ * narration is the most valuable thing in here and the first to be evicted,
+ * because a ring evicts by age and the boot is the oldest thing there is.
+ *
+ * 64 KB holds a boot and a long session after it. It is .bss on a machine
+ * with hundreds of megabytes, and the alternative - a person on a laptop
+ * with no serial port unable to read why their own machine did something -
+ * is not a trade worth 48 kilobytes.
+ */
+#define LOG_BYTES CONSOLE_LOG_BYTES
 
 static char          logbuf[LOG_BYTES];
 static unsigned long logged;            /* total ever written */
@@ -280,7 +295,42 @@ static unsigned glyph_index(unsigned cp)
     return (unsigned)(GLYPH_LAST - GLYPH_FIRST + 1);
 }
 
-static void draw_glyph(unsigned col, unsigned line, unsigned cp)
+/*
+ * What is on the screen, in characters, so that scrolling never has to read
+ * the screen back.
+ *
+ * **This exists because of one measurement on real hardware.** The scroll
+ * below used to move pixels: two million reads from the framebuffer and two
+ * million writes, for every line. Under QEMU the framebuffer is host memory
+ * and that is free. On a laptop it is a graphics aperture across PCIe,
+ * where write-combining makes writes cheap and does nothing at all for
+ * reads - every one is an uncached round trip. A ThinkPad at 1920x1080 took
+ * something close to a fifth of a second per scrolled line, which is a boot
+ * log you can watch arrive.
+ *
+ * So the console keeps its own text and repaints from it. The screen is
+ * write-only from here, which is what the memory type it is mapped with is
+ * good at.
+ *
+ * Twelve bytes a cell and a fixed ceiling, because `CLAUDE.md` is clear
+ * that the kernel has no allocator: 256 by 96 covers 2048x1536 at this
+ * glyph size, and `console_attach_screen` clamps a larger screen to it
+ * rather than writing past the end.
+ */
+#define CELL_COLS   256u
+#define CELL_ROWS    96u
+
+struct cell {
+    uint32_t cp;
+    uint32_t fg;
+    uint32_t bg;
+};
+
+static struct cell cells[CELL_ROWS][CELL_COLS];
+
+/* Draws one cell in the colours given, and touches nothing else. */
+static void paint_glyph(unsigned col, unsigned line, unsigned cp,
+                        uint32_t ink, uint32_t paper)
 {
     const unsigned char *glyph = font_8x16
                                + (size_t)glyph_index(cp) * GLYPH_H;
@@ -292,7 +342,32 @@ static void draw_glyph(unsigned col, unsigned line, unsigned cp)
         unsigned x;
 
         for (x = 0; x < GLYPH_W; x++) {
-            p[x] = (bits & (0x80u >> x)) ? fg : bg;
+            p[x] = (bits & (0x80u >> x)) ? ink : paper;
+        }
+    }
+}
+
+static void draw_glyph(unsigned col, unsigned line, unsigned cp)
+{
+    if (col < CELL_COLS && line < CELL_ROWS) {
+        cells[line][col].cp = cp;
+        cells[line][col].fg = fg;
+        cells[line][col].bg = bg;
+    }
+
+    paint_glyph(col, line, cp, fg, bg);
+}
+
+/* Everything the grid says, drawn again. Writes only. */
+static void repaint(void)
+{
+    unsigned line, col;
+
+    for (line = 0; line < rows && line < CELL_ROWS; line++) {
+        for (col = 0; col < cols && col < CELL_COLS; col++) {
+            const struct cell *c = &cells[line][col];
+
+            paint_glyph(col, line, c->cp ? c->cp : ' ', c->fg, c->bg);
         }
     }
 }
@@ -303,19 +378,28 @@ static void draw_glyph(unsigned col, unsigned line, unsigned cp)
  * correct today and wrong the first time anything else touches it. */
 static void scroll(void)
 {
-    unsigned y;
+    unsigned line, col;
+    unsigned last = (rows < CELL_ROWS ? rows : CELL_ROWS) - 1;
 
-    for (y = GLYPH_H; y < rows * GLYPH_H; y++) {
-        uint32_t *dst = pixel_row(y - GLYPH_H);
-        const uint32_t *src = pixel_row(y);
-        unsigned x;
-
-        for (x = 0; x < cols * GLYPH_W; x++) {
-            dst[x] = src[x];
+    /*
+     * In the grid, which is memory, and then painted once - rather than in
+     * the framebuffer, which on real hardware is across a bus and cannot be
+     * read at any speed worth having. The comment above `struct cell` has
+     * the measurement.
+     */
+    for (line = 0; line < last; line++) {
+        for (col = 0; col < CELL_COLS; col++) {
+            cells[line][col] = cells[line + 1][col];
         }
     }
 
-    fill_rect(0, (rows - 1) * GLYPH_H, cols * GLYPH_W, GLYPH_H, bg);
+    for (col = 0; col < CELL_COLS; col++) {
+        cells[last][col].cp = ' ';
+        cells[last][col].fg = fg;
+        cells[last][col].bg = bg;
+    }
+
+    repaint();
 }
 
 /*
@@ -537,6 +621,20 @@ void console_attach_screen(const struct fb *fb, const char *title)
     cols = fb->width / GLYPH_W;
     rows = fb->height / GLYPH_H;
 
+    /*
+     * Clamped to the grid, because the grid is a fixed array and this
+     * kernel has no allocator to grow one with. A screen wider than 2048
+     * loses the columns past it rather than writing past the end of
+     * `cells`, which is the failure worth having.
+     */
+    if (cols > CELL_COLS) {
+        cols = CELL_COLS;
+    }
+
+    if (rows > CELL_ROWS + RESERVED_ROWS) {
+        rows = CELL_ROWS + RESERVED_ROWS;
+    }
+
     if (rows <= RESERVED_ROWS) {
         return;                     /* too small to be worth using */
     }
@@ -545,6 +643,18 @@ void console_attach_screen(const struct fb *fb, const char *title)
     cx = 0;
     cy = 0;
     attached = true;
+
+    {
+        unsigned line, col;
+
+        for (line = 0; line < CELL_ROWS; line++) {
+            for (col = 0; col < CELL_COLS; col++) {
+                cells[line][col].cp = ' ';
+                cells[line][col].fg = fg;
+                cells[line][col].bg = bg;
+            }
+        }
+    }
 
     fill_rect(0, 0, fb->width, fb->height, bg);
 

@@ -158,6 +158,51 @@
 #define MAP_USER_RX (PTE_P | PTE_US)
 
 /*
+ * **And the screen, which is a user mapping of the pages `MAP_FRAMEBUFFER`
+ * already describes.**
+ *
+ * So it needs both halves: `PTE_US`, because the compositor is a process,
+ * and `PTE_PAT`, because these are the *same physical pages* and a memory
+ * type is a property of the mapping rather than of the memory. Two
+ * mappings of one framebuffer can disagree about it, and for a long time
+ * these two did.
+ *
+ * It was `MAP_USER_RW` until the first machine with a real cache ran it.
+ * The comment above `MAP_FRAMEBUFFER` had the whole argument written out -
+ * uncached is "wrong for eight megabytes of pixels a compositor rewrites
+ * sixty times a second" - and the compositor was the one thing in the
+ * system that did not get it.
+ *
+ * What write-back costs here is not a cache that helps. Against the
+ * firmware's MTRR for a PCIe framebuffer the two combine to *uncached*,
+ * which is one bus transaction per four bytes; a 1920x1080 composite is
+ * two million of them. The console stayed quick throughout, because the
+ * console draws through the kernel's mapping - so the machine looked like
+ * it had a slow desktop rather than a wrong page table, and the boot log
+ * agreed with it by reporting the mapping that was right.
+ *
+ * Invisible under QEMU by construction, for the reason `mmu.c` gives:
+ * TCG models no cache, so both types run identically. That is what the
+ * assertion below is for - the invariant is checkable even where the
+ * consequence is not.
+ */
+#define MAP_USER_FB (PTE_P | PTE_RW | PTE_US | PTE_PAT | PTE_NX)
+
+/*
+ * The two mappings of the framebuffer must agree about its memory type.
+ *
+ * A static assertion rather than a test, because this is the exact mistake
+ * it is protecting against: somebody changes one constant, every suite
+ * passes, and the machine that shows it is on another desk. Only the
+ * cache-type bits are compared - `PTE_US` differs on purpose, and that is
+ * the whole reason there are two constants.
+ */
+_Static_assert((MAP_USER_FB     & (PTE_PAT | PTE_PCD | PTE_PWT))
+            == (MAP_FRAMEBUFFER & (PTE_PAT | PTE_PCD | PTE_PWT)),
+               "the compositor's framebuffer mapping must carry the "
+               "kernel's memory type");
+
+/*
  * Where a device's registers get mapped, and why they are not identity
  * mapped like everything else.
  *
@@ -212,6 +257,11 @@ uintptr_t mmu_map_framebuffer(uintptr_t pa, size_t bytes);
  * measured under emulation and the *correctness* of it can be asserted.
  */
 bool mmu_write_combining(void);
+
+/* Whether an entry from any space carries the memory type the kernel's
+ * framebuffer mapping has. For checking a second mapping of those same
+ * pages against the first - see `mmu.c` for the bug that motivates it. */
+bool mmu_entry_matches_framebuffer(uint64_t entry);
 
 /*
  * Marks a range uncached in the page tables that are loaded *now*.

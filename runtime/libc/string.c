@@ -15,10 +15,56 @@
  * asking for it is the trade this project does not make.
  */
 
+/*
+ * A word at a time where the addresses allow it, and bytes where they do
+ * not.
+ *
+ * **This was a byte loop, and on a laptop that is what made the desktop
+ * slow.** The compositor blits through here: at 1920x1080 a full pass is
+ * 8.3 million single-byte stores into a graphics aperture across PCIe.
+ * Under QEMU the framebuffer is host memory and the difference is a few
+ * milliseconds; on real hardware byte stores barely fill the processor's
+ * write-combining buffers, so most of the bandwidth is thrown away one
+ * store at a time.
+ *
+ * Eight bytes when both sides are eight-aligned, four when both are four -
+ * which is the case that matters, because a pixel is four bytes and a row
+ * of them starts wherever the pitch says. Bytes otherwise, and bytes for
+ * the tail.
+ *
+ * **Both sides checked, not just the destination.** An unaligned load is
+ * merely slow on x86-64 and is a fault on some of what `hal.md` lists as
+ * possible targets, and a libc that works on one architecture is not a
+ * libc.
+ */
 void *memcpy(void *dst, const void *src, size_t n)
 {
     unsigned char *d = dst;
     const unsigned char *s = src;
+
+    if ((((uintptr_t)d | (uintptr_t)s) & 7u) == 0) {
+        uint64_t *dw = (uint64_t *)(void *)d;
+        const uint64_t *sw = (const uint64_t *)(const void *)s;
+
+        while (n >= 8) {
+            *dw++ = *sw++;
+            n -= 8;
+        }
+
+        d = (unsigned char *)(void *)dw;
+        s = (const unsigned char *)(const void *)sw;
+    } else if ((((uintptr_t)d | (uintptr_t)s) & 3u) == 0) {
+        uint32_t *dw = (uint32_t *)(void *)d;
+        const uint32_t *sw = (const uint32_t *)(const void *)s;
+
+        while (n >= 4) {
+            *dw++ = *sw++;
+            n -= 4;
+        }
+
+        d = (unsigned char *)(void *)dw;
+        s = (const unsigned char *)(const void *)sw;
+    }
 
     while (n-- > 0) {
         *d++ = *s++;
@@ -51,12 +97,27 @@ void *memmove(void *dst, const void *src, size_t n)
     return dst;
 }
 
+/* The same argument as `memcpy` above, for the same reason: clearing a
+ * region of a framebuffer is the other half of what a compositor does. */
 void *memset(void *dst, int c, size_t n)
 {
     unsigned char *d = dst;
+    unsigned char b = (unsigned char)c;
+
+    if (((uintptr_t)d & 7u) == 0 && n >= 8) {
+        uint64_t word = 0x0101010101010101ULL * b;
+        uint64_t *dw = (uint64_t *)(void *)d;
+
+        while (n >= 8) {
+            *dw++ = word;
+            n -= 8;
+        }
+
+        d = (unsigned char *)(void *)dw;
+    }
 
     while (n-- > 0) {
-        *d++ = (unsigned char)c;
+        *d++ = b;
     }
 
     return dst;

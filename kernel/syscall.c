@@ -1145,10 +1145,13 @@ void syscall_dispatch(struct syscall_frame *sc)
          * If output ever carries something that should not be shared, the
          * fix is not to print it.
          */
+        /* The whole ring, at most. Capped rather than trusted because the
+         * caller names the length and the buffer, and a caller that asked
+         * for more than exists would be handed whatever follows it. */
         size_t max = (size_t)sc->arg[1];
 
-        if (max > 16384) {
-            max = 16384;
+        if (max > CONSOLE_LOG_BYTES) {
+            max = CONSOLE_LOG_BYTES;
         }
 
         if (!process_may_write(p, sc->arg[0], max)) {

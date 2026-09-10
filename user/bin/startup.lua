@@ -71,10 +71,14 @@ table.sort(names)
 -- each other, and the last one is the one you are looking at.
 --
 local ticked = {}
-local saved = fs.read(SETTINGS)
 
-if type(saved) == "table" and type(saved.items) == "table" then
-  for _, name in ipairs(saved.items) do ticked[tostring(name)] = true end
+--
+-- Including the default, so that the boxes shown match the windows that
+-- opened. A panel that showed nothing ticked while three applications were
+-- on the desktop would be the machine contradicting itself.
+--
+for _, name in ipairs(use("/lib/startup.lua").items()) do
+  ticked[tostring(name)] = true
 end
 
 local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "" }

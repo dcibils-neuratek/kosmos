@@ -1,4 +1,5 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
+#include <stdbool.h>
 /* How this board looks for input devices, in the words the boot log uses.
  * The driver is shared with the other machine; where it looks is not. */
 
@@ -13,15 +14,19 @@ const char *hal_keyboard_describe(void)
 }
 
 /*
- * **The pointer is virtio's and the keyboard is not**, which is what
- * `input_bind.c` decided and this has to agree with. Saying "i8042
- * auxiliary port" here while the binding takes the pointer from virtio
- * would be the same kind of lie the kernel used to tell about the keyboard,
- * one layer down.
+ * **Whichever the binding took**, which is what `input_bind.c` decides and
+ * this has to agree with. Saying "i8042 auxiliary port" while the pointer
+ * came from virtio would be the same kind of lie the kernel used to tell
+ * about the keyboard, one layer down - so it asks rather than asserting.
  *
- * It changes the day the auxiliary port delivers.
+ * On a machine with no virtio the auxiliary port is what is left, and this
+ * line is how you find out whether the TrackPoint answered.
  */
+bool pc_pointer_on_virtio(void);
+
 const char *hal_pointer_describe(void)
 {
-    return "virtio-input with absolute axes, reporting 0..";
+    return pc_pointer_on_virtio()
+         ? "virtio-input with absolute axes, reporting 0.."
+         : "the i8042 auxiliary port, relative counts made absolute";
 }

@@ -2,11 +2,78 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-08
+Last updated: 2026-09-10
 
 ---
 
 ## Where this left off
+
+### The first machine ran it, and then would not let go of it
+
+The ThinkPad boots: GRUB, UEFI, multiboot 2, twelve stages, 1920x1080, and a
+desktop. What it will not do yet is *be* a desktop - the windows draw once
+and the machine then behaves as though the compositor has stopped, while
+Control-C still returns to a shell that works perfectly. The console, the
+keyboard, the timer and the kernel are all alive. Only the desktop is not.
+
+**Three faults were found and fixed; the hang itself is not yet explained.**
+
+**The framebuffer was mapped twice and the two mappings disagreed.**
+`MAP_FRAMEBUFFER` is write-combining and `process_grant_screen` handed the
+compositor the same physical pages with `MAP_USER_RW`, which is write-back -
+and against the firmware's MTRR for a PCIe framebuffer that resolves to
+uncached: one bus transaction per four bytes, two million per composite. The
+console stayed quick throughout because the console draws through the
+*kernel's* mapping, so the machine looked like it had a slow desktop rather
+than a wrong page table, and boot stage six agreed by reporting the mapping
+that was right. `MAP_USER_FB` now carries the type on both architectures,
+asserted against `MAP_FRAMEBUFFER` at compile time and read back out of the
+page tables at run time.
+
+**None of that is provable here**, and `arch/x86_64/mmu.c` has said so for a
+while: TCG models no cache, so both memory types run identically under QEMU.
+Whether this was *the* cause is a question only the machine can answer.
+
+**There was no way to ask the machine anything.** Every instrument built for
+it needed a window, which is drawn by the compositor, which is the thing
+under suspicion. `log` is the answer - a program at the prompt, over the
+same ring `logview` shows - and it needs only the shell, the console and the
+keyboard, which is exactly what still worked. The ring was 16 KB and
+`logview` read 6000 bytes of it, less than one boot, so the twelve stages had
+always scrolled out before anybody could look; it is 64 KB now and read
+whole. And `logview` had rendered *blank on every machine it ever ran on*,
+because it sets `scroll = 1 << 30` to stick to the bottom and `ui.lua`
+clamped only in its key and pointer handlers.
+
+**`wm trace` narrates the compositor into that ring**: every stage of the
+first forty passes, every program started, every window and where it landed,
+and both halves of a poll with the wait in scheduler ticks. It is opt-in
+because it was not, and the display harness caught what that cost - see the
+decision log. Plain `wm` still says what started and where each window went.
+
+### What the next boot should be asked
+
+1. `wm trace`, let it hang, Control-C, then `log wm`. If the pass numbers
+   stop, the last line names the stage it stopped in. If they keep climbing
+   while nothing redraws, the compositor is fine and the question moves to
+   the polls.
+2. `log screen`. The absence of `the compositor's mapping does not carry the
+   framebuffer's memory type` is what says the write-combining fix took.
+3. `log` alone for the boot stages one to six, which no photograph of that
+   machine has ever shown.
+
+### And the disk it has
+
+`hal/pc/nvme.c` is new and works: found by PCI class, admin queue, identify,
+one I/O queue, polled completions, everything through a single bounce page so
+the PRP-list path does not exist to be got wrong. `make x86` boots from it
+and the ARM board keeps virtio-blk, so neither driver is orphaned. Four
+checks in `run_x86.py` write a file, kill the machine and read it back, which
+is what establishes the field offsets - they were written from knowledge of
+the specification rather than a copy of it.
+
+**It has never seen the ThinkPad's Micron drive.** The one thing it refuses
+outright is a namespace whose blocks are not 512 bytes, and it says so.
 
 ### The interrupt controller a laptop actually has
 

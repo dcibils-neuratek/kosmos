@@ -27,13 +27,13 @@
 
 set -euo pipefail
 
-ISO="${1:-build/x86_64/kosmos.iso}"
+IMG="${1:-build/x86_64/kosmos-usb.img}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
 [ "$(uname)" = "Darwin" ] || die "mkusb: macOS only - see the comment at the top of this file."
 
-[ -f "$ISO" ] || die "mkusb: no $ISO. Run \`make x86-iso\` first."
+[ -f "$IMG" ] || die "mkusb: no $IMG. Run \`make x86-usb-image\` first."
 
 command -v diskutil >/dev/null 2>&1 || die "mkusb: no diskutil."
 
@@ -114,7 +114,7 @@ SIZE="$(printf '%s\n' "$DRIVES" | grep "^${CHOSEN}	" | cut -f2)"
 printf '\n'
 printf '  About to ERASE  /dev/%s\n' "$CHOSEN"
 printf '  Which is        %s, %s\n' "$LABEL" "$SIZE"
-printf '  Writing         %s (%s)\n' "$ISO" "$(du -h "$ISO" | cut -f1)"
+printf '  Writing         %s (%s)\n' "$IMG" "$(du -h "$IMG" | cut -f1)"
 printf '\n'
 printf '  Everything on that drive will be gone.\n'
 printf '  Type the drive name exactly to confirm: %s\n' "$LABEL"
@@ -133,7 +133,7 @@ diskutil unmountDisk "/dev/$CHOSEN"
 #  this `dd` has instead of a progress bar.
 #
 printf 'Writing (this needs your password, and Ctrl-T shows progress)...\n'
-sudo dd if="$ISO" of="/dev/r$CHOSEN" bs=4m
+sudo dd if="$IMG" of="/dev/r$CHOSEN" bs=4m
 
 sync
 printf '\nEjecting...\n'

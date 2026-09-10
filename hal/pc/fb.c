@@ -100,8 +100,23 @@ static bool from_loader(struct fb *out)
      * with a firmware framebuffer, so the sentence the boot log printed was
      * the one set before any mapping had happened.
      */
+    /*
+     * **"write-combining" here is a claim about two mappings, and it used
+     * to be a claim about one.**
+     *
+     * The compositor draws through its own mapping of these same pages, and
+     * that one was write-back for as long as this line has existed - so on
+     * the first machine with a real cache the log said write-combining, and
+     * was right, about the mapping the desktop does not use. What it
+     * described was quick; what the person was looking at was not.
+     *
+     * It says both now because `MAP_USER_FB` is asserted against
+     * `MAP_FRAMEBUFFER` at compile time, so there is one memory type to
+     * report rather than two that were never compared.
+     */
     source = mmu_write_combining()
-           ? "the loader's, from the multiboot video request, write-combining"
+           ? "the loader's, from the multiboot video request, "
+             "write-combining for the kernel and the compositor alike"
            : "the loader's, from the multiboot video request, uncached "
              "because this processor has no PAT";
 

@@ -61,7 +61,20 @@ local last = ""
 local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function ticker:tick()
-  local text = sys.log(6000)
+  --
+  -- **The whole ring, not a tail of it.**
+  --
+  -- This asked for 6000 bytes, which is less than a boot: the twelve
+  -- stages had always scrolled out of what this window could reach by the
+  -- time anybody opened it, so the one thing a log viewer exists for on a
+  -- machine with no serial port was the one thing it could not show.
+  --
+  -- The cost is a string this size once a tick. It is a second apart and
+  -- this is not on the frame path, but it is real, and if it ever matters
+  -- the fix is for the kernel to say how much it has written so this can
+  -- ask only when that changed.
+  --
+  local text = sys.log(65536)
 
   if not text or text == last then return end
 
@@ -100,9 +113,14 @@ function ticker:tick()
   -- A number far larger than any log rather than `content - h`: `content`
   -- is what the *last* draw measured, so using it lands one refresh behind
   -- whenever the log grew - and the widget clamps an over-large scroll to
-  -- the real bottom on the way past. Asking for further than the end and
-  -- being corrected is exactly right here, and it needs no idea of how tall
-  -- the text became.
+  -- the real bottom on the way past.
+  --
+  -- **That last clause was an intention rather than a fact for as long as
+  -- this line existed.** `ui.lua` clamped in its key and pointer handlers
+  -- and nowhere else, so a scroll set from here went straight through and
+  -- this window was empty on every machine it has ever run on, while the
+  -- status line below counted the lines it was not drawing. The widget
+  -- clamps in `draw` now, so the sentence above is true.
 
   view.scroll = 1 << 30
 

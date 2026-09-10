@@ -231,6 +231,36 @@ done.
 
 ---
 
+## 16.7b Where a new window goes
+
+A window asks for a position and usually gets it. It is moved only when more
+than a third of it would be hidden by windows already on screen - and then it
+takes the first free quarter of the workspace, falling back to a cascade when
+all four are spoken for.
+
+**"Hidden" is measured as area, and that is the whole of the fix.** The rule
+used to compare *origins*: two windows collided only when their top-left
+corners were within a title bar of each other. That is the right question for
+a cascade and the wrong one for a screen - two 850-pixel windows whose
+origins are 110 apart pass it comfortably and bury each other by seven
+hundred pixels. Four applications opening at login came up as a pile with an
+inch of each showing, on a 1920x1080 panel that had room for all of them.
+
+Three details, each of which was got wrong first:
+
+- **The backdrop and the menu strip do not count.** Tracker's desktop window
+  is the whole screen and lives under everything by construction, so counting
+  it made every position on the machine occupied and the search a no-op that
+  silently fell through to the cascade.
+- **The trigger asks only whether the *new* window is buried.** Asking it
+  both ways everywhere means a large window will not overlap a small one -
+  and the Deskbar is a 210x266 panel, so every window on the machine fled it.
+  A window is entitled to overlap a panel.
+- **The quarter search asks it both ways.** There the opposite case is the
+  one that bites: dropping an 850x482 window on a 380x112 one covers the
+  small window completely while leaving nine tenths of the large one showing,
+  which the trigger's rule calls fine.
+
 ## 16.8 Replicants
 
 The most BeOS feature of all, and the one that turns out better in Kosmos than in the original.

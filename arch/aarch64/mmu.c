@@ -687,3 +687,21 @@ const char *mmu_describe(void)
 {
     return "4 KB granule, 39-bit addresses, .text read-only";
 }
+
+/*
+ * The same question the x86-64 port answers, and here it has a short answer.
+ *
+ * This board's framebuffer is ramfb: pixels the guest allocated out of its
+ * own RAM, mapped by the kernel like every other page of it. So the type to
+ * match is `MAP_RW`'s, and a compositor that got normal cacheable memory
+ * has exactly what the kernel has.
+ *
+ * It is asked at all because the *rule* is architecture-independent even
+ * where the answer is easy: a board whose framebuffer is a device - a Pi's
+ * mailbox buffer, virtio-gpu - changes `MAP_USER_FB` and this together, and
+ * the check goes on meaning the same thing.
+ */
+bool mmu_entry_matches_framebuffer(uint64_t entry)
+{
+    return (entry & ATTR_IDX(7)) == (MAP_RW & ATTR_IDX(7));
+}

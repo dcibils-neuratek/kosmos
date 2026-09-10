@@ -2103,7 +2103,7 @@ static int l_log(lua_State *L)
     char *space;
     long n;
 
-    if (want > 16384) { want = 16384; }
+    if (want > 65536) { want = 65536; }
     if (want < 0)     { want = 0; }
 
     /*

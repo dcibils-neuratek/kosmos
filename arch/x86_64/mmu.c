@@ -527,6 +527,8 @@ void mmu_init(void)
  * at boot and never unmapped. Anything cleverer would be a free list for a
  * dozen mappings that outlive the machine.
  */
+static uintptr_t framebuffer_va;
+
 static uintptr_t device_next = DEVICE_WINDOW_BASE;
 
 /*
@@ -581,9 +583,72 @@ void mmu_boot_uncached(uintptr_t base, size_t bytes)
     }
 }
 
+/*
+ * **Asked of the page table, not of CPUID.**
+ *
+ * This used to return `has_pat()`, which says the processor *could* do
+ * write-combining and nothing about whether this mapping got it - so the
+ * boot log said "write-combining" on every machine with a PAT, which is
+ * every machine. That is the same failure as the pitch line that claimed
+ * padding whichever it was: a fact reported as an intention.
+ *
+ * It matters here more than most places. A framebuffer mapped uncached
+ * instead is correct and perhaps twenty times slower, and the difference is
+ * invisible under emulation - QEMU's framebuffer is host memory and TCG
+ * models no cache, so both run identically. The only way to know on the
+ * machine is to read back what was written.
+ */
 bool mmu_write_combining(void)
 {
-    return has_pat();
+    uint64_t *entry;
+
+    if (!has_pat() || framebuffer_va == 0) {
+        return false;
+    }
+
+    entry = mmu_page_entry(framebuffer_va);
+
+    if (entry == NULL || (*entry & PTE_P) == 0) {
+        return false;
+    }
+
+    /* Slot 4: the PAT bit set, and neither of the two below it. */
+    return (*entry & PTE_PAT) != 0
+        && (*entry & (PTE_PCD | PTE_PWT)) == 0;
+}
+
+/*
+ * Does this entry describe the same memory type the kernel's framebuffer
+ * mapping got?
+ *
+ * **Asked of one entry against another, rather than against a constant.**
+ * The framebuffer is mapped twice - once by the kernel and once into the
+ * compositor - and a memory type lives in the entry, not in the memory, so
+ * the two can disagree. They did: the compositor's was write-back, which
+ * against the firmware's MTRR for a PCIe framebuffer resolves to uncached,
+ * and the desktop ran at one bus transaction per four bytes while the
+ * console beside it was fine.
+ *
+ * A machine with no framebuffer entry to compare against answers yes. There
+ * is nothing to be inconsistent with, and a warning about a screen that
+ * does not exist is noise on the one boot where the log matters most.
+ */
+bool mmu_entry_matches_framebuffer(uint64_t entry)
+{
+    const uint64_t mask = PTE_PAT | PTE_PCD | PTE_PWT;
+    uint64_t *fb;
+
+    if (framebuffer_va == 0) {
+        return true;
+    }
+
+    fb = mmu_page_entry(framebuffer_va);
+
+    if (fb == NULL || (*fb & PTE_P) == 0) {
+        return true;
+    }
+
+    return (entry & mask) == (*fb & mask);
 }
 
 uintptr_t mmu_map_framebuffer(uintptr_t pa, size_t bytes)
@@ -603,6 +668,7 @@ uintptr_t mmu_map_framebuffer(uintptr_t pa, size_t bytes)
 
     map_pages(kernel_pml4, at, start, pages, MAP_FRAMEBUFFER);
     device_next = at + pages * PAGE_SIZE;
+    framebuffer_va = at;
 
     __asm__ volatile("movq %%cr3, %%rax; movq %%rax, %%cr3" ::: "rax", "memory");
 

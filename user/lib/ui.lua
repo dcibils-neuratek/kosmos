@@ -2477,7 +2477,44 @@ function ui.text(spec)
     return lines
   end
 
+  --
+  -- Where the scroll is allowed to be, given how tall the text turned out.
+  --
+  -- `content` is measured *by drawing*, so it describes the last pass -
+  -- which is why this is called at the top of the next one rather than
+  -- pretending to know the height in advance. It is scroll-independent:
+  -- `draw` records `y + self.scroll`, which is the total height and not
+  -- what happened to be on screen.
+  --
+  local function clamp(self)
+    local most = (self.content or 0) - self.h + 8
+
+    if most < 0 then most = 0 end
+    if self.scroll > most then self.scroll = most end
+    if self.scroll < 0 then self.scroll = 0 end
+  end
+
   function v:draw(g)
+    --
+    -- **Clamped here, and not only when a key or the pointer moved it.**
+    --
+    -- Scrolling used to be clamped by the two handlers that scroll, which
+    -- is every path but the one that mattered: a program setting `scroll`
+    -- directly. `logview` does - it asks for a position past the end on
+    -- every refresh so the newest line stays in view, with a comment saying
+    -- the widget "clamps an over-large scroll to the real bottom on the way
+    -- past". Nothing did. The view scrolled a billion pixels down, every
+    -- line fell outside it, and that window drew nothing at all on every
+    -- machine it has ever run on - while its own status line truthfully
+    -- counted the eighty-eight lines it was not showing.
+    --
+    -- So the widget makes that sentence true rather than the caller being
+    -- wrong about it. Sticking to the bottom by asking for further than the
+    -- bottom is a good way to say it, and it lets a caller do so without
+    -- knowing how tall the text became.
+    --
+    clamp(self)
+
     local columns = (self.w - 8) // GW
 
     if columns < 1 then return end
@@ -2519,13 +2556,6 @@ function ui.text(spec)
   -- moves with the pointer - which is what a document does everywhere and
   -- is three lines here because the pointer already grabs.
   --
-  local function clamp(self)
-    local most = self.content - self.h + 8
-
-    if most < 0 then most = 0 end
-    if self.scroll > most then self.scroll = most end
-    if self.scroll < 0 then self.scroll = 0 end
-  end
 
   function v:key(c)
     if c == -1 then self.scroll = self.scroll - GH; clamp(self); return true end

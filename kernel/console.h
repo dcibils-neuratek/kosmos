@@ -124,6 +124,14 @@ void console_screen_resume(void);
  * process prints by asking the console server and the console server calls
  * `sys.write` - so this is one place with all of it, in order.
  */
+/*
+ * How much that ring holds, and therefore the most `console_log` can ever
+ * return. Named here rather than in `console.c` because the syscall that
+ * exposes it has to cap what a caller asks for, and a second copy of this
+ * number living in `syscall.c` is the kind of pair that drifts.
+ */
+#define CONSOLE_LOG_BYTES 65536
+
 size_t console_log(char *out, size_t max);
 
 void console_tick(void);

@@ -109,6 +109,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import tempfile
 import time
 import zlib
@@ -281,8 +282,41 @@ DRAW = (
     "local w, h = s:size() "
     "s:fill(0, 0, w, h, 0xff000000) "
     + " ".join(f"s:fill({x}, 0, {BAR_WIDTH}, h, 0xff{c:06x}) " for x, c in BARS)
-    + "return 'drawn'"
 )
+
+#
+# **It used to end `return 'drawn'`, and that marker is what broke it.**
+#
+# The shell echoes what a snippet returns, so the marker was a *print* -
+# which scrolls the console, and a console that scrolls now repaints its
+# whole grid rather than shifting the framebuffer. The bars were painted
+# over by the very line that announced they had been painted.
+#
+# Under the old console the same print shifted the picture up sixteen pixels
+# instead of erasing it, and these bars are vertical and full height, so a
+# vertical shift left them looking identical. The phase passed for years on
+# a property nobody chose.
+#
+# So there is no marker. Nothing is printed after the fills, nothing
+# scrolls, and the phase waits for the *picture* to show bars rather than
+# for a word to appear on the serial line - which is what `settle` exists
+# for and what its own docstring recommends over waiting a fixed time.
+#
+
+
+def bars_drawn(width, height, px):
+    """Are all three bars on the screen yet? The predicate `settle` waits on."""
+    def at(x, y):
+        o = (y * width + x) * 3
+        return tuple(px[o:o + 3])
+
+    for x, colour in BARS:
+        want = ((colour >> 16) & 0xff, (colour >> 8) & 0xff, colour & 0xff)
+
+        if at(x + BAR_WIDTH // 2, 1) != want:
+            return None
+
+    return width, height, px
 
 
 class Failure(Exception):
@@ -303,6 +337,7 @@ class Guest:
         self.sockpath = os.path.join(self.dir.name, "monitor")
         self.qmppath = os.path.join(self.dir.name, "qmp")
         self.seen = ""
+        self._lock = threading.Lock()
 
         arch = machine(image)
         binary = "qemu-system-x86_64" if arch == "x86_64" else QEMU
@@ -332,27 +367,65 @@ class Guest:
         fcntl.fcntl(fd, fcntl.F_SETFL,
                     fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
+        # Started here rather than in the lines above, because it reads
+        # `self.proc` and there was no process until a moment ago.
+        self._reader = threading.Thread(target=self._drain, daemon=True)
+        self._reader.start()
+
         self.monitor = None
         self.qmp = None
 
-    def _read_available(self):
-        """Drain whatever the serial line has produced, without blocking."""
+    def _drain(self):
+        """Read the serial line for as long as the guest lives.
+
+        **A thread, because the guest blocks when nobody is reading.** This
+        used to be drained only from `wait_for` - so during a phase that
+        types nothing and waits on the *picture* instead, nothing emptied the
+        pipe for seconds at a time. A pipe holds 64 KB; past that the write
+        blocks, and the write blocking is in `kputc`, which holds the console
+        lock, which stops the machine dead.
+
+        It was invisible while the guest was quiet. The window manager now
+        narrates its startup into the log, about five kilobytes per instance
+        and twenty instances across a full run, and the last phase - which is
+        the one that drags a window through three seconds of sleeps - started
+        failing with the window not moving at all. That reads exactly like a
+        compositor waiting on an application, which is what its message says,
+        and it was the harness holding the machine still.
+
+        So the fix is here rather than a quieter guest: a test that cannot
+        survive its subject talking is a test that will fail again the next
+        time anything useful is printed.
+        """
         fd = self.proc.stdout.fileno()
 
         while True:
-            ready, _, _ = select.select([fd], [], [], 0.1)
-            if not ready:
-                return
-
             try:
+                ready, _, _ = select.select([fd], [], [], 0.2)
+
+                if not ready:
+                    if self.proc.poll() is not None:
+                        return
+                    continue
+
                 chunk = os.read(fd, 65536)
-            except BlockingIOError:
+
+                if not chunk:
+                    return
+
+                with self._lock:
+                    self.seen += chunk.decode("utf-8", errors="replace")
+            except (BlockingIOError, OSError, ValueError):
                 return
 
-            if not chunk:
-                return
+    def _read_available(self):
+        """Nothing to do: `_drain` has been reading all along.
 
-            self.seen += chunk.decode("utf-8", errors="replace")
+        Kept so the call sites read the same as they did, and because
+        "drain now" is still the right thing to say at a point where the
+        answer matters.
+        """
+        return
 
     def wait_for(self, text, what):
         deadline = time.monotonic() + self.timeout
@@ -704,7 +777,12 @@ def check_bars(data):
     everything inside the guest, and produces bars that walk sideways by
     sixteen pixels a row out here.
     """
-    width, height, at = pixel_reader(data)
+    width, height, px = data
+
+    def at(x, y):
+        o = (y * width + x) * 3
+        return tuple(px[o:o + 3])
+
     rows = [1, 5, 50, 200, 400, 600, height - 2]
     checked = 0
 
@@ -2763,6 +2841,9 @@ def check_window_manager(guest):
             f"{before} then {after}, and the drag went left and down. "
             "Either the compositor is waiting for an application - the one "
             "thing it must never do - or the button press never reached it."
+        
+            + "\n--- the last of what the machine said ---\n"
+            + guest.seen[-1800:]
         )
 
     return 3
@@ -3047,10 +3128,44 @@ def main():
         splash_checks = check_boot_screen(reported, guest.screendump())
 
         guest.type(DRAW)
-        guest.wait_for("drawn", "finished drawing")
 
+        bar_checks = check_bars(settle(
+            guest, bars_drawn,
+            "the three bars never appeared. The snippet draws them straight "
+            "into gfx.screen(), so either the shell was not given the screen "
+            "or the fill did not reach it."))
+
+        # The picture `--png` saves, in the raw form `write_png` wants.
+        # Taken here rather than kept from the wait above, because that now
+        # hands back an already-parsed picture - and taken before the line
+        # below prints anything, since a print scrolls the console and the
+        # console repaints over what was drawn.
         drawn = guest.screendump()
-        bar_checks = check_bars(drawn)
+
+        #
+        # **The login set, emptied, before any phase starts a desktop.**
+        #
+        # `/lib/startup.lua` opens Tracker, Monitor, Processes and the log on
+        # a machine nobody has told otherwise, which is right for a person
+        # and wrong for a harness: every phase below counts windows, and a
+        # bare `wm` would arrive with five of them for reasons that have
+        # nothing to do with what the phase is testing.
+        #
+        # An empty list rather than deleting the file, because those mean
+        # different things and the difference is the feature: absent is
+        # "nobody has chosen" and opens the default, empty is "somebody
+        # unticked everything" and opens nothing. Writing it here asserts
+        # the second, which no other check covers.
+        #
+        # Waited for, not merely typed. `type` writes into a pipe and returns;
+        # the next phase sends key *events* through the monitor, and the two
+        # streams land in the same console queue - so an unconsumed line here
+        # came back spliced through the middle of `2+2`. The marker is
+        # assembled at run time so that waiting for it cannot match the echo
+        # of the line that asks for it.
+        guest.type('fs.write("/home/.startup", { items = {} }) '
+                   'print("login-set-" .. "cleared")')
+        guest.wait_for("login-set-cleared", "emptied the login set")
 
         # Each phase timed, because "the harness is slow" is not something
         # to guess about. The number that matters is which phase, not the

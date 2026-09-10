@@ -416,9 +416,9 @@ win:add(watcher)
 -- opens at startup and the same item chosen by hand are the same thing.
 --------------------------------------------------------------------------
 do
-  local saved = fs.read("/home/.startup")
-  local items = (type(saved) == "table" and type(saved.items) == "table")
-                and saved.items or {}
+  -- The list, or what a machine nobody has told opens. `/lib/startup.lua`
+  -- holds both so that this and the panel cannot disagree about it.
+  local items = use("/lib/startup.lua").items()
 
   local started = 0
 
@@ -434,8 +434,21 @@ do
       if have == name then known = true break end
     end
 
-    if known and fs.send("/app/wm", { type = "launch", program = name }) then
-      started = started + 1
+    -- Narrated, because this is the step nobody could see. Four windows
+    -- opening at login is four `launch` messages from here, and when one of
+    -- them does not arrive there is nothing on the screen to say which - so
+    -- each is announced with what came back. `log deskbar` at the prompt
+    -- reads them after the desktop has been left.
+    if not known then
+      print(("deskbar: %s is not in /bin, so it was not started"):format(name))
+    else
+      local sent = fs.send("/app/wm", { type = "launch", program = name })
+
+      print(("deskbar: launch %s -> %s"):format(name, tostring(sent)))
+
+      if sent then
+        started = started + 1
+      end
     end
   end
 

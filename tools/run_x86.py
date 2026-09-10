@@ -168,6 +168,69 @@ def tone(path):
     return int(seconds * 1000), int(crossings / 2 / seconds), stray
 
 
+def storage(image, check):
+    """Boots with an NVMe drive, writes a file, reboots, and reads it back.
+
+    **The only disk on this QEMU line is the NVMe one**, which is what makes
+    this a test of `hal/pc/nvme.c` rather than of the filesystem: there is no
+    virtio-blk to fall back to, so a file that comes back after a reboot came
+    back through an admin queue, an identify, a created I/O queue, a write
+    command and a read command, and every field offset in all of them.
+
+    `nvme.c` says in as many words that a driver which merely *initialises*
+    proves almost nothing, and that the field offsets are the part to
+    distrust because they were written from knowledge of the specification
+    rather than from a copy of it. This is the test it names: bytes in, a
+    reboot, and the same bytes out. A wrong offset anywhere on that path
+    cannot produce them.
+
+    The reboot is a kill rather than a shutdown, deliberately - it is what
+    `run_disk.py` does on the other board, and the journal is supposed to
+    survive exactly that.
+    """
+    disk = os.path.join(tempfile.gettempdir(), "kosmos-x86-nvme.img")
+
+    with open(disk, "wb") as handle:
+        handle.truncate(64 * 1024 * 1024)
+
+    extra = ("-drive", "file=%s,format=raw,if=none,id=nvme0" % disk,
+             "-device", "nvme,drive=nvme0,serial=kosmos")
+
+    first = boot(image, None, 90.0, extra=extra, typed=(
+        "diskinfo",
+        "mkfs --yes",
+        "save notes.txt written before the reboot",
+    ))
+
+    if first is None:
+        check(False, "the machine would not boot with an NVMe drive")
+        return
+
+    check("sectors" in first,
+          "`diskinfo` said nothing about sectors, so the NVMe namespace was "
+          "never identified: "
+          + next((l.strip() for l in first.splitlines() if "disk" in l),
+                 "nothing was said about a disk at all"))
+
+    check("Formatted" in first,
+          "`mkfs` did not report formatting, so writing to the drive failed")
+
+    check("saved notes.txt" in first,
+          "`save` did not report writing the file")
+
+    second = boot(image, None, 90.0, extra=extra,
+                  typed=("cat /home/notes.txt",))
+
+    if second is None:
+        check(False, "the machine would not boot the second time")
+        return
+
+    check("written before the reboot" in second,
+          "the file written over NVMe was not there after a reboot, so the "
+          "writes never reached the drive - which a driver that formats and "
+          "reads back its own cache looks exactly like")
+
+
 def sound(image, check):
     """Boots with a real HDA controller, plays a tone, and listens."""
     wav = os.path.join(tempfile.gettempdir(), "kosmos-x86-hda.wav")
@@ -516,6 +579,15 @@ def main():
     #
     sound(image, check)
 
+    # And the disk, which is the other thing this board does not take from
+    # virtio. A ThinkPad's storage is NVMe or nothing - `docs/thinkpad.md`
+    # has the table - so the driver that has to work there is the one
+    # exercised here, and virtio-blk stays the ARM board's disk so that
+    # neither is orphaned. The same argument as the sound controller above,
+    # made a second time.
+    #
+    storage(image, check)
+
     if fails:
         print("FAIL: %d of %d checks on x86-64:"
               % (len(fails), len(fails) + checks))
@@ -528,8 +600,9 @@ def main():
     print("PASS: %d checks on x86-64 (it boots through twelve stages, names "
           "its processor out of CPUID, agrees with userland about the memory "
           "by two paths, answers what is typed at it, runs a program that "
-          "reports what it was handed, and plays a tone an Intel HDA "
-          "controller hands back at the right pitch)." % checks)
+          "reports what it was handed, plays a tone an Intel HDA "
+          "controller hands back at the right pitch, and keeps a file on an "
+          "NVMe drive across a reboot)." % checks)
     return 0
 
 

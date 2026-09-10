@@ -210,6 +210,7 @@ SRCS := boot/start.S \
         hal/keys.c \
         hal/qemu-virt/input_describe.c \
         hal/virtio/blk.c \
+        hal/qemu-virt/blk_bind.c \
         kernel/console.c \
         kernel/screen.c \
         kernel/boot.c \
@@ -1891,6 +1892,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/pci.c \
              hal/pc/virtio.c \
              hal/virtio/blk.c \
+             hal/pc/nvme.c \
+             hal/pc/blk_bind.c \
              hal/virtio/net.c \
              hal/virtio/input.c \
              hal/pc/i8042.c \
@@ -2074,8 +2077,14 @@ X86_DISPLAY := $(if $(filter Darwin,$(shell uname)),cocoa$(ZOOM_FLAG)$(FULLSCREE
 # work on a laptop would be the one never exercised. The tablet stays
 # because the i8042's auxiliary port does not yet deliver.
 #
+# **And an NVMe drive rather than a virtio-blk one**, for that argument a
+# second time. A ThinkPad's storage is NVMe or nothing - `docs/thinkpad.md`
+# has the table, and there is no SATA option on the machine at all - so the
+# driver that has to work there is the one this board exercises, and
+# `hal/qemu-virt/` keeps virtio-blk so neither is orphaned.
+#
 # **And an Intel HDA controller rather than a virtio sound device**, for
-# exactly that argument a second time. A laptop has an HDA controller and no
+# exactly that argument a third time. A laptop has an HDA controller and no
 # virtio anything, `hal/pc/hda.c` is the driver that has to work there, and
 # a machine configured with the easy device would leave it untested.
 # `hal/qemu-virt/` still runs virtio-sound, so neither driver is orphaned.
@@ -2084,7 +2093,7 @@ X86_DEVICES := -device ramfb \
                -device virtio-tablet-pci \
                -device virtio-net-pci,netdev=n0 -netdev user,id=n0 \
                -drive file=$(DISK),format=raw,if=none,id=d0 \
-               -device virtio-blk-pci,drive=d0 \
+               -device nvme,drive=d0,serial=kosmos \
                -device ich9-intel-hda -device hda-output,audiodev=a0 \
                -audiodev coreaudio,id=a0
 
@@ -2182,8 +2191,30 @@ PANEL_H := $(word 2,$(subst x, ,$(PANEL)))
 # script's own header gives: a `dd` copied out of a README is one keystroke
 # from the disk this Mac boots from, and it gives no warning at all.
 #
-usb: x86-iso
-	@bash tools/mkusb.sh $(ISO)
+USB_IMG := $(X86_BUILD)/kosmos-usb.img
+
+#
+# The stick's image: a GPT, one EFI System Partition, GRUB and Kosmos.
+#
+# **This replaced the `grub-mkrescue` ISO because the ISO failed on the
+# machine.** It booted perfectly under OVMF and reached this on a real
+# ThinkPad:
+#
+#     error: file '/boot/grub/x86_64-efi/boot.mod' not found.
+#     Entering rescue mode...
+#
+# `grub-mkrescue` keeps its modules only inside the El Torito FAT image and
+# leaves nothing at that path on the ISO9660 filesystem beside it; under
+# QEMU GRUB's idea of its own root resolved to the FAT image and found
+# them, and on that firmware it resolved elsewhere and did not.
+# `tools/mkusb_image.py` has the whole account, including the two further
+# things that went wrong while fixing it.
+#
+x86-usb-image: x86-build
+	python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG)
+
+usb: x86-usb-image
+	@bash tools/mkusb.sh $(USB_IMG)
 
 x86-uefi: x86-iso
 	@cp $(OVMF_VARS) $(X86_BUILD)/ovmf-vars.fd

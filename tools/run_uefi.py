@@ -92,9 +92,13 @@ def capture(iso, moments):
     # `-cdrom` puts the image on the SATA controller and the firmware boots
     # it as an optical device. Nothing on a ThinkPad does that: the image
     # goes on a stick, the firmware finds it over xHCI with its own USB
-    # stack, and boots it as `UEFI QEMU USB HARDDRIVE`. Two different
-    # firmware paths to the same GRUB, and only one of them is the one that
-    # matters - which was worth finding out here rather than at the machine.
+    # stack, and boots it as `UEFI QEMU USB HARDDRIVE`.
+    #
+    # **And it is the image `make usb` writes, byte for byte.** It used to
+    # be a `grub-mkrescue` ISO, which passed every check here and then
+    # dropped to `grub rescue>` on the machine, unable to find its own
+    # modules. A harness that boots something other than what is shipped
+    # tests the harness.
     #
     cmd = [QEMU, "-M", "q35", "-m", "4G", "-no-reboot",
            "-vga", "std", "-display", "none", "-serial", "stdio",
@@ -166,7 +170,7 @@ def share(pixels, colour):
 
 
 def main():
-    iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.iso"
+    iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-usb.img"
     checks = 0
     fails = []
 
@@ -179,7 +183,7 @@ def main():
             fails.append(complaint)
 
     if not os.path.exists(iso):
-        print("SKIP: no %s. Run `make x86-iso`." % iso)
+        print("SKIP: no %s. Run `make x86-usb-image`." % iso)
         return 0
 
     frames, serial = capture(iso, (30.0,))
