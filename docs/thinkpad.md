@@ -214,32 +214,25 @@ In the build, on both architectures.
 
 ### `hal/pc/i8042.c` - the keyboard and the TrackPoint
 
-**The keyboard is in the build and is what the x86 board types with.** The
-pointer half is written and blocked; see §5 and §6.
+**Both are in the build, and both work on the machine.** The keyboard came
+first and the auxiliary port after it; §5 and §6 are the account of what the
+TrackPoint needed before it said anything, and before what it said decoded.
 
 That took a split. Both input drivers defined the same nine HAL functions,
 so a board could take *both* its keyboard and its pointer from one of them
-or neither - which is why this driver sat out of the build for a while.
-Each driver now has its own names, and a per-board file binds them:
-`hal/qemu-virt/input_bind.c` takes both from virtio, and
-`hal/pc/input_bind.c` takes the keyboard from the i8042 and the pointer
-from virtio.
-
-**When the auxiliary port works, one line in that file changes.** Until
-then the real keyboard driver is exercised every time the display harness
-types anything, which is what stops it rotting while the other half is
-worked out - and the x86 board keeps a pointer, which eleven display checks
-need.
+or neither. Each driver has its own names now, and a per-board file binds
+them: `hal/qemu-virt/input_bind.c` takes both from virtio, and
+`hal/pc/input_bind.c` takes the keyboard from the i8042 and the pointer from
+its auxiliary port - or from a virtio tablet, when QEMU has one.
 
 Design decisions worth keeping:
 
-- **Polled, not interrupt-driven.** `hal.h` asks for `hal_getchar` and
-  `hal_pointer_poll`, both of which are questions rather than
-  announcements. The virtio driver uses interrupts because a virtqueue is
-  asynchronous by construction; a controller with two bytes of buffer is
-  not. It also means **the first hardware boot needs no APIC and no
-  interrupt routing at all**, which moves a whole milestone after the first
-  picture instead of before it.
+- **Interrupt-driven, and polled as well.** It began polled only: `hal.h`
+  asks questions, and that kept the first hardware boot free of interrupt
+  routing. But a TrackPoint sends three bytes a hundred times a second and
+  the controller holds one, so a look once a scheduler tick left four
+  milliseconds between reads. IRQ 1 and 12 drain as bytes arrive, and the
+  questions still drain too.
 - **One drain, two devices.** The keyboard and the auxiliary port share port
   0x60 and the status register says which one a byte came from, so there is
   one drain called by whichever question arrives first, sorting into two
@@ -251,6 +244,20 @@ Design decisions worth keeping:
   invention - which `hal.h` permits, because its rule is the device's own
   units *with the range beside them*. A made-up range is honest as long as
   it is stated rather than assumed.
+- **Every way in takes one lock.** The interrupt and the system calls that
+  drain were kept apart by running with interrupts masked on the one core
+  that scheduled. With threads spread, the window manager asks for the
+  pointer on one core while IRQ 12 drains on another, and two readers on one
+  byte stream cut packets apart.
+- **Initialised once, and after that a question.** `SYS_SYSINFO` asks
+  whether there is a keyboard every time anything shows system information,
+  and asking re-ran the initialisation: both ports disabled, the bytes
+  waiting in the controller thrown away, the configuration byte rewritten.
+  On real hardware that cuts TrackPoint packets in half whenever Processes
+  or Monitor is open - the likeliest cause of the jumping pointer this
+  machine showed, and invisible under QEMU, which hands over whole packets.
+  With threads spread it also raced the interrupt for the configuration
+  byte.
 
 ### `hal/pc/acpi.c` - the machine says how many processors it has
 
@@ -904,15 +911,14 @@ right depends on a fact about the laptop's firmware.
    the reason to do USB first is now the keyboard and the touchpad rather
    than storage, and this machine's keyboard turned out to be an i8042. What
    USB buys here is the trackpad and anything plugged in.
-2. **The other seven cores.** Three start under QEMU, through `-kernel`
-   and through GRUB on OVMF: INIT and STARTUP through the local APIC, a
-   trampoline under 1 MB, `swapgs` and a TSS per core, and a local APIC
-   timer each. On this machine the APIC engages now and none of them has
-   come up: the boot said `0 of the others in the kernel too` and nothing
-   about why, so every processor asked about gets a `cpu_on:` line, and `log
-   processor` is the next question. The slots stop at four (`NR_CPUS`), so
-   four of its eight would run. Spreading threads across them waits for a
-   TLB shootdown, which x86 needs and AArch64 does not.
+2. **The other seven cores, and work on them.** Three came up on this
+   machine at APIC ids 2, 4 and 6, each a millisecond after its second
+   STARTUP, and there are eight slots now, so the next boot starts all
+   seven. Spreading threads across them has what it was waiting for - a TLB
+   shootdown, a lock in every PC driver a system call reaches, and a lost
+   IPC reply found and fixed - and is switched on here by `opt/kosmos/smp=8`
+   on GRUB's `multiboot2` line, read from the Multiboot command line because
+   this machine has no fw_cfg to put it in.
 3. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
    bytes per function through port 0xCF8 and PCIe has 4096.
 

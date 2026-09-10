@@ -210,6 +210,9 @@ them apart is to make the thing fail on purpose and watch the test notice.
 | `cpu: every processor takes its own ticks` | a secondary never armed its comparator |
 | `cpu: every processor idles as a thread` | a secondary ticks but has no `current` to charge it to |
 | `smp: a thread runs on another processor` | placement, the target's runqueue, its lock, or its idle loop |
+| `smp: a changed mapping reaches every core` | a TLB shootdown that never arrives or is not answered: core 1 reads a page through a user address while core zero unmaps it and maps others there. The reader masks interrupts, because with them on it passed with the shootdown switched off; now, switched off, it reads the old page and fails |
+| `smp: a slot is reused only once its thread has left` | a dead thread's slot handed to a new thread while the dead one was still switching away - which started the new thread inside `thread_exit`. Every slot is touched so a new thread must reuse one; a thread exits on another core with an address space still loaded, so its last switch changes page tables inside the window; and core zero creates a thread on a third core the instant the slot reads dead, two hundred times. Without the fix it panics - `a dead thread was scheduled` - in two runs of two on each board |
+| `smp: a reply reaches a caller on another core` | a reply lost between cores: two thousand calls from core 2 to a server on core 1. With `ipc_call`'s old order - waking the receiver before joining the reply queue - it fails within 111 rounds, one reply refused |
 
 Three things about that table are deliberate.
 

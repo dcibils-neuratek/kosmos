@@ -31,6 +31,7 @@
 
 #include "hal.h"
 #include "pc.h"
+#include "spinlock.h"
 
 #define CMOS_ADDR   0x70
 #define CMOS_DATA   0x71
@@ -116,7 +117,7 @@ static unsigned long days_from_civil(unsigned y, unsigned m, unsigned d)
     return era * 146097 + doe - 719468;
 }
 
-unsigned long hal_rtc_seconds(void)
+static unsigned long read_seconds(void)
 {
     struct wallclock now, again;
     uint8_t format;
@@ -187,4 +188,21 @@ unsigned long hal_rtc_seconds(void)
 
     return days_from_civil(now.year, now.month, now.day) * 86400UL
          + now.hour * 3600UL + now.minute * 60UL + now.second;
+}
+
+/*
+ * The chip is an index port and a data port, and every read is the pair: two
+ * cores asking at once would each read the register the other selected. So
+ * one question at a time, interrupts masked - for as long as the update
+ * window can take, which is about two milliseconds, once a second.
+ */
+static struct spinlock rtc_lock = SPINLOCK("rtc");
+
+unsigned long hal_rtc_seconds(void)
+{
+    unsigned long flags = spin_lock(&rtc_lock);
+    unsigned long seconds = read_seconds();
+
+    spin_unlock(&rtc_lock, flags);
+    return seconds;
 }

@@ -1902,6 +1902,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/fb.c \
              hal/pc/loader_fb.c \
              hal/pc/fwcfg_port.c \
+             hal/pc/boot_option.c \
              hal/pc/acpi.c \
              hal/pc/pci.c \
              hal/pc/virtio.c \
@@ -2224,8 +2225,13 @@ USB_IMG := $(X86_BUILD)/kosmos-usb.img
 # `tools/mkusb_image.py` has the whole account, including the two further
 # things that went wrong while fixing it.
 #
+# `KOSMOS_ARGS` puts words on GRUB's `multiboot2` line - the kernel's command
+# line, and on a machine with no fw_cfg the only way to give it a boot option:
+#
+#     make usb KOSMOS_ARGS=opt/kosmos/smp=8
+#
 x86-usb-image: x86-build
-	python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG)
+	python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) $(KOSMOS_ARGS)
 
 usb: x86-usb-image
 	@bash tools/mkusb.sh $(USB_IMG)

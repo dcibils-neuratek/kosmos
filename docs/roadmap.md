@@ -104,16 +104,17 @@ while all six were alive. The cause was preemption rather than placement -
 `thread_wake` decided preemption about the waking core instead of the
 target. `docs/smp.md` has both, and what was ruled out first.
 
-**What keeps placement off by default is now one known failure**: the
-display harness fails at its editor phase under `SMPWORK=4`. The desktop
-comes up and runs; the program typed into `edit` does not come back. That
-is the next thing to find.
+**What kept placement off by default was one known failure, and it passes
+now**: the display harness's editor phase under `SMPWORK=4`, where the
+program typed into `edit` did not come back. `ipc_call` could lose a reply to
+a receiver on another core: with that fixed the phase passes, and with the
+old order put back it fails again. Switching placement on by default waits
+for `make stress` with it on.
 
 Then a panic protocol - a core that panics has to *stop* the others rather
 than queue behind them, and today it stops neither them nor itself. Step
-seven turns out to be smaller than it was written: `as_switch` already uses
-`tlbi vmalle1is`, which the hardware broadcasts, so there is no shootdown
-IPI to build on this architecture.
+seven needed no IPI on AArch64 - `as_switch` uses `tlbi vmalle1is`, which the
+hardware broadcasts - and needed one on x86-64, which has it now.
 
 ### Next, in this order
 

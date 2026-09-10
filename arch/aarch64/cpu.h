@@ -270,6 +270,16 @@ static inline void cpu_relax(void)
 }
 
 /*
+ * What a core does while it waits for a lock, and here that is only the
+ * pause: `tlbi ...is` is broadcast by the hardware, so there is no shootdown
+ * for a waiting core to answer. The x86 side has one, and answers it here.
+ */
+static inline void cpu_lock_wait(void)
+{
+    cpu_relax();
+}
+
+/*
  * Whether interrupts are currently taken on this core.
  *
  * Read rather than assumed. `PSTATE.I` set means IRQ is masked, so this is

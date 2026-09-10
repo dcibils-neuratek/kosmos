@@ -306,8 +306,9 @@ installs its own exception vector, wakes its own GIC redistributor, arms its
 own generic timer, claims its own `struct percpu` through `TPIDR_EL1`, adopts
 its own idle thread and runs its own runqueue. On x86-64 the same happens
 through `INIT` and `STARTUP` IPIs, a real-mode trampoline under 1 MB, the
-`GS` base with `swapgs`, and a local APIC timer per core. `docs/smp.md` is
-the map of what exists and what is left.
+`GS` base with `swapgs`, a local APIC timer per core, and a TLB shootdown the
+hardware does not broadcast for it. `docs/smp.md` is the map of what exists
+and what is left.
 
 **What is not switched on by default is the placement policy.**
 `make SMPWORK=4 qemu` turns it on; without it every thread comes home to
@@ -323,10 +324,14 @@ every core but zero, so only core zero preempted on a quantum; and
 target. `docs/smp.md` has both, and the three plausible explanations that
 were ruled out by experiment before them.
 
-**What keeps it off by default is one known failure**: under `SMPWORK=4` the
-display harness fails at its editor phase. The desktop comes up and runs;
-the program typed into `edit` does not come back. A separate bug - it
-survived the fixes above - and the next one to find.
+**What kept it off by default was one known failure, and it passes now**:
+under `SMPWORK=4` the display harness failed at its editor phase - the
+program typed into `edit` did not come back. `ipc_call` woke a receiver
+before joining the reply queue, so a receiver on another core could answer
+first and have its reply refused. With that fixed the harness passes with
+placement on, and with the old order put back it fails again. Switching
+placement on by default is a decision still to take, after `make stress`
+with it on.
 
 **This paragraph said the opposite for two years, and the correction is
 worth keeping.** It claimed the code was "written SMP-ready: no loose mutable

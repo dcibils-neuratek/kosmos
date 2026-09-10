@@ -25,10 +25,11 @@
  * masked.
  *
  * Both paths run with interrupts off - a syscall enters with IF clear and
- * nothing on its way re-enables it, and an interrupt gate clears it - and
- * this board schedules on one core, so the queues below are only ever
- * touched by one of them at a time. A second core would need a lock here;
- * this is where that is written down.
+ * nothing on its way re-enables it, and an interrupt gate clears it - which
+ * kept them apart while this board scheduled on one core. **It does not any
+ * more**, so every way in takes `i8042_lock`: the window manager asking for
+ * the pointer on one core while IRQ 12 drains on another would otherwise put
+ * two readers on one byte stream and cut packets apart.
  *
  * **One buffer, two devices.** The keyboard and the auxiliary port share
  * port 0x60, and which one a byte came from is a bit in the status register.
@@ -67,6 +68,7 @@
 #include "keys.h"
 #include "i8042.h"
 #include "pc.h"
+#include "spinlock.h"
 
 #define DATA        0x60
 #define STATUS      0x64
@@ -114,6 +116,9 @@
 
 static bool present;
 static bool aux_present;
+
+/* Every way into the queues below and into the controller's byte stream. */
+static struct spinlock i8042_lock = SPINLOCK("i8042");
 
 /*------------------------------------------------------------------------
  * Talking to the controller.
@@ -349,7 +354,7 @@ static unsigned pointer_scale = 32;
  * screen on one count, and neither is worth a error path in a device
  * setting somebody is fiddling with to find what they like.
  */
-unsigned i8042_pointer_speed(unsigned scale)
+static unsigned pointer_speed_unlocked(unsigned scale)
 {
     if (scale > 0) {
         pointer_scale = scale > 512 ? 512 : scale;
@@ -623,7 +628,7 @@ static bool aux_command(uint8_t c)
     return read_data() == DEV_ACK;
 }
 
-bool i8042_keyboard_init(void)
+static bool keyboard_init_unlocked(void)
 {
     int config;
 
@@ -712,7 +717,7 @@ bool i8042_keyboard_init(void)
     return true;
 }
 
-bool i8042_pointer_init(void)
+static bool pointer_init_unlocked(void)
 {
     if (!present) {
         return false;
@@ -755,7 +760,7 @@ bool i8042_pointer_init(void)
  * The questions `hal.h` asks.
  *----------------------------------------------------------------------*/
 
-int i8042_getchar(void)
+static int getchar_unlocked(void)
 {
     drain();
 
@@ -776,7 +781,7 @@ bool i8042_present(void)
     return present;
 }
 
-bool i8042_key_event(unsigned *code, bool *down)
+static bool key_event_unlocked(unsigned *code, bool *down)
 {
     drain();
 
@@ -800,7 +805,7 @@ bool i8042_key_held(unsigned code)
     return (held[code >> 5] & (1u << (code & 31))) != 0;
 }
 
-bool i8042_pointer_poll(struct pointer_state *out)
+static bool pointer_poll_unlocked(struct pointer_state *out)
 {
     if (!aux_present) {
         return false;
@@ -831,7 +836,7 @@ bool i8042_pointer_poll(struct pointer_state *out)
  * chip until somebody reads them. The virtio driver's pair differ because
  * one clears an interrupt flag; here they are the same question.
  */
-bool i8042_input_pending_peek(void)
+static bool pending_unlocked(void)
 {
     if (!present) {
         return false;
@@ -858,13 +863,108 @@ bool i8042_input_pending(void)
  * byte is drained as soon as the controller has it, into the same queues
  * the questions above read.
  *
- * Interrupts are off in here and off in every syscall that drains, and this
- * board schedules on one core, so the two never interleave - the note at the
- * top says what a second core would need.
+ * Interrupts are off in here and off in every syscall that drains, which on
+ * one core was enough to keep the two apart. On several it is the lock, and
+ * the note at the top says why.
  */
-void i8042_interrupt(unsigned line)
+static void interrupt_unlocked(unsigned line)
 {
     if (line == 1 || line == 12) {
         drain();
     }
+}
+
+/*
+ * The ways in, each taking the lock around the unlocked version above.
+ * `drain` prints on a resync and for the click probe, so the console's lock
+ * nests inside this one - and never the other way round: the only path into
+ * this file from a system call, `SYS_GETCHAR`, holds no lock.
+ */
+int i8042_getchar(void)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    int c = getchar_unlocked();
+
+    spin_unlock(&i8042_lock, flags);
+    return c;
+}
+
+bool i8042_key_event(unsigned *code, bool *down)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    bool got = key_event_unlocked(code, down);
+
+    spin_unlock(&i8042_lock, flags);
+    return got;
+}
+
+bool i8042_pointer_poll(struct pointer_state *out)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    bool got = pointer_poll_unlocked(out);
+
+    spin_unlock(&i8042_lock, flags);
+    return got;
+}
+
+bool i8042_input_pending_peek(void)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    bool pending = pending_unlocked();
+
+    spin_unlock(&i8042_lock, flags);
+    return pending;
+}
+
+void i8042_interrupt(unsigned line)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+
+    interrupt_unlocked(line);
+    spin_unlock(&i8042_lock, flags);
+}
+
+unsigned i8042_pointer_speed(unsigned scale)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    unsigned speed = pointer_speed_unlocked(scale);
+
+    spin_unlock(&i8042_lock, flags);
+    return speed;
+}
+
+/*
+ * **Once, and after that a question.** `SYS_SYSINFO` asks
+ * `hal_keyboard_init` whether there is a keyboard every time anybody asks
+ * for system information - Processes, Monitor and the top bar, several
+ * times a second between them - and its comment called that idempotent.
+ * On this chip it was not: every call disabled both ports, read and threw
+ * away whatever was waiting, and rewrote the configuration byte.
+ *
+ * So each refresh dropped whatever the mouse was half-way through sending,
+ * and the driver resynchronised by discarding bytes until a packet lined up
+ * again - a pointer that jumps, on the laptop, whenever those windows were
+ * open. And with threads spread across cores it was worse: the sequence ran
+ * on one core while IRQ 12 drained the same port on another, the drain took
+ * the configuration byte the sequence was waiting for, and a garbage
+ * configuration went back - after which the mouse said nothing at all.
+ *
+ * Both now answer from what they found the first time, under the lock.
+ */
+bool i8042_keyboard_init(void)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    bool ok = present || keyboard_init_unlocked();
+
+    spin_unlock(&i8042_lock, flags);
+    return ok;
+}
+
+bool i8042_pointer_init(void)
+{
+    unsigned long flags = spin_lock(&i8042_lock);
+    bool ok = aux_present || pointer_init_unlocked();
+
+    spin_unlock(&i8042_lock, flags);
+    return ok;
 }

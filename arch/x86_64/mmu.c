@@ -9,6 +9,9 @@
 #include "spinlock.h"
 #include "panic.h"
 #include "hal.h"
+#include "console.h"
+#include "percpu.h"
+#include "smp.h"
 
 /* Section boundaries from the linker script, all page aligned. */
 extern char __text_start[], __text_end[];
@@ -76,6 +79,153 @@ static uint64_t *alloc_table(void)
 static void invalidate(uintptr_t va)
 {
     __asm__ volatile("invlpg (%0)" : : "r"(va) : "memory");
+}
+
+/*
+ * **The TLB shootdown: what x86 has instead of an inner-shareable
+ * invalidate.**
+ *
+ * `invlpg` and a CR3 reload reach this core's TLB and no other. AArch64
+ * broadcasts `tlbi ...is` to every core and the instruction does not retire
+ * until they have all seen it; x86 has no such instruction, so a translation
+ * changed here stays cached on every other core that has these tables loaded
+ * - and a stale entry is not a fault, it is a successful read of a page that
+ * may belong to somebody else by now. That is why threads stayed on core
+ * zero on this board until this existed.
+ *
+ * So a change to a live mapping is followed by a round: every other core
+ * that may hold it is handed the range, knocked with the wake IPI, and
+ * waited for. Each core publishes the root it has loaded *before* writing
+ * CR3, and a round reads the roots *after* the entries changed - so a core
+ * either shows the root here or walks the changed entries.
+ *
+ * **Every lock masks interrupts, and that is the hazard this lives with.**
+ * The core being asked may be spinning, interrupts masked, on a lock the
+ * asking core holds. So `spin_lock`'s wait answers rounds through
+ * `cpu_lock_wait`, and so does every interrupt on its way in. One round at a
+ * time for the whole machine: they are rare, and one lock is a discipline
+ * simple enough to check by reading.
+ */
+static uint64_t *volatile tlb_loaded[NR_CPUS];
+
+static struct {
+    uint64_t *root;             /* NULL: the kernel's own, on every core */
+    uintptr_t va;
+    size_t    pages;
+} tlb_request[NR_CPUS];
+
+static volatile bool tlb_pending[NR_CPUS];
+
+static struct spinlock tlb_lock = SPINLOCK("tlb");
+
+/* Past this many pages, one CR3 reload is cheaper than the invlpgs. */
+#define TLB_RELOAD_OVER     32u
+
+/* Spins before a core that never answers is a deadlock rather than a wait.
+ * Seconds: the core asked may be finishing a system call, which on this
+ * architecture runs with interrupts masked. */
+#define TLB_GIVE_UP         200000000UL
+
+static void flush_here(uintptr_t va, size_t pages)
+{
+    size_t i;
+
+    if (pages > TLB_RELOAD_OVER) {
+        __asm__ volatile("movq %%cr3, %%rax; movq %%rax, %%cr3" ::: "rax", "memory");
+        return;
+    }
+
+    for (i = 0; i < pages; i++) {
+        invalidate(va + i * PAGE_SIZE);
+    }
+}
+
+void tlb_service(void)
+{
+    unsigned here;
+
+    if (smp_online() <= 1) {
+        return;
+    }
+
+    here = this_cpu()->index;
+    cpu_observe();
+
+    if (here >= NR_CPUS || !tlb_pending[here]) {
+        return;
+    }
+
+    /* A core that has loaded other tables since was flushed by the CR3
+     * write that loaded them. */
+    if (tlb_request[here].root == NULL
+        || tlb_request[here].root == tlb_loaded[here]) {
+        flush_here(tlb_request[here].va, tlb_request[here].pages);
+    }
+
+    tlb_pending[here] = false;
+    cpu_publish();
+}
+
+static void shoot(uint64_t *root, uintptr_t va, size_t pages)
+{
+    unsigned online = smp_online();
+    unsigned here;
+    unsigned c;
+    unsigned long flags;
+    unsigned long spins;
+
+    if (online <= 1 || pages == 0) {
+        return;
+    }
+
+    if (online > NR_CPUS) {
+        online = NR_CPUS;
+    }
+
+    flags = spin_lock(&tlb_lock);
+    here = this_cpu()->index;
+
+    /* The changed entries, visible before anybody's root is read. */
+    cpu_publish();
+
+    for (c = 0; c < online; c++) {
+        cpu_observe();
+
+        if (c == here || (root != NULL && tlb_loaded[c] != root)) {
+            continue;
+        }
+
+        tlb_request[c].root = root;
+        tlb_request[c].va = va;
+        tlb_request[c].pages = pages;
+        tlb_pending[c] = true;
+        cpu_publish();
+
+        hal_cpu_wake(c);
+    }
+
+    /* No round can be addressed to this core while it holds the lock, so
+     * waiting here needs to answer nothing. */
+    for (c = 0; c < online; c++) {
+        for (spins = 0; ; spins++) {
+            cpu_observe();
+
+            if (!tlb_pending[c]) {
+                break;
+            }
+
+            if (spins == TLB_GIVE_UP) {
+                kputs("tlb: processor ");
+                kputu(c);
+                kputs(" never answered a shootdown\n");
+                panic("tlb: a processor did not answer a shootdown");
+            }
+
+            cpu_relax();
+        }
+    }
+
+    spin_unlock(&tlb_lock, flags);
 }
 
 /*
@@ -234,6 +384,10 @@ static void unmap_page(uint64_t *root, uintptr_t va)
 void mmu_unmap_page(uintptr_t va)
 {
     unmap_page(kernel_pml4, va);
+
+    /* The kernel's tables are every core's, so a guard page has to be gone
+     * everywhere - or an overflow on another core walks straight into it. */
+    shoot(NULL, va, 1);
 }
 
 /*
@@ -882,6 +1036,8 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
            uint64_t attrs)
 {
     size_t i;
+    uintptr_t start = va;
+    bool replaced = false;
 
     if ((va & PAGE_MASK) != 0 || (pa & PAGE_MASK) != 0) {
         return AS_ERR_ALIGN;
@@ -902,11 +1058,22 @@ int as_map(struct addrspace *as, uintptr_t va, uintptr_t pa, size_t pages,
         uint64_t *pd = reach_pd(as->pml4, va);
         uint64_t *pt = descend(pd, (unsigned)PD_INDEX(va));
 
+        if ((pt[PT_INDEX(va)] & PTE_P) != 0) {
+            replaced = true;
+        }
+
         pt[PT_INDEX(va)] = (pa & PTE_ADDR_MASK) | attrs;
         invalidate(va);
 
         va += PAGE_SIZE;
         pa += PAGE_SIZE;
+    }
+
+    /* A page put where one already was is a changed translation. A page put
+     * where there was none needs no round: a TLB caches translations, not
+     * their absence. */
+    if (replaced) {
+        shoot(as->pml4, start, pages);
     }
 
     return AS_OK;
@@ -924,10 +1091,14 @@ int as_unmap(struct addrspace *as, uintptr_t va, size_t pages)
         return AS_ERR_RANGE;
     }
 
+    uintptr_t start = va;
+
     for (i = 0; i < pages; i++) {
         unmap_page(as->pml4, va);
         va += PAGE_SIZE;
     }
+
+    shoot(as->pml4, start, pages);
 
     return AS_OK;
 }
@@ -974,8 +1145,19 @@ bool as_user_may(struct addrspace *as, uintptr_t va, bool need_write)
 
 void as_switch(struct addrspace *as)
 {
-    uint64_t root = (uint64_t)(uintptr_t)
-                    ((as != NULL) ? as->pml4 : kernel_pml4);
+    uint64_t *root = (as != NULL) ? as->pml4 : kernel_pml4;
+    unsigned long flags = cpu_interrupts_save();
+    unsigned here = this_cpu()->index;
+
+    /*
+     * The root first, published, and then CR3 - the order `shoot` depends
+     * on. Masked around both, because a switch in between would load
+     * somebody else's tables and leave this one's name beside them.
+     */
+    if (here < NR_CPUS) {
+        tlb_loaded[here] = root;
+        cpu_publish();
+    }
 
     /*
      * Writing CR3 flushes every non-global entry, which is all of them:
@@ -986,7 +1168,10 @@ void as_switch(struct addrspace *as)
      * cheap by *not* flushing. Worth having when there are processes
      * switching often, and the same milestone as ARM's ASIDs.
      */
-    __asm__ volatile("movq %0, %%cr3" :: "r"(root) : "memory");
+    __asm__ volatile("movq %0, %%cr3" :: "r"((uint64_t)(uintptr_t)root)
+                                      : "memory");
+
+    cpu_interrupts_restore(flags);
 }
 
 void as_destroy(struct addrspace *as)

@@ -41,53 +41,64 @@ every one of them is in the decision log with the evidence that found it:
 Deskbar open through QEMU's PS/2 mouse - which streams now, after months of
 sending nothing - on the 8259, with a serial port and without one.
 
-### What the T14 answered, and what the next boot should be asked
+### Eight processors, and the desktop spread across them
 
-- **The pointer, clicks and the processor**, on 0.10.17: the mouse works,
-  Kosmos opens its menu and Tracker's buttons come back up, and the reading
-  that sat at 100% came down to 16%.
-- **The interrupt controller**, on 0.10.18: `interrupts: an I/O APIC and the
-  local APIC's own timer, scheduling priority`. The 120-input I/O APIC is
-  accepted and running.
-- **The other processors**, on a build with this revision's bring-up and not
-  its diagnostics: `0 of the others in the kernel too, ticking and idle; the
-  rest are still in firmware`. The desktop worked around it, with every
-  interrupt it uses on a new path.
+**The T14 starts its other cores.** `log processor` on the diagnostic
+build: processors 1 to 3 at APIC ids 2, 4 and 6 - its physical cores - each
+reaching the kernel a millisecond after its second STARTUP. There are eight
+slots now, so the next boot starts all seven.
 
-**Four processors on x86-64, under QEMU.** `swapgs` and a per-core block
-behind `GS`, a TSS per core, a real-mode trampoline, INIT and STARTUP through
-the local APIC's command register, a local APIC timer per core, and a wake
-IPI. `run_x86.py` and `run_uefi.py` both check that three other processors
-reached the kernel, and the guest suite's SMP checks pass on this board.
+**Threads can be spread on x86, and three things stopped a spread desktop
+first:**
 
-**On the T14 the log could not say why none came up, so now it can.** Every
-processor asked about gets one `cpu_on:` line, and the next boot should be
-asked `log processor`. Each line is one of three answers:
+- **No TLB shootdown.** A translation changed on one core stayed cached on
+  every other. `arch/x86_64/mmu.c` now follows every change to a live
+  mapping with a round of IPIs, and a core waiting for a lock answers it.
+- **Drivers written for one core.** The i8042 said so in a comment; PCI's
+  index/data pair, the CMOS clock, fw_cfg, the UART and NVMe had the same
+  shape. All of them lock now.
+- **A reply lost between cores.** `ipc_call` woke its receiver before joining
+  the reply queue, so a receiver on another core that answered at once had
+  its reply refused and the caller waited for ever. With it fixed the ARM
+  display harness passes under `SMPWORK=4`; with the old order put back its
+  editor phase fails again, so this was the failure that kept placement off.
 
-1. **`not started:`** and the reason - no local APIC, page 0x8000 missing
-   from the loader's map (with the usable regions below 1 MB listed), a page
-   that did not keep what was written to it, or a processor the MADT does
-   not list.
-2. **The last stage it reached** - `never ran the trampoline`, `stopped in
-   real mode`, and so on up to `moved onto the kernel's page tables` - read
-   back from the word it writes into the trampoline page as it climbs.
-3. **`reached the kernel N ms after its second STARTUP`**, followed by
-   nothing, or by `smp: processor N was started and never arrived` when it
-   died inside `secondary_main` before counting itself.
+**And one the gate found.** A thread exiting on one core could have its slot
+handed to a thread being created on another before the exit's switch was
+over, and the new thread started life inside `thread_exit`: `a dead thread
+was scheduled`, once in eleven x86 suite runs. A slot is reused only once its
+processor has left it now, and a guest test that forces the window panics
+without the fix in two runs of two on each board.
 
-Two Linux boot logs from this model call all of 0x0-0x9efff usable, so a
-refusal of the page would mean GRUB's map says otherwise; and the boot that
-started none stamped its `0 of the others` line at 2.781 seconds, which
-leaves little room for three processors timing out. One of those readings is
-wrong, and the next boot says which.
+**And a fault that hurt the laptop on one core.** `SYS_SYSINFO` asked the
+i8042 whether there was a keyboard by re-initialising it - several times a
+second whenever Processes, Monitor or the top bar were open: both ports
+disabled, the waiting bytes thrown away, the configuration byte rewritten.
+On real hardware that cuts mouse packets in half, a pointer that jumps, and
+QEMU - which hands over whole packets - never showed it. It answers from what
+it found the first time now.
+
+**Measured under QEMU with glmech and two cubes running:** a click reaches
+the window manager in 35 to 48 ms median on one core, over two runs, and in
+1 ms spread across eight - 1 ms at the ninetieth percentile too.
+
+### What the next boot of the T14 should be asked
+
+The stick carries `opt/kosmos/smp=8` on GRUB's `multiboot2` line - the first
+boot option a machine without fw_cfg has been able to take.
+
+1. **`log processor`**: seven `cpu_on:` lines, each `reached the kernel`.
+2. **`log given`**: `8 of them given new threads`.
+3. **Monitor**: eight bars, moving when glmech and a cube are running.
+4. **The pointer**, with Processes and Monitor open: smooth. If it still
+   jumps, `log resync` says what the driver threw away.
 
 ### Still open
 
-- **x86 starts its other cores under QEMU and none on the T14 yet**, and it
-  does not give them threads. Placement stays on core zero here until there
-  is a TLB shootdown: x86 has no broadcast invalidate, and a process's
-  threads on two cores would share translations one of them could change
-  under the other. `NR_CPUS` is four, so the T14 would run four of its eight.
+- **Placement is still off by default on both boards**, and the reason given
+  for that - the display harness's editor phase under `SMPWORK=4` - passes
+  now. Switching it on is a decision rather than a fix, and `make stress`
+  with it on comes first.
 - **Why `/net` takes 18.4 seconds** to list nothing on a machine with no
   network card. Tracker no longer asks; the call is still that slow.
 - **Which change made QEMU's PS/2 mouse stream** - the configuration byte,

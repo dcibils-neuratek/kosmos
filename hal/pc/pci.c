@@ -22,6 +22,7 @@
 #include "hda.h"
 #include "snd.h"
 #include "virtio.h"
+#include "spinlock.h"
 
 #define PCI_CONFIG_ADDR     0xCF8
 #define PCI_CONFIG_DATA     0xCFC
@@ -83,18 +84,35 @@ static uint32_t address_of(uint8_t bus, uint8_t slot, uint8_t fn, uint8_t off)
          | (off & 0xFCu);
 }
 
+/*
+ * **Two ports, one question.** A configuration read writes the address to
+ * 0xCF8 and reads the answer at 0xCFC, and a second core doing the same
+ * between the two would have this read answer its question. One lock for
+ * both directions, interrupts masked, for two port operations.
+ */
+static struct spinlock pci_lock = SPINLOCK("pci");
+
 uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fn, uint8_t offset)
 {
-    out32(PCI_CONFIG_ADDR, address_of(bus, slot, fn, offset));
+    unsigned long flags = spin_lock(&pci_lock);
+    uint32_t value;
 
-    return in32(PCI_CONFIG_DATA);
+    out32(PCI_CONFIG_ADDR, address_of(bus, slot, fn, offset));
+    value = in32(PCI_CONFIG_DATA);
+
+    spin_unlock(&pci_lock, flags);
+    return value;
 }
 
 void pci_config_write(uint8_t bus, uint8_t slot, uint8_t fn,
                       uint8_t offset, uint32_t value)
 {
+    unsigned long flags = spin_lock(&pci_lock);
+
     out32(PCI_CONFIG_ADDR, address_of(bus, slot, fn, offset));
     out32(PCI_CONFIG_DATA, value);
+
+    spin_unlock(&pci_lock, flags);
 }
 
 /*

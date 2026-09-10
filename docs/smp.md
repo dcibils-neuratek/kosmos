@@ -1,7 +1,7 @@
 # SMP
 
-**Where this stands: six of seven steps are done. The kernel is SMP-aware
-and the placement policy is not switched on.** The map of what exists is
+**Where this stands: all seven steps are done, on both boards. The kernel
+is SMP-aware and the placement policy is not switched on by default.** The map of what exists is
 *As built*, further down; what is left and what is holding it is *What is
 left*. Everything before those two sections is the reasoning, because this
 is the hardest thing in the kernel and the reasoning is most of the value.
@@ -465,12 +465,62 @@ threads dying (a trace on every transition to `THREAD_DEAD` printed
 nothing); and the lost-wakeup race in `thread_wake` below, which is real and
 was fixed and changed nothing here.
 
-### What is still wrong under `SMPWORK=4`
+### What was still wrong under `SMPWORK=4`, and what was found
 
-**The display harness fails at its editor phase** - the program typed into
-`edit` does not come back - and that is a different bug from the one above,
-which is why placement is still off by default. It survived the fix. The
-desktop itself comes up and runs.
+**The display harness failed at its editor phase** - the program typed into
+`edit` did not come back - and it survived the preemption fixes above, which
+is why placement stayed off by default. It passes now, and the fix below is
+why: with the old order put back it fails again - `the program typed into
+the editor did not run`.
+
+**A reply could be lost between cores.** `ipc_call` handed its message over,
+woke the receiver, and only then joined the reply queue and named its
+endpoint. `ipc_reply` reads that name without a lock, because it is how it
+finds the lock to take. On one core the woken receiver cannot run before the
+caller has blocked. On two it can: it reads NULL, refuses the reply as
+addressed to nobody, and the caller waits for ever. `smp: a reply reaches a
+caller on another core` fails with the old order within 111 rounds of 2000,
+one reply refused, and passes on both boards with the new one.
+
+**It was found from the other board.** Spreading an x86 desktop across eight
+cores stopped it answering clicks - the i8042 logged the click and the window
+manager never saw it - and chasing that meant reading the IPC paths. Reading
+every thread, core and runqueue out of a stopped guest found what else that
+board needed: drivers written for one core.
+
+**A slot could be handed out before its thread had left it.** This one
+stopped the gate for 0.10.20: `thread_exit: a dead thread was scheduled`,
+once in eleven runs of the x86 guest suite. `thread_exit` marks a thread dead
+and then switches away, and until the switch is over the thread is still on
+its stacks with its registers unsaved. `alloc_thread` reuses dead slots,
+stacks included, and any core may call it. A thread created on another core
+in that window was given the slot and had its context planted - and then the
+switch saved the dying thread's registers over it, so the new thread started
+life below the switch in `thread_exit`, and panicked there.
+
+The pool's comment said a dead thread "stopped the moment thread_exit
+switched away", which was true on one processor, where nothing runs between
+the mark and the switch. **Dead is not the same as gone.** `thread_exit` now
+names the thread in its processor's `leaving` before marking it dead, under
+the pool's lock; the thread that arrives next lets go, in
+`thread_switch_finished`, which `switch_into` and both `thread_entry`s call
+first; and `alloc_thread` passes over a slot any processor names. That is the
+first code in this kernel on the far side of a switch - the place
+`thread_block_and_release` says work stealing would need.
+
+`smp: a slot is reused only once its thread has left` forces the window:
+every slot touched so that a new thread must reuse one, the exiting thread
+leaving with an address space loaded so that its last switch changes page
+tables inside the window, and a thread created on a third core the instant
+the slot reads dead. Without the fix it panics with the same message in two
+runs of two on each board; with it, it passes on both.
+
+**And one failure that was the probe, recorded so it is not chased again.**
+A click sent to QEMU's PS/2 mouse a millisecond after a large move arrives at
+a queue the move has filled; QEMU records the press, sends it only when the
+queue drains, and the release that follows overwrites it. The window manager
+never sees a click that was never delivered. It fails on one core just the
+same, and a 50 ms gap between the move and the click makes it arrive.
 
 **And the desktop does not saturate**, which is not a bug and is worth not
 misreading: eight applications leave the machine about a fifth busy, so the
@@ -479,33 +529,6 @@ assignment by creation order - `thread_create_suspended` calls it "the
 dumbest policy that is not obviously wrong" - so the same applications land
 on the same cores every boot and one bar stays low. Load-aware placement is
 a later question and wants something to measure first.
-
-**What has been ruled out, each by an experiment rather than by reading:**
-
-- *Placement itself.* A trace in `thread_create_suspended` shows the six
-  threads going to cpu 0, 1, 2, 3, 0, 1 — round robin, exactly as intended.
-- *IPC.* A worker that does no IPC at all after it loads — no `fs.read`, no
-  `/dev/cpu`, no server — behaves identically.
-- *Threads dying.* A trace on every transition to `THREAD_DEAD` prints
-  nothing. The workers are alive the whole time.
-- *The lost-wakeup race below.* Fixing it changed nothing here, which is why
-  it is recorded as a separate bug rather than as the cause of this one.
-
-**And one structural fault found while looking**, which is real whether or
-not it is this symptom: `thread_tick` returns early on every core but zero,
-*before* it reaches `policy->tick`. **So only core zero ever preempts.** A
-compute-bound thread on cores 1–3 can never be taken off by the timer. The
-comment there says why that was safe — "a secondary runs only its own idle
-thread" — and calls itself "a temporary invariant, named so it is found when
-the locks arrive". The locks arrived at step two and nobody came back to it.
-
-The desktop shows the same fault more quietly: with eight applications
-running it reads roughly 27 / 25 / 2 / 37 per core, and the third bar is the
-one that never rises.
-
-**This is why placement is off by default**, and it is a better reason than
-the one written here before, which was that the confidence was missing. The
-mechanism is finished; the policy is not correct yet.
 
 ---
 
@@ -658,23 +681,25 @@ different thread than took it. Pick under the lock, let go, then switch.
 
 ## What is left, and what is holding it
 
-**The mechanism is finished and the policy is not correct yet**, which is
-a different sentence from the one that stood here for months and a worse
-one. `thread_cpu_count()` returns `smp_online()` when `SMPWORK` asks it to;
-`thread_create_on` puts a thread anywhere and it runs there.
+**The mechanism is finished on both boards.** `thread_cpu_count()` returns
+`smp_online()` when `SMPWORK` or `opt/kosmos/smp` asks it to;
+`thread_create_on` puts a thread anywhere and it runs there. x86 has its TLB
+shootdown and its drivers lock, the display harness passes with placement
+on, and a spread x86 desktop under load answers a click in a millisecond
+where one core takes thirty-five to forty-eight.
 
-**What used to hold the line was the drivers, and that is done.** `blk`,
-`net`, `input` and `snd` each take a spinlock over the virtqueue indices
-they own, landed in 0.9.20. This section named them as the single blocker
-for months, and went on naming them in the release that removed them.
+**What holds placement off by default now is a decision rather than a
+fault**, and what should come before it is `make stress` with placement on:
+every resource bug this system has had was a pool that filled on the
+fiftieth try, and a spread machine has more ways to leak than one core.
 
-**What holds the line now is that work does not spread**, which was found
-by measuring rather than by reasoning and is written up under *What
-`SMPWORK=4` actually does today* above. Six compute-bound processes, four
-processors, three of them idle within a second.
+**The line was held first by the drivers, then by preemption.** `blk`,
+`net`, `input` and `snd` took spinlocks over their virtqueue indices in
+0.9.20, and work stopped going idle on three of four cores when the two
+preemption faults above were fixed.
 
-**It was switched on once before that, deliberately, to find out what
-breaks.** Two things did, within a second:
+**It was switched on once before any of that, deliberately, to find out
+what breaks.** Two things did, within a second:
 
 - `thread_block` panicked. "Every thread is blocked" was a statement about
   the *machine* and is now a statement about one processor - an empty
@@ -754,10 +779,10 @@ core needs it:
 
 Under QEMU four processors come up, both through `-kernel` and through GRUB
 on OVMF, and the guest suite's SMP checks pass on this board for the first
-time. On the ThinkPad T14 none has come up yet, and `cpu_on.c` now says why
-for each. **What x86-64 still lacks is a TLB shootdown**, which AArch64 does not
-need and this board does - step 7 below - so placement across cores stays
-off here until it exists. The paragraph this replaces listed a table walker
+time. On the ThinkPad T14 three did, at APIC ids 2, 4 and 6 - its physical
+cores - each a millisecond after its second STARTUP. **x86-64 has a TLB
+shootdown now**, which AArch64 does not need and this board does - step 7
+below - so placement is the same boot option on both boards. The paragraph this replaces listed a table walker
 and an interrupt controller as missing, and went on saying so for months
 after both had arrived.
 
@@ -970,11 +995,28 @@ Then, in dependency order:
    `split_block`, which replaces a live 2 MB block with a table descriptor
    without break-before-make - legal on one core by luck and not by
    architecture, because another core may hold both translations at once
-   and the manual says that is a permitted TLB conflict abort. x86-64 has
-   its second core now and no broadcast invalidate, so it does need the
-   IPI - and the vector and the command register a shootdown would go
-   through already exist, for the wake. Until it is built, nothing on x86-64
-   puts a process's threads on more than one core.
+   and the manual says that is a permitted TLB conflict abort.
+
+   **x86-64 needs the IPI, and has it.** There is no broadcast invalidate,
+   so `arch/x86_64/mmu.c` follows every change to a live mapping - `as_unmap`,
+   an `as_map` over a present entry, a kernel page unmapped - with a round:
+   each other core that may hold the translation is handed the range,
+   knocked with the wake IPI, and waited for. A core publishes the root it
+   has loaded before it writes CR3, and a round reads the roots after the
+   entries changed, so a core either shows the root or walks the changed
+   entries. Every lock masks interrupts, so a core blocked on a lock the
+   asking core holds could not take the IPI: `spin_lock`'s wait answers
+   rounds itself, through `cpu_lock_wait`, and so does every interrupt on
+   its way in.
+
+   **The test for it passed before it could fail.** `smp: a changed mapping
+   reaches every core` has a thread on core 1 read a page through a user
+   address while core zero unmaps it, maps another page there, and maps
+   over it again. The first version passed with the shootdown switched off -
+   something on the interrupt path flushed core 1's TLB before a stale entry
+   could be seen - so the reader now runs with interrupts masked and answers
+   rounds the way a waiting core does. With the shootdown off it reads the
+   old page and fails; with it on it passes, on both boards.
 
 ---
 

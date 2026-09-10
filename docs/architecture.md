@@ -599,10 +599,11 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   the *waking* core's `current` and flagged the *waking* core, so a
   cross-core wake never preempted the target.
 
-  What is left: the display harness fails at its editor phase under
-  `SMPWORK=4`, which is why placement is still off by default; and a panic
-  protocol - a core that panics has to *stop* the others rather than queue
-  behind them. `docs/smp.md` is the map, and carries the measurement.
+  What is left: placement off by default is a decision now rather than a
+  fault - the display harness passes with it on - and `make stress` with it
+  on comes first; and a panic protocol - a core that panics has to *stop*
+  the others rather than queue behind them. `docs/smp.md` is the map, and
+  carries the measurement.
 
   This bullet has been wrong twice in opposite directions. It said "nothing
   has ever run on a second core, and there is no per-CPU struct"; and before

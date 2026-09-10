@@ -73,6 +73,7 @@
 #include "mmu.h"
 #include "pci.h"
 #include "nvme.h"
+#include "spinlock.h"
 
 /* `pc_timer_wait_ms`, which is declared in an odd place - see `apic.c`,
  * which uses it for the same reason: a millisecond of real time during
@@ -557,6 +558,15 @@ bool nvme_init(struct blkdev *out)
  * Reading and writing.
  *------------------------------------------------------------------------*/
 
+/*
+ * **One command at a time.** The I/O queue pair, its doorbells and the
+ * bounce buffer are one of each for the machine, so a read on one core and a
+ * write on another would share all three. Taken per chunk rather than for a
+ * whole transfer, because a lock masks interrupts and a large read is many
+ * commands: held for one command, polled to its completion.
+ */
+static struct spinlock nvme_lock = SPINLOCK("nvme");
+
 static bool transfer(uint64_t sector, void *buf, uint32_t bytes, bool write)
 {
     uint8_t *p = buf;
@@ -574,6 +584,10 @@ static bool transfer(uint64_t sector, void *buf, uint32_t bytes, bool write)
                                                 : bytes;
         uint32_t blocks = chunk / HAL_BLK_SECTOR;
         struct sqe command;
+        unsigned long flags;
+        bool done;
+
+        flags = spin_lock(&nvme_lock);
 
         if (write) {
             memcpy(bounce, p, chunk);
@@ -587,13 +601,17 @@ static bool transfer(uint64_t sector, void *buf, uint32_t bytes, bool write)
         command.dw[11] = (uint32_t)(sector >> 32);
         command.dw[12] = blocks - 1u;               /* zero-based count */
 
-        if (!submit(IO_QID, io_sq, io_cq, &nvme.io_tail, &nvme.io_head,
-                    &nvme.io_phase, &command, NULL)) {
-            return false;
+        done = submit(IO_QID, io_sq, io_cq, &nvme.io_tail, &nvme.io_head,
+                      &nvme.io_phase, &command, NULL);
+
+        if (done && !write) {
+            memcpy(p, bounce, chunk);
         }
 
-        if (!write) {
-            memcpy(p, bounce, chunk);
+        spin_unlock(&nvme_lock, flags);
+
+        if (!done) {
+            return false;
         }
 
         p += chunk;

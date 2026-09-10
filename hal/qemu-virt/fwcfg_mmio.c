@@ -12,6 +12,7 @@
 
 #include "fwcfg.h"
 #include "mmio.h"
+#include "hal.h"
 
 #define FWCFG_BASE      0x09020000UL
 #define FWCFG_REG_DMA   (FWCFG_BASE + 16)
@@ -34,4 +35,14 @@ uint64_t fwcfg_reg_read(void)
     uint32_t low  = __builtin_bswap32(mmio_read32(FWCFG_REG_DMA + 4));
 
     return ((uint64_t)high << 32) | low;
+}
+
+/*
+ * Where this board's boot options come from: fw_cfg and nothing else, since
+ * QEMU is the only thing that boots it. The PC board reads the loader's
+ * command line as well - `hal/pc/boot_option.c` says why.
+ */
+bool hal_boot_option(const char *name, char *out, unsigned long max)
+{
+    return fwcfg_boot_option(name, out, max);
 }

@@ -181,6 +181,14 @@ thread_entry:
      * started from inside the vector's epilogue, where SPSel is 1 and the
      * eret that would have cleared it is never reached.
      */
+
+    /*
+     * First, that the switch which started this thread is over - see
+     * thread_switch_finished. x19 and x20 are callee-saved, so the entry and
+     * its argument are still there after it.
+     */
+    bl      thread_switch_finished
+
     mov     x0, x20
     blr     x19
 

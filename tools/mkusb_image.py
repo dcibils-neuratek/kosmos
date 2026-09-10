@@ -32,6 +32,7 @@ the arrangement every UEFI machine is specified to boot and the one this
 machine has already proved it can read.
 """
 
+import re
 import os
 import struct
 import subprocess
@@ -82,7 +83,7 @@ set default=0
 menuentry "Kosmos" {
     insmod efi_gop
     insmod multiboot2
-    multiboot2 /boot/kosmos.bin
+    multiboot2 /boot/kosmos.bin@ARGS@
     boot
 }
 """
@@ -116,7 +117,7 @@ def build_efi(grub_dir, out):
          "-o", out] + CORE_MODULES)
 
 
-def build_esp(kernel, efi, out, grub_dir):
+def build_esp(kernel, efi, out, grub_dir, args=""):
     """A FAT filesystem holding the loader, its configuration and Kosmos."""
     size = ESP_MB * 1024 * 1024
 
@@ -134,7 +135,7 @@ def build_esp(kernel, efi, out, grub_dir):
     cfg = out + ".cfg"
 
     with open(cfg, "w") as f:
-        f.write(GRUB_CFG)
+        f.write(GRUB_CFG.replace("@ARGS@", (" " + args) if args else ""))
 
     run(["mcopy", "-i", out, efi, "::/EFI/BOOT/BOOTX64.EFI"])
     run(["mcopy", "-i", out, cfg, "::/boot/grub/grub.cfg"])
@@ -258,6 +259,16 @@ def main():
     kernel = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.bin"
     out = sys.argv[2] if len(sys.argv) > 2 else "build/x86_64/kosmos-usb.img"
 
+    # Words for the kernel's command line, after the path on GRUB's
+    # `multiboot2` line - `opt/kosmos/smp=8` and the like, which is how a
+    # machine with no fw_cfg is given a boot option at all. Checked, because
+    # they are written into a GRUB script, where a quote or a semicolon would
+    # make it a different script.
+    args = " ".join(sys.argv[3:])
+
+    if args and not re.fullmatch(r"[A-Za-z0-9_./=,:-]+( [A-Za-z0-9_./=,:-]+)*", args):
+        sys.exit("mkusb_image: %r is not a list of name=value words" % args)
+
     if not os.path.exists(kernel):
         sys.exit("mkusb_image: no %s. Run `make x86-build`." % kernel)
 
@@ -274,11 +285,12 @@ def main():
     esp = os.path.join(work, "esp.img")
 
     build_efi(grub_dir, efi)
-    esp_size = build_esp(kernel, efi, esp, grub_dir)
+    esp_size = build_esp(kernel, efi, esp, grub_dir, args)
     total = write_gpt(out, esp, esp_size)
 
-    print("%s  %.1f MB  (GRUB %.0f KB with %d modules built in)"
-          % (out, total / 1e6, os.path.getsize(efi) / 1024, len(CORE_MODULES)))
+    print("%s  %.1f MB  (GRUB %.0f KB with %d modules built in)%s"
+          % (out, total / 1e6, os.path.getsize(efi) / 1024, len(CORE_MODULES),
+             "; the kernel is told: " + args if args else ""))
 
 
 if __name__ == "__main__":

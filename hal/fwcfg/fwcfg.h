@@ -53,4 +53,9 @@ bool fwcfg_read(uint16_t select, void *buffer, uint32_t length);
  * a writable item takes bytes from the guest rather than giving them. */
 bool fwcfg_write(uint16_t select, const void *data, uint32_t length);
 
+/* A `-fw_cfg name=...,string=...` value, or false when there is none. Each
+ * board's `hal_boot_option` decides whether this is the only place options
+ * come from. */
+bool fwcfg_boot_option(const char *name, char *out, unsigned long max);
+
 #endif /* HAL_FWCFG_H */

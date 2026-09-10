@@ -394,4 +394,21 @@ static inline void cpu_relax(void)
     __asm__ volatile("pause" ::: "memory");
 }
 
+/*
+ * What a core does while it waits for a lock.
+ *
+ * **It answers TLB shootdowns**, because it cannot take the interrupt that
+ * asks: every lock masks interrupts, and the core waiting for the answer may
+ * be the one holding the lock this core wants. `arch/x86_64/mmu.c` has the
+ * whole argument. AArch64's invalidates are broadcast by the hardware, so
+ * its version of this is only the pause.
+ */
+void tlb_service(void);
+
+static inline void cpu_lock_wait(void)
+{
+    tlb_service();
+    cpu_relax();
+}
+
 #endif /* ARCH_X86_64_CPU_H */

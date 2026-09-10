@@ -578,6 +578,7 @@ void apic_timer_init_here(void)
  */
 static void send_ipi(uint32_t id, uint32_t low)
 {
+    unsigned long flags = cpu_interrupts_save();
     unsigned spins;
 
     for (spins = 0; spins < 100000u
@@ -586,8 +587,17 @@ static void send_ipi(uint32_t id, uint32_t low)
         cpu_relax();
     }
 
+    /*
+     * The destination, then the command, with interrupts masked across both:
+     * an interrupt whose handler sends an IPI of its own would rewrite the
+     * destination between them, and this one would go to that core instead
+     * - a wake lost with nothing to show for it. AArch64 sends an SGI with
+     * one system register write and has no such window.
+     */
     lapic_write(LAPIC_ICR_HIGH, id << 24);
     lapic_write(LAPIC_ICR_LOW, low);
+
+    cpu_interrupts_restore(flags);
 }
 
 /*

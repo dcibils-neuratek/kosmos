@@ -34,6 +34,7 @@
 #define MB2_LOADER_MAGIC    0x36d76289u
 
 #define MB2_TAG_END         0u
+#define MB2_TAG_CMDLINE     1u      /* the arguments after the kernel's path */
 #define MB2_TAG_MMAP        6u
 #define MB2_TAG_FRAMEBUFFER 8u
 #define MB2_TAG_ACPI_OLD    14u     /* an RSDP as ACPI 1.0 defined it */

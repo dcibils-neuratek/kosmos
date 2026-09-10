@@ -193,4 +193,8 @@ bool pc_trampoline_page_free(void);
  * was refused and where one might go instead. False past the last one. */
 bool pc_low_region(unsigned i, unsigned long *base, unsigned long *length);
 
+/* The command line the loader passed, or an empty string. Copied during the
+ * memory walk, and where boot options come from on a machine with no fw_cfg. */
+const char *pc_loader_cmdline(void);
+
 #endif

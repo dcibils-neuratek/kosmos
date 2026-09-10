@@ -150,13 +150,21 @@ thread_entry:
      * because nothing called us: `ret` popped the address thread_create
      * planted and left rsp where the thread's stack began. System V wants
      * rsp+8 aligned to 16 at the *entry* of a function, which is what a
-     * `call` produces - so the `call` below is what puts it right, and the
+     * `call` produces - so each `call` below is what puts it right, and the
      * stack this runs on has to start 16-aligned for that to hold.
      *
      * A misalignment here is invisible until something in the callee uses
      * an aligned SSE store, and then it is a general protection fault a
      * long way from the cause.
      */
+
+    /*
+     * First, that the switch which started this thread is over - see
+     * thread_switch_finished. rbx and r12 are callee-saved, so the entry and
+     * its argument are still there after it.
+     */
+    call    thread_switch_finished
+
     movq    %r12, %rdi
     call    *%rbx
 

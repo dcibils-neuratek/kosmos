@@ -56,6 +56,32 @@ static struct {
 static unsigned low_region_count;
 
 /*
+ * The loader's command line, copied during the walk for the reason the
+ * regions above are: the structure it lives in is free memory to `pmm_init`.
+ * It is where boot options come from on a machine with no fw_cfg - a laptop
+ * booted by GRUB is told `opt/kosmos/smp=8` on the `multiboot2` line or not
+ * at all.
+ */
+static char loader_cmdline[256];
+
+static void keep_cmdline(const char *from, size_t max)
+{
+    size_t n = 0;
+
+    while (n + 1 < sizeof(loader_cmdline) && n < max && from[n] != '\0') {
+        loader_cmdline[n] = from[n];
+        n++;
+    }
+
+    loader_cmdline[n] = '\0';
+}
+
+const char *pc_loader_cmdline(void)
+{
+    return loader_cmdline;
+}
+
+/*
  * And the part of it the line above puts out of reach.
  *
  * Kept separately because "the machine has more than the kernel uses" is
@@ -271,6 +297,12 @@ static void capture_multiboot2(const struct mb2_info *info)
         loader_rsdp_valid = true;
     }
 
+    tag = mb2_find(info, MB2_TAG_CMDLINE);
+
+    if (tag != NULL && tag->size > sizeof(*tag)) {
+        keep_cmdline((const char *)tag + sizeof(*tag), tag->size - sizeof(*tag));
+    }
+
     tag = mb2_find(info, MB2_TAG_MMAP);
 
     if (tag != NULL && tag->size >= sizeof(struct mb2_tag_mmap)) {
@@ -335,6 +367,11 @@ void pc_capture_memory(void)
             loader_fb.height = got.height;
             loader_fb.valid = true;
         }
+    }
+
+    if ((info->flags & MB_FLAG_CMDLINE) != 0 && info->cmdline != 0) {
+        keep_cmdline((const char *)(uintptr_t)info->cmdline,
+                     sizeof(loader_cmdline));
     }
 
     if ((info->flags & MB_FLAG_MMAP) == 0) {

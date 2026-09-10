@@ -39,11 +39,12 @@
  *
  * It was 1 while nothing could start a second core. `smp.c` can now, and a
  * core that arrives needs somewhere to put itself, so the slots have to
- * exist first. Four because that is what `make test` boots and what a Pi 5
- * has; the machine is asked how many it really has and the smaller of the
- * two wins.
+ * exist first. Eight, because the first real machine has eight: it was four
+ * - what `make test` boots and what a Pi 5 has - until the ThinkPad started
+ * three of its seven others and left four in firmware. The machine is asked
+ * how many it really has and the smaller of the two wins.
  */
-#define NR_CPUS     4
+#define NR_CPUS     8
 
 struct thread;
 
@@ -69,6 +70,22 @@ struct percpu {
 
     /* Each core idles independently, so each has its own idle thread. */
     struct thread *idle_thread;
+
+    /*
+     * A thread that has exited on this processor and is not gone yet.
+     *
+     * **Dead is not the same as gone.** `thread_exit` marks a thread dead and
+     * then switches away from it, and until that switch is over the thread is
+     * still executing on its own stacks with its registers unsaved. Its slot,
+     * stacks included, looked free for all of that time, and a processor
+     * creating a thread could be handed it.
+     *
+     * Named here by `thread_exit` before the thread is marked dead, and let go
+     * by whichever thread this processor runs next, the moment it arrives -
+     * `thread_switch_finished`. `alloc_thread` passes over a slot any
+     * processor names here.
+     */
+    struct thread *leaving;
 
     /*
      * Where the processor's time went, in scheduler ticks.

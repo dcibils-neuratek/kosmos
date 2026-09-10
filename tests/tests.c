@@ -5027,6 +5027,488 @@ static bool test_longjmp_restores_the_stack_pointer(void)
     return r == 9 && after == before;
 }
 
+/*
+ * A translation changed on one processor, read on another.
+ *
+ * **The check x86 needed before a process's threads could be on two cores.**
+ * A thread on core 1 reads a page through a user address, over and over, so
+ * the translation sits in core 1's TLB. Core zero then changes what that
+ * address maps, and core 1 has to read the change.
+ *
+ * On AArch64 `tlbi ...is` makes that true by itself. On x86 only the
+ * shootdown in `arch/x86_64/mmu.c` does, and without it this fails: core 1
+ * keeps reading the page core zero no longer maps there - not a fault, the
+ * old contents, for as long as the entry stays cached.
+ *
+ * Both paths that change a live translation, and neither with the reader on
+ * the address while it is unmapped - a read there would be a kernel fault:
+ * the reader is moved to a second address first, the first is unmapped and
+ * given another page, and the reader moved back; then the first is mapped
+ * over while the reader is on it.
+ */
+static struct addrspace *volatile tlb_space;
+static volatile uintptr_t         tlb_address;
+static volatile uint32_t          tlb_seen;
+static volatile unsigned long     tlb_reads;
+static volatile bool              tlb_stop;
+static volatile bool              tlb_done;
+
+#define TLB_FIRST   0x0a11ce5eu
+#define TLB_SECOND  0x0b0b0b0bu
+
+static void tlb_reader(void *arg)
+{
+    unsigned long flags;
+
+    (void)arg;
+
+    thread_current()->space = tlb_space;
+    as_switch(tlb_space);
+
+    /*
+     * **Interrupts masked for the whole read, and that is what makes this a
+     * test.** With them on it passed with the shootdown switched off:
+     * something on the interrupt path flushed core 1's TLB before a stale
+     * entry could be seen. Masked, nothing flushes this core but a
+     * shootdown, which it answers the way a core waiting for a lock does.
+     */
+    flags = cpu_interrupts_save();
+
+    while (!tlb_stop) {
+        uintptr_t at = tlb_address;
+
+        /* Through a volatile pointer, so every pass is a load through the
+         * TLB rather than one the compiler hoisted out of the loop. */
+        tlb_seen = *(const volatile uint32_t *)at;
+        tlb_reads++;
+
+        cpu_lock_wait();
+    }
+
+    cpu_interrupts_restore(flags);
+
+    as_switch(NULL);
+    thread_current()->space = NULL;
+    tlb_done = true;
+}
+
+/* Until the reader has read `want` for another `passes` passes. */
+static bool tlb_reader_sees(uint32_t want, unsigned long passes)
+{
+    unsigned long mark = tlb_reads;
+    unsigned long start = hal_ticks();
+
+    while ((tlb_seen != want || tlb_reads < mark + passes)
+           && hal_ticks() - start < 250UL) {
+        cpu_relax();
+    }
+
+    return tlb_seen == want && tlb_reads >= mark + passes;
+}
+
+static bool test_a_changed_mapping_reaches_every_processor(void)
+{
+    const uintptr_t one = USER_VA_BASE;
+    const uintptr_t two = USER_VA_BASE + PAGE_SIZE;
+    uint32_t *first;
+    uint32_t *second;
+    unsigned long start;
+    bool ok;
+
+    if (smp_online() <= 1) {
+        return true;            /* one processor, one TLB */
+    }
+
+    first = pmm_alloc_page();
+    second = pmm_alloc_page();
+    tlb_space = as_create();
+
+    if (first == NULL || second == NULL || tlb_space == NULL) {
+        return false;
+    }
+
+    *first = TLB_FIRST;
+    *second = TLB_SECOND;
+
+    if (as_map(tlb_space, one, (uintptr_t)first, 1, MAP_RW) != AS_OK
+        || as_map(tlb_space, two, (uintptr_t)first, 1, MAP_RW) != AS_OK) {
+        return false;
+    }
+
+    tlb_address = one;
+    tlb_seen = 0;
+    tlb_reads = 0;
+    tlb_stop = false;
+    tlb_done = false;
+
+    if (thread_create_on(1, "tlb-reader", tlb_reader, NULL) == NULL) {
+        return false;
+    }
+
+    /* Core 1 has the first address cached; then it moves to the second. */
+    ok = tlb_reader_sees(TLB_FIRST, 10000UL);
+    tlb_address = two;
+    ok = ok && tlb_reader_sees(TLB_FIRST, 10000UL);
+
+    /* Unmapped here and given the other page, while core 1 is elsewhere. */
+    ok = ok && as_unmap(tlb_space, one, 1) == AS_OK
+            && as_map(tlb_space, one, (uintptr_t)second, 1, MAP_RW) == AS_OK;
+
+    tlb_address = one;
+    ok = ok && tlb_reader_sees(TLB_SECOND, 10000UL);
+
+    /* And mapped over while core 1 is reading it. */
+    ok = ok && as_map(tlb_space, one, (uintptr_t)first, 1, MAP_RW) == AS_OK;
+    ok = ok && tlb_reader_sees(TLB_FIRST, 10000UL);
+
+    tlb_stop = true;
+    start = hal_ticks();
+
+    while (!tlb_done && hal_ticks() - start < 250UL) {
+        cpu_relax();
+    }
+
+    /* A reader still running on these tables is a reason to leak them. */
+    if (!tlb_done) {
+        return false;
+    }
+
+    as_destroy(tlb_space);
+    pmm_free_page(first);
+    pmm_free_page(second);
+
+    return ok;
+}
+
+/*
+ * A reply to a caller on another core, two thousand times.
+ *
+ * **The bug this is here for stopped the whole desktop.** `ipc_call` woke
+ * its receiver and only then joined the reply queue and named its endpoint.
+ * A receiver on another core that answered at once read `waiting_on` with no
+ * lock, found NULL, and dropped the reply as addressed to nobody - and the
+ * caller blocked for ever. On one core the receiver cannot run before the
+ * caller has blocked, which is why only spreading threads found it.
+ *
+ * So the server runs on core 1 and the caller on core 2, and every reply is
+ * accounted for: the server counts the replies the kernel refused, and core
+ * zero waits for the caller to finish its rounds. A lost reply fails this
+ * rather than hanging the suite, because destroying the endpoint afterwards
+ * wakes whatever is still waiting on it.
+ */
+#define REPLY_ROUNDS    2000u
+
+static volatile cap_t    reply_server_cap;
+static volatile cap_t    reply_caller_cap;
+static volatile unsigned reply_refused;
+static volatile unsigned reply_rounds_done;
+static volatile bool     reply_caller_done;
+static volatile bool     reply_server_done;
+
+static void reply_server(void *arg)
+{
+    (void)arg;
+
+    for (;;) {
+        struct message msg;
+        struct message reply;
+        struct thread *sender;
+
+        if (ipc_receive(reply_server_cap, &msg, &sender, false, 0) != IPC_OK) {
+            break;              /* the endpoint was destroyed */
+        }
+
+        reply.tag = msg.tag + 1;
+        reply.length = 0;
+
+        if (ipc_reply(sender, &reply) != IPC_OK) {
+            reply_refused++;
+        }
+    }
+
+    reply_server_done = true;
+}
+
+static void reply_caller(void *arg)
+{
+    unsigned i;
+
+    (void)arg;
+
+    for (i = 0; i < REPLY_ROUNDS; i++) {
+        struct message msg = { 0 };
+        struct message reply = { 0 };
+
+        msg.tag = i;
+        msg.length = 0;
+
+        if (ipc_call(reply_caller_cap, &msg, &reply) != IPC_OK
+            || reply.tag != i + 1) {
+            break;
+        }
+
+        reply_rounds_done++;
+    }
+
+    reply_caller_done = true;
+}
+
+static bool test_a_reply_reaches_a_caller_on_another_processor(void)
+{
+    struct thread *server;
+    struct thread *caller;
+    unsigned long start;
+    cap_t ep;
+    bool ok;
+
+    if (smp_online() < 3) {
+        return true;            /* a server and a caller need two other cores */
+    }
+
+    reply_refused = 0;
+    reply_rounds_done = 0;
+    reply_caller_done = false;
+    reply_server_done = false;
+
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
+
+    server = thread_create_suspended("reply-server", reply_server, NULL);
+    caller = thread_create_suspended("reply-caller", reply_caller, NULL);
+
+    if (server == NULL || caller == NULL) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    reply_server_cap = ipc_cap_grant(server, ep);
+    reply_caller_cap = ipc_cap_grant(caller, ep);
+
+    if (reply_server_cap < 0 || reply_caller_cap < 0) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    /* Homes before the first wake, the way `thread_create_on` does it. */
+    server->sched.cpu = 1;
+    caller->sched.cpu = 2;
+    thread_wake(server);
+    thread_wake(caller);
+
+    start = hal_ticks();
+
+    while (!reply_caller_done && hal_ticks() - start < 2500UL) {
+        cpu_relax();
+    }
+
+    ok = reply_caller_done && reply_rounds_done == REPLY_ROUNDS
+      && reply_refused == 0;
+
+    if (!ok) {
+        kputs("\n   (");
+        kputu(reply_rounds_done);
+        kputs(" of ");
+        kputu(REPLY_ROUNDS);
+        kputs(" rounds, ");
+        kputu(reply_refused);
+        kputs(" replies refused)\n");
+    }
+
+    /* Ends the server's loop, and wakes a caller still waiting for a reply
+     * that was lost. */
+    (void)ipc_endpoint_destroy(ep);
+
+    start = hal_ticks();
+
+    while ((!reply_server_done || !reply_caller_done)
+           && hal_ticks() - start < 250UL) {
+        cpu_relax();
+    }
+
+    return ok;
+}
+
+/*
+ * A thread exiting on one core while a thread is created on another.
+ *
+ * `thread_exit` marks a thread dead and then switches away from it, and until
+ * that switch is over the thread is on its stacks with its registers unsaved.
+ * `alloc_thread` hands out dead slots, stacks included, on any core. So a
+ * thread created in that window was given the slot, had its context planted,
+ * and then had the dying thread's registers saved over it: it started life
+ * below the switch in `thread_exit`, and the kernel panicked with "a dead
+ * thread was scheduled". One run of the x86 suite in eleven.
+ *
+ * This makes that instant likely:
+ *
+ * - Every slot is touched first. `alloc_thread` prefers a slot nothing has
+ *   used, and while one exists the slot being left is never handed out. After
+ *   that a new thread reuses the lowest dead slot, which is the one the
+ *   exiting thread has just left.
+ * - Core zero watches the exiting thread and creates a thread the moment it
+ *   reads dead - on a third core, so the new thread can start while the old
+ *   one is still switching away.
+ * - The exiting thread leaves with an address space loaded, so its last
+ *   switch changes page tables inside the window - more to do there than a
+ *   switch between two kernel threads. A process that exits while its core's
+ *   next thread belongs to another process makes the same switch in the same
+ *   place.
+ *
+ * Failing is a panic rather than a false, because the thread that was given
+ * the slot never gets back to say anything. Without the fix it did, in two
+ * runs of two on each board.
+ */
+#define LEAVE_ROUNDS  200
+
+static struct addrspace *volatile leave_space;
+static volatile bool leave_armed;
+static volatile bool leave_go;
+static volatile bool reborn_ran;
+
+static void leaves_with_a_space_loaded(void *arg)
+{
+    (void)arg;
+
+    thread_current()->space = leave_space;
+    as_switch(leave_space);
+
+    leave_armed = true;
+
+    while (!leave_go) {
+        cpu_relax();
+    }
+
+    /* Returns with the space still loaded; see above. */
+}
+
+static void reborn(void *arg)
+{
+    (void)arg;
+    reborn_ran = true;
+}
+
+/* Yielding rather than spinning, so a thread on this core gets to run. */
+static bool wait_for_flag(const volatile bool *flag)
+{
+    unsigned long start = hal_ticks();
+
+    while (!*flag && hal_ticks() - start < 250UL) {
+        thread_yield();
+    }
+
+    return *flag;
+}
+
+/* The state read afresh on every pass rather than once, before the loop. */
+static bool wait_until_dead(const struct thread *t, bool spin)
+{
+    unsigned long start = hal_ticks();
+
+    while (*(const volatile enum thread_state *)&t->state != THREAD_DEAD
+           && hal_ticks() - start < 250UL) {
+        if (spin) {
+            cpu_relax();
+        } else {
+            thread_yield();
+        }
+    }
+
+    return t->state == THREAD_DEAD;
+}
+
+static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
+{
+    unsigned cores = smp_online();
+    struct thread *touched[THREAD_MAX];
+    unsigned before = thread_count();
+    unsigned count = 0;
+    unsigned round;
+    unsigned long start;
+    unsigned i;
+    bool ok = true;
+
+    if (cores < 2) {
+        return true;        /* nothing runs between the mark and the switch */
+    }
+
+    leave_space = as_create();
+
+    if (leave_space == NULL) {
+        return false;
+    }
+
+    /* Every slot touched, and given straight back. */
+    while (count < THREAD_MAX) {
+        struct thread *t = thread_create_suspended("touch", short_thread, NULL);
+
+        if (t == NULL) {
+            break;
+        }
+
+        touched[count++] = t;
+    }
+
+    for (i = 0; i < count; i++) {
+        thread_wake(touched[i]);
+    }
+
+    start = hal_ticks();
+
+    while (thread_count() > before && hal_ticks() - start < 250UL) {
+        thread_yield();
+    }
+
+    if (thread_count() > before) {
+        return false;
+    }
+
+    for (round = 0; round < LEAVE_ROUNDS && ok; round++) {
+        unsigned from = 1 + round % (cores - 1);
+        unsigned to   = (cores > 2) ? 1 + from % (cores - 1) : 0;
+        struct thread *leaver;
+        struct thread *next;
+
+        leave_armed = false;
+        leave_go    = false;
+        reborn_ran  = false;
+
+        leaver = thread_create_on(from, "leaves", leaves_with_a_space_loaded, NULL);
+
+        if (leaver == NULL || !wait_for_flag(&leave_armed)) {
+            ok = false;
+            break;
+        }
+
+        leave_go = true;
+
+        /* The instant it reads dead, which is before it has left. */
+        if (!wait_until_dead(leaver, true)) {
+            ok = false;
+            break;
+        }
+
+        next = thread_create_on(to, "reborn", reborn, NULL);
+
+        ok = next != NULL
+             && wait_for_flag(&reborn_ran)
+             && wait_until_dead(next, false);
+    }
+
+    /* The last thread to leave was switching off this space; let it finish. */
+    start = hal_ticks();
+
+    while (hal_ticks() - start < 5UL) {
+        thread_yield();
+    }
+
+    as_destroy(leave_space);
+    leave_space = NULL;
+
+    return ok;
+}
+
 static const struct test tests[] = {
     { "boot: .bss is zeroed",                  test_bss_zeroed          },
     { "boot: .bss bounds are 16-byte aligned", test_bss_bounds_aligned  },
@@ -5083,6 +5565,9 @@ static const struct test tests[] = {
     { "sched: both sides keep running",        test_preemption_does_not_lose_the_preempted_thread },
     { "smp: a secondary preempts a spinner",   test_a_secondary_preempts_a_thread_that_never_yields },
     { "smp: a new thread avoids a loaded core", test_placement_avoids_a_loaded_processor },
+    { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
+    { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },
+    { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },

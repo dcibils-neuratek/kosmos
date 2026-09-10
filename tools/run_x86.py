@@ -825,6 +825,20 @@ def main():
           "threads without being asked to")
 
     #
+    # **And the same option from the loader's command line**, which is how a
+    # machine with no fw_cfg - the ThinkPad, booted by GRUB - is given one at
+    # all. `-append` fills Multiboot's command line under QEMU, the field
+    # GRUB's `multiboot2` line fills on the laptop, and no fw_cfg is passed.
+    #
+    spread = boot(image, None, 90.0,
+                  extra=("-smp", "4", "-append", "opt/kosmos/smp=4"))
+
+    check(spread is not None and "4 of them given new threads" in spread,
+          "opt/kosmos/smp=4 on the command line did not reach the kernel: "
+          + next((l.strip() for l in (spread or "").splitlines()
+                  if "given new threads" in l), "no placement line"))
+
+    #
     # **A machine with a real amount of memory in it.**
     #
     # Every x86 boot in this file until now asked for 512 MB, which is the

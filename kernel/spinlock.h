@@ -111,7 +111,10 @@ static inline unsigned long spin_lock(struct spinlock *lock)
             return flags;
         }
 
-        cpu_relax();
+        /* Not only a pause: on x86 a waiting core answers TLB shootdowns
+         * here, because with interrupts masked it cannot take the IPI that
+         * asks - and the core asking may hold this very lock. */
+        cpu_lock_wait();
     }
 
     spin_panic(lock);

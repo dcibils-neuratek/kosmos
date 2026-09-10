@@ -294,6 +294,13 @@ void trap_handle(struct trapframe *f)
         bool tick = hal_irq_handle();
 
         /*
+         * A shootdown may be what knocked, and it is answered on every core
+         * before anything else: the core that asked is waiting for it with
+         * interrupts masked. `arch/x86_64/mmu.c` has the protocol.
+         */
+        tlb_service();
+
+        /*
          * **On any core but zero, the tick and nothing else** - the guard
          * `arch/aarch64/trap.c` keeps, for its reason. Waking input
          * sleepers, the audio server and the console's cursor are machine

@@ -721,8 +721,28 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
             thread_inherit(receiver, self);
         }
 
-        deliver(receiver, IPC_OK);
+        /*
+         * **Findable before the receiver is woken, and the order is the
+         * fix.** This thread went onto the reply queue and named its
+         * endpoint *after* `deliver`, and on one core that was harmless: the
+         * receiver could not run until this thread had blocked.
+         *
+         * On several it runs at once. `ipc_reply` reads `waiting_on` with no
+         * lock - it is how it finds the lock to take - so a receiver on
+         * another core that answered quickly read NULL, said "nobody is
+         * waiting", and dropped the reply. The caller then blocked for ever
+         * on an answer already given. That was the whole desktop stopping
+         * within two seconds of spreading its threads, found by reading every
+         * thread out of the frozen machine: the window manager blocked on
+         * the console, and the console asleep with nothing left to answer.
+         *
+         * Named first, the unlocked read finds this endpoint and waits on
+         * its lock, which this thread holds until it has blocked.
+         */
         queue_push(&ep->awaiting_reply, self);
+        self->ipc.waiting_on = ep;
+
+        deliver(receiver, IPC_OK);
     } else {
         /*
          * Nobody home. Wait to be collected, on the sender queue and only
@@ -731,11 +751,11 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          * because they share the `ipc.next` link.
          */
         queue_push(&ep->senders, self);
+        self->ipc.waiting_on = ep;
     }
 
-    /* Either way it is on a queue this endpoint can find, so destroying the
-     * endpoint reaches it. */
-    self->ipc.waiting_on = ep;
+    /* Either way it is on a queue this endpoint can find, and names it, so
+     * destroying the endpoint reaches it and a reply finds its lock. */
 
     /* Blocked and findable become true together, and the endpoint is let go
      * at exactly that moment. `thread.c` explains why the release can happen

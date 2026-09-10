@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "fwcfg.h"
+#include "spinlock.h"
 
 /*
  * The DMA descriptor. Every field big-endian, control at the lowest address.
@@ -115,7 +116,15 @@ struct fwcfg_file {
     char     name[56];
 };
 
-bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size)
+/*
+ * **One conversation with the device at a time.** Selecting an item resets
+ * a read position the device keeps, and every read advances it - so two
+ * cores walking the directory at once would each skip the entries the other
+ * read. Taken by the public functions below; the walks under them assume it.
+ */
+static struct spinlock fwcfg_lock = SPINLOCK("fw_cfg");
+
+static bool find_unlocked(const char *name, uint16_t *select, uint32_t *size)
 {
     struct fwcfg_file entry;
     uint32_t count;
@@ -169,8 +178,8 @@ bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size)
  * resets its offset and each read advances it, so entries arrive one at a
  * time and a kernel with no allocator never needs room for all of them.
  */
-bool fwcfg_entry(unsigned index, char *name, size_t name_len,
-                 uint16_t *select, uint32_t *size)
+static bool entry_unlocked(unsigned index, char *name, size_t name_len,
+                           uint16_t *select, uint32_t *size)
 {
     struct fwcfg_file entry;
     uint32_t count;
@@ -219,7 +228,7 @@ bool fwcfg_entry(unsigned index, char *name, size_t name_len,
  * not checked against the item's size here - the caller asked the directory
  * how big it was and is the one that can do something about the answer.
  */
-bool fwcfg_read(uint16_t select, void *buffer, uint32_t length)
+static bool read_unlocked(uint16_t select, void *buffer, uint32_t length)
 {
     if (length == 0) {
         return true;
@@ -229,7 +238,7 @@ bool fwcfg_read(uint16_t select, void *buffer, uint32_t length)
                      buffer, length);
 }
 
-bool fwcfg_write(uint16_t select, const void *data, uint32_t length)
+static bool write_unlocked(uint16_t select, const void *data, uint32_t length)
 {
     /*
      * Writes go through the DMA interface and nowhere else. Writes to the
@@ -252,7 +261,7 @@ bool fwcfg_write(uint16_t select, const void *data, uint32_t length)
  * Returns false when there is no such entry, which is the ordinary case and
  * not an error: a machine started without one boots to the shell.
  */
-bool hal_boot_option(const char *name, char *out, unsigned long max)
+bool fwcfg_boot_option(const char *name, char *out, unsigned long max)
 {
     uint16_t select;
     uint32_t size;
@@ -283,4 +292,41 @@ bool hal_boot_option(const char *name, char *out, unsigned long max)
 
     out[size] = '\0';
     return true;
+}
+
+bool fwcfg_find(const char *name, uint16_t *select, uint32_t *size)
+{
+    unsigned long flags = spin_lock(&fwcfg_lock);
+    bool ok = find_unlocked(name, select, size);
+
+    spin_unlock(&fwcfg_lock, flags);
+    return ok;
+}
+
+bool fwcfg_entry(unsigned index, char *name, size_t name_len,
+                 uint16_t *select, uint32_t *size)
+{
+    unsigned long flags = spin_lock(&fwcfg_lock);
+    bool ok = entry_unlocked(index, name, name_len, select, size);
+
+    spin_unlock(&fwcfg_lock, flags);
+    return ok;
+}
+
+bool fwcfg_read(uint16_t select, void *buffer, uint32_t length)
+{
+    unsigned long flags = spin_lock(&fwcfg_lock);
+    bool ok = read_unlocked(select, buffer, length);
+
+    spin_unlock(&fwcfg_lock, flags);
+    return ok;
+}
+
+bool fwcfg_write(uint16_t select, const void *data, uint32_t length)
+{
+    unsigned long flags = spin_lock(&fwcfg_lock);
+    bool ok = write_unlocked(select, data, length);
+
+    spin_unlock(&fwcfg_lock, flags);
+    return ok;
 }

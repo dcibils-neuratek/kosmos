@@ -546,6 +546,15 @@ void thread_abandon(struct thread *t);
  * thread's entry function returns. */
 void thread_exit(void) __attribute__((noreturn));
 
+/*
+ * The switch that brought the calling thread here is over.
+ *
+ * Called first thing from `switch_into` and from each architecture's
+ * `thread_entry`, and from nowhere else. It is what lets a thread that exited
+ * in that switch be reused; see `leaving` in percpu.h.
+ */
+void thread_switch_finished(void);
+
 struct thread *thread_current(void);
 
 /*

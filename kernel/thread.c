@@ -434,8 +434,13 @@ static void copy_name(char *dst, const char *src)
  * handing them back to the page allocator would mean re-mapping those guards
  * only to unmap them again.
  *
- * A dead thread is not standing on its stack any more. It stopped the moment
- * thread_exit switched away, and it can never be scheduled again.
+ * **A dead thread's slot is free once the thread has left it, which is later
+ * than when it died.** `thread_exit` marks it dead and then switches away,
+ * and for the length of that switch it is still standing on the stacks this
+ * would hand out. This paragraph used to say it "stopped the moment
+ * thread_exit switched away", which was true while nothing could run between
+ * the mark and the switch, and stopped being true when a second processor
+ * could; `leaving` in `percpu.h` has the rest.
  *
  * Untouched slots are preferred so that reuse only starts once the pool is
  * genuinely full, which keeps a use-after-exit bug visible for as long as
@@ -458,6 +463,27 @@ static void copy_name(char *dst, const char *src)
  */
 static struct spinlock threads_lock = SPINLOCK("threads");
 
+/*
+ * Whether some processor has not finished switching away from `t`.
+ *
+ * `thread_exit` names a thread in `leaving` while holding this lock, before
+ * marking it dead. So a scan that holds the lock and finds a slot dead finds
+ * it named too, until the thread's successor has arrived - and it is the
+ * lock, not the order of two stores, that makes that visible from another
+ * processor.
+ */
+static bool still_leaving(const struct thread *t)
+{
+    unsigned c;
+
+    for (c = 0; c < NR_CPUS; c++) {
+        if (percpu_at(c)->leaving == t) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 static struct thread *alloc_thread(void)
 {
@@ -473,7 +499,7 @@ static struct thread *alloc_thread(void)
     }
 
     for (i = 0; i < THREAD_MAX; i++) {
-        if (threads[i].state == THREAD_DEAD) {
+        if (threads[i].state == THREAD_DEAD && !still_leaving(&threads[i])) {
             threads[i].state = THREAD_CLAIMED;
             spin_unlock(&threads_lock, flags);
             return &threads[i];
@@ -802,6 +828,24 @@ struct thread *thread_create_on(unsigned cpu, const char *name,
 }
 
 /*
+ * The far side of a switch, run by the thread that arrives.
+ *
+ * A thread runs again by returning out of `context_switch` in `switch_into`
+ * below, or runs for the first time from `thread_entry`, and both call this
+ * before anything else. By then the switch is over: the outgoing thread's
+ * registers are saved and this processor is off its stacks. So a thread that
+ * exited in that switch has left, and its slot may be handed out.
+ *
+ * One store, and only this processor writes its own `leaving`. An interrupt
+ * that arrives before it and switches again only means a different arriving
+ * thread makes the same store first - and what it says is just as true then.
+ */
+void thread_switch_finished(void)
+{
+    this_cpu()->leaving = NULL;
+}
+
+/*
  * Hands the CPU to `next`, from `prev`.
  *
  * The one place a switch happens. thread_exit used to have its own copy of
@@ -828,6 +872,9 @@ static void switch_into(struct thread *prev, struct thread *next)
     }
 
     context_switch(&prev->ctx, &next->ctx);
+
+    /* Reached as whichever thread this processor has just resumed. */
+    thread_switch_finished();
 }
 
 static void switch_to(struct thread *next)
@@ -1012,7 +1059,7 @@ unsigned thread_cpu_count(void)
      * are easy to confuse here and all three exist:
      *
      *   `NR_CPUS`      how many `struct percpu` slots exist - the room, so
-     *                  a core that starts has somewhere to put itself. Four.
+     *                  a core that starts has somewhere to put itself. Eight.
      *   `smp_online()` how many have executed kernel code. Four.
      *   this           how many are given work. One, unless asked otherwise.
      *
@@ -1359,9 +1406,10 @@ void thread_yield(void)
  * So the simple thing is correct, and it is correct *because* of a decision
  * made somewhere else. If work stealing is ever added - or migration, or a
  * balancer - this comment is where the cost shows up: the release would have
- * to move to the far side of the switch, and every entry into a thread,
- * including a brand new one starting at its trampoline, would have to know
- * about it.
+ * to move to the far side of the switch. That side exists now, because an
+ * exiting thread needed it first: `thread_switch_finished`, which every entry
+ * into a thread passes through, a brand new one starting at its trampoline
+ * included.
  */
 void thread_block_and_release(struct spinlock *lock, unsigned long flags)
 {
@@ -1752,7 +1800,45 @@ void thread_exit(void)
 {
     struct thread *next;
 
+    /*
+     * Masked from here to the switch, and never put back: nothing this thread
+     * returns to wants them, and the switch loads its successor's own.
+     *
+     * **For `leaving`, not for the locks**, which mask for themselves. A
+     * thread exiting with interrupts on could be preempted between the two
+     * blocks below, and the thread that arrived in its place would let go of
+     * `leaving` - so when this one ran again and finished dying, nothing would
+     * be keeping its slot.
+     */
+    (void)cpu_interrupts_save();
+
     fp_forget(current);
+
+    /*
+     * **Named as leaving before it is marked dead**, and that is the fix for
+     * "thread_exit: a dead thread was scheduled".
+     *
+     * Between the mark below and the end of `switch_into`, this thread is
+     * still running on its stacks and its registers are not saved.
+     * `alloc_thread` hands out dead slots with their stacks, and any processor
+     * may call it. So a thread created on another core in that window was
+     * given this slot and had its context planted - and then `context_switch`
+     * saved this thread's registers over it. Scheduled, the new thread resumed
+     * below the switch at the end of this function, and panicked there.
+     * Started a moment sooner, it would have been running on the stack this
+     * one was still using.
+     *
+     * On one processor the window did not exist, because nothing ran between
+     * the mark and the switch. Under the pool's lock because the scan reads it
+     * under that lock; see `still_leaving`.
+     */
+    {
+        unsigned long flags = spin_lock(&threads_lock);
+
+        this_cpu()->leaving = current;
+
+        spin_unlock(&threads_lock, flags);
+    }
 
     /*
      * Dead and a successor chosen, under one lock, for the reason
@@ -1784,8 +1870,9 @@ void thread_exit(void)
      * structures by simply not going back in.
      *
      * Its stacks stay allocated, and stay with the slot: whoever reuses it
-     * inherits them, guard pages and all. Handing them back would mean
-     * re-mapping those guards only to unmap them again for the next thread.
+     * inherits them, guard pages and all, once `thread_switch_finished` says
+     * this thread is off them. Handing them back would mean re-mapping those
+     * guards only to unmap them again for the next thread.
      */
     switch_into(current, next);
 

@@ -20,6 +20,7 @@
 #include "hal.h"
 #include "pc.h"
 #include "virtio.h"
+#include "spinlock.h"
 
 #define COM1        0x3F8
 
@@ -152,6 +153,12 @@ void hal_putchar(char c)
     outb(COM1 + UART_DATA, (uint8_t)c);
 }
 
+/*
+ * Status, then data: one question, and two cores between the two reads could
+ * both see a byte ready and one of them read the next one, or nothing.
+ */
+static struct spinlock uart_lock = SPINLOCK("uart");
+
 int hal_getchar(void)
 {
     /*
@@ -170,11 +177,21 @@ int hal_getchar(void)
         return key;
     }
 
-    if (!present || (inb(COM1 + UART_LSR) & LSR_RX_READY) == 0) {
+    if (!present) {
         return HAL_NO_INPUT;
     }
 
-    return inb(COM1 + UART_DATA);
+    {
+        unsigned long flags = spin_lock(&uart_lock);
+        int c = HAL_NO_INPUT;
+
+        if ((inb(COM1 + UART_LSR) & LSR_RX_READY) != 0) {
+            c = inb(COM1 + UART_DATA);
+        }
+
+        spin_unlock(&uart_lock, flags);
+        return c;
+    }
 }
 
 const char *hal_console_describe(void)
