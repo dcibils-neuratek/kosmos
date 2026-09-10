@@ -248,7 +248,13 @@ def main():
                   if "processor" in l and "->" in l), "no processor line")
           + "; ACPI is not reaching the kernel through the loader")
 
-    check("I/O APIC" in serial,
+    #
+    # Anchored on the phrase the boot fact prints when the APIC is running,
+    # not on "I/O APIC" alone: every sentence that explains a fallback names
+    # the I/O APIC too - "because nothing answers at the I/O APIC's address" -
+    # so the short match would pass on the very boot this exists to catch.
+    #
+    check("interrupts: an I/O APIC" in serial,
           "booted through the loader the machine fell back to the 8259 "
           "pair, which is what no ACPI looks like")
 

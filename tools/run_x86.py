@@ -874,7 +874,13 @@ def main():
 
     # And that the default took the other one, so the two checks above are
     # about a path this machine is not otherwise using.
-    check("I/O APIC" in out,
+    #
+    # Anchored on the phrase the boot fact prints when the APIC is running,
+    # not on "I/O APIC" alone: every sentence that explains a fallback names
+    # the I/O APIC too - "because nothing answers at the I/O APIC's address" -
+    # so the short match would pass on the very boot this exists to catch.
+    #
+    check("interrupts: an I/O APIC" in out,
           "the default boot did not take the APIC, so this machine only "
           "ever tests one of the two controllers")
 

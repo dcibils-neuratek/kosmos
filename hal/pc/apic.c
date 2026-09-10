@@ -9,6 +9,7 @@
 
 #include "acpi.h"
 #include "apic.h"
+#include "apic_decode.h"
 #include "hal.h"
 #include "mmio.h"
 #include "mmu.h"
@@ -35,6 +36,12 @@
 
 #define LVT_MASKED          (1u << 16)
 #define LVT_PERIODIC        (1u << 17)
+
+/*
+ * Where the local APIC says which mode it is in: IA32_APIC_BASE, Intel SDM
+ * volume 3, chapter 11. `apic_decode.h` has what its bits mean.
+ */
+#define MSR_APIC_BASE       0x1bu
 
 /*
  * Divide by sixteen, which is the encoding's awkwardness rather than a
@@ -103,8 +110,21 @@ static struct {
     unsigned  hz;
 } apic;
 
-static const char *description = "the 8259 pair, because ACPI described no "
-                                 "I/O APIC";
+static const char *description = "a pair of 8259s, because ACPI described "
+                                 "no I/O APIC";
+
+/*
+ * A model-specific register, read the way `hal/pc/timer.c` reads the time
+ * stamp counter: one instruction, and nothing to map.
+ */
+static uint64_t read_msr(uint32_t msr)
+{
+    uint32_t lo, hi;
+
+    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+
+    return ((uint64_t)hi << 32) | lo;
+}
 
 static uint32_t lapic_read(unsigned reg)
 {
@@ -394,23 +414,68 @@ bool apic_init(void)
         return false;
     }
 
+    /*
+     * **Which mode the firmware left the local APIC in, before a single
+     * register of it is touched.**
+     *
+     * This driver speaks the memory-mapped interface, and in x2APIC mode
+     * that interface is switched off: reads return all ones and writes
+     * vanish. The id would read 0xff, the timer would never count, and the
+     * first acknowledgement would go nowhere - a machine that takes one
+     * interrupt and then none. Refused instead, with the reason in the boot
+     * log.
+     *
+     * A Linux boot log from the laptop this was written for switches x2APIC
+     * on itself, which suggests that firmware hands over in the other mode.
+     * A suggestion is not a register, and this is what keeps a machine that
+     * does otherwise from hanging.
+     */
+    switch (lapic_mode_of(read_msr(MSR_APIC_BASE))) {
+    case LAPIC_XAPIC:
+        break;
+
+    case LAPIC_X2APIC:
+        description = "a pair of 8259s, because the firmware left the local "
+                      "APIC in x2APIC mode, which this driver does not speak";
+        return false;
+
+    default:
+        description = "a pair of 8259s, because the local APIC is switched "
+                      "off in IA32_APIC_BASE";
+        return false;
+    }
+
     apic.lapic = mmu_map_device((uintptr_t)lapic_base, 0x1000);
     apic.ioapic = mmu_map_device((uintptr_t)ioapic_base, 0x1000);
 
     if (apic.lapic == 0 || apic.ioapic == 0) {
-        description = "an I/O APIC and no room in the device window to map it";
+        description = "a pair of 8259s, because the device window had no "
+                      "room to map the APICs";
         return false;
     }
 
     apic.override_count = acpi_overrides(apic.overrides, OVERRIDE_MAX);
 
-    /* Bits 23:16 of the version register are the highest input, so the
-     * count is one more than that. */
+    /*
+     * **How many inputs - and a hundred and twenty is a real answer.**
+     *
+     * This refused anything above sixty-four as "an impossible size", on an
+     * eight-bit field. The chipset in a ThinkPad T14 Gen 2 reports a hundred
+     * and twenty, so the first real machine this ran on never left the 8259
+     * pair, and the reason sat in this file's description while the boot
+     * log printed the 8259's instead.
+     *
+     * Every input is masked below whatever the count, and only the ones the
+     * override table and `pci.c` name are ever unmasked - all of them under
+     * twenty-four. What a check is still for is a chip that is not there,
+     * which reads all ones.
+     */
     version = ioapic_read(IOAPIC_REG_VERSION);
-    apic.inputs = ((version >> 16) & 0xffu) + 1u;
+    apic.inputs = ioapic_inputs(version);
 
-    if (apic.inputs == 0 || apic.inputs > 64u) {
-        description = "an I/O APIC that reported an impossible size";
+    if (apic.inputs == 0) {
+        description = "a pair of 8259s, because nothing answers at the I/O "
+                      "APIC's address";
         return false;
     }
 

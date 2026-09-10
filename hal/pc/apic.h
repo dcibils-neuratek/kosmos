@@ -25,9 +25,10 @@
  * is started at all: INIT and two STARTUP inter-processor interrupts, which
  * is what `hal/pc/cpu_on.c` has been waiting for.
  *
- * **The I/O APIC is on the chipset and routes.** A table of twenty-four
- * entries, one per input, each saying which vector to raise and which core
- * to raise it on. The 8259 pair between them had fifteen lines and could
+ * **The I/O APIC is on the chipset and routes.** A table with an entry per
+ * input - twenty-four on the 82093AA and in QEMU, a hundred and twenty on a
+ * ThinkPad T14 Gen 2's chipset - each saying which vector to raise and which
+ * core to raise it on. The 8259 pair between them had fifteen lines and could
  * only ever interrupt the bootstrap processor.
  *
  * AArch64's GIC is the same split under other names, and `qemu-virt/gic.c`
@@ -44,8 +45,9 @@
 
 /*
  * True when this machine has one and it is now running. False is not an
- * error: it means the firmware described no I/O APIC, and the 8259 pair is
- * what this machine has.
+ * error: the 8259 pair is what runs, and `apic_describe` says why - no I/O
+ * APIC described, one that does not answer, or a local APIC in a mode this
+ * driver does not speak.
  */
 bool apic_init(void);
 

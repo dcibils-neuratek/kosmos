@@ -34,6 +34,7 @@
 #include "pc.h"
 
 static bool on_apic;
+static bool forced;
 
 /*
  * `opt/kosmos/irq=pic` forces the legacy path.
@@ -87,6 +88,7 @@ static void decide(void)
     decided = true;
 
     if (forced_to_pic()) {
+        forced = true;
         return;
     }
 
@@ -141,8 +143,20 @@ void pc_irq_unmask(unsigned irq)
  */
 const char *hal_irq_describe(void)
 {
-    return on_apic ? apic_describe()
-                   : "a pair of 8259s, remapped clear of the exceptions";
+    if (on_apic) {
+        return apic_describe();
+    }
+
+    /*
+     * **And on the fallback, why.** This printed the 8259's own description
+     * whenever the APIC was not running, so on the first real machine the
+     * reason the APIC had been refused - kept in `apic.c`, and correct - was
+     * never shown to anybody. The machine said "a pair of 8259s" at every
+     * boot and nothing about what it had turned down.
+     */
+    return forced ? "a pair of 8259s, because opt/kosmos/irq=pic asked for "
+                    "them"
+                  : apic_describe();
 }
 
 bool pc_irq_on_apic(void)

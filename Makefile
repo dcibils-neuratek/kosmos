@@ -1261,6 +1261,18 @@ $(HOSTDIR)/test_pmmplace: tools/test_pmmplace.c kernel/pmm_place.c kernel/pmm_pl
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_pmmplace.c kernel/pmm_place.c
 
+#
+# And what the APIC registers say, for the same reason a third time: the
+# chipset of the first real machine reports a hundred and twenty I/O APIC
+# inputs, QEMU's reports twenty-four whatever it is given, and the driver
+# refused anything above sixty-four - so the case that matters is arithmetic
+# no emulator here produces.
+#
+$(HOSTDIR)/test_apicdecode: tools/test_apicdecode.c hal/pc/apic_decode.c hal/pc/apic_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_apicdecode.c hal/pc/apic_decode.c
+
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
@@ -1876,6 +1888,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/memory.c \
              hal/pc/pic.c \
              hal/pc/apic.c \
+             hal/pc/apic_decode.c \
              hal/pc/irq_bind.c \
              hal/pc/timer.c \
              hal/pc/rtc.c \
@@ -2247,7 +2260,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2265,6 +2278,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# and QEMU does not.
 	$(HOSTDIR)/test_pmmplace
 	$(HOSTDIR)/test_loaderfb
+	$(HOSTDIR)/test_apicdecode
 	@# And the Lite XL surface shim, which is C and still needs no machine:
 	@# `make litexl` says the port's sources compile, and this says the part
 	@# of them Kosmos wrote is correct. Different claims.

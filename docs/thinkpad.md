@@ -579,6 +579,32 @@ processor because a processor is started by sending INIT and two STARTUP
 inter-processor interrupts *through the local APIC*, and there was not one.
 There is now. This machine has eight cores and Kosmos uses one.
 
+**And on this machine it was refused, for a reason nobody could see.** The
+size check turned down any I/O APIC above sixty-four inputs, and this
+chipset has a hundred and twenty:
+
+```
+IOAPIC[0]: apic_id 2, version 32, address 0xfec00000, GSI 0-119
+```
+
+from a Linux boot log of a T14 Gen 2i. The refusal was stored in `apic.c`
+and the 8259's description printed instead, so the boot log said `a pair of
+8259s` and nothing about what had been turned down. 0.10.18 takes the size
+the register reports, reads the local APIC's mode out of IA32_APIC_BASE
+before touching any of its registers - a firmware that left it in x2APIC
+mode is refused with a sentence rather than a hang - and prints the reason
+on every fallback. No QEMU configuration has a 120-input I/O APIC, so the
+decode is a pure function in `apic_decode.c`, asked on the host with this
+machine's register value.
+
+**And on this machine it now engages.** The next boot, read back with `log
+interrupts` at the prompt:
+
+```
+[2.782] [11/12] timer and interrupts
+[2.782]         -> interrupts: an I/O APIC and the local APIC's own timer, scheduling priority
+```
+
 ### ACPI is invisible under UEFI, and that is the next thing to fix
 
 **Measured, and it corrects something written above.** The same image, the

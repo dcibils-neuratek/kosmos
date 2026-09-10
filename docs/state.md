@@ -41,23 +41,22 @@ every one of them is in the decision log with the evidence that found it:
 Deskbar open through QEMU's PS/2 mouse - which streams now, after months of
 sending nothing - on the 8259, with a serial port and without one.
 
-### What the next boot should be asked
+### What the T14 answered
 
-1. **Boot stage 1** should say `none - nothing answers at 0x3f8`: the probe
-   working on the real machine.
-2. **Processes**, at an idle desktop: the console near 0%, not 94%.
-3. **Clicks**: Kosmos opens its menu, and Tracker's buttons come back up.
-4. **If the pointer still jumps**: `log resync` says whether the driver is
-   throwing bytes away, and `log collecting` whether a window's queue
-   overflowed. The jumps may have been a desktop starved by the phantom
-   input, in which case both come back empty and the jumps are gone.
+- **The pointer, clicks and the processor**, on 0.10.17: the mouse works,
+  Kosmos opens its menu and Tracker's buttons come back up, and the reading
+  that sat at 100% came down to 16%.
+- **The interrupt controller**, on a build carrying 0.10.18's: `interrupts:
+  an I/O APIC and the local APIC's own timer, scheduling priority`. The
+  120-input I/O APIC is accepted and running.
 
 ### Still open
 
 - **Only core 0 runs on x86.** Nothing sends INIT and STARTUP through the
   local APIC, there is no trampoline page under 1 MB, and
-  `cpu_secondary_entry` answers 0 - and on the T14 the APIC does not engage,
-  so the 8259 it falls back to could not start a core anyway.
+  `cpu_secondary_entry` answers 0. The local APIC all of that needs is
+  running on the T14 now; it was refused there by a size check that took the
+  chipset's 120 I/O APIC inputs for an impossible number and never said why.
   `docs/smp.md`'s x86 paragraph predates the APIC driver and says less than
   is true.
 - **Why `/net` takes 18.4 seconds** to list nothing on a machine with no
