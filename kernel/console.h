@@ -126,11 +126,18 @@ void console_screen_resume(void);
  */
 /*
  * How much that ring holds, and therefore the most `console_log` can ever
- * return. Named here rather than in `console.c` because the syscall that
+ * return.
+ *
+ * **A quarter of a megabyte, and it earned every doubling.** It was 16 KB,
+ * which did not hold one boot; then 64 KB, which held a boot and about
+ * fifteen seconds of a traced desktop - and a traced desktop is exactly the
+ * thing being read, at six lines a pass. A log that has already evicted the
+ * moment you are asking about is a log that answers the wrong question
+ * confidently. This is .bss on a machine with hundreds of megabytes. Named here rather than in `console.c` because the syscall that
  * exposes it has to cap what a caller asks for, and a second copy of this
  * number living in `syscall.c` is the kind of pair that drifts.
  */
-#define CONSOLE_LOG_BYTES 65536
+#define CONSOLE_LOG_BYTES 262144
 
 size_t console_log(char *out, size_t max);
 

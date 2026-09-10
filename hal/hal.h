@@ -412,6 +412,19 @@ bool hal_pointer_init(void);
 bool hal_pointer_poll(struct pointer_state *out);
 
 /*
+ * How far the pointer travels per count of movement, read or set.
+ *
+ * Zero asks without changing anything. Meaningful only for a *relative*
+ * device - a TrackPoint, a mouse - which is why it is a number of device
+ * units rather than a screen distance: this layer does not know how big the
+ * screen is, the same division `hal_pointer_poll` draws.
+ *
+ * A board with an absolute device answers with zero and does nothing: a
+ * tablet reports where it is, and there is no gain to apply to that.
+ */
+unsigned hal_pointer_speed(unsigned units_per_count);
+
+/*
  * Has an input device raised an interrupt since this was last asked?
  *
  * Not "what happened" - the events are in the device's own queue and are

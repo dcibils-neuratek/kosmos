@@ -10,7 +10,7 @@ const char *hal_input_describe(void)
 
 const char *hal_keyboard_describe(void)
 {
-    return "i8042, scancode set 1, polled - the chip a laptop still has";
+    return "i8042, scancode set 1, on IRQ 1 - the chip a laptop still has";
 }
 
 /*
@@ -28,5 +28,5 @@ const char *hal_pointer_describe(void)
 {
     return pc_pointer_on_virtio()
          ? "virtio-input with absolute axes, reporting 0.."
-         : "the i8042 auxiliary port, relative counts made absolute";
+         : "the i8042 auxiliary port, relative counts made absolute over 0..";
 }

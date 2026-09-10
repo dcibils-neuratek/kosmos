@@ -8,59 +8,70 @@ Last updated: 2026-09-10
 
 ## Where this left off
 
-### The first machine ran it, and then would not let go of it
+### The first machine runs the desktop, and the last two faults were one missing port
 
-The ThinkPad boots: GRUB, UEFI, multiboot 2, twelve stages, 1920x1080, and a
-desktop. What it will not do yet is *be* a desktop - the windows draw once
-and the machine then behaves as though the compositor has stopped, while
-Control-C still returns to a shell that works perfectly. The console, the
-keyboard, the timer and the kernel are all alive. Only the desktop is not.
+The ThinkPad T14 boots to a desktop that draws, ticks and follows the
+TrackPoint. Getting there was a chain of faults, each hiding the next, and
+every one of them is in the decision log with the evidence that found it:
 
-**Three faults were found and fixed; the hang itself is not yet explained.**
+- **The compositor's mapping of the framebuffer had the wrong memory type**
+  (0.10.16): write-back against a PCIe framebuffer, one bus transaction per
+  four bytes.
+- **Every application blocked in its first poll.** The window manager's
+  replies were larger than a message and the `pcall` around `sys.reply`
+  threw the error away. Twelve events a reply now, and a failed reply is
+  logged.
+- **Tracker's sidebar asked every mount for a listing at startup**, and
+  `/net` on a machine with no network card took 18.4 seconds to answer.
+  Tracker is the desktop, so the desktop took eighteen seconds to exist.
+- **The TrackPoint said nothing, then decoded as noise.** A configuration
+  byte that kept the auxiliary port shut, and a framing check that accepted
+  almost every negative delta as a packet header. The controller is
+  interrupt-driven as well as polled now, and a resync logs what it throws
+  away.
+- **A core at 100%, and buttons that went down and never came up** - one
+  fault. The T14 has no COM1; a port nothing answers reads 0xFF, and 0xFF in
+  a 16550's line status register says a byte has arrived, so the console
+  read phantom input for ever and the window manager posted it as keys into
+  the focused window's queue. Reproduced under QEMU with `-serial none`,
+  fixed by asking the scratch register, and kept fixed by a gate boot with no
+  serial port that asks QEMU whether the processor ever halts.
 
-**The framebuffer was mapped twice and the two mappings disagreed.**
-`MAP_FRAMEBUFFER` is write-combining and `process_grant_screen` handed the
-compositor the same physical pages with `MAP_USER_RW`, which is write-back -
-and against the firmware's MTRR for a PCIe framebuffer that resolves to
-uncached: one bus transaction per four bytes, two million per composite. The
-console stayed quick throughout because the console draws through the
-*kernel's* mapping, so the machine looked like it had a slow desktop rather
-than a wrong page table, and boot stage six agreed by reporting the mapping
-that was right. `MAP_USER_FB` now carries the type on both architectures,
-asserted against `MAP_FRAMEBUFFER` at compile time and read back out of the
-page tables at run time.
-
-**None of that is provable here**, and `arch/x86_64/mmu.c` has said so for a
-while: TCG models no cache, so both memory types run identically under QEMU.
-Whether this was *the* cause is a question only the machine can answer.
-
-**There was no way to ask the machine anything.** Every instrument built for
-it needed a window, which is drawn by the compositor, which is the thing
-under suspicion. `log` is the answer - a program at the prompt, over the
-same ring `logview` shows - and it needs only the shell, the console and the
-keyboard, which is exactly what still worked. The ring was 16 KB and
-`logview` read 6000 bytes of it, less than one boot, so the twelve stages had
-always scrolled out before anybody could look; it is 64 KB now and read
-whole. And `logview` had rendered *blank on every machine it ever ran on*,
-because it sets `scroll = 1 << 30` to stick to the bottom and `ui.lua`
-clamped only in its key and pointer handlers.
-
-**`wm trace` narrates the compositor into that ring**: every stage of the
-first forty passes, every program started, every window and where it landed,
-and both halves of a poll with the wait in scheduler ticks. It is opt-in
-because it was not, and the display harness caught what that cost - see the
-decision log. Plain `wm` still says what started and where each window went.
+**The x86 gate boots the machine a laptop is.** `tools/run_x86.py` clicks the
+Deskbar open through QEMU's PS/2 mouse - which streams now, after months of
+sending nothing - on the 8259, with a serial port and without one.
 
 ### What the next boot should be asked
 
-1. `wm trace`, let it hang, Control-C, then `log wm`. If the pass numbers
-   stop, the last line names the stage it stopped in. If they keep climbing
-   while nothing redraws, the compositor is fine and the question moves to
-   the polls.
-2. `log screen`. The absence of `the compositor's mapping does not carry the
-   framebuffer's memory type` is what says the write-combining fix took.
-3. `log` alone for the boot stages one to six, which no photograph of that
-   machine has ever shown.
+1. **Boot stage 1** should say `none - nothing answers at 0x3f8`: the probe
+   working on the real machine.
+2. **Processes**, at an idle desktop: the console near 0%, not 94%.
+3. **Clicks**: Kosmos opens its menu, and Tracker's buttons come back up.
+4. **If the pointer still jumps**: `log resync` says whether the driver is
+   throwing bytes away, and `log collecting` whether a window's queue
+   overflowed. The jumps may have been a desktop starved by the phantom
+   input, in which case both come back empty and the jumps are gone.
+
+### Still open
+
+- **Only core 0 runs on x86.** Nothing sends INIT and STARTUP through the
+  local APIC, there is no trampoline page under 1 MB, and
+  `cpu_secondary_entry` answers 0 - and on the T14 the APIC does not engage,
+  so the 8259 it falls back to could not start a core anyway.
+  `docs/smp.md`'s x86 paragraph predates the APIC driver and says less than
+  is true.
+- **Why `/net` takes 18.4 seconds** to list nothing on a machine with no
+  network card. Tracker no longer asks; the call is still that slow.
+- **Which change made QEMU's PS/2 mouse stream** - the configuration byte,
+  the armed interrupt lines, or the framing check. Not isolated.
+- **One pointer speed for two devices.** `pointer 48` sets it, nothing
+  persists it, and a TrackPoint and a touchpad want different curves from a
+  driver that cannot tell their packets apart.
+- **`neofetch` on the T14 says `QEMU q35 x86-64` and `virtio-net`.** The
+  platform is a Makefile constant compiled into the kernel, and the network
+  row names the virtio driver whatever the machine has.
+- **The click probes are still in**: `i8042 buttons` and `wm: button`, both
+  bounded, to come out once clicks are confirmed on the machine.
 
 ### And the disk it has
 

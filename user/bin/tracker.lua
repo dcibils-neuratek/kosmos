@@ -494,13 +494,35 @@ local function mount_roots()
       end
     end
 
-    -- `fs.list` and not `files.entries`, which is the difference between
-    -- one round trip and one per file in there. The first version asked
-    -- `files.entries`, which adds a `getattr` for every name - ninety-one
-    -- of them for `/bin` alone - and the window opened empty and stayed
-    -- that way while it worked through them. The question here is only
-    -- whether the mount answers a listing at all.
-    if not nested and fs.list(prefix) then
+    --
+    -- **It used to ask each mount for a listing first, and that is what
+    -- wedged the first real machine.**
+    --
+    -- The probe was one round trip per mount to decide whether the mount
+    -- was worth showing - "the question here is only whether the mount
+    -- answers a listing at all". Twelve mounts, twelve round trips, on
+    -- every Tracker startup, and Tracker is the desktop: if any one of them
+    -- does not answer, the desktop does not exist.
+    --
+    -- One did not. `/net` on a laptop with no network card took **18.4
+    -- seconds** to come back, measured, while every other mount answered in
+    -- four to twelve milliseconds. Both Tracker processes sat in this loop;
+    -- the compositor cycled happily with nothing to draw on; four other
+    -- applications painted and polled and waited for a desktop that was
+    -- inside a filesystem call. From the outside it was indistinguishable
+    -- from a hung window manager, and it was a sidebar asking a question it
+    -- did not need the answer to.
+    --
+    -- So it does not ask. Every mount is shown, and one that cannot be
+    -- listed shows empty when it is opened - which is the right place to
+    -- find that out, because by then a person has asked for it and is
+    -- waiting for one directory rather than for the machine to start.
+    --
+    -- The deeper fault is still open: a filesystem call that takes eighteen
+    -- seconds to fail is a bug wherever it lives, and this only stops the
+    -- desktop being the thing that pays for it.
+    --
+    if not nested then
       out[#out + 1] = { text = prefix:sub(2), path = prefix,
                         children = subdirs }
     end

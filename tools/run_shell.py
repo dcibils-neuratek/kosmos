@@ -208,7 +208,12 @@ def main():
 
         # df measured the mounts by asking, so /bin - which is in the image
         # and always there - has to appear with a count.
-        if "/bin" not in tools.split("df")[-1]:
+        #
+        # Split at the command as it was typed, not at the word. Every
+        # process that ends says so now, and `process 17 (df) ended` follows
+        # df's output - so the last `df` in the transcript was that line, and
+        # /bin was looked for after it.
+        if "/bin" not in tools.split("kosmos> df")[-1]:
             raise Failure("df did not list the mounts it can measure.\n"
                           + tools[-1500:])
 

@@ -30,7 +30,13 @@ M.SETTINGS = "/home/.startup"
 -- wanted is the first boot on a machine nobody has run this on before,
 -- which is precisely the moment nobody has opened a window yet.
 --
-M.DEFAULT = { "tracker", "sysmon", "procs", "logview" }
+--
+-- `topbar` first, because it is a strip: the window manager gives it the
+-- top of the screen and everything else opens below it, so opening it last
+-- would mean every other window had already chosen a place that is now one
+-- bar too high.
+--
+M.DEFAULT = { "topbar", "tracker", "sysmon", "procs", "logview" }
 
 --
 -- **Absent and empty are different, and the difference is the whole

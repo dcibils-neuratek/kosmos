@@ -423,6 +423,16 @@ static void fill_pointer(struct con_reply *rep)
     }
 }
 
+/*
+ * How many more loops to assume somebody still wants key events.
+ *
+ * Set whenever a client asks for them and counted down otherwise, so
+ * "nobody is collecting these" is a question about the recent past rather
+ * than about this instant - the window manager asks every pass, and a gap
+ * of one pass is not it going away.
+ */
+static unsigned events_wanted;
+
 static void answer(const struct message *msg, uint64_t sender)
 {
     struct con_request req;
@@ -469,10 +479,13 @@ static void answer(const struct message *msg, uint64_t sender)
         return;
 
     case CON_OP_KEYS:
+        events_wanted = 64;
         drain_keys(&rep);
         break;
 
     case CON_OP_WAIT: {
+        events_wanted = 64;
+
         drain_keys(&rep);
         drain_key_events(&rep);
 
@@ -628,6 +641,35 @@ void console_server(long endpoint)
 
         if (got == 0) {
             answer(&msg, sender);
+        }
+
+        /*
+         * **Key events nobody is collecting are thrown away here.**
+         *
+         * The board queues a transition for every key up and down so the
+         * desktop can have them. Nothing collects them at a shell prompt -
+         * the shell reads *characters* - so the queue filled on the first
+         * keystroke and stayed full, and `hal_input_pending` answered yes
+         * for ever: measured on the first real machine, `keys=1` on every
+         * check, four milliseconds apart. The core at 100% measured beside
+         * it, with this process taking 94%, was a different fault that
+         * looked like this one - a serial port that was not there, read as
+         * a byte waiting for ever. `hal/pc/uart.c` has it.
+         *
+         * The window manager takes the screen and asks for events with
+         * `CON_OP_WAIT`; while it does, `events_wanted` is set and this
+         * leaves them alone. When it is not - which is every moment the
+         * machine is at a prompt - they are drained and dropped, because an
+         * event with nobody to give it to is not input.
+         */
+        if (events_wanted > 0) {
+            events_wanted--;
+        } else {
+            unsigned code;
+            unsigned down;
+
+            while (kosmos_key_event(&code, &down) == 0) {
+            }
         }
 
         /* Whether or not a message came, the half-typed line gets a look.

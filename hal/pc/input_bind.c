@@ -2,23 +2,22 @@
 /*
  * Which drivers this board takes its input from, and it is not one answer.
  *
- * **The keyboard comes from the i8042 and the pointer from virtio**, which
- * looks like a compromise and is a statement about where this board is
- * going. The machine this is aimed at - `docs/thinkpad.md` - has an i8042
- * with a keyboard and a TrackPoint on it and no virtio anything. The
- * keyboard half of that driver is proven; the auxiliary half sends nothing
- * under emulation for reasons written down in `i8042.c` and not yet
- * understood.
+ * **The keyboard always comes from the i8042; the pointer from a virtio
+ * tablet if the machine has one and from the i8042's auxiliary port if it
+ * does not.** The machine this is aimed at - `docs/thinkpad.md` - has an
+ * i8042 with a keyboard and a TrackPoint on it and no virtio anything, so
+ * the real keyboard driver is the one exercised every time a harness types,
+ * which is what stops it rotting.
  *
- * So the real keyboard driver is the one exercised here, every time the
- * display harness types anything - which is what stops it rotting while the
- * other half is worked out - and the pointer stays on the device QEMU will
- * actually drive, because eleven display checks need one and a desktop
- * without a pointer is not a desktop.
+ * The pointer used to be virtio unconditionally, because the auxiliary port
+ * sent nothing under emulation. It works now, on the laptop and under QEMU
+ * both, so the order below is the whole of the decision: the display
+ * harness keeps its tablet because its checks put the pointer at exact
+ * coordinates in one step, and `tools/run_x86.py` boots without one to click
+ * through the PS/2 mouse a TrackPoint looks like.
  *
- * **When the auxiliary port works, one line here changes.** That is the
- * whole reason this file exists rather than the drivers defining the HAL
- * names themselves.
+ * That is why this file exists rather than the drivers defining the HAL
+ * names themselves: which device answers is the board's choice, made once.
  */
 
 #include <stdbool.h>
@@ -49,14 +48,13 @@ bool hal_key_held(unsigned code) { return i8042_key_held(code); }
  * and on a real PC the pointing device is on the auxiliary port of the same
  * i8042 the keyboard is on.
  *
- * **The TrackPoint driver has never run.** It was written months ago, sends
- * nothing under emulation for reasons `i8042.c` sets out and five ruled-out
- * causes, and until now the board bound the pointer to virtio
- * unconditionally - so on a laptop there was no pointer at all *and* the
- * driver that might have provided one was never asked. The comment this
- * replaces said "when the auxiliary port works, one line here changes";
- * the honest version is that the line had to change before anyone could
- * find out whether it works.
+ * **The TrackPoint driver had never run when this order was written.** The
+ * board bound the pointer to virtio unconditionally, so on a laptop there
+ * was no pointer at all *and* the driver that might have provided one was
+ * never asked: the line had to change before anyone could find out whether
+ * it worked. It did, after fixes the laptop found - a configuration byte
+ * written with the port still disabled, and a controller read too rarely
+ * for a device that sends three bytes a report.
  */
 bool pc_pointer_on_virtio(void);
 
@@ -97,13 +95,23 @@ bool hal_input_pending_peek(void)
 /*
  * Offered to both, for the reason `pic.c` offers every line to every
  * driver: PCI interrupts are shared and the number alone does not say who
- * raised one. The i8042 masks its own lines and drains anyway if one
- * arrives; virtio reads its interrupt-status byte and decides.
+ * raised one. The i8042 drains on its own two lines, 1 and 12, and ignores
+ * the rest; virtio reads its interrupt-status byte and decides.
  */
 void input_interrupt(unsigned line)
 {
     i8042_interrupt(line);
     virtio_input_interrupt(line);
+}
+
+/*
+ * Only the i8042 has one. virtio's tablet is absolute - it reports where it
+ * is, not how far it moved - so there is nothing for a gain to multiply,
+ * and answering zero is the honest way to say so.
+ */
+unsigned hal_pointer_speed(unsigned units_per_count)
+{
+    return on_virtio_pointer ? 0u : i8042_pointer_speed(units_per_count);
 }
 
 bool pc_pointer_on_virtio(void)

@@ -74,6 +74,12 @@ function ticker:tick()
   -- the fix is for the kernel to say how much it has written so this can
   -- ask only when that changed.
   --
+  -- 64 KB and not the whole ring. This runs twice a second and the ring is
+  -- a quarter of a megabyte: asking for all of it is half a megabyte a
+  -- second of message traffic and Lua string, for a window that shows forty
+  -- lines. `log` at the prompt reads the whole ring, because it runs once
+  -- when somebody types it.
+  --
   local text = sys.log(65536)
 
   if not text or text == last then return end

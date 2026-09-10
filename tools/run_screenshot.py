@@ -204,7 +204,10 @@ X86_ARGS = [
     #
     # No virtio keyboard: q35's i8042 is this board's, so `sendkey` has to
     # reach the PS/2 controller for the check to mean anything. The tablet
-    # stays, because the i8042's auxiliary port does not deliver yet.
+    # stays because these checks put the pointer at exact coordinates, which
+    # an absolute device does in one step and a relative one only by
+    # counting. The i8042's auxiliary port delivers under QEMU now, and
+    # `tools/run_x86.py` clicks through it with no tablet at all.
     #
     "-device", "virtio-tablet-pci",
 ] + ([
@@ -1177,9 +1180,20 @@ def check_widgets(guest):
 
         time.sleep(0.3)
     else:
+        #
+        # With what the guest said, because this sentence alone is every
+        # cause at once: a window manager that never saw the byte, one that
+        # saw it and did not finish, and a shell that came back and printed
+        # nothing. It failed once in a full run and passed on its own, and
+        # the next time it fails the transcript is the only way to tell.
+        #
         raise Failure(
             "Control-C did not get the screen back from the window manager, "
-            "so the shell is still waiting for it."
+            "so the shell is still waiting for it.\n"
+            "--- what the guest said after Control-C ---\n"
+            + (guest.seen[mark:][-3000:] or "(nothing at all)")
+            + "\n--- and just before it ---\n"
+            + guest.seen[max(0, mark - 1500):mark]
         )
 
     return 2
@@ -3145,11 +3159,11 @@ def main():
         #
         # **The login set, emptied, before any phase starts a desktop.**
         #
-        # `/lib/startup.lua` opens Tracker, Monitor, Processes and the log on
-        # a machine nobody has told otherwise, which is right for a person
-        # and wrong for a harness: every phase below counts windows, and a
-        # bare `wm` would arrive with five of them for reasons that have
-        # nothing to do with what the phase is testing.
+        # `/lib/startup.lua` opens the top bar, Tracker, Monitor, Processes
+        # and the log on a machine nobody has told otherwise, which is right
+        # for a person and wrong for a harness: every phase below counts
+        # windows, and a bare `wm` would arrive with six of them for reasons
+        # that have nothing to do with what the phase is testing.
         #
         # An empty list rather than deleting the file, because those mean
         # different things and the difference is the feature: absent is
@@ -3163,9 +3177,22 @@ def main():
         # came back spliced through the middle of `2+2`. The marker is
         # assembled at run time so that waiting for it cannot match the echo
         # of the line that asks for it.
+        #
+        # **And the palette its colours were written against.** A desktop
+        # with nothing saved is BeOS now, and nearly every colour this file
+        # looks for - `SELECTED`, `GREEN`, `HUNG_TITLE`, `HIGHLIGHT`,
+        # `TAB_IDLE`, the meters - is a field of the kit's own dark palette.
+        # Moving them to BeOS is not a change of numbers: its idle tab is the
+        # same #e8e8e8 as every raised button, so a check that finds tabs by
+        # that colour would find buttons. So this names the dark palette,
+        # which `theme.apply` resolves by name. BeOS is what `make shot`
+        # photographs and what every desktop boot in `run_x86.py` runs.
+        #
         guest.type('fs.write("/home/.startup", { items = {} }) '
-                   'print("login-set-" .. "cleared")')
-        guest.wait_for("login-set-cleared", "emptied the login set")
+                   'fs.write("/home/.appearance", { palette = "dark" }) '
+                   'print("harness-set" .. "-up")')
+        guest.wait_for("harness-set-up",
+                       "emptied the login set and chose the dark palette")
 
         # Each phase timed, because "the harness is slow" is not something
         # to guess about. The number that matters is which phase, not the

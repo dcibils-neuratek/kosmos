@@ -155,10 +155,38 @@ local function apply_fonts(fonts)
   return why
 end
 
+--
+-- **What a machine nobody has told looks like, and it is BeOS.**
+--
+-- The palette used to be whatever the kit was compiled with, which is a
+-- default by omission rather than by choice. This system's whole premise is
+-- BeOS's bet brought forward, `themes.lua` ships that palette, and a
+-- desktop should look like what it is on the first boot rather than after
+-- somebody finds the Appearance panel.
+--
+-- Only when nothing was saved: a person who has chosen keeps their choice,
+-- and on a machine with no disk `/home` does not survive a power cut, so
+-- this is what they see again next time.
+--
+local function default_appearance()
+  local ok, shipped = pcall(use, "/lib/themes.lua")
+
+  if not ok or type(shipped) ~= "table" or not shipped.beos then return end
+
+  local palette = theme.read(shipped.beos, "dark")
+
+  if palette then theme.apply(palette) end
+end
+
 local function load_appearance()
   local saved = fs.read(SETTINGS)
 
-  if type(saved) ~= "table" then return end
+  if type(saved) ~= "table" then
+    default_appearance()
+    return
+  end
+
+  if not saved.palette then default_appearance() end
 
   if saved.palette then theme.apply(saved.palette) end
   if saved.desktop then theme.override { desktop = saved.desktop } end
@@ -360,11 +388,57 @@ sys.screen_take(true)
 --
 local TRACE = false
 
+-- Forward-declared: `step` below needs it and the definition is further
+-- down the file, next to the rest of the clock arithmetic.
+local counter_per_tick
+
 local passes = 0
 
+--
+-- **How long each stage took, in microseconds.**
+--
+-- The line stamps in the kernel's log are scheduler ticks - four
+-- milliseconds here - which is coarse enough that a whole pass fits inside
+-- one and every stage of it reads the same number. That was enough to prove
+-- the compositor was not spinning and useless for the question underneath:
+-- *which stage is the time in*.
+--
+-- `sys.ticks()` is the counter, which on this machine runs at 2.6 GHz. The
+-- divisor is worked out on first use rather than at load, because
+-- `counter_per_tick` is defined further down the file.
+--
+local per_us
+
+local last_step = 0
+
 local function step(what)
-  if TRACE and passes <= 40 then
-    print(("wm: %d %s"):format(passes, what))
+  --
+  -- **No pass bound, and removing it is the point.**
+  --
+  -- It was forty passes, from when this printed unconditionally and the
+  -- display harness had to be protected from it. `trace` is opt-in now, so
+  -- the harness never sets it and the bound protects nobody - while cutting
+  -- the instrument off exactly where it starts being useful. On the first
+  -- machine the four login windows opened at passes 39 and 40, so the whole
+  -- record ended on the last line before anything interesting happened.
+  --
+  -- Unbounded is *correct* here because the kernel's ring is bounded: it
+  -- holds 64 KB and evicts the oldest, so what survives is the last few
+  -- hundred passes before you pressed Control-C. That is the state worth
+  -- having, and a prefix of the boot is the state that is not.
+  --
+  if TRACE then
+    local now = sys.ticks()
+
+    if not per_us then
+      per_us = math.max(1, counter_per_tick()
+                           * ((sys.info() or {}).tick_hz or 250) // 1000000)
+    end
+
+    print(("wm: %d %s %dus"):format(passes, what,
+          last_step > 0 and (now - last_step) // per_us or 0))
+
+    last_step = now
   end
 end
 
@@ -402,6 +476,35 @@ local said = 0
 local queued = {}
 
 --
+-- **A reply that failed to go, said out loud.**
+--
+-- Every `sys.reply` in this file is wrapped in `pcall`, which is right -
+-- an application that died between asking and being answered must not take
+-- the compositor with it - and the result was thrown away, which is not.
+--
+-- On the first real machine every application blocked in its first poll for
+-- as long as the desktop was up and the log said nothing at all, because
+-- the one thing that could have gone wrong was the one thing nobody was
+-- allowed to hear about. A dropped reply is a hung application by
+-- construction: the caller is in `sys.call` and there is nothing else that
+-- will ever wake it.
+--
+-- Bounded, because if it happens once it will happen every pass and the
+-- ring would hold nothing else.
+--
+local complaints = 0
+
+local function replied(ok, err, what)
+  if not ok and complaints < 20 then
+    complaints = complaints + 1
+    print(("wm: reply for %s failed: %s"):format(tostring(what),
+          tostring(err)))
+  end
+
+  return ok
+end
+
+--
 -- **Bounded by passes as well as by count, and the pass bound is the one
 -- that matters.**
 --
@@ -419,7 +522,7 @@ local queued = {}
 -- crawling one fills the budget with exactly the conversation in question.
 --
 local function note(what)
-  if TRACE and said < 60 and passes <= 40 then
+  if TRACE then
     said = said + 1
     queued[#queued + 1] = what
   end
@@ -645,7 +748,7 @@ local waiting = {}
 --
 local per_tick
 
-local function counter_per_tick()
+function counter_per_tick()
   if not per_tick then
     local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
     local rate = (sys.info() or {}).tick_hz or 100
@@ -1959,6 +2062,25 @@ handlers.open = function(req, who, cap)
     h       = h_,
     surface = gfx.surface{ w = w_, h = h_ },
     events  = {},
+
+    --
+    -- **The silence clock starts when the window opens, not at its first
+    -- poll**, and that distinction is a bug this cost.
+    --
+    -- `collect_dead` reaps a window whose application has gone quiet *and*
+    -- whose process is gone. It guards on `w.last_poll` being set, and
+    -- `last_poll` was only ever assigned inside the poll handler - so an
+    -- application that died before it ever polled had `last_poll` nil, the
+    -- guard short-circuited, and its window was exempt from collection for
+    -- ever. Which is precisely the case worth catching: dying during the
+    -- first paint is the most likely moment for an application to die.
+    --
+    -- On the first real machine that produced four windows drawn once and
+    -- then abandoned, no polls at all, and a compositor cycling happily
+    -- underneath - a desktop that looked wedged while nothing was wrong
+    -- with it, because the corpses were unreapable.
+    --
+    last_poll = sys.ticks(),
   }
 
   win.surface:fill(0, 0, w_, h_, 0xff202020)
@@ -2231,6 +2353,16 @@ handlers.open = function(req, who, cap)
     reserved_top = win.h
   end
 
+  if req.kind == "menu" then
+    win.kind = "menu"
+    win.owner = tonumber(req.owner)
+
+    -- Placed where it was asked, only pulled back far enough to be on the
+    -- screen. A menu under the pointer is the whole point of a menu.
+    win.x = math.min(math.max(tonumber(req.x) or 0, 0), W - w_)
+    win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
+  end
+
   -- Where it ended up, which is the other half of "started": a program that
   -- started and never opened a window is a different fault from one whose
   -- window landed under another, and the log has to tell them apart on a
@@ -2241,17 +2373,20 @@ handlers.open = function(req, who, cap)
   -- made this line report a desktop at 30,48 that was about to be moved to
   -- the origin. A diagnostic that prints a number nothing else will ever
   -- use is worse than none.
-  print(("wm: window %s at %d,%d %dx%d"):format(
-        tostring(win.title), win.x, win.y, win.w, win.h))
+  --
+  -- And after a menu is put where it was asked, for the same reason. A menu
+  -- is named as its window's, because it has no title of its own: the
+  -- Deskbar's menu opening used to read `wm: window window at 812,74`, and
+  -- on a machine where clicks were the thing in question that was the one
+  -- line that could have said a click had worked.
+  if win.kind == "menu" then
+    local owner = by_handle[win.owner]
 
-  if req.kind == "menu" then
-    win.kind = "menu"
-    win.owner = tonumber(req.owner)
-
-    -- Placed where it was asked, only pulled back far enough to be on the
-    -- screen. A menu under the pointer is the whole point of a menu.
-    win.x = math.min(math.max(tonumber(req.x) or 0, 0), W - w_)
-    win.y = math.min(math.max(tonumber(req.y) or 0, 0), H - h_)
+    print(("wm: menu of %s at %d,%d %dx%d"):format(
+          tostring(owner and owner.title), win.x, win.y, win.w, win.h))
+  else
+    print(("wm: window %s at %d,%d %dx%d"):format(
+          tostring(win.title), win.x, win.y, win.w, win.h))
   end
 
   -- Whoever was launched most recently, if this is their first window.
@@ -2354,7 +2489,19 @@ handlers.launch = function(req)
   end
 
   local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+  --
+  -- When, and with what result. `launch` is how everything except the
+  -- desktop and the Deskbar gets started, so without this the log has no
+  -- moment to measure an application's startup *from* - which is exactly
+  -- the number that mattered when one of them took two minutes to reach
+  -- its first line.
+  --
+  print(("wm: launching %s"):format(tostring(req.program)))
+
   local ok, err, id = run(path, req.args or "", true, { ["/app/wm"] = ep })
+
+  print(("wm: launched %s -> %s %s"):format(tostring(req.program),
+        tostring(ok), tostring(ok and id or err)))
 
   if not ok then
     return { ok = false, error = tostring(err) }
@@ -2581,9 +2728,48 @@ handlers.move = function(req)
   return { ok = true, x = win.x, y = win.y }
 end
 
+--
+-- **At most this many in one reply, and the rest wait for the next poll.**
+--
+-- `post` bounds the queue at 64 events, which is a bound on *memory*.
+-- `MSG_BYTES` is 2048, which is a bound on the *wire*. Nothing reconciled
+-- the two, and sixty-four events do not fit in two kilobytes.
+--
+-- On the first real machine that was fatal and silent: every application
+-- blocked in its first poll for as long as the desktop was up, and the
+-- window manager was raising `value does not fit in a message` on every
+-- reply. The `pcall` around `sys.reply` swallowed it - rightly wrapping,
+-- wrongly discarding - so nothing was printed, and a caller parked in
+-- `sys.call` has nothing left in the system that can wake it. A desktop
+-- that drew perfectly and answered nobody.
+--
+-- Twelve, because an event is a small table and a dozen of them leave room
+-- for the reply around them. It is deliberately not the queue's bound:
+-- those two numbers measure different things and pretending otherwise is
+-- what caused this.
+--
+-- **A partial batch is always correct here.** An event queue is a queue:
+-- the caller polls again immediately, and what is left goes in order on the
+-- next reply. What is never correct is a reply that cannot be sent.
+--
+local EVENTS_PER_REPLY = 12
+
 local function events_for(win)
   local out = win.events
-  win.events = {}
+
+  if #out > EVENTS_PER_REPLY then
+    local rest = {}
+
+    for i = EVENTS_PER_REPLY + 1, #out do
+      rest[#rest + 1] = out[i]
+      out[i] = nil
+    end
+
+    win.events = rest
+  else
+    win.events = {}
+  end
+
   return { ok = true, events = out }
 end
 
@@ -2666,6 +2852,12 @@ handlers.poll = function(req, who)
   -- here, so a number in the millions is the unit bug this file has been
   -- bitten by twice and the log would say so at a glance.
   note(("poll %s wait=%s"):format(tostring(win.title), tostring(wait)))
+
+  -- Always on and bounded, with the arithmetic spelled out. `wait` is
+  -- scheduler ticks and the deadline is the counter, and the whole reason
+  -- this line prints both is that the conversion between them has been
+  -- wrong twice in this file's history - in a way that reads as a desktop
+  -- that never redraws rather than as a number.
 
   waiting[#waiting + 1] = {
     who = who, win = win, deadline = sys.ticks() + in_counter(wait),
@@ -2752,16 +2944,24 @@ local function answer_waiting()
   local now = sys.ticks()
   local still = {}
 
+  -- How many are queued and how far the soonest one still is. If replies
+  -- are going out this says nothing interesting; if they are not, it says
+  -- whether the deadline is approaching or standing still.
+
   for _, w in ipairs(waiting) do
     if by_handle[w.win.handle] == nil then
       -- Its window closed underneath it. An empty answer, so the
       -- application's loop notices and leaves rather than hanging on a
       -- reply nobody is going to send.
-      pcall(sys.reply, w.who, { ok = true, events = {} })
+      replied(pcall(sys.reply, w.who, { ok = true, events = {} }),
+              nil, "a closed window")
     elseif #w.win.events > 0 or now >= w.deadline then
       note(("answer %s %s"):format(tostring(w.win.title),
            #w.win.events > 0 and "events" or "due"))
-      pcall(sys.reply, w.who, events_for(w.win))
+      do
+        local ok, err = pcall(sys.reply, w.who, events_for(w.win))
+        replied(ok, err, w.win.title)
+      end
     else
       still[#still + 1] = w
     end
@@ -2833,16 +3033,64 @@ end
 -- Queued and not delivered: delivering would mean calling the application,
 -- and calling it is what this process must never do.
 --
+local QUEUE_MAX = 64
+
+--
+-- **What a full queue gives up, and it used to be whatever came first.**
+--
+-- A key or a movement is one of a stream: losing one loses one. A press, a
+-- release, a close or a resize is half of a state the application is
+-- holding, and losing it leaves that state wrong for ever. On the first real
+-- machine a serial port that was not there read as sixty-four keys a pass,
+-- all posted to the focused window, and every button went down and none came
+-- up: the window manager logged each release and no application received
+-- one, and a full queue dropping its oldest event is the only way a posted
+-- event does not arrive. `hal/pc/uart.c` has the cause; this is why the next
+-- cause like it costs keystrokes rather than a wedged widget.
+--
+local function expendable(event)
+  return event.type == "key" or event.type == "rawkey"
+         or (event.type == "mouse" and event.action == "move")
+end
+
 function post(win, event)
   if not win then return end
 
-  win.events[#win.events + 1] = event
+  local events = win.events
 
-  if #win.events > 64 then
+  events[#events + 1] = event
+
+  if #events > QUEUE_MAX then
     -- An application that has stopped collecting its events is not going to
-    -- start. Dropping the oldest is better than growing without limit in a
-    -- process that everything else on the screen depends on.
-    table.remove(win.events, 1)
+    -- start. Dropping one is better than growing without limit in a process
+    -- that everything else on the screen depends on.
+    local victim = 1
+
+    for i = 1, #events do
+      if expendable(events[i]) then
+        victim = i
+        break
+      end
+    end
+
+    local lost = table.remove(events, victim)
+
+    --
+    -- Said, because a dropped event is invisible from everywhere else: the
+    -- application never learns it existed, and a button that stays down
+    -- looks like a bug in the button. The first five one at a time, then at
+    -- each power of ten, per window - a flood is a line per order of
+    -- magnitude rather than a ring full of the same sentence.
+    --
+    win.dropped = (win.dropped or 0) + 1
+
+    local n = win.dropped
+
+    if n <= 5 or n == 100 or n == 1000 or n == 10000 or n == 100000 then
+      print(("wm: %s is not collecting its events; dropped a %s%s, %d so far")
+            :format(tostring(win.title), tostring(lost.type),
+                    lost.action and (" " .. lost.action) or "", n))
+    end
   end
 end
 
@@ -3230,6 +3478,12 @@ local function collect_dead(now)
 
     if win.pid and win.last_poll and not alive[win.pid]
        and (now - win.last_poll) > silent_grace then
+      -- Said out loud, always - not only under `trace`. A window vanishing
+      -- on its own is the desktop doing something a person did not ask for,
+      -- and the reason belongs somewhere they can read it afterwards.
+      print(("wm: %s stopped answering and its process is gone"):format(
+            tostring(win.title)))
+
       handlers.close{ window = win.handle }
     end
   end
@@ -3320,6 +3574,8 @@ local function window_at(x, y)
   return nil
 end
 
+local pointers_said = 0
+
 local function pointer_pass(p)
   if not p then return end
 
@@ -3333,6 +3589,17 @@ local function pointer_pass(p)
 
   local was_down = (buttons & 1) ~= 0
   local is_down = (p.buttons & 1) ~= 0
+
+  -- Both ends of a click, bounded; the driver logs the same two moments as
+  -- `i8042 buttons`. If the driver logs a release and this does not, it was
+  -- lost between the two. If both do and the widget stays down, it was lost
+  -- after this - which on the first real machine it was, in an event queue
+  -- `post` now empties more carefully.
+  if is_down ~= was_down and pointers_said < 30 then
+    pointers_said = pointers_said + 1
+    print(("wm: button %s at %d,%d raw=%s"):format(
+          is_down and "down" or "up", nx, ny, tostring(p.buttons)))
+  end
 
   local moved_this_pass = (nx ~= pointer_x or ny ~= pointer_y)
 
@@ -3931,6 +4198,35 @@ end
 while running do
   passes = passes + 1
   flush_notes()
+
+  --
+  -- **Who is actually running, once a second, under `trace` only.**
+  --
+  -- Every instrument so far has asked "is this part stuck", and each time
+  -- the answer was no: the compositor loops, the applications paint, the
+  -- filesystem answers the shell. What none of them could say is where the
+  -- processor is *going* - and on the first real machine the compositor
+  -- managed nine passes a second while measuring four milliseconds per
+  -- pass, which means it was not running for most of the time and neither
+  -- was anything else that was being watched.
+  --
+  -- `ticks` is cumulative scheduler ticks charged to a process, so the
+  -- difference between two of these lines is the share it took. That is the
+  -- one question left and nothing in the system was answering it.
+  --
+  if TRACE and passes % 250 == 0 then
+    local list = sys.processes and sys.processes() or nil
+
+    for i = 1, (list and #list or 0) do
+      local e = list[i]
+
+      if (e.ticks or 0) > 0 then
+        print(("wm: cpu %s(%s) ticks=%s state=%s"):format(
+              tostring(e.name), tostring(e.id), tostring(e.ticks),
+              tostring(e.state)))
+      end
+    end
+  end
   -- 1. Input, always first - and this is where the pass sleeps if there is
   -- none. One call for keys and the pointer together, because the console
   -- has to be asked anyway and two round trips to learn nothing is one
@@ -3997,7 +4293,8 @@ while running do
     -- A handler that took responsibility for its own answer, which `poll`
     -- does when there is nothing to report yet.
     if reply ~= DEFER then
-      pcall(sys.reply, who, reply)
+      local sent, err = pcall(sys.reply, who, reply)
+      replied(sent, err, req.type)
     end
   end
 

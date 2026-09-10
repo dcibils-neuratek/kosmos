@@ -366,7 +366,8 @@ For a long time a driver *was* the HAL: `hal/virtio/input.c` defined
 was exactly right while every board took that subsystem from the same file.
 
 **It stopped being right the moment a board had a choice.** The PC takes its
-keyboard from an i8042 and its pointer from virtio; it takes its sound from
+keyboard from an i8042, and its pointer from a virtio tablet when QEMU gives
+it one and from the i8042's auxiliary port when not; it takes its sound from
 an Intel HDA controller when there is one and from virtio when there is not.
 Two drivers cannot both define the same nine symbols, and neither of them
 should have to know the other exists.
@@ -392,13 +393,21 @@ link, or a codec whose output pin is wired to nothing. Three different
 faults, three different fixes, one silence. On a machine with no serial port
 the boot log is the only instrument there is.
 
+**And a board asks whether the port it describes is there.** `hal/pc/uart.c`
+did not, because QEMU always provides COM1, and read the T14's missing one as
+a byte waiting for ever: every register of a port nothing answers reads 0xFF,
+which in a 16550's line status register means data has arrived. A core at
+100% and a desktop whose buttons never came up, on a machine whose boot log
+said `16550 UART at 0x3f8`. It asks the scratch register first now, and the
+boot log says `none` when nothing answers.
+
 ## The interface
 
 Minimal on purpose. **Do not expand it speculatively.**
 
 ```c
 void     hal_early_init(void);        // the minimum needed to have output
-void     hal_putchar(char c);         // serial
+void     hal_putchar(char c);         // serial, if the board has one
 bool     hal_fb_init(struct fb *out); // address, w, h, pitch, format
 void     hal_irq_init(void);
 void     hal_timer_init(uint32_t hz);

@@ -2096,6 +2096,28 @@ static int l_boot_option(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.pointer_speed([units])` - how far the pointer moves per count.
+ *
+ * With no argument it asks; with one it sets and answers what it set. Zero
+ * comes back on a board whose pointer is absolute, where there is nothing
+ * for a gain to multiply.
+ *
+ * A device setting rather than an input operation, which is why it is not
+ * behind the console the way `sys.pointer` is: a program run from a shell
+ * has no console of its own and should still be able to say the TrackPoint
+ * is too slow.
+ */
+static int l_pointer_speed(lua_State *L)
+{
+    long units = (long)luaL_optinteger(L, 1, 0);
+
+    if (units < 0) { units = 0; }
+
+    lua_pushinteger(L, kosmos_pointer_speed((unsigned)units));
+    return 1;
+}
+
 static int l_log(lua_State *L)
 {
     luaL_Buffer b;
@@ -2103,7 +2125,10 @@ static int l_log(lua_State *L)
     char *space;
     long n;
 
-    if (want > 65536) { want = 65536; }
+    /* The whole ring, at most. `CONSOLE_LOG_BYTES` is the kernel's number
+     * and this is the userland copy of it; the syscall caps against the
+     * real one, so a mismatch here costs a short read rather than a fault. */
+    if (want > 262144) { want = 262144; }
     if (want < 0)     { want = 0; }
 
     /*
@@ -2519,6 +2544,7 @@ static const luaL_Reg sys_functions[] = {
     { "disk_write",  l_disk_write },
     { "boot",     l_boot_option },
     { "log",      l_log },
+    { "pointer_speed", l_pointer_speed },
     { "build",    l_build },
     { "wait_input", l_wait_input },
     { "kill",     l_kill },

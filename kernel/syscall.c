@@ -975,6 +975,17 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
         break;
 
+    case SYS_PTR_SPEED:
+        /*
+         * Not guarded by `owns_console`, and deliberately: this reads and
+         * writes a *setting*, not the input stream. Taking a keystroke
+         * somebody else is waiting for is theft; making the pointer move
+         * faster is a preference, and a program run from a shell has no
+         * console of its own to prove it deserves one.
+         */
+        result = (long)hal_pointer_speed((unsigned)sc->arg[0]);
+        break;
+
     case SYS_POINTER: {
         /*
          * Guarded exactly as SYS_GETCHAR is, and for the same reason: input

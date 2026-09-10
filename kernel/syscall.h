@@ -191,7 +191,8 @@
 #define SYS_NET_SEND   40   /* (ptr, len)             -> 0 or error         */
 #define SYS_NET_RECV   41   /* (ptr, max)             -> bytes, or none     */
 
-#define SYS_MAX         42
+#define SYS_PTR_SPEED  42   /* (units)                -> the speed now      */
+#define SYS_MAX         43
 
 /*
  * What a spawn may hand its child beyond capabilities.

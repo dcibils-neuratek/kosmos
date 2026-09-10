@@ -14,14 +14,21 @@
  * same controller's *auxiliary* port - so this one file is a keyboard **and
  * a pointer**, which is the whole of what a desktop needs from a person.
  *
- * **Polled, not interrupt-driven, and that is a decision rather than a
- * shortcut.** `hal.h` asks for `hal_getchar` and `hal_pointer_poll`, both of
- * which are questions rather than announcements; the virtio driver uses
- * interrupts because a virtqueue is asynchronous by construction, and this
- * one does not because a controller with two bytes of buffer is not. It also
- * means the first hardware boot needs no APIC and no interrupt routing at
- * all, which moves an entire milestone after the picture instead of before
- * it.
+ * **Interrupts and questions both, and it was questions alone until the
+ * first real machine.** `hal.h` asks for `hal_getchar` and
+ * `hal_pointer_poll`, so this driver read the controller only when asked -
+ * fine for a keyboard, and a poor fit for a pointer: the controller holds
+ * *one* byte, a TrackPoint sends three a report a hundred times a second,
+ * and a look once a scheduler tick leaves four milliseconds between reads.
+ * IRQ 1 and 12 now drain it as bytes arrive; the questions still drain too,
+ * which costs a port read and keeps the device working if a line is ever
+ * masked.
+ *
+ * Both paths run with interrupts off - a syscall enters with IF clear and
+ * nothing on its way re-enables it, and an interrupt gate clears it - and
+ * this board schedules on one core, so the queues below are only ever
+ * touched by one of them at a time. A second core would need a lock here;
+ * this is where that is written down.
  *
  * **One buffer, two devices.** The keyboard and the auxiliary port share
  * port 0x60, and which one a byte came from is a bit in the status register.
@@ -30,37 +37,24 @@
  * lose mouse packets and the other way round.
  *
  * ------------------------------------------------------------------------
- * **This is not in the build yet, and here is exactly where it got to.**
+ * **The auxiliary half sent nothing under QEMU for months, and now it
+ * does.** The keyboard half was demonstrated early - `sendkey p w d ret`
+ * produced `pwd` at the prompt - while no auxiliary byte ever arrived, and
+ * five causes were ruled out one at a time: the handshake was acknowledged,
+ * the drain ran and saw keyboard bytes, `info mice` named the PS/2 mouse,
+ * `vmport=off` changed nothing, and neither did arming the interrupt bits in
+ * the configuration byte.
  *
- * The keyboard half *works*, demonstrated rather than assumed: with the x86
- * board switched to this driver and the virtio devices detached, QEMU's
- * `sendkey p w d ret` produced `pwd`, a newline and `/` at the prompt, and
- * `sendkey up` walked the shell's history and re-ran it. So the controller
- * handshake, scancode set 1, the shared keymap and the escape sequences for
- * the arrows are all right.
+ * What changed is what the first real machine forced, all at once: the
+ * configuration byte no longer carries `CFG_AUX_DISABLE`, both lines are
+ * armed *and* unmasked with a handler draining them, and the framing check
+ * is strict. With those, `mouse_move` from QEMU's monitor arrives as packets
+ * and a click on the Deskbar opens its menu. Which of them QEMU needed has
+ * not been isolated, and this says so rather than guessing.
  *
- * The auxiliary half sends nothing under QEMU, and the reason is not known.
- * What is known, from instrumenting the drain:
- *
- *   - the handshake succeeds - `0xA8` leaves the configuration byte at 0x40,
- *     which is translation on with both ports enabled, and `0xFF`, `0xF6`
- *     and `0xF4` are all acknowledged;
- *   - the drain does run and does see keyboard bytes, with the status
- *     register's auxiliary bit clear as it should be for those;
- *   - no auxiliary byte ever arrives, whether the movement is sent with
- *     `input-send-event` or the monitor's own `mouse_move`;
- *   - `info mice` names the PS/2 mouse as current, and `vmport=off` - the
- *     obvious suspect, since q35 carries a vmmouse - changes nothing;
- *   - and enabling both interrupts in the configuration byte, in case the
- *     model only pushes auxiliary bytes to the output buffer when the line
- *     is armed, changes nothing either.
- *
- * So the board stays on virtio input until that is understood, because a
- * desktop with no pointer is not a desktop and the display harness says so
- * in eleven checks. **What is not blocked is the machine this is for**: a
- * TrackPoint is a real PS/2 device rather than an emulated one, and the
- * keyboard - the half that decides whether a laptop can be typed on at all -
- * is the half that works.
+ * What it buys is the reason to write it down: the pointer driver a laptop
+ * runs is exercised on every gate - `tools/run_x86.py` boots with no tablet
+ * and clicks through it - instead of only on a laptop.
  * ------------------------------------------------------------------------
  */
 
@@ -69,6 +63,7 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "console.h"
 #include "keys.h"
 #include "i8042.h"
 #include "pc.h"
@@ -280,8 +275,21 @@ static void key_transition(unsigned code, bool down)
         }
     }
 
+    /*
+     * **Full means drop the oldest, and it used to mean drop the newest.**
+     *
+     * A queue of key transitions is a queue of things that already
+     * happened; when it overflows the interesting end is the recent one.
+     *
+     * Either way a full queue stays full until somebody collects it, and
+     * `input_pending` says "there is input" for as long as it does. Nothing
+     * collects key *events* at a shell prompt - they exist for the desktop -
+     * so on the first real machine `keys=1` held from the first keystroke
+     * on. The console server throws them away now when no client has asked
+     * for any; `events_wanted` there has the rest.
+     */
     if (next == keyq_tail) {
-        return;
+        keyq_tail = (keyq_tail + 1) % KEYQ;
     }
 
     keyq[keyq_head].code = (uint8_t)code;
@@ -311,13 +319,44 @@ static void key_transition(unsigned code, bool down)
  * Units per count, and the one number here that should be decided on the
  * machine rather than in this file.
  *
- * Eight puts a count at about half a pixel on a 1920-wide screen, which is
- * fine for a mouse and probably slow for a TrackPoint - those send a lot of
- * counts when pushed hard, and every other system applies an acceleration
- * curve on top. There is none here yet, deliberately: a curve tuned against
- * an emulated mouse would be a curve tuned against the wrong device.
+ * Eight put a count at about half a pixel on a 1920-wide screen, and the
+ * paragraph that used to be here said it was "fine for a mouse and probably
+ * slow for a TrackPoint". It was right, and the first machine to run this
+ * measured it: the range is 32767 across 1920 pixels, so seventeen units to
+ * the pixel, and a count moved 0.47 of one. The pointer worked and crawled.
+ *
+ * Thirty-two is about 1.9 pixels a count there, which is the speed a
+ * TrackPoint wants. What decides it is the ratio of this to `RANGE`: the
+ * window manager maps the whole range onto the screen, so the driver's
+ * limits and the screen's edges are reached together and there is no
+ * saturation to worry about - crossing the screen is a fixed number of
+ * counts however big the panel is.
+ *
+ * **It is still one number for two devices, and that is the next thing.**
+ * A TrackPoint is a strain gauge and a touchpad is a surface; they want
+ * different speeds and both want a curve. `pointer` at the prompt sets this
+ * one, through the function below, and nothing here can yet tell a
+ * TrackPoint's packet from a touchpad's to give them two.
  */
-#define SCALE 8
+static unsigned pointer_scale = 32;
+
+/*
+ * Read and set from userland through `hal_pointer_speed`.
+ *
+ * Zero asks without changing anything, which is what lets one program both
+ * report and set. Clamped rather than validated: a speed of nought is a
+ * pointer that cannot move and a huge one is a pointer that crosses the
+ * screen on one count, and neither is worth a error path in a device
+ * setting somebody is fiddling with to find what they like.
+ */
+unsigned i8042_pointer_speed(unsigned scale)
+{
+    if (scale > 0) {
+        pointer_scale = scale > 512 ? 512 : scale;
+    }
+
+    return pointer_scale;
+}
 
 static uint32_t pointer_x = RANGE / 2;
 static uint32_t pointer_y = RANGE / 2;
@@ -332,12 +371,11 @@ static void move_by(int dx, int dy)
 {
     /*
      * Scaled, because a TrackPoint reports a handful of counts per report
-     * and the range is fifteen bits. Sixty-four is a feel rather than a
-     * measurement, and it is the one number in this file that should be
-     * decided on the machine rather than here.
+     * and the range is fifteen bits. By how much is `pointer_scale` above,
+     * which the machine decides rather than this file.
      */
-    int32_t nx = (int32_t)pointer_x + dx * SCALE;
-    int32_t ny = (int32_t)pointer_y - dy * SCALE;   /* up is positive on PS/2 */
+    int32_t nx = (int32_t)pointer_x + dx * (int32_t)pointer_scale;
+    int32_t ny = (int32_t)pointer_y - dy * (int32_t)pointer_scale;  /* up is + */
 
     if (nx < 0) { nx = 0; }
     if (ny < 0) { ny = 0; }
@@ -348,9 +386,40 @@ static void move_by(int dx, int dy)
     pointer_y = (uint32_t)ny;
 }
 
+/*
+ * Button changes as this driver decoded them, bounded: the driver's end of a
+ * click, where `wm` logs the other end.
+ *
+ * On the first real machine a press reached the application and its release
+ * never did, and the two logs together are what placed the loss: the driver
+ * decoded both, the window manager saw both, and the release was dropped
+ * after that, from a window's event queue full of keys typed by a serial
+ * port that was not there. `hal/pc/uart.c` has that story.
+ */
+static unsigned button_changes;
+
+/*
+ * Bytes thrown away while looking for the start of a packet - the evidence
+ * for a pointer that jumps.
+ *
+ * A stream that loses a byte decodes the next packet wrongly: a movement
+ * byte read as the header and the following header read as a delta, which
+ * with the sign bits of a byte that was never a header is a jump of
+ * hundreds of pixels and a button nobody pressed. The check below then
+ * discards whatever cannot be a header until the stream lines up again. So
+ * a count that climbs while the pointer moves is a stream losing bytes, and
+ * one that stays at zero says the jumps come from somewhere else.
+ *
+ * The first twenty one at a time, because how far apart they are is the
+ * question; after that at each power of ten, so a stream that is badly
+ * wrong says so without filling the ring.
+ */
+static unsigned long resync_dropped;
+
 static void aux_byte(uint8_t b)
 {
     int dx, dy;
+
 
     /*
      * Bit 3 of the first byte is always set, and that is the only way to
@@ -359,7 +428,38 @@ static void aux_byte(uint8_t b)
      * because a mis-framed packet moves the pointer somewhere nobody asked
      * for and the next one would be wrong too.
      */
-    if (packet_len == 0 && (b & 0x08) == 0) {
+    /*
+     * **Bit 3 set *and* both overflow bits clear**, and the second half of
+     * that is what this was missing.
+     *
+     * Byte 0 of a PS/2 packet is buttons in 0-2, an always-one bit in 3, the
+     * X and Y signs in 4 and 5, and the X and Y *overflow* flags in 6 and 7.
+     * Overflow means the device moved further than a byte can say, which a
+     * hand on a TrackPoint does not do - so on a real stream those two bits
+     * are zero, and requiring them to be zero is what tells a first byte
+     * from a byte that merely looks like one.
+     *
+     * Testing bit 3 alone accepts almost every *negative* delta: -3 is 0xfd,
+     * -5 is 0xfb, -2 is 0xfe, and all of them have bit 3 set. Measured on
+     * the first real machine, that is exactly what happened - the log is
+     * full of `packet0 fd`, `packet0 fb`, `packet0 fe`, which are movement
+     * bytes decoded as headers. The low bits of a delta then read as button
+     * state, so the pointer reported presses nobody made and releases that
+     * never came, and the stream never resynchronised because the rule that
+     * was supposed to resynchronise it matched the wrong bytes.
+     */
+    if (packet_len == 0 && ((b & 0x08) == 0 || (b & 0xc0) != 0)) {
+        resync_dropped++;
+
+        if (resync_dropped <= 20 || resync_dropped == 100
+            || resync_dropped == 1000 || resync_dropped == 10000) {
+            kputs("i8042 resync: dropped byte ");
+            kputx(b, 2);
+            kputs(", ");
+            kputu(resync_dropped);
+            kputs(" so far\n");
+        }
+
         return;
     }
 
@@ -389,6 +489,19 @@ static void aux_byte(uint8_t b)
 
         if (buttons != was) {
             pointer_moved = true;
+
+            /*
+             * Both ends of a click, because a click that half-arrives has to
+             * be traced to the layer that lost it - see `button_changes`.
+             */
+            if (button_changes < 20) {
+                button_changes++;
+                kputs("i8042 buttons ");
+                kputx(buttons, 2);
+                kputs(" from packet0 ");
+                kputx(packet[0], 2);
+                kputc('\n');
+            }
         }
     }
 }
@@ -485,7 +598,6 @@ static void drain(void)
 
         b = pc_in8(DATA);
 
-
         if ((status & ST_AUX) != 0) {
             if (aux_present) {
                 aux_byte(b);
@@ -542,15 +654,45 @@ bool i8042_keyboard_init(void)
     }
 
     /*
-     * Interrupts off and translation on.
+     * Translation on, both ports enabled, both interrupts armed.
      *
-     * Off because this driver is polled - see the note at the top - and a
-     * controller raising IRQ 1 into a system with no handler for it is a
-     * machine that stops. Translation on because it makes the device's set 2
-     * arrive as set 1, which is the set evdev's numbers came from and
-     * therefore the one `hal/keys.c` already understands.
+     * Translation because it makes the device's set 2 arrive as set 1, which
+     * is the set evdev's numbers came from and therefore the one
+     * `hal/keys.c` already understands.
      */
-    config &= ~(CFG_KBD_IRQ | CFG_AUX_IRQ | CFG_KBD_DISABLE);
+    /*
+     * **`CFG_AUX_DISABLE` too, and it was not cleared here before.**
+     *
+     * `CMD_ENABLE_AUX` clears it in the controller, and `i8042_pointer_init`
+     * sends that - so in principle the order is fine. In practice this
+     * writes the whole config byte with bit 5 still set, and a controller
+     * that honours the byte over the command is a controller whose
+     * auxiliary device never says anything. It is one bit, it is what the
+     * datasheet describes, and the machine it matters on reports exactly
+     * that symptom.
+     */
+    /*
+     * **Interrupts on, and this driver used to turn them off.**
+     *
+     * The reason it did was true when it was written: a controller raising
+     * IRQ 1 into a system with no handler is a machine that stops. There is a handler now - `i8042_interrupt` drains
+     * on lines 1 and 12, and both `pic.c` and `apic.c` route them here - so
+     * the reason expired and the cost did not.
+     *
+     * **The cost is lost bytes.** The i8042 has a *one-byte* output buffer.
+     * Polling it once per scheduler tick leaves four milliseconds between
+     * looks, and a mouse reporting a hundred times a second puts three bytes
+     * through that buffer in about one. Bytes are dropped, a dropped byte
+     * shifts every packet after it, and the framing check above then has to
+     * recover a stream that is permanently one byte out.
+     *
+     * The polled drains stay exactly where they were. They cost a port read
+     * when there is nothing to fetch and they are what keeps this working if
+     * a line is ever masked, so this is belt and braces rather than a change
+     * of mechanism.
+     */
+    config &= ~(CFG_KBD_DISABLE | CFG_AUX_DISABLE);
+    config |= CFG_KBD_IRQ | CFG_AUX_IRQ;
     config |= CFG_TRANSLATE;
 
     command(CMD_WRITE_CONFIG);
@@ -560,6 +702,11 @@ bool i8042_keyboard_init(void)
     }
 
     command(CMD_ENABLE_KBD);
+
+    /* The keyboard's line. The auxiliary port's is opened by
+     * `i8042_pointer_init`, which is the only thing that knows whether
+     * there is a device on it. */
+    pc_irq_unmask(1);
 
     present = true;
     return true;
@@ -596,6 +743,11 @@ bool i8042_pointer_init(void)
     }
 
     aux_present = true;
+
+    /* IRQ 12 is the auxiliary port's, on the slave controller - `pic.c`
+     * opens the cascade for anything above seven. */
+    pc_irq_unmask(12);
+
     return true;
 }
 
@@ -687,7 +839,8 @@ bool i8042_input_pending_peek(void)
 
     drain();
 
-    return chars_head != chars_tail || keyq_head != keyq_tail || pointer_moved;
+    return chars_head != chars_tail || keyq_head != keyq_tail
+        || pointer_moved;
 }
 
 bool i8042_input_pending(void)
@@ -696,17 +849,18 @@ bool i8042_input_pending(void)
 }
 
 /*
- * The interrupt half, which this driver does not use and still has to have.
+ * The interrupt half, and since the first real machine the half that
+ * matters.
  *
  * `hal/pc/pic.c` offers every line to every driver because PCI interrupts
- * are shared and the number alone does not say who raised one - so the
- * symbol has to exist even for a device that asked not to be interrupted.
+ * are shared and the number alone does not say who raised one, so this
+ * answers only its own: 1 for the keyboard, 12 for the auxiliary port. A
+ * byte is drained as soon as the controller has it, into the same queues
+ * the questions above read.
  *
- * **It is a drain rather than an empty function.** IRQ 1 and 12 are masked
- * in the configuration byte above, so nothing should arrive; if something
- * does - a firmware that left them enabled, or the day this driver stops
- * polling - reading the bytes is the right answer and dropping them is not.
- * The queues are the same ones the polled path fills.
+ * Interrupts are off in here and off in every syscall that drains, and this
+ * board schedules on one core, so the two never interleave - the note at the
+ * top says what a second core would need.
  */
 void i8042_interrupt(unsigned line)
 {

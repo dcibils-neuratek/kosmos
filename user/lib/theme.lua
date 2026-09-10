@@ -38,7 +38,10 @@ local theme = {}
 
 theme.palettes = {}
 
--- Dark: what Kosmos looked like first, and still the default.
+-- Dark: what Kosmos looked like first, and still what the kit starts with.
+-- A desktop with nothing saved is BeOS - the window manager applies it, in
+-- `default_appearance` - and the display harness names this one, because its
+-- colours are the ones that harness looks for.
 theme.palettes.dark = {
   name      = "dark",
 

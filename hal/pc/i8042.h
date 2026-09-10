@@ -22,4 +22,7 @@ bool i8042_input_pending(void);
 bool i8042_input_pending_peek(void);
 void i8042_interrupt(unsigned line);
 
+/* Read (0) or set the pointer's units-per-count. See `i8042.c`. */
+unsigned i8042_pointer_speed(unsigned scale);
+
 #endif

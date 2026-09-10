@@ -439,6 +439,13 @@ static inline long kosmos_pointer(struct pointer_info *out)
     return sys1(SYS_POINTER, (long)(uintptr_t)out);
 }
 
+/* Read (0) or set how far the pointer moves per count. Answers the speed
+ * in force, or zero on a board whose pointer is absolute. */
+static inline long kosmos_pointer_speed(unsigned units)
+{
+    return sys1(SYS_PTR_SPEED, (long)units);
+}
+
 static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 {
     return sys2(SYS_REPLY, (long)sender, (long)(uintptr_t)msg);

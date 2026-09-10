@@ -626,14 +626,19 @@ The board now answers `hal_keyboard_describe()` and
 ```
 [7/12] input devices
        The i8042 at 0x60, then the PCI bus for everything else.
-       -> keyboard: i8042, scancode set 1, polled - the chip a laptop still has
-       -> pointer: i8042 auxiliary port, relative counts made absolute over 0..32767
+       -> keyboard: i8042, scancode set 1, on IRQ 1 - the chip a laptop still has
+       -> pointer: the i8042 auxiliary port, relative counts made absolute over 0..32767
 ```
 
 **A boot log that names the wrong driver is worse than one that says
 nothing**, because it is the first thing anybody reads when a board does not
 work - and on this machine it is the *only* thing, since there is no serial
 port.
+
+The pointer's line read `made absolute32767` on every boot until 0.10.17:
+the board's sentence ended where the kernel appends the range, and the
+`over 0..` quoted above was in this document and nowhere in the code. The
+keyboard's still said `polled` after its interrupt had been armed.
 
 ---
 
@@ -682,29 +687,35 @@ side is real silence, which is the same claim from the other direction.
 
 ## 6. What is blocked, and exactly what is known
 
-**The auxiliary port sends nothing under QEMU.** Established by
-instrumenting the drain rather than by reading code:
+**The auxiliary port sent nothing under QEMU for months, and it streams
+now.** What was established then, by instrumenting the drain rather than by
+reading code, is worth keeping because every item on it stayed true:
 
-- the handshake **succeeds** - after `0xA8` the configuration byte reads
-  0x40, which is translation on with both ports enabled, and `0xFF` reset,
-  `0xF6` defaults and `0xF4` enable are each acknowledged;
-- the drain **does run** and **does see keyboard bytes**, with the status
-  register's auxiliary bit correctly clear for those - `st=29 d=30` is the
-  make code for A and `d=158` its break;
-- **no auxiliary byte ever arrives**, whether the movement is sent with
+- the handshake **succeeded** - after `0xA8` the configuration byte read
+  0x40, translation on with both ports enabled, and `0xFF` reset, `0xF6`
+  defaults and `0xF4` enable were each acknowledged;
+- the drain **ran** and **saw keyboard bytes**, with the status register's
+  auxiliary bit correctly clear for those - `st=29 d=30` is the make code
+  for A and `d=158` its break;
+- **no auxiliary byte ever arrived**, whether the movement was sent with
   `input-send-event` or with the monitor's own `mouse_move`;
-- `info mice` names `QEMU PS/2 Mouse` as the current mouse;
-- `vmport=off` - the obvious suspect, since q35 carries a vmmouse in its
-  device tree - changes nothing.
+- `info mice` named `QEMU PS/2 Mouse` as the current mouse;
+- `vmport=off` - the obvious suspect, since q35 carries a vmmouse - changed
+  nothing.
 
-**So the x86 board is back on virtio input and the driver is not in the
-build.** That is deliberate: the display harness spends eleven checks on the
-pointer and a desktop without one is not a desktop. A green tree with a
-precise unknown is worth more than a red one with a guess.
+So the board stayed on virtio input and the driver was bound to nothing, on
+the grounds that a green tree with a precise unknown is worth more than a
+red one with a guess.
 
-**The machine itself is not blocked by this.** A TrackPoint is a real PS/2
-device rather than an emulated one, and the half that decides whether a
-laptop can be typed on at all is the half that works.
+**The machine is what moved it.** On the T14 the TrackPoint said nothing
+until the configuration byte stopped carrying `CFG_AUX_DISABLE`; its packets
+were misframed until the framing check required the two overflow bits clear
+as well as bit 3; and the controller was read once a scheduler tick until
+IRQ 1 and 12 were armed and drained. With all three in the build, QEMU's
+PS/2 mouse streams as well - `mouse_move -100 -100` arrives as `18 9c 64` -
+and **the driver the laptop runs is exercised on every gate**:
+`tools/run_x86.py` boots the desktop with no tablet and clicks the Deskbar's
+menu open through it. Which of the three QEMU needed has not been isolated.
 
 ---
 
@@ -737,6 +748,69 @@ The kernel already draws its boot log to a framebuffer and
 the panel and nothing else. A netconsole becomes possible once the I219
 works, and not before.
 
+**And the missing port turned out to be a fault as well as a constraint.**
+Nothing in `hal/pc/uart.c` asked whether COM1 existed, because QEMU always
+provides one. On a machine without one every register reads 0xFF, and 0xFF
+in the line status register means a byte has arrived - so every read of the
+console's input came back with a phantom 0xFF, for ever. The shell still
+worked, because the keyboard is asked first and the line editor drops a
+non-printable byte without a word. What gave it away was a core at 100% with
+the console server taking 94%, and every button on the desktop going down
+and never coming up: the window manager posted sixty-four phantom keys a
+pass into the focused window's queue, and the mouse release was the oldest
+thing in it.
+
+Reproduced under QEMU with `-serial none` - an idle desktop went from 20% of
+a host core to 100% every time, and in one run the Deskbar's button stayed
+down - and fixed by asking the 16550's scratch register first.
+`tools/run_x86.py` boots with no serial port at all to keep it fixed. Nothing
+can be read from a machine with no serial line, so it asks QEMU whether the
+processor ever halts - which failed against the build before the fix, where
+the stuck button, depending on timing a harness does not reproduce on demand,
+did not.
+
+---
+
+## 8a. Where the register values come from
+
+**Intel's own driver is a legitimate reference, and the licence is the
+reason to check rather than the reason to stop.**
+
+The Linux kernel as a whole is GPL-2.0, and that is what made this look
+closed. `drivers/gpu/drm/` is not the whole kernel: it inherits the
+X11/XFree86 lineage, and Intel contributed much of i915 under **MIT**.
+`i915_pci.c` carries an Intel copyright and an MIT permission notice, which
+is the same licence Kosmos uses - so the existing rule covers it exactly.
+Vendored files keep their authors' notices byte for byte and never get the
+Kosmos header; `LICENSE` names them.
+
+    https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/i915/i915_pci.c
+
+**Check the notice on every file, every time.** The tree is mixed. One file
+being MIT says nothing about the one beside it, and the SPDX line or the
+header is the authority - not the directory it happens to sit in.
+
+**What it is for, and what it is not.** i915 is six figures of lines welded
+to DRM/KMS, dma-buf, workqueues and an allocator, none of which exist here
+and one of which this kernel forbids outright. It cannot be dropped in and
+nobody should try. What it *is* is the authoritative statement of what the
+silicon's registers are, written by the people who built it - device
+identifiers, register offsets, bit meanings, and the order operations have
+to happen in. `CLAUDE.md` requires hardware offsets to be verified against a
+datasheet rather than recalled, and this is a datasheet that compiles.
+
+Intel also publishes the Tiger Lake Programmer's Reference Manuals, which
+are the primary source and carry no licence question at all. Where the two
+disagree, the PRM is the document and the driver is what somebody had to do
+about it.
+
+**The part of the graphics device this project would reach first is the
+display engine** - the cursor plane and the scanout address - because it is
+plain MMIO. The 2D blitter is not: Gen11 removed legacy ring submission, so
+the BLT engine is behind execlists, contexts and per-context page tables.
+That is a GPU driver, not a 2D driver, and it is not the small first step it
+sounds like.
+
 ---
 
 ## 9. What is still missing
@@ -748,7 +822,7 @@ works, and not before.
 | i8042 keyboard | **in the build**, exercised by the display harness | done |
 | More than a gigabyte of RAM | **fixed**: 4 GB of boot page tables, and the low region chosen by what can be mapped | done |
 | A bootable stick | **`make x86-iso`**, hybrid GRUB image | done |
-| i8042 auxiliary port | written, does not deliver under QEMU | blocked, §6 |
+| i8042 auxiliary port | **in the build**: the TrackPoint moves the pointer on the machine, and a click through QEMU's PS/2 mouse is checked on every gate | done |
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
 | ~~Local APIC / IOAPIC / MSI~~ | **written and in the build**, both paths chosen at run time and both tested | done |
 | PCI over ECAM from MCFG | rework of `pci.c` | ~200 |
@@ -780,8 +854,11 @@ right depends on a fact about the laptop's firmware.
 
 0. **A picture.** Boot from a stick; the boot log on the panel.
 1. **A prompt.** i8042, and `neofetch` typed on real silicon.
-2. **The desktop.** The TrackPoint through the auxiliary port. This is the
-   photograph worth taking, and it is a few hundred lines away.
+2. ~~**The desktop.**~~ **Running on the machine**, TrackPoint included. It
+   cost more than the few hundred lines this said: a framebuffer mapped with
+   the wrong memory type, a poll reply too large to send, an eighteen-second
+   mount probe, and a serial port that was not there - the decision log from
+   0.10.16 on has each.
 3. **Cores and time.** ACPI MADT for the real processor count - eight or
    twelve, against the four this kernel has ever seen - and an APIC timer.
 4. ~~**Storage.** NVMe, so `/home` outlives the boot.~~ **Written.** It has
@@ -800,11 +877,15 @@ right depends on a fact about the laptop's firmware.
    the reason to do USB first is now the keyboard and the touchpad rather
    than storage, and this machine's keyboard turned out to be an i8042. What
    USB buys here is the trackpad and anything plugged in.
-2. **The local APIC**, now that ACPI says where it is. It is what a real
-   machine needs for a per-core timer, and it is the first half of starting
-   a second processor.
+2. **The other seven cores.** The local APIC is written and ACPI counts the
+   processors, and still only core 0 runs: nothing sends INIT and STARTUP
+   through the APIC's command register, there is no trampoline page under
+   1 MB, and `cpu_secondary_entry` answers 0. On this machine the APIC does
+   not engage yet either and the board falls back to the 8259, which cannot
+   start a core at all - so that comes first.
 3. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
    bytes per function through port 0xCF8 and PCIe has 4096.
 
-And still open, whenever it is cheap: **why QEMU's PS/2 mouse will not
-stream.** One reading of `pckbd.c`, and it decides nothing else.
+And still open, whenever it is cheap: **which change made QEMU's PS/2 mouse
+stream** - §6 names the three. One reading of `pckbd.c`, and it decides
+nothing else.

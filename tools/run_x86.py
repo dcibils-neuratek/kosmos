@@ -24,10 +24,12 @@ test that only read the boot log would have called that a pass.
 
 import os
 import re
+import socket
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 QEMU = "qemu-system-x86_64"
@@ -332,6 +334,310 @@ def sound(image, check):
           "which means the depth this driver reports is not the HAL's")
 
 
+#
+# **The pointer a laptop has, and the serial port it does not.**
+#
+# Every other boot in this file has a COM1, because QEMU gives a machine one
+# unless told not to, and either a virtio tablet or no pointer at all. The
+# first real machine had neither: its pointer is a TrackPoint on the i8042's
+# auxiliary port, and it has no serial port - which mattered more than
+# anything about the pointer. An I/O port nothing answers reads 0xFF, and
+# 0xFF in a 16550's line status register says a byte has arrived. The
+# console read a phantom byte for ever, never slept, and posted keys that
+# pushed every mouse release out of the focused window's queue: a core at
+# 100% and buttons that went down and never came up, on a machine that
+# booted and typed perfectly.
+#
+# So two boots, both straight into the desktop on the 8259 the laptop uses
+# and with QEMU's PS/2 mouse as the only pointer:
+#
+#   - with COM1, where the log can be read: the auxiliary port is bound, and
+#     a click on the Deskbar's button - driven through the monitor as
+#     relative counts, which is what a TrackPoint sends - opens its menu;
+#   - without COM1, where nothing can be read: the machine halts between
+#     events, sampled from QEMU's own `HLT=` rather than from anything the
+#     guest says about itself, and the same click opens the same menu,
+#     found in a screendump.
+#
+# **What each check is known to catch, because both were run against the
+# build before the fix.** The idle check failed there - HLT=1 in 0 of 40
+# samples - with either queue policy in `wm.lua`. The menu check did not:
+# with the phantom port put back the click still opened the menu here,
+# because whether a release is lost depends on where it lands in a queue the
+# flood is filling, and this harness's timing does not land it there on
+# demand. So the menu check is the end-to-end claim that a click works on a
+# machine with no serial port, and the idle check is the test of the fault.
+#
+MOUSE_SPEED = 32        # `pointer_scale` in hal/pc/i8042.c: units per count
+POINTER_RANGE = 32767   # the range it reports, which the wm maps to pixels
+
+
+class Monitor:
+    """QEMU's human monitor over a socket: a command in, whatever it said."""
+
+    def __init__(self, path):
+        for _ in range(400):
+            self.sock = socket.socket(socket.AF_UNIX)
+
+            try:
+                self.sock.connect(path)
+                break
+            except OSError:
+                self.sock.close()
+                time.sleep(0.05)
+        else:
+            raise RuntimeError("QEMU's monitor never opened at " + path)
+
+        self.sock.settimeout(0.05)
+        self.ask("")
+
+    def ask(self, line, quiet=0.15):
+        """Sends a line and returns what came back before it went quiet."""
+        self.sock.sendall((line + "\n").encode())
+        out, heard = b"", time.time()
+
+        while time.time() - heard < quiet:
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                continue
+
+            if not chunk:
+                break
+
+            out += chunk
+            heard = time.time()
+
+        return out.decode("utf-8", "replace")
+
+    def screendump(self, path):
+        """Width, height and RGB bytes of the screen, or None."""
+        self.ask("screendump " + path, quiet=0.5)
+
+        for _ in range(100):
+            if os.path.exists(path):
+                picture = parse_ppm(open(path, "rb").read())
+
+                if picture is not None:
+                    return picture
+
+            time.sleep(0.1)
+
+        return None
+
+    def close(self):
+        self.sock.close()
+
+
+def parse_ppm(data):
+    """Width, height and pixels of a binary PPM, or None if it is short."""
+    fields, at = [], 0
+
+    while len(fields) < 4:
+        while at < len(data) and data[at:at + 1].isspace():
+            at += 1
+
+        start = at
+
+        while at < len(data) and not data[at:at + 1].isspace():
+            at += 1
+
+        if start == at:
+            return None
+
+        fields.append(data[start:at])
+
+    width, height = int(fields[1]), int(fields[2])
+    pixels = data[at + 1:]
+
+    if fields[0] != b"P6" or len(pixels) < width * height * 3:
+        return None
+
+    return width, height, pixels
+
+
+def click(monitor, x, y, width, height):
+    """Moves the pointer to a screen pixel in relative counts, and clicks."""
+
+    # To the corner first, so where it starts is known rather than assumed:
+    # the driver clamps at its range, so enough movement up and to the left
+    # is exactly the origin however far the pointer had wandered.
+    for _ in range(24):
+        monitor.ask("mouse_move -100 -100", quiet=0.03)
+
+    # The window manager maps the driver's range onto the screen and the
+    # driver multiplies each count by its speed, so this undoes both. Down
+    # is positive here; QEMU turns it into PS/2's convention, where up is.
+    need_x = -(-(x * POINTER_RANGE // (width - 1) + 1) // MOUSE_SPEED)
+    need_y = -(-(y * POINTER_RANGE // (height - 1) + 1) // MOUSE_SPEED)
+
+    while need_x > 0 or need_y > 0:
+        step_x, step_y = min(need_x, 60), min(need_y, 60)
+        monitor.ask("mouse_move %d %d" % (step_x, step_y), quiet=0.03)
+        need_x, need_y = need_x - step_x, need_y - step_y
+
+    time.sleep(1.5)
+    monitor.ask("mouse_button 1", quiet=0.03)
+    time.sleep(0.25)
+    monitor.ask("mouse_button 0", quiet=0.03)
+
+
+def pointer(image, check):
+    """Clicks the Deskbar's button through a PS/2 mouse, with and without COM1."""
+    binary = os.path.join(os.path.dirname(image), "kosmos.bin")
+    work = tempfile.mkdtemp(prefix="kosmos-x86-pointer-")
+
+    def start(serial):
+        path = os.path.join(work, "monitor-" + serial)
+        cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+               "-display", "none", "-vga", "none", "-device", "ramfb",
+               "-monitor", "unix:%s,server,nowait" % path,
+               "-serial", serial,
+               "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+               "-fw_cfg", "name=opt/kosmos/irq,string=pic",
+               "-kernel", binary]
+
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL)
+        heard = bytearray()
+
+        # On a thread, because a guest whose serial line is not read stops
+        # inside `kputc` once the pipe is full - the lesson the display
+        # harness learned first.
+        def drain():
+            while True:
+                chunk = os.read(proc.stdout.fileno(), 65536)
+
+                if not chunk:
+                    return
+
+                heard.extend(chunk)
+
+        threading.Thread(target=drain, daemon=True).start()
+        return proc, Monitor(path), heard
+
+    def said(heard):
+        return heard.decode("utf-8", "replace")
+
+    def wait_for(heard, pattern, seconds):
+        until = time.time() + seconds
+
+        while time.time() < until:
+            found = re.search(pattern, said(heard))
+
+            if found:
+                return tuple(int(v) for v in found.groups())
+
+            time.sleep(0.25)
+
+        return None
+
+    # 1. With COM1, where the machine can say what happened.
+    proc, monitor, heard = start("stdio")
+    began = time.time()
+
+    try:
+        deskbar = wait_for(heard, r"wm: window Deskbar at (\d+),(\d+) (\d+)x(\d+)",
+                           120.0)
+        to_desktop = time.time() - began
+
+        check("pointer: the i8042 auxiliary port" in said(heard),
+              "with no tablet on the machine the board did not bind the "
+              "i8042's auxiliary port, so QEMU's PS/2 mouse reaches nothing")
+
+        check(deskbar is not None,
+              "booted into the desktop, the Deskbar never opened a window")
+
+        if deskbar is None:
+            return
+
+        # The rest of the login windows placed first, so none of them lands
+        # on the button after the pointer has got there.
+        time.sleep(6.0)
+
+        screen = monitor.screendump(os.path.join(work, "geometry.ppm"))
+
+        check(screen is not None, "QEMU would not screendump the desktop")
+
+        if screen is None:
+            return
+
+        width, height = screen[0], screen[1]
+        at_x, at_y = deskbar[0] + deskbar[2] // 2, deskbar[1] + 24
+
+        click(monitor, at_x, at_y, width, height)
+
+        menu = wait_for(heard, r"wm: menu of Deskbar at (\d+),(\d+) (\d+)x(\d+)",
+                        20.0)
+
+        check(menu is not None,
+              "a click on the Deskbar's button through QEMU's PS/2 mouse "
+              "opened no menu; the driver and the window manager said: "
+              + " | ".join(l.strip() for l in said(heard).splitlines()
+                           if "i8042" in l or "wm: button" in l
+                           or "not collecting" in l)[-400:])
+    finally:
+        monitor.close()
+        proc.kill()
+        proc.wait()
+
+    if menu is None:
+        return
+
+    # 2. Without COM1, which is the machine the fault was on.
+    proc, monitor, _ = start("none")
+
+    try:
+        # Nothing to wait on, so as long again as the first boot took and
+        # then some. A machine slower than that fails the menu check below,
+        # which says so.
+        time.sleep(max(30.0, 2.5 * to_desktop + 10.0))
+
+        halted = 0
+
+        for _ in range(40):
+            if "HLT=1" in monitor.ask("info registers"):
+                halted += 1
+
+            time.sleep(0.1)
+
+        check(halted >= 10,
+              "with no serial port the machine never idles - HLT=1 in %d of "
+              "40 samples, where the same desktop with one halts in most - so "
+              "something is reading a device that is not there as input"
+              % halted)
+
+        mx, my, mw, mh = menu
+        before = monitor.screendump(os.path.join(work, "before.ppm"))
+
+        click(monitor, at_x, at_y, width, height)
+        time.sleep(5.0)
+
+        after = monitor.screendump(os.path.join(work, "after.ppm"))
+        changed = 0
+
+        if before and after:
+            for y in range(my, min(my + mh, height)):
+                for x in range(mx, min(mx + mw, width)):
+                    i = (y * width + x) * 3
+
+                    if before[2][i:i + 3] != after[2][i:i + 3]:
+                        changed += 1
+
+        check(before is not None and after is not None,
+              "QEMU would not screendump the desktop with no serial port")
+
+        check(changed * 3 > mw * mh,
+              "with no serial port a click on the Deskbar's button opened no "
+              "menu: %d of the %d pixels where it opens changed"
+              % (changed, mw * mh))
+    finally:
+        monitor.close()
+        proc.kill()
+        proc.wait()
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     checks = 0
@@ -588,6 +894,11 @@ def main():
     #
     storage(image, check)
 
+    # And the pointer a laptop has, with and without the serial port it does
+    # not have. `pointer` says why the second half is the one that matters.
+    #
+    pointer(image, check)
+
     if fails:
         print("FAIL: %d of %d checks on x86-64:"
               % (len(fails), len(fails) + checks))
@@ -601,8 +912,10 @@ def main():
           "its processor out of CPUID, agrees with userland about the memory "
           "by two paths, answers what is typed at it, runs a program that "
           "reports what it was handed, plays a tone an Intel HDA "
-          "controller hands back at the right pitch, and keeps a file on an "
-          "NVMe drive across a reboot)." % checks)
+          "controller hands back at the right pitch, keeps a file on an "
+          "NVMe drive across a reboot, and opens a menu with a click through "
+          "a PS/2 mouse whether or not the machine has a serial port)."
+          % checks)
     return 0
 
 

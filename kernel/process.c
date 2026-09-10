@@ -1072,6 +1072,39 @@ void process_exit(struct process *p, int code)
     p->exit_code = code;
     p->exited = true;
 
+    /*
+     * **Every death says so, not only the ones that fault.**
+     *
+     * A process that takes an exception is reported by `trap.c` with a
+     * register dump. A process that merely *stops* - returned, was killed,
+     * or ended because a Lua chunk raised and the runtime unwound - printed
+     * nothing at all, and the log said nothing about the most interesting
+     * thing that had happened.
+     *
+     * That is not hypothetical. Four applications on the first real machine
+     * drew their windows and went silent, and `log error` found nothing,
+     * because nothing was written when they went. Whether they died at all
+     * was unanswerable from the one record the machine keeps.
+     *
+     * One line, at the moment it becomes true, with the name and the number
+     * a person can match against `ps` and against the window that was left
+     * behind.
+     */
+    kputs("process ");
+    kputu((unsigned long)p->id);
+    kputs(" (");
+    kputs(p->name[0] != '\0' ? p->name : "?");
+    kputs(") ended, code ");
+
+    if (code < 0) {
+        kputc('-');
+        kputu((unsigned long)(-(long)code));
+    } else {
+        kputu((unsigned long)code);
+    }
+
+    kputc('\n');
+
     /* Whoever is waiting for this one, if anyone is. */
     if (p->parent != NULL && p->parent->waiter != NULL) {
         thread_wake(p->parent->waiter);

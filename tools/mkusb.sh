@@ -18,8 +18,22 @@
 #      moments and the drive set can change between them;
 #    - the drive that holds the running system is rejected by a third route,
 #      in case a machine ever reports its own boot disk as external;
-#    - and the confirmation is the drive's *name*, typed out. A `y/n` prompt
-#      is answered by reflex; a name has to be read first.
+#    - and a drive that was not on the list this run is refused outright.
+#
+#  **Choosing the identifier is the confirmation, and it used to not be.**
+#  There was a fourth step: the drive's *name*, typed out, on the grounds
+#  that a `y/n` is answered by reflex while a name has to be read first.
+#  That is still true and it was removed anyway, deliberately, because this
+#  script is run several times an hour while a machine is being brought up
+#  and the friction was buying nothing the checks above do not already buy.
+#
+#  What that costs is worth writing down rather than discovering: the three
+#  refusals protect the *catastrophic* mistake - the disk this Mac boots
+#  from - and they do nothing about the merely expensive one. With two
+#  external drives plugged in, `disk4` where you meant `disk5` now erases
+#  the other one with no second chance. The summary below is printed before
+#  anything happens, and `sudo` asks for a password after it, which is the
+#  last moment to read it.
 #
 #  macOS only. It is what this project is developed on, and `diskutil` is
 #  what makes the checks above possible - Linux wants `lsblk` and different
@@ -117,11 +131,6 @@ printf '  Which is        %s, %s\n' "$LABEL" "$SIZE"
 printf '  Writing         %s (%s)\n' "$IMG" "$(du -h "$IMG" | cut -f1)"
 printf '\n'
 printf '  Everything on that drive will be gone.\n'
-printf '  Type the drive name exactly to confirm: %s\n' "$LABEL"
-printf '  > '
-read -r CONFIRM
-
-[ "$CONFIRM" = "$LABEL" ] || die "mkusb: that is not the name. Nothing written."
 
 printf '\nUnmounting...\n'
 diskutil unmountDisk "/dev/$CHOSEN"

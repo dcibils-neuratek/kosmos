@@ -29,9 +29,26 @@
 -- has been carrying it all along. That is precisely why it did not exist
 -- until there was a machine without one.
 
+--
+-- How many lines a bare `log` shows, and the most any filter prints.
+--
+-- A screenful, roughly. The point of both limits is the same: this is read
+-- at a prompt with no scrollback, so anything above the last screen is not
+-- merely unhelpful, it has pushed the useful part off the top.
+--
+local LINES = 40
+
 local want = args:match("^%s*(%S*)") or ""
 
-local text = sys.log(65536)
+--
+-- The whole ring, every time.
+--
+-- A quarter of a megabyte in one Lua string is heavy for a program that ran
+-- twice a second, which is why `logview` still asks for less - but this one
+-- runs when somebody types it, and the thing it must never do is search a
+-- fraction of the log and answer as though it had searched all of it.
+--
+local text = sys.log(262144)
 
 if not text or text == "" then
   print("log: the ring is empty, which should not happen while you are reading this")
@@ -69,17 +86,62 @@ local count = tonumber(want)
 -- program for reading a log at two in the morning.
 --
 if want ~= "" and want ~= "all" and count == nil then
-  local found = 0
+  --
+  -- **What the machine said, not what you typed - and the difference took
+  -- an afternoon to see.**
+  --
+  -- The console records everything through `kputc`, and that includes its
+  -- own echo of the command line. So `log poll` put the word "poll" into
+  -- the ring *by being run*, found exactly that one line, and printed it
+  -- back: on screen, indistinguishable from the shell echoing the command a
+  -- second time. Every search matched itself, which meant the "nothing
+  -- found" message below could never fire for any query at all - the one
+  -- answer a search most needs to be able to give.
+  --
+  -- It read as a bug in the console, or in the shell, or in `print`. It was
+  -- a search engine indexing the search.
+  --
+  -- Lines beginning with the prompt are what a person typed, and a log
+  -- search is asking what the machine answered. `log all` still shows them.
+  --
+  local hits = {}
 
   for _, line in ipairs(lines) do
-    if line:lower():find(want:lower(), 1, true) then
-      print(line)
-      found = found + 1
+    if not line:find("kosmos> ", 1, true)
+       and line:lower():find(want:lower(), 1, true) then
+      hits[#hits + 1] = line
     end
   end
 
-  if found == 0 then
+  if #hits == 0 then
     print(("log: nothing about %q in %d lines"):format(want, #lines))
+    return
+  end
+
+  --
+  -- **The last screenful of the matches, not all of them.**
+  --
+  -- `log wm` against a traced desktop matches fifteen hundred lines, and
+  -- printing them all is not merely long: every line scrolls the console,
+  -- and a console that scrolls repaints its whole grid, so it is fifteen
+  -- hundred repaints of a 1920x1080 screen. It looked, on the machine, like
+  -- the command had printed nothing at all - the prompt came back and the
+  -- output was somewhere in the middle of a flood that had scrolled past.
+  --
+  -- Which is the same mistake as bounding the window manager's trace by
+  -- pass count: a limit in the place it does no good and none in the place
+  -- it does. A log is read from the end, so the end is what is printed, and
+  -- the count below says what was left out and how to ask for it.
+  --
+  local from = math.max(1, #hits - LINES + 1)
+
+  for i = from, #hits do
+    print(hits[i])
+  end
+
+  if from > 1 then
+    print(("-- %d of %d matches; `log all` for everything"):format(
+          #hits - from + 1, #hits))
   end
 
   return
@@ -90,7 +152,7 @@ local from = 1
 if want == "all" then
   from = 1
 else
-  from = #lines - (count or 40) + 1
+  from = #lines - (count or LINES) + 1
   if from < 1 then from = 1 end
 end
 

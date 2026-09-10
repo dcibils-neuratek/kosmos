@@ -14,6 +14,7 @@
  * Register offsets: PC16550D datasheet, table 2. They have not moved.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "hal.h"
@@ -28,6 +29,7 @@
 #define UART_LCR    3        /* line control */
 #define UART_MCR    4        /* modem control */
 #define UART_LSR    5        /* line status */
+#define UART_SCR    7        /* scratch: read/write, controls nothing */
 
 #define LSR_RX_READY  (1u << 0)
 #define LSR_TX_EMPTY  (1u << 5)
@@ -57,21 +59,72 @@ static inline uint8_t inb(uint16_t port)
     return value;
 }
 
+/*
+ * Whether anything answers at COM1 at all.
+ *
+ * **A PC with no serial port reads 0xFF from every register here, and 0xFF
+ * in the line status register says a byte has arrived.** This file assumed
+ * the port existed, because QEMU always gives it one - so on the first real
+ * machine, a T14 with no COM1, `hal_getchar` answered every call with a
+ * byte of 0xFF, for ever.
+ *
+ * Nothing crashed, which is why it took this long to see. The console
+ * server's line editor loops until the input runs out, and it never did: at
+ * a prompt it span discarding a non-printable byte while the keyboard,
+ * asked first, still typed perfectly. At the desktop every `CON_OP_WAIT`
+ * came back with sixty-four of them, so the window manager never slept and
+ * posted sixty-four key events a pass to the focused window - whose queue
+ * holds sixty-four and drops the oldest. A core at 100% with the console
+ * taking 94% of it, and every button pressed and never released, because
+ * the release was pushed out of the queue by keys nobody typed.
+ *
+ * Reproduced under QEMU by taking the port away, `-serial none`: an idle
+ * desktop went from 20% of a host core to 100% every time, and in the first
+ * run a click on the Deskbar's button left it down with no menu while the
+ * same click with the port present opened it. Not in every run - whether
+ * the release is lost depends on where it lands in a queue the flood is
+ * filling - which is why `tools/run_x86.py` tests this by whether the
+ * processor ever halts rather than by the click.
+ *
+ * The scratch register is the test because it is the one register that
+ * does nothing - PC16550D: read/write, and it "does not control the UART in
+ * any way". Two complementary patterns, because one could be 0xFF, which a
+ * port that is not there reads back regardless.
+ */
+static bool present;
+
+static bool answers(void)
+{
+    outb(COM1 + UART_SCR, 0x5a);
+
+    if (inb(COM1 + UART_SCR) != 0x5a) {
+        return false;
+    }
+
+    outb(COM1 + UART_SCR, 0xa5);
+
+    return inb(COM1 + UART_SCR) == 0xa5;
+}
+
 /* `hal_early_init` is the HAL's own name for this: whatever a board must do
  * before anything can be said. On QEMU virt it is the PL011; here it is
  * COM1. Same contract, and the kernel above never learns which. */
 void hal_early_init(void)
 {
-    outb(COM1 + UART_IER, 0x00);            /* no interrupts: polled */
+    present = answers();
 
-    /* 115200 baud: the divisor is 115200/115200 = 1, behind DLAB. */
-    outb(COM1 + UART_LCR, LCR_DLAB);
-    outb(COM1 + 0, 0x01);
-    outb(COM1 + 1, 0x00);
+    if (present) {
+        outb(COM1 + UART_IER, 0x00);        /* no interrupts: polled */
 
-    outb(COM1 + UART_LCR, LCR_8N1);         /* and DLAB back off */
-    outb(COM1 + UART_FCR, 0xC7);            /* FIFOs on, cleared, 14-byte */
-    outb(COM1 + UART_MCR, 0x0B);            /* DTR, RTS, OUT2 */
+        /* 115200 baud: the divisor is 115200/115200 = 1, behind DLAB. */
+        outb(COM1 + UART_LCR, LCR_DLAB);
+        outb(COM1 + 0, 0x01);
+        outb(COM1 + 1, 0x00);
+
+        outb(COM1 + UART_LCR, LCR_8N1);     /* and DLAB back off */
+        outb(COM1 + UART_FCR, 0xC7);        /* FIFOs on, cleared, 14-byte */
+        outb(COM1 + UART_MCR, 0x0B);        /* DTR, RTS, OUT2 */
+    }
 
     /*
      * And what the loader left, while it is still there.
@@ -86,6 +139,13 @@ void hal_early_init(void)
 
 void hal_putchar(char c)
 {
+    /* Nobody to tell. The log ring and the screen still get every byte -
+     * this is only the wire - and waiting for a transmitter that is not
+     * there is a loop whose exit is decided by a floating bus. */
+    if (!present) {
+        return;
+    }
+
     while ((inb(COM1 + UART_LSR) & LSR_TX_EMPTY) == 0) {
     }
 
@@ -110,7 +170,7 @@ int hal_getchar(void)
         return key;
     }
 
-    if ((inb(COM1 + UART_LSR) & LSR_RX_READY) == 0) {
+    if (!present || (inb(COM1 + UART_LSR) & LSR_RX_READY) == 0) {
         return HAL_NO_INPUT;
     }
 
@@ -119,5 +179,6 @@ int hal_getchar(void)
 
 const char *hal_console_describe(void)
 {
-    return "16550 UART at 0x3f8, polled";
+    return present ? "16550 UART at 0x3f8, polled"
+                   : "none - nothing answers at 0x3f8, so the screen and `log` only";
 }

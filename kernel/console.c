@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "kernel.h"
+#include "cpu.h"
 #include "console.h"
 #include "spinlock.h"
 #include "hal.h"
@@ -329,9 +330,29 @@ struct cell {
 static struct cell cells[CELL_ROWS][CELL_COLS];
 
 /* Draws one cell in the colours given, and touches nothing else. */
+static bool can_draw(void);
+
+/*
+ * **Painting is what a screen does; the grid is what the console *is*.**
+ *
+ * These two used to be the same thing, gated together, and that produced a
+ * console that forgot everything printed while somebody else owned the
+ * screen. The window manager suspends drawing and every `print` from every
+ * process still goes through here - so on Control-C the grid was replayed
+ * from the moment the desktop started, with the boot log and the wordmark
+ * still in it, and the new lines were written over only the cells they
+ * happened to occupy. Anything shorter than what it replaced left the old
+ * text showing: a log with pieces of the Kosmos logo embedded in it.
+ *
+ * So the grid is updated always and only the painting is conditional.
+ */
 static void paint_glyph(unsigned col, unsigned line, unsigned cp,
                         uint32_t ink, uint32_t paper)
 {
+    if (!can_draw()) {
+        return;
+    }
+
     const unsigned char *glyph = font_8x16
                                + (size_t)glyph_index(cp) * GLYPH_H;
     unsigned y;
@@ -820,12 +841,127 @@ size_t console_log(char *out, size_t max)
  */
 static struct spinlock console_lock = SPINLOCK("console");
 
+/*
+ * One character into the ring, and nowhere else.
+ *
+ * Split out from `putc_locked` so that the stamp below can use it without
+ * the stamp itself reaching a screen or a serial line.
+ */
+static void log_byte(char c)
+{
+    logbuf[logged % LOG_BYTES] = c;
+    logged++;
+}
+
+/*
+ * **When, in front of every line - in the log and not on the screen.**
+ *
+ * "It stopped" and "it stopped three seconds in" are different facts, and
+ * the second one is the one worth having: a desktop that draws four windows
+ * and then goes quiet looks identical whether the last thing happened at
+ * 0.4 seconds or at forty, and only one of those is a timeout.
+ *
+ * The stamp goes into the ring alone. The screen and the serial line get
+ * what they always got, which matters more than it sounds: the display
+ * harness and the x86 suite read the serial line and match on text, and a
+ * number in front of every line would be a format change under every one of
+ * those checks for no benefit to them at all.
+ *
+ * The clock is the cycle counter from the first line the kernel prints; the
+ * comment inside says why it stopped being the scheduler tick.
+ */
+static uint64_t stamp_hz;
+static uint64_t stamp_base;
+
+static void log_stamp(void)
+{
+    unsigned long whole;
+    unsigned long part;
+
+    /*
+     * **The counter, not the scheduler tick.**
+     *
+     * `hal_ticks` does not move until the timer is armed at stage eleven, so
+     * every line of the boot log - the ten stages where things actually go
+     * wrong - was stamped `0.000`. Truthful and useless: a log whose most
+     * interesting half carries no time is a log you cannot measure a hang
+     * against.
+     *
+     * The cycle counter runs from power-on, so the first reading is taken
+     * as the origin and everything is relative to it. That makes the kernel
+     * start at zero rather than at however long the firmware took, which is
+     * the number a person reading this actually wants.
+     *
+     * If the frequency is not known yet - it is asked of the processor at
+     * stage three - this falls back to the tick, which is zero, and the
+     * first few lines say so honestly.
+     */
+    if (stamp_hz == 0) {
+        struct cpu_info cpu;
+
+        cpu_identify(&cpu);
+        stamp_hz = cpu.counter_hz;
+
+        if (stamp_hz != 0 && stamp_base == 0) {
+            stamp_base = cpu_cycles();
+        }
+    }
+
+    if (stamp_hz != 0) {
+        uint64_t now = cpu_cycles();
+        uint64_t since = now > stamp_base ? now - stamp_base : 0;
+
+        whole = (unsigned long)(since / stamp_hz);
+        part = (unsigned long)(((since % stamp_hz) * 1000u) / stamp_hz);
+    } else {
+        unsigned long ticks = hal_ticks();
+
+        whole = ticks / TICK_HZ;
+        part = ((ticks % TICK_HZ) * 1000u) / TICK_HZ;
+    }
+    char digits[24];
+    unsigned n = 0;
+    unsigned i;
+
+    log_byte('[');
+
+    if (whole == 0) {
+        digits[n++] = '0';
+    }
+
+    while (whole > 0) {
+        digits[n++] = (char)('0' + (whole % 10));
+        whole /= 10;
+    }
+
+    for (i = 0; i < n; i++) {
+        log_byte(digits[n - 1 - i]);
+    }
+
+    log_byte('.');
+    log_byte((char)('0' + (part / 100) % 10));
+    log_byte((char)('0' + (part / 10) % 10));
+    log_byte((char)('0' + part % 10));
+    log_byte(']');
+    log_byte(' ');
+}
+
+static bool log_at_line_start = true;
+
 static void putc_locked(char c)
 {
     /* Before anything decides where it goes: the log is what was printed,
      * not what happened to reach a screen. */
-    logbuf[logged % LOG_BYTES] = c;
-    logged++;
+    if (log_at_line_start && c != '\n') {
+        log_stamp();
+        log_at_line_start = false;
+    }
+
+    log_byte(c);
+
+    if (c == '\n') {
+        log_at_line_start = true;
+    }
 
     if (c == '\n') {
         hal_putchar('\r');
@@ -833,7 +969,20 @@ static void putc_locked(char c)
 
     hal_putchar(c);
 
-    if (can_draw()) {
+    /*
+     * **`attached`, not `can_draw`.** Three states, not two: no screen at
+     * all, a screen somebody else is using, and a screen this console
+     * draws on.
+     *
+     * The first one still goes to the early buffer below, so the boot can
+     * be replayed from its beginning when a display appears. The other two
+     * both come through here and keep the grid current - `paint_glyph` is
+     * the only thing past this point that touches a framebuffer, and it
+     * checks `can_draw` for itself. Gating the whole path on `can_draw` is
+     * what left the console replaying a picture from before the desktop
+     * started.
+     */
+    if (attached) {
         if (c == '\n') {
             screen_byte('\r');
         }

@@ -38,3 +38,14 @@ bool hal_input_pending(void)      { return virtio_input_pending(); }
 bool hal_input_pending_peek(void) { return virtio_input_pending_peek(); }
 
 void input_interrupt(unsigned line) { virtio_input_interrupt(line); }
+
+/*
+ * This board's pointer is a virtio tablet, which is absolute: it says where
+ * it is rather than how far it moved, so there is no gain to apply. Zero,
+ * which is what `hal.h` asks a board with nothing to say to answer.
+ */
+unsigned hal_pointer_speed(unsigned units_per_count)
+{
+    (void)units_per_count;
+    return 0;
+}
