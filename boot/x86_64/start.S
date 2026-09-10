@@ -72,6 +72,82 @@
     .long 32                          /* depth */
 
 /*
+ * And a Multiboot 2 header beside it, because ACPI is invisible without
+ * one.
+ *
+ * **Not for booting.** Multiboot 1 boots perfectly well under UEFI - that
+ * was measured, through GRUB, under OVMF, all the way to a desktop. What it
+ * cannot do is carry an *RSDP*, and without one this kernel cannot find
+ * ACPI on a UEFI machine at all: `hal/pc/acpi.c` looks in the two places a
+ * BIOS leaves the pointer, and UEFI passes it in the EFI Configuration
+ * Table and leaves nothing behind. The same image on the same four-
+ * processor machine reports four processors and drives the APIC under
+ * `-kernel`, and reports one and falls back to the 8259 pair under GRUB.
+ *
+ * So both headers are here and the loader picks. A Multiboot 1 loader finds
+ * the first and nothing changes; a Multiboot 2 loader finds this one and
+ * hands over an RSDP, a memory map and a framebuffer in one structure.
+ * `start.S` tells them apart by the magic the loader leaves in `eax`.
+ *
+ * Multiboot specification 2.0, section 3.1. Eight-byte alignment is
+ * required rather than conventional, and the header must be inside the
+ * first 32 KB - which is why it sits beside the other one at the very
+ * front of the image.
+ */
+#define MB2_MAGIC       0xE85250D6
+#define MB2_ARCH_I386   0
+
+.align 8
+__multiboot2_header:
+    .long MB2_MAGIC
+    .long MB2_ARCH_I386
+    .long __multiboot2_end - __multiboot2_header
+    .long -(MB2_MAGIC + MB2_ARCH_I386 + (__multiboot2_end - __multiboot2_header))
+
+    /*
+     * The address tag, which is this image's a.out kludge under another
+     * name and needed for the same reason: a multiboot loader parses ELF32,
+     * this kernel is ELF64, and the build hands over a flat binary. Five
+     * addresses and the format stops being the loader's business.
+     */
+.align 8
+    .short 2                          /* address */
+    .short 0
+    .long 24
+    .long __multiboot2_header         /* where this header is */
+    .long __load_start                /* where the image begins */
+    .long 0                           /* 0: load to the end of the file */
+    .long __image_end                 /* reserve up to here */
+
+    /* Where to begin, which the address tag does not say. */
+.align 8
+    .short 3                          /* entry address */
+    .short 0
+    .long 12
+    .long _start
+
+    /*
+     * The same video request the other header makes, and the same
+     * reasoning: zero for width and height means "whatever suits the
+     * panel", and 32 bits per pixel is a requirement rather than a
+     * preference because everything above `struct fb` treats a pixel as one
+     * 32-bit word.
+     */
+.align 8
+    .short 5                          /* framebuffer */
+    .short 0
+    .long 20
+    .long 0                           /* width:  no preference */
+    .long 0                           /* height: no preference */
+    .long 32                          /* depth */
+
+.align 8
+    .short 0                          /* end of tags */
+    .short 0
+    .long 8
+__multiboot2_end:
+
+/*
  * The page tables that get us into long mode.
  *
  * **Four gigabytes, identity mapped, with 2 MB pages**, and the size is the
@@ -136,10 +212,21 @@ _start:
     cli
     movl    $__stack_top, %esp
 
+    /*
+     * **Which loader this is, from the magic in eax.**
+     *
+     * Multiboot 1 leaves 0x2BADB002 and Multiboot 2 leaves 0x36D76289, and
+     * the information structures they point `ebx` at have nothing in common
+     * beyond both starting with a length. Parked in edi alongside the
+     * pointer so that one branch in C decides, rather than two paths of
+     * assembly.
+     */
+
     /* Multiboot leaves the information structure in ebx. Parked in esi,
      * which nothing below touches: edi is the destination register for
      * both the table fill and `rep stos`, and ecx is their counter. */
     movl    %ebx, %esi
+    movl    %eax, %ebx           /* ...and only now, since ebx held it */
 
     /*
      * .bss, zeroed - and it happens *here*, before the page tables are
@@ -255,6 +342,7 @@ long_mode:
      * After the .bss zeroing above, not before: `pc_multiboot` is in there.
      */
     movl    %esi, pc_multiboot(%rip)
+    movl    %ebx, pc_multiboot_magic(%rip)
 
     call    kmain_x86
 

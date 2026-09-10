@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "multiboot.h"
+#include "multiboot2.h"
 
 bool pc_framebuffer_from(const struct multiboot_info *info,
                          struct pc_loader_fb *out)
@@ -59,6 +60,89 @@ bool pc_framebuffer_from(const struct multiboot_info *info,
     out->pitch = info->framebuffer_pitch;
     out->width = info->framebuffer_width;
     out->height = info->framebuffer_height;
+
+    return true;
+}
+
+/*------------------------------------------------------------------------
+ * And the same questions of the other protocol's structure.
+ *----------------------------------------------------------------------*/
+
+const struct mb2_tag *mb2_find(const struct mb2_info *info, uint32_t type)
+{
+    const uint8_t *at;
+    const uint8_t *end;
+
+    if (info == NULL || info->total_size < sizeof(*info)) {
+        return NULL;
+    }
+
+    at = (const uint8_t *)info + sizeof(*info);
+    end = (const uint8_t *)info + info->total_size;
+
+    while (at + sizeof(struct mb2_tag) <= end) {
+        const struct mb2_tag *tag = (const struct mb2_tag *)at;
+
+        if (tag->type == MB2_TAG_END) {
+            return NULL;
+        }
+
+        /*
+         * **A size smaller than the header is a walk that never
+         * advances**, which is the one thing a malformed structure could do
+         * to this function. The specification's own minimum is eight.
+         */
+        if (tag->size < sizeof(struct mb2_tag)) {
+            return NULL;
+        }
+
+        if (tag->type == type) {
+            return tag;
+        }
+
+        /*
+         * Every tag begins on an eight-byte boundary whatever its size
+         * says, so the step is the size rounded up rather than the size.
+         * Reading the second tag at the wrong offset is how a walk finds
+         * one tag and then nonsense.
+         */
+        at += (tag->size + 7u) & ~7u;
+    }
+
+    return NULL;
+}
+
+bool mb2_framebuffer_from(const struct mb2_info *info,
+                          struct pc_loader_fb *out)
+{
+    const struct mb2_tag_framebuffer *fb =
+        (const struct mb2_tag_framebuffer *)mb2_find(info,
+                                                     MB2_TAG_FRAMEBUFFER);
+
+    if (fb == NULL || fb->tag.size < sizeof(*fb)) {
+        return false;
+    }
+
+    /* The same four refusals, for the same reasons as above: a palette or
+     * EGA text is something nothing here can draw into, and a depth that
+     * is not 32 makes every write above this the wrong width. */
+    if (fb->fb_type != MB2_FB_RGB || fb->bpp != 32) {
+        return false;
+    }
+
+    if (fb->addr == 0 || fb->width == 0 || fb->height == 0
+        || fb->pitch == 0) {
+        return false;
+    }
+
+    if (fb->pitch < fb->width * 4u) {
+        return false;
+    }
+
+    out->addr = fb->addr;
+    out->pitch = fb->pitch;
+    out->width = fb->width;
+    out->height = fb->height;
 
     return true;
 }

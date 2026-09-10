@@ -53,10 +53,24 @@ EFI Configuration Table and OVMF leaves nothing where a scan would find it.
 The same image with four processors reports four and takes the APIC under
 `-kernel`, and reports one and falls back to the 8259 pair under GRUB.
 
-On the ThinkPad, booted the way it will actually boot, that means no
-processor count, no ECAM and no APIC. **Multiboot 2 is the fix** - it has a
-tag for the RSDP where Multiboot 1 has no way to carry one - and it is the
-next thing to build.
+On the ThinkPad, booted the way it will actually boot, that meant no
+processor count, no ECAM and no APIC.
+
+**Multiboot 2 is in, and that is fixed.** The image carries both headers and
+the loader picks; `grub.cfg` says `multiboot2`. Under UEFI the same machine
+now reports **four processors and drives the local APIC**, where it reported
+one and fell back to the 8259 pair. `run_uefi.py` boots with four processors
+and checks both, and both checks fail when the ISO is built with `multiboot`
+instead - verified.
+
+**And the machine arrived.** It is a T14 **Gen 2** - Tiger Lake, i5-1145G7,
+16 GB, UEFI - rather than the Gen 1 this document assumed. `docs/thinkpad.md`
+§0 has what its own report says, and three things follow: the keyboard is
+i8042 (no USB keyboard in its device list, so the driver already written is
+the right one), there is no VMD in front of the NVMe, and **there is no
+Ethernet at all** - the network is an AX201 over CNVi, so the roadmap's
+"Intel I219, ~1500 lines" is not this machine and USB Ethernet behind xHCI
+is the honest path.
 
 ### Kosmos boots the way the ThinkPad will
 

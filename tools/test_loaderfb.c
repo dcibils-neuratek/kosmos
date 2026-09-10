@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "../hal/pc/multiboot.h"
+#include "../hal/pc/multiboot2.h"
 
 static int checks;
 static int failures;
@@ -121,6 +122,75 @@ int main(void)
     info.framebuffer_pitch = 1920 * 4;
     check(pc_framebuffer_from(&info, &fb),
           "an unpadded pitch was refused");
+
+    /*----------------------------------------------------------------
+     * And the other protocol's structure, whose *walk* is the new part.
+     *
+     * Multiboot 1 is one flat structure with a flags word; Multiboot 2 is
+     * a chain of tags, and the walk is where a malformed one can hurt. A
+     * size below the header never advances - a hang at boot. A step that
+     * is not rounded up to eight finds the next tag at the wrong offset,
+     * which reads one tag correctly and then nonsense, the most confusing
+     * shape a bug can have.
+     *---------------------------------------------------------------*/
+    {
+        static unsigned char blob[128];
+        struct mb2_info *mb2 = (struct mb2_info *)blob;
+        struct mb2_tag_framebuffer *tfb;
+        struct mb2_tag *end;
+        struct pc_loader_fb out;
+
+        memset(blob, 0, sizeof(blob));
+
+        tfb = (struct mb2_tag_framebuffer *)(blob + sizeof(*mb2));
+        tfb->tag.type = MB2_TAG_FRAMEBUFFER;
+        tfb->tag.size = sizeof(*tfb);
+        tfb->addr = 0x80000000u;
+        tfb->pitch = 5120;
+        tfb->width = 1280;
+        tfb->height = 800;
+        tfb->bpp = 32;
+        tfb->fb_type = MB2_FB_RGB;
+
+        end = (struct mb2_tag *)((unsigned char *)tfb
+                                 + ((sizeof(*tfb) + 7u) & ~7u));
+        end->type = MB2_TAG_END;
+        end->size = 8;
+
+        mb2->total_size = (uint32_t)((unsigned char *)end + 8 - blob);
+
+        check(mb2_find(mb2, MB2_TAG_FRAMEBUFFER) == &tfb->tag,
+              "the walk did not find a tag that is there");
+        check(mb2_find(mb2, MB2_TAG_ACPI_NEW) == NULL,
+              "the walk found a tag that is not there");
+        check(mb2_framebuffer_from(mb2, &out),
+              "a good Multiboot 2 framebuffer was refused");
+        check(out.addr == 0x80000000u && out.pitch == 5120
+              && out.width == 1280 && out.height == 800,
+              "the Multiboot 2 framebuffer came back changed");
+
+        tfb->bpp = 24;
+        check(!mb2_framebuffer_from(mb2, &out),
+              "24 bits per pixel was accepted");
+        tfb->bpp = 32;
+
+        tfb->pitch = 1000;
+        check(!mb2_framebuffer_from(mb2, &out),
+              "a pitch narrower than the row was accepted");
+        tfb->pitch = 5120;
+
+        tfb->tag.size = 4;
+        check(mb2_find(mb2, MB2_TAG_ACPI_NEW) == NULL,
+              "a tag smaller than its own header did not stop the walk");
+        tfb->tag.size = sizeof(*tfb);
+
+        mb2->total_size = 4;
+        check(mb2_find(mb2, MB2_TAG_FRAMEBUFFER) == NULL,
+              "a structure shorter than its own header was walked");
+
+        check(mb2_find(NULL, MB2_TAG_FRAMEBUFFER) == NULL,
+              "a null structure was walked");
+    }
 
     if (failures > 0) {
         printf("FAIL: %d of %d checks on the loader's framebuffer.\n",

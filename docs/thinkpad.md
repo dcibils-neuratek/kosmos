@@ -1,4 +1,4 @@
-# The ThinkPad T14 Gen 1 - the first real machine
+# The ThinkPad T14 - the first real machine
 
 Everything about bringing Kosmos up on hardware that is not QEMU: what the
 machine is, what already runs, what has been built for it, what is proven,
@@ -10,6 +10,61 @@ Where the two overlap, the table in `targets.md` §7 is the summary and this
 is the detail.
 
 ---
+
+## 0. What the machine turned out to be
+
+**It arrived, and it is a Gen 2 rather than a Gen 1.** Everything below was
+written against a Comet Lake T14 Gen 1 from a specification sheet; the
+machine on the desk is Tiger Lake. Corrected here rather than quietly, because
+three of this document's conclusions rested on the wrong part number.
+
+From its own CPU-Z report:
+
+| | |
+|---|---|
+| Board | `20W1S1Y500` - ThinkPad T14 Gen 2 |
+| Processor | Intel Core i5-1145G7, **Tiger Lake-U**, 4 cores / 8 threads |
+| Chipset | Tiger Lake-U/Y PCH rev 20, host bridge `8086:9A14` |
+| Memory | **16 GB** DDR4-3200, one channel |
+| Firmware | **UEFI** |
+| ECAM | `0xC0000000` |
+
+And the devices, which is what the drivers care about:
+
+| device | at | id | class |
+|---|---|---|---|
+| Iris Xe graphics | `0:02.0` | `8086:9A49` | 03:00 |
+| xHCI | `0:20.0` | `8086:A0ED` | 0C:03 |
+| **Wi-Fi (CNVi)** | `0:20.3` | `8086:A0F0` | 02:80 |
+| LPSS I2C | `0:21.0`, `0:21.1` | `8086:A0E8/9` | 0C:80 |
+| LPC / ISA bridge | `0:31.0` | `8086:A082` | 06:01 |
+| **HDA** | `0:31.3` | `8086:A0C8` | **04:03** |
+| **NVMe** | `4:00.0` | Micron CT500P1SSD8 | 01:08 |
+
+**Three of §7's questions are answered, and one of them changes the plan.**
+
+**The keyboard is i8042.** The USB device list holds a fingerprint reader, a
+webcam and Bluetooth - **no keyboard and no mouse**. So the keyboard and the
+TrackPoint are on the PS/2 controller behind the LPC bridge, which is the
+driver that is already written, in the build, and exercised by the display
+harness on every gate. The touchpad is I2C-HID on the LPSS controllers, not
+USB either.
+
+**There is no VMD.** The NVMe is a plain PCIe device on bus 4 behind the
+bridge at `0:06.0`. `pci_find` walks all 256 buses, so it is reachable;
+`hal_bus_scan` walks bus 0 only, so `devices` will not list it until that is
+widened.
+
+**And there is no Ethernet at all.** §9 sizes "Intel I219, which is the
+e1000e family" at ~1500 lines. **That device is not on this machine.**
+Networking here is an Intel AX201 over CNVi - firmware upload and a
+mac80211-shaped stack, which is a different order of work - so the honest
+path to a network is USB Ethernet, and that means xHCI first.
+
+**HDA is at class 04:03**, which is what `pci_find_class` looks for. The
+decision to find a sound controller by class rather than by identifier was
+made against QEMU's `8086:2668`; this machine's is `8086:A0C8`, and it needs
+no change at all.
 
 ## 1. The machine
 
@@ -645,7 +700,7 @@ works, and not before.
 
 | | | rough size |
 |---|---|---|
-| **Multiboot 2** | **needed after all**, and it is the next thing: not to boot - Multiboot 1 boots fine under UEFI - but because ACPI cannot be found without it | ~300 |
+| ~~Multiboot 2~~ | **written and in the build.** Not to boot - Multiboot 1 boots fine under UEFI - but because ACPI cannot be found without it. Four processors and the APIC where there were one and the 8259 pair | done |
 | Framebuffer from the loader's boot information | **written and proven end to end** under GRUB + OVMF; 14 host checks and 7 boot checks | done |
 | i8042 keyboard | **in the build**, exercised by the display harness | done |
 | More than a gigabyte of RAM | **fixed**: 4 GB of boot page tables, and the low region chosen by what can be mapped | done |

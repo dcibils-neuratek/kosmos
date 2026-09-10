@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "acpi.h"
+#include "pc.h"
 #include "string.h"
 
 /*
@@ -175,6 +176,35 @@ static const struct rsdp *scan(uintptr_t from, uintptr_t to)
 
 static const struct rsdp *find_rsdp(void)
 {
+    /*
+     * **The loader's answer first, because on a UEFI machine it is the only
+     * one there is.**
+     *
+     * Everything below this looks in the two places a BIOS leaves the
+     * pointer. UEFI does not: it hands the RSDP to whatever it launched, in
+     * the EFI Configuration Table, and is not obliged to leave a copy where
+     * a scan of the first megabyte would find one. OVMF leaves none.
+     *
+     * What that cost was measured before it was fixed. The same image on
+     * the same four-processor machine reported four processors and drove the
+     * local APIC under QEMU's `-kernel`, and reported one and fell back to a
+     * pair of 8259s through GRUB - so on the machine the whole x86 target
+     * exists for, every line of ACPI, APIC and MSI code was dead.
+     *
+     * `multiboot2.h` is why `start.S` carries a second header, and this is
+     * the one thing it buys.
+     */
+    {
+        const struct rsdp *given = (const struct rsdp *)pc_loader_rsdp();
+
+        if (given != NULL && signature_is(given->signature, "RSD PTR ", 8)
+            && sums_to_zero(given, 20)) {
+            if (given->revision < 2 || sums_to_zero(given, given->length)) {
+                return given;
+            }
+        }
+    }
+
     /*
      * `volatile`, and not for the usual reason. Nothing else writes this
      * word; what it stops is the compiler reasoning about a constant

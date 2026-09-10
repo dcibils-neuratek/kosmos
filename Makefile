@@ -2127,7 +2127,7 @@ x86-iso: x86-build
 	@rm -rf $(X86_BUILD)/iso
 	@mkdir -p $(X86_BUILD)/iso/boot/grub
 	@cp $(X86_BUILD)/kosmos.bin $(X86_BUILD)/iso/boot/
-	@printf 'set timeout=0\nset default=0\n\nmenuentry "Kosmos" {\n  insmod efi_gop\n  multiboot /boot/kosmos.bin\n  boot\n}\n' \
+	@printf 'set timeout=0\nset default=0\n\nmenuentry "Kosmos" {\n  insmod efi_gop\n  multiboot2 /boot/kosmos.bin\n  boot\n}\n' \
 	  > $(X86_BUILD)/iso/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $(ISO) $(X86_BUILD)/iso 2>/dev/null
 	@ls -l $(ISO)

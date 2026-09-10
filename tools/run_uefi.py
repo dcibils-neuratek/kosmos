@@ -103,7 +103,10 @@ def capture(iso, moments):
            "-drive", "if=pflash,format=raw,unit=1,file=" + writable,
            "-device", "qemu-xhci,id=xhci",
            "-drive", "if=none,id=stick,format=raw,file=" + iso,
-           "-device", "usb-storage,bus=xhci.0,drive=stick"]
+           "-device", "usb-storage,bus=xhci.0,drive=stick",
+           # Four, so that "how many processors" has an answer worth
+           # checking: ACPI's MADT is the only place that number is.
+           "-smp", "4"]
 
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
@@ -221,6 +224,30 @@ def main():
     # first four gigabytes plain present-and-writable, which is write-back,
     # and write-back is the one memory type MMIO may not have.
     #
+    #
+    # **ACPI is visible, which is the whole reason there is a second boot
+    # header.**
+    #
+    # `find_rsdp` looks where a BIOS leaves the pointer; UEFI passes it to
+    # the loader and leaves nothing behind. Multiboot 1 has no tag to carry
+    # one and Multiboot 2 has two - so before this the same image reported
+    # one processor and fell back to a pair of 8259s here, while reporting
+    # four and driving the local APIC under QEMU's `-kernel`. Every line of
+    # the ACPI, APIC and MSI work was dead on the one path that matters.
+    #
+    # Four processors are asked for below, so a machine that says one is a
+    # machine that did not read the MADT.
+    #
+    check("-> 4 processors" in serial,
+          "the machine found "
+          + next((l.strip() for l in serial.splitlines()
+                  if "processor" in l and "->" in l), "no processor line")
+          + "; ACPI is not reaching the kernel through the loader")
+
+    check("I/O APIC" in serial,
+          "booted through the loader the machine fell back to the 8259 "
+          "pair, which is what no ACPI looks like")
+
     check("write-combining" in serial,
           "the framebuffer is not write-combining: "
           + next((l.strip() for l in serial.splitlines()

@@ -179,4 +179,9 @@ struct pc_loader_fb {
 bool pc_framebuffer_from(const struct multiboot_info *info,
                          struct pc_loader_fb *out);
 
+/* Where the loader said ACPI's root pointer is, or NULL. Only a
+ * Multiboot 2 loader can answer; see `multiboot2.h` for why that matters
+ * more than it sounds. */
+const void *pc_loader_rsdp(void);
+
 #endif
