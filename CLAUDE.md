@@ -304,8 +304,10 @@ in time.
 **The kernel is SMP-aware, and the machine boots four processors.** Each one
 installs its own exception vector, wakes its own GIC redistributor, arms its
 own generic timer, claims its own `struct percpu` through `TPIDR_EL1`, adopts
-its own idle thread and runs its own runqueue. `docs/smp.md` is the map of
-what exists and what is left.
+its own idle thread and runs its own runqueue. On x86-64 the same happens
+through `INIT` and `STARTUP` IPIs, a real-mode trampoline under 1 MB, the
+`GS` base with `swapgs`, and a local APIC timer per core. `docs/smp.md` is
+the map of what exists and what is left.
 
 **What is not switched on by default is the placement policy.**
 `make SMPWORK=4 qemu` turns it on; without it every thread comes home to
@@ -588,8 +590,9 @@ are the board's half of a split worth naming: **the board knows how to
 start a processor and not where it should land.** PSCI here, and
 `INIT`-`SIPI`-`SIPI` on a PC; where a started core begins executing is an
 architecture fact and comes from `cpu_secondary_entry` in `arch/`. Both
-halves can say no independently, and on x86-64 today both do - which is why
-they are separate rather than one function that would have to be half
+halves can say no independently - and on x86-64 both did, until the
+trampoline and the local APIC's command register arrived together - which is
+why they are separate rather than one function that would have to be half
 right.
 
 `hal_fb_init` is deliberately "ask the firmware for a linear framebuffer, and let it choose where the pixels live", because that is the one operation QEMU's ramfb and the Pi's mailbox both perform. virtio-gpu does not fit it — it needs an explicit flush after drawing — and that is precisely why adding virtio-gpu is what will grow the interface a `hal_fb_flush`, with two implementations in front of it rather than one.

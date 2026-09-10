@@ -42,6 +42,7 @@
 #define KOSMOS_HAL_PC_APIC_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /*
  * True when this machine has one and it is now running. False is not an
@@ -73,5 +74,25 @@ bool apic_timer_init(unsigned hz);
 unsigned apic_id(void);
 
 const char *apic_describe(void);
+
+/*
+ * This core's half, on a processor started after the first: accept every
+ * priority, switch the local APIC on, and record its id so that another
+ * core can interrupt this one.
+ */
+void apic_init_here(void);
+
+/* This core's tick, at the rate core zero calibrated against the 8253. */
+void apic_timer_init_here(void);
+
+/*
+ * INIT, then two STARTUP IPIs carrying `vector`, to the processor whose local
+ * APIC id is `id`. False when there is no local APIC to send them with, or
+ * the id is one this interface cannot address.
+ */
+bool apic_start_processor(uint32_t id, unsigned vector);
+
+/* Interrupts another core so it looks at its runqueue. */
+void apic_wake(unsigned cpu);
 
 #endif

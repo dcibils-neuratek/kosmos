@@ -247,32 +247,35 @@ static inline unsigned cpu_current_el(void)
 
 
 /*
- * Where this core's own state lives - and on this board, not yet in a
- * register.
+ * Where this core's own state lives: the GS base.
  *
  * AArch64 has `TPIDR_EL1`: banked, invisible to a process, set once per
- * core at boot. The equivalent here is the `GS` base, and it is not
- * equivalent: x86 has **one** `GS` shared between ring 3 and ring 0, so
- * using it means `swapgs` on every entry and every exit, in `vectors.S` and
- * `user.S`, with the classic hazard that an exception arriving between the
- * two finds the wrong one.
+ * core at boot. The equivalent here is the GS base, and it is not
+ * equivalent: x86 has **one** GS shared between ring 3 and ring 0, so the
+ * kernel's value waits in IA32_KERNEL_GS_BASE while a process runs and
+ * `swapgs` exchanges the two at every boundary - the first instruction of
+ * `syscall_entry`, the top of `isr_common` when the frame came from ring 3,
+ * and the last instructions before `sysretq` and `iretq` back.
  *
- * That is real surgery on the entry path and it belongs with this board's
- * *second core*, not before it. `docs/smp.md` does AArch64 first for
- * exactly this kind of reason. Until then a static is correct for one
- * processor, and this comment is what stops it being mistaken for the
- * finished thing.
+ * **The hazard is an exception taken in the few instructions where the
+ * privilege level and GS disagree**, which is why every one of those
+ * windows runs with interrupts masked and touches no memory it could fault
+ * on. A static answered this for one processor, and said it was waiting for
+ * the second core - which is what makes the register necessary.
+ *
+ * `cpu_set_self` is not inline because the block it installs holds this
+ * core's TSS, and `gdt.c` owns those. `cpu_self` is one load: the first word
+ * of the block is the pointer, asserted there.
  */
-static void *cpu_self_storage;
-
-static inline void cpu_set_self(void *self)
-{
-    cpu_self_storage = self;
-}
+void cpu_set_self(unsigned index, void *self);
 
 static inline void *cpu_self(void)
 {
-    return cpu_self_storage;
+    void *self;
+
+    __asm__ volatile("movq %%gs:0, %0" : "=r"(self));
+
+    return self;
 }
 
 
@@ -365,23 +368,25 @@ static inline void cpu_observe(void)
 }
 
 /*
- * Where a newly started core lands - and on this machine, nowhere yet.
+ * Where a newly started core lands: a flat 32-bit entry in
+ * `boot/x86_64/start.S`.
  *
- * `boot/x86_64/start.S` has one entry point and it assumes the boot
- * protocol handed it a machine in a known state. A secondary here does not
- * arrive that way: `INIT`-`SIPI`-`SIPI` starts it in **real mode**, at a
- * page under 1 MB, and the same long-mode climb has to happen again from
- * there. That trampoline does not exist, so this says so and
- * `smp_start_others` stops before asking the board for anything.
+ * **Thirty-two bits rather than sixty-four, and that is where the two halves
+ * meet.** A STARTUP IPI begins a processor in real mode on a page under 1 MB,
+ * and getting from there to flat protected mode is how a PC starts one - so
+ * that is `hal/pc/trampoline.S`, the board's. From flat 32-bit mode to long
+ * mode is how this architecture reaches C, and `start.S` already did it once
+ * for core zero.
  *
- * The board refuses too - `hal/pc/cpu_on.c` returns false, because it has
- * no local APIC to send the sequence with. **Two separate missing things,
- * said separately**, so that building one does not silently look like
- * building both. `docs/smp.md` is where they are counted.
+ * It answered 0 for as long as neither half existed, and said so separately
+ * from the board's refusal so that building one would not look like building
+ * both.
  */
+extern char _secondary_start32[];
+
 static inline uintptr_t cpu_secondary_entry(void)
 {
-    return 0;
+    return (uintptr_t)_secondary_start32;
 }
 
 static inline void cpu_relax(void)

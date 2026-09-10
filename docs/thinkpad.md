@@ -280,11 +280,12 @@ Three things worth keeping:
   structure at an address the firmware chose, in memory this kernel did not
   write. A table that fails its sum is skipped, and a missing table is a
   fact rather than a failure.
-- **Counting is not starting, and the two are still apart.** `cpu_on.c`
-  refuses until there is a local APIC driver and `cpu_secondary_entry`
-  refuses until there is a trampoline below 1 MB - so the machine reports
-  four and schedules on one, and says so. A count that arrived before
-  either would make it claim processors it cannot use.
+- **Counting is not starting, and the two were kept apart.** `cpu_on.c`
+  refused until there was a local APIC driver and `cpu_secondary_entry`
+  until there was a trampoline below 1 MB - so the machine reported four and
+  scheduled on one, and said so. A count that arrived before either would
+  have claimed processors it could not use. Both exist now, and §11 has what
+  became of them on this machine.
 
 Two checks in the x86-64 suite, which went from 27 to 29: the machine finds
 the four processors QEMU was told to give it, and does *not* claim to be
@@ -903,12 +904,15 @@ right depends on a fact about the laptop's firmware.
    the reason to do USB first is now the keyboard and the touchpad rather
    than storage, and this machine's keyboard turned out to be an i8042. What
    USB buys here is the trackpad and anything plugged in.
-2. **The other seven cores.** The local APIC is written and ACPI counts the
-   processors, and still only core 0 runs: nothing sends INIT and STARTUP
-   through the APIC's command register, there is no trampoline page under
-   1 MB, and `cpu_secondary_entry` answers 0. On this machine the APIC does
-   not engage yet either and the board falls back to the 8259, which cannot
-   start a core at all - so that comes first.
+2. **The other seven cores.** Three start under QEMU, through `-kernel`
+   and through GRUB on OVMF: INIT and STARTUP through the local APIC, a
+   trampoline under 1 MB, `swapgs` and a TSS per core, and a local APIC
+   timer each. On this machine the APIC engages now and none of them has
+   come up: the boot said `0 of the others in the kernel too` and nothing
+   about why, so every processor asked about gets a `cpu_on:` line, and `log
+   processor` is the next question. The slots stop at four (`NR_CPUS`), so
+   four of its eight would run. Spreading threads across them waits for a
+   TLB shootdown, which x86 needs and AArch64 does not.
 3. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
    bytes per function through port 0xCF8 and PCIe has 4096.
 

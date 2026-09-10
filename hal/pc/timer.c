@@ -20,6 +20,7 @@
 #include "hal.h"
 #include "apic.h"
 #include "pc.h"
+#include "percpu.h"
 
 #define PIT_CHANNEL0   0x40
 #define PIT_COMMAND    0x43
@@ -29,7 +30,7 @@
 /* channel 0, low byte then high, mode 3 (square wave), binary */
 #define PIT_SETUP      0x36
 
-static volatile unsigned long ticks;
+static volatile unsigned long ticks[NR_CPUS];
 
 /* Which chip is producing them, for the boot log. */
 static bool on_apic_timer;
@@ -235,7 +236,7 @@ void hal_timer_init(unsigned hz)
 
 unsigned long hal_ticks(void)
 {
-    return ticks;
+    return ticks[this_cpu()->index];
 }
 
 /*
@@ -256,14 +257,16 @@ unsigned long hal_ticks(void)
  * is one of the things that will pay for moving to it.
  */
 /*
- * One processor on this board, so core 0's count is the only one there is.
+ * Another processor's tick count - which is how a core that started and is
+ * taking interrupts is told apart from one that started and died.
  *
- * `hal/pc/cpu_here.c` says why: there is no local APIC, so nothing here can
- * start a second core and no core but this one ever ticks.
+ * It said core zero's was the only one there was, and it was: nothing on this
+ * board could start a second core. Each core started now has its own local
+ * APIC timer and its own count, written only by that core.
  */
 unsigned long hal_ticks_on(unsigned cpu)
 {
-    return (cpu == 0) ? hal_ticks() : 0;
+    return (cpu < NR_CPUS) ? ticks[cpu] : 0;
 }
 
 unsigned long hal_ticks_missed(void)
@@ -271,11 +274,11 @@ unsigned long hal_ticks_missed(void)
     return 0;
 }
 
-/* Called from `pic.c` with interrupts off, which is what an interrupt gate
- * gets us: nothing else is touching `ticks` while this runs. */
+/* Called from `pic.c` or `apic.c` with interrupts off, on the core whose
+ * timer fired: each core has its own count, and only it writes it. */
 void pc_timer_interrupt(void)
 {
-    ticks++;
+    ticks[this_cpu()->index]++;
 }
 
 const char *hal_timer_describe(void)

@@ -104,15 +104,16 @@ context_switch:
      *
      * This is the store the AArch64 switch makes when it loads SP_EL1 -
      * same field, same reason, different destination. There the stack is a
-     * register the hardware selects; here it is a field in one TSS shared
-     * by the whole machine, so the switch has to put the incoming thread's
-     * there or the next syscall lands on the previous thread's stack.
+     * register the hardware selects; here it is a field in this core's TSS,
+     * found through GS, so the switch has to put the incoming thread's there
+     * or the next syscall lands on the previous thread's stack. It was one
+     * TSS for the whole machine while one core ran the kernel.
      *
      * Read on entry from ring 3 and nowhere else, so it costs one store on
      * a path that is already writing eight registers.
      */
     movq    CTX_KSTACK(%rsi), %rax
-    movq    %rax, tss+TSS_RSP0(%rip)
+    movq    %rax, %gs:PCPU_RSP0
 
     /*
      * The incoming thread's flags, not the outgoing one's - and this is the

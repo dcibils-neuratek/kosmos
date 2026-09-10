@@ -49,7 +49,7 @@ struct percpu *percpu_at(unsigned index)
 void percpu_init(unsigned index)
 {
     cpus[index].index = index;
-    cpu_set_self(&cpus[index]);
+    cpu_set_self(index, &cpus[index]);
 }
 
 /*

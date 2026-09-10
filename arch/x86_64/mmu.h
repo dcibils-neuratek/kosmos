@@ -282,6 +282,13 @@ void mmu_boot_uncached(uintptr_t base, size_t bytes);
  * tables come out of the page allocator. */
 void mmu_init(void);
 
+/*
+ * The same for a processor started after this one: the PAT, NX and SMEP, write
+ * protection, and the kernel's tables. Every one of those is a per-core
+ * register that core zero set only for itself.
+ */
+void mmu_enable_here(void);
+
 /* Whether paging is on. */
 bool mmu_is_enabled(void);
 

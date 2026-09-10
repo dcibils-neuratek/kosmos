@@ -249,6 +249,19 @@ def main():
           + "; ACPI is not reaching the kernel through the loader")
 
     #
+    # **And the other three started, through the path a laptop takes.** Under
+    # `-kernel` the trampoline page is below a map SeaBIOS wrote; here the map
+    # is the one GRUB passes on from UEFI, which is the map the ThinkPad hands
+    # over - so this is the check that says a processor can be started on the
+    # machine the port is for, before that machine is asked.
+    #
+    check("3 of the others in the kernel too" in serial,
+          "booted through the loader, the machine did not bring the other "
+          "three processors into the kernel: "
+          + next((l.strip() for l in serial.splitlines()
+                  if "others" in l or "firmware" in l), "no line about them"))
+
+    #
     # Anchored on the phrase the boot fact prints when the APIC is running,
     # not on "I/O APIC" alone: every sentence that explains a fallback names
     # the I/O APIC too - "because nothing answers at the I/O APIC's address" -

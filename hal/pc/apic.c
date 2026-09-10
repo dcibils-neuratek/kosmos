@@ -14,6 +14,7 @@
 #include "mmio.h"
 #include "mmu.h"
 #include "pc.h"
+#include "percpu.h"
 #include "virtio.h"
 
 /*------------------------------------------------------------------------
@@ -31,6 +32,27 @@
 #define LAPIC_TIMER_INIT    0x380
 #define LAPIC_TIMER_CURRENT 0x390
 #define LAPIC_TIMER_DIVIDE  0x3e0
+
+/*
+ * The interrupt command register, which is how one local APIC interrupts
+ * another processor: the destination's id in the top byte of the high half,
+ * and writing the low half sends. Intel SDM volume 3, section 11.6.1.
+ */
+#define LAPIC_ICR_LOW       0x300
+#define LAPIC_ICR_HIGH      0x310
+
+#define ICR_FIXED           0x000u
+#define ICR_INIT            0x500u
+#define ICR_STARTUP         0x600u
+#define ICR_SEND_PENDING    (1u << 12)
+#define ICR_ASSERT          (1u << 14)  /* must be set for all of these */
+
+/*
+ * The vector a core is knocked with. 0x3E because it has a stub and a gate,
+ * sits above every line `pci.c` will route - those stop at 55 - and below the
+ * spurious vector at 0x3F.
+ */
+#define WAKE_VECTOR         0x3eu
 
 #define SVR_ENABLE          (1u << 8)
 
@@ -108,6 +130,12 @@ static struct {
     unsigned  override_count;
 
     unsigned  hz;
+    uint32_t  per_tick;         /* core zero's calibration, for the others */
+
+    /* Each core's local APIC id, which it records for itself as it comes up
+     * - the only way to learn it is to be that processor. */
+    uint32_t  ids[NR_CPUS];
+    bool      id_known[NR_CPUS];
 } apic;
 
 static const char *description = "a pair of 8259s, because ACPI described "
@@ -290,6 +318,16 @@ bool apic_handle(void)
         return false;
     }
 
+    /*
+     * A knock from another core, and acknowledging it is the whole of the
+     * handling: the thread it was about is already on this core's runqueue,
+     * and the way out of the interrupt is where the scheduler runs.
+     */
+    if (vector == WAKE_VECTOR) {
+        lapic_write(LAPIC_EOI, 0);
+        return false;
+    }
+
     irq = IRQ_OF(vector);
     tick = (irq == 0);
 
@@ -362,6 +400,11 @@ bool apic_timer_init(unsigned hz)
 
     lapic_write(LAPIC_LVT_TIMER, VECTOR_OF(0) | LVT_PERIODIC);
     lapic_write(LAPIC_TIMER_INIT, per_tick);
+
+    /* Kept, because every core's local APIC timer counts the same bus
+     * clock, and calibrating again on each would take ten milliseconds of
+     * the 8253 per core for the same answer. */
+    apic.per_tick = per_tick;
 
     return true;
 }
@@ -480,6 +523,8 @@ bool apic_init(void)
     }
 
     apic.id = (lapic_read(LAPIC_ID) >> 24) & 0xffu;
+    apic.ids[0] = apic.id;
+    apic.id_known[0] = true;
 
     apic.present = true;
     mask_everything();
@@ -494,4 +539,96 @@ bool apic_init(void)
     description = "an I/O APIC and the local APIC's own timer";
 
     return true;
+}
+
+void apic_init_here(void)
+{
+    unsigned cpu = this_cpu()->index;
+
+    if (!apic.present || cpu >= NR_CPUS) {
+        return;
+    }
+
+    lapic_write(LAPIC_TPR, 0);
+    lapic_write(LAPIC_SVR, SPURIOUS_VECTOR | SVR_ENABLE);
+    lapic_write(LAPIC_ESR, 0);
+
+    apic.ids[cpu] = (lapic_read(LAPIC_ID) >> 24) & 0xffu;
+    apic.id_known[cpu] = true;
+
+    /* Visible to every other core from here: `apic_wake` reads both. */
+    cpu_publish();
+}
+
+void apic_timer_init_here(void)
+{
+    if (!apic.present || apic.per_tick == 0) {
+        return;
+    }
+
+    lapic_write(LAPIC_TIMER_DIVIDE, TIMER_DIVIDE_16);
+    lapic_write(LAPIC_LVT_TIMER, VECTOR_OF(0) | LVT_PERIODIC);
+    lapic_write(LAPIC_TIMER_INIT, apic.per_tick);
+}
+
+/*
+ * One inter-processor interrupt. Waits, boundedly, for the previous one to
+ * leave, because a write to the low half while one is still pending is a
+ * message the local APIC is free to lose.
+ */
+static void send_ipi(uint32_t id, uint32_t low)
+{
+    unsigned spins;
+
+    for (spins = 0; spins < 100000u
+                    && (lapic_read(LAPIC_ICR_LOW) & ICR_SEND_PENDING) != 0;
+         spins++) {
+        cpu_relax();
+    }
+
+    lapic_write(LAPIC_ICR_HIGH, id << 24);
+    lapic_write(LAPIC_ICR_LOW, low);
+}
+
+/*
+ * The MP start-up sequence, SDM volume 3 section 9.4.4: INIT, ten
+ * milliseconds, STARTUP, and a second STARTUP after at least two hundred
+ * microseconds. A processor already running when the second arrives is out
+ * of the wait-for-SIPI state and ignores it, which is why sending both is
+ * safe and is what the manual asks for.
+ *
+ * The waits are the 8253's, which is still running at this point in the
+ * boot and is what `apic_timer_init` was calibrated against.
+ */
+bool apic_start_processor(uint32_t id, unsigned vector)
+{
+    if (!apic.present || id > 0xfeu || vector > 0xffu) {
+        return false;
+    }
+
+    send_ipi(id, ICR_INIT | ICR_ASSERT);
+    pc_timer_wait_ms(10);
+
+    send_ipi(id, ICR_STARTUP | ICR_ASSERT | vector);
+    pc_timer_wait_ms(1);
+
+    send_ipi(id, ICR_STARTUP | ICR_ASSERT | vector);
+    pc_timer_wait_ms(1);
+
+    return true;
+}
+
+void apic_wake(unsigned cpu)
+{
+    if (!apic.present || cpu >= NR_CPUS) {
+        return;
+    }
+
+    cpu_observe();
+
+    if (!apic.id_known[cpu]) {
+        return;     /* that processor has not come up and said who it is */
+    }
+
+    send_ipi(apic.ids[cpu], ICR_FIXED | ICR_ASSERT | WAKE_VECTOR);
 }

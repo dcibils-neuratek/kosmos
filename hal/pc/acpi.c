@@ -93,6 +93,12 @@ struct mcfg_entry {
 
 static bool     found;
 static unsigned cpus;
+
+/* Their local APIC ids, which INIT and STARTUP are addressed to. A table
+ * longer than this is still counted; only the ids past it are not kept. */
+#define CPU_IDS_MAX 64
+
+static uint32_t cpu_ids[CPU_IDS_MAX];
 static uint64_t lapic;
 static uint64_t ioapic;
 static uint64_t ecam;
@@ -247,6 +253,15 @@ static const struct rsdp *find_rsdp(void)
     return scan(BIOS_START, BIOS_END);
 }
 
+static void usable_cpu(uint32_t id)
+{
+    if (cpus < CPU_IDS_MAX) {
+        cpu_ids[cpus] = id;
+    }
+
+    cpus++;
+}
+
 /*
  * One processor entry at a time.
  *
@@ -281,15 +296,18 @@ static void read_madt(const struct madt *m)
              * that exists" - where neither means an empty socket.
              */
             if ((flags & (LAPIC_ENABLED | LAPIC_ONLINE)) != 0) {
-                cpus++;
+                usable_cpu(at[3]);          /* the APIC id, one byte */
             }
         } else if (type == MADT_LAPIC_X2 && length >= 16) {
             uint32_t flags;
 
+            uint32_t id;
+
+            memcpy(&id, at + 4, sizeof(id));
             memcpy(&flags, at + 8, sizeof(flags));
 
             if ((flags & (LAPIC_ENABLED | LAPIC_ONLINE)) != 0) {
-                cpus++;
+                usable_cpu(id);             /* the x2APIC id, four bytes */
             }
         } else if (type == MADT_OVERRIDE && length >= 10
                    && override_count < OVERRIDE_MAX) {
@@ -428,6 +446,16 @@ bool acpi_init(void)
 unsigned acpi_cpu_count(void)
 {
     return found ? cpus : 0u;
+}
+
+bool acpi_cpu_apic_id(unsigned n, uint32_t *out)
+{
+    if (!found || n >= cpus || n >= CPU_IDS_MAX) {
+        return false;
+    }
+
+    *out = cpu_ids[n];
+    return true;
 }
 
 uint64_t acpi_lapic_base(void)

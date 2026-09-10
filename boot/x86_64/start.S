@@ -174,6 +174,8 @@ __multiboot2_end:
  * entry are flags, so a table that is not page-aligned has its address
  * silently truncated into them.
  */
+#include "smp.h"
+
 #define BOOT_GIGABYTES  4
 #define BOOT_PD_ENTRIES (BOOT_GIGABYTES * 512)
 
@@ -349,4 +351,76 @@ long_mode:
 hang:
     cli
     hlt
+    jmp     hang
+
+/*
+ * Where a processor started after this one arrives, from `hal/pc/trampoline.S`.
+ *
+ * **The board brought it to flat 32-bit protected mode; the rest of the climb
+ * is this file's**, and it is the same climb `_start` made: PAE, the boot page
+ * tables, EFER.LME, paging, and a far jump into 64-bit code. Those tables are
+ * still in .bss and still map four gigabytes with no NX bit, which is what a
+ * processor needs while it is still executing out of low memory - the
+ * kernel's own tables map that megabyte non-executable. `mmu_enable_here`
+ * moves the core onto them as soon as it reaches C.
+ *
+ * The index arrives in edi and survives the climb, because nothing here
+ * touches edi: rdmsr and wrmsr use eax, ecx and edx.
+ *
+ * **And esi is a word to write progress into**, which the board reads back
+ * to say where a processor stopped. This file does not know what the word
+ * is and does not need to: 3 on arriving, 4 in long mode, and `entry.c`
+ * carries on from there. `hal/pc/trampoline.h` names the numbers.
+ */
+.code32
+.global _secondary_start32
+_secondary_start32:
+    cli
+    movl    $3, (%esi)
+
+    movl    %cr4, %eax
+    orl     $(1 << 5), %eax                 /* PAE */
+    movl    %eax, %cr4
+
+    movl    $pml4, %eax
+    movl    %eax, %cr3
+
+    movl    $0xC0000080, %ecx               /* EFER */
+    rdmsr
+    orl     $(1 << 8), %eax                 /* LME */
+    wrmsr
+
+    movl    %cr0, %eax
+    orl     $(1 << 31), %eax                /* PG */
+    movl    %eax, %cr0
+
+    lgdt    gdt_pointer
+    ljmp    $0x08, $secondary_long_mode
+
+.code64
+secondary_long_mode:
+    movw    $0x10, %ax
+    movw    %ax, %ds
+    movw    %ax, %es
+    movw    %ax, %ss
+
+    /* The upper halves of the registers are undefined after the switch into
+     * 64-bit mode, so the progress word's address is zero-extended first. */
+    movl    %esi, %esi
+    movl    $4, (%rsi)
+
+    /*
+     * Its stack from `kernel/smp.c`'s array, by index, the way AArch64's
+     * `_secondary_start` finds one: the label is the base, so the top of slot
+     * n is base + (n + 1) * size.
+     */
+    movl    %edi, %edi                      /* the index, zero-extended */
+    leaq    1(%rdi), %rax
+    imulq   $SECONDARY_STACK_BYTES, %rax
+    leaq    secondary_stacks(%rip), %rsp
+    addq    %rax, %rsp
+    xorq    %rbp, %rbp
+
+    /* rdi is the index and rsi the progress word: both arguments. */
+    call    x86_secondary_entry
     jmp     hang

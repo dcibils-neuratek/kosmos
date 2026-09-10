@@ -41,24 +41,53 @@ every one of them is in the decision log with the evidence that found it:
 Deskbar open through QEMU's PS/2 mouse - which streams now, after months of
 sending nothing - on the 8259, with a serial port and without one.
 
-### What the T14 answered
+### What the T14 answered, and what the next boot should be asked
 
 - **The pointer, clicks and the processor**, on 0.10.17: the mouse works,
   Kosmos opens its menu and Tracker's buttons come back up, and the reading
   that sat at 100% came down to 16%.
-- **The interrupt controller**, on a build carrying 0.10.18's: `interrupts:
-  an I/O APIC and the local APIC's own timer, scheduling priority`. The
-  120-input I/O APIC is accepted and running.
+- **The interrupt controller**, on 0.10.18: `interrupts: an I/O APIC and the
+  local APIC's own timer, scheduling priority`. The 120-input I/O APIC is
+  accepted and running.
+- **The other processors**, on a build with this revision's bring-up and not
+  its diagnostics: `0 of the others in the kernel too, ticking and idle; the
+  rest are still in firmware`. The desktop worked around it, with every
+  interrupt it uses on a new path.
+
+**Four processors on x86-64, under QEMU.** `swapgs` and a per-core block
+behind `GS`, a TSS per core, a real-mode trampoline, INIT and STARTUP through
+the local APIC's command register, a local APIC timer per core, and a wake
+IPI. `run_x86.py` and `run_uefi.py` both check that three other processors
+reached the kernel, and the guest suite's SMP checks pass on this board.
+
+**On the T14 the log could not say why none came up, so now it can.** Every
+processor asked about gets one `cpu_on:` line, and the next boot should be
+asked `log processor`. Each line is one of three answers:
+
+1. **`not started:`** and the reason - no local APIC, page 0x8000 missing
+   from the loader's map (with the usable regions below 1 MB listed), a page
+   that did not keep what was written to it, or a processor the MADT does
+   not list.
+2. **The last stage it reached** - `never ran the trampoline`, `stopped in
+   real mode`, and so on up to `moved onto the kernel's page tables` - read
+   back from the word it writes into the trampoline page as it climbs.
+3. **`reached the kernel N ms after its second STARTUP`**, followed by
+   nothing, or by `smp: processor N was started and never arrived` when it
+   died inside `secondary_main` before counting itself.
+
+Two Linux boot logs from this model call all of 0x0-0x9efff usable, so a
+refusal of the page would mean GRUB's map says otherwise; and the boot that
+started none stamped its `0 of the others` line at 2.781 seconds, which
+leaves little room for three processors timing out. One of those readings is
+wrong, and the next boot says which.
 
 ### Still open
 
-- **Only core 0 runs on x86.** Nothing sends INIT and STARTUP through the
-  local APIC, there is no trampoline page under 1 MB, and
-  `cpu_secondary_entry` answers 0. The local APIC all of that needs is
-  running on the T14 now; it was refused there by a size check that took the
-  chipset's 120 I/O APIC inputs for an impossible number and never said why.
-  `docs/smp.md`'s x86 paragraph predates the APIC driver and says less than
-  is true.
+- **x86 starts its other cores under QEMU and none on the T14 yet**, and it
+  does not give them threads. Placement stays on core zero here until there
+  is a TLB shootdown: x86 has no broadcast invalidate, and a process's
+  threads on two cores would share translations one of them could change
+  under the other. `NR_CPUS` is four, so the T14 would run four of its eight.
 - **Why `/net` takes 18.4 seconds** to list nothing on a machine with no
   network card. Tracker no longer asks; the call is still that slow.
 - **Which change made QEMU's PS/2 mouse stream** - the configuration byte,

@@ -522,6 +522,15 @@ void mmu_init(void)
     enable();
 }
 
+void mmu_enable_here(void)
+{
+    /* The PAT first, before this core loads a single entry that names slot
+     * four: every processor must hold the same PAT, or the framebuffer is
+     * write-combining on one core and uncached on the next. */
+    pat_init();
+    enable();
+}
+
 /*
  * A bump allocator over the device window, because devices are mapped once
  * at boot and never unmapped. Anything cleverer would be a free list for a
@@ -765,11 +774,10 @@ unsigned as_total(void)
  * claim happens inside, and the page allocation outside, so this lock is
  * never held while the PMM's is taken.
  *
- * This board cannot start a second core - `hal/pc/cpu_on.c` has no local
- * APIC - so nothing here ever contends. It is written anyway, because the
- * two files are the same design against different tables and a lock present
- * in one and absent in the other is exactly the difference nobody notices
- * until the second board grows a second core.
+ * It was written while this board could not start a second core, because
+ * the two files are the same design against different tables and a lock
+ * present in one and absent in the other is exactly the difference nobody
+ * notices until the second board grows a second core. It has grown three.
  */
 static struct spinlock spaces_lock = SPINLOCK("address spaces");
 

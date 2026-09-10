@@ -227,9 +227,9 @@ void smp_start_others(void)
 
     /*
      * An architecture with nowhere to land a core does not get asked. x86-64
-     * is that architecture today and says why in `arch/x86_64/cpu.h`; the
-     * board there refuses as well, and the two refusals are separate on
-     * purpose.
+     * was that architecture until its trampoline arrived, and its board
+     * refused as well, separately and on purpose: building one half did not
+     * look like building both.
      */
     if (entry == 0) {
         return;
@@ -262,5 +262,18 @@ void smp_start_others(void)
         /* The other half of the pair. Everything the secondary wrote before
          * its `cpu_publish` is visible to this core from here on. */
         cpu_observe();
+
+        /*
+         * Said, when it never came. The line under the processor stage used
+         * to be the only trace - "0 of the others in the kernel too" - which
+         * is equally what a board that refused and a processor that died on
+         * the way in look like. The board says which it was; this is the
+         * half every board shares.
+         */
+        if (online == was) {
+            kputs("smp: processor ");
+            kputu(i);
+            kputs(" was started and never arrived\n");
+        }
     }
 }

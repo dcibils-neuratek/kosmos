@@ -184,4 +184,13 @@ bool pc_framebuffer_from(const struct multiboot_info *info,
  * more than it sounds. */
 const void *pc_loader_rsdp(void);
 
+/* Whether the page `hal/pc/trampoline.S` is copied to was usable RAM in the
+ * loader's map - answered from the walk at boot, because the map is gone by
+ * the time a processor is started. */
+bool pc_trampoline_page_free(void);
+
+/* The usable regions the loader listed below 1 MB, kept to say why that page
+ * was refused and where one might go instead. False past the last one. */
+bool pc_low_region(unsigned i, unsigned long *base, unsigned long *length);
+
 #endif

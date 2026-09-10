@@ -38,12 +38,11 @@
  * listed and marked usable, which on the ThinkPad this is aimed at is eight
  * or twelve against the four this kernel has ever seen.
  *
- * **Counting them is not starting them**, and the two are deliberately
- * still apart. `cpu_on.c` refuses until there is a local APIC driver, and
- * `cpu_secondary_entry` refuses until there is a trampoline below 1 MB for
- * a core to land on. A count that arrived before either would make the
- * machine claim processors it cannot use - so `smp_start_others` will try,
- * be refused, and say so, which is the failure that reads correctly.
+ * **Counting them is not starting them.** `smp_start_others` asks
+ * `hal_cpu_on` for each processor counted here, and `cpu_on.c` gives every
+ * one a line in the boot log - refused and why, stopped and where, or
+ * arrived - so a count the machine cannot act on reads as a count with the
+ * reason beside it, rather than as processors it claims.
  *
  * Falls back to one, and it is the same one for the same reason: a machine
  * whose firmware has no tables has a processor this kernel is running on,

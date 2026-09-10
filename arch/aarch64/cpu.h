@@ -214,8 +214,12 @@ static inline unsigned cpu_current_el(void)
  *
  * `kernel/percpu.h` is what this is for and holds the argument.
  */
-static inline void cpu_set_self(void *self)
+static inline void cpu_set_self(unsigned index, void *self)
 {
+    /* The index is for x86, which keeps a block per core behind GS. This
+     * register is banked, so the pointer is the whole answer. */
+    (void)index;
+
     __asm__ volatile("msr tpidr_el1, %0" : : "r"(self));
 }
 

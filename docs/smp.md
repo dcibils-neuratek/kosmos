@@ -250,7 +250,8 @@ can open.
 ### A processor's own state
 
 `struct percpu` in `kernel/percpu.h`, found through `TPIDR_EL1` on AArch64
-and a static on x86-64, which is honest for one processor and says so.
+and through the `GS` base on x86-64, which `swapgs` exchanges at every entry
+from ring 3 and every return to it.
 `NR_CPUS` is 4 — how many *slots* exist, which is not how many the machine
 has (`hal_cpu_count`), nor how many run kernel code (`smp_online`), nor how
 many schedule threads (`thread_cpu_count`). Those four numbers are different
@@ -263,7 +264,9 @@ CPU interface, and the generic timer's comparator and tick counts.
 
 ### How a processor comes up
 
-`kernel/smp.c`, `boot/start.S`, `hal/qemu-virt/power.c`.
+`kernel/smp.c`, `boot/start.S`, `hal/qemu-virt/power.c` - and on x86-64
+`hal/pc/cpu_on.c`, `hal/pc/trampoline.S`, `boot/x86_64/start.S` and
+`arch/x86_64/entry.c`.
 
 1. `hal_cpu_count()` asks PSCI `AFFINITY_INFO` about processor 0, 1, 2 …
    until the firmware refuses. There is no "how many" call and no
@@ -271,8 +274,24 @@ CPU interface, and the generic timer's comparator and tick counts.
    and it starts nothing.
 2. `smp_start_others()` calls `hal_cpu_on(cpu, entry, cpu)` — PSCI `CPU_ON`
    — with the entry address from `cpu_secondary_entry()` in `arch/`. **The
-   board knows how to start a processor and not where it should land**;
-   x86-64 refuses at both, separately, and says why in each place.
+   board knows how to start a processor and not where it should land**.
+   On x86-64 the board's half is `INIT` and two `STARTUP` IPIs through the
+   local APIC's command register, to the id the MADT listed, carrying the
+   vector of a real-mode page under 1 MB - `hal/pc/trampoline.S`, copied into
+   place only where the loader's memory map says that page is RAM. It reaches
+   flat 32-bit mode and jumps to `_secondary_start32`, where the
+   architecture's half begins: the long-mode climb `start.S` made once for
+   core zero, on the same boot page tables, a stack by index, and
+   `x86_secondary_entry` - this core's GDT and TSS, `mmu_enable_here`, the
+   `syscall` MSRs and FP - before `secondary_main`.
+
+   **Each of those steps writes a number into a word in the trampoline page,
+   and the board reads it back.** Every processor asked about gets one
+   `cpu_on:` line: why it was refused, the last stage it reached, or how many
+   milliseconds reaching the kernel took - and `kernel/smp.c` adds `was
+   started and never arrived` for one that got that far and no further. The
+   first real machine counted eight processors, started none, and said only
+   `0 of the others in the kernel too`.
 3. `_secondary_start` sets a known `SCTLR_EL1`, traps FP, takes its two
    stacks out of `secondary_stacks[]` by index, calls `mmu_enable_here()`
    and jumps to C. Turning translation on is the last step of the
@@ -357,6 +376,14 @@ makes the enqueue visible before the interrupt arrives.
 
 `thread_wake` sends one when the woken thread lives elsewhere. Not to this
 core — an interrupt to oneself is a wasted exception.
+
+On x86-64 it is `apic_wake` in `hal/pc/apic.c`: a fixed IPI on vector 0x3E
+through the interrupt command register, addressed by the local APIC id the
+target recorded for itself in `hal_irq_init_here`, and its handler is the
+acknowledgement and nothing else. A secondary's own local APIC timer ticks
+at the rate core zero calibrated against the 8253, and `arch/x86_64/trap.c`
+keeps the machine-wide half of a tick on core zero, exactly as
+`arch/aarch64/trap.c` does.
 
 ### What userland sees
 
@@ -525,20 +552,23 @@ of what "a per-CPU struct" means, made concrete:
 | `owner` in `arch/<name>/fp.c` | who owns the FP registers *on this core* | **moved** - `fp_owner`, as `void *` so `percpu.h` need not know what a thread is |
 | the runqueue in `sched_prio.c` | `head[]`, `tail[]`, `occupied` | **moved** - indexed `[NR_CPUS][SCHED_PRIORITIES]`, one lock each |
 | the armed-fault slot in `trap.c` | a fault this core is expecting | still one global, and every core's handler reads it |
-| the TSS / kernel stack | where a ring-3 entry lands | still one; x86 only |
+| the TSS / kernel stack | where a ring-3 entry lands | **moved** - a TSS per core in `arch/x86_64/gdt.c`, rsp0 written through `GS`; x86 only |
 
 And the register that finds them: **`TPIDR_EL1` on AArch64, the `GS` base
-with `swapgs` on x86-64.** The first is written; the second is not, and the
-asymmetry is larger than it looks.
+with `swapgs` on x86-64.** Both are written now, and the asymmetry is
+larger than it looks.
 
 `TPIDR_EL1` is *banked*: EL0 cannot see it or change it, so it is set once
 per core at boot and read from anywhere afterwards. **No entry path is
 touched at all.** x86 has one `GS` shared between ring 3 and ring 0, so the
 same trick needs `swapgs` at every entry and every exit, in `vectors.S` and
 `user.S`, with the classic hazard of an exception arriving between the two.
-That is real surgery and it belongs with x86's second core rather than
-before it - so that board answers from `cpus[0]` today and says so in
-`arch/x86_64/cpu.h`.
+That was real surgery and it arrived with x86's second core rather than
+before it: `swapgs` is the first instruction of `syscall_entry`, the top of
+`isr_common` when the saved CS says ring 3, and the last instruction before
+`sysretq` and `iretq` back - and every one of those windows runs with
+interrupts masked. `GS` holds the null selector from `gdt.c` on, because
+loading a selector into it would replace the base the whole scheme rests on.
 
 This paragraph used to say "neither is written" and that both would touch
 every exception entry. Half of that was wrong about AArch64, which is why
@@ -708,15 +738,28 @@ it to turn the machine off - and `CPU_ON` is the same call with a different
 function id and an entry point. The GIC already gives software-generated
 interrupts, which is what an IPI is.
 
-**x86-64 is the expensive half, and it is a new driver.** Kosmos drives the
-8259 PIC. SMP needs the **local APIC** - for IPIs, and for a per-core timer,
-because one 8253 cannot tick four cores - and it needs **ACPI MADT parsing**
-to find out how many cores there are and what their APIC ids are. That is a
-table walker and an interrupt controller, neither of which exists, and it
-is most of the reason the two boards are not equal work.
+**x86-64 was the expensive half, and it is built.** In the order a second
+core needs it:
 
-Then `INIT`-`SIPI`-`SIPI`, a real-mode trampoline page under 1 MB, and the
-same long-mode climb `boot/x86_64/start.S` already does once.
+- **The table walker** - `hal/pc/acpi.c` walks the MADT for the count, and
+  now keeps each usable processor's local APIC id, which is what an `INIT`
+  aimed at one core is addressed by.
+- **The interrupt controller** - `hal/pc/apic.c` drives the local APIC and
+  the I/O APIC, and now writes the interrupt command register that `INIT`,
+  `STARTUP` and the wake IPI go through.
+- **The trampoline** - a real-mode page under 1 MB that reaches flat 32-bit
+  mode, and the same long-mode climb `boot/x86_64/start.S` already did once.
+- **A core's own state** - the `GS` base with `swapgs` at every entry and
+  exit, a TSS per core, and a local APIC timer per core.
+
+Under QEMU four processors come up, both through `-kernel` and through GRUB
+on OVMF, and the guest suite's SMP checks pass on this board for the first
+time. On the ThinkPad T14 none has come up yet, and `cpu_on.c` now says why
+for each. **What x86-64 still lacks is a TLB shootdown**, which AArch64 does not
+need and this board does - step 7 below - so placement across cores stays
+off here until it exists. The paragraph this replaces listed a table walker
+and an interrupt controller as missing, and went on saying so for months
+after both had arrived.
 
 ---
 
@@ -927,9 +970,11 @@ Then, in dependency order:
    `split_block`, which replaces a live 2 MB block with a table descriptor
    without break-before-make - legal on one core by luck and not by
    architecture, because another core may hold both translations at once
-   and the manual says that is a permitted TLB conflict abort. x86-64,
-   when it gets a second core, has no broadcast invalidate and does need
-   the IPI.
+   and the manual says that is a permitted TLB conflict abort. x86-64 has
+   its second core now and no broadcast invalidate, so it does need the
+   IPI - and the vector and the command register a shootdown would go
+   through already exist, for the wake. Until it is built, nothing on x86-64
+   puts a process's threads on more than one core.
 
 ---
 

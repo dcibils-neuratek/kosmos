@@ -1,47 +1,39 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * A processor's own interrupt controller and clock, and on this board there
- * is no such thing yet.
+ * A processor's own interrupt controller and clock, on a PC: its local APIC.
  *
- * AArch64 gives every core a GIC redistributor and a banked generic timer,
- * so a secondary arms its own comparator and receives its own PPI without
- * asking anybody. The PC equivalent is the **local APIC**: one per core, with
- * its own timer, and it is what `docs/smp.md` calls the expensive half. This
- * board drives the 8259 PIC and the 8254, which are one interrupt controller
- * and one timer for the whole machine - there is nothing here that belongs
- * to a processor rather than to the computer.
+ * AArch64 gives every core a GIC redistributor and a banked generic timer;
+ * the PC equivalent is the local APIC, one per core with a timer of its own,
+ * and `apic.c` drives it. These run on every processor started after the
+ * first, from `kernel/smp.c`'s `secondary_main`. Core zero's own setup
+ * happens in `hal_irq_init` and `hal_timer_init` exactly as it always did.
  *
- * So both of these do nothing, and doing nothing is correct rather than
- * unfinished: **they are only ever called on a secondary, and this board
- * cannot start one.** `arch/x86_64/cpu.h` has no trampoline to land a core
- * on and `hal/pc/cpu_on.c` has no APIC to send `INIT`-`SIPI`-`SIPI` with, so
- * `smp_start_others` stops before either. Core zero's own setup happens in
- * `hal_irq_init` and `hal_timer_init` exactly as it did.
- *
- * They exist because `kernel/smp.c` has no architecture in it and must link
- * on both boards - the same lesson `mmu_enable_here` taught when it was
- * called from there and x86-64 refused the link.
+ * On a machine running the 8259 pair nothing here is ever called, because
+ * `cpu_on.c` refuses to start a processor without a local APIC to start it
+ * with - and each of these is a no-op there anyway.
  */
 
+#include "apic.h"
 #include "hal.h"
 
 void hal_irq_init_here(void)
 {
+    apic_init_here();
 }
 
 void hal_timer_init_here(void)
 {
+    apic_timer_init_here();
 }
 
 /*
- * And nobody to knock on.
+ * Knock on another processor.
  *
- * Interrupting another processor on a PC means the local APIC's interrupt
- * command register, which is the same missing driver as everything else
- * here. Doing nothing is correct rather than unfinished: this board has one
- * processor, every thread is homed on it, and a wake never crosses a core.
+ * The point is the interruption, not a message: `thread_wake` has already put
+ * a thread on that core's runqueue, and the interrupt makes the core look.
+ * Its handler does nothing, and the way out of it runs the scheduler.
  */
 void hal_cpu_wake(unsigned cpu)
 {
-    (void)cpu;
+    apic_wake(cpu);
 }

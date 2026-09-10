@@ -42,12 +42,26 @@
  * way. A _Static_assert in gdt.c keeps this honest. */
 #define TSS_RSP0        4
 
+/*
+ * This core's block, which is what GS points at while it is in the kernel,
+ * and the offsets the entry paths read it by. `gdt.c` asserts each one
+ * against the structure.
+ */
+#define PCPU_SELF       0       /* the kernel's struct percpu */
+#define PCPU_USER_RSP   8       /* a process's rsp, for two instructions */
+#define PCPU_TSS        16      /* this core's task state segment */
+#define PCPU_RSP0       (PCPU_TSS + TSS_RSP0)
+
 #ifndef __ASSEMBLER__
 
 #include <stdint.h>
 
 /* Builds the tables, loads them, and reloads every segment register. */
 void gdt_init(void);
+
+/* The same table on a processor started after the first, with that core's
+ * own TSS in the task register and its own stack in the IST. */
+void gdt_init_here(unsigned index);
 
 /*
  * There is no setter for the TSS's rsp0, and that is deliberate.

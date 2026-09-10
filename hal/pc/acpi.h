@@ -36,6 +36,11 @@ bool acpi_init(void);
  */
 unsigned acpi_cpu_count(void);
 
+/* The local APIC id of the n-th usable processor, in the order the MADT
+ * lists them - which need not begin with the one running this. False past
+ * the end. */
+bool acpi_cpu_apic_id(unsigned n, uint32_t *out);
+
 /* Where the local APIC's registers are, or 0. */
 uint64_t acpi_lapic_base(void);
 

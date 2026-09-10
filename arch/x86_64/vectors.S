@@ -132,6 +132,17 @@ isr\vector:
  * the two out of step is a silent bug: the C sees `rax` where `r15` is.
  */
 isr_common:
+    /*
+     * **From ring 3, this core's GS first**, before a single push. The low
+     * two bits of the saved CS are the privilege level the interrupt came
+     * from, and after the two words the stub pushed, that CS is 24 bytes up.
+     * From ring 0 GS is already the kernel's, and swapping it would hand the
+     * handler the process's.
+     */
+    testb   $3, 24(%rsp)
+    jz      1f
+    swapgs
+1:
     pushq   %r15
     pushq   %r14
     pushq   %r13
@@ -199,6 +210,15 @@ isr_common:
     popq    %r14
     popq    %r15
 
+    /*
+     * And back, by the same test on the frame being returned to - which
+     * after a switch is the incoming thread's, so a kernel thread resumed
+     * here keeps the kernel's GS and a process gets its own.
+     */
+    testb   $3, 24(%rsp)
+    jz      2f
+    swapgs
+2:
     /* Past the vector and the error code, which the processor will not do
      * for us: `iretq` expects to find RIP where they are sitting. */
     addq    $16, %rsp

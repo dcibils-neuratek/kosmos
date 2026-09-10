@@ -30,12 +30,30 @@
 #include "mmu.h"
 #include "multiboot2.h"
 #include "pc.h"
+#include "trampoline.h"
 
 
 static struct memrange found = { 0, 0 };
 
 /* Every usable byte the loader listed, mappable or not. */
 static unsigned long whole;
+
+/*
+ * Whether the page a started processor begins on is RAM the loader called
+ * usable. Recorded here because the walk is the only moment the map exists:
+ * the structure it lives in is free memory to `pmm_init`.
+ */
+static bool trampoline_free;
+
+/* And every usable region that starts below 1 MB, for when it was not. */
+#define LOW_REGIONS_MAX 8
+
+static struct {
+    unsigned long base;
+    unsigned long length;
+} low_regions[LOW_REGIONS_MAX];
+
+static unsigned low_region_count;
 
 /*
  * And the part of it the line above puts out of reach.
@@ -75,6 +93,22 @@ static bool    loader_rsdp_valid;
 const void *pc_loader_rsdp(void)
 {
     return loader_rsdp_valid ? (const void *)loader_rsdp : NULL;
+}
+
+bool pc_trampoline_page_free(void)
+{
+    return trampoline_free;
+}
+
+bool pc_low_region(unsigned i, unsigned long *base, unsigned long *length)
+{
+    if (i >= low_region_count) {
+        return false;
+    }
+
+    *base = low_regions[i].base;
+    *length = low_regions[i].length;
+    return true;
 }
 
 /*
@@ -144,6 +178,16 @@ unsigned long lo = base;
 unsigned long hi = base + length;
 
 whole += length;
+
+    if (base <= TRAMPOLINE_BASE && base + length >= TRAMPOLINE_BASE + 4096u) {
+        trampoline_free = true;
+    }
+
+    if (base < 0x100000UL && low_region_count < LOW_REGIONS_MAX) {
+        low_regions[low_region_count].base = base;
+        low_regions[low_region_count].length = length;
+        low_region_count++;
+    }
 
         /*
          * **Clipped to what this kernel can map, before it competes to

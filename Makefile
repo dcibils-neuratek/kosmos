@@ -1896,6 +1896,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/cpus.c \
              hal/pc/cpu_on.c \
              hal/pc/cpu_here.c \
+             hal/pc/trampoline.S \
              hal/fwcfg/fwcfg.c \
              hal/fwcfg/ramfb.c \
              hal/pc/fb.c \

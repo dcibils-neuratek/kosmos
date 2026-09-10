@@ -2,7 +2,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cpu.h"
 #include "gdt.h"
+#include "percpu.h"
+#include "smp.h"
 
 /*
  * A code or data descriptor: eight bytes, and the fields are scattered
@@ -58,14 +61,42 @@ _Static_assert(offsetof(struct tss, rsp0) == TSS_RSP0, "TSS_RSP0 vs user.S");
 
 extern char __exception_stack_top[];
 
-struct tss tss;
+/*
+ * A core's own block: what GS points at while that core is in the kernel.
+ *
+ * The pointer to the kernel's `struct percpu` first, because `cpu_self` is a
+ * single load of the first word. Then the one word `syscall_entry` needs
+ * before it has a stack - a process's rsp, parked for two instructions - and
+ * then the core's TSS, whose rsp0 `switch.S` writes and `syscall_entry`
+ * reads.
+ *
+ * **One of each per core, where there was one of each for the machine.**
+ * That was correct while one processor ran the kernel. A TSS is the stack an
+ * entry from ring 3 lands on, so two cores entering through one TSS would
+ * land on the same stack; and the scratch word is the same shape one level
+ * down, a cell two cores entering at once would both write.
+ */
+struct cpu_block {
+    void      *self;
+    uint64_t   user_rsp;
+    struct tss tss;
+};
+
+_Static_assert(offsetof(struct cpu_block, self) == PCPU_SELF, "PCPU_SELF");
+_Static_assert(offsetof(struct cpu_block, user_rsp) == PCPU_USER_RSP,
+               "PCPU_USER_RSP");
+_Static_assert(offsetof(struct cpu_block, tss) == PCPU_TSS, "PCPU_TSS");
+
+static struct cpu_block blocks[NR_CPUS];
 
 /*
- * Seven eight-byte slots: five descriptors, a hole, and a TSS descriptor
- * that takes two of them because a system descriptor in long mode carries a
- * 64-bit base.
+ * Six eight-byte slots - five descriptors and a hole - and then a TSS
+ * descriptor per core, each taking two slots because a system descriptor in
+ * long mode carries a 64-bit base. Core n's is at `SEL_TSS + 16n`.
  */
-static uint64_t gdt[8];
+#define GDT_SLOTS   (SEL_TSS / 8 + 2 * NR_CPUS)
+
+static uint64_t gdt[GDT_SLOTS];
 
 struct gdtr {
     uint16_t limit;
@@ -84,6 +115,13 @@ _Static_assert(SEL_KERNEL_DATA == SEL_KERNEL_CODE + 8, "syscall loads SS from ba
  * be written at all - it changes only through a far jump, a far return or
  * an interrupt - which is why this is a far return to the next instruction:
  * the address and the new selector are pushed, and `lretq` pops both.
+ *
+ * **FS and GS get the null selector, and they used to get the kernel's data
+ * segment.** Loading a selector into GS replaces the GS base with the
+ * descriptor's, which is zero - and the GS base is now where this core keeps
+ * its block. So nothing loads GS after `cpu_set_self`, and it holds null
+ * from here on, which is also what a return to ring 3 would otherwise have
+ * replaced a DPL 0 selector with.
  */
 static void reload(const struct gdtr *pointer)
 {
@@ -98,6 +136,7 @@ static void reload(const struct gdtr *pointer)
         "movw   %%ax, %%ds       \n"
         "movw   %%ax, %%es       \n"
         "movw   %%ax, %%ss       \n"
+        "xorl   %%eax, %%eax     \n"
         "movw   %%ax, %%fs       \n"
         "movw   %%ax, %%gs       \n"
         :
@@ -105,10 +144,28 @@ static void reload(const struct gdtr *pointer)
         : "rax", "memory");
 }
 
+/*
+ * The TSS descriptor for one core, which is a different shape from the
+ * others: type 0x89 - present, DPL 0, "available 64-bit TSS" - a real limit,
+ * since `iomap_base` is checked against it, and a base spread over four
+ * fields and two slots.
+ */
+static void tss_descriptor(unsigned index)
+{
+    uintptr_t at = (uintptr_t)&blocks[index].tss;
+    unsigned slot = SEL_TSS / 8 + 2 * index;
+
+    gdt[slot] = (uint64_t)(sizeof(struct tss) - 1)
+              | ((uint64_t)(at & 0xFFFFFF) << 16)
+              | (0x89UL << 40)
+              | ((uint64_t)((at >> 24) & 0xFF) << 56);
+    gdt[slot + 1] = (uint64_t)(at >> 32);
+}
+
 void gdt_init(void)
 {
     struct gdtr pointer;
-    uintptr_t at = (uintptr_t)&tss;
+    unsigned i;
 
     gdt[SEL_NULL / 8]        = 0;
     gdt[SEL_KERNEL_CODE / 8] = GDT_KERNEL_CODE;
@@ -127,8 +184,11 @@ void gdt_init(void)
     gdt[SEL_USER_DATA / 8]   = GDT_USER_DATA;
     gdt[SEL_USER_CODE / 8]   = GDT_USER_CODE;
 
-    tss.rsp0 = 0;
-    tss.iomap_base = sizeof(struct tss);
+    for (i = 0; i < NR_CPUS; i++) {
+        blocks[i].tss.rsp0 = 0;
+        blocks[i].tss.iomap_base = sizeof(struct tss);
+        tss_descriptor(i);
+    }
 
     /*
      * The stack a fault lands on, in the first interrupt stack table slot.
@@ -153,25 +213,62 @@ void gdt_init(void)
      * The slots are numbered from 1 in a gate descriptor and from 0 here,
      * which is the kind of off-by-one that is worth writing down once.
      */
-    tss.ist[0] = (uint64_t)(uintptr_t)__exception_stack_top;
-
-    /*
-     * The TSS descriptor, which is a different shape from the others: type
-     * 0x89 - present, DPL 0, "available 64-bit TSS" - a real limit, since
-     * `iomap_base` is checked against it, and a base spread over four
-     * fields and two slots.
-     */
-    gdt[SEL_TSS / 8] = (uint64_t)(sizeof(struct tss) - 1)
-                     | ((uint64_t)(at & 0xFFFFFF) << 16)
-                     | (0x89UL << 40)
-                     | ((uint64_t)((at >> 24) & 0xFF) << 56);
-    gdt[SEL_TSS / 8 + 1] = (uint64_t)(at >> 32);
+    blocks[0].tss.ist[0] = (uint64_t)(uintptr_t)__exception_stack_top;
 
     pointer.limit = (uint16_t)(sizeof(gdt) - 1);
     pointer.base  = (uint64_t)(uintptr_t)gdt;
 
     reload(&pointer);
 
-    /* And the task register, which is what makes rsp0 mean anything. */
+    /* And the task register, which is what makes rsp0 mean anything - core
+     * zero's descriptor here, and every other core loads its own. */
     __asm__ volatile("ltr %w0" :: "r"((uint16_t)SEL_TSS));
+}
+
+/* `kernel/smp.c`'s, a stack per secondary for exceptions. */
+extern uint8_t secondary_exception_stacks[NR_CPUS][SECONDARY_STACK_BYTES];
+
+void gdt_init_here(unsigned index)
+{
+    struct gdtr pointer;
+
+    if (index == 0 || index >= NR_CPUS) {
+        return;
+    }
+
+    pointer.limit = (uint16_t)(sizeof(gdt) - 1);
+    pointer.base  = (uint64_t)(uintptr_t)gdt;
+
+    reload(&pointer);
+
+    /* The stack #PF and #DF land on, this core's own - the note above
+     * `gdt_init` says why it has to be one nobody else is using. */
+    blocks[index].tss.ist[0] = (uint64_t)(uintptr_t)
+        (secondary_exception_stacks[index] + SECONDARY_STACK_BYTES);
+
+    __asm__ volatile("ltr %w0"
+                     :: "r"((uint16_t)(SEL_TSS + 16u * index)));
+}
+
+/* IA32_GS_BASE and IA32_KERNEL_GS_BASE: Intel SDM volume 4, table 2-2. */
+#define MSR_GS_BASE         0xC0000101u
+#define MSR_KERNEL_GS_BASE  0xC0000102u
+
+static void write_msr(uint32_t msr, uint64_t value)
+{
+    __asm__ volatile("wrmsr" :: "c"(msr), "a"((uint32_t)value),
+                                "d"((uint32_t)(value >> 32)));
+}
+
+void cpu_set_self(unsigned index, void *self)
+{
+    blocks[index].self = self;
+
+    /*
+     * The kernel's GS base is this core's block, and the other one - the GS
+     * a process runs with after `swapgs` - is zero: nothing in ring 3 uses
+     * GS, and a process must not be handed a kernel address in a register.
+     */
+    write_msr(MSR_GS_BASE, (uint64_t)(uintptr_t)&blocks[index]);
+    write_msr(MSR_KERNEL_GS_BASE, 0);
 }

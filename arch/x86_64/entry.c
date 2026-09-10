@@ -18,7 +18,11 @@
  * knowing about it than the ARM side has knowing about a device tree.
  */
 
+#include <stdint.h>
+
 #include "gdt.h"
+#include "mmu.h"
+#include "smp.h"
 #include "user.h"
 
 void kmain(void);
@@ -45,4 +49,38 @@ void kmain_x86(void)
     fp_init();
 
     kmain();
+}
+
+/*
+ * Where a started processor reaches C: the calls core zero made above, for
+ * this core, and then the kernel's own secondary path.
+ *
+ * **The order is load-bearing.** The GDT and this core's TSS first, so that
+ * anything taken from here lands on this core's stacks. Then the kernel's
+ * page tables, off the boot tables the climb used. Then `syscall`'s MSRs and
+ * floating point, both per core and both only ever set on core zero. Then
+ * `secondary_main`, whose first act is claiming this core's per-CPU block
+ * through GS.
+ *
+ * **And each step writes how far it got into `reached`**, the word the board
+ * handed over and reads back - `hal/pc/trampoline.h` names the numbers - so a
+ * processor that stops between here and `secondary_main` says where, rather
+ * than only that it never arrived. The word is in low memory, which the
+ * kernel's tables map, so it stays writable across `mmu_enable_here`.
+ */
+void x86_secondary_entry(unsigned long index, uint32_t *reached)
+{
+    *reached = 5;
+
+    gdt_init_here((unsigned)index);
+    *reached = 6;
+
+    mmu_enable_here();
+    *reached = 7;
+
+    user_init();
+    fp_init();
+    *reached = 8;
+
+    secondary_main(index);
 }

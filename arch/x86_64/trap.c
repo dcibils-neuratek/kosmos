@@ -25,6 +25,7 @@
 #include "sched.h"
 #include "thread.h"
 #include "hal.h"
+#include "percpu.h"
 #include "trap.h"
 
 /*
@@ -291,6 +292,26 @@ void trap_handle(struct trapframe *f)
      */
     if (f->vector >= IRQ_BASE) {
         bool tick = hal_irq_handle();
+
+        /*
+         * **On any core but zero, the tick and nothing else** - the guard
+         * `arch/aarch64/trap.c` keeps, for its reason. Waking input
+         * sleepers, the audio server and the console's cursor are machine
+         * work, and they stay on core zero until there is a reason to move
+         * them. A secondary's own timer still charges its own tick, which is
+         * what makes it preempt and what its processor meter reads.
+         */
+        if (this_cpu()->index != 0) {
+            if (tick) {
+                thread_tick();
+            }
+
+            if (f->cs & 3) {
+                die_if_killed();
+            }
+
+            return;
+        }
 
         /*
          * And what an interrupt *means*, which acknowledging it does not

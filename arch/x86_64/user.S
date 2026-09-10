@@ -45,8 +45,13 @@ enter_user:
     movl    $(SEL_USER_DATA | 3), %eax
     movw    %ax, %ds
     movw    %ax, %es
-    movw    %ax, %fs
-    movw    %ax, %gs
+
+    /*
+     * FS and GS are left alone, and they used to be loaded here too. A
+     * selector loaded into GS replaces the GS base with the descriptor's -
+     * and the GS base is where this core keeps its block. Both hold the null
+     * selector from `gdt.c`, which is what a process gets.
+     */
 
     /*
      * The frame `iretq` pops, in the order it pops it: rip, cs, rflags,
@@ -82,6 +87,12 @@ enter_user:
     xorl    %r14d, %r14d
     xorl    %r15d, %r15d
 
+    /*
+     * The process's GS, which is zero, with this core's block parked in
+     * IA32_KERNEL_GS_BASE until the next entry swaps it back. Last, so that
+     * nothing between here and ring 3 reads GS.
+     */
+    swapgs
     iretq
 
 /*
@@ -115,15 +126,18 @@ enter_user:
  * AArch64 never asks the question: an exception writes its frame onto the
  * thread's own SP_EL1 stack, so the saved SP_EL0 is per-thread by
  * construction. Here the fix is to get onto the kernel stack and push it
- * there in the same breath - which is what the three instructions below
- * do, with the global as a scratch cell across two of them, at a moment
- * IA32_FMASK has already made uninterruptible.
+ * there in the same breath - which is what the instructions below do, with
+ * a scratch word across two of them, at a moment IA32_FMASK has already made
+ * uninterruptible. The word is this core's, in the block GS points at after
+ * the `swapgs`: a global was one scratch cell for every core, and two cores
+ * entering at once would have written each other's stack pointer.
  */
 .global syscall_entry
 syscall_entry:
-    movq    %rsp, user_rsp(%rip)
-    movq    tss+TSS_RSP0(%rip), %rsp
-    pushq   user_rsp(%rip)          /* and now it belongs to this thread */
+    swapgs                          /* this core's block, before anything */
+    movq    %rsp, %gs:PCPU_USER_RSP
+    movq    %gs:PCPU_RSP0, %rsp
+    pushq   %gs:PCPU_USER_RSP       /* and now it belongs to this thread */
 
     /*
      * **Everything the process had, because `syscall` saved none of it.**
@@ -203,14 +217,13 @@ syscall_entry:
      * than out of a global that another thread may have written. */
     popq    %rsp
 
+    /* The process's GS back, and this core's block parked until the next
+     * entry. Nothing below reads GS. */
+    swapgs
+
     /*
      * Back to ring 3 with the answer in rax. `sysretq` rather than `sysret`
      * - without the REX.W prefix it returns to 32-bit compatibility mode,
      * which would be a process that suddenly cannot see its own pointers.
      */
     sysretq
-
-.section .bss
-.align 8
-user_rsp:
-    .skip 8

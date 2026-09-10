@@ -786,11 +786,43 @@ def main():
           "the machine did not find the four processors it was given; "
           "the MADT is the only place that number is")
 
-    # And it does not claim to be *using* them. Counting is not starting:
-    # `cpu_on.c` refuses until there is a local APIC, and there is not.
+    #
+    # **And the other three are running kernel code**, which for as long as
+    # this board existed they were not: nothing could send INIT and STARTUP,
+    # and there was no page under 1 MB for a core to land on. Each climbs out
+    # of real mode on its own, claims its per-CPU block through GS, loads its
+    # own TSS and ticks on its own local APIC timer.
+    #
+    check(smp is not None and "3 of the others in the kernel too" in smp,
+          "the machine found four processors and did not bring the other "
+          "three into the kernel: "
+          + next((l.strip() for l in (smp or "").splitlines()
+                  if "others" in l or "firmware" in l), "no line about them"))
+
+    #
+    # **And each of them said so, from the board's side.** `cpu_on.c` reads
+    # back a word every processor writes into the trampoline page as it
+    # climbs, and prints one line per processor whatever became of it: why
+    # it was refused, the last stage it reached, or how long reaching the
+    # kernel took. The first real machine this ran on started none of its
+    # cores and said nothing about why, and on a machine with no serial port
+    # these lines are all there is to go on - this keeps them printing.
+    #
+    started = [l.strip() for l in (smp or "").splitlines()
+               if "cpu_on: processor" in l]
+
+    check(len(started) == 3
+          and all("reached the kernel" in l for l in started),
+          "the board should print one line per processor it started, each "
+          "saying it reached the kernel; it printed: "
+          + ("; ".join(started) or "nothing"))
+
+    # And it does not give them new threads, which is a placement policy
+    # rather than a limit - `SMPWORK` on the other board, `opt/kosmos/smp`
+    # on both.
     check(smp is not None and "1 of them given new threads" in smp,
-          "the machine claimed more than one processor is scheduling, and "
-          "nothing can start a second one yet")
+          "the machine claimed more than one processor is taking new "
+          "threads without being asked to")
 
     #
     # **A machine with a real amount of memory in it.**
