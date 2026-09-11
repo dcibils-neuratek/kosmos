@@ -573,7 +573,7 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   a driver bug is a kernel bug. Everything else that was going to move out
   of the kernel has.
 
-- **Four processors, and the placement policy is not switched on.**
+- **Four processors, and new threads spread across all of them.**
   `make qemu` boots four. Each one installs its own exception vector, wakes
   its own GIC redistributor, arms its own generic timer, claims its own
   `struct percpu` through `TPIDR_EL1`, adopts its own idle thread and runs
@@ -599,11 +599,12 @@ nobody* - which is the same lesson the 0.9.0 review found four times over.
   the *waking* core's `current` and flagged the *waking* core, so a
   cross-core wake never preempted the target.
 
-  What is left: placement off by default is a decision now rather than a
-  fault - the display harness passes with it on - and `make stress` with it
-  on comes first; and a panic protocol - a core that panics has to *stop*
-  the others rather than queue behind them. `docs/smp.md` is the map, and
-  carries the measurement.
+  Placement is on by default since 0.10.22: a plain boot homes each new
+  thread on the least busy processor that arrived, and `opt/kosmos/smp=N`
+  narrows it. What is left: a panic protocol - a core that panics has to
+  *stop* the others rather than queue behind them - and placement that sees
+  work rather than only the threads runnable at one instant. `docs/smp.md`
+  is the map, and carries the measurement.
 
   This bullet has been wrong twice in opposite directions. It said "nothing
   has ever run on a second core, and there is no per-CPU struct"; and before

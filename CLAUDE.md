@@ -310,10 +310,13 @@ through `INIT` and `STARTUP` IPIs, a real-mode trampoline under 1 MB, the
 hardware does not broadcast for it. `docs/smp.md` is the map of what exists
 and what is left.
 
-**What is not switched on by default is the placement policy.**
-`make SMPWORK=4 qemu` turns it on; without it every thread comes home to
-core zero and `thread_create_on(cpu, ...)` is how anything crosses a core
-deliberately.
+**New threads spread across every processor that arrived, by default.**
+Each is homed on the least busy core when it is created and never moves.
+`opt/kosmos/smp=N` narrows that - `make SMPWORK=1 qemu`, or the word on
+GRUB's `multiboot2` line - and `=1` homes everything on core zero again, for
+when something breaks; it cannot widen past what arrived.
+`thread_create_on(cpu, ...)` still crosses a core deliberately, and the
+guest suite pins itself to core zero and crosses only that way.
 
 **Work spreads.** Six compute-bound processes on four processors read 100%
 on every core. Getting there took two fixes and neither was placement, which
@@ -324,14 +327,14 @@ every core but zero, so only core zero preempted on a quantum; and
 target. `docs/smp.md` has both, and the three plausible explanations that
 were ruled out by experiment before them.
 
-**What kept it off by default was one known failure, and it passes now**:
-under `SMPWORK=4` the display harness failed at its editor phase - the
-program typed into `edit` did not come back. `ipc_call` woke a receiver
-before joining the reply queue, so a receiver on another core could answer
-first and have its reply refused. With that fixed the harness passes with
-placement on, and with the old order put back it fails again. Switching
-placement on by default is a decision still to take, after `make stress`
-with it on.
+**It was off by default for months, and what held it there was a series of
+faults rather than an opinion**: unlocked drivers, then the preemption path,
+then under `SMPWORK=4` a display harness whose editor phase never came back
+- `ipc_call` woke a receiver before joining the reply queue, so a receiver
+on another core could answer first and have its reply refused - and on x86
+no TLB shootdown. With those fixed the ThinkPad ran its desktop spread
+across all eight of its processors with a smooth pointer, and placement
+became the default in 0.10.22.
 
 **This paragraph said the opposite for two years, and the correction is
 worth keeping.** It claimed the code was "written SMP-ready: no loose mutable

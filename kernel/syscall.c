@@ -509,9 +509,10 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
          * answer per core: `smp_online` counts processors running kernel
          * code, every one of which takes its own timer interrupt and charges
          * its own idle or busy tick. `thread_cpu_count` is how many are
-         * *given* work, which is one unless `SMPWORK` says otherwise - and
-         * that is a policy rather than a capability: a secondary has its own
-         * runqueue and takes work from it whenever anything is placed there.
+         * *given* work, which is all of them unless a boot option asks for
+         * fewer - and that is a policy rather than a capability: a secondary
+         * has its own runqueue and takes work from it whenever anything is
+         * placed there.
          *
          * Bounding by the smaller of the two reported three cores as zero
          * when they were measurably idle, which is a different claim.
@@ -583,22 +584,17 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      */
     info.bus_count = hal_bus_scan(info.bus, BUS_DEVICES_MAX);
 
-    /* One, and it will stay one until SMP. `CLAUDE.md` used to say the code
-     * was written SMP-ready from the start and that was never true of any
-     * of it - see `docs/smp.md`, which counts what is actually missing. What
-     * this field reports is cores *running*, which is the honest number
-     * either way. */
     /*
      * Three numbers, because there are three questions.
      *
      *   cpus_present   what the machine has, from the firmware
      *   cpus_online    how many are running kernel code and taking ticks
-     *   cpus           how many run threads
+     *   cpus           how many are given new threads
      *
-     * On this machine today they are 4, 4 and 1, and the gaps are the honest
-     * measure of how far `docs/smp.md` has got: three processors are awake,
-     * ticking and idle, and none of them can be given work until there is a
-     * runqueue per core and a lock around what they share.
+     * On a machine that started every processor and was given no boot
+     * option they are one number three times, and that is the point: a gap
+     * between the first two is a processor that never arrived, and a gap
+     * between the last two is `opt/kosmos/smp` asking for fewer.
      *
      * Two of these were one number for a while, and the collapse was the
      * bug: a parked core and a working one both reported as "not

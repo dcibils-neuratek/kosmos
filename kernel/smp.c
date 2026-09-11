@@ -27,10 +27,10 @@
  * is called once at boot and never again.
  *
  * What comes after it has changed and this sentence used to deny it: the
- * secondaries are *not* in `wfi` for ever. They idle when their runqueue is
- * empty, which on the default placement is always, so the machine behaves
- * as it did on one core - and that is the property `make test` checks by
- * still passing. Give them work with `SMPWORK` and they run it.
+ * secondaries are *not* in `wfi` for ever. They take new threads as core
+ * zero does and idle when their runqueue is empty. The guest suite pins its
+ * own threads to core zero and crosses a core only on purpose, which is why
+ * `make test` still asks the questions it was written to ask.
  */
 
 #include <stdbool.h>
@@ -59,7 +59,7 @@
  * have a guard page beneath them; these do not, and that is a real
  * difference worth naming rather than a detail: a secondary that overflows
  * walks into the slot below it instead of faulting. That day has arrived -
- * a secondary runs real threads under `SMPWORK` - so this wants the linker
+ * a secondary runs real threads on every boot - so this wants the linker
  * script treatment now, and it is a real gap rather than a future one. It
  * has not bitten because a kernel stack here carries an idle loop and an
  * exception frame, not a deep call chain.
@@ -74,10 +74,10 @@ _Alignas(16) uint8_t secondary_exception_stacks[NR_CPUS][SECONDARY_STACK_BYTES];
  * How many processors have run kernel code.
  *
  * One before any of this - core 0 counts itself. **Not the same number as
- * how many are given work**, which is `thread_cpu_count` and is one unless
- * `SMPWORK` says otherwise. Every core counted here can run threads and
- * does when it is given any; the two numbers stay apart because one is a
- * fact about the machine and the other is a policy about it.
+ * how many are given work**, which is `thread_cpu_count`: all of these
+ * unless `opt/kosmos/smp` asks for fewer. Every core counted here can run
+ * threads and does when it is given any; the two numbers stay apart because
+ * one is a fact about the machine and the other is a policy about it.
  *
  * `volatile` because a secondary writes it and core 0 reads it in a loop
  * below, which is the first time in this kernel that a variable is touched

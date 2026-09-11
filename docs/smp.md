@@ -1,7 +1,7 @@
 # SMP
 
 **Where this stands: all seven steps are done, on both boards. The kernel
-is SMP-aware and the placement policy is not switched on by default.** The map of what exists is
+is SMP-aware, and new threads spread across every processor by default.** The map of what exists is
 *As built*, further down; what is left and what is holding it is *What is
 left*. Everything before those two sections is the reasoning, because this
 is the hardest thing in the kernel and the reasoning is most of the value.
@@ -396,22 +396,28 @@ ticks. `machine` and `About Kosmos` report present against scheduling.
 ### The switch, and how to throw it
 
 ```
-make qemu                 one processor places work; the default
-make SMPWORK=4 qemu       four processors place work
+make qemu                 every processor that arrived places work; the default
+make SMPWORK=1 qemu       one - every new thread homed on core zero
 make SMPWORK=2 qemu       two, for halving the search space
 ```
 
-`SMPWORK` is a boot option (`opt/kosmos/smp` through fw_cfg), read once in
-`kmain` and handed to `thread_place_across`. It is separate from `SMP`,
-which is how many processors the *machine* has — that is always four. This
-is whether the kernel puts work on them.
+`SMPWORK` is a boot option (`opt/kosmos/smp` through fw_cfg, or a word on
+the loader's command line on a PC), read once in `kmain` and handed to
+`thread_place_across`. It is separate from `SMP`, which is how many
+processors the *machine* has. It narrows, and is capped at the processors
+that arrived: a number somebody typed could otherwise home threads on cores
+that never started, where they would never run.
 
-**Off by default, and that is a policy rather than a limitation.** Every
-processor that came up can run threads, and does: `thread_create_on(cpu, …)`
-puts one anywhere and the suite crosses a core on every run. What is not
-finished is the *confidence* — spreading every thread is the first
-configuration in which two processors are inside the kernel at the same
-instant on a real workload, and the locks here have never been contended.
+**On by default since 0.10.22, and off for months before that as a policy
+rather than a limitation.** Every processor that came up could run threads -
+`thread_create_on(cpu, …)` put one anywhere and the suite crossed a core on
+every run - but spreading every thread was the first configuration in which
+two processors were inside the kernel at the same instant on a real
+workload. What held it off turned out to be faults, found one at a time
+below: the drivers, the preemption path, a reply lost between cores, and on
+x86 a TLB shootdown that did not exist. It was switched on after the
+ThinkPad ran its desktop across all eight of its processors with a pointer
+that did not jump.
 
 The test image always places on one, set by the suite itself. A dozen of its
 checks mask interrupts, create three threads and drive them by yielding,
@@ -524,11 +530,13 @@ same, and a 50 ms gap between the move and the click makes it arrive.
 
 **And the desktop does not saturate**, which is not a bug and is worth not
 misreading: eight applications leave the machine about a fifth busy, so the
-bars show naive round-robin placement rather than a fault. Placement is
-assignment by creation order - `thread_create_suspended` calls it "the
-dumbest policy that is not obviously wrong" - so the same applications land
-on the same cores every boot and one bar stays low. Load-aware placement is
-a later question and wants something to measure first.
+bars say how placement chooses rather than that anything is wrong.
+`place_new_thread` homes a thread on the core with the fewest *runnable*
+threads at the instant it is created, so an application waiting for its
+next frame counts as nothing and a later one can land beside it. The
+ThinkPad's first spread boot looked like that - most of the load on three
+cores and three at 0%. Placement that sees work rather than a moment wants
+something to measure first.
 
 ---
 
@@ -681,17 +689,40 @@ different thread than took it. Pick under the lock, let go, then switch.
 
 ## What is left, and what is holding it
 
-**The mechanism is finished on both boards.** `thread_cpu_count()` returns
-`smp_online()` when `SMPWORK` or `opt/kosmos/smp` asks it to;
-`thread_create_on` puts a thread anywhere and it runs there. x86 has its TLB
-shootdown and its drivers lock, the display harness passes with placement
-on, and a spread x86 desktop under load answers a click in a millisecond
-where one core takes thirty-five to forty-eight.
+**The mechanism is finished on both boards, and placement is on by
+default.** `thread_cpu_count()` returns `smp_online()` unless
+`opt/kosmos/smp` asks for fewer; `thread_create_on` puts a thread anywhere
+and it runs there. x86 has its TLB shootdown and its drivers lock, the
+display harness passes with placement on, and a spread x86 desktop under
+load answers a click in a millisecond where one core takes thirty-five to
+forty-eight.
 
-**What holds placement off by default now is a decision rather than a
-fault**, and what should come before it is `make stress` with placement on:
-every resource bug this system has had was a pool that filled on the
-fiftieth try, and a spread machine has more ways to leak than one core.
+**Switched on in 0.10.22, after the ThinkPad.** Booted with
+`opt/kosmos/smp=8` on GRUB's line, it started all seven of its other
+processors, homed threads on all eight, ran four software-rasterised demos
+at once - a cube at 153 frames a second, a bouncing ball at 150, gears and
+the mech at 61 - and moved a pointer that no longer jumped.
+
+**What is left for placement is seeing work.** It counts the threads
+runnable at the instant a thread is created, so the ThinkPad's Monitor read
+60%, 57% and 25% on three cores and 0% on three others while those demos
+ran.
+
+**And `make stress` found one more, the first time it booted four
+processors.** Every snapshot counted a child that was still leaving on
+another core - `run` returns when the program replies, before its process
+has exited - so the driver waits for each child now. Making that wait
+trustworthy meant locking it: `process_exit` published `exited` before
+giving anything back and woke the parent with nothing held, and
+`process_wait` scanned and blocked with nothing held, so a parent could reap
+a slot still being torn down or sleep through its wake. The exit publishes
+last under `processes_lock` now, and the wait blocks under it with
+`thread_block_and_release` - the same shape as IPC's fix, for the same
+reason. With both, `make stress` passes on four processors - sixty rounds, and every pool and every page back where it started.
+
+`process_kill` still reads a process's thread with nothing held, which a
+kill landing during an exit on another core can get wrong. It waits for its
+lock order against IPC to be checked.
 
 **The line was held first by the drivers, then by preemption.** `blk`,
 `net`, `input` and `snd` took spinlocks over their virtqueue indices in
@@ -1036,9 +1067,11 @@ where the time goes, and IPC is where the bugs will be.
 ## How it would be tested
 
 `make stress` already exists and already asks the right question - use the
-machine hard, then ask `sysinfo` whether it gave everything back. It becomes
-the SMP test almost unchanged, because a lost lock shows up as a leaked
-slot.
+machine hard, then ask `sysinfo` whether it gave everything back - because a
+lost lock shows up as a leaked slot. **It became the SMP test with one line,
+and only in 0.10.22**: until then it passed QEMU no `-smp`, so the release
+gate stressed a one-processor machine through every step of this document.
+It boots four now, and a plain boot spreads new threads across them.
 
 **And the machine boots with four processors by default**, not only under
 `make test`: `SMP ?= 4` in the Makefile, `make SMP=1 qemu` for the one-core
@@ -1047,7 +1080,8 @@ fault, no hang and no wrong behaviour - only a boot line saying 1 where it
 should have said 4 - so a bring-up path that runs only when the suite runs
 is one that is checked once a session by somebody reading a number they
 just wrote. Three cores in `wfi` cost a QEMU thread that is never
-scheduled.
+scheduled - which was the whole cost while they were idle, and they take
+work now.
 
 Two checks in the guest suite, and the second is the one that matters:
 

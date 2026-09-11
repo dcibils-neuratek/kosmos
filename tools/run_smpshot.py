@@ -24,8 +24,8 @@ to arrange around.
 
 The boot option is the whole point:
 
-    KOSMOS_SMPWORK=4    the kernel places new threads on all four cores
-    (unset)             every thread is homed on core zero, the default
+    (unset)             new threads on all four cores, the default
+    KOSMOS_SMPWORK=1    every thread homed on core zero
 
 Run it both ways and the difference between the two pictures is the
 feature. `Makefile`'s `smpshot` target does the first.
@@ -121,7 +121,7 @@ def main():
         # machine that was placing on one would be the most convincing wrong
         # screenshot this project could produce.
         #
-        placing = os.environ.get("KOSMOS_SMPWORK") or "1 (default)"
+        placing = os.environ.get("KOSMOS_SMPWORK") or "every core (default)"
         print("placing across: %s" % placing)
 
         guest.type("wm deskbar," + args.open)

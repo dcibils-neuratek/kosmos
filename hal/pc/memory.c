@@ -59,7 +59,7 @@ static unsigned low_region_count;
  * The loader's command line, copied during the walk for the reason the
  * regions above are: the structure it lives in is free memory to `pmm_init`.
  * It is where boot options come from on a machine with no fw_cfg - a laptop
- * booted by GRUB is told `opt/kosmos/smp=8` on the `multiboot2` line or not
+ * booted by GRUB is told `opt/kosmos/smp=1` on the `multiboot2` line or not
  * at all.
  */
 static char loader_cmdline[256];

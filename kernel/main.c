@@ -562,21 +562,21 @@ void kmain(void)
     /*
      * How many processors new threads are spread across.
      *
-     * **Off by default, and that is a policy rather than a limitation.**
-     * Every processor that came up can run threads and does - the mechanism
-     * is finished. What is not finished is the confidence: spreading every
-     * thread across four cores is the first configuration in which two
-     * processors are inside the kernel at the same instant on a real
-     * workload, and `docs/smp.md` is honest that the locks below have never
-     * been contended.
+     * **Every one that came up, unless asked for fewer.** It was one by
+     * default for months, and that was a policy rather than a limitation:
+     * the mechanism worked and the confidence did not. What it waited for
+     * arrived one fault at a time - locked drivers, a secondary that
+     * preempts, a wake that preempts the right core, a reply not lost
+     * between cores, a TLB shootdown on x86 - and then the ThinkPad ran its
+     * desktop spread across all eight of its processors with a pointer that
+     * did not jump. `docs/smp.md` has the whole account.
      *
-     * `make qemu SMPWORK=4` turns it on, which is the whole point of it
-     * being an option: somebody can run the desktop on four processors
-     * without editing the kernel, and turn it off again when something
-     * looks wrong. That is how the next set of bugs gets found.
-     *
-     * The number is read rather than a flag, so `SMPWORK=2` is a way of
-     * halving the search space when something does break.
+     * So a plain boot sets nothing here and `thread_cpu_count` answers
+     * `smp_online()`. The option stays, as a way to *narrow*:
+     * `opt/kosmos/smp=1` - `make SMPWORK=1 qemu`, or the word on GRUB's
+     * line - homes every new thread on core zero again, and `=2` halves the
+     * search space when something breaks. It cannot widen past the
+     * processors that arrived; `thread_cpu_count` sees to that.
      */
     {
         char value[16];
@@ -590,8 +590,6 @@ void kmain(void)
             }
 
             thread_place_across(n);
-        } else {
-            thread_place_across(1);
         }
     }
 
@@ -620,8 +618,8 @@ void kmain(void)
         kputu(thread_cpu_count());
         kputs(" of them given new threads");
 
-        if (thread_cpu_count() == 1) {
-            kputs("; SMPWORK=4 spreads them");
+        if (thread_cpu_count() < smp_online()) {
+            kputs("; opt/kosmos/smp asked for fewer");
         }
 
         boot_fact_end();

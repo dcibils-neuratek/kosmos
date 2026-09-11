@@ -744,25 +744,24 @@ struct thread *thread_create_suspended(const char *name,
         t->id = next_id++;
 
         /*
-         * And where it will live, which is the whole of placement.
+         * And where it will live, which is the whole of placement: the least
+         * busy of the processors that take new threads, chosen once and
+         * never revisited. `place_new_thread` says how it counts, and why
+         * that is not balancing.
          *
-         * **Round robin over the processors that schedule**, assigned once
-         * and never revisited. Today `thread_cpu_count` is one, so every
-         * thread comes home to core zero and the machine behaves exactly as
-         * it did - which is what makes this safe to put in before the thing
-         * it is for.
+         * What a better choice would need, it still cannot see: which
+         * threads talk to each other (put them together, or the IPC crosses
+         * cores), which are compute-bound rather than merely runnable at this
+         * instant, and on a machine with unequal cores, which kind each one
+         * wants. `docs/targets.md` has such a laptop in it. The ThinkPad's
+         * first spread boot looked like the second of those: most of the
+         * load on three cores and three at 0%, which is what counting only
+         * runnable threads predicts when a demo waiting for its next frame
+         * counts as nothing.
          *
-         * It is deliberately the dumbest policy that is not obviously wrong.
-         * Anything cleverer needs to know something this kernel cannot see
-         * yet: which threads talk to each other (put them together, or the
-         * IPC crosses cores), which are compute-bound (spread them), and on
-         * a machine with unequal cores, which kind each one wants.
-         * `docs/targets.md` has such a laptop in it. The right time to
-         * choose is when there is something to measure.
-         *
-         * Under the pool lock because `next_cpu` is a counter two cores
-         * would otherwise increment together - the same reason the id is
-         * here, and free once the lock is already held.
+         * Under the pool lock because `next_cpu`, its rotating tie-break, is
+         * a counter two cores would otherwise increment together - the same
+         * reason the id is here, and free once the lock is already held.
          */
         t->sched.cpu = place_new_thread();
 
@@ -1061,7 +1060,8 @@ unsigned thread_cpu_count(void)
      *   `NR_CPUS`      how many `struct percpu` slots exist - the room, so
      *                  a core that starts has somewhere to put itself. Eight.
      *   `smp_online()` how many have executed kernel code. Four.
-     *   this           how many are given work. One, unless asked otherwise.
+     *   this           how many are given work. All of them, unless asked
+     *                  for fewer.
      *
      * Returning `NR_CPUS` here once said "4 scheduling" on a machine where
      * three cores were parked in `wfi`, which is why they are kept apart.
@@ -1069,8 +1069,8 @@ unsigned thread_cpu_count(void)
      * Every processor that reached `secondary_main` has its own runqueue,
      * its own idle thread and its own timer, and runs the same loop core
      * zero runs. So the mechanism is finished and this is the *policy*;
-     * `thread_place_across` sets it and `SMPWORK` reaches that from the
-     * command line.
+     * `thread_place_across` sets it, and `opt/kosmos/smp` - `SMPWORK` from
+     * the Makefile - narrows it from the command line.
      *
      * **Work spreads now**: six compute-bound processes on four processors
      * read 100% on every core. It did not until the two faults in the
@@ -1080,18 +1080,21 @@ unsigned thread_cpu_count(void)
      * the target. Placement was never the fault; a trace showed the six
      * going to cpu 0,1,2,3,0,1 all along.
      *
-     * **It is still one by default because of a failure that survived
-     * both**: under `SMPWORK=4` the display harness does not get past its
-     * editor phase. The desktop comes up and runs; the program typed into
-     * `edit` does not come back.
+     * **It was one by default until 0.10.22**, held there last by a
+     * failure that survived both: under `SMPWORK=4` the display harness did
+     * not get past its editor phase, because `ipc_call` could lose a reply
+     * to a receiver on another core. With that fixed, and x86 given a TLB
+     * shootdown and locked drivers, every processor that arrived is given
+     * work unless the boot option asks for fewer.
      *
-     * **This comment used to say the blocker was the four virtio drivers
-     * having no locks, and said it in two contradictory blocks stacked on
-     * top of each other.** They were locked in 0.9.20. `docs/smp.md` has
-     * the measurement and what was ruled out to reach it.
+     * **This comment once said the blocker was the four virtio drivers
+     * having no locks, in two contradictory blocks stacked on top of each
+     * other.** They were locked in 0.9.20. `docs/smp.md` has the
+     * measurements and what was ruled out to reach them.
      */
     /*
-     * Zero means "however many are online", asked *now* rather than latched.
+     * Zero means "however many are online", asked *now* rather than latched,
+     * and zero is what a plain boot leaves it at.
      *
      * It was latched on the first call, and the first call happens inside
      * `thread_init` - which runs before `smp_start_others`, when
@@ -1099,8 +1102,13 @@ unsigned thread_cpu_count(void)
      * before the other processors existed and placed every thread on core
      * zero for ever, while reporting "1 runs threads" on a screen showing
      * four. A cache whose first read is guaranteed to be wrong.
+     *
+     * **And never more than are online.** A number from a boot option is
+     * whatever somebody typed: `smp=8` on a four-core machine would have
+     * homed threads on four processors that never started, where they would
+     * never run. The option narrows; it cannot widen.
      */
-    if (placement_cores != 0) {
+    if (placement_cores != 0 && placement_cores < smp_online()) {
         return placement_cores;
     }
 

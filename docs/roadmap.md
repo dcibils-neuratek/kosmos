@@ -90,12 +90,12 @@ unblocks.
 
 ### Being built now
 
-**SMP on AArch64 - the mechanism is finished; the policy is not correct
-yet.** `docs/smp.md` is the map. **Six of seven steps are done**: per-CPU
+**SMP - the mechanism is finished on both boards, and new threads spread
+by default.** `docs/smp.md` is the map. **All seven steps are done**: per-CPU
 state, the locks, four processors each with their own vector table,
 interrupt controller, timer, idle thread and runqueue, and an IPI worth a
-measured 25x on a cross-core wake. `make SMPWORK=4 qemu` places threads on
-all four; `thread_create_on(cpu, ...)` puts one anywhere deliberately.
+measured 25x on a cross-core wake. A plain boot places new threads on all
+of them; `thread_create_on(cpu, ...)` puts one anywhere deliberately.
 
 **Work spreads.** Six compute-bound processes on four processors: 100% on
 every core, where before the fix three of them went idle within a second
@@ -104,12 +104,13 @@ while all six were alive. The cause was preemption rather than placement -
 `thread_wake` decided preemption about the waking core instead of the
 target. `docs/smp.md` has both, and what was ruled out first.
 
-**What kept placement off by default was one known failure, and it passes
-now**: the display harness's editor phase under `SMPWORK=4`, where the
-program typed into `edit` did not come back. `ipc_call` could lose a reply to
-a receiver on another core: with that fixed the phase passes, and with the
-old order put back it fails again. Switching placement on by default waits
-for `make stress` with it on.
+**Placement is on by default since 0.10.22.** The last thing that held it
+off was the display harness's editor phase under `SMPWORK=4`, where the
+program typed into `edit` did not come back: `ipc_call` could lose a reply to
+a receiver on another core. With that fixed and x86 given its TLB shootdown,
+the ThinkPad ran its desktop across all eight processors, and a plain boot
+now does what `SMPWORK` used to. Next for placement is seeing work rather
+than runnable threads - a demo waiting for its next frame counts as idle.
 
 Then a panic protocol - a core that panics has to *stop* the others rather
 than queue behind them, and today it stops neither them nor itself. Step

@@ -206,12 +206,14 @@ them apart is to make the thing fail on purpose and watch the test notice.
 |---|---|
 | `lock: a spinlock excludes, names its holder and masks` | it does not mask (interrupts still on inside), or it hands the same word to two callers |
 | `cpu: the machine says how many processors it has` | `hal_cpu_count` is hardcoded — which `-smp 1` cannot detect |
-| `cpu: every processor claimed its own slot` | `TPIDR_EL1` is not really per-core |
+| `cpu: every processor claimed its own slot` | `TPIDR_EL1` is not really per-core, or placement answers with more processors than arrived - asked for every slot, it must answer with the cores that started |
 | `cpu: every processor takes its own ticks` | a secondary never armed its comparator |
 | `cpu: every processor idles as a thread` | a secondary ticks but has no `current` to charge it to |
 | `smp: a thread runs on another processor` | placement, the target's runqueue, its lock, or its idle loop |
+| `smp: new threads go to every core by default` | a plain boot homing new threads on fewer processors than arrived - `kmain`'s old `thread_place_across(1)`. Read before the suite pins itself to core zero, since the pin is the suite's decision and this is about the kernel's |
 | `smp: a changed mapping reaches every core` | a TLB shootdown that never arrives or is not answered: core 1 reads a page through a user address while core zero unmaps it and maps others there. The reader masks interrupts, because with them on it passed with the shootdown switched off; now, switched off, it reads the old page and fails |
 | `smp: a slot is reused only once its thread has left` | a dead thread's slot handed to a new thread while the dead one was still switching away - which started the new thread inside `thread_exit`. Every slot is touched so a new thread must reuse one; a thread exits on another core with an address space still loaded, so its last switch changes page tables inside the window; and core zero creates a thread on a third core the instant the slot reads dead, two hundred times. Without the fix it panics - `a dead thread was scheduled` - in two runs of two on each board |
+| `smp: a parent waits for children on other cores` | `process_exit` publishing `exited` before its teardown, or a parent's wait and a child's wake meeting with nothing held - a slot reaped while its owner still writes to it, or a wake lost. A thread of its own waits a hundred times for a child placed on another core, and spawns the next the moment each wait returns. The suite's own thread cannot do the waiting: it is core zero's idle thread, and an idle thread that blocks panics. With `process.c` as 0.10.21 had it, both boards panic on the second child: `pmm_free_page: address is below RAM` |
 | `smp: a reply reaches a caller on another core` | a reply lost between cores: two thousand calls from core 2 to a server on core 1. With `ipc_call`'s old order - waking the receiver before joining the reply queue - it fails within 111 rounds, one reply refused |
 
 Three things about that table are deliberate.
@@ -235,12 +237,14 @@ gave up the CPU, it would prove nothing about the other one.
 
 ### What cannot be checked here, and what is done instead
 
-Mutual exclusion **under real contention** is not tested. It is no longer
-`thread_cpu_count()` that prevents it - that returns `smp_online()` under
-`SMPWORK` - but the suite, which pins itself to one core with
-`thread_place_across(1)` because a dozen of its checks mask interrupts,
-create three threads and drive them by yielding, and only mean anything if
-those threads are here. Two things stand in for it:
+Mutual exclusion **under real contention** is not tested by the suite. It
+is no longer `thread_cpu_count()` that prevents it - that returns
+`smp_online()` on every plain boot since 0.10.22 - but the suite, which pins
+itself to one core with `thread_place_across(1)` because a dozen of its
+checks mask interrupts, create three threads and drive them by yielding, and
+only mean anything if those threads are here. The harnesses that boot the
+real image - the display, the disk, the network, `run_x86.py` - run spread
+now. Two things stand in for it inside the suite:
 
 - **An audit.** Four readers over `kernel/`, `arch/` and `hal/`, each handed
   to a second reader told to refute it. About sixty structures, and it found

@@ -1610,12 +1610,11 @@ SMP ?= 4
 
 # How many processors new threads are spread across, inside the guest.
 #
-# **Separate from `SMP`, which is how many the machine has.** The machine
-# always boots four; this says whether the kernel places work on them.
-# `make SMPWORK=4 qemu` runs the desktop on four processors,
-# `make SMPWORK=2 qemu` halves the search space when something breaks, and
-# the default is one - the mechanism is finished and the confidence is not,
-# and `docs/smp.md` says which is which.
+# **Separate from `SMP`, which is how many the machine has.** The default is
+# every processor that arrived, and this narrows it: `make SMPWORK=1 qemu`
+# homes every new thread on core zero, as every boot did until 0.10.22, and
+# `make SMPWORK=2 qemu` halves the search space when something breaks. It
+# cannot widen past what arrived; `docs/smp.md` has why it is on.
 SMPWORK ?=
 
 SMPARG := $(if $(SMPWORK),-fw_cfg 'name=opt/kosmos/smp$(comma)string=$(SMPWORK)',)
@@ -2228,7 +2227,7 @@ USB_IMG := $(X86_BUILD)/kosmos-usb.img
 # `KOSMOS_ARGS` puts words on GRUB's `multiboot2` line - the kernel's command
 # line, and on a machine with no fw_cfg the only way to give it a boot option:
 #
-#     make usb KOSMOS_ARGS=opt/kosmos/smp=8
+#     make usb KOSMOS_ARGS=opt/kosmos/smp=1
 #
 x86-usb-image: x86-build
 	python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) $(KOSMOS_ARGS)

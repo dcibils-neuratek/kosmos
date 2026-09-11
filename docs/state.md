@@ -8,6 +8,71 @@ Last updated: 2026-09-10
 
 ## Where this left off
 
+### New threads on every core by default, after the ThinkPad ran on eight
+
+**The T14 ran 0.10.20 spread across all eight of its processors.** Booted
+with `opt/kosmos/smp=8` on GRUB's `multiboot2` line: all eight alive,
+Processes showing threads homed on cores 0 to 7 with 31 of 48 thread slots
+in use, and four software-rasterised demos at once - Cube at 153 frames a
+second, Bounce at 150, Gears and Mech at 61. Monitor read 60, 0, 57, 0, 25,
+0, 2 and 6 percent across the eight.
+
+**And the pointer is smooth**, with Processes and Monitor open, where 0.10.19
+lagged and jumped. Which change did it is not isolated: 0.10.20 stopped
+`SYS_SYSINFO` re-initialising the i8042, locked the controller, and spread
+the desktop's work across eight cores - under QEMU a click waited 35 to 48 ms
+behind one busy core and 1 ms spread. One boot with only the
+re-initialisation put back would say whether that was the jumps.
+
+**So placement is on by default now.** `kmain` no longer calls
+`thread_place_across(1)` when there is no boot option, and a plain boot
+homes each new thread on the least busy processor that arrived.
+`opt/kosmos/smp=N` stays as a way to narrow - `SMPWORK=1` puts everything
+on core zero for when something breaks - and is capped at the processors
+that arrived, which it was not: `smp=8` on four processors would have homed
+threads on four that never started.
+
+Two guest checks hold it. `smp: new threads go to every core by default`
+reads the count before the suite pins itself to core zero, and `cpu: every
+processor claimed its own slot` now asks for every slot and requires the
+answer to be the cores that arrived - under the suite's pin that comparison
+was one against four and could not fail. With `kmain`'s old default and no cap put back, both fail on each board and nothing else does. `run_x86.py` requires a plain
+boot to say `4 of them given new threads`, and `opt/kosmos/smp=2` on the
+command line to narrow it; `smp=4` would have passed there with the option
+never read.
+
+**The uneven Monitor is how placement chooses, not a fault**: it counts the
+threads runnable at the instant one is created, so a demo waiting for its
+next frame counts as idle and a later one can land beside it. Seeing work
+rather than a moment is the next question for placement.
+
+**And `make stress` booted four processors for the first time, and failed.**
+It had passed QEMU no `-smp`, so the release gate had only ever stressed a
+one-processor machine. On four, every snapshot counted one thread and about
+650 pages more than the machine held at the end, and the end matched a
+one-processor run exactly - nothing leaked. Two causes, one in the driver
+and one in the kernel:
+
+- **`run` returns when the program replies, before its process has
+  exited**, and `stress.lua` counted at once. On one core the child was gone
+  by the time the driver ran again; on four it was still leaving on another
+  core, and a non-blocking drain cannot wait for it. The driver waits for
+  each child now.
+- **That wait could not be trusted as it was.** `process_exit` set `exited`
+  on its first line, before giving anything back, and woke the parent with
+  nothing held; `process_wait` scanned, named itself the waiter and blocked
+  with nothing held either. On a spread machine a parent could reap a slot
+  its owner was still tearing down - and the next spawn be handed it - or
+  sleep through a wake that landed before it blocked, which is the
+  `sys.wait` the shell makes after every foreground command. `exited`, the
+  exit code and the cleared thread are published last now, under
+  `processes_lock`, with the wake; the wait scans, reaps and blocks under it
+  through `thread_block_and_release`, as IPC does.
+
+`smp: a parent waits for children on other cores` holds it: a thread of its
+own waits a hundred times for a child placed on another core and spawns the
+next the moment each wait returns. With `process.c` as 0.10.21 had it, both boards panic on the second child - `pmm_free_page: address is below RAM`, the shape of a teardown reading a slot already reaped and handed to the next child. With the fix and the waiting driver, `make stress` passes on four processors: sixty rounds, threads 20 to 20, processes 12 to 12, and 117,141 pages free before and after.
+
 ### Nine vendored files no commit had, and the unanchored `build/` that hid them
 
 Found during the audio ring work by making a worktree - the first thing in a
@@ -151,23 +216,31 @@ it found the first time now.
 the window manager in 35 to 48 ms median on one core, over two runs, and in
 1 ms spread across eight - 1 ms at the ninetieth percentile too.
 
-### What the next boot of the T14 should be asked
+### What the T14 was asked, and answered
 
-The stick carries `opt/kosmos/smp=8` on GRUB's `multiboot2` line - the first
-boot option a machine without fw_cfg has been able to take.
+The 0.10.20 stick carried `opt/kosmos/smp=8` on GRUB's `multiboot2` line -
+the first boot option a machine without fw_cfg has been able to take, and
+since 0.10.22 not needed for this.
 
-1. **`log processor`**: seven `cpu_on:` lines, each `reached the kernel`.
-2. **`log given`**: `8 of them given new threads`.
-3. **Monitor**: eight bars, moving when glmech and a cube are running.
-4. **The pointer**, with Processes and Monitor open: smooth. If it still
-   jumps, `log resync` says what the driver threw away.
+1. **All eight processors alive**, reported from the machine, and Processes
+   showing threads homed on every one of them.
+2. **Monitor**: eight bars, three of them well loaded while four demos ran.
+3. **The pointer**, with Processes and Monitor open: smooth.
 
 ### Still open
 
-- **Placement is still off by default on both boards**, and the reason given
-  for that - the display harness's editor phase under `SMPWORK=4` - passes
-  now. Switching it on is a decision rather than a fix, and `make stress`
-  with it on comes first.
+- **Placement sees a moment rather than work.** A demo waiting for its next
+  frame counts as idle when the next thread is placed, so busy threads can
+  share a core while others sit at 0%. Nothing migrates, so a poor choice
+  lasts the thread's life.
+- **Which of three changes stopped the T14's pointer jumping** - the i8042
+  no longer re-initialised by `SYS_SYSINFO`, its lock, or the spread. Not
+  isolated.
+- **`process_kill` still reads a process's thread with nothing held.** A
+  kill that lands while the process exits on another core can call
+  `ipc_abort` on a thread slot that has since been reused. Exit and wait are
+  locked now; kill wants its lock order against IPC checked before it takes
+  `processes_lock`.
 - **Why `/net` takes 18.4 seconds** to list nothing on a machine with no
   network card. Tracker no longer asks; the call is still that slow.
 - **Which change made QEMU's PS/2 mouse stream** - the configuration byte,
@@ -179,7 +252,9 @@ boot option a machine without fw_cfg has been able to take.
   platform is a Makefile constant compiled into the kernel, and the network
   row names the virtio driver whatever the machine has.
 - **The click probes are still in**: `i8042 buttons` and `wm: button`, both
-  bounded, to come out once clicks are confirmed on the machine.
+  bounded. Clicks are confirmed on the machine now - the T14's log shows a
+  release reaching the window manager and an application launched from it -
+  so they can come out.
 
 ### And the disk it has
 

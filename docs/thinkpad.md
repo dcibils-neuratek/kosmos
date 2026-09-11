@@ -717,6 +717,21 @@ pitch rather than as an error. They arrived **once**, so the cyclic buffer
 is not repeating a period it has already played. And the silence on either
 side is real silence, which is the same claim from the other direction.
 
+**And on the machine itself, all eight processors doing work.** 0.10.20,
+booted from a stick with `opt/kosmos/smp=8` on GRUB's line - which 0.10.22
+no longer needs, because a plain boot spreads:
+
+```
+Monitor     GenuineIntel f6m140, eight bars: 60 0 57 0 25 0 2 6 %
+Processes   threads homed on cores 0 to 7, 31 of 48 thread slots in use
+demos       Cube 153 fps, Bounce 150, Gears 61, Mech 61, software rasterised
+pointer     smooth with Processes and Monitor open; 0.10.19 lagged and jumped
+```
+
+The pointer's fix is three changes at once - `SYS_SYSINFO` no longer
+re-initialising the i8042, a lock on it, and the desktop spread across
+eight cores - and which one stopped the jumps is not isolated.
+
 ---
 
 ## 6. What is blocked, and exactly what is known
@@ -911,14 +926,12 @@ right depends on a fact about the laptop's firmware.
    the reason to do USB first is now the keyboard and the touchpad rather
    than storage, and this machine's keyboard turned out to be an i8042. What
    USB buys here is the trackpad and anything plugged in.
-2. **The other seven cores, and work on them.** Three came up on this
-   machine at APIC ids 2, 4 and 6, each a millisecond after its second
-   STARTUP, and there are eight slots now, so the next boot starts all
-   seven. Spreading threads across them has what it was waiting for - a TLB
-   shootdown, a lock in every PC driver a system call reaches, and a lost
-   IPC reply found and fixed - and is switched on here by `opt/kosmos/smp=8`
-   on GRUB's `multiboot2` line, read from the Multiboot command line because
-   this machine has no fw_cfg to put it in.
+2. **Placement that sees work.** All eight processors run threads now and a
+   plain boot spreads them (§5), but a thread is homed where the fewest
+   threads were *runnable* at the instant it was created - so with four
+   demos running, Monitor read 60%, 57% and 25% on three cores and 0% on
+   three others. What it should count instead wants measuring on this
+   machine first.
 3. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
    bytes per function through port 0xCF8 and PCIe has 4096.
 

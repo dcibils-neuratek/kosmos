@@ -229,16 +229,16 @@ QEMU_ARGS = [
     # nobody runs - and it showed up immediately, because `cores` and
     # `sysmon` draw a row per processor and drew one.
     #
-    # The other three park and schedule nothing, so nothing here should
-    # behave differently. That is the assertion.
+    # And all four take new threads: a plain boot spreads work across every
+    # processor that arrived, so this harness measures the machine as it is
+    # used.
     #
     "-smp", "4",
     #
-    # And, when asked, the boot option that makes those four *place work*
-    # rather than merely exist. `KOSMOS_SMPWORK=4 make screenshot` is how
-    # this harness is run against placement; without it the kernel puts
-    # every new thread on core zero and this file measures what it always
-    # measured.
+    # And, when asked, the boot option that narrows that.
+    # `KOSMOS_SMPWORK=1 make screenshot` homes every new thread on core zero
+    # again, which is how a failure here is told apart from one about
+    # placement.
     #
     # An environment variable rather than a flag because the harness is
     # invoked from the Makefile in five places and a flag would have to be

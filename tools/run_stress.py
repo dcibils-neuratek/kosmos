@@ -35,6 +35,13 @@ QEMU = "qemu-system-aarch64"
 ARGS = [
     "-M", "virt,gic-version=3",
     "-cpu", "cortex-a72",
+    #
+    # Four processors, as every other harness boots - and since 0.10.22 a
+    # plain boot gives all four new threads. Without this the release gate
+    # stressed a one-processor machine nobody runs, where a pool that leaks
+    # only when two cores race for it cannot leak at all.
+    #
+    "-smp", "4",
     "-m", "512M",
     "-nographic",
     "-global", "virtio-mmio.force-legacy=false",
@@ -90,7 +97,7 @@ def main():
         if line.startswith("  after ") or line.startswith("  regions") \
            or line.startswith("  endpoints") or line.startswith("  threads") \
            or line.startswith("  processes") or line.startswith("  pages free") \
-           or "STRESS" in line:
+           or "given new threads" in line or "STRESS" in line:
             print(line)
 
     if "STRESS PASS" in out:

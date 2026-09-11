@@ -10,7 +10,7 @@
  * 1 under QEMU's `-kernel` carries `-append`, so both reach
  * `pc_loader_cmdline` and the same names work there:
  *
- *     multiboot2 /boot/kosmos.bin opt/kosmos/smp=8
+ *     multiboot2 /boot/kosmos.bin opt/kosmos/smp=1
  *
  * fw_cfg first, because under QEMU that is where a harness puts an option on
  * purpose. A word is `name=value`, words are separated by spaces, and a value

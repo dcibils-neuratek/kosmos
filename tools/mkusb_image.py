@@ -260,7 +260,7 @@ def main():
     out = sys.argv[2] if len(sys.argv) > 2 else "build/x86_64/kosmos-usb.img"
 
     # Words for the kernel's command line, after the path on GRUB's
-    # `multiboot2` line - `opt/kosmos/smp=8` and the like, which is how a
+    # `multiboot2` line - `opt/kosmos/smp=1` and the like, which is how a
     # machine with no fw_cfg is given a boot option at all. Checked, because
     # they are written into a GRUB script, where a quote or a semicolon would
     # make it a different script.

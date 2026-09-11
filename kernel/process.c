@@ -491,6 +491,9 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
 
     for (;;) {
         bool any = false;
+        unsigned long flags = spin_lock(&processes_lock);
+
+        parent->waiter = NULL;
 
         for (i = 0; i < PROCESS_MAX; i++) {
             struct process *c = &processes[i];
@@ -508,8 +511,11 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
 
                 /* Reaped here, so a supervisor looping on wait does not have
                  * to remember to, and so the same child is not reported
-                 * twice. */
-                process_reap(c);
+                 * twice - under the lock `exited` was published under,
+                 * which is what makes the slot this frees one that nothing
+                 * is still writing to. */
+                c->in_use = false;
+                spin_unlock(&processes_lock, flags);
                 return code;
             }
 
@@ -517,6 +523,7 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
         }
 
         if (!any) {
+            spin_unlock(&processes_lock, flags);
             return -1;      /* nothing left to wait for */
         }
 
@@ -531,12 +538,32 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
          * has to be distinguishable: a caller draining zombies must be able
          * to stop without being told its children have gone. */
         if (nonblocking) {
+            spin_unlock(&processes_lock, flags);
             return -2;
         }
 
+        /*
+         * **Findable and blocked before the lock is let go**, which is the
+         * whole of the fix and the same one IPC needed.
+         *
+         * This set `waiter` and called `thread_block` with nothing held. On
+         * one core that was safe: a child cannot run between the scan above
+         * and the block. On two it can, and there are two ways to lose the
+         * wake - the child ends on another core after the scan and finds no
+         * waiter yet, or finds the waiter and wakes a thread that has not
+         * blocked yet, which `thread_wake` ignores. Either way the parent
+         * sleeps for ever beside an exited child, and the shell's `sys.wait`
+         * after every foreground command is this call.
+         *
+         * `process_exit` publishes and wakes under `processes_lock`, so it
+         * either ran before the scan above - which then found the child - or
+         * runs after this thread is blocked and named, where its wake
+         * sticks. `thread_block_and_release` lets go of the lock at the one
+         * instant that is true, and why that instant may come before the
+         * switch rather than after it is written above it in `thread.c`.
+         */
         parent->waiter = thread_current();
-        thread_block();
-        parent->waiter = NULL;
+        thread_block_and_release(&processes_lock, flags);
     }
 }
 
@@ -1069,9 +1096,6 @@ void process_exit(struct process *p, int code)
         panic("process_exit: only the running process may exit");
     }
 
-    p->exit_code = code;
-    p->exited = true;
-
     /*
      * **Every death says so, not only the ones that fault.**
      *
@@ -1105,11 +1129,6 @@ void process_exit(struct process *p, int code)
 
     kputc('\n');
 
-    /* Whoever is waiting for this one, if anyone is. */
-    if (p->parent != NULL && p->parent->waiter != NULL) {
-        thread_wake(p->parent->waiter);
-    }
-
     /*
      * Back to the kernel's own address space before the process's is taken
      * apart. The thread is still executing, and it is executing kernel code
@@ -1129,13 +1148,45 @@ void process_exit(struct process *p, int code)
     ipc_caps_release(thread_current());
 
     release_memory(p);
-    p->thread = NULL;
 
     /*
-     * `in_use` stays set. Everything expensive is gone; what is left is the
-     * exit code, and the moment a process dies is exactly when somebody
-     * wants to know why. process_reap releases the slot.
+     * **And only now is it exited**, published under the pool's lock with
+     * the wake that goes with it.
+     *
+     * `exited` was set on this function's first line, before any of the
+     * teardown above, and on one core nothing could see the difference: a
+     * parent cannot run until this thread has switched away for good. On
+     * two it runs at once: `process_wait` can find the child exited, reap
+     * the slot and return while this thread is still on another core giving
+     * back the child's capabilities and pages - so a parent that counts what
+     * the machine holds the moment its wait returns counts a child that is
+     * still leaving. And a slot reaped mid-teardown can be claimed by the
+     * next spawn while this thread still writes to it: `release_memory`
+     * reading the new process's pages, `p->thread = NULL` clearing its
+     * thread.
+     *
+     * So everything that touches `p` happens first, and `exited` means what
+     * `process.h` says - finished, holding only its exit code. The waiter
+     * is read and woken under the lock `process_wait` blocks with, which is
+     * what stops that wake being lost.
+     *
+     * `in_use` stays set. What is left is the exit code, and the moment a
+     * process dies is exactly when somebody wants to know why.
+     * `process_wait` or `process_reap` releases the slot.
      */
+    {
+        unsigned long flags = spin_lock(&processes_lock);
+
+        p->thread = NULL;
+        p->exit_code = code;
+        p->exited = true;
+
+        if (p->parent != NULL && p->parent->waiter != NULL) {
+            thread_wake(p->parent->waiter);
+        }
+
+        spin_unlock(&processes_lock, flags);
+    }
 
     /* Never returns. The thread's slot and stacks go back to the pool. */
     thread_exit();
@@ -1143,11 +1194,21 @@ void process_exit(struct process *p, int code)
 
 void process_reap(struct process *p)
 {
-    if (p == NULL || !p->in_use || !p->exited) {
+    unsigned long flags;
+
+    if (p == NULL) {
         return;
     }
 
-    p->in_use = false;
+    /* Under the lock `exited` is published under, for the reason
+     * `process_wait` gives. */
+    flags = spin_lock(&processes_lock);
+
+    if (p->in_use && p->exited) {
+        p->in_use = false;
+    }
+
+    spin_unlock(&processes_lock, flags);
 }
 
 /*

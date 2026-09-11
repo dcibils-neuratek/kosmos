@@ -72,6 +72,9 @@ do
   local cap = sys.memory(2)
   if cap then sys.release(cap) end
   run("/bin/hello.lua", "", false)
+
+  -- Waited for, for the reason the loop below gives.
+  sys.wait()
 end
 
 local base = snapshot()
@@ -140,6 +143,16 @@ for n = 1, rounds do
   -- its first run, and is exactly the shape of thing it exists for: a
   -- machine that works perfectly for twenty-one rounds.
   --
+  -- **Waited for, and not only drained, because the reply is not the end
+  -- of the child.** The program has finished when `run` returns; its
+  -- process has not - it still has to exit and give back its thread and
+  -- its pages. On one core that happened before this process ran again.
+  -- On four it happens on another core at the same moment, so the day this
+  -- machine booted `-smp 4` every snapshot below counted one thread and
+  -- about 650 pages more than a finished round holds - and a drain that
+  -- does not block cannot wait for a child that has not exited yet.
+  --
+  sys.wait()
   while sys.wait(true) do end
 
   if n % 10 == 0 then

@@ -817,25 +817,32 @@ def main():
           "saying it reached the kernel; it printed: "
           + ("; ".join(started) or "nothing"))
 
-    # And it does not give them new threads, which is a placement policy
-    # rather than a limit - `SMPWORK` on the other board, `opt/kosmos/smp`
-    # on both.
-    check(smp is not None and "1 of them given new threads" in smp,
-          "the machine claimed more than one processor is taking new "
-          "threads without being asked to")
+    # And all four are given new threads, with nobody asking: a plain boot
+    # spreads work across every processor that arrived. This said "1" until
+    # 0.10.22, when that was the default rather than a limit.
+    check(smp is not None and "4 of them given new threads" in smp,
+          "a plain boot should give every processor that arrived new "
+          "threads; it said: "
+          + next((l.strip() for l in (smp or "").splitlines()
+                  if "given new threads" in l), "no placement line"))
 
     #
-    # **And the same option from the loader's command line**, which is how a
+    # **And the boot option from the loader's command line**, which is how a
     # machine with no fw_cfg - the ThinkPad, booted by GRUB - is given one at
     # all. `-append` fills Multiboot's command line under QEMU, the field
     # GRUB's `multiboot2` line fills on the laptop, and no fw_cfg is passed.
     #
-    spread = boot(image, None, 90.0,
-                  extra=("-smp", "4", "-append", "opt/kosmos/smp=4"))
+    # Two rather than four, because four is what a plain boot says now and an
+    # option that never arrived would pass. The option narrows.
+    #
+    narrowed = boot(image, None, 90.0,
+                    extra=("-smp", "4", "-append", "opt/kosmos/smp=2"))
 
-    check(spread is not None and "4 of them given new threads" in spread,
-          "opt/kosmos/smp=4 on the command line did not reach the kernel: "
-          + next((l.strip() for l in (spread or "").splitlines()
+    check(narrowed is not None
+          and "2 of them given new threads; opt/kosmos/smp asked for fewer"
+          in narrowed,
+          "opt/kosmos/smp=2 on the command line did not reach the kernel: "
+          + next((l.strip() for l in (narrowed or "").splitlines()
                   if "given new threads" in l), "no placement line"))
 
     #

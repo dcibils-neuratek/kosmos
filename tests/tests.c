@@ -785,6 +785,117 @@ static int run_user(const char *name, const char *start, const char *end)
     return code;
 }
 
+/*
+ * A parent waiting for children that end on other processors.
+ *
+ * **`process_wait` and `process_exit` meeting across cores.** The child set
+ * `exited` on the first line of `process_exit`, before giving anything back,
+ * and woke its parent with nothing held. On two cores that is two faults: a
+ * waiting parent can reap a slot whose owner is still tearing it down, and
+ * the next spawn be handed that slot while the old owner still writes to it;
+ * or the parent can sleep through a wake that landed before it had blocked.
+ *
+ * So a hundred children, each placed on a core other than the waiter's, each
+ * waited for with a blocking `process_wait`, and the next spawned the moment
+ * the wait returns - which is when a slot reaped too early is most likely to
+ * be claimed again while its old owner still writes to it.
+ *
+ * **The waiting is done by a thread of its own**, because this one cannot
+ * block: the suite runs on the boot thread, which is core zero's idle
+ * thread, and an idle thread that blocks leaves its processor nothing to
+ * fall back to. `thread_block` panics saying so, which is how the first
+ * version of this check ended. The parent is a process built and never
+ * started, because `process_wait` asks only whose children these are and
+ * who is waiting.
+ *
+ * `hello` without the console, so it fails its write and exits 1 without a
+ * word. What is asserted is that every wait returns, with the right child,
+ * inside a bound that a lost wake never meets.
+ */
+#define WAIT_ROUNDS 100u
+
+static struct process *volatile wait_parent;
+static volatile bool            wait_ok;
+static volatile bool            wait_done;
+
+static void waits_for_children(void *arg)
+{
+    const size_t len   = (size_t)(user_hello_end - user_hello_start);
+    unsigned     cores = smp_online();
+    unsigned     round;
+
+    (void)arg;
+
+    for (round = 0; round < WAIT_ROUNDS; round++) {
+        struct process *child = process_create("t-waited", user_hello_start,
+                                               len, 0);
+        unsigned id = 0;
+        unsigned want;
+
+        if (child == NULL) {
+            wait_ok = false;
+            break;
+        }
+
+        want = child->id;
+        child->parent = wait_parent;
+        child->thread->sched.cpu = 1 + round % (cores - 1);
+        process_start(child);
+
+        (void)process_wait(wait_parent, &id, false);
+
+        if (id != want) {
+            wait_ok = false;
+            break;
+        }
+    }
+
+    wait_done = true;
+}
+
+static bool test_a_parent_waits_for_children_on_other_processors(void)
+{
+    const size_t  len = (size_t)(user_hello_end - user_hello_start);
+    unsigned long start;
+
+    if (smp_online() < 2) {
+        return true;            /* one processor, nothing to meet across */
+    }
+
+    wait_parent = process_create("t-parent", user_hello_start, len, 0);
+    wait_ok = true;
+    wait_done = false;
+
+    if (wait_parent == NULL) {
+        return false;
+    }
+
+    if (thread_create("t-waiter", waits_for_children, NULL) == NULL) {
+        process_abandon(wait_parent);
+        return false;
+    }
+
+    /* Thirty seconds of ticks at 250 Hz: a hundred rounds on a loaded host
+     * take a small part of it, and a lost wake never meets it. */
+    start = hal_ticks();
+
+    while (!wait_done && hal_ticks() - start < 7500UL) {
+        thread_yield();
+    }
+
+    /*
+     * A waiter still blocked is left blocked, and its parent with it:
+     * abandoning a process somebody is waiting on would free what the
+     * waiter reads when it wakes.
+     */
+    if (!wait_done) {
+        return false;
+    }
+
+    process_abandon(wait_parent);
+    return wait_ok;
+}
+
 static bool test_lua_runs_at_el0(void)
 {
     /*
@@ -4185,6 +4296,26 @@ static bool test_the_machine_says_how_many_processors_it_has(void)
 }
 
 /*
+ * A machine given no boot option spreads new threads across every processor
+ * that arrived.
+ *
+ * **Read before the suite pins itself**, because the pin is the suite's own
+ * decision and this is about the kernel's. `tests_run` records the count
+ * just before it pins, while it is still what `kmain` left - and the test
+ * image is booted with no `opt/kosmos/smp`, which is exactly a plain boot.
+ *
+ * It was one for months, on purpose, and every harness measured a machine
+ * with three idle cores. With `kmain`'s old `thread_place_across(1)` put back
+ * this reads one against four.
+ */
+static unsigned placed_across_at_boot;
+
+static bool test_new_threads_go_to_every_core_by_default(void)
+{
+    return placed_across_at_boot == smp_online();
+}
+
+/*
  * Every processor that entered the kernel claimed *its own* slot.
  *
  * **This is what step one could not check and step three can.** The per-CPU
@@ -4209,13 +4340,25 @@ static bool test_every_processor_claimed_its_own_slot(void)
 {
     unsigned online  = smp_online();
     unsigned present = hal_cpu_count();
+    unsigned widened;
     unsigned i;
 
     if (online < 1 || online > present) {
         return false;
     }
 
-    if (thread_cpu_count() > online) {
+    /*
+     * Asked for every slot, placement still answers with only the cores that
+     * arrived. Under the suite's own pin this read one against four and
+     * could not fail - and a boot option is whatever somebody typed:
+     * `opt/kosmos/smp=8` on four processors would home threads on four that
+     * never started, where they would never run.
+     */
+    thread_place_across(NR_CPUS);
+    widened = thread_cpu_count();
+    thread_place_across(1);
+
+    if (widened != online) {
         return false;           /* scheduling on cores that never arrived */
     }
 
@@ -5554,6 +5697,7 @@ static const struct test tests[] = {
     { "cpu: every processor takes its own ticks",  test_every_processor_takes_its_own_ticks },
     { "cpu: every processor idles as a thread",     test_every_processor_idles_as_a_thread },
     { "smp: a thread runs on another processor",    test_a_thread_runs_on_another_processor },
+    { "smp: new threads go to every core by default", test_new_threads_go_to_every_core_by_default },
     { "cpu: per-CPU state is per CPU, not per thread", test_percpu_is_per_cpu_and_not_per_thread },
     { "sched: a sleep lasts as long as it asked", test_a_sleep_lasts_as_long_as_it_asked },
     { "sched: input does not wake a plain sleeper", test_input_does_not_wake_a_plain_sleeper },
@@ -5568,6 +5712,7 @@ static const struct test tests[] = {
     { "smp: a changed mapping reaches every core", test_a_changed_mapping_reaches_every_processor },
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },
     { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
+    { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },
@@ -5701,7 +5846,11 @@ void tests_run(void)
      * they still cross cores. `smp: a thread runs on another processor` is
      * the one that matters, and this line is what makes it a deliberate
      * crossing rather than an accident of placement.
+     *
+     * What placement was before this line is kept for the one check that
+     * asks about the kernel's default rather than the suite's.
      */
+    placed_across_at_boot = thread_cpu_count();
     thread_place_across(1);
 
     heap = pmm_alloc_contiguous(TEST_HEAP_PAGES);

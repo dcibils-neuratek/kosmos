@@ -239,6 +239,12 @@ struct thread;
  * address space once in five runs. The lock that would make this safe goes
  * here; until there is one, anything inspecting a live process has to mask
  * interrupts, which is what stops it being preempted mid-look.
+ *
+ * **Masking is a statement about one processor**, and a spread machine runs
+ * the process on another while it is looked at. `exited` and `exit_code`
+ * are the exception because they are published last and together, under
+ * `processes_lock`, once the teardown that makes the rest unsafe is over -
+ * and `in_use` is cleared under the same lock when the slot is reaped.
  */
 struct process {
     bool              in_use;
@@ -452,10 +458,11 @@ struct process *process_current(void);
  * process_abandon.
  *
  * The slot itself survives, holding the exit code, until somebody reaps it.
- * Everything expensive is already gone by then, so what is left is a few
- * bytes recording how it ended. Freeing it at the same moment would mean the
- * only record of why a process died disappears at the instant it dies, which
- * is exactly when somebody wants to look.
+ * Everything expensive is gone before `exited` says so - it is published
+ * last, under the pool's lock, with the parent's wake - so what is left is a
+ * few bytes recording how it ended. Freeing it at the same moment would mean
+ * the only record of why a process died disappears at the instant it dies,
+ * which is exactly when somebody wants to look.
  */
 void process_exit(struct process *p, int code);
 
@@ -479,6 +486,9 @@ struct process *process_spawn(struct process *parent, unsigned long arg);
  * `nonblocking` makes it return -2 when children exist but none has exited,
  * which is distinct from -1 for no children at all. A shell draining the
  * processes it spawned needs to stop without being told it has none.
+ *
+ * The look and the sleep are one step under `processes_lock`, so a child
+ * ending on another core cannot land its wake between them.
  */
 int process_wait(struct process *parent, unsigned *id, bool nonblocking);
 
