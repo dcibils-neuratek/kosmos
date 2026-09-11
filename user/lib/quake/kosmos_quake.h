@@ -32,4 +32,46 @@
 #define write(fd, buf, count)   (-1)
 #define close(fd)               (-1)
 
+/*
+ * And the names id Software used in both of its engines.
+ *
+ * Doom and Quake come from the same hands and share a vocabulary: a zone
+ * allocator called `Z_Malloc`, a renderer started by `R_Init`, a `deathmatch`
+ * and a `gammatable`. Each engine links alone, and `make MEGA=1` - Doom and
+ * Quake in one image, with no dynamic linking to keep them apart - stopped
+ * on these twenty-four, each defined twice.
+ *
+ * Quake's copies are renamed here rather than either tree being edited, the
+ * way `unlink` is pointed at `remove` above: every Quake file and
+ * `quake_kosmos.c` see these macros, so each name is renamed wherever Quake
+ * defines or uses it, and nowhere else. Always, not only in a MEGA image, so
+ * the Quake `make quake-check` boots is built the way MEGA's is. A name added
+ * to either engine that collides again stops the MEGA link, by name.
+ */
+#define M_Init          quake_M_Init
+#define R_DrawSprite    quake_R_DrawSprite
+#define R_Init          quake_R_Init
+#define R_InitTextures  quake_R_InitTextures
+#define R_SetupFrame    quake_R_SetupFrame
+#define S_Init          quake_S_Init
+#define S_Shutdown      quake_S_Shutdown
+#define S_StartSound    quake_S_StartSound
+#define S_StopSound     quake_S_StopSound
+#define V_Init          quake_V_Init
+#define WritePCXfile    quake_WritePCXfile
+#define Z_CheckHeap     quake_Z_CheckHeap
+#define Z_ClearZone     quake_Z_ClearZone
+#define Z_Free          quake_Z_Free
+#define Z_Malloc        quake_Z_Malloc
+
+#define deathmatch      quake_deathmatch
+#define gammatable      quake_gammatable
+#define mainzone        quake_mainzone
+#define nomonsters      quake_nomonsters
+#define onground        quake_onground
+#define precache        quake_precache
+#define snd_channels    quake_snd_channels
+#define startepisode    quake_startepisode
+#define timelimit       quake_timelimit
+
 #endif

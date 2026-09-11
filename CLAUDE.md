@@ -109,6 +109,7 @@ make qemu        # build and run under QEMU virt, in a window
 make fast        # the same, on this Mac's own cores (hvf); 4-14x
 make FB=1280x800 qemu    # the same, at that display size
 make FULL=0 qemu         # without the browser and Doom, and quicker to link
+make MEGA=1 qemu         # everything: FULL, plus Lite XL and Quake
 make serial      # the same, serial only, no window
 make test        # run the suite under QEMU, exit code 0 or 1
 make screenshot  # boot, screendump, and check the picture QEMU scans out
@@ -123,6 +124,10 @@ building is use it, and a build that leaves half of it out tells you about
 half of it. `FULL=0` gives the lean image; `make test` and `make bench`
 build their own and are unaffected, because a suite's value is being quick
 enough to run without thinking about it.
+
+Doom is GPLv2 and nothing here is linked dynamically, so that image is a
+GPLv2 work, and `FULL=0` is the MIT one; `LICENSE` has the list, and the
+About window shows it.
 
 Toolchain: `aarch64-none-elf-gcc`, `qemu-system-aarch64`.
 
@@ -686,10 +691,10 @@ by writing more code.
 that arrives on its own.
 
 **A push carries a picture. `make prepush`** runs the suites, the display
-harness, `make litexl-check` and `make shot`, which puts a 1920x1080
-screenshot of the desktop - Tracker, the widget gallery, Processes, Monitor
-and the cube, tiled - into `docs/screenshots/` under the date and the
-revision.
+harness, `make litexl-check`, a MEGA link and `make shot`, which puts a
+1920x1080 screenshot of the desktop - Tracker, the widget gallery,
+Processes, Monitor and the cube, tiled - into `docs/screenshots/` under the
+date and the revision.
 
 It is a make target rather than a habit because it is the step that would be
 forgotten: nothing fails without it, and a series of these with gaps in it

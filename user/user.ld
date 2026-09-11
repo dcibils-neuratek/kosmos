@@ -99,6 +99,18 @@ SECTIONS
     . = ALIGN(4096);
     __image_end = .;
 
+    /*
+     * And the image has to end before the heap begins.
+     *
+     * `USER_HEAP` in `user/include/kosmos.h` is sixteen megabytes above
+     * `USER_BASE`, fixed. An image that grew past it would overlap the heap,
+     * and the link is the place to find that out rather than whatever the
+     * first allocation lands on. The ordinary image is about six megabytes
+     * and `MEGA=1`, which carries everything, is the one that gets closest.
+     */
+    ASSERT(__image_end <= USER_BASE + 0x01000000,
+           "the userland image runs into its heap, which starts at USER_BASE + 16 MB (USER_HEAP, user/include/kosmos.h)")
+
     /DISCARD/ : {
         *(.comment)
         *(.note .note.*)

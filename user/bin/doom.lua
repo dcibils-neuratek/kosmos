@@ -6,9 +6,10 @@
 --   wm doom                    /home/doom1.wad
 --   wm doom:/ramfs/other.wad    somewhere else
 --
--- Only in an image built with `make DOOM=1`; see
--- `runtime/upstream/doom/README.md` for why that is a build option and not
--- part of the desktop.
+-- Only in an image with Doom compiled in: `make` and `make qemu` build one
+-- (`FULL=1`, the default) and `make FULL=0` does not. See
+-- `runtime/upstream/doom/README.md` for why it is a build option, and what
+-- carrying it makes of the image's licence.
 --
 -- **This file is the loop, and that is the whole division.** id's code does
 -- the game; `doom_kosmos.c` gives it six functions; and what is left - which

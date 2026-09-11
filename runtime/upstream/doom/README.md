@@ -19,22 +19,28 @@ a blit rather than a conversion.
 data; it goes on the disk with `tools/kfs.lua put`, which is what a
 filesystem is for.
 
-## Why it is `make DOOM=1` and not part of the image
+## Why it is a build option, and which builds turn it on
 
-**The licence.** Doom is GPLv2 and Kosmos is MIT. There is no dynamic
-linking here - `layout.md` says so and means it - so anything compiled in is
-*linked* in, and a Kosmos image containing Doom is a combined work under the
-GPL. That is not a problem to be solved, it is a fact to be respected, and
-the line is drawn in the build rather than in a comment because a licence
-boundary that depends on somebody remembering is not a boundary. Kosmos's
-own sources stay MIT and are unaffected; an image built with `DOOM=1` is a
-GPL work.
+**`make` turns it on.** `FULL=1` is the default, and it builds the whole
+system, Doom and the browser included, because the machine you sit in front
+of should be the whole machine - the decision log has that row. `make
+FULL=0` leaves Doom out, and so do `make test` and `make bench`, which build
+images of their own.
+
+**So an ordinary image is a GPLv2 work.** Doom is GPLv2 and Kosmos is MIT.
+There is no dynamic linking here - `layout.md` says so and means it - so
+anything compiled in is *linked* in, and a Kosmos image containing Doom is a
+combined work under the GPL. That is not a problem to be solved, it is a
+fact to be respected, and the line is drawn in the build rather than in a
+comment because a licence boundary that depends on somebody remembering is
+not a boundary. Kosmos's own sources stay MIT and are unaffected, and
+`FULL=0` is the image to hand somebody who needs an MIT one.
 
 **And the size.** The image is copied into every process - `roadmap.md`
 records the cost and `procs` shows it, which is why every process reports
-the same few megabytes. Doom is about a megabyte of code, and a desktop with
-eighteen processes would pay that eighteen times for something seventeen of
-them will never call.
+the same few megabytes. Doom is about a megabyte of code, paid by every
+process on the machine for something one of them calls. `FULL=1` pays it
+on purpose, and `FULL=0` does not.
 
 `DOOM=1` gets its own `VARIANT`, so its objects never mix with an ordinary
 build's: they are compiled with different flags, and `make` compares

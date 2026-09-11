@@ -54,6 +54,29 @@ SIZE    := $(CROSS)size
 # image must not carry, and its whole value is being fast enough to run
 # without thinking about it.
 #
+# **And the licence, which follows from the first line.** Doom is GPLv2 and
+# nothing here is linked dynamically, so the image `FULL=1` builds is a
+# combined work under the GPL, and `FULL=0` is the MIT one. `LICENSE` says
+# so, and the About window reads it out of the image.
+#
+# **`MEGA=1` is everything this tree can put in one image**: what `FULL=1`
+# turns on, and the two it does not carry - Lite XL and Quake. It is for
+# running the whole of it at once, not for the suites: the test and bench
+# images ignore it as they ignore `FULL`, and the checks that build a variant
+# of their own say `MEGA=` so an inherited one cannot change what they check.
+# The image is a GPL work (`LICENSE`), and the game data is still not in it:
+# `make image FILES=...` puts `doom1.wad` and `pak0.pak` on the disk.
+#
+ifeq ($(MEGA),1)
+ifndef TEST
+ifndef BENCH
+FULL   := 1
+LITEXL := 1
+QUAKE  := 1
+endif
+endif
+endif
+
 FULL ?= 1
 
 ifeq ($(FULL),1)
@@ -1494,11 +1517,17 @@ ICON_FILES := $(sort $(wildcard assets/icons/*.png))
 # a picture is neither.
 ART_FILES := $(sort $(wildcard assets/*.txt))
 
-$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) \
+# And `LICENSE`, the one file from the root of the tree the image carries.
+# The About window lists what it says, read with `sys.asset("LICENSE")`,
+# so the window keeps no licence text of its own to fall out of step with
+# the file. `licence_for` finds `LICENSE` itself as the only licence in its
+# directory, so it is not reported as unlicensed.
+
+$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE \
                  tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
-	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES)
+	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE
 
 # The outline fonts, embedded the same way.
 #
@@ -2471,6 +2500,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# same interpreter either way, so this needs no machine either.
 	$(HOSTDIR)/lua tools/test_litexl_lua.lua
 	$(HOSTDIR)/lua tools/test_litexl_host.lua
+	@# And LICENSE, read the way the About window reads it: every line of
+	@# it, and every vendored tree named in it - so a library added without
+	@# an entry fails here, by name.
+	$(HOSTDIR)/lua tools/test_licences.lua LICENSE $(wildcard runtime/upstream/*/) lua/upstream/
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,
@@ -2659,7 +2692,16 @@ browser: $(HOSTDIR)/lua
 	python3 tools/run_browser.py $(TARGET) --out build/browser.png \
 	  $(if $(PAGE),--page $(PAGE),)
 
-prepush: test screenshot litexl-check shot
+# Everything in one image, linked. `MEGA=1` is where Doom and Quake meet in
+# a single link - where a name both of them define shows up - and the image
+# that comes closest to its heap, which `user/user.ld` asserts. Built rather
+# than booted: the checks before it boot their own images, and `shot` builds
+# the ordinary one again after it.
+.PHONY: mega
+mega:
+	@$(MAKE) --no-print-directory MEGA=1 $(TARGET)
+
+prepush: test screenshot litexl-check mega shot
 	@echo
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
@@ -2761,7 +2803,7 @@ quake:
 # and `shot` builds the ordinary one again before it takes its picture.
 .PHONY: litexl-check
 litexl-check:
-	@$(MAKE) --no-print-directory FULL=0 LITEXL=1
+	@$(MAKE) --no-print-directory MEGA= FULL=0 LITEXL=1
 	python3 tools/run_litexl.py build/kosmos.elf
 
 # Quake on the machine: a window, the engine started, the demo and its map,
@@ -2774,7 +2816,7 @@ litexl-check:
 .PHONY: quake-check
 quake-check: $(HOSTDIR)/lua
 	@test -f "$(PAK)" || { echo "FAIL: no pak. make quake-check PAK=/path/to/pak0.pak"; exit 1; }
-	@$(MAKE) --no-print-directory FULL=0 QUAKE=1
+	@$(MAKE) --no-print-directory MEGA= FULL=0 QUAKE=1
 	python3 tools/run_quake.py build/kosmos.elf $(PAK)
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf

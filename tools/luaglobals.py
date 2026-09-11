@@ -51,12 +51,13 @@ ENVIRONMENTS = {
 
     # A program in /bin gets an environment built by the runner.
     #
-    # `doom` and `quake` are there only in images built with `make DOOM=1`
-    # and `make QUAKE=1`, and are listed here anyway - which is the honest way round. This checker asks
-    # "will this name exist", and the answer for `doom` is "in the image
-    # that has Doom in it". The application checks for itself before using
-    # it, because a program that assumes an optional global is a program
-    # that fails with a nil index instead of a sentence.
+    # `doom` and `quake` are there only in images that compile them in -
+    # `DOOM=1`, which `FULL=1` turns on, and `QUAKE=1` - and are listed here
+    # anyway, which is the honest way round. This checker asks "will this
+    # name exist", and the answer for `doom` is "in the image that has Doom
+    # in it". The application checks for itself before using it, because a
+    # program that assumes an optional global is a program that fails with a
+    # nil index instead of a sentence.
     #
     # `write` is `print`'s coloured sibling: one run of text, no newline
     # added. It is here rather than under `sys` because a program has no

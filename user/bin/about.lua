@@ -5,13 +5,16 @@
 -- BeOS's About box: the machine down the left, and text down the right. In
 -- BeOS the right-hand column was trademark notices, which is what a
 -- commercial system has to put there. This one has room for something
--- better, so it says what the system is and why it is built the way it is.
+-- better, so it says what the system is and why it is built the way it is,
+-- and then whose work is in it and under what terms, read from the image's
+-- own copy of LICENSE.
 --
 -- Every number on the left is read from the same nodes every other program
 -- here reads - /dev/cpu, /dev/kernel, /dev/memory - and the version comes
 -- from `sys.build()`, which the Makefile compiles in from the commit.
 
 local ui = use("/lib/ui.lua")
+local licences = use("/lib/licences.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -95,6 +98,53 @@ fact("Memory:", ("%d MB, %d free"):format(mem.total_mb or 0,
                                           mem.free_mb or 0))
 
 --------------------------------------------------------------------------
+-- Whose work is in it, after what it is.
+--
+-- Read out of the image's own copy of LICENSE rather than written here, so
+-- this window cannot say something the file does not. `/lib/licences.lua`
+-- reads the shape LICENSE keeps, and `tools/test_licences.lua` holds the
+-- file to the tree, so a library vendored without an entry fails `make test`
+-- rather than going missing from this list.
+--------------------------------------------------------------------------
+
+local function with_licences(blocks)
+  blocks[#blocks + 1] = { style = "title", text = "Licences" }
+
+  local text = sys.asset("LICENSE")
+
+  if not text then
+    blocks[#blocks + 1] = { style = "body", text =
+      "This image carries no LICENSE to read them from." }
+    return blocks
+  end
+
+  local found = licences.parse(text)
+
+  -- LICENSE marks names with backticks, which read as code in a file and as
+  -- stray punctuation in a window, so the file keeps them and this drops them.
+  local function prose(words)
+    return (words:gsub("`", ""))
+  end
+
+  blocks[#blocks + 1] = { style = "body", text =
+    ("Kosmos itself: the %s, %s."):format(found.licence or "MIT License",
+                                          found.holder or "") }
+
+  for _, item in ipairs(found.items) do
+    if item.title then
+      blocks[#blocks + 1] = { style = "head", text = prose(item.title) }
+      blocks[#blocks + 1] = { style = "body",
+                              text = prose(table.concat(item.details, " ")) }
+    else
+      blocks[#blocks + 1] = { style = "body",
+                              text = prose(table.concat(item.note, " ")) }
+    end
+  end
+
+  return blocks
+end
+
+--------------------------------------------------------------------------
 -- What it is, down the right.
 --------------------------------------------------------------------------
 
@@ -104,7 +154,7 @@ win:add(ui.label{ x = 270, y = H - 26,
 
 win:add(ui.text{
   x = 270, y = 14, w = W - 286, h = H - 48,
-  blocks = {
+  blocks = with_licences({
     { style = "title", text = "What Kosmos is" },
 
     -- The architecture is asked for rather than written down. It said "on
@@ -156,7 +206,7 @@ win:add(ui.text{
       "A personal learning project. No users, no compatibility to keep, " ..
       "no deadline - which is what makes it possible to take decisions a " ..
       "commercial system cannot." },
-  },
+  }),
 })
 
 --------------------------------------------------------------------------

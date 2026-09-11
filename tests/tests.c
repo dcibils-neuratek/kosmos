@@ -3344,6 +3344,14 @@ static bool test_pdf_scanner(void)                     { return luatest_role(37)
 static bool test_console_write_carries_no_capability(void) { return luatest_role(38); }
 
 /*
+ * The image carries LICENSE, which About reads its Licences section from.
+ * The file's contents are checked on the build machine; this checks that
+ * it arrived, since a LICENSE left out of the asset table fails nowhere
+ * else - About would only say there is nothing to read.
+ */
+static bool test_licence_is_carried(void)              { return luatest_role(40); }
+
+/*
  * A region the size of Quake's shareware pak, and one page over the cap.
  *
  * `MEMOBJ_PAGES_MAX` was 4096 - sixteen megabytes, "a double-buffered full
@@ -5812,6 +5820,7 @@ static const struct test tests[] = {
     { "cap: forty regions, made and released", test_cap_release_frees_slots },
     { "inflate: a stream from elsewhere",      test_inflate_round_trip },
     { "pdf: the scanner reads what it should", test_pdf_scanner },
+    { "licence: the image carries LICENSE",     test_licence_is_carried },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },

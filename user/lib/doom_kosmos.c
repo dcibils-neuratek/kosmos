@@ -5,7 +5,8 @@
  * The half of the port that is ours. `runtime/upstream/doom/` is id's source, byte for
  * byte and GPLv2; this file is the platform underneath it and is the only
  * place the two vocabularies meet. See `runtime/upstream/doom/README.md` for why the
- * whole thing is behind `make DOOM=1`.
+ * whole thing is a build option - on in `FULL=1`, the default - and what it
+ * makes of an image's licence.
  *
  *--------------------------------------------------------------------------
  * What doomgeneric asks for, and what it gets.

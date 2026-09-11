@@ -1952,12 +1952,13 @@ int luaopen_gfx(lua_State *L)
     kosmos_png_open(L);
 
 #ifdef KOSMOS_DOOM
-    /* `make DOOM=1` only. See runtime/upstream/doom/README.md: the licence
-     * and the size both say this does not belong in an ordinary image. */
+    /* Only where Doom is compiled in: `FULL=1`, the default, or `DOOM=1`.
+     * runtime/upstream/doom/README.md says what that makes of the image's
+     * licence and what it costs every process. */
     kosmos_doom_open(L);
 #endif
 #ifdef KOSMOS_QUAKE
-    /* `make QUAKE=1` only, for the same two reasons. */
+    /* `make QUAKE=1` only, which `FULL=1` does not turn on. */
     kosmos_quake_open(L);
 #endif
     kosmos_docfont_open(L);

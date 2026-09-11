@@ -61,6 +61,7 @@ local R_INFLATE      = 36
 local R_PDF_SCAN     = 37
 local R_CONWRITE     = 38
 local R_CONWRITE_PEER = 39
+local R_LICENCE      = 40
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -1310,6 +1311,23 @@ if role == R_PDF_SCAN then
     end
   end
 
+  sys.exit(0)
+end
+
+if role == R_LICENCE then
+  -- The image carries its own LICENSE, and the About window reads it rather
+  -- than keeping a list of its own. What has to hold in here is that the
+  -- file arrived whole: the project's terms at the top, the rule, and the
+  -- vendored entries below it. `tools/test_licences.lua` checks the rest of
+  -- the file on the build machine.
+  local text = sys.asset("LICENSE")
+  check(type(text) == "string", "the image carries no LICENSE")
+  check(text:sub(1, 11) == "MIT License",
+        "LICENSE in the image does not start with the project's terms")
+  check(text:find("\n---\n", 1, true) ~= nil,
+        "LICENSE in the image has no rule above its vendored list")
+  check(text:find("runtime/upstream/", 1, true) ~= nil,
+        "LICENSE in the image names no vendored tree")
   sys.exit(0)
 end
 

@@ -8,6 +8,42 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### Whose work is in it, and everything in one image
+
+About Kosmos ends with a Licences section: the project's own terms, then every
+vendored component - who made it, its licence, where the text lives - read out
+of the image's own copy of `LICENSE`. `user/lib/licences.lua` reads the file
+and `tools/test_licences.lua` holds it to the tree, and that test found
+`LICENSE` three entries short: musl's maths, NetSurf's five libraries and the
+Tango icons. It draws: a MEGA image scrolled to the end of About shows the
+doomgeneric and Chocolate Quake entries, bold headings over their details.
+
+`LICENSE` also said Doom was not in an ordinary image, and it was. Diego
+decided the text follows the Makefile: `FULL=1` builds the whole system, so an
+ordinary image is a GPLv2 work, and `FULL=0` is the MIT one. Doom's README,
+the Makefile's `FULL` comment, `CLAUDE.md` and four comments in the tree say
+the same now.
+
+`make MEGA=1 qemu` builds and runs everything this tree can put in one image -
+Doom, the browser, Lite XL and Quake. Its first link failed on twenty-four
+names Doom and Quake both define; Quake's copies are renamed in its forced
+header. The image is 8.64 MB of the sixteen before a process's heap, which
+`user/user.ld` now asserts at link time. On a MEGA image `run_litexl.py`
+passes its 6 checks, `run_quake.py` its 6 and the display harness its 71,
+and Doom opens and draws beside Quake. The game data still goes on the disk:
+
+    make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
+    make MEGA=1 qemu
+
+Open:
+
+- **Two assets have no licence**: `assets/images/test-pattern.png` and
+  `assets/kosmos-ascii-art.txt`, which the build warns about on every run.
+- **MEGA on x86-64 has not been built.**
+
+**Next, in the order agreed**: the battery indicator on the top bar, which
+starts with the T14's DSDT.
+
 ### Quake runs on Kosmos
 
 `wm quake` opens a window and plays the shareware attract loop: `demo1.dem` in

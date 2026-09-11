@@ -1030,6 +1030,13 @@ patch is a header included ahead of every Quake file,
 other three do nothing. Kosmos gained no POSIX name, and everything done to
 the port can be read in one file.
 
+The same header answers a collision that is not POSIX's at all. Doom and
+Quake share id Software's vocabulary - `Z_Malloc`, `R_Init`, `deathmatch` -
+and `make MEGA=1` links both into one image, with nothing to keep two
+definitions of a name apart. Quake's twenty-four are renamed there with
+`#define`, which reaches every place Quake defines or uses them and leaves
+strings, cvar names and the layout of every structure as they were.
+
 **A detail that causes bugs months later:** `errno` is a global variable and with coroutines it does not work. It goes per process, in the state struct. Solve it at the start.
 
 **References:** musl for reading clean implementations (the code is too Linux-specific to copy), PDCLib for public-domain freestanding.

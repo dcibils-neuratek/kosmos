@@ -34,9 +34,18 @@ Vendored third-party code keeps its own licence, which travels beside it:
   puff.c, by Mark Adler, zlib licence
       runtime/upstream/puff/LICENSE.puff
 
+  musl's maths functions, by Rich Felker and others, MIT
+      runtime/upstream/musl-math/COPYRIGHT, which also lists the other
+      permissive notices parts of musl carry; the vendoring is recorded
+      in README.kosmos.md beside it
+
   TinyGL, by Fabrice Bellard and erysdren, MIT
       runtime/upstream/tinygl/COPYING, with the vendoring recorded in
       README.kosmos.md beside it
+
+  NetSurf's libraries, by J-M Bell and the NetSurf Browser Project, MIT
+      runtime/upstream/netsurf/: libcss, libdom, libhubbub, libparserutils
+      and libwapcaplet, each under the COPYING file in its own directory
 
   Lite XL, by rxi, Francesco Abbate and the Lite XL Team, MIT
       runtime/upstream/lite-xl/LICENSE, with the vendoring recorded in
@@ -57,20 +66,27 @@ Vendored third-party code keeps its own licence, which travels beside it:
       whose licence is not beside it is not committed, and the build
       says so when it finds one.
 
+  The Tango icons, public domain
+      assets/icons/, under LICENSE.tango beside them
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 
-  doomgeneric, GPLv2 - and therefore NOT built by default.
-      runtime/upstream/doom/. Doom is included only under `make DOOM=1`,
-      because there is no dynamic linking here: an image with Doom in it
-      is a combined work and would have to be GPLv2 as a whole. The line
-      is drawn in the build rather than in a comment, so an ordinary
-      `make` produces an MIT binary and there is nothing to remember.
+Two more are GPL. Nothing here is linked dynamically - whatever is compiled
+into an image is linked into it - so an image carrying either is a combined
+work under the GPL as a whole. Kosmos's own sources stay MIT either way.
 
-  Chocolate Quake, by id Software, Henrique Barateli and others, GPL -
-  and therefore NOT built by default either.
+  doomgeneric, id Software's Doom by way of Chocolate Doom, GPLv2
+      runtime/upstream/doom/, in LICENSE.doomgeneric. Built by default:
+      `make` and `make qemu` build the whole system (`FULL=1`), Doom
+      included, so the image they produce is GPLv2. `make FULL=0` leaves
+      Doom out and produces an MIT image, and so do `make test` and
+      `make bench`, which build images of their own.
+
+  Chocolate Quake, by id Software, Henrique Barateli and others, GPL
       runtime/upstream/quake/, with the vendoring recorded in
       README.kosmos.md beside it. Every source file carries id's
       "version 2, or any later version" notice, and the project's own
-      LICENSE file is version 3. Quake is included only under
-      `make QUAKE=1`, which `FULL=1` does not turn on.
+      LICENSE file is version 3. Not built by default: Quake is included
+      only under `make QUAKE=1` and `make MEGA=1`, and `FULL=1` does not
+      turn it on.

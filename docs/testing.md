@@ -605,8 +605,9 @@ make browser                   # the browser, with a page in it
 make browser PAGE=/some.html   # the same, on a page of your own
 ```
 
-Both boot a `WEB=1` image, which is an optional variant like `DOOM=1`, so
-neither is part of `make test`.
+Both boot a `WEB=1` image - the ordinary one, since `FULL=1` turns the web
+kit on - and `make test` builds an image of its own without it, so neither
+is part of `make test`.
 
 `make web` asks the guest to parse things and answers over serial: a title
 out of a tree, a `p` counted through a walk rather than a token count, `&amp;`
@@ -764,3 +765,19 @@ with the gallery placed first, and one with the report forced first - a
 program written at the shell asks for the gallery three seconds after the
 report opens, which is the layout that failed, and the harness as it was
 fails that run again.
+
+## 18.17 LICENSE held to the tree, and one image with everything in it
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/test_licences.lua` | `make test` | LICENSE is read the way About reads it - its terms, every entry and detail, nothing stray - and every directory under `runtime/upstream/` and `lua/upstream/` is named in an entry |
+| "licence: the image carries LICENSE" | `make test` | the file About reads is in the image's asset table |
+| a MEGA link | `make prepush` | Doom, the browser, Lite XL and Quake link into one image with no name defined twice, and the image ends before its heap |
+
+**Each check has had what it guards taken away.** With musl's entry cut out
+of a copy of LICENSE, `test_licences.lua` fails and names
+`runtime/upstream/musl-math/`; with one detail line at four spaces instead
+of six, it reports the line as stray. Given eight megabytes instead of
+sixteen, the MEGA link stops at `user/user.ld`'s assertion. With `LICENSE`
+left out of the asset table, "licence: the image carries LICENSE" is the one
+test of 147 that fails.
