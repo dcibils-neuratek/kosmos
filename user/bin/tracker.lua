@@ -755,13 +755,18 @@ local function draw_icons(self, g, list)
 
     if on then g:fill(x, y, CELL_W - 4, CELL_H - 2, theme.accent) end
 
-    -- The label's background, and on the desktop it is the desktop.
     --
-    -- `g:text` fills behind the glyphs rather than drawing them onto what
-    -- is already there, so this has to be the actual colour underneath or
-    -- every name sits in a rectangle of the wrong grey.
-    local bg = on and theme.accent
-               or (backdrop and theme.desktop or theme.sunken)
+    -- The label's background - and on the desktop there is none.
+    --
+    -- `g:text` fills behind the glyphs rather than drawing them onto what is
+    -- already there, so in a window this has to be the actual colour
+    -- underneath or every name sits in a rectangle of the wrong grey. On the
+    -- desktop what is underneath is somebody's picture, so the name is drawn
+    -- with no box at all and a shadow under it instead, which is what reads
+    -- on a dark photograph and on a light one.
+    --
+    local plain = backdrop and not on
+    local bg = on and theme.accent or (not backdrop and theme.sunken or nil)
 
     local ink = on and theme.text_on
                 or (backdrop and theme.desktop_text or theme.text)
@@ -774,21 +779,34 @@ local function draw_icons(self, g, list)
     local room = (CELL_W - 8) // GW
     local first, second = layout.label(files.label(e), room)
 
-    g:text(x + (CELL_W - 4 - gfx.measure(first)) // 2, y + files.ICON + 6,
-           first, ink, bg)
+    local function label(text, ly)
+      local lx = x + (CELL_W - 4 - gfx.measure(text)) // 2
 
-    if second then
-      g:text(x + (CELL_W - 4 - gfx.measure(second)) // 2,
-             y + files.ICON + 6 + GH, second, ink, bg)
+      -- The shadow first, a pixel down and across, then the name over it.
+      if plain then g:text(lx + 1, ly + 1, text, 0xff000000) end
+
+      g:text(lx, ly, text, ink, bg)
     end
+
+    label(first, y + files.ICON + 6)
+
+    if second then label(second, y + files.ICON + 6 + GH) end
   end
 end
 
 function rows:draw(g)
-  -- On the desktop this view *is* the desktop, so it paints the desktop
-  -- colour and has no frame: a one-pixel line around the edge of the screen
-  -- is a line around the edge of the screen.
-  g:fill(0, 0, self.w, self.h, backdrop and theme.desktop or theme.sunken)
+  --
+  -- On the desktop this view *is* the desktop, and it draws nothing behind
+  -- the icons: cleared to transparent so that whatever the compositor paints
+  -- under it shows through, and no frame, because a one-pixel line around
+  -- the edge of the screen is a line around the edge of the screen.
+  --
+  -- It filled with the desktop colour before. That is the same colour the
+  -- compositor paints when nobody has chosen a picture, so it looked right
+  -- and a wallpaper was never visible - see `compose_rect` in `wm.lua` for
+  -- the half of that which is not about colour.
+  --
+  g:fill(0, 0, self.w, self.h, backdrop and 0x00000000 or theme.sunken)
 
   if not backdrop then
     g:frame(0, 0, self.w, self.h, self.focused and theme.ring or theme.line)

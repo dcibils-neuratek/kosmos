@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>Kosmos - the prompt</title>
+<title>Kosmos - the prompt and the desktop</title>
 <style>
 body { background: #f7f5ef; color: #1b1b1b; margin: 24px; }
 ul { margin: 0 0 12px 0; }
@@ -16,11 +16,14 @@ hr { border: 1px solid #ddd8cc; margin: 18px 0; }
 <body>
 
 <h1>Kosmos</h1>
-<p><i>The prompt, as a place to work. The same page is in the machine:
-type <b>help "shell"</b> - and the quotes are not decoration, which is
-explained at the bottom.</i></p>
+<p><i>Two halves: what you type at the prompt, and what you do on the
+desktop. The same page is in the machine - type <b>help "shell"</b>, and the
+quotes are not decoration, which is explained at the end of the first
+half.</i></p>
 
 <hr>
+
+<h1>One - at the prompt</h1>
 
 <h2>The line you are typing</h2>
 <ul>
@@ -63,16 +66,8 @@ explained at the bottom.</i></p>
 <li><b>stat path</b> - kind, size, and where the bytes are</li>
 <li><b>which name</b> - where a program is, if it is anywhere</li>
 <li><b>attr path</b> - its attributes</li>
-<li><b>attr path kind=note</b> - set one</li>
+<li><b>attr path kind=note</b> - set one; one name=value a word, so no spaces in a value</li>
 <li><b>find kind=note</b> - everything that matches, anywhere that can answer</li>
-</ul>
-
-<h2>The desktop</h2>
-<ul>
-<li><b>/home/Desktop</b> - what the desktop shows, and nothing else</li>
-<li><b>launcher path program args</b> - an icon that starts a program; Drive is <i>tracker /</i></li>
-<li><b>attr path</b> on a desktop icon - <i>desktop_x</i> and <i>desktop_y</i> are where it was dragged</li>
-<li><b>Trash</b> - Delete puts things here; Empty Trash, in a Tracker window's File menu, is the one that does not come back</li>
 </ul>
 
 <h2>The machine</h2>
@@ -87,7 +82,14 @@ explained at the bottom.</i></p>
 <li><b>diskinfo</b> - what is on the disk</li>
 </ul>
 
-<hr>
+<h2>Starting the desktop, and anything on it</h2>
+<ul>
+<li><b>wm</b> - the desktop: the icons, and the Deskbar that starts things</li>
+<li><b>wm doom</b> - that program and nothing else; <b>wm desktop,topbar</b> names several</li>
+<li><b>wm tracker:/bin</b> - a program with something to work on, after the colon</li>
+<li><b>monitor 30 &amp;</b> - a trailing ampersand detaches it and gives the prompt back</li>
+<li><b>Control-C</b> - end what is running and take the screen back</li>
+</ul>
 
 <h2>Where things live</h2>
 <ul>
@@ -124,6 +126,72 @@ which is not something a command can change.</p>
 <b>hostname</b> - nothing here has a global name. <b>env</b> and
 <b>export</b> - no environment variables. <b>sort, cut, sed, awk, tee</b> -
 pipeline tools, and there are no pipes yet.</p>
+
+<hr>
+
+<h1>Two - on the desktop</h1>
+
+<h2>The desktop itself</h2>
+<ul>
+<li><b>What it shows</b> - <i>/home/Desktop</i>, and nothing else</li>
+<li><b>Drag an icon</b> anywhere and it stays: the place is kept on the file, as <i>desktop_x</i> and <i>desktop_y</i>, so <b>attr</b> shows it and a copy carries it</li>
+<li><b>Drag onto a folder's icon</b> - the file moves into that folder</li>
+<li><b>Drag onto the Trash</b> - thrown away, under a free name if it holds that one already</li>
+<li><b>Drive</b> - a launcher that opens Tracker at <i>/</i></li>
+<li><b>cheatsheet.html</b> - this page, put back whenever it is missing</li>
+<li><b>Open a folder</b> - a Tracker window opens; the desktop stays the desktop</li>
+<li><b>The picture behind the icons</b> - Appearance, under Preferences in the Deskbar, lists the PNGs in <i>/home</i></li>
+</ul>
+
+<h2>Launchers - an icon that starts a program</h2>
+<ul>
+<li><b>launcher /home/Desktop/Doom doom</b> - make one</li>
+<li><b>launcher /home/Desktop/Notes editor /home/notes.txt</b> - everything after the program is its arguments, spaces and all</li>
+<li><b>launcher --icon App_Terminal path program</b> - choose its picture: a name from <i>assets/icons</i> without the <i>.png</i></li>
+<li><b>Run it again on the same path</b> to change what it starts</li>
+<li><b>attr path</b> - a launcher is a file with attributes and nothing inside: <i>kind=launcher</i>, <i>program</i>, <i>args</i>, <i>icon</i></li>
+<li>It starts what the Deskbar could start, and nothing the Deskbar could not</li>
+</ul>
+
+<h2>The Trash</h2>
+<ul>
+<li><b>Delete</b> in a Tracker window moves what is selected into the Trash</li>
+<li><b>Delete inside the Trash</b> is the one that does not come back</li>
+<li><b>File &gt; Empty Trash</b> - all of it, for good</li>
+<li>Its icon is full or empty by what is in it, and it is a folder like any other: open it and drag things back out</li>
+</ul>
+
+<h2>A Tracker window</h2>
+<ul>
+<li><b>&lt;</b> <b>&gt;</b> <b>Up</b> <b>Home</b> <b>New folder</b> <b>Delete</b> - the buttons across the top</li>
+<li><b>Search</b> - narrows the listing as you type</li>
+<li><b>File</b> - Open, New folder, Rename, Cut, Copy, Paste, Select all, Select none, Delete, Empty Trash</li>
+<li><b>Go</b> - Back, Forward, Up, Home, Refresh</li>
+<li><b>View</b> - as icons, as list, and By name, By size or By kind</li>
+<li><b>Enter</b> opens, <b>Control-R</b> renames, <b>Control-A</b> selects all, <b>Escape</b> selects none, <b>Backspace</b> goes up</li>
+<li><b>Drag</b> files into a folder, into another window, or out onto the desktop</li>
+</ul>
+
+<h2>The Deskbar, top right</h2>
+<ul>
+<li><b>Kosmos</b> - Applications, System, Preferences and Demos, each application with its own picture; Restart and Shut Down under a line at the bottom</li>
+<li><b>Running</b> - every window on the screen; click one to raise it</li>
+</ul>
+
+<h2>The bar across the top</h2>
+<ul>
+<li><b>tracker gallery procs editor calc</b> - one click each, and the time on the right</li>
+</ul>
+
+<h2>Windows, and the one reserved key</h2>
+<ul>
+<li><b>Control-W</b> then an <b>arrow</b> - move the focused window</li>
+<li><b>Control-W</b> then <b>Tab</b> - focus the next one</li>
+<li><b>Control-W</b> then <b>a</b>, <b>c</b>, <b>x</b>, <b>v</b> - select all, copy, cut, paste in the focused control</li>
+<li><b>Control-W</b> twice - a literal Control-W to the application</li>
+<li><b>Control-C</b> - end the desktop and take the screen back to the prompt</li>
+<li>A tab carries its close box at the left, where BeOS put it, and minimise and maximise at the right; the corner grip resizes, and dragging the tab moves the window</li>
+</ul>
 
 <hr>
 

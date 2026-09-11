@@ -819,7 +819,7 @@ stick from `make MEGA=1 usb` and run Doom and Quake off its disk.
 | check | run by | what it establishes |
 | ----- | ------ | ------------------- |
 | `tools/test_iconlayout.lua` | `make test` | new icons fill the first column down, then the next; a placed icon keeps its place and the next new one does not land on it; a place off the screen is pulled back onto it; a name too long for two lines keeps its extension - nine checks on the build machine, with no guest |
-| `desktop` phase of `tools/run_screenshot.py` | `make screenshot` | `wm desktop,topbar` puts the backdrop at the strip's height; Drive dragged out of its cell is drawn where it was let go, and `desktop_x` and `desktop_y` say the same at the prompt; dragged onto the Trash it goes in and the Trash's picture changes; Drive is a launcher for Tracker at `/`, with the Trash and the cheat sheet beside it |
+| `desktop` phase of `tools/run_screenshot.py` | `make screenshot` | `wm desktop,topbar` puts the backdrop at the strip's height; the window manager's stamp is legible *through* the desktop, which is the layer a wallpaper is painted in; Drive dragged out of its cell is drawn where it was let go, and `desktop_x` and `desktop_y` say the same at the prompt; dragged onto the Trash it goes in and the Trash's picture changes; Drive is a launcher for Tracker at `/`, with the Trash and the cheat sheet beside it |
 | `L-RAMFS` and `L-HOME` in `tools/run_queries.py` | `make test` | a 64-character name reads back on the disk, and in memory inside a 64-character directory - 136 bytes of path, where `/ramfs` used to hold 128 |
 
 **Each has had what it guards taken away.** With the window manager neither
@@ -841,3 +841,12 @@ drawn in its cell - passed on a screen with *no desktop on it at all*,
 because it only asks whether pixels differ from the desktop's colour. The
 phase now waits for the desktop to be on the screen before looking for
 anything on it, and searches all of it.
+
+**The stamp stands in for a wallpaper**, which a harness booting without a
+disk cannot put on the machine. Both are painted by `draw_desktop`, in the
+pass that runs only where no window reaches, so a desktop that occludes
+hides the one exactly as it hides the other - and the stamp is in the image
+already. With the backdrop occluding again and copied rather than blended,
+the phase fails with `the window manager's stamp in the bottom-right corner
+is not visible through the desktop`, and every other check in it still
+passes.

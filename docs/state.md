@@ -8,6 +8,42 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### The wallpaper, behind the icons
+
+A wallpaper chosen in Appearance did nothing once the desktop existed, and
+only half of the reason was about colour. Tracker's backdrop filled itself
+with the desktop colour, which is what the compositor paints when nobody has
+chosen a picture, so nothing looked wrong - and the compositor paints that
+layer *only where no window reaches*, so a screen-sized opaque backdrop
+meant the wallpaper was never drawn.
+
+The desktop is transparent between its icons now: cleared with an alpha of
+zero, left out of the occlusion pass, and blended over the layer beneath
+rather than copied onto it. Labels lost their filled background and got a
+shadow, which is what reads on a photograph.
+
+The cheat sheet went into two halves with this, because half of what the
+system does now is on the desktop and none of it is a command: dragging an
+icon and having it stay, the Trash, Drive, launchers, and the one key the
+window manager keeps.
+
+**Checked:** the display harness's desktop phase is seven checks, the new
+one being that the window manager's stamp - which shares its layer with a
+wallpaper - is legible *through* the desktop. With the backdrop occluding
+again and copied rather than blended, that check fails and the rest still
+pass. By hand, with one of the 1920x1080 pictures on a disk and named in
+`/home/.appearance`, the desktop draws it behind the Trash, Drive and the
+cheat sheet, with the labels legible over it.
+
+Open:
+
+- **Blending the desktop costs more than copying it**, over the area no
+  window covers. Nothing has measured it; `frames` is the instrument when
+  something does.
+
+**Next, as queued**: a launcher option to scale Doom and Quake, then the app
+profiler.
+
 ### The desktop: below the strip, icons where they are put, a Trash
 
 The desktop drew its first row of icons under the top bar, and an icon

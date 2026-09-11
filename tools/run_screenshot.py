@@ -2745,6 +2745,35 @@ def check_desktop(guest):
            "backdrop mode through the window manager, and if Tracker died "
            "instead the lines above say why.")
 
+    #
+    # And what the compositor paints *under* the desktop is still painted.
+    #
+    # The wallpaper, the flat colour and the version stamp in the
+    # bottom-right corner are one layer, drawn only where no window covers.
+    # A desktop window that counted as opaque took the whole screen out of
+    # that, so a wallpaper was never drawn at all - and the stamp is the part
+    # of that layer a harness can check without a picture on the disk. It has
+    # to be legible through the desktop.
+    #
+    def stamp_shows(w, h, px):
+        ink = 0
+
+        for yy in range(h - 26, h - 4):
+            for xx in range(w - 600, w - 10):
+                o = (yy * w + xx) * 3
+
+                if tuple(px[o:o + 3]) != DESK:
+                    ink += 1
+
+        return (w, h, px) if ink > 60 else None
+
+    settle(guest, stamp_shows,
+           "the window manager's stamp in the bottom-right corner is not "
+           "visible through the desktop, so neither would a wallpaper be. "
+           "The desktop is transparent between its icons and must not "
+           "occlude the layer under it - see `compose_rect`.")
+    checks += 1
+
     def drawn(x, y):
         """An icon's 32 pixels at x, y are not all desktop."""
         def look(w, h, px):

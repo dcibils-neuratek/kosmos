@@ -1619,8 +1619,19 @@ local function draw_window(i, r)
           from = win.shared[win.shared.live]
         end
 
-        back:blit(from, x0 - win.x, y0 - win.y,
-                  x1 - x0, y1 - y0, x0, y0)
+        --
+        -- Blended for the backdrop and copied for everything else. The
+        -- desktop is transparent between its icons and the wallpaper is
+        -- underneath it; `blend` is source-over and costs more than a copy,
+        -- which is why it is not what every window gets.
+        --
+        if win.backdrop then
+          back:blend(from, x0 - win.x, y0 - win.y,
+                     x1 - x0, y1 - y0, x0, y0)
+        else
+          back:blit(from, x0 - win.x, y0 - win.y,
+                    x1 - x0, y1 - y0, x0, y0)
+        end
       end
 
       --
@@ -1751,7 +1762,22 @@ local function compose_rect(r)
             mine = { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
           end
 
-          subtract_into(keep, piece, x0, y0, x1, y1)
+          --
+          -- **The backdrop hides nothing.** It is transparent wherever it
+          -- has not drawn an icon, so what the compositor paints under it -
+          -- the wallpaper, or the flat colour, and the stamp - still has to
+          -- be painted. Every other window is opaque and cuts away what is
+          -- behind it, which is what this pass is for.
+          --
+          -- Without this the desktop was not merely covering the wallpaper:
+          -- a window that covers a rectangle makes `draw_desktop` skip it
+          -- altogether, so the picture was never drawn at all.
+          --
+          if win.backdrop then
+            keep[#keep + 1] = piece
+          else
+            subtract_into(keep, piece, x0, y0, x1, y1)
+          end
         else
           keep[#keep + 1] = piece
         end

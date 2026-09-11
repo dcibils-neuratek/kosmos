@@ -535,6 +535,17 @@ is thrown away from the desktop, which has no menu bar and never gets keys:
 the backdrop is never raised, and the window manager gives keys to the top
 window.
 
+**And it hides nothing.** The desktop is cleared to transparent between its
+icons rather than filled, `compose_rect` leaves it out of the occlusion it
+culls with, and the compositor blends it over what is underneath instead of
+copying it. That layer - the wallpaper, or the flat colour, and the version
+stamp - is painted only where no window reaches, so while the desktop
+counted as an opaque window covering the screen a chosen wallpaper was not
+hidden behind it: it was never painted at all. Icon labels lost their filled
+background with the same change and carry a one-pixel shadow instead, which
+reads on a dark picture and on a light one, where a box of the desktop's
+colour reads as a mistake.
+
 **Pictures come from the programs.** `-- kosmos: icon App_Tracker` in a
 header is reported by `/bin` next to `section`, and the Deskbar draws it
 beside the name. A menu with any picture in it gives every row the
