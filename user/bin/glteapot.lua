@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The Utah teapot, lit.
 -- kosmos: application
+-- kosmos: icon App_Teapot
 -- kosmos: section demos/GLDemos
 --
 --   wm glteapot

@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon Prefs_Devices
 -- kosmos: section system
 -- What this machine turned out to be.
 --

@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon Misc_Dragger
 -- Adopts whatever replicant was left in /ramfs, and runs it.
 --
 -- Called `tracker` until it was pointed out that Tracker is BeOS's *file

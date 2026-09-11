@@ -949,7 +949,7 @@ local ops = {
     -- `alpha` picks the compositing rule, and a picture needs both.
     --
     -- A photograph is opaque and wants `blit`, which is a `memcpy` a row at
-    -- a time. An icon is not: Tango's are RGBA and the corners outside the
+    -- a time. An icon is not: these are RGBA and the corners outside the
     -- shape are transparent, so copying them would paint a grey square
     -- around every file - and worse, would paint over the selection colour
     -- underneath it.
@@ -1939,12 +1939,86 @@ end
 -- that drifts the first time something closes twice or dies without saying
 -- so - and an application dying without saying so is the ordinary case.
 --
+local fit_backdrop            -- below: the backdrop follows this number
+
 local function recount_strips()
   reserved_top = 0
 
   for _, w in ipairs(windows) do
     if w.strip == "top" and not w.hidden then
       reserved_top = w.h
+    end
+  end
+
+  fit_backdrop()
+end
+
+--
+-- A window given new pixels at another size, and told.
+--
+-- One function for a resize and for the backdrop following the strip,
+-- which are the same operation asked for by different people.
+--
+local function swap_surface(win, w, h)
+  -- Where it was, so the part it no longer covers is repainted.
+  damage_window(win)
+
+  --
+  -- `pcall`, because `gfx.surface` *raises* when the kernel refuses the
+  -- pages rather than returning nil - and this used to check for nil, which
+  -- is a check that could never fire.
+  --
+  -- What that cost: maximising a window on a 1920x1080 screen asked for
+  -- eight megabytes, the kernel said no, and the error went up through the
+  -- compositor's main loop and killed the desktop. Every window on the
+  -- screen went with it. A window that will not resize is a window that did
+  -- not resize; it is not a reason to end the session.
+  --
+  local ok, fresh = pcall(gfx.surface, { w = w, h = h })
+
+  if not ok or not fresh then
+    print("wm: " .. tostring(fresh))
+    return false
+  end
+
+  fresh:fill(0, 0, w, h, 0xff202020)
+
+  win.surface:free()
+  win.surface = fresh
+  win.w, win.h = w, h
+
+  damage_window(win)
+
+  -- And the application, so it can lay out again. Queued like every other
+  -- event: this process does not call applications.
+  post(win, { type = "resize", w = w, h = h })
+
+  return true
+end
+
+--
+-- The backdrop is the screen less the strip, and follows the strip.
+--
+-- Sized when it opens from whatever the strip had claimed by then - but the
+-- strip is an application like any other, and may start after the desktop
+-- or stop. Either way the backdrop is moved and resized here and told, and
+-- a desktop that draws its icons from its own top-left corner puts them
+-- below the bar without having to know there is one.
+--
+function fit_backdrop()
+  for _, w in ipairs(windows) do
+    if w.backdrop and (w.y ~= reserved_top or w.h ~= H - reserved_top) then
+      local was = w.y
+
+      damage_window(w)
+      w.y = reserved_top
+
+      if swap_surface(w, W, H - reserved_top) then
+        print(("wm: the desktop is below the strip, at 0,%d %dx%d")
+              :format(w.y, w.w, w.h))
+      else
+        w.y = was
+      end
     end
   end
 end
@@ -2051,6 +2125,19 @@ handlers.open = function(req, who, cap)
 
   local w_ = math.min(math.max(tonumber(req.w) or 320, floor), room_w)
   local h_ = math.min(math.max(tonumber(req.h) or 200, floor), room_h)
+
+  --
+  -- The backdrop is whatever the strip leaves, whatever it asked for.
+  --
+  -- It asks for the screen because the screen is all it knows, and a
+  -- desktop that believed it was the whole screen drew its first row of
+  -- icons under the bar. So it is sized here from the one number that says
+  -- how much the strip took, and `fit_backdrop` keeps it so when the strip
+  -- starts after it or goes away.
+  --
+  if req.backdrop then
+    w_, h_ = W, H - reserved_top
+  end
 
   local win = {
     handle  = next_handle,
@@ -2333,7 +2420,7 @@ handlers.open = function(req, who, cap)
   if req.backdrop then
     win.backdrop = true
     win.pinned = true
-    win.x, win.y = 0, 0
+    win.x, win.y = 0, reserved_top
   end
 
   --
@@ -2351,6 +2438,7 @@ handlers.open = function(req, who, cap)
     win.pinned = true
     win.x, win.y = 0, 0
     reserved_top = win.h
+    fit_backdrop()
   end
 
   if req.kind == "menu" then
@@ -3014,6 +3102,10 @@ handlers.close = function(req)
     end
   end
 
+  -- A strip that goes gives its room back: to the windows that open after
+  -- it, and to the backdrop, which grows back up to the top of the screen.
+  if win.strip then recount_strips() end
+
   --
   -- And a window takes its menus with it. Without this a menu outlives the
   -- window it belongs to and floats above a desktop with nothing behind
@@ -3240,40 +3332,7 @@ function resize_window(win, w, h)
 
   if w == win.w and h == win.h then return false end
 
-  -- Where it was, so the part it no longer covers is repainted.
-  damage_window(win)
-
-  --
-  -- `pcall`, because `gfx.surface` *raises* when the kernel refuses the
-  -- pages rather than returning nil - and this used to check for nil, which
-  -- is a check that could never fire.
-  --
-  -- What that cost: maximising a window on a 1920x1080 screen asked for
-  -- eight megabytes, the kernel said no, and the error went up through the
-  -- compositor's main loop and killed the desktop. Every window on the
-  -- screen went with it. A window that will not resize is a window that did
-  -- not resize; it is not a reason to end the session.
-  --
-  local ok, fresh = pcall(gfx.surface, { w = w, h = h })
-
-  if not ok or not fresh then
-    print("wm: " .. tostring(fresh))
-    return false
-  end
-
-  fresh:fill(0, 0, w, h, 0xff202020)
-
-  win.surface:free()
-  win.surface = fresh
-  win.w, win.h = w, h
-
-  damage_window(win)
-
-  -- And the application, so it can lay out again. Queued like every other
-  -- event: this process does not call applications.
-  post(win, { type = "resize", w = w, h = h })
-
-  return true
+  return swap_surface(win, w, h)
 end
 
 local function to_focused(c)

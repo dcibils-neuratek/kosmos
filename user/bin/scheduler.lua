@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: icon System_Kernel
 -- kosmos: section preferences
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --

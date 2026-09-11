@@ -1,4 +1,5 @@
 -- kosmos: application
+-- kosmos: icon File_PDF
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 --
 -- A PDF, as it was typeset.

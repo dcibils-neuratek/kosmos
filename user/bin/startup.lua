@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- What opens when the desktop does.
 -- kosmos: application
+-- kosmos: icon App_Launchbox
 -- kosmos: section preferences
 --
 -- A list of everything that can be started, with a box beside each. Tick

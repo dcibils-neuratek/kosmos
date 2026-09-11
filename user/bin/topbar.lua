@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The strip across the top of the screen.
 -- kosmos: application
+-- kosmos: icon Misc_Deskbar_Group
 -- kosmos: section applications
 --
 --   wm topbar

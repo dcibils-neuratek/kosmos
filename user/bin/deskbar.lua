@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon App_Deskbar
 -- kosmos: needs screen
 -- The Deskbar: what is running, and what can be.
 --
@@ -103,6 +104,11 @@ local by_section = { applications = {}, system = {},
 --
 local by_group = {}
 
+-- What each application's header says it looks like, by short name. Read
+-- once with the rest of its attributes, rather than asked again every time
+-- the menu opens.
+local icons = {}
+
 do
   for _, file in ipairs(fs.list("/bin") or {}) do
     local attrs = fs.getattr("/bin/" .. file)
@@ -127,6 +133,7 @@ do
 
         into[#into + 1] = short
         launchable[#launchable + 1] = short
+        icons[short] = attrs.icon
       end
     end
   end
@@ -212,6 +219,7 @@ win:add(running)
 local function launcher(name)
   return {
     text = name,
+    icon = icons[name] or "App_Generic",
     on_choose = function()
       local ok, why = fs.send("/app/wm", { type = "launch", program = name })
 
@@ -245,7 +253,7 @@ local function section_items(which)
       inner[#inner + 1] = launcher(name)
     end
 
-    out[#out + 1] = { text = group, submenu = inner }
+    out[#out + 1] = { text = group, icon = "Folder_generic", submenu = inner }
   end
 
   for _, name in ipairs(by_section[which] or {}) do
@@ -268,6 +276,7 @@ menu_button = ui.button{
         -- Capitalised for the menu, lower case everywhere else, because a
         -- section is a name here and an identifier in the header.
         text = which:sub(1, 1):upper() .. which:sub(2),
+        icon = "Folder_generic",
         submenu = section_items(which),
       }
     end

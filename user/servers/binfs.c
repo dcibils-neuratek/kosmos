@@ -163,6 +163,15 @@ static void fill_attrs(const struct source_entry *e, struct bin_reply *rep)
     }
 
     /*
+     * The icon, for applications and programs alike: a program has no menu
+     * row today, and declaring a face costs it nothing if one arrives. Blank
+     * when none is declared, and whoever draws it picks a generic one.
+     */
+    s = declared(e->text, e->length, "icon", &n);
+    copy_word(rep->icon, BIN_ICON_MAX, (s != NULL) ? s : "",
+              (s != NULL) ? n : 0);
+
+    /*
      * `needs` is a line of words, and each becomes one entry. A program that
      * declares more than `BIN_NEEDS_MAX` gets the first few, which is the
      * one place here that quietly drops something - and the static assert

@@ -531,7 +531,7 @@ static void answer(const struct message *msg, uint64_t sender)
     memcpy(&req, msg->data, sizeof(req));
     memset(&rep, 0, sizeof(rep));
 
-    /* Whatever arrived, terminated. `path` is 128 bytes from another
+    /* Whatever arrived, terminated. `path` is 256 bytes from another
      * process and nothing promises there is a zero in it. */
     req.path[RAM_PATH_MAX - 1] = '\0';
     normalise(path, req.path);

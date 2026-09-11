@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon App_Pulse
 -- kosmos: section system
 -- The processors, in a window.
 --

@@ -8,6 +8,63 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### The desktop: below the strip, icons where they are put, a Trash
+
+The desktop drew its first row of icons under the top bar, and an icon
+could not be moved. Both came from one assumption - that the backdrop is
+the whole screen - and the fixes arrived with what was asked for alongside
+them.
+
+- **Below the strip.** The window manager sizes the backdrop from what the
+  strip claimed and refits it when the strip starts later or closes.
+  Closing a strip had never been recounted, so a top bar that quit kept its
+  room for the rest of the session.
+- **Where it was dragged.** A drag from the desktop let go on the desktop
+  moves the icon, and the place is two attributes of the file, `desktop_x`
+  and `desktop_y`. A label is two lines, and a longer name keeps its end,
+  where the extension is.
+- **Launchers.** An empty file with `kind=launcher`, `program`, `args` and
+  `icon`; `launcher` makes one at the prompt. Drive - Tracker at `/` - the
+  cheat sheet and the Trash are always on the desktop. A folder opened from
+  the desktop opens a Tracker window rather than turning the desktop into
+  that folder.
+- **A Trash.** Delete moves things into it under a free name, only the
+  Trash deletes for good, and Empty Trash is in the File menu. Dragging
+  onto it is how the desktop throws something away, since the backdrop
+  never gets keys.
+- **Haiku's icons**, 48 of them, MIT, in place of Tango's seven. A program
+  declares its own with `-- kosmos: icon`, and the Deskbar's menus draw it.
+- **Sixty-four character names.** kfs allowed 255 already; `/bin` and
+  `/lib` went from 48 to 64, and `/ramfs` paths from 128 to 256 bytes, so
+  its listings answer four at a time.
+
+**And a bug every second desktop of a boot had.** `desktop.lua` started
+Tracker with `run`, so Tracker looked `/app/wm` up by name - and a window
+manager stopped with Control-C never unregisters, so the name still pointed
+at the dead one and Tracker died at once with "no such path: /app/wm". It
+asks the window manager to launch Tracker now, which hands it the live
+endpoint. The registry keeping a name whose owner has gone is its own bug,
+and is not fixed here.
+
+**Checked:** 9 layout checks on the build machine, and six in the display
+harness - `wm desktop,topbar` puts the backdrop at 0,26 and says so; Drive
+dragged out of its cell onto bare desktop is drawn where it was let go, and
+`desktop_x` and `desktop_y` on the file say the same at the prompt; dragged
+onto the Trash it goes in and the Trash's picture changes; and the desktop
+still holds the Trash and the cheat sheet. `run_queries.py` reads a
+64-character name back on the disk and in memory two directories down.
+
+Open:
+
+- **The desktop's Trash is drawn from what it last listed.** A file deleted
+  in another window is in the Trash, and the picture of it changes when the
+  desktop next refreshes.
+- **`/app` and `/dev` names** stay at 24 and 20 bytes. They name services
+  and devices, not files anyone types sixty-four characters of.
+
+**Next, as queued**: a launcher option to scale Doom and Quake - which is
+now a launcher with arguments - then the app profiler.
+
 ### Lite XL's window is named for its document
 
 Lite XL's window said "Lite XL" whatever was open, and `docs/litexl.md` listed

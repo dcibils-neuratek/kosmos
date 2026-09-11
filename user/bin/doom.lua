@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Doom.
 -- kosmos: application
+-- kosmos: icon App_Generic
 -- kosmos: section demos
 --
 --   wm doom                    /home/doom1.wad

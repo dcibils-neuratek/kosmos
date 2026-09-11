@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon Server_Syslog
 -- kosmos: section system
 -- The system log, in a window.
 --

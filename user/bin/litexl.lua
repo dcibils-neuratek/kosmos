@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Lite XL, a real editor, on Kosmos.
 -- kosmos: application
+-- kosmos: icon App_Pe
 -- kosmos: section applications
 --
 --   wm litexl                     the editor, with /home as its project

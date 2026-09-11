@@ -654,14 +654,14 @@ local function new_namespace()
   -- files whose names still fitted kept working - which is the worst
   -- version of this, because it looks like a problem with those files.
   --
-  local BIN_NAME_MAX = 48                 -- has to match binproto.h
+  local BIN_NAME_MAX = 64                 -- has to match binproto.h
   local BIN_REQUEST  = "<I4I4c" .. BIN_NAME_MAX   -- op, offset, name
-  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16"
+  local BIN_HEAD     = "<I4I4I4I4I4I4c16c16c16c16c16c16c32"
 
   assert(#string.pack(BIN_REQUEST, 0, 0, "") == 8 + BIN_NAME_MAX,
          "namespace: the /bin request layout does not match binproto.h")
 
-  local BIN_DATA = 24 + 96 + 1        -- past the header, 1-based
+  local BIN_DATA = 24 + 96 + 32 + 1   -- past the header and the icon, 1-based
   local BIN_OPS = { list = 1, read = 2, getattr = 3 }
   local BIN_ERRORS = {
     [1] = "no such program",
@@ -684,7 +684,7 @@ local function new_namespace()
     if #reply < BIN_DATA then return nil, "a /bin reply of the wrong size" end
 
     local err, count, size, length, more, windowed,
-          kind, section, n1, n2, n3, n4 = string.unpack(BIN_HEAD, reply)
+          kind, section, n1, n2, n3, n4, icon = string.unpack(BIN_HEAD, reply)
 
     if err ~= 0 then
       return nil, BIN_ERRORS[err] or ("bin error " .. tostring(err))
@@ -731,6 +731,9 @@ local function new_namespace()
         -- Applications only; a program is not in the menu at all.
         section = (windowed ~= 0) and trim(section) or nil,
         needs = needs,
+        -- What the Deskbar draws beside it, and nil rather than "" when the
+        -- program declares nothing, so `or` picks the default.
+        icon = (trim(icon) ~= "") and trim(icon) or nil,
       } }
     end
 
@@ -1069,11 +1072,11 @@ local function new_namespace()
   --------------------------------------------------------------------------
 
   local RAM_ATTR    = "I4c32c48"                     -- kind, name, value
-  local RAM_REQUEST = "<I4I4I4I4I4c128" .. string.rep(RAM_ATTR, 8) .. "c1024"
+  local RAM_REQUEST = "<I4I4I4I4I4c256" .. string.rep(RAM_ATTR, 8) .. "c1024"
   local RAM_REPLY   = "<I4I4I4I4I4c1024"
 
-  local RAM_PATH_MAX, RAM_ATTRS_MAX = 128, 8
-  local RAM_ENTRIES_MAX, RAM_DATA_MAX = 8, 1024
+  local RAM_PATH_MAX, RAM_ATTRS_MAX = 256, 8
+  local RAM_ENTRIES_MAX, RAM_DATA_MAX = 4, 1024
 
   assert(#string.pack(RAM_REPLY, 0, 0, 0, 0, 0, "") == 1044,
          "namespace: the /ramfs reply layout does not match ramproto.h")
@@ -1093,7 +1096,7 @@ local function new_namespace()
     [8] = "it is already there",
   }
 
-  -- A string cut to exactly what a fixed field holds. `c128` pads a short
+  -- A string cut to exactly what a fixed field holds. `c256` pads a short
   -- one and refuses a long one, so the cut has to happen first.
   local function fixed(text, n)
     text = tostring(text or "")

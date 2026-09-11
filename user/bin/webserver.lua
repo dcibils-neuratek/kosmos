@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon App_Poorman
 -- kosmos: section system
 -- Starts and stops the web server, and shows what it has been asked for.
 --

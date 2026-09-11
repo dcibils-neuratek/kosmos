@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Morphing platonic solids.
 -- kosmos: application
+-- kosmos: icon App_GLDirectMode
 -- kosmos: section demos/GLDemos
 --
 --   wm glmorph3d

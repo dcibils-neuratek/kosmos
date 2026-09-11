@@ -813,3 +813,31 @@ tools and a minute of `mcopy`. So it was booted by hand: a USB image made
 with `mkusb_image.py --disk`, under OVMF as a USB stick, with the boot log
 saying `a disk from the loader: 8192 KB`. The T14 has since booted a
 stick from `make MEGA=1 usb` and run Doom and Quake off its disk.
+
+## 18.19 The desktop, and names of sixty-four characters
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/test_iconlayout.lua` | `make test` | new icons fill the first column down, then the next; a placed icon keeps its place and the next new one does not land on it; a place off the screen is pulled back onto it; a name too long for two lines keeps its extension - nine checks on the build machine, with no guest |
+| `desktop` phase of `tools/run_screenshot.py` | `make screenshot` | `wm desktop,topbar` puts the backdrop at the strip's height; Drive dragged out of its cell is drawn where it was let go, and `desktop_x` and `desktop_y` say the same at the prompt; dragged onto the Trash it goes in and the Trash's picture changes; Drive is a launcher for Tracker at `/`, with the Trash and the cheat sheet beside it |
+| `L-RAMFS` and `L-HOME` in `tools/run_queries.py` | `make test` | a 64-character name reads back on the disk, and in memory inside a 64-character directory - 136 bytes of path, where `/ramfs` used to hold 128 |
+
+**Each has had what it guards taken away.** With the window manager neither
+placing nor refitting the backdrop below the strip, the desktop phase fails
+on its first check and the log reads `wm: window Tracker at 0,0 1920x1080`.
+With the drop not writing `desktop_x` and `desktop_y`, the icon is still
+drawn where it was let go and the prompt answers `DESK-AT nil nil` - which
+is the whole difference between a picture and a fact. With the desktop not
+making the Trash, Drive cannot be thrown away and the desktop holds
+`Drive,cheatsheet.html`. `test_iconlayout.lua` fails when an overlap is
+never seen, and again when a long name is cut instead of keeping its end.
+
+**And one of those controls found a hole in the check itself**, which is
+the argument for running them. Two runs failed saying there was nowhere
+bare to drop on, which had nothing to do with what was sabotaged: the phase
+looked for somewhere in one band of the screen, where the application the
+`deskbar` phase starts sometimes sits. Worse, the step before it - Drive is
+drawn in its cell - passed on a screen with *no desktop on it at all*,
+because it only asks whether pixels differ from the desktop's colour. The
+phase now waits for the desktop to be on the screen before looking for
+anything on it, and searches all of it.

@@ -51,7 +51,7 @@ def licence_for(path):
     #
     # `assets/fonts/` holds several unrelated fonts under different terms,
     # so each one names its own; `assets/icons/` holds one release of one
-    # icon theme under a single notice, and asking Tango to ship seven
+    # icon set under a single notice, and asking Haiku to ship forty-eight
     # copies of the same sentence - one per file, named after the file -
     # would mean renaming what it released, which is the one thing the rule
     # about vendored data forbids.

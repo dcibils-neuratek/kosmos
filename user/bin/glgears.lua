@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Brian Paul's gears, the oldest OpenGL demo there is.
 -- kosmos: application
+-- kosmos: icon App_GLDirectMode
 -- kosmos: section demos/GLDemos
 --
 --   wm glgears

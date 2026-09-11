@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon Misc_Bug
 -- kosmos: section demos
 -- An application that hangs, on purpose.
 --

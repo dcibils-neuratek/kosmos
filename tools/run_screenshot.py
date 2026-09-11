@@ -2576,12 +2576,18 @@ def check_deskbar(guest):
     # use.
     #
     # deskbar.lua: window at (sw - 210 - 12, 34), button at (10, 12) and
-    # 28 tall, so the menu opens at (dx + 10, dy + 12 + 28). Menu rows are
-    # one glyph plus six, from two pixels in.
+    # 28 tall, so the menu opens at (dx + 10, dy + 12 + 28). Every item in
+    # the Deskbar's menus has a picture now, and a menu with pictures gives
+    # every row the picture's height, 32 and four, from two pixels in.
     #
     dx, dy = width - 210 - 12, 34
-    row_h = GLYPH_H + 6
+    row_h = max(GLYPH_H + 6, 32 + 4)
     menu_x, menu_y = dx + 10, dy + 12 + GLYPH_H + 12
+
+    # And its width, because the submenu opens beside it: the widest name,
+    # `Applications`, then the padding, the arrow and the picture - the sum
+    # `menu_metrics` in ui.lua makes.
+    top_w = len("Applications") * GLYPH_W + 8 * 2 + 12 + 12 + 32 + 6
 
     guest.mouse_to(*_to_tablet(dx + 100, dy + 26, width, height))
     time.sleep(0.4)
@@ -2597,7 +2603,7 @@ def check_deskbar(guest):
     time.sleep(1.4)
 
     # And the first item in that submenu, which sits beside the parent row.
-    guest.mouse_to(*_to_tablet(menu_x + 150, menu_y + 2 + row_h // 2 + 4,
+    guest.mouse_to(*_to_tablet(menu_x + top_w + 30, menu_y + 2 + row_h // 2 + 4,
                                width, height))
     time.sleep(0.8)
     guest.mouse_button(True)
@@ -2641,6 +2647,266 @@ def check_deskbar(guest):
         raise Failure("Control-C did not get the screen back from the desktop.")
 
     return 2
+
+
+def check_desktop(guest):
+    """The desktop: below the strip, holding what it always holds, and an
+    icon that stays where it is dragged.
+
+    Each of these could look right and be wrong, so each is asked of the
+    thing that decides it rather than read off the picture alone.
+
+    **Below the strip.** `wm desktop,topbar` starts both, in whichever order
+    they arrive, and the window manager has to say the backdrop is at the
+    strip's height - either when it opens, or when it is moved there because
+    the strip came second. A desktop at 0,0 draws its first row of icons
+    under the bar, which is the bug this exists for.
+
+    **Dragged, it stays.** Drive is pressed where an empty desktop puts it,
+    in the cell under the Trash's, and let go on bare desktop further down.
+    The icon has to be drawn there, and the place has to be written to the
+    file as `desktop_x` and `desktop_y` - read back at the prompt, which is
+    the claim that survives a restart.
+
+    **Thrown away.** Then Drive is dragged onto the Trash, which is how
+    anything is thrown away from a desktop with no menu bar: the backdrop is
+    never raised and the window manager gives keys to the top window, so a
+    Delete key would never arrive. The Trash's picture has to change, and
+    Drive has to be inside it afterwards with its place still on it.
+
+    **What it always has.** The same listing says the Trash and the cheat
+    sheet are in `/home/Desktop`, and Drive's attributes say it is a
+    launcher for Tracker at `/`.
+    """
+    checks = 0
+    mark = len(guest.seen)
+
+    guest.type("wm desktop,topbar")
+
+    def said_any(texts, seconds=40):
+        deadline = time.monotonic() + seconds
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if any(t in guest.seen[mark:] for t in texts):
+                return True
+
+            time.sleep(0.3)
+
+        return False
+
+    # The top bar's own height: 26, or a glyph and ten if that is more.
+    strip = max(26, GLYPH_H + 10)
+    below = (f"wm: window Tracker at 0,{strip} ",
+             f"wm: the desktop is below the strip, at 0,{strip} ")
+
+    if not said_any(["wm: window Topbar at 0,0 "]):
+        raise Failure("`wm desktop,topbar` never opened the top bar.\n"
+                      + guest.seen[mark:][-1200:])
+
+    if not said_any(below):
+        placed = [line for line in guest.seen[mark:].splitlines()
+                  if "wm: window Tracker" in line or "below the strip" in line]
+        raise Failure(
+            f"the desktop is not below the {strip}-pixel strip. The window "
+            "manager places the backdrop at the height the strip claimed, or "
+            "moves it there when the strip opens second - and said:\n"
+            + "\n".join(placed))
+
+    checks += 1
+
+    DESK = (0x1c, 0x25, 0x30)          # the dark palette's `desktop`
+    CELL_W, CELL_H = 84, 56 + GLYPH_H  # tracker.lua's cell
+
+    #
+    # And on the screen, before anything is looked for on it.
+    #
+    # Everything below tests pixels *against* the desktop's colour, so a
+    # screen with no desktop on it passes those tests for the wrong reason
+    # and fails several steps later saying something unrelated - which is
+    # what a negative control did say, about a sabotage that had nothing to
+    # do with it.
+    #
+    def desktop_drawn(w, h, px):
+        seen = 0
+
+        for yy in range(strip + 4, h - 4, 16):
+            for xx in range(4, w - 4, 16):
+                o = (yy * w + xx) * 3
+
+                if tuple(px[o:o + 3]) == DESK:
+                    seen += 1
+
+        return (w, h, px) if seen > (w // 16) * (h // 16) // 3 else None
+
+    settle(guest, desktop_drawn,
+           "the desktop never drew. `wm desktop,topbar` starts Tracker in "
+           "backdrop mode through the window manager, and if Tracker died "
+           "instead the lines above say why.")
+
+    def drawn(x, y):
+        """An icon's 32 pixels at x, y are not all desktop."""
+        def look(w, h, px):
+            n = 0
+
+            for yy in range(y, y + 32, 2):
+                for xx in range(x, x + 32, 2):
+                    o = (yy * w + xx) * 3
+
+                    if tuple(px[o:o + 3]) != DESK:
+                        n += 1
+
+            return (w, h, px) if n > 40 else None
+
+        return look
+
+    # Directories first, then by name: the Trash takes the first cell, and
+    # Drive - which sorts before cheatsheet.html - the one under it.
+    left = 2 + (CELL_W - 4 - 32) // 2
+    trash_y = strip + 2 + 2
+    cell_y = 2 + CELL_H
+    width, height, px = settle(
+        guest, drawn(left, strip + cell_y + 2),
+        "Drive never appeared in the second cell under the strip. Either the "
+        "desktop did not put the Trash and Drive in /home/Desktop, or it is "
+        "not drawing from the desktop's own top-left corner.")
+
+    def bare(x0, y0, size=96):
+        for yy in range(y0, y0 + size, 8):
+            for xx in range(x0, x0 + size, 8):
+                o = (yy * width + xx) * 3
+
+                if tuple(px[o:o + 3]) != DESK:
+                    return False
+
+        return True
+
+    #
+    # Somewhere to let go: any 96-pixel square of bare desktop, looked for
+    # from the bottom upward. The application the Deskbar phase started is
+    # placed by the window manager and lands somewhere different from run to
+    # run, and a search over one band of the screen made *that* the reason
+    # this phase failed - twice, in a negative control that was supposed to
+    # be failing about something else entirely.
+    #
+    spot = next(((x, y) for y in range(height - 140, strip + CELL_H, -32)
+                 for x in range(2, width - 120, 32) if bare(x, y)), None)
+
+    if spot is None:
+        raise Failure("there was no bare 96-pixel square of desktop to let an "
+                      f"icon go on, on a screen of {width}x{height}.")
+
+    press_x, press_y = left + 16, strip + cell_y + 2 + 16
+    drop_x, drop_y = spot[0] + 48, spot[1] + 48
+    trash_was = _strip(px, width, 2, trash_y, CELL_W - 4, 40)
+
+    guest.mouse_to(*_to_tablet(press_x, press_y, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_to(*_to_tablet(press_x + 12, press_y + 12, width, height))
+    time.sleep(0.4)
+    guest.mouse_to(*_to_tablet(drop_x, drop_y, width, height))
+    time.sleep(0.6)
+    guest.mouse_button(False)
+
+    # Where the cell moved to, in the desktop's own coordinates and on the
+    # screen: by exactly how far the pointer went.
+    want_x = 2 + (drop_x - press_x)
+    want_y = cell_y + (drop_y - press_y)
+
+    settle(guest, drawn(want_x + (CELL_W - 4 - 32) // 2, strip + want_y + 2),
+           f"Drive was let go at {drop_x},{drop_y} and is not drawn there. "
+           "A drop from the desktop onto the desktop moves the icon.")
+    checks += 1
+
+    #
+    # And onto the Trash, which is how a thing is thrown away from here.
+    #
+    guest.mouse_to(*_to_tablet(want_x + (CELL_W - 4 - 32) // 2 + 16,
+                               strip + want_y + 18, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_to(*_to_tablet(want_x + 40, strip + want_y + 34,
+                               width, height))
+    time.sleep(0.4)
+    guest.mouse_to(*_to_tablet(left + 16, trash_y + 16, width, height))
+    time.sleep(0.6)
+    guest.mouse_button(False)
+
+    def trash_changed(w, h, pixels):
+        now = _strip(pixels, w, 2, trash_y, CELL_W - 4, 40)
+
+        return (w, h, pixels) if now != trash_was else None
+
+    settle(guest, trash_changed,
+           "the Trash's picture did not change when Drive was dragged onto "
+           "it. `files.icon` draws Trash_Full while anything is in it.")
+    checks += 1
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[back:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from the desktop.")
+
+    guest.type('local a = fs.getattr("/home/Desktop/Trash/Drive") or {} '
+               'print("DESK" .. "-AT", a.desktop_x, a.desktop_y, a.kind, '
+               'a.program, a.args) '
+               'print("DESK" .. "-HAS", table.concat(fs.list("/home/Desktop") '
+               'or {}, ",")) '
+               'print("DESK" .. "-TRASH", '
+               'table.concat(fs.list("/home/Desktop/Trash") or {}, ","))')
+    guest.wait_for("DESK-TRASH", "the desktop and Trash listings")
+
+    at = [line for line in guest.seen.splitlines() if "DESK-AT" in line][-1]
+    has = [line for line in guest.seen.splitlines() if "DESK-HAS" in line][-1]
+    trash = [line for line in guest.seen.splitlines()
+             if "DESK-TRASH" in line][-1]
+    fields = at.split()
+
+    if "Drive" not in trash:
+        raise Failure("Drive was dragged onto the Trash and is not in it.\n"
+                      + trash + "\n" + has)
+
+    checks += 1
+
+    try:
+        got_x, got_y = int(float(fields[1])), int(float(fields[2]))
+    except (IndexError, ValueError):
+        raise Failure("Drive was dragged and nothing wrote where it went: "
+                      "`desktop_x` and `desktop_y` should be attributes of "
+                      f"the file.\n{at}")
+
+    if abs(got_x - want_x) > 3 or abs(got_y - want_y) > 3:
+        raise Failure(f"Drive's place was written as {got_x},{got_y} and it "
+                      f"was dropped at {want_x},{want_y}.\n{at}")
+
+    checks += 1
+
+    if fields[3:6] != ["launcher", "tracker", "/"]:
+        raise Failure("Drive should be a launcher for Tracker at /: "
+                      "kind=launcher, program=tracker, args=/.\n" + at)
+
+    if "Trash" not in has or "cheatsheet.html" not in has:
+        raise Failure("the desktop folder should always hold the Trash and "
+                      "the cheat sheet, and holds:\n" + has)
+
+    checks += 1
+
+    return checks
 
 
 def check_clicks(guest):
@@ -3287,6 +3553,7 @@ def main():
         three_d_checks = phase("3d", check_3d)
         terminal_checks = phase("terminal", check_terminal)
         deskbar_checks = phase("deskbar", check_deskbar)
+        desktop_checks = phase("desktop", check_desktop)
         clip_checks = phase("clipboard", check_clipboard)
         cores_checks = phase("cores", check_cores)
         reaped_checks = phase("reaped", check_reaped)
@@ -3310,6 +3577,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
+             + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks)
@@ -3335,6 +3603,8 @@ def main():
           f"something else owns it, "
           f"{click_checks} on the widgets under the pointer, "
           f"{deskbar_checks} on starting an application from the Deskbar, "
+          f"{desktop_checks} on the desktop below the strip and an icon "
+          f"staying where it is dragged, "
           f"{clip_checks} on copying text from one application into "
           f"another, "
           f"{reaped_checks} on an application that dies saying why and "

@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Music: pick a file, press play.
 -- kosmos: application
+-- kosmos: icon App_MediaPlayer
 --
 --   wm music
 --

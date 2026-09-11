@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon Misc_Book
 -- A markdown viewer: manuals and tutorials, inside the system they describe.
 --
 --   wm reader                     the guide that ships in the image

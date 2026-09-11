@@ -84,6 +84,19 @@ def main():
             # answer; only reading it says whether it names anything.
             'local hit = (fs.query("/home", { kind = "book" }) or {})[1] '
             'print("Q-READ", hit and (fs.read(hit) or "unreadable") or "none")',
+
+            # A sixty-four character name, on both kinds of mount, and in
+            # memory a directory down: a 64-character directory holding a
+            # 64-character file is 136 bytes of path, which /ramfs's old
+            # 128-byte field refused outright.
+            'D, N = string.rep("d", 64), string.rep("n", 60) .. ".txt" '
+            'fs.send("/ramfs/" .. D, { type = "mkdir" }) '
+            'fs.write("/ramfs/" .. D .. "/" .. N, "deep") '
+            'fs.write("/home/" .. N, "long")',
+
+            'print("L-RAMFS", fs.read("/ramfs/" .. D .. "/" .. N) or "none", '
+            'table.concat(fs.list("/ramfs/" .. D) or {}, ",")) '
+            'print("L-HOME", fs.read("/home/" .. N) or "none")',
         #
         # Five seconds a command, not forty. `pump` waits the whole time
         # rather than stopping at the prompt, so `each` is a real cost per
@@ -115,6 +128,31 @@ def main():
             if marker not in flat:
                 raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
                               + flat[-1200:])
+            checks += 1
+
+        #
+        # The sixty-four character names. Read back rather than listed alone:
+        # a name cut short still lists as something, and only the content says
+        # whether it is the file that was written.
+        #
+        long_name = "n" * 60 + ".txt"
+
+        for marker, content, what in [
+            ("L-RAMFS", "deep",
+             "a 64-character file inside a 64-character directory in /ramfs "
+             "- 136 bytes of path"),
+            ("L-HOME", "long", "a 64-character file on the disk"),
+        ]:
+            lines = [l for l in flat.splitlines() if l.startswith(marker + " ")]
+
+            if not lines or content not in lines[-1].split()[1:2]:
+                raise Failure(f"{what} did not read back.\n"
+                              + "\n".join(lines or [flat[-1200:]]))
+
+            if marker == "L-RAMFS" and long_name not in lines[-1]:
+                raise Failure(f"{what} read back, and its directory does not "
+                              "list it under its whole name.\n" + lines[-1])
+
             checks += 1
 
         #

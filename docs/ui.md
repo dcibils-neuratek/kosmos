@@ -493,6 +493,55 @@ shrinking it makes the limit something you can see, in the one place you
 were already looking - where a dialog saying "1900 of 4212 bytes" would be
 the same fact, later, and in the way.
 
+## 16.12 The desktop: icons where they are put, launchers, and pictures
+
+The desktop is Tracker in backdrop mode, showing `/home/Desktop` and
+nothing else. Several things arrived together in September 2026, and they
+belong together because each one is a decision about what that folder is.
+
+**It is the screen less the strip.** The backdrop asks for the screen,
+because the screen is all it knows. The window manager sizes it from
+`reserved_top` - what the strip across the top has claimed - and when the
+strip starts after the desktop, or closes, `fit_backdrop` moves and resizes
+it and posts a `resize`. A desktop that draws its icons from its own
+top-left corner is then below the bar without knowing there is one.
+
+**An icon is where it was dragged.** The place is two attributes of the
+file, `desktop_x` and `desktop_y`. BeOS kept it the same way and for the
+same reason: the place belongs to the file, so it moves with it and goes
+with it, and no positions file beside the folder can fall out of step. A
+drag from the desktop let go on the desktop moves the icons by how far the
+pointer went; let go on a folder's icon it moves the files, as a drop does
+anywhere else. An icon never placed takes the next free cell down the first
+column. `user/lib/iconlayout.lua` holds that arithmetic and a name's two
+lines, so both are checked on the build machine rather than by looking.
+
+**A launcher is an empty file that says what to start**: `kind=launcher`,
+`program`, `args`, and an `icon` if it wants one. Opening it sends the
+window manager the `launch` the Deskbar sends, so a launcher starts nothing
+the Deskbar could not, and the window manager's check on the program's name
+stays the only check. `launcher` makes one at the prompt. Drive - Tracker
+at `/` - is one, and it, the cheat sheet and the Trash are on every
+desktop, put back whenever they are missing. A launcher is not a link: a
+link is another name for a file, and this starts a program with arguments.
+
+**The Trash is a folder.** Delete moves things into it, under a free name
+if it holds that one already, and only inside it does Delete destroy
+anything. Emptying it is in Tracker's File menu, by name, because it is the
+one delete that cannot be taken back. A folder rather than a flag on each
+file, because a folder is already something every window can open, list,
+drop onto and take things back out of - and dragging onto it is how a thing
+is thrown away from the desktop, which has no menu bar and never gets keys:
+the backdrop is never raised, and the window manager gives keys to the top
+window.
+
+**Pictures come from the programs.** `-- kosmos: icon App_Tracker` in a
+header is reported by `/bin` next to `section`, and the Deskbar draws it
+beside the name. A menu with any picture in it gives every row the
+picture's height, because nothing here scales one and a column of names
+that did not line up would be worse than a taller menu. The icons are
+Haiku's, and `assets/icons/README.md` says which, and from where.
+
 ---
 
 ## 16.10 What we do not copy from BeOS

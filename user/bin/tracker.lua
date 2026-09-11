@@ -1,5 +1,6 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: application
+-- kosmos: icon App_Tracker
 -- Tracker: the file manager.
 --
 --   wm tracker            opens at /home
@@ -40,6 +41,7 @@
 local ui    = use("/lib/ui.lua")
 local files = use("/lib/files.lua")
 local types = use("/lib/filetypes.lua")
+local layout = use("/lib/iconlayout.lua")
 local theme = ui.theme
 
 local W, H = 780, 520
@@ -126,6 +128,50 @@ if backdrop then
       print("tracker: no desktop folder: " .. tostring(why))
     end
   end
+
+  --
+  -- Three things the desktop always has, put back whenever they are missing.
+  --
+  -- **The cheat sheet**, because it is the quickest way into this system
+  -- and the desktop is where a person looks first. Written again whenever
+  -- it differs from the copy in the image, so it describes the system it
+  -- is on rather than whichever one first put it there.
+  --
+  -- **Drive**, a launcher for Tracker at `/`, the one place every file is
+  -- under - BeOS put the boot volume's icon on the desktop for the same
+  -- reason. A launcher rather than a special case in this file, so it is
+  -- moved, renamed and removed like anything else, and comes back at the
+  -- next start if it was removed.
+  --
+  -- **The Trash**, where a delete puts things - see `files.TRASH`.
+  --
+  local sheet = sys.asset("cheatsheet.html")
+  local sheet_path = files.join(where, "cheatsheet.html")
+
+  if sheet and fs.read(sheet_path) ~= sheet then
+    local ok, why = fs.write(sheet_path, sheet)
+
+    if not ok then print("tracker: no cheat sheet: " .. tostring(why)) end
+  end
+
+  local drive = files.join(where, "Drive")
+
+  if not fs.getattr(drive) then
+    local ok, why = fs.write(drive, "")
+
+    if ok then
+      ok, why = fs.setattr(drive, { kind = "launcher", program = "tracker",
+                                    args = "/", icon = "Device_Harddisk" })
+    end
+
+    if not ok then print("tracker: no Drive: " .. tostring(why)) end
+  end
+
+  if not fs.getattr(files.TRASH) then
+    local ok, why = fs.send(files.TRASH, { type = "mkdir" })
+
+    if not ok then print("tracker: no Trash: " .. tostring(why)) end
+  end
 end
 
 local win, err = ui.window{
@@ -143,6 +189,10 @@ if not win then
   print("tracker: " .. tostring(err))
   return
 end
+
+-- The desktop's real size, which is the screen less the strip across the
+-- top. The window manager decides that and says so in its reply.
+if backdrop then W, H = win.w, win.h end
 
 local GW, GH = gfx.font.w, gfx.font.h
 
@@ -186,6 +236,7 @@ local followed = nil       -- the cursor the view last scrolled to
 --
 local pending  = nil       -- { n, x, y, cursor } between press and release
 local carrying = false     -- a drag of our own is in progress
+local dragged  = nil       -- where that drag was pressed, until it lands
 
 local DRAG_SLOP = 4
 
@@ -574,7 +625,7 @@ rows.focusable = true
 -- and disagreeing about it is the bug where you click one icon and open
 -- another - the same reason `boxes_x` exists in the window manager.
 --
-local CELL_W, CELL_H = 84, 56
+local CELL_W, CELL_H = 84, 56 + GH    -- a name gets two lines
 
 local function cell_of(self, i)
   local across = math.max(1, (self.w - 4) // CELL_W)
@@ -598,6 +649,14 @@ local function box_of(self, n)
   if i < 0 or i >= (self.per or 0) then return nil end
 
   if mode == "icons" then
+    if backdrop then
+      local r = self.rects and self.rects[n]
+
+      if not r then return nil end
+
+      return r.x, r.y, CELL_W - 4, CELL_H - 2
+    end
+
     local x, y = cell_of(self, i + 1)
 
     return x, y, CELL_W - 4, CELL_H - 2
@@ -617,6 +676,23 @@ end
 --
 local function at_point(self, x, y)
   if mode == "icons" then
+    -- On the desktop an icon is wherever it was put, so the point is tested
+    -- against each one, the last drawn first because that one is on top.
+    if backdrop then
+      local rects = self.rects or {}
+
+      for n = #rects, 1, -1 do
+        local r = rects[n]
+
+        if x >= r.x and x < r.x + CELL_W - 4
+           and y >= r.y and y < r.y + CELL_H - 2 then
+          return n
+        end
+      end
+
+      return nil
+    end
+
     local across = math.max(1, (self.w - 4) // CELL_W)
     local col = (x - 2) // CELL_W
     local row = (y - 2) // CELL_H
@@ -632,17 +708,35 @@ local function at_point(self, x, y)
 end
 
 local function draw_icons(self, g, list)
-  local per_row = math.max(1, (self.w - 4) // CELL_W)
-  local rows_fit = math.max(1, self.h // CELL_H)
-  local total = math.ceil(#list / per_row)
+  if backdrop then
+    --
+    -- The desktop has no grid and no scrolling: an icon is where it was
+    -- dragged, from its `desktop_x` and `desktop_y`, and one never dragged
+    -- takes the next free cell - `iconlayout.place` says which.
+    --
+    local items = {}
 
-  if scroll > total - rows_fit + 1 then scroll = total - rows_fit + 1 end
-  if scroll < 1 then scroll = 1 end
+    for i, e in ipairs(list) do
+      local a = e.attrs or {}
 
-  self.per = rows_fit * per_row
-  self.first = (scroll - 1) * per_row + 1
-  self.bar = ui.scrollbar(g, self.w, self.h, total * per_row,
-                          rows_fit * per_row, self.first)
+      items[i] = { x = a.desktop_x, y = a.desktop_y }
+    end
+
+    self.rects = layout.place(items, CELL_W, CELL_H, self.w, self.h, 2)
+    self.per, self.first, self.bar = #list, 1, nil
+  else
+    local per_row = math.max(1, (self.w - 4) // CELL_W)
+    local rows_fit = math.max(1, self.h // CELL_H)
+    local total = math.ceil(#list / per_row)
+
+    if scroll > total - rows_fit + 1 then scroll = total - rows_fit + 1 end
+    if scroll < 1 then scroll = 1 end
+
+    self.per = rows_fit * per_row
+    self.first = (scroll - 1) * per_row + 1
+    self.bar = ui.scrollbar(g, self.w, self.h, total * per_row,
+                            rows_fit * per_row, self.first)
+  end
 
   for i = 0, self.per - 1 do
     local n = self.first + i
@@ -650,7 +744,13 @@ local function draw_icons(self, g, list)
 
     if not e then break end
 
-    local x, y = cell_of(self, i + 1)
+    local x, y
+
+    if backdrop then
+      x, y = self.rects[n].x, self.rects[n].y
+    else
+      x, y = cell_of(self, i + 1)
+    end
     local on = marked[e.name] or false
 
     if on then g:fill(x, y, CELL_W - 4, CELL_H - 2, theme.accent) end
@@ -668,15 +768,19 @@ local function draw_icons(self, g, list)
 
     files.icon(g, x + (CELL_W - 4 - files.ICON) // 2, y + 2, e, path_of(e))
 
-    -- Trimmed to the cell rather than clipped, so a long name ends in a
-    -- readable way instead of half a glyph.
-    local label = files.label(e)
+    -- Two lines of the cell's width rather than one, so a name reads in
+    -- full up to twice as long, and past that the second line keeps its
+    -- end - where the extension is - rather than half a glyph.
     local room = (CELL_W - 8) // GW
+    local first, second = layout.label(files.label(e), room)
 
-    if #label > room then label = label:sub(1, math.max(1, room - 1)) .. "~" end
+    g:text(x + (CELL_W - 4 - gfx.measure(first)) // 2, y + files.ICON + 6,
+           first, ink, bg)
 
-    g:text(x + (CELL_W - 4 - gfx.measure(label)) // 2, y + files.ICON + 6,
-           label, ink, bg)
+    if second then
+      g:text(x + (CELL_W - 4 - gfx.measure(second)) // 2,
+             y + files.ICON + 6 + GH, second, ink, bg)
+    end
   end
 end
 
@@ -793,12 +897,48 @@ function rows:draw(g)
   draw_band()
 end
 
+--
+-- A launcher opened: what its attributes say to start, started.
+--
+-- The window manager is asked exactly as the Deskbar asks it, so a launcher
+-- starts nothing the Deskbar could not, and the window manager's check on
+-- the program's name is the only check there is. Read when it is opened
+-- rather than when it was listed, so a launcher changed with `attr` does
+-- the new thing without a refresh.
+--
+local function start_launcher(path, name)
+  local a = fs.getattr(path) or {}
+  local program = tostring(a.program or "")
+
+  if program == "" then
+    status.text = name .. ": a launcher that names no program"
+    return
+  end
+
+  local ok, why = fs.send("/app/wm", { type = "launch", program = program,
+                                       args = tostring(a.args or "") })
+
+  status.text = ok and ("started " .. program)
+                or ("could not start " .. program .. ": " .. tostring(why))
+end
+
 local function open_selected()
   local e = rows.shown and rows.shown[selected]
 
   if not e then return end
 
-  if e.kind == "directory" then
+  if e.kind == "launcher" then
+    start_launcher(path_of(e), e.name)
+  elseif e.kind == "directory" and backdrop then
+    -- The desktop does not wander off into a folder, because it is the
+    -- desktop. A folder opened from it opens in a Tracker window of its
+    -- own, which is what BeOS did and what a person reaching for one means.
+    local ok, why = fs.send("/app/wm", { type = "launch", program = "tracker",
+                                         args = path_of(e) })
+
+    status.text = ok and ("opened " .. e.name)
+                  or ("could not open it: " .. tostring(why))
+  elseif e.kind == "directory" then
     visit(path_of(e))
   else
     -- Which program opens it is `/lib/filetypes.lua`'s answer, not
@@ -1017,6 +1157,11 @@ function start_drag(self)
     return
   end
 
+  -- Where the press was, kept past the release: a drop back onto the
+  -- desktop moves its icons by how far the pointer went, and the release
+  -- reaches this window before the drop does - see `rows:drop`.
+  dragged = { x = pending and pending.x or 0, y = pending and pending.y or 0 }
+
   carrying = true
   status.text = "dragging " .. label
 end
@@ -1045,6 +1190,42 @@ function rows:drop(kind, payload, x, y)
     return true
   end
 
+  --
+  -- On the desktop, icons dragged from the desktop and let go on it are
+  -- *moved*, and the files stay where they are. Dropping a file into the
+  -- directory it is already in does nothing anywhere else; on a desktop
+  -- what a person means by it is "put it here". Only onto another
+  -- directory's icon is it a move of the file, by the rule below.
+  --
+  local from = dragged
+
+  dragged = nil
+
+  if backdrop and from then
+    local at = at_point(self, x, y)
+    local onto = at and self.shown and self.shown[at]
+
+    if not (onto and onto.kind == "directory" and not marked[onto.name]) then
+      local dx, dy = x - from.x, y - from.y
+
+      for i, it in ipairs(self.shown or {}) do
+        local r = self.rects and self.rects[i]
+
+        if marked[it.name] and r then
+          local nx, ny = r.x + dx, r.y + dy
+
+          it.attrs = it.attrs or {}
+          it.attrs.desktop_x, it.attrs.desktop_y = nx, ny
+
+          fs.setattr(path_of(it), { desktop_x = nx, desktop_y = ny })
+        end
+      end
+
+      ui.dropped(win, true, 0, nil)
+      return true
+    end
+  end
+
   local into = where
   local n = at_point(self, x, y)
   local e = n and self.shown and self.shown[n]
@@ -1061,9 +1242,26 @@ function rows:drop(kind, payload, x, y)
       -- a file back into its own directory should do nothing at all.
       skipped = skipped + 1
     elseif name then
-      local ok, err = files.move(path, files.join(into, name))
+      -- Into the Trash under a name it does not hold yet: a second
+      -- `notes.txt` thrown away is `notes 2.txt`, not a refusal.
+      local target = (into == files.TRASH) and files.free_name(into, name)
+                     or name
+      local ok, err = files.move(path, files.join(into, target or name))
 
-      if ok then moved = moved + 1 else failed, why = failed + 1, err end
+      if ok then
+        moved = moved + 1
+
+        -- Onto the desktop, a file lands where it was let go and the next
+        -- one under it, rather than in whichever cell happened to be free.
+        if backdrop and into == where then
+          fs.setattr(files.join(into, name), {
+            desktop_x = x - CELL_W // 2,
+            desktop_y = y - files.ICON // 2 + (moved - 1) * CELL_H,
+          })
+        end
+      else
+        failed, why = failed + 1, err
+      end
     end
   end
 
@@ -1290,21 +1488,42 @@ function delete_selected()
   --
   -- Every marked file, and the first failure stops it.
   --
-  -- Stopping rather than carrying on, because the reason one delete fails -
-  -- a directory that is not empty, a read-only store - is usually the reason
+  -- Stopping rather than carrying on, because the reason one fails - a
+  -- read-only store, a name the Trash has run out of - is usually the reason
   -- the next one will, and a list of twelve identical complaints is not more
-  -- informative than one. What was already deleted stays deleted; there is
-  -- no undo here yet and this does not pretend otherwise.
+  -- informative than one.
   --
-  local done = 0
+  -- **Into the Trash, unless it is already there.** A delete anywhere else
+  -- is a move, and taking it back is dragging it out again. Only inside the
+  -- Trash is it for good, which is where there being no undo stops being
+  -- the whole story. The Trash itself goes nowhere.
+  --
+  local done, trashed = 0, 0
 
   for _, e in ipairs(list) do
-    local ok, why = fs.send(path_of(e), { type = "delete" })
+    local from = path_of(e)
+    local ok, why
+
+    if from == files.TRASH then
+      ok, why = nil, "the Trash does not go in the Trash"
+    elseif files.in_trash(from) then
+      ok, why = files.remove(from)
+    else
+      local name
+
+      name, why = files.free_name(files.TRASH, e.name)
+
+      if name then
+        ok, why = files.move(from, files.join(files.TRASH, name))
+      end
+
+      if ok then trashed = trashed + 1 end
+    end
 
     if not ok then
       show(where)
-      status.text = ("deleted %d, then %s: %s"):format(done, e.name,
-                                                       tostring(why))
+      status.text = ("%d done, then %s: %s"):format(done, e.name,
+                                                    tostring(why))
       return
     end
 
@@ -1312,8 +1531,41 @@ function delete_selected()
   end
 
   show(where)
-  status.text = (done == 1) and ("deleted " .. list[1].name)
-                or ("deleted " .. done .. " items")
+
+  if trashed == 0 then
+    status.text = (done == 1) and ("deleted " .. list[1].name)
+                  or ("deleted " .. done .. " items")
+  else
+    status.text = (done == 1) and (list[1].name .. " is in the Trash")
+                  or (done .. " items are in the Trash")
+  end
+end
+
+--
+-- Everything in the Trash, gone for good.
+--
+-- No confirmation, for the reason there is no dialog anywhere in this
+-- window - see `new_folder`. What makes that bearable is that this is now
+-- the only delete that cannot be taken back, and it is asked for by name.
+--
+local function empty_trash()
+  local names = fs.list(files.TRASH) or {}
+
+  for i, name in ipairs(names) do
+    local ok, why = files.remove(files.join(files.TRASH, name))
+
+    if not ok then
+      show(where)
+      status.text = ("emptied %d, then %s: %s"):format(i - 1, name,
+                                                       tostring(why))
+      return
+    end
+  end
+
+  show(where)
+  status.text = (#names == 0) and "the Trash was already empty"
+                or ("emptied the Trash of %d item%s"):format(
+                     #names, (#names == 1) and "" or "s")
 end
 
 button(192, 96, "New folder", new_folder)
@@ -1694,6 +1946,7 @@ win:add(ui.menubar{
         { text = "Select none", on_choose = select_none },
         { separator = true },
         { text = "Delete",     on_choose = function() delete_selected() end },
+        { text = "Empty Trash", on_choose = function() empty_trash() end },
       } },
     { title = "Go",
       items = {
@@ -1727,6 +1980,12 @@ chrome(split)
 -- window: no insets, because there is no frame to be inset from.
 if backdrop then
   rows.x, rows.y, rows.w, rows.h = 0, 0, W, H
+
+  -- And again whenever the window manager changes it, which it does when
+  -- the strip across the top starts after the desktop, or goes away.
+  function win:on_resize(w, h)
+    rows.x, rows.y, rows.w, rows.h = 0, 0, w, h
+  end
 end
 
 --
@@ -1782,6 +2041,8 @@ end
 -- lies until you happen to press Refresh.
 --
 function win:on_dropped(ok, count, err)
+  dragged = nil
+
   if ok and count > 0 then
     show(where)
     status.text = ("moved %d item%s"):format(count, count == 1 and "" or "s")

@@ -1522,12 +1522,18 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # so the window keeps no licence text of its own to fall out of step with
 # the file. `licence_for` finds `LICENSE` itself as the only licence in its
 # directory, so it is not reported as unlicensed.
+#
+# And `docs/cheatsheet.html`, which the desktop writes into `/home/Desktop`
+# whenever it finds it missing or different - see `tracker.lua`. It is the
+# project's own work, so there is no licence beside it and the generated
+# file says so, which is what that line of the report is for.
 
 $(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE \
-                 tools/assets2c.py
+                 docs/cheatsheet.html tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
-	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE
+	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE \
+	        docs/cheatsheet.html
 
 # The outline fonts, embedded the same way.
 #
@@ -2493,6 +2499,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
+	$(HOSTDIR)/lua tools/test_iconlayout.lua
 	@# And the audio ring's position arithmetic. It models the client, the
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.

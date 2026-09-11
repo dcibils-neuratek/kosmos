@@ -48,7 +48,7 @@
  * it is for, and `help("fs")` promises this mount behaves like a filesystem.
  *
  * **`rename` carries its destination in `u.data`** rather than in a field of
- * its own. A `to[RAM_PATH_MAX]` would be 128 bytes copied twice on every
+ * its own. A `to[RAM_PATH_MAX]` would be 256 bytes copied twice on every
  * list, read and write that never looks at it - which is the same argument
  * the union is already here for.
  */
@@ -66,11 +66,21 @@
 #define RAM_ERR_NOT_EMPTY    7u   /* a directory with something still in it */
 #define RAM_ERR_EXISTS       8u   /* the destination is already taken */
 
-#define RAM_PATH_MAX     128u     /* a whole path, not one component */
+/*
+ * **A path is 256 bytes, so a name in one can be sixty-four characters.**
+ *
+ * It was 128, which is a whole path rather than a name: two directories
+ * down, a sixty-four character file name did not fit at all. The price is
+ * a page. `known` and `entries` are that many paths in one message, and at
+ * 256 bytes eight of them are the entire message - so a listing, a query
+ * or a watch answers four at a time and asks again, which every caller
+ * already knew how to do.
+ */
+#define RAM_PATH_MAX     256u     /* a whole path, not one component */
 #define RAM_NAME_MAX      32u     /* an attribute's name */
 #define RAM_VALUE_MAX     48u     /* an attribute's value, as text */
 #define RAM_ATTRS_MAX      8u     /* attributes on one node, or query terms */
-#define RAM_ENTRIES_MAX    8u     /* names or paths in one page of a reply */
+#define RAM_ENTRIES_MAX    4u     /* names or paths in one page of a reply */
 #define RAM_DATA_MAX    1024u     /* bytes of content in one message */
 
 /*

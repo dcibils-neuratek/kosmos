@@ -36,6 +36,8 @@ filetypes.by_extension = {
   png  = "photo",
   pdf  = "pdfview",
 
+  html = "browser",
+
   mp3  = "music",
   wav  = "play",
 }

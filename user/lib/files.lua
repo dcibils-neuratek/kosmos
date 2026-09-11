@@ -67,7 +67,16 @@ function files.entries(path)
       kind = attrs and attrs.kind or "file",
       size = attrs and attrs.size or 0,
       extents = attrs and attrs.extents,
+      -- All of them, for whoever draws the entry: a launcher's icon and a
+      -- desktop icon's place are attributes, and asking again per entry
+      -- would be the same round trip twice.
+      attrs = attrs,
     }
+
+    -- The Trash is drawn full or empty, and one look inside says which.
+    if files.join(path, name) == files.TRASH then
+      out[#out].full = #(fs.list(files.TRASH) or {}) > 0
+    end
   end
 
   table.sort(out, function(a, b)
@@ -271,6 +280,65 @@ function files.move(from, to)
 end
 
 --------------------------------------------------------------------------
+-- The Trash.
+--
+-- A folder on the desktop that a delete moves things into, and the one
+-- place a delete is for good. A folder rather than a flag on each file,
+-- because a folder is already something every window can open, list, drop
+-- onto and take things back out of - the Trash needs nothing else.
+--------------------------------------------------------------------------
+
+files.TRASH = "/home/Desktop/Trash"
+
+-- Whether a path is the Trash or something inside it.
+function files.in_trash(path)
+  return path == files.TRASH
+         or path:sub(1, #files.TRASH + 1) == files.TRASH .. "/"
+end
+
+--
+-- A name not already taken in `dir`: `name`, then `name 2`, `name 3` and on,
+-- with the extension kept at the end, so two `notes.txt` thrown away are
+-- still both text files.
+--
+function files.free_name(dir, name)
+  if not fs.getattr(files.join(dir, name)) then return name end
+
+  local stem, ext = name:match("^(.+)(%.[^.]+)$")
+
+  if not stem then stem, ext = name, "" end
+
+  for n = 2, 999 do
+    local candidate = ("%s %d%s"):format(stem, n, ext)
+
+    if not fs.getattr(files.join(dir, candidate)) then return candidate end
+  end
+
+  return nil, "no free name for " .. name .. " in " .. dir
+end
+
+--
+-- A path and everything under it, which is what emptying the Trash is.
+--
+-- The walk is here because a filesystem's `delete` takes one node and
+-- refuses a directory with anything in it, which is right for a server and
+-- is why `rm -r` walks too.
+--
+function files.remove(path)
+  local attrs = fs.getattr(path)
+
+  if attrs and attrs.kind == "directory" then
+    for _, name in ipairs(fs.list(path) or {}) do
+      local ok, why = files.remove(files.join(path, name))
+
+      if not ok then return nil, why end
+    end
+  end
+
+  return fs.send(path, { type = "delete" })
+end
+
+--------------------------------------------------------------------------
 -- The icons.
 --
 -- Vendored pictures, not shapes drawn from `g:fill`. What was here first
@@ -281,16 +349,15 @@ end
 -- distinctly would have meant drawing a script, and then an image, and
 -- then a font, each in eleven rectangles, by hand.
 --
--- So: `assets/icons/`, which is the Tango Icon Library at the size it was
--- drawn for, public domain, byte for byte as released. Nothing converts
+-- So: `assets/icons/`, which is Haiku's icons at the size they were
+-- exported, MIT, byte for byte as the repository has them. Nothing converts
 -- them. `gfx.png` decodes PNG already and `surface:blend` composites
 -- source-over already, both in C because both are pixel loops, so the
--- release's own bytes are what the system carries.
+-- export's own bytes are what the system carries.
 --
--- The names are freedesktop's, which is the point of using them: `ICONS`
--- below maps what Kosmos knows about a file onto a name that a *different*
--- icon theme would also answer to, so a second theme is seven files and no
--- new code.
+-- The names are Haiku's. `ICONS` below maps what Kosmos knows about a file
+-- onto one of them, and a program names its own in its header, so this
+-- table is the one place a different set of pictures would have to change.
 --------------------------------------------------------------------------
 
 files.ICON = 32
@@ -300,26 +367,31 @@ files.ICON = 32
 -- what it knows - which is the same rule `filetypes.by_extension` follows
 -- and for the same reason.
 local ICONS = {
-  directory = "folder",
+  directory = "Folder_generic",
 
-  lua  = "text-x-script",
-  txt  = "text-x-generic",
-  conf = "text-x-generic",
-  md   = "text-x-generic",
+  lua  = "File_SourceCode",
+  txt  = "File_Text",
+  conf = "File_Text",
+  md   = "File_Text",
 
-  png  = "image-x-generic",
+  png  = "File_Image_1",
+  pdf  = "File_PDF",
+  html = "File_HTML",
 
-  ttf  = "font-x-generic",
-  otf  = "font-x-generic",
-  bdf  = "font-x-generic",
+  mp3  = "File_Audio",
+  wav  = "File_Audio",
+
+  ttf  = "Prefs_Fonts",
+  otf  = "Prefs_Fonts",
+  bdf  = "Prefs_Fonts",
 }
 
 -- Two directories that are not just directories. Every desktop since the
 -- Macintosh has drawn home and a volume differently from a folder, because
--- they are places rather than containers, and Tango ships both.
+-- they are places rather than containers, and Haiku draws both.
 local BY_PATH = {
-  ["/home"] = "user-home",
-  ["/ramfs"] = "drive-harddisk",
+  ["/home"] = "Folder_home",
+  ["/ramfs"] = "Device_Ramdisk",
 }
 
 --
@@ -328,20 +400,30 @@ local BY_PATH = {
 -- Nothing is decoded here. `gc:icon` sends the *name* and the compositor
 -- loads and caches the picture, which is the same division the rest of this
 -- kit follows: an application says what it wants drawn and never holds what
--- is drawn. It also means seven icons are decoded once for the whole
--- desktop rather than once per application that shows a directory.
+-- is drawn. It also means an icon is decoded once for the whole desktop
+-- rather than once per application that shows it.
 --
 function files.icon(g, x, y, entry, path)
   local name
 
-  if path and BY_PATH[path] then
+  if path == files.TRASH then
+    name = entry.full and "Trash_Full" or "Trash_Empty"
+  elseif path and BY_PATH[path] then
     name = BY_PATH[path]
   elseif entry.kind == "directory" then
     name = ICONS.directory
+  elseif entry.kind == "launcher" then
+    -- A launcher says what it looks like, because what it starts is not a
+    -- file this can look at. Only the shape of an asset's name is taken;
+    -- anything else gets the generic application rather than a request for
+    -- a picture that is not there.
+    local said = tostring(entry.attrs and entry.attrs.icon or "")
+
+    name = said:match("^[%w_%-]+$") and said or "App_Generic"
   else
     local ext = tostring(entry.name):sub(2):match("%.([%w]+)$")
 
-    name = ext and ICONS[ext:lower()] or "text-x-generic"
+    name = ext and ICONS[ext:lower()] or "File_Generic"
   end
 
   g:icon(x, y, name .. ".png", files.ICON)

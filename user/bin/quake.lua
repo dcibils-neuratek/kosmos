@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Quake.
 -- kosmos: application
+-- kosmos: icon App_Generic
 -- kosmos: section demos
 --
 --   wm quake                        /home/id1/pak0.pak

@@ -42,7 +42,7 @@
 #define BIN_ERR_BAD_OP      3u
 
 /*
- * A name, padded. **Forty-eight because a name stopped being a name.**
+ * A name, padded. **Sixty-four, because a file name has to be able to be.**
  *
  * Twenty-four was generous for `/bin`, where every entry is one file with
  * a flat name - `tracker.lua` is twelve. It stopped being enough when the
@@ -56,13 +56,18 @@
  * packing. Worth the sentence, because the next person to see it will be
  * looking at the wrong file.
  *
- * The assert below still holds at 48: 1792 / 48 is 37 names to a listing
+ * Forty-eight answered that, and sixty-four answers a rule rather than a
+ * tree: a name anywhere in Kosmos may be sixty-four characters, and a store
+ * that held fewer would be the one place that broke it.
+ *
+ * The assert below still holds at 64: 1792 / 64 is 28 names to a listing
  * reply, against the sixteen it asks for.
  */
-#define BIN_NAME_MAX    48u
+#define BIN_NAME_MAX    64u
 #define BIN_WORD_MAX    16u       /* a kind, a section, one `needs` word */
 #define BIN_NEEDS_MAX    4u       /* authorities one program may declare */
-#define BIN_CHUNK     1792u       /* source bytes, or 74 names, per reply */
+#define BIN_ICON_MAX    32u       /* `Misc_Deskbar_Group` is eighteen */
+#define BIN_CHUNK     1792u       /* source bytes, or 28 names, per reply */
 
 struct bin_request {
     uint32_t op;
@@ -86,6 +91,11 @@ struct bin_reply {
     char     kind[BIN_WORD_MAX];
     char     section[BIN_WORD_MAX];
     char     needs[BIN_NEEDS_MAX][BIN_WORD_MAX];
+
+    /* The picture the Deskbar draws beside it - `kosmos: icon App_Tracker`,
+     * an asset's name without its `.png`. Wider than a word because Haiku's
+     * names are, and blank when a program declares none. */
+    char     icon[BIN_ICON_MAX];
 
     uint8_t  data[BIN_CHUNK];
 };

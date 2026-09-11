@@ -1,6 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- Mixer: a fader for every program making a noise.
 -- kosmos: application
+-- kosmos: icon Misc_Speaker
 -- kosmos: section preferences
 --
 --   wm mixer

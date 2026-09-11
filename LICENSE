@@ -66,8 +66,9 @@ Vendored third-party code keeps its own licence, which travels beside it:
       whose licence is not beside it is not committed, and the build
       says so when it finds one.
 
-  The Tango icons, public domain
-      assets/icons/, under LICENSE.tango beside them
+  The Haiku icons, by Haiku, Inc., MIT
+      assets/icons/, under the LICENSE beside them. The Haiku logo and
+      leaf are Haiku, Inc.'s trademarks, and neither is among them
 
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.

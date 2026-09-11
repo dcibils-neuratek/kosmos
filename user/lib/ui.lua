@@ -3312,9 +3312,23 @@ local MENU_PAD = 8
 -- Room on the right for the marker that says "there is more this way".
 local MENU_ARROW = 12
 
+-- A menu item's picture, drawn at its own size because nothing here scales
+-- one. A menu with any pictures in it gives every row their height, so the
+-- names still line up down the left whether a row has a picture or not.
+local MENU_ICON = 32
+
+local function menu_pictured(items)
+  for _, it in ipairs(items) do
+    if it.icon then return true end
+  end
+
+  return false
+end
+
 local function menu_metrics(items)
   local widest = 0
   local deep = false
+  local pictured = menu_pictured(items)
 
   for _, it in ipairs(items) do
     -- Measured, not counted. A character count is a width only while every
@@ -3325,9 +3339,10 @@ local function menu_metrics(items)
     if it.submenu then deep = true end
   end
 
-  local row = GH + 6
+  local row = pictured and math.max(GH + 6, MENU_ICON + 4) or (GH + 6)
 
-  return widest + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0),
+  return widest + MENU_PAD * 2 + 12 + (deep and MENU_ARROW or 0)
+                + (pictured and MENU_ICON + 6 or 0),
          #items * row + 4, row
 end
 
@@ -3346,6 +3361,8 @@ function window:paint_menu(m)
   g.cw, g.ch = m.w, m.h
   g:raised(0, 0, m.w, m.h, "raised")
 
+  local text_x = MENU_PAD + 4 + (menu_pictured(m.items) and MENU_ICON + 6 or 0)
+
   for i, it in ipairs(m.items) do
     local y = 2 + (i - 1) * m.row
 
@@ -3357,7 +3374,12 @@ function window:paint_menu(m)
 
       if hot then g:fill(2, y, m.w - 4, m.row, "accent") end
 
-      g:text(MENU_PAD + 4, y + (m.row - GH) // 2, tostring(it.text or ""),
+      if it.icon then
+        g:icon(MENU_PAD + 2, y + (m.row - MENU_ICON) // 2, it.icon .. ".png",
+               MENU_ICON)
+      end
+
+      g:text(text_x, y + (m.row - GH) // 2, tostring(it.text or ""),
              hot and theme.text_on or theme.text, bg)
 
       --

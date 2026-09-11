@@ -2,6 +2,7 @@
 -- The desktop: your files, behind everything else.
 --
 -- kosmos: application
+-- kosmos: icon Prefs_Backgrounds
 -- kosmos: section system
 --
 -- **Tracker in backdrop mode, and the only reason this file exists is that
@@ -48,7 +49,19 @@ for _, w in ipairs(seen and seen.windows or {}) do
   end
 end
 
-local ok, why = run("/bin/tracker.lua", "desktop", true)
+--
+-- Started by the window manager, not by `run`.
+--
+-- `run` gives the child a namespace in which `/app/wm` is looked up in the
+-- registry by name - and after a window manager has been stopped and another
+-- started, that name can still be the old one's. So the desktop worked on
+-- the first `wm` of a boot and on the second Tracker died at once saying
+-- "no such path: /app/wm". A launch through the window manager hands the
+-- child this window manager's endpoint directly, which is how everything
+-- else started from the desktop gets it.
+--
+local ok, why = fs.send("/app/wm", { type = "launch", program = "tracker",
+                                     args = "desktop" })
 
 if not ok then
   print("desktop: " .. tostring(why))
