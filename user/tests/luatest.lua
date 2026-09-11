@@ -62,6 +62,17 @@ local R_PDF_SCAN     = 37
 local R_CONWRITE     = 38
 local R_CONWRITE_PEER = 39
 local R_LICENCE      = 40
+local R_OWNED_MAIN   = 41
+local R_OWNED_SERVER = 42
+local R_OWNED_CLIENT = 43
+local R_NAMES_MAIN   = 44
+local R_NAMES_HOLDER = 45
+local R_NAMES_ASKER  = 46
+
+-- The /app registry's role in `user/init/main.c`. Not offset by BASE: a
+-- server role is dispatched before any chunk is chosen, so this is the
+-- registry itself rather than a Lua stand-in for it.
+local ROLE_APPFS     = 14
 
 -- The tag that asks a server to stop. Every other tag in here is positive,
 -- so there is nothing for it to collide with.
@@ -1328,6 +1339,204 @@ if role == R_LICENCE then
         "LICENSE in the image has no rule above its vendored list")
   check(text:find("runtime/upstream/", 1, true) ~= nil,
         "LICENSE in the image names no vendored tree")
+  sys.exit(0)
+end
+
+-- ------------------------------------------------------------------
+-- What a process takes with it when it goes.
+-- ------------------------------------------------------------------
+
+if role == R_OWNED_MAIN then
+  -- An endpoint ends with the process that made it.
+  --
+  -- It did not, and nothing said so. A process that ended without destroying
+  -- its endpoints - killed, faulted, or unwound by an error nothing caught -
+  -- left them in the pool with nobody to receive on them. A client already
+  -- waiting for an answer waited for ever, one that called later joined a
+  -- queue nobody would drain, and the pool of ninety-six was one short for
+  -- the life of the machine.
+  --
+  -- So this makes the worst of those on purpose: a server takes a client's
+  -- message and is killed before it answers.
+  local ep = sys.endpoint()
+  local before = sys.info().endpoints_used
+
+  local server = spawn(R_OWNED_SERVER, { ep })
+
+  local _, handed, theirs = sys.receive(ep)
+  check(theirs and theirs >= 0, "the server did not hand over its endpoint")
+  sys.reply(handed, {})
+
+  check(sys.info().endpoints_used == before + 1,
+        "the server's endpoint is not in the pool's count")
+
+  -- The server comes back here once it holds the client's message, so when
+  -- this returns the client is waiting on the server's endpoint for an
+  -- answer. Not replied to: the server is about to end, and a reply to a
+  -- dead thread's token is what `ipc_abort` warns about.
+  local client = spawn(R_OWNED_CLIENT, { theirs, ep })
+  local holding = sys.receive(ep)
+  check(holding and holding.holding, "the server never took the client's call")
+
+  check(sys.kill(server), "the server could not be killed")
+
+  -- Nothing else can end first: the client is blocked. Not checked by id,
+  -- because a killed process ends with -1 and `sys.wait` reports any
+  -- negative code as "no children".
+  sys.wait()
+
+  -- Counted before the client's report is waited for, because the count
+  -- needs no waiting: `process_exit` gives the endpoints back before a wait
+  -- can return, so this is already true or never will be. It was last,
+  -- behind a receive with a 500-tick timeout, and with the kernel's half of
+  -- this removed that receive had not come back when the suite gave up on
+  -- the role - which failed, and said nothing about why.
+  check(sys.info().endpoints_used == before,
+        ("the killed server's endpoint was not given back: %d in use, %d before")
+        :format(sys.info().endpoints_used, before))
+
+  local said, who = sys.receive(ep)
+  check(said, "the client never reported")
+  sys.reply(who, {})
+  check(said.error == "the endpoint was destroyed",
+        "the waiting client was woken with: " .. tostring(said.error))
+
+  local id, code = sys.wait()
+  check(id == client and code == 0, "the client did not finish cleanly")
+
+  -- And the capability still held here names nothing, rather than an
+  -- endpoint nobody will receive on again - which is what a registry is left
+  -- holding when an application dies.
+  local reply, why = sys.call(theirs, {})
+  check(reply == nil and why == "no such capability",
+        "a capability to a dead process's endpoint gave: " .. tostring(why))
+
+  sys.exit(0)
+end
+
+if role == R_OWNED_SERVER then
+  local mine = sys.endpoint()
+  sys.call(0, { mine = true }, mine)
+
+  -- One call taken and not answered, then back to the parent to say so,
+  -- where it is killed with the client still waiting on it.
+  local asked = sys.receive(mine)
+  sys.call(0, { holding = asked ~= nil })
+  sys.exit(1)
+end
+
+if role == R_OWNED_CLIENT then
+  -- 0 is the server's endpoint and 1 the parent's.
+  local answer, why = sys.call(0, { ask = true })
+  sys.call(1, { error = (answer == nil) and why or "it was answered" })
+  sys.exit(0)
+end
+
+if role == R_NAMES_MAIN then
+  -- A name in /app lasts as long as the endpoint registered under it.
+  --
+  -- The window manager registers as `wm` and, stopped with Control-C,
+  -- destroys its endpoint without unregistering. The registry kept the name
+  -- anyway: the next window manager was filed as `wm2`, and a program that
+  -- looked `wm` up was handed an endpoint that had ended. `desktop` started a
+  -- Tracker that died of it at once - "no such path: /app/wm" - under a
+  -- desktop that was running.
+  --
+  -- So: the real registry, and one name held three times in turn - by a
+  -- holder that leaves the way the window manager does, by one that is
+  -- killed, and by one that stays. Then a process that holds nothing but the
+  -- registry looks the name up and calls what it is handed.
+  local door = sys.endpoint()          -- the registry's
+  local talk = sys.endpoint()          -- where the holders and the asker report
+
+  local registry = sys.spawn(ROLE_APPFS, { door })
+  check(registry, "the registry did not start")
+
+  -- A holder registers, reports the name it was given, and is told how to
+  -- end: `leave`, or answer calls with `label` until it is killed.
+  local function hold(how, label)
+    local id = spawn(R_NAMES_HOLDER, { talk, door })
+    local said, who = sys.receive(talk)
+    check(said, "a holder said nothing")
+    sys.reply(who, { how = how, label = label })
+    return id, said.name
+  end
+
+  local first, name = hold("leave")
+  check(name == "wm", "the first holder was registered as " .. tostring(name))
+  check(sys.wait() == first, "the first holder did not end")
+
+  local second
+  second, name = hold("serve", "second")
+  check(name == "wm", "a holder that destroyed its endpoint and left kept its "
+                      .. "name: the next was registered as " .. tostring(name))
+
+  check(sys.kill(second), "the second holder could not be killed")
+  sys.wait()                      -- not by id: see R_OWNED_MAIN
+
+  local third
+  third, name = hold("serve", "third")
+  check(name == "wm", "a holder that was killed kept its name: the next was "
+                      .. "registered as " .. tostring(name))
+
+  local asker = spawn(R_NAMES_ASKER, { talk, door })
+  local heard, who = sys.receive(talk)
+  check(heard, "the asker said nothing")
+  sys.reply(who, {})
+  check(heard.from == "third", "looking wm up and calling it reached "
+                               .. tostring(heard.from or heard.error))
+  check(sys.wait() == asker, "the asker did not end")
+
+  -- The registry serves until it is stopped, and so does the last holder.
+  check(sys.kill(third), "the third holder could not be killed")
+  check(sys.kill(registry), "the registry could not be stopped")
+  sys.wait()
+  sys.wait()
+  sys.exit(0)
+end
+
+if role == R_NAMES_HOLDER then
+  -- 0 reports to the parent and 1 is the registry. Registered the way
+  -- `wm.lua` and `ui.window` do it: the endpoint beside the request.
+  local mine = sys.endpoint()
+  local reply, err = sys.call_raw(1, string.pack("<I4c24", 1, "wm"), mine)
+  local name = "no reply: " .. tostring(err)
+
+  if reply then
+    local code, _, settled = string.unpack("<I4I4c24", reply)
+    name = (code == 0) and settled:gsub("\0.*", "") or ("error " .. code)
+  end
+
+  local told = sys.call(0, { name = name })
+
+  -- Control-C's way out of `wm.lua`: the endpoint destroyed, and nothing
+  -- said to the registry.
+  if told.how == "leave" then
+    sys.destroy(mine)
+    sys.exit(0)
+  end
+
+  while true do
+    local _, who = sys.receive(mine)
+    if who then sys.reply(who, { from = told.label }) end
+  end
+end
+
+if role == R_NAMES_ASKER then
+  -- What a program started with `run` does to reach /app/wm, with nothing
+  -- else in the way: ask the registry for the name and call what it hands
+  -- over. 0 is the parent and 1 the registry.
+  local reply, got = sys.call_raw(1, string.pack("<I4c24", 2, "wm"))
+  local code = reply and string.unpack("<I4", reply)
+
+  if not reply or code ~= 0 or got < 0 then
+    sys.call(0, { error = ("the lookup came back %s, with capability %s")
+                          :format(tostring(code), tostring(got)) })
+    sys.exit(1)
+  end
+
+  local answer, why = sys.call(got, { ask = true })
+  sys.call(0, { from = answer and answer.from, error = why })
   sys.exit(0)
 end
 

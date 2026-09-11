@@ -32,6 +32,10 @@ struct trapframe {
 void trap_init(void);
 void trap_handle(struct trapframe *f);
 
+/* Called by `syscall_entry` after every syscall, so a process killed while
+ * it was in one ends there rather than going back to ring 3. */
+void trap_syscall_leave(void);
+
 /*
  * Deliberate faults, for tests.
  *

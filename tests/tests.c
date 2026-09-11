@@ -3352,6 +3352,21 @@ static bool test_console_write_carries_no_capability(void) { return luatest_role
 static bool test_licence_is_carried(void)              { return luatest_role(40); }
 
 /*
+ * An endpoint ends with the process that made it. A server takes a client's
+ * call and is killed before answering: the client has to be woken with an
+ * error, and the pool has to get the endpoint back.
+ */
+static bool test_endpoint_ends_with_its_process(void)  { return luatest_role(41); }
+
+/*
+ * The /app registry takes a name back once nothing can answer to it - from a
+ * holder that destroyed its endpoint without unregistering, which is how the
+ * window manager stops, and from one that was killed - and a lookup reaches
+ * the holder that is still there.
+ */
+static bool test_registry_takes_back_dead_names(void)  { return luatest_role(44); }
+
+/*
  * A region the size of Quake's shareware pak, and one page over the cap.
  *
  * `MEMOBJ_PAGES_MAX` was 4096 - sixteen megabytes, "a double-buffered full
@@ -5821,6 +5836,8 @@ static const struct test tests[] = {
     { "inflate: a stream from elsewhere",      test_inflate_round_trip },
     { "pdf: the scanner reads what it should", test_pdf_scanner },
     { "licence: the image carries LICENSE",     test_licence_is_carried },
+    { "ipc: an endpoint ends with its process",  test_endpoint_ends_with_its_process },
+    { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },

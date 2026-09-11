@@ -207,6 +207,12 @@ The cost is that writing code over synchronous IPC normally forces you into ugly
 
 A detail that is easy to forget and ruins server restart: **when an endpoint is destroyed, the kernel has to wake everyone blocked waiting on it with an error.** Otherwise they hang forever.
 
+**And an endpoint ends with the process that made it.** The paragraph above says what destroying one has to do, and for a long time nothing destroyed an endpoint whose process died without doing it itself - killed, faulted, or unwound by an error nothing caught. Its clients waited for ever, the pool of ninety-six was one short for good, and anybody holding a capability to it could not tell it from a live one. `process_exit` destroys every endpoint the process created, before a parent's wait can return, so the waiting are woken with an error and every other capability to it goes stale.
+
+The *maker* rather than whoever receives on it, and that is what keeps §10's level 2 possible: every server's endpoint is made by somebody else and handed over - the console's, `/ramfs`'s, `/dev`'s and `/bin`'s by the kernel before init exists, the rest by init - so a server that dies leaves its endpoint behind for a restarted one to take up, with every client's capability still good.
+
+A holder finds out with `SYS_CAP_CHECK`, which resolves an index and uses nothing. Nothing else could answer: calling a live endpoint to ask blocks, and receiving on one can take a message meant for its server. The `/app` registry asks it about every capability it holds before it answers a request, so **a name lasts as long as the endpoint registered under it**, and nothing has to unregister - which matters, because the window manager stopped with Control-C does not, and a process that is killed cannot. That was a bug before it was a rule: a second `wm` was filed as `wm2`, and a lookup of `wm` handed out an endpoint that had ended.
+
 ### 4.3 Capabilities
 
 Each process has an array of endpoints. Syscalls take an index into that array, never a global identifier.

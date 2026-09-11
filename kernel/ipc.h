@@ -8,6 +8,7 @@
 
 struct thread;
 struct memobj;
+struct process;
 
 /*
  * Synchronous IPC, and the capability table that names it.
@@ -209,6 +210,19 @@ cap_t ipc_cap_grant(struct thread *to, cap_t from_index);
  * fails cleanly instead of addressing whatever is created next.
  */
 int ipc_endpoint_destroy(cap_t index);
+
+/*
+ * Destroys every endpoint `p` made, as `ipc_endpoint_destroy` would: an
+ * endpoint ends with the process that made it. Called by `process_exit`.
+ */
+void ipc_endpoints_release(struct process *p);
+
+/*
+ * IPC_OK while `index` names a live endpoint or region, IPC_ERR_BAD_CAP once
+ * it names nothing. Touches nothing, so a holder of somebody else's endpoint
+ * can ask whether it is still there without calling it.
+ */
+int ipc_cap_check(struct thread *t, cap_t index);
 
 /*
  * Send and wait for the reply. Blocks until a receiver takes the message and

@@ -313,6 +313,16 @@ static inline long kosmos_cap_drop(long cap)
 }
 
 /*
+ * 0 while the capability names an endpoint or a region, negative once what
+ * it named has gone - and an endpoint goes with the process that made it.
+ * Asked without using it: nothing is sent, received or dropped.
+ */
+static inline long kosmos_cap_check(long cap)
+{
+    return sys1(SYS_CAP_CHECK, cap);
+}
+
+/*
  * A shared region out of the share window. The pages are the region's and
  * are not freed here; this is losing sight of them, not disposing of them.
  */

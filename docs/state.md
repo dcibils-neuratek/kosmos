@@ -8,6 +8,69 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### A name in `/app` outlives no process
+
+A window manager started a second time could not be found by name. Seen on
+11 September in the display harness's order - `wm`, Control-C, then
+`wm desktop,topbar` - where the Tracker that `desktop.lua` starts with `run`
+died at once with `tracker: no such path: /app/wm`. `wm.lua` destroys its
+endpoint on Control-C and never unregisters, so the registry kept `wm`, filed
+the second window manager as `wm2`, and answered a lookup of `wm` with a
+capability that named nothing. A killed process was worse, and nothing had
+shown it: the kernel never destroyed a dead process's endpoints at all, so a
+client waiting on one waited for ever.
+
+Two halves, one decision in the README:
+
+- **An endpoint ends with the process that made it.** `struct endpoint`
+  records its maker, and `process_exit` destroys every endpoint the process
+  made before a parent's wait can return. The maker rather than the
+  receiver: the four endpoints the kernel makes at boot and the five init
+  makes outlive the servers they are handed to.
+- **The registry asks the kernel instead of waiting to be told.**
+  `SYS_CAP_CHECK` (43) resolves an index and uses nothing, and `appfs` drops
+  every entry whose capability no longer names anything before it answers a
+  request. A window manager started again is `wm`.
+
+Checked in `make test` by "ipc: an endpoint ends with its process" and "app:
+a dead holder's name is taken back" - 149 tests now - and in the display
+harness by a `registry` phase that starts a window manager twice and has a
+`run` child look up `/app/wm` and call it - 81 checks now. On the tree as it
+was, both suite tests failed, and the phase failed on its second start with
+`no such path: /app/wm` and `/app` holding `wm wm2`. `testing.md` §18.20 has
+the controls. The kernel is 6997 lines of code, 47 more.
+
+**And a kill on x86-64 now ends a process that is in a syscall.** `make test`
+failed the registry test on x86-64 alone: the `syscall` stub returned with
+`sysretq` and never checked for a kill, so a holder killed while it was
+blocked came back from the aborted call, blocked again, and was never ended.
+`trap_syscall_leave` checks after every syscall, as AArch64 does, and the
+x86-64 suite passes 145 of 145.
+
+Open, each a task of its own:
+
+- **`sys.wait` reports a killed child as "no children".** A killed or faulted
+  process ends with -1 and `l_wait` treats every negative code as an error,
+  so the new tests wait for killed children without checking the id.
+- **Any program can end any application's endpoint with `unregister`.** The
+  request is a name, and `appfs` destroys whatever is registered under it -
+  the window manager's included.
+- **`ipc_endpoint_create` claims a pool slot without a lock**, under a
+  comment that still says the kernel is single-core.
+- **A child keeps pointing at its parent's slot after the parent ends.**
+  Nothing reparents it, so whichever process takes the slot next may wait
+  for it and kill it. A negative-control run showed it: one test's leftover
+  registry was reported to the next test as its own child.
+
+The desktop got around this in 0.10.28 by having the window manager launch
+Tracker, which hands the child the live endpoint - the right way round
+whatever the registry does. The mechanism it stopped relying on, a `run`
+child reaching `/app/wm` after a restart, is what the `registry` phase now
+checks, and it works.
+
+**Next, as queued**: a launcher option to scale Doom and Quake, then the app
+profiler.
+
 ### The wallpaper, behind the icons
 
 A wallpaper chosen in Appearance did nothing once the desktop existed, and
@@ -40,9 +103,6 @@ Open:
 - **Blending the desktop costs more than copying it**, over the area no
   window covers. Nothing has measured it; `frames` is the instrument when
   something does.
-
-**Next, as queued**: a launcher option to scale Doom and Quake, then the app
-profiler.
 
 ### The desktop: below the strip, icons where they are put, a Trash
 

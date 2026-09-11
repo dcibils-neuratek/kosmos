@@ -58,6 +58,28 @@ struct endpoint {
     unsigned generation;
 
     /*
+     * The process that made it, and an endpoint ends with that process.
+     *
+     * Nothing else could tell. A capability names an endpoint and not
+     * whoever receives on it, so a process that died without destroying its
+     * own - killed, faulted, or unwound by an error nothing caught - left
+     * them in the pool with nobody to answer: a client already waiting for a
+     * reply waited for ever, and every capability to them still resolved.
+     * `process_exit` destroys them now, which wakes the first and turns the
+     * second stale.
+     *
+     * The maker rather than the receiver, and the difference matters. Every
+     * server's endpoint is made by somebody else and handed over - four by
+     * the kernel before init exists, the rest by init - so a server that
+     * dies does not take its endpoint with it, which is what restarting one
+     * on the same endpoint, `design.md` §10's level 2, needs.
+     *
+     * NULL for one a kernel thread made, as those four are; they end only
+     * when something destroys them.
+     */
+    struct process *owner;
+
+    /*
      * Three queues, and the third is the one that is easy to forget.
      *
      * Senders and receivers waiting to meet are the obvious two. A sender
@@ -562,6 +584,7 @@ cap_t ipc_endpoint_create(void)
             cap_t index;
 
             endpoints[i].in_use = true;
+            endpoints[i].owner = self->process;
             endpoints[i].senders = NULL;
             endpoints[i].receivers = NULL;
             endpoints[i].awaiting_reply = NULL;
@@ -602,56 +625,71 @@ static void deliver(struct thread *t, int status)
     thread_wake(t);
 }
 
+/*
+ * Everything blocked on an endpoint woken with IPC_ERR_GONE, and the endpoint
+ * gone. The caller holds its lock.
+ *
+ * The trap roadmap.md names for M3. Everything blocked on this endpoint has
+ * to be woken with an error, or it waits forever for a server that no longer
+ * exists, and a server that cannot be restarted takes the design's whole
+ * recovery story with it.
+ *
+ * The whole teardown under one hold, and it has to be. Emptying three queues
+ * and then invalidating the endpoint is one operation: a sender arriving
+ * between the last `queue_pop` and `in_use = false` would join a queue nobody
+ * will ever drain, and block for ever on a server that no longer exists.
+ * That is the exact failure this was written to prevent, one core later.
+ */
+static void teardown(struct endpoint *ep)
+{
+    struct thread *t;
+
+    while ((t = queue_pop(&ep->senders)) != NULL) {
+        deliver(t, IPC_ERR_GONE);
+    }
+
+    while ((t = queue_pop(&ep->receivers)) != NULL) {
+        deliver(t, IPC_ERR_GONE);
+    }
+
+    while ((t = queue_pop(&ep->awaiting_reply)) != NULL) {
+        deliver(t, IPC_ERR_GONE);
+    }
+
+    /*
+     * Bumped before the slot is freed, so every capability naming it is
+     * already stale by the time the slot can be handed out again.
+     */
+    ep->generation++;
+    ep->owner = NULL;
+    ep->in_use = false;
+}
+
 int ipc_endpoint_destroy(cap_t index)
 {
     struct thread *self = thread_current();
     struct endpoint *ep = resolve(self, index);
-    struct thread *t;
+    unsigned long epflags;
 
     if (ep == NULL) {
         return IPC_ERR_BAD_CAP;
     }
 
+    epflags = spin_lock(&ep->lock);
+
     /*
-     * The trap roadmap.md names for this milestone. Everything blocked on
-     * this endpoint has to be woken with an error, or it waits forever for a
-     * server that no longer exists, and a server that cannot be restarted
-     * takes the design's whole recovery story with it.
+     * Looked at again with the lock held. `resolve` read without it, and
+     * since then the process that made this endpoint may have ended on
+     * another core and taken it down - and the slot may already be a new
+     * endpoint belonging to somebody else, which destroying would end.
      */
-    {
-        unsigned long epflags = spin_lock(&ep->lock);
-
-        /*
-         * The whole teardown under one hold, and it has to be.
-         *
-         * Emptying three queues and then invalidating the endpoint is one
-         * operation: a sender arriving between the last `queue_pop` and
-         * `in_use = false` would join a queue nobody will ever drain, and
-         * block for ever on a server that no longer exists. That is the
-         * exact failure this function was written to prevent, one core
-         * later.
-         */
-        while ((t = queue_pop(&ep->senders)) != NULL) {
-            deliver(t, IPC_ERR_GONE);
-        }
-
-        while ((t = queue_pop(&ep->receivers)) != NULL) {
-            deliver(t, IPC_ERR_GONE);
-        }
-
-        while ((t = queue_pop(&ep->awaiting_reply)) != NULL) {
-            deliver(t, IPC_ERR_GONE);
-        }
-
-        /*
-         * Bumped before the slot is freed, so every capability naming it is
-         * already stale by the time the slot can be handed out again.
-         */
-        ep->generation++;
-        ep->in_use = false;
-
+    if (!ep->in_use || self->caps[index].generation != ep->generation) {
         spin_unlock(&ep->lock, epflags);
+        return IPC_ERR_BAD_CAP;
     }
+
+    teardown(ep);
+    spin_unlock(&ep->lock, epflags);
 
     /* The granter's own capability is cleared; the others go stale on their
      * next use, which is what the generation check is for. */
@@ -659,6 +697,63 @@ int ipc_endpoint_destroy(cap_t index)
     self->caps[index].endpoint = NULL;
 
     return IPC_OK;
+}
+
+/*
+ * Every endpoint a process made, destroyed as it ends. See `owner`.
+ *
+ * Read without the lock first, and that is safe for one reason: an
+ * endpoint's owner only becomes `p` when `p` creates it, and `p` is the
+ * process ending, on this thread, so it is creating nothing. Whatever else
+ * the unlocked read sees is not `p` and stays that way, so the lock is taken
+ * only for the endpoints that are.
+ */
+void ipc_endpoints_release(struct process *p)
+{
+    unsigned i;
+
+    if (p == NULL) {
+        return;
+    }
+
+    for (i = 0; i < ENDPOINT_MAX; i++) {
+        struct endpoint *ep = &endpoints[i];
+        unsigned long epflags;
+
+        if (ep->owner != p) {
+            continue;
+        }
+
+        epflags = spin_lock(&ep->lock);
+
+        if (ep->in_use && ep->owner == p) {
+            teardown(ep);
+        }
+
+        spin_unlock(&ep->lock, epflags);
+    }
+}
+
+/*
+ * Whether an index still names something, without using it.
+ *
+ * `resolve` is the whole answer - the bounds test and generation match every
+ * operation here makes - and nothing is sent, received or dropped. That is
+ * the point: a holder of somebody else's endpoint cannot find out by calling
+ * it, which blocks on one that is live, or by receiving on it, which could
+ * take a message meant for its server.
+ */
+int ipc_cap_check(struct thread *t, cap_t index)
+{
+    if (t == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    if (resolve(t, index) != NULL || ipc_resolve_memory(t, index) != NULL) {
+        return IPC_OK;
+    }
+
+    return IPC_ERR_BAD_CAP;
 }
 
 int ipc_call(cap_t index, const struct message *msg, struct message *reply)

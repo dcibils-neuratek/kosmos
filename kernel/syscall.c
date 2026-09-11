@@ -1579,6 +1579,20 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = ipc_cap_drop(thread_current(), (cap_t)sc->arg[0]);
         break;
 
+    case SYS_CAP_CHECK:
+        /*
+         * Whether a capability this thread holds still names something.
+         *
+         * For a holder of somebody else's endpoint - the /app registry holds
+         * one for every name it answers to - which had no way to ask:
+         * calling it blocks on one that is live, and receiving on it could
+         * take a message meant for its server. No permission check, for
+         * SYS_CAP_DROP's reason: the index resolves against this thread's
+         * own table.
+         */
+        result = ipc_cap_check(thread_current(), (cap_t)sc->arg[0]);
+        break;
+
     case SYS_CALL:
         result = sys_call(p, (cap_t)sc->arg[0], sc->arg[1], sc->arg[2]);
         break;

@@ -1140,6 +1140,22 @@ void process_exit(struct process *p, int code)
     thread_current()->space = NULL;
 
     /*
+     * The endpoints it made, ended with it.
+     *
+     * Before its capabilities, because this is not about its own table:
+     * those endpoints are in other processes' tables too, and some of those
+     * processes are blocked on them. A server killed with a client waiting
+     * for its answer left the client waiting for ever, and a registry
+     * holding its name kept a capability that still resolved. Destroying
+     * them wakes the first with an error and makes the second stale, which
+     * is how anything else learns that this process has gone.
+     *
+     * And before `exited` is published below, so a parent whose wait
+     * returns finds them already gone.
+     */
+    ipc_endpoints_release(p);
+
+    /*
      * Capabilities before memory. A shared region's pages come back only
      * when the last capability naming it is dropped, and this thread's are
      * about to stop existing - so a process that exits holding one would

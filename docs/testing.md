@@ -850,3 +850,68 @@ already. With the backdrop occluding again and copied rather than blended,
 the phase fails with `the window manager's stamp in the bottom-right corner
 is not visible through the desktop`, and every other check in it still
 passes.
+
+## 18.20 A name in /app, and what a process takes with it
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| "ipc: an endpoint ends with its process" | `make test` | a server that takes a client's call and is killed before answering gives its endpoint back to the pool, the client is woken with "the endpoint was destroyed", and the capability left in the parent names nothing |
+| "app: a dead holder's name is taken back" | `make test` | the real `appfs`, spawned as role 14, gives `wm` again after a holder that destroyed its endpoint without unregistering and after one that was killed, and a process holding only the registry looks `wm` up and reaches the holder still there |
+| `registry` in `tools/run_screenshot.py`, 3 checks | `make screenshot`, and so `make prepush` | `wm`, Control-C, `wm` again: each time, a program the window manager launched starts another with `run` and no shares, which looks up `/app/wm`, calls it, and says what `/app` holds |
+
+**The display phase's first start is its control.** It runs before any other
+phase starts a window manager, so nothing in the registry can be stale yet:
+the probe has to be answered there, and a failure on the second start is the
+restart's. It is checked by what the probe prints rather than by the screen,
+because nothing in it opens a window.
+
+**All three were run on the tree as it was, before either half of the fix.**
+The two suite tests were the two of 149 that failed, and the phase passed its
+first start and failed its second with `no such path: /app/wm` and `/app`
+holding `['wm', 'wm2']` - the Tracker's failure, reproduced.
+
+**And each half has been taken away on its own, on the test image.**
+
+- *`process_exit` not calling `ipc_endpoints_release`:* "ipc: an endpoint
+  ends with its process" fails with `the killed server's endpoint was not
+  given back: 10 in use, 9 before`, and the registry test fails at its killed
+  holder with `a holder that was killed kept its name: the next was
+  registered as wm2`. The display phase was not run for this one, and should
+  not notice it: a window manager stopped with Control-C destroys its own
+  endpoint on the way out, which is why the kernel's half needs a test of
+  its own.
+- *`appfs` not calling `forget_the_dead`:* the registry test fails at its
+  first holder with `a holder that destroyed its endpoint and left kept its
+  name: the next was registered as wm2`, and the kernel test passes.
+
+**The first of those controls found a check that failed without saying
+why.** The kernel test counted the pool last, behind a receive with a
+500-tick timeout, and with the kernel's half removed that receive had not
+come back when the suite gave up on the role: `not ok`, and nothing else.
+The count needs no waiting - `process_exit` gives endpoints back before a
+wait can return - so it comes first now, and the same control produces the
+sentence above.
+
+**Three failures in those runs were not these tests.** `sched: the policy is
+pluggable` failed in two of the three control runs and passed in the fixed
+and unfixed ones; `state.md` has recorded it failing about one run in three
+for a long time. And with `forget_the_dead` removed, the two tests after the
+registry test failed too. The first says why: `child 156 exited 1`, where 156
+was the failed test's `appfs`. Its endpoint had ended with the role that made
+it, so it stopped, and its end was reported to the next role as that role's
+own child, because a child keeps pointing at its parent's slot after the
+parent ends. The second failed without a message. `state.md` has the fault
+as an open item.
+
+**`make test` then failed on x86-64 alone, and the registry test had found a
+fault in the kernel rather than in itself.** The suite passed 149 of 149 on
+AArch64 and gave `not ok 119 - app: a dead holder's name is taken back` on
+x86-64, with no message: the role never ended. Its killed holder serves in a
+loop, and on x86-64 a kill was checked only when an interrupt returned to
+ring 3 - the `syscall` stub in `arch/x86_64/user.S` went back with `sysretq`
+and never looked. So the holder came back from its aborted `receive`, went
+straight into another, and was waited for for ever. The kernel test had shown
+the same thing more quietly: its killed server ended with its own `exit(1)`
+rather than -1. `trap_syscall_leave` makes the check after every syscall, as
+AArch64 always has, and the x86-64 suite passes 145 of 145 with every killed
+process ending -1. The failing run is that fix's control.

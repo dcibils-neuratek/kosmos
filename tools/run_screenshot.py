@@ -1045,6 +1045,117 @@ def find_colour_anywhere(width, height, px, want):
 SELECTED = (0x1f, 0x6f, 0xeb)
 
 
+def check_registry(guest):
+    """A window manager started a second time is found by name.
+
+    `wm` registers itself in /app, and a program started with `run` and
+    handed nothing else reaches `/app/wm` by asking the registry for that
+    name - which is how `desktop` starts the Tracker. Stopped with
+    Control-C, a window manager destroys its endpoint and does not
+    unregister, and the registry used to keep the name: the next one was
+    filed as `wm2`, a lookup of `wm` was handed an endpoint that had ended,
+    and the Tracker died at once with "no such path: /app/wm" under a
+    desktop that was running.
+
+    So this starts a window manager, stops it, and starts another. Each
+    time, the program `wm` launches starts a second one with `run` and no
+    shares, and that one looks up /app/wm, calls it, and prints what /app
+    holds.
+
+    **The first start is the control, which is why this phase comes before
+    any other that starts a window manager.** Nothing in the registry can be
+    stale yet, so the probe has to be answered there; a failure on the
+    second start is then the restart's and not the probe's.
+
+    Checked by what the program says rather than by the screen, because
+    nothing here opens a window: a lookup that succeeds and an endpoint that
+    answers are the whole of the question.
+    """
+    # The marker is split in the source, so the echo of the line that writes
+    # the program cannot be mistaken for the program printing it.
+    probe = (
+        "local answer, why = fs.send('/app/wm', { type = 'windows' }) "
+        "local said = answer and (answer.ok and 'answered' "
+        "or tostring(answer.error)) or tostring(why) "
+        "print('registry' .. '-probe: ' .. said .. ' | ' "
+        ".. table.concat(fs.list('/app') or {}, ' ') .. ' |')"
+    )
+    launcher = (
+        "local ok, why = run('/ramfs/probe.lua', '', false) "
+        "if not ok then print('registry' .. '-probe: ' .. tostring(why) "
+        ".. ' | |') end"
+    )
+
+    guest.type("fs.write('/ramfs/probe.lua', %r)" % probe)
+    time.sleep(2)
+    guest.type("fs.write('/ramfs/viarun.lua', %r)" % launcher)
+    time.sleep(2)
+
+    def start_and_probe(which):
+        mark = len(guest.seen)
+        guest.type("wm /ramfs/viarun.lua")
+
+        deadline = time.monotonic() + 40
+        found = None
+
+        while found is None and time.monotonic() < deadline:
+            time.sleep(0.3)
+            guest._read_available()
+            found = re.search(r"registry-probe: ([^\n|]*)\|([^\n|]*)\|",
+                              guest.seen[mark:])
+
+        if found is None:
+            raise Failure(
+                f"the {which} window manager started, and the program run "
+                "under it never said what it found at /app/wm.\n"
+                "--- what the guest said ---\n" + guest.seen[mark:][-800:])
+
+        # Back to the shell, the way every phase here ends.
+        stop = len(guest.seen)
+        guest.proc.stdin.write(b"\x03")
+        guest.proc.stdin.flush()
+
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[stop:]:
+                break
+
+            time.sleep(0.3)
+        else:
+            raise Failure(f"Control-C did not get the screen back from the "
+                          f"{which} window manager.")
+
+        return found.group(1).strip(), found.group(2).split()
+
+    said, names = start_and_probe("first")
+
+    if said != "answered":
+        raise Failure(
+            "under the first window manager of this boot, a program started "
+            f"with `run` could not reach it through /app/wm: {said}. /app "
+            f"held {names}. Nothing in the registry can be stale yet, so the "
+            "lookup or the probe is what broke, not a restart.")
+
+    said, names = start_and_probe("second")
+
+    if said != "answered":
+        raise Failure(
+            "under a second window manager, a program started with `run` "
+            f"could not reach it through /app/wm: {said}. /app held {names}. "
+            "The registry is handing out a name whose holder has ended.")
+
+    if names != ["wm"]:
+        raise Failure(
+            f"/app held {names} under the second window manager, where `wm` "
+            "alone belongs. The first one's name was kept after it ended, so "
+            "the second was registered under another.")
+
+    return 3
+
+
 def check_widgets(guest):
     """The UI kit, driven from the keyboard.
 
@@ -3575,6 +3686,9 @@ def main():
         stop_checks = phase("interrupt", check_interrupt)
         bar_updates = phase("status_bar", check_status_bar)
         editor_checks = phase("editor", check_editor)
+        # Before `widgets`, the first phase that starts a window manager:
+        # this one's first start is its control, and needs a clean registry.
+        registry_checks = phase("registry", check_registry)
         widget_checks = phase("widgets", check_widgets)
         script_checks = phase("scripting", check_scripting)
         idle_checks = phase("idle", check_idle)
@@ -3609,7 +3723,7 @@ def main():
              + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
-             + three_d_checks)
+             + three_d_checks + registry_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -3625,6 +3739,8 @@ def main():
           f"{latency_checks} on scheduling latency, "
           f"{editor_checks} on the machine writing and running its own "
           f"program, "
+          f"{registry_checks} on a window manager found by name after a "
+          f"restart, "
           f"{widget_checks} on the widget kit, "
           f"{script_checks} on scripting a running application, "
           f"{replicant_checks} on a replicant moved between processes, "

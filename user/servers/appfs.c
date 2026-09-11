@@ -13,6 +13,11 @@
  * neither is marshalled, because the kernel translates an index between two
  * processes and a number copied into a struct would mean nothing on the
  * other side. `appproto.h` is small for that reason.
+ *
+ * **A name lasts as long as the endpoint registered under it.** Nobody has
+ * to unregister for that to be true, which matters: the window manager
+ * stopped with Control-C does not, and a process that is killed cannot. See
+ * `forget_the_dead`.
  */
 
 #include <stdbool.h>
@@ -61,6 +66,10 @@ static void copy_name(char *dst, const char *src)
  * A second application of the same name gets a number rather than replacing
  * the first: two clocks are two clocks.
  *
+ * Only while the first is still there. A name whose holder has gone was
+ * taken out before this runs, so a window manager started again is `wm`
+ * rather than `wm2`.
+ *
  * The suffix is appended in place with the terminator recomputed, because
  * there is no `snprintf` worth pulling in for one digit and a name that
  * filled the array must still end.
@@ -96,6 +105,45 @@ static void unique(char *name)
     }
 }
 
+/*
+ * Every entry whose endpoint has gone, taken out before a request is
+ * answered.
+ *
+ * This server used to keep them, and a name outlived what it named. The
+ * window manager registers as `wm` and, stopped with Control-C, destroys its
+ * endpoint without unregistering: the next one was filed as `wm2`, and a
+ * lookup of `wm` handed out a capability that named nothing. The Tracker
+ * `desktop` starts died of it - "no such path: /app/wm", under a desktop
+ * that was running.
+ *
+ * So the registry does not wait to be told. The kernel ends an endpoint
+ * with the process that made it, and `kosmos_cap_check` asks whether each
+ * capability held here still names one, without using it. Calling the
+ * application to find out would make this a process any hung application
+ * could stop - the same reason `lookup` hands an endpoint out rather than
+ * forwarding to it.
+ *
+ * At the top of every request rather than on a clock, because nothing sees
+ * a stale entry without asking: `register` finds the name free, `lookup`
+ * and `list` find only the living, and a full table has had its dead slots
+ * back before it says it is full. A holder that ends between the sweep and
+ * the reply is handed out once more, and fails the way any stale capability
+ * does.
+ */
+static void forget_the_dead(void)
+{
+    unsigned i;
+
+    for (i = 0; i < APP_MAX; i++) {
+        if (apps[i].in_use && kosmos_cap_check(apps[i].cap) != 0) {
+            /* Dropped, not destroyed: the endpoint has already gone, and
+             * what comes back is the slot in this server's own table. */
+            (void)kosmos_cap_drop(apps[i].cap);
+            memset(&apps[i], 0, sizeof(apps[i]));
+        }
+    }
+}
+
 static void answer(const struct message *in, uint64_t sender, long cap)
 {
     struct message out;
@@ -118,6 +166,8 @@ static void answer(const struct message *in, uint64_t sender, long cap)
 
     memcpy(name, req->name, APP_NAME_MAX);
     name[APP_NAME_MAX - 1] = '\0';
+
+    forget_the_dead();
 
     switch (req->op) {
     case APP_OP_REGISTER:

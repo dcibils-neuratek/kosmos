@@ -237,6 +237,22 @@ static void die_if_killed(void)
 }
 
 /*
+ * The same, on the way back from a syscall.
+ *
+ * `syscall_entry` leaves with `sysretq` and never reaches `trap_handle`, so
+ * the paragraph above was true of interrupts and not of syscalls: a killed
+ * process ended only when a timer interrupt happened to find it in ring 3.
+ * One that came back from its aborted call and went straight into another -
+ * a server looping on `receive` - never did, and its parent waited for it
+ * for ever. `arch/aarch64/trap.c` makes this check after every syscall, and
+ * this is that check.
+ */
+void trap_syscall_leave(void)
+{
+    die_if_killed();
+}
+
+/*
  * The armed-fault slot. A single one on purpose, for the reason
  * `arch/aarch64/trap.c` gives: a test arms it, causes exactly one fault,
  * and disarms. Nesting would mean a fault inside the handler, which is a

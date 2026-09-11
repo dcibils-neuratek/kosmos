@@ -201,6 +201,15 @@ syscall_entry:
     movq    %rsp, %rdi
     call    syscall_dispatch
 
+    /*
+     * A kill takes effect here, before ring 3, as it does after every
+     * AArch64 syscall. Without it a process killed while blocked came back
+     * from the aborted call and could block again straight away, for ever.
+     * The result is still in the frame, so this may clobber what it likes,
+     * and rsp is where it was for the call above.
+     */
+    call    trap_syscall_leave
+
     movq    48(%rsp), %rax
     addq    $72, %rsp
 

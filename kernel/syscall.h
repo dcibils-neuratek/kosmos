@@ -192,7 +192,10 @@
 #define SYS_NET_RECV   41   /* (ptr, max)             -> bytes, or none     */
 
 #define SYS_PTR_SPEED  42   /* (units)                -> the speed now      */
-#define SYS_MAX         43
+
+/* Whether a capability still names something, asked without using it. */
+#define SYS_CAP_CHECK  43   /* (cap)                  -> 0 or error         */
+#define SYS_MAX         44
 
 /*
  * What a spawn may hand its child beyond capabilities.

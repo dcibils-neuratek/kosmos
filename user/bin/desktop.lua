@@ -53,12 +53,17 @@ end
 -- Started by the window manager, not by `run`.
 --
 -- `run` gives the child a namespace in which `/app/wm` is looked up in the
--- registry by name - and after a window manager has been stopped and another
--- started, that name can still be the old one's. So the desktop worked on
--- the first `wm` of a boot and on the second Tracker died at once saying
--- "no such path: /app/wm". A launch through the window manager hands the
--- child this window manager's endpoint directly, which is how everything
--- else started from the desktop gets it.
+-- registry by name, and a name is not the same thing as *this* window
+-- manager. It was the bug that started this: the registry kept a name whose
+-- holder had gone, so the desktop worked on the first `wm` of a boot and on
+-- the second Tracker died at once saying "no such path: /app/wm".
+--
+-- The registry is fixed - a name lasts as long as the endpoint registered
+-- under it - and this is still right, because a launch through the window
+-- manager hands the child *this* window manager's endpoint directly, which
+-- is how everything else started from the desktop gets it. A lookup would
+-- find whichever one holds the name, which is only the same thing while
+-- there is one.
 --
 local ok, why = fs.send("/app/wm", { type = "launch", program = "tracker",
                                      args = "desktop" })
