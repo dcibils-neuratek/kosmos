@@ -9,8 +9,9 @@ Licence:  MIT — rxi 2020, Francesco Abbate 2020-2022, Lite XL Team
 follows: what is in the tree is what the author released, and everything done
 to it is a build step somebody can read. No Kosmos copyright line is added to
 these files - adding one would be modifying them, which is the one thing that
-rule forbids. `src/` and `data/` are both a `diff -r` away from upstream and
-that is checked rather than asserted.
+rule forbids. `src/` and `data/` are both a `diff -r` away from upstream -
+`data/` with two licence files added beside its fonts, named under *The
+fonts* - and that is checked rather than asserted.
 
 ## Why v2.1.7 and not the branch tip
 
@@ -73,3 +74,23 @@ because a Kosmos process has one thread and no way to make a second.
 twice - which is the rule working as intended rather than an oversight, since
 deduplicating it would mean editing what upstream released. `icons.ttf` is
 Lite XL's own and has no equivalent here.
+
+**Two files in `data/fonts/` are Kosmos's**, so `diff -r` against upstream
+shows them and nothing else: `LICENSE.FiraSans` and `LICENSE.icons`. Upstream
+ships neither face with a licence beside it, and the build carries a face
+only with one there - `tools/assets2c.py` looks for `LICENSE.<stem>` - so
+these record the terms where the build looks.
+
+- **`LICENSE.FiraSans`** is transcribed from upstream's own
+  `licenses/licenses.md` at this tag: the Fira Sans notice and the SIL Open
+  Font License 1.1. The font's name table says 2012-2016 where that notice
+  says 2012-2015; the notice is kept as upstream wrote it.
+- **`LICENSE.icons`** has no upstream notice to transcribe, and says so. It
+  records the evidence with the terms: the font's name table says Fontello
+  generated it; a Lite XL maintainer wrote in discussion #1159 that the icons
+  are Font Awesome 4, whose font files are SIL OFL 1.1; 20 of its glyph names
+  are Fontello's names for those icons, and the other 5 are named for Lite XL.
+
+A `LITEXL=1` image carries Fira Sans and `icons.ttf` in `litexl_fonts_table`,
+not in the system's `fonts_table` - the Makefile says why, beside
+`FONT_FILES`.

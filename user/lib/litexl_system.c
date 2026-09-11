@@ -382,40 +382,6 @@ int luaopen_regex(lua_State *L)
 
 void api_load_libs(lua_State *L);
 
-/*
- * A font's bytes have to outlive the call.
- *
- * `stb_truetype` reads the file for as long as the face exists and does not
- * copy it, so the Lua string handed in here must not be collected. It is
- * anchored in a registry table; nothing removes it, which is correct for
- * the two or three faces an editor opens and would not be for a font
- * manager.
- */
-static const char *const FONTS_KEY = "kosmos.litexl.fonts";
-
-static int l_provide_font(lua_State *L)
-{
-    const char *path = luaL_checkstring(L, 1);
-    size_t      len;
-    const char *bytes = luaL_checklstring(L, 2, &len);
-
-    lua_getfield(L, LUA_REGISTRYINDEX, FONTS_KEY);
-
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
-        lua_newtable(L);
-        lua_pushvalue(L, -1);
-        lua_setfield(L, LUA_REGISTRYINDEX, FONTS_KEY);
-    }
-
-    lua_pushvalue(L, 2);
-    lua_setfield(L, -2, path);      /* anchored for as long as the state */
-    lua_pop(L, 1);
-
-    litexl_font_provide(path, bytes, len);
-    return 0;
-}
-
 /* `attach_window(pixels, w, h, pitch)` - a `gfx` surface's own memory. */
 uint32_t *kosmos_surface_pixels(lua_State *L, int index,
                                 unsigned *w, unsigned *h, unsigned *pitch);
@@ -441,17 +407,15 @@ static int l_swap_window(lua_State *L)
 }
 
 /*
- * `provide_image_font(name [, as])` - a face compiled into the image.
+ * `provide_image_font(name)` - a face compiled into the image.
  *
- * The same table `gfx` draws from, which `tools/assets2c.py` writes out of
- * `assets/fonts/` with each face's licence beside it - so a font the system
- * already carries reaches the editor without a disk and without a second
- * copy. The bytes are static, so nothing has to anchor them the way
- * `provide_font` anchors a string.
- *
- * `as` provides it under another file name, which is how the Lua side
- * stands one face in for another and says so where it does. Returns
- * whether the image had the face at all.
+ * Two tables, both written by `tools/assets2c.py` with each face's licence
+ * beside it in the tree. `fonts_table`, out of `assets/fonts/`, is the one
+ * `gfx` draws from, so JetBrains Mono reaches the editor with no second
+ * copy. `litexl_fonts_table` is Lite XL's own UI and icon faces, which only
+ * a `LITEXL=1` image carries, kept apart so that `gfx.fonts()` never offers
+ * them. The bytes are static, so nothing has to anchor them. Returns whether
+ * the image had the face at all.
  *
  * The struct is the shape `assets2c.py` emits, and `gfx.c` declares it the
  * same way.
@@ -463,19 +427,25 @@ struct kosmos_font_asset {
 };
 
 extern const struct kosmos_font_asset fonts_table[];
+extern const struct kosmos_font_asset litexl_fonts_table[];
 
 static int l_provide_image_font(lua_State *L)
 {
+    static const struct kosmos_font_asset *const tables[] = {
+        fonts_table, litexl_fonts_table,
+    };
     const char *name = luaL_checkstring(L, 1);
-    const char *as   = luaL_optstring(L, 2, name);
+    size_t      t;
     unsigned    i;
 
-    for (i = 0; fonts_table[i].name != NULL; i++) {
-        if (strcmp(fonts_table[i].name, name) == 0) {
-            litexl_font_provide(as, fonts_table[i].bytes,
-                                fonts_table[i].length);
-            lua_pushboolean(L, 1);
-            return 1;
+    for (t = 0; t < sizeof tables / sizeof tables[0]; t++) {
+        for (i = 0; tables[t][i].name != NULL; i++) {
+            if (strcmp(tables[t][i].name, name) == 0) {
+                litexl_font_provide(name, tables[t][i].bytes,
+                                    tables[t][i].length);
+                lua_pushboolean(L, 1);
+                return 1;
+            }
         }
     }
 
@@ -530,7 +500,6 @@ void kosmos_litexl_kit(lua_State *L)
         { "attach_window", l_attach_window },
         { "swap_window",   l_swap_window   },
         { "provide_image_font", l_provide_image_font },
-        { "provide_font",  l_provide_font  },
         { "take_damage",   l_take_damage   },
         { NULL, NULL }
     };

@@ -19,7 +19,8 @@ queue losing a Control release: the key reached the window and the command
 never ran.
 
 Only for an image built with `make LITEXL=1`, which the ordinary image is not,
-so this is `make litexl-check` rather than a phase of `make test`.
+so this is `make litexl-check`, which `make prepush` runs, rather than a phase
+of `make test`.
 
 Usage: run_litexl.py [image]
 """
@@ -81,6 +82,8 @@ def start(guest, spec):
         if bad in said:
             raise Failure(f"Lite XL did not start ({bad!r}):\n{said[-1500:]}")
 
+    return said
+
 
 def stop_and_read(guest, path):
     """Control-C stops the desktop; then the file, as the prompt sees it."""
@@ -111,8 +114,16 @@ def edit_a_file(image):
         if not said_after(guest, mark, PROMPT, 20):
             raise Failure("the prompt did not come back after making the file.")
 
-        start(guest, "litexl:/home/notes.txt")
+        said = start(guest, "litexl:/home/notes.txt")
         checks += 2                          # a window, and an editor
+
+        # Lite XL's own faces, out of the image rather than stood in for.
+        for face in ("FiraSans-Regular.ttf", "icons.ttf"):
+            if f"litexl: font {face}: from the image" not in said:
+                raise Failure(f"{face} did not come from the image:\n"
+                              + said[-1500:])
+
+        checks += 1
 
         keys(guest, "added")
         soak(guest, 3)
@@ -182,8 +193,9 @@ def main():
         print(f"FAIL: {e}")
         return 1
 
-    print(f"PASS: {checks} checks on Lite XL (a window, a file edited and "
-          f"saved, Control-N, and a new document saved under a name).")
+    print(f"PASS: {checks} checks on Lite XL (a window, its own faces out of "
+          f"the image, a file edited and saved, Control-N, and a new "
+          f"document saved under a name).")
     return 0
 
 

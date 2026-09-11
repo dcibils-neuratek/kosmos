@@ -686,9 +686,10 @@ by writing more code.
 that arrives on its own.
 
 **A push carries a picture. `make prepush`** runs the suites, the display
-harness and `make shot`, which puts a 1920x1080 screenshot of the desktop -
-Tracker, the widget gallery, Processes, Monitor and the cube, tiled - into
-`docs/screenshots/` under the date and the revision.
+harness, `make litexl-check` and `make shot`, which puts a 1920x1080
+screenshot of the desktop - Tracker, the widget gallery, Processes, Monitor
+and the cube, tiled - into `docs/screenshots/` under the date and the
+revision.
 
 It is a make target rather than a habit because it is the step that would be
 forgotten: nothing fails without it, and a series of these with gaps in it

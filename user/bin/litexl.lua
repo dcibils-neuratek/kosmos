@@ -461,34 +461,17 @@ end
 -- The faces, handed over.
 --
 -- `ren_font_load` takes a filename and there is no `fopen`, so each face is
--- given to the renderer by name. From the image when it carries the face -
--- `assets/fonts/`, where every font has its licence beside it - then from
--- `/home/fonts/` for one somebody put there, and failing both a face the
--- image does carry stands in, and says so. Lite XL's own UI and icon faces
--- are in the vendored tree without a licence file beside them, which is why
--- the image does not carry them.
+-- given to the renderer by name, out of the image: JetBrains Mono from
+-- `assets/fonts/`, which the whole system draws from, and Lite XL's own UI
+-- and icon faces from a table only a `LITEXL=1` image carries. Every one has
+-- its licence beside it in the tree. Said either way, so the boot log
+-- records where each face came from.
 --------------------------------------------------------------------------
 
-for _, face in ipairs({ { "JetBrainsMono-Regular.ttf", nil },
-                        { "FiraSans-Regular.ttf", "IBMPlexSans-Regular.ttf" },
-                        { "icons.ttf", "JetBrainsMono-Regular.ttf" } }) do
-  local want, stand_in = face[1], face[2]
-  local how
-
-  if lx.provide_image_font(want) then
-    how = "from the image"
-  else
-    local bytes = fs.read("/home/fonts/" .. want)
-
-    if type(bytes) == "string" then
-      lx.provide_font(want, bytes)
-      how = "from /home/fonts"
-    elseif stand_in and lx.provide_image_font(stand_in, want) then
-      how = stand_in .. " standing in"
-    else
-      how = "MISSING"
-    end
-  end
+for _, want in ipairs({ "JetBrainsMono-Regular.ttf", "FiraSans-Regular.ttf",
+                        "icons.ttf" }) do
+  local how = lx.provide_image_font(want) and "from the image"
+              or "MISSING from this image"
 
   print("litexl: font " .. want .. ": " .. how)
 end

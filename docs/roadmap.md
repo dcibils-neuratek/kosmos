@@ -123,8 +123,8 @@ hardware broadcasts - and needed one on x86-64, which has it now.
 processors:
 
 1. **Lite XL, until it is an editor.** It is one now: it opens, edits and
-   saves (`docs/litexl.md`). What is left is its own faces' licences, the
-   wheel, resizing and the title.
+   saves (`docs/litexl.md`), in its own faces. What is left is the wheel,
+   resizing and the title.
 2. **Quake, through quakegeneric.** Doom's port is the template - a platform
    layer under the engine, Lua deciding when a frame happens, the game data
    put into a region by Lua and never in the repository, GPLv2 behind a

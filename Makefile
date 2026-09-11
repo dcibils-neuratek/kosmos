@@ -646,7 +646,7 @@ endif
 # command lines.
 #
 ifdef LITEXL
-USER_SRCS += $(LITEXL_SRCS)
+USER_SRCS += $(LITEXL_SRCS) $(GEN)/litexl_fonts.c
 endif
 
 ifdef DOOM
@@ -1356,6 +1356,23 @@ FONT_FILES := $(sort $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/*.ot
 $(GEN)/fonts.c: $(FONT_FILES) tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py fonts_table $@ $(FONT_FILES)
+
+#
+# Lite XL's own faces, in a `LITEXL=1` image only, and in a table of their own.
+#
+# Not in `fonts_table`, because that table is also what `gfx.fonts()` offers:
+# Appearance would list `icons` as a face for the desktop, and every other
+# image would carry 300 KB it never draws. The editor is the one reader -
+# `provide_image_font` looks here after `fonts_table`. Their terms are
+# recorded beside them, in `LICENSE.FiraSans` and `LICENSE.icons`, and
+# `runtime/upstream/lite-xl/README.kosmos.md` says where those came from.
+#
+LITEXL_FONT_FILES := runtime/upstream/lite-xl/data/fonts/FiraSans-Regular.ttf \
+                     runtime/upstream/lite-xl/data/fonts/icons.ttf
+
+$(GEN)/litexl_fonts.c: $(LITEXL_FONT_FILES) tools/assets2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/assets2c.py litexl_fonts_table $@ $(LITEXL_FONT_FILES)
 
 $(GEN)/version.c: FORCE
 	@mkdir -p $(dir $@)
@@ -2482,7 +2499,7 @@ browser: $(HOSTDIR)/lua
 	python3 tools/run_browser.py $(TARGET) --out build/browser.png \
 	  $(if $(PAGE),--page $(PAGE),)
 
-prepush: test screenshot shot
+prepush: test screenshot litexl-check shot
 	@echo
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 
@@ -2554,7 +2571,9 @@ litexl:
 # so a pass is the file saying what was typed rather than a picture of text.
 #
 # Not part of `make test`: it needs an image built with `LITEXL=1`, which the
-# ordinary image is not, and it boots that image twice.
+# ordinary image is not, and it boots that image twice. `make prepush` runs
+# it before `shot`: this leaves a lean `LITEXL=1` image in `build/kosmos.elf`,
+# and `shot` builds the ordinary one again before it takes its picture.
 .PHONY: litexl-check
 litexl-check:
 	@$(MAKE) --no-print-directory FULL=0 LITEXL=1

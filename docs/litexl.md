@@ -87,7 +87,7 @@ make a second.
       plugins. `wm litexl:/home/notes.txt` opens the file, takes typing and
       saves it. `tools/test_litexl_host.lua` checks the launcher's decisions
       on this machine in `make test`, and `make litexl-check` checks the whole
-      editor through the files it saved.
+      editor through the files it saved; `make prepush` runs both.
 
 ## What step two turned out to be
 
@@ -389,13 +389,20 @@ and a directory when keys continue past it - which is enough for all 26
 bundled plugins to load, the tree view among them.
 
 **The fonts come from the image.** `provide_image_font` hands the renderer a
-face out of `assets/fonts/`, the table `gfx` draws from, with no disk and no
-second copy. JetBrains Mono is there. **Lite XL's UI face and its icon font
-are not**: `FiraSans-Regular.ttf` and `icons.ttf` are in the vendored tree
-with no licence file beside them, so the image does not carry them. IBM Plex
-Sans and JetBrains Mono stand in, the launcher says so, and the icons are
-drawn as the letters that encode them. A face put in `/home/fonts/` is used
-before a stand-in.
+face compiled into the image, with no disk and no second copy. JetBrains Mono
+comes out of `assets/fonts/`, the table `gfx` draws from. Lite XL's UI face
+and its icon font come out of a table of their own that only a `LITEXL=1`
+image carries - in `fonts_table` they would be offered by `gfx.fonts()`, and
+Appearance would list `icons` as a face for the desktop.
+
+They were stood in for at first, because `FiraSans-Regular.ttf` and
+`icons.ttf` are in the vendored tree with no licence beside them. Their terms
+are recorded beside them now. Fira Sans's are in Lite XL's own
+`licenses/licenses.md`: SIL OFL 1.1. `icons.ttf`'s are in nothing upstream
+wrote, so `LICENSE.icons` gives the evidence with the terms - the font's own
+name table says Fontello made it, a Lite XL maintainer said its icons are
+Font Awesome 4, whose fonts are SIL OFL 1.1, and five of its glyphs are named
+for Lite XL itself.
 
 **Control-C is not copy.** The window manager stops the desktop on it before
 any window sees the key, so copy, cut, paste and select-all come the way
@@ -429,16 +436,12 @@ after a drain is the next one out.
 
 ### What is left
 
-- **Lite XL's own faces**, which want their licences recorded beside them
-  before the image carries them. Until then the icons are letters.
 - **The wheel and the other buttons.** The window manager delivers the first
   button and no wheel, so scrolling is the scrollbar and the keys.
 - **Resizing.** A direct window's buffers are allocated once, so the window
   is sized from the screen when it opens and stays that size.
 - **The title.** The window manager has no way to rename a window, so it says
   "Lite XL" whatever is open.
-- **The gate.** `make litexl-check` is not part of `make prepush`, which never
-  builds a `LITEXL=1` image.
 
 ## Two things deliberately given up
 

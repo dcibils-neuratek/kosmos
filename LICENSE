@@ -42,6 +42,12 @@ Vendored third-party code keeps its own licence, which travels beside it:
       runtime/upstream/lite-xl/LICENSE, with the vendoring recorded in
       README.kosmos.md beside it
 
+  Lite XL's own faces, carried only in a `make LITEXL=1` image
+      runtime/upstream/lite-xl/data/fonts/: Fira Sans, by the Mozilla
+      Foundation and Telefonica S.A., SIL OFL 1.1, in LICENSE.FiraSans;
+      icons.ttf, Font Awesome 4 by Dave Gandy through Fontello, SIL OFL
+      1.1, and glyphs named for Lite XL, MIT, in LICENSE.icons
+
   minimp3, by lieff, CC0 1.0 (public domain)
       runtime/upstream/minimp3/LICENSE, and the notice at the top of
       minimp3.h

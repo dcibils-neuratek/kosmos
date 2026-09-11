@@ -8,6 +8,31 @@ Last updated: 2026-09-10
 
 ## Where this left off
 
+### Lite XL in its own faces, and in the gate
+
+A `LITEXL=1` image carries `FiraSans-Regular.ttf` and `icons.ttf` now, and the
+editor draws in both: Fira Sans for its interface, and icons where there were
+letters - folders and chevrons in the tree view, the toolbar under it, a tab's
+close button, the status bar. They sit in a table of their own,
+`litexl_fonts_table`, which only `provide_image_font` reads; in `fonts_table`,
+`gfx.fonts()` would offer them and Appearance would list `icons` as a face for
+the desktop. The stand-ins, `provide_font` and the `/home/fonts` fallback went
+with the reason for them.
+
+Their terms are recorded beside them in `runtime/upstream/lite-xl/data/fonts/`.
+`LICENSE.FiraSans` is transcribed from Lite XL's own `licenses/licenses.md`:
+SIL OFL 1.1. `LICENSE.icons` is Kosmos's, because upstream wrote nothing for
+that file, and it gives its evidence with the terms - Fontello in the font's
+name table, a Lite XL maintainer saying the icons are Font Awesome 4, whose
+fonts are SIL OFL 1.1, and five glyphs named for Lite XL. **That is the one
+licence here resting on somebody's word rather than on a notice**, and the
+file says so.
+
+`make prepush` runs `make litexl-check`, which also checks now that the
+launcher took both faces from the image: 6 checks. With `icons.ttf` left out
+of the table it exits 1 - at the start check, because Lite XL cannot load
+`core/style.lua` without its icon font.
+
 ### Lite XL edits and saves on Kosmos
 
 `wm litexl:/home/notes.txt` opens a window with the file in a tab and the
@@ -33,13 +58,8 @@ every key, event, command and log line.
 
 Open:
 
-- **Lite XL's UI and icon faces** have no licence file beside them in the
-  vendored tree, so the image does not carry them: IBM Plex Sans and
-  JetBrains Mono stand in, and the icons are letters.
 - **Control-C** stops the desktop before a window sees it, so the editor
   copies with Control-W and `c`.
-- **Whether `make litexl-check` joins the gate**, which never builds a
-  `LITEXL=1` image.
 
 **Next, in the order agreed**: Quake through quakegeneric, then a battery
 indicator on the top bar, which starts with the T14's DSDT. `docs/roadmap.md`
