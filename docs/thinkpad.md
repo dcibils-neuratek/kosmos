@@ -935,6 +935,11 @@ right depends on a fact about the laptop's firmware.
 3. **PCI over ECAM**, now that MCFG says where that is. `pci.c` reaches 256
    bytes per function through port 0xCF8 and PCIe has 4096.
 
+And agreed for after Lite XL and Quake: **a battery indicator on the top
+bar**, read from the embedded controller with the register map this machine's
+DSDT describes, without an AML interpreter. It starts with a DSDT dump
+from a Linux live boot on this machine.
+
 And still open, whenever it is cheap: **which change made QEMU's PS/2 mouse
 stream** - §6 names the three. One reading of `pckbd.c`, and it decides
 nothing else.

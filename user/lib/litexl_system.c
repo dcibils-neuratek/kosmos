@@ -174,7 +174,8 @@ static int f_load_native_plugin(lua_State *L)
         return forward(L, name, results);                \
     }
 
-FORWARD(f_poll_event,          "poll_event",          1)
+/* A type and up to four values: `mousepressed` carries four. */
+FORWARD(f_poll_event,          "poll_event",          5)
 FORWARD(f_wait_event,          "wait_event",          1)
 FORWARD(f_set_cursor,          "set_cursor",          0)
 FORWARD(f_set_window_title,    "set_window_title",    0)
@@ -428,6 +429,60 @@ static int l_attach_window(lua_State *L)
     return 0;
 }
 
+/* `swap_window(surface)` - the other buffer, after a commit. See
+ * `litexl_window_swap`. */
+static int l_swap_window(lua_State *L)
+{
+    unsigned  w, h, pitch;
+    uint32_t *pixels = kosmos_surface_pixels(L, 1, &w, &h, &pitch);
+
+    litexl_window_swap(pixels);
+    return 0;
+}
+
+/*
+ * `provide_image_font(name [, as])` - a face compiled into the image.
+ *
+ * The same table `gfx` draws from, which `tools/assets2c.py` writes out of
+ * `assets/fonts/` with each face's licence beside it - so a font the system
+ * already carries reaches the editor without a disk and without a second
+ * copy. The bytes are static, so nothing has to anchor them the way
+ * `provide_font` anchors a string.
+ *
+ * `as` provides it under another file name, which is how the Lua side
+ * stands one face in for another and says so where it does. Returns
+ * whether the image had the face at all.
+ *
+ * The struct is the shape `assets2c.py` emits, and `gfx.c` declares it the
+ * same way.
+ */
+struct kosmos_font_asset {
+    const char          *name;
+    const unsigned char *bytes;
+    size_t               length;
+};
+
+extern const struct kosmos_font_asset fonts_table[];
+
+static int l_provide_image_font(lua_State *L)
+{
+    const char *name = luaL_checkstring(L, 1);
+    const char *as   = luaL_optstring(L, 2, name);
+    unsigned    i;
+
+    for (i = 0; fonts_table[i].name != NULL; i++) {
+        if (strcmp(fonts_table[i].name, name) == 0) {
+            litexl_font_provide(as, fonts_table[i].bytes,
+                                fonts_table[i].length);
+            lua_pushboolean(L, 1);
+            return 1;
+        }
+    }
+
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
 /*
  * `take_damage()` - what changed since the last frame, as a flat list of
  * x, y, w, h, or `true` when it is the whole window.
@@ -473,6 +528,8 @@ void kosmos_litexl_kit(lua_State *L)
     static const luaL_Reg lib[] = {
         { "set_host",      l_set_host      },
         { "attach_window", l_attach_window },
+        { "swap_window",   l_swap_window   },
+        { "provide_image_font", l_provide_image_font },
         { "provide_font",  l_provide_font  },
         { "take_damage",   l_take_damage   },
         { NULL, NULL }

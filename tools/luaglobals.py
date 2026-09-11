@@ -86,7 +86,7 @@ ENVIRONMENTS = {
     # everything not in this list. `docs/litexl.md` explains why each one is
     # here.
     #
-    "litexl.lua": {"os", "debug", "package", "require", "dofile",
+    "litexl.lua": {"io", "os", "debug", "package", "require", "dofile",
                    "ARGS", "PLATFORM", "ARCH", "EXEFILE", "HOME", "SCALE",
                    "VERSION", "MOD_VERSION", "PATHSEP", "EXEDIR",
                    "DATADIR", "USERDIR", "MACOS_RESOURCES",

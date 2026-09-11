@@ -78,11 +78,16 @@ make a second.
 - [x] **Step 5. `system.c`**, replaced rather than shimmed - and for a
       different reason than step four. Ten translation units, all in the
       image, 58 checks in `make test`.
-- [~] **Step 6. `main.c`, and then the Lua.** **`core.init()` returns on
-      the machine.** The 78 files are in the image, `require` runs over the
+- [x] **Step 6. `main.c`, and then the Lua.** `core.init()` returns on
+      the machine: the 78 files are in the image, `require` runs over the
       namespace, and the editor's core initialises with real fonts through
-      `stb_truetype`. It does **not** draw: `core.run()` has never been
-      called, no window is opened and no event is delivered.
+      `stb_truetype`.
+- [x] **Step 7. The editor.** A window, Lite XL's own `core.run()`, keys and
+      the pointer in its shape, files through `io.open`, and all 26 bundled
+      plugins. `wm litexl:/home/notes.txt` opens the file, takes typing and
+      saves it. `tools/test_litexl_host.lua` checks the launcher's decisions
+      on this machine in `make test`, and `make litexl-check` checks the whole
+      editor through the files it saved.
 
 ## What step two turned out to be
 
@@ -278,11 +283,12 @@ measured rather than guessed:
 Every one of those is a question for a server, which is why `system` is
 shaped the way step five left it.
 
-**What is left is integration, not discovery.** `data/`'s 78 Lua files have
+**What was left was integration, not discovery.** `data/`'s 78 Lua files had
 to reach the image and be findable - Kosmos has `use()` and a namespace
-where Lite XL has `require` and `package.path`, so that is a loader to
-write - and the host table has to be implemented against `fs`, the window
-manager and the clipboard rather than stubbed. Neither is unknown work now.
+where Lite XL has `require` and `package.path`, so that was a loader to
+write - and the host table had to be implemented against `fs`, the window
+manager and the clipboard rather than stubbed. Neither was unknown work by
+then, and the next two sections are both of them done.
 
 ## Step six, on the machine
 
@@ -293,10 +299,10 @@ manager and the clipboard rather than stubbed. Neither is unknown work now.
     require core: true
     core.init(): true
 
-**That is the editor's constructor completing, not the editor running.**
-`core.run()` has never been called, nothing is drawn, and no keystroke is
-delivered. Worth stating plainly, because "it initialises" reads like more
-than it is.
+**That was the editor's constructor completing, not the editor running.**
+`core.run()` had not been called, nothing was drawn, and no keystroke was
+delivered - step seven, below, is where those arrived. Worth stating
+plainly, because "it initialises" reads like more than it is.
 
 Five things had to give, and each was a real limit rather than a guess:
 
@@ -337,18 +343,102 @@ which is the honest place for them and cost nothing: `binfs.c` finds an
 entry with `strcmp`, so a key with slashes reads straight out and no
 server, role or capability had to be invented.
 
-### What is between here and an editor
+## Step seven, and what the editor needed
 
-1. Open a window, attach its surface, and drive `core.run()` a frame at a
-   time rather than letting it block.
-2. `poll_event` for real - the window manager's keys and pointer in Lite
-   XL's shape. It returns nil today.
-3. Push `take_damage()` to the compositor each frame.
-4. The fonts into the image; they come off a scratch disk today, which a
-   `/bin` program cannot depend on.
+    kosmos> wm litexl:/home/notes.txt
 
-Steps 1 to 3 are the substance, and they are also the first test of whether
-step four's renderer draws readable text - nothing has put it on a screen.
+A window with the file in a tab and the tree view beside it, and typing that
+reaches the file when it is saved. The four steps this section used to list
+were the right four, and two of them turned out different in the doing.
+
+**The editor keeps its own loop.** The plan was to drive `core.run()` a frame
+at a time, the way Doom is driven. It cannot be: the scheduler for Lite XL's
+background work - the cursor blink, highlighting, a project scan - is a local
+inside `core/init.lua`, so a caller stepping frames from outside would never
+run it. So `core.run()` runs unchanged, and Kosmos does its part inside the
+two calls that loop makes when it waits. `system.wait_event` and
+`system.sleep` show the frame just drawn and then ask the window manager what
+happened - for no longer than asked, and never for longer than a quarter of a
+second. A close from the desktop arrives as Lite XL's own `quit`.
+
+**A direct window has two buffers, and Lite XL draws only what changed.**
+`commit` shows the buffer that was drawn and hands back the other, which
+still holds the frame before. So the rectangles just shown are copied across,
+and `swap_window` points the renderer at the other buffer's pixels without
+treating it as fresh - which would have made every commit the whole window.
+
+**Keys arrive as two streams, and go to Lite XL in the order SDL uses.**
+`rawkey` gives the transitions, which become `keypressed` and `keyreleased`
+by SDL's names; the character stream becomes `textinput`, except with
+Control or Alt held. Transitions go first, so a stroke that runs a binding
+tells Lite XL to drop the text behind it. The pointer is the first button
+only, with movement while it is held, and a double click is counted from how
+soon and how near the next press lands.
+
+**`io.open`, over the namespace.** Lite XL loads and saves every document
+through it, and this sandbox has no `io`. A file opened for reading is its
+whole text; one opened for writing is stored whole when it is closed, through
+`fs.write`, which already takes a value larger than a message on every
+mount. `mkdir` is a `fs.send`, and `absolute_path` and `chdir` keep the
+working directory the editor believes in.
+
+**The installed tree is worked out from keys.** The build stores `data/`
+flat in `/lib`, under `litexl/...`, and Lite XL finds its plugins, colours and
+languages by listing directories. A name is a file when a key is exactly that
+and a directory when keys continue past it - which is enough for all 26
+bundled plugins to load, the tree view among them.
+
+**The fonts come from the image.** `provide_image_font` hands the renderer a
+face out of `assets/fonts/`, the table `gfx` draws from, with no disk and no
+second copy. JetBrains Mono is there. **Lite XL's UI face and its icon font
+are not**: `FiraSans-Regular.ttf` and `icons.ttf` are in the vendored tree
+with no licence file beside them, so the image does not carry them. IBM Plex
+Sans and JetBrains Mono stand in, the launcher says so, and the icons are
+drawn as the letters that encode them. A face put in `/home/fonts/` is used
+before a stand-in.
+
+**Control-C is not copy.** The window manager stops the desktop on it before
+any window sees the key, so copy, cut, paste and select-all come the way
+every application here gets them - Control-W and a letter - and each becomes
+the Lite XL command it names.
+
+**The launcher's decisions are a library.** Paths, the installed tree, files,
+the event queue, key names and the damage rectangle are plain Lua in
+`user/lib/litexl_host.lua`, with no system call in it, so
+`tools/test_litexl_host.lua` checks them on this machine in `make test`.
+
+### The fault, and how it was found
+
+After Control-N and `hello`, the editor opened an "Open File" prompt and made
+no document. The keys were not the problem: `wm litexl:--trace` prints every
+raw key and every event on its way in, and every press and release was
+there, in order. What it also prints - every command Lite XL runs and
+everything it logs - said `doc:select-lines` and `core:open-file`, and no
+`core:new-doc`. Lite XL had seen `ctrl+l` and `ctrl+o`, with Control still
+held after its release.
+
+**The queue consumed an event by clearing its slot.** Once everything had
+been taken, `#` answered nought while the read position had moved on, so the
+count of waiting events went below zero; `poll_event` refilled only when that
+count was exactly nought, and the next events were written into slots the
+read position had already passed, where nothing read them. A Control release
+was among them. The queue now moves past an entry and never clears one, and
+with the old consumption put back `tools/test_litexl_host.lua` fails on the
+two checks that describe it: a drained queue is empty, and an event pushed
+after a drain is the next one out.
+
+### What is left
+
+- **Lite XL's own faces**, which want their licences recorded beside them
+  before the image carries them. Until then the icons are letters.
+- **The wheel and the other buttons.** The window manager delivers the first
+  button and no wheel, so scrolling is the scrollbar and the keys.
+- **Resizing.** A direct window's buffers are allocated once, so the window
+  is sized from the screen when it opens and stays that size.
+- **The title.** The window manager has no way to rename a window, so it says
+  "Lite XL" whatever is open.
+- **The gate.** `make litexl-check` is not part of `make prepush`, which never
+  builds a `LITEXL=1` image.
 
 ## Two things deliberately given up
 

@@ -8,6 +8,43 @@ Last updated: 2026-09-10
 
 ## Where this left off
 
+### Lite XL edits and saves on Kosmos
+
+`wm litexl:/home/notes.txt` opens a window with the file in a tab and the
+tree view beside it; typing reaches the document, Control-S saves it, and
+`head` at the prompt afterwards reads back what was typed. Control-N makes a
+new document. `docs/litexl.md`, "Step seven", has what it took: Lite XL's own
+`core.run()` with Kosmos inside its waits, keys in SDL's order, `io.open` over
+the namespace, the installed tree worked out from `/lib`'s keys, and the
+direct window's two buffers kept in step.
+
+Only in an image built with `make LITEXL=1`. Two checks hold it:
+`tools/test_litexl_host.lua` in `make test` - 34 checks on the launcher's
+decisions, with a negative control for the fault below - and
+`make litexl-check`, which boots the image twice and reads each saved file
+back at the prompt. Its first run passed: 5 checks, both boots in
+1 min 49 s under TCG.
+
+**The fault**: a queue that consumed events by clearing slots let its count
+go below zero once drained, and the next events - a Control release among
+them - were written where nothing read them, so `l` and `o` reached the
+editor as `ctrl+l` and `ctrl+o`. Found with `wm litexl:--trace`, which prints
+every key, event, command and log line.
+
+Open:
+
+- **Lite XL's UI and icon faces** have no licence file beside them in the
+  vendored tree, so the image does not carry them: IBM Plex Sans and
+  JetBrains Mono stand in, and the icons are letters.
+- **Control-C** stops the desktop before a window sees it, so the editor
+  copies with Control-W and `c`.
+- **Whether `make litexl-check` joins the gate**, which never builds a
+  `LITEXL=1` image.
+
+**Next, in the order agreed**: Quake through quakegeneric, then a battery
+indicator on the top bar, which starts with the T14's DSDT. `docs/roadmap.md`
+has both.
+
 ### New threads on every core by default, after the ThinkPad ran on eight
 
 **The T14 ran 0.10.20 spread across all eight of its processors.** Booted

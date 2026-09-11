@@ -2293,6 +2293,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# code - loaded and initialised with the C modules stubbed. It is the
 	@# same interpreter either way, so this needs no machine either.
 	$(HOSTDIR)/lua tools/test_litexl_lua.lua
+	$(HOSTDIR)/lua tools/test_litexl_host.lua
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,
@@ -2547,6 +2548,17 @@ litexl:
 	echo "  $$ok of $$((ok + fail)) Lite XL translation units compile."; \
 	echo "  In the image: $(words $(LITEXL_SRCS)).  Waiting on ren_*/renwin_*: $(words $(LITEXL_STAGED))."; \
 	test $$fail -eq 0
+
+# Lite XL on the machine: a window, a file edited and saved, Control-N, and a
+# new document saved under a name - each read back at the prompt afterwards,
+# so a pass is the file saying what was typed rather than a picture of text.
+#
+# Not part of `make test`: it needs an image built with `LITEXL=1`, which the
+# ordinary image is not, and it boots that image twice.
+.PHONY: litexl-check
+litexl-check:
+	@$(MAKE) --no-print-directory FULL=0 LITEXL=1
+	python3 tools/run_litexl.py build/kosmos.elf
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234

@@ -657,3 +657,46 @@ for the record is also a profile. Run the same capture with `-accel hvf
 -cpu host` spliced into `QEMU_ARGS` and the same line reads native speeds
 instead of TCG ones; `docs/state.md` has both columns for the run that
 found the commit wait.
+
+## 18.14 An editor, checked through the files it saved
+
+```
+make test            # three of the four, on this machine
+make litexl-check    # the fourth: a LITEXL=1 image, booted twice
+```
+
+Lite XL has four checks, and three of them boot nothing, because most of
+what can go wrong in the port does not need a machine to go wrong on.
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/test_litexl_surface.c`, 58 checks | `make test` | the SDL shim Kosmos wrote and the renderer over it, built with the host compiler - which works because the shim needs `stdlib.h`, `string.h` and nothing else |
+| `tools/test_litexl_lua.lua`, 9 checks | `make test` | the vendored Lua still loads: the module graph resolves and `core.init()` returns, on `build/host/lua` with the C modules stubbed |
+| `tools/test_litexl_host.lua`, 34 checks | `make test` | the launcher's own decisions - paths, the installed tree worked out from keys, files, the event queue, key names and the damage rectangle |
+| `tools/run_litexl.py`, 5 checks | `make litexl-check` | the editor: a window, a file edited and saved, Control-N, and a new document saved under a name |
+
+**The check on the machine reads what the editor saved, not what it drew.**
+Each boot starts the editor from the prompt, types through QEMU's own
+keyboard, saves with Control-S, stops the desktop with Control-C, and asks
+`head` for the file. A picture of the window would pass with the save
+quietly failing; the file cannot. The first boot counts two more checks for
+the start: `wm` says it opened a window, and forty seconds later none of the
+launcher's failure lines has appeared.
+
+**Control-N is checked by what the editor did.** `wm litexl:--trace` prints
+every command Lite XL runs, and the check waits for
+`command core:new-doc -> true`. That is the check that would have caught the
+queue fault `docs/litexl.md` describes, where the key reached the window and
+the command never ran.
+
+**The host test's negative control has been run.** With the old consumption
+put back - the slot cleared, and the storage never started again - it exits
+1 and fails exactly two checks: a drained queue is empty, and an event pushed
+after the queue drained is the next one out. It is the exercise 18.12
+describes, for the reason it gives: a check that still passes with the fault
+put back is not checking the fault.
+
+**`make litexl-check` is not part of `make prepush`.** The gate builds no
+`LITEXL=1` image, and the check is two boots - 1 min 49 s together under
+TCG - after a build of its own. Whether it joins the gate is open, and
+`docs/state.md` lists it.

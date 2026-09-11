@@ -472,6 +472,30 @@ void litexl_window_attach(void *pixels, int w, int h, int pitch)
     damage_whole = true;
 }
 
+/*
+ * The same window, the other buffer.
+ *
+ * A direct window is double-buffered, and `commit` flips which of the two
+ * the compositor shows - so after every frame the renderer has to be
+ * pointed at the other one. **The surface object stays and only its pixels
+ * move**, so anything holding the pointer `SDL_GetWindowSurface` returned
+ * still holds the right one.
+ *
+ * **Damage is left as it is**, unlike `attach`. The Lua side copies the
+ * rectangles it has just committed into this buffer before swapping, so it
+ * already holds exactly what is on screen; treating it as fresh would turn
+ * every following commit into the whole window.
+ */
+void litexl_window_swap(void *pixels)
+{
+    if (the_window.surface == NULL || pixels == NULL) {
+        return;
+    }
+
+    the_window.pixels = pixels;
+    the_window.surface->pixels = pixels;
+}
+
 SDL_Surface *SDL_GetWindowSurface(SDL_Window *window)
 {
     (void)window;

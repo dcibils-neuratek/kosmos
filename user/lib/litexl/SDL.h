@@ -227,6 +227,7 @@ bool litexl_path_before(const char *a, bool a_dir,
 
 SDL_Window *litexl_window(void);
 void        litexl_window_attach(void *pixels, int w, int h, int pitch);
+void        litexl_window_swap(void *pixels);
 int         litexl_damage_take(SDL_Rect *out, int max, bool *whole);
 
 /* --------------------------------------------------------------- errors */

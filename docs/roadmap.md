@@ -119,10 +119,24 @@ hardware broadcasts - and needed one on x86-64, which has it now.
 
 ### Next, in this order
 
-**SMP on AArch64 first, and x86-64 only once ARM is thoroughly tested.**
-One architecture at a time, on purpose: the bugs SMP introduces appear once
-every thousand boots, and finding them on two boards at once means never
-knowing which half is at fault. `docs/smp.md` is the plan.
+**Agreed on 2026-09-10**, after the ThinkPad ran spread across eight
+processors:
+
+1. **Lite XL, until it is an editor.** It is one now: it opens, edits and
+   saves (`docs/litexl.md`). What is left is its own faces' licences, the
+   wheel, resizing and the title.
+2. **Quake, through quakegeneric.** Doom's port is the template - a platform
+   layer under the engine, Lua deciding when a frame happens, the game data
+   put into a region by Lua and never in the repository, GPLv2 behind a
+   build flag. Two things come first: Quake takes its memory as one block
+   before it draws anything, so how large is the first number to read,
+   against the 48 MB a process may map; and `LICENSE` says Doom is built
+   only under `make DOOM=1` while `FULL=1` turns Doom on for every ordinary
+   build, and those have to agree before a second GPL engine joins it.
+3. **A battery indicator on the top bar**, for the ThinkPad: read from the
+   embedded controller with the register map the T14's own DSDT describes,
+   rather than through an AML interpreter, and cached rather than read on
+   every `SYS_SYSINFO`. It starts with getting the DSDT off the machine.
 
 **A non-blocking send.** Half a browser frame is the application blocked on
 a `commit` whose handler swaps an index and records a rectangle. `SYS_CALL`,
@@ -154,15 +168,10 @@ the worst — a scan that reset the keyboard on its way past — was latent on
 ARM too, and survived only because QEMU happens to lay virtio-mmio windows
 out in the reverse of the order the devices are given.
 
-**SMP, and real parallelism.** The next thing, and the port just paid for
-part of it in advance. Two pieces of state on x86-64 are per-CPU rather
-than per-thread — the TSS holding the stack an entry from ring 3 lands on,
-and whoever owns the floating-point registers — and finding the boundary
-was not theoretical: a global holding the interrupted stack pointer looked
-like per-CPU state, was actually per-*thread*, and produced a process
-returning to user level on another process's stack. One core was enough to
-prove it wrong. `swapgs` and the GS base are what x86 replaces that global
-with; `TPIDR_EL1` is ARM's, and neither is written yet.
+**SMP, and real parallelism - done on both boards**, with placement on by
+default since 0.10.22; *Being built now* has where it stands. This entry said
+x86-64's per-CPU state was not written yet, which stopped being true when
+`swapgs`, the GS base and a TSS per core arrived.
 
 **PowerPC, on a G5 or a G4 iMac.** Wanted, and it changes two things this
 project has written down as settled.
