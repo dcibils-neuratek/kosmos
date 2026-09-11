@@ -634,7 +634,18 @@ def pointer(image, check):
             return
 
         width, height = screen[0], screen[1]
-        at_x, at_y = deskbar[0] + deskbar[2] // 2, deskbar[1] + 24
+
+        #
+        # The Kosmos end of the bar, not the middle of it.
+        #
+        # This was the centre of the Deskbar's window plus 24, which was the
+        # button when the Deskbar was a small window in the top-right
+        # corner. It is the strip across the whole top now - `0,0 1920x36` -
+        # so the centre is somewhere among the buttons for running windows,
+        # and a click there raises an application instead of opening the
+        # menu. The menu is at the left, where the Kosmos button is.
+        #
+        at_x, at_y = deskbar[0] + 40, deskbar[1] + 18
 
         click(monitor, at_x, at_y, width, height)
 

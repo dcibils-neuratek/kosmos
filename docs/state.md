@@ -8,6 +8,95 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### One bar, and a menu made of files
+
+The Deskbar was a window in the top-right corner with a menu and a list of
+what was running, and `topbar` was a second strip across the top with five
+hard-coded shortcuts and a clock. Two pieces of always-present chrome, one
+of which was a menu that could not be edited sitting beside a menu that
+could.
+
+It is one strip now: the Kosmos menu at the left, a button per running
+window carrying its application's own picture, and the indicators at the
+right. 36 pixels with 32-pixel icons, because nothing here scales one.
+`topbar.lua` is deleted and gone from `startup.lua`'s defaults.
+
+**The menu is `/home/Deskbar`, a folder per section holding launchers.** A
+thing is in the menu because a launcher file exists - no fallback, no
+ledger of programs seen before. Moving 3dcube from Demos to Applications is
+dragging a file in Tracker; giving Doom a different size is an attribute on
+its launcher. It was `/bin` filtered by each program's `kosmos: section`
+header, which made the menu read-only by construction: `/bin` is an array
+the build puts in the binary, so moving an item meant editing source and
+rebuilding, and an item could carry no arguments at all.
+
+That header line is now the *default* a program is filed under the first
+time the tree is made, and nothing else reads it.
+
+Reading the tree is about fifty messages to the disk server, so it happens
+once at startup and again when told: `setprop /app/Deskbar/menu reload`, or
+**Reload Menus** on the Kosmos button's own right-click menu - which also
+has **Open Deskbar Folder**, because nothing on the screen said the folder
+existed.
+
+**A launcher is now a file type.** `type=launcher` beside `kind`, which is
+the first real user of the attribute branch `filetypes.lua` was written
+with and nothing had ever used. `kind_of` reads `kind` too, so launchers
+already on a disk became launchers with no migration. Tracker's Kind column
+says `launcher` - it had been calling `kind_of` without the attributes, so
+it could only ever read an extension.
+
+**And what a launcher records is explicit.** `program` is the whole path:
+`handlers.launch` completes a bare `doom` to `/bin/doom.lua`, which is right
+for somebody typing and wrong in a file. A launcher that records `doom`
+runs correctly and reads as broken to anybody who does not know the rule.
+
+**Right-click reaches applications**, and only those that said they
+understand `button` - `ui.lua` says it for every window it opens and drops
+what no view claimed, so Paint, Quake and Lite XL cannot be bitten. A right
+press on a menu row or a desktop icon opens `launcheredit`, which edits what
+a launcher starts, with what arguments, and under which of the 48 icons.
+
+**The Deskbar holds `network` and `audio` now**, which is a change of
+position recorded in the README: reading state is not holding power, and
+`processes` stays with the window manager.
+
+**Checked:** `make test` is 149 on AArch64 and 145 on x86-64, with two new
+host suites - `test_deskbarmenu.lua` (9 checks on what counts as an item,
+what order things come in, how deep a folder may go) and
+`test_filetypes.lua` (13 on what a file is and what opens it). The display
+harness has a `context` phase: a right press on a probe's button reaches
+`on_context` and does *not* press it, and a left press still does.
+
+`test_deskbarmenu.lua` was written and never wired into `make test`, which
+is a test that would have passed for ever without being run. Both are in
+the Makefile now.
+
+Open:
+
+- **Desklets.** `monitor.lua`'s processor and memory figures are on the bar
+  as meters the Deskbar draws itself, so adding an indicator means editing
+  `deskbar.lua`. BeOS hosted them as replicants and `ui.replicant` exists -
+  it sandboxes a chunk inside the host, which subtracts authority and never
+  adds, so it fits.
+- **Per-launcher permissions.** A program declares `needs audio` and *gets*
+  it; nothing asks. A launcher recording a granted subset would be the
+  consent step, and can only narrow, which is what makes it real rather
+  than decoration.
+- **Deskbar preferences**: position top or bottom, icon size, which
+  indicators. Bottom needs `reserved_bottom` mirroring `reserved_top` in
+  the compositor - ten call sites, one concept.
+- **The battery is drawn with a question mark beside it and no reading.**
+  This machine cannot read one.
+- **`make fast` does not boot.** Not our fault: a released 0.9.21 binary is
+  equally dead under `hvf` on this Mac, so QEMU 11.1.1 or macOS broke it.
+  The gate is all TCG, so it stays green while the one tool that answers
+  "does this feel fast" is unusable.
+
+**Next, as queued**: desklets in the bar, per-launcher permissions, and a
+Deskbar preferences app - position, icon size, which indicators. Then a
+launcher option to scale Doom and Quake, and the app profiler.
+
 ### A name in `/app` outlives no process
 
 A window manager started a second time could not be found by name. Seen on
@@ -67,9 +156,6 @@ Tracker, which hands the child the live endpoint - the right way round
 whatever the registry does. The mechanism it stopped relying on, a `run`
 child reaching `/app/wm` after a restart, is what the `registry` phase now
 checks, and it works.
-
-**Next, as queued**: a launcher option to scale Doom and Quake, then the app
-profiler.
 
 ### The wallpaper, behind the icons
 

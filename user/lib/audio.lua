@@ -374,7 +374,17 @@ function audio.stats()
 
   if not r then return nil end
 
-  return { starved = r.starved, late = r.late, mixes = r.mixes }
+  --
+  -- `master` was unpacked from the reply and thrown away here.
+  --
+  -- The server has always sent it - `REPLY` carries it and `request` reads
+  -- it - and this function returned three of the five numbers it had. The
+  -- Deskbar draws the volume on the bar and needs exactly this one, and
+  -- adding it costs nothing because it was already on the wire and already
+  -- parsed. 0 to 256, which is the scale every gain here uses.
+  --
+  return { starved = r.starved, late = r.late, mixes = r.mixes,
+           master = r.master }
 end
 
 --

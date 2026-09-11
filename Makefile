@@ -1014,21 +1014,50 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 # build and watching the identical link error come back twice is how this
 # was found. They expand to nothing when their variant is not selected.
 #
-FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))
-FLAGS_FILE := $(BUILD)/flags
+#
+# **Two stamps, because there are two sets of objects and they do not share
+# a build directory.**
+#
+# There was one, `$(BUILD)/flags`, carrying every flag in the build - and
+# `BUILD` is only ever `build`, `build/test` or `build/bench`. It does *not*
+# vary with `DOOM`, `WEB`, `LITEXL` or `QUAKE`; `UBUILD` does. So the
+# userland flags were recorded in a file the kernel's objects also depended
+# on, and every switch between variants rewrote it.
+#
+# What that cost was the gate. `make prepush` builds plain, then `MEGA=1`,
+# then plain again for the screenshot, and each switch changed
+# `$(LITEXL_CFLAGS)` or `$(QUAKE_CFLAGS)` in the stamp - so **the whole
+# kernel was recompiled three times for flags no kernel object uses.**
+#
+# Now each stamp covers exactly the flags its own objects are compiled with,
+# which is what a stamp is for. The userland one lives in `UBUILD`, so it is
+# per-variant and a MEGA build and a plain one cannot invalidate each other
+# at all.
+#
+KFLAGS_NOW := $(CFLAGS)
+KFLAGS_FILE := $(BUILD)/flags
+
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))
+UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
-$(shell [ "$$(cat $(FLAGS_FILE) 2>/dev/null)" = '$(FLAGS_NOW)' ] \
-        || printf '%s' '$(FLAGS_NOW)' > $(FLAGS_FILE))
+$(shell [ "$$(cat $(KFLAGS_FILE) 2>/dev/null)" = '$(KFLAGS_NOW)' ] \
+        || printf '%s' '$(KFLAGS_NOW)' > $(KFLAGS_FILE))
+$(shell [ "$$(cat $(UFLAGS_FILE) 2>/dev/null)" = '$(UFLAGS_NOW)' ] \
+        || printf '%s' '$(UFLAGS_NOW)' > $(UFLAGS_FILE))
 
-# And a rule, so a build that has never made this variant can still make it.
-# The line above only rewrites the file when it exists and differs; the test
-# and bench builds use their own BUILD directory and had never seen one,
-# which make reported as "no rule to make target" rather than as anything
-# resembling the cause.
-$(FLAGS_FILE):
+# And a rule each, so a build that has never made this variant can still
+# make it. The lines above only rewrite a file when it exists and differs;
+# the test and bench builds use their own directories and had never seen
+# one, which make reported as "no rule to make target" rather than as
+# anything resembling the cause.
+$(KFLAGS_FILE):
 	@mkdir -p $(dir $@)
-	@printf '%s' '$(FLAGS_NOW)' > $@
+	@printf '%s' '$(KFLAGS_NOW)' > $@
+
+$(UFLAGS_FILE):
+	@mkdir -p $(dir $@)
+	@printf '%s' '$(UFLAGS_NOW)' > $@
 
 # And the same trick for the one file that carries its own flag, so that
 # changing the screen size rebuilds that file and relinks, and touches
@@ -1053,15 +1082,15 @@ $(BUILD)/hal/fwcfg/ramfb.c.o: $(FB_FILE)
 # the reason that rule's neighbour already records: make takes the first
 # pattern that matches, and `runtime/upstream/%.c` matches these too.
 #
-$(UBUILD)/runtime/upstream/tinygl/examples/bounce.c.o: runtime/upstream/tinygl/examples/bounce.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/bounce.c.o: runtime/upstream/tinygl/examples/bounce.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,bounce) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/examples/cube.c.o: runtime/upstream/tinygl/examples/cube.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/cube.c.o: runtime/upstream/tinygl/examples/cube.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,cube) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/examples/gears.c.o: runtime/upstream/tinygl/examples/gears.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/gears.c.o: runtime/upstream/tinygl/examples/gears.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,gears) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
@@ -1071,29 +1100,29 @@ $(UBUILD)/runtime/upstream/tinygl/examples/gears.c.o: runtime/upstream/tinygl/ex
 # the ordinary rename finds no `draw` to rename. Given its own line here
 # rather than patched, for the same reason as everything else in this tree.
 #
-$(UBUILD)/runtime/upstream/tinygl/examples/mech.c.o: runtime/upstream/tinygl/examples/mech.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/mech.c.o: runtime/upstream/tinygl/examples/mech.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,mech) \
 	      -Ddisplay=mech_draw \
 	      -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/examples/morph3d.c.o: runtime/upstream/tinygl/examples/morph3d.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/morph3d.c.o: runtime/upstream/tinygl/examples/morph3d.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,morph3d) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/examples/spin.c.o: runtime/upstream/tinygl/examples/spin.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/spin.c.o: runtime/upstream/tinygl/examples/spin.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,spin) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/examples/teapot.c.o: runtime/upstream/tinygl/examples/teapot.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/teapot.c.o: runtime/upstream/tinygl/examples/teapot.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,teapot) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/examples/texobj.c.o: runtime/upstream/tinygl/examples/texobj.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/examples/texobj.c.o: runtime/upstream/tinygl/examples/texobj.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) $(call tinygl_rename,texobj) -Iruntime/upstream/tinygl/examples -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(TINYGL_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -1103,19 +1132,19 @@ $(UBUILD)/runtime/upstream/tinygl/source/%.c.o: runtime/upstream/tinygl/source/%
 # An explicit rule each, because the generic `user/lib` one carries only
 # `UCFLAGS` and this is the one place under `user/lib` that needs more.
 #
-$(UBUILD)/user/lib/litexl_sdl.c.o: user/lib/litexl_sdl.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/litexl_sdl.c.o: user/lib/litexl_sdl.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/lib/litexl_render.c.o: user/lib/litexl_render.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/litexl_render.c.o: user/lib/litexl_render.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/lib/litexl_system.c.o: user/lib/litexl_system.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/litexl_system.c.o: user/lib/litexl_system.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/lib/litexl_match.c.o: user/lib/litexl_match.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/litexl_match.c.o: user/lib/litexl_match.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -1123,11 +1152,11 @@ $(UBUILD)/user/lib/litexl_match.c.o: user/lib/litexl_match.c $(FLAGS_FILE)
 # Lite XL. Two patterns because its sources are one directory deep in
 # places - `src/api/utf8.c` - and a single `%` does not cross a slash.
 #
-$(UBUILD)/runtime/upstream/lite-xl/src/%.c.o: runtime/upstream/lite-xl/src/%.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/lite-xl/src/%.c.o: runtime/upstream/lite-xl/src/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/lite-xl/src/api/%.c.o: runtime/upstream/lite-xl/src/api/%.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/lite-xl/src/api/%.c.o: runtime/upstream/lite-xl/src/api/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(LITEXL_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -1140,7 +1169,7 @@ $(UBUILD)/runtime/upstream/lite-xl/src/api/%.c.o: runtime/upstream/lite-xl/src/a
 # no business seeing any of it - the NetSurf and Doom rules omit it for the
 # same reason.
 #
-$(UBUILD)/$(MUSL)/src/math/%.c.o: $(MUSL)/src/math/%.c $(FLAGS_FILE)
+$(UBUILD)/$(MUSL)/src/math/%.c.o: $(MUSL)/src/math/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(MUSL_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -1156,7 +1185,7 @@ $(UBUILD)/$(MUSL)/src/math/%.c.o: $(MUSL)/src/math/%.c $(FLAGS_FILE)
 # them, and `make` cannot know that from the source alone.
 #
 $(UBUILD)/runtime/upstream/netsurf/%.c.o: runtime/upstream/netsurf/%.c \
-                                         $(FLAGS_FILE) | $(WEB_GEN)
+                                         $(UFLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(WEB_CFLAGS) \
 	      -Iruntime/upstream/netsurf/$(firstword $(subst /, ,$*))/src \
@@ -1167,14 +1196,14 @@ $(UBUILD)/runtime/upstream/netsurf/%.c.o: runtime/upstream/netsurf/%.c \
 # `-Wall -Wextra -Werror` and `-fno-common`, plus the public headers of the
 # libraries it calls. `gl_kosmos.c` has the same arrangement with TinyGL.
 #
-$(UBUILD)/user/lib/web_%.c.o: user/lib/web_%.c $(FLAGS_FILE) | $(WEB_GEN)
+$(UBUILD)/user/lib/web_%.c.o: user/lib/web_%.c $(UFLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) \
 	      $(foreach l,$(WEB_LIBS),-Iruntime/upstream/netsurf/$(l)/include) \
 	      -I$(GEN)/netsurf -MMD -MP -c $< -o $@
 
 # The generated property parsers are libcss's, so they get libcss's `src`.
-$(UBUILD)/$(GEN)/netsurf/%.c.o: $(GEN)/netsurf/%.c $(FLAGS_FILE) | $(WEB_GEN)
+$(UBUILD)/$(GEN)/netsurf/%.c.o: $(GEN)/netsurf/%.c $(UFLAGS_FILE) | $(WEB_GEN)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(WEB_CFLAGS) \
 	      -Iruntime/upstream/netsurf/libcss/src \
@@ -1250,12 +1279,12 @@ $(GEN)/netsurf/css/autogenerated_%.c: \
 # below the generic one. TinyGL's has always been above, which is why TinyGL
 # built and why this is the shape to copy.
 #
-$(UBUILD)/runtime/upstream/doom/%.c.o: runtime/upstream/doom/%.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/doom/%.c.o: runtime/upstream/doom/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(DOOM_CFLAGS) -MMD -MP -c $< -o $@
 
 # Quake's, above the generic rule for the reason Doom's is.
-$(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(QUAKE_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -1263,11 +1292,11 @@ $(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(FLAGS_FILE)
 # because this file is ours - all but `-Wcomment`, which five `//` comments
 # in Quake's own headers set off by ending in a backslash, and which is about
 # upstream's text rather than anything this file does.
-$(UBUILD)/user/lib/quake_kosmos.c.o: user/lib/quake_kosmos.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/quake_kosmos.c.o: user/lib/quake_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(QUAKE_INCLUDES) -Wno-comment -MMD -MP -c $< -o $@
 
-$(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
+$(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Wno-error -MMD -MP -c $< -o $@
 
@@ -1287,19 +1316,19 @@ $(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
 #   No `-include kosmos_lua.h`. Doom does not know what Lua is and should
 #   not be told.
 #
-$(UBUILD)/user/lib/gl_demos.c.o: user/lib/gl_demos.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/gl_demos.c.o: user/lib/gl_demos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
 
-$(UBUILD)/user/lib/gl_kosmos.c.o: user/lib/gl_kosmos.c $(FLAGS_FILE)
+$(UBUILD)/user/lib/gl_kosmos.c.o: user/lib/gl_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Iruntime/upstream/tinygl/include -MMD -MP -c $< -o $@
 
-$(UBUILD)/%.c.o: %.c $(FLAGS_FILE)
+$(UBUILD)/%.c.o: %.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -include lua/kosmos/kosmos_lua.h -MMD -MP -c $< -o $@
 
-$(UBUILD)/%.S.o: %.S $(FLAGS_FILE)
+$(UBUILD)/%.S.o: %.S $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -MMD -MP -c $< -o $@
 
@@ -1926,11 +1955,11 @@ $(TARGET): $(OBJS) boot/kosmos.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@ $(KLIBS)
 
-$(BUILD)/%.c.o: %.c $(FLAGS_FILE)
+$(BUILD)/%.c.o: %.c $(KFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD)/%.S.o: %.S $(FLAGS_FILE)
+$(BUILD)/%.S.o: %.S $(KFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
@@ -2500,6 +2529,13 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
 	$(HOSTDIR)/lua tools/test_iconlayout.lua
+	@# The Deskbar's menu, read off a folder tree - what counts as an item,
+	@# what order things come in, how deep a folder may go. The store it
+	@# reads through is a table here, which is the whole reason the reading
+	@# lives in `/lib` and not inside the Deskbar.
+	$(HOSTDIR)/lua tools/test_deskbarmenu.lua
+	@# And what a file *is*: the attribute first, the extension second.
+	$(HOSTDIR)/lua tools/test_filetypes.lua
 	@# And the audio ring's position arithmetic. It models the client, the
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.
@@ -2724,7 +2760,31 @@ browser: $(HOSTDIR)/lua
 mega:
 	@$(MAKE) --no-print-directory MEGA=1 $(TARGET)
 
-prepush: test screenshot litexl-check mega shot
+#
+# **The stages in order, each compiled in parallel.**
+#
+# They were prerequisites - `prepush: test screenshot litexl-check mega
+# shot` - which is correct and slow. Make builds a prerequisite's own
+# dependencies one at a time unless told otherwise, so every object in every
+# variant was compiled serially on a machine with ten cores.
+#
+# `-j` on the whole thing is not the answer: the five stages would run at
+# once, which means several QEMUs racing for the same build directories and
+# a screenshot taken of whichever image happened to be linked last. The
+# stages are *ordered* on purpose.
+#
+# So the ordering stays here in the recipe and the parallelism goes inside
+# each stage, where it is safe: one stage at a time, its compiles spread
+# across `J` jobs. `make J=4 prepush` for a quieter machine.
+#
+J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+
+prepush:
+	@$(MAKE) --no-print-directory -j$(J) test
+	@$(MAKE) --no-print-directory -j$(J) screenshot
+	@$(MAKE) --no-print-directory -j$(J) litexl-check
+	@$(MAKE) --no-print-directory -j$(J) mega
+	@$(MAKE) --no-print-directory -j$(J) shot
 	@echo
 	@echo "ready to push: suites green and $(SHOTDIR) has today's picture."
 

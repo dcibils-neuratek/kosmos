@@ -91,11 +91,19 @@ function files.entries(path)
   return out
 end
 
--- How an entry reads in a list. The trailing slash is the only marker, and
--- it is enough: it is what a path would need anyway.
+--
+-- The name, and nothing added to it.
+--
+-- A directory used to get a trailing slash here. That is a *path*
+-- convention - it says "you can go into this" in a line of text where
+-- nothing else could - and both places this is drawn already say so better:
+-- an icon on the desktop is a picture of a folder, and a row in Tracker has
+-- a Kind column that reads `folder`.
+--
+-- So it said the same thing twice, and the second time looked like part of
+-- the name: `Trash/` is not what that folder is called.
+--
 function files.label(entry)
-  if entry.kind == "directory" then return entry.name .. "/" end
-
   return entry.name
 end
 

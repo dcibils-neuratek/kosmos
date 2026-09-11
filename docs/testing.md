@@ -819,7 +819,7 @@ stick from `make MEGA=1 usb` and run Doom and Quake off its disk.
 | check | run by | what it establishes |
 | ----- | ------ | ------------------- |
 | `tools/test_iconlayout.lua` | `make test` | new icons fill the first column down, then the next; a placed icon keeps its place and the next new one does not land on it; a place off the screen is pulled back onto it; a name too long for two lines keeps its extension - nine checks on the build machine, with no guest |
-| `desktop` phase of `tools/run_screenshot.py` | `make screenshot` | `wm desktop,topbar` puts the backdrop at the strip's height; the window manager's stamp is legible *through* the desktop, which is the layer a wallpaper is painted in; Drive dragged out of its cell is drawn where it was let go, and `desktop_x` and `desktop_y` say the same at the prompt; dragged onto the Trash it goes in and the Trash's picture changes; Drive is a launcher for Tracker at `/`, with the Trash and the cheat sheet beside it |
+| `desktop` phase of `tools/run_screenshot.py` | `make screenshot` | `wm desktop,deskbar`, with an empty `/home/.startup` so nothing opens over it, puts the backdrop at the strip's height; the window manager's stamp is legible *through* the desktop, which is the layer a wallpaper is painted in; Drive dragged out of its cell is drawn where it was let go, and `desktop_x` and `desktop_y` say the same at the prompt; dragged onto the Trash it goes in and the Trash's picture changes; Drive is a launcher for Tracker at `/`, with the Trash and the cheat sheet beside it |
 | `L-RAMFS` and `L-HOME` in `tools/run_queries.py` | `make test` | a 64-character name reads back on the disk, and in memory inside a 64-character directory - 136 bytes of path, where `/ramfs` used to hold 128 |
 
 **Each has had what it guards taken away.** With the window manager neither
@@ -915,3 +915,53 @@ the same thing more quietly: its killed server ended with its own `exit(1)`
 rather than -1. `trap_syscall_leave` makes the check after every syscall, as
 AArch64 always has, and the x86-64 suite passes 145 of 145 with every killed
 process ending -1. The failing run is that fix's control.
+
+## 18.21 One bar, a menu made of files, and the right button
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/test_deskbarmenu.lua`, 9 checks | `make test` | the folders under `/home/Deskbar` are the sections, in their own order; only `kind == "launcher"` is an item; a folder inside a section is a submenu and submenus come before launchers, each sorted; a launcher carries its program and its arguments, with no arguments reported as an empty string rather than nothing; a folder that contains itself is read to a depth and then stops |
+| `tools/test_filetypes.lua`, 13 checks | `make test` | the `type` attribute beats the extension, a leading dot is not an extension, a launcher written today is of type `launcher` and one carrying only `kind` still is, `launcheredit` handles the type, and a launcher is never recognised by its name |
+| `context` phase of `tools/run_screenshot.py`, 3 checks | `make screenshot`, and so `make prepush` | a right press on a probe's button reaches its `on_context`, does **not** press the button, and a left press on the same pixel still does |
+| `deskbar` phase | the same | a bare `wm` opens the strip at 0,0, and walking the Kosmos menu into Applications and choosing the first item opens a window |
+| `desktop` phase | the same | `wm desktop,deskbar` with an empty startup list puts the backdrop at the strip's height |
+
+**Each host test has had what it guards taken away.** With anything in the
+folder counting as an item, `test_deskbarmenu` fails on the file that is not
+a launcher; with launchers before submenus it fails on the order and on four
+more; with no depth guard it blows the stack at 62,000 levels. With the
+launcher not read out of `kind`, `test_filetypes` fails on the launcher that
+predates the `type` attribute; with the attribute no longer beating the
+extension it fails on three.
+
+**The `context` phase's controls found the check reporting the wrong half.**
+With the kit no longer saying it understands `button`, nothing arrives and it
+fails saying so. With the kit routing a right press like a left one, the
+button *is* pressed - and the check first reported "on_context never fired",
+which is a symptom rather than the fault. The order was swapped so the
+sentence that says what happened comes first.
+
+**And the redesign broke six checks that encoded the old shape rather than
+the behaviour**, which is worth listing because every one of them looked
+like a bug in the code:
+
+- The x86 pointer check clicked the centre of the Deskbar's window, which is
+  now the middle of a bar as wide as the screen.
+- `check_deskbar` expected exactly one window after `wm` - the Deskbar's own
+  tab. A strip is chrome and has none.
+- The baseline was sampled while the Deskbar's startup applications were
+  still opening, so "a window appeared" came true without the menu being
+  touched. **That passed, which is worse than failing.**
+- `count_windows` counts long runs of tab colour, and the bar is
+  tab-coloured, full width, and redraws every second as its clock ticks, so
+  the count wobbled between frames. It takes a `from_y` now and the bar is
+  not counted.
+- Even below the strip the count was wrong: a new window overlapping an old
+  one merges into its cluster. The check asks the window manager whether it
+  opened a window instead - the rule this file already states for everything
+  else, *asked of the thing that decides it rather than read off the picture
+  alone*.
+- `desktop_drawn` looks for mostly-desktop-colour below the strip, and the
+  Deskbar starts four applications that cover it. The phase writes an empty
+  `/home/.startup` first, because `startup.lua` treats absent and empty as
+  different things on purpose.

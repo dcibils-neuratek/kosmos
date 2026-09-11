@@ -1044,6 +1044,11 @@ def find_colour_anywhere(width, height, px, want):
 # The list selection in the gallery, 0x1f6feb, which is the accent colour.
 SELECTED = (0x1f, 0x6f, 0xeb)
 
+# The Deskbar's height. It is the strip across the top, it is
+# tab-coloured, and it is not a window - so anything counting windows
+# by their title bars starts below it.
+STRIP_H = 36
+
 
 def check_registry(guest):
     """A window manager started a second time is found by name.
@@ -1154,6 +1159,149 @@ def check_registry(guest):
             "the second was registered under another.")
 
     return 3
+
+
+def check_context(guest):
+    """The right button reaches an application, and presses nothing.
+
+    Both pointer drivers have always reported the right button - `hal.h` says
+    bit 0 left, bit 1 right - and everything above the HAL threw it away: the
+    window manager masked `buttons & 1` and the `mouse` event it posted
+    carried no button at all.
+
+    **The danger in delivering it is that a program which has never heard of
+    one reads it as a left press and acts on it.** Paint would draw with it,
+    Quake would fire, Lite XL would move its cursor. So a right press goes
+    only to a window that said it understands `button`, `ui.lua` says so for
+    every window it opens, and the kit drops what no view claimed - see
+    `handlers.open` in `wm.lua`.
+
+    The probe is one window with both halves, because the interesting claim
+    is about the two together: a button to press, and an `on_context`. A
+    right press on the button has to reach `on_context` and leave the button
+    alone, and a left press on the same pixel has to press it. Checked by
+    what the program prints rather than by the screen, because "the button
+    was not pressed" is not a picture.
+    """
+    # Split in the source so the echo of the line that writes the program
+    # cannot be mistaken for the program printing it.
+    probe = (
+        'local ui = use("/lib/ui.lua") '
+        'local win = ui.window{ title = "Context", w = 300, h = 160, '
+        'x = 200, y = 200 } '
+        'win:add(ui.button{ x = 20, y = 40, w = 120, text = "Press", '
+        'on_click = function() print("ctx" .. "-probe: pressed") end }) '
+        'function win:on_context(x, y) '
+        'print("ctx" .. "-probe: context at " .. x .. "," .. y) '
+        'return true end '
+        'print("ctx" .. "-probe: at " .. win.origin_x .. "," .. win.origin_y) '
+        'win:run()'
+    )
+
+    guest.type("fs.write('/ramfs/ctxprobe.lua', %r)" % probe)
+    time.sleep(2)
+
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/ctxprobe.lua")
+
+    deadline = time.monotonic() + 40
+    where = None
+
+    while where is None and time.monotonic() < deadline:
+        time.sleep(0.3)
+        guest._read_available()
+        where = re.search(r"ctx-probe: at (\d+),(\d+)", guest.seen[mark:])
+
+    if where is None:
+        raise Failure(
+            "the window manager started and the probe never said where its "
+            "window went.\n--- what the guest said ---\n"
+            + guest.seen[mark:][-800:])
+
+    ox, oy = int(where.group(1)), int(where.group(2))
+    width, height, _ = parse_ppm(guest.screendump())
+
+    # The button is at 20,40 inside the window and is 120 wide; `ui.button`
+    # gives it the font's height plus ten. Its middle, in screen pixels.
+    bx, by = ox + 20 + 60, oy + 40 + 13
+
+    def press(button):
+        guest.mouse_to(*_to_tablet(bx, by, width, height))
+        time.sleep(0.4)
+        guest.mouse_button(True, button)
+        time.sleep(0.4)
+        guest.mouse_button(False, button)
+        time.sleep(0.8)
+        guest._read_available()
+
+    checks = 0
+
+    # 1 and 2. A right press does not press, and reaches on_context.
+    #
+    # **Pressed first, and the order is not arbitrary.** Both are wrong when
+    # a right press is routed like a left one, and "it pressed the button" is
+    # the sentence that says what happened; "on_context never fired" is a
+    # symptom of it and sends the reader to the wrong half of the system.
+    # Asking the other way round is what this did first, and the negative
+    # control below caught it reporting the wrong one - the guest had printed
+    # `ctx-probe: pressed` and the failure never mentioned it.
+    at_right = len(guest.seen)
+    press("right")
+    said = guest.seen[at_right:]
+
+    if "ctx-probe: pressed" in said:
+        raise Failure(
+            "a right press on the probe's button *pressed* it. That is the "
+            "whole failure this is here to catch: a right press routed like "
+            "a left one draws in Paint and fires in Quake. `dispatch_mouse` "
+            "in `ui.lua` has to take `button == \"right\"` out of the normal "
+            "path before any widget sees it.\n"
+            "--- what the guest said ---\n" + said[-800:])
+
+    checks += 1
+
+    if not re.search(r"ctx-probe: context at \d+,\d+", said):
+        raise Failure(
+            "a right press on the probe's button never reached its "
+            "`on_context`, and did not press it either - so nothing arrived "
+            "at all. The window manager sends one only to a window that says "
+            "it understands `button`, and `ui.lua` says so for every window "
+            "it opens, so either the button never came from the driver or "
+            "`wm.lua` dropped it.\n"
+            "--- what the guest said ---\n" + said[-800:])
+
+    checks += 1
+
+    # 3. And the left button still does what it always did.
+    at_left = len(guest.seen)
+    press("left")
+
+    if "ctx-probe: pressed" not in guest.seen[at_left:]:
+        raise Failure(
+            "a left press on the probe's button no longer presses it, so "
+            "adding the right button broke the one that worked.\n"
+            "--- what the guest said ---\n" + guest.seen[at_left:][-800:])
+
+    checks += 1
+
+    # Back to the shell, the way every phase here ends.
+    stop = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[stop:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back from the probe.")
+
+    return checks
 
 
 def check_widgets(guest):
@@ -1634,8 +1782,18 @@ def _strip(px, width, x0, y0, w, h):
 TAB_IDLE = (0xb8, 0xb8, 0xb8)
 
 
-def count_windows(width, height, px):
+def count_windows(width, height, px, from_y=0):
     """How many windows are on screen, counted by their title bars.
+
+    `from_y` skips rows at the top, and it exists for the Deskbar. The
+    bar across the top is tab-coloured, the full width of the screen, and
+    it **redraws every second** as its clock ticks - so its gradient rows
+    drift in and out of the tab-colour test and the whole-screen count
+    wobbles between readings. That made the Deskbar phase flaky rather
+    than wrong: it passed or failed depending on which frame it caught.
+
+    The bar is chrome rather than a window, so the answer is to stop
+    counting it.
 
     **Not by rows containing tab colour**, which is what this did until the
     decoration became one colour across the whole frame. A window's *border*
@@ -1692,7 +1850,7 @@ def count_windows(width, height, px):
 
     clusters = []                       # [x0, x1, last_y, rows]
 
-    for y in range(0, height, 2):
+    for y in range(from_y, height, 2):
         for a0, a1 in runs_in(y):
             for c in clusters:
                 if a0 < c[1] and c[0] < a1 and y - c[2] <= MEMORY:
@@ -2663,14 +2821,56 @@ def check_deskbar(guest):
     guest.type("wm")
     started(guest)
 
-    width, height, px = parse_ppm(guest.screendump())
-    before = count_windows(width, height, px)
+    #
+    # The Deskbar is a *strip* now, so it has no tab and does not appear in
+    # a census of windows at all.
+    #
+    # This used to read "expected the Deskbar and nothing else, and counted
+    # 1" - the 1 being the Deskbar's own tab. When the Deskbar became the
+    # bar across the top it became chrome, like the desktop, and `wm.lua`
+    # gives chrome no tab. So the thing to assert is that the strip opened,
+    # which the window manager says outright, and the count becomes a
+    # baseline rather than a claim.
+    #
+    # The baseline is what the real check below is made of: after choosing
+    # something from the menu there has to be *more* than there was.
+    #
+    deadline = time.monotonic() + 30
 
-    if before != 1:
-        raise Failure(
-            f"expected the Deskbar and nothing else after a bare `wm`, and "
-            f"counted {before} windows."
-        )
+    while "wm: window Deskbar at 0,0 " not in guest.seen:
+        if time.monotonic() > deadline:
+            raise Failure(
+                "a bare `wm` did not open the Deskbar across the top.\n"
+                "--- what the guest said ---\n" + guest.seen[-1200:])
+
+        time.sleep(0.3)
+        guest._read_available()
+
+    #
+    # **The baseline is taken once the machine has stopped opening windows.**
+    #
+    # The Deskbar starts what `startup.lua` lists - four applications - and
+    # they arrive over a second or so. Sampling the count straight after
+    # `wm` and then waiting for it to *rise* meant the rise came from those,
+    # not from the menu: the check passed without the menu being involved at
+    # all, which is the worst kind of green.
+    #
+    # So: wait for two readings the same, and use that.
+    #
+    width, height, px = parse_ppm(guest.screendump())
+    before = count_windows(width, height, px, STRIP_H)
+
+    settled = time.monotonic() + 25
+
+    while time.monotonic() < settled:
+        time.sleep(1.5)
+        width, height, px = parse_ppm(guest.screendump())
+        again = count_windows(width, height, px, STRIP_H)
+
+        if again == before:
+            break
+
+        before = again
 
     #
     # Through the menu, which is where the applications are now.
@@ -2686,21 +2886,27 @@ def check_deskbar(guest):
     # clicked where the old list was would pass on a Deskbar nobody could
     # use.
     #
-    # deskbar.lua: window at (sw - 210 - 12, 34), button at (10, 12) and
-    # 28 tall, so the menu opens at (dx + 10, dy + 12 + 28). Every item in
-    # the Deskbar's menus has a picture now, and a menu with pictures gives
-    # every row the picture's height, 32 and four, from two pixels in.
+    # deskbar.lua: the strip at 0,0, 36 tall, with the Kosmos button at its
+    # left end - twelve in, a 32-pixel icon, eight, then the word. Its menu
+    # opens under the bar, at the window's own origin.
     #
-    dx, dy = width - 210 - 12, 34
+    # It used to be a window in the top-right corner and these numbers were
+    # measured from there, which is why they had to change: the bar is the
+    # whole width now and the middle of it is somebody's window button.
+    #
+    # Every item in the Deskbar's menus has a picture, and a menu with
+    # pictures gives every row the picture's height, 32 and four, from two
+    # pixels in.
+    #
     row_h = max(GLYPH_H + 6, 32 + 4)
-    menu_x, menu_y = dx + 10, dy + 12 + GLYPH_H + 12
+    menu_x, menu_y = 0, 36
 
     # And its width, because the submenu opens beside it: the widest name,
     # `Applications`, then the padding, the arrow and the picture - the sum
     # `menu_metrics` in ui.lua makes.
     top_w = len("Applications") * GLYPH_W + 8 * 2 + 12 + 12 + 32 + 6
 
-    guest.mouse_to(*_to_tablet(dx + 100, dy + 26, width, height))
+    guest.mouse_to(*_to_tablet(40, 18, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
@@ -2717,20 +2923,56 @@ def check_deskbar(guest):
     guest.mouse_to(*_to_tablet(menu_x + top_w + 30, menu_y + 2 + row_h // 2 + 4,
                                width, height))
     time.sleep(0.8)
+
+    # From here on, any window the window manager opens is this choice's.
+    chose = len(guest.seen)
+
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
 
-    after = settle(
-        guest,
-        lambda w, h, px: (lambda n: n if n > before else None)(
-            count_windows(w, h, px)),
-        f"starting an application from the Deskbar's menu did nothing: "
-        f"there was {before} window and there still is. Either the menu did "
-        "not open, or its submenu did not (the window manager forwards "
-        "pointer movement only while a menu is open - see `pointer_pass`), "
-        "or the program named is not marked `-- kosmos: application` and so "
-        "is not in the menu at all.")
+    #
+    # **Asked of the window manager rather than counted off the screen.**
+    #
+    # This counted title bars before and after, and the count is a pixel
+    # heuristic: a title bar is a long horizontal run of tab colour, and a
+    # run that overlaps one seen a few rows above is taken to be the same
+    # window continuing. With five windows on a 1920x1080 desktop the new
+    # one lands overlapping an old one often enough that the count does not
+    # move, so the check failed while the launch it was testing worked
+    # perfectly - which is the third time that heuristic has cost a day.
+    #
+    # The window manager says when it opens a window and what it is called.
+    # That is the thing that decides it, so that is what to ask - the same
+    # rule the rest of this file follows for everything that could look
+    # right and be wrong.
+    #
+    deadline = time.monotonic() + 25
+    opened = None
+
+    while opened is None and time.monotonic() < deadline:
+        guest._read_available()
+        # A title has spaces in it - "About Kosmos" - so the name is
+        # taken up to the position, not up to the first space.
+        opened = re.search(r"wm: window (.+?) at \d+,\d+ ",
+                           guest.seen[chose:])
+
+        if opened is None:
+            time.sleep(0.4)
+
+    if opened is None:
+        raise Failure(
+            "choosing the first item of the Kosmos menu's Applications "
+            "section opened no window. Either the menu did not open, or its "
+            "submenu did not (the window manager forwards pointer movement "
+            "only while a menu is open - see `pointer_pass`), or the item "
+            "names a program that is not there.\n"
+            "--- what the window manager said ---\n"
+            + "\n".join(l.strip() for l in guest.seen[chose:].splitlines()
+                         if "menu of" in l or "launch" in l
+                         or "wm: window" in l)[-900:])
+
+    after = before + 1
 
     if False:
         raise Failure(
@@ -2767,11 +3009,15 @@ def check_desktop(guest):
     Each of these could look right and be wrong, so each is asked of the
     thing that decides it rather than read off the picture alone.
 
-    **Below the strip.** `wm desktop,topbar` starts both, in whichever order
-    they arrive, and the window manager has to say the backdrop is at the
-    strip's height - either when it opens, or when it is moved there because
-    the strip came second. A desktop at 0,0 draws its first row of icons
-    under the bar, which is the bug this exists for.
+    **Below the strip.** `wm desktop,deskbar` starts both, in whichever
+    order they arrive, and the window manager has to say the backdrop is at
+    the strip's height - either when it opens, or when it is moved there
+    because the strip came second. A desktop at 0,0 draws its first row of
+    icons under the bar, which is the bug this exists for.
+
+    The strip is the Deskbar itself now. It used to be `topbar`, a second
+    bar with five hard-coded shortcuts; the Deskbar is that strip, so there
+    is one piece of chrome across the top rather than two.
 
     **Dragged, it stays.** Drive is pressed where an empty desktop puts it,
     in the cell under the Trash's, and let go on bare desktop further down.
@@ -2792,7 +3038,25 @@ def check_desktop(guest):
     checks = 0
     mark = len(guest.seen)
 
-    guest.type("wm desktop,topbar")
+    #
+    # Nothing opened at login, so what is on the screen is the desktop.
+    #
+    # This used to start `topbar`, which opened nothing of its own. The
+    # Deskbar is the strip now, and the Deskbar starts what `startup.lua`
+    # lists - four applications, which cover enough of a 1920x1080 screen
+    # that "most of what I sample is desktop colour" stops being true.
+    #
+    # An empty list rather than a smaller sampling threshold: the phase is
+    # about the desktop being *drawn below the strip*, and a threshold tuned
+    # around four windows would pass on a desktop that was not there at all
+    # the moment somebody changed what opens at login. `startup.lua` treats
+    # an absent file and an empty list as different things on purpose, and
+    # this is the empty one.
+    #
+    guest.type('fs.write("/home/.startup", { items = {} })')
+    time.sleep(2)
+
+    guest.type("wm desktop,deskbar")
 
     def said_any(texts, seconds=40):
         deadline = time.monotonic() + seconds
@@ -2807,13 +3071,14 @@ def check_desktop(guest):
 
         return False
 
-    # The top bar's own height: 26, or a glyph and ten if that is more.
-    strip = max(26, GLYPH_H + 10)
+    # The Deskbar's own height, which is a fixed 36: an icon is 32 and
+    # nothing here scales one, so the bar is that plus two rows of air.
+    strip = 36
     below = (f"wm: window Tracker at 0,{strip} ",
              f"wm: the desktop is below the strip, at 0,{strip} ")
 
-    if not said_any(["wm: window Topbar at 0,0 "]):
-        raise Failure("`wm desktop,topbar` never opened the top bar.\n"
+    if not said_any(["wm: window Deskbar at 0,0 "]):
+        raise Failure("`wm desktop,deskbar` never opened the strip.\n"
                       + guest.seen[mark:][-1200:])
 
     if not said_any(below):
@@ -2852,7 +3117,7 @@ def check_desktop(guest):
         return (w, h, px) if seen > (w // 16) * (h // 16) // 3 else None
 
     settle(guest, desktop_drawn,
-           "the desktop never drew. `wm desktop,topbar` starts Tracker in "
+           "the desktop never drew. `wm desktop,deskbar` starts Tracker in "
            "backdrop mode through the window manager, and if Tracker died "
            "instead the lines above say why.")
 
@@ -3036,9 +3301,20 @@ def check_desktop(guest):
 
     checks += 1
 
-    if fields[3:6] != ["launcher", "tracker", "/"]:
+    #
+    # The whole path, not the short name.
+    #
+    # `handlers.launch` accepts either and completes a bare `tracker` to
+    # `/bin/tracker.lua`, which is right for somebody typing. What a *file*
+    # records should say what it runs without the reader knowing that rule,
+    # so everything that writes a launcher writes the path - and this check
+    # is where that decision is held to.
+    #
+    if fields[3:6] != ["launcher", "/bin/tracker.lua", "/"]:
         raise Failure("Drive should be a launcher for Tracker at /: "
-                      "kind=launcher, program=tracker, args=/.\n" + at)
+                      "kind=launcher, program=/bin/tracker.lua, args=/. A "
+                      "launcher records the whole path rather than a short "
+                      "name the window manager would complete.\n" + at)
 
     if "Trash" not in has or "cheatsheet.html" not in has:
         raise Failure("the desktop folder should always hold the Trash and "
@@ -3689,6 +3965,7 @@ def main():
         # Before `widgets`, the first phase that starts a window manager:
         # this one's first start is its control, and needs a clean registry.
         registry_checks = phase("registry", check_registry)
+        context_checks = phase("context", check_context)
         widget_checks = phase("widgets", check_widgets)
         script_checks = phase("scripting", check_scripting)
         idle_checks = phase("idle", check_idle)
@@ -3723,7 +4000,7 @@ def main():
              + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
-             + three_d_checks + registry_checks)
+             + three_d_checks + registry_checks + context_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -3741,6 +4018,8 @@ def main():
           f"program, "
           f"{registry_checks} on a window manager found by name after a "
           f"restart, "
+          f"{context_checks} on the right button reaching an application "
+          f"and pressing nothing, "
           f"{widget_checks} on the widget kit, "
           f"{script_checks} on scripting a running application, "
           f"{replicant_checks} on a replicant moved between processes, "

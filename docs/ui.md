@@ -555,6 +555,78 @@ Haiku's, and `assets/icons/README.md` says which, and from where.
 
 ---
 
+## 16.13 One bar: the Deskbar is the strip
+
+There were two pieces of chrome that were always on the screen: the Deskbar,
+a panel in the top-right corner with a menu and a list of what was running,
+and `topbar`, a strip across the top with five shortcuts and a clock. The
+shortcuts were a hard-coded list in a source file - a menu that cannot be
+edited, sitting beside a menu that can.
+
+It is one strip now, 36 pixels tall, and `topbar.lua` is deleted:
+
+- **The Kosmos menu at the left**, which is `/home/Deskbar` read off the
+  disk. Right-clicking it offers **Reload Menus** and **Open Deskbar
+  Folder**, the second because nothing on the screen said the folder
+  existed.
+- **A button per running window across the middle**, each drawing that
+  application's own picture. The window manager reports the *program* that
+  opened each window - a path - and `/bin` reports what its header declares,
+  because a title cannot give you a picture and changes whenever the
+  application likes.
+- **What the machine is doing at the right**: processor and memory meters,
+  the network, the volume, the battery, the date and the clock. Each one
+  opens the application that owns it.
+
+**32-pixel icons in a 36-pixel bar**, because 32 is the size every icon in
+`assets/icons/` actually is and nothing here scales one - any other number
+would be a crop rather than a smaller picture.
+
+**Drawn as one view rather than a row of widgets.** A `ui.button` is a
+bevel, a label and a focus ring, and none of those belong on a bar; what
+this wants is something you can click, which is a fill and a picture. That
+is `topbar.lua`'s decision and it outlived the file.
+
+**The shades are a ladder, not three numbers.** The strip is `theme.tab`
+under a gradient, a button is a touch lighter, and a pressed button is a
+shade darker *than the button* - measured from the button rather than from
+the strip, or a pressed one ends up darker than the bar and lighter than its
+neighbours, which reads as a hole. Corners are rounded by a two-entry table
+of insets, which is Mac OS X's menu-bar highlight: a hard rectangle reads as
+a panel bolted on.
+
+**A second click on the focused window's button minimises it.** The only
+gesture on the bar that has to be learned, and the alternative - a click
+always raises - leaves the button under the window you are in doing nothing
+at all.
+
+**Every window keeps a button, however many there are.** They share the room
+between the menu and the indicators, capped so that two windows do not each
+get half the screen, and shrink past that: icon and title, then icon alone,
+then slivers. A sliver is ugly and it is *reachable*, which is the property
+that matters - this first stopped shrinking at icon width and dropped any
+window that did not fit, which is a taskbar hiding the thing you are looking
+for.
+
+**The indicators are drawn only when the machine can answer.** `topbar.lua`
+refused to draw them for subsystems that did not exist, on the grounds that
+a picture which lies about what the system knows is worse than a gap. What
+decides it now is the kernel rather than a comment: `needs audio` grants
+nothing on a board with no sound card, so `/dev/audio` is absent from the
+Deskbar's namespace and the speaker is not drawn. The battery is the
+exception and says so - it is drawn with a question mark beside it, because
+this machine cannot read one and a battery drawn at 72% would be
+indistinguishable from a battery that works.
+
+**The Deskbar holds `network` and `audio` now, and that is a change of
+position.** It declared `needs screen` and nothing else, on the argument
+that launching goes through the window manager so that reaching the Deskbar
+is not reaching everything. That still holds for *power* - `processes` stays
+with the window manager, and Restart is a request this sends. What changed
+is that the bar is where a person manages the machine from, and a bar that
+cannot see the volume cannot show it. **Reading state is not holding
+power**, and the two are kept apart deliberately.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

@@ -31,12 +31,16 @@ M.SETTINGS = "/home/.startup"
 -- which is precisely the moment nobody has opened a window yet.
 --
 --
--- `topbar` first, because it is a strip: the window manager gives it the
--- top of the screen and everything else opens below it, so opening it last
--- would mean every other window had already chosen a place that is now one
--- bar too high.
+-- **`topbar` was first in this list and is gone entirely.** It was a second
+-- strip across the top - five hard-coded shortcuts and a clock - and the
+-- Deskbar is that strip now: the Kosmos menu, a button per window, and the
+-- indicators. One bar rather than two, so there is nothing to open first.
 --
-M.DEFAULT = { "topbar", "tracker", "sysmon", "procs", "logview" }
+-- The Deskbar itself is not in this list and never was: the window manager
+-- starts it, because a desktop with no way to start anything is not a
+-- desktop.
+--
+M.DEFAULT = { "tracker", "sysmon", "procs", "logview" }
 
 --
 -- **Absent and empty are different, and the difference is the whole

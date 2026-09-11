@@ -40,6 +40,23 @@ filetypes.by_extension = {
 
   mp3  = "music",
   wav  = "play",
+
+  --
+  -- Not an extension, and the first entry here that never was one.
+  --
+  -- A launcher's type comes from its attributes rather than its name -
+  -- `kind_of` below - because the name is the label somebody sees in the
+  -- menu and on the desktop, and `Drive.launcher` under an icon is the
+  -- machinery showing through. This is the type-to-program half of that.
+  --
+  -- **`launcheredit` edits one; it does not open one.** Opening a launcher
+  -- means starting what it points at, which is what Tracker does when you
+  -- double-click it and what the Deskbar does when you choose it - both
+  -- test `kind == "launcher"` before they ever ask here. So this is the
+  -- answer to "what handles this type", which is the question a Get Info or
+  -- a right-click asks.
+  --
+  launcher = "launcheredit",
 }
 
 -- What a path is, as a type name rather than a program.
@@ -49,6 +66,22 @@ function filetypes.kind_of(path, attrs)
   -- yet; this is the branch that will matter and it is here so that adding
   -- attributes to the disk does not mean revisiting every caller.
   if attrs and attrs.type then return attrs.type end
+
+  --
+  -- And a launcher is one, whoever wrote it.
+  --
+  -- `kind` is what the node *is* - file, directory, launcher - and for a
+  -- launcher that is also the whole of what it is worth saying. Reading it
+  -- here as well as `type` means every launcher already on a disk is a
+  -- launcher to this function without anybody rewriting its attributes:
+  -- there were thirty-eight of them on the first machine this ran on, and a
+  -- migration to teach them a word they already knew would have been work
+  -- for nothing.
+  --
+  -- New ones set `type` too, so the general branch above stays the one that
+  -- matters and this is only the floor under it.
+  --
+  if attrs and attrs.kind == "launcher" then return "launcher" end
 
   local name = tostring(path):match("([^/]+)$") or ""
 

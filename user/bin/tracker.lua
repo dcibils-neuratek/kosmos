@@ -160,7 +160,8 @@ if backdrop then
     local ok, why = fs.write(drive, "")
 
     if ok then
-      ok, why = fs.setattr(drive, { kind = "launcher", program = "tracker",
+      ok, why = fs.setattr(drive, { kind = "launcher", type = "launcher",
+                                    program = "/bin/tracker.lua",
                                     args = "/", icon = "Device_Harddisk" })
     end
 
@@ -907,9 +908,20 @@ function rows:draw(g)
     g:text(COLUMNS[1].x, y, files.label(e), fg, bg)
     g:text(COLUMNS[2].x, y,
            (e.kind == "directory") and "--" or files.size(e.size), fg, bg)
+    --
+    -- The attributes go with the name, or the Kind column can only ever
+    -- read an extension.
+    --
+    -- `kind_of` takes them and prefers them - it always has - and this call
+    -- left them out, so a launcher read as `file` and every typed attribute
+    -- the disk grows would have been invisible here. Launchers were the
+    -- first thing to notice: thirty-eight of them in the Deskbar's folder,
+    -- all saying "file", all 0 B, with nothing on screen to say what they
+    -- were.
+    --
     g:text(COLUMNS[3].x, y,
            (e.kind == "directory") and "folder"
-           or (types.kind_of(e.name) or "file"), fg, bg)
+           or (types.kind_of(e.name, e.attrs) or "file"), fg, bg)
   end
 
   draw_band()
@@ -979,6 +991,45 @@ local function open_selected()
     status.text = ok and ("opened " .. e.name .. " in " .. opener)
                   or ("could not open it: " .. tostring(why))
   end
+end
+
+--
+-- Right-click a launcher: edit what it starts.
+--
+-- The same window the Deskbar's menu opens on a right press, because it is
+-- the same kind of file - a desktop icon and a menu row are two views of one
+-- launcher, and having two ways to edit it would be two ways to disagree.
+--
+-- Only a launcher answers. Right-clicking anything else says so rather than
+-- opening a window about a file that has nothing to edit; a general context
+-- menu for every kind of file is a bigger idea and is not this one.
+--
+-- `dispatch_context` in `ui.lua` hit-tests to this view and hands local
+-- coordinates, so `at_point` is the same function a left press uses and the
+-- desktop's free-placed icons are found the same way.
+--
+function rows:on_context(x, y)
+  local n = at_point(self, x, y)
+  local e = n and self.shown and self.shown[n]
+
+  if not e then
+    status.text = "nothing there"
+    return true
+  end
+
+  if e.kind ~= "launcher" then
+    status.text = e.name .. " is not a launcher"
+    return true
+  end
+
+  local ok, why = fs.send("/app/wm", { type = "launch",
+                                       program = "/bin/launcheredit.lua",
+                                       args = path_of(e) })
+
+  status.text = ok and ("editing " .. e.name)
+                or ("could not open it: " .. tostring(why))
+
+  return true
 end
 
 function rows:mouse(action, x, y)

@@ -391,7 +391,21 @@ end
 -- exactly the question the two edges answer.
 --------------------------------------------------------------------------
 
-local SCROLL_W = 14
+--
+-- **Wide enough to hit.** Fourteen pixels was a bar you aimed at rather
+-- than reached for, and a scrollbar is the one control in a window that is
+-- always used with the pointer and never with the keyboard - so the size
+-- of the target *is* the design.
+--
+-- Sixteen is Mac OS 8 and 9's, which is where the arrows at each end come
+-- from and where the sunken-trough-and-raised-thumb vocabulary comes from
+-- too. Taking the width from somewhere else while taking everything else
+-- from there is how a control ends up looking almost right.
+--
+-- It costs sixteen columns of every well that scrolls, which is the trade:
+-- two columns of content for a bar somebody can use without aiming.
+--
+local SCROLL_W = 16
 
 --
 -- An arrow button at each end, which is Mac OS 8 and 9 and is not decoration.
@@ -2926,6 +2940,18 @@ function ui.window(spec)
     -- a drag is overhead - see `wm.lua` - so saying yes and then ignoring
     -- the drop is a promise the window does not keep.
     drops = spec.drops or nil,
+
+    -- Always, and it is the kit saying "I understand `button`" rather than
+    -- the application asking for anything.
+    --
+    -- The window manager will not send a right press to a window that has
+    -- not said this, because a program that has never heard of one reads it
+    -- as a left press and acts on it - `handlers.open` in `wm.lua` has the
+    -- argument. Every window built here goes through `dispatch_mouse`,
+    -- which reads `button` and drops a right press no view claimed, so it
+    -- is safe here in a way it is not for a hand-written event loop. An
+    -- application that wants one writes `on_context` and nothing else.
+    context = true,
   }, shared_cap)
 
   if not reply then
@@ -3489,6 +3515,28 @@ function window:menu_mouse(ev)
 
   local item = row and m.items[row]
 
+  --
+  -- A right press on a row asks about it rather than choosing it.
+  --
+  -- The menu closes first, because whatever answers is going to put a
+  -- window on the screen and a menu left standing over it is a menu nobody
+  -- can get rid of. Then `on_menu_context` is told which item, and a window
+  -- that has no such handler gets a closed menu and nothing else - which is
+  -- the right answer for every menu in the system except the Deskbar's.
+  --
+  if ev.button == "right" then
+    if ev.action ~= "press" then return false end
+
+    self:close_menus()
+
+    if item and self.on_menu_context then
+      pcall(self.on_menu_context, self, item)
+      return true
+    end
+
+    return true
+  end
+
   if ev.action == "release" then
     --
     -- Releasing on something that opens a submenu is not a choice. The
@@ -3666,7 +3714,49 @@ function window:dispatch_edit(kind)
   return false
 end
 
+--
+-- The right button, which never touches focus, the grab, or a widget.
+--
+-- It is a different question from a click - "tell me about what is under the
+-- pointer" rather than "press it" - so routing it through the same path
+-- would press whatever it landed on, which is the bug this whole opt-in
+-- exists to prevent. A window says what to do about it by having
+-- `on_context`; one that does not gets nothing, which is why `ui.lua` can
+-- ask the window manager for right presses on behalf of every window it
+-- opens without changing how any of them behave.
+--
+-- The release is dropped too. A context menu opens on the press and
+-- everything after that is the menu's, which the window manager routes by
+-- handle - so there is nothing for a right release to mean here, and a
+-- handler that received one would have to know to ignore it.
+--
+local function dispatch_context(self, ev)
+  if ev.action ~= "press" then return false end
+
+  --
+  -- The view under it first, then the window. Same order and same reason as
+  -- a drop: a view answers in its own coordinates and does not have to know
+  -- where in the window it sits, and a window can answer everywhere without
+  -- giving every widget a handler.
+  --
+  local target, lx, ly = self.root:hit(ev.x, ev.y)
+
+  if target and target.on_context then
+    return target.on_context(target, lx, ly) and true or false
+  end
+
+  if self.on_context then
+    return self.on_context(self, ev.x, ev.y) and true or false
+  end
+
+  return false
+end
+
 local function dispatch_mouse(self, ev)
+  if ev.button == "right" then
+    return dispatch_context(self, ev)
+  end
+
   if ev.action == "press" then
     local target, lx, ly = self.root:hit(ev.x, ev.y)
 

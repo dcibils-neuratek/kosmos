@@ -1,12 +1,23 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- kosmos: server
--- kosmos: needs processes screen network
+-- kosmos: needs processes screen network audio
 --
 -- `network` is here so the desktop can *pass it on*. The kernel refuses a
 -- spawn that hands over authority the parent does not hold, so without this
 -- an application declaring `needs network` fails to start with "no process"
 -- - which says nothing about the card. init grants it to the shell for the
 -- same reason and the shell to this.
+--
+-- `audio` is here for the same reason and one more: the Deskbar draws what
+-- the machine is doing - the network, the volume - and a bar that is always
+-- on screen is where a person looks for that. Reading it means holding it,
+-- and holding it here is what lets this hand it down.
+--
+-- **Neither widens what an application can reach.** `init.lua` grants each
+-- only when the machine has the thing - `may_pass_audio` asks whether there
+-- is a sound card at all - and a child gets a capability only when its own
+-- header declares it needs one. So this is a conduit rather than a store,
+-- which is the same arrangement `network` has had since the browser.
 -- The window manager: windows, decoration, stacking, focus, and the
 -- compositor underneath them.
 --
@@ -617,6 +628,10 @@ local windows = {}
 local by_handle = {}
 local pending_pid = nil
 
+-- And which program that launch was, for the same window. See where
+-- both are collected, a few hundred lines down in `handlers.open`.
+local pending_program = nil
+
 -- Decoded pictures, by name. `false` means it was tried and would not
 -- decode, which is remembered so a broken image is not re-decoded every
 -- frame for the life of the desktop.
@@ -1023,6 +1038,11 @@ local pointer_x, pointer_y = 0, 0
 local buttons = 0
 local dragging = nil          -- { win, dx, dy } while a title bar is held
 local resizing = nil          -- { win, ox, oy, ow, oh } while a grip is held
+
+-- The right button's own grab, because the two buttons are two
+-- conversations: one can be held while the other is pressed and released,
+-- and sharing `grabbed` would have the second end the first.
+local right_grabbed = nil
 
 --
 -- The rubber band: where the frame *would* be, while the grip is held.
@@ -2432,6 +2452,36 @@ handlers.open = function(req, who, cap)
   win.drops = req.drops and true or nil
 
   --
+  -- Whether the *right* button reaches it at all.
+  --
+  -- Off unless asked for, and that is the whole design. Every other event
+  -- this process posts is one an application may ignore safely; a right
+  -- press is not, because an application that has never heard of one reads
+  -- it as a left press and acts on it. Paint would draw with it, Quake
+  -- would fire, Lite XL would move its cursor - three programs that handle
+  -- `mouse` themselves rather than through the kit, and none of them wrong
+  -- to.
+  --
+  -- The alternative was a guard in each of them, and CLAUDE.md has already
+  -- paid for that lesson: a rule that requires you to recognise a third
+  -- case will miss the fourth. The fourth program to read `mouse` directly
+  -- would be written without the guard, and right-clicking it would fire a
+  -- weapon.
+  --
+  -- So this is the capability argument one layer up, and the same sentence
+  -- as `drops` above: what you were not handed, you do not have. A window
+  -- that never asked cannot receive one, so it cannot misread one.
+  --
+  -- **What it asserts is "I understand the `button` field"**, rather than
+  -- "I want a menu". That is the distinction that makes it free: `ui.lua`
+  -- sets it on every window it opens, because the kit reads `button` and
+  -- drops what no widget claimed, so no application using the kit has to
+  -- know this exists. The three that read `mouse` themselves never set it,
+  -- and are the three it protects.
+  --
+  win.context = req.context and true or nil
+
+  --
   -- The backdrop: the window everything else sits on.
   --
   -- BeOS's desktop was a Tracker window - borderless, screen-sized, at the
@@ -2506,6 +2556,22 @@ handlers.open = function(req, who, cap)
   -- Whoever was launched most recently, if this is their first window.
   win.pid = pending_pid
   pending_pid = nil
+
+  --
+  -- And what was started to produce it, tied the same way and with the same
+  -- honesty about how good the tie is: the next window to open after a
+  -- launch is taken to be that launch's.
+  --
+  -- The Deskbar draws a button per window and wants the application's
+  -- picture on it, and a *title* cannot give it one - a title is a sentence
+  -- the application chose and changes whenever it likes. The program is a
+  -- path, and a path has a `kosmos: icon` line at the end of it.
+  --
+  -- Nil for a window nothing launched: the desktop, the bar itself, and
+  -- anything started before there was a window manager to ask.
+  --
+  win.program = pending_program
+  pending_program = nil
 
   next_handle = next_handle + 1
 
@@ -2627,6 +2693,7 @@ handlers.launch = function(req)
   -- pointer, and the thread that opens a window is the one this started.
   -- Good enough to end what was just launched, and honestly not more.
   pending_pid = id
+  pending_program = path
   return { ok = true }
 end
 
@@ -2698,10 +2765,51 @@ handlers.windows = function(req)
                -- already" is a question with an answer only this process
                -- has. `desktop` asks it before starting a second one, and
                -- `chrome` cannot answer it: the strip is chrome too.
-               backdrop = win.backdrop or nil }
+               backdrop = win.backdrop or nil,
+
+               -- What was started to make it, as a path. The Deskbar puts a
+               -- button on the bar per window and draws the application's
+               -- own picture on it, which it finds by asking `/bin` about
+               -- this - a title could not say, because a title is whatever
+               -- the application feels like calling itself today.
+               program = win.program,
+
+               -- And whether it is minimised, which the bar needs for two
+               -- reasons: to draw the button differently, and to know that
+               -- clicking it should bring the window back rather than put
+               -- it away. Without this the bar would have to remember what
+               -- it did last, and a second memory of one fact is a second
+               -- thing to be wrong.
+               hidden = win.hidden or nil }
   end
 
   return { ok = true, windows = out }
+end
+
+--
+-- Put one away. The other half of `raise`, which is what brings it back.
+--
+-- Here rather than in the Deskbar because `hidden` is this process's fact:
+-- it decides what is composed, and a window that is not composed is not on
+-- the screen. The bar asks, exactly as it asks for a raise - see
+-- `handlers.raise` directly below, which unhides on its way.
+--
+-- A strip or the backdrop is refused. Minimising the bar would hide the one
+-- thing that brings windows back, which is the same argument that gives the
+-- Deskbar no minimise box of its own.
+--
+handlers.minimise = function(req)
+  local win = by_handle[tonumber(req.window) or -1]
+
+  if not win then
+    return { ok = false, error = "no such window" }
+  end
+
+  if win.backdrop or win.strip then
+    return { ok = false, error = "the desktop and the bar do not minimise" }
+  end
+
+  return { ok = minimise(win) }
 end
 
 --
@@ -4002,6 +4110,71 @@ local function pointer_pass(p)
   elseif grabbed and is_down and moved_this_pass then
     post(grabbed, { type = "mouse", action = "move",
                     x = nx - grabbed.x, y = ny - grabbed.y })
+  end
+
+  --------------------------------------------------------------------------
+  -- And the right button, which does none of this process's own jobs.
+  --
+  -- No raise, no drag, no close box, no grip. Those are all answers to "you
+  -- pressed the decoration", and a right press means "tell me about what is
+  -- under the pointer" - a question about the *contents*, which is the
+  -- application's to answer and not this one's. So the frame is not tested
+  -- at all: a right press outside the contents does nothing.
+  --
+  -- Only `win.context` windows hear it - see `handlers.open` for why that is
+  -- off by default - and it carries `button = "right"` so a window that
+  -- asked for both can tell them apart. **No `button` field means the left
+  -- one**, which is what every event this process has ever posted was, so
+  -- nothing already written has to change to keep being right.
+  --
+  -- Grabbed like a left press, so the release reaches the same window even
+  -- if the pointer has left it by then.
+  --------------------------------------------------------------------------
+  local was_right = (buttons & 2) ~= 0
+  local is_right  = (p.buttons & 2) ~= 0
+
+  if is_right and not was_right then
+    if #menus > 0 then
+      --
+      -- Into the menu, tagged with its handle, exactly as a left press is.
+      --
+      -- A menu row is the thing most worth asking about - "what is this and
+      -- what would it start" - and the Deskbar's rows are launchers, which
+      -- are files somebody may want to edit. Sending this to the owner is
+      -- what lets it answer without this process learning what a menu row
+      -- means.
+      --
+      -- Outside every menu it dismisses them and stops, which is what a
+      -- left press does and for the same reason: the first click after
+      -- opening a menu is how you change your mind, not how you press the
+      -- thing behind it.
+      --
+      local m = menu_at(nx, ny)
+
+      if m then
+        post(by_handle[m.owner],
+             { type = "mouse", menu = m.handle, action = "press",
+               button = "right", x = nx - m.x, y = ny - m.y })
+      else
+        dismiss_menus()
+      end
+    else
+      local win = window_at(nx, ny)
+
+      if win and win.context
+         and nx >= win.x and nx < win.x + win.w
+         and ny >= win.y and ny < win.y + win.h then
+        right_grabbed = win
+        post(win, { type = "mouse", action = "press", button = "right",
+                    x = nx - win.x, y = ny - win.y })
+      end
+    end
+  elseif not is_right and was_right and right_grabbed then
+    post(right_grabbed, { type = "mouse", action = "release",
+                          button = "right",
+                          x = nx - right_grabbed.x,
+                          y = ny - right_grabbed.y })
+    right_grabbed = nil
   end
 
   buttons = p.buttons
