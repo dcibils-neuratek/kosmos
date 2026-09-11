@@ -91,6 +91,15 @@ void hal_ram_range(struct memrange *out);
 bool hal_ram_capped(unsigned long *whole_bytes);
 
 /*
+ * A disk the loader left in memory beside the kernel, if it left one:
+ * where it is and how long. The kernel prints it among the memory facts,
+ * because on a machine with no serial port the boot screen is the only
+ * place to learn whether the loader handed one over. False on a board
+ * whose loader has no way to.
+ */
+bool hal_loader_disk(unsigned long *base, unsigned long *bytes);
+
+/*
  * How many processors this machine has - not how many are being used.
  *
  * `sysinfo.cpus` is the second number and is `NR_CPUS`, which is 1. This is

@@ -35,6 +35,7 @@
 
 #define MB2_TAG_END         0u
 #define MB2_TAG_CMDLINE     1u      /* the arguments after the kernel's path */
+#define MB2_TAG_MODULE      3u      /* a file the loader put in memory */
 #define MB2_TAG_MMAP        6u
 #define MB2_TAG_FRAMEBUFFER 8u
 #define MB2_TAG_ACPI_OLD    14u     /* an RSDP as ACPI 1.0 defined it */
@@ -86,6 +87,16 @@ struct mb2_tag_framebuffer {
 } __attribute__((packed));
 
 #define MB2_FB_RGB          1u
+
+/*
+ * A module: where the loader put the file. The words after its path on the
+ * `module2` line follow as a string, which nothing here reads.
+ */
+struct mb2_tag_module {
+    struct mb2_tag tag;
+    uint32_t mod_start;
+    uint32_t mod_end;               /* one past the last byte */
+} __attribute__((packed));
 
 /*
  * The first tag of a type, or NULL.

@@ -1,6 +1,15 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * Where this board's disk comes from: NVMe first, then virtio-blk.
+ * Where this board's disk comes from: a disk the loader handed over, then
+ * NVMe, then virtio-blk.
+ *
+ * **The loader's disk first, ahead of a real drive**, because it only exists
+ * when somebody put it on the boot stick for this boot: a disk image carried
+ * beside the kernel is a statement about what this machine should mount, and
+ * a ThinkPad with an NVMe drive would otherwise never see it. The cost is
+ * said out loud rather than discovered: on such a boot the drive's `/home`
+ * is not mounted, and what is written goes to memory.
+ *
  *
  * **The same shape as `snd_bind.c` and `input_bind.c`, and the same
  * argument a third time.** A ThinkPad has an NVMe drive on its PCI bus and
@@ -27,14 +36,21 @@
 
 #include "hal.h"
 #include "blk.h"
+#include "memdisk.h"
 #include "nvme.h"
 
-static bool on_nvme;
+/* Which of the three answered, decided by `hal_blk_init`. */
+static enum { ON_VIRTIO, ON_NVME, ON_MEMORY } on = ON_VIRTIO;
 
 bool hal_blk_init(struct blkdev *out)
 {
+    if (memdisk_init(out)) {
+        on = ON_MEMORY;
+        return true;
+    }
+
     if (nvme_init(out)) {
-        on_nvme = true;
+        on = ON_NVME;
         return true;
     }
 
@@ -43,19 +59,31 @@ bool hal_blk_init(struct blkdev *out)
 
 bool hal_blk_read(uint64_t sector, void *buf, uint32_t bytes)
 {
-    return on_nvme ? nvme_read(sector, buf, bytes)
-                   : virtio_blk_read(sector, buf, bytes);
+    if (on == ON_MEMORY) {
+        return memdisk_read(sector, buf, bytes);
+    }
+
+    return on == ON_NVME ? nvme_read(sector, buf, bytes)
+                         : virtio_blk_read(sector, buf, bytes);
 }
 
 bool hal_blk_write(uint64_t sector, const void *buf, uint32_t bytes)
 {
-    return on_nvme ? nvme_write(sector, buf, bytes)
-                   : virtio_blk_write(sector, buf, bytes);
+    if (on == ON_MEMORY) {
+        return memdisk_write(sector, buf, bytes);
+    }
+
+    return on == ON_NVME ? nvme_write(sector, buf, bytes)
+                         : virtio_blk_write(sector, buf, bytes);
 }
 
 bool hal_blk_present(void)
 {
-    return on_nvme ? nvme_present() : virtio_blk_present();
+    if (on == ON_MEMORY) {
+        return memdisk_present();
+    }
+
+    return on == ON_NVME ? nvme_present() : virtio_blk_present();
 }
 
 /*
@@ -70,7 +98,11 @@ bool hal_blk_present(void)
  */
 const char *hal_blk_describe(void)
 {
-    if (on_nvme) {
+    if (on == ON_MEMORY) {
+        return memdisk_describe();
+    }
+
+    if (on == ON_NVME) {
         return nvme_describe();
     }
 

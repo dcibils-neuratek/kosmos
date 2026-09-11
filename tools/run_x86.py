@@ -233,6 +233,76 @@ def storage(image, check):
           "reads back its own cache looks exactly like")
 
 
+def memdisk(image, check):
+    """Boots with a disk the loader handed over, and reads a file off it.
+
+    **The disk a ThinkPad gets its game data from**, and the path it takes:
+    GRUB loads a kfs image from the USB stick into memory as a module, and
+    `hal/pc/memdisk.c` presents that memory as the board's block device.
+    QEMU's `-kernel` does the loader's half with `-initrd`, which puts the
+    image in memory as a Multiboot 1 module - so this is everything from the
+    kernel finding the module to the filesystem mounting it, without the
+    firmware.
+
+    **An empty NVMe drive is attached as well.** The loader's disk is meant
+    to win over a real drive, and the drive holds nothing, so a file that
+    comes back could only have come out of the module. It also catches the
+    module's pages being handed to the allocator: the first processes would
+    be built on top of the disk, and the file would not survive to be read.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    lua = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(image))),
+                       "host", "lua")
+    work = tempfile.mkdtemp()
+    marker = os.path.join(work, "marker.txt")
+    disk = os.path.join(work, "loader-disk.img")
+    drive = os.path.join(work, "empty-nvme.img")
+
+    with open(marker, "w") as handle:
+        handle.write("carried in by the loader, not the drive\n")
+
+    made = subprocess.run([lua, os.path.join(here, "kfs.lua"), "create", disk,
+                           "8", marker + ":/home/marker.txt"],
+                          capture_output=True, text=True)
+
+    if made.returncode != 0:
+        check(False, "kfs.lua could not make the loader's disk: "
+              + (made.stderr or made.stdout).strip())
+        return
+
+    with open(drive, "wb") as handle:
+        handle.truncate(64 * 1024 * 1024)
+
+    extra = ("-initrd", disk,
+             "-drive", "file=%s,format=raw,if=none,id=nvme0" % drive,
+             "-device", "nvme,drive=nvme0,serial=kosmos")
+
+    out = boot(image, None, 90.0, extra=extra,
+               typed=("diskinfo", "cat /home/marker.txt"))
+
+    if out is None:
+        check(False, "the machine would not boot with a disk from the loader")
+        return
+
+    check("a disk from the loader: 8192 KB" in out,
+          "the boot log did not name the loader's disk, so the module was "
+          "never captured: "
+          + next((l.strip() for l in out.splitlines() if "loader" in l),
+                 "nothing was said about a loader at all"))
+
+    check("disk: 16384 sectors" in out,
+          "`diskinfo` did not report the loader's 8 MB disk as 16384 sectors, "
+          "so the module was not the disk that was bound: "
+          + next((l.strip() for l in out.splitlines() if "disk:" in l),
+                 "nothing was said about a disk at all"))
+
+    check("carried in by the loader, not the drive" in out,
+          "the file on the loader's disk did not come back - either the "
+          "module was never read, or the allocator was given its pages and "
+          "something was built on top of it")
+
+
+
 def sound(image, check):
     """Boots with a real HDA controller, plays a tone, and listens."""
     wav = os.path.join(tempfile.gettempdir(), "kosmos-x86-hda.wav")
@@ -953,6 +1023,12 @@ def main():
     #
     storage(image, check)
 
+    # And a disk that is no drive at all: the image GRUB loads from a USB
+    # stick into memory, which is how a machine with nothing it can read
+    # carries its own data. `memdisk` says why a drive is attached anyway.
+    #
+    memdisk(image, check)
+
     # And the pointer a laptop has, with and without the serial port it does
     # not have. `pointer` says why the second half is the one that matters.
     #
@@ -972,7 +1048,8 @@ def main():
           "by two paths, answers what is typed at it, runs a program that "
           "reports what it was handed, plays a tone an Intel HDA "
           "controller hands back at the right pitch, keeps a file on an "
-          "NVMe drive across a reboot, and opens a menu with a click through "
+          "NVMe drive across a reboot, reads one off a disk the loader "
+          "handed over in memory, and opens a menu with a click through "
           "a PS/2 mouse whether or not the machine has a serial port)."
           % checks)
     return 0

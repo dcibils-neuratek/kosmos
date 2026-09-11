@@ -862,6 +862,26 @@ uintptr_t mmu_map_device(uintptr_t pa, size_t bytes)
     return at + offset;
 }
 
+uintptr_t mmu_map_ram(uintptr_t pa, size_t bytes)
+{
+    uintptr_t offset = pa & PAGE_MASK;
+    uintptr_t start = pa - offset;
+    size_t pages = (offset + bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    uintptr_t at = device_next;
+
+    if (bytes == 0 || at + pages * PAGE_SIZE > DEVICE_WINDOW_END) {
+        return 0;
+    }
+
+    map_pages(kernel_pml4, at, start, pages, MAP_RW);
+    device_next = at + pages * PAGE_SIZE;
+
+    /* The reload `mmu_map_device` makes, for the reason it gives. */
+    __asm__ volatile("movq %%cr3, %%rax; movq %%rax, %%cr3" ::: "rax", "memory");
+
+    return at + offset;
+}
+
 bool mmu_is_enabled(void)
 {
     uint64_t cr0;

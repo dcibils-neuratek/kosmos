@@ -8,6 +8,55 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### A disk on the USB stick, for the T14's games
+
+Doom did not run on the T14 from `make MEGA=1 usb`, and Doom was not the
+problem: the image carried it, and the stick carried no WAD. Under QEMU
+`make qemu` attaches `build/kosmos.img`, the disk `make image FILES=...`
+wrote; the ThinkPad boots from a stick that held GRUB and the kernel and
+nothing else.
+
+So the stick carries the disk now. `make x86-usb-image` copies
+`build/kosmos.img` onto it when `kfs.lua` can read it, GRUB loads it into
+memory as a module, and `hal/pc/memdisk.c` presents that memory as the
+board's disk - ahead of the NVMe drive, whose `/home` is not mounted on such a
+boot. The kernel reads the module from both loader protocols, keeps its pages
+away from the allocator, and names it in the boot log. Under QEMU the new
+check boots with an 8 MB disk handed over as a module and an empty NVMe drive
+beside it: the allocator's region starts above the module, `diskinfo`
+reports 16384 sectors, and a file written into the image on this Mac comes
+back. With the module's pages left to the allocator, it fails.
+
+    make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
+    make MEGA=1 usb
+
+Under OVMF - the firmware a ThinkPad's is built from - a USB image made with
+`mkusb_image.py --disk` boots as a USB stick, GRUB loads the disk with
+`module2`, and the boot log says `a disk from the loader: 8192 KB` with RAM
+starting above it. On the x86-64 MEGA image, with a 64 MB disk of
+`doom1.wad` and `pak0.pak` handed over the same way, Quake starts, plays
+`demo1.dem` in e1m3 and draws, and Doom opens and draws - the first time
+Quake has run on x86-64.
+
+**And on the T14 itself, both run off the stick.** Booted on 11 September
+from a stick `make MEGA=1 usb` wrote, with the WAD and the pak in the disk
+GRUB loaded: Doom playing E1M1 and Quake at its main menu, in windows side
+by side; Tracker listing `doom1.wad` and `id1/` in `/home`; Monitor with all
+eight processors. `/home` also held the `Desktop` folder Tracker makes when
+it is missing, so the machine wrote to the loader's disk as well as read it. The
+watermark read 0.10.26, because the bump came after; nothing else changed.
+
+Open:
+
+- **Writes to the loader's disk are lost at power-off.** A USB storage driver
+  is what makes the stick itself writable.
+- **The disk is limited by the device window**, 256 MB shared with the
+  framebuffer and every controller's registers.
+
+**Next, as queued**: Tracker's desktop - Haiku's icons, icons on the app menu,
+desktop icons below the top bar and draggable - then a launcher option to
+scale Doom and Quake, then the app profiler.
+
 ### Whose work is in it, and everything in one image
 
 About Kosmos ends with a Licences section: the project's own terms, then every

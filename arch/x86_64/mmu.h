@@ -248,6 +248,15 @@ uintptr_t mmu_map_device(uintptr_t pa, size_t bytes);
 uintptr_t mmu_map_framebuffer(uintptr_t pa, size_t bytes);
 
 /*
+ * Physical RAM outside the region the allocator manages - a disk a loader
+ * left in memory - mapped into the device window, cached and never
+ * executable. `mmu_map_device` would map the same pages uncached, which is
+ * right for registers and very slow for bytes. Zero when the window has no
+ * room left.
+ */
+uintptr_t mmu_map_ram(uintptr_t pa, size_t bytes);
+
+/*
  * Whether `mmu_map_framebuffer` gives write-combining or falls back.
  *
  * For the boot log, and it is the only way to know from outside: the two

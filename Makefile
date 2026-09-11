@@ -2110,6 +2110,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/virtio.c \
              hal/virtio/blk.c \
              hal/pc/nvme.c \
+             hal/pc/memdisk.c \
              hal/pc/blk_bind.c \
              hal/virtio/net.c \
              hal/virtio/input.c \
@@ -2432,8 +2433,23 @@ USB_IMG := $(X86_BUILD)/kosmos-usb.img
 #
 #     make usb KOSMOS_ARGS=opt/kosmos/smp=1
 #
-x86-usb-image: x86-build
-	python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) $(KOSMOS_ARGS)
+# **And `$(DISK)` on the stick as well, when it holds a filesystem** - the
+# disk `make image FILES=...` makes, which is where Doom's WAD and Quake's
+# pak live. GRUB loads it into memory beside the kernel and Kosmos mounts it
+# at boot, ahead of the machine's own drive; `hal/pc/blk_bind.c` says why.
+# Only a disk `kfs.lua` can read goes on: `make qemu` leaves an empty one
+# behind, and carrying that would hide a ThinkPad's NVMe `/home` for nothing.
+#
+#     make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
+#     make MEGA=1 usb
+#
+x86-usb-image: x86-build $(HOSTDIR)/lua
+	@if [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
+	    echo "$(DISK) goes on the stick too: GRUB loads it, Kosmos mounts it"; \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --disk $(DISK) $(KOSMOS_ARGS); \
+	else \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) $(KOSMOS_ARGS); \
+	fi
 
 usb: x86-usb-image
 	@bash tools/mkusb.sh $(USB_IMG)

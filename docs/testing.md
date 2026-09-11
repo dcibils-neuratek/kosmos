@@ -781,3 +781,21 @@ of six, it reports the line as stray. Given eight megabytes instead of
 sixteen, the MEGA link stops at `user/user.ld`'s assertion. With `LICENSE`
 left out of the asset table, "licence: the image carries LICENSE" is the one
 test of 147 that fails.
+
+## 18.18 A disk that arrives with the kernel
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `memdisk` in `tools/run_x86.py` | `make test` | a kfs image handed over as a Multiboot 1 module is the disk the machine mounts - the boot log names it, `diskinfo` reports its 16384 sectors and a file written into it on the build machine comes back - with an empty NVMe drive attached that it has to win over |
+
+**It has had what it guards taken away.** With `keep_disk_out_of_ram`
+disabled, so the allocator is handed the module's pages, the boot log
+reports 510 MB of RAM at 1 MB instead of 487 MB above the module,
+`diskinfo` reports no disk, and the file never comes back.
+
+**The Multiboot 2 half is checked once, not on every run.** `run_uefi.py`
+boots the ISO, which carries no disk, and a USB image with one needs GRUB's
+tools and a minute of `mcopy`. So it was booted by hand: a USB image made
+with `mkusb_image.py --disk`, under OVMF as a USB stick, with the boot log
+saying `a disk from the loader: 8192 KB`. The T14 has since booted a
+stick from `make MEGA=1 usb` and run Doom and Quake off its disk.

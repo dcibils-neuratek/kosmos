@@ -30,6 +30,14 @@ So nothing here depends on which filesystem GRUB thinks it booted from:
 The result is a plain GPT disk with a single EFI System Partition, which is
 the arrangement every UEFI machine is specified to boot and the one this
 machine has already proved it can read.
+
+**And a disk image beside the kernel, when there is one.** `--disk PATH`
+copies a kfs image onto the same partition and tells GRUB to load it as a
+module; `hal/pc/memdisk.c` then presents that memory as the machine's disk,
+which is how a ThinkPad this kernel cannot yet read a USB stick on gets its
+game data. The partition grows to hold it.
+
+Usage: mkusb_image.py KERNEL OUT [--disk IMAGE] [name=value ...]
 """
 
 import re
@@ -84,7 +92,7 @@ menuentry "Kosmos" {
     insmod efi_gop
     insmod multiboot2
     multiboot2 /boot/kosmos.bin@ARGS@
-    boot
+@MODULE@    boot
 }
 """
 
@@ -117,9 +125,14 @@ def build_efi(grub_dir, out):
          "-o", out] + CORE_MODULES)
 
 
-def build_esp(kernel, efi, out, grub_dir, args=""):
+def build_esp(kernel, efi, out, grub_dir, args="", disk=None):
     """A FAT filesystem holding the loader, its configuration and Kosmos."""
     size = ESP_MB * 1024 * 1024
+
+    # The disk on top of what the rest needs, rounded up to a megabyte, and
+    # eight more for FAT's own tables at that size.
+    if disk:
+        size += ((os.path.getsize(disk) + 0xFFFFF) // 0x100000 + 8) * 1024 * 1024
 
     with open(out, "wb") as f:
         f.truncate(size)
@@ -135,11 +148,16 @@ def build_esp(kernel, efi, out, grub_dir, args=""):
     cfg = out + ".cfg"
 
     with open(cfg, "w") as f:
-        f.write(GRUB_CFG.replace("@ARGS@", (" " + args) if args else ""))
+        f.write(GRUB_CFG.replace("@ARGS@", (" " + args) if args else "")
+                        .replace("@MODULE@",
+                                 "    module2 /boot/disk.img\n" if disk else ""))
 
     run(["mcopy", "-i", out, efi, "::/EFI/BOOT/BOOTX64.EFI"])
     run(["mcopy", "-i", out, cfg, "::/boot/grub/grub.cfg"])
     run(["mcopy", "-i", out, kernel, "::/boot/kosmos.bin"])
+
+    if disk:
+        run(["mcopy", "-i", out, disk, "::/boot/disk.img"])
 
     #
     # **And the module directory as well, beside the ones built in.**
@@ -264,7 +282,16 @@ def main():
     # machine with no fw_cfg is given a boot option at all. Checked, because
     # they are written into a GRUB script, where a quote or a semicolon would
     # make it a different script.
-    args = " ".join(sys.argv[3:])
+    words = sys.argv[3:]
+    disk = None
+
+    if len(words) >= 2 and words[0] == "--disk":
+        disk, words = words[1], words[2:]
+
+        if not os.path.isfile(disk):
+            sys.exit("mkusb_image: no disk image at %s" % disk)
+
+    args = " ".join(words)
 
     if args and not re.fullmatch(r"[A-Za-z0-9_./=,:-]+( [A-Za-z0-9_./=,:-]+)*", args):
         sys.exit("mkusb_image: %r is not a list of name=value words" % args)
@@ -285,12 +312,14 @@ def main():
     esp = os.path.join(work, "esp.img")
 
     build_efi(grub_dir, efi)
-    esp_size = build_esp(kernel, efi, esp, grub_dir, args)
+    esp_size = build_esp(kernel, efi, esp, grub_dir, args, disk)
     total = write_gpt(out, esp, esp_size)
 
-    print("%s  %.1f MB  (GRUB %.0f KB with %d modules built in)%s"
+    print("%s  %.1f MB  (GRUB %.0f KB with %d modules built in)%s%s"
           % (out, total / 1e6, os.path.getsize(efi) / 1024, len(CORE_MODULES),
-             "; the kernel is told: " + args if args else ""))
+             "; the kernel is told: " + args if args else "",
+             "; with %s as its disk, %.1f MB" % (disk, os.path.getsize(disk) / 1e6)
+             if disk else ""))
 
 
 if __name__ == "__main__":

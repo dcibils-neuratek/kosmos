@@ -42,3 +42,15 @@ bool hal_ram_capped(unsigned long *whole_bytes)
 
     return false;
 }
+
+/*
+ * No loader hands this board a disk: `virt` is started with `-kernel`,
+ * and the disk it has is the virtio-blk device QEMU was given.
+ */
+bool hal_loader_disk(unsigned long *base, unsigned long *bytes)
+{
+    (void)base;
+    (void)bytes;
+
+    return false;
+}

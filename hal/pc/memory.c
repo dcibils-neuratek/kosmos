@@ -174,6 +174,43 @@ static struct {
     bool     valid;
 } loader_fb;
 
+/*
+ * The disk a loader handed over, as a module. `pc_loader_disk` in
+ * `multiboot.h` has why it is kept, and `keep_disk_out_of_ram` below why
+ * the region the allocator is given changes because of it.
+ */
+static struct {
+    uint64_t base;
+    uint64_t end;
+    bool     valid;
+} loader_disk;
+
+bool pc_loader_disk(uint64_t *base, uint64_t *bytes)
+{
+    if (!loader_disk.valid) {
+        return false;
+    }
+
+    *base = loader_disk.base;
+    *bytes = loader_disk.end - loader_disk.base;
+
+    return true;
+}
+
+bool hal_loader_disk(unsigned long *base, unsigned long *bytes)
+{
+    uint64_t at, length;
+
+    if (!pc_loader_disk(&at, &length)) {
+        return false;
+    }
+
+    *base = (unsigned long)at;
+    *bytes = (unsigned long)length;
+
+    return true;
+}
+
 bool pc_loader_framebuffer(uint64_t *addr, uint32_t *pitch,
                            uint32_t *width, uint32_t *height)
 {
@@ -254,6 +291,66 @@ whole += length;
 }
 
 /*
+ * The first module a loader put in memory, remembered as a disk.
+ *
+ * Only the first: one disk is what `blk_bind.c` binds, and a second module
+ * would be a second disk nothing mounts. An empty or backwards range is a
+ * loader's mistake and is not believed.
+ */
+static void remember_disk(uint64_t base, uint64_t end)
+{
+    if (loader_disk.valid || end <= base) {
+        return;
+    }
+
+    loader_disk.base = base;
+    loader_disk.end = end;
+    loader_disk.valid = true;
+}
+
+/*
+ * **And the pages under it taken out of the allocator's region.**
+ *
+ * A loader puts a module wherever it likes, and QEMU puts it just past the
+ * kernel image - inside the largest usable region, which is the region
+ * `pmm_init` hands out a page at a time. The first processes would be built
+ * on top of the disk, and the filesystem would mount whatever they wrote.
+ *
+ * So the region becomes whichever side of the module is larger. The module
+ * itself stays where it lies, and `memdisk.c` maps it explicitly either way,
+ * since on the side above the new region it is outside the identity map.
+ *
+ * Whole pages, because the allocator counts in them: the module's first page
+ * rounded down and its last rounded up.
+ */
+static void keep_disk_out_of_ram(void)
+{
+    unsigned long lo, hi, top, below, above;
+
+    if (!loader_disk.valid || found.size == 0) {
+        return;
+    }
+
+    lo = (unsigned long)(loader_disk.base & ~(uint64_t)0xfff);
+    hi = (unsigned long)((loader_disk.end + 0xfff) & ~(uint64_t)0xfff);
+    top = found.base + found.size;
+
+    if (hi <= found.base || lo >= top) {
+        return;                         /* not in the region at all */
+    }
+
+    below = lo > found.base ? lo - found.base : 0;
+    above = top > hi ? top - hi : 0;
+
+    if (above >= below) {
+        found.base = hi;
+        found.size = above;
+    } else {
+        found.size = below;
+    }
+}
+
+/*
  * Everything a Multiboot 2 loader left, which is the same three facts in a
  * different shape - plus the one Multiboot 1 has no way to carry.
  */
@@ -303,6 +400,14 @@ static void capture_multiboot2(const struct mb2_info *info)
         keep_cmdline((const char *)tag + sizeof(*tag), tag->size - sizeof(*tag));
     }
 
+    tag = mb2_find(info, MB2_TAG_MODULE);
+
+    if (tag != NULL && tag->size >= sizeof(struct mb2_tag_module)) {
+        const struct mb2_tag_module *mod = (const struct mb2_tag_module *)tag;
+
+        remember_disk(mod->mod_start, mod->mod_end);
+    }
+
     tag = mb2_find(info, MB2_TAG_MMAP);
 
     if (tag != NULL && tag->size >= sizeof(struct mb2_tag_mmap)) {
@@ -327,6 +432,8 @@ static void capture_multiboot2(const struct mb2_info *info)
             }
         }
     }
+
+    keep_disk_out_of_ram();
 }
 
 void pc_capture_memory(void)
@@ -374,6 +481,14 @@ void pc_capture_memory(void)
                      sizeof(loader_cmdline));
     }
 
+    if ((info->flags & MB_FLAG_MODS) != 0 && info->mods_count > 0
+        && info->mods_addr != 0) {
+        const struct multiboot_mod *mod =
+            (const struct multiboot_mod *)(uintptr_t)info->mods_addr;
+
+        remember_disk(mod->mod_start, mod->mod_end);
+    }
+
     if ((info->flags & MB_FLAG_MMAP) == 0) {
         return;
     }
@@ -390,6 +505,8 @@ void pc_capture_memory(void)
 
         entry += m->size + 4;       /* `size` does not count itself */
     }
+
+    keep_disk_out_of_ram();
 }
 
 void hal_ram_range(struct memrange *out)

@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #define MB_FLAG_CMDLINE      (1u << 2)
+#define MB_FLAG_MODS         (1u << 3)
 #define MB_FLAG_MMAP         (1u << 6)
 
 /*
@@ -162,6 +163,30 @@ void pc_capture_memory(void);
  */
 bool pc_loader_framebuffer(uint64_t *addr, uint32_t *pitch,
                            uint32_t *width, uint32_t *height);
+
+/*
+ * One entry of `mods_addr`: a file a Multiboot 1 loader put in memory beside
+ * the kernel. QEMU's `-kernel` fills it from `-initrd`, which is how
+ * `tools/run_x86.py` hands the machine a disk without a drive.
+ */
+struct multiboot_mod {
+    uint32_t mod_start;
+    uint32_t mod_end;               /* one past the last byte */
+    uint32_t string;
+    uint32_t reserved;
+};
+
+/*
+ * A disk the loader handed over, if it handed one over: the first module,
+ * from either protocol - `module2` on the USB stick, `-initrd` under QEMU.
+ *
+ * **Captured with the memory map and for the same reason, and more than
+ * captured**: its pages are taken out of the region the allocator is given,
+ * or the first processes would be built on top of the disk.
+ * `hal/pc/memdisk.c` reads it as the board's block device. False when there
+ * was none.
+ */
+bool pc_loader_disk(uint64_t *base, uint64_t *bytes);
 
 /* What a loader handed over, once it has been believed. */
 struct pc_loader_fb {

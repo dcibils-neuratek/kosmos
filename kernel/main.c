@@ -254,6 +254,27 @@ void kmain(void)
     boot_fact_end();
 
     /*
+     * **And a disk the loader carried in**, when there is one - printed
+     * beside the memory it was kept out of, because on a laptop with no
+     * serial port this line is how anybody learns that the loader handed
+     * it over. The server that mounts it starts much later, on a screen
+     * that has stopped printing boot facts.
+     */
+    {
+        unsigned long disk_base, disk_bytes;
+
+        if (hal_loader_disk(&disk_base, &disk_bytes)) {
+            boot_fact_begin();
+            kputs("a disk from the loader: ");
+            kputu(disk_bytes / 1024);
+            kputs(" KB at 0x");
+            kputx(disk_base, 8);
+            kputs(", kept from the allocator");
+            boot_fact_end();
+        }
+    }
+
+    /*
      * And what the machine had that this kernel cannot reach.
      *
      * **Said out loud because the alternative was not booting at all.** A

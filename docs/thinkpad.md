@@ -109,6 +109,24 @@ it was the core rather than the layout. The core is minimal now - what is
 needed to read the partition and run `grub.cfg`, and nothing else, because
 a module that fails to load cannot be the module that loads modules.
 
+### Game data on the stick
+
+`make usb` carries `build/kosmos.img` when it holds a filesystem, and GRUB
+loads it into memory beside the kernel. Kosmos mounts it at boot ahead of the
+NVMe drive, so the files `make image` put in it are at `/home` on the
+machine:
+
+    make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
+    make MEGA=1 usb
+
+Nothing written on such a boot survives power-off, and the drive's own
+`/home` is not mounted; boot a stick without a disk to have it back. The boot
+log says `a disk from the loader` when GRUB handed one over.
+
+First booted this way on 11 September 2026: Doom played E1M1 and Quake
+reached its menu, side by side, off a 64 MB disk holding `doom1.wad` and
+`id1/pak0.pak`.
+
 ## 1. The machine
 
 From Lenovo's PSREF for the T14 Gen 1 (Intel), March 2022.
