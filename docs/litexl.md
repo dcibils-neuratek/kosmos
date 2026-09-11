@@ -367,6 +367,17 @@ still holds the frame before. So the rectangles just shown are copied across,
 and `swap_window` points the renderer at the other buffer's pixels without
 treating it as fresh - which would have made every commit the whole window.
 
+**The window is named for what is open.** Lite XL composes its title -
+`~/notes.txt - Lite XL`, with a `*` after the name while there are unsaved
+changes - and calls `system.set_window_title` only when it changes. That is
+`win:retitle`, the request Photo and the browser already make, so the tab and
+the Deskbar follow the document. The window manager says each rename, as
+`wm: window Lite XL is now ~/notes.txt - Lite XL`, which is how
+`make litexl-check` sees the title follow a file through an edit and a save.
+This document used to list the title as unfinished, on the grounds that the
+window manager had no way to rename a window. It had one all along; the
+editor never asked.
+
 **Keys arrive as two streams, and go to Lite XL in the order SDL uses.**
 `rawkey` gives the transitions, which become `keypressed` and `keyreleased`
 by SDL's names; the character stream becomes `textinput`, except with
@@ -440,8 +451,6 @@ after a drain is the next one out.
   button and no wheel, so scrolling is the scrollbar and the keys.
 - **Resizing.** A direct window's buffers are allocated once, so the window
   is sized from the screen when it opens and stays that size.
-- **The title.** The window manager has no way to rename a window, so it says
-  "Lite XL" whatever is open.
 
 ## Two things deliberately given up
 

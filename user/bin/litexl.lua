@@ -550,12 +550,20 @@ lx.set_host{
   set_window_bordered = function() end,
   set_window_hit_test = function() end,
   set_window_opacity  = function() return false end,
-  set_window_title    = function() end,
   window_has_focus    = function() return true end,
   raise_window        = function() end,
   set_cursor          = function() end,
   set_text_input_rect = function() end,
   clear_ime           = function() end,
+
+  -- The title is Lite XL's - the document's name, and `*` while there are
+  -- changes nobody saved - and the tab it goes in is the desktop's, so it
+  -- is `retitle`: `win.title = ...` would change a copy. Lite XL asks only
+  -- when the name changes, and on its first frame, which on a start with no
+  -- file is "Lite XL" again. A name the window already has is not sent.
+  set_window_title = function(title)
+    if title ~= win.title then win:retitle(title) end
+  end,
 
   show_fatal_error = function(title, message)
     print("litexl: " .. tostring(title) .. ": " .. tostring(message))

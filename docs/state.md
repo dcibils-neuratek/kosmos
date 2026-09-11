@@ -8,6 +8,26 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### Lite XL's window is named for its document
+
+Lite XL's window said "Lite XL" whatever was open, and `docs/litexl.md` listed
+that as left undone because "the window manager has no way to rename a
+window". It had one: `handlers.retitle`, which Photo and the browser already
+reach through `win:retitle`. The launcher had `set_window_title` as an empty
+function, so nothing ever asked.
+
+It is `win:retitle` now, skipped when the window already has that name. Lite
+XL composes the title - `~/notes.txt - Lite XL`, with a `*` while there are
+unsaved changes - and calls it only when that changes, so this is a request
+at the rate a person edits, never one a frame. The window manager says each
+rename as `wm: window <old> is now <new>`, and says nothing for a rename to
+the name a window already has.
+
+`make litexl-check` is 7 checks: the title follows `/home/notes.txt` from
+opened to edited to saved. With the empty function put back it fails at the
+first of the three, and the only line about the window is where it was
+placed.
+
 ### A disk on the USB stick, for the T14's games
 
 Doom did not run on the T14 from `make MEGA=1 usb`, and Doom was not the

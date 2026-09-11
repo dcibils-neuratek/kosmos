@@ -674,7 +674,7 @@ what can go wrong in the port does not need a machine to go wrong on.
 | `tools/test_litexl_surface.c`, 58 checks | `make test` | the SDL shim Kosmos wrote and the renderer over it, built with the host compiler - which works because the shim needs `stdlib.h`, `string.h` and nothing else |
 | `tools/test_litexl_lua.lua`, 9 checks | `make test` | the vendored Lua still loads: the module graph resolves and `core.init()` returns, on `build/host/lua` with the C modules stubbed |
 | `tools/test_litexl_host.lua`, 34 checks | `make test` | the launcher's own decisions - paths, the installed tree worked out from keys, files, the event queue, key names and the damage rectangle |
-| `tools/run_litexl.py`, 6 checks | `make litexl-check`, and so `make prepush` | the editor: a window, Lite XL's own faces out of the image, a file edited and saved, Control-N, and a new document saved under a name |
+| `tools/run_litexl.py`, 7 checks | `make litexl-check`, and so `make prepush` | the editor: a window, Lite XL's own faces out of the image, a title that follows its file, a file edited and saved, Control-N, and a new document saved under a name |
 
 **The check on the machine reads what the editor saved, not what it drew.**
 Each boot starts the editor from the prompt, types through QEMU's own
@@ -693,6 +693,20 @@ every command Lite XL runs, and the check waits for
 `command core:new-doc -> true`. That is the check that would have caught the
 queue fault `docs/litexl.md` describes, where the key reached the window and
 the command never ran.
+
+**The title is checked by what the window manager said**, for the same
+reason: Lite XL composes the name and the desktop draws it, so the evidence
+is the compositor's line rather than the screen. `wm: window Lite XL is now
+~/notes.txt - Lite XL` when the file opens, `~/notes.txt* - Lite XL` once a
+key has been typed, and the plain name again after Control-S. The last of
+the three is read after the file has been, because the file is the better
+evidence that the save happened at all.
+
+**Its negative control has been run**, before the check was believed: with
+`set_window_title` the empty function it was until this revision, it exits 1
+at the first of the three, and the only line about that window is where it
+was placed. The title had been listed as something the window manager could
+not do, for as long as the port existed.
 
 **The host test's negative control has been run.** With the old consumption
 put back - the slot cleared, and the storage never started again - it exits

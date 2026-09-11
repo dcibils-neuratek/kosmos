@@ -18,6 +18,11 @@ every command Lite XL runs. That is the check that would have caught the
 queue losing a Control release: the key reached the window and the command
 never ran.
 
+**The title is checked by what the window manager said**, which is every
+rename: the file's name when it opens, marked `*` once it is edited, and
+plain again once it is saved. The window manager could always rename a
+window; for a long time the editor never asked, and nothing here noticed.
+
 Only for an image built with `make LITEXL=1`, which the ordinary image is not,
 so this is `make litexl-check`, which `make prepush` runs, rather than a phase
 of `make test`.
@@ -57,6 +62,12 @@ def said_after(guest, mark, text, seconds):
             return True
         time.sleep(0.3)
     return False
+
+
+def windows(said):
+    """The window manager's lines about windows, which say every rename."""
+    return "\n".join(line for line in said.splitlines()
+                     if "wm: window " in line) or "(none)"
 
 
 def keys(guest, text):
@@ -125,8 +136,24 @@ def edit_a_file(image):
 
         checks += 1
 
+        # The title Lite XL composes, which the window manager says each time
+        # it changes: `~` is the home directory and `*` is unsaved changes.
+        opened, edited = "~/notes.txt - Lite XL", "~/notes.txt* - Lite XL"
+
+        if f"wm: window Lite XL is now {opened}" not in said:
+            raise Failure("the window was not named for its file:\n"
+                          + windows(said))
+
+        mark = len(guest.seen)
         keys(guest, "added")
         soak(guest, 3)
+
+        if not said_after(guest, mark, f"wm: window {opened} is now {edited}",
+                          10):
+            raise Failure("the title did not mark the file edited:\n"
+                          + windows(guest.seen[mark:]))
+
+        mark = len(guest.seen)
         guest.sendkey("ctrl-s")
         soak(guest, 4)
 
@@ -135,6 +162,13 @@ def edit_a_file(image):
         if "addedfirst line" not in back:
             raise Failure("the file does not say what was typed into it:\n"
                           + back[-600:])
+
+        checks += 1
+
+        # After the file, which is the better evidence that the save happened.
+        if f"wm: window {edited} is now {opened}" not in guest.seen[mark:]:
+            raise Failure("the title still marks the file edited once it was "
+                          "saved:\n" + windows(guest.seen[mark:]))
 
         checks += 1
     finally:
@@ -194,8 +228,8 @@ def main():
         return 1
 
     print(f"PASS: {checks} checks on Lite XL (a window, its own faces out of "
-          f"the image, a file edited and saved, Control-N, and a new "
-          f"document saved under a name).")
+          f"the image, a title that follows its file, a file edited and "
+          f"saved, Control-N, and a new document saved under a name).")
     return 0
 
 

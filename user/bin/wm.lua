@@ -2675,11 +2675,22 @@ handlers.retitle = function(req)
   local win = by_handle[req.window]
   if not win then return { ok = false, error = "no such window" } end
 
+  local was = win.title
+  local title = tostring(req.title or was)
+
+  -- A name it already has changes nothing on screen, and the line below
+  -- would say that it had.
+  if title == was then return { ok = true } end
+
   -- Both the old tab and the new one: a shorter title leaves the tail of
   -- the longer one behind, and the tab is as wide as its text.
   damage_window(win)
-  win.title = tostring(req.title or win.title)
+  win.title = title
   damage_window(win)
+
+  -- Said, as where it was placed is said: the log knows a window by its
+  -- title, and from here on that is a different one.
+  print(("wm: window %s is now %s"):format(tostring(was), title))
 
   return { ok = true }
 end

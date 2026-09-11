@@ -2809,9 +2809,10 @@ quake:
 	echo "  A QUAKE=1 image carries them and user/lib/quake_kosmos.c."; \
 	test $$fail -eq 0
 
-# Lite XL on the machine: a window, a file edited and saved, Control-N, and a
-# new document saved under a name - each read back at the prompt afterwards,
-# so a pass is the file saying what was typed rather than a picture of text.
+# Lite XL on the machine: a window, a title that follows its file, a file
+# edited and saved, Control-N, and a new document saved under a name - each
+# file read back at the prompt afterwards, so a pass is the file saying what
+# was typed rather than a picture of text.
 #
 # Not part of `make test`: it needs an image built with `LITEXL=1`, which the
 # ordinary image is not, and it boots that image twice. `make prepush` runs
