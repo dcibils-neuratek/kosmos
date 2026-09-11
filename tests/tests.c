@@ -18,6 +18,7 @@
 #include "thread.h"
 #include "sched.h"
 #include "ipc.h"
+#include "memobj.h"
 #include "process.h"
 #include "hal.h"
 #include "boot.h"
@@ -3342,6 +3343,36 @@ static bool test_pdf_scanner(void)                     { return luatest_role(37)
  */
 static bool test_console_write_carries_no_capability(void) { return luatest_role(38); }
 
+/*
+ * A region the size of Quake's shareware pak, and one page over the cap.
+ *
+ * `MEMOBJ_PAGES_MAX` was 4096 - sixteen megabytes, "a double-buffered full
+ * screen" - and the pak is 4563 pages, which came back as "no room" on a
+ * machine with more than a hundred thousand pages free. Made here at that
+ * size, reached at its last page and given back whole; and a region one page
+ * over the cap is still refused, because a cap that takes anything is not one.
+ */
+static bool test_memobj_holds_a_pak(void)
+{
+    enum { PAK_PAGES = 4563 };          /* 18,689,235 bytes, rounded up */
+    size_t before = pmm_free_pages();
+    struct memobj *m = memobj_create(PAK_PAGES);
+    bool reached;
+
+    if (m == NULL) {
+        return false;
+    }
+
+    reached = memobj_page(m, PAK_PAGES - 1) != NULL
+           && memobj_page(m, PAK_PAGES) == NULL;
+
+    memobj_unref(m);
+
+    return reached
+        && pmm_free_pages() == before
+        && memobj_create(MEMOBJ_PAGES_MAX + 1) == NULL;
+}
+
 static bool test_shared_memory_is_freed_once(void)
 {
     size_t before = pmm_free_pages();
@@ -5783,6 +5814,7 @@ static const struct test tests[] = {
     { "pdf: the scanner reads what it should", test_pdf_scanner },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
+    { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },

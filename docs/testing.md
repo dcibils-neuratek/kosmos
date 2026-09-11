@@ -704,3 +704,63 @@ put back is not checking the fault.
 because the check leaves a lean `LITEXL=1` image in `build/kosmos.elf` and
 `shot` builds the ordinary one again before it takes its picture. It costs
 the gate a build of its own and two boots, 1 min 49 s together under TCG.
+
+## 18.15 Quake, checked through what it says
+
+```
+make test                               # the scanner, and a pak-sized region
+make quake-check PAK=/path/to/pak0.pak  # the game, on a QUAKE=1 image
+```
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/test_scan.c`, 19 checks | `make test` | the scanf family's scanner: `%f` writes a float and nothing past it, and nothing past a length is read - which is how `fscanf` reads a demo inside a pak |
+| "mem: a region the size of Quake's pak" | `make test` | a 4563-page region is made, reached at its last page and given back whole, and one page over `MEMOBJ_PAGES_MAX` is refused |
+| `tools/run_quake.py`, 6 checks | `make quake-check` | a window; the engine's start-up; the demo and the map it loads; more than 32 colours in the window; a command typed at Quake's console answered; Control-C closing it without a fault |
+
+**Both of `make test`'s new checks have had their fixes undone to check
+them.** With `%f` storing a double and numbers copied past the length,
+`test_scan` fails exactly the three checks about those. With
+`MEMOBJ_PAGES_MAX` put back to 16 MB, the region test is the one of 146 that
+fails.
+
+**The console command is the check that says keys arrive, and it is counted
+twice.** Quake echoes a line when it is entered and `echo` prints the word
+again when the command runs, so two appearances mean the keys arrived and the
+command ran, and one means only the first.
+
+**`make quake-check` is not in `make prepush`**, and cannot be: the pak is not
+in the repository and will not be. Its first run passed all 6. With
+`quake.lua` withholding keys from the engine it fails at the console command,
+0 of 2, so what that check counts is keys Quake received rather than an echo
+from somewhere else.
+
+## 18.16 A clipboard that was never broken, and a control that was not one
+
+The display harness failed its clipboard phase four runs in a row while
+0.10.25 was being gated: "Control-W v changed nothing in the gallery's text
+field". 0.10.24 had passed it that morning, and a clean 0.10.24 built beside
+it passed again, so the revision was bisected: the region cap put back, then
+`quake.lua` taken out of the image. It failed both times.
+
+**Then both images were run once more with every screendump the phase takes
+saved, and the result flipped**: 0.10.24 failed, 0.10.25 passed. The
+pictures said why. `wm machine,gallery` starts both, and the gallery asks for
+60,90, which is under the report. When `machine` gets its window first, the
+window manager moves the gallery into a free quarter (`taken_at` in
+`wm.lua`), and every click the harness aimed at the top left lands in the
+report - so the paste goes to a read-only editor, and nothing changes.
+
+**The mistake is §18.11's, in another shape.** One passing run of the old
+image was taken as the control, when the thing it had to hold still was a
+race. A comparison against a race needs the race settled in both of its
+runs, or enough runs of each to see it go both ways.
+
+The fix is in the harness, not the system. The window manager prints where it
+put every window, unconditionally, and the phase now reads both lines and
+makes each click an offset into the window it is meant for, checked to be
+clear of the other one's frame. It has passed in both layouts: three runs
+with the gallery placed first, and one with the report forced first - a
+program written at the shell asks for the gallery three seconds after the
+report opens, which is the layout that failed, and the harness as it was
+fails that run again.

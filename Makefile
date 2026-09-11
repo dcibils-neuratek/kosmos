@@ -88,7 +88,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)$(if $(QUAKE),-quake)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -491,7 +491,9 @@ USER_LIBC := runtime/libc/string.c \
              runtime/libc/snprintf.c \
              runtime/libc/strtod.c \
              runtime/libc/stdio.c \
+             runtime/libc/scan.c \
              runtime/libc/setjmp-$(ARCH).S \
+             runtime/libc/callstack-$(ARCH).S \
              user/lib/misc_user.c \
              user/lib/panic_user.c
 
@@ -555,6 +557,131 @@ LITEXL_SRCS := user/lib/litexl_sdl.c \
 # Nothing is waiting on the renderer any more. `api/system.c` and `main.c`
 # join this when step five writes their half of the shim.
 LITEXL_STAGED :=
+
+#
+# `make QUAKE=1` - Quake, from Chocolate Quake, GPL like Doom and outside
+# `FULL=1` for the same reasons.
+#
+# Chocolate Quake rather than the quakegeneric this began from, because
+# quakegeneric says it builds only for 32-bit machines and Kosmos is only
+# 64-bit; Chocolate Quake ships arm64 builds of the same WinQuake 1.09 code.
+#
+# **Two lists.** `QUAKE_ENGINE` is upstream's - 78 files, which `make quake`
+# compiles on their own to say whether they still build against the shim.
+# `QUAKE_SRCS` is what goes into the image: the engine, and
+# `user/lib/quake_kosmos.c`, the platform under it (`Sys_*`, `VID_*`, `IN_*`,
+# `SNDDMA_*`), which is Kosmos's and held to the ordinary flags.
+#
+# **Left out, to be replaced rather than patched**: `main.c`,
+# `sys/src/sys.c`, all of `video/src/`, the four SDL input files,
+# `snd_sdl.c`, music and its codecs (`bgmusic.c`, `snd_codec.c`,
+# `snd_wave.c`, MP3, Vorbis, FLAC), the UDP driver and the datagram driver
+# over it (`net_udp.c`, `net_dgrm.c`) with the table naming them
+# (`net_drivers.c`), and `end_screen/`. `net_socket.c` stays: it is the
+# engine's own book of connections, and Loopback keeps one too.
+#
+# **`-iquote` rather than `-I` for Quake's own headers.** `console.h` and
+# `screen.h` are also the names of headers in `kernel/`, which every
+# userland compile has on its path; `-iquote` directories are searched first
+# for `#include "..."`, so no ordering of flags can pick the wrong one.
+# `-Iuser/lib/quake` is the SDL shim the engine's `#include <SDL.h>` and
+# `<SDL_stdinc.h>` resolve to, so nothing upstream released is touched.
+#
+# `HAVE_STRCPY` and its two siblings are what upstream's CMake detects, and
+# this libc has all three.
+#
+QUAKE_DIR := runtime/upstream/quake/src
+
+QUAKE_INCLUDES := $(addprefix -iquote ,$(wildcard $(QUAKE_DIR)/*/include)) \
+                  -iquote $(QUAKE_DIR) \
+                  -Iuser/lib/quake \
+                  -include user/lib/quake/kosmos_quake.h
+
+QUAKE_CFLAGS := -w -Wno-error \
+                -DHAVE_STRCPY -DHAVE_STRNCPY -DHAVE_STRCAT \
+                $(QUAKE_INCLUDES)
+
+QUAKE_ENGINE := $(addprefix $(QUAKE_DIR)/, \
+                  camera/src/chase.c \
+                  camera/src/view.c \
+                  client/src/cl_demo.c \
+                  client/src/cl_input.c \
+                  client/src/cl_main.c \
+                  client/src/cl_parse.c \
+                  client/src/cl_tent.c \
+                  cmd/src/cmd.c \
+                  common/src/com_argv.c \
+                  common/src/com_byte.c \
+                  common/src/com_ext.c \
+                  common/src/com_fs.c \
+                  common/src/com_init.c \
+                  common/src/com_link.c \
+                  common/src/com_msg.c \
+                  common/src/com_sizebuf.c \
+                  common/src/com_stdio.c \
+                  common/src/com_stdlib.c \
+                  common/src/com_string.c \
+                  common/src/com_token.c \
+                  common/src/com_va.c \
+                  console/src/console.c \
+                  console/src/cvar.c \
+                  crc/src/crc.c \
+                  host/src/host.c \
+                  host/src/host_cmd.c \
+                  input/src/keys.c \
+                  mathlib/src/mathlib.c \
+                  memory/src/zone.c \
+                  menu/src/menu.c \
+                  model/src/model.c \
+                  net/src/net_loop.c \
+                  net/src/net_main.c \
+                  net/src/net_poll.c \
+                  net/src/net_socket.c \
+                  net/src/net_vcr.c \
+                  progs/src/pr_cmds.c \
+                  progs/src/pr_edict.c \
+                  progs/src/pr_exec.c \
+                  renderer/src/d_edge.c \
+                  renderer/src/d_fill.c \
+                  renderer/src/d_init.c \
+                  renderer/src/d_modech.c \
+                  renderer/src/d_part.c \
+                  renderer/src/d_polyse.c \
+                  renderer/src/d_scan.c \
+                  renderer/src/d_sky.c \
+                  renderer/src/d_sprite.c \
+                  renderer/src/d_surf.c \
+                  renderer/src/d_vars.c \
+                  renderer/src/d_zpoint.c \
+                  renderer/src/draw.c \
+                  renderer/src/nonintel.c \
+                  renderer/src/r_aclip.c \
+                  renderer/src/r_alias.c \
+                  renderer/src/r_bsp.c \
+                  renderer/src/r_draw.c \
+                  renderer/src/r_edge.c \
+                  renderer/src/r_efrag.c \
+                  renderer/src/r_light.c \
+                  renderer/src/r_main.c \
+                  renderer/src/r_misc.c \
+                  renderer/src/r_part.c \
+                  renderer/src/r_sky.c \
+                  renderer/src/r_sprite.c \
+                  renderer/src/r_surf.c \
+                  renderer/src/r_vars.c \
+                  screen/src/screen.c \
+                  server/src/sv_main.c \
+                  server/src/sv_move.c \
+                  server/src/sv_phys.c \
+                  server/src/sv_user.c \
+                  server/src/sv_world.c \
+                  sound/src/snd_dma.c \
+                  sound/src/snd_mem.c \
+                  sound/src/snd_mix.c \
+                  status_bar/src/sbar.c \
+                  wad/src/wad.c)
+
+QUAKE_SRCS := $(QUAKE_ENGINE) user/lib/quake_kosmos.c
 
 TINYGL_CFLAGS := -w -Wno-error \
                  -Iruntime/upstream/tinygl/include \
@@ -647,6 +774,10 @@ endif
 #
 ifdef LITEXL
 USER_SRCS += $(LITEXL_SRCS) $(GEN)/litexl_fonts.c
+endif
+
+ifdef QUAKE
+USER_SRCS += $(QUAKE_SRCS)
 endif
 
 ifdef DOOM
@@ -825,7 +956,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iuser/include -Ikernel -Iruntime/include \
@@ -860,7 +991,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 # build and watching the identical link error come back twice is how this
 # was found. They expand to nothing when their variant is not selected.
 #
-FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)
+FLAGS_NOW := $(CFLAGS) | $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))
 FLAGS_FILE := $(BUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1100,6 +1231,19 @@ $(UBUILD)/runtime/upstream/doom/%.c.o: runtime/upstream/doom/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(DOOM_CFLAGS) -MMD -MP -c $< -o $@
 
+# Quake's, above the generic rule for the reason Doom's is.
+$(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(QUAKE_CFLAGS) -MMD -MP -c $< -o $@
+
+# And Kosmos's half of it: Quake's headers on the path, and the warnings on,
+# because this file is ours - all but `-Wcomment`, which five `//` comments
+# in Quake's own headers set off by ending in a backslash, and which is about
+# upstream's text rather than anything this file does.
+$(UBUILD)/user/lib/quake_kosmos.c.o: user/lib/quake_kosmos.c $(FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(QUAKE_INCLUDES) -Wno-comment -MMD -MP -c $< -o $@
+
 $(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) -Wno-error -MMD -MP -c $< -o $@
@@ -1220,6 +1364,19 @@ $(HOSTDIR)/test_litexl: tools/test_litexl_surface.c user/lib/litexl_sdl.c \
 	    user/lib/litexl_render.c user/lib/litexl_match.c \
 	    runtime/upstream/stb/stb_impl.c \
 	    runtime/upstream/lite-xl/src/renwindow.c -lm
+
+#
+# The scanf family's scanner, on this machine.
+#
+# `runtime/libc/scan.c` includes nothing of Kosmos's, so the host compiler
+# builds it as the cross one does. `vsscanf` and `sscanf` are renamed on the
+# command line, so the ones the test calls are Kosmos's and not the host's.
+#
+$(HOSTDIR)/test_scan: tools/test_scan.c runtime/libc/scan.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -O1 -o $@ \
+	    -Dvsscanf=kosmos_test_vsscanf -Dsscanf=kosmos_test_sscanf \
+	    tools/test_scan.c runtime/libc/scan.c
 
 #
 # The audio ring's arithmetic, on this machine.
@@ -2283,7 +2440,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2295,6 +2452,9 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# server and the device queue, because the thing worth asserting is
 	@# that a period taken out of the ring is not yet a period heard.
 	$(HOSTDIR)/test_audioring
+	@# And the scanf family's scanner, which reads Quake's demos out of a
+	@# pak: `%f` writes a float, and nothing past a length is read.
+	$(HOSTDIR)/test_scan
 	@#
 	@# And where the page bitmap goes, which is the same shape of test one
 	@# layer down: arithmetic with an awkward case that firmware produces
@@ -2566,6 +2726,31 @@ litexl:
 	echo "  In the image: $(words $(LITEXL_SRCS)).  Waiting on ren_*/renwin_*: $(words $(LITEXL_STAGED))."; \
 	test $$fail -eq 0
 
+#
+# Whether upstream's engine still compiles against the shim, file by file,
+# without building an image. The question worth asking after moving the
+# vendored tree forward, and the one a link failure answers badly.
+#
+.PHONY: quake
+quake:
+	@mkdir -p build/quake
+	@ok=0; fail=0; \
+	for f in $(QUAKE_ENGINE); do \
+	    o=build/quake/$$(echo $$f | tr / _).o; \
+	    if $(CC) $(UCFLAGS) $(QUAKE_CFLAGS) -c $$f -o $$o 2>build/quake/err; then \
+	        printf "  ok    %-54s %s bytes\n" "$$f" "$$(wc -c < $$o | tr -d ' ')"; \
+	        ok=$$((ok + 1)); \
+	    else \
+	        printf "  FAIL  %s\n" "$$f"; \
+	        head -5 build/quake/err | sed 's/^/        /'; \
+	        fail=$$((fail + 1)); \
+	    fi; \
+	done; \
+	echo; \
+	echo "  $$ok of $$((ok + fail)) Quake engine files compile."; \
+	echo "  A QUAKE=1 image carries them and user/lib/quake_kosmos.c."; \
+	test $$fail -eq 0
+
 # Lite XL on the machine: a window, a file edited and saved, Control-N, and a
 # new document saved under a name - each read back at the prompt afterwards,
 # so a pass is the file saying what was typed rather than a picture of text.
@@ -2578,6 +2763,19 @@ litexl:
 litexl-check:
 	@$(MAKE) --no-print-directory FULL=0 LITEXL=1
 	python3 tools/run_litexl.py build/kosmos.elf
+
+# Quake on the machine: a window, the engine started, the demo and its map,
+# the game drawn, a command typed at Quake's console and answered, and
+# Control-C closing it without a fault.
+#
+# Not part of `make test` or `make prepush`: it needs the shareware
+# `pak0.pak`, which is not in the repository, so it is handed one. The pak is
+# asked for before the build, which takes minutes, rather than after it.
+.PHONY: quake-check
+quake-check: $(HOSTDIR)/lua
+	@test -f "$(PAK)" || { echo "FAIL: no pak. make quake-check PAK=/path/to/pak0.pak"; exit 1; }
+	@$(MAKE) --no-print-directory FULL=0 QUAKE=1
+	python3 tools/run_quake.py build/kosmos.elf $(PAK)
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234

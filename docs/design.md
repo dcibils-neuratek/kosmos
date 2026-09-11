@@ -1022,6 +1022,14 @@ The line was crossed the moment `fork`, signals, a global `/`, or a server handi
 
 **Never:** `fork`, `exec`, `signal`, `pipe`, `socket`, `select`, `ioctl`, and all of `unistd.h`. If a port asks for one, patch the port.
 
+**Patching a vendored port is a build step, not an edit.** Quake's
+`console.c` calls `unlink`, and its `-condebug` log calls `open`, `write` and
+`close`. The tree under `runtime/upstream/quake/` is not modified, so the
+patch is a header included ahead of every Quake file,
+`user/lib/quake/kosmos_quake.h`: `unlink` becomes ISO C's `remove`, and the
+other three do nothing. Kosmos gained no POSIX name, and everything done to
+the port can be read in one file.
+
 **A detail that causes bugs months later:** `errno` is a global variable and with coroutines it does not work. It goes per process, in the state struct. Solve it at the start.
 
 **References:** musl for reading clean implementations (the code is too Linux-specific to copy), PDCLib for public-domain freestanding.

@@ -614,5 +614,5 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
  * string.c: it needs `strtol`, `strtol` is userland-only, and this file is
  * linked into the kernel's test build. The link said so.
  *
- * It lives in `user/lib/misc_user.c`, next to the `strtol` it calls.
+ * It lives in `runtime/libc/scan.c`, which only the userland links.
  */

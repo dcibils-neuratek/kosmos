@@ -2300,8 +2300,68 @@ def check_clipboard(guest):
     that is what the third measurement below is looking at: the selection
     getting *smaller* when you copy it.
     """
+    #
+    # **Where both windows are is read from the window manager, not assumed.**
+    #
+    # The clicks below used to be numbers: the report at 100,60, and the
+    # gallery "about 460x350 near the top left". The report is always where
+    # it asks to be. The gallery is not. It asks for 60,90, which is under
+    # the report, and the window manager moves a window that would be more
+    # than a third buried into a free quarter (`taken_at` in `wm.lua`). So
+    # when `machine` gets its window first the gallery opens bottom right,
+    # every click aimed at it lands in the report, and Control-W v pastes
+    # into a read-only editor - "changed nothing", for a reason that has
+    # nothing to do with the clipboard. Which of the two gets its window
+    # first is a race, and it went the wrong way four runs in a row.
+    #
+    # So each click is an offset into the window it is meant for, taken from
+    # the line the window manager prints when it places one, and checked to
+    # be clear of the other window's frame.
+    #
+    mark = len(guest.seen)
+
+    def placed(title, seconds=25):
+        """Where `title`'s window was put: x, y, w, h of what it draws in."""
+        pattern = re.compile(r"wm: window " + re.escape(title)
+                             + r" at (\d+),(\d+) (\d+)x(\d+)")
+        deadline = time.monotonic() + seconds
+
+        while True:
+            guest._read_available()
+            found = pattern.search(guest.seen, mark)
+
+            if found:
+                return tuple(int(v) for v in found.groups())
+
+            if time.monotonic() > deadline:
+                raise Failure(f"the window manager never placed {title!r}:\n"
+                              + guest.seen[mark:][-1500:])
+
+            time.sleep(0.25)
+
+    # A window's frame around what it draws in: `BORDER` on three sides and
+    # `TAB_H` above, in `wm.lua`. The tab is counted as the whole width, which
+    # is more than a tab covers and errs towards "not clear".
+    def covers(win, x, y):
+        wx, wy, ww, wh = win
+        return wx - 2 <= x < wx + ww + 2 and wy - 20 <= y < wy + wh + 2
+
+    def clear_point(win, other, offsets):
+        """The first offset into `win` that is clear of `other`'s frame."""
+        for dx, dy in offsets:
+            x, y = win[0] + dx, win[1] + dy
+
+            if not covers(other, x, y):
+                return x, y
+
+        raise Failure(f"no point tried on the window at {win} is clear of "
+                      f"the one at {other}")
+
     guest.type("wm machine,gallery")
     started(guest)
+
+    report = placed("This Machine")
+    gallery = placed("gallery")
     time.sleep(2.0)
 
     width, height, px = parse_ppm(guest.screendump())
@@ -2310,19 +2370,18 @@ def check_clipboard(guest):
     #
     # Raise the report first, and do not assume it is already on top.
     #
-    # **Which of the two is in front is a startup race.** `wm machine,gallery`
+    # **Which of the two is in front is the same race.** `wm machine,gallery`
     # spawns them in that order and `started` waits for the *first* window,
     # so the one that finishes opening last is the one raised - and that is
     # whichever took longer to build itself, not whichever was named last.
-    # `machine` usually wins because it assembles a page of text first. It
-    # does not always, and then the drag below lands on the gallery and
-    # selects nothing, which is what this said before this click existed.
+    # When the gallery is last, the drag below lands on it and selects
+    # nothing, which is what this said before this click existed.
     #
-    # (600, 700) is inside the report - it opens at 100,60 and is 700x720 -
-    # and outside the gallery, which is about 460x350 near the top left. Not
-    # the title bar: the left end of a tab is the close box.
+    # A point in the report and clear of the gallery, wherever that landed.
+    # Not the title bar: the left end of a tab is the close box.
     #
-    guest.mouse_to(*_to_tablet(600, 700, width, height))
+    x, y = clear_point(report, gallery, [(500, 640), (300, 600), (600, 300)])
+    guest.mouse_to(*_to_tablet(x, y, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
@@ -2330,15 +2389,15 @@ def check_clipboard(guest):
     time.sleep(1.0)
 
     #
-    # A drag inside the report. `machine` opens at 100,60 with its editor
-    # eight pixels in, so this starts a few characters into a line and ends
-    # four lines down.
+    # A drag inside the report, whose editor is eight pixels in, so this
+    # starts a few characters into a line and ends four lines down. The
+    # report is on top now, so the gallery cannot be in the way.
     #
-    guest.mouse_to(*_to_tablet(130, 150, width, height))
+    guest.mouse_to(*_to_tablet(report[0] + 30, report[1] + 90, width, height))
     time.sleep(0.3)
     guest.mouse_button(True)
     time.sleep(0.3)
-    guest.mouse_to(*_to_tablet(560, 214, width, height))
+    guest.mouse_to(*_to_tablet(report[0] + 460, report[1] + 154, width, height))
     time.sleep(0.5)
     guest.mouse_button(False)
     time.sleep(0.8)
@@ -2363,11 +2422,14 @@ def check_clipboard(guest):
     send(b"c", 1.0)                          # copy
 
     #
-    # The gallery opened behind the report. Raised from its bottom label
-    # rather than its title bar, because the left of a tab is the close box
-    # and clicking it here closes the window this phase is about to use.
+    # The gallery, raised from its bottom label rather than its title bar,
+    # because the left of a tab is the close box and clicking it here closes
+    # the window this phase is about to use. A point the report does not
+    # cover: when the gallery opened under the report, the strip of it left
+    # of the report is all there is to click.
     #
-    guest.mouse_to(*_to_tablet(75, 396, width, height))
+    x, y = clear_point(gallery, report, [(15, 306), (15, 14), (440, 306)])
+    guest.mouse_to(*_to_tablet(x, y, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
@@ -2375,7 +2437,9 @@ def check_clipboard(guest):
     time.sleep(1.0)
 
     # Its text field, which is `ui.field` and takes a paste at the caret.
-    guest.mouse_to(*_to_tablet(196, 231, width, height))
+    # The gallery is on top now, so nothing covers it.
+    guest.mouse_to(*_to_tablet(gallery[0] + 136, gallery[1] + 141,
+                               width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
@@ -2402,14 +2466,18 @@ def check_clipboard(guest):
     # which is more than a message holds, so the selection has to come back
     # to the part that fits.
     #
-    guest.mouse_to(*_to_tablet(400, 660, width, height))
+    # Clear of the gallery, which is on top again and may have opened over
+    # the part of the report this used to click.
+    x, y = clear_point(report, gallery, [(300, 600), (500, 640), (600, 300)])
+    guest.mouse_to(*_to_tablet(x, y, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
     time.sleep(0.3)
     guest.mouse_button(False)
     time.sleep(1.0)
 
-    guest.mouse_to(*_to_tablet(300, 400, width, height))
+    guest.mouse_to(*_to_tablet(report[0] + 200, report[1] + 340,
+                               width, height))
     time.sleep(0.3)
     guest.mouse_button(True)
     time.sleep(0.2)

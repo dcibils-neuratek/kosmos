@@ -1,11 +1,12 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The stream functions, all of which fail.
+ * The stream functions: reading files a process was handed, and refusing
+ * the rest.
  *
- * See the comment in <stdio.h> for why this is the answer rather than a
- * placeholder: there is no global tree, so there is no path to open. The
- * three stream pointers are NULL and never dereferenced, because nothing
- * gets far enough to dereference them.
+ * There is no global tree, so a path means nothing on its own; see the note
+ * in <stdio.h>. What `fopen` can open is what `kosmos_provide` named, below.
+ * The three stream pointers are NULL and never dereferenced: printing goes to
+ * this process's console whichever of them is passed.
  */
 
 #include <stddef.h>
@@ -213,6 +214,9 @@ int  getc(FILE *f)
 
     return f->bytes[f->at++];
 }
+/* The same function as `getc`, which the standard allows to be a macro and
+ * this is not; Quake's savegame loader spells it this way. */
+int  fgetc(FILE *f)          { return getc(f); }
 int  ungetc(int c, FILE *f) { (void)c; (void)f; return EOF; }
 
 char *strerror(int errnum)
@@ -365,6 +369,16 @@ int vprintf(const char *fmt, va_list ap)
     return emit(fmt, ap);
 }
 
+/*
+ * `sprintf`'s other half, for the same kind of user and with the same
+ * absence of a bound. Quake formats every console line and every error with
+ * it, into buffers it sized itself. New code uses `vsnprintf`.
+ */
+int vsprintf(char *buf, const char *fmt, va_list ap)
+{
+    return vsnprintf(buf, (size_t)-1, fmt, ap);
+}
+
 int sprintf(char *buf, const char *fmt, ...)
 {
     va_list ap;
@@ -473,6 +487,46 @@ void rewind(FILE *f)
     if (f != NULL) {
         f->at = 0;
     }
+}
+
+/*
+ *--------------------------------------------------------------------------
+ * Formatted text read back out of a file this process was handed.
+ *
+ * Quake's demos begin with the CD track they want, written as "%i\n" and
+ * read back with `fscanf` - and a demo is a file inside `pak0.pak`, which
+ * `kosmos_provide` made openable. So this scans what is left of the file and
+ * moves the position past what was consumed. Nothing past the file's own
+ * length is read, which is why the scanner takes a length rather than
+ * stopping at a NUL: inside a pak, what follows a file is the next file.
+ *--------------------------------------------------------------------------
+ */
+int vfscanf(FILE *f, const char *fmt, va_list ap)
+{
+    size_t used = 0;
+    int n;
+
+    if (f == NULL || f->bytes == NULL) {
+        return EOF;
+    }
+
+    n = kosmos_vscan((const char *)f->bytes + f->at, f->len - f->at, fmt, ap,
+                     &used);
+    f->at += used;
+
+    return n;
+}
+
+int fscanf(FILE *f, const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, fmt);
+    n = vfscanf(f, fmt, ap);
+    va_end(ap);
+
+    return n;
 }
 
 int remove(const char *path)

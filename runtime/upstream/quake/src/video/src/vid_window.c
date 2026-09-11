@@ -1,0 +1,256 @@
+/*
+* Copyright (C) 1996-1997 Id Software, Inc.
+* Copyright (C) Henrique Barateli, <henriquejb194@gmail.com>, et al.
+*
+* This program is free software; you can redistribute it and/or
+* modify it under the terms of the GNU General Public License
+* as published by the Free Software Foundation; either version 2
+* of the License, or (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+*
+* See the GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+*/
+// vid_window.c -- handles window creation, management and resizing.
+
+
+#include "vid_window.h"
+#include "config.h"
+#include "cvar.h"
+#include "input.h"
+#include "sys.h"
+#include "vid_buffers.h"
+
+static SDL_Window* window = NULL;
+static SDL_Renderer* renderer = NULL;
+
+static cvar_t _windowed_mouse = {"_windowed_mouse", "0", true};
+static qboolean windowed_mouse = false;
+
+static cvar_t aspect_correction = {"aspect_correction", "1", true};
+static qboolean aspect_correct = true;
+
+
+/*
+================================================================================
+
+ASPECT RATIO CORRECTION
+
+================================================================================
+*/
+
+static void VID_EnableAspectCorrection(void) {
+    aspect_correct = true;
+    Cvar_SetValue("aspect_correction", aspect_correct);
+    SDL_RenderSetLogicalSize(renderer, 320, 240);
+}
+
+static void VID_DisableAspectCorrection(void) {
+    aspect_correct = false;
+    Cvar_SetValue("aspect_correction", aspect_correct);
+    SDL_RenderSetLogicalSize(renderer, 0, 0);
+}
+
+//==============================================================================
+
+
+/*
+================================================================================
+
+INITIALIZATION AND SHUTDOWN
+
+================================================================================
+*/
+
+static void VID_CreateRenderer(void) {
+    i32 index = -1;
+    u32 flags = SDL_RENDERER_TARGETTEXTURE;
+    renderer = SDL_CreateRenderer(window, index, flags);
+
+    // Blank out the full screen area in case there is any junk in
+    // the borders that won't otherwise be overwritten.
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_RenderPresent(renderer);
+}
+
+static void VID_CreateWindow(void) {
+    int x = SDL_WINDOWPOS_CENTERED;
+    int y = SDL_WINDOWPOS_CENTERED;
+    int w = 0;
+    int h = 0;
+    u32 flags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_FULLSCREEN_DESKTOP;
+    window = SDL_CreateWindow(PACKAGE_STRING, x, y, w, h, flags);
+    if (window == NULL) {
+        const char* error = SDL_GetError();
+        Sys_Error("Error creating window for video startup: %s", error);
+    }
+    SDL_SetWindowMinimumSize(window, 320, 240);
+}
+
+static void VID_RegisterCvars(void) {
+    Cvar_RegisterVariable(&_windowed_mouse);
+    Cvar_RegisterVariable(&aspect_correction);
+}
+
+void VID_InitWindow(void) {
+    VID_RegisterCvars();
+    VID_CreateWindow();
+    VID_CreateRenderer();
+    VID_EnableAspectCorrection();
+}
+
+void VID_ShutdownWindow(void) {
+    if (renderer) {
+        SDL_DestroyRenderer(renderer);
+        renderer = NULL;
+    }
+    if (window) {
+        SDL_DestroyWindow(window);
+        window = NULL;
+    }
+}
+
+//==============================================================================
+
+
+/*
+================================================================================
+
+MOUSE HANDLING
+
+================================================================================
+*/
+
+static void VID_CenterMouse(void) {
+    int x = (int) vid.width / 2;
+    int y = (int) vid.height / 2;
+    SDL_WarpMouseInWindow(window, x, y);
+}
+
+static void VID_ReleaseMouse(void) {
+    VID_CenterMouse();
+    IN_DeactivateMouse();
+    IN_ShowMouse();
+}
+
+static void VID_GrabMouse(void) {
+    IN_ActivateMouse();
+    IN_HideMouse();
+}
+
+qboolean VID_WindowedMouse(void) {
+    return (i32) _windowed_mouse.value != 0;
+}
+
+void VID_ToggleMouseGrab(void) {
+    windowed_mouse = !windowed_mouse;
+    if (windowed_mouse) {
+        VID_GrabMouse();
+    } else {
+        VID_ReleaseMouse();
+    }
+    Cvar_SetValue("_windowed_mouse", (float) windowed_mouse);
+}
+
+//==============================================================================
+
+
+/*
+================================================================================
+
+VIDEO MODE CHANGE
+
+================================================================================
+*/
+
+static void VID_SetWindowed(void) {
+    int w = (int) vid.width;
+    int h = (int) vid.height;
+    int x = SDL_WINDOWPOS_CENTERED;
+    int y = SDL_WINDOWPOS_CENTERED;
+    SDL_SetWindowFullscreen(window, 0);
+    SDL_SetWindowSize(window, w, h);
+    SDL_SetWindowPosition(window, x, y);
+    if (VID_WindowedMouse()) {
+        VID_GrabMouse();
+    } else {
+        VID_ReleaseMouse();
+    }
+}
+
+static void VID_SetFullscreen(void) {
+    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    VID_GrabMouse();
+}
+
+void VID_ResizeScreen(void) {
+    VID_ReallocBuffers(renderer);
+    if (VID_IsFullscreenMode()) {
+        VID_SetFullscreen();
+    } else {
+        VID_SetWindowed();
+    }
+}
+
+//==============================================================================
+
+
+static void VID_UpdateAspectRatio(void) {
+    i32 aspect = (i32) aspect_correction.value;
+    if (aspect == aspect_correct) {
+        return;
+    }
+    if (aspect) {
+        VID_EnableAspectCorrection();
+    } else {
+        VID_DisableAspectCorrection();
+    }
+}
+
+static void VID_UpdateMouse(void) {
+    if (VID_IsFullscreenMode()) {
+        return;
+    }
+    if (windowed_mouse != VID_WindowedMouse()) {
+        // Handle the mouse state when windowed if that's changed.
+        VID_ToggleMouseGrab();
+    }
+}
+
+static void VID_UpdateScreen(vrect_t* rect) {
+    if (!rect) {
+        return;
+    }
+    // Update renderer backbuffer with the contents of the screen buffer.
+    VID_UpdateBuffers(renderer, rect);
+    // Present the backbuffer content to the screen.
+    SDL_RenderPresent(renderer);
+}
+
+void VID_UpdateWindow(vrect_t* rect) {
+    VID_UpdateScreen(rect);
+    VID_UpdateMouse();
+    VID_UpdateAspectRatio();
+}
+
+void VID_HandlePause(qboolean pause) {
+    if (VID_IsFullscreenMode()) {
+        return;
+    }
+    if (pause) {
+        VID_ReleaseMouse();
+    } else {
+        VID_GrabMouse();
+    }
+}
+
+void VID_MinimizeWindow(void) {
+    SDL_MinimizeWindow(window);
+}

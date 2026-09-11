@@ -125,14 +125,13 @@ processors:
 1. **Lite XL, until it is an editor.** It is one now: it opens, edits and
    saves (`docs/litexl.md`), in its own faces. What is left is the wheel,
    resizing and the title.
-2. **Quake, through quakegeneric.** Doom's port is the template - a platform
-   layer under the engine, Lua deciding when a frame happens, the game data
-   put into a region by Lua and never in the repository, GPLv2 behind a
-   build flag. Two things come first: Quake takes its memory as one block
-   before it draws anything, so how large is the first number to read,
-   against the 48 MB a process may map; and `LICENSE` says Doom is built
-   only under `make DOOM=1` while `FULL=1` turns Doom on for every ordinary
-   build, and those have to agree before a second GPL engine joins it.
+2. **Quake - running.** From Chocolate Quake rather than quakegeneric, which
+   builds only for 32-bit machines; the shareware attract loop plays and the
+   menus answer (`runtime/upstream/quake/README.kosmos.md`). What is left:
+   sound through `/dev/audio`, looking around without dragging - a relative
+   pointer mode in the window manager - music, and saving. `LICENSE` and
+   `FULL=1` still disagree about Doom; Quake, outside `FULL=1`, adds nothing
+   to that.
 3. **A battery indicator on the top bar**, for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on

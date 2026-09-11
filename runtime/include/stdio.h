@@ -6,45 +6,34 @@
 #include <stddef.h>
 
 /*
- * Formatting, and nothing else.
+ * Formatting, and reading files a process was handed.
  *
- * There is no FILE and there are no streams. Lua's file library is not built
- * (`fopen("/etc/passwd")` is semantically incoherent in Kosmos, per
- * `design.md` §5.4), and the pieces of Lua that are built only ever want
- * snprintf for turning numbers into text.
- *
- * When a real stdio arrives it will be at M10, for Doom, and every one of
- * its I/O functions will resolve against the process's namespace and nowhere
- * else. That is the line `design.md` §17.3 draws and it is why there is no
- * half of one here now.
+ * There is no global tree, so a bare path means nothing. Lua's file library
+ * is not built (`fopen("/etc/passwd")` is semantically incoherent in Kosmos,
+ * per `design.md` §5.4), and this is not a POSIX stdio: what `fopen` opens is
+ * what the process named itself with `kosmos_provide`, which is how Doom's
+ * WAD and Quake's pak arrive. `design.md` §17.3 draws the line - I/O that
+ * resolves against the process's own namespace and nowhere else.
  */
 
 #define EOF     (-1)
 
 /*
- * Declared and never defined, on purpose.
+ * Incomplete here, on purpose.
  *
- * There are no streams here. This exists because lauxlib.h declares a
- * `luaL_Stream` holding a `FILE *`, unconditionally, even though only
- * liolib ever touches it and liolib is not built. An incomplete type is
- * enough for a pointer, and it means any attempt to actually use a FILE is
- * a compile error rather than a runtime surprise.
+ * `stdio.c` defines it and nothing else can see inside: a FILE is a position
+ * in bytes a process provided. `lauxlib.h` declares a `luaL_Stream` holding a
+ * `FILE *` unconditionally, and an incomplete type is enough for that.
  */
 typedef struct _kosmos_file FILE;
 
 /*
- * The stream functions exist, and every one of them fails.
+ * The stream functions, and what each does here.
  *
- * That is not a placeholder, it is the answer. Lua's `luaL_loadfile` opens a
- * path, and there is no path to open: what a process can reach is what was
- * mounted into its namespace, and a bare filename means nothing outside one.
- * Making them fail means `loadfile` returns "cannot open", which is true,
- * instead of the function not existing and the build not linking.
- *
- * Real file access arrives at M5 as `fs`, speaking the namespace protocol.
- * A real stdio arrives at M10 for Doom, and every one of its I/O functions
- * will resolve against the process's namespace and nowhere else. That is the
- * line `design.md` §17.3 draws.
+ * Reading works on a provided file - `fopen` for reading, `fread`, `getc`,
+ * `fscanf`, `feof`. Opening anything else, and writing, fail: `fopen` sets
+ * `ENOENT`, and Lua's `luaL_loadfile` says "cannot open", which is true. See
+ * `stdio.c`.
  */
 #define BUFSIZ  1024
 
@@ -62,6 +51,7 @@ int    ferror(FILE *f);
 void   clearerr(FILE *f);
 int    fflush(FILE *f);
 int    getc(FILE *f);
+int    fgetc(FILE *f);
 int    ungetc(int c, FILE *f);
 
 /*
@@ -79,10 +69,24 @@ int vfprintf(FILE *f, const char *fmt, va_list ap)
     __attribute__((format(printf, 2, 0)));
 int sprintf(char *buf, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
+int vsprintf(char *buf, const char *fmt, va_list ap)
+    __attribute__((format(printf, 2, 0)));
 int sscanf(const char *in, const char *fmt, ...)
     __attribute__((format(scanf, 2, 3)));
 int vsscanf(const char *in, const char *fmt, va_list ap)
     __attribute__((format(scanf, 2, 0)));
+int fscanf(FILE *f, const char *fmt, ...)
+    __attribute__((format(scanf, 2, 3)));
+int vfscanf(FILE *f, const char *fmt, va_list ap)
+    __attribute__((format(scanf, 2, 0)));
+
+/*
+ * The scanner under all four, bounded by a length rather than a NUL and
+ * reporting how much it consumed - both of which `fscanf` needs, because a
+ * file here is bytes in memory. `runtime/libc/scan.c` has the account.
+ */
+int kosmos_vscan(const char *in, size_t len, const char *fmt, va_list ap,
+                 size_t *used);
 
 /*
  * Hand this libc a file the process already holds.
@@ -95,7 +99,8 @@ int kosmos_provide(const char *name, const void *bytes, size_t len);
 
 int puts(const char *s);
 
-/* The savegame half, all of which fail. See the note in stdio.c. */
+/* Positioning, which works on a provided file, and the two calls that would
+ * change a tree, which refuse. See the notes in stdio.c. */
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2

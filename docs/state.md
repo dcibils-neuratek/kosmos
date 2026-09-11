@@ -2,11 +2,67 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-10
+Last updated: 2026-09-11
 
 ---
 
 ## Where this left off
+
+### Quake runs on Kosmos
+
+`wm quake` opens a window and plays the shareware attract loop: `demo1.dem` in
+e1m3, the Necropolis, drawn through the palette at twice its 320 by 240, and
+Escape brings up the main menu. Chocolate Quake at `edb8209`, vendored
+unmodified under `runtime/upstream/quake/`, with Kosmos's platform in
+`user/lib/quake_kosmos.c` and the loop in `user/bin/quake.lua`. Only in an
+image built with `make QUAKE=1`, which `FULL=1` does not include.
+
+Not quakegeneric, which the plan named: it builds only for 32-bit machines.
+`runtime/upstream/quake/README.kosmos.md` has that and everything the port
+took.
+
+It asked two things of the rest of Kosmos, both decisions in the README:
+
+- **A region may be 32 MB.** `MEMOBJ_PAGES_MAX` was 16 MB and the pak is
+  18.3 MB, so it came back "no room". "mem: a region the size of Quake's
+  pak" holds it. With `MEMOBJ_PAGES_MAX` put back to 16 MB, the region test
+  is the one of 146 that fails.
+- **The engine has a stack of its own.** `R_EdgeDrawing` is a 205 KB frame
+  and a process's stack is 256 KB, so the first frame ran off onto the guard
+  page. The engine runs on a megabyte of mapped pages with a guard page under
+  it, through `kosmos_call_on_stack`, and no other process's stack changed.
+
+And one of the libc: the scanner moved to `runtime/libc/scan.c` to give Quake
+`fscanf`, and moving it found `%f` storing a `double` where the standard says
+`float`. `tools/test_scan.c`, 19 checks, with a negative control.
+
+`make quake-check PAK=/path/to/pak0.pak` is the check on the machine. Its
+first run passed all 6. With `quake.lua` withholding keys from the engine it
+fails at the console command, 0 of 2, so what that check counts is keys Quake
+received rather than an echo from somewhere else. It is not in
+`make prepush`, because the pak is not in the repository.
+
+**The gate found a race in the display harness on the way.** Its clipboard
+phase clicked where the gallery asks to open, and the window manager moves
+the gallery when the report gets its window first; it failed four runs in a
+row, and a clean 0.10.24 fails it too. The phase now reads where both windows
+were placed, and passes with either one first. `docs/testing.md` §18.16 has
+how that was established, including the comparison that looked like proof
+and was not.
+
+Open:
+
+- **No sound.** `SNDDMA_Init` finds no device; `/dev/audio` is next.
+- **Looking around is a drag.** The window manager reports pointer movement
+  only while the button is held; a relative mode would fix it.
+- **Nothing is written.** `config.cfg`, saves and the `-condebug` log are
+  refused by the libc, and a question Quake asks inside a frame - a new game
+  over a running one - is answered no.
+- **`LICENSE` and `FULL=1` still disagree about Doom**, unchanged; Quake is
+  outside `FULL=1` and does not add to it.
+
+**Next, in the order agreed**: a battery indicator on the top bar, which
+starts with the T14's DSDT. `docs/roadmap.md` has it.
 
 ### Lite XL in its own faces, and in the gate
 
@@ -61,9 +117,8 @@ Open:
 - **Control-C** stops the desktop before a window sees it, so the editor
   copies with Control-W and `c`.
 
-**Next, in the order agreed**: Quake through quakegeneric, then a battery
-indicator on the top bar, which starts with the T14's DSDT. `docs/roadmap.md`
-has both.
+**Next, in the order agreed**: Quake, then a battery indicator on the top bar,
+which starts with the T14's DSDT. `docs/roadmap.md` has both.
 
 ### New threads on every core by default, after the ThinkPad ran on eight
 

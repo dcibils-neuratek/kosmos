@@ -66,3 +66,11 @@ what is in this tree is what their authors released.
       is a combined work and would have to be GPLv2 as a whole. The line
       is drawn in the build rather than in a comment, so an ordinary
       `make` produces an MIT binary and there is nothing to remember.
+
+  Chocolate Quake, by id Software, Henrique Barateli and others, GPL -
+  and therefore NOT built by default either.
+      runtime/upstream/quake/, with the vendoring recorded in
+      README.kosmos.md beside it. Every source file carries id's
+      "version 2, or any later version" notice, and the project's own
+      LICENSE file is version 3. Quake is included only under
+      `make QUAKE=1`, which `FULL=1` does not turn on.

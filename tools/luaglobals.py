@@ -51,8 +51,8 @@ ENVIRONMENTS = {
 
     # A program in /bin gets an environment built by the runner.
     #
-    # `doom` is there only in an image built with `make DOOM=1`, and is
-    # listed here anyway - which is the honest way round. This checker asks
+    # `doom` and `quake` are there only in images built with `make DOOM=1`
+    # and `make QUAKE=1`, and are listed here anyway - which is the honest way round. This checker asks
     # "will this name exist", and the answer for `doom` is "in the image
     # that has Doom in it". The application checks for itself before using
     # it, because a program that assumes an optional global is a program
@@ -64,7 +64,7 @@ ENVIRONMENTS = {
     # the only door to it, exactly as `print` is.
     #
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
-                  "interrupted", "use", "doom", "write"},
+                  "interrupted", "use", "doom", "quake", "write"},
 
     # A library is loaded into the environment of whoever asked for it, so it
     # sees the same names a program does - minus `args`, which belongs to the

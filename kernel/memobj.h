@@ -51,12 +51,12 @@
  *
  * So a region is a list now, and the objection the old comment raised is
  * answered rather than ignored: **the list does not live in .bss.** A page
- * holds 512 pointers, so a region's pages are indexed by up to eight pages
- * taken from the allocator itself, and the descriptor carries eight pointers
- * instead of one. That is 256 descriptors at 96 bytes rather than 40 - 24 KB
- * of .bss instead of 10 - and the quarter of a megabyte the old comment
- * feared never appears, because the index is allocated only for regions that
- * exist.
+ * holds 512 pointers, so a region's pages are indexed by up to sixteen pages
+ * taken from the allocator itself, and the descriptor carries sixteen
+ * pointers instead of one. That is 256 descriptors at 160 bytes rather than
+ * 40 - 40 KB of .bss instead of 10 - and the quarter of a megabyte the old
+ * comment feared never appears, because the index is allocated only for
+ * regions that exist.
  *
  * What is given up: mapping walks an index instead of adding to a base, and
  * a region is no longer a single physical run, so it could not be handed to
@@ -82,7 +82,21 @@
  * at a known limit.
  */
 #define MEMOBJ_MAX        256
-#define MEMOBJ_PAGES_MAX  4096      /* 16 MB, a double-buffered full screen */
+
+/*
+ * The largest region, in pages: 32 MB.
+ *
+ * It was 16 MB, "a double-buffered full screen", and the first thing bigger
+ * than a screen that had to be one region was a game's data. Quake's
+ * shareware `pak0.pak` is 18.3 MB, read into a region because it cannot be a
+ * Lua value, and at 4563 pages it was refused as "no room".
+ *
+ * What bounds a process is `USER_MAP_PAGES_MAX` - 48 MB of mappings in all -
+ * so a region's cap only has to sit under that. Doubling it costs every
+ * descriptor eight more index pointers, 16 KB of .bss across the pool, and no
+ * pages at all until a region that large exists.
+ */
+#define MEMOBJ_PAGES_MAX  8192
 
 /* A page of pointers, and how many such pages the largest region needs. */
 #define MEMOBJ_PER_INDEX  (PAGE_SIZE / sizeof(void *))

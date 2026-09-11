@@ -48,6 +48,9 @@ void kosmos_png_open(lua_State *L);
 #ifdef KOSMOS_DOOM
 void kosmos_doom_open(lua_State *L);
 #endif
+#ifdef KOSMOS_QUAKE
+void kosmos_quake_open(lua_State *L);
+#endif
 void kosmos_docfont_open(lua_State *L);
 
 #define SURFACE_MT  "kosmos.surface"
@@ -1949,9 +1952,13 @@ int luaopen_gfx(lua_State *L)
     kosmos_png_open(L);
 
 #ifdef KOSMOS_DOOM
-    /* `make DOOM=1` only. See user/doom/README.md: the licence and the size
-     * both say this does not belong in an ordinary image. */
+    /* `make DOOM=1` only. See runtime/upstream/doom/README.md: the licence
+     * and the size both say this does not belong in an ordinary image. */
     kosmos_doom_open(L);
+#endif
+#ifdef KOSMOS_QUAKE
+    /* `make QUAKE=1` only, for the same two reasons. */
+    kosmos_quake_open(L);
 #endif
     kosmos_docfont_open(L);
 

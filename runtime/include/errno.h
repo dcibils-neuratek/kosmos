@@ -36,4 +36,19 @@ int *__errno(void);
 #define ENOTDIR  20
 #endif
 
+/*
+ * And the three Quake's `com_stdio.c` sets on a bad stream: `EBADF` for a
+ * null handle, `EFAULT` for a null buffer, `EINVAL` for a seek it will not
+ * do. Linux's numbers, like the rest.
+ */
+#ifndef EBADF
+#define EBADF    9
+#endif
+#ifndef EFAULT
+#define EFAULT   14
+#endif
+#ifndef EINVAL
+#define EINVAL   22
+#endif
+
 #endif /* ERRNO_H */

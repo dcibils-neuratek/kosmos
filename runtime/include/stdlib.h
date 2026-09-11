@@ -36,6 +36,13 @@ int    system(const char *command);
  */
 int    kosmos_exit_arm(void);
 void   kosmos_exit_disarm(void);
+
+/*
+ * `fn(arg)` on another stack, the one ending at `top`, and back. For a
+ * vendored engine whose frames outgrow a process's stack; the caller owns
+ * that memory and its guard page. See `callstack-aarch64.S`.
+ */
+void   kosmos_call_on_stack(void (*fn)(void *), void *arg, void *top);
 void   qsort(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *));
 void  *bsearch(const void *key, const void *base, size_t count, size_t size,
