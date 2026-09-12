@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""The Super Nintendo on the machine: a ROM from the drive, frames, and the pad.
+"""The Super Nintendo on the machine: a ROM from the drive, a picture, sound.
 
-A ROM read from `/home/roms/snes` into a region, the core loaded, and a window
-drawing the game. And the number this port was started to find out: how many
-frames a second the core manages under QEMU's TCG, which `snes.lua` reports
-every ten seconds. Enter is pressed to get past title screens, and whether
-it reached the pad is not checked - the saved pictures show it.
+A ROM read from `/home/roms/snes` into a region, the core loaded, a window
+drawing the game, and its sound going through the audio server to a device.
+And the number this port was started to find out: how many frames a second
+the core manages under QEMU's TCG, which `snes.lua` reports every ten
+seconds. Enter is pressed to get past title screens, and whether it reached
+the pad is not checked - the saved pictures show it.
 
 **The ROM is not in the repository**, so this needs one:
 `make snes-check ROM=/path/to/game.sfc`. It goes on a disk image of its own
 under `build/snes/`, never on `build/kosmos.img`.
+
+**The sound is heard rather than trusted.** The guest gets virtio-sound with
+QEMU's WAV writer behind it, so what came out of the device is
+`build/snes/sound.wav` afterwards, and the check is that it is not silence.
+Under TCG the core runs at a third of the console's speed, so most of that
+file is the gaps between frames; how much of it is sound is reported, not
+judged.
 
 The picture is saved as `build/snes/screen.png` and the window alone as
 `build/snes/window.png`, because a frame rate says nothing about whether the
@@ -31,10 +39,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "build", "snes")
 DISK = os.path.join(OUT, "snes.img")
+WAV = os.path.join(OUT, "sound.wav")
 LUA = os.path.join(ROOT, "build", "host", "lua")
 
+# QEMU's WAV writer: a 44-byte header, then 16-bit stereo little-endian.
+WAV_HEADER = 44
+
 REPORT = re.compile(r"snes: ([\d.]+) frames a second of ([\d.]+), "
-                    r"([\d.]+) ms emulating each")
+                    r"([\d.]+) ms emulating each, (\d+) frames of sound dropped")
 
 
 def soak(guest, seconds):
@@ -79,6 +91,26 @@ def colours(rgb):
     return len({rgb[i:i + 3] for i in range(0, len(rgb), 3 * 7)})
 
 
+def heard(path):
+    """(seconds captured, fraction of frames not silent, loudest sample)."""
+    if not os.path.exists(path):
+        return 0.0, 0.0, 0
+
+    with open(path, "rb") as f:
+        data = f.read()[WAV_HEADER:]
+
+    frames = len(data) // 4
+
+    if frames == 0:
+        return 0.0, 0.0, 0
+
+    samples = struct.unpack("<%dh" % (frames * 2), data[:frames * 4])
+    live = sum(1 for i in range(frames) if samples[2 * i] or samples[2 * i + 1])
+    loudest = max(abs(s) for s in samples)
+
+    return frames / 44100.0, live / frames, loudest
+
+
 def main():
     args = sys.argv[1:]
     image = args.pop(0) if args and args[0].endswith(".elf") else "build/kosmos.elf"
@@ -101,21 +133,24 @@ def main():
         return 1
 
     os.makedirs(OUT, exist_ok=True)
-    if os.path.exists(DISK):
-        os.remove(DISK)
+    for stale in (DISK, WAV):
+        if os.path.exists(stale):
+            os.remove(stale)
 
     name = os.path.basename(rom)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", DISK, "64",
                     rom + ":/home/roms/snes/" + name], check=True)
 
-    # Read by run_screenshot when it is imported, so it is set first.
+    # Both read by run_screenshot when it is imported, so they are set first.
     os.environ["KOSMOS_DISK"] = DISK
+    os.environ["KOSMOS_AUDIO_WAV"] = WAV
     sys.path.insert(0, HERE)
     from run_screenshot import Guest, Failure, PROMPT, parse_ppm   # noqa: E402
 
     guest = Guest(image, 600)
     checks = 0
     mark = 0
+    reports = []
 
     try:
         guest.wait_for(PROMPT, "reached a shell")
@@ -124,6 +159,11 @@ def main():
 
         if not said_after(guest, mark, "snes: /home/roms/snes/", 120):
             raise Failure("the ROM did not start:\n" + guest.seen[mark:][-1500:])
+        checks += 1
+
+        if not said_after(guest, mark, "snes: sound, ", 30):
+            raise Failure("the machine has a sound device and the ROM opened "
+                          "no stream:\n" + guest.seen[mark:][-1500:])
         checks += 1
 
         where = None
@@ -172,14 +212,29 @@ def main():
         print("FAIL: %s" % e)
         return 1
     finally:
+        # Closed before the WAV is read: QEMU finishes the file on the way out.
         guest.close()
 
-    for fps, target, ms in reports:
-        print("  %5s frames a second of %s, %s ms emulating each" % (fps, target, ms))
+    length, live, loudest = heard(WAV)
 
-    print("PASS: %d checks on the Super Nintendo (the ROM started, a window, "
-          "the rate reported, the game drawn in %d colours, no fault). "
-          "Pictures in build/snes/." % (checks, seen))
+    if length < 5 or live == 0 or loudest < 64:
+        print("FAIL: the device played %.1f s, %.1f%% of it not silent, loudest "
+              "%d - the game's sound did not reach it" % (length, live * 100,
+                                                          loudest))
+        return 1
+    checks += 1
+
+    for fps, target, ms, dropped in reports:
+        print("  %5s frames a second of %s, %s ms emulating each, %s frames of "
+              "sound dropped" % (fps, target, ms, dropped))
+
+    print("  the device played %.1f s: %.1f%% of it sound, loudest sample %d"
+          % (length, live * 100, loudest))
+
+    print("PASS: %d checks on the Super Nintendo (the ROM started, a sound "
+          "stream, a window, the rate reported, the game drawn in %d colours, "
+          "no fault, and sound out of the device). Pictures and sound in "
+          "build/snes/." % (checks, seen))
     return 0
 
 

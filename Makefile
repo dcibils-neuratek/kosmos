@@ -2977,9 +2977,10 @@ quake-check: $(HOSTDIR)/lua
 	python3 tools/run_quake.py build/kosmos.elf $(PAK)
 
 # The Super Nintendo on the machine: a ROM from `/home/roms/snes`, a window
-# drawing the game, and how many frames a second the core really manages -
-# which is the number this port was started to find. Enter is pressed to get
-# past title screens and not checked; the pictures show whether it arrived.
+# drawing the game, its sound out of a virtio-sound device and recorded to a
+# WAV, and how many frames a second the core really manages - which is the
+# number this port was started to find. Enter is pressed to get past title
+# screens and not checked; the pictures show whether it arrived.
 #
 # Not part of `make test` or `make prepush`, for the reason `quake-check` is
 # not: it needs a ROM, and no ROM is in the repository. The pictures it takes

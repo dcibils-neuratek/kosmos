@@ -144,6 +144,15 @@ RESERVED_PX = 2 * GLYPH_H
 _DISK = os.environ.get("KOSMOS_DISK")
 
 #
+# And a sound device, the same way, when a harness wants to hear the guest.
+#
+# `KOSMOS_AUDIO_WAV=path` adds virtio-sound with QEMU's WAV writer behind it,
+# so what the guest played is a file afterwards - the way `run_x86.py`
+# listens to HDA. The default stays silent, for the reason it stays diskless.
+#
+_WAV = os.environ.get("KOSMOS_AUDIO_WAV")
+
+#
 # Which machine, chosen from the image's own path.
 #
 # **Every harness that boots a guest goes through `Guest`**, so making this
@@ -259,7 +268,10 @@ QEMU_ARGS = [
 ] + ([
     "-drive", "file=%s,format=raw,if=none,id=disk" % _DISK,
     "-device", "virtio-blk-device,drive=disk",
-] if _DISK else [])
+] if _DISK else []) + ([
+    "-audiodev", "wav,id=snd0,path=%s" % _WAV,
+    "-device", "virtio-sound-device,audiodev=snd0",
+] if _WAV else [])
 
 PROMPT = "kosmos>"          # printed once the shell is serving
 

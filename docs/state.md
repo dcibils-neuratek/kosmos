@@ -8,6 +8,60 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: the Super Nintendo's sound, with the device as the clock
+
+`wm snes` has sound. `snes.sound(ring, rate)` takes the ring `audio.open`
+made, and every frame writes its samples straight into it from C, a slot at
+a time the way `sys.pcm_into` does, so no Lua string exists at either end.
+`snes.lua` runs a frame whenever less than one frame of sound is waiting: the
+device paces the console, and the counter only paces it where there is no
+device.
+
+**The rate is the core's, 60 or 50** - not the 60.0988 the first cut paced
+by. `apu.c` clocks the SPC700 per 60.0 Hz frame, so that is the rate at which
+its sound has its own pitch; it comes from `snes.start` now and is written
+nowhere else.
+
+**Heard off the machine.** `KOSMOS_AUDIO_WAV` gives a harness virtio-sound
+with QEMU's WAV writer, and `make snes-check` uses it. On All-Stars: 24 s
+recorded, 75% of it sound, no frames dropped, at about 21 frames a second.
+And it is the right sound: 479 consecutive sounding periods from a native run
+of the same ROM - console frames 101 to 355 - are in the guest's recording
+byte for byte and in order.
+
+**And the rest of the bug class 0.10.41 found.** `string.pack` raises for a
+string longer than its `cN`, and four more places packed a caller's string
+that way. A label is now cut to what its server keeps - an `/app` lookup and
+an audio stream's name, 23 bytes each - and a name that has to match is
+answered as not found: `/dev` over 20 bytes, `/bin` over 64. A ROM's window
+would have been the first audio stream to hit it.
+
+**Checked:**
+
+- `make snes-check`, 7 checks now: the ROM started, a sound stream, a
+  window, the rate, the game drawn, no fault, and sound out of the device.
+  With `snes.sound` withheld it fails: "the device played 0.0 s".
+- `tools/run_queries.py`, 18: a 40-byte `/dev` name and an 80-byte `/bin` name
+  are answered rather than raised. With the guards removed it fails with
+  `bad argument #4 to 'pack'`.
+- `make test`: 153/153 and every harness up to x86-64, where 2 of 63 failed -
+  the HDA tone captured at 396 Hz for 377 ms, which is 44 ms of silence
+  inside the tone rather than a different pitch. The same image passed all
+  63 run again on an idle machine; the first run had another session's gate
+  beside it. The harnesses after x86-64 in `make test` did not run, and
+  `make prepush` was not run either: this landed on the checks above and
+  `make shot`, by choice, to save the ten minutes.
+
+Open:
+
+- **Under TCG the sound has gaps**: the core makes about a third of a second
+  of it each second there. Nothing on the machine fixes that; it is judged
+  natively, or on hardware.
+- **No saves**, and a button held while the window loses the focus stays
+  down.
+- `/ramfs` cuts over-long fields with `fixed()` rather than refusing them,
+  paths included. Not looked at in this change.
+
 ### 12 September: a Super Nintendo, from LakeSnes
 
 `wm snes` opens the first ROM in `/home/roms/snes` - `wm snes:<name>` a named

@@ -1255,3 +1255,35 @@ than 8 colours says the window is drawn and not that it is drawn right.
 repository, and none will be. Its first run failed - the window died
 opening, which is the `/app` bug above. After the fix it passed all 5, at
 about 22 frames a second of 60, on Super Mario All-Stars' game-select screen.
+
+## 18.26 Sound that is heard, and the rest of a class
+
+```
+make test                               # long names at /dev and /bin, at the prompt
+make snes-check ROM=/path/to/game.sfc   # now with the sound recorded
+```
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/run_snes.py`, 7 checks | `make snes-check` | the two new ones: the ROM opened a sound stream, and the device played more than five seconds that are not silence |
+| `tools/run_queries.py`, `F-LONG` | `make test` | a 40-byte name under `/dev` and an 80-byte one under `/bin` are answered by their protocols rather than raised inside the namespace kit |
+
+**`KOSMOS_AUDIO_WAV=path`** is the harness's second hook beside
+`KOSMOS_DISK`: it gives the guest virtio-sound with QEMU's WAV writer behind
+it, so what the device played is a file when the guest has gone. The default
+stays silent, for the reason it stays diskless.
+
+**Both checks have had their fixes undone.** With `snes.sound` withheld, the
+stream still opens and the device plays nothing - "the device played 0.0 s".
+With the `/dev` and `/bin` guards removed, the prompt prints
+`F-LONG false false init:698: bad argument #4 to 'pack'`.
+
+**The machine can tell sound from silence; whether it is the right sound was
+checked once, natively.** The same ROM run on the build machine with no
+input made 3583 sounding periods in its first 1500 frames, and the first 479
+of them - console frames 101 to 355 - are in the guest's recording byte for
+byte and in order, until the harness's key presses make the two runs
+different games. It is not a permanent check, because it needs a ROM and a
+native build of the core. What it established is that nothing between
+`snes_setSamples` and the device changes a sample: not the slot writing, not
+the channel order, not the server's unity mix.

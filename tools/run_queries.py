@@ -108,6 +108,12 @@ def main():
             'name = string.rep("t", 46) }, E) '
             'print("A-LONG", R and R.name or "refused") '
             'if R then fs.send("/app", { type = "unregister", name = R.name }) end',
+
+            # And the rest of that class: a name longer than its field at /dev
+            # and at /bin is an answer - no such device, no such program -
+            # rather than a raise from `string.pack` inside the namespace kit.
+            'print("F-LONG", pcall(fs.getattr, "/dev/" .. string.rep("d", 40)), '
+            'pcall(fs.getattr, "/bin/" .. string.rep("b", 80)))',
         #
         # Five seconds a command, not forty. `pump` waits the whole time
         # rather than stopping at the prompt, so `each` is a real cost per
@@ -176,6 +182,16 @@ def main():
         if not lines or lines[-1].strip() != want:
             raise Failure("a 46-byte name registered in /app did not come "
                           "back as its first 23 bytes.\n"
+                          + "\n".join(lines or [flat[-1200:]]))
+        checks += 1
+
+        # `pcall` says whether the call returned at all: true for both is an
+        # answer from each protocol, false is a raise from inside the kit.
+        lines = [l for l in flat.splitlines() if l.startswith("F-LONG ")]
+
+        if not lines or not lines[-1].startswith("F-LONG true true"):
+            raise Failure("a name longer than its field at /dev or /bin raised "
+                          "inside the namespace kit instead of being answered.\n"
                           + "\n".join(lines or [flat[-1200:]]))
         checks += 1
 

@@ -306,13 +306,23 @@ local ERRORS = {
 }
 
 function request(op, fields, pass)
+  --
+  -- The name is a label, cut to the 23 bytes the server keeps of it.
+  --
+  -- `string.pack` raises for a string longer than `c24` rather than cutting
+  -- it, and a stream named for its window - a ROM's No-Intro name, say - is
+  -- that long. `audio.c` ends whatever arrives at 23, so this sends what
+  -- would be kept. `init.lua` cuts a window's `/app` name the same way.
+  --
+  local name = tostring(fields.name or ""):sub(1, 23)
+
   local bytes = string.pack(REQUEST, op,
                             fields.stream or 0,
                             fields.gain or -1,
                             fields.balance or -101,
                             fields.muted or -1,
                             fields.master or -1,
-                            fields.name or "")
+                            name)
 
   local reply, why = fs.raw("/dev/audio", bytes, pass)
 

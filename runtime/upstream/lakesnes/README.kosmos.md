@@ -105,15 +105,57 @@ a fifth. `gfx.md` 19.14 is why that is measured natively: the vector unit is
 where that loop would go faster, and TCG translates vector instructions one
 at a time.
 
+## Sound, and the device as the clock
+
+**Samples go into the ring from C.** `snes.sound(ring, rate)` takes the ring
+`audio.open` made and the rate `audio.format` reports. Each `snes.frame` then
+asks the core for one frame of sound at that rate - 735 device frames at
+44100 over 60, with the fraction carried, so a rate that does not divide
+evenly neither drifts nor rounds - and writes it straight into the slot at
+the ring's `write` index, publishing each slot once it is full. That is
+`sys.pcm_into`'s technique, and it means no Lua string exists at either end:
+a minute of sound allocates nothing.
+
+**The device paces the console, not the counter.** `snes.lua` runs a frame
+whenever less than one frame's worth of sound is waiting in the ring, which
+holds the console at exactly the rate its sound needs, with no clock
+arithmetic and no second clock for the picture to drift against. The ring is
+sized from the numbers - two frames of sound and two slots of slack - rather
+than left at the default. Without a sound device, the counter paces it as it
+did before there was sound.
+
+**60 and 50, not 60.0988 and 50.007.** A real console draws 60.0988 frames a
+second, and this file said so at first. But `apu.c` clocks the SPC700 at
+32040 Hz *per 60.0 Hz frame*, and per 50.0 for PAL, so 60 and 50 are the rates
+at which this core's sound has its own pitch - upstream's frontend asks for
+48000 / 60 samples a frame for the same reason. The rate now comes from the
+core, as `snes.start`'s second result, and is not written anywhere else.
+
+**Heard off the machine, because TCG cannot judge it by ear.** `make
+snes-check` gives the guest virtio-sound with QEMU's WAV writer behind it. On
+Super Mario All-Stars it recorded 24 seconds over about 65 of running - the
+device takes periods as they arrive, so the file is what the core made - 75%
+of it sound, and no frames dropped.
+
+**And the recording is the right sound, not merely a loud one.** The same
+ROM run natively with no input makes 3583 sounding periods in its first 1500
+frames. The first 479 of them, console frames 101 to 355, are in the guest's
+recording byte for byte and in order; the first miss comes after the harness
+has begun pressing Enter, and the two runs stop being the same game. The
+sample format, the channel order, the rate, the slot writing and the server's
+unity mix all have to be exact for that to hold.
+
 ## What works, and what is left
 
-A ROM is read from the drive into a region, the core loads it, frames run at
-the console's own rate - 60.0988 Hz, or 50.007 for a PAL cartridge - into a
-512 by 480 window, and the keyboard is the first pad.
+A ROM is read from the drive into a region, the core loads it, and frames
+run into a 512 by 480 window at the core's own rate - 60, or 50 for a PAL
+cartridge - with their sound going through the audio server and the keyboard
+as the first pad.
 
-- **No sound yet.** `snes_setSamples` is not called. It is the next step, and
-  the one that makes the console's rate matter: the audio server's ring, fed
-  from C, would pace the frames rather than the counter.
+- **Under TCG the sound has gaps.** The core makes about a third of a second
+  of sound each second there, so the device plays what arrives and waits for
+  the rest. Nothing on the machine can fix that; it is judged natively, as
+  above.
 - **No saves.** Battery RAM and save states are bytes the core hands back,
   and this libc opens no file for writing, so they have to go out through
   the namespace from Lua.

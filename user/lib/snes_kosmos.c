@@ -11,14 +11,15 @@
  * functions and a WAD reader, Quake a platform layer of nine hundred lines
  * and a stack of its own. LakeSnes's core already *is* a library: it asks for
  * `malloc`, `memcpy`, `printf` and six functions from `math.h`, and offers
- * `snes_loadRom`, `snes_runFrame`, `snes_setPixels` and
+ * `snes_loadRom`, `snes_runFrame`, `snes_setPixels`, `snes_setSamples` and
  * `snes_setButtonState` - no files, no clock, no threads, and no `exit` to
  * land. Its largest stack frame is 544 bytes.
  *
  * So what is here is exactly what doom_kosmos.c's Lua half is, and nothing
- * else: a ROM handed in as an address, a frame into a surface, a button, and
- * the log. None of it blocks, and the Lua side owns the loop - which window,
- * which ROM, when a frame happens, and when to stop.
+ * else: a ROM handed in as an address, a frame into a surface and its sound
+ * into a ring, a button, and the log. None of it blocks, and the Lua side
+ * owns the loop - which window, which ROM, when a frame happens, and when to
+ * stop.
  */
 
 #include <stdbool.h>
@@ -30,6 +31,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#include "audioring.h"
 #include "snes.h"
 
 /* From `gfx.c`, the one file allowed to know how a surface is laid out. */
@@ -63,6 +65,80 @@ static Snes    *machine;
 static uint8_t *picture;
 static bool     loaded;
 
+/*--------------------------------------------------------------------------
+ * Sound.
+ *
+ * The core hands back one console frame's worth of samples at whatever rate
+ * it is asked for, and they go straight into the audio server's ring from
+ * here - `CLAUDE.md`'s rule that a stream never travels as a message, and
+ * `sys.pcm_into`'s way of keeping it. Frames are written into the slot at
+ * `write`, which the server cannot be reading, because it never reads an
+ * index this side has not published; and a slot is published only once it is
+ * full. No Lua string exists at either end, so a minute of sound allocates
+ * nothing and the collector has no reason to arrive inside a period.
+ *------------------------------------------------------------------------*/
+
+/*
+ * The most device frames one console frame may ask for. 44100 at 50 Hz is
+ * 882, so this is room for a device a little over twice that fast.
+ */
+#define SAMPLES_MAX 2048u
+
+static struct audio_ring *ring;
+static int16_t           *samples;
+static double             per_frame;  /* device frames one console frame makes */
+static double             owed;       /* the fraction carried to the next frame */
+static uint32_t           partial;    /* frames already in the slot at `write` */
+
+/*
+ * The console's frame rate as this core keeps it: 60 or 50, exactly.
+ *
+ * A real NTSC console draws 60.0988 frames a second and a PAL one 50.007, and
+ * those are not the numbers to use here. `apu.c` clocks the SPC700 at 32040 Hz
+ * *per 60.0 Hz frame* - per 50.0 for PAL - so 60 and 50 are the rates at which
+ * this core's sound comes out at its own pitch. Upstream's frontend asks for
+ * 48000 / 60 samples a frame for the same reason.
+ */
+static double console_rate(void)
+{
+    return machine->palTiming ? 50.0 : 60.0;
+}
+
+/*
+ * Frames into the ring, a slot at a time. Returns how many did not fit - none,
+ * unless a frame was run that the ring had not asked for.
+ *
+ * `audio_ring_space` before every slot, and not only before the first: a full
+ * ring's `write` slot *is* the slot at `read`, which the server may be mixing.
+ */
+static unsigned feed(const int16_t *in, unsigned frames)
+{
+    uint32_t period = ring->period_bytes / 4u;
+    unsigned done = 0;
+
+    while (done < frames && audio_ring_space(ring) > 0) {
+        uint8_t *slot = audio_ring_slot(ring, ring->write);
+        uint32_t take = period - partial;
+
+        if (take > frames - done) {
+            take = frames - done;
+        }
+
+        memcpy(slot + (size_t)partial * 4u, in + (size_t)done * 2u,
+               (size_t)take * 4u);
+
+        partial += take;
+        done += take;
+
+        if (partial == period) {
+            audio_ring_publish(ring, ring->write + 1);
+            partial = 0;
+        }
+    }
+
+    return frames - done;
+}
+
 /*
  * snes.start(address, length) - where the ROM is, and how much of it.
  *
@@ -71,8 +147,8 @@ static bool     loaded;
  * region and keeps the region; `snes_loadRom` copies it into the cartridge,
  * so nothing here holds on to the address afterwards.
  *
- * Returns `true, pal` - whether the cartridge is a 50 Hz one, which is the
- * rate the Lua side has to run it at - or `false, why`.
+ * Returns `true, rate` - the console's frames a second, 60 or 50, which the
+ * Lua side paces by when there is no sound to pace by - or `false, why`.
  */
 static int l_start(lua_State *L)
 {
@@ -120,51 +196,114 @@ static int l_start(lua_State *L)
     loaded = true;
 
     lua_pushboolean(L, 1);
-    lua_pushboolean(L, machine->palTiming);
+    lua_pushnumber(L, (lua_Number)console_rate());
     return 2;
 }
 
 /*
- * snes.frame(surface) - one frame of the console, then its picture.
+ * snes.sound(ring, rate) - where the sound goes, and how fast the device
+ * takes it.
  *
- * Row by row through the surface's own pitch (`gfx.md` 19.3), which is why
- * the core draws into `picture` rather than into the surface: it assumes
- * 2048 bytes a row, and a surface is a resize away from not having them.
- * The alpha is forced opaque, as Doom's is, because a surface blends on it
- * and nothing guarantees the core writes one.
+ * The ring is the one `audio.open` made and handed to the audio server, by
+ * address; the rate is `audio.format().rate`, asked of the machine rather
+ * than assumed. From here on every `snes.frame` puts its samples in the ring.
+ */
+static int l_sound(lua_State *L)
+{
+    struct audio_ring *r =
+        (struct audio_ring *)(uintptr_t)luaL_checkinteger(L, 1);
+    lua_Integer rate = luaL_checkinteger(L, 2);
+
+    if (!loaded) {
+        return luaL_error(L, "start a ROM before its sound");
+    }
+
+    if (!audio_ring_valid(r) || r->period_bytes % 4u != 0) {
+        return luaL_argerror(L, 1, "not a ring of 16-bit stereo periods");
+    }
+
+    if (rate <= 0 || (double)rate / console_rate() > (double)SAMPLES_MAX) {
+        return luaL_argerror(L, 2, "not a rate this can feed");
+    }
+
+    if (samples == NULL) {
+        samples = malloc((size_t)SAMPLES_MAX * 2u * sizeof *samples);
+    }
+
+    if (samples == NULL) {
+        return luaL_error(L, "no room for a frame of sound");
+    }
+
+    ring = r;
+    per_frame = (double)rate / console_rate();
+    owed = 0.0;
+    partial = 0;
+
+    return 0;
+}
+
+/*
+ * snes.frame(surface) - one frame of the console, its sound, then its
+ * picture. Returns how many frames of sound the ring had no room for.
+ *
+ * The sound is a whole number of device frames each time and the fraction is
+ * carried, so 735 a frame at 44100 over 60 comes out exactly and a rate that
+ * does not divide evenly neither drifts nor rounds.
+ *
+ * The picture goes row by row through the surface's own pitch (`gfx.md`
+ * 19.3), which is why the core draws into `picture` rather than into the
+ * surface: it assumes 2048 bytes a row, and a surface is a resize away from
+ * not having them. The alpha is forced opaque, as Doom's is, because a
+ * surface blends on it and nothing guarantees the core writes one.
  */
 static int l_frame(lua_State *L)
 {
     unsigned w = 0, h = 0, pitch = 0;
     uint32_t *dst = kosmos_surface_pixels(L, 1, &w, &h, &pitch);
-    unsigned rows, cols, y;
+    unsigned rows, cols, y, dropped = 0;
 
     if (!loaded) {
         return luaL_error(L, "no ROM has been started");
     }
 
     snes_runFrame(machine);
-    snes_setPixels(machine, picture);
 
-    if (dst == NULL) {
-        return 0;
+    if (ring != NULL) {
+        unsigned want;
+
+        owed += per_frame;
+        want = (unsigned)owed;
+        owed -= (double)want;
+
+        if (want > SAMPLES_MAX) {
+            want = SAMPLES_MAX;
+        }
+
+        snes_setSamples(machine, samples, (int)want);
+        dropped = feed(samples, want);
     }
 
-    rows = (h < PICTURE_H) ? h : PICTURE_H;
-    cols = (w < PICTURE_W) ? w : PICTURE_W;
+    snes_setPixels(machine, picture);
 
-    for (y = 0; y < rows; y++) {
-        const uint32_t *src = (const uint32_t *)(void *)
-                              (picture + (size_t)y * PICTURE_W * 4u);
-        uint32_t *out = (uint32_t *)(void *)((uint8_t *)dst + (size_t)y * pitch);
-        unsigned x;
+    if (dst != NULL) {
+        rows = (h < PICTURE_H) ? h : PICTURE_H;
+        cols = (w < PICTURE_W) ? w : PICTURE_W;
 
-        for (x = 0; x < cols; x++) {
-            out[x] = src[x] | 0xff000000u;
+        for (y = 0; y < rows; y++) {
+            const uint32_t *src = (const uint32_t *)(void *)
+                                  (picture + (size_t)y * PICTURE_W * 4u);
+            uint32_t *out = (uint32_t *)(void *)
+                            ((uint8_t *)dst + (size_t)y * pitch);
+            unsigned x;
+
+            for (x = 0; x < cols; x++) {
+                out[x] = src[x] | 0xff000000u;
+            }
         }
     }
 
-    return 0;
+    lua_pushinteger(L, (lua_Integer)dropped);
+    return 1;
 }
 
 /*
@@ -209,6 +348,7 @@ static int l_log(lua_State *L)
 
 static const luaL_Reg snes_lib[] = {
     { "start",  l_start },
+    { "sound",  l_sound },
     { "frame",  l_frame },
     { "button", l_button },
     { "log",    l_log },

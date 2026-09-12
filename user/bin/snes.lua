@@ -12,9 +12,9 @@
 -- LakeSnes; `runtime/upstream/lakesnes/README.kosmos.md` is the account.
 --
 -- **This file is the loop, the way `doom.lua` is Doom's.** The core does
--- the console; `snes_kosmos.c` hands it a ROM, a surface and a pad; and what
--- is left - which ROM, which window, when a frame happens, when to stop - is
--- policy, so it is here.
+-- the console; `snes_kosmos.c` hands it a ROM, a surface, a ring and a pad;
+-- and what is left - which ROM, which window, when a frame happens, when to
+-- stop - is policy, so it is here.
 --
 -- ROMs live on the drive, in /home/roms/snes, the way Doom's WAD lives in
 -- /home. None is in the repository, and none will be:
@@ -23,6 +23,7 @@
 
 local ui = use("/lib/ui.lua")
 local wmproto = use("/lib/wmproto.lua")
+local audio = use("/lib/audio.lua")
 
 if type(snes) ~= "table" then
   print("snes: this image was not built with SNES=1")
@@ -142,12 +143,18 @@ local function drained()
   end
 end
 
-local ok, started, pal = pcall(snes.start, at, size)
+--
+-- `fps` is the console's rate as the core keeps it - 60, or 50 for a PAL
+-- cartridge - and it comes from the core rather than from here, because the
+-- core's sound is pitched to it and a second copy of the number would be a
+-- second thing to get wrong.
+--
+local ok, started, fps = pcall(snes.start, at, size)
 
 drained()
 
 if not ok or not started then
-  print("snes: " .. tostring(ok and pal or started))
+  print("snes: " .. tostring(ok and fps or started))
   return
 end
 
@@ -167,7 +174,47 @@ if not win:surface() then
   return
 end
 
-print(("snes: %s, %d KB, %s"):format(path, size // 1024, pal and "50 Hz" or "60 Hz"))
+print(("snes: %s, %d KB, %g Hz"):format(path, size // 1024, fps))
+
+--
+-- Sound, when the machine has a device - and then the device decides when a
+-- frame runs.
+--
+-- **The device keeps time, so nothing else has to.** Each frame the core
+-- makes one frame's worth of samples and the device takes them at its own
+-- rate. Running a frame whenever less than one frame's worth is waiting holds
+-- the console at exactly the rate its sound needs: no clock arithmetic, and no
+-- second clock for the picture to drift against. Without a device, the
+-- counter paces it as it always did.
+--
+-- The ring is sized from the numbers rather than left at the default: a frame
+-- is run when under one frame of sound is waiting, so no more than two are
+-- ever queued, and two slots of slack cover the period being filled.
+--
+local out
+local per_frame = 0
+
+do
+  local fmt = audio.format()
+
+  if fmt.period == 0 then
+    print("snes: no sound device, so the clock paces it")
+  else
+    per_frame = fmt.rate / fps
+
+    local depth = math.ceil(2 * per_frame / fmt.frames) + 2
+    local stream, oops = audio.open(title, depth)
+
+    if stream then
+      snes.sound(stream.ring, stream.rate)
+      out = stream
+      print(("snes: sound, %d Hz, in a ring of %d periods")
+            :format(stream.rate, stream.ring_periods))
+    else
+      print("snes: no sound (" .. tostring(oops) .. "), so the clock paces it")
+    end
+  end
+end
 
 --
 -- The pad, from the Linux keycodes virtio-input speaks. The layout is
@@ -188,41 +235,44 @@ local KEYS = {
   [32]  = B.l,      [46]  = B.r,                         -- d c
 }
 
---
--- The console's own rate, which is not sixty.
---
--- An NTSC Super Nintendo draws 60.0988 frames a second and a PAL one
--- 50.007, from its master clock. It matters more than it looks once there
--- is sound, which is paced by samples rather than by frames.
---
 local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
-local period = counter_hz / (pal and 50.007 or 60.0988)
+local period = counter_hz / fps
+local due = sys.ticks()
+
+-- Whether the console owes the device, or the clock, a frame.
+local function wanted(now)
+  if out then
+    return out:queued() * out.frames < per_frame
+  end
+
+  return now >= due
+end
 
 --
 -- How fast it is really going, every ten seconds.
 --
 -- The question this port was started to answer: whether an emulator's core
 -- keeps up under QEMU's TCG, which is at its worst on exactly this kind of
--- code. `emulating` is the frame and the copy into the surface, so what is
--- left of the period is everything else on the machine.
+-- code. `emulating` is the frame and the copy into the surface. Dropped sound
+-- is frames the ring had no room for, which pacing by the ring should keep at
+-- none; a core too slow for its device shows up instead as the server's
+-- `starved`, and as silence between the frames.
 --
 local REPORT = counter_hz * 10
 local report_at = sys.ticks()
-local frames, busy = 0, 0
-
-local due = sys.ticks()
+local frames, busy, lost = 0, 0, 0
 
 while win.running do
   local now = sys.ticks()
 
-  if now >= due then
-    local fine, oops = pcall(snes.frame, win:surface())
+  if wanted(now) then
+    local fine, dropped = pcall(snes.frame, win:surface())
     local after = sys.ticks()
 
     drained()
 
     if not fine then
-      print("snes: " .. tostring(oops))
+      print("snes: " .. tostring(dropped))
       break
     end
 
@@ -232,34 +282,46 @@ while win.running do
 
     frames = frames + 1
     busy = busy + (after - now)
-    due = due + period
+    lost = lost + dropped
 
-    -- Behind by more than a few frames: stop owing them. Racing to repay
-    -- a debt the machine cannot pay is a game that never answers a key.
-    if now - due > 4 * period then
-      due = now
+    if not out then
+      due = due + period
+
+      -- Behind by more than a few frames: stop owing them. Racing to repay
+      -- a debt the machine cannot pay is a game that never answers a key.
+      if now - due > 4 * period then
+        due = now
+      end
     end
   end
 
   if now - report_at >= REPORT then
     local seconds = (now - report_at) / counter_hz
 
-    print(("snes: %.1f frames a second of %.1f, %.1f ms emulating each")
-          :format(frames / seconds, counter_hz / period,
-                  frames > 0 and busy / frames / counter_hz * 1000 or 0))
+    print(("snes: %.1f frames a second of %g, %.1f ms emulating each, "
+           .. "%d frames of sound dropped")
+          :format(frames / seconds, fps,
+                  frames > 0 and busy / frames / counter_hz * 1000 or 0, lost))
 
-    report_at, frames, busy = now, 0, 0
+    report_at, frames, busy, lost = now, 0, 0, 0
   end
 
   --
   -- Wait for the next frame without spinning, and without oversleeping it.
   --
-  -- One scheduler tick when the frame is more than half a period away, and
-  -- a yield when it is closer - so an idle console is an idle process, and
-  -- a tick's length is never assumed, only that it is shorter than half a
-  -- frame.
+  -- One scheduler tick when nothing is owed - a tick is shorter than a
+  -- period of sound and than half a frame, which is all that is assumed
+  -- about it - and none when a frame is.
   --
-  local reply = wmproto.poll(win.handle, (due - sys.ticks() > period / 2) and 1 or 0)
+  local idle
+
+  if out then
+    idle = not wanted(sys.ticks())
+  else
+    idle = due - sys.ticks() > period / 2
+  end
+
+  local reply = wmproto.poll(win.handle, idle and 1 or 0)
 
   if not reply then break end
 
@@ -273,9 +335,11 @@ while win.running do
     end
   end
 
-  if due - sys.ticks() > 0 and due - sys.ticks() <= period / 2 then
+  if not out and due - sys.ticks() > 0 and due - sys.ticks() <= period / 2 then
     sys.yield()
   end
 end
+
+if out then out:close() end
 
 win:close()

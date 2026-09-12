@@ -454,7 +454,12 @@ local function new_namespace()
     -- as it always did: `sys.call_raw` returns the reply's payload and the
     -- endpoint travels in the message rather than in it.
     --
-    local reply, got = sys.call_raw(cap, string.pack("<I4c24", 2, name))
+    --
+    -- Cut to the 23 bytes a registered name keeps, as `app_request` cuts it,
+    -- so a window registered under a long title is found by that title -
+    -- and `string.pack` never sees a string longer than its field.
+    --
+    local reply, got = sys.call_raw(cap, string.pack("<I4c24", 2, name:sub(1, 23)))
 
     if not reply or #reply < 4 or string.unpack("<I4", reply) ~= 0
        or not got or got < 0 then
@@ -608,6 +613,14 @@ local function new_namespace()
       return nil, "no such operation: " .. tostring(op)
     end
 
+    --
+    -- A name longer than the field is no device the server holds, and is
+    -- answered as one. `string.pack` would raise instead - ending whoever
+    -- asked with a line about packing - and cutting the name could find a
+    -- different device that shares its first twenty bytes.
+    --
+    if #(rest or "") > 20 then return nil, DEV_ERRORS[2] end
+
     local reply, why = sys.call_raw(capability,
                                     string.pack(DEV_REQUEST, code, rest or ""))
 
@@ -675,6 +688,11 @@ local function new_namespace()
     if not code then
       return nil, "no such operation: " .. tostring(op)
     end
+
+    -- Longer than the field is no program in the image, for `dev_request`'s
+    -- reason: an answer, not a raise from `pack` and not a cut that could
+    -- name some other program.
+    if #(rest or "") > BIN_NAME_MAX then return nil, BIN_ERRORS[1] end
 
     local reply, why = sys.call_raw(capability,
         string.pack(BIN_REQUEST, code, (extra and extra.offset) or 0,
