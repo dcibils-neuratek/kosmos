@@ -54,14 +54,34 @@ local KEY_ESC    = 27
 local KEY_CTRL_C = 3
 local KEY_PREFIX = 23      -- Control-W
 
--- What a letter means after the prefix. A table rather than a chain of
--- comparisons because it is a lookup, and because upper and lower case
--- being the same entry is then visible rather than argued.
-local CLIP_KEYS = {
-  [97] = "selectall", [65] = "selectall",     -- a
-  [99] = "copy",      [67] = "copy",          -- c
-  [120] = "cut",      [88] = "cut",           -- x
-  [118] = "paste",    [86] = "paste",         -- v
+--------------------------------------------------------------------------
+-- **The four everybody's fingers already know.**
+--
+-- These were behind the prefix - `Control-W c` to copy - and the argument
+-- for that was written down and was good at the time: *there are no
+-- modifiers to escape into, so Control-C is a key an application can see,
+-- and in this system it is already the key that stops one.*
+--
+-- Both halves of that have since stopped being true. There **is** a
+-- modifier now: the Super key is read by the board and carried up as an
+-- escape sequence, so the window manager has somewhere of its own to put a
+-- command. And Control-C ending the desktop was never a decision so much as
+-- the oldest line in this file - it sat at the top of `key`, before
+-- anything else could look at the byte, so pressing copy in any window
+-- closed the whole desktop.
+--
+-- So the ordinary keys do the ordinary thing, and what a person has to
+-- learn is the *system* commands rather than the editing ones.
+--
+-- A table rather than a chain of comparisons because it is a lookup. There
+-- is no upper case here and there does not need to be: Control plus a
+-- letter is one control character whichever way the shift key is held.
+--------------------------------------------------------------------------
+local EDIT_KEYS = {
+  [1]  = "selectall",     -- Control-A
+  [3]  = "copy",          -- Control-C
+  [24] = "cut",           -- Control-X
+  [22] = "paste",         -- Control-V
 }
 
 local theme = use("/lib/theme.lua")
@@ -4404,12 +4424,32 @@ local function prefixed(c)
     return
   end
 
+  --
+  -- **Q ends the desktop**, and it is behind the prefix because ending the
+  -- desktop is the most destructive thing this keyboard can do and should
+  -- take two deliberate presses. It used to be Control-C, at the top of
+  -- `key`, which is one press and the same one people use to copy.
+  --
   -- Either case of the letter, because a prefix command is a command and
   -- nobody should have to notice the shift key to give one.
-  local edit = CLIP_KEYS[c]
+  --
+  if c == 113 or c == 81 then                 -- q, Q
+    running = false
+    return
+  end
 
-  if edit then
-    post(focused_window(), { type = edit })
+  --
+  -- And a literal Control-C through to the application, which is the same
+  -- escape hatch `Control-W Control-W` is for the prefix itself.
+  --
+  -- Nothing needs it yet: the Terminal answers the console's `poll` with
+  -- "no Control-C" and has never interrupted a child. It will one day, and
+  -- on that day the key is already reachable - which is cheaper than
+  -- discovering that the window manager has quietly taken the only way to
+  -- stop a running program.
+  --
+  if c == 99 or c == 67 then                  -- c, C
+    to_focused(KEY_CTRL_C)
     return
   end
 end
@@ -4589,13 +4629,22 @@ local SUPER_BINDINGS = {
 -- already live in `CLIP_KEYS`.
 --
 local PREFIX_BINDINGS = {
+  { shown = "Control-W Q",      what = "End the desktop" },
   { shown = "Control-W Tab",    what = "Go round the open windows" },
   { shown = "Control-W arrows", what = "Move the window in front" },
-  { shown = "Control-W A",      what = "Select everything" },
-  { shown = "Control-W C",      what = "Copy" },
-  { shown = "Control-W X",      what = "Cut" },
-  { shown = "Control-W V",      what = "Paste" },
+  { shown = "Control-W C",      what = "Send a real Control-C through" },
   { shown = "Control-W Control-W", what = "Send a real Control-W through" },
+}
+
+--
+-- And the ordinary ones, which are here so the window says what the whole
+-- keyboard does rather than only the unusual half of it.
+--
+local EDIT_BINDINGS = {
+  { shown = "Control-A", what = "Select everything" },
+  { shown = "Control-C", what = "Copy" },
+  { shown = "Control-X", what = "Cut" },
+  { shown = "Control-V", what = "Paste" },
 }
 
 SUPER_KEYS = {}
@@ -4614,7 +4663,7 @@ end
 -- anywhere else would be a guess about another process's behaviour.
 --
 handlers.shortcuts = function()
-  local keys, prefixes = {}, {}
+  local keys, prefixes, edits = {}, {}, {}
 
   for _, b in ipairs(SUPER_BINDINGS) do
     keys[#keys + 1] = { shown = b.shown, what = b.what }
@@ -4624,15 +4673,14 @@ handlers.shortcuts = function()
     prefixes[#prefixes + 1] = { shown = b.shown, what = b.what }
   end
 
-  return { ok = true, super = keys, prefix = prefixes }
+  for _, b in ipairs(EDIT_BINDINGS) do
+    edits[#edits + 1] = { shown = b.shown, what = b.what }
+  end
+
+  return { ok = true, super = keys, prefix = prefixes, edit = edits }
 end
 
 local function key(c)
-  if c == KEY_CTRL_C then
-    running = false
-    return
-  end
-
   --
   -- Collecting `ESC [ 1 ; 9`. Each byte either continues the sequence or
   -- ends the attempt, and ending it hands back everything taken so far.
@@ -4702,6 +4750,23 @@ local function key(c)
 
   if c == KEY_PREFIX then
     prefix = true
+    return
+  end
+
+  --
+  -- Copy, cut, paste and select-all, after the prefix has had its say so
+  -- that `Control-W c` can still mean something else.
+  --
+  -- **What crosses is the intent, not the key.** This process does not know
+  -- what a selection is; a text field does. So it posts `{type = "copy"}`
+  -- and the application answers with whatever it decided that meant - which
+  -- is why Lite XL, which is not built on the widget kit at all, gets these
+  -- without a line of its own: it already reads the intent.
+  --
+  local edit = EDIT_KEYS[c]
+
+  if edit then
+    post(focused_window(), { type = edit })
     return
   end
 

@@ -56,8 +56,14 @@ local reply = fs.send("/app/wm", { type = "shortcuts" })
 local groups = {}
 
 if reply and reply.ok then
+  --
+  -- Editing first, because it is the half somebody already knows and the
+  -- fastest way to see that this machine does not want to be learnt from
+  -- scratch. The unusual keys come after.
+  --
+  groups[#groups + 1] = { title = "Editing", rows = reply.edit or {} }
   groups[#groups + 1] = { title = "The Super key", rows = reply.super or {} }
-  groups[#groups + 1] = { title = "The prefix, for a keyboard without one",
+  groups[#groups + 1] = { title = "Control-W, which introduces a command",
                           rows = reply.prefix or {} }
 end
 

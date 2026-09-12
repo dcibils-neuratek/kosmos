@@ -97,12 +97,19 @@ def start(guest, spec):
 
 
 def stop_and_read(guest, path):
-    """Control-C stops the desktop; then the file, as the prompt sees it."""
+    """`Control-W Q` stops the desktop; then the file, as the prompt sees it.
+
+    It was Control-C, which the window manager took before any window could
+    see it - so pressing copy closed the desktop. Control-C is copy now and
+    ending the desktop is a prefix and a letter, two deliberate presses for
+    the most destructive thing this keyboard does.
+    """
     mark = len(guest.seen)
-    guest.sendkey("ctrl-c")
+    guest.sendkey("ctrl-w")
+    guest.sendkey("q")
 
     if not said_after(guest, mark, PROMPT, 30):
-        raise Failure("Control-C did not stop the desktop.")
+        raise Failure("Control-W Q did not stop the desktop.")
 
     command = "head -n 3 " + path
     mark = len(guest.seen)

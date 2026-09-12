@@ -165,7 +165,10 @@ end
 
 local K_MOUSE1 = 200
 
--- Control-C closes the window, like every other application here - by
+-- Control-C closes the window - not the way the rest of the system uses
+-- that key, which is copy, but because this reads `rawkey` keycodes on a
+-- path the window manager does not take characters from. `Super + Q` is
+-- the consistent way and works as well. Closing here is done by
 -- keycode, so it does not depend on the character path.
 local CTRL = { [29] = true, [97] = true }
 local ctrl_down = false

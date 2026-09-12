@@ -772,6 +772,22 @@ def check_boot_screen(geometry, data):
     return checks
 
 
+#
+# **What ends the desktop, as two bytes on the serial line.**
+#
+# It was `\x03` - Control-C - and that was the first line of the window
+# manager's key handler, before anything else could look at the byte. Which
+# meant copy closed the desktop, so Control-C became `Control-W Q`: a prefix
+# and a letter, two deliberate presses for the most destructive thing this
+# keyboard can do.
+#
+# A name rather than the bytes at eighteen call sites, because eighteen
+# copies of `b"\x17q"` is eighteen places to be wrong on the day it changes
+# again - and it has now changed once.
+#
+STOP_DESKTOP = b"\x17q"
+
+
 def check_bars(data):
     """Phase two: what Lua drew, through gfx.screen().
 
@@ -1117,7 +1133,7 @@ def check_registry(guest):
 
         # Back to the shell, the way every phase here ends.
         stop = len(guest.seen)
-        guest.proc.stdin.write(b"\x03")
+        guest.proc.stdin.write(STOP_DESKTOP)
         guest.proc.stdin.flush()
 
         deadline = time.monotonic() + 15
@@ -1286,7 +1302,7 @@ def check_context(guest):
 
     # Back to the shell, the way every phase here ends.
     stop = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -1427,7 +1443,7 @@ def check_widgets(guest):
     # Hand the screen back, or the next phase types its command at a shell
     # that is still blocked waiting for this window manager to finish.
     mark = len(guest.seen)
-    send(b"\x03", 2.0)
+    send(STOP_DESKTOP, 2.0)
 
     deadline = time.monotonic() + 15
 
@@ -1599,7 +1615,7 @@ def check_scripting(guest):
         )
 
     # Back to the shell, then start both together.
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
     time.sleep(2)
 
@@ -1622,7 +1638,7 @@ def check_scripting(guest):
 
     # And hand the screen back for the phase after this one.
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -1734,7 +1750,7 @@ def check_replicants(guest):
 
     # Hand the screen back.
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -1945,7 +1961,7 @@ def check_idle(guest):
         )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -2025,7 +2041,7 @@ def check_direct(guest):
         )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -2110,7 +2126,7 @@ def check_3d(guest):
         raise Failure("the cube is not rotating; every frame is the same.")
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -2225,7 +2241,7 @@ def check_repaints(guest):
         )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -2403,7 +2419,7 @@ def check_terminal(guest):
            seconds=20)
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -2715,7 +2731,7 @@ def check_cores(guest):
     checks += 1
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -2877,8 +2893,7 @@ def check_clipboard(guest):
         guest.proc.stdin.flush()
         time.sleep(wait)
 
-    send(b"\x17", 0.5)                       # Control-W
-    send(b"c", 1.0)                          # copy
+    send(b"\x03", 1.0)                       # Control-C, copy
 
     #
     # The gallery, raised from its bottom label rather than its title bar,
@@ -2907,14 +2922,13 @@ def check_clipboard(guest):
 
     before = guest.screendump()
 
-    send(b"\x17", 0.5)                       # Control-W
-    send(b"v", 1.2)                          # paste
+    send(b"\x16", 1.2)                       # Control-V, paste
 
     after = guest.screendump()
 
     if before == after:
         raise Failure(
-            "Control-W v changed nothing in the gallery's text field. The "
+            "Control-V changed nothing in the gallery's text field. The "
             "copy was made in a different application, so either the "
             "window manager is not holding the clipboard between the two "
             "or `ui.field` is not answering a paste."
@@ -2943,14 +2957,12 @@ def check_clipboard(guest):
     guest.mouse_button(False)
     time.sleep(0.8)
 
-    send(b"\x17", 0.5)
-    send(b"a", 1.2)                          # select everything
+    send(b"\x01", 1.2)                       # Control-A, select everything
 
     width, height, px = parse_ppm(guest.screendump())
     everything = _highlight_area(width, height, px)
 
-    send(b"\x17", 0.5)
-    send(b"c", 1.5)                          # copy, which cannot take it all
+    send(b"\x03", 1.5)                       # copy, which cannot take it all
 
     width, height, px = parse_ppm(guest.screendump())
     capped = _highlight_area(width, height, px)
@@ -2966,7 +2978,7 @@ def check_clipboard(guest):
         )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -3206,7 +3218,7 @@ def check_deskbar(guest):
         )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -3474,7 +3486,7 @@ def check_desktop(guest):
     checks += 1
 
     back = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -3630,7 +3642,7 @@ def check_clicks(guest):
         )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -3738,7 +3750,7 @@ def check_graphical_mode(guest):
             )
 
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15
@@ -3964,7 +3976,7 @@ def check_reaped(guest):
 
     # Control-C back to the shell, the way every phase here ends.
     mark = len(guest.seen)
-    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
 
     deadline = time.monotonic() + 15

@@ -608,8 +608,11 @@ every key, event, command and log line.
 
 Open:
 
-- **Control-C** stops the desktop before a window sees it, so the editor
-  copies with Control-W and `c`.
+- ~~**Control-C** stops the desktop before a window sees it, so the editor
+  copies with Control-W and `c`.~~ Closed on 12 September: Control-C is copy
+  and `Control-W Q` ends the desktop, so the editor copies the way everything
+  else does. Lite XL needed no change at all, because it reads the *intent*
+  rather than the key.
 
 **Next, in the order agreed**: Quake, then a battery indicator on the top bar,
 which starts with the T14's DSDT. `docs/roadmap.md` has both.

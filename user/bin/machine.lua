@@ -430,7 +430,7 @@ absent("Pointer", "sys.pointer answers nil both for a board with none and " ..
 -- **Read-only, and selectable, which is the pair that makes it useful.**
 -- A report of what a machine is has one job after being read, and it is
 -- being sent to somebody else. So the text is text: drag over it and it
--- highlights, `Control-W c` puts it on the clipboard, and nothing typed at
+-- highlights, `Control-C` puts it on the clipboard, and nothing typed at
 -- it can change what it says. `ui.editor` refuses the editing keys when
 -- `read_only` is set and answers copy and select-all regardless, so that
 -- is the whole of it here.
@@ -452,8 +452,8 @@ win:add(ui.editor{ x = 8, y = 8, w = W - 32, h = H - 74,
 -- this machine, so the clipboard lives behind the window manager's prefix,
 -- and a prefix nobody mentions is a feature nobody has.
 win:add(ui.label{ x = 10, y = H - 60,
-                  text = "Drag to select, or Control-W a for all."
-                         .. "   Control-W c copies it.",
+                  text = "Drag to select, or Control-A for all."
+                         .. "   Control-C copies it.",
                   color = "text_dim" })
 
 win:run()

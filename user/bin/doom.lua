@@ -300,7 +300,13 @@ while win.running do
     elseif ev.type == "rawkey" then
       if CTRL[ev.code] then ctrl_down = ev.down end
 
-      -- Control-C, like every other application here.
+      -- Control-C, and this is now a *difference* from the rest of the
+      -- system rather than a likeness. Elsewhere Control-C is copy, taken
+      -- by the window manager from the character stream before any window
+      -- sees it. This reads `rawkey`, which is a separate path carrying
+      -- undecoded keycodes, so the combination still arrives here - and
+      -- copy means nothing in a full-screen game anyway. `Super + Q` is
+      -- the consistent way to close this, and works too.
       if ctrl_down and ev.code == 46 and ev.down then
         win:close()
       else

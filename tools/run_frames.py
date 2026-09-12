@@ -194,9 +194,11 @@ def main():
             text = run()
             show(title, text)
 
-            # Back to a prompt for the next one. Control-C is what `wm`
-            # documents as giving the screen back.
-            guest.proc.stdin.write(b"\x03")
+            # Back to a prompt for the next one. `Control-W Q` is what `wm`
+            # documents as giving the screen back - Control-C is copy, and
+            # was taken off this job when it turned out that copying in any
+            # window closed the desktop.
+            guest.proc.stdin.write(b"\x17q")
             guest.proc.stdin.flush()
             time.sleep(2)
             guest._read_available()

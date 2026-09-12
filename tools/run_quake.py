@@ -172,12 +172,22 @@ def main():
                           "(%d of 2 appeared)" % (count - before))
         checks += 1
 
-        # Control-C closes the window, and the process ends without a fault.
+        #
+        # `Control-W Q` ends the desktop, and Quake ends with it, without a
+        # fault - which is what this is checking.
+        #
+        # It was Control-C, which the window manager took before any window
+        # saw it. That key is copy now: the prefix is where ending the
+        # desktop went, because it is the most destructive thing this
+        # keyboard can do. Control-W is the window manager's whatever has
+        # the focus, so a full-screen game does not swallow it.
+        #
         end_mark = len(guest.seen)
-        guest.sendkey("ctrl-c")
+        guest.sendkey("ctrl-w")
+        guest.sendkey("q")
 
         if not said_after(guest, end_mark, "(quake) ended", 30):
-            raise Failure("Control-C did not close Quake:\n"
+            raise Failure("Control-W Q did not close Quake:\n"
                           + guest.seen[end_mark:][-800:])
 
         if "died:" in guest.seen[mark:]:

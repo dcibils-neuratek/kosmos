@@ -178,15 +178,22 @@ interface moves between controls and the arrows are how every list is used,
 so a manager holding them has decided no application may have a second
 control.
 
-There are no modifiers to escape into - a virtio keyboard gives Control plus
-a letter, no Alt, no Super, and Control-arrow is a terminal escape sequence
-this system does not speak. So it takes the approach `screen` and `tmux` took
-for the same reason: one key is reserved and it *introduces* a command rather
-than being one.
+Control-arrow is a terminal escape sequence this system does not speak, so
+it takes the approach `screen` and `tmux` took for the same reason: one key
+is reserved and it *introduces* a command rather than being one.
 
     Control-W then an arrow    move the focused window
     Control-W then Tab         focus the next window
+    Control-W then Q           end the desktop
+    Control-W then C           a literal Control-C to the application
     Control-W then Control-W   a literal Control-W to the application
+
+**This paragraph used to open "there are no modifiers to escape into - no
+Alt, no Super", and that is no longer true.** `hal/keys.c` reads the Windows
+key on a PC keyboard and the Command key on an Apple one - the same HID usage
+- and carries it up as an escape sequence, so there is a modifier now and
+Super owns the desktop commands. What is left behind the prefix is the small
+set that has to work on a keyboard with no Super key at all.
 
 The pointer divides the same way. A press on a title bar is the window
 manager's - raise and drag. A press anywhere else is the application's, and
@@ -427,27 +434,39 @@ an application as a byte stream, so shift-plus-arrow arrives as the same
 four bytes as an arrow. Two consequences, and both of them shaped the
 design:
 
-**Control-C is not available.** In this system it is the key that stops a
-program, and nine checks in `run_screenshot.py` use it to get the screen
-back from the desktop, from `plasma`, from `cube3d` and from a terminal
-window. So the CUA triple cannot be had.
+**Control-C was not available, and now it is.** This section argued that it
+is the key that stops a program, that eighteen checks in `run_screenshot.py`
+use it to get the screen back, and that the CUA triple therefore could not be
+had - so the four edits went behind the prefix, `Control-W c` to copy.
 
-The alternative was to invent a triple out of whatever control codes are
-unclaimed, and every candidate carries somebody's prior - `^Y` is paste to
-half the world and copy to nobody. So they went behind the prefix that
-already exists precisely because this machine has no Meta key:
+Both halves of that have since stopped being true, and the correction is
+worth keeping because neither was refuted by argument. **A modifier
+arrived**: Super is read by the board and carried up as an escape sequence,
+so the window manager has its own place for a command and does not need to
+borrow one. And **Control-C ending the desktop was never a decision** - it
+was the first line of `key`, before anything could look at the byte, dating
+from a window manager that had no applications in it. What it meant in
+practice was that pressing copy closed the desktop.
+
+So the four are the four:
 
 ```
-Control-W a    select everything in the focused control
-Control-W c    copy
-Control-W x    cut
-Control-W v    paste
+Control-A    select everything in the focused control
+Control-C    copy
+Control-X    cut
+Control-V    paste
 ```
 
-Behind a prefix the letters can be the ones everyone already knows, which
-is the entire point of having a prefix. §16.6's argument for one reserved
-key rather than five reserved ones is the same argument, and this is the
-first thing to be added under it since the window-moving arrows.
+and ending the desktop moved to `Control-W Q`, behind the prefix, because it
+is the most destructive thing this keyboard can do and two deliberate presses
+is the right price for it. `Control-W C` sends a literal Control-C through,
+which nothing needs yet - the Terminal has never interrupted a child - and
+which exists so that the day it does, the key is reachable.
+
+**What a person has to learn is the system commands, not the editing ones.**
+That is the whole of the change: §16.6's argument for one reserved key rather
+than five is intact, and what sits behind that key is now only the things
+that could not sit anywhere else.
 
 **A selection is made with the pointer, not with shift.** `ui.editor` holds
 an *anchor* and a *cursor* and nothing else: the press sets the anchor, the

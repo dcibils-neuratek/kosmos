@@ -417,7 +417,7 @@ for Lite XL itself.
 
 **Control-C is not copy.** The window manager stops the desktop on it before
 any window sees the key, so copy, cut, paste and select-all come the way
-every application here gets them - Control-W and a letter - and each becomes
+every application here gets them - Control plus a letter - and each becomes
 the Lite XL command it names.
 
 **The launcher's decisions are a library.** Paths, the installed tree, files,

@@ -405,12 +405,17 @@ local function pointer(ev)
 end
 
 --
--- Select-all, copy, cut and paste, from the desktop's prefix.
+-- Select-all, copy, cut and paste, as the desktop decided them.
 --
--- **Not Control-C**, and not by choice: Control-C belongs to the window
--- manager, which stops the desktop on it before any window sees the key. So
--- the four edits come the way every application here gets them - Control-W
--- and a letter - as intents, and each becomes the Lite XL command it names.
+-- **Not the keys, the intents.** Control-A, C, X and V are taken by the
+-- window manager before any window sees them, and what it sends on is what
+-- it decided they *meant* - `{type = "copy"}` rather than a byte. So this
+-- reads the same four intents every application here reads, and each
+-- becomes the Lite XL command it names.
+--
+-- Which is why nothing had to change in this file when those keys moved off
+-- the `Control-W` prefix: a window that reads intents does not know or care
+-- which key produced one. That is the point of sending the intent.
 --
 local EDITS = {
   copy = "doc:copy", cut = "doc:cut", paste = "doc:paste",
