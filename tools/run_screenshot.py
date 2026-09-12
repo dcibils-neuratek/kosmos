@@ -2906,6 +2906,9 @@ def check_deskbar(guest):
     # `menu_metrics` in ui.lua makes.
     top_w = len("Applications") * GLYPH_W + 8 * 2 + 12 + 12 + 32 + 6
 
+    # Everything after this point follows a click on the bar.
+    opened_at = len(guest.seen)
+
     guest.mouse_to(*_to_tablet(40, 18, width, height))
     time.sleep(0.4)
     guest.mouse_button(True)
@@ -2974,6 +2977,35 @@ def check_deskbar(guest):
 
     after = before + 1
 
+    #
+    # **And clicking the bar must not resize the desktop.**
+    #
+    # `pointer_pass` raises whatever is under the pointer before it asks
+    # what kind of window it is, so a click on the Deskbar raises the strip
+    # itself. `raise` used to take the window out of `windows`, count the
+    # strips in that incomplete list - finding none - and resize the
+    # backdrop to the whole screen, then put it back and resize it again.
+    #
+    # Every click on the bar therefore reallocated and repainted an 8 MB
+    # desktop surface twice. On a ThinkPad that is a visible flicker across
+    # the screen; under QEMU it hid in the noise and the gate stayed green,
+    # which is why this check exists at all.
+    #
+    # The window manager says the backdrop's size every time it sets it, so
+    # counting those lines is the whole test: one at startup, and no more.
+    #
+    resized = len(re.findall(r"wm: the desktop is below the strip", 
+                             guest.seen[opened_at:]))
+
+    if resized > 0:
+        raise Failure(
+            f"clicking the Deskbar resized the desktop {resized} time(s). "
+            "`raise` must count the strips over a *complete* window list - "
+            "it raises the strip itself, so counting while the strip is "
+            "removed finds none and gives the backdrop the whole screen.\n"
+            + "\n".join(l.strip() for l in guest.seen[opened_at:].splitlines()
+                         if "below the strip" in l)[-500:])
+
     if False:
         raise Failure(
             f"clicking an application in the Deskbar started nothing: "
@@ -2999,7 +3031,7 @@ def check_deskbar(guest):
     else:
         raise Failure("Control-C did not get the screen back from the desktop.")
 
-    return 2
+    return 3
 
 
 def check_desktop(guest):

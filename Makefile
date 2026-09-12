@@ -1482,6 +1482,35 @@ $(HOSTDIR)/test_apicdecode: tools/test_apicdecode.c hal/pc/apic_decode.c hal/pc/
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_apicdecode.c hal/pc/apic_decode.c
 
+#
+# And whether the userland image's canary works, which is the same argument
+# a fourth time with one difference: the two halves are written in different
+# languages.
+#
+# `tools/bin2c.py` computes the checksums on the host in Python and
+# `kernel/image_sum.h` recomputes them on the machine in C. If those ever
+# disagree the boot log calls a healthy image corrupt, on every machine - and
+# a canary that cries on a healthy boot is worse than none, because the next
+# real one is read as the same false alarm. Nothing at run time can catch
+# that: the two never meet except on the machine whose memory is in question.
+#
+# So the fixture goes through the real script, and the test compiles against
+# what it emitted. Ten thousand and one bytes rather than a round number, so
+# the last page is short - which is the case every real blob has and a wrong
+# length would report as one permanently bad page.
+#
+$(HOSTDIR)/imagesum_fixture.c: tools/bin2c.py
+	@mkdir -p $(dir $@)
+	@python3 -c "import sys; sys.stdout.buffer.write(bytes((i * 37 + 11) % 251 for i in range(10001)))" \
+	        > $(HOSTDIR)/imagesum_fixture.bin
+	@python3 tools/bin2c.py $(HOSTDIR)/imagesum_fixture.bin fixture $@
+
+$(HOSTDIR)/test_imagesum: tools/test_imagesum.c kernel/image_sum.h \
+                          $(HOSTDIR)/imagesum_fixture.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_imagesum.c $(HOSTDIR)/imagesum_fixture.c
+
 $(HOSTDIR)/lua: lua/upstream/lua.c lua/upstream/linit.c $(LUA_HOST_SRCS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -O1 -w -Ilua/upstream -o $@ $^ -lm
@@ -2520,7 +2549,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2550,6 +2579,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	$(HOSTDIR)/test_pmmplace
 	$(HOSTDIR)/test_loaderfb
 	$(HOSTDIR)/test_apicdecode
+	@# And the userland image's canary, over a blob the real script
+	@# generated during this build - because its two halves are Python and
+	@# C and nothing at run time can notice them disagreeing.
+	$(HOSTDIR)/test_imagesum
 	@# And the Lite XL surface shim, which is C and still needs no machine:
 	@# `make litexl` says the port's sources compile, and this says the part
 	@# of them Kosmos wrote is correct. Different claims.

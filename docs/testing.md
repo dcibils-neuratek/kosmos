@@ -925,6 +925,15 @@ process ending -1. The failing run is that fix's control.
 | `context` phase of `tools/run_screenshot.py`, 3 checks | `make screenshot`, and so `make prepush` | a right press on a probe's button reaches its `on_context`, does **not** press the button, and a left press on the same pixel still does |
 | `deskbar` phase | the same | a bare `wm` opens the strip at 0,0, and walking the Kosmos menu into Applications and choosing the first item opens a window |
 | `desktop` phase | the same | `wm desktop,deskbar` with an empty startup list puts the backdrop at the strip's height |
+| the third `deskbar` check | the same | **clicking the bar does not resize the desktop.** `pointer_pass` raises whatever is under the pointer before asking what kind of window it is, so a click on the Deskbar raises the strip; `raise` counted the strips while the window was out of `windows`, found none, and gave the backdrop the whole screen - then put it back and resized it again. Every click reallocated and repainted an 8 MB surface twice |
+
+**That one was found on hardware and could not be seen under QEMU.** On a
+2.6 GHz ThinkPad it is a flicker across the whole screen on every click; in
+emulation it hid in the noise and the gate was green throughout. The check
+counts what the window manager says - it announces the backdrop's size every
+time it sets one - so it now catches in emulation a fault that only a real
+machine could show. Put the census back between the `remove` and the append
+and it fails with `clicking the Deskbar resized the desktop 2 time(s)`.
 
 **Each host test has had what it guards taken away.** With anything in the
 folder counting as an item, `test_deskbarmenu` fails on the file that is not
@@ -965,3 +974,120 @@ like a bug in the code:
   Deskbar starts four applications that cover it. The phase writes an empty
   `/home/.startup` first, because `startup.lua` treats absent and empty as
   different things on purpose.
+
+
+## 18.22 A canary for bytes nothing can write
+
+**The fault this exists for has never been reproduced here**, and that is
+the whole shape of it.
+
+A ThinkPad T14 booted from a USB stick with a 64 MB disk carried as a GRUB
+module dies at the last stage: `process 8 (diskfs) ended, code 1`, and the
+desktop never comes up. The same kernel with an 8 MB module boots perfectly
+and has done for weeks. The same image under QEMU with OVMF, eight cores,
+sixteen gigabytes and an NVMe drive boots every time.
+
+**The first thing that was missing was a way for the server to say
+anything.** `diskfs` is spawned with one capability - its own endpoint - and
+`sys_write` refuses any process that does not own the console, deliberately.
+So `print` reaches nobody, and so does the `say` in `user/init/main.c` that
+reports a Lua error: a Lua error in that server has been invisible since it
+was written, and `ended, code 1` was the entire diagnosis. What is left is
+the exit code, which init prints, so `diskfs_main` now spends five of them:
+
+| code | what raised |
+|---|---|
+| 11 | `sys.libraries()` or its chunk, for a reason not below |
+| 12 | `kfs.lua` would not load or run |
+| 13 | the serve loop |
+| 14 | out of memory |
+| 15 | **a syntax error** - the source arrived corrupted |
+
+1 is deliberately not among them: that is what `main.c` returns for a Lua
+error it could not print, and a diagnostic that cannot be told apart from
+the fault it diagnoses is worse than none. Using it cost a boot.
+
+The machine answered **15**. The Lua source of `/lib` did not parse - so it
+is not memory exhaustion, not `kfs`, and not the disk. It is the same fault
+as `beep`'s `/lib/audio.lua:1: unexpected symbol near '$'` on the same
+laptop, months earlier: two symptoms, one bug.
+
+### What the instrument is
+
+Those bytes live in one place. `process_create` maps the read-only half of
+the userland image straight out of the kernel's own copy - one set of
+physical pages for every address space - so the code, the fonts and the Lua
+source of every program are these bytes and no others. No process can write
+one: the mapping is read only, and the pages sit below the region the
+allocator hands out, so nothing the kernel allocates can land there either.
+
+So `tools/bin2c.py` writes down what it emitted - a checksum of the whole
+blob and one per 4 KB page - and the kernel asks, **four times in one boot**,
+whether that is still what is there:
+
+| asked | what is between it and the last |
+|---|---|
+| as the loader left it | nothing of this kernel but the trap table |
+| with the page tables built | the allocator chose a region; the tables were built over it |
+| with the devices up | the display, the input devices, the storage controller - everything that hands a physical address to something that is not the processor |
+| before init is built from it | the rest |
+
+Four rather than one because a boot of that machine is expensive: a single
+run says which gap the bytes changed under instead of three runs bisecting
+it. A change is reported with the count of bad pages, the address of the
+first, and the sixteen bytes it holds instead - which says whether what
+landed there reads as somebody's DMA, somebody's text, or zeroes.
+
+Beside it, **the loader's whole memory map**, reserved entries and all.
+`consider` in `hal/pc/memory.c` sees type 1 and throws the rest away at the
+moment of the walk, which is right for deciding what to manage and is why
+nobody could answer "what does the firmware think is at this address" - the
+first question to ask about memory that changes where nothing can write it.
+QEMU's map is nine entries under `-kernel` and twenty-five through GRUB; a
+laptop's is longer, and none of it was visible.
+
+**The cap was wrong on the first try and the boot said so**, which is the
+only reason it was noticed. Twenty-four was chosen as "more than any machine
+would have" and OVMF's map is *exactly* twenty-four, so the array filled to
+the brim and looked complete - the same failure as a screenshot check that
+passes because nothing happened. The count seen is now reported beside the
+count kept, and the cap is forty-eight.
+
+**And the first thing the dump found, on the first boot it ran:** three
+entries between `0x00800000` and `0x00900000` come back type 4 - reserved,
+and to be preserved - and this kernel runs from `0x00100000` to past
+`0x01300000`, straight through them, with the userland image on top. It
+survives under emulation, so overlapping is not sufficient on its own; what
+that says is that nothing writes those pages here after the loader hands
+over, which is exactly what a real machine's firmware does not promise. The
+line naming it is in the dump: `** UNDER THE USERLAND IMAGE **`.
+
+### And the test, which is of the instrument
+
+`build/host/test_imagesum`, 16 checks, in `make test`.
+
+**The two halves are written in different languages and neither can check
+the other at run time.** `bin2c.py` computes the checksums on the host in
+Python; `kernel/image_sum.h` recomputes them on the machine in C. If those
+ever disagree the boot log calls a healthy image corrupt on every machine -
+and a canary that cries on a healthy boot is worse than none, because the
+next real one is read as the same false alarm. Nothing at run time can catch
+that: the two never meet except on the machine whose memory is in question.
+
+So the test compiles against a blob **the real script generated during the
+build**, from a fixture the Makefile writes. 10001 bytes rather than a round
+number, because the last page has to be short: that is the case every real
+blob has, and hashing it over the padding instead of its own bytes would
+report one permanently bad page on every boot for ever.
+
+**The negative control:** one byte of a copy is changed and the walk has to
+notice, name the page it is on, and name only that one - once in the middle
+of the blob and once in the short last page. With `IMAGE_SUM_FNV32_PRIME`
+changed by two, 7 of the 16 checks fail, including both published FNV-1a
+vectors. A checker that always answered "fine" would pass the first three
+and fail the rest.
+
+What the test cannot say is whether the ThinkPad's memory is sound. What it
+says is that **when the instrument reports something on that machine, the
+reading can be believed** - which is the only claim a host test was ever in
+a position to make about a fault it cannot reproduce.

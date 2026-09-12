@@ -85,14 +85,38 @@ CORE_MODULES = [
 # 32-bit word. A laptop has no bochs; asking the firmware directly gives
 # the panel its own mode.
 #
+#
+# **And the loader's own words are kept on the screen long enough to read.**
+#
+# GRUB says something on this machine while loading a 64 MB module, and
+# nobody knows what: it prints, hands over, and the kernel's first stage
+# scrolls it away inside a second. The one witness to it is somebody looking
+# at the panel, and that person got "something like" - which is not a
+# diagnosis, and cannot become one without another boot.
+#
+# So the loader is asked to say what it is doing and then to stop. `echo`
+# before each step, so a message that appears has something to be *after*;
+# `sleep --interruptible 6` before `boot`, so whatever was printed - a
+# warning, an allocation complaint, nothing at all - is still on the screen
+# to be read or photographed, and a key press skips the wait.
+#
+# It costs six seconds on a boot nobody is watching and is worth it while
+# this is open. When it is understood, both lines come out.
+#
 GRUB_CFG = """set timeout=3
 set default=0
 
 menuentry "Kosmos" {
     insmod efi_gop
     insmod multiboot2
+
+    echo "grub: loading the kernel..."
     multiboot2 /boot/kosmos.bin@ARGS@
-@MODULE@    boot
+@MODULE@
+    echo "grub: loaded. Anything above this line is the loader's."
+    sleep --interruptible 6
+
+    boot
 }
 """
 
@@ -148,9 +172,14 @@ def build_esp(kernel, efi, out, grub_dir, args="", disk=None):
     cfg = out + ".cfg"
 
     with open(cfg, "w") as f:
+        # The disk gets an `echo` of its own, because *which of the two loads
+        # complained* is the question: the kernel is 10 MB and the module 64,
+        # and it is the module's size that decides whether this machine boots.
         f.write(GRUB_CFG.replace("@ARGS@", (" " + args) if args else "")
                         .replace("@MODULE@",
-                                 "    module2 /boot/disk.img\n" if disk else ""))
+                                 '    echo "grub: loading the disk..."\n'
+                                 "    module2 /boot/disk.img\n"
+                                 if disk else ""))
 
     run(["mcopy", "-i", out, efi, "::/EFI/BOOT/BOOTX64.EFI"])
     run(["mcopy", "-i", out, cfg, "::/boot/grub/grub.cfg"])

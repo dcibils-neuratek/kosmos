@@ -45,6 +45,55 @@ static unsigned long whole;
  */
 static bool trampoline_free;
 
+/*
+ * **The loader's map, whole, and not only the parts this kernel adopts.**
+ *
+ * `consider` sees type 1 and nothing else, which is right for choosing a
+ * region and useless for asking why a machine misbehaves. The pages the
+ * userland image sits on are below every region the allocator manages and
+ * no process can write them, and on the ThinkPad they change anyway - so
+ * the question becomes what *else* the firmware says is down there, and
+ * there was no way to ask it. QEMU's map is four entries and clean; a real
+ * laptop's is twenty, with ACPI tables, runtime services and reserved holes
+ * among them.
+ *
+ * Copied here for the reason the regions and the command line above are:
+ * the structure it lives in is free memory to `pmm_init`, so the walk is
+ * the only moment the map exists.
+ *
+ * **Forty-eight, and the first number was wrong.** Twenty-four was chosen as
+ * "more than any machine would have"; OVMF's map is exactly twenty-four, so
+ * the very first boot filled the array to the brim and there was no way to
+ * tell that from a map that happened to end there. The count seen is
+ * reported for that reason - a truncated map has to say so rather than look
+ * complete, which is the same mistake as a screenshot check that passes
+ * because nothing happened.
+ */
+#define MEMORY_ENTRIES_MAX 48
+
+static struct {
+    uint64_t base;
+    uint64_t length;
+    uint32_t type;
+} memory_entries[MEMORY_ENTRIES_MAX];
+
+static unsigned memory_entry_count;
+static unsigned memory_entries_seen;
+
+static void remember_entry(uint64_t base, uint64_t length, uint32_t type)
+{
+    memory_entries_seen++;
+
+    if (memory_entry_count >= MEMORY_ENTRIES_MAX) {
+        return;
+    }
+
+    memory_entries[memory_entry_count].base = base;
+    memory_entries[memory_entry_count].length = length;
+    memory_entries[memory_entry_count].type = type;
+    memory_entry_count++;
+}
+
 /* And every usable region that starts below 1 MB, for when it was not. */
 #define LOW_REGIONS_MAX 8
 
@@ -126,6 +175,28 @@ bool pc_trampoline_page_free(void)
     return trampoline_free;
 }
 
+unsigned pc_memory_entries(unsigned *seen)
+{
+    if (seen != NULL) {
+        *seen = memory_entries_seen;
+    }
+
+    return memory_entry_count;
+}
+
+bool pc_memory_entry(unsigned i, uint64_t *base, uint64_t *length,
+                     uint32_t *type)
+{
+    if (i >= memory_entry_count) {
+        return false;
+    }
+
+    *base = memory_entries[i].base;
+    *length = memory_entries[i].length;
+    *type = memory_entries[i].type;
+    return true;
+}
+
 bool pc_low_region(unsigned i, unsigned long *base, unsigned long *length)
 {
     if (i >= low_region_count) {
@@ -194,6 +265,27 @@ bool pc_loader_disk(uint64_t *base, uint64_t *bytes)
     *base = loader_disk.base;
     *bytes = loader_disk.end - loader_disk.base;
 
+    return true;
+}
+
+unsigned hal_memory_entries(unsigned *seen)
+{
+    return pc_memory_entries(seen);
+}
+
+bool hal_memory_entry(unsigned i, unsigned long *base, unsigned long *length,
+                      unsigned *type)
+{
+    uint64_t at, len;
+    uint32_t kind;
+
+    if (!pc_memory_entry(i, &at, &len, &kind)) {
+        return false;
+    }
+
+    *base = (unsigned long)at;
+    *length = (unsigned long)len;
+    *type = (unsigned)kind;
     return true;
 }
 
@@ -423,6 +515,8 @@ static void capture_multiboot2(const struct mb2_info *info)
                 const struct mb2_mmap_entry *e =
                     (const struct mb2_mmap_entry *)at;
 
+                remember_entry(e->base, e->length, e->type);
+
                 if (e->type == 1) {
                     consider((unsigned long)e->base,
                              (unsigned long)e->length);
@@ -498,6 +592,8 @@ void pc_capture_memory(void)
 
     while (entry < end) {
         const struct multiboot_mmap *m = (const struct multiboot_mmap *)entry;
+
+        remember_entry(m->base, m->length, m->type);
 
         if (m->type == 1) {
             consider((unsigned long)m->base, (unsigned long)m->length);

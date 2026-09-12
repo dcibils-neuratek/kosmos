@@ -218,6 +218,23 @@ bool pc_trampoline_page_free(void);
  * was refused and where one might go instead. False past the last one. */
 bool pc_low_region(unsigned i, unsigned long *base, unsigned long *length);
 
+/*
+ * The loader's whole memory map, reserved entries and all, copied during the
+ * walk because the structure holding it is free memory a moment later.
+ *
+ * `pc_memory_entries` returns how many were kept and, through `seen`, how
+ * many there were - a map longer than the array is reported rather than
+ * silently shortened. `pc_memory_entry` is false past the last kept one.
+ *
+ * This is for the boot log rather than for any decision: what the kernel
+ * adopts is decided by `hal_ram_range`, from type 1 alone. What it is for is
+ * the question "what else does the firmware say is at this address", which
+ * on a machine with no serial port there was previously no way to ask.
+ */
+unsigned pc_memory_entries(unsigned *seen);
+bool pc_memory_entry(unsigned i, uint64_t *base, uint64_t *length,
+                     uint32_t *type);
+
 /* The command line the loader passed, or an empty string. Copied during the
  * memory walk, and where boot options come from on a machine with no fw_cfg. */
 const char *pc_loader_cmdline(void);

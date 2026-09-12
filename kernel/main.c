@@ -24,6 +24,7 @@
 #include "process.h"
 #include "screen.h"
 #include "boot.h"
+#include "image_sum.h"
 #include "cpu.h"
 #include "ipc.h"
 #include "panic.h"
@@ -42,6 +43,204 @@ extern const char kosmos_platform[];
 #ifdef KOSMOS_BENCH
 #include "bench.h"
 #endif
+
+/*
+ * The userland image, and the build's own account of what is in it.
+ * `tools/bin2c.py` emits all six and says why.
+ */
+extern const unsigned char init_image[];
+extern const unsigned long init_image_len;
+extern const unsigned long init_image_sum;
+extern const unsigned long init_image_page_bytes;
+extern const unsigned long init_image_pages;
+extern const unsigned      init_image_page_sum[];
+
+/*
+ * **Are these still the bytes the build put there?**
+ *
+ * Every process on this machine runs out of one blob. `process_create` maps
+ * the read-only half of the init image straight out of the kernel's own copy
+ * - one set of physical pages for sixteen address spaces - so the code, the
+ * fonts and the Lua source of every program in `/lib` and `/bin` are these
+ * bytes and no others. No process can write one of them: the mapping is read
+ * only, and the pages are below the region the allocator hands out, so
+ * nothing the kernel allocates can land on them either.
+ *
+ * On the ThinkPad they change anyway. `diskfs` dies with a *syntax error*
+ * parsing `/lib`, `beep` reported `audio.lua:1: unexpected symbol near '$'`,
+ * and a 64 MB loader module makes it happen every time where an 8 MB one
+ * mostly does not. Nothing in the failure names memory: what a person sees
+ * is a Lua error, on a laptop with no serial port.
+ *
+ * So the build records a checksum and this asks the question out loud, at
+ * two moments - as the loader left it, and again just before init is built
+ * from it. Those two answers between them say whether the bytes ever arrived
+ * correctly, and if they did, whether this kernel is what spoils them. The
+ * page table narrows "changed" to an address, which is the form a memory map
+ * can be asked about, and the first sixteen bytes of the first bad page say
+ * what is there instead - whether it reads as somebody's DMA, somebody's
+ * text, or zeroes.
+ *
+ * **Asked four times, because a boot of that machine is expensive.** Each
+ * one names the stages between it and the last, so a single boot says which
+ * of them the bytes changed under rather than three boots bisecting it: the
+ * loader's own work, then the page tables, then the drivers and whatever DMA
+ * they started, then everything up to init.
+ *
+ * It costs a pass over the image at each, which is nothing on a machine and
+ * about a second under emulation for all four. It stays until this is
+ * understood.
+ */
+static void check_init_image(const char *when)
+{
+    unsigned long sum = image_sum64(init_image, init_image_len);
+    unsigned long base = (unsigned long)(uintptr_t)init_image;
+    struct image_sum_walk walk;
+
+    boot_fact_begin();
+    kputs("the userland image ");
+    kputs(when);
+    kputs(": 0x");
+    kputx(base, 8);
+    kputs("..0x");
+    kputx(base + init_image_len, 8);
+
+    if (sum == init_image_sum) {
+        kputs(", as the build left it");
+        boot_fact_end();
+        return;
+    }
+
+    walk = image_sum_walk(init_image, init_image_len, init_image_page_bytes,
+                          init_image_pages, init_image_page_sum);
+
+    kputs("  ** CHANGED ** wanted 0x");
+    kputx(init_image_sum, 16);
+    kputs(", holds 0x");
+    kputx(sum, 16);
+    boot_fact_end();
+
+    boot_fact_begin();
+    kputu(walk.bad);
+    kputs(" of ");
+    kputu(init_image_pages);
+    kputs(" pages differ");
+
+    if (walk.bad > 0) {
+        unsigned long i;
+
+        /*
+         * **Which pages, not only how many.**
+         *
+         * Sixteen bytes of the first bad page was the wrong thing to print
+         * and one boot of the machine proved it: they came back *correct* -
+         * the page is wrong somewhere later - so the bytes said nothing and
+         * the address said only that a page was bad.
+         *
+         * The list says what kind of fault it is. Contiguous pages are a
+         * block that landed in the wrong place. Scattered ones are not. And
+         * a list that *differs between two boots of the same stick* is not
+         * a placement fault at all, which is the one question a single
+         * number can never answer.
+         */
+        kputs(", at page");
+
+        for (i = 0; i < walk.listed; i++) {
+            kputs(" ");
+            kputu(walk.at_page[i]);
+        }
+
+        if (walk.listed < walk.bad) {
+            kputs(" ...");
+        }
+
+        kputs("  (the first at 0x");
+        kputx(base + walk.first * init_image_page_bytes, 8);
+        kputs(")");
+    }
+
+    boot_fact_end();
+
+    /*
+     * **And where those bytes came from, asked of the machine itself.**
+     *
+     * Eleven contiguous pages, at the same place on every boot, already
+     * wrong when the trap table is the only thing this kernel has done. So
+     * something wrote them before we ran, and the only question left is
+     * *what* - which is a question about content, and the content is right
+     * here: the whole kernel image and the loader's 64 MB disk are both in
+     * memory, identity mapped, at this instant.
+     *
+     * So the page is hashed and every page-aligned window of both is hashed
+     * against it. If those bytes are a copy of something, this names it and
+     * the investigation is over in one boot instead of one boot per guess.
+     * Eighty megabytes of FNV is a fraction of a second and it only happens
+     * on a machine that is already broken.
+     *
+     * Page-aligned only, deliberately: a copy that landed at a page
+     * boundary is the shape a loader produces, and searching every byte
+     * offset would be four thousand times the work for the shapes it does
+     * not.
+     */
+    {
+        extern char __image_end[];
+
+        unsigned long at = walk.first * init_image_page_bytes;
+        unsigned long n = init_image_len - at;
+        unsigned want;
+        unsigned long disk_base = 0, disk_bytes = 0;
+        unsigned long where = 0;
+        const char *in = NULL;
+        unsigned pass;
+
+        if (n > init_image_page_bytes) {
+            n = init_image_page_bytes;
+        }
+
+        want = image_sum32(init_image + at, n);
+
+        (void)hal_loader_disk(&disk_base, &disk_bytes);
+
+        for (pass = 0; pass < 2 && in == NULL; pass++) {
+            unsigned long from = (pass == 0) ? 0x100000UL : disk_base;
+            unsigned long to = (pass == 0)
+                               ? (unsigned long)(uintptr_t)__image_end
+                               : disk_base + disk_bytes;
+            unsigned long scan;
+
+            if (to <= from || to - from < n) {
+                continue;
+            }
+
+            for (scan = from; scan + n <= to; scan += init_image_page_bytes) {
+                if (scan == (unsigned long)(uintptr_t)init_image + at) {
+                    continue;           /* itself */
+                }
+
+                if (image_sum32((const unsigned char *)scan, n) == want) {
+                    where = scan;
+                    in = (pass == 0) ? "this kernel's image"
+                                     : "the loader's disk";
+                    break;
+                }
+            }
+        }
+
+        boot_fact_begin();
+
+        if (in != NULL) {
+            kputs("those bytes are a copy of 0x");
+            kputx(where, 8);
+            kputs(", which is in ");
+            kputs(in);
+        } else {
+            kputs("those bytes are nowhere else in the image or the disk, "
+                  "so they were written rather than copied");
+        }
+
+        boot_fact_end();
+    }
+}
 
 void kmain(void)
 {
@@ -121,6 +320,12 @@ void kmain(void)
     boot_stage("exception vectors");
     boot_why("Until the trap table is installed, a fault is a silent hang.");
     boot_fact(trap_describe());
+
+    /* First of the two, and here rather than three lines earlier so that a
+     * fault while reading 2.8 MB is a report instead of a silent hang. This
+     * one is the loader's work and the firmware's: nothing of this kernel
+     * has run yet except the trap table. */
+    check_init_image("as the loader left it");
 
     /*
      * And the screen, as early as the board can give one.
@@ -254,6 +459,119 @@ void kmain(void)
     boot_fact_end();
 
     /*
+     * **And the rest of the loader's map, which nothing above reads.**
+     *
+     * One region is adopted and every other entry was thrown away at the
+     * moment of the walk. That is correct for deciding what to manage and
+     * it is why nobody can answer "what does the firmware think is at this
+     * address" - which is the first question to ask about memory that is
+     * corrupted where nothing should be able to write it.
+     *
+     * Printed unfiltered and with the loader's own type numbers, because
+     * this is a transcript rather than a conclusion. On `virt` the HAL says
+     * there is no map and these lines do not appear.
+     */
+    {
+        extern char __image_end[];
+
+        unsigned long kernel_lo = 0x100000UL;
+        unsigned long kernel_hi = (unsigned long)(uintptr_t)__image_end;
+        unsigned long user_lo = (unsigned long)(uintptr_t)init_image;
+        unsigned long user_hi = user_lo + init_image_len;
+        unsigned long base, length;
+        unsigned type, i, kept, seen = 0;
+
+        kept = hal_memory_entries(&seen);
+
+        if (kept < seen) {
+            boot_fact_begin();
+            kputs("the loader's map has ");
+            kputu(seen);
+            kputs(" entries and only ");
+            kputu(kept);
+            kputs(" were kept  ** THE REST ARE NOT SHOWN **");
+            boot_fact_end();
+        }
+
+        /*
+         * **One line per entry cost more than it was worth, and that is a
+         * correction rather than a tidy-up.**
+         *
+         * The full dump did its job on the first boot of the machine: it
+         * established that the T14 reports `0x00100000..0x8e36f000` usable
+         * and that nothing reserved is under this kernel. Then it cost
+         * twenty-five lines of a screen somebody photographs, and pushed
+         * the first two image checks off the top - which are the ones that
+         * say whether the bytes arrived wrong or were spoiled here, and
+         * therefore the only two that decide anything.
+         *
+         * A diagnostic that buries the answer it was printed beside is a
+         * worse diagnostic. So: the region holding this kernel, the count,
+         * and then only the entries worth a line - the ones that are not
+         * usable *and* overlap the image, which is the fault this was
+         * looking for and is zero lines on a healthy machine.
+         */
+        for (i = 0; hal_memory_entry(i, &base, &length, &type); i++) {
+            unsigned digits = (base + length) > 0xffffffffUL ? 16 : 8;
+            bool over = base < kernel_hi && base + length > kernel_lo;
+
+            if (type == 1) {
+                if (!over) {
+                    continue;
+                }
+
+                boot_fact_begin();
+                kputs("this kernel is inside the loader's 0x");
+                kputx(base, digits);
+                kputs("..0x");
+                kputx(base + length, digits);
+                kputs(" (usable), of ");
+                kputu(seen);
+                kputs(" entries");
+                boot_fact_end();
+                continue;
+            }
+
+            if (!over) {
+                continue;
+            }
+
+            boot_fact_begin();
+            kputs("the loader's map: 0x");
+            kputx(base, digits);
+            kputs("..0x");
+            kputx(base + length, digits);
+            kputs("  type ");
+            kputu(type);
+
+            /*
+             * **And whether this kernel is sitting on it**, which is the
+             * line this whole dump exists to make possible.
+             *
+             * The image is loaded at a fixed megabyte because that is what
+             * a multiboot header asks for, and nothing has ever checked
+             * that the firmware agrees the address is ours. Under OVMF it
+             * does not: three entries between 0x800000 and 0x900000 come
+             * back type 4 - reserved, and to be preserved - and the image
+             * runs from 0x100000 to past 0x1300000, straight through them.
+             * The userland image's read-only half, which every process on
+             * the machine runs out of and none of them can write, is inside
+             * that same span.
+             *
+             * It survives here, so overlapping is not enough on its own.
+             * What that says is that under emulation nothing writes those
+             * pages after the loader hands over, which is exactly the thing
+             * a real machine's firmware does not promise.
+             */
+            kputs((base < user_hi && base + length > user_lo)
+                  ? "  ** UNDER THE USERLAND IMAGE **"
+                  : "  ** UNDER THIS KERNEL **");
+
+            boot_fact_end();
+        }
+    }
+
+    /*
      * **And a disk the loader carried in**, when there is one - printed
      * beside the memory it was kept out of, because on a laptop with no
      * serial port this line is how anybody learns that the loader handed
@@ -264,12 +582,44 @@ void kmain(void)
         unsigned long disk_base, disk_bytes;
 
         if (hal_loader_disk(&disk_base, &disk_bytes)) {
+            extern char __image_end[];
+            unsigned long image_end = (unsigned long)__image_end;
+
             boot_fact_begin();
             kputs("a disk from the loader: ");
             kputu(disk_bytes / 1024);
             kputs(" KB at 0x");
             kputx(disk_base, 8);
+            kputs("..0x");
+            kputx(disk_base + disk_bytes, 8);
             kputs(", kept from the allocator");
+            boot_fact_end();
+
+            /*
+             * **And whether it landed on this kernel.**
+             *
+             * A loader puts a module where it likes, and nothing here ever
+             * checked that "where it likes" is not on top of the image it
+             * just loaded. On the ThinkPad a 64 MB module leaves the
+             * libraries source unparseable - `sys.libraries()` returns a
+             * string Lua will not load - and an 8 MB one at a different
+             * address does not, which is exactly the shape of a module
+             * sitting on the read-only data.
+             *
+             * Printed rather than refused, because this line is how anybody
+             * finds out: the machine has no serial port, the disk server
+             * cannot print, and "ended, code 11" is all there was.
+             */
+            boot_fact_begin();
+            kputs("this kernel is 0x");
+            kputx(0x100000UL, 8);
+            kputs("..0x");
+            kputx(image_end, 8);
+
+            if (disk_base < image_end && disk_base + disk_bytes > 0x100000UL) {
+                kputs("  ** THE MODULE OVERLAPS IT **");
+            }
+
             boot_fact_end();
         }
     }
@@ -331,6 +681,11 @@ void kmain(void)
     boot_why("Translation on; from here the kernel's own code is read-only.");
     boot_fact(mmu_describe());
     boot_fact("page 0 and the stack guards unmapped, so both faults name themselves");
+
+    /* Second of the four. Between this and the first: the allocator chose a
+     * region and reserved what was already taken, and the page tables were
+     * built over it. Both write to memory chosen from the loader's map. */
+    check_init_image("with the page tables built");
 
     /*
      * The display, if there is one.
@@ -650,6 +1005,12 @@ void kmain(void)
      * everything on the way in. Now there is a handler and a source. */
     cpu_irq_enable();
 
+    /* Third of the four, and the one a DMA answer would show up in: between
+     * this and the second are the display, the keyboard, the pointer and the
+     * storage controller, which are the parts of this kernel that hand a
+     * physical address to something that is not the processor. */
+    check_init_image("with the devices up");
+
     boot_stage("timer and interrupts");
     boot_why("The heartbeat: from here a thread that never yields is interrupted.");
 
@@ -707,8 +1068,6 @@ void kmain(void)
      * parent holds it.
      */
     {
-        extern const unsigned char init_image[];
-        extern const unsigned long init_image_len;
         struct process *init;
         cap_t console_ep = ipc_endpoint_create();
         cap_t ramfs_ep = ipc_endpoint_create();
@@ -718,6 +1077,11 @@ void kmain(void)
         if (console_ep < 0 || ramfs_ep < 0 || devices_ep < 0 || binfs_ep < 0) {
             panic("no endpoints for init");
         }
+
+        /* And the second, with every stage of this kernel between it and
+         * the first: the allocator, the page tables, the display, the
+         * input devices, the timer and whatever DMA any of them started. */
+        check_init_image("before init is built from it");
 
         init = process_create("init", init_image,
                               (size_t)init_image_len, 7 /* init */);

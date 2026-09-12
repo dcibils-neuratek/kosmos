@@ -8,6 +8,75 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### The bar on real hardware, and two things only it could show
+
+0.10.31 went on the ThinkPad. **The desktop runs: four cube3d windows at
+189 fps each, eight processors, 2611 MHz** - which is the first speed number
+this project has from the kind of machine it was aiming at, and the question
+`CLAUDE.md` says it exists to answer.
+
+Two faults showed up there and neither was visible in emulation.
+
+**Clicking the bar resized the whole desktop, twice.** `pointer_pass` raises
+whatever is under the pointer before it asks what kind of window it is, so a
+click on the Deskbar raises the strip itself - and `raise` counted the strips
+while the window was removed from `windows`, found none, set `reserved_top`
+to zero and gave the backdrop the entire screen, then put the window back and
+resized it again. An 8 MB surface reallocated and repainted twice per click.
+The old Deskbar was an ordinary window, so `win.strip` was nil and the census
+never cared about it; making it the strip is what exposed the bug. The count
+now happens over a complete list, and the `deskbar` phase has a third check
+that fails if a click resizes the desktop at all.
+
+**The loader's disk kills `diskfs` on that machine, and it is now a
+different question than it was.** 64 MB fails every time; 8 MB booted once
+and died once with the same image. It could not be reproduced under OVMF
+with eight cores, 16 GB and an NVMe drive.
+
+`diskfs` owns no console, so a Lua error in it had been invisible since it
+was written - `sys_write` refuses any process that does not own the console,
+and that refusal reaches the `say` in `main.c` too. It now spends one exit
+code per stage, and the machine answered **15: a syntax error**. The Lua
+source of `/lib` arrives corrupted. Not memory exhaustion, not `kfs`, not
+the disk - and the same fault as `beep`'s `audio.lua:1: unexpected symbol
+near '$'` on that laptop months ago. Two symptoms, one bug.
+
+**Those bytes are the one blob every process runs out of.**
+`process_create` maps the userland image's read-only half straight out of
+the kernel's own copy, below the region the allocator hands out. No process
+can write them and nothing the kernel allocates can land on them.
+
+So there is an instrument rather than a fix. `tools/bin2c.py` writes down a
+checksum of the blob and one per page; `check_init_image` asks four times in
+one boot - as the loader left it, with the page tables built, with the
+devices up, and before init - because a boot of that machine is expensive
+and one run should say which gap the bytes changed under. A change reports
+the page count, the first bad address, and the sixteen bytes there instead.
+The loader's whole memory map prints beside it, reserved entries and all,
+which nothing kept before. `build/host/test_imagesum` is 16 checks on the
+instrument itself, over a blob the real script generated during the build,
+because its two halves are Python and C and nothing at run time could notice
+them disagreeing. `docs/testing.md` §18.22 and `docs/thinkpad.md` §6a.
+
+**And the instrument found something on its first boot.** Under OVMF the
+loader's map says `0x00800000..0x00900000` is type 4 - reserved, to be
+preserved - and this kernel runs from `0x00100000` to past `0x01300000`,
+straight through it, with the userland image's read-only half on top. The
+multiboot header asks for a fixed megabyte and nothing has ever checked that
+the firmware agrees the address is anybody's to give. It survives under
+emulation, so overlapping is not sufficient by itself - which says only that
+nothing writes those pages here after the loader hands over, and real
+firmware does not promise that.
+
+**What it needs now is one boot of the ThinkPad with a 64 MB image**, which
+settles it either way: the first changed page's address either falls inside
+one of those entries or it does not. The image is built and waiting at
+`build/x86_64/kosmos-usb.img` (MEGA, 142.6 MB, the 64 MB disk on it).
+
+**Next, as queued**: read that boot, then desklets in the bar, per-launcher
+permissions, and a Deskbar preferences app - position, icon size, which
+indicators.
+
 ### One bar, and a menu made of files
 
 The Deskbar was a window in the top-right corner with a menu and a list of
@@ -92,10 +161,6 @@ Open:
   equally dead under `hvf` on this Mac, so QEMU 11.1.1 or macOS broke it.
   The gate is all TCG, so it stays green while the one tool that answers
   "does this feel fast" is unusable.
-
-**Next, as queued**: desklets in the bar, per-launcher permissions, and a
-Deskbar preferences app - position, icon size, which indicators. Then a
-launcher option to scale Doom and Quake, and the app profiler.
 
 ### A name in `/app` outlives no process
 

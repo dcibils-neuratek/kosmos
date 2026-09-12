@@ -2102,12 +2102,32 @@ local function raise(win)
   for i, w_ in ipairs(windows) do
     if w_ == win then
       table.remove(windows, i)
-      recount_strips()
       break
     end
   end
 
   windows[#windows + 1] = win
+
+  --
+  -- **After the list is whole again, and that is the whole fix.**
+  --
+  -- This ran between the `remove` and the append, so it counted the strips
+  -- in a list the window had just been taken out of. Raising the strip
+  -- itself - which a click on the Deskbar does, because `pointer_pass`
+  -- raises whatever is under the pointer before it asks what kind of window
+  -- it is - therefore found *no* strip, set `reserved_top` to zero, and
+  -- resized the backdrop to the whole screen. Putting it back resized it
+  -- again.
+  --
+  -- So every click on the bar reallocated and repainted an 8 MB desktop
+  -- surface twice. On a ThinkPad that is a visible flicker across the whole
+  -- screen; under QEMU it hides in the noise, which is why the gate is
+  -- green and always was.
+  --
+  -- Raising cannot change *which* strips exist, so this is only here to
+  -- recompute an ordering-dependent answer over a complete list.
+  --
+  recount_strips()
   damage_window(win)
 
   if losing then

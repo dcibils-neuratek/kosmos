@@ -54,3 +54,28 @@ bool hal_loader_disk(unsigned long *base, unsigned long *bytes)
 
     return false;
 }
+
+/*
+ * And no map either, for the same reason: `-kernel` hands over a device
+ * tree rather than a list of ranges, and what this board knows about its
+ * own memory is the one range `hal_ram_range` reports.
+ */
+unsigned hal_memory_entries(unsigned *seen)
+{
+    if (seen != NULL) {
+        *seen = 0;
+    }
+
+    return 0;
+}
+
+bool hal_memory_entry(unsigned i, unsigned long *base, unsigned long *length,
+                      unsigned *type)
+{
+    (void)i;
+    (void)base;
+    (void)length;
+    (void)type;
+
+    return false;
+}

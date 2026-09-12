@@ -3103,10 +3103,76 @@ end
 -- free: the mixer has already touched every sample.
 --------------------------------------------------------------------------
 
-local function diskfs_main(endpoint)
-  local kfs = assert(load(sys.libraries(), "libraries"))()["kfs.lua"]
+--
+-- **It cannot print, so it says where it died in its exit code.**
+--
+-- This server is spawned with one capability - its own endpoint - and
+-- `sys_write` in the kernel refuses any process that does not own the
+-- console, deliberately: "if any process could print, nothing would depend
+-- on going through [the console server]". So `print` reaches nobody, and
+-- neither does the `say` in `main.c` that reports a Lua error - **a Lua
+-- error in this server is invisible by construction.**
+--
+-- What is left is the exit code, which init prints. So each stage gets its
+-- own, and "ended, code 12" says which line raised without a console, a
+-- serial port, or a debugger.
+--
+-- 1 is deliberately not used: that is what `main.c` returns for a Lua error
+-- it could not print, and a diagnostic that cannot be told apart from the
+-- fault it diagnoses is worse than none. That mistake cost a boot.
+--
+local DIED_LIBRARIES = 11    -- sys.libraries() or its chunk
+local DIED_KFS       = 12    -- kfs.lua would not load or run
+local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 
-  serve(endpoint, { kfs = assert(load(kfs, "kfs.lua"))() }, diskfs_handlers)
+local function diskfs_main(endpoint)
+  --
+  -- Split three ways, because "the libraries would not load" has two very
+  -- different causes and they need opposite fixes:
+  --
+  --   14  out of memory - the string did not fit in this process's heap
+  --   15  a syntax error - the source arrived corrupted, which is what
+  --       `beep` saw on the same machine as
+  --       "/lib/audio.lua:1: unexpected symbol near '$'"
+  --   11  anything else
+  --
+  -- The message cannot be printed - this server owns no console and
+  -- `sys_write` refuses every process that does not - so the only channel
+  -- out is the code init prints. Reading the message and choosing a number
+  -- is how a machine with no serial port gets to say which.
+  --
+  local ok, why = pcall(sys.libraries)
+
+  if not ok then
+    sys.exit(tostring(why):find("memory") and 14 or 11)
+  end
+
+  local source = why
+
+  ok, why = pcall(function()
+    return assert(load(source, "libraries"))()
+  end)
+
+  if not ok then
+    local said = tostring(why)
+
+    sys.exit(said:find("memory") and 14
+             or (said:find("near") or said:find("unexpected")) and 15
+             or DIED_LIBRARIES)
+  end
+
+  local libraries = why
+
+  local kfs
+  ok, kfs = pcall(function()
+    return assert(load(libraries["kfs.lua"], "kfs.lua"))()
+  end)
+
+  if not ok then sys.exit(DIED_KFS) end
+
+  ok = pcall(serve, endpoint, { kfs = kfs }, diskfs_handlers)
+
+  if not ok then sys.exit(DIED_SERVING) end
 end
 
 --

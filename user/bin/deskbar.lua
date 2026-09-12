@@ -477,6 +477,10 @@ local function picture(program)
   return icon_of[program]
 end
 
+-- Forward-declared: the tick below notices when the Kosmos menu has
+-- closed, and the bar itself is built further down.
+local bar
+
 local watcher = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
 function watcher:tick()
@@ -510,6 +514,10 @@ function watcher:tick()
   end
 
   for i = #running, #list + 1, -1 do running[i] = nil end
+
+  -- And the Kosmos end stops being lit when its menu goes. The press is
+  -- immediate; noticing the menu closed is what a tick is for.
+  if bar and bar.lit_menu ~= (#win.menus > 0) then changed = true end
 
   if changed then win.dirty = true end
 end
@@ -792,7 +800,16 @@ local GAP = 4
 -- was darker than the bar and lighter than its neighbours, which is how it
 -- ended up looking like a hole.
 --
-local FACE = 14
+--
+-- **The face has to differ from the strip enough to have an edge.**
+--
+-- This was 14 per cent toward white, and on a saturated yellow that is
+-- nearly the same colour: the button had no visible outline, so its rounded
+-- corners were invisible too and the whole row read as words printed on the
+-- bar rather than as things you press. The corner was blamed first and the
+-- corner was correct.
+--
+local FACE = 24
 local PRESSED = -20
 
 --
@@ -812,20 +829,44 @@ local PRESSED = -20
 -- produce the same four numbers - with the difference that nobody could
 -- see, from the code, what shape it draws.
 --
-local CORNER = { 2, 1 }
+--
+-- The insets, row by row from each end, which is a circle worked out once
+-- rather than a square root in a drawing path.
+--
+-- `{ 2, 1 }` is exactly radius 4 and `{ 3, 2, 1, 1 }` - the first try - is
+-- about radius 6, which read as too much. This is radius 5.
+--
+local CORNER = { 3, 1, 1 }
 
+--
+-- **The middle in one fill, and a row each for the corners.**
+--
+-- This drew a fill per row - thirty-two for one button - so a bar with nine
+-- windows on it was about three hundred drawing commands, batched into a
+-- dozen messages, **on every focus change**. On a 2.6 GHz ThinkPad that is
+-- visible as a flicker every time you click a button; under QEMU everything
+-- is slow enough that it hides, which is why it took real hardware to see.
+--
+-- Only the rows named in `CORNER` are inset. Everything between them is a
+-- rectangle, and a rectangle is one `fill` however tall it is - so a button
+-- costs five commands instead of thirty-two and the picture is identical.
+--
 local function rounded(g, x, y, w, h, colour)
-  for row = 0, h - 1 do
-    local from_edge = math.min(row, h - 1 - row)
-    local inset = CORNER[from_edge + 1] or 0
+  local rows = #CORNER
 
+  for i, inset in ipairs(CORNER) do
     if w > inset * 2 then
-      g:fill(x + inset, y + row, w - inset * 2, 1, colour)
+      g:fill(x + inset, y + i - 1, w - inset * 2, 1, colour)
+      g:fill(x + inset, y + h - i, w - inset * 2, 1, colour)
     end
+  end
+
+  if h > rows * 2 then
+    g:fill(x, y + rows, w, h - rows * 2, colour)
   end
 end
 
-local bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
+bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
 
 --
 -- Where the indicators start, worked out while drawing and remembered so
@@ -896,10 +937,23 @@ function bar:draw(g)
   -- the thing that starts other things, and lit while its menu is open so
   -- the bar says where the menu came from.
   --
-  if self.menu_open then
+  --
+  -- Lit while its menu is open, and **derived rather than remembered.**
+  --
+  -- This tested `self.menu_open`, which nothing ever set - so the Kosmos end
+  -- never lit at all, however long the menu was up. The window already knows
+  -- what menus it has open, and both of the bar's menus hang off this end,
+  -- so the answer is `#win.menus` and there is no second copy of it to fall
+  -- out of step.
+  --
+  local menu_up = #win.menus > 0
+
+  if menu_up then
     rounded(g, 2, 2, KOSMOS_W - 4, self.h - 4,
             lit(lit(theme.tab, FACE), PRESSED))
   end
+
+  self.lit_menu = menu_up
 
   g:icon(12, iy, "App_Deskbar.png", ICON)
   g:text(12 + ICON + 8, ty, "Kosmos", theme.tab_text)
@@ -1104,6 +1158,9 @@ function bar:mouse(action, x, y)
   if action ~= "press" then return false end
 
   if x < KOSMOS_W then
+    -- Lit in the same frame as the press, before the menu is even asked
+    -- for. See `instant feedback` in `ui.md`.
+    win.dirty = true
     open_kosmos_menu()
     return true
   end
@@ -1148,6 +1205,32 @@ function bar:mouse(action, x, y)
       --
       local w_ = s.w_
       local what = (w_.focused and not w_.hidden) and "minimise" or "raise"
+
+      --
+      -- **The button changes now, not at the next tick.**
+      --
+      -- `watcher:tick` is what discovers that the focus moved, and the kit
+      -- wakes twice a second - so the button a person just pressed sat
+      -- unchanged for up to half a second while everything else happened
+      -- first. On a ThinkPad that reads as the bar ignoring the click and
+      -- catching up later, which is the one thing a taskbar must not do:
+      -- it is the control you press when you cannot find a window, so it
+      -- has to answer immediately or you press it again.
+      --
+      -- This is not a second memory of the focus - `tick` still reads the
+      -- window manager and still wins. It is the same answer, half a second
+      -- earlier, and if the request is refused the next tick puts it back.
+      --
+      for _, other in ipairs(running) do other.focused = nil end
+
+      if what == "raise" then
+        w_.focused = true
+        w_.hidden = nil
+      else
+        w_.hidden = true
+      end
+
+      win.dirty = true
 
       fs.send("/app/wm", { type = what, window = w_.handle })
       return true

@@ -786,6 +786,110 @@ menu open through it. Which of the three QEMU needed has not been isolated.
 
 ---
 
+## 6a. The bytes that change where nothing can write them
+
+**Open, and this is what is known rather than what is suspected.**
+
+With a 64 MB disk carried as a GRUB module the machine boots all twelve
+stages and then stops:
+
+```
+process 8 (diskfs) ended, code 1
+init: the disk server died with code 1
+```
+
+With an 8 MB module the same binary is perfect - desktop, 8 cores, cube3d at
+189 fps. Under QEMU with OVMF, 8 cores, 16 GB and an NVMe drive, the 64 MB
+image boots every time.
+
+**What the exit code says.** `diskfs` owns no console, so a Lua error in it
+was invisible by construction; `diskfs_main` now spends one exit code per
+stage, and the machine answered **15: a syntax error**. The Lua source of
+`/lib` did not parse. That rules out memory exhaustion (14), `kfs` (12) and
+the serve loop (13) - and it makes this the same fault as `beep`'s
+`/lib/audio.lua:1: unexpected symbol near '$'` on this laptop months
+earlier. Two symptoms, one bug.
+
+**Where those bytes live, which is what makes it strange.**
+`process_create` maps the read-only half of the userland image straight out
+of the kernel's own copy, so every process on the machine runs out of one
+set of physical pages - `0x0011d000..0x0084dbb4` in the build that failed.
+Nothing can write them: the mapping is read only, and they are below the
+region the allocator hands out, so nothing the kernel allocates lands there.
+
+**Ruled out by reading and by the boot log:**
+
+- **Overlap.** The log prints both ranges. The kernel is
+  `0x00100000..0x013d2000` and GRUB puts the module at exactly `0x013d2000`,
+  adjacent - in the working 8 MB case too.
+- **The allocator.** `keep_disk_out_of_ram` is page aligned and takes the
+  larger side; 684 MB was adopted with the module carved out below it.
+- **The device window.** 256 MB, and 64 MB of module plus 8 MB of
+  framebuffer fits.
+- **Page tables.** `alloc_table` panics; it does not fail quietly.
+- **The 0.10.30 kernel change.** A killed process exits -1, and this is 1.
+
+**What is instrumented now**, and what one boot of the machine will say:
+
+- the userland image checked at four points - as the loader left it, with
+  the page tables built, with the devices up, and before init is built from
+  it - so one run says which gap the bytes changed under;
+- when it has changed: how many pages, the address of the first, and the
+  sixteen bytes there instead, which says whether it reads as somebody's
+  DMA, somebody's text, or zeroes;
+- the loader's whole memory map, reserved entries and all, which `consider`
+  used to throw away at the moment of the walk.
+
+`docs/testing.md` §18.22 has the instrument and its test.
+
+### And the first thing the instrument found, on the first boot it ran
+
+Under OVMF, with the 64 MB image, the loader's own map says this:
+
+```
+-> the loader's map: 0x00100000..0x00800000  type 1 (usable)
+-> the loader's map: 0x00800000..0x00808000  type 4  ** UNDER THE USERLAND IMAGE **
+-> the loader's map: 0x00808000..0x0080b000  type 1 (usable)
+-> the loader's map: 0x0080b000..0x0080c000  type 4  ** UNDER THE USERLAND IMAGE **
+-> the loader's map: 0x0080c000..0x00811000  type 1 (usable)
+-> the loader's map: 0x00811000..0x00900000  type 4  ** UNDER THE USERLAND IMAGE **
+-> this kernel is 0x00100000..0x013d6000
+```
+
+**The kernel is loaded over a megabyte the firmware asked to keep**, and the
+userland image's read-only half - which every process runs out of and none
+of them can write - is on top of it. Nothing has ever checked this: the
+multiboot header asks for a fixed megabyte and the image is placed there
+whether or not the firmware agrees the address is anybody's to give.
+
+**It survives here, so overlapping is not sufficient on its own.** What that
+says is that under emulation nothing writes those pages after the loader
+hands over - which is precisely what a real machine's firmware does not
+promise. SMM, runtime services and ACPI NVS all live in memory of that type.
+
+**So it is a lead and not a conclusion, and the next boot of the T14 settles
+it**: the instrument reports the address of the first changed page, and that
+address either falls inside one of those entries or it does not. Both
+answers are worth the boot.
+
+If it does, the fix is a loader question rather than a kernel one - where
+the image is put, not what it does afterwards - and it would explain the
+size dependence directly: a larger image and a larger module both reach
+further into whatever the firmware kept.
+
+**The number to look at first if it turns out to be placement instead:**
+`kosmos.bin` is 7.7 MB and `__image_end` is 19.7 MB past the load address -
+about 10 MB of framebuffer reserved *inside* the image, NOLOAD, costing the
+file nothing. `fine_end` in `arch/x86_64/mmu.c`, the boundary between 4 KB
+and 2 MB mappings, is computed from `__framebuffer_start` rather than from
+`__image_end`, which puts it below both.
+
+**Meanwhile:** `python3 tools/mkusb_image.py build/x86_64/kosmos.bin
+out.img` with no `--disk` builds a stick that boots every time. `/home` goes
+to memory, so nothing is kept and the games have no data.
+
+---
+
 ## 7. The three questions the machine answers in half an hour
 
 Boot any Linux stick and read:

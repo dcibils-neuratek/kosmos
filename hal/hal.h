@@ -100,6 +100,40 @@ bool hal_ram_capped(unsigned long *whole_bytes);
 bool hal_loader_disk(unsigned long *base, unsigned long *bytes);
 
 /*
+ * **What the loader said about memory, whole, and not only the part this
+ * kernel adopted.**
+ *
+ * `hal_ram_range` answers "which region do I manage" and is the only thing
+ * any decision is made from. This answers a different question - "what does
+ * the firmware say is at this address" - and it exists because there was no
+ * way to ask it. The userland image sits below every region the allocator
+ * manages, no process can write a byte of it, and on the ThinkPad it is
+ * corrupted anyway; the first thing anyone would want is the rest of the
+ * map, and a laptop with no serial port has only the boot screen to print
+ * it on.
+ *
+ * `type` is the loader's own number, passed through rather than translated:
+ * 1 is usable and everything else is the firmware's business, and inventing
+ * names for entries this kernel does not act on would be inventing meaning.
+ *
+ * False past the last entry, and false on the first for a board whose loader
+ * hands over no map at all - which is `virt`, started with `-kernel`.
+ */
+bool hal_memory_entry(unsigned i, unsigned long *base, unsigned long *length,
+                      unsigned *type);
+
+/*
+ * How many entries can be read, and through `seen` how many there were.
+ *
+ * The two differ when the board kept fewer than the loader listed, and the
+ * difference is the whole reason this is separate: the first cap chosen was
+ * twenty-four, OVMF's map is *exactly* twenty-four, and a full array and a
+ * map that happens to end are indistinguishable without this. Zero on a
+ * board with no map.
+ */
+unsigned hal_memory_entries(unsigned *seen);
+
+/*
  * How many processors this machine has - not how many are being used.
  *
  * `sysinfo.cpus` is the second number and is `NR_CPUS`, which is 1. This is
