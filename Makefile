@@ -1626,11 +1626,13 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # file says so, which is what that line of the report is for.
 
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
+                 assets/images/test-screen.jpg \
                  $(ICON_FILES) $(ART_FILES) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
 	        assets/images/test-pattern.png assets/images/test-quads.jpg \
+	        assets/images/test-screen.jpg \
 	        $(ICON_FILES) $(ART_FILES) LICENSE \
 	        docs/cheatsheet.html
 

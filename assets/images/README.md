@@ -25,8 +25,23 @@ build could start failing because the *encoder* on this machine changed,
 which is a day spent on the wrong question. The image it was made from is
 128x128 with those four quadrants, and it is 1,125 bytes.
 
+`test-screen.jpg` is the same four quadrants at 1920x1080, and it exists
+for its *size* rather than its content. Decoding a picture as big as the
+screen costs the window manager two full-screen buffers, which is the load a
+wallpaper puts on it - and on the ThinkPad that load, with a Terminal being
+dragged to full size, was enough to exhaust a flat 48 MB mapping budget. The
+display harness boots without a disk, so the picture has to be carried in the
+image, and photographs cannot be: they are somebody else's. Flat colour
+compresses to almost nothing.
+
+It is encoded **4:4:4**, a full-resolution plane for each colour, because
+that is how the ThinkPad's wallpapers are encoded and it is what makes the
+decoder's scratch as large as theirs. The first version was 4:2:0, and
+against the budget it exists to catch it passed anyway. Made with
+`cjpeg -sample 1x1 -quality 90`.
+
 Anything else here is whatever you put here, and it is yours; the generated
-pattern and the quads are the project's.
+pattern, the quads and the screen are the project's.
 
 **Size matters more than usual.** These bytes are in the kernel image and
 in RAM for the whole run, and decoding one costs its pixels twice over -

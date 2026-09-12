@@ -779,7 +779,36 @@ static bool find_widgets(void)
     uint32_t roots = get_param(0, PARAM_SUBNODES);
     unsigned start, count, fg;
 
+    /*
+     * **Why nothing was found, counted as it happens and said only at the
+     * end.**
+     *
+     * On the ThinkPad this function returned false and its topology dump -
+     * added for exactly that machine - never printed. The dump runs only
+     * once an audio function group has been found and nothing routed, so a
+     * silent dump means it gave up *earlier*, at one of the exits below, and
+     * each of those used to say the same "no output path" as a routing
+     * failure. Three different faults, one sentence.
+     *
+     * Counted rather than printed where they happen, so that a codec which
+     * works - one with a modem group skipped on the way to its audio group,
+     * say - pays nothing. The line is printed only on the way out with
+     * nothing, which is the only time anybody needs it.
+     */
+    unsigned silent = 0, other = 0, no_nodes = 0;
+    uint32_t other_type = 0;
+
     if (roots == CODEC_NO_ANSWER) {
+        /*
+         * The codec did not answer the very first question. Nothing below
+         * can have run. On a machine whose audio controller is in a DSP's
+         * hands this is where it stops, because the codec is not reachable
+         * with plain HDA commands until the DSP's own firmware brings the
+         * link up - so this line is worth more than any other here.
+         */
+        boot_fact_begin();
+        kputs("the codec did not answer its root node, so nothing about it is known");
+        boot_fact_end();
         return false;
     }
 
@@ -791,7 +820,14 @@ static bool find_widgets(void)
         uint32_t nodes;
         unsigned wstart, wcount, w;
 
-        if (type == CODEC_NO_ANSWER || (type & 0xffu) != FUNCTION_AUDIO) {
+        if (type == CODEC_NO_ANSWER) {
+            silent++;
+            continue;
+        }
+
+        if ((type & 0xffu) != FUNCTION_AUDIO) {
+            other++;
+            other_type = type & 0xffu;
             continue;
         }
 
@@ -803,6 +839,7 @@ static bool find_widgets(void)
         nodes = get_param(fg, PARAM_SUBNODES);
 
         if (nodes == CODEC_NO_ANSWER) {
+            no_nodes++;
             continue;
         }
 
@@ -916,6 +953,33 @@ static bool find_widgets(void)
             }
         }
     }
+
+    /*
+     * Which of the exits above it was. All zeroes after a dump means the
+     * groups were fine and the routing was not; anything else names the
+     * exit, and says how many function groups there were to begin with.
+     */
+    boot_fact_begin();
+    kputs("codec: 0x");
+    kputx(count, 2);
+    kputs(" function groups from node 0x");
+    kputx(start, 2);
+    kputs("; 0x");
+    kputx(silent, 2);
+    kputs(" did not answer, 0x");
+    kputx(other, 2);
+    kputs(" not audio");
+
+    if (other > 0) {
+        kputs(" (type 0x");
+        kputx(other_type, 2);
+        kputs(")");
+    }
+
+    kputs(", 0x");
+    kputx(no_nodes, 2);
+    kputs(" audio but gave no node count");
+    boot_fact_end();
 
     return false;
 }

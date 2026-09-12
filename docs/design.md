@@ -106,7 +106,17 @@ Rejected on purpose:
 
 ### 4.1 Kernel
 
-Runs at EL1. Freestanding C11, no dynamic allocator, everything in fixed-size pools. An array of threads, an array of address spaces, an array of endpoints. This eliminates half the possible memory bugs in one stroke.
+Runs at EL1. Freestanding C11, and **no heap for kernel objects**: threads,
+address spaces, endpoints and interrupt claims live in pools. Pages are
+allocated - the physical page allocator is in the list below, and always was -
+but no kernel object is ever `kmalloc`ed and freed, which is what keeps a slot
+bounded in time, unable to fragment, and refusable cleanly at the syscall.
+
+This paragraph said "no dynamic allocator" for two years while the list under
+it named one; the principle was always about kernel *objects*, and it now says
+so. **Pool sizes are not the principle.** Compiled in for a 512 MB QEMU guest,
+they are to be sized once at boot from the RAM that is actually present - a
+4K display and a 16 GB laptop are why - and never grown or freed afterwards.
 
 Responsibilities:
 

@@ -8,6 +8,55 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: the ThinkPad's memory refusals, and the limits that go
+
+**The Terminal that would not grow and the JPEG that would not load were one
+bug.** The window manager was held to `USER_MAP_PAGES_MAX`, 48 MB like every
+process, and at 1920x1080 it holds more than that at once: backbuffer,
+backdrop, wallpaper, a maximised window, a second surface for it while it
+resizes, and a decode. The process holding the screen now gets twelve
+screens' worth on top, counted from the framebuffer each time (`map_budget`,
+`SCREEN_OWNER_SCREENS`), so a 4K display gets four times as much without a
+number being changed. `sys_unmap` takes the same bound, or a mapping larger
+than 48 MB could be made and never given back.
+
+Reproduced in QEMU before it was touched, at 1920x1080 with a scratch disk
+holding one of the ThinkPad wallpapers: three refusals and a Terminal that
+stayed put, then none and a Terminal at 1905x1061. **The display harness's
+`compositor budget` phase is that reproduction** (`testing.md` §18.29), and
+it took three attempts to make it able to fail. The last miss was the
+picture: 4:2:0 instead of the wallpapers' 4:4:4. **Not yet tried on the
+ThinkPad**; that needs a stick.
+
+**The codec says where it stopped.** On the ThinkPad the topology dump never
+printed, which means `find_widgets` gave up before routing, at one of three
+exits that all printed the same sentence. It now counts what it skipped and
+prints one line on the way out with nothing (`testing.md` §18.28). The next
+ThinkPad boot's log is what to read. If it says the root node did not answer,
+the likely cause is Intel's DSP firmware owning the audio controller - a
+much larger job than a graph walk.
+
+**4K: the goal is decided and the plan is not.** Diego will connect a 4K
+monitor, and every compiled-in limit sized for a 512 MB QEMU guest has to be
+derived from the machine or grow. The README has the row; `roadmap.md` item
+0b has the steps, **proposed and not agreed**: reuse user address space, lift
+the x86 RAM ceiling of about 768 MB, size the kernel's pools from RAM at boot,
+replace the flat per-process cap with growth. Driving an *external* monitor
+very likely needs a driver for the Intel GPU, which is to be confirmed.
+
+**The kernel principle says what it always meant**: "no heap for kernel
+objects" rather than "no dynamic allocator", which `design.md` contradicted
+five lines later by listing the page allocator. `CLAUDE.md` and `design.md`
+§4.1.
+
+**The stick's disk in this worktree was overwritten.** `build/kosmos.img`
+became 64 MB at 15:37 holding `/home/Deskbar`, `/home/Desktop` and
+`/home/roms`, very likely the SNES session's tests. The wallpapers, the Doom
+WAD, Quake's `id1` and the video clip are still in the main checkout's
+`build/kosmos.img` and in `~/Downloads/kosmos-wallpapers`. Not restored.
+
+**Next:** xHCI, as before; and agreeing the order of the limits work.
+
 ### 12 September: the Super Nintendo's sound, with the device as the clock
 
 `wm snes` has sound. `snes.sound(ring, rate)` takes the ring `audio.open`
@@ -119,11 +168,11 @@ Open:
 ### 12 September: two result codes that were one number
 
 `SYS_NO_CHILD_READY` and `SYS_ERR_NO_CAPS` were both -106. `NO_CAPS` is -109
-now. It skips -108 because the `SYS_DEV_FIND` work, still uncommitted, gives
--108 to `SYS_ERR_NO_DEVICE`. `syscall.h` lists every result code as a case
-label in `sys_result_codes_are_distinct`, so two codes with one value stop
-the build. **When `SYS_ERR_NO_DEVICE` lands it has to be added to that list
-by hand**, because nothing will add it there. `sys_user.c` now names the codes
+now. It skips -108, which the power button's `SYS_DEV_FIND` gave to
+`SYS_ERR_NO_DEVICE`. `syscall.h` lists every result code as a case label in
+`sys_result_codes_are_distinct`, so two codes with one value stop the build,
+and `SYS_ERR_NO_DEVICE` is on that list. **A new code has to be added to it by
+hand**, because nothing will add it there. `sys_user.c` now names the codes
 it used to write as numbers. The README has the row.
 
 ### 12 September: JPEG, and three bugs in things that looked finished

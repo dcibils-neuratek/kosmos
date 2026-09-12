@@ -141,6 +141,38 @@ bool dev_range_ok(uintptr_t phys, size_t pages)
     return true;
 }
 
+/*
+ * **How many pages this process may have mapped at once.**
+ *
+ * The flat guard for everybody, and the screen's worth on top for the one
+ * process that holds the screen. `process.h` has the count behind twelve.
+ *
+ * Asked each time rather than stored, because the framebuffer is the
+ * kernel's fact and a copy of it in the process would be a second answer to
+ * one question. A full screen is counted as `max(pitch, width * 4) * height`,
+ * so a pitch padded wider than the pixels is paid for, and so the count is
+ * right whichever unit `pitch` is written in.
+ */
+static size_t map_budget(const struct process *p)
+{
+    struct fb fb;
+    size_t row, screen_pages;
+
+    if (!p->owns_screen || !screen_get(&fb)) {
+        return USER_MAP_PAGES_MAX;
+    }
+
+    row = (size_t)fb.pitch;
+
+    if (row < (size_t)fb.width * 4u) {
+        row = (size_t)fb.width * 4u;
+    }
+
+    screen_pages = (row * (size_t)fb.height + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    return USER_MAP_PAGES_MAX + SCREEN_OWNER_SCREENS * screen_pages;
+}
+
 static long sys_write(struct process *p, uintptr_t ptr, size_t len,
                       unsigned long colour)
 {
@@ -702,13 +734,13 @@ static long sys_map(struct process *p, size_t pages)
 {
     uintptr_t base;
     size_t i;
+    size_t budget = map_budget(p);
 
     if (pages == 0) {
         return SYS_ERR_NO_ROOM;
     }
 
-    if (pages > USER_MAP_PAGES_MAX
-        || p->mapped_pages + pages > USER_MAP_PAGES_MAX) {
+    if (pages > budget || p->mapped_pages + pages > budget) {
         return SYS_ERR_NO_ROOM;
     }
 
@@ -784,8 +816,13 @@ static long sys_unmap(struct process *p, uintptr_t va, size_t pages)
      * multiplies to 4096 - a request that looks like one page and iterates
      * four and a half quadrillion times. `sys_map` has always checked this
      * and this had not.
+     *
+     * The bound is `map_budget`, the one `sys_map` takes. The process holding
+     * the screen may map more than the flat allowance in a single call, and a
+     * bound tighter here than there would leave such a mapping impossible to
+     * give back.
      */
-    if (va < USER_MAP_VA || pages == 0 || pages > USER_MAP_PAGES_MAX
+    if (va < USER_MAP_VA || pages == 0 || pages > map_budget(p)
         || va + pages * PAGE_SIZE > p->next_map) {
         return SYS_ERR_FAULT;
     }

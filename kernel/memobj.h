@@ -92,8 +92,9 @@
  * shareware `pak0.pak` is 18.3 MB, read into a region because it cannot be a
  * Lua value, and at 4563 pages it was refused as "no room".
  *
- * What bounds a process is `USER_MAP_PAGES_MAX` - 48 MB of mappings in all -
- * so a region's cap only has to sit under that. Doubling it costs every
+ * What bounds a process is `USER_MAP_PAGES_MAX` - 48 MB of mappings in all,
+ * and more for the one holding the screen - so a region's cap only has to sit
+ * under that. Doubling it costs every
  * descriptor eight more index pointers, 16 KB of .bss across the pool, and no
  * pages at all until a region that large exists.
  */

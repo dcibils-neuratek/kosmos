@@ -1324,3 +1324,86 @@ says "the button did not work" for both would leave that to be worked out.
 aarch64 only. The PC's power button is an ACPI event rather than a GPIO line,
 so there is nothing there for this driver to find - and on that board it asks,
 is told "no device", and exits.
+
+---
+
+## 18.28 A codec that says where it stopped
+
+The ThinkPad's boot log said `no sound: an HDA codec with no output path`,
+and 0.10.34 added a topology dump for exactly that machine - every widget, its
+connections, each pin's configuration. On the next boot the dump never printed.
+
+That silence was the evidence. The dump runs only after an audio function
+group has been found and nothing routed, so a missing dump means
+`find_widgets` gave up *before* routing, at one of three earlier exits: the
+codec's root node did not answer, no function group was of type audio, or an
+audio group would not say how many nodes it had. All three printed the same
+sentence as a routing failure. Three faults, one message.
+
+**Counted, not printed where they happen.** Each skipped group increments a
+counter, and one line is printed only on the way out with nothing, so a codec
+that works - one with a modem group skipped on the way to its audio group,
+say - pays nothing at all.
+
+Checked under QEMU with `tools/run_x86.py`'s `boot()`, an `ich9-intel-hda`
+and an `hda-output` codec, by forcing each exit in turn:
+
+```
+baseline, a working codec:
+  -> sound: Intel HDA, 44100 Hz stereo, 256-frame periods (5 ms), 4 deep
+  beep: 440 Hz, 333 ms of sound in 286 ms, 58 periods
+root node forced silent:
+  -> the codec did not answer its root node, so nothing about it is known
+every function group forced non-audio:
+  -> codec: 0x01 function groups from node 0x01; 0x00 did not answer,
+     0x01 not audio (type 0x01), 0x00 audio but gave no node count
+```
+
+The baseline matters as much as the controls: it is what shows the new line
+costs a working machine nothing. The line is for the ThinkPad, whose processor
+is a Tiger Lake. If it says the root node did not answer, the likely cause is
+an audio controller in Intel's DSP firmware's hands, where the codec is not
+reachable with plain HDA commands at all - and that would be a far larger
+piece of work than a graph walk.
+
+---
+
+## 18.29 A full-screen picture and a maximised window, at 1920x1080
+
+The ThinkPad refused its own desktop. Dragging a Terminal to full size logged
+`no room for a 1916x1016 surface: the kernel refused 1905 pages` on every
+step and the window stayed put, and a JPEG wallpaper would not load. The
+window manager was allowed 48 MB of mappings, like every process, and at
+1920x1080 it holds more than that at once: its backbuffer, the backdrop, the
+wallpaper, a maximised window, a second surface for that window while it
+resizes, and a decode. Its allowance is derived from the framebuffer now
+(`map_budget` in `kernel/syscall.c`).
+
+The display harness's `compositor budget` phase is that afternoon in QEMU:
+the desktop, a Terminal, Log View and `photo:test-screen.jpg`, then the
+Terminal raised and dragged by its grip to the bottom-right corner. It passes
+when nothing is refused and the Terminal's grid grows by at least 800 pixels.
+**It checks the property rather than a number**, so it does not care how many
+pages that took.
+
+**It took three attempts to make it able to fail.** The first pressed the
+grip while Processes was stacked over it, so nothing was resized and nothing
+was refused. The second raised the Terminal first and passed against the
+flat budget too. A 4:2:0 JPEG leaves the decoder about three megabytes less
+scratch than the ThinkPad's 4:4:4 wallpapers, and `malloc`'s arenas are
+never given back, so that difference is still counted when the drag starts.
+With a 4:4:4 picture and one more window it fails exactly as the ThinkPad
+did:
+
+```
+=== with the derived budget: must pass
+PASS: 2 compositor budget checks
+=== control, the committed flat budget: must fail
+FAIL: the window manager was refused 3 surface(s) at 1920x1080 with a
+full-screen picture decoded - first: 'wm: no room for a 1920x1044 surface
+(7830 KB): the kernel refused 1958 pages'.
+```
+
+The lesson is the one the power button taught from the other side: **a
+negative control is not a formality.** Before it ran, this phase was a
+passing test that could not fail.

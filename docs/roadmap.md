@@ -148,11 +148,11 @@ is the one that makes the machine Diego owns behave like a computer:
      and no public documentation - so a USB-C Ethernet adapter is the
      shortest path to metal, and those chips need no firmware and no crypto.
 
-   The design question to settle first: where the stack lives. Drivers are C
-   in `hal/`, but enumeration, device management and hotplug are a *server's*
-   shape against a kernel whose smoke alarm is 10k lines. Probably
-   `hal/pc/xhci.c` for the controller with a server above it, the way
-   `diskfs` sits above a block device.
+   **Where the stack lives is settled**: in userland, as servers, not in
+   `hal/`. `docs/drivers.md` is the record. The three kernel primitives a
+   driver outside the kernel needs have landed, and the first such driver -
+   QEMU's power button - proved them, so xHCI is a driver rather than kernel
+   work.
 
    **And a thing to fix on the way**: a machine with no serial port shows
    nothing until stage six, when the framebuffer attaches and the log
@@ -163,6 +163,27 @@ is the one that makes the machine Diego owns behave like a computer:
 
 **Agreed on 2026-09-10**, after the ThinkPad ran spread across eight
 processors, and still what follows USB:
+
+0b. **The compiled-in limits go, before a 4K display is plugged in.**
+   **The goal is Diego's decision**, 12 September: every memory failure on
+   the ThinkPad was a constant sized for a 512 MB QEMU guest, and a 4K screen
+   is four times what the last constant was sized for. **The steps below,
+   their order, and this item's place ahead of Lite XL are proposed and not
+   yet agreed:**
+
+   - the compositor's mapping allowance derived from its framebuffer - in
+     progress, because it is also the ThinkPad's Terminal and JPEG bug;
+   - user address space reused, since a 4 GB window that is never reused
+     holds about 120 full 4K surfaces in a session;
+   - the x86 RAM ceiling of about 768 MB lifted, with a higher-half kernel;
+   - the kernel's pools sized from RAM once at boot, which is the principle
+     about kernel objects kept and its compiled-in numbers dropped;
+   - the flat per-process cap replaced by growth, a reserve for what the
+     desktop cannot lose, and reclaiming from the largest offender.
+
+   Driving an *external* monitor is a separate job: it very likely needs a
+   display driver for the laptop's Intel GPU, which is to be confirmed before
+   it is planned.
 
 1. **Lite XL, until it is an editor.** It is one now: it opens, edits and
    saves (`docs/litexl.md`), in its own faces. What is left is the wheel,

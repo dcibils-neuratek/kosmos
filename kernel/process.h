@@ -176,6 +176,36 @@ struct thread;
 #define USER_MAP_PAGES_MAX  12288
 
 /*
+ * **And the process holding the screen gets the screen's worth on top.**
+ *
+ * The number above has now been wrong three times, always the same way. 4096
+ * was right at 1024x768 and wrong at 1920x1080. 12288 was "four full screens
+ * at 1080p", and on the ThinkPad the compositor needed more than that. The
+ * log said `no room for a 1916x1016 surface` on every step of a Terminal
+ * being dragged to full size, and a JPEG wallpaper would not load.
+ *
+ * What it holds at once, counted in full screens rather than guessed at:
+ * its backbuffer; the desktop's backdrop; the wallpaper; a maximised window;
+ * a *second* surface for that window while it resizes, because `swap_surface`
+ * keeps the old one until the new one exists so a refusal leaves the window
+ * as it was; and a JPEG decode, which is a buffer on the heap plus the
+ * surface it is copied into. Seven, before any ordinary window.
+ *
+ * **Every one of those scales with the screen**, which is why a constant
+ * cannot be right: whatever it is sized for, a larger display breaks it the
+ * way 1080p broke the last one. So the allowance is derived from the
+ * framebuffer the process was handed, and a 4K screen gets four times as much
+ * without anybody having to remember to change a number.
+ *
+ * Twelve screens is the seven above with room for the windows people actually
+ * open. It is still a guard against running away rather than a reservation -
+ * `pmm_alloc_page` returning NULL is what stops memory running out, as the
+ * paragraph above says - and every other process keeps the flat 48 MB,
+ * because nothing else is asked to hold the screen.
+ */
+#define SCREEN_OWNER_SCREENS  12u
+
+/*
  * Where a shared region lands, and deliberately not in the window above.
  *
  * The two windows differ in who owns the pages, which is the whole reason

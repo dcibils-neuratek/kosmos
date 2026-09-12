@@ -278,9 +278,10 @@ local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
 --
 -- Read a picture and make it the desktop.
 --
--- PNG only, and `gfx.png` is the whole decoder. A JPEG needs one this image
--- does not carry, and saying so is better than a file that silently does
--- nothing when you pick it.
+-- PNG or JPEG, chosen by the name on the end of the file: `DECODERS` below
+-- says which function decodes which. Anything else is refused with a
+-- sentence, which is better than a file that silently does nothing when you
+-- pick it.
 --
 --
 -- A picture off the filesystem, decoded here.
@@ -289,7 +290,7 @@ local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
 -- or three of PNG and this heap is two, by design. `fs.read` would build
 -- that as a string out of chunks that are themselves on the heap, and the
 -- answer was "cannot read" on a file that was plainly there. `fs.read_into`
--- puts it in pages instead and `gfx.png` is given where it landed.
+-- puts it in pages instead, and the decoder is given where it landed.
 --
 -- Written for the wallpaper and now shared with `ui.image`, which is what
 -- lets Photo open a file rather than only the pictures compiled into this

@@ -169,7 +169,26 @@ Practically, for me: do not answer a proposal by citing one of these as
 though it settled the matter. Say what the principle is protecting and
 whether that applies here. If it does not, say so.
 
-**No dynamic allocator in the kernel.** Everything lives in statically declared fixed-size pools: an array of threads, of address spaces, of endpoints. There is no `malloc` or equivalent.
+**No heap for kernel objects.** The kernel allocates *pages* - `pmm` hands
+them out for processes, shared regions, page tables and the framebuffer - but
+its own objects, the threads, processes, endpoints and interrupt claims, live
+in pools and never in a `kmalloc`. What that buys, and it is the whole of the
+principle: taking a slot is bounded time and cannot fragment; running out is
+a clean refusal at the syscall rather than a failure halfway through an
+operation with locks held; and no process can make the kernel consume
+unbounded memory of its own.
+
+**This used to read "no dynamic allocator in the kernel ... no `malloc` or
+equivalent", and that was never quite true.** `design.md` listed a physical
+page allocator among the kernel's responsibilities five lines after saying
+there was none. Diego asked the question that exposed it, and the correction
+is recorded rather than quietly made.
+
+**The sizes of the pools are not part of the principle.** They were compiled
+in because the first machine was a 512 MB QEMU guest, and every one of them is
+a number that a 16 GB laptop, or a 4K screen, outgrows. They are to be carved
+from physical memory once, at boot, in proportion to what is there - and never
+grown or freed afterwards, which is what keeps every property above.
 
 **The kernel does not know what a file is.** Threads, address spaces, IPC, capabilities. Nothing else. No networking, no graphics, no filesystem, and no Lua inside it.
 

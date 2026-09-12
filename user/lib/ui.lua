@@ -2373,7 +2373,7 @@ function ui.image(spec)
     if self.image_w == 0 then
       g:text(6, 6, "no picture called " .. tostring(self.asset), theme.bad)
       g:text(6, 6 + gfx.font.h + 4,
-             "PNG only, and it has to be one", theme.text_dim)
+             "PNG or JPEG, and it has to be one", theme.text_dim)
       return
     end
 

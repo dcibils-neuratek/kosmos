@@ -2184,6 +2184,134 @@ def _console_box(width, height, px):
     return x0, y0, x1, y1
 
 
+def check_budget(guest):
+    """The window manager can decode a full-screen picture and maximise a
+    window at the same time, at 1920x1080.
+
+    On the ThinkPad it could not. Its log said `no room for a 1916x1016
+    surface: the kernel refused 1905 pages` on every step of a Terminal being
+    dragged to full size, and a JPEG wallpaper would not load. The window
+    manager was allowed 48 MB of mappings like every other process - a number
+    chosen as "four full screens at 1080p" - and it holds more than that: its
+    backbuffer, the desktop's backdrop, every window, a second surface for a
+    window while it resizes, and a picture's decode buffer beside the surface
+    it lands in.
+
+    **Checked as a property rather than a number.** The allowance is now
+    derived from the framebuffer the process holds, so the test asserts what a
+    person needs - the Terminal grows and nothing is refused - and does not
+    care how many pages that took. It fails on the flat budget: dragging a
+    Terminal to full size beside a decoded `test-screen.jpg` was refused three
+    times and the grid stayed put, and with the derived budget it filled the
+    screen with nothing refused.
+
+    The picture is carried in the image because this harness boots without a
+    disk; `assets/images/README.md` has why it is flat colour. The Terminal is
+    raised before its grip is touched, because the windows the Deskbar starts
+    at login cascade over its bottom-right corner and a press there lands on
+    whichever is on top - which is what made the first attempt at this test
+    pass without testing anything.
+
+    **And the second attempt passed without the fix too**, which is why the
+    picture is 4:4:4 and Log View is open. It was a 4:2:0 JPEG and three
+    windows, and against the flat budget nothing was refused. The ThinkPad's
+    wallpapers are 4:4:4 - a full-resolution plane for each colour, about
+    three megabytes more of the decoder's scratch than 4:2:0 - and that
+    scratch comes from `malloc`, whose arenas are never given back, so it is
+    still counted when the drag begins. That and one more window was the
+    margin; with both, the flat budget refuses exactly what the ThinkPad
+    refused, `1920x1044 surface (7830 KB)` three times.
+    """
+    width, height, _ = parse_ppm(guest.screendump())
+
+    if (width, height) != (1920, 1080):
+        raise Failure(
+            f"the compositor budget is checked at 1920x1080, where the ThinkPad "
+            f"refused its surfaces, and this display is {width}x{height}."
+        )
+
+    mark = len(guest.seen)
+    guest.type("wm desktop,deskbar,terminal,logview,photo:test-screen.jpg")
+    started(guest)
+    time.sleep(25)
+    guest._read_available()
+
+    placed = re.findall(r"wm: window Terminal at (\d+),(\d+) (\d+)x(\d+)",
+                        guest.seen[mark:])
+
+    if not placed:
+        raise Failure("the Terminal never opened, so there is nothing to resize.")
+
+    x, y, w, h = (int(v) for v in placed[-1])
+    width, height, px = parse_ppm(guest.screendump())
+    before = _console_box(width, height, px)
+
+    if before is None:
+        raise Failure("the Terminal opened and its grid is not on the screen.")
+
+    # Raised first, by a press inside its banner.
+    guest.mouse_to(*_to_tablet(x + 60, y + 60, width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.2)
+    guest.mouse_button(False)
+    time.sleep(1.5)
+
+    gx, gy = x + w - 3, y + h - 3
+    guest.mouse_to(*_to_tablet(gx, gy, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+
+    for i in range(1, 13):
+        guest.mouse_to(*_to_tablet(gx + (width - 8 - gx) * i // 12,
+                                   gy + (height - 8 - gy) * i // 12,
+                                   width, height))
+        time.sleep(0.15)
+
+    guest.mouse_button(False)
+    time.sleep(5)
+    guest._read_available()
+
+    refused = [l.strip() for l in guest.seen[mark:].replace("\r", "").split("\n")
+               if "no room for a" in l]
+
+    if refused:
+        raise Failure(
+            f"the window manager was refused {len(refused)} surface(s) at "
+            f"1920x1080 with a full-screen picture decoded - first: "
+            f"{refused[0]!r}. Its mapping allowance is meant to scale with the "
+            "screen it holds; a flat one runs out exactly here."
+        )
+
+    width, height, px = parse_ppm(guest.screendump())
+    after = _console_box(width, height, px)
+
+    if after is None or (after[2] - after[0]) < (before[2] - before[0]) + 800:
+        raise Failure(
+            f"nothing was refused and the Terminal's grid did not grow to full "
+            f"size: {before} before the drag, {after} after."
+        )
+
+    stop = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[stop:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-W Q did not get the screen back.")
+
+    return 2
+
+
 def check_power_button(guest):
     """The power button reaches a driver that is not in the kernel.
 
@@ -4296,6 +4424,7 @@ def main():
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
+        budget_checks = phase("compositor budget", check_budget)
         deskbar_checks = phase("deskbar", check_deskbar)
         desktop_checks = phase("desktop", check_desktop)
         clip_checks = phase("clipboard", check_clipboard)
@@ -4325,7 +4454,7 @@ def main():
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks + registry_checks + context_checks
-             + repaint_checks + power_checks)
+             + repaint_checks + power_checks + budget_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -4366,6 +4495,8 @@ def main():
           f"resized), "
           f"{repaint_checks} on an idle window drawing nothing at all, "
           f"{power_checks} on the power button reaching a driver outside the kernel, "
+          f"{budget_checks} on a full-screen picture and a maximised window fitting "
+          f"in the compositor at 1920x1080, "
           f"{direct_checks} on an application drawing its own pixels, "
           f"{three_d_checks} on a software-rendered solid).")
     return 0
