@@ -27,9 +27,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
   Lua 5.4, by Lua.org / PUC-Rio, MIT
       lua/upstream/, and the notice is at the bottom of lua.h
 
-  stb_truetype.h, by Sean Barrett, MIT or public domain
-      runtime/upstream/stb/, notice at the bottom of the header,
-      pointed at by LICENSE.stb beside it
+  stb_truetype.h and stb_image.h, by Sean Barrett, MIT or public domain
+      runtime/upstream/stb/, notice at the bottom of each header,
+      pointed at by LICENSE.stb beside them, which also records the
+      version and commit each was taken from
 
   puff.c, by Mark Adler, zlib licence
       runtime/upstream/puff/LICENSE.puff

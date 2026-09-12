@@ -277,9 +277,43 @@ local wallpaper, wall_x, wall_y, wall_w, wall_h = nil, 0, 0, 0, 0
 -- process owns every pixel on the screen, and an application that decoded
 -- its own would be holding them.
 --
+--
+-- Which decoder, from the name on the end of the file.
+--
+-- The extension and not the bytes, deliberately. Both formats have a
+-- signature and sniffing it would work, but a picture that is called `.png`
+-- and is not one is a mistake worth reporting rather than quietly coping
+-- with - and every picture this system opens is one somebody put there on
+-- purpose.
+--
+-- JPEG is here for wallpapers, which is the one thing on this machine that
+-- is a photograph. A 1920x1080 photograph is about three megabytes as a PNG
+-- and three hundred kilobytes as a JPEG, and the disk is 32 MB: the format
+-- is the difference between nine wallpapers and ninety.
+--
+local DECODERS = {
+  png  = function(...) return gfx.png(...) end,
+  jpg  = function(...) return gfx.jpeg(...) end,
+  jpeg = function(...) return gfx.jpeg(...) end,
+}
+
+--
+-- One chooser, used by both things that open a picture: a file on the disk
+-- and a file compiled into the image. They had drifted apart already - the
+-- asset path said `gfx.png` outright - and that was harmless only for as
+-- long as every asset was a PNG.
+--
+local function decoder_for(name)
+  local suffix = tostring(name):lower():match("%.([%a]+)$")
+
+  return suffix and DECODERS[suffix], suffix
+end
+
 local function picture_from_file(path)
-  if not tostring(path):lower():match("%.png$") then
-    return nil, "only PNG for now, and that is not one"
+  local decode, suffix = decoder_for(path)
+
+  if not decode then
+    return nil, "this opens PNG and JPEG, and that is neither"
   end
 
   local size = (fs.getattr(path) or {}).size
@@ -311,13 +345,15 @@ local function picture_from_file(path)
     return nil, "could only read " .. done .. " of " .. size .. " bytes"
   end
 
-  local ok, made = pcall(gfx.png, at, size)
+  local ok, made = pcall(decode, at, size)
 
   -- The compressed copy is scratch: the surface holds the pixels now.
   sys.release(region)
 
   if not ok or not made then
-    return nil, "that PNG would not decode"
+    -- `made` is the decoder's own sentence when the call raised, which is
+    -- the one that says *what* was wrong with the file.
+    return nil, tostring(made or ("that " .. suffix .. " would not decode"))
   end
 
   return made
@@ -731,9 +767,10 @@ local function picture_named(name)
     end
   else
     local bytes = sys.asset(name)
+    local decode = decoder_for(name)
 
-    if bytes then
-      local ok, decoded = pcall(gfx.png, bytes)
+    if bytes and decode then
+      local ok, decoded = pcall(decode, bytes)
 
       if ok then picture = decoded end
     end
@@ -2238,9 +2275,25 @@ handlers.open = function(req, who, cap)
   local win = {
     handle  = next_handle,
     title   = tostring(req.title or "window"),
-    x       = math.min(math.max(tonumber(req.x) or 40, BORDER), W - w_ - BORDER),
-    y       = math.min(math.max(tonumber(req.y) or 40, top_limit()),
-                       H - h_ - BORDER),
+    --
+    -- Where it opens. `centre` wins over any x and y the application also
+    -- sent, because the two cannot both be honoured and only one of them
+    -- was a decision - `x` and `y` in an application's source are a guess
+    -- made without knowing the screen size.
+    --
+    -- The vertical middle is measured from `top_limit()` rather than from
+    -- zero, so a centred window sits in the middle of the room that is
+    -- actually available rather than half a strip too high.
+    --
+    x       = req.centre
+              and math.max(BORDER, (W - w_) // 2)
+              or math.min(math.max(tonumber(req.x) or 40, BORDER),
+                          W - w_ - BORDER),
+    y       = req.centre
+              and math.max(top_limit(),
+                           top_limit() + (H - top_limit() - h_) // 2)
+              or math.min(math.max(tonumber(req.y) or 40, top_limit()),
+                          H - h_ - BORDER),
     w       = w_,
     h       = h_,
     surface = gfx.surface{ w = w_, h = h_ },
@@ -2312,7 +2365,8 @@ handlers.open = function(req, who, cap)
   -- Scenery places itself: the backdrop and the strip are pinned to 0,0 a
   -- few lines below, so searching for somewhere free for them is work
   -- whose answer is thrown away.
-  if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top" then
+  if req.kind ~= "menu" and not req.backdrop and req.strip ~= "top"
+     and not req.centre then
     --
     -- **Taken means hidden, not "in the same spot".**
     --
@@ -2693,6 +2747,15 @@ handlers.draw = function(req)
   -- application composes off-screen and says when it is done.
   --
   if not req.more then
+    --
+    -- One line per *finished* frame, under `wm trace`. A window that redraws
+    -- when nothing has happened is otherwise invisible: it costs too little
+    -- to move a processor meter and it puts the same pixels back, so the
+    -- screen cannot show it either. The Terminal repainted itself once a
+    -- second for months because there was nowhere to see that it did.
+    --
+    note(("draw %s"):format(tostring(win.title)))
+
     damage_window(win)
   end
 
@@ -4289,11 +4352,42 @@ end
 -- manager holds the bytes and stays ignorant of them, which is the same
 -- division it already keeps with pixels.
 --
+--------------------------------------------------------------------------
+-- Round the open windows, without the pointer.
+--
+-- **Raise the bottom one.** `windows` is bottom-to-top, so the one that has
+-- been buried longest comes to the front and the one that was in front goes
+-- to the back of the queue - press it as many times as there are windows and
+-- you are back where you started. That is a real cycle rather than a swap
+-- between two, and it needs no "most recently used" list to fall out of step
+-- with what is on the screen.
+--
+-- **Scenery is not a window you can be hidden behind**, and this is the bug
+-- that was here: `raise(windows[1])` was written when `windows[1]` was an
+-- ordinary window, and by the time anybody pressed it `windows[1]` was the
+-- backdrop - which `raise` refuses outright, by design. So Control-W Tab
+-- had done nothing at all for as long as there had been a desktop. The same
+-- three flags `focusable` and the placement search already use.
+--
+-- A minimised window counts. It is an open application, which is what was
+-- asked for, and `raise` brings a hidden one back - so cycling walks
+-- through everything that is running rather than everything that happens to
+-- be visible, which is what every Alt-Tab since Windows 3 has done.
+--------------------------------------------------------------------------
+local function cycle_windows()
+  for _, win in ipairs(windows) do
+    if not (win.backdrop or win.strip or win.kind == "menu") then
+      raise(win)
+      return
+    end
+  end
+end
+
 local function prefixed(c)
   prefix = false
 
   if c == KEY_TAB then
-    if #windows > 1 then raise(windows[1]) end
+    cycle_windows()
     return
   end
 
@@ -4405,7 +4499,6 @@ local function minimise_focused()
     handlers.minimise{ window = win.handle }
   end
 end
-
 --
 -- **The launcher pad**, which is a program rather than something built in
 -- here. The window manager starts applications; it does not draw dialogs,
@@ -4420,37 +4513,119 @@ local function open_launchpad()
   handlers.launch{ program = "launchpad" }
 end
 
-SUPER_KEYS = {
-  [126] = function()                            -- ~, Super on its own
-    --
-    -- **Posted, and that word is the whole of what was wrong twice.**
-    --
-    -- This was `fs.send` and then `fs.write`. Both are *calls*: they wait
-    -- for a reply, and a reply from the key path of the compositor is a
-    -- reply the compositor is not running to receive. One press of the
-    -- Windows key and the desktop stopped reading the keyboard - no error,
-    -- no crash, just a machine that ignores you.
-    --
-    -- `post` appends to the window's queue and returns, which is what every
-    -- mouse press and close request already does. Nothing in here may block:
-    -- this function runs between reading a key and reading the next one.
-    --
-    for _, win in ipairs(windows) do
-      if win.strip then
-        post(win, { type = "menu" })
-        break
+--------------------------------------------------------------------------
+-- **One declaration, and the Shortcuts window reads it.**
+--
+-- These were a table keyed by character with a function in each slot, which
+-- is the right shape for dispatch and no shape at all for anything that
+-- wants to *list* them: `pairs` has no order, and a key code is not
+-- something to show a person. So the list is the array and `SUPER_KEYS` is
+-- built from it below.
+--
+-- The point is that a shortcut cannot be added without saying what it does.
+-- A hand-written cheat sheet in another file is a copy, and a copy of
+-- something that changes is a copy that will be wrong - this system already
+-- has `docs/cheatsheet.html`, written before any of these keys existed and
+-- silently missing all of them.
+--
+-- `also` is the other case of a letter. Both dispatch; only one is shown,
+-- because "Super + Q or Super + Shift + Q" is noise in a list somebody is
+-- reading to learn one thing.
+--------------------------------------------------------------------------
+local SUPER_BINDINGS = {
+  {
+    key = 126, shown = "Super",
+    what = "Open the Kosmos menu",
+    run = function()
+      --
+      -- **Posted, and that word is the whole of what was wrong twice.**
+      --
+      -- This was `fs.send` and then `fs.write`. Both are *calls*: they wait
+      -- for a reply, and a reply from the key path of the compositor is a
+      -- reply the compositor is not running to receive. One press of the
+      -- Windows key and the desktop stopped reading the keyboard - no error,
+      -- no crash, just a machine that ignores you.
+      --
+      -- `post` appends to the window's queue and returns, which is what
+      -- every mouse press and close request already does. Nothing in here
+      -- may block: this runs between reading a key and reading the next one.
+      --
+      for _, win in ipairs(windows) do
+        if win.strip then
+          post(win, { type = "menu" })
+          break
+        end
       end
-    end
-  end,
+    end,
+  },
 
-  [113] = function() close_focused() end,       -- q
-  [81]  = function() close_focused() end,       -- Q
+  { key = 32, shown = "Super + Space",
+    what = "Start something by typing part of its name",
+    run = function() open_launchpad() end },
 
-  [104] = function() minimise_focused() end,    -- h
-  [72]  = function() minimise_focused() end,    -- H
+  { key = 47, shown = "Super + /",
+    what = "This window",
+    run = function() handlers.launch{ program = "shortcuts" } end },
 
-  [32]  = function() open_launchpad() end,      -- space
+  { key = 9, shown = "Super + Tab",
+    what = "Go round the open windows",
+    run = function() cycle_windows() end },
+
+  { key = 113, also = 81, shown = "Super + Q",
+    what = "Close the window in front",
+    run = function() close_focused() end },
+
+  { key = 104, also = 72, shown = "Super + H",
+    what = "Get the window in front out of the way",
+    run = function() minimise_focused() end },
 }
+
+--
+-- And the prefix, which this process does not dispatch from a table - it is
+-- a chain of comparisons in `prefixed` - but which a person learning the
+-- keyboard needs in the same list. Named here rather than discovered,
+-- which is a copy and is admitted as one: the alternative is restructuring
+-- `prefixed` around a table to serve a window, and the four clipboard keys
+-- already live in `CLIP_KEYS`.
+--
+local PREFIX_BINDINGS = {
+  { shown = "Control-W Tab",    what = "Go round the open windows" },
+  { shown = "Control-W arrows", what = "Move the window in front" },
+  { shown = "Control-W A",      what = "Select everything" },
+  { shown = "Control-W C",      what = "Copy" },
+  { shown = "Control-W X",      what = "Cut" },
+  { shown = "Control-W V",      what = "Paste" },
+  { shown = "Control-W Control-W", what = "Send a real Control-W through" },
+}
+
+SUPER_KEYS = {}
+
+for _, b in ipairs(SUPER_BINDINGS) do
+  SUPER_KEYS[b.key] = b.run
+
+  if b.also then SUPER_KEYS[b.also] = b.run end
+end
+
+--
+-- What the keyboard does, for whoever asks.
+--
+-- The window manager answers because the window manager is what decides:
+-- these keys are taken before any application sees them, so a list compiled
+-- anywhere else would be a guess about another process's behaviour.
+--
+handlers.shortcuts = function()
+  local keys, prefixes = {}, {}
+
+  for _, b in ipairs(SUPER_BINDINGS) do
+    keys[#keys + 1] = { shown = b.shown, what = b.what }
+  end
+
+  for _, b in ipairs(PREFIX_BINDINGS) do
+    prefixes[#prefixes + 1] = { shown = b.shown, what = b.what }
+  end
+
+  return { ok = true, super = keys, prefix = prefixes }
+end
 
 local function key(c)
   if c == KEY_CTRL_C then

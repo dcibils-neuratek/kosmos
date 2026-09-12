@@ -516,3 +516,68 @@ colours, **at all four lane positions**, because a fast path correct for
 lane 0 and wrong for lane 3 is exactly the bug this shape invites.
 
 **33,554,432 pixels, zero disagreements.**
+
+---
+
+## 19.15 Two decoders, and why one of them is somebody else's
+
+PNG is decoded by `user/lib/png.c`, which is this project's own code: an
+inflate and five row filters, written from the specification, and a file you
+can read in an afternoon and be sure of. JPEG is decoded by `stb_image`,
+vendored, and the difference is not taste.
+
+**They are not the same size of problem.** JPEG is a discrete cosine
+transform, a Huffman decoder, four chroma subsampling layouts, a progressive
+mode with a scan structure of its own, and restart markers. Writing that from
+the specification would be a month learning something this project is not
+about - and `png.c`'s own argument applies with the sign flipped: *a decoder
+that half-supports a format is worse than one that says no*. A JPEG decoder
+that handles baseline and not progressive fails on somebody's wallpaper, not
+on a test.
+
+So `stb_image.h` sits in `runtime/upstream/stb/` beside `stb_truetype.h`,
+same author, same dual licence, unmodified, with the exact commit and hash
+recorded in `LICENSE.stb`. It is instantiated once in `stb_impl.c` with
+`STBI_ONLY_JPEG`, so it is not a second PNG decoder standing next to ours -
+two answers to one question, one of which is never exercised, is the worst
+outcome available here.
+
+**Three build switches, and one of them is not optional.** `STBI_NO_STDIO`
+because there is no `FILE`; `STBI_NO_HDR` and `STBI_NO_LINEAR` because both
+want `pow` for a format nothing reads; and `STBI_NO_THREAD_LOCALS`, without
+which this does not link at all. stb keeps its failure string in a `__thread`
+variable, and GCC implements that on bare-metal AArch64 by calling
+`__emutls_get_address`, which lives in a runtime this system does not have.
+The cost is named rather than hidden: two threads in one process decoding two
+*malformed* images at once can read each other's error message. The decode
+itself keeps its state on the stack.
+
+### Where it is reached from
+
+`gfx.jpeg(bytes)` returns the same `gfx.surface` `gfx.png(bytes)` returns,
+and it is a function on `gfx` rather than a kit. A kit would have been
+defensible - a decoder is a bounded loop over bytes, which is the kit
+archetype - and the caller decided it. `picture_from_file` opens a picture;
+it should not have to know that one format lives on a table and another
+behind a `use`. A person adding a wallpaper is not choosing a decoder.
+
+The window manager picks between them on the **extension**, not by sniffing
+the signature. Both formats have one and sniffing would work, but a file
+called `.png` that is not one is a mistake worth reporting rather than
+quietly coping with, and every picture this machine opens is one somebody put
+there deliberately.
+
+### What it is for, and it is not a feature
+
+The disk is 32 MB and a 1920x1080 photograph is about three megabytes as a
+PNG and three hundred kilobytes as a JPEG. That is the difference between
+nine wallpapers and ninety, and it is the whole reason this exists: PNG is
+the right format for the icons and the test pattern, which are flat colour
+with sharp edges and an alpha channel, and the wrong one for a photograph.
+
+**And it runs at EL0.** stb_image's own warning about untrusted input is as
+true as stb_truetype's, and the answer is the same one: the decoder runs in
+whichever process asked to draw, behind its own address space, so a malformed
+JPEG that gets past its bounds checks kills that process and nothing else.
+That is the microkernel earning its keep rather than a licence to be careless
+- a picture on a disk somebody handed you is untrusted input.

@@ -2,11 +2,57 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-11
+Last updated: 2026-09-12
 
 ---
 
 ## Where this left off
+
+### 12 September: JPEG, and three bugs in things that looked finished
+
+**Pictures.** `gfx.jpeg` sits beside `gfx.png`, vendoring stb_image v2.30 at
+a pinned commit, JPEG-only. The reason is the disk rather than the format: a
+1920x1080 photograph is about three megabytes as a PNG and three hundred
+kilobytes as a JPEG, against a 32 MB disk. Wallpapers on the test disk went
+from 7.45 MB to 1.37 MB for the same three pictures, and nine ThinkPad ones
+Diego chose now fit beside them. `gfx.md` §19.15 has the argument, including
+why PNG stays ours and this one does not, and why `STBI_NO_THREAD_LOCALS` is
+a link error rather than a preference.
+
+**Three Terminal bugs, and the third explains the second.** Its view never
+said it follows the right and bottom edges, so a resized window kept the grid
+it opened at. It repainted itself once a second for ever, because a 0x0 view
+called `pump` still had a `tick` after the tick's body moved into `on_frame`
+- and `window:add` treats *having* a `tick` as "this changes on its own".
+That phantom frame is where the flicker came from: the compositor writes a
+window's surface batch by batch and holds only the damage, so something
+else's damage mid-frame scans out a terminal that has been cleared and not
+yet re-texted. And `poll_wait_ticks` was pinned at 1 from open to close, so
+an idle Terminal woke sixty times a second to serve children it did not have.
+
+All three measured, with the bug put back each time to check the measurement:
+0x0 against 290x144 on the resize, and 16 idle frames in 20 seconds against
+none. `testing.md` §18.23 and §18.24.
+
+**The desktop, from the keyboard.** The launcher pad opens in the middle of
+the screen every time rather than wherever the cascade put it - `centre` is a
+flag on the open request, because an application does not know how big the
+screen is and should not. Arrows walk its list while the field still has the
+focus; a double click or Return starts something. Super+Tab cycles the open
+windows by raising the bottom one, which also fixed Control-W Tab: it did
+`raise(windows[1])`, and `windows[1]` became the backdrop the day the desktop
+gained one, which `raise` refuses by design. It had done nothing for months.
+
+There is a **Shortcuts** window now, at Super+/, and it is worth saying how
+it works rather than that it exists: it asks the window manager what the
+keyboard does. `wm.lua` declares each binding with its sentence in the array
+it builds its dispatch table from, so a shortcut cannot be added without
+describing itself, and the window draws whatever comes back. It is the
+opposite of `docs/cheatsheet.html`, which is a copy and which listed none of
+the Super keys on the day this was written.
+
+**Still open**, and the next thing: USB. Nothing below has changed.
+
 
 ### USB is the next milestone, and the reason is tonight
 

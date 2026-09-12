@@ -44,6 +44,7 @@
 #include "kosmos.h"
 
 void kosmos_png_open(lua_State *L);
+void kosmos_jpeg_open(lua_State *L);
 
 #ifdef KOSMOS_DOOM
 void kosmos_doom_open(lua_State *L);
@@ -2121,6 +2122,7 @@ int luaopen_gfx(lua_State *L)
     /* `gfx.png`, which lives in its own file because a decoder and a
      * blitter have nothing to say to each other. */
     kosmos_png_open(L);
+    kosmos_jpeg_open(L);
 
 #ifdef KOSMOS_DOOM
     /* Only where Doom is compiled in: `FULL=1`, the default, or `DOOM=1`.

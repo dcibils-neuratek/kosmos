@@ -3438,6 +3438,19 @@ static bool test_console_write_carries_no_capability(void) { return luatest_role
 static bool test_licence_is_carried(void)              { return luatest_role(40); }
 
 /*
+ * A JPEG decodes to the right colours, and a PNG handed to the JPEG decoder
+ * does not.
+ *
+ * The decoder is stb_image and therefore not what is on trial. What is on
+ * trial is this build of it: `STBI_ONLY_JPEG`, `STBI_NO_THREAD_LOCALS` -
+ * without which it does not link on a freestanding target at all, because
+ * `__thread` becomes a call into a runtime that is not here - and the
+ * conversion in `user/lib/jpeg.c` from stb's byte order to this system's
+ * word order and padded pitch.
+ */
+static bool test_a_jpeg_decodes(void)                  { return luatest_role(47); }
+
+/*
  * An endpoint ends with the process that made it. A server takes a client's
  * call and is killed before answering: the client has to be woken with an
  * error, and the pool has to get the endpoint back.
@@ -5970,6 +5983,7 @@ static const struct test tests[] = {
     { "inflate: a stream from elsewhere",      test_inflate_round_trip },
     { "pdf: the scanner reads what it should", test_pdf_scanner },
     { "licence: the image carries LICENSE",     test_licence_is_carried },
+    { "jpeg: four quadrants, and not a PNG",   test_a_jpeg_decodes },
     { "ipc: an endpoint ends with its process",  test_endpoint_ends_with_its_process },
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },

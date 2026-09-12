@@ -41,7 +41,12 @@ local name = tostring(args or ""):match("^%s*(%S+)") or "test-pattern.png"
 -- An asset is allowed to be named without its extension, because they are a
 -- known short list. A path is not: guessing at one would turn a typo into a
 -- different file.
-if not name:find("/") and not name:match("%.png$") then
+--
+-- `.png` is what a bare name gets, because that is what almost every asset
+-- is. A JPEG asset has to be named in full, which is the right way round:
+-- the guess should favour the common case and never silently find a
+-- different file than the one that was asked for.
+if not name:find("/") and not name:match("%.%a+$") then
   name = name .. ".png"
 end
 
@@ -75,7 +80,9 @@ local function describe()
     return ("%d x %d, drag to pan"):format(picture.image_w, picture.image_h)
   end
 
-  if name:find("/") then return "that file is not a PNG this can decode" end
+  if name:find("/") then
+    return "that file is not a picture this can decode"
+  end
 
   return "not carried in the image"
 end

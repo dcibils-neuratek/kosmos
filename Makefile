@@ -744,6 +744,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/lib/sys_user.c \
              user/lib/gfx.c \
              user/lib/png.c \
+             user/lib/jpeg.c \
              user/lib/docfont.c \
              user/lib/inflate.c \
              user/lib/pdftok.c \
@@ -1586,11 +1587,13 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # project's own work, so there is no licence beside it and the generated
 # file says so, which is what that line of the report is for.
 
-$(GEN)/assets.c: assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE \
+$(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
+                 $(ICON_FILES) $(ART_FILES) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
-	        assets/images/test-pattern.png $(ICON_FILES) $(ART_FILES) LICENSE \
+	        assets/images/test-pattern.png assets/images/test-quads.jpg \
+	        $(ICON_FILES) $(ART_FILES) LICENSE \
 	        docs/cheatsheet.html
 
 # The outline fonts, embedded the same way.

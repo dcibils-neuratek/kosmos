@@ -1,7 +1,12 @@
-stb_truetype.h is by Sean Barrett and is dual-licensed: MIT, or public
-domain under the Unlicense, at the recipient's choice. The full text of
-both is at the bottom of stb_truetype.h itself, where the author put it,
-and that file is here exactly as shipped.
+stb_truetype.h and stb_image.h are by Sean Barrett and are dual-licensed:
+MIT, or public domain under the Unlicense, at the recipient's choice. The
+full text of both is at the bottom of each header itself, where the author
+put it, and both files are here exactly as shipped.
+
+  stb_truetype.h  v1.26
+  stb_image.h     v2.30, from nothings/stb commit
+                  013ac3beddff3dbffafd5177e7972067cd2b5083,
+                  sha256 594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3
 
 This note exists because the rule in CLAUDE.md is that anything vendored
 records its licence beside it. For stb the licence travels inside the file,
@@ -9,5 +14,5 @@ so this is a pointer rather than a copy: if the two ever disagree, the text
 in stb_truetype.h is the one that counts.
 
 stb_impl.c is not upstream. It is the one translation unit that defines
-STB_TRUETYPE_IMPLEMENTATION, written here, and it carries no separate
-terms beyond the above.
+STB_TRUETYPE_IMPLEMENTATION and STB_IMAGE_IMPLEMENTATION, written here, and
+it carries no separate terms beyond the above.

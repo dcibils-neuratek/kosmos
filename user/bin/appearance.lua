@@ -390,8 +390,11 @@ end
 -- middle. Scaling would put every wallpaper through a resampler to serve
 -- the ones that do not fit, and lose sharpness on the ones that do.
 --
--- PNG only. There is no JPEG decoder in this image yet, and a `.jpg` listed
--- here would be a name that does nothing when you pick it.
+-- PNG and JPEG. A photograph is the one thing on this machine that is
+-- genuinely a photograph, and the format is the difference between three
+-- megabytes and three hundred kilobytes for the same picture - which on a
+-- 32 MB disk is the difference between a handful of wallpapers and a
+-- library of them.
 --------------------------------------------------------------------------
 
 -- Below the "Palette default" button, which sits at FY + 100 and is 24
@@ -405,7 +408,11 @@ local function wallpapers()
   local out = { "none" }
 
   for _, name in ipairs(fs.list("/home") or {}) do
-    if name:lower():match("%.png$") then out[#out + 1] = name end
+    local suffix = name:lower():match("%.([%a]+)$")
+
+    if suffix == "png" or suffix == "jpg" or suffix == "jpeg" then
+      out[#out + 1] = name
+    end
   end
 
   return out

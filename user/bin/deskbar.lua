@@ -858,10 +858,19 @@ local PRESSED = -20
 -- The insets, row by row from each end, which is a circle worked out once
 -- rather than a square root in a drawing path.
 --
--- `{ 2, 1 }` is exactly radius 4 and `{ 3, 2, 1, 1 }` - the first try - is
--- about radius 6, which read as too much. This is radius 5.
+-- `{ 2, 1 }` is exactly radius 4, `{ 3, 1, 1 }` is radius 5, and this is
+-- radius 6: the inset for each row is `r - sqrt(r^2 - (r - j - 0.5)^2)`,
+-- rounded, which is a quarter circle evaluated once here instead of a square
+-- root in a drawing path.
 --
-local CORNER = { 3, 1, 1 }
+-- **Radius 6 was tried before and read as too much, at a bar 20 pixels
+-- tall.** The bar is 26 now - the title bars grew so their controls could be
+-- hit - and the same corner on a taller button reads as less, not more,
+-- because what the eye judges is the corner against the height beside it.
+-- So this is not a reversed decision; it is the same proportion at the new
+-- size.
+--
+local CORNER = { 4, 2, 1, 1 }
 
 --
 -- **The middle in one fill, and a row each for the corners.**

@@ -1091,3 +1091,136 @@ What the test cannot say is whether the ThinkPad's memory is sound. What it
 says is that **when the instrument reports something on that machine, the
 reading can be believed** - which is the only claim a host test was ever in
 a position to make about a fault it cannot reproduce.
+
+---
+
+## 18.23 A window that kept its old size, and one that redrew for nothing
+
+Three bugs in the Terminal, reported in one sentence each - *the content does
+not resize*, *the content flickers*, *is it redrawing while sitting still* -
+and the third is the cause of the second.
+
+### The grid that never grew
+
+`terminal.lua` built its view with the width and height of the window it
+opens at, and the widget kit resizes a child only if that child said it
+**follows** an edge. The default is left and top, "something that sits where
+it was put", so the view stayed 624x560 inside a window that had become
+912x716, with the window's own colour around it.
+
+Nothing was wrong with the arithmetic. `draw` divides `self.w` and `self.h`
+by the monospace cell on every pass, so the rows and columns were always
+correct *for the size the view believed it was*. This is the shape of bug
+where reading the drawing code proves it right and the bug is one level up.
+
+**The check drags the sizing grip and measures the black.** `theme.console`
+is 0x0b0b0b and nothing else on the desktop is, so the bounding box of that
+colour is the character grid - and measuring the grid rather than the window
+frame is the point: the frame moves because the window manager moved it,
+whether or not the application noticed anything.
+
+The negative control was run before the fix was kept, by removing the one
+`follow` line and rebuilding:
+
+```
+before   console 622x558 at (99,49)
+after    console 622x558 at (99,49)      grew by 0 x 0
+```
+
+and with it:
+
+```
+before   console 622x558 at (99,49)
+after    console 912x702 at (99,49)      grew by 290 x 144
+```
+
+290x144 is exactly the room left on a 1024x768 screen, which is the other
+half of the check: a number that matched the drag rather than merely being
+larger.
+
+### A hook that was emptied and not deleted
+
+The Terminal repainted itself once a second, for ever, with nothing to
+redraw. `pump` was a 0x0 view that drew nothing and whose `tick` had been
+emptied when its work moved into `on_frame` - the right move, and the empty
+function was left behind.
+
+```lua
+local pump = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+
+function pump:tick()
+end
+```
+
+**An empty function is not nothing to the kit.** `window:add` tests whether a
+child *has* a `tick`, because a child that does means "this changes on its
+own, like a clock" - so the window was given a `tick_every` of one second and
+the run loop marked it dirty on that clock whether or not anything had
+happened. The whole window went to the compositor: the banner, every run of
+every line, sixty-odd drawing commands batched into several messages.
+
+That is also where the flicker came from. The window manager writes a
+window's surface on every batch and holds the *damage* until the last one, so
+a frame is never composited half-drawn **by its own damage** - but the
+surface is live memory, and anything else damaging the screen mid-frame
+composites a terminal that has been cleared and not yet re-texted. The
+Deskbar clock damages once a second. So did this.
+
+The class, which is the part worth keeping: **a hook that is emptied should
+be deleted, because having the hook is the signal.** The kit cannot tell an
+empty `tick` from a full one and should not have to.
+
+### And how often it wakes
+
+`win.poll_wait_ticks = 1` was set once and never cleared, so a Terminal at
+its prompt woke every scheduler tick - sixty times a second - to serve
+children it did not have. The reason it exists is real: a program's `write`
+blocks until this loop answers it, and `ls` came out one line a second before
+it was added.
+
+Typing never depended on it, and that is what makes the fix safe. A held poll
+is answered the moment the window manager has an event for the window, so the
+wait bounds how long a *program* waits to be answered and nothing else. It is
+raised while `busy`, and for half a second after anything writes - not
+`busy` alone, because a program can leave something of its own behind and
+whatever it left inherited this window as its console.
+
+---
+
+## 18.24 Four quadrants, and a PNG that must not decode
+
+`gfx.jpeg` is stb_image, and stb_image is not what the test is for. What is
+on trial is this *build* of it - `STBI_ONLY_JPEG`, `STBI_NO_STDIO`,
+`STBI_NO_THREAD_LOCALS`, the last of which is the difference between linking
+and not - and the conversion in `user/lib/jpeg.c` from stb's RGBA in memory
+order to this system's `0xAARRGGBB` word on a padded pitch.
+
+`assets/images/test-quads.jpg` is four solid 64x64 blocks: red, green, blue,
+near-white. Solid, because **JPEG is lossy and there is no byte-for-byte
+answer to check against.** What a correct decode guarantees is that the
+middle of a flat area comes back the colour it went in as, within the error
+the quantiser is allowed; the edges between blocks are where a lossy codec
+rings, so nothing looks at them. The tolerance is 16, which is comfortably
+inside "the same colour" and nowhere near "a different quadrant".
+
+The PNG test pattern is a poor JPEG fixture for exactly the reason it is a
+good PNG one: its whole point is per-row filters and an alpha channel, and
+JPEG has neither.
+
+**Two negative controls, because without them the four colour checks prove
+nothing** - they would all pass on a function that returned a 128x128 surface
+of the right colours whatever it was handed.
+
+1. **The PNG, decoded as a JPEG, must fail.** This is the confusion that can
+   actually happen: the window manager picks a decoder from the name on the
+   end of the file, so a picture named wrongly has to be refused rather than
+   turned into noise.
+2. **A JPEG that stops being one halfway through.** Sixty-four bytes of the
+   compressed data replaced - the shape of a truncated download or a bad
+   block. It may refuse or it may produce something ugly; what it must not do
+   is take the process with it, and that is the check.
+
+The fixture is a committed file rather than a generated one, deliberately. A
+decoder's regression test wants bytes that never move: a fixture regenerated
+by the build could start failing because the *encoder* on the build machine
+changed, which is a day spent on the wrong question.

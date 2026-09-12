@@ -69,7 +69,16 @@ end
 local all = everything()
 local shown = {}
 
-local win, err = ui.window{ title = "Open", w = W, h = H }
+--
+-- In the middle of the screen, every time.
+--
+-- It opened wherever the cascade put it, which for a window summoned by a
+-- key from anywhere is exactly wrong: a launcher pad has no place of its
+-- own to be remembered, so "where it was last time" is noise, and the middle
+-- is the one position that is the same whatever else is open. Spotlight has
+-- always done this and so does every launcher since.
+--
+local win, err = ui.window{ title = "Open", w = W, h = H, centre = true }
 
 if not win then
   print("launchpad: " .. tostring(err))
@@ -150,11 +159,77 @@ local field = ui.field{
   on_enter  = launch,
 }
 
+--------------------------------------------------------------------------
+-- The arrows belong to the list, even though the field has the focus.
 --
--- Return on the list starts things too, so a person who arrowed down does
--- not have to go back to the field to commit.
+-- A launcher pad is one control with two halves - you type in the top and
+-- you choose in the bottom - and having to press Tab between them would be
+-- the widget kit's structure showing through to a person. `ui.field`
+-- returns false for a key it has no use for, and an unclaimed key falls back
+-- to the window, so this is where an arrow lands while the field is focused.
 --
-list.on_select = function() end
+-- Clamped rather than wrapped. A list of results is short and ordered by how
+-- well it matched, so running off the bottom and reappearing at the top
+-- moves you further from what you wanted, not nearer.
+--------------------------------------------------------------------------
+function win:on_key(c)
+  if c == -1 or c == -2 then
+    local to = (list.selected or 1) + (c == -1 and -1 or 1)
+
+    if #list.items > 0 then
+      list.selected = math.max(1, math.min(#list.items, to))
+    end
+
+    return true
+  end
+
+  return false
+end
+
+--------------------------------------------------------------------------
+-- A click looks, two clicks choose.
+--
+-- `ui.list` calls `on_select` when a click is released on the row it was
+-- pressed on, which is a *single* click - and a single click in a list of
+-- results is how you look at one. Two in quick succession is how you mean
+-- it, which is what every file list since the Macintosh has said and what a
+-- person expects here.
+--
+-- The span is read from `/dev/cpu` rather than assumed, because `sys.ticks`
+-- is the counter and the two clocks differ by a quarter of a million on one
+-- board and four million on another. Half a second is slow enough for a
+-- hand that is not in a hurry and far short of two deliberate clicks.
+--------------------------------------------------------------------------
+local CLICK_SPAN = ((fs.read("/dev/cpu") or {}).counter_hz or 62500000) // 2
+
+local clicked_row, clicked_at = nil, 0
+
+list.on_select = function(_, _, n)
+  local now = sys.ticks()
+
+  if n == clicked_row and (now - clicked_at) < CLICK_SPAN then
+    launch()
+    return
+  end
+
+  clicked_row, clicked_at = n, now
+end
+
+--
+-- Return, for somebody who arrowed into the list itself with Tab. It starts
+-- the selection outright rather than going through `on_select`, which above
+-- means "one click" and would need two.
+--
+local list_key = list.key
+
+list.key = function(self, c)
+  if c == 10 or c == 13 then
+    launch()
+    return true
+  end
+
+  return list_key(self, c)
+end
 
 win:add(ui.label{ x = 12, y = 44, w = W - 24, text = "" })
 win:add(field)

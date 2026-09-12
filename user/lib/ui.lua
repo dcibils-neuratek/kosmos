@@ -2935,6 +2935,24 @@ function ui.window(spec)
     -- which takes room away from the screen rather than sitting over it.
     strip = spec.strip or nil,
 
+    --
+    -- In the middle of the screen, and asked for rather than computed here.
+    --
+    -- An application does not know how big the screen is when it opens - it
+    -- has no framebuffer and no business having one - so "centre me" is the
+    -- only form this request can take. The window manager is the process
+    -- that knows both numbers, and it is also the one that knows a strip
+    -- along the top has taken a piece of the screen away.
+    --
+    -- It also turns off the cascade. A window that asked for the middle
+    -- means the middle: stepping it down and across to avoid whatever is
+    -- already there would put it somewhere it did not ask for, which for
+    -- the launcher pad is the entire bug - it appeared in a different place
+    -- every time because it was being placed *around* the windows already
+    -- open.
+    --
+    centre = spec.centre or nil,
+
     -- Whether something dragged from another window may be let go over
     -- this one. It decides whether the desktop outlines this window while
     -- a drag is overhead - see `wm.lua` - so saying yes and then ignoring

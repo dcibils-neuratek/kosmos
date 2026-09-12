@@ -2128,6 +2128,121 @@ def check_3d(guest):
     return 3
 
 
+# `theme.console`, 0x0b0b0b. Nothing else on this desktop is that colour, so
+# the bounding box of it is the terminal's character grid - which is the one
+# thing that has to change size when the window does.
+CONSOLE = (0x0b, 0x0b, 0x0b)
+
+
+def _console_box(width, height, px):
+    """Where the terminal's grid is, and how big. None if there is not one."""
+    x0, y0, x1, y1 = width, height, -1, -1
+
+    for y in range(height):
+        row = y * width
+
+        for x in range(width):
+            at = (row + x) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == CONSOLE:
+                if x < x0: x0 = x
+                if x > x1: x1 = x
+                if y < y0: y0 = y
+                if y > y1: y1 = y
+
+    if x1 < 0:
+        return None
+
+    return x0, y0, x1, y1
+
+
+def check_repaints(guest):
+    """A window with nothing to do draws nothing.
+
+    The window manager narrates a *finished* frame under `wm trace` - one
+    line when an application sends the last batch of a repaint - and this
+    counts them with the desktop sitting still. The answer has to be none.
+
+    **This is here because the bug it catches is invisible every other way.**
+    The Terminal repainted itself once a second, for ever, with nothing to
+    redraw: a 0x0 view called `pump` whose `tick` had been emptied when its
+    work moved into `on_frame`, and `window:add` treats *having* a `tick` as
+    "this changes on its own, like a clock". A repaint costs far too little
+    to move the processor meter the idle phase reads, and it puts the same
+    pixels back, so the screen cannot show it either.
+
+    What it did show was a flicker. The window manager writes a window's
+    surface on every batch and holds the damage to the last, so a frame is
+    never composited half-drawn by its own damage - but the surface is live
+    memory, and anything else damaging the screen mid-frame scans out a
+    terminal that has been cleared and not yet re-texted. The Terminal sends
+    the largest frame on the machine, so it is the widest opening there is.
+
+    Measured rather than reasoned about, and the measurement was checked
+    against the bug: with the dead hook back it reads about one frame a
+    second, and without it, none.
+    """
+    guest.type("wm trace,terminal")
+    started(guest)
+
+    # The banner, and whatever the desktop does when it opens. Frames during
+    # this are the point of the window rather than a fault in it.
+    time.sleep(8)
+    guest._read_available()
+    mark = len(guest.seen)
+
+    IDLE = 8
+    time.sleep(IDLE)
+    guest._read_available()
+
+    drew = re.findall(r"wm: draw (\S+)", guest.seen[mark:])
+
+    counts = {}
+
+    for name in drew:
+        counts[name] = counts.get(name, 0) + 1
+
+    #
+    # The clock is allowed one. The Deskbar redraws when the minute changes,
+    # which is a real change and may fall inside the window this watches.
+    # Anything repeating is not that.
+    #
+    busy = {name: n for name, n in counts.items() if n > 1}
+
+    if busy:
+        worst = ", ".join(f"{name} drew {n} times"
+                          for name, n in sorted(busy.items(),
+                                                key=lambda kv: -kv[1]))
+
+        raise Failure(
+            f"in {IDLE} seconds of an idle desktop, {worst}. A window that "
+            "repaints when nothing has happened is sending its whole "
+            "contents to the compositor for nothing - and because the "
+            "surface is written batch by batch while only the damage waits, "
+            "it is also the thing that makes a window flicker while it sits "
+            "still. Look for a widget with a `tick` that does nothing: the "
+            "kit cannot tell an empty hook from a full one."
+        )
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(b"\x03")
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back.")
+
+    return 1
+
+
 def check_terminal(guest):
     """A program runs inside a window, and prints into it.
 
@@ -2212,6 +2327,81 @@ def check_terminal(guest):
            "machine's console instead of the one it was handed.",
            seconds=25)
 
+    #
+    # **And the grid is the window's size, not the size it opened at.**
+    #
+    # The view holding the characters was built with the width and height the
+    # window opens with, and the kit only resizes a child that *said* it
+    # follows an edge - the default is left and top, "something that sits
+    # where it was put". So a resized Terminal kept the grid it started with
+    # and showed the window's own colour around it, while `draw` went on
+    # correctly dividing a width that never changed by the character cell.
+    #
+    # Measured by the grid rather than by the window frame, because the frame
+    # is the window manager's and would move whether or not the application
+    # noticed. What has to grow is the black.
+    #
+    width, height, px = parse_ppm(guest.screendump())
+    before = _console_box(width, height, px)
+
+    if before is None:
+        raise Failure(
+            "there is no console-coloured area on the screen, so the "
+            "terminal either did not open or is not drawing its grid."
+        )
+
+    bx0, by0, bx1, by1 = before
+
+    # The window's own bottom-right corner, from the view's insets: the view
+    # sits 8 in from the left and top and leaves 8 and 12 on the other sides.
+    grip_x, grip_y = bx1 + 8 - 3, by1 + 12 - 3
+
+    # Only into the room that exists. This screen is not large and the
+    # terminal already fills most of it, so a drag past the edge would be a
+    # test that fails on a smaller display for a reason that is not the bug.
+    room_x = (width - 6) - (grip_x + 3)
+    room_y = (height - 6) - (grip_y + 3)
+
+    if room_x < 60 or room_y < 40:
+        raise Failure(
+            f"no room to resize the terminal: {room_x}x{room_y} left on a "
+            f"{width}x{height} screen."
+        )
+
+    guest.mouse_to(*_to_tablet(grip_x, grip_y, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+
+    # In steps, the way a hand does it. One jump can outrun a drag that is
+    # tracking the pointer rather than teleporting with it.
+    for i in range(1, 9):
+        guest.mouse_to(*_to_tablet(grip_x + room_x * i // 8,
+                                   grip_y + room_y * i // 8,
+                                   width, height))
+        time.sleep(0.12)
+
+    guest.mouse_button(False)
+
+    def grew(w_, h_, px_):
+        now = _console_box(w_, h_, px_)
+
+        if now is None:
+            return None
+
+        wider = (now[2] - now[0]) - (bx1 - bx0)
+        taller = (now[3] - now[1]) - (by1 - by0)
+
+        return True if wider > 60 and taller > 40 else None
+
+    settle(guest, grew,
+           "the terminal's window was made bigger and its character grid "
+           "stayed the size it opened at, which is a view that never said "
+           "it follows the right and bottom edges. The window frame moves "
+           "either way, so this looks like a border of window colour around "
+           "a console that will not grow.",
+           seconds=20)
+
     mark = len(guest.seen)
     guest.proc.stdin.write(b"\x03")
     guest.proc.stdin.flush()
@@ -2228,7 +2418,7 @@ def check_terminal(guest):
     else:
         raise Failure("Control-C did not get the screen back from the terminal.")
 
-    return 1
+    return 2
 
 
 # The focus ring and the selection, 0x58a6ff. `ui.editor` draws a selected
@@ -4004,6 +4194,7 @@ def main():
         direct_checks = phase("direct", check_direct)
         three_d_checks = phase("3d", check_3d)
         terminal_checks = phase("terminal", check_terminal)
+        repaint_checks = phase("repaints", check_repaints)
         deskbar_checks = phase("deskbar", check_deskbar)
         desktop_checks = phase("desktop", check_desktop)
         clip_checks = phase("clipboard", check_clipboard)
@@ -4032,7 +4223,8 @@ def main():
              + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
-             + three_d_checks + registry_checks + context_checks)
+             + three_d_checks + registry_checks + context_checks
+             + repaint_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -4068,7 +4260,10 @@ def main():
           f"{cores_checks} on a processor meter moving when the machine is "
           f"given work, "
           f"{idle_checks} on an idle desktop being idle, "
-          f"{terminal_checks} on a program printing into a terminal window, "
+          f"{terminal_checks} on a terminal window (a program printing into "
+          f"one, and its character grid following the window when it is "
+          f"resized), "
+          f"{repaint_checks} on an idle window drawing nothing at all, "
           f"{direct_checks} on an application drawing its own pixels, "
           f"{three_d_checks} on a software-rendered solid).")
     return 0

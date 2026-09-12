@@ -147,7 +147,23 @@ local function emit(text, colour)
   end
 end
 
-local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 20 }
+--
+-- **Sized by the window, not by the window it was opened at.**
+--
+-- `w` and `h` here are only where it starts. `follow` is what keeps it
+-- right: the kit records a child's distance to each of its parent's edges
+-- when it is added and reapplies them on a resize, so a view pinned to all
+-- four grows with the window. The default is left and top - "something that
+-- sits where it was put" - which is why a resized Terminal kept the grid of
+-- the window it opened at, with the window's own colour around it.
+--
+-- Nothing else changes: `draw` already divides `self.w` and `self.h` by the
+-- monospace cell every pass, so the rows and the columns follow from the
+-- view being the right size. The bug was never in the arithmetic.
+--
+local view = ui.view{ x = 8, y = 8, w = W - 16, h = H - 20,
+                      follow = { left = true, right = true,
+                                 top = true, bottom = true } }
 
 function view:draw(g)
   g:fill(0, 0, self.w, self.h, "console")
@@ -381,6 +397,28 @@ local BURST_WAIT = 1        -- scheduler ticks: how long to wait mid-burst
 -- same read `tile` does, with the same fallback.
 local BURST_SPAN = ((fs.read("/dev/cpu") or {}).counter_hz or 62500000) // 60
 
+--------------------------------------------------------------------------
+-- How long this window keeps waking quickly after somebody wrote to it.
+--
+-- `poll_wait_ticks` used to be 1 from open to close, so a Terminal sitting
+-- at its prompt woke sixty times a second to serve children it did not have.
+-- The reason it exists is real - a program's `write` blocks in `sys.call`
+-- until this loop answers it, and `ls` came out one line a second before it
+-- was added - but that reason only holds while something is running in here.
+--
+-- **Typing never depended on it.** A held poll is answered the moment the
+-- window manager has an event for the window, so this bounds how long a
+-- *program* waits to be answered and nothing else. An idle window falls back
+-- to the kit's quarter of a second and a keystroke still arrives at once.
+--
+-- Not `busy` alone, which is only the child this window started: a program
+-- can leave something of its own behind, and whatever it left inherited this
+-- window as its console. So the rule is "somebody wrote here recently", with
+-- `busy` covering the child that has not printed yet.
+--------------------------------------------------------------------------
+local AWAKE_SPAN = BURST_SPAN * 30      -- half a second, in counter units
+local awake_until = 0
+
 local function serve_console()
   local changed = false
   local until_ = nil
@@ -413,6 +451,7 @@ local function serve_console()
       -- passed on: `emit` compares colours to decide whether to join two
       -- runs, and a run drawn in colour 0 would be invisible.
       emit(req.text, (req.colour ~= 0) and req.colour or nil)
+      awake_until = sys.ticks() + AWAKE_SPAN
       changed = true
       reply = {}
 
@@ -443,15 +482,11 @@ end
 --------------------------------------------------------------------------
 
 --
--- This window answers its children, so it cannot sleep a second between
--- passes: a program's `write` blocks until this loop gets to it, and `ls`
--- came out one line a second because of exactly that.
+-- Asleep until something needs answering; `on_frame` raises it. The ceiling
+-- this sets is on how long a *program* waits to be answered, and never on
+-- how long a keystroke takes to arrive.
 --
--- One scheduler tick. Input is still interrupt-driven and arrives sooner
--- than that; this is only the ceiling on how long a program waits to be
--- answered.
---
-win.poll_wait_ticks = 1
+win.poll_wait_ticks = nil
 
 win:add(view)
 
@@ -529,22 +564,29 @@ function win:on_key(c)
   return false
 end
 
+--------------------------------------------------------------------------
+-- There is no ticking widget in this window, and that is deliberate.
 --
--- The child's output, and noticing when it has finished.
+-- There was one: `pump`, a 0x0 view that drew nothing, whose `tick` had been
+-- emptied when the work moved into `on_frame` - "every pass rather than on
+-- the tick", which was the right move. The empty function was left behind.
 --
-local pump = ui.view{ x = 0, y = 0, w = 0, h = 0 }
-
+-- **An empty function is not nothing to the kit.** `window:add` tests
+-- whether a child *has* a `tick` at all, and one that does means "this
+-- changes on its own, like a clock" - so the window was given a `tick_every`
+-- of one second and the run loop marked it dirty on that clock whether or
+-- not anything had happened. This window therefore re-sent its whole
+-- contents - the banner, every run of every line - to the compositor once a
+-- second, for ever, with nothing to say.
 --
--- Noticing that the child has finished.
+-- That is also the largest frame any window here sends, so it is the widest
+-- window for the compositor to scan out a surface that has been cleared and
+-- not yet re-texted. Which is what it looked like from the outside: a
+-- terminal that flickered while sitting perfectly still.
 --
--- Every pass rather than on the tick, and in `on_frame` rather than here,
--- because a second of "..." after a program that printed one line and left
--- is a second of looking like something is wrong.
---
-function pump:tick()
-end
-
-win:add(pump)
+-- The lesson belongs to the kit rather than to this file: a hook that is
+-- emptied should be deleted, because having the hook is the signal.
+--------------------------------------------------------------------------
 
 -- Serving the console cannot wait for the tick: a program that prints a
 -- screenful would arrive one line a second. It happens every pass, which is
@@ -563,6 +605,9 @@ function win:on_frame()
     busy = nil
     changed = true
   end
+
+  -- Awake while somebody might be blocked on an answer, asleep otherwise.
+  win.poll_wait_ticks = (busy or sys.ticks() < awake_until) and 1 or nil
 
   return changed
 end

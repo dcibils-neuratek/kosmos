@@ -68,6 +68,7 @@ local R_OWNED_CLIENT = 43
 local R_NAMES_MAIN   = 44
 local R_NAMES_HOLDER = 45
 local R_NAMES_ASKER  = 46
+local R_JPEG         = 47
 
 -- The /app registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -1323,6 +1324,104 @@ if role == R_PDF_SCAN then
   end
 
   sys.exit(0)
+end
+
+if role == R_JPEG then
+  --------------------------------------------------------------------------
+  -- A JPEG decodes, and a file that is not one says so.
+  --
+  -- `assets/images/test-quads.jpg` is four solid 64x64 blocks. Solid,
+  -- because JPEG is lossy and there is no byte-for-byte answer to check
+  -- against: what a correct decode guarantees is that the middle of a flat
+  -- area comes back the colour it went in as, within the error the quantiser
+  -- is allowed. The edges between the blocks are where a lossy codec rings,
+  -- so nothing here looks at them.
+  --
+  -- What this is really guarding is the *build* rather than stb_image. The
+  -- decoder is somebody else's and well exercised; what is ours is
+  -- `STBI_ONLY_JPEG`, `STBI_NO_THREAD_LOCALS` and `STBI_NO_STDIO` - three
+  -- switches that decide whether this links at all and whether it links to
+  -- something that works - plus the conversion in `jpeg.c` from stb's
+  -- RGBA-in-memory-order to this system's 0xAARRGGBB word.
+  --------------------------------------------------------------------------
+  local bytes = sys.asset("test-quads.jpg")
+  check(type(bytes) == "string", "the image carries no test-quads.jpg")
+
+  local s = gfx.jpeg(bytes)
+  check(s ~= nil, "a valid JPEG did not decode")
+
+  local w, h = s:size()
+  check(w == 128 and h == 128,
+        "the JPEG decoded to " .. w .. "x" .. h .. ", not 128x128")
+
+  -- A surface, with this system's padded pitch - which is the half of the
+  -- conversion that has nothing to do with JPEG and everything to do with
+  -- `gfx.md` 19.3. A decoder that wrote rows at width * 4 would pass every
+  -- colour check below and draw a picture that leans.
+  check(s:pitch() >= w * 4, "the decoded surface has no pitch")
+
+  --
+  -- The four centres, and the tolerance is the codec's rather than a number
+  -- chosen until it passed: quality-80 chroma subsampling moves a flat
+  -- colour by a few units, and 16 is comfortably inside "the same colour"
+  -- and far outside "a different quadrant".
+  --
+  local function near(got, want, what)
+    local gr, gg, gb = (got >> 16) & 0xff, (got >> 8) & 0xff, got & 0xff
+    local wr, wg, wb = (want >> 16) & 0xff, (want >> 8) & 0xff, want & 0xff
+
+    local off = math.max(math.abs(gr - wr),
+                         math.abs(gg - wg),
+                         math.abs(gb - wb))
+
+    check((got >> 24) & 0xff == 0xff,
+          what .. " came back transparent; JPEG has no alpha and this "
+          .. "should be opaque")
+
+    check(off <= 16,
+          what .. " is " .. string.format("%06x", got & 0xffffff)
+          .. ", wanted about " .. string.format("%06x", want & 0xffffff))
+  end
+
+  near(s:get(32, 32),  0xffd02828, "the top-left quadrant")
+  near(s:get(96, 32),  0xff28b43c, "the top-right quadrant")
+  near(s:get(32, 96),  0xff3246c8, "the bottom-left quadrant")
+  near(s:get(96, 96),  0xfff0f0f0, "the bottom-right quadrant")
+
+  --
+  -- The negative control, and it is two of them.
+  --
+  -- A decoder that answered anything at all for these would make every check
+  -- above meaningless - they would pass on a function that returned a
+  -- 128x128 surface of the right colours whatever it was handed.
+  --
+  -- The PNG first, because it is the confusion that can actually happen: the
+  -- window manager picks a decoder from the name on the end of the file, and
+  -- a picture named wrongly must fail rather than produce noise.
+  --
+  local pattern = sys.asset("test-pattern.png")
+  check(type(pattern) == "string", "the image carries no test-pattern.png")
+
+  local ok = pcall(gfx.jpeg, pattern)
+  check(not ok, "a PNG decoded as a JPEG, which means nothing was checked")
+
+  -- And a JPEG that *is* one until the middle of its compressed data. The
+  -- header decodes, the dimensions are right, and the entropy-coded bytes
+  -- are rubbish - which is the shape of a truncated download or a bad block
+  -- on a disk, and the one a decoder is most likely to walk off the end of.
+  local half = #bytes // 2
+  local broken = bytes:sub(1, half)
+                 .. string.rep("\xa5", 64)
+                 .. bytes:sub(half + 65)
+
+  -- It may decode to something ugly or it may refuse; what it must not do is
+  -- take the process with it. Either answer passes, a fault does not, and
+  -- the fault is exactly what this is here to catch.
+  local lived = pcall(gfx.jpeg, broken)
+  check(lived == true or lived == false,
+        "corrupt compressed data did not come back either way")
+
+  return
 end
 
 if role == R_LICENCE then
