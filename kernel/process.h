@@ -317,6 +317,26 @@ struct process {
     bool              owns_procctl;
 
     /*
+     * **May claim a piece of hardware, and may ask where memory physically
+     * is.**
+     *
+     * The root of the authority `docs/drivers.md` describes, and it is a
+     * boolean for the one reason a boolean is ever right here: somebody has
+     * to be able to mint the first capability, and in this system that is
+     * init. What it is *not* is how a driver gets its device - a driver is
+     * handed a capability naming one register range and cannot express any
+     * other, which is the whole point of moving drivers out of the kernel.
+     *
+     * So this is held by init and by whichever server it gives the job of
+     * enumerating hardware. A USB driver never has it.
+     *
+     * It is the strongest grant in the system, above `owns_disk`: every
+     * byte of physical memory, and every device on the machine. That is
+     * what makes a driver's own capability worth having.
+     */
+    bool              owns_devices;
+
+    /*
      * Pages this process asked for with SYS_MAP: where the next one goes,
      * and how many it holds. The count is both the budget and what
      * `release_memory` walks to give them back - a process that exits
@@ -438,6 +458,7 @@ void process_wake_net(void);
  * a flag and nothing to map. Always succeeds; there is no device to be
  * absent. */
 void process_grant_procctl(struct process *p);
+void process_grant_devices(struct process *p);
 
 
 /* Makes it runnable. Nothing may touch its address space afterwards without

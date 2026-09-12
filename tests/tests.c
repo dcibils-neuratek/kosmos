@@ -3379,7 +3379,7 @@ static bool test_memobj_holds_a_pak(void)
 {
     enum { PAK_PAGES = 4563 };          /* 18,689,235 bytes, rounded up */
     size_t before = pmm_free_pages();
-    struct memobj *m = memobj_create(PAK_PAGES);
+    struct memobj *m = memobj_create(PAK_PAGES, false);
     bool reached;
 
     if (m == NULL) {
@@ -3393,7 +3393,55 @@ static bool test_memobj_holds_a_pak(void)
 
     return reached
         && pmm_free_pages() == before
-        && memobj_create(MEMOBJ_PAGES_MAX + 1) == NULL;
+        && memobj_create(MEMOBJ_PAGES_MAX + 1, false) == NULL;
+}
+
+/*
+ * A region a device could walk, and the refusal that protects one.
+ *
+ * A USB controller reads its command ring itself, in physical addresses,
+ * with no page table in the way - so those pages have to be one run or the
+ * hardware reads whatever the allocator gave somebody else. `MEM_CONTIGUOUS`
+ * asks for that, and `memobj_phys` reports where it is.
+ *
+ * **The half that matters is the refusal.** An ordinary region is scattered
+ * on purpose - that is what let a 4563-page pak be allocated on a fragmented
+ * machine at all - and answering with its first page would be this kernel
+ * handing hardware a pointer to three pages the caller owns and then
+ * somebody's heap. So `memobj_phys` says 0 for one, and that is asserted
+ * here rather than assumed.
+ */
+static bool test_a_region_can_be_one_physical_run(void)
+{
+    enum { RING_PAGES = 4 };
+    size_t before = pmm_free_pages();
+    struct memobj *run = memobj_create(RING_PAGES, true);
+    struct memobj *scattered = memobj_create(RING_PAGES, false);
+    uintptr_t base;
+    bool consecutive = true;
+    size_t i;
+
+    if (run == NULL || scattered == NULL) {
+        return false;
+    }
+
+    base = memobj_phys(run);
+
+    /* Every page where the hardware would expect to find it. */
+    for (i = 0; i < RING_PAGES; i++) {
+        if ((uintptr_t)memobj_page(run, i) != base + i * PAGE_SIZE) {
+            consecutive = false;
+        }
+    }
+
+    memobj_unref(run);
+    memobj_unref(scattered);
+
+    return base != 0
+        && (base & (PAGE_SIZE - 1)) == 0
+        && consecutive
+        && memobj_phys(scattered) == 0      /* the refusal */
+        && pmm_free_pages() == before;      /* and both given back whole */
 }
 
 static bool test_shared_memory_is_freed_once(void)
@@ -5841,6 +5889,7 @@ static const struct test tests[] = {
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
+    { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },

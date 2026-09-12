@@ -614,6 +614,18 @@ void process_grant_procctl(struct process *p)
 }
 
 /*
+ * Hardware. See `SPAWN_DEVICES` for what this is and why a driver does not
+ * get it - it is the authority to *mint* a device capability, not the
+ * capability itself.
+ */
+void process_grant_devices(struct process *p)
+{
+    if (p != NULL) {
+        p->owns_devices = true;
+    }
+}
+
+/*
  * The right to play sound.
  *
  * Nothing is mapped and nothing is reserved: unlike the screen there are no

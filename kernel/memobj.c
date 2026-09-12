@@ -25,6 +25,7 @@ void memobj_init(void)
         objects[i].refs = 0;
         objects[i].pages = 0;
         objects[i].indexes = 0;
+        objects[i].contiguous = false;
     }
 }
 
@@ -57,6 +58,7 @@ static void unwind(struct memobj *m, size_t built)
 
     m->indexes = 0;
     m->pages = 0;
+    m->contiguous = false;
     m->in_use = false;
 }
 
@@ -76,7 +78,7 @@ static void unwind(struct memobj *m, size_t built)
  */
 static struct spinlock objects_lock = SPINLOCK("regions");
 
-struct memobj *memobj_create(size_t pages)
+struct memobj *memobj_create(size_t pages, bool contiguous)
 {
     unsigned i;
 
@@ -114,6 +116,7 @@ struct memobj *memobj_create(size_t pages)
 
         m->pages = pages;
         m->indexes = 0;
+        m->contiguous = false;
 
         for (k = 0; k < indexes; k++) {
             m->index[k] = pmm_alloc_page();
@@ -127,7 +130,50 @@ struct memobj *memobj_create(size_t pages)
         }
 
         /*
-         * Then the pages themselves, one at a time and in no particular
+         * **Unless the caller asked for one run, which is what a device
+         * needs and nothing else does.**
+         *
+         * A USB controller walks its command ring itself, in physical
+         * addresses, with no page table in the way - so those pages have to
+         * be consecutive in physical memory or the hardware reads somebody
+         * else's. That is the one requirement the scattered arrangement
+         * above cannot meet, and it is why this flag exists rather than a
+         * second kind of object: a DMA buffer is the same thing - pages a
+         * process maps - with one constraint on where they come from.
+         *
+         * The cost is exactly the failure the scattered version was
+         * introduced to remove: a run can be unavailable on a fragmented
+         * machine while the pages exist. That is acceptable *here* and was
+         * not acceptable there, and the difference is size - a ring is a
+         * handful of pages where a window's double buffer was nine hundred.
+         *
+         * The pages still go in the index one by one, so `memobj_page` and
+         * everything that maps or frees a region is untouched. The run is
+         * remembered only so its physical address can be reported.
+         */
+        if (contiguous) {
+            char *run = pmm_alloc_contiguous(pages);
+
+            if (run == NULL) {
+                unwind(m, 0);
+                return NULL;
+            }
+
+            memset(run, 0, pages * PAGE_SIZE);
+
+            for (n = 0; n < pages; n++) {
+                m->index[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] =
+                    run + n * PAGE_SIZE;
+            }
+
+            m->contiguous = true;
+            m->refs = 1;
+
+            return m;
+        }
+
+        /*
+         * Otherwise the pages themselves, one at a time and in no particular
          * place. This is the change: a region no longer needs a run, so a
          * fragmented machine can still satisfy a large one.
          *
@@ -242,4 +288,21 @@ unsigned memobj_in_use(void)
 unsigned memobj_total(void)
 {
     return MEMOBJ_MAX;
+}
+
+uintptr_t memobj_phys(const struct memobj *m)
+{
+    /*
+     * Refused for a scattered region rather than answering with its first
+     * page, and that is the whole point of recording `contiguous` instead
+     * of inferring it. A driver handed the first page of a region whose
+     * pages are elsewhere would program its hardware to walk off the end of
+     * it into whatever the allocator gave somebody else - and the hardware
+     * does not consult a page table on the way.
+     */
+    if (m == NULL || !m->in_use || !m->contiguous || m->pages == 0) {
+        return 0;
+    }
+
+    return (uintptr_t)memobj_page(m, 0);
 }

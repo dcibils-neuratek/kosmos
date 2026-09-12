@@ -278,6 +278,12 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
         return SYS_ERR_DENIED;
     }
 
+    /* The strongest of them, so it is refused the same way: a parent that
+     * was not given hardware cannot give it away. */
+    if ((flags & SPAWN_DEVICES) != 0 && !p->owns_devices) {
+        return SYS_ERR_DENIED;
+    }
+
     if ((flags & SPAWN_NET) != 0 && !p->owns_net) {
         return SYS_ERR_DENIED;      /* cannot pass on what it has not got */
     }
@@ -316,6 +322,10 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
     if ((flags & SPAWN_AUDIO) != 0 && !process_grant_audio(child)) {
         /* Not fatal: a machine with no sound device still runs a program
          * that would have liked some, and it finds out by being silent. */
+    }
+
+    if ((flags & SPAWN_DEVICES) != 0) {
+        process_grant_devices(child);
     }
 
     if ((flags & SPAWN_NET) != 0 && !process_grant_net(child)) {
@@ -1186,7 +1196,21 @@ void syscall_dispatch(struct syscall_frame *sc)
          * into it, and a create that also mapped would put pages in the
          * address space of a process that only wanted to hand them on.
          */
-        struct memobj *m = memobj_create((size_t)sc->arg[0]);
+        /*
+         * **`arg[1]` is flags, and bit 0 asks for one physical run.**
+         *
+         * Added as a second argument rather than a second syscall because
+         * what differs is a constraint on the allocation, not the nature of
+         * the thing: a DMA buffer is pages a process maps, exactly like
+         * every other region, and giving it its own object would duplicate
+         * the mapping, unmapping and freeing that already work.
+         *
+         * Callers that pass nothing get zero and the old behaviour, which
+         * is what every existing one wants - a window's double buffer has
+         * no business asking for a run and would sometimes fail if it did.
+         */
+        struct memobj *m = memobj_create((size_t)sc->arg[0],
+                                         (sc->arg[1] & MEM_CONTIGUOUS) != 0);
 
         if (m == NULL) {
             result = SYS_ERR_NO_ROOM;
@@ -1278,6 +1302,47 @@ void syscall_dispatch(struct syscall_frame *sc)
                                               (cap_t)sc->arg[0]);
 
         result = (m == NULL) ? SYS_ERR_DENIED : (long)m->pages;
+        break;
+    }
+
+    case SYS_MEM_PHYS: {
+        /*
+         * Where a region begins in physical memory - the one number a
+         * driver cannot work out and cannot do without, since hardware is
+         * told where its rings are in the bus's addresses and a process
+         * only ever sees its own.
+         *
+         * **Gated on device authority, and that is not ceremony.** A
+         * process that can learn where things physically live has a head
+         * start on reaching them: it turns "somewhere in 684 MB" into an
+         * address, which is most of the work of using any of the ways a
+         * kernel can be persuaded to touch memory on somebody's behalf.
+         * Nothing here is hostile yet and this is the cheapest moment to
+         * decide that it will not be.
+         *
+         * Refused for a scattered region by `memobj_phys` rather than here,
+         * because that is where the reason lives.
+         */
+        struct memobj *m;
+
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        m = ipc_resolve_memory(thread_current(), (cap_t)sc->arg[0]);
+
+        if (m == NULL) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        result = (long)memobj_phys(m);
+
+        if (result == 0) {
+            result = SYS_ERR_DENIED;    /* not one run; see memobj_phys */
+        }
+
         break;
     }
 

@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "page.h"           /* PAGE_SIZE: an index page holds 512 pointers */
 
@@ -117,7 +118,30 @@ struct memobj {
     void   **index[MEMOBJ_INDEXES];
     size_t   indexes;               /* how many of the above are in use */
     size_t   pages;
+
+    /*
+     * Whether those pages are one physical run, which only a caller that
+     * asked for it gets.
+     *
+     * A device walks memory itself, in physical addresses, with no page
+     * table in the way - so a USB controller's command ring has to be
+     * consecutive or the hardware reads somebody else's pages. Recorded
+     * rather than inferred, because `memobj_phys` must refuse a region that
+     * merely *happens* to have come out contiguous: reporting a base for a
+     * scattered region would be a driver handing hardware a pointer to
+     * three pages it owns and the rest of somebody's heap.
+     */
+    bool     contiguous;
 };
+
+/*
+ * Where the region begins in physical memory, or 0 when it is not one run.
+ *
+ * The one number a driver cannot work out for itself and cannot do without:
+ * hardware is told where its rings are in the addresses the *bus* uses, and
+ * a process only ever sees its own virtual ones.
+ */
+uintptr_t memobj_phys(const struct memobj *m);
 
 void memobj_init(void);
 
@@ -125,7 +149,13 @@ void memobj_init(void);
  * A new region of `pages` pages, zeroed, with one reference. NULL when the
  * pool is full or the pages are not there.
  */
-struct memobj *memobj_create(size_t pages);
+/*
+ * `contiguous` costs exactly the failure the scattered arrangement was
+ * introduced to remove - a run can be unavailable on a fragmented machine
+ * while the pages exist - and is worth it only because a ring is a handful
+ * of pages where a window's double buffer was nine hundred.
+ */
+struct memobj *memobj_create(size_t pages, bool contiguous);
 
 /*
  * Page `i` of the region, or NULL if there is no such page.

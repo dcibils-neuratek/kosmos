@@ -441,3 +441,78 @@ region** - the machinery the shared surfaces already use. One IPC per
 
 It gets built when fonts come from the disk, because that is when the
 security argument stops being hypothetical.
+
+## 19.14 The vector unit, and why the kernel's ban does not reach here
+
+**Compositing is 84.7% of a busy pass** - `frames` says so - and compositing
+is one loop: source-over, a pixel at a time, in `l_blend`.
+
+**The kernel may not touch an FP or SIMD register.** `-mgeneral-regs-only`
+turns that from a promise into a compile error, and it is load-bearing: it
+is what makes lazy FP save possible, because a context switch disarms the
+registers rather than saving them and only a thread that *uses* them ever
+faults. Every kernel thread is in the second group precisely because of the
+flag, and it is worth a measured 29.9% of a switch and 16.2% of an IPC round
+trip.
+
+**`gfx.c` is not the kernel.** It is an EL0 process, so it may use the vector
+unit and pays the one fault per time slice that `arch/aarch64/fp.c` already
+accounts for. A blitter is exactly the thread that scheme was built to
+charge honestly: it uses FP, so it pays for FP, and nothing else does.
+
+### What was measured, and why it was measured off the machine
+
+**QEMU cannot answer this question.** Under TCG every vector instruction is
+translated one at a time, so a SIMD version can measure *slower* there while
+being several times faster on hardware - which is the trap `CLAUDE.md` names
+when it says QEMU numbers detect regressions and do not say whether
+something is fast. `make fast` is broken on this Mac, so the loop was lifted
+out and run natively, at 1920x1080, in three shapes:
+
+| | scalar | vector, no short circuit | vector + short circuit |
+|---|---|---|---|
+| opaque (window interiors) | 1200 Mpx/s | 1472 | **9865** |
+| transparent | 2564 | **1546** | 7122 |
+| mixed (text, shadows) | 525 | 1546 | **1293** |
+
+**The middle column is the finding.** Vectorising *without* keeping the
+short circuits is slower for transparent pixels - 1546 against 2564 -
+because removing a branch that almost always wins costs more than the lanes
+save. "Use SIMD" applied naively would have made the common case worse and
+still reported a win on the average.
+
+So `over`'s two fast paths are kept and asked of **four pixels at once**:
+all-opaque becomes a masked copy, all-transparent becomes nothing, and only
+the genuinely mixed pixels do arithmetic. That is why the opaque case is
+eight times quicker rather than one and a bit - a window's interior stops
+being a computation and becomes memory bandwidth.
+
+### One implementation, three instruction sets
+
+GCC's vector types rather than intrinsics:
+
+```c
+typedef uint32_t u32x4 __attribute__((vector_size(16)));
+```
+
+The compiler picks the instructions, so the same source is NEON on the Pi,
+SSE2 on the ThinkPad, and would be AltiVec on a G4. Writing
+`_mm_mullo_epi32` would have bought nothing and cost a second implementation
+to keep in step.
+
+`memcpy` into and out of the vectors rather than a cast, because a surface's
+rows are only guaranteed 4-byte aligned - the pitch is deliberately *not*
+`width * 4`, for the reason 19.3 gives - and a misaligned vector load faults
+on some machines and is merely slow on others. The tail is the scalar loop:
+a row is rarely a multiple of four.
+
+### And it is the same picture
+
+Speed was the reason and correctness is what would have been lost quietly: a
+blend one unit out per channel looks fine in a screenshot and is wrong in
+every window on the machine. So the two were compared exhaustively on the
+host - every source alpha against every global alpha, over a spread of
+colours, **at all four lane positions**, because a fast path correct for
+lane 0 and wrong for lane 3 is exactly the bug this shape invites.
+
+**33,554,432 pixels, zero disagreements.**

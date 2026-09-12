@@ -1095,6 +1095,16 @@ void kmain(void)
         process_grant_console(init);
 
         /*
+         * And hardware, which is the root of the authority
+         * `docs/drivers.md` describes: init can mint a capability naming a
+         * device's registers, and hand exactly that one to the driver that
+         * needs it. Granted here for the same reason the console is - there
+         * is nowhere else it could come from, and authority in this system
+         * flows from parent to child and never sideways.
+         */
+        process_grant_devices(init);
+
+        /*
          * And the screen, for the same reason and with the same rule: a
          * spawn refuses to hand on a device the parent does not hold, so
          * init cannot give the shell a screen it was never given itself.

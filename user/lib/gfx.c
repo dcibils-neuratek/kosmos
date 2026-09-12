@@ -206,6 +206,106 @@ static inline uint32_t over(uint32_t src, uint32_t dst, uint32_t global)
         | (mul255((src      ) & 0xffu, a) + mul255((dst      ) & 0xffu, inv));
 }
 
+/*
+ * **The same thing, four pixels at a time - and the short circuit above is
+ * why it is worth anything.**
+ *
+ * `frames` puts compositing at 84.7% of a busy pass, and compositing is
+ * this loop. The kernel may not touch an FP or SIMD register -
+ * `-mgeneral-regs-only`, which is what makes lazy FP save possible and is
+ * worth 29.9% of a context switch - but **this is not the kernel.** `gfx.c`
+ * is an EL0 process, so it may use the vector unit and pays the one fault
+ * per time slice that `arch/aarch64/fp.c` already accounts for. A blitter
+ * is precisely the thread that scheme was built to charge honestly.
+ *
+ * GCC's own vector types rather than intrinsics, so there is one
+ * implementation rather than an SSE2 one and a NEON one. The compiler picks
+ * the instructions.
+ *
+ * **Measured before writing, on real cores rather than under emulation**,
+ * because QEMU translates every vector instruction one at a time and would
+ * have answered the wrong question. At 1920x1080:
+ *
+ *     opaque       1200 -> 9865 Mpx/s
+ *     transparent  2564 -> 7122
+ *     mixed         525 -> 1293
+ *
+ * And the reading that decided the shape: **vectorising without the short
+ * circuit is *slower* for transparent pixels** - 1546 against 2564 - because
+ * removing a branch that almost always wins costs more than the lanes save.
+ * The fast paths are kept and asked of four pixels at once instead of one,
+ * which is why the opaque case is eight times quicker rather than one and a
+ * bit: a window's interior stops being arithmetic and becomes a masked copy
+ * at memory speed.
+ *
+ * The tail is the scalar loop. A row is rarely a multiple of four and a
+ * branch at the end costs nothing next to what the body saves.
+ */
+typedef uint32_t u32x4 __attribute__((vector_size(16)));
+
+static inline u32x4 mul255v(u32x4 x, u32x4 a)
+{
+    u32x4 t = x * a + 128u;
+    return (t + (t >> 8)) >> 8;
+}
+
+static inline u32x4 over4(u32x4 src, u32x4 dst, u32x4 global)
+{
+    u32x4 a   = mul255v((src >> 24) & 0xffu, global);
+    u32x4 inv = 255u - a;
+
+    u32x4 r = mul255v((src >> 16) & 0xffu, a) + mul255v((dst >> 16) & 0xffu, inv);
+    u32x4 g = mul255v((src >>  8) & 0xffu, a) + mul255v((dst >>  8) & 0xffu, inv);
+    u32x4 b = mul255v((src      ) & 0xffu, a) + mul255v((dst      ) & 0xffu, inv);
+
+    return 0xff000000u | (r << 16) | (g << 8) | b;
+}
+
+/*
+ * One row of source-over. `memcpy` into and out of the vectors rather than a
+ * cast, because a surface's rows are only guaranteed 4-byte aligned - the
+ * pitch is deliberately not width * 4 - and a misaligned vector load is a
+ * fault on some machines and merely slow on others.
+ */
+static void blend_row(uint32_t *dp, const uint32_t *sp, long w,
+                      uint32_t global)
+{
+    u32x4 gv = { global, global, global, global };
+    long i = 0;
+
+    for (; i + 4 <= w; i += 4) {
+        u32x4 s, d;
+
+        memcpy(&s, sp + i, sizeof s);
+
+        /* The two cases `over` short-circuits, asked of four pixels. Only
+         * when the global alpha is opaque, because otherwise the source's
+         * own alpha is not the whole answer. */
+        if (global == 255u) {
+            u32x4 a = s >> 24;
+
+            if (a[0] == 255u && a[1] == 255u && a[2] == 255u && a[3] == 255u) {
+                u32x4 opaque = s | 0xff000000u;
+
+                memcpy(dp + i, &opaque, sizeof opaque);
+                continue;
+            }
+
+            if (a[0] == 0 && a[1] == 0 && a[2] == 0 && a[3] == 0) {
+                continue;               /* nothing of the source shows */
+            }
+        }
+
+        memcpy(&d, dp + i, sizeof d);
+        d = over4(s, d, gv);
+        memcpy(dp + i, &d, sizeof d);
+    }
+
+    for (; i < w; i++) {
+        dp[i] = over(sp[i], dp[i], global);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 
 static int l_new(lua_State *L)
@@ -739,11 +839,7 @@ static int l_blend(lua_State *L)
     for (row = 0; row < h; row++) {
         const uint32_t *sp = row_of(src, (unsigned)(sy + row)) + sx;
         uint32_t *dp = row_of(dst, (unsigned)(dy + row)) + dx;
-        long i;
-
-        for (i = 0; i < w; i++) {
-            dp[i] = over(sp[i], dp[i], (uint32_t)global);
-        }
+        blend_row(dp, sp, w, (uint32_t)global);
     }
 
     return 0;

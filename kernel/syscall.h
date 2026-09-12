@@ -73,6 +73,25 @@
 #define SYS_CAP_DROP   30   /* (cap)                  -> 0 or error         */
 #define SYS_SHARE_UNMAP 31  /* (address, pages)       -> 0 or error         */
 #define SYS_SCHED_INFO 32   /* (&info)                -> 0 or error         */
+
+/*
+ * **What a driver outside the kernel needs, and nothing else does.**
+ *
+ * `docs/drivers.md` is the argument: a USB stack is 1500 to 2500 lines
+ * before enumeration, and `make size` says 2747 remain before the kernel's
+ * smoke alarm - so it cannot live here, and a driver at EL0 needs two
+ * things the kernel has never handed out.
+ *
+ * `SYS_MEM_PHYS` is where a region begins in physical memory, because
+ * hardware is told where its rings are in the bus's addresses. Refused
+ * unless the region was made with `MEM_CONTIGUOUS`, since reporting a base
+ * for scattered pages would point hardware at somebody else's heap.
+ */
+#define SYS_MEM_PHYS   44   /* (cap)                  -> address or error   */
+
+/* Flags for SYS_MEM_CREATE's second argument. Zero is the old behaviour and
+ * what every caller but a driver wants. */
+#define MEM_CONTIGUOUS  1u
 #define SYS_SCHED_SET  33   /* (what, value)          -> 0 or error         */
 
 /*
@@ -195,7 +214,7 @@
 
 /* Whether a capability still names something, asked without using it. */
 #define SYS_CAP_CHECK  43   /* (cap)                  -> 0 or error         */
-#define SYS_MAX         44
+#define SYS_MAX         45
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -260,6 +279,29 @@
  * number anybody can name.
  */
 #define SPAWN_NET      32u
+
+/*
+ * **Hardware itself: every device on the machine, and every physical
+ * address.**
+ *
+ * The strongest grant there is, above the disk - because the disk is every
+ * file and this is every *byte*, including the pages the kernel and every
+ * other process are running out of.
+ *
+ * It exists so that drivers can stop being kernel code. `docs/drivers.md`
+ * has the argument and `make size` has the number: a USB stack does not fit
+ * in what is left of the kernel, and a driver at EL0 needs somewhere to get
+ * its registers from. Somebody has to be able to mint the first capability
+ * and in this system that is init.
+ *
+ * **A driver never holds this.** It is handed a capability naming one
+ * register range, cannot express any other, and that is the entire point -
+ * the USB driver and the sound driver are each unable to say the other's
+ * name. This flag belongs to init and to whichever server it gives the job
+ * of enumerating hardware, and `ps` lists it beside the console and the
+ * screen for the same reason: being able to should be visible.
+ */
+#define SPAWN_DEVICES  64u
 
 
 
