@@ -68,6 +68,10 @@
 
 #include "hal.h"
 #include "hda.h"
+/* For the topology dump below, which is the only thing here that prints and
+ * only prints when the walk has failed. */
+#include "boot.h"
+#include "console.h"
 #include "mmio.h"
 #include "mmu.h"
 #include "pc.h"
@@ -573,19 +577,119 @@ static unsigned connections(unsigned nid, unsigned *out, unsigned max)
     for (i = 0; i < count && n < max; i++) {
         uint32_t word = command(verb8(nid, VERB_GET_CONNECTIONS,
                                            wide ? (i & ~1u) : (i & ~3u)));
+        unsigned entry, id;
+        bool range;
 
         if (word == CODEC_NO_ANSWER) {
             return n;
         }
 
         if (wide) {
-            out[n++] = (word >> ((i & 1u) * 16u)) & 0x7fffu;
+            entry = (word >> ((i & 1u) * 16u)) & 0xffffu;
+            range = (entry & 0x8000u) != 0;
+            id = entry & 0x7fffu;
         } else {
-            out[n++] = (word >> ((i & 3u) * 8u)) & 0x7fu;
+            entry = (word >> ((i & 3u) * 8u)) & 0xffu;
+            range = (entry & 0x80u) != 0;
+            id = entry & 0x7fu;
         }
+
+        /*
+         * **A set high bit means a range, not a node**, and ignoring it was
+         * a real bug rather than a simplification.
+         *
+         * Section 7.1.2: an entry with its top bit set means "every node
+         * from the previous entry up to this one", which is how a codec with
+         * a mixer taking sixteen consecutive inputs describes it in two
+         * words. Masking the bit away turned `{0x02, 0x85}` into
+         * `{0x02, 0x05}` - the two ends kept, everything between them lost.
+         *
+         * QEMU's codec has one input per widget and never writes a range, so
+         * nothing here could have found this. Realtek codecs use them, and
+         * the ThinkPad has a Realtek.
+         */
+        if (range && n > 0) {
+            unsigned from = out[n - 1] + 1;
+
+            while (from <= id && n < max) {
+                out[n++] = from++;
+            }
+
+            continue;
+        }
+
+        out[n++] = id;
     }
 
     return n;
+}
+
+/*
+ * **Everything the codec says about itself, printed once, when the walk has
+ * failed.**
+ *
+ * `find_widgets` below reports "no output path" and that sentence is the
+ * whole diagnosis: it does not say which pins exist, what they are wired to,
+ * or what the board designer said each one is for. On a laptop with no
+ * serial port that is the end of the road - and the machine this exists for
+ * is exactly that.
+ *
+ * So when nothing routes, the codec is asked to describe itself and the
+ * answer goes in the boot log: every widget, its type, its connection list,
+ * and for a pin the configuration default, which is where "this one is the
+ * internal speaker" is written down. It is the same information Linux puts
+ * in `/proc/asound/card0/codec#0`, produced by this driver on the machine in
+ * question.
+ *
+ * Only on failure, so a working machine pays nothing, and this is the same
+ * principle `check_init_image` in `kernel/main.c` follows: when something
+ * cannot be worked out from here, make the machine say what it found.
+ */
+static void describe_widget(unsigned nid, uint32_t caps)
+{
+    static const char *kind[] = {
+        "dac", "adc", "mixer", "selector", "pin",
+        "power", "volume", "beep", "?", "?", "?", "?", "?", "?", "?", "other"
+    };
+
+    unsigned list[16];
+    unsigned n = connections(nid, list, 16);
+    unsigned i;
+
+    boot_fact_begin();
+    kputs("  codec node 0x");
+    kputx(nid, 2);
+    kputs(" is a ");
+    kputs(kind[WIDGET_TYPE(caps)]);
+
+    if (WIDGET_TYPE(caps) == WIDGET_PIN) {
+        uint32_t pin = get_param(nid, PARAM_PIN_CAPS);
+        uint32_t config = command(verb8(nid, VERB_GET_CONFIG_DEFAULT, 0));
+
+        if (pin != CODEC_NO_ANSWER) {
+            kputs((pin & PIN_CAP_OUTPUT) ? ", output" : ", not an output");
+        }
+
+        if (config != CODEC_NO_ANSWER) {
+            /* Bits 31:30 how it is connected, 23:20 what it is, 19:16 where
+             * it is on the box. The numbers are the spec's, section 7.3.3.31,
+             * and are printed rather than named: a table of fifteen device
+             * types is what this is trying to avoid needing. */
+            kputs(", config 0x");
+            kputx(config, 8);
+        }
+    }
+
+    if (n > 0) {
+        kputs(", from");
+
+        for (i = 0; i < n; i++) {
+            kputs(" 0x");
+            kputx(list[i], 2);
+        }
+    }
+
+    boot_fact_end();
 }
 
 /*
@@ -705,9 +809,34 @@ static bool find_widgets(void)
         wstart = (unsigned)((nodes >> 16) & 0xffu);
         wcount = (unsigned)(nodes & 0xffu);
 
+        /*
+         * **Every converter and every usable pin, then pairs - not the
+         * first of each and a hope.**
+         *
+         * This took the first DAC it saw and the first output pin it saw,
+         * wired them together and declared success *without looking at
+         * whether the route had been found*: `route`'s answer was cast to
+         * void. On QEMU's codec - one converter, one pin, wired directly -
+         * every pairing is the only pairing and it could not be wrong.
+         *
+         * A laptop is not that. A Realtek codec has two converters and ten
+         * pins, and the speaker is fed by one converter while the headphone
+         * jack is fed by the other. Picking the first of each gives a pair
+         * that is not connected, and there was no second attempt - so a
+         * codec with a perfectly good speaker reported no output path, or
+         * worse, reported success and played nothing.
+         *
+         * Both halves are collected and then paired in the codec's own
+         * order, which puts a laptop's internal speaker before its jack.
+         * The first pair that actually routes wins, and `route` is believed
+         * this time.
+         */
+        unsigned dacs[8], pins[16];
+        unsigned ndac = 0, npin = 0;
+        unsigned d, p;
+
         for (w = wstart; w < wstart + wcount; w++) {
             uint32_t caps = get_param(w, PARAM_WIDGET_CAPS);
-
 
             if (caps == CODEC_NO_ANSWER) {
                 continue;
@@ -717,12 +846,12 @@ static bool find_widgets(void)
                 (void)command(verb8(w, VERB_SET_POWER_STATE, 0));
             }
 
-            if (WIDGET_TYPE(caps) == WIDGET_DAC && hda.dac == 0) {
-                hda.dac = w;
+            if (WIDGET_TYPE(caps) == WIDGET_DAC && ndac < 8) {
+                dacs[ndac++] = w;
                 unmute(w, (unsigned)caps, fg);
             }
 
-            if (WIDGET_TYPE(caps) == WIDGET_PIN && hda.pin == 0) {
+            if (WIDGET_TYPE(caps) == WIDGET_PIN && npin < 16) {
                 uint32_t pin = get_param(w, PARAM_PIN_CAPS);
                 uint32_t config;
 
@@ -738,19 +867,53 @@ static bool find_widgets(void)
                                      * to nothing */
                 }
 
-                hda.pin = w;
-
-                (void)command(verb8(w, VERB_SET_PIN_CONTROL,
-                                       PIN_CTL_OUT_ENABLE
-                                       | ((pin & PIN_CAP_HEADPHONE)
-                                          ? PIN_CTL_HP_ENABLE : 0u)));
-                unmute(w, (unsigned)caps, fg);
+                pins[npin++] = w;
             }
         }
 
-        if (hda.dac != 0 && hda.pin != 0) {
-            (void)route(hda.pin, hda.dac, fg);
-            return true;
+        for (p = 0; p < npin; p++) {
+            for (d = 0; d < ndac; d++) {
+                if (!route(pins[p], dacs[d], fg)) {
+                    continue;
+                }
+
+                {
+                    uint32_t caps = get_param(pins[p], PARAM_WIDGET_CAPS);
+                    uint32_t pin = get_param(pins[p], PARAM_PIN_CAPS);
+
+                    hda.pin = pins[p];
+                    hda.dac = dacs[d];
+
+                    (void)command(verb8(hda.pin, VERB_SET_PIN_CONTROL,
+                                        PIN_CTL_OUT_ENABLE
+                                        | ((pin != CODEC_NO_ANSWER
+                                            && (pin & PIN_CAP_HEADPHONE))
+                                           ? PIN_CTL_HP_ENABLE : 0u)));
+
+                    if (caps != CODEC_NO_ANSWER) {
+                        unmute(hda.pin, (unsigned)caps, fg);
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        /*
+         * Nothing routed. Say what is there, because "no output path" is a
+         * symptom and this is the evidence - and on the machine this was
+         * written for there is no other way to ask.
+         */
+        boot_fact_begin();
+        kputs("the codec answered, and no pin reaches a converter:");
+        boot_fact_end();
+
+        for (w = wstart; w < wstart + wcount; w++) {
+            uint32_t caps = get_param(w, PARAM_WIDGET_CAPS);
+
+            if (caps != CODEC_NO_ANSWER) {
+                describe_widget(w, caps);
+            }
         }
     }
 

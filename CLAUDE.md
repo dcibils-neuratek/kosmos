@@ -55,6 +55,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Current state and next step: `docs/state.md` — **read it before proposing anything**
 - Milestones: `docs/roadmap.md`
 - Targets and HAL: `docs/hal.md`
+- Where a driver lives, and where its code comes from: `docs/drivers.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`
