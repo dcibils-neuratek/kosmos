@@ -86,22 +86,35 @@ CORE_MODULES = [
 # the panel its own mode.
 #
 #
-# **And the loader's own words are kept on the screen long enough to read.**
+# **The loader is asked to say what it is doing, and the answer was
+# nothing.**
 #
-# GRUB says something on this machine while loading a 64 MB module, and
-# nobody knows what: it prints, hands over, and the kernel's first stage
-# scrolls it away inside a second. The one witness to it is somebody looking
-# at the panel, and that person got "something like" - which is not a
-# diagnosis, and cannot become one without another boot.
+# GRUB printed something on the ThinkPad while loading a 64 MB module and
+# nobody could read it: it prints, hands over, and the kernel's first stage
+# scrolls it away inside a second. So an `echo` before each step, and each
+# load is now bracketed - a message that appears has something to be after.
 #
-# So the loader is asked to say what it is doing and then to stop. `echo`
-# before each step, so a message that appears has something to be *after*;
-# `sleep --interruptible 6` before `boot`, so whatever was printed - a
-# warning, an allocation complaint, nothing at all - is still on the screen
-# to be read or photographed, and a key press skips the wait.
+# What it established: **GRUB reports no error at all.** Kernel, disk,
+# loaded, and then an image with eleven pages already corrupted. Whatever it
+# does wrong, it does quietly. The echoes stay because they cost nothing and
+# the next person to look will want the same bracket.
 #
-# It costs six seconds on a boot nobody is watching and is worth it while
-# this is open. When it is understood, both lines come out.
+# **There was a `sleep --interruptible 6` here and it is gone.** It held the
+# screen so the message could be photographed, which worked twice - and then
+# a stick appeared to hang on that line. A diagnostic that stops the machine
+# it is diagnosing is not one, and this had already returned its answer.
+#
+# **And a `set debug=relocator,mm,efi` with `set pager=1`, also gone**, but
+# not before earning its keep. It showed that GRUB's allocations are
+# correct and non-overlapping on that machine - kernel at `0x100000+0xade000`
+# and the module immediately after it - and that the ThinkPad's firmware
+# hands GRUB the kernel's *final* address, where QEMU's stages it elsewhere
+# and moves it at `boot`. Different path through the relocator, which is a
+# large part of why no emulated machine here has ever shown the fault.
+#
+# The `pager` is worth its own warning: it waits for a key when the screen
+# fills, which on a laptop looks exactly like the hang being investigated.
+# It cost a boot and a wrong conclusion.
 #
 GRUB_CFG = """set timeout=3
 set default=0
@@ -114,8 +127,6 @@ menuentry "Kosmos" {
     multiboot2 /boot/kosmos.bin@ARGS@
 @MODULE@
     echo "grub: loaded. Anything above this line is the loader's."
-    sleep --interruptible 6
-
     boot
 }
 """

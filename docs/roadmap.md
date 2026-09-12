@@ -119,8 +119,46 @@ hardware broadcasts - and needed one on x86-64, which has it now.
 
 ### Next, in this order
 
+**Reordered on 2026-09-11, and USB went to the front.**
+
+The evening that did it is in `docs/thinkpad.md` §6a: the machine would not
+boot with a 64 MB disk, and the disk is 64 MB of *memory* because **Kosmos
+cannot read the stick it booted from**. GRUB has to shovel the whole
+filesystem in as a module before the kernel starts, and on that laptop the
+image arrives with eleven contiguous pages already corrupted. The workaround
+was to make the disk smaller.
+
+So the next thing is not a subsystem this system lacks in the abstract. It
+is the one that makes the machine Diego owns behave like a computer:
+
+0. **USB.** xHCI, then enumeration, then bulk transfers, then mass storage,
+   then Ethernet. Each step ends in something visible, and two of them are
+   worth the whole milestone on their own:
+
+   - **mass storage deletes the loader-disk problem.** No module, no
+     relocator, no ceiling on what can be carried.
+   - **Ethernet puts the network stack on real hardware for the first
+     time.** ARP, IP, TCP, DNS, `host` and the browser are written and have
+     only ever run against virtio-net under emulation. The T14 has no RJ45
+     and its WiFi is an AX201 - a CNVi part, with the MAC inside the chipset
+     and no public documentation - so a USB-C Ethernet adapter is the
+     shortest path to metal, and those chips need no firmware and no crypto.
+
+   The design question to settle first: where the stack lives. Drivers are C
+   in `hal/`, but enumeration, device management and hotplug are a *server's*
+   shape against a kernel whose smoke alarm is 10k lines. Probably
+   `hal/pc/xhci.c` for the controller with a server above it, the way
+   `diskfs` sits above a block device.
+
+   **And a thing to fix on the way**: a machine with no serial port shows
+   nothing until stage six, when the framebuffer attaches and the log
+   replays - so a panic in memory setup and a hang inside the loader look
+   identical. The loader's framebuffer address arrives before `pmm_init`
+   runs, so there is no reason to wait. **Bring the display up early.** That
+   one costs an afternoon and would have saved a whole evening.
+
 **Agreed on 2026-09-10**, after the ThinkPad ran spread across eight
-processors:
+processors, and still what follows USB:
 
 1. **Lite XL, until it is an editor.** It is one now: it opens, edits and
    saves (`docs/litexl.md`), in its own faces. What is left is the wheel,

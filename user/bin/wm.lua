@@ -67,12 +67,26 @@ local CLIP_KEYS = {
 local theme = use("/lib/theme.lua")
 
 --
--- Eighteen, not twenty. The controls are fourteen and the glyphs sixteen,
--- so this is the smallest a tab can be and still hold both with a pixel
--- either side - which is what a title bar should be: as small as it can be
--- while remaining a handle you can hit.
+-- **Twenty-six, and the reasoning that gave twenty was measuring the wrong
+-- thing.**
 --
-local TAB_H      = 20
+-- It said: the controls are fourteen and the glyphs sixteen, so this is the
+-- smallest a tab can be and still hold both with a pixel either side. That
+-- is an argument about what *fits*, and a title bar is not a container - it
+-- is a handle. What decides its height is how hard it is to put a pointer on
+-- it and keep it there while dragging.
+--
+-- On a 14-inch panel at 1920x1080 twenty pixels is about 2.4 mm of physical
+-- target, and it reads as a hairline you have to aim at. The number that
+-- matters is millimetres on the glass rather than pixels in the buffer, and
+-- nothing in this file had ever asked that question - it was a desktop
+-- measured in QEMU windows, where the panel is whatever the Mac's display
+-- makes of it.
+--
+-- Six more, because that is what the machine says is comfortable. The
+-- controls stay fourteen: a bigger handle, not bigger buttons.
+--
+local TAB_H      = 26
 local BORDER     = 2
 --
 -- The three controls on a tab, and the room they take.

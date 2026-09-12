@@ -8,6 +8,45 @@ Last updated: 2026-09-11
 
 ## Where this left off
 
+### USB is the next milestone, and the reason is tonight
+
+**Decided 11 September 2026.** `docs/roadmap.md` now opens with it.
+
+The ThinkPad would not boot with a 64 MB disk, and it is 64 MB of *memory*
+because Kosmos cannot read the stick it booted from - GRUB carries the whole
+filesystem in as a module, and on that machine the image arrives with eleven
+contiguous pages already corrupted before the kernel executes an
+instruction. **The fix is not to understand GRUB. It is to stop needing it**:
+USB mass storage removes the module entirely.
+
+And the same driver stack gives a network. The T14 has **no RJ45**, and its
+WiFi is an **Intel AX201** - `VEN_8086&DEV_A0F0`, a CNVi part with the MAC
+inside the chipset and no public documentation. Diego has a USB-C Ethernet
+adapter; those chips need no firmware and no crypto, where the AX201 needs a
+1.5 MB blob, 802.11 and WPA2 before a single packet moves.
+
+Haiku does run that card, and it is worth knowing *how*: it wraps FreeBSD's
+drivers in a compatibility layer, and for a card this new FreeBSD's own
+driver is Linux's under LinuxKPI. Two shims. That is a legitimate route and
+a real decision - port or write - but it is not a small one, and it is not
+the one that gets this laptop onto a network this month.
+
+**Before any of it**: bring the display up early. A machine with no serial
+port shows nothing until stage six, so a panic in memory setup and a hang in
+the loader look identical - which is what made tonight take four hours
+instead of one. The loader hands over the framebuffer address before
+`pmm_init` runs.
+
+**Audio, queued behind USB**: the codec is a **Realtek ALC257**
+(`VEN_10EC&DEV_0257`, Lenovo `SUBSYS_17AA22C9`). `hda.c` finds it and reports
+"an HDA codec with no output path". The next step is not to guess the
+topology but to **print it**: when the walk fails, dump every widget, its
+type, its connection list and each pin's configuration default. One real
+flaw is already visible by reading - `connections()` ignores HDA *range*
+entries, which Realtek codecs use, so `{0x02, 0x85}` reads as `{0x02, 0x05}`
+and loses everything between.
+
+
 ### The bar on real hardware, and two things only it could show
 
 0.10.31 went on the ThinkPad. **The desktop runs: four cube3d windows at

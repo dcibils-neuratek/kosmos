@@ -922,11 +922,42 @@ local function task_spans()
   return out
 end
 
+--
+-- **The strip's own two top corners, which is what "rounded corners like a
+-- Mac" meant all along.**
+--
+-- This was asked for three times and answered wrong twice, because the
+-- buttons *were* being rounded and the bar was not: on a Mac the curve is
+-- the display's, at the top two corners of the screen, and the menu bar
+-- simply follows it. Its bottom edge is a straight line and always was.
+--
+-- So the first rows are inset and the cut is painted black - the colour of
+-- a screen that stops there. Only the top two: rounding the bottom would
+-- put two notches in the middle of the desktop, which is not a shape any
+-- machine has.
+--
+-- A real quarter circle rather than a guess, worked out once:
+-- `inset(y) = r - floor(sqrt(r^2 - (r - y - 0.5)^2))` at r = 8. It is a
+-- table for the reason `CORNER` above is one - a square root in a drawing
+-- path would produce these same eight numbers, and nobody reading the code
+-- could see what shape it draws.
+--
+local BAR_CORNER = { 6, 4, 3, 2, 1, 1, 1, 1 }
+
+local CUT = 0xff000000
+
 function bar:draw(g)
   for row = 0, self.h - 1 do
     local k = (38 * (self.h - 1 - row)) // (self.h - 1)
+    local inset = BAR_CORNER[row + 1]
 
-    g:fill(0, row, self.w, 1, lit(theme.tab, k))
+    if inset and self.w > inset * 2 then
+      g:fill(0, row, inset, 1, CUT)
+      g:fill(self.w - inset, row, inset, 1, CUT)
+      g:fill(inset, row, self.w - inset * 2, 1, lit(theme.tab, k))
+    else
+      g:fill(0, row, self.w, 1, lit(theme.tab, k))
+    end
   end
 
   local ty = (self.h - gfx.font.h) // 2
