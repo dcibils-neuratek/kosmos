@@ -856,7 +856,7 @@ struct diskinfo {
 #define SYS_NO_CHILD_READY (-106)   /* children, but none has exited yet */
 #define SYS_NO_MESSAGE    (-107)    /* nothing to receive, and not blocking */
 #define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
-#define SYS_ERR_NO_CAPS   (-106)    /* this thread's capability table is full */
+#define SYS_ERR_NO_CAPS   (-109)    /* this thread's capability table is full */
 #define SYS_ERR_NO_DEVICE (-108)    /* this machine has nothing of that kind */
 
 /*
@@ -867,6 +867,40 @@ struct diskinfo {
 #ifndef __ASSEMBLER__
 
 #include <stdint.h>
+
+/*
+ * **No two result codes share a value, and the compiler is what says so.**
+ *
+ * `SYS_NO_CHILD_READY` and `SYS_ERR_NO_CAPS` were both -106 for ten days.
+ * The second was added to a list that is not in numeric order, and a caller
+ * got one number for "none of your children has finished" and "your
+ * capability table is full". Nothing noticed, because no single syscall
+ * returns both - which was luck rather than design.
+ *
+ * Two case labels with one value are a constraint violation in C11, so this
+ * switch stops the build the moment two codes agree, and the message names
+ * both. It is never called and generates nothing. **A new code goes in here
+ * as well as above**, and that is the one part no compiler can check: the
+ * assembler reads the `#define`s, so they cannot be an enum that lists
+ * itself.
+ */
+static inline void sys_result_codes_are_distinct(long result)
+{
+    switch (result) {
+    case SYS_ERR_BADCALL:
+    case SYS_ERR_FAULT:
+    case SYS_ERR_DENIED:
+    case SYS_NO_INPUT:
+    case SYS_ERR_NO_CHILD:
+    case SYS_ERR_NO_ROOM:
+    case SYS_NO_CHILD_READY:
+    case SYS_NO_MESSAGE:
+    case SYS_ERR_NO_CAPS:
+    case SYS_ERR_NO_DEVICE:
+    default:
+        break;
+    }
+}
 
 /*
  * What a syscall carries, in the one shape every architecture can fill.

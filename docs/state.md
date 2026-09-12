@@ -116,6 +116,15 @@ Open:
 - **Under TCG it is a third of the console's speed**, so timing - and sound
   above all - has to be judged natively or on hardware.
 - A button held while the window loses the focus stays down.
+### 12 September: two result codes that were one number
+
+`SYS_NO_CHILD_READY` and `SYS_ERR_NO_CAPS` were both -106. `NO_CAPS` is -109
+now. It skips -108 because the `SYS_DEV_FIND` work, still uncommitted, gives
+-108 to `SYS_ERR_NO_DEVICE`. `syscall.h` lists every result code as a case
+label in `sys_result_codes_are_distinct`, so two codes with one value stop
+the build. **When `SYS_ERR_NO_DEVICE` lands it has to be added to that list
+by hand**, because nothing will add it there. `sys_user.c` now names the codes
+it used to write as numbers. The README has the row.
 
 ### 12 September: JPEG, and three bugs in things that looked finished
 

@@ -39,11 +39,11 @@ static const char *ipc_error(long status)
     case -2:   return "the endpoint was destroyed";
     case -3:   return "that thread is not waiting for a reply";
     case -4:   return "out of endpoints or capability slots";
-    case -101: return "a pointer this process may not use";
-    case -102: return "this process does not hold that device";
-    case -104: return "there is nothing to wait for";
-    case -105: return "the machine is out of memory or processes";
-    case -106: return "this process holds too many capabilities";
+    case SYS_ERR_FAULT:    return "a pointer this process may not use";
+    case SYS_ERR_DENIED:   return "this process does not hold that device";
+    case SYS_ERR_NO_CHILD: return "there is nothing to wait for";
+    case SYS_ERR_NO_ROOM:  return "the machine is out of memory or processes";
+    case SYS_ERR_NO_CAPS:  return "this process holds too many capabilities";
     default:   return "unknown error";
     }
 }
@@ -1039,8 +1039,9 @@ static int l_spawn(lua_State *L)
 
     if (id < 0) {
         lua_pushnil(L);
-        lua_pushstring(L, (id == -102) ? "this process does not hold that device"
-                                       : "could not spawn");
+        lua_pushstring(L, (id == SYS_ERR_DENIED)
+                              ? "this process does not hold that device"
+                              : "could not spawn");
         return 2;
     }
 
@@ -1054,7 +1055,7 @@ static int l_wait(lua_State *L)
     int nonblocking = lua_toboolean(L, 1);
     long code = kosmos_wait(&id, nonblocking);
 
-    if (code == -106) {
+    if (code == SYS_NO_CHILD_READY) {
         lua_pushnil(L);
         lua_pushstring(L, "no child ready");
         return 2;
