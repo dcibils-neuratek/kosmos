@@ -6,6 +6,7 @@
 #include "exit.h"
 #include "fault.h"
 #include "machine.h"
+#include "cpu.h"
 #include "percpu.h"
 #include "spinlock.h"
 #include "smp.h"
@@ -602,6 +603,7 @@ static void order_thread(void *arg)
 
 static bool run_three_and_record(const struct scheduler *policy)
 {
+    struct thread *made[3];
     unsigned      i;
     unsigned long guard;
 
@@ -610,11 +612,50 @@ static bool run_three_and_record(const struct scheduler *policy)
     sched_use(policy);
     trace_len = 0;
 
+    /*
+     * **Created suspended, then woken with interrupts masked - and this is
+     * the whole of what was wrong with this test.**
+     *
+     * `thread_create` makes a thread runnable *the instant it returns*, so
+     * the loop below was racing its own creations: preempted after making
+     * thread 1 - one quantum, entirely legitimate - LIFO would pick thread
+     * 1, because at that moment it was the only thing on the stack. The
+     * loop then made 2 and 3, which came off as 3 then 2, and the test read
+     * `1 3 2` and called the scheduler broken.
+     *
+     * That is not a slow host and no timeout could have fixed it, which is
+     * why it survived two rewrites that raised one. The test asserted an
+     * order that only holds if all three are queued before any of them
+     * runs, and never said so.
+     *
+     * `thread_create_suspended` says exactly this in its own comment - "a
+     * process whose capabilities were granted on the next line had already
+     * run, found an empty table, and exited" - so the lesson was already
+     * learned once, for processes, and not carried here.
+     *
+     * Masking interrupts across the wakes as well: waking three threads of
+     * equal priority does not preempt, but a timer tick between two of them
+     * would, and that is the same race one step narrower.
+     */
     for (i = 1; i <= 3; i++) {
-        if (thread_create("order", order_thread, (void *)(uintptr_t)i) == NULL) {
+        made[i - 1] = thread_create_suspended("order", order_thread,
+                                              (void *)(uintptr_t)i);
+
+        if (made[i - 1] == NULL) {
+            kputs("\n   (thread ");
+            kputu(i);
+            kputs(" of 3 could not be created - the pool is full)\n");
             return false;
         }
     }
+
+    cpu_irq_disable();
+
+    for (i = 0; i < 3; i++) {
+        thread_wake(made[i]);
+    }
+
+    cpu_irq_enable();
 
     /*
      * Waited out by the clock and not by a count of yields.
@@ -647,13 +688,46 @@ static bool run_three_and_record(const struct scheduler *policy)
      * it five times longer costs nothing in the passing case and stops the
      * suite reporting a scheduler bug when what it measured was the host.
      */
-    guard = hal_ticks() + 250;              /* a second, on a busy host */
+    /*
+     * **Five seconds, and the number is not the interesting part.**
+     *
+     * This has been rewritten twice for being in a hurry - twelve yields,
+     * then two hundred milliseconds, then a second - and it went on failing
+     * about one run in five on a loaded host. Each rewrite raised the bound
+     * and none of them made a failure *legible*, which is why the third one
+     * was needed after the second.
+     *
+     * The bound is a failure bound: the loop leaves the moment the three
+     * threads are done, so a longer one costs a passing run nothing at all.
+     * Making it generous is free; making it exact is guesswork about a host
+     * this code cannot see.
+     */
+    guard = hal_ticks() + 1250;             /* five seconds, and only a cap */
 
     while (trace_len < 3 && hal_ticks() < guard) {
         thread_yield();
     }
 
-    return trace_len == 3;
+    if (trace_len != 3) {
+        /*
+         * **Say so, rather than returning false into a caller that also
+         * checks the ordering.**
+         *
+         * That was the real defect. A failure here and a genuinely wrong
+         * order arrived at the same place as one `false`, so "the policy is
+         * pluggable" failing said nothing about whether the scheduler was
+         * broken or the host was busy - and on 11 September it was read as
+         * the former, and a good change was reverted for it.
+         */
+        kputs("\n   (only ");
+        kputu(trace_len);
+        kputs(" of 3 threads ran in five seconds under ");
+        kputs(policy->name);
+        kputs(" - a busy host, not a scheduler fault)\n");
+        return false;
+    }
+
+    return true;
 }
 
 static bool test_the_scheduler_is_pluggable(void)
@@ -691,8 +765,20 @@ static bool test_the_scheduler_is_pluggable(void)
     /* Created 1, 2, 3 in that order. FIFO runs them in it; LIFO reverses it.
      * Asserting the exact orders rather than merely "they differ" means a
      * policy that is broken in both directions cannot pass. */
-    return fifo[0] == 1 && fifo[1] == 2 && fifo[2] == 3
-        && lifo[0] == 3 && lifo[1] == 2 && lifo[2] == 1;
+    if (fifo[0] == 1 && fifo[1] == 2 && fifo[2] == 3
+        && lifo[0] == 3 && lifo[1] == 2 && lifo[2] == 1) {
+        return true;
+    }
+
+    /* And when the orders are wrong, which of them - because this is the
+     * failure that means something. */
+    kputs("\n   (ran ");
+    kputu(fifo[0]); kputu(fifo[1]); kputu(fifo[2]);
+    kputs(" under round robin and ");
+    kputu(lifo[0]); kputu(lifo[1]); kputu(lifo[2]);
+    kputs(" under lifo, wanted 123 and 321)\n");
+
+    return false;
 }
 
 static bool test_thread_stacks_have_guard_pages(void)

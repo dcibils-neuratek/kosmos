@@ -47,7 +47,27 @@ import subprocess
 import sys
 import zlib
 
-ESP_MB = 64
+#
+# **192, and the number is FAT32's rather than ours.**
+#
+# This was 64, which is ample for a 10 MB kernel and a loader - and produced
+# a filesystem the ThinkPad's firmware would list and refuse to boot.
+#
+# FAT32 is *defined* as having at least 65,525 clusters; a volume that
+# cannot reach that is not FAT32 no matter what the boot sector says. At
+# 64 MB the only way to get there is 512-byte clusters, which is what
+# `mformat` duly chose - legal, rare, and unloved by UEFI firmware FAT
+# drivers. Every stick that ever booted this machine happened to carry a
+# disk image too, which pushed the partition past 100 MB and let mformat
+# use 1 KB clusters. The no-disk image was never bootable on hardware and
+# nobody noticed, because under QEMU it works: an emulator's FAT driver
+# does not care.
+#
+# 192 MB reaches 65,525 clusters comfortably at 1 KB each, which is the
+# shape of the images known to work. It costs nothing but space on a stick
+# that is gigabytes.
+#
+ESP_MB = 192
 
 # The partition type every UEFI firmware looks for, and the one this image
 # has exactly one of. UEFI 2.10, table 5.7.
@@ -174,8 +194,11 @@ def build_esp(kernel, efi, out, grub_dir, args="", disk=None):
 
     # FAT32, one sector per cluster group chosen by mformat, and a label
     # so `search --label` has something to find if `$root` ever goes wrong.
-    run(["mformat", "-i", out, "-F", "-v", "KOSMOS", "-T", str(size // SECTOR),
-         "::"])
+    # `-c 2` - a kilobyte a cluster, said rather than left to mformat, which
+    # maximises the cluster *count* and so picks the smallest cluster that
+    # will do. See ESP_MB above for what that cost.
+    run(["mformat", "-i", out, "-F", "-c", "2", "-v", "KOSMOS",
+         "-T", str(size // SECTOR), "::"])
 
     for d in ("::/EFI", "::/EFI/BOOT", "::/boot", "::/boot/grub"):
         run(["mmd", "-i", out, d])

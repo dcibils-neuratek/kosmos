@@ -321,12 +321,6 @@ void kmain(void)
     boot_why("Until the trap table is installed, a fault is a silent hang.");
     boot_fact(trap_describe());
 
-    /* First of the two, and here rather than three lines earlier so that a
-     * fault while reading 2.8 MB is a report instead of a silent hang. This
-     * one is the loader's work and the firmware's: nothing of this kernel
-     * has run yet except the trap table. */
-    check_init_image("as the loader left it");
-
     /*
      * And the screen, as early as the board can give one.
      *
@@ -353,6 +347,26 @@ void kmain(void)
         screen_init(&fb);
         console_attach_screen(&fb, "Kosmos");
     }
+
+    /*
+     * **First of the four, and after the screen rather than before it.**
+     *
+     * This ran immediately after `trap_init`, which is three lines too
+     * early and was a real fault rather than an untidiness: it reads ten
+     * megabytes and hashes them, and on a corrupted image it then hashes
+     * the whole kernel again looking for where the bytes came from - all of
+     * it *before there is anywhere to print*. On a laptop with no serial
+     * port that is a black panel and no way to tell a stalled diagnostic
+     * from a kernel that never started.
+     *
+     * The check exists to be read. Putting it in front of the thing that
+     * makes reading possible was backwards, and it cost a boot of the one
+     * machine it was written for.
+     *
+     * Still early: the only things between the loader and here are the trap
+     * table and the screen, so "as the loader left it" is still honest.
+     */
+    check_init_image("as the loader left it");
 
     /*
      * Who we are running on, asked of the processor.

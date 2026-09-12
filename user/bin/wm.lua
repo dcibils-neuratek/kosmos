@@ -95,7 +95,23 @@ local BORDER     = 2
 -- a gap between two adjacent controls without either of them knowing about
 -- the other.
 --
-local BOX        = 14
+-- **Eighteen, and it was fourteen until the tab grew.**
+--
+-- Fourteen was chosen against a twenty-pixel tab, where it filled most of
+-- the height and looked deliberate. Twenty-six left the same small square
+-- floating in a tall bar - and a control that got *harder* to hit as its
+-- handle got easier is the wrong trade in both directions at once.
+--
+-- Two pixels on every side. The slots and the glyphs are derived from this
+-- and follow, and so does the hit test, which is the whole reason it is one
+-- number: a target that is drawn larger than it can be clicked is worse
+-- than a small one, because it is a small one that lies.
+--
+-- `GRIP` below says the same thing about the resize corner - "a target that
+-- thin is a target you miss" - and this is that sentence applied to the end
+-- of the bar it shares.
+--
+local BOX        = 18
 
 -- How far a control sits from the end of the tab. One constant for both
 -- ends, because "the same margin on the left and the right" is a fact about
@@ -4304,9 +4320,179 @@ local function prefixed(c)
   end
 end
 
+--
+-- **Super, and why it needs a parser rather than a comparison.**
+--
+-- Windows on a PC keyboard, Command on an Apple one. `hal/keys.c` turns it
+-- into `ESC [ 1 ; 9 x` for a combination and `ESC [ 1 ; 9 ~` for a tap,
+-- because this system's input language is characters and escape sequences
+-- and a *held* modifier has nowhere else to go.
+--
+-- Which means six bytes arrive one at a time, and five of them look exactly
+-- like the beginning of something an application was entitled to receive.
+-- So they are **buffered and flushed through** when they turn out not to be
+-- ours: an editor pressing Escape and then a bracket must still get both,
+-- in order, or the window manager has quietly eaten somebody's keystroke.
+--
+-- That is the whole reason this is a state machine and not `if c == 27`.
+--
+local SUPER_HEAD = { 27, 91, 49, 59, 57 }       -- ESC [ 1 ; 9
+local super_at = 0
+
+--
+-- What Super plus a key does. True when it was ours, false to hand the
+-- keystroke back - which is what makes an unbound combination reach the
+-- application instead of vanishing.
+--
+-- A table rather than a chain of comparisons, for the reason `CLIP_KEYS`
+-- above gives: it is a lookup, and both cases of a letter being the same
+-- entry should be visible rather than argued. Nobody should have to notice
+-- the shift key to give a command.
+--
+local SUPER_KEYS
+
+local function super_command(c)
+  local what = SUPER_KEYS[c]
+
+  if not what then
+    return false
+  end
+
+  what()
+  return true
+end
+
+local function flush_super(upto, extra)
+  local i
+
+  for i = 1, upto do
+    to_focused(SUPER_HEAD[i])
+  end
+
+  if extra then to_focused(extra) end
+
+  super_at = 0
+end
+
+--
+-- The bindings themselves, filled in here because they need `focused_window`
+-- and the handlers above.
+--
+-- `~` is Super tapped alone, which opens the Kosmos menu - a modifier that
+-- means something by itself is unusual, and it is the one people reach for
+-- without being taught.
+--
+--
+-- Close, minimise and the launcher, each named so the table above reads as
+-- what it does rather than as how it is done.
+--
+-- All three go through the same handlers a message would, so a keystroke
+-- and a click on the Deskbar are the same operation - which is what stops
+-- the two drifting apart the first time one of them grows a rule.
+--
+local function close_focused()
+  local win = focused_window()
+
+  if win and not win.backdrop and not win.strip then
+    handlers.close{ window = win.handle }
+  end
+end
+
+local function minimise_focused()
+  local win = focused_window()
+
+  if win then
+    handlers.minimise{ window = win.handle }
+  end
+end
+
+--
+-- **The launcher pad**, which is a program rather than something built in
+-- here. The window manager starts applications; it does not draw dialogs,
+-- and a search box that can grow to search files has no business inside the
+-- compositor.
+--
+-- Started fresh each time and closing itself when it is done, so there is no
+-- window to hide, no state to keep, and nothing to go wrong while nobody is
+-- looking at it.
+--
+local function open_launchpad()
+  handlers.launch{ program = "launchpad" }
+end
+
+SUPER_KEYS = {
+  [126] = function()                            -- ~, Super on its own
+    --
+    -- **Posted, and that word is the whole of what was wrong twice.**
+    --
+    -- This was `fs.send` and then `fs.write`. Both are *calls*: they wait
+    -- for a reply, and a reply from the key path of the compositor is a
+    -- reply the compositor is not running to receive. One press of the
+    -- Windows key and the desktop stopped reading the keyboard - no error,
+    -- no crash, just a machine that ignores you.
+    --
+    -- `post` appends to the window's queue and returns, which is what every
+    -- mouse press and close request already does. Nothing in here may block:
+    -- this function runs between reading a key and reading the next one.
+    --
+    for _, win in ipairs(windows) do
+      if win.strip then
+        post(win, { type = "menu" })
+        break
+      end
+    end
+  end,
+
+  [113] = function() close_focused() end,       -- q
+  [81]  = function() close_focused() end,       -- Q
+
+  [104] = function() minimise_focused() end,    -- h
+  [72]  = function() minimise_focused() end,    -- H
+
+  [32]  = function() open_launchpad() end,      -- space
+}
+
 local function key(c)
   if c == KEY_CTRL_C then
     running = false
+    return
+  end
+
+  --
+  -- Collecting `ESC [ 1 ; 9`. Each byte either continues the sequence or
+  -- ends the attempt, and ending it hands back everything taken so far.
+  --
+  if super_at > 0 then
+    if super_at == #SUPER_HEAD then
+      local was = super_at
+
+      super_at = 0
+
+      if super_command(c) then
+        return
+      end
+
+      -- Not a binding we have, so it was never ours to keep.
+      flush_super(was, c)
+      return
+    end
+
+    if c == SUPER_HEAD[super_at + 1] then
+      super_at = super_at + 1
+      return
+    end
+
+    -- A different sequence - an arrow, or a person pressing Escape. Give
+    -- back what was taken and let this byte be handled on its own merits.
+    local was = super_at
+
+    super_at = 0
+    flush_super(was, nil)
+    -- fall through, so this byte is dispatched normally
+  end
+
+  if c == SUPER_HEAD[1] and super_at == 0 then
+    super_at = 1
     return
   end
 

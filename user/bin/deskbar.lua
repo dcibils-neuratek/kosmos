@@ -695,6 +695,31 @@ local function open_kosmos_menu()
 end
 
 --
+-- **Opening the menu from somewhere else.**
+--
+-- The window manager binds the Windows key - Command on an Apple keyboard -
+-- and it cannot reach into this process to open a menu, so it posts an
+-- event and this opens it.
+--
+-- **Posted, never called.** The first attempt had the compositor `send` to
+-- this process and the second had it `write` a property. Both are
+-- synchronous: they wait for a reply, and a reply from the compositor's key
+-- path is one the compositor is not running to receive. A single press of
+-- the key stopped the whole desktop reading the keyboard, with no error and
+-- no crash - just a machine that ignored you. `post` appends to this
+-- window's queue and returns, which is what every mouse press already does.
+--
+win.on_event = function(_, ev)
+  if ev.type == "menu" then
+    open_kosmos_menu()
+    return true
+  end
+
+  return false
+end
+
+
+--
 -- Right-click the Kosmos button: what the menu *is*, rather than what is in
 -- it.
 --

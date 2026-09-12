@@ -82,6 +82,46 @@ const char *hal_key_sequence(unsigned code)
 }
 
 /*
+ * **A key held with Super, as one sequence.**
+ *
+ * Windows on a PC keyboard, Command on an Apple one - see `keys.h` for why
+ * it is named for neither. What matters here is that this system's input
+ * language is characters and escape sequences, so a *held* modifier has
+ * nowhere to go: the drivers consume shift and control and hand up the
+ * character that resulted. Super is not like those - it changes what a key
+ * means rather than which character it is - so it needs a sequence of its
+ * own, exactly as the arrow keys do.
+ *
+ * `ESC [ 1 ; 9 x`, which is xterm's shape for a modified key with 9 as the
+ * modifier. Following a convention that exists costs nothing and means a
+ * terminal on the other end of a cable would understand it; inventing one
+ * would have meant explaining it forever.
+ *
+ * **And Super alone, tapped, is `ESC [ 1 ; 9 ~`.** A modifier that does
+ * something by itself is unusual and is what opens the menu, so it is
+ * emitted on *release* and only when nothing was pressed in between - which
+ * is the difference between tapping the key and using it to hold a
+ * combination.
+ *
+ * The buffer is static and the caller copies before asking again, which is
+ * what `hal_key_sequence` above already promises by returning a literal.
+ */
+static char super_seq[8];
+
+const char *hal_key_super(int c)
+{
+    super_seq[0] = 0x1b;
+    super_seq[1] = '[';
+    super_seq[2] = '1';
+    super_seq[3] = ';';
+    super_seq[4] = '9';
+    super_seq[5] = (char)((c > 0) ? c : '~');
+    super_seq[6] = 0;
+
+    return super_seq;
+}
+
+/*
  * The character a key produces, or -1 for a key that says nothing.
  *
  * Lifted out of `hal/virtio/input.c` unchanged, because the rules are about

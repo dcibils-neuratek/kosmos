@@ -43,6 +43,8 @@
 
 #include "hal.h"
 #include "fwcfg.h"
+#include "page.h"
+#include "pmm.h"
 
 /*
  * The geometry.
@@ -98,21 +100,47 @@
 #define FB_BYTES    (FB_PITCH * FB_HEIGHT)
 
 /*
- * The pixels.
+ * The pixels, **taken from the page allocator rather than reserved inside
+ * the image** - and the move is worth the explanation, because the old
+ * arrangement had reasons and they were all good ones.
  *
- * In `.framebuffer`, which the linker script places after the stacks and
- * inside __image_end. After the stacks so that three megabytes here does not
- * push the stack guards out of the page-mapped first 2 MB of RAM; inside
- * __image_end so the page allocator counts these pages as the kernel's and
- * never hands them out. NOLOAD, so the image file does not carry three
+ * It was `_Alignas(4096) uint8_t framebuffer[FB_BYTES]` in section
+ * `.framebuffer`, which the linker script places after the stacks and
+ * inside `__image_end`: after the stacks so eight megabytes here would not
+ * push the stack guards out of the page-mapped first 2 MB of RAM, inside
+ * `__image_end` so the page allocator counts these pages as the kernel's
+ * and never hands them out, and NOLOAD so the image file carries no
  * megabytes of zeroes.
  *
- * Page aligned because QEMU is given the physical address and because the
- * app server will one day have this mapped into its own address space, and
- * a mapping is made of pages.
+ * **What it cost was invisible until a real machine was booted from a USB
+ * stick.** NOLOAD keeps the bytes out of the file and not out of the
+ * *image*: `kosmos.bin` is 10.3 MB and `__image_end` was 19.7 MB, so a
+ * loader is asked to find, reserve and zero nearly twice the kernel it
+ * actually reads. On the ThinkPad, GRUB loading that alongside a 64 MB
+ * module hands over an image with pages already corrupted - eleven of them,
+ * contiguous, before this kernel has executed an instruction - and which
+ * pages depends on the layout, so four kilobytes more kernel moves it
+ * somewhere else or makes it vanish. `docs/thinkpad.md` §6a has the whole
+ * account.
+ *
+ * Halving what the loader must place does not *fix* that. What it does is
+ * stop this kernel asking for nine megabytes of address space it does not
+ * use, which was never a thing worth asking for once there was an allocator
+ * to ask instead.
+ *
+ * **And there is an allocator by the time this runs.** `hal_fb_init` is
+ * boot stage six; `pmm_init` is stage four. The comment above this one said
+ * "fixed at build time because there is no allocator", which stopped being
+ * true when the display moved after physical memory in `kmain` and nobody
+ * came back to it.
+ *
+ * `pmm_alloc_contiguous` answers with page-aligned memory, which is what
+ * QEMU needs - it is handed the physical address - and what a mapping into
+ * the app server's address space will need later. Pages the allocator has
+ * given out are not handed out again, which is the other thing being inside
+ * `__image_end` used to buy.
  */
-static _Alignas(4096) uint8_t framebuffer[FB_BYTES]
-    __attribute__((section(".framebuffer")));
+static uint8_t *framebuffer;
 
 /*
  * `struct RAMFBCfg` from QEMU's hw/display/ramfb.c, which is where it is
@@ -180,10 +208,28 @@ bool ramfb_init(struct fb *out)
         return false;
     }
 
-    /* Zeroed here rather than by start.S, which only covers .bss. Black
-     * rather than whatever the last boot left, and it is the first proof
-     * that these three megabytes are writable. */
-    memset(framebuffer, 0, sizeof(framebuffer));
+    /*
+     * The pixels, now that there is something to ask.
+     *
+     * Refused rather than half-drawn if the machine cannot spare eight
+     * megabytes contiguous: `hal_fb_init` treats false as "this board has
+     * no ramfb", falls through, and the boot log says which source answered
+     * - which is the honest outcome, since a display that cannot be
+     * allocated is a machine with no display.
+     */
+    if (framebuffer == NULL) {
+        framebuffer = pmm_alloc_contiguous(
+            (FB_BYTES + PAGE_SIZE - 1) / PAGE_SIZE);
+
+        if (framebuffer == NULL) {
+            return false;
+        }
+    }
+
+    /* Zeroed here rather than by start.S, which only covered .bss and never
+     * covered this at all. Black rather than whatever the last owner left,
+     * and it is the first proof that these eight megabytes are writable. */
+    memset(framebuffer, 0, FB_BYTES);
 
     cfg.addr   = __builtin_bswap64((uint64_t)(uintptr_t)framebuffer);
     cfg.fourcc = __builtin_bswap32(DRM_FORMAT_XRGB8888);

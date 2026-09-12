@@ -4060,6 +4060,24 @@ function window:run()
         -- intent it decided on. So a widget implements `edit`, and never
         -- has to know which keys a board happens to have.
         if self:dispatch_edit(ev.type) then changed = true end
+      elseif self.on_event then
+        --
+        -- **Anything else, handed to the application.**
+        --
+        -- Until this existed the chain above ended in silence: an event the
+        -- kit did not recognise was dropped, so the window manager had no
+        -- way to tell an application anything the kit had not been taught.
+        --
+        -- That is how the Windows key ended up wedging the desktop. With no
+        -- way to *post* to the Deskbar, the compositor called it instead -
+        -- and a synchronous call from the key path to a process that does
+        -- not answer stops the whole machine reading the keyboard. `post`
+        -- was always the right mechanism; there was just nowhere for it to
+        -- land.
+        --
+        -- Returning true means it was handled and the window should redraw.
+        --
+        if self.on_event(self, ev) then changed = true end
       end
     end
 

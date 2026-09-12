@@ -190,6 +190,11 @@ static void queue(const char *s)
 
 /* Modifier state, which belongs to the keyboard and to nothing else. */
 static bool      shift;
+
+/* Super, and whether a key was pressed while it was held. See the key
+ * handler below for why the second is needed. */
+static bool      super;
+static bool      super_used;
 static bool      ctrl;
 static bool      caps;
 
@@ -732,6 +737,32 @@ static int keyboard_getchar_locked(void)
             continue;
         }
 
+        /*
+         * Super - Windows on a PC keyboard, Command on an Apple one. Unlike
+         * shift and control it means something *by itself*, so its release
+         * is a keystroke rather than bookkeeping: tapped it opens the menu,
+         * held it makes a combination. `super_used` is what tells the two
+         * apart, and without it Win+Q would close the window and then open
+         * the menu on the way back up.
+         */
+        if (event.code == KEY_LEFTMETA || event.code == KEY_RIGHTMETA) {
+            if (event.value != 0) {
+                super = true;
+                super_used = false;
+            } else {
+                bool tapped = super && !super_used;
+
+                super = false;
+
+                if (tapped) {
+                    queue(hal_key_super(0));
+                    return (unsigned char)pending[pending_at++];
+                }
+            }
+
+            continue;
+        }
+
         if (event.value == 0) {
             continue;               /* a release of an ordinary key */
         }
@@ -757,9 +788,18 @@ static int keyboard_getchar_locked(void)
          */
         c = hal_key_char(event.code, shift, ctrl, caps);
 
-        if (c >= 0) {
-            return c;
+        if (c < 0) {
+            continue;
         }
+
+        /* Held with Super: a command rather than a character. */
+        if (super) {
+            super_used = true;
+            queue(hal_key_super(c));
+            return (unsigned char)pending[pending_at++];
+        }
+
+        return c;
     }
 }
 

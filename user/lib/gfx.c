@@ -200,10 +200,50 @@ static inline uint32_t over(uint32_t src, uint32_t dst, uint32_t global)
 
     inv = 255u - a;
 
-    return 0xff000000u
-        | (mul255((src >> 16) & 0xffu, a) + mul255((dst >> 16) & 0xffu, inv)) << 16
-        | (mul255((src >>  8) & 0xffu, a) + mul255((dst >>  8) & 0xffu, inv)) <<  8
-        | (mul255((src      ) & 0xffu, a) + mul255((dst      ) & 0xffu, inv));
+    /*
+     * **The destination's own alpha, which this used to assume was 255.**
+     *
+     * It ended `return 0xff000000u | ...`, and for a destination that is
+     * opaque - a window's backbuffer, the screen - that is right and this
+     * arithmetic is unchanged for it: `da` is 255, the weight below becomes
+     * `inv`, and the result is opaque.
+     *
+     * The desktop is not that. It is a *transparent* surface with icons
+     * drawn into it and blended over the wallpaper afterwards, so a
+     * shadow pixel at 40% was composited against transparent black -
+     * darkening it toward nothing - and then stamped fully opaque. Haiku's
+     * soft drop shadows came out as hard black fringes, which is what a
+     * person sees and calls a border round the icon.
+     *
+     * Source-over on straight alpha, written out: the result covers what
+     * the source covers plus what the destination still shows through it,
+     * and each contributes in proportion. The divide is the price of a
+     * destination that is not opaque, and it is paid only on this path -
+     * a fully transparent or fully opaque source has already returned.
+     */
+    {
+        uint32_t da = (dst >> 24) & 0xffu;
+        uint32_t wd = mul255(da, inv);
+        uint32_t oa = a + wd;
+        uint32_t r, g, b;
+
+        if (oa == 0) {
+            return 0;                   /* nothing covers anything */
+        }
+
+        r = (mul255((src >> 16) & 0xffu, a)
+             + mul255((dst >> 16) & 0xffu, wd)) * 255u / oa;
+        g = (mul255((src >>  8) & 0xffu, a)
+             + mul255((dst >>  8) & 0xffu, wd)) * 255u / oa;
+        b = (mul255((src      ) & 0xffu, a)
+             + mul255((dst      ) & 0xffu, wd)) * 255u / oa;
+
+        if (r > 255u) { r = 255u; }
+        if (g > 255u) { g = 255u; }
+        if (b > 255u) { b = 255u; }
+
+        return (oa << 24) | (r << 16) | (g << 8) | b;
+    }
 }
 
 /*
@@ -249,6 +289,14 @@ static inline u32x4 mul255v(u32x4 x, u32x4 a)
     return (t + (t >> 8)) >> 8;
 }
 
+/*
+ * **Only for an opaque destination**, which is why `blend_row` checks before
+ * calling it. `over` above has to compute the result's alpha because the
+ * desktop is a transparent surface; here the destination covers everything
+ * already, so the output is opaque and the weights collapse to `a` and
+ * `255 - a` with no divide. Keeping the divide out of the vector path is
+ * most of why this is eight times quicker.
+ */
 static inline u32x4 over4(u32x4 src, u32x4 dst, u32x4 global)
 {
     u32x4 a   = mul255v((src >> 24) & 0xffu, global);
@@ -297,8 +345,35 @@ static void blend_row(uint32_t *dp, const uint32_t *sp, long w,
         }
 
         memcpy(&d, dp + i, sizeof d);
-        d = over4(s, d, gv);
-        memcpy(dp + i, &d, sizeof d);
+
+        /*
+         * **The vector path assumes the destination is opaque**, which is
+         * true of a window's backbuffer and of the screen, and false of the
+         * desktop - a transparent surface with icons drawn into it. Getting
+         * that wrong turned Haiku's soft drop shadows into hard black
+         * fringes, so it is checked rather than assumed.
+         *
+         * Four comparisons against the alternative, which is a divide per
+         * channel per pixel. The common case keeps its eight times.
+         */
+        {
+            u32x4 da = d >> 24;
+
+            if (da[0] == 255u && da[1] == 255u
+                && da[2] == 255u && da[3] == 255u) {
+                d = over4(s, d, gv);
+                memcpy(dp + i, &d, sizeof d);
+                continue;
+            }
+        }
+
+        {
+            long k;
+
+            for (k = 0; k < 4; k++) {
+                dp[i + k] = over(sp[i + k], dp[i + k], global);
+            }
+        }
     }
 
     for (; i < w; i++) {

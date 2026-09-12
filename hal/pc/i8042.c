@@ -204,6 +204,9 @@ static unsigned extended_code(uint8_t scan)
     case 0x51: return KEY_PAGEDOWN;
     case 0x53: return KEY_DELETE;
     case 0x1d: return KEY_RIGHTCTRL;
+    /* Windows on this keyboard, Command on an Apple one. See `keys.h`. */
+    case 0x5b: return KEY_LEFTMETA;
+    case 0x5c: return KEY_RIGHTMETA;
     case 0x1c: return 28;           /* the keypad's enter is still enter */
     default:   return 0;
     }
@@ -212,6 +215,16 @@ static unsigned extended_code(uint8_t scan)
 static bool shift;
 static bool ctrl;
 static bool caps;
+
+/*
+ * Super, and whether anything was pressed while it was held.
+ *
+ * The second is what separates *tapping* the key - which opens the menu -
+ * from holding it to make a combination. Without it, Win+Q would open the
+ * menu as well as closing the window, because the release still happens.
+ */
+static bool super;
+static bool super_used;
 
 /*
  * Characters waiting to come out of `keyboard_getchar`.
@@ -550,6 +563,30 @@ static void kbd_byte(uint8_t b)
     case KEY_LEFTCTRL:
     case KEY_RIGHTCTRL:  ctrl = down;  return;
     case KEY_CAPSLOCK:   if (down) { caps = !caps; } return;
+
+    case KEY_LEFTMETA:
+    case KEY_RIGHTMETA:
+        if (down) {
+            super = true;
+            super_used = false;
+        } else {
+            /* Tapped, so it meant itself: the menu. Held and used, so the
+             * combination has already been sent and this release says
+             * nothing. */
+            if (super && !super_used) {
+                queue_sequence(hal_key_super(0));
+
+                for (c = 0; c < (int)pending_len; c++) {
+                    put_char((unsigned char)pending[c]);
+                }
+
+                pending_len = 0;
+            }
+
+            super = false;
+        }
+        return;
+
     default: break;
     }
 
@@ -574,9 +611,30 @@ static void kbd_byte(uint8_t b)
 
     c = hal_key_char(code, shift, ctrl, caps);
 
-    if (c >= 0) {
-        put_char(c);
+    if (c < 0) {
+        return;
     }
+
+    /*
+     * Held with Super, so it is a command rather than a character. The
+     * whole sequence goes out in place of the letter, and the key is marked
+     * as used so the eventual release does not also open the menu.
+     */
+    if (super) {
+        unsigned i;
+
+        super_used = true;
+        queue_sequence(hal_key_super(c));
+
+        for (i = 0; i < pending_len; i++) {
+            put_char((unsigned char)pending[i]);
+        }
+
+        pending_len = 0;
+        return;
+    }
+
+    put_char(c);
 }
 
 static void drain(void)
