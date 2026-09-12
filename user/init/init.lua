@@ -772,8 +772,21 @@ local function new_namespace()
       return nil, "no such operation: " .. tostring(op)
     end
 
+    --
+    -- Cut to what the field keeps, which is what the server keeps.
+    --
+    -- `name[24]` holds 23 bytes and a terminator: `appfs.c` ends whatever
+    -- arrives at 23. But `string.pack` does not cut a string longer than
+    -- `c24`, it raises - so a window whose title was longer than that killed
+    -- its own process while opening, before the server could do what it
+    -- already does with a long name. A Super Nintendo ROM named the way
+    -- No-Intro names them was the first title that long. The reply carries
+    -- the name that was settled on, so the caller still learns what it got.
+    --
+    local field = tostring(name or ""):sub(1, 23)
+
     local reply, got = sys.call_raw(capability,
-                                    string.pack(APP_REQUEST, code, name or ""),
+                                    string.pack(APP_REQUEST, code, field),
                                     pass)
 
     if not reply then return nil, tostring(got) end

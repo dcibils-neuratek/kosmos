@@ -51,8 +51,9 @@ ENVIRONMENTS = {
 
     # A program in /bin gets an environment built by the runner.
     #
-    # `doom` and `quake` are there only in images that compile them in -
-    # `DOOM=1`, which `FULL=1` turns on, and `QUAKE=1` - and are listed here
+    # `doom`, `quake` and `snes` are there only in images that compile them
+    # in - `DOOM=1` and `SNES=1`, which `FULL=1` turns on, and `QUAKE=1` - and
+    # are listed here
     # anyway, which is the honest way round. This checker asks "will this
     # name exist", and the answer for `doom` is "in the image that has Doom
     # in it". The application checks for itself before using it, because a
@@ -65,7 +66,7 @@ ENVIRONMENTS = {
     # the only door to it, exactly as `print` is.
     #
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
-                  "interrupted", "use", "doom", "quake", "write"},
+                  "interrupted", "use", "doom", "quake", "snes", "write"},
 
     # A library is loaded into the environment of whoever asked for it, so it
     # sees the same names a program does - minus `args`, which belongs to the

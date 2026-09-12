@@ -1224,3 +1224,34 @@ The fixture is a committed file rather than a generated one, deliberately. A
 decoder's regression test wants bytes that never move: a fixture regenerated
 by the build could start failing because the *encoder* on the build machine
 changed, which is a day spent on the wrong question.
+
+## 18.25 A Super Nintendo, and a name too long for /app
+
+```
+make test                               # a 46-byte name in /app, at the prompt
+make snes-check ROM=/path/to/game.sfc   # the console, on an SNES=1 image
+```
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/run_queries.py`, `A-LONG` | `make test` | a 46-byte name registered in `/app` the way `ui.window` registers a window comes back as its first 23 bytes, rather than as an error that ends the process that asked |
+| `tools/run_snes.py`, 5 checks | `make snes-check` | a ROM from `/home/roms/snes` started; a window; the loop reported its rate; more than 8 colours in the window; no fault |
+
+**The `/app` check has had its fix undone to check it.** With the namespace
+kit packing the whole name again, `run_queries.py` stops at that check with
+the error first seen when a ROM's window died opening - `bad argument #3 to
+'pack' (string longer than given size)`. With the cut back it passes, 17 of
+17.
+
+**`make snes-check` reports a rate rather than judging one.** `snes.lua`
+prints its frames a second every ten seconds and the harness prints those
+lines back; a TCG frame rate is not a threshold worth failing on. It also
+presses Enter four times to get past title screens, and **does not check
+that the presses arrived** - the picture shows it, and the picture is saved
+as `build/snes/screen.png` and `window.png` for exactly that, because more
+than 8 colours says the window is drawn and not that it is drawn right.
+
+**It is not in `make prepush`**, for `quake-check`'s reason: no ROM is in the
+repository, and none will be. Its first run failed - the window died
+opening, which is the `/app` bug above. After the fix it passed all 5, at
+about 22 frames a second of 60, on Super Mario All-Stars' game-select screen.

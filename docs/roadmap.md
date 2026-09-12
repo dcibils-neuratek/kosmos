@@ -74,6 +74,8 @@ system monitor — forty-one of them.
 
 **Software 3D**, through TinyGL, and Doom.
 
+**A Super Nintendo**, from LakeSnes, with its ROMs on the drive. No sound yet.
+
 **A web browser.** hubbub, libdom and libcss running at EL0: HTML parsed
 into a DOM, the CSS cascade run with a user-agent stylesheet, text laid out
 into boxes that survive the paint, and links you can click.

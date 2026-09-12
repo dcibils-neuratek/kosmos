@@ -97,6 +97,17 @@ def main():
             'print("L-RAMFS", fs.read("/ramfs/" .. D .. "/" .. N) or "none", '
             'table.concat(fs.list("/ramfs/" .. D) or {}, ",")) '
             'print("L-HOME", fs.read("/home/" .. N) or "none")',
+
+            # A name longer than /app keeps, registered the way `ui.window`
+            # registers a window under its title. The namespace kit used to
+            # raise inside `string.pack` before the registry saw it, which
+            # killed the process that asked - a window titled with a ROM's
+            # No-Intro name was the first to be that long.
+            'E = sys.endpoint() '
+            'R = fs.send("/app", { type = "register", '
+            'name = string.rep("t", 46) }, E) '
+            'print("A-LONG", R and R.name or "refused") '
+            'if R then fs.send("/app", { type = "unregister", name = R.name }) end',
         #
         # Five seconds a command, not forty. `pump` waits the whole time
         # rather than stopping at the prompt, so `each` is a real cost per
@@ -154,6 +165,19 @@ def main():
                               "list it under its whole name.\n" + lines[-1])
 
             checks += 1
+
+        #
+        # The long name comes back as what the field keeps - 23 bytes and a
+        # terminator - rather than as an error from the process that asked.
+        #
+        want = "A-LONG " + "t" * 23
+        lines = [l for l in flat.splitlines() if l.startswith("A-LONG ")]
+
+        if not lines or lines[-1].strip() != want:
+            raise Failure("a 46-byte name registered in /app did not come "
+                          "back as its first 23 bytes.\n"
+                          + "\n".join(lines or [flat[-1200:]]))
+        checks += 1
 
         #
         # And the one that would have caught the original bug on its own: a

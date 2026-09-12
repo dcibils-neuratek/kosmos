@@ -62,6 +62,10 @@ Vendored third-party code keeps its own licence, which travels beside it:
       runtime/upstream/minimp3/LICENSE, and the notice at the top of
       minimp3.h
 
+  LakeSnes, by angelo_wf and contributors, the CX4 by dink, MIT
+      runtime/upstream/lakesnes/LICENSE.txt, with the vendoring recorded
+      in README.kosmos.md beside it. Built by default, in `FULL=1`
+
   The fonts
       assets/fonts/, each under the LICENSE file beside it. A font
       whose licence is not beside it is not committed, and the build

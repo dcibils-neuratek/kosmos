@@ -84,6 +84,7 @@ ifndef TEST
 ifndef BENCH
 DOOM := 1
 WEB  := 1
+SNES := 1
 FB   ?= 1920x1080
 endif
 endif
@@ -111,7 +112,7 @@ endif
 # all about why. Left out of the name for aarch64 so that every path in
 # every document that was written before there was a second one still says
 # what it says.
-VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)$(if $(QUAKE),-quake)
+VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $(BENCH),-bench)$(if $(DOOM),-doom)$(if $(WEB),-web)$(if $(LITEXL),-litexl)$(if $(QUAKE),-quake)$(if $(SNES),-snes)
 
 #
 # **Defined here, beside VARIANT, and not beside the flags that use it.**
@@ -805,6 +806,30 @@ ifdef QUAKE
 USER_SRCS += $(QUAKE_SRCS)
 endif
 
+#
+# `SNES=1` - LakeSnes, a Super Nintendo, on in `FULL=1`.
+#
+# **A build option for Doom's second reason and not its first.** LakeSnes is
+# MIT, so an image carrying it is as MIT as one without. But the image is
+# copied into every process, and ninety kilobytes of 65816 and SPC700 would
+# be paid by all of them for the one that runs it.
+#
+# The twelve files upstream's own Makefile names for the core, listed rather
+# than globbed for the reason Doom's are. Its SDL frontend, tracer and zip
+# reader are not built: `user/lib/snes_kosmos.c` stands where the frontend
+# was. `runtime/upstream/lakesnes/README.kosmos.md` is the account.
+#
+SNES_DIR   := runtime/upstream/lakesnes/snes
+SNES_NAMES := spc dsp apu cpu dma ppu cart cx4 input statehandler snes \
+              snes_other
+SNES_SRCS  := $(addprefix $(SNES_DIR)/,$(addsuffix .c,$(SNES_NAMES))) \
+              user/lib/snes_kosmos.c
+SNES_CFLAGS := -w -Wno-error -iquote $(SNES_DIR)
+
+ifdef SNES
+USER_SRCS += $(SNES_SRCS)
+endif
+
 ifdef DOOM
 #
 # The 79 objects doomgeneric's own Makefile names, and not one more.
@@ -981,7 +1006,7 @@ USER_DEPS := $(USER_OBJS:.o=.d)
 
 # -Ikernel is for syscall.h and panic.h, and nothing else. The syscall
 # numbers are the ABI and belong to both sides of it by definition.
-UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) -DKOSMOS_USER \
+UCFLAGS := $(CFLAGS_BASE) $(UTESTDEFS) -DKOSMOS_USER_BASE=$(USER_BASE) $(if $(DOOM),-DKOSMOS_DOOM -Iruntime/upstream/doom) $(if $(WEB),-DKOSMOS_WEB) $(if $(LITEXL),-DKOSMOS_LITEXL) $(if $(QUAKE),-DKOSMOS_QUAKE) $(if $(SNES),-DKOSMOS_SNES) -DKOSMOS_USER \
            -Iruntime/upstream/puff -Iruntime/upstream/stb \
            -Iruntime/upstream/minimp3 \
            -Iuser/include -Ikernel -Iruntime/include \
@@ -1039,7 +1064,7 @@ ULDFLAGS := -T user/user.ld -Wl,--defsym=USER_BASE=$(USER_BASE) \
 KFLAGS_NOW := $(CFLAGS)
 KFLAGS_FILE := $(BUILD)/flags
 
-UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))
+UFLAGS_NOW := $(UCFLAGS) | $(DOOM_CFLAGS) | $(TINYGL_CFLAGS) | $(WEB_CFLAGS) | $(MUSL_CFLAGS) | $(LITEXL_CFLAGS)$(if $(QUAKE), | $(QUAKE_CFLAGS))$(if $(SNES), | $(SNES_CFLAGS))
 UFLAGS_FILE := $(UBUILD)/flags
 
 $(shell mkdir -p $(BUILD) $(UBUILD))
@@ -1297,6 +1322,16 @@ $(UBUILD)/runtime/upstream/quake/%.c.o: runtime/upstream/quake/%.c $(UFLAGS_FILE
 $(UBUILD)/user/lib/quake_kosmos.c.o: user/lib/quake_kosmos.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(UCFLAGS) $(QUAKE_INCLUDES) -Wno-comment -MMD -MP -c $< -o $@
+
+# LakeSnes's core, above the generic rule for the reason Doom's is.
+$(UBUILD)/runtime/upstream/lakesnes/%.c.o: runtime/upstream/lakesnes/%.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) $(SNES_CFLAGS) -MMD -MP -c $< -o $@
+
+# And Kosmos's half: the core's headers on the path, and every warning on.
+$(UBUILD)/user/lib/snes_kosmos.c.o: user/lib/snes_kosmos.c $(UFLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(UCFLAGS) -iquote $(SNES_DIR) -MMD -MP -c $< -o $@
 
 $(UBUILD)/runtime/upstream/%.c.o: runtime/upstream/%.c $(UFLAGS_FILE)
 	@mkdir -p $(dir $@)
@@ -2940,6 +2975,20 @@ quake-check: $(HOSTDIR)/lua
 	@test -f "$(PAK)" || { echo "FAIL: no pak. make quake-check PAK=/path/to/pak0.pak"; exit 1; }
 	@$(MAKE) --no-print-directory MEGA= FULL=0 QUAKE=1
 	python3 tools/run_quake.py build/kosmos.elf $(PAK)
+
+# The Super Nintendo on the machine: a ROM from `/home/roms/snes`, a window
+# drawing the game, and how many frames a second the core really manages -
+# which is the number this port was started to find. Enter is pressed to get
+# past title screens and not checked; the pictures show whether it arrived.
+#
+# Not part of `make test` or `make prepush`, for the reason `quake-check` is
+# not: it needs a ROM, and no ROM is in the repository. The pictures it takes
+# go to `build/snes/`.
+.PHONY: snes-check
+snes-check: $(HOSTDIR)/lua
+	@test -f "$(ROM)" || { echo "FAIL: no ROM. make snes-check ROM=/path/to/game.sfc"; exit 1; }
+	@$(MAKE) --no-print-directory MEGA= FULL=0 SNES=1
+	python3 tools/run_snes.py build/kosmos.elf "$(ROM)"
 
 # In another terminal: aarch64-none-elf-gdb build/kosmos.elf
 #                      (gdb) target remote :1234

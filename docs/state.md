@@ -8,6 +8,61 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: a Super Nintendo, from LakeSnes
+
+`wm snes` opens the first ROM in `/home/roms/snes` - `wm snes:<name>` a named
+one - and runs it in a 512 by 480 window at the console's own rate, with the
+keyboard as the first pad. LakeSnes, dink's fork at `048a0d7`, vendored
+unmodified under `runtime/upstream/lakesnes/`; Kosmos's half is
+`user/lib/snes_kosmos.c`, and the loop is `user/bin/snes.lua`. In `FULL=1`,
+the default, and out of `FULL=0`: it is MIT, so the flag is about the ninety
+kilobytes every process would carry rather than the licence.
+
+**The port asked nothing of Kosmos.** The core was written as a library
+under an SDL frontend, so the frontend is the platform layer and is the one
+file not taken. It compiled against this system's headers the first time,
+needs no shim and no stack of its own, and never calls `exit`.
+`runtime/upstream/lakesnes/README.kosmos.md` has the account.
+
+**How fast.** Natively on the M4, 2.0 to 2.5 ms a frame on three ROMs.
+Under TCG, **about 22 frames a second of 60** - 25 to 34 ms a frame - on the
+All-Stars title and game-select screens: slow motion under `make qemu`.
+Sampled natively, 72% of a frame is the picture processor choosing a layer
+for each pixel (`ppu_getPixel` 58%, `ppu_handlePixel` 14%), and the 65816 and
+the SPC700 together are under a fifth. `-O3` is worth 3 to 5%, and the copy
+into the surface is 1%. If the vector unit is ever brought to it, the
+picture processor's loop is where, measured natively (`gfx.md` §19.14).
+
+**And the desktop bug it found.** A window titled longer than 24 bytes killed
+its own process while opening: `ui.window` registers under its title, and the
+namespace kit packed the name into `c24` with `string.pack`, which raises
+rather than cuts. `appfs.c` already keeps 23 bytes of whatever arrives, so the
+kit cuts to 23 now. The ROM's No-Intro name, 46 bytes, was the first title
+that long.
+
+**Checked:**
+
+- `make snes-check ROM=...`, 5 checks: the ROM started, a window, the rate
+  reported, the game drawn - 247 colours - and no fault. Not in
+  `make prepush`, because no ROM is in the repository.
+- `tools/run_queries.py` registers a 46-byte name in `/app` at the prompt and
+  expects its first 23 bytes back: 17 of 17. With the cut undone it fails
+  with the original `bad argument #3 to 'pack'`.
+- `make test` green: 151/151 and 147/147 and every harness in it, on an
+  ordinary image that now carries LakeSnes beside Doom and the browser.
+  `make prepush` has not been run.
+
+Open:
+
+- **No sound.** `snes_setSamples` is not called. Next: feed the audio
+  server's ring from C, and let the ring pace the frames instead of the
+  counter.
+- **No saves.** Battery RAM and save states are bytes the core hands back,
+  and they need a way out through the namespace.
+- **Under TCG it is a third of the console's speed**, so timing - and sound
+  above all - has to be judged natively or on hardware.
+- A button held while the window loses the focus stays down.
+
 ### 12 September: JPEG, and three bugs in things that looked finished
 
 **Pictures.** `gfx.jpeg` sits beside `gfx.png`, vendoring stb_image v2.30 at

@@ -52,6 +52,9 @@ void kosmos_doom_open(lua_State *L);
 #ifdef KOSMOS_QUAKE
 void kosmos_quake_open(lua_State *L);
 #endif
+#ifdef KOSMOS_SNES
+void kosmos_snes_open(lua_State *L);
+#endif
 void kosmos_docfont_open(lua_State *L);
 
 #define SURFACE_MT  "kosmos.surface"
@@ -2133,6 +2136,11 @@ int luaopen_gfx(lua_State *L)
 #ifdef KOSMOS_QUAKE
     /* `make QUAKE=1` only, which `FULL=1` does not turn on. */
     kosmos_quake_open(L);
+#endif
+#ifdef KOSMOS_SNES
+    /* `FULL=1`, the default, or `SNES=1`. LakeSnes is MIT, so this one is
+     * about size and not licence: runtime/upstream/lakesnes/README.kosmos.md. */
+    kosmos_snes_open(L);
 #endif
     kosmos_docfont_open(L);
 
