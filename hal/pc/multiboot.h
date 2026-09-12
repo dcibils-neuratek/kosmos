@@ -108,6 +108,7 @@ void pic_silence(void);
 void pic_init(void);
 bool pic_handle(void);
 void pic_unmask(unsigned irq);
+void pic_mask(unsigned irq);
 
 /* Whether this machine took the APIC path. `timer.c` asks, because the
  * tick comes from a different chip on each. */

@@ -24,6 +24,7 @@
 #include "hal.h"
 #include "boot.h"
 #include "syscall.h"
+#include "irq.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -3558,6 +3559,88 @@ static bool test_a_driver_may_map_devices_and_not_ram(void)
         && !dev_range_ok(~(uintptr_t)0 - PAGE_SIZE, 4); /* wrapping: no */
 }
 
+/*
+ * A driver can claim an interrupt, and cannot claim the kernel's.
+ *
+ * `irq_deliver` is what the interrupt handler calls, so it can be called
+ * here directly and the whole path exercised without a device: claim,
+ * deliver, count, take, release. What is *not* exercised is the blocking
+ * half of `irq_wait` - a test thread with nothing pending would block for
+ * ever and there is no interrupt coming to wake it - so every wait below
+ * happens with something already delivered. The blocking path gets its test
+ * from the first real driver, which is the only thing that can produce a
+ * genuine interrupt.
+ *
+ * **The refusals are the interesting half.** A claim table that said yes to
+ * everything would pass a test that only ever claimed a free line, and the
+ * two things it must refuse are the two that break the machine: a number the
+ * kernel spends on itself - the tick above all, since a process that could
+ * claim it could stop scheduling - and a line somebody already holds, where
+ * two drivers would each be told about the other's device.
+ *
+ * The line to claim is found by asking the board rather than written down,
+ * because which numbers are free is a fact about the machine and differs
+ * between the two this runs on. Zero is the one number both machines refuse,
+ * for different reasons that come to the same thing - it is the
+ * inter-processor interrupt on the GIC and the tick on a PC - so that is the
+ * refusal this can assert without knowing which machine it is on.
+ */
+static bool test_a_driver_can_claim_an_interrupt(void)
+{
+    struct irq_line *mine, *twice;
+    unsigned n, taken = 0;
+    bool found = false;
+    bool ok;
+
+    /* The first number this board says a driver may have. */
+    for (n = 0; n < 1024; n++) {
+        if (hal_irq_available(n)) {
+            taken = n;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        return false;           /* a board with nothing to give: say so */
+    }
+
+    mine = irq_claim(taken, NULL);
+
+    if (mine == NULL) {
+        return false;
+    }
+
+    /* Nobody else may have it now. */
+    twice = irq_claim(taken, NULL);
+
+    /* One interrupt, delivered the way the handler delivers it, then taken. */
+    ok = irq_deliver(taken)                 /* it is somebody's */
+      && irq_wait(mine) == 0                /* and waiting finds it */
+      && mine->pending == 0;                /* exactly once */
+
+    /*
+     * Two while the driver was busy, and both are there. A flag instead of a
+     * count would report one and lose the other, which is a device left with
+     * work outstanding and a driver that will not be told again.
+     */
+    ok = ok
+      && irq_deliver(taken)
+      && irq_deliver(taken)
+      && mine->pending == 2
+      && irq_wait(mine) == 0
+      && irq_wait(mine) == 0
+      && mine->pending == 0;
+
+    irq_release(mine);
+
+    return ok
+        && twice == NULL                    /* the second claim: refused */
+        && !irq_deliver(taken)              /* released: nobody's again */
+        && irq_wait(mine) == SYS_ERR_DENIED /* and the capability is stale */
+        && !hal_irq_available(0);           /* and 0 is never a driver's */
+}
+
 static bool test_a_region_can_be_one_physical_run(void)
 {
     enum { RING_PAGES = 4 };
@@ -6038,6 +6121,8 @@ static const struct test tests[] = {
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
+    { "irq: a line is claimed, counted and given back",
+                                          test_a_driver_can_claim_an_interrupt },
     { "dev: registers may be mapped, RAM may not",
                                           test_a_driver_may_map_devices_and_not_ram },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },

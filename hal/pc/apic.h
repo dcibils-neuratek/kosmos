@@ -57,6 +57,7 @@ bool apic_present(void);
 /* Lets one line through, by the ISA number everything above still uses.
  * The override table is what turns that into an input. */
 void apic_unmask(unsigned irq);
+void apic_mask(unsigned irq);
 
 /*
  * Serves whatever arrived and says whether it was the tick.

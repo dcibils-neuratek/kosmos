@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "syscall.h"
+#include "irq.h"
 #include "process.h"
 #include "sched.h"
 #include "smp.h"
@@ -1413,6 +1414,65 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = (long)base;
         break;
     }
+
+    case SYS_IRQ_CLAIM: {
+        /*
+         * A line, claimed, and handed back as a capability.
+         *
+         * **Gated on device authority**, like the two mappings: this is the
+         * right to take an interrupt out of the kernel's hands, and a
+         * process that could take the wrong one could stop the machine. The
+         * board decides which numbers are wrong, in `hal_irq_available`,
+         * because it is the only thing that knows which it spends.
+         *
+         * Installed into the capability table, so the driver names its line
+         * by an index into its own table from here on and `owns_devices` is
+         * not consulted again. That is what makes it possible for a devices
+         * server to hold the authority one day and hand a driver the
+         * capability - the driver never needing the authority at all.
+         */
+        struct irq_line *line;
+        cap_t index;
+
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        line = irq_claim((unsigned)sc->arg[0], p);
+
+        if (line == NULL) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        index = ipc_install_irq(thread_current(), line);
+
+        if (index < 0) {
+            /* No slot for it, so the claim goes back rather than being held
+             * by a process with no way to name it. */
+            irq_release(line);
+            result = SYS_ERR_NO_CAPS;
+            break;
+        }
+
+        result = (long)index;
+        break;
+    }
+
+    case SYS_IRQ_WAIT:
+        /*
+         * No device-authority check, and that is deliberate: holding the
+         * capability *is* the authority. The grant was spent at the claim.
+         */
+        result = irq_wait(ipc_resolve_irq(thread_current(),
+                                          (cap_t)sc->arg[0]));
+        break;
+
+    case SYS_IRQ_ACK:
+        result = irq_ack(ipc_resolve_irq(thread_current(),
+                                         (cap_t)sc->arg[0]));
+        break;
 
     case SYS_MEM_SIZE: {
         struct memobj *m = ipc_resolve_memory(thread_current(),

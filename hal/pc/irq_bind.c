@@ -124,6 +124,68 @@ bool hal_irq_handle(void)
     return on_apic ? apic_handle() : pic_handle();
 }
 
+/*
+ * **Which numbers a driver outside the kernel may claim, on a PC.**
+ *
+ * Not the timer, which is this kernel's tick and whose loss would stop the
+ * machine scheduling. Not the keyboard or the mouse, which `i8042.c` still
+ * drives from in here. Everything else is a PCI link or an MSI, which is
+ * exactly what a userland driver is for.
+ *
+ * The upper bound is the largest IRQ number `pci.c` mints for an MSI; above
+ * that there is no source at all.
+ */
+bool hal_irq_available(unsigned intid)
+{
+    /*
+     * 0 is the tick, 1 the keyboard and 12 the mouse - the three this kernel
+     * unmasks for itself, in `timer.c` and `i8042.c`. Written as the numbers
+     * they are because that is how those files ask for them; the day one of
+     * them gains a name, this gains it too.
+     *
+     * 2 is not a device at all: it is the wire the slave 8259 hangs on, and
+     * masking it would silence every line on the slave.
+     */
+    if (intid == 0 || intid == 1 || intid == 2 || intid == 12) {
+        return false;
+    }
+
+    /*
+     * The ceiling is the widest a PC's numbering gets here: sixteen ISA
+     * lines, the PCI links above them, and the MSI numbers `pci.c` mints on
+     * top. Two hundred is comfortably past all of them and far below the
+     * vector space, so it catches a wrong number rather than bounding a
+     * design.
+     */
+    return intid < 200u;
+}
+
+/*
+ * Mask or unmask one, through whichever controller is running.
+ *
+ * The APIC's version returns without doing anything for an MSI, and that is
+ * correct: there is no redirection entry and nothing is asserted after the
+ * handler. `kernel/irq.c` masks on every delivery because a level-triggered
+ * line would otherwise arrive again before the driver could run; for an MSI
+ * both directions are no-ops and the driver's ack changes nothing.
+ */
+void hal_irq_set_masked(unsigned intid, bool masked)
+{
+    if (!hal_irq_available(intid)) {
+        return;
+    }
+
+    if (masked) {
+        if (on_apic) {
+            apic_mask(intid);
+        } else {
+            pic_mask(intid);
+        }
+    } else {
+        pc_irq_unmask(intid);
+    }
+}
+
 void pc_irq_unmask(unsigned irq)
 {
     if (on_apic) {

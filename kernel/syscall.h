@@ -118,6 +118,34 @@
 #define DEV_MAP_PAGES_MAX  1024u
 
 /*
+ * **And being told the device has something to say**, which is the third of
+ * `drivers.md`'s primitives and the one a driver cannot work around. Without
+ * it a driver polls, which on a USB controller means either a thread that
+ * never sleeps or a latency nobody wants.
+ *
+ * Three calls, which is where L4, seL4 and QNX all ended up:
+ *
+ *   `SYS_IRQ_CLAIM` takes a line and gives back a *capability*, so a driver
+ *   names its interrupt by an index into its own table. Refused for a number
+ *   the board spends on itself - the tick above all, since a process able to
+ *   claim it could stop the machine scheduling.
+ *
+ *   `SYS_IRQ_WAIT` blocks until one arrives, or returns at once if one
+ *   arrived while the driver was busy. A count rather than a flag, so an
+ *   interrupt during servicing is not lost.
+ *
+ *   `SYS_IRQ_ACK` unmasks. The kernel masks the line on delivery because a
+ *   level-triggered source is still asserted when the handler returns, and
+ *   unmasked it would arrive again before the driver - a process - could run
+ *   at all. **On an MSI there is nothing to mask and this costs a syscall
+ *   and changes nothing**, which is correct rather than missing: the device
+ *   wrote to the local APIC and nothing is left asserted.
+ */
+#define SYS_IRQ_CLAIM  46   /* (intid)                -> cap or error       */
+#define SYS_IRQ_WAIT   47   /* (cap)                  -> 0 or error         */
+#define SYS_IRQ_ACK    48   /* (cap)                  -> 0 or error         */
+
+/*
  * Whether a physical range may be handed to a driver at all - size,
  * alignment, and above all that it is not RAM. Declared here rather than
  * left static so the suite can ask it directly: the mapping mechanics are
@@ -266,7 +294,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 
 /* Whether a capability still names something, asked without using it. */
 #define SYS_CAP_CHECK  43   /* (cap)                  -> 0 or error         */
-#define SYS_MAX         46
+#define SYS_MAX         49
 
 /*
  * What a spawn may hand its child beyond capabilities.

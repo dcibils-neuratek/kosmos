@@ -245,6 +245,31 @@ void hal_cpu_wake(unsigned cpu);
 bool hal_irq_handle(void);
 
 /*
+ * **The board's half of an interrupt a driver owns.**
+ *
+ * `kernel/irq.c` keeps the claims and does the waking; what it cannot know
+ * is which numbers this machine spends on itself and how this controller
+ * masks one. Both are facts about the board.
+ *
+ * `hal_irq_available` is the safety half: the timer and the inter-processor
+ * interrupt are the kernel's, and a process that could claim the timer could
+ * stop the machine scheduling. Asked rather than kept as a list in the
+ * kernel, because only the board knows which numbers it uses.
+ *
+ * `hal_irq_set_masked` is what makes a level-triggered source survivable. It
+ * is still asserted when the handler returns, so it must be masked there and
+ * unmasked once the driver has quietened the device - otherwise the
+ * controller delivers it again immediately and the driver, which is a
+ * process, never gets a turn.
+ *
+ * **On a source that is not a line - an MSI - both directions do nothing,
+ * and that is correct rather than missing**: the device wrote to the local
+ * APIC, there is no redirection entry, and nothing is asserted afterwards.
+ */
+bool hal_irq_available(unsigned intid);
+void hal_irq_set_masked(unsigned intid, bool masked);
+
+/*
  * Which interrupt controller this machine turned out to have.
  *
  * A board with one answer returns a constant; a PC has two and chooses at

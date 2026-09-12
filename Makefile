@@ -249,6 +249,7 @@ SRCS := boot/start.S \
         kernel/sched_prio.c \
         kernel/ipc.c \
         kernel/memobj.c \
+        kernel/irq.c \
         kernel/process.c \
         kernel/smp.c \
         kernel/spinlock.c \
@@ -2203,6 +2204,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/sched_prio.c \
              kernel/ipc.c \
              kernel/memobj.c \
+             kernel/irq.c \
              kernel/process.c \
              kernel/smp.c \
              kernel/spinlock.c \

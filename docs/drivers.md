@@ -76,7 +76,7 @@ because there was no other way to express it.
 
 ---
 
-## 4. The three primitives — two of them now exist
+## 4. The three primitives, all of which now exist
 
 This is the actual work, and everything below depends on it.
 
@@ -103,14 +103,34 @@ This is the actual work, and everything below depends on it.
    scattered region, since reporting a base for one would point hardware at
    somebody else's heap.
 
-3. **Receive an interrupt.** ✖ Still missing. There is no route from a
-   hardware IRQ to a thread waiting in a driver.
+3. **Receive an interrupt.** ✅ `SYS_IRQ_CLAIM`, `SYS_IRQ_WAIT` and
+   `SYS_IRQ_ACK` (0.10.40), with the claims in `kernel/irq.c`: a fixed pool
+   of sixteen, one lock, no allocation. A claim is a *capability*, so a
+   driver names its line by an index into its own table.
 
-**The two that exist do not overlap, and that is deliberate**: registers are
+   **A wake, not a message.** An interrupt carries no data - the data is in
+   registers the driver already has mapped - so a message would be an empty
+   envelope built and copied on the one path that runs with interrupts off.
+   The handler bumps a count and wakes a thread, and that is all.
+
+   **The line is masked on delivery**, because a level-triggered source is
+   still asserted when the handler returns and would arrive again before the
+   driver - a process - could run: a livelock in the handler. The driver
+   unmasks with `SYS_IRQ_ACK` once it has quietened the device. On an MSI
+   there is no line, so both directions are no-ops, and that is the normal
+   case on the ThinkPad rather than an edge.
+
+   Refused: a number the board spends on itself (`hal_irq_available` - the
+   tick above all), and a line somebody already holds. The blocking half of
+   `SYS_IRQ_WAIT` is the one piece without a test yet, because only a real
+   device can produce the interrupt that ends the wait.
+
+**The two mappings do not overlap, and that is deliberate**: registers are
 device memory and uncached, buffers are ordinary memory and cached, and a
-driver that confuses them is refused rather than left to find out. Between
-them a driver can already *drive* a device; what it cannot do is be told
-that the device has something to say, so it would have to poll.
+driver that confuses them is refused rather than left to find out. With the
+interrupt beside them a driver in a process has everything a driver in the
+kernel had: it can reach the device, give it memory, and be told when it has
+something to say. **The next thing is a driver.**
 
 Estimated at 500-800 lines in the kernel, and the largest architectural
 addition since capabilities - because it turns "a driver is kernel code"

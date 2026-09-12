@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 
+#include "irq.h"
 #include "hal.h"
 #include "pc.h"
 #include "virtio.h"
@@ -98,6 +99,25 @@ void pic_unmask(unsigned irq)
     if (irq >= 8) {
         wanted |= (uint16_t)(1u << 2);
     }
+
+    apply_masks();
+}
+
+/*
+ * And shut one again.
+ *
+ * IRQ 2 is left open whatever happens: it is the wire the slave controller
+ * is on, not a device, so closing it because a line on the slave was masked
+ * would silence every other line on the slave too. The cascade is opened by
+ * `pic_unmask` for the same reason and is nobody's to close.
+ */
+void pic_mask(unsigned irq)
+{
+    if (irq > 15 || irq == 2) {
+        return;
+    }
+
+    wanted &= (uint16_t)~(1u << irq);
 
     apply_masks();
 }
@@ -242,6 +262,14 @@ bool pic_handle(void)
         snd_interrupt(irq);
         net_interrupt(irq);
         blk_interrupt(irq);
+
+        /*
+         * And a driver in a process. `irq_deliver` masks the line before it
+         * returns, which is what keeps a level-triggered source from
+         * arriving again before the driver - which cannot run until this
+         * handler does - has had a turn.
+         */
+        (void)irq_deliver(irq);
     }
 
     eoi(irq);

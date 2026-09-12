@@ -61,10 +61,19 @@
  * and the app server will.
  */
 struct memobj;
+struct irq_line;
 
 #define CAP_NONE      0
 #define CAP_ENDPOINT  1
 #define CAP_MEMORY    2
+
+/*
+ * A hardware interrupt line, claimed by a driver. `kernel/irq.h` is the
+ * argument; what matters here is that it is a capability like the other two,
+ * so a driver names a line by an index into its own table and cannot reach
+ * one it was not given.
+ */
+#define CAP_IRQ       3
 
 #define THREAD_MAX          48
 #define THREAD_NAME_MAX     16
@@ -292,9 +301,11 @@ struct thread {
      * whose object was destroyed and replaced.
      */
     struct {
-        unsigned char    kind;      /* CAP_NONE, CAP_ENDPOINT, CAP_MEMORY */
+        unsigned char    kind;      /* CAP_NONE, CAP_ENDPOINT, CAP_MEMORY,
+                                     * CAP_IRQ */
         struct endpoint *endpoint;
         struct memobj   *memory;
+        struct irq_line *irq;
         unsigned         generation;
     } caps[CAPS_PER_THREAD];
 

@@ -51,7 +51,28 @@ describing itself, and the window draws whatever comes back. It is the
 opposite of `docs/cheatsheet.html`, which is a copy and which listed none of
 the Super keys on the day this was written.
 
-**Still open**, and the next thing: USB. Nothing below has changed.
+**Then the three driver primitives, all of them.** `docs/drivers.md` §4
+named three things a driver outside the kernel needs and the kernel had never
+handed out. One had quietly landed in 0.10.35 - contiguous memory and its
+physical address - and the other two landed in this session:
+
+- `SYS_DEV_MAP` (0.10.39): a device's registers in the driver's own address
+  space, Device-nGnRnE on ARM and PCD|PWT on x86. RAM is refused.
+- `SYS_IRQ_CLAIM`, `WAIT`, `ACK` (0.10.40): an interrupt, as a capability,
+  delivered as a wake, with the line masked until the driver acks. On an MSI
+  the mask is a no-op, which is the normal case on the ThinkPad.
+
+Both architectures, both tested with negative controls run and watched fail.
+**What is not tested yet is the blocking half of `SYS_IRQ_WAIT`**, because
+only a real device produces the interrupt that ends the wait - so the first
+driver is also that test.
+
+**Still open, and the next thing: the first userland driver.** xHCI is the
+target, since USB mass storage deletes the loader-disk bug and a USB-C
+Ethernet adapter puts TCP/IP on metal. It may be worth a smaller device first
+- something on QEMU whose interrupt can be provoked on demand - so that the
+primitives are proven by a driver simple enough that a failure points at
+them rather than at xHCI's ring management.
 
 
 ### USB is the next milestone, and the reason is tonight

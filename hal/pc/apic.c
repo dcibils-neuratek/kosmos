@@ -9,6 +9,7 @@
 
 #include "acpi.h"
 #include "apic.h"
+#include "irq.h"
 #include "apic_decode.h"
 #include "hal.h"
 #include "mmio.h"
@@ -263,6 +264,40 @@ void apic_unmask(unsigned irq)
     ioapic_write(IOAPIC_REG_ENTRY + input * 2, VECTOR_OF(irq) | extra);
 }
 
+/*
+ * Mask one line, which is the redirection entry's own bit 16.
+ *
+ * **An MSI has no entry and nothing to mask**, and returning without doing
+ * anything is correct rather than a gap: the device wrote to the local APIC
+ * directly, so there is no line asserted after the handler and nothing to
+ * hold off. `kernel/irq.c` masks on every delivery because a level-triggered
+ * source would otherwise livelock the machine; for an MSI that mask is a
+ * no-op and the matching ack is a syscall that changes nothing.
+ */
+void apic_mask(unsigned irq)
+{
+    uint32_t extra;
+    unsigned input;
+
+    if (!apic.present || irq >= MSI_IRQ_FIRST) {
+        return;
+    }
+
+    input = (irq >= ISA_LINES) ? irq : input_of(irq, &extra);
+
+    if (input >= apic.inputs) {
+        return;
+    }
+
+    /*
+     * The low word alone. Masking is one bit and the destination in the high
+     * word is left as it is, so unmasking later does not have to know where
+     * this line was aimed - `apic_unmask` rewrites both anyway.
+     */
+    ioapic_write(IOAPIC_REG_ENTRY + input * 2,
+                 VECTOR_OF(irq) | ENTRY_MASKED);
+}
+
 static void mask_everything(void)
 {
     unsigned i;
@@ -343,6 +378,21 @@ bool apic_handle(void)
         snd_interrupt(irq);
         net_interrupt(irq);
         blk_interrupt(irq);
+
+        /*
+         * And a driver in a process, which cannot be a line above it by
+         * construction - the thing that wants to know is not in this address
+         * space. `irq_deliver` masks the line before it returns, which is
+         * what stops a level-triggered source arriving again before the
+         * driver has had a turn; for an MSI that mask is a no-op, because
+         * nothing is asserted after the device's write.
+         *
+         * Offered after the in-kernel drivers rather than instead of them,
+         * because a PCI line is shared: the same number can be a userland
+         * driver's device and one of these at once, and each settles it from
+         * its own status register.
+         */
+        (void)irq_deliver(irq);
     }
 
     lapic_write(LAPIC_EOI, 0);

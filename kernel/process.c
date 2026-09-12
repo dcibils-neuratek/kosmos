@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "process.h"
+#include "irq.h"
 #include "spinlock.h"
 #include "screen.h"
 #include "syscall.h"
@@ -1166,6 +1167,19 @@ void process_exit(struct process *p, int code)
      * returns finds them already gone.
      */
     ipc_endpoints_release(p);
+
+    /*
+     * **Interrupt lines, and this one is not a leak but a live device.**
+     *
+     * A driver that exits or is killed leaves its hardware asserting and
+     * nothing left to quieten it. `irq_release` masks each line on the way
+     * out, which is what stops a level-triggered source from delivering for
+     * ever into a claim nobody owns - and it wakes anything still blocked on
+     * one, so a driver with a thread inside `SYS_IRQ_WAIT` can finish dying.
+     *
+     * Before the capabilities, because those name these.
+     */
+    irq_release_owned_by(p);
 
     /*
      * Capabilities before memory. A shared region's pages come back only

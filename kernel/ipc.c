@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ipc.h"
+#include "irq.h"
 #include "spinlock.h"
 #include "hal.h"
 #include "thread.h"
@@ -454,6 +455,68 @@ struct memobj *ipc_resolve_memory(struct thread *t, cap_t index)
     return m;
 }
 
+/*
+ * An interrupt line, out of and into a capability table.
+ *
+ * The same shape as the memory pair above and for the same reasons, with one
+ * difference worth naming: **there is no reference count.** A line belongs to
+ * the process that claimed it and is released when that process ends, so the
+ * number of capabilities naming it does not decide its lifetime. If a driver
+ * passes one to another process and then dies, the line goes and the other
+ * capability stops resolving - which is the right answer, since the device
+ * is unowned at that point and nothing is left to quieten it.
+ *
+ * The generation is what makes that safe rather than a dangling pointer: a
+ * released slot counts up, so a capability naming the claim that used to be
+ * there fails to match the one that is.
+ */
+struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index)
+{
+    struct irq_line *line;
+
+    if (index < 0 || index >= CAPS_PER_THREAD) {
+        return NULL;
+    }
+
+    if (t->caps[index].kind != CAP_IRQ) {
+        return NULL;
+    }
+
+    line = t->caps[index].irq;
+
+    if (line == NULL || !line->in_use) {
+        return NULL;
+    }
+
+    if (t->caps[index].generation != line->generation) {
+        return NULL;    /* released and the slot reused since */
+    }
+
+    return line;
+}
+
+cap_t ipc_install_irq(struct thread *t, struct irq_line *line)
+{
+    cap_t i;
+
+    if (t == NULL || line == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < CAPS_PER_THREAD; i++) {
+        if (t->caps[i].kind == CAP_NONE) {
+            t->caps[i].kind = CAP_IRQ;
+            t->caps[i].endpoint = NULL;
+            t->caps[i].memory = NULL;
+            t->caps[i].irq = line;
+            t->caps[i].generation = line->generation;
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 cap_t ipc_install_memory(struct thread *t, struct memobj *m)
 {
     cap_t i;
@@ -538,6 +601,7 @@ int ipc_cap_drop(struct thread *t, cap_t index)
     t->caps[index].kind = CAP_NONE;
     t->caps[index].endpoint = NULL;
     t->caps[index].memory = NULL;
+    t->caps[index].irq = NULL;
     t->caps[index].generation = 0;
 
     return 0;
@@ -571,6 +635,7 @@ void ipc_caps_release(struct thread *t)
         t->caps[i].kind = CAP_NONE;
         t->caps[i].endpoint = NULL;
         t->caps[i].memory = NULL;
+        t->caps[i].irq = NULL;
     }
 }
 

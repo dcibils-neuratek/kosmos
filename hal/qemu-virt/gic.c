@@ -24,6 +24,7 @@
 #include "percpu.h"
 #include "panic.h"
 #include "qemu-virt.h"
+#include "irq.h"
 #include "virtio.h"
 
 #define GICD_BASE           0x08000000UL
@@ -42,6 +43,7 @@
  */
 #define GICD_IGROUPR        (GICD_BASE + 0x0080)
 #define GICD_ISENABLER      (GICD_BASE + 0x0100)
+#define GICD_ICENABLER      (GICD_BASE + 0x0180)
 #define GICD_IPRIORITYR     (GICD_BASE + 0x0400)
 #define GICD_IROUTER        (GICD_BASE + 0x6000)
 
@@ -470,15 +472,94 @@ bool hal_irq_handle(void)
         input_interrupt(slot);
         snd_interrupt(slot);
         net_interrupt(slot);
+    } else {
+        /*
+         * **And the registry this function declined to build, twice.**
+         *
+         * The note above said a table of handlers saves two comparisons on a
+         * path that runs when a device has something to say, and named what
+         * would change the judgement: *a dynamic set of drivers - a driver
+         * loaded at run time cannot be a line in this function - and that is
+         * the same milestone as drivers at EL0.*
+         *
+         * This is that milestone. A driver in a process cannot be a line
+         * here by construction, so the claims live in `kernel/irq.c` and
+         * this asks them. It is still not a table of *function pointers* -
+         * there is nothing to call, because the thing that wants to know is
+         * not in this address space. It is a wake.
+         *
+         * `irq_deliver` masks the line before returning true, which is what
+         * keeps a level-triggered source from arriving again before the
+         * driver has run. An interrupt nobody claimed falls through to the
+         * end-of-interrupt below and is dropped, exactly as before.
+         */
+        (void)irq_deliver(intid);
     }
 
     /*
-     * Anything else is signalled complete and dropped. A registry of
-     * handlers is for when there are more kinds than this, which is M11.
+     * Signalled complete either way. For a claimed line this is safe because
+     * `irq_deliver` has already masked it: end-of-interrupt tells the
+     * controller this one is finished, and the mask is what stops the next.
      */
     gic_end_of_interrupt(intid);
 
     return tick;
+}
+
+/*
+ * **Which numbers a driver outside the kernel may claim.**
+ *
+ * SPIs only, and not the ones this board already spends. Below 32 are SGIs
+ * and PPIs - per-core, and the inter-processor interrupt and the timer live
+ * there - and 48 through 79 are the virtio-mmio slots, whose drivers are in
+ * this kernel. Handing any of those to a process would mean two things
+ * servicing one source, and for the timer it would mean a process able to
+ * stop the machine scheduling.
+ *
+ * The upper bound is the architecture's: 1020 and above are the special
+ * numbers, of which 1023 is the spurious one `hal_irq_handle` already knows.
+ */
+bool hal_irq_available(unsigned intid)
+{
+    if (intid < 32 || intid >= 1020) {
+        return false;
+    }
+
+    if (intid >= VIRTIO_INTID_BASE
+        && intid < VIRTIO_INTID_BASE + VIRTIO_MMIO_COUNT) {
+        return false;
+    }
+
+    return true;
+}
+
+/*
+ * Mask or unmask one SPI.
+ *
+ * Unmasking goes through `gic_enable_spi` rather than writing the enable bit
+ * alone, because a line being claimed for the first time also needs its
+ * group, its priority and its routing - and that function is idempotent, so
+ * the second and later unmasks simply rewrite what is already there. One
+ * path instead of a first-time case that could be got wrong.
+ *
+ * Masking is `ICENABLER`, which is write-one-to-clear. Both registers are
+ * write-one rather than read-modify-write for the reason the enable path
+ * gives: a read-modify-write would race with the GIC itself.
+ */
+void hal_irq_set_masked(unsigned intid, bool masked)
+{
+    unsigned word = intid / 32;
+    unsigned bit = intid % 32;
+
+    if (!hal_irq_available(intid)) {
+        return;
+    }
+
+    if (masked) {
+        mmio_write32(GICD_ICENABLER + word * 4, (uint32_t)1 << bit);
+    } else {
+        gic_enable_spi(intid);
+    }
 }
 
 /*
