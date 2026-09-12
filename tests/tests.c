@@ -23,6 +23,7 @@
 #include "process.h"
 #include "hal.h"
 #include "boot.h"
+#include "syscall.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -3510,6 +3511,53 @@ static bool test_memobj_holds_a_pak(void)
  * somebody's heap. So `memobj_phys` says 0 for one, and that is asserted
  * here rather than assumed.
  */
+/*
+ * A driver may be handed a device's registers, and may not be handed RAM.
+ *
+ * `SYS_DEV_MAP` is the primitive the whole driver plan rests on. Its mapping
+ * mechanics are `as_map`'s and are tested elsewhere; what is new here is the
+ * *decision* - which physical ranges a process holding device authority may
+ * ask for - and that is the half which is about safety.
+ *
+ * **The negative controls are the test.** A predicate that answered yes to
+ * everything would pass a check that only ever asked about a device address.
+ * So this asks about RAM, where the answer must be no, and about a pair of
+ * pages straddling the boundary, where it must also be no even though one of
+ * them is fine. Physical memory mapped uncached into a process is an alias
+ * for somebody else's pages that bypasses their cache: a way to corrupt them
+ * and a way to watch them.
+ *
+ * The address that must be *allowed* is derived from where RAM ends rather
+ * than written down, because `DEVICE_BASE` is private to one architecture's
+ * page-table code and the other has no equivalent. A constant would make
+ * this a fact about QEMU's `virt` instead of a question about the rule.
+ */
+static bool test_a_driver_may_map_devices_and_not_ram(void)
+{
+    struct memrange ram;
+    uintptr_t after, straddle;
+
+    hal_ram_range(&ram);
+
+    /* The first page past RAM, which is not RAM on either machine. */
+    after = (uintptr_t)((ram.base + ram.size + PAGE_SIZE - 1)
+                        & ~(unsigned long)(PAGE_SIZE - 1));
+
+    /* Two pages ending just past RAM's last one: the first is RAM, so the
+     * pair must be refused even though the second would be allowed alone. */
+    straddle = after - PAGE_SIZE;
+
+    return dev_range_ok(after, 1)                     /* not RAM: yes */
+        && dev_range_ok(after, 16)
+        && !dev_range_ok((uintptr_t)ram.base, 1)      /* RAM: no */
+        && !dev_range_ok((uintptr_t)ram.base + PAGE_SIZE, 1)
+        && !dev_range_ok(straddle, 2)                 /* straddling: no */
+        && !dev_range_ok(after, 0)                    /* nothing: no */
+        && !dev_range_ok(after + 1, 1)                /* unaligned: no */
+        && !dev_range_ok(after, DEV_MAP_PAGES_MAX + 1)  /* absurd: no */
+        && !dev_range_ok(~(uintptr_t)0 - PAGE_SIZE, 4); /* wrapping: no */
+}
+
 static bool test_a_region_can_be_one_physical_run(void)
 {
     enum { RING_PAGES = 4 };
@@ -5990,6 +6038,8 @@ static const struct test tests[] = {
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
     { "mem: a region the size of Quake's pak",  test_memobj_holds_a_pak },
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
+    { "dev: registers may be mapped, RAM may not",
+                                          test_a_driver_may_map_devices_and_not_ram },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },

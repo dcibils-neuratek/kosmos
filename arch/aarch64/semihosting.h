@@ -23,7 +23,20 @@
  * semihosting spec), SYS_EXIT.
  */
 
-#define SYS_EXIT                        0x18
+/*
+ * **`SEMIHOSTING_EXIT` rather than the spec's `SYS_EXIT`**, because this
+ * system has a syscall of that name and it is number 0, not 0x18.
+ *
+ * Two unrelated numbering schemes both call their first operation SYS_EXIT:
+ * ARM's semihosting interface, which is what this header speaks, and
+ * Kosmos's own, in `kernel/syscall.h`. Nothing included both until a test
+ * wanted a constant from the second one, at which point the collision is a
+ * `-Werror` redefinition and the compiler names the wrong file first.
+ *
+ * The spec's name is kept in the comments, where it points somebody at the
+ * document; the identifier is prefixed, where it has to be unique.
+ */
+#define SEMIHOSTING_EXIT                0x18
 
 /* The guest is stopping because the application finished normally, as
  * opposed to a breakpoint or a fault. This is the reason code that makes
@@ -33,7 +46,7 @@
 static inline void semihosting_exit(int code)
 {
     /*
-     * On AArch64 SYS_EXIT does not take the status in a register. x1 points
+     * On AArch64 this call does not take the status in a register. x1 points
      * at a two-field block: the reason, then the exit status. Passing the
      * status directly is the AArch32 form and silently exits 0 here.
      */
@@ -42,7 +55,7 @@ static inline void semihosting_exit(int code)
         (uint64_t)(unsigned int)code,
     };
 
-    register uint64_t x0 __asm__("x0") = SYS_EXIT;
+    register uint64_t x0 __asm__("x0") = SEMIHOSTING_EXIT;
     register uint64_t x1 __asm__("x1") = (uint64_t)(uintptr_t)block;
 
     __asm__ volatile("hlt #0xf000" : : "r"(x0), "r"(x1) : "memory");

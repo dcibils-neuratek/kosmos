@@ -89,6 +89,58 @@
  */
 #define SYS_MEM_PHYS   44   /* (cap)                  -> address or error   */
 
+/*
+ * `SYS_DEV_MAP` is the other half, and the one that makes a driver possible
+ * at all: a device's registers, in the driver's own address space.
+ *
+ * The kernel has always mapped MMIO for itself - `MAP_DEVICE`, a whole 2 MB
+ * block of it at boot - and has never had a way to hand a window of it to a
+ * process. That is the difference between "a driver is kernel code" and "a
+ * driver is a server you handed a capability to".
+ *
+ * The memory type is the point rather than a detail. Device-nGnRnE on ARM,
+ * PCD|PWT on x86: a store to a register happens once, in the order it was
+ * written, and is not merged with its neighbour. Mapped as ordinary memory a
+ * doorbell write can sit in a cache line waiting for company, and the device
+ * waits for ever.
+ */
+#define SYS_DEV_MAP    45   /* (phys, pages)          -> address or error   */
+
+/*
+ * How much of one, at most.
+ *
+ * A PCI BAR for the kind of device this is for is small: xHCI's is typically
+ * 64 KB, NVMe's 16, an I/O APIC's one page. Four megabytes is far above all
+ * of them and far below anything that would exhaust the share window, so it
+ * is a bound that catches a wrong number rather than a budget anybody is
+ * meant to plan against.
+ */
+#define DEV_MAP_PAGES_MAX  1024u
+
+/*
+ * Whether a physical range may be handed to a driver at all - size,
+ * alignment, and above all that it is not RAM. Declared here rather than
+ * left static so the suite can ask it directly: the mapping mechanics are
+ * `as_map`'s and already tested, and this is the part that is about safety.
+ *
+ * **Behind two guards, because this header is shared twice over.**
+ * Everything else in here is numbers, which is why userland can include it
+ * without including anything else - and why *assembly* can: the entry stubs
+ * at the bottom of this file are `.S`, and a C declaration in front of them
+ * makes the assembler read `typedef long int ptrdiff_t` and say `unknown
+ * mnemonic`, which is a genuinely baffling error message to meet.
+ *
+ * So: not for userland, which would pay three headers for a declaration it
+ * never uses, and not for the assembler, which cannot read one at all.
+ */
+#if !defined(KOSMOS_USER) && !defined(__ASSEMBLER__)
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+bool dev_range_ok(uintptr_t phys, size_t pages);
+#endif
+
 /* Flags for SYS_MEM_CREATE's second argument. Zero is the old behaviour and
  * what every caller but a driver wants. */
 #define MEM_CONTIGUOUS  1u
@@ -214,7 +266,7 @@
 
 /* Whether a capability still names something, asked without using it. */
 #define SYS_CAP_CHECK  43   /* (cap)                  -> 0 or error         */
-#define SYS_MAX         45
+#define SYS_MAX         46
 
 /*
  * What a spawn may hand its child beyond capabilities.

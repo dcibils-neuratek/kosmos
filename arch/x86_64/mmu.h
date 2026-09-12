@@ -158,6 +158,21 @@
 #define MAP_USER_RX (PTE_P | PTE_US)
 
 /*
+ * A device's registers, in a driver's own address space.
+ *
+ * `MAP_DEVICE` plus `PTE_US`, and uncached is the whole point: with PCD and
+ * PWT both set the defaults out of reset name the uncached type, so a store
+ * to a register is not held in a cache line waiting for company and a load
+ * is not answered from one. A driver written against write-back memory works
+ * until the day a doorbell write sits in L1 and the device waits for ever.
+ *
+ * `PTE_PAT` is deliberately clear: this wants uncached rather than the
+ * write-combining slot the framebuffer reprograms, and write-combining is
+ * exactly the merging a register must not get.
+ */
+#define MAP_USER_DEVICE (PTE_P | PTE_RW | PTE_US | PTE_PCD | PTE_PWT | PTE_NX)
+
+/*
  * **And the screen, which is a user mapping of the pages `MAP_FRAMEBUFFER`
  * already describes.**
  *

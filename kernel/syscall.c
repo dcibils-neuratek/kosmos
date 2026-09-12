@@ -85,6 +85,53 @@ static void copy_message_out(struct message *dst, const struct message *src)
  * is why `kosmos_write` uses `sys3` with an explicit zero and why the four
  * assembly test programs zero it by hand.
  */
+/*
+ * **Is this a range a driver may be handed?**
+ *
+ * Lifted out of `SYS_DEV_MAP` so it can be asked a question without a
+ * process and a syscall frame around it - which is the whole of what
+ * `tests/tests.c` needs in order to check the one decision here that is
+ * about safety rather than about mechanics.
+ *
+ * Three refusals, and the middle one is the point:
+ *
+ *   - Nothing, or absurdly much: a bound that catches a wrong number.
+ *   - **Anything overlapping RAM.** Physical memory mapped uncached into a
+ *     process is an alias for somebody else's pages that bypasses their
+ *     cache - a way to corrupt them and a way to watch them. Nothing
+ *     legitimate wants it: a driver's buffers come from `SYS_MEM_CREATE`
+ *     with `MEM_CONTIGUOUS`, mapped normally, with `SYS_MEM_PHYS` saying
+ *     where they are. The two calls do not overlap, so a driver that asks
+ *     this one for RAM has made a mistake and should be told about it.
+ *   - A range that wraps, tested before the overlap arithmetic, because an
+ *     end that wrapped compares small and would sail straight through it.
+ */
+bool dev_range_ok(uintptr_t phys, size_t pages)
+{
+    struct memrange ram;
+
+    if (pages == 0 || pages > DEV_MAP_PAGES_MAX) {
+        return false;
+    }
+
+    if ((phys & (PAGE_SIZE - 1)) != 0) {
+        return false;
+    }
+
+    if (phys + pages * PAGE_SIZE < phys) {
+        return false;
+    }
+
+    hal_ram_range(&ram);
+
+    if (phys < (uintptr_t)ram.base + (uintptr_t)ram.size
+        && (uintptr_t)ram.base < phys + pages * PAGE_SIZE) {
+        return false;
+    }
+
+    return true;
+}
+
 static long sys_write(struct process *p, uintptr_t ptr, size_t len,
                       unsigned long colour)
 {
@@ -1292,6 +1339,76 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
 
         p->next_share += m->pages * PAGE_SIZE;
+
+        result = (long)base;
+        break;
+    }
+
+    case SYS_DEV_MAP: {
+        /*
+         * A window of a device's registers, into this process's address
+         * space, with the memory type that makes a register a register.
+         *
+         * **Gated on device authority, like `SYS_MEM_PHYS`**, and this is
+         * the stronger of the two: knowing where something lives is a head
+         * start, and this is the reaching itself. A process holding it can
+         * drive any device on the machine, which is why the grant exists at
+         * all and why it is one flag rather than a list - a list of which
+         * devices would be a policy, and policy does not belong here. The
+         * *server* that hands drivers their windows is where that belongs,
+         * and it is a process.
+         *
+         * **RAM is refused**, and the check is cheap and worth having.
+         * Physical memory mapped uncached into a process is an alias for
+         * somebody else's pages that bypasses their cache, which is both a
+         * way to corrupt them and a way to watch them. Nothing legitimate
+         * wants it: a driver's buffers come from `SYS_MEM_CREATE` with
+         * `MEM_CONTIGUOUS`, which is mapped normally and whose physical
+         * address `SYS_MEM_PHYS` reports. So the two calls do not overlap,
+         * and a driver that asks this one for RAM has made a mistake it
+         * should be told about rather than allowed to debug.
+         */
+        uintptr_t phys = (uintptr_t)sc->arg[0];
+        size_t pages = (size_t)sc->arg[1];
+        uintptr_t base;
+        size_t i;
+
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (!dev_range_ok(phys, pages)) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (p->next_share + pages * PAGE_SIZE > USER_SHARE_END) {
+            result = SYS_ERR_NO_ROOM;
+            break;
+        }
+
+        base = p->next_share;
+
+        for (i = 0; i < pages; i++) {
+            if (as_map(p->space, base + i * PAGE_SIZE, phys + i * PAGE_SIZE,
+                       1, MAP_USER_DEVICE) != AS_OK) {
+                break;
+            }
+        }
+
+        if (i < pages) {
+            size_t j;
+
+            for (j = 0; j < i; j++) {
+                as_unmap(p->space, base + j * PAGE_SIZE, 1);
+            }
+
+            result = SYS_ERR_NO_ROOM;
+            break;
+        }
+
+        p->next_share += pages * PAGE_SIZE;
 
         result = (long)base;
         break;

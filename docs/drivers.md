@@ -76,24 +76,64 @@ because there was no other way to express it.
 
 ---
 
-## 4. The three primitives that do not exist yet
+## 4. The three primitives — two of them now exist
 
-This is the actual work, and everything below depends on it. A process
-today cannot:
+This is the actual work, and everything below depends on it.
 
-1. **Map a device's registers.** `SYS_MEM_CREATE` makes ordinary RAM.
-   There is no way to hand a process the MMIO a PCI BAR names.
-2. **Get memory a device can reach.** DMA needs physically contiguous
-   pages and their *physical* address, and nothing reports one.
-3. **Receive an interrupt.** There is no route from a hardware IRQ to a
-   message on an endpoint.
+1. **Map a device's registers.** ✅ `SYS_DEV_MAP` (0.10.39). A physical
+   window into the driver's own address space, with the memory type that
+   makes a register a register: Device-nGnRnE on ARM, PCD|PWT on x86, both
+   execute-never. The type is the feature rather than a detail - mapped as
+   ordinary memory a doorbell write may sit in a cache line waiting for
+   company while the device waits for ever.
 
-Perhaps 500-800 lines in the kernel, and the largest architectural addition
-since capabilities - because it turns "a driver is kernel code" into "a
-driver is a server you were handed a capability to". Each of the three is a
-capability, so the rule the whole system runs on holds: **what you were not
-handed, you cannot reach.** A driver server that was given the sound card's
-registers cannot touch the disk controller's.
+   Gated on `owns_devices`, and **RAM is refused**: physical memory mapped
+   uncached into a process is an alias for somebody else's pages that
+   bypasses their cache, which is a way to corrupt them and a way to watch
+   them. Nothing legitimate wants it, because a driver's buffers come from
+   the next primitive instead. `dev_range_ok` is a separate function so the
+   suite can ask it directly, and its test is nine assertions of which seven
+   are refusals.
+
+2. **Get memory a device can reach.** ✅ `SYS_MEM_CREATE` with
+   `MEM_CONTIGUOUS`, and `SYS_MEM_PHYS` to ask where it landed (0.10.35).
+   Physically contiguous pages, mapped *normally* - a driver's rings are
+   read and written constantly and want a cache - with the physical address
+   reported so the hardware can be told where they are. Refused for a
+   scattered region, since reporting a base for one would point hardware at
+   somebody else's heap.
+
+3. **Receive an interrupt.** ✖ Still missing. There is no route from a
+   hardware IRQ to a thread waiting in a driver.
+
+**The two that exist do not overlap, and that is deliberate**: registers are
+device memory and uncached, buffers are ordinary memory and cached, and a
+driver that confuses them is refused rather than left to find out. Between
+them a driver can already *drive* a device; what it cannot do is be told
+that the device has something to say, so it would have to poll.
+
+Estimated at 500-800 lines in the kernel, and the largest architectural
+addition since capabilities - because it turns "a driver is kernel code"
+into "a driver is a server you were handed a capability to".
+
+**The first two came in well under that**, and it is worth saying why rather
+than claiming the estimate was pessimistic: the machinery was already there.
+`as_map` has always taken attributes and the kernel has always mapped its own
+MMIO with them, so `SYS_DEV_MAP` is one attribute constant per architecture
+and a gated syscall shaped exactly like `SYS_MEM_MAP`. The interrupt is the
+one with real design in it, because it is the only one that has to happen
+*while the machine is in an interrupt handler with everything masked*.
+
+**Authority, not capability, for the first two.** `owns_devices` is the right
+to mint a device mapping rather than a mapping itself - the same shape
+`owns_screen` and `owns_net` already have. That is weaker than the rule this
+system runs on: a process holding it can map any device on the machine, so a
+driver server given it could touch the disk controller as well as its own
+sound card. What makes that acceptable today is that nothing but init holds
+it. What makes it *right* eventually is a devices server that holds the
+authority and hands out windows, so a driver is given the window and not the
+right to make one - and that server is a process, which is exactly where a
+policy about which driver gets which device belongs.
 
 **The cost, named rather than discovered later:** this creates two driver
 worlds for a while. `i8042`, `hda`, `nvme` and `pci` are in `hal/` today and

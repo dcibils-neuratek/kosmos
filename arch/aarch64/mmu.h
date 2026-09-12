@@ -90,6 +90,24 @@
                      ATTR_AP_RO_EL0 | ATTR_PXN)   /* UXN clear: EL0 executes */
 
 /*
+ * A device's registers, in a driver's own address space.
+ *
+ * `MAP_DEVICE` with EL0 access, and the memory type is the whole point:
+ * Device-nGnRnE is non-gathering, non-reordering and no-early-acknowledge,
+ * so a store to a register happens once, in the order written, and is not
+ * merged with the next one. Normal memory gives the compiler and the core
+ * permission to do all three, and a driver written against it works until
+ * the day the core decides to coalesce two writes to a doorbell.
+ *
+ * **No `ATTR_SH_INNER`**, exactly as `MAP_DEVICE` has none: shareability is
+ * a property of cacheable memory and the architecture ignores it here. Both
+ * execute-never bits, because registers are not instructions at either
+ * level.
+ */
+#define MAP_USER_DEVICE (ATTR_IDX(MAIR_IDX_DEVICE) | ATTR_AF | \
+                         ATTR_AP_RW_EL0 | ATTR_PXN | ATTR_UXN)
+
+/*
  * The screen, granted to the compositor.
  *
  * The same as `MAP_USER_RW` here, and that is a fact about this board
