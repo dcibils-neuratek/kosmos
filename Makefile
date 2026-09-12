@@ -235,6 +235,7 @@ SRCS := boot/start.S \
         hal/qemu-virt/input_describe.c \
         hal/virtio/blk.c \
         hal/qemu-virt/blk_bind.c \
+        hal/qemu-virt/devices.c \
         kernel/console.c \
         kernel/screen.c \
         kernel/boot.c \
@@ -740,6 +741,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/console.c \
              user/servers/ramfs.c \
              user/servers/net.c \
+             user/servers/powerbutton.c \
              user/lib/net_kosmos.c \
              user/lib/crypto.c \
              user/lib/lua_glue.c \
@@ -2215,6 +2217,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/nvme.c \
              hal/pc/memdisk.c \
              hal/pc/blk_bind.c \
+             hal/pc/devices.c \
              hal/virtio/net.c \
              hal/virtio/input.c \
              hal/pc/i8042.c \

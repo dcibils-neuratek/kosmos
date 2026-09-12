@@ -421,6 +421,10 @@ uint64_t hal_ticks(void);
 unsigned hal_cpu_count(void);
 bool     hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long context);
 
+bool     hal_irq_available(unsigned intid);          /* drivers at EL0 */
+void     hal_irq_set_masked(unsigned intid, bool masked);
+bool     hal_device_find(unsigned kind, struct hal_device *out);
+
 // The half of irq_init and timer_init that belongs to *this* processor: its
 // GIC redistributor and CPU interface, its own generic timer. Both are
 // per-core by architecture, so no core can do them for another - and

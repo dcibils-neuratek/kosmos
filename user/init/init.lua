@@ -35,6 +35,7 @@ local ROLE_APPFS     = 14 -- serves /app: what each running program exposes
 local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
 local ROLE_AUDIO     = 16 -- serves /dev/audio: the one process that may play
 local ROLE_NET       = 17 -- serves /net: the one process that holds the card
+local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -133,6 +134,12 @@ local SPAWN_AUDIO   = 16
 -- every frame that reaches the machine, whatever any namespace says. So one
 -- process gets it - the stack - and everything else asks that one.
 local SPAWN_NET     = 32
+
+-- Hardware itself: the right to be told where a device is, map its
+-- registers and claim its interrupt. The kernel gives it to init alone, and
+-- init passes it to a driver - never to anything that merely wants to talk
+-- to one, which asks the driver instead.
+local SPAWN_DEVICES = 64
 
 local function line(s) sys.write(s .. "\n") end
 
@@ -4573,6 +4580,26 @@ if role == ROLE_INIT then
   --
   local net = start("the network stack", ROLE_NET, { NET_EP },
                     may_pass_net() and SPAWN_NET or 0)
+
+  --
+  -- **The power button**, the first driver outside the kernel.
+  --
+  -- Handed the console server's endpoint and nothing else, so it can report
+  -- without owning the console - which would let it read every key on the
+  -- machine. On a board with no such button it asks, is told there is none,
+  -- and exits.
+  --
+  -- **Not through `start`**, because `start` ends init when a spawn fails,
+  -- which is right for the console and the filesystem and wrong for a
+  -- button. An optional driver that cannot start is a line in the log.
+  --
+  do
+    local _, err = sys.spawn(ROLE_POWERBUTTON, { CONSOLE_EP }, SPAWN_DEVICES)
+
+    if err then
+      line("init: no power button driver: " .. tostring(err))
+    end
+  end
 
   --
   -- And its address, which init has to give it because the stack has no

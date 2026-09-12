@@ -146,6 +146,15 @@
 #define SYS_IRQ_ACK    48   /* (cap)                  -> 0 or error         */
 
 /*
+ * **Where a device is**, asked of the board by a process holding device
+ * authority. `CLAUDE.md` puts every hardware address in `hal/` and init is
+ * userland too, so a driver cannot be *given* an address by anybody but the
+ * kernel, and the kernel only relays what the board says. The address then
+ * exists in userland solely as a value a driver was handed.
+ */
+#define SYS_DEV_FIND   49   /* (kind, &info)          -> 0 or error         */
+
+/*
  * Whether a physical range may be handed to a driver at all - size,
  * alignment, and above all that it is not RAM. Declared here rather than
  * left static so the suite can ask it directly: the mapping mechanics are
@@ -294,7 +303,7 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 
 /* Whether a capability still names something, asked without using it. */
 #define SYS_CAP_CHECK  43   /* (cap)                  -> 0 or error         */
-#define SYS_MAX         49
+#define SYS_MAX         50
 
 /*
  * What a spawn may hand its child beyond capabilities.
@@ -848,6 +857,7 @@ struct diskinfo {
 #define SYS_NO_MESSAGE    (-107)    /* nothing to receive, and not blocking */
 #define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
 #define SYS_ERR_NO_CAPS   (-106)    /* this thread's capability table is full */
+#define SYS_ERR_NO_DEVICE (-108)    /* this machine has nothing of that kind */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -888,6 +898,26 @@ struct syscall_frame {
  * `result`, which the handler puts back wherever that machine returns a
  * value. */
 void syscall_dispatch(struct syscall_frame *sc);
+
+/*
+ * What `SYS_DEV_FIND` answers.
+ *
+ * A kind names a programming model *and* a job, because the driver needs
+ * both: `DEV_PL061_POWER_KEY` is "an ARM PL061 GPIO controller, and `line`
+ * is its input wired to the power key". Fixed-width and padded to a whole
+ * number of words, since it crosses from the kernel to a process byte for
+ * byte.
+ */
+#define DEV_PL061_POWER_KEY  1u
+
+struct dev_info {
+    uint32_t kind;
+    uint32_t intid;         /* for SYS_IRQ_CLAIM */
+    uint32_t line;          /* which input on the device, where that matters */
+    uint32_t reserved;
+    uint64_t base;          /* for SYS_DEV_MAP */
+    uint64_t size;
+};
 
 #endif /* !__ASSEMBLER__ */
 

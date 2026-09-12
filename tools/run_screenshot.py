@@ -2184,6 +2184,81 @@ def _console_box(width, height, px):
     return x0, y0, x1, y1
 
 
+def check_power_button(guest):
+    """The power button reaches a driver that is not in the kernel.
+
+    `user/servers/powerbutton.c` is the first driver in this system outside
+    the kernel, and it exists to prove `docs/drivers.md`'s three primitives on
+    a device simple enough that a failure points at them. It is told where the
+    PL061 is, maps its registers, claims its interrupt and blocks in
+    `SYS_IRQ_WAIT`; QEMU's `system_powerdown` pulses the power key; the driver
+    wakes, clears the controller, acks, and says so.
+
+    **Twice, and the second press is the test that matters.** The first press
+    proves the blocking wait ends on a real interrupt - the one piece of the
+    primitives no suite could reach, because only a device can end that wait.
+    The second proves the acknowledgement: the kernel masked the line on
+    delivery, so if `SYS_IRQ_ACK` did not unmask it the second press would
+    arrive at a masked line and never be reported. A driver that forgot to ack
+    passes a one-press test.
+
+    aarch64 only: the PC's power button is an ACPI event, not a GPIO line.
+    """
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if "powerbutton: waiting on line" in guest.seen:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "the power button driver never said it was waiting. It is started "
+            "by init with device authority and the console server's endpoint; "
+            "look for `no power button driver` in the boot log, or for a line "
+            "from the driver saying which of find, map or claim refused it."
+        )
+
+    mark = len(guest.seen)
+
+    for press in (1, 2):
+        guest._qmp("system_powerdown", {})
+
+        deadline = time.monotonic() + 10
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if guest.seen[mark:].count("powerbutton: pressed") >= press:
+                break
+
+            time.sleep(0.2)
+        else:
+            if press == 1:
+                raise Failure(
+                    "the power key was pressed and the driver never woke. "
+                    "Either the interrupt did not reach `irq_deliver`, or the "
+                    "wait did not end on it - which is the half of the "
+                    "primitives this is the only test of."
+                )
+
+            raise Failure(
+                "the first press was reported and the second was not. The "
+                "kernel masks a line when it delivers, and only `SYS_IRQ_ACK` "
+                "unmasks it - so a missing second press is a missing or "
+                "ineffective ack, or a controller cleared after the ack "
+                "rather than before it."
+            )
+
+        # The key is held for 100 ms of the guest's clock. Well past it, so
+        # the second press is a new edge rather than the tail of the first.
+        time.sleep(1.0)
+
+    return 2
+
+
 def check_repaints(guest):
     """A window with nothing to do draws nothing.
 
@@ -4219,6 +4294,8 @@ def main():
         three_d_checks = phase("3d", check_3d)
         terminal_checks = phase("terminal", check_terminal)
         repaint_checks = phase("repaints", check_repaints)
+        power_checks = (phase("power button", check_power_button)
+                        if machine(args.image) == "aarch64" else 0)
         deskbar_checks = phase("deskbar", check_deskbar)
         desktop_checks = phase("desktop", check_desktop)
         clip_checks = phase("clipboard", check_clipboard)
@@ -4248,7 +4325,7 @@ def main():
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks + registry_checks + context_checks
-             + repaint_checks)
+             + repaint_checks + power_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -4288,6 +4365,7 @@ def main():
           f"one, and its character grid following the window when it is "
           f"resized), "
           f"{repaint_checks} on an idle window drawing nothing at all, "
+          f"{power_checks} on the power button reaching a driver outside the kernel, "
           f"{direct_checks} on an application drawing its own pixels, "
           f"{three_d_checks} on a software-rendered solid).")
     return 0

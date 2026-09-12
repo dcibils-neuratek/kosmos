@@ -587,7 +587,19 @@ bool          hal_pointer_poll(struct pointer_state *out);
 
 unsigned      hal_cpu_count(void);          /* how many processors exist */
 bool          hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long ctx);
+
+bool          hal_irq_available(unsigned intid);            /* drivers at EL0 */
+void          hal_irq_set_masked(unsigned intid, bool masked);
+bool          hal_device_find(unsigned kind, struct hal_device *out);
 ```
+
+The last three arrived together, with the first driver outside the kernel -
+`user/servers/powerbutton.c` - and each answers a question only the board
+can: which interrupt numbers the machine spends on itself and a process may
+therefore never claim, how this controller masks one line, and where a device
+of a given kind is. The third is what keeps *no hardware addresses outside
+`hal/`* true for userland drivers: init is userland too, so the address has to
+come from the board, through the kernel, as a value the driver is handed.
 
 There is deliberately no `hal_keyboard_getchar`. A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. Nothing above the HAL changes because a keyboard exists.
 

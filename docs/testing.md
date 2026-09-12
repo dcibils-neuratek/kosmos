@@ -1287,3 +1287,40 @@ different games. It is not a permanent check, because it needs a ROM and a
 native build of the core. What it established is that nothing between
 `snes_setSamples` and the device changes a sample: not the slot writing, not
 the channel order, not the server's unity mix.
+
+---
+
+## 18.27 A power button, pressed twice
+
+The driver primitives had one piece no suite could reach: the blocking half of
+`SYS_IRQ_WAIT`. A kernel test can call `irq_deliver` the way the handler does,
+but a thread that waits with nothing pending waits for ever - only a device
+can end that wait. So the test is a device.
+
+QEMU `virt` wires its power key to a PL061 GPIO controller, and QMP's
+`system_powerdown` pulses it. `user/servers/powerbutton.c` finds the
+controller, maps it, claims its interrupt and blocks; the display harness
+waits for `powerbutton: waiting on line 3`, presses, and expects
+`powerbutton: pressed`.
+
+**Twice, because a one-press test cannot fail in the way that matters.** The
+kernel masks a line when it delivers it, and only `SYS_IRQ_ACK` unmasks it. A
+driver that never acks reports the first press and never hears the second -
+and the negative control, run by deleting the ack and rebuilding, printed
+exactly that:
+
+```
+control applied: the driver never acks
+FAIL: the first press was reported and the second was not.
+  powerbutton: waiting on line 3
+  kosmos> powerbutton: pressed
+```
+
+The two failure messages are different on purpose. A first press that never
+arrives points at delivery or the wait; a missing second points at the ack,
+or at a controller cleared after the ack instead of before it. A test that
+says "the button did not work" for both would leave that to be worked out.
+
+aarch64 only. The PC's power button is an ACPI event rather than a GPIO line,
+so there is nothing there for this driver to find - and on that board it asks,
+is told "no device", and exits.

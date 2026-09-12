@@ -172,16 +172,17 @@ physical address - and the other two landed in this session:
   the mask is a no-op, which is the normal case on the ThinkPad.
 
 Both architectures, both tested with negative controls run and watched fail.
-**What is not tested yet is the blocking half of `SYS_IRQ_WAIT`**, because
-only a real device produces the interrupt that ends the wait - so the first
-driver is also that test.
+**And the first driver outside the kernel, which is what tested the one piece
+no suite could.** `user/servers/powerbutton.c` drives QEMU `virt`'s PL061,
+where the power key is wired: told where it is by `SYS_DEV_FIND`, maps it,
+checks its PrimeCell ID, claims interrupt 39, and blocks. The display harness
+presses the key twice over QMP. Two presses because the second is the test of
+the ack - removing the driver's `SYS_IRQ_ACK` loses exactly that one, checked.
 
-**Still open, and the next thing: the first userland driver.** xHCI is the
-target, since USB mass storage deletes the loader-disk bug and a USB-C
-Ethernet adapter puts TCP/IP on metal. It may be worth a smaller device first
-- something on QEMU whose interrupt can be provoked on demand - so that the
-primitives are proven by a driver simple enough that a failure points at
-them rather than at xHCI's ring management.
+**Next: xHCI**, the first driver that matters - USB mass storage deletes the
+loader-disk bug, and a USB-C Ethernet adapter puts TCP/IP on metal. On the PC,
+`hal_device_find` still answers nothing; xHCI is found through PCI, so its
+entry is the first real one on that board.
 
 
 ### USB is the next milestone, and the reason is tonight

@@ -121,16 +121,26 @@ This is the actual work, and everything below depends on it.
    case on the ThinkPad rather than an edge.
 
    Refused: a number the board spends on itself (`hal_irq_available` - the
-   tick above all), and a line somebody already holds. The blocking half of
-   `SYS_IRQ_WAIT` is the one piece without a test yet, because only a real
-   device can produce the interrupt that ends the wait.
+   tick above all), and a line somebody already holds. The blocking half of `SYS_IRQ_WAIT` is tested by the first driver
+   (0.10.43), because only a real device can end that wait.
 
 **The two mappings do not overlap, and that is deliberate**: registers are
 device memory and uncached, buffers are ordinary memory and cached, and a
 driver that confuses them is refused rather than left to find out. With the
 interrupt beside them a driver in a process has everything a driver in the
 kernel had: it can reach the device, give it memory, and be told when it has
-something to say. **The next thing is a driver.**
+something to say. **And the first one exists.** `user/servers/powerbutton.c` (0.10.43) drives QEMU
+`virt`'s PL061, where the power key is wired, and uses all of it: the board
+says where the controller is (`SYS_DEV_FIND` - init is userland too, so the
+address has to come from `hal/`), the driver maps it, checks its PrimeCell ID
+before writing a byte, claims interrupt 39, and blocks. The display harness
+presses the key twice with QMP's `system_powerdown`. The second press is the
+real test: with the driver's ack removed the first is reported and the second
+never arrives. It reports through the console server as a client, because
+owning the console would also let it read every key on the machine.
+
+A device this simple was chosen so a failure would point at the primitives
+rather than at the device. The next driver is xHCI.
 
 Estimated at 500-800 lines in the kernel, and the largest architectural
 addition since capabilities - because it turns "a driver is kernel code"

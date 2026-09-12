@@ -270,6 +270,36 @@ bool hal_irq_available(unsigned intid);
 void hal_irq_set_masked(unsigned intid, bool masked);
 
 /*
+ * **Where a device is, for a driver that is not in the kernel.**
+ *
+ * A driver in a process needs three facts about its hardware - where its
+ * registers are, how big the window is, and which interrupt it raises - and
+ * `CLAUDE.md` is exact about where facts like that live: *no hardware
+ * addresses outside `hal/`. Not one.* The init process is userland too, so it
+ * cannot be the one to know them either. The board answers, the kernel
+ * passes the answer to a process holding device authority, and the address
+ * appears in userland only as a value a driver was handed.
+ *
+ * A `kind` names a programming model *and* the job, because both matter to
+ * the driver: "a PL061 GPIO controller, whose `line` is the one wired to the
+ * power key" is what the power-button driver needs to be told. False when
+ * this board has nothing of that kind, which on a PC today is every kind.
+ *
+ * Not speculative, which is the test `CLAUDE.md` sets for the HAL: it
+ * arrived with the driver that calls it.
+ */
+#define HAL_DEV_PL061_POWER_KEY  1u
+
+struct hal_device {
+    unsigned long base;
+    unsigned long size;
+    unsigned      intid;
+    unsigned      line;         /* which input on it, where that matters */
+};
+
+bool hal_device_find(unsigned kind, struct hal_device *out);
+
+/*
  * Which interrupt controller this machine turned out to have.
  *
  * A board with one answer returns a constant; a PC has two and chooses at

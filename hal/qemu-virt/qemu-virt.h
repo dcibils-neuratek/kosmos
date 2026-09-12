@@ -42,6 +42,26 @@ void gic_enable_spi(unsigned intid);
 #define VIRTIO_MMIO_BASE    0x0a000000UL
 #define VIRTIO_MMIO_STRIDE  0x200UL
 
+/*
+ * The PL061 GPIO controller, and the power key wired to it.
+ *
+ * All four read out of the device tree QEMU 11.1.1 builds for
+ * `-M virt,gic-version=3` - the harness's own options - rather than
+ * remembered: `pl061@9030000` with `reg = <0 0x9030000 0 0x1000>` and
+ * `interrupts = <0 7 4>`, which is SPI 7 and therefore INTID 32 + 7, level
+ * high; and `gpio-keys` with `gpios = <&pl061 3 0>`, so the power key is
+ * input 3.
+ *
+ * QEMU chooses this path only when the machine has no ACPI device, which a
+ * `-kernel` boot without firmware does not - `virt_powerdown_req` in
+ * hw/arm/virt.c. On a boot through UEFI the same button goes through ACPI
+ * instead and this controller is not in the tree at all.
+ */
+#define PL061_BASE              0x09030000UL
+#define PL061_SIZE              0x1000UL
+#define PL061_INTID             39u
+#define PL061_POWER_KEY_LINE    3u
+
 /* One of the input devices has events waiting. `slot` is which window. */
 
 /* The sound device has finished with a period. `slot` is which window. */

@@ -107,6 +107,14 @@ static void copy_message_out(struct message *dst, const struct message *src)
  *   - A range that wraps, tested before the overlap arithmetic, because an
  *     end that wrapped compares small and would sail straight through it.
  */
+/*
+ * One number with two names: the ABI's, which a driver passes, and the
+ * board's, which the HAL answers to. Kept separate so `hal/` does not include
+ * the syscall header, and held together here so they cannot drift.
+ */
+_Static_assert(DEV_PL061_POWER_KEY == HAL_DEV_PL061_POWER_KEY,
+               "a device kind must mean the same thing on both sides");
+
 bool dev_range_ok(uintptr_t phys, size_t pages)
 {
     struct memrange ram;
@@ -1412,6 +1420,49 @@ void syscall_dispatch(struct syscall_frame *sc)
         p->next_share += pages * PAGE_SIZE;
 
         result = (long)base;
+        break;
+    }
+
+    case SYS_DEV_FIND: {
+        /*
+         * Where a device of this kind is, if the board has one.
+         *
+         * **Gated on device authority**, the same as mapping it: an address
+         * is most of the way to reaching a device, and there is no reason a
+         * process that may not drive hardware should be able to survey it.
+         *
+         * "Nothing of that kind" is its own answer rather than a denial. A
+         * driver on a board without its device is the ordinary case - the
+         * power button on a PC - and it should be able to tell that apart
+         * from having been refused.
+         */
+        struct hal_device found;
+        struct dev_info info = { 0 };
+        uintptr_t out_ptr = (uintptr_t)sc->arg[1];
+
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (!process_may_write(p, out_ptr, sizeof(info))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        if (!hal_device_find((unsigned)sc->arg[0], &found)) {
+            result = SYS_ERR_NO_DEVICE;
+            break;
+        }
+
+        info.kind  = (uint32_t)sc->arg[0];
+        info.intid = (uint32_t)found.intid;
+        info.line  = (uint32_t)found.line;
+        info.base  = (uint64_t)found.base;
+        info.size  = (uint64_t)found.size;
+
+        *(struct dev_info *)out_ptr = info;
+        result = 0;
         break;
     }
 

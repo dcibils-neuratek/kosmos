@@ -224,6 +224,44 @@ static inline long kosmos_sysinfo(struct sysinfo *out)
 }
 
 /*
+ * **A driver's four calls**, and every one of them is refused to a process
+ * that was not handed device authority - except the two that take a
+ * capability, where holding the capability is the authority.
+ *
+ * `kosmos_dev_find` is where a driver learns an address: the board knows it,
+ * the kernel passes it on, and it appears here only as a value the driver
+ * was handed - never as a constant in the driver's source.
+ */
+static inline long kosmos_dev_find(unsigned long kind, struct dev_info *out)
+{
+    return sys2(SYS_DEV_FIND, (long)kind, (long)(uintptr_t)out);
+}
+
+/* The registers, mapped uncached. RAM is refused. */
+static inline long kosmos_dev_map(unsigned long phys, unsigned long pages)
+{
+    return sys2(SYS_DEV_MAP, (long)phys, (long)pages);
+}
+
+/* An interrupt line, as a capability. */
+static inline long kosmos_irq_claim(unsigned long intid)
+{
+    return sys1(SYS_IRQ_CLAIM, (long)intid);
+}
+
+/* Until one arrives, or at once if one arrived while this was busy. */
+static inline long kosmos_irq_wait(long cap)
+{
+    return sys1(SYS_IRQ_WAIT, cap);
+}
+
+/* Unmask, once the device has been quietened. A no-op on an MSI. */
+static inline long kosmos_irq_ack(long cap)
+{
+    return sys1(SYS_IRQ_ACK, cap);
+}
+
+/*
  * Pages of this process's own, for the things that do not fit on its heap.
  *
  * The heap is 2 MB and deliberately so; a full-screen surface is 3.2 MB.
