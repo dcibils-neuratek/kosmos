@@ -33,6 +33,7 @@
 
 #include "audioring.h"
 #include "snes.h"
+#include "snes_blit.h"
 
 /* From `gfx.c`, the one file allowed to know how a surface is laid out. */
 uint32_t *kosmos_surface_pixels(lua_State *L, int index,
@@ -255,15 +256,25 @@ static int l_sound(lua_State *L)
  * surface: it assumes 2048 bytes a row, and a surface is a resize away from
  * not having them. The alpha is forced opaque, as Doom's is, because a
  * surface blends on it and nothing guarantees the core writes one.
+ *
+ * `snes_blit.c` does the copy, at the scale the optional second argument
+ * asks for - 1, or 2 for `--scale 2` - and it is a file of its own so the
+ * host can test it without a core.
  */
 static int l_frame(lua_State *L)
 {
     unsigned w = 0, h = 0, pitch = 0;
     uint32_t *dst = kosmos_surface_pixels(L, 1, &w, &h, &pitch);
-    unsigned rows, cols, y, dropped = 0;
+    lua_Integer scale = luaL_optinteger(L, 2, 1);
+    unsigned dropped = 0;
 
     if (!loaded) {
         return luaL_error(L, "no ROM has been started");
+    }
+
+    if (scale < 1 || scale > (lua_Integer)SNES_SCALE_MAX) {
+        return luaL_error(L, "a scale of 1 to %d, not %d",
+                          (int)SNES_SCALE_MAX, (int)scale);
     }
 
     snes_runFrame(machine);
@@ -286,20 +297,8 @@ static int l_frame(lua_State *L)
     snes_setPixels(machine, picture);
 
     if (dst != NULL) {
-        rows = (h < PICTURE_H) ? h : PICTURE_H;
-        cols = (w < PICTURE_W) ? w : PICTURE_W;
-
-        for (y = 0; y < rows; y++) {
-            const uint32_t *src = (const uint32_t *)(void *)
-                                  (picture + (size_t)y * PICTURE_W * 4u);
-            uint32_t *out = (uint32_t *)(void *)
-                            ((uint8_t *)dst + (size_t)y * pitch);
-            unsigned x;
-
-            for (x = 0; x < cols; x++) {
-                out[x] = src[x] | 0xff000000u;
-            }
-        }
+        snes_blit(dst, w, h, pitch, (const uint32_t *)(void *)picture,
+                  PICTURE_W, PICTURE_H, (unsigned)scale);
     }
 
     lua_pushinteger(L, (lua_Integer)dropped);

@@ -8,6 +8,23 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: the Super Nintendo at twice the size
+
+**`--scale 2` before the ROM, through `wm` or a launcher**, opens the
+game in a 1024 by 960 window. Diego asked for it after seeing it at 512 by
+480 on the ThinkPad, "like Doom" - whose scale was queued and never built, so
+the form was decided here for all three: options before the file, as
+`--name value`, because a launcher keeps the rest of its line and ROM names
+have spaces. Nearest neighbour, whole numbers, 2 at most. The copy is C in
+`user/lib/snes_blit.c`, tested on the host (`tools/test_snesblit.c`), and the
+option's parsing in the display harness; `testing.md` §18.34 has both
+controls. **Not yet seen with a real game**, here or on the ThinkPad, and its
+cost in frames is not measured: four times the pixels to compose, on a window
+manager that since 0.10.50 answers in 0.31 ms rather than 11.5.
+
+**For Doom and Quake**, when they get a scale: the same form, and the same
+kind of file for the pixels.
+
 ### 12 September: a request wakes the window manager
 
 **The Super Nintendo's 43 frames a second on the ThinkPad were the window

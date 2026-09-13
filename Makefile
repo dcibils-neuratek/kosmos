@@ -827,7 +827,7 @@ SNES_DIR   := runtime/upstream/lakesnes/snes
 SNES_NAMES := spc dsp apu cpu dma ppu cart cx4 input statehandler snes \
               snes_other
 SNES_SRCS  := $(addprefix $(SNES_DIR)/,$(addsuffix .c,$(SNES_NAMES))) \
-              user/lib/snes_kosmos.c
+              user/lib/snes_kosmos.c user/lib/snes_blit.c
 SNES_CFLAGS := -w -Wno-error -iquote $(SNES_DIR)
 
 ifdef SNES
@@ -1495,6 +1495,16 @@ $(HOSTDIR)/test_loaderfb: tools/test_loaderfb.c hal/pc/loader_fb.c hal/pc/multib
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_loaderfb.c hal/pc/loader_fb.c
+
+#
+# And the Super Nintendo's picture at a scale: the only code between the
+# core's pixels and the window, asked without a core or a ROM, including
+# every byte it must not touch.
+#
+$(HOSTDIR)/test_snesblit: tools/test_snesblit.c user/lib/snes_blit.c user/lib/snes_blit.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -Iuser/lib -o $@ \
+	        tools/test_snesblit.c user/lib/snes_blit.c
 
 #
 # And where the page bitmap goes, for the same reason one layer down.
@@ -2602,7 +2612,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
@@ -2632,6 +2642,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	$(HOSTDIR)/test_pmmplace
 	$(HOSTDIR)/test_loaderfb
 	$(HOSTDIR)/test_apicdecode
+	$(HOSTDIR)/test_snesblit
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

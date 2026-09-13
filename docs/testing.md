@@ -1748,3 +1748,58 @@ and 11.716 and 11.178 ms in the other two runs, the same as before the fix.
 `latency.lua` gained the right tick rate on the way: it had 100 Hz written into
 it while the kernel ran at 250, so every threshold was two and a half times
 looser than it read. The suites stand at aarch64 154/154 and x86-64 150/150.
+
+---
+
+## 18.34 The Super Nintendo at twice the size
+
+`wm snes:--scale 2`, or a launcher carrying those words, opens the game in a
+1024 by 960 window, every pixel of the console's picture a two-by-two block.
+Two checks, because it can go wrong in two places, and neither needs a ROM.
+
+**The pixels, on the host.** `tools/test_snesblit.c` gives `snes_blit` a
+four-by-three picture, every pixel a different colour and none opaque, and
+surfaces shaped the awkward ways real ones are: rows padded wider than the
+window, a window smaller than the doubled picture, and a pitch too narrow to
+hold a row. Every byte the copy must not touch is a canary. With the copy
+changed to never repeat a pixel:
+
+```
+FAIL: scale 2 makes every pixel a two-by-two block, and leaves the padding alone
+FAIL: scale 2 into a smaller window writes only what fits
+FAIL: 2 of 5 checks on the Super Nintendo's picture at a scale
+```
+
+**Restoring the file is not enough to see it pass again.** The first rerun
+still said `2 of 5`: the restore landed in the same second as the broken
+build, and GNU Make 3.81 compares whole seconds, so it kept the broken binary.
+Deleting `build/host/test_snesblit` and building again gave all five. A control
+run by a script has to force the rebuild after restoring, or its "restored"
+line reports the control twice.
+
+**The option, in the display harness.** ROMs are named with spaces, so the
+whole line after the option is the name, and the harness asks both ways that
+can go wrong: `wm snes:--scale 3` must be refused by name, and
+`wm snes:--scale 2 nosuch.sfc` must look for exactly `nosuch.sfc`. The
+harness counts it as "2 on the Super Nintendo's --scale reaching the window
+and not the ROM's name". Against the `snes.lua` from before the option
+existed, with what the guest said split at its line breaks:
+
+```
+phase FAILED: `wm snes:--scale 3` was not refused by name; the program said:
+wm snes:--scale 3
+wm: started /bin/snes.lua as 16
+snes: no /home/roms/snes/--scale 3: no such path
+process 16 (snes) ended, code 0
+```
+
+**The first version of the phase typed `snes --scale 3` at the prompt**, and
+the prompt printed `table: 0x00000081007890`. The core registers itself as a
+global named `snes` in every Lua state, the shell's included, so at the
+prompt the name is the core and `--scale 3` is a Lua comment. The phase starts
+the program through the window manager, as the Deskbar and a launcher do; the
+name at the prompt is a separate fault, and older than this.
+
+**What neither can say is how a real game looks at 1024 by 960**, or what it
+costs in frames. That is `make snes-check ROM=...`'s, which needs a ROM, and
+the ThinkPad's.

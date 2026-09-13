@@ -170,3 +170,8 @@ They go on the drive, in `/home/roms/snes`:
     make image FILES="game.sfc:/home/roms/snes/game.sfc"
 
 and `wm snes` opens the first one there, or `wm snes:<name>` a named one.
+
+`--scale 2` before the name - `wm snes:--scale 2`, or a launcher carrying
+those words - opens it in a window twice the size, each of the console's
+pixels a block. The copy is `user/lib/snes_blit.c`; the window manager
+composes four times the pixels, at a cost in frames not yet measured.

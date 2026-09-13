@@ -7,6 +7,11 @@
 --   wm snes                        the first ROM in /home/roms/snes
 --   wm snes:Top Gear 2.sfc         that one, from the same directory
 --   wm snes:/ramfs/other.smc       anywhere else
+--   wm snes:--scale 2              the first ROM, in a window twice the size
+--   wm snes:--scale 2 Top Gear 2.sfc
+--
+-- A launcher carries the same words, so the bigger window is a launcher of
+-- its own: `launcher /home/Desktop/Mario snes --scale 2 Super Mario World.sfc`.
 --
 -- In an image built with `FULL=1`, the default, or `SNES=1`. The core is
 -- LakeSnes; `runtime/upstream/lakesnes/README.kosmos.md` is the account.
@@ -47,6 +52,42 @@ end
 --
 local wanted = (args or ""):match("^%s*(.-)%s*$")
 local path
+
+--
+-- **`--scale 2`, before the ROM, for a window twice the size.**
+--
+-- The one option, and written first for the reason the ROM is the whole rest
+-- of the line: a No-Intro name has spaces in it, so the option must be
+-- something no file is called, and it must come off the front. Anything else
+-- starting `--` is refused rather than looked for as a file.
+--
+-- Twice and no more: 1024 by 960 fits under the bar on a 1080-line screen,
+-- and three times would fit on no screen this system has run on. Each of the
+-- console's pixels becomes a block, in C (`snes_blit.c`). The window manager
+-- then composes four times the pixels; what that costs in frames is a
+-- measurement, not a guess, and has not been made yet.
+--
+local scale = 1
+
+do
+  local given, rest = wanted:match("^%-%-scale%s+(%S+)%s*(.-)$")
+
+  if given then
+    local number = tonumber(given)
+
+    scale = number and math.tointeger(number)
+
+    if scale ~= 1 and scale ~= 2 then
+      print(("snes: --scale is 1 or 2, and %s is neither"):format(given))
+      return
+    end
+
+    wanted = rest
+  elseif wanted:sub(1, 2) == "--" then
+    print("snes: the one option is --scale 1 or --scale 2, before the ROM")
+    return
+  end
+end
 
 if wanted == "" then
   local names, why = fs.list(ROMS)
@@ -158,7 +199,7 @@ if not ok or not started then
   return
 end
 
-local W, H = snes.width, snes.height
+local W, H = snes.width * scale, snes.height * scale
 local title = path:match("([^/]+)$"):gsub("%.%w+$", "")
 
 local win, err = ui.window{ title = title, w = W, h = H, x = 60, y = 60,
@@ -174,7 +215,8 @@ if not win:surface() then
   return
 end
 
-print(("snes: %s, %d KB, %g Hz"):format(path, size // 1024, fps))
+print(("snes: %s, %d KB, %g Hz, a %d by %d window"):format(path, size // 1024,
+                                                        fps, W, H))
 
 --
 -- Sound, when the machine has a device - and then the device decides when a
@@ -266,7 +308,7 @@ while win.running do
   local now = sys.ticks()
 
   if wanted(now) then
-    local fine, dropped = pcall(snes.frame, win:surface())
+    local fine, dropped = pcall(snes.frame, win:surface(), scale)
     local after = sys.ticks()
 
     drained()
