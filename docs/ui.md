@@ -687,6 +687,82 @@ is that the bar is where a person manages the machine from, and a bar that
 cannot see the volume cannot show it. **Reading state is not holding
 power**, and the two are kept apart deliberately.
 
+## 16.14 Log View: console output, drawn the way the console draws it
+
+Diego, on the ThinkPad: the log viewer should look like the Terminal, on
+black, and scroll as lines arrive; it had an overlapping title and grey text
+nobody could read. All three were reproduced in QEMU at 1920x1080 before
+anything was changed.
+
+**It was a document widget showing console output.** Log View was a
+`ui.text` - built for paragraphs of help - with a heading label above it and a
+status line below, on the window's own colour. `ui.text` draws body text in
+`text_dim`, which in the BeOS palette is #808080 on the panel grey #d8d8d8.
+And `ui.text` and `ui.label` lay text out on the cell `ui.lua` copied from
+`gfx.font` when it loaded - the bitmap's 8x16 - while the compositor draws a
+string with no role in the interface face. With a 20-pixel TrueType face
+chosen, rows sat 16 pixels apart, the heading's line ran into the first row's,
+and the heading and the status line were both cut short. At the default font
+the two cells agree, which is why no screen the harness photographed had ever
+shown it.
+
+**A log is console output, so it is drawn the way the Terminal draws console
+output**: `theme.console` and `console_text`, black in every theme; the `mono`
+face; the row height and column width asked of `gfx.height("mono")` and
+`gfx.measure("0", "mono")` on every draw, so a face changed while the window
+is open is followed. No heading, because the title bar already says what the
+window is. Lines are wrapped by character rather than clipped: a log line is
+whatever somebody wrote, and the end of a boot line is usually the part worth
+reading.
+
+**Colour by shape, in the console's numbers.** Faults in 0xda3633 and boot
+stages in 0x3fb950 - `CONSOLE_COLOURS` in `init.lua`, which are the dark
+palette's values - rather than `theme.bad` and `theme.good`, which are chosen
+for the window's colour and in BeOS are dark red and dark green: dark on
+black. The stage pattern had matched nothing since the kernel began starting
+every line in the ring with a stamp, `[12.345] `, so it is matched after it.
+
+**It follows the log, and holds still while you read.** `back` is how many
+rows the view sits above the newest. At 0 whatever arrives is drawn at the
+bottom. Scrolled up by any amount - the arrows, backspace and space, the
+kit's scroll bar, or dragging the text - the text on screen is *held*: it
+stays what it was however much is written, and `new lines below` appears in
+the corner where the Terminal says what it is running. Back at the bottom it
+takes the newest text there is at that moment and follows again. Each of
+those is painted in the same pass as the input that caused it.
+
+**Held rather than adjusted**, and this is the decision. The alternative goes
+on following underneath and adds the arriving rows to `back`, so the same
+lines stay in view while the scroll range grows. That needs to know how many
+rows arrived, and the kernel does not say: `sys.log` is the last 64 KB of a
+quarter-megabyte ring, so once the ring holds more than that, each read loses
+lines at the top as well as gaining them at the bottom, and telling the two
+apart means matching strings against each other and hoping no line repeats.
+Holding is correct by construction. If the kernel ever says how much it has
+written - which the refresh's own comment already names as the fix for its
+cost - adjusting becomes exact and this is worth revisiting.
+
+**It used to follow by asking `ui.text` for a scroll far past the end** and
+letting the widget clamp it. The clamp measures the height of the *previous*
+draw, which on the first was nothing, so the window opened at the top of the
+log and stayed there until the log changed - and then sat a draw behind it.
+
+**It repaints when the log changes, not on a clock.** The refresh was a view
+with a `tick`, which to the kit means "changes on its own", so an idle Log
+View re-sent every row it shows twice a second for as long as it was open -
+what the Terminal found about itself (`testing.md` §18.23). It reads the ring
+in `on_frame` now, at most twice a second, and asks for a paint only when
+something changed.
+
+**Still open, and wider than this window.** `ui.lua` copies `gfx.font.w` and
+`gfx.font.h` into `GW` and `GH` once, as it loads. `gfx.use_font` refreshes
+that table in place when the interface face changes, but `ui.window` applies
+the desktop's faces after `ui.lua` has loaded - so every widget in the kit
+still lays out on the bitmap's 8x16 cell, whatever face it is drawn in. Log
+View no longer asks the kit for a cell; the kit's own widgets do.
+
+`testing.md` §18.31 has the check and its negative controls.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

@@ -2514,18 +2514,22 @@ function ui.text(spec)
     --
     -- Scrolling used to be clamped by the two handlers that scroll, which
     -- is every path but the one that mattered: a program setting `scroll`
-    -- directly. `logview` does - it asks for a position past the end on
-    -- every refresh so the newest line stays in view, with a comment saying
-    -- the widget "clamps an over-large scroll to the real bottom on the way
-    -- past". Nothing did. The view scrolled a billion pixels down, every
-    -- line fell outside it, and that window drew nothing at all on every
-    -- machine it has ever run on - while its own status line truthfully
+    -- directly. `logview` did - it asked for a position past the end on
+    -- every refresh so the newest line would stay in view, with a comment
+    -- saying the widget "clamps an over-large scroll to the real bottom on
+    -- the way past". Nothing did. The view scrolled a billion pixels down,
+    -- every line fell outside it, and that window drew nothing at all on
+    -- every machine it had run on - while its own status line truthfully
     -- counted the eighty-eight lines it was not showing.
     --
-    -- So the widget makes that sentence true rather than the caller being
-    -- wrong about it. Sticking to the bottom by asking for further than the
-    -- bottom is a good way to say it, and it lets a caller do so without
-    -- knowing how tall the text became.
+    -- So the widget clamps here - **against the height the previous draw
+    -- measured**, which is all `content` is. A caller asking for the bottom
+    -- this way therefore lands one draw behind whatever it has just added,
+    -- and on the first draw, before anything has been measured, at the top.
+    -- Log View did exactly that: it opened at the top of the log and stayed
+    -- there until the log changed. It follows the log itself now, and a
+    -- widget that wanted to stick to the bottom would have to measure before
+    -- it clamps rather than after.
     --
     clamp(self)
 

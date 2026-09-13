@@ -2156,14 +2156,56 @@ def check_3d(guest):
     return 3
 
 
-# `theme.console`, 0x0b0b0b. Nothing else on this desktop is that colour, so
-# the bounding box of it is the terminal's character grid - which is the one
-# thing that has to change size when the window does.
+# `theme.console`, 0x0b0b0b. While the Terminal is the only window drawn in
+# it, the bounding box of that colour is the terminal's character grid - which
+# is the one thing that has to change size when the window does.
+#
+# **Only while.** Log View draws on it too since 0.10.47, and the first gate
+# with both on the screen measured a box round the two of them: the Terminal
+# grew to full size and the check said it had not. A phase with Log View open
+# measures the Terminal from its own corner instead, with `_terminal_grid`.
 CONSOLE = (0x0b, 0x0b, 0x0b)
 
 
+def _terminal_grid(width, height, px, x, y):
+    """The Terminal's grid, measured from its own corner. None if it is not there.
+
+    `x, y` is the window as the window manager logged it. The view sits 8 in,
+    inside a one-pixel frame, and its first row and column never hold text -
+    lines start 3 down and 4 in - so the console colour runs unbroken from the
+    corner along both to the far edges of the grid. Another window's frame
+    stops the walk, so a Log View beside the Terminal, or over it, cannot make
+    the grid look bigger than it is.
+    """
+    x0, y0 = x + 9, y + 9
+
+    def console(cx, cy):
+        at = (cy * width + cx) * 3
+
+        return (px[at], px[at + 1], px[at + 2]) == CONSOLE
+
+    if not (0 <= x0 < width and 0 <= y0 < height) or not console(x0, y0):
+        return None
+
+    x1 = x0
+
+    while x1 + 1 < width and console(x1 + 1, y0):
+        x1 += 1
+
+    y1 = y0
+
+    while y1 + 1 < height and console(x0, y1 + 1):
+        y1 += 1
+
+    return x0, y0, x1, y1
+
+
 def _console_box(width, height, px):
-    """Where the terminal's grid is, and how big. None if there is not one."""
+    """Where the terminal's grid is, and how big. None if there is not one.
+
+    The bounding box of the console colour on the whole screen, so it is the
+    Terminal's grid only when nothing else on the screen is that colour.
+    """
     x0, y0, x1, y1 = width, height, -1, -1
 
     for y in range(height):
@@ -2244,7 +2286,9 @@ def check_budget(guest):
 
     x, y, w, h = (int(v) for v in placed[-1])
     width, height, px = parse_ppm(guest.screendump())
-    before = _console_box(width, height, px)
+    # From the Terminal's corner, because Log View is on this screen too and
+    # draws on the same black.
+    before = _terminal_grid(width, height, px, x, y)
 
     if before is None:
         raise Failure("the Terminal opened and its grid is not on the screen.")
@@ -2285,7 +2329,7 @@ def check_budget(guest):
         )
 
     width, height, px = parse_ppm(guest.screendump())
-    after = _console_box(width, height, px)
+    after = _terminal_grid(width, height, px, x, y)
 
     if after is None or (after[2] - after[0]) < (before[2] - before[0]) + 800:
         raise Failure(
@@ -2650,6 +2694,488 @@ def check_terminal(guest):
         raise Failure("Control-C did not get the screen back from the terminal.")
 
     return 2
+
+
+def _log_view_area(width, height, px, win):
+    """Where Log View draws its rows, or None if it has no console.
+
+    `win` is the window as the window manager logged it, `(x, y, w, h)`. The
+    console box is the bounding rectangle of `theme.console` inside it, which
+    is the inside of the view's one-pixel frame; the rows stop short of the
+    scroll bar the kit draws down the right-hand side, 16 wide and 2 in.
+    """
+    x, y, w, h = win
+    x0, y0, x1, y1 = width, height, -1, -1
+    count = 0
+
+    for yy in range(max(0, y), min(height, y + h)):
+        row = yy * width
+
+        for xx in range(max(0, x), min(width, x + w)):
+            at = (row + xx) * 3
+
+            if (px[at], px[at + 1], px[at + 2]) == CONSOLE:
+                count += 1
+                if xx < x0: x0 = xx
+                if xx > x1: x1 = xx
+                if yy < y0: y0 = yy
+                if yy > y1: y1 = yy
+
+    # A quarter of the window at least. Black text anti-aliased onto a grey
+    # window has pixels that land on exactly this colour, and the first run
+    # against the old window drew a box round a handful of them and reported
+    # "0 of 0 pixels" instead of saying the window was grey.
+    if count < (w * h) // 4:
+        return None
+
+    return x0 + 2, y0 + 2, x1 - 20, y1 - 1
+
+
+def _commonest(width, px, win):
+    """The most common colour in a window, sampled every third pixel."""
+    x, y, w, h = win
+    seen = {}
+
+    for yy in range(y, y + h, 3):
+        for xx in range(x, x + w, 3):
+            at = (yy * width + xx) * 3
+            c = (px[at], px[at + 1], px[at + 2])
+            seen[c] = seen.get(c, 0) + 1
+
+    return max(seen, key=seen.get)
+
+
+def _text_rows(width, px, area, right=None):
+    """The rows of text in an area, as bands of pixel rows with ink in them.
+
+    Each band is `[top, bottom, red, green]`, the last two saying whether any
+    of it is Log View's fault colour or its stage colour - the console's
+    `bad` and `good`, 0xda3633 and 0x3fb950, which this finds by channel
+    rather than exactly so a TrueType face's softened edges still count.
+
+    Ink is anything brighter than the console by a margin, so the yellow note
+    counts as ink and as neither colour. `right` stops short of the area's
+    right edge, which is how a check looks past that note.
+    """
+    ax0, ay0, ax1, ay1 = area
+    stop = ax1 if right is None else right
+    bands = []
+
+    for y in range(ay0, ay1):
+        row = y * width
+        ink = red = green = False
+
+        for x in range(ax0, stop):
+            at = (row + x) * 3
+            r, g, b = px[at], px[at + 1], px[at + 2]
+
+            if r > 90 or g > 90 or b > 90:
+                ink = True
+
+                if r > 150 and g < 110 and b < 110:
+                    red = True
+                elif g > 140 and r < 120 and b < 130:
+                    green = True
+
+        if not ink:
+            continue
+
+        if bands and bands[-1][1] == y - 1:
+            bands[-1][1] = y
+            bands[-1][2] = bands[-1][2] or red
+            bands[-1][3] = bands[-1][3] or green
+        else:
+            bands.append([y, y, red, green])
+
+    return bands
+
+
+def _settled_rows(guest, area, seconds=15):
+    """Log View's rows once two looks a second apart agree.
+
+    For after something that logs a line of its own - a click, which the
+    window manager narrates - while the view is still to catch up with it.
+    A second is twice the window's refresh, so two agreeing looks cannot both
+    have come before a refresh that was on its way.
+    """
+    deadline = time.monotonic() + seconds
+    last = None
+
+    while time.monotonic() < deadline:
+        width, height, px = parse_ppm(guest.screendump())
+        rows = _text_rows(width, px, area)
+
+        if rows == last:
+            return rows
+
+        last = rows
+        time.sleep(1.0)
+
+    raise Failure(f"Log View's rows were still changing {seconds}s after a "
+                  "click.")
+
+
+def check_log_view(guest):
+    """Log View reads like the Terminal, and follows what is logged.
+
+    Diego, on the ThinkPad: *the log viewer should look like the terminal, on
+    a black background, scrolling automatically as new items are added; right
+    now it has an overlapping title and the content is not readable because
+    it is on a grey background.* Reproduced in QEMU before it was touched, and
+    all three were real:
+
+    - The rows were `ui.text`'s body colour, `text_dim`, on the window's
+      panel grey: #808080 on #d8d8d8 in the BeOS palette.
+    - `ui.text` and its heading label laid text out on the bitmap font's 8x16
+      cell while the compositor drew it in the interface face. With a
+      20-pixel TrueType face the heading ran into the first row and rows sat
+      16 pixels apart. At the default font the two cells agree, so no
+      harness screen could show it.
+    - It never followed. It set `scroll` past the end and the widget clamped
+      that against the height the *previous* draw measured - nothing, the
+      first time - so it opened at the top of the log and stayed there.
+
+    **So the conditions are the ThinkPad's, not the harness's.** This phase
+    runs the BeOS palette, because in the dark one the window colour is
+    already dark and the old window would pass the first check; and a
+    TrueType face at 20 pixels, because at spleen's 16 the second bug cannot
+    be seen. Both are put back afterwards.
+
+    What is logged is under this phase's control. `/ramfs/logger.lua` opens a
+    small window and prints when it is clicked: forty plain lines, then one
+    the log colours as a fault; the second click, forty more and one it
+    colours as a stage. Finding them by colour rather than by shape is what
+    survives the kernel's stamp, which makes every row start with the same
+    nine characters. It prints on the *release*, because the window manager
+    logs every click itself and logs the release before it delivers it - so
+    the harness's lines come after its own.
+
+    Four checks:
+
+    1. **The rows are on black**: most of the text area is `theme.console`
+       and light text is drawn on it.
+    2. **Nothing overlaps**: the rows are separate bands of ink, each
+       shorter than the pitch between them, and that pitch is no smaller
+       than the face. A heading drawn into the first row merges bands; rows
+       laid out on a cell smaller than the face may not, which is why the
+       pitch is checked as well.
+    3. **It follows**: the fault line appears in the lower half of the view,
+       under the plain lines printed before it, with nothing touched.
+    4. **It holds while scrolled back, and follows again at the bottom**:
+       one row up, the second batch arrives, the rows on screen stay as they
+       were - the fault line among them - and a note says there are new
+       lines; one row down and the stage line is in view.
+
+    **One row, and it was three.** Three rows up, the held view was nothing
+    but plain lines, and plain lines look the same whichever batch printed
+    them - so a window that followed regardless showed forty identical rows
+    and passed. One row up keeps the fault line on screen, and a window that
+    jumps takes it away.
+    """
+    # The face's size, which check 2 holds the row pitch to.
+    FACE_PX = 20
+
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Logger', w = 240, h = 90, "
+        "x = 900, y = 110 } "
+        "if not w then return end "
+        "local n = 0 "
+        "local v = ui.view{ x = 0, y = 0, w = 240, h = 90 } "
+        "function v:mouse(action) "
+        "if action == 'release' then "
+        "n = n + 1 "
+        "for i = 1, 40 do print('filler') end "
+        "print(n == 1 and 'error: deliberate' or '[2/2] harness') "
+        "end "
+        "return true "
+        "end "
+        "w:add(v) w:run()"
+    )
+
+    guest.type("fs.write('/ramfs/logger.lua', %r)" % program)
+    guest.type('fs.write("/home/.appearance", { fonts = { '
+               'ui = { font = "ibmplexmono", px = %d }, '
+               'mono = { font = "ibmplexmono", px = %d } } }) '
+               'print("log-view" .. "-ready")' % (FACE_PX, FACE_PX))
+    guest.wait_for("log-view-ready",
+                   "wrote the logger and chose BeOS with a TrueType face")
+
+    mark = len(guest.seen)
+    guest.type("wm logview,/ramfs/logger.lua")
+
+    placed = {}
+    deadline = time.monotonic() + 40
+
+    while time.monotonic() < deadline and len(placed) < 2:
+        for title, *geometry in re.findall(
+                r"wm: window (Log|Logger) at (\d+),(\d+) (\d+)x(\d+)",
+                guest.seen[mark:]):
+            placed[title] = tuple(int(v) for v in geometry)
+
+        time.sleep(0.3)
+
+    if len(placed) < 2:
+        raise Failure(
+            f"Log View and the logger did not both open within 40s: "
+            f"{sorted(placed)} did."
+        )
+
+    log, logger = placed["Log"], placed["Logger"]
+
+    # A second for the first refresh and the window's first paint.
+    time.sleep(3)
+
+    width, height, px = parse_ppm(guest.screendump())
+
+    def click(x, y):
+        guest.mouse_to(*_to_tablet(x, y, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+        time.sleep(0.4)
+
+    # The pointer is drawn on the screen too, and a pointer resting over the
+    # rows is a row of ink that moves when it does.
+    def park():
+        guest.mouse_to(*_to_tablet(width - 200, height - 200, width, height))
+        time.sleep(0.4)
+
+    park()
+    failures = []
+
+    # 1. On black.
+    width, height, px = parse_ppm(guest.screendump())
+    area = _log_view_area(width, height, px, log)
+
+    if area is None:
+        common = _commonest(width, px, log)
+        failures.append(
+            "Log View's rows are not on a dark ground: almost none of its "
+            "window is the console colour, and the commonest colour there is "
+            "#%02x%02x%02x. The other three checks find the rows inside that "
+            "console, so they were not run." % common
+        )
+    else:
+        ax0, ay0, ax1, ay1 = area
+        dark = ink = 0
+
+        for y in range(ay0, ay1, 2):
+            for x in range(ax0, ax1, 2):
+                at = (y * width + x) * 3
+                c = (px[at], px[at + 1], px[at + 2])
+
+                if c == CONSOLE:
+                    dark += 1
+                elif max(c) > 150:
+                    ink += 1
+
+        total = len(range(ay0, ay1, 2)) * len(range(ax0, ax1, 2))
+
+        if dark < total // 2 or ink < 100:
+            failures.append(
+                f"Log View has a console box but is not text on it: {dark} of "
+                f"{total} sampled pixels are the console colour and {ink} are "
+                "light."
+            )
+
+    lx, ly, lw, lh = logger
+
+    if area is not None:
+        ax0, ay0, ax1, ay1 = area
+        middle = (ay0 + ay1) // 2
+        pitch = None
+
+        # 3 first, because 2 is measured on the rows it puts on screen.
+        click(lx + lw // 2, ly + lh // 2)
+        park()
+
+        def followed(w_, h_, px_):
+            bands = _text_rows(w_, px_, area)
+            reds = [i for i, b in enumerate(bands) if b[2]]
+
+            if not reds or bands[reds[-1]][0] < middle:
+                return None
+
+            above = bands[max(0, reds[-1] - 3):reds[-1]]
+
+            if len(above) < 3 or any(b[2] or b[3] for b in above):
+                return None
+
+            return bands
+
+        try:
+            bands = settle(
+                guest, followed,
+                "a line logged while Log View was open never came into the "
+                "lower half of its view, under the plain lines printed before "
+                "it. It is not following the log: a reader would have to "
+                "scroll by hand to see what just happened.",
+                seconds=20)
+        except Failure as e:
+            failures.append(str(e))
+            bands = None
+
+        # 2. Nothing overlaps, measured on those rows.
+        if bands is not None:
+            tops = [b[0] for b in bands]
+            steps = sorted(b - a for a, b in zip(tops, tops[1:]))
+            pitch = steps[len(steps) // 2] if steps else None
+
+            inside = [b for b in bands if b[0] > ay0 and b[1] < ay1 - 1]
+            tall = [b for b in inside
+                    if pitch is None or b[1] - b[0] + 1 >= pitch]
+
+            #
+            # **Two conditions, because the first alone passed the bug.**
+            # Rows 16 pixels apart in a 20-pixel face do not always touch:
+            # Plex Mono's bracket is short enough to leave a pixel between
+            # them, so a window laid out on the bitmap cell passed "no band
+            # as tall as the pitch". A pitch smaller than the face is the
+            # cause itself, seen whether or not these glyphs collide.
+            #
+            if len(bands) < 4 or pitch is None or pitch < FACE_PX or tall:
+                failures.append(
+                    f"Log View's rows overlap: {len(bands)} rows of text "
+                    f"{pitch} pixels apart in a {FACE_PX}-pixel face, and "
+                    f"{len(tall)} of them as tall as that. Text laid out on "
+                    "one font's cell and drawn in another runs into the row "
+                    "below - which is also what a heading over the first row "
+                    "looks like."
+                )
+
+        # 4. Held while scrolled back, and following again at the bottom.
+        if bands is not None and pitch:
+            click(ax0 + 60, ay0 + 40)
+            park()
+
+            #
+            # Where the fault line is *after* that click, not before it. The
+            # window manager logs a click itself, so the click that gives the
+            # view the focus also lifts every row by two as its lines arrive -
+            # and a position taken before it made one row down look like one
+            # row up.
+            #
+            try:
+                reds = [b[0] for b in _settled_rows(guest, area) if b[2]]
+            except Failure as e:
+                failures.append(str(e))
+                reds = []
+
+            if not reds:
+                failures.append(
+                    "the fault line left Log View's rows when the view was "
+                    "clicked, so there was nothing to scroll back over."
+                )
+
+            before = reds[-1] if reds else ay1
+
+            guest.sendkey("up")
+
+            def moved(w_, h_, px_):
+                now = [b[0] for b in _text_rows(w_, px_, area) if b[2]]
+
+                return (True if not now or now[-1] >= before + pitch // 2
+                        else None)
+
+            left = ax0 + (ax1 - ax0) * 55 // 100
+            note = (ax0 + (ax1 - ax0) * 6 // 10, ay0, ax1, ay0 + pitch + 2)
+
+            try:
+                settle(guest, moved,
+                       "the up arrow did not move Log View's rows.",
+                       seconds=10)
+
+                width, height, px = parse_ppm(guest.screendump())
+                held = _text_rows(width, px, area, right=left)
+
+                said = len(guest.seen)
+                click(lx + lw // 2, ly + lh // 2)
+                park()
+
+                #
+                # Until the logger has finished, which the serial line says,
+                # and then for the note - separately. This waited for the
+                # note alone, and a window that followed regardless never
+                # shows one, so it failed on the note and never reached the
+                # question of whether the rows had moved.
+                #
+                deadline = time.monotonic() + 15
+
+                while "[2/2] harness" not in guest.seen[said:]:
+                    if time.monotonic() > deadline:
+                        raise Failure("the logger's second batch never "
+                                      "reached the serial line.")
+                    time.sleep(0.3)
+
+                try:
+                    width, height, px = settle(
+                        guest,
+                        lambda w_, h_, px_: (w_, h_, px_)
+                        if _text_rows(w_, px_, note) else None,
+                        "more was logged while Log View was scrolled back "
+                        "and nothing in its corner said so.", seconds=10)
+                except Failure as e:
+                    failures.append(str(e))
+                    width, height, px = parse_ppm(guest.screendump())
+
+                now = _text_rows(width, px, area, right=left)
+
+                if now != held or any(b[3] for b in _text_rows(width, px, area)):
+                    failures.append(
+                        "Log View jumped to the newest lines while it was "
+                        "scrolled back: the rows on screen changed under a "
+                        "reader who had left the bottom to read them."
+                    )
+
+                click(ax0 + 60, ay0 + 40)
+                park()
+
+                guest.sendkey("down")
+
+                def following(w_, h_, px_):
+                    bands_ = _text_rows(w_, px_, area)
+                    greens = [b for b in bands_ if b[3]]
+
+                    if not greens or greens[-1][0] < middle:
+                        return None
+
+                    return None if _text_rows(w_, px_, note) else True
+
+                settle(guest, following,
+                       "back at the bottom, Log View did not follow again: "
+                       "the line logged while it was held never came into "
+                       "view, or the note that there were new lines stayed.",
+                       seconds=15)
+            except Failure as e:
+                failures.append(str(e))
+
+    stop = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[stop:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        failures.append("Control-W Q did not get the screen back.")
+
+    # The palette and faces every other phase was written against.
+    guest.type('fs.write("/home/.appearance", { palette = "dark" }) '
+               'print("log-view" .. "-restored")')
+    guest.wait_for("log-view-restored", "put the dark palette back")
+
+    if failures:
+        raise Failure("\n  - ".join(["Log View:"] + failures))
+
+    return 4
 
 
 # The focus ring and the selection, 0x58a6ff. `ui.editor` draws a selected
@@ -4699,6 +5225,7 @@ def main():
         direct_checks = phase("direct", check_direct)
         three_d_checks = phase("3d", check_3d)
         terminal_checks = phase("terminal", check_terminal)
+        log_view_checks = phase("log view", check_log_view)
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
@@ -4731,7 +5258,8 @@ def main():
              + graphical_checks + click_checks + deskbar_checks
              + focus_checks + desktop_checks
              + clip_checks + cores_checks + reaped_checks
-             + idle_checks + terminal_checks + direct_checks
+             + idle_checks + terminal_checks + log_view_checks
+             + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks)
     print("\nwhere the time went:")
@@ -4774,6 +5302,9 @@ def main():
           f"{terminal_checks} on a terminal window (a program printing into "
           f"one, and its character grid following the window when it is "
           f"resized), "
+          f"{log_view_checks} on Log View (rows on black that do not "
+          f"overlap, following what is logged and holding still while "
+          f"scrolled back), "
           f"{repaint_checks} on an idle window drawing nothing at all, "
           f"{power_checks} on the power button reaching a driver outside the kernel, "
           f"{budget_checks} on a full-screen picture and a maximised window fitting "

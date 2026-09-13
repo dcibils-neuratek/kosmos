@@ -8,6 +8,73 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: Log View looks like the Terminal, and follows the log
+
+Diego, from the ThinkPad: Log View should be black like the Terminal and
+scroll as lines arrive; it had an overlapping title and grey, unreadable text.
+**All three were reproduced in QEMU at 1920x1080 before a line changed**,
+each with a picture:
+
+- **Grey.** It was a `ui.text`, whose body colour is `text_dim`: #808080 on
+  BeOS's #d8d8d8.
+- **Overlap.** `ui.text` and `ui.label` lay text out on the 8x16 cell `ui.lua`
+  copies from `gfx.font` when it loads, while the compositor draws in the
+  interface face. With `ibmplexsans` at 20 pixels the heading and the status
+  line were cut short and rows sat 16 pixels apart. Invisible at spleen, which
+  is the font every harness screen had used.
+- **Not following.** It set `scroll = 1 << 30` and `ui.text` clamped that
+  against the *previous* draw's height - nothing, on the first draw - so it
+  opened at the top of the log and stayed there.
+
+**What it is now** (`ui.md` §16.14): the Terminal's view. `console` and
+`console_text`, the `mono` face measured on every draw, no heading, lines
+wrapped by character, and faults and stages in the console's own colours -
+the stage pattern had matched nothing since the kernel began stamping lines.
+
+**The behaviour chosen: at the bottom it follows; scrolled up** - arrows,
+backspace and space, the scroll bar, or dragging the text - **it holds the
+text it had and says `new lines below`, and follows again on reaching the
+bottom.** Held rather than adjusted, because `sys.log` cannot say how many rows
+arrived once the ring holds more than the 64 KB it reads. It repaints when the
+log changes, rather than twice a second on a `tick`.
+
+**Checked:**
+
+- The display harness's new `log view` phase (`testing.md` §18.31), 4 checks:
+  18.6 s on aarch64, 18.2 s on x86-64. It runs BeOS and Plex Mono at 20
+  pixels, the ThinkPad's conditions, and puts the dark palette back after.
+- Negative controls, each failing for its own reason: the old `logview.lua`
+  (grey), rows on a 16-pixel pitch (overlap), never taking new text (not
+  following), always taking it (jumped, and no note). **Three of the four
+  found the check wrong first**, and each correction is a comment in it.
+- **A phase this broke, found by the gate after rebasing.** `compositor
+  budget` measured the Terminal's grid as the bounding box of the console
+  colour on the whole screen, and Log View is that colour now, so a Terminal
+  that filled the screen was reported as not having grown. It measures from
+  the Terminal's own corner now (`testing.md` §18.31), and with the Terminal's
+  `follow` removed it still fails on growth.
+- `make prepush`: green - `make test` 153/153 and 149/149, 63 checks on
+  x86-64, and the display harness 98 checks on aarch64 and 96 on x86-64, four
+  of each on Log View. **It took six runs**, and one failure was this
+  change's. Before the rebase: the x86-64 HDA tone, 411 Hz for 371 ms, then
+  green. Rebased onto another session's 0.10.46, the Deskbar focus change,
+  so this is 0.10.47. After it: the x86 suite's `console held by nobody`
+  panic, which `claude/admiring-murdock-5b3d97` fixes and has not landed;
+  the `compositor budget` measurement above; the x86-64 `registry` phase,
+  which bets two seconds on a typed `fs.write` and passed 3 of 3 alone - its
+  own task now; then green.
+
+Open:
+
+- **The kit-wide version of the overlap.** Every widget in `ui.lua` lays out
+  on that stale 8x16 cell under a TrueType interface face. Offered to Diego as
+  its own task; not done here.
+- **PgUp, PgDn, Home and End** reach a widget as a stray `~` or as nothing,
+  because `ui.key_decoder` decodes only the arrows. Also offered as its own
+  task. Log View pages with backspace and space meanwhile.
+- **Not tried on the ThinkPad.**
+
+**Next:** unchanged - xHCI, and agreeing the order of the limits work.
 ### 12 September: the Deskbar shows the focus where it went, at once
 
 Diego, on the ThinkPad: moving the focus to an application, its button on

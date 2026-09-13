@@ -1114,10 +1114,13 @@ correct *for the size the view believed it was*. This is the shape of bug
 where reading the drawing code proves it right and the bug is one level up.
 
 **The check drags the sizing grip and measures the black.** `theme.console`
-is 0x0b0b0b and nothing else on the desktop is, so the bounding box of that
-colour is the character grid - and measuring the grid rather than the window
-frame is the point: the frame moves because the window manager moved it,
-whether or not the application noticed anything.
+is 0x0b0b0b, and while the Terminal is the only window drawn in it the
+bounding box of that colour is the character grid - and measuring the grid
+rather than the window frame is the point: the frame moves because the window
+manager moved it, whether or not the application noticed anything. Log View
+draws on the same black since 0.10.47, so the `compositor budget` phase, which
+has both on the screen, measures the grid from the Terminal's own corner
+instead (§18.31).
 
 The negative control was run before the fix was kept, by removing the one
 `follow` line and rebuilding:
@@ -1485,3 +1488,130 @@ the focus where it had been.
 strip and gives it the keyboard focus, and a window minimised by its box
 keeps the keys; and the bar repaints itself every second whether or not the
 minute or a meter moved.
+## 18.31 Log View, on black and following the log
+
+Diego, from the ThinkPad: Log View should look like the Terminal - black, and
+scrolling as lines arrive - and it had an overlapping title and grey text that
+could not be read. All three were reproduced in QEMU at 1920x1080 before
+anything changed; `ui.md` §16.14 has the causes and the design.
+
+The display harness's `log view` phase is four checks, and **the conditions
+are the ThinkPad's rather than the harness's**:
+
+- **The BeOS palette.** Every other phase runs the dark one, where the window
+  colour is #161b22, and there the old grey-on-grey window would have passed
+  "the rows are on a dark ground".
+- **IBM Plex Mono at 20 pixels** for the interface and monospace roles. At
+  spleen's 16 the cell the old window laid text out on and the face it drew
+  in are the same size, so the overlap cannot be seen at the harness's font.
+
+What is logged is under the phase's control. `/ramfs/logger.lua` opens a small
+window and prints when it is clicked: forty plain lines and one Log View
+colours as a fault, then forty more and one it colours as a boot stage.
+**Found by colour rather than by shape**, because the kernel stamps every line
+in the ring, so every row starts with the same nine characters and a
+one-character line is not a narrow row. **Printed on the release**, because
+the window manager logs its first thirty clicks itself and logs a release
+before it delivers it, so the harness's lines always come after its own.
+
+1. **On black**: most of the text area is `theme.console`, with light text on
+   it.
+2. **Nothing overlaps**: at least four rows, each shorter than the row pitch,
+   and the pitch no smaller than the face.
+3. **It follows**: the fault line appears in the lower half of the view, under
+   plain lines, with nothing touched.
+4. **It holds, then follows again**: one row up, the second batch arrives, the
+   rows on screen do not change and `new lines below` appears; one row down
+   and the stage line is in view.
+
+It runs on both boards, like every phase here: 4 checks in 18.6 s on aarch64
+and in 18.2 s on x86-64, where the arrow keys arrive through the PS/2
+controller rather than virtio.
+
+### Four builds made to fail, each in one way
+
+Each is the tree as committed with one change, run through this phase alone:
+
+```
+the old logview.lua
+FAIL: Log View's rows are not on a dark ground: almost none of its window
+is the console colour, and the commonest colour there is #d8d8d8.
+
+rows measured on the bitmap cell: `MH` is 16, not gfx.height("mono")
+FAIL: Log View's rows overlap: 24 rows of text 16 pixels apart in a
+20-pixel face, and 0 of them as tall as that.
+
+never takes the newest text, even at the bottom
+FAIL: Log View has a console box but is not text on it: 57130 of 57130
+sampled pixels are the console colour and 0 are light.
+FAIL: a line logged while Log View was open never came into the lower half
+of its view, under the plain lines printed before it.
+
+takes the newest text even while scrolled back
+FAIL: more was logged while Log View was scrolled back and nothing in its
+corner said so.
+FAIL: Log View jumped to the newest lines while it was scrolled back.
+
+as committed
+PASS: 4 checks in 18.6s
+```
+
+**Three of those controls found the check wrong before they found anything
+else**, and each correction is a comment where it was made:
+
+- **The old window's first failure said "0 of 0 sampled pixels".** Black text
+  anti-aliased onto grey lands on exactly #0b0b0b here and there, and a box
+  drawn round a handful of those is not a console. The box has to cover a
+  quarter of the window now, and the message says the window is grey.
+- **Rows 16 pixels apart in a 20-pixel face passed.** Plex Mono's bracket is
+  short enough to leave a pixel between rows at that pitch, so "no row as tall
+  as the pitch" did not see text laid out on the wrong cell. The pitch is held
+  to the face's size as well, which is the cause rather than one of the ways
+  it sometimes shows.
+- **A window that always took the newest text passed check 4.** Three rows up,
+  the held view was nothing but plain lines, and those look the same whichever
+  batch printed them. One row up keeps the fault line in view, so a jump takes
+  it away. And the check had waited for the note before comparing, so that
+  window failed on the note and never reached the comparison: it now waits for
+  the logger's last line on the serial port, then for the note, then compares,
+  and reports the two separately.
+
+A fourth mistake was the harness's alone, found by the change as committed:
+the fault line's position was taken before the click that focuses the view,
+the window manager logs that click as two lines, and every row had moved up by
+two before the arrow moved it down by one. It is measured once the view has
+settled after the click.
+
+**The lesson is the power button's again** (§18.27): a check is not finished
+when it passes, but when a build broken in exactly the way it names makes it
+fail for exactly that reason. Two of these four would have shipped as passing
+tests that could not fail.
+
+### And a phase it broke
+
+The first gate after rebasing failed somewhere else. The `compositor budget`
+phase (§18.29) said the Terminal's grid had not grown - `(99, 49, 1570, 958)`
+before the drag, `(99, 49, 1905, 1061)` after - while the picture it left
+behind showed a Terminal filling the screen. That phase opens Log View beside
+the Terminal, and it measured the grid as the bounding box of `theme.console`
+on the whole screen, on the strength of a comment saying nothing else on the
+desktop was that colour. Since this change Log View is, so "before" was a box
+round both windows. It passed in the gate before the rebase and fails every
+time after it; whatever differs between the two, a measurement any other black
+window can inflate was not measuring the Terminal.
+
+It measures the Terminal from its own corner now, along the first row and the
+first column of the grid, which never hold text, until another window's frame
+or the grid's own edge stops the walk. The same image, and a control whose
+Terminal does not follow its window's edges:
+
+```
+as committed
+PASS: 2 checks in 40.7s
+
+the Terminal's view without `follow`
+FAIL: nothing was refused and the Terminal's grid did not grow to full
+size: (11, 507, 632, 1064) before the drag, (11, 507, 632, 1064) after.
+```
+
+§18.23 said the same thing about the colour, and is corrected.
