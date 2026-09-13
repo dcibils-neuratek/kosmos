@@ -1213,6 +1213,28 @@ void syscall_dispatch(struct syscall_frame *sc)
         }
         break;
 
+    case SYS_WAIT_INPUT_OR_CALL:
+        /*
+         * `SYS_WAIT_INPUT`, and a caller on the watched endpoint as well -
+         * syscall.h has why. The same owner check and the same look at
+         * input first; the rest, including looking again once the wake
+         * condition is set, is `ipc_wait_for_caller`'s.
+         */
+        if (!p->owns_console) {
+            result = SYS_ERR_DENIED;
+        } else if (hal_input_pending()) {
+            result = 0;
+        } else {
+            unsigned long ticks = (unsigned long)sc->arg[0];
+
+            if (ticks > (unsigned long)TICK_HZ * 3600UL) {
+                ticks = (unsigned long)TICK_HZ * 3600UL;
+            }
+
+            result = ipc_wait_for_caller((cap_t)sc->arg[1], ticks, true);
+        }
+        break;
+
     case SYS_SLEEP:
         /*
          * The same sleep, for anybody, without the input half.

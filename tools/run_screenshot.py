@@ -4866,6 +4866,61 @@ def check_window_manager(guest):
     return 3
 
 
+def check_wm_latency(guest):
+    """An application's request wakes the window manager.
+
+    Every window asks the window manager something each frame and waits for
+    the answer. The manager used to sleep in the console server's input wait
+    and collect requests only when that ended, so a request on an idle
+    desktop cost 11.5 ms - 2.86 scheduler ticks - and a game making two a
+    frame could not pass 43 frames a second on the ThinkPad however little it
+    had to draw. The console server now ends its sleep when a caller arrives
+    on the manager's endpoint.
+
+    `wmlatency` judges itself against half a scheduler tick, and this reads
+    its verdict. It was run first against the manager as it was and failed
+    at 2.86 ticks, three times.
+    """
+    mark = len(guest.seen)
+    guest.type("wm wmlatency")
+    deadline = time.monotonic() + 90
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+        tail = guest.seen[mark:]
+
+        if "PASS:" in tail or "FAIL:" in tail or "went away" in tail:
+            time.sleep(0.5)
+            guest._read_available()
+            break
+
+        time.sleep(0.3)
+
+    said = [l.strip() for l in guest.seen[mark:].replace("\r", "").split("\n")
+            if "wmlatency" in l or l.strip().startswith(("PASS:", "FAIL:"))]
+
+    stop = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    end = time.monotonic() + 15
+
+    while time.monotonic() < end:
+        guest._read_available()
+
+        if PROMPT in guest.seen[stop:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-W Q did not get the screen back after wmlatency.")
+
+    if not any(l.startswith("PASS:") for l in said):
+        raise Failure("an application's request does not wake the window "
+                      "manager:\n  " + "\n  ".join(said or ["(wmlatency said nothing)"]))
+
+    return 1
+
+
 def check_latency(guest):
     """A yield is not paced by the timer, and neither is an IPC round trip.
 
@@ -5212,6 +5267,7 @@ def main():
         key_checks = phase("keyboard", check_keyboard)
 
         latency_checks = phase("latency", check_latency)
+        wm_latency_checks = phase("window manager latency", check_wm_latency)
         stop_checks = phase("interrupt", check_interrupt)
         bar_updates = phase("status_bar", check_status_bar)
         editor_checks = phase("editor", check_editor)
@@ -5254,6 +5310,7 @@ def main():
 
     total = (splash_checks + bar_checks + key_checks + bar_updates
              + stop_checks + wm_checks + latency_checks + editor_checks
+             + wm_latency_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
              + focus_checks + desktop_checks
@@ -5275,6 +5332,7 @@ def main():
           f"{stop_checks} on Control-C stopping it, "
           f"{wm_checks} on dragging a hung application's window, "
           f"{latency_checks} on scheduling latency, "
+          f"{wm_latency_checks} on a request waking the window manager, "
           f"{editor_checks} on the machine writing and running its own "
           f"program, "
           f"{registry_checks} on a window manager found by name after a "

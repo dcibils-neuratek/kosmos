@@ -2262,6 +2262,162 @@ static bool test_a_server_inherits_its_callers_priority(void)
         && inherit_seen_after  == SCHED_PRIO_LOW;
 }
 
+/*
+ * **A caller ends a sleep that watches its endpoint.**
+ *
+ * The window manager sleeps in the console server's input wait and collects
+ * its own messages afterwards, so an application's `commit` sat on its
+ * endpoint until that sleep ran out: 11.5 ms a round trip on an idle desktop,
+ * two per frame, and the Super Nintendo at 43 frames a second on the
+ * ThinkPad. `ipc_wait_for_caller` ends the sleep when a caller arrives.
+ *
+ * A thread here sleeps for two seconds watching an endpoint, and another
+ * calls it ten ticks in. The sleep must end long before the two seconds, with
+ * the message still waiting to be collected; and a second sleep, taken with
+ * a caller already queued, must not sleep at all.
+ *
+ * **Input is left out of it on purpose** (`or_input` false). On x86 an input
+ * flag can latch and wake an input sleeper on every tick, which would end
+ * the first sleep early whether or not a caller could - and the negative
+ * control would pass. This is the half that is about callers.
+ */
+static cap_t watched_caller_cap;
+static cap_t watched_sleeper_cap;
+static volatile bool watched_caller_done;
+static volatile bool watched_sleeper_done;
+static volatile int watched_caller_result;
+static volatile bool watched_first_early;
+static volatile bool watched_first_collected;
+static volatile bool watched_second_at_once;
+static volatile bool watched_second_collected;
+
+static void watched_caller(void *arg)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    unsigned i;
+
+    (void)arg;
+    watched_caller_result = IPC_OK;
+
+    thread_sleep_until(thread_deadline_in(10));
+
+    for (i = 0; i < 2 && watched_caller_result == IPC_OK; i++) {
+        msg.tag = 40u + i;
+        msg.length = 1;
+        msg.data[0] = (uint8_t)i;
+        watched_caller_result = ipc_call(watched_caller_cap, &msg, &reply);
+    }
+
+    watched_caller_done = true;
+    thread_exit();
+}
+
+/*
+ * The side that sleeps, in a thread of its own. The suite's thread runs on
+ * core zero with nothing behind it and must never block - which is how the
+ * first version of this test, sleeping in the suite's thread, panicked the
+ * kernel with "this processor has no idle thread".
+ */
+static void watched_sleeper(void *arg)
+{
+    struct message msg = { 0 };
+    struct message answer = { 0 };
+    struct thread *sender = NULL;
+    uint64_t long_before, began, two_ticks;
+    unsigned i;
+
+    (void)arg;
+    answer.length = 1;
+
+    /* Two seconds asked for; half of one is "long before". */
+    long_before = thread_deadline_in(TICK_HZ / 2u);
+    (void)ipc_wait_for_caller(watched_sleeper_cap, 2u * TICK_HZ, false);
+    watched_first_early = cpu_cycles() < long_before;
+
+    watched_first_collected =
+        ipc_receive(watched_sleeper_cap, &msg, &sender, true, 0) == IPC_OK
+        && msg.tag == 40u;
+
+    if (watched_first_collected) {
+        (void)ipc_reply(sender, &answer);
+    }
+
+    /* The caller's second call is queued before this sleep begins. */
+    for (i = 0; i < 50; i++) {
+        thread_sleep_until(thread_deadline_in(1));
+    }
+
+    two_ticks = thread_deadline_in(2) - cpu_cycles();
+    began = cpu_cycles();
+    (void)ipc_wait_for_caller(watched_sleeper_cap, 2u * TICK_HZ, false);
+    watched_second_at_once = cpu_cycles() - began < two_ticks;
+
+    watched_second_collected =
+        ipc_receive(watched_sleeper_cap, &msg, &sender, true, 0) == IPC_OK
+        && msg.tag == 41u;
+
+    if (watched_second_collected) {
+        (void)ipc_reply(sender, &answer);
+    }
+
+    watched_sleeper_done = true;
+    thread_exit();
+}
+
+static bool test_a_caller_ends_a_watched_sleep(void)
+{
+    struct thread *caller, *sleeper;
+    uint64_t give_up;
+    cap_t ep;
+
+    watched_caller_done = false;
+    watched_sleeper_done = false;
+    watched_first_early = false;
+    watched_first_collected = false;
+    watched_second_at_once = false;
+    watched_second_collected = false;
+
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
+
+    caller = thread_create_suspended("watched-caller", watched_caller, NULL);
+    sleeper = thread_create_suspended("watched-sleeper", watched_sleeper, NULL);
+
+    if (caller == NULL || sleeper == NULL) {
+        return false;
+    }
+
+    watched_caller_cap = ipc_cap_grant(caller, ep);
+    watched_sleeper_cap = ipc_cap_grant(sleeper, ep);
+
+    if (watched_caller_cap < 0 || watched_sleeper_cap < 0) {
+        return false;
+    }
+
+    thread_wake(sleeper);
+    thread_wake(caller);
+
+    /* Four seconds is both sleeps running out unwoken, and a little more:
+     * past that, waiting longer would show nothing new. */
+    give_up = thread_deadline_in(4u * TICK_HZ);
+
+    while ((!watched_sleeper_done || !watched_caller_done)
+           && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    /* Always, so a thread still blocked on it is released with an error. */
+    (void)ipc_endpoint_destroy(ep);
+
+    return watched_sleeper_done && watched_caller_done
+        && watched_first_early && watched_first_collected
+        && watched_second_at_once && watched_second_collected
+        && watched_caller_result == IPC_OK;
+}
+
 static bool test_ipc_call_and_reply(void)
 {
     struct message msg = { 0 };
@@ -6046,6 +6202,7 @@ static const struct test tests[] = {
     { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
+    { "ipc: a caller ends a watched sleep",    test_a_caller_ends_a_watched_sleep },
     { "ipc: both arrival orders work",         test_ipc_works_in_both_arrival_orders },
     { "ipc: destroy wakes the blocked",        test_destroying_an_endpoint_wakes_the_blocked },
     { "ipc: a stale capability fails",         test_a_stale_capability_fails },

@@ -281,6 +281,7 @@ struct thread {
         struct thread  *next;       /* link in an endpoint's wait queue */
         struct thread  *peer;       /* who sent to us, or who we sent to */
         struct endpoint *waiting_on;/* so destroying an endpoint can find us */
+        struct endpoint *watching;  /* whose callers end this thread's sleep */
         int             status;     /* the result handed over on waking */
     } ipc;
 

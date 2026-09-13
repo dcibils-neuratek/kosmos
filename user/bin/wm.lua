@@ -678,6 +678,25 @@ if not ep then
 end
 
 --
+-- **Asked for once: a request ends this process's sleep.**
+--
+-- Each pass sleeps in `wait_input` - which is the console server's sleep -
+-- and only then collects what applications have asked. A request arriving
+-- during the sleep waited for it to run out: 11.5 ms a round trip on an idle
+-- desktop, and a game making two a frame could not pass 43 frames a second
+-- on the ThinkPad, however little the manager had to do. The console now
+-- watches this endpoint and answers early when somebody calls. If it cannot,
+-- nothing breaks; requests are simply answered a sleep late, as they were.
+--
+do
+  local watched, why = fs.watch_input("/dev/console", ep)
+
+  if not watched then
+    print("wm: requests will wait for the next pass: " .. tostring(why))
+  end
+end
+
+--
 -- Publish it, so a process that was not started by this one can find it.
 --
 -- The window manager used to be reachable only as `/dev/wm`, and only by

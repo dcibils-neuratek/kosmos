@@ -101,6 +101,13 @@ Two properties come out of this for free:
 
 The cost is memory: a double-buffered full-screen surface is 16MB. Acceptable, and only for apps that ask for a surface.
 
+**The commit is answered when it arrives**, and for a long time it was not.
+Nothing about the surfaces showed it: the window manager slept before
+collecting requests, so a `commit` and the `poll` after it each waited for that
+sleep - 11.5 ms apiece on an idle desktop, which held the Super Nintendo at 43
+frames a second on the ThinkPad with 6.5 ms of work in a frame. A caller now
+ends the sleep (`design.md` §4.2), and the round trip is 0.31 ms.
+
 ---
 
 ## 19.4b The memory type belongs to the mapping, not to the memory

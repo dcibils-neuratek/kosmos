@@ -174,7 +174,10 @@ static inline void kosmos_yield(void)
 }
 
 /*
- * Stop running for `ticks` scheduler ticks - a hundredth of a second each.
+ * Stop running for `ticks` scheduler ticks - TICK_HZ of them a second, which
+ * is 250 today; `sysinfo`'s `tick_hz` says so at run time. This said "a
+ * hundredth of a second each" long after it stopped being true, and the
+ * xHCI driver's timeouts were written from it.
  *
  * The difference from `kosmos_yield` is the whole point: yielding goes to
  * the back of the band and comes straight back, so a loop around it is a
@@ -469,6 +472,15 @@ static inline long kosmos_log(char *out, unsigned long max)
 static inline long kosmos_wait_input(unsigned long ticks)
 {
     return sys1(SYS_WAIT_INPUT, (long)ticks);
+}
+
+/*
+ * The same, and a caller arriving on the endpoint `cap` names ends it too.
+ * For the console server, watching the window manager: kernel/syscall.h.
+ */
+static inline long kosmos_wait_input_or_call(unsigned long ticks, long cap)
+{
+    return sys2(SYS_WAIT_INPUT_OR_CALL, (long)ticks, cap);
 }
 
 /* Ends a child. Takes effect at that process's next entry into the kernel,

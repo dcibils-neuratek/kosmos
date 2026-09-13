@@ -433,6 +433,15 @@ static void fill_pointer(struct con_reply *rep)
  */
 static unsigned events_wanted;
 
+/*
+ * The endpoint `CON_OP_WATCH` asked for, in this process's table, or -1.
+ *
+ * Kept until it goes stale - the window manager ended, and its endpoint with
+ * it - which the wait below finds out by being refused. Then it is dropped,
+ * so the slot does not stay taken by something that no longer exists.
+ */
+static long watched = -1;
+
 static void answer(const struct message *msg, uint64_t sender)
 {
     struct con_request req;
@@ -503,7 +512,21 @@ static void answer(const struct message *msg, uint64_t sender)
          * operation rather than something `keys` started doing.
          */
         if (rep.nkeys == 0 && rep.nevents == 0) {
-            (void)kosmos_wait_input(req.ticks);
+            /*
+             * **And a caller on the watched endpoint wakes it too.** The
+             * process waiting on this reply is the window manager, and its
+             * applications' requests are on its endpoint; without this, one
+             * arriving now waited for the sleep to end - 11.5 ms on an idle
+             * desktop. With it, the reply goes as soon as they call.
+             */
+            if (watched >= 0
+                && kosmos_wait_input_or_call(req.ticks, watched) != 0) {
+                (void)kosmos_cap_drop(watched);
+                watched = -1;
+                (void)kosmos_wait_input(req.ticks);
+            } else if (watched < 0) {
+                (void)kosmos_wait_input(req.ticks);
+            }
 
             /*
              * And again, because whatever woke this is the answer.
@@ -605,6 +628,19 @@ static void answer(const struct message *msg, uint64_t sender)
             }
         }
 
+        break;
+
+    case CON_OP_WATCH:
+        if (msg->cap_plus_one == 0) {
+            fail(sender, CON_ERR_BAD_OP);   /* no endpoint came with it */
+            return;
+        }
+
+        if (watched >= 0) {
+            (void)kosmos_cap_drop(watched);
+        }
+
+        watched = (long)msg->cap_plus_one - 1;
         break;
 
     case CON_OP_STAT:

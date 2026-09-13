@@ -99,6 +99,22 @@ struct endpoint {
     struct thread *senders;
     struct thread *receivers;
     struct thread *awaiting_reply;
+
+    /*
+     * **One thread that a caller arriving here should wake**, even though it
+     * is not receiving.
+     *
+     * The window manager sleeps inside the console server's input wait and
+     * collects its own messages afterwards, without blocking. So a caller on
+     * its endpoint - an application's `commit`, its `poll` - used to sit in
+     * `senders` until that sleep ran out: 11.5 ms a round trip on an idle
+     * desktop, two per frame, which is the Super Nintendo's 43 frames a
+     * second on the ThinkPad. `ipc_wait_for_caller` puts the sleeping
+     * thread here and `ipc_call` wakes it. One, because one process serves
+     * this; a second watcher is refused rather than silently replacing the
+     * first.
+     */
+    struct thread *watcher;
 };
 
 static struct endpoint endpoints[ENDPOINT_MAX];
@@ -263,6 +279,23 @@ void ipc_abort(struct thread *t)
         return;
     }
 
+    /*
+     * A thread that dies watching an endpoint must not stay its watcher: the
+     * next caller would wake a thread slot that belongs to somebody else by
+     * then.
+     */
+    if (t->ipc.watching != NULL) {
+        struct endpoint *w = t->ipc.watching;
+        unsigned long wflags = spin_lock(&w->lock);
+
+        if (w->watcher == t) {
+            w->watcher = NULL;
+        }
+
+        t->ipc.watching = NULL;
+        spin_unlock(&w->lock, wflags);
+    }
+
     ep = t->ipc.waiting_on;
 
     if (ep == NULL) {
@@ -353,6 +386,7 @@ void ipc_init(void)
     for (i = 0; i < ENDPOINT_MAX; i++) {
         endpoints[i].in_use = false;
         endpoints[i].senders = NULL;
+        endpoints[i].watcher = NULL;
         endpoints[i].receivers = NULL;
         endpoints[i].awaiting_reply = NULL;
 
@@ -652,6 +686,7 @@ cap_t ipc_endpoint_create(void)
             endpoints[i].owner = self->process;
             endpoints[i].senders = NULL;
             endpoints[i].receivers = NULL;
+            endpoints[i].watcher = NULL;
             endpoints[i].awaiting_reply = NULL;
 
             index = install(self, &endpoints[i]);
@@ -719,6 +754,14 @@ static void teardown(struct endpoint *ep)
 
     while ((t = queue_pop(&ep->awaiting_reply)) != NULL) {
         deliver(t, IPC_ERR_GONE);
+    }
+
+    /* A watcher is woken as well: what it was watching is gone, and the
+     * deadline it would otherwise sleep to is somebody else's business. */
+    if (ep->watcher != NULL) {
+        t = ep->watcher;
+        ep->watcher = NULL;
+        thread_wake(t);
     }
 
     /*
@@ -912,6 +955,19 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          */
         queue_push(&ep->senders, self);
         self->ipc.waiting_on = ep;
+
+        /*
+         * **And a watcher is told there is somebody to collect.** Under the
+         * lock it checked the queue under, so it cannot look, find nothing,
+         * and sleep through this: it is either already blocked and findable
+         * here, or it has not looked yet and will find this thread queued.
+         */
+        if (ep->watcher != NULL) {
+            struct thread *w = ep->watcher;
+
+            ep->watcher = NULL;
+            thread_wake(w);
+        }
     }
 
     /* Either way it is on a queue this endpoint can find, and names it, so
@@ -1059,6 +1115,88 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
 
     message_copy(msg, &self->ipc.msg);
     *sender = self->ipc.peer;
+    return IPC_OK;
+}
+
+/*
+ * **Until somebody calls this endpoint, the deadline passes, or - with
+ * `or_input` - a key or the pointer arrives.** Whichever is first.
+ *
+ * It does not receive. The caller collects with an ordinary non-blocking
+ * `ipc_receive` afterwards, which is what the window manager already does
+ * every pass; this only ends the sleep in front of it. That is why a
+ * receiver's timed wait is not the answer: the thread that sleeps here is
+ * the console server, answering the window manager's input request, and the
+ * endpoint it watches is the window manager's.
+ *
+ * **No lost wakeup.** The queue is looked at under the endpoint's lock, the
+ * watcher is recorded under it, and the thread blocks and lets it go in one
+ * step (`thread_block_and_release`). A caller on another core takes the same
+ * lock to queue itself, so it either arrives first and is seen, or arrives
+ * after and finds a blocked, findable watcher to wake. Input is looked at
+ * again after `wake_on_input` is set, for the same reason one layer down.
+ *
+ * Returns IPC_OK however it ended - which of the three is not something the
+ * caller can act on differently, since it looks at input and messages
+ * anyway - or IPC_ERR_BAD_CAP, or IPC_ERR_NO_SPACE when somebody else is
+ * already watching.
+ */
+int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input)
+{
+    struct thread *self = thread_current();
+    struct endpoint *ep = resolve(self, index);
+    unsigned long epflags;
+
+    if (ep == NULL) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    if (ticks == 0) {
+        return IPC_OK;
+    }
+
+    epflags = spin_lock(&ep->lock);
+
+    if (ep->senders != NULL) {
+        spin_unlock(&ep->lock, epflags);
+        return IPC_OK;                  /* somebody is already there */
+    }
+
+    if (ep->watcher != NULL && ep->watcher != self) {
+        spin_unlock(&ep->lock, epflags);
+        return IPC_ERR_NO_SPACE;
+    }
+
+    ep->watcher = self;
+    self->ipc.watching = ep;
+    self->wake_at = thread_deadline_in(ticks);
+    self->wake_on_input = or_input;
+
+    if (or_input && hal_input_pending()) {
+        ep->watcher = NULL;
+        self->ipc.watching = NULL;
+        self->wake_on_input = false;
+        self->wake_at = 0;
+        spin_unlock(&ep->lock, epflags);
+        return IPC_OK;
+    }
+
+    thread_block_and_release(&ep->lock, epflags);
+
+    /* Woken by a caller, the timer, input, or the endpoint going: whichever
+     * did it may or may not have cleared the watcher, so this does. */
+    epflags = spin_lock(&ep->lock);
+
+    if (ep->watcher == self) {
+        ep->watcher = NULL;
+    }
+
+    self->ipc.watching = NULL;
+    spin_unlock(&ep->lock, epflags);
+
+    self->wake_on_input = false;
+    self->wake_at = 0;
+
     return IPC_OK;
 }
 

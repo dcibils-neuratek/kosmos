@@ -531,6 +531,43 @@ static void set_int(lua_State *L, const char *name, lua_Integer v)
     lua_setfield(L, -2, name);
 }
 
+/*
+ * con.watch(console, endpoint) - true, or nil and a sentence.
+ *
+ * Asks the console to end its `CON_OP_WAIT` sleep when a caller arrives on
+ * `endpoint` as well. The capability goes with the message and the kernel
+ * copies it into the console's table, so the caller keeps its own.
+ */
+static int l_watch(lua_State *L)
+{
+    long cap = (long)luaL_checkinteger(L, 1);
+    long endpoint = (long)luaL_checkinteger(L, 2);
+    struct message msg, rep;
+    struct con_request *req = (struct con_request *)msg.data;
+    struct con_reply *r = (struct con_reply *)rep.data;
+    long status;
+
+    if (endpoint < 0) {
+        return luaL_argerror(L, 2, "an endpoint capability");
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.length = sizeof(*req);
+    msg.cap_plus_one = (uint32_t)(endpoint + 1);
+    req->op = CON_OP_WATCH;
+
+    status = kosmos_call(cap, &msg, &rep);
+
+    if (status != 0 || rep.length < sizeof(*r) || r->error != CON_OK) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the console would not watch it");
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 void kosmos_console_kit(lua_State *L)
 {
     static const luaL_Reg api[] = {
@@ -540,6 +577,7 @@ void kosmos_console_kit(lua_State *L)
         { "decode_reply",   l_decode_reply },
         { "message",        l_message },
         { "wait",           l_wait },
+        { "watch",          l_watch },
         { NULL, NULL }
     };
 
@@ -548,6 +586,7 @@ void kosmos_console_kit(lua_State *L)
     /* The operations, by the names the namespace already uses for them, so
      * a caller writes `con.WRITE` rather than remembering that it is 1. */
     set_int(L, "WRITE",   CON_OP_WRITE);
+    set_int(L, "WATCH",   CON_OP_WATCH);
     set_int(L, "READ",    CON_OP_READ);
     set_int(L, "KEYS",    CON_OP_KEYS);
     set_int(L, "WAIT",    CON_OP_WAIT);

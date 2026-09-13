@@ -32,7 +32,9 @@
 --------------------------------------------------------------------------
 
 local N = 200
-local TICK_HZ = 100                       -- kernel/main.c: hal_timer_init
+-- Asked, not written down: this said 100 while the kernel ran at 250, which
+-- made every threshold below two and a half times looser than it read.
+local TICK_HZ = (sys.info() or {}).tick_hz or 250
 local hz = sys.info().counter_hz
 local period = hz // TICK_HZ
 

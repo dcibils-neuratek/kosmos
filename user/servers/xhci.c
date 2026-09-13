@@ -94,11 +94,20 @@
 #define PORTS_MAX           255u        /* MaxPorts is eight bits */
 #define CAPS_MAX            64u         /* a list longer than this is a loop */
 
-/* Scheduler ticks, a hundredth of a second each. */
-#define HALT_TICKS          20u         /* 5.4.1 allows 16 ms */
-#define FIRMWARE_TICKS      100u        /* 4.22.1: no more than a second */
-#define RESET_TICKS         100u
-#define SETTLE_TICKS        50u
+/*
+ * **Waits in milliseconds**, turned into scheduler ticks by `ticks_for` once
+ * the tick rate is known.
+ *
+ * They were written as ticks, "a hundredth of a second each", from a comment
+ * in `kosmos.h` that had stopped being true when the kernel moved to 250 Hz.
+ * So every wait here was two and a half times shorter than it said - the
+ * second the specification gives the firmware among them - and the handoff
+ * line would have printed its milliseconds two and a half times too long.
+ */
+#define HALT_MS             20u         /* 5.4.1 allows 16 ms */
+#define FIRMWARE_MS         1000u       /* 4.22.1: no more than a second */
+#define RESET_MS            1000u
+#define SETTLE_MS           500u
 
 struct controller {
     uintptr_t     base;                 /* the capability registers */
@@ -110,6 +119,16 @@ struct controller {
 };
 
 static long console = -1;
+
+/* Asked of the machine when the driver starts; 250 only if it will not say. */
+static unsigned long tick_hz = 250u;
+
+/* Milliseconds as scheduler ticks, rounded up so no wait is shorter than
+ * asked for. */
+static unsigned ticks_for(unsigned long ms)
+{
+    return (unsigned)((ms * tick_hz + 999u) / 1000u);
+}
 
 /* A PCI address the way people write one: 00:0d.0. */
 static void address(struct say_line *line, unsigned where)
@@ -166,7 +185,7 @@ static void take_from_firmware(const struct controller *c, uintptr_t legsup,
                 (uint8_t)(mmio_read8(legsup + LEGSUP_OS_BYTE) | LEGSUP_OWNED));
 
     while ((mmio_read8(legsup + LEGSUP_BIOS_BYTE) & LEGSUP_OWNED) != 0
-           && waited < FIRMWARE_TICKS) {
+           && waited < ticks_for(FIRMWARE_MS)) {
         kosmos_sleep(1);
         waited++;
     }
@@ -180,7 +199,7 @@ static void take_from_firmware(const struct controller *c, uintptr_t legsup,
                        "used anyway");
     } else {
         say_text(line, " taken from the firmware after ");
-        say_dec(line, (unsigned long)waited * 10u);
+        say_dec(line, (unsigned long)waited * 1000u / tick_hz);
         say_text(line, " ms");
     }
 
@@ -255,7 +274,7 @@ static bool reset(const struct controller *c, struct say_line *line)
 {
     const char *why = NULL;
 
-    if (!settles(c->op + OP_USBSTS, USBSTS_CNR, 0, RESET_TICKS)) {
+    if (!settles(c->op + OP_USBSTS, USBSTS_CNR, 0, ticks_for(RESET_MS))) {
         why = " never became ready";
     } else {
         if ((mmio_read32(c->op + OP_USBSTS) & USBSTS_HCH) == 0) {
@@ -263,7 +282,7 @@ static bool reset(const struct controller *c, struct say_line *line)
                          mmio_read32(c->op + OP_USBCMD) & ~USBCMD_RS);
 
             if (!settles(c->op + OP_USBSTS, USBSTS_HCH, USBSTS_HCH,
-                         HALT_TICKS)) {
+                         ticks_for(HALT_MS))) {
                 why = " would not halt";
             }
         }
@@ -272,8 +291,10 @@ static bool reset(const struct controller *c, struct say_line *line)
             mmio_write32(c->op + OP_USBCMD,
                          mmio_read32(c->op + OP_USBCMD) | USBCMD_HCRST);
 
-            if (!settles(c->op + OP_USBCMD, USBCMD_HCRST, 0, RESET_TICKS)
-                || !settles(c->op + OP_USBSTS, USBSTS_CNR, 0, RESET_TICKS)) {
+            if (!settles(c->op + OP_USBCMD, USBCMD_HCRST, 0,
+                         ticks_for(RESET_MS))
+                || !settles(c->op + OP_USBSTS, USBSTS_CNR, 0,
+                            ticks_for(RESET_MS))) {
                 why = " did not finish resetting";
             }
         }
@@ -369,7 +390,7 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
      * is halted (4.19.2), but a USB 3 link that the reset retrained needs
      * time to come back, and reading at once would miss it.
      */
-    kosmos_sleep(SETTLE_TICKS);
+    kosmos_sleep(ticks_for(SETTLE_MS));
 
     for (port = 1; port <= c->ports; port++) {
         uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
@@ -420,6 +441,7 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
 void xhci_server(long console_cap)
 {
     static struct controller c;
+    struct sysinfo info = { 0 };
     struct dev_info dev;
     struct say_line line;
     unsigned where[NAMED_MAX];
@@ -427,6 +449,10 @@ void xhci_server(long console_cap)
     long asked;
 
     console = console_cap;
+
+    if (kosmos_sysinfo(&info) == 0 && info.tick_hz != 0) {
+        tick_hz = info.tick_hz;
+    }
 
     for (index = 0; (asked = kosmos_dev_find(DEV_XHCI, index, &dev)) == 0;
          index++) {

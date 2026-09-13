@@ -8,6 +8,30 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: a request wakes the window manager
+
+**The Super Nintendo's 43 frames a second on the ThinkPad were the window
+manager asleep, not busy.** Diego would not believe it was a bottleneck, and he
+was right about the work: each pass sleeps in `wait_input` - the console
+server's sleep - and collects applications' requests afterwards, so a `commit`
+or a `poll` waited for the sleep to end. `wmlatency` measured it before
+anything changed: 11.5 ms a round trip on an idle desktop, two a frame.
+
+**The fix is a kernel wait that a caller also ends**, `SYS_WAIT_INPUT_OR_CALL`,
+used by the console server with the window manager's endpoint, which the
+manager hands over once (`CON_OP_WATCH`). **0.31 ms afterwards.** Kernel test
+and display-harness check, each with a negative control (`testing.md` §18.33).
+Not yet run on the ThinkPad, where the Super Nintendo should now be held by the
+core rather than by the manager.
+
+**Two clocks were written down wrong** and were found on the way: `kosmos_sleep`
+said a tick is a hundredth of a second and `latency.lua` assumed 100 Hz; the
+kernel runs at 250. The xHCI driver's waits had been written from that comment,
+so every one was two and a half times short; they are milliseconds now.
+
+**Next, in the order Diego set**: `--scale 2` for the Super Nintendo, prepared
+and waiting; then USB step 2, enumeration.
+
 ### 12 September: USB on the ThinkPad, and a stick's disk is 32 MB
 
 **0.10.48 did not boot on the T14, and the code was not why.** GRUB printed

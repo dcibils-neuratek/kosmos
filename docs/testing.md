@@ -1694,3 +1694,57 @@ because on the ThinkPad the second controller's lines had scrolled away.
 **What this cannot test is the firmware handoff**: QEMU's controller has no
 Legacy Support capability, so the driver says it has no handoff to make. The
 ThinkPad runs that path first, and `usb.md` lists what its line can say.
+
+---
+
+## 18.33 A request wakes the window manager
+
+**Two checks, one for each half.**
+
+**The kernel's, in the suite:** `ipc: a caller ends a watched sleep`. A thread
+sleeps for two seconds watching an endpoint, another calls it ten ticks in, and
+the sleep must end long before the two seconds with the message still waiting
+to be collected; a second sleep, taken with a caller already queued, must not
+sleep at all. Input is left out (`or_input` false), because on x86 a latched
+input flag can wake an input sleeper every tick and would end the first sleep
+early whether a caller could or not. With the wake in `ipc_call` removed:
+
+```
+ok 55 - ipc: call and reply
+not ok 56 - ipc: a caller ends a watched sleep
+ok 57 - ipc: both arrival orders work
+...
+FAIL: 1 of 154 test(s) failed:
+  not ok 56 - ipc: a caller ends a watched sleep
+```
+
+**The first version of this test panicked the kernel**, and the reason is a
+rule of the suite worth knowing: `thread_block: this processor has no idle
+thread`. It slept in the suite's own thread, which runs on core zero with
+nothing behind it and must never block. The sleeping moved into a thread of its
+own, and the suite's thread only yields until both report.
+
+**The system's, in the display harness:** `wmlatency` opens a window, asks the
+window manager two hundred times for events it does not have, and judges the
+average against half a scheduler tick. Against the manager as it was, three
+runs:
+
+```
+wmlatency: a round trip to the window manager takes 11.479 ms on average and 22.972 ms at worst, against a scheduler tick of 4.000 ms
+FAIL: the window manager answers in 2.86 scheduler ticks on average. It answers when its sleep ends, not when it is asked.
+```
+
+and 11.661 and 11.311 ms. With the fix, 0.324, 0.309 and 0.314 ms - 0.08 of a
+tick. With the window manager's `watch_input` call removed and nothing else
+changed:
+
+```
+wmlatency: a round trip to the window manager takes 11.558 ms on average and 14.070 ms at worst, against a scheduler tick of 4.000 ms
+FAIL: the window manager answers in 2.88 scheduler ticks on average. It answers when its sleep ends, not when it is asked.
+```
+
+and 11.716 and 11.178 ms in the other two runs, the same as before the fix.
+
+`latency.lua` gained the right tick rate on the way: it had 100 Hz written into
+it while the kernel ran at 250, so every threshold was two and a half times
+looser than it read. The suites stand at aarch64 154/154 and x86-64 150/150.

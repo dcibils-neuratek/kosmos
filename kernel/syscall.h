@@ -309,7 +309,27 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 
 /* Whether a capability still names something, asked without using it. */
 #define SYS_CAP_CHECK  43   /* (cap)                  -> 0 or error         */
-#define SYS_MAX         50
+/*
+ * **The console owner's input wait, which a caller on a watched endpoint
+ * also ends.**
+ *
+ * The window manager sleeps inside the console server's `CON_OP_WAIT`, and
+ * that sleep is this process's `SYS_WAIT_INPUT`: until a key, the pointer or
+ * the deadline. A request to the window manager meanwhile waited for the
+ * deadline - 11.5 ms a round trip on an idle desktop, and the reason the
+ * Super Nintendo managed 43 frames a second of 60 on the ThinkPad with the
+ * machine idle. The console server now watches the window manager's
+ * endpoint while it sleeps, and a caller arriving there ends the sleep too.
+ *
+ * `cap` is the watched endpoint, in the caller's table. Nothing is received:
+ * the window manager collects its messages itself, afterwards, as it always
+ * did. Refused to anybody but the console owner, like `SYS_WAIT_INPUT`.
+ * Returns 0, or an IPC error - a stale capability once the watched process
+ * has gone.
+ */
+#define SYS_WAIT_INPUT_OR_CALL 50   /* (ticks, cap)     -> 0 or error         */
+
+#define SYS_MAX         51
 
 /*
  * What a spawn may hand its child beyond capabilities.

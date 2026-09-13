@@ -31,6 +31,18 @@
 #define CON_OP_POLL     6u
 #define CON_OP_STAT     7u
 
+/*
+ * **Watch the endpoint sent with this request while `CON_OP_WAIT` sleeps.**
+ *
+ * The capability travels with the message, out of band, and the console
+ * keeps its own copy of it. From then on a caller arriving on that endpoint
+ * ends a `CON_OP_WAIT` sleep as a key would, so the process that sleeps here
+ * and serves requests afterwards - the window manager - answers them when
+ * they arrive rather than when the sleep runs out. One endpoint at a time: a
+ * second `WATCH` replaces the first.
+ */
+#define CON_OP_WATCH    8u
+
 #define CON_OK              0u
 #define CON_ERR_BUSY        1u   /* the console already has a reader */
 #define CON_ERR_NO_POINTER  2u

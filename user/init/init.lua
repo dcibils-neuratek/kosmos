@@ -2029,6 +2029,24 @@ local function new_namespace()
     return r.value
   end
 
+  --
+  -- **And whose callers should end that wait**: `endpoint`, a capability in
+  -- this process's table, which the console keeps a copy of. For the window
+  -- manager, which sleeps in `wait_input` and serves its applications after -
+  -- so without this an application's request waited for the sleep to end.
+  -- Only the console speaks it; anything else mounted at `path` is told so.
+  --
+  function ns.watch_input(path, endpoint)
+    local con = console_kit()
+    local capability, _, _, proto = resolve(path)
+
+    if not (con and capability and proto == "console") then
+      return nil, "only the console can watch an endpoint"
+    end
+
+    return con.watch(capability, endpoint)
+  end
+
   function ns.pointer(path)
     local r, e = request("pointer", path)
     if not r then return nil, e end

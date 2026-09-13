@@ -250,6 +250,12 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
                 bool nonblocking, unsigned long timeout);
 
 /* Answer a sender obtained from ipc_receive, unblocking it. */
+/*
+ * Sleep until a caller arrives on `index`, `ticks` scheduler ticks pass, or -
+ * with `or_input` - input arrives. Collects nothing; see ipc.c.
+ */
+int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input);
+
 int ipc_reply(struct thread *sender, const struct message *msg);
 
 /* For tests and inspection. */

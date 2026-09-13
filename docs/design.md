@@ -223,6 +223,22 @@ The *maker* rather than whoever receives on it, and that is what keeps §10's le
 
 A holder finds out with `SYS_CAP_CHECK`, which resolves an index and uses nothing. Nothing else could answer: calling a live endpoint to ask blocks, and receiving on one can take a message meant for its server. The `/app` registry asks it about every capability it holds before it answers a request, so **a name lasts as long as the endpoint registered under it**, and nothing has to unregister - which matters, because the window manager stopped with Control-C does not, and a process that is killed cannot. That was a bug before it was a rule: a second `wm` was filed as `wm2`, and a lookup of `wm` handed out an endpoint that had ended.
 
+**A sleep can watch an endpoint without receiving on it.** The window manager
+sleeps in `wait_input` - which is a call to the console server, whose
+`CON_OP_WAIT` is the actual sleep - and collects its applications' requests
+afterwards with non-blocking receives. So a request that arrived during the
+sleep waited for it to end: 11.5 ms a round trip on an idle desktop. A timed
+receive could not have fixed it, because the thread asleep is the console
+server and the endpoint is the window manager's. `SYS_WAIT_INPUT_OR_CALL`
+therefore takes a watched endpoint: the sleep ends on input, the deadline, or a
+caller joining that endpoint's queue, and nothing is received. The window
+manager hands the console a copy of its endpoint capability once, with
+`CON_OP_WATCH`. **One watcher per endpoint**, a second refused; the queue is
+looked at under the endpoint's lock before sleeping, and `ipc_call` wakes the
+watcher under the same lock, so a caller either arrives first and is seen or
+arrives after and finds the watcher blocked and findable. A dying watcher and a
+destroyed endpoint both clear it.
+
 ### 4.3 Capabilities
 
 Each process has an array of endpoints. Syscalls take an index into that array, never a global identifier.
