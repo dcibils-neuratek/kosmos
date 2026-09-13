@@ -8,6 +8,28 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: every syscall's arguments
+
+**`kosmos_mem_create` passed one argument to a call that reads two**, and the
+second is flags where bit 0 asks for one physical run. Both architectures
+pass the kernel whatever the unloaded register held, so an ordinary region -
+a window's shared surface, the audio ring, the network's TCP rings - could
+have asked for a run a fragmented machine can refuse. Found by reading while writing the xHCI
+driver's wrappers; not seen failing. Fixed, and `tools/test_syscall_args.lua`
+now fails any wrapper that passes fewer arguments than its case reads
+(`testing.md` §18.36). The driver's `kosmos_mem_create_flags` and
+`kosmos_mem_phys` came with it.
+
+**Its first gate stopped on an x86 panic this revision did not cause.** In the
+x86 kernel suite, during `smp: a reply reaches a caller on another core`:
+`spinlock: console held by nobody, wanted by 0`, `PANIC: spinlock: gave up
+waiting`, then page faults in `this_cpu` reading `%gs:0` as the machine went
+down. 0.10.53 changes no kernel code - one comment in `syscall.h` - and the
+same x86 test kernel passed in 0.10.52's gate and in three reruns straight
+after, so it is intermittent (one run in five so far) and older than this.
+Two questions are open and not answered here: what held the console lock for
+ten million spins, and why a core ran kernel code with a GS base of 0.
+
 ### 12 September: an interrupt wait with a deadline
 
 **`SYS_IRQ_WAIT (cap, ticks)`, and `SYS_NO_INTERRUPT` (-110) when the

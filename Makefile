@@ -2660,6 +2660,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# it, and every vendored tree named in it - so a library added without
 	@# an entry fails here, by name.
 	$(HOSTDIR)/lua tools/test_licences.lua LICENSE $(wildcard runtime/upstream/*/) lua/upstream/
+	@# And every syscall's arguments: what the kernel reads from each case,
+	@# against what userland passes. A wrapper that passes fewer hands the
+	@# kernel whatever the register last held - SYS_MEM_CREATE's flags did.
+	$(HOSTDIR)/lua tools/test_syscall_args.lua kernel/syscall.c $(sort $(wildcard user/*/*.c user/*/*.h lua/kosmos/*.c runtime/libc/*.c))
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,

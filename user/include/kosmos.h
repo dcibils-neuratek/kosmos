@@ -421,7 +421,15 @@ static inline long kosmos_receive(long cap, struct message *msg,
  */
 static inline long kosmos_mem_create(unsigned long pages)
 {
-    return sys1(SYS_MEM_CREATE, (long)pages);
+    /*
+     * **The zero is passed, not left out.** The kernel reads a second
+     * argument as flags, and both architectures hand it whatever the register
+     * held when it was not loaded - so this was `sys1`, and a leftover value
+     * with bit 0 set asked for one physical run, which a large region on a
+     * fragmented machine can be refused. `tools/test_syscall_args.lua` now
+     * fails any wrapper that passes fewer arguments than its case reads.
+     */
+    return sys2(SYS_MEM_CREATE, (long)pages, 0);
 }
 
 static inline long kosmos_mem_map(long cap)
@@ -432,6 +440,23 @@ static inline long kosmos_mem_map(long cap)
 static inline long kosmos_mem_size(long cap)
 {
     return sys1(SYS_MEM_SIZE, cap);
+}
+
+/*
+ * **For a driver**: a region that is one physical run (`MEM_CONTIGUOUS`), and
+ * where that run begins in the bus's addresses, which is what hardware is
+ * told. The address is refused for a scattered region, and to a process
+ * without device authority.
+ */
+static inline long kosmos_mem_create_flags(unsigned long pages,
+                                           unsigned long flags)
+{
+    return sys2(SYS_MEM_CREATE, (long)pages, (long)flags);
+}
+
+static inline long kosmos_mem_phys(long cap)
+{
+    return sys1(SYS_MEM_PHYS, cap);
 }
 
 /*

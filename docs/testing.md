@@ -1851,3 +1851,45 @@ aarch64 155/155 and x86-64 151/151.
 **What this cannot show is an MSI reaching a process on x86**: nothing in
 either suite raises one, and the power button is on the ARM board. That is
 the xHCI driver's to show, with the controller's first interrupt.
+
+---
+
+## 18.36 Every syscall's arguments
+
+`tools/test_syscall_args.lua`, in `make test` beside the LICENSE check and,
+like it, a host check that needs no machine.
+
+**The fault it is for is silent.** A wrapper names how many arguments it
+loads - `sys1`, `sys2` - and the kernel's case reads `sc->arg[0]` to
+`sc->arg[4]`. Both architectures copy every argument register into `sc->arg`
+whether the wrapper loaded it or not (`arch/aarch64/trap.c`,
+`arch/x86_64/user.S`), so a wrapper that passes too few compiles, runs, and
+hands the kernel whatever that register last held. `kosmos_mem_create` did
+exactly that with `SYS_MEM_CREATE`'s flags.
+
+The check reads the highest `sc->arg[N]` in each case of `kernel/syscall.c`,
+with adjacent labels that have nothing between them sharing the next one's
+body, and every `sysN(SYS_...)` call in the userland sources `make test` hands
+it. It fails by name for a call that passes fewer than its case reads. It also
+fails a scan that found fewer than forty cases or forty calls, because an empty
+scan would otherwise pass everything. Two wildcards can name one file, so a
+file is read once.
+
+On the tree before the fix:
+
+```
+FAIL: 1 of 104 checks on syscall arguments:
+  user/include/kosmos.h: sys1(SYS_MEM_CREATE) passes 1, and the kernel reads 2
+```
+
+and on the fixed one:
+
+```
+PASS: 108 checks on what each syscall reads and what userland passes it (51 cases, 53 calls, none short).
+```
+
+**What it does not see**: a syscall made in assembly, which loads its
+registers by hand - `user/hello-*.S`, `user/faulty-*.S` and init's
+`user/init/start-*.S`, on both architectures - and a case that read its
+arguments through a helper rather than `sc->arg` directly, which none does
+today: `syscall_dispatch` is the only function the frame is handed to.
