@@ -8,6 +8,48 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: USB on the ThinkPad, and a stick's disk is 32 MB
+
+**0.10.48 did not boot on the T14, and the code was not why.** GRUB printed
+its three lines and Kosmos drew nothing, twice. The stick carried a 64 MB
+disk; the last one that booted, 0.10.38, carried 32 MB, and no code that runs
+before the screen changed between them. The same 0.10.48 with a 32 MB disk
+booted to the desktop. QEMU boots the 64 MB stick perfectly. It is
+`thinkpad.md` §6a's knob again, and §6a now has a table of every stick.
+**The rule**: `tools/mkusb_image.py` refuses a disk over 32 MB, and `DISK_MB`
+is 32. Diego: *big size sticks dont boot* - the disk image inside, not the
+stick. USB mass storage ends it, and his goal for that step is recorded in
+`usb.md`: the drive mounted over USB, so big files live on the disk.
+
+**The USB driver's first run on hardware** (`usb.md`, "On the ThinkPad"):
+the chipset's controller at 00:14.0, xHCI 1.2, sixteen ports; a Legacy
+Support capability, so the handoff ran for the first time, and the firmware
+no longer held the controller; a reset that completed; devices on USB 2
+ports 3, 4, 7 and 10. A second controller exists and its lines scrolled off
+the photograph. **0.10.49 fixes two things it showed**: every USB 2 port said
+"Full-speed" from a field invalid until the port is reset, so a USB 2 port's
+speed is now unknown until then; and the closing line names the controllers.
+The x86 check gained a keyboard on the first controller for exactly that,
+and against 0.10.48 it fails four of seven.
+
+**The Super Nintendo on the T14: 42.9 to 43.4 frames a second of 60**, 5.4 to
+7.7 ms emulating each, no sound frames dropped, and no sound device, so the
+clock paces it. The machine read 95% idle, so the ceiling is not the core:
+each frame takes about 23 ms against 6.5 ms of work, and the rest is waiting
+on the window manager's commit and poll. Timing those two in the report line
+would say which.
+
+**About and `neofetch` say "QEMU q35 x86-64" on the ThinkPad**: both print
+`kosmos_platform`, which the Makefile's `PLATFORM` writes at build time for
+every PC. A separate session is on it, told that Diego wants every such row
+to read the hardware.
+
+**Wanted from the T14, on the same stick**: the second controller's lines
+and the `codec` line in Log View; a Terminal dragged to full size with no
+`no room for a`; a JPEG wallpaper; which socket the stick is in.
+
+**Next:** enumeration, which starts with the port reset this step leaves out.
+
 ### 12 September: USB step one, the controllers up
 
 **Every xHCI controller is found, taken from the firmware, reset, and its

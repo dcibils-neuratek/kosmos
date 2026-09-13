@@ -884,9 +884,45 @@ file nothing. `fine_end` in `arch/x86_64/mmu.c`, the boundary between 4 KB
 and 2 MB mappings, is computed from `__framebuffer_start` rather than from
 `__image_end`, which puts it below both.
 
-**Meanwhile:** `python3 tools/mkusb_image.py build/x86_64/kosmos.bin
-out.img` with no `--disk` builds a stick that boots every time. `/home` goes
-to memory, so nothing is kept and the games have no data.
+### 12 September: the disk on the stick is 32 MB or less
+
+**The size of the disk image decides whether the ThinkPad boots.** Not the
+stick - a stick of any size is fine - but the image inside it that GRUB
+carries into memory. Every stick whose disk was written down:
+
+| build | disk | on the ThinkPad |
+| ----- | ---- | --------------- |
+| 0.10.27 | 8 MB | booted |
+| 0.10.31 | 8 MB | booted once; on another boot `diskfs` died |
+| 0.10.31 | 64 MB | twelve stages, then `diskfs` died, every time |
+| the next build, 11 September, 4 KB larger | 64 MB | booted to the desktop |
+| 0.10.38 | 32 MB | booted to the desktop |
+| 0.10.48 | 64 MB | nothing after GRUB's last line, twice |
+| 0.10.48 | 32 MB | booted to the desktop, and ran the USB driver |
+
+It is the knob this section found on 11 September and did not explain: the
+module's size moves where things land, and some placements survive that
+machine's firmware and some do not. The 0.10.48 failure was the worst form
+yet - no stage, no character, the image dead before the early screen - and it
+looked like a regression in the code that had just landed. The same binary
+with a smaller disk booted.
+
+**What has booted every time is 32 MB, so that is the rule**, until USB mass
+storage makes the module unnecessary. `tools/mkusb_image.py` refuses a disk
+over 32 MB with a sentence saying why, and `DISK_MB` is 32, so `make image`
+makes a disk that fits. Diego asked for it written down in as many words:
+*big size sticks dont boot*.
+
+**QEMU cannot see it**, which is why a refusal is the only place the lesson
+can live: under OVMF, booted from a USB stick on an xHCI controller, the
+64 MB 0.10.48 image passed all fourteen of `run_uefi.py`'s checks on the
+evening the machine would not boot it.
+
+**And the note that stood here was wrong.** It said a stick with no disk
+boots every time. That was a QEMU result: no disk-less stick had booted on
+the ThinkPad when it was written, because the partition was one the firmware
+refused - `ESP_MB` in `mkusb_image.py` has that story. One has not been tried
+since the partition was fixed.
 
 ---
 

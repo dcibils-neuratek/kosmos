@@ -69,6 +69,24 @@ import zlib
 #
 ESP_MB = 192
 
+#
+# **The disk image is 32 MB or less, and a bigger one is refused.**
+#
+# Measured on the ThinkPad, not derived, and not understood. GRUB carries the
+# disk into memory as a module, and on that machine the module's size decides
+# whether the kernel it loaded survives: 0.10.48 with a 64 MB disk stopped
+# after GRUB's last line, twice, before printing a character, and the same
+# build with a 32 MB disk booted to the desktop. 32 MB is the size that has
+# booted every time it was tried. `docs/thinkpad.md` §6a has every stick and
+# what it did.
+#
+# QEMU boots the 64 MB stick perfectly - `run_uefi.py` passed it the evening
+# the machine would not - so a refusal here is the only place the lesson can
+# live. It goes away with USB mass storage, which reads the stick itself and
+# needs no module.
+#
+STICK_DISK_MAX_MB = 32
+
 # The partition type every UEFI firmware looks for, and the one this image
 # has exactly one of. UEFI 2.10, table 5.7.
 ESP_TYPE_GUID = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
@@ -353,6 +371,14 @@ def main():
 
         if not os.path.isfile(disk):
             sys.exit("mkusb_image: no disk image at %s" % disk)
+
+        if os.path.getsize(disk) > STICK_DISK_MAX_MB * 1024 * 1024:
+            sys.exit("mkusb_image: %s is %.0f MB, and the ThinkPad does not boot "
+                     "with a disk over %d MB (docs/thinkpad.md, section 6a). "
+                     "Make one that size:\n  build/host/lua tools/kfs.lua "
+                     "create %s %d host-file:/home/name ..."
+                     % (disk, os.path.getsize(disk) / 1048576.0,
+                        STICK_DISK_MAX_MB, disk, STICK_DISK_MAX_MB))
 
     args = " ".join(words)
 

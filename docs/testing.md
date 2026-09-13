@@ -1620,26 +1620,28 @@ size: (11, 507, 632, 1064) before the drag, (11, 507, 632, 1064) after.
 
 ## 18.32 Two USB controllers, and a stick on the second
 
-`tools/run_x86.py` boots q35 with two `qemu-xhci` controllers and a
-`usb-storage` device on the second, and reads what `user/servers/xhci.c`
-says. It passes when the driver reports two controllers at different PCI
-addresses, exactly one device, on the second of them, and the closing line
-two controllers and one stick should give. The first boot of the harness,
+`tools/run_x86.py` boots q35 with two `qemu-xhci` controllers, a
+`usb-storage` device on the second and a `usb-kbd` on the first, and reads
+what `user/servers/xhci.c` says. It passes when the driver reports two
+controllers at different PCI addresses, exactly one USB 3 device, on the
+second of them, the keyboard's USB 2 port with its speed unknown, and a
+closing line that names both controllers. The first boot of the harness,
 which has no USB controller, must hear nothing from the driver at all.
 
 **Two controllers because the index is the part one cannot test.** A driver
 that always asked for the first controller would find it, reset it and read
 its ports perfectly, and on a machine with two it would never see the other.
 
-What QEMU printed:
+What QEMU prints:
 
 ```
 xhci: 00:03.0, version 1.0, 8 ports, 64 slots
 xhci: 00:03.0 has no firmware handoff to make
+xhci: 00:03.0 port 5, USB 2: a device, its speed unknown until the port is reset
 xhci: 00:04.0, version 1.0, 8 ports, 64 slots
 xhci: 00:04.0 has no firmware handoff to make
 xhci: 00:04.0 port 1, USB 3: a SuperSpeed device (speed ID 4)
-xhci: 2 controllers, 1 port with something plugged in
+xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in
 ```
 
 **Both halves were broken on purpose and watched fail.** With the port
@@ -1669,6 +1671,25 @@ saying why.** Written as `if (seen == 0)`, it left `index` unused, the build
 stopped on `-Werror=unused-parameter`, and the script moved on to restoring
 the file. A control that does not build has not run. It was rewritten as
 `seen == (index & 0u)`, which uses the parameter and ignores it.
+
+**And a keyboard on the first controller, for its port** - added the day the
+ThinkPad ran the driver and named four USB 2 ports "Full-speed". That was a
+field the specification calls invalid on a USB 2 port until the port is
+reset (Table 5-27), and this step resets no port. QEMU shows the same thing
+from its side: before any reset it reports its keyboard as High-speed. The
+check wants that port reported with its speed unknown and no speed named on
+any USB 2 port, and against the 0.10.48 driver it fails four of seven:
+
+```
+FAIL: 4 of 7
+  ...
+    xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3)
+  ...
+  a speed was named on a USB 2 port, where the field is invalid until the port is reset:
+```
+
+The same run also failed the closing line, which now names the controllers
+because on the ThinkPad the second controller's lines had scrolled away.
 
 **What this cannot test is the firmware handoff**: QEMU's controller has no
 Legacy Support capability, so the driver says it has no handoff to make. The

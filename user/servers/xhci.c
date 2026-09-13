@@ -111,16 +111,22 @@ struct controller {
 
 static long console = -1;
 
+/* A PCI address the way people write one: 00:0d.0. */
+static void address(struct say_line *line, unsigned where)
+{
+    say_hex(line, (where >> 8) & 0xFFu, 2);
+    say_text(line, ":");
+    say_hex(line, (where >> 3) & 0x1Fu, 2);
+    say_text(line, ".");
+    say_dec(line, where & 7u);
+}
+
 /* "xhci: 00:0d.0" - the start of every line about one controller. */
 static void about(struct say_line *line, const struct controller *c)
 {
     say_begin(line);
     say_text(line, "xhci: ");
-    say_hex(line, (c->where >> 8) & 0xFFu, 2);
-    say_text(line, ":");
-    say_hex(line, (c->where >> 3) & 0x1Fu, 2);
-    say_text(line, ".");
-    say_dec(line, c->where & 7u);
+    address(line, c->where);
 }
 
 /* Whether (reg & mask) == want within `ticks`, polling once a tick. */
@@ -377,31 +383,57 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
         about(line, c);
         say_text(line, " port ");
         say_dec(line, port);
-        say_text(line, ", USB ");
-        say_dec(line, c->usb[port]);
-        say_text(line, ": a ");
-        say_text(line, speed_name(PORTSC_SPEED(sc)));
-        say_text(line, " device (speed ID ");
-        say_dec(line, PORTSC_SPEED(sc));
-        say_text(line, ")");
+
+        /*
+         * **A speed only where the field holds one.** Table 5-27: the speed
+         * "is invalid on a USB2 protocol port until after the port is
+         * reset", because a USB 2 device says how fast it is during that
+         * reset, and this step resets no port. The ThinkPad showed what
+         * printing it anyway looks like: four USB 2 ports, every one of them
+         * "Full-speed", which nothing had yet asked.
+         */
+        if (c->usb[port] >= 3) {
+            say_text(line, ", USB ");
+            say_dec(line, c->usb[port]);
+            say_text(line, ": a ");
+            say_text(line, speed_name(PORTSC_SPEED(sc)));
+            say_text(line, " device (speed ID ");
+            say_dec(line, PORTSC_SPEED(sc));
+            say_text(line, ")");
+        } else if (c->usb[port] == 2) {
+            say_text(line, ", USB 2: a device, its speed unknown until the "
+                           "port is reset");
+        } else {
+            say_text(line, ": a device, on a port no protocol capability "
+                           "describes");
+        }
+
         say_send(console, line);
     }
 
     return plugged;
 }
 
+/* As many controllers as the closing line names; the board keeps four. */
+#define NAMED_MAX           8u
+
 void xhci_server(long console_cap)
 {
     static struct controller c;
     struct dev_info dev;
     struct say_line line;
-    unsigned index, plugged = 0;
+    unsigned where[NAMED_MAX];
+    unsigned index, i, plugged = 0;
     long asked;
 
     console = console_cap;
 
     for (index = 0; (asked = kosmos_dev_find(DEV_XHCI, index, &dev)) == 0;
          index++) {
+        if (index < NAMED_MAX) {
+            where[index] = dev.where;
+        }
+
         plugged += bring_up(&c, &dev, &line);
     }
 
@@ -417,10 +449,26 @@ void xhci_server(long console_cap)
         kosmos_exit(0);                 /* no USB controller: not an error */
     }
 
+    /*
+     * **The addresses as well as the count.** The ThinkPad's photograph
+     * said "2 controllers" beside the lines of only one: the other's were
+     * printed before the shell's banner and had scrolled away. A closing
+     * line that names them is one photograph instead of two.
+     */
     say_begin(&line);
     say_text(&line, "xhci: ");
     say_dec(&line, index);
-    say_text(&line, index == 1 ? " controller, " : " controllers, ");
+    say_text(&line, index == 1 ? " controller (" : " controllers (");
+
+    for (i = 0; i < index && i < NAMED_MAX; i++) {
+        if (i > 0) {
+            say_text(&line, ", ");
+        }
+
+        address(&line, where[i]);
+    }
+
+    say_text(&line, "), ");
     say_dec(&line, plugged);
     say_text(&line, plugged == 1 ? " port with something plugged in"
                                  : " ports with something plugged in");

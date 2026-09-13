@@ -7,15 +7,22 @@ else.
 
 | step | what it ends in | state |
 | ---- | --------------- | ----- |
-| 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built |
+| 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
 | 2. enumeration | a device's descriptors read: what it is, who made it | not started |
 | 3. bulk transfers | bytes to and from an endpoint | not started |
-| 4. mass storage | the stick Kosmos booted from, read as a disk | not started |
+| 4. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
 | 5. Ethernet | a USB-C adapter carrying the network stack | not started |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
-decided it: the ThinkPad carries its disk as 64 MB of memory because Kosmos
-cannot read the stick it booted from.
+decided it: the ThinkPad carries its disk as memory because Kosmos cannot
+read the stick it booted from.
+
+**Where step 4 is going, as Diego put it**: once USB works, the drive is
+mounted over USB, so big files live on the disk. Today GRUB loads the whole
+disk image into memory as a module before Kosmos starts, and on the ThinkPad
+that image must be 32 MB or less or the machine does not boot
+(`thinkpad.md` §6a). Reading the stick directly removes the module, and with
+it the limit.
 
 ---
 
@@ -92,6 +99,11 @@ separate wires.
 Full-speed, 2 Low-speed, 3 High-speed, 4 SuperSpeed, 5 to 7 SuperSpeedPlus.
 A controller may define its own numbering in its protocol capability, which
 is why the driver prints the number beside the name.
+
+**And on a USB 2 port the number means nothing yet.** Table 5-27: the field
+"is invalid on a USB2 protocol port until after the port is reset" - a USB 2
+device says how fast it is during that reset. Step 1 resets no port, so it
+names a speed only on a USB 3 port. The ThinkPad is how this was found.
 
 ### Extended capabilities
 
@@ -196,9 +208,10 @@ For controller 0, 1, 2 until there are no more:
    and which USB 3;
 5. wait for ready, halt, reset, wait for ready again;
 6. give the ports half a second - a USB 3 link retrains after a reset - and
-   print every port that has a device, with its protocol and speed.
+   print every port that has a device, with its protocol, and its speed where
+   the field holds one: on a USB 3 port.
 
-Then one closing line with the totals, and **exit**. With no rings there is
+Then one closing line naming the controllers, with the totals, and **exit**. With no rings there is
 nothing to wait for, and no interrupt is claimed: every question in this
 step is a register read and every wait is polled and bounded.
 
@@ -221,27 +234,66 @@ firmware's, it was taken after so many milliseconds, or the firmware had not
 let go after a second. It also says if any of the firmware's SMI enables
 (USBLEGCTLSTS bits 0, 4, 13, 14, 15; 7.1.2) are still set afterwards.
 
+### On the ThinkPad
+
+0.10.48 ran on the T14 on 12 September, from a stick with a 32 MB disk - a
+64 MB one does not boot at all, `thinkpad.md` §6a. The driver's lines, as
+photographed:
+
+```
+xhci: 00:14.0, version 1.2, 16 ports, 64 slots
+xhci: 00:14.0 was not the firmware's; claimed
+xhci: 00:14.0 port 3, USB 2: a Full-speed device (speed ID 1)
+xhci: 00:14.0 port 4, USB 2: a Full-speed device (speed ID 1)
+xhci: 00:14.0 port 7, USB 2: a Full-speed device (speed ID 1)
+xhci: 00:14.0 port 10, USB 2: a Full-speed device (speed ID 1)
+xhci: 2 controllers, 4 ports with something plugged in
+```
+
+What that established:
+
+- **The chipset's controller is at 00:14.0**: xHCI 1.2, sixteen ports.
+- **It has a Legacy Support capability**, which QEMU's does not, so the
+  handoff code ran for the first time. The firmware no longer held the
+  controller when Kosmos asked, and none of its SMI enables were left set.
+- **The reset completed**, and four USB 2 ports have something behind them -
+  most likely devices built into the laptop, which enumeration will name.
+- **There is a second controller**, and none of its lines are on the
+  photograph: they came before the shell's banner and scrolled away. The
+  closing line names the controllers now, so one photograph is enough.
+
+**And the four speeds were wrong.** Every USB 2 port said "Full-speed", from
+a field the specification says is invalid on a USB 2 port until the port is
+reset - which this step does not do. The driver now says a USB 2 port's
+speed is unknown until then.
+
 ### How it is tested
 
-`tools/run_x86.py` boots q35 with two `qemu-xhci` controllers and a USB
-stick on the second, and checks what the driver prints: two controllers at
-different addresses, exactly one device, on the second controller, and the
-closing line. A boot with no controller must hear nothing from the driver.
-`testing.md` §18.32 has the negative controls, both run and watched fail.
+`tools/run_x86.py` boots q35 with two `qemu-xhci` controllers, a USB stick on
+the second and a USB keyboard on the first, and checks what the driver
+prints: two controllers at different addresses, the stick on the second as a
+SuperSpeed device, the keyboard's USB 2 port with its speed unknown, and a
+closing line naming both controllers. A boot with no controller must hear
+nothing from the driver. `testing.md` §18.32 has the negative controls, all
+run and watched fail.
 
 What QEMU prints:
 
 ```
 xhci: 00:03.0, version 1.0, 8 ports, 64 slots
 xhci: 00:03.0 has no firmware handoff to make
+xhci: 00:03.0 port 5, USB 2: a device, its speed unknown until the port is reset
 xhci: 00:04.0, version 1.0, 8 ports, 64 slots
 xhci: 00:04.0 has no firmware handoff to make
 xhci: 00:04.0 port 1, USB 3: a SuperSpeed device (speed ID 4)
-xhci: 2 controllers, 1 port with something plugged in
+xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in
 ```
 
 The stick is on port 1 because QEMU numbers its USB 3 ports first
-(`hcd-xhci.c`), and QEMU attached it at SuperSpeed - speed ID 4.
+(`hcd-xhci.c`), and QEMU attached it at SuperSpeed - speed ID 4. The keyboard
+is on port 5, the first USB 2 port, and its speed is left unsaid: before a
+port reset QEMU's field reads High-speed, and the specification says not to
+believe that field yet.
 
 ---
 

@@ -1,7 +1,7 @@
 -- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
 -- The disk, from this machine rather than from inside Kosmos.
 --
---   build/host/lua tools/kfs.lua create out.img 64
+--   build/host/lua tools/kfs.lua create out.img 32
 --   build/host/lua tools/kfs.lua ls     out.img /home
 --   build/host/lua tools/kfs.lua put    out.img book.pdf /home/book.pdf
 --   build/host/lua tools/kfs.lua get    out.img /home/notes.txt notes.txt

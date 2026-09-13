@@ -241,8 +241,8 @@ def storage(image, check):
 
 
 def usb(image, check):
-    """Two xHCI controllers, a USB stick on the second, and what the driver
-    in `user/servers/xhci.c` says it found.
+    """Two xHCI controllers, a USB stick on the second, a keyboard on the
+    first, and what the driver in `user/servers/xhci.c` says it found.
 
     **Two controllers, because the index is the part one cannot test.** A
     driver that always asked for the first would find a controller, take it,
@@ -257,6 +257,14 @@ def usb(image, check):
     firmware handoff is the one path QEMU cannot reach**: its controller has
     no legacy-support capability, so there is nothing to hand over, and the
     driver says that rather than claiming a handoff it never made.
+
+    **The keyboard is there for its port, not for typing.** QEMU puts a
+    full-speed device on a USB 2 port, and on a USB 2 port the speed field
+    is invalid until the port is reset (xHCI 1.2, Table 5-27), which this
+    step never does. The ThinkPad showed what a driver that printed it anyway
+    says: four USB 2 ports, every one "Full-speed". The check wants the
+    keyboard's port reported with its speed unknown, and no speed named on
+    any USB 2 port at all.
     """
     stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
 
@@ -266,7 +274,8 @@ def usb(image, check):
     extra = ("-device", "qemu-xhci,id=usb0",
              "-device", "qemu-xhci,id=usb1",
              "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
-             "-device", "usb-storage,bus=usb1.0,drive=stick")
+             "-device", "usb-storage,bus=usb1.0,drive=stick",
+             "-device", "usb-kbd,bus=usb0.0")
 
     out = boot(image, None, 90.0, extra=extra, until="plugged in")
 
@@ -300,9 +309,23 @@ def usb(image, check):
               "reported it on %s - which is what asking for the first "
               "controller twice looks like" % (found[1][0], ports[0][0]))
 
-    check("xhci: 2 controllers, 1 port with something plugged in" in out,
-          "the driver's closing line is not what two controllers and one "
-          "stick should give:\n    " + shown)
+    if len(found) == 2:
+        check(re.search(r"xhci: %s port \d+, USB 2: a device, its speed "
+                        r"unknown until the port is reset" % re.escape(found[0][0]),
+                        out) is not None,
+              "the keyboard on the first controller, %s, was not reported as a "
+              "USB 2 device whose speed is unknown until its port is reset:\n    "
+              % found[0][0] + shown)
+
+    check(re.search(r"USB 2: a \S+ device \(speed ID", out) is None,
+          "a speed was named on a USB 2 port, where the field is invalid "
+          "until the port is reset:\n    " + shown)
+
+    check(re.search(r"xhci: 2 controllers \([0-9a-f]{2}:[0-9a-f]{2}\.[0-7], "
+                    r"[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]\), 2 ports with something "
+                    r"plugged in", out) is not None,
+          "the driver's closing line is not what two controllers, a stick "
+          "and a keyboard should give:\n    " + shown)
 
 
 def memdisk(image, check):
@@ -1142,7 +1165,7 @@ def main():
           "reports what it was handed, plays a tone an Intel HDA "
           "controller hands back at the right pitch, keeps a file on an "
           "NVMe drive across a reboot, reads one off a disk the loader "
-          "handed over in memory, finds a USB stick on the second of two "
+          "handed over in memory, finds a USB stick and a keyboard on two "
           "xHCI controllers, and opens a menu with a click through "
           "a PS/2 mouse whether or not the machine has a serial port)."
           % checks)

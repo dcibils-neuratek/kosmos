@@ -1768,11 +1768,17 @@ QEMU      := qemu-system-aarch64
 # Making a second image is one command, and it can be filled while it is
 # made:
 #
-#   build/host/lua tools/kfs.lua create build/play.img 64 \
+#   build/host/lua tools/kfs.lua create build/play.img 32 \
 #       ~/Downloads/book.pdf:/home/book.pdf
 #
+#
+# **32 MB, because this image also goes on the ThinkPad's stick**, where a
+# disk over 32 MB does not boot: `tools/mkusb_image.py` refuses one and
+# `docs/thinkpad.md` §6a has why. QEMU would take any size; the default is
+# the one that works on both.
+#
 DISK      := build/kosmos.img
-DISK_MB   := 64
+DISK_MB   := 32
 
 #
 # What to start once the machine is up. Empty means the shell.
