@@ -2620,6 +2620,23 @@ serial: $(TARGET) $(DISK)
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
 test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
+	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
+	@# a program's name hides the program from the prompt: `snes --scale 3`
+	@# printed a table. This reads the source, so it sees every variant -
+	@# `MEGA=1` included, which the display harness never boots. It also
+	@# found the one the move itself left behind. design.md §6.
+	@# Comment lines are skipped: the first version matched the comment in
+	@# `sys_user.c` that says this search exists, and failed on it.
+	@if grep -rn --include='*.c' --include='*.h' --exclude-dir=upstream \
+	    'lua_setglobal\|lua_pushglobaltable\|LUA_RIDX_GLOBALS' \
+	    user runtime lua/kosmos | grep -v '^user/lib/lua_glue.c:' \
+	    | grep -v '^[^:]*:[0-9]*: *\(/\*\|\*\|//\)'; then \
+	    echo "FAIL: C sets a Lua global outside kosmos_lua_open. A kit is"; \
+	    echo "      reached with use(\"/kits/<name>\"); see design.md §6."; \
+	    exit 1; \
+	fi
+	@echo "cglobals: no C sets a Lua global outside kosmos_lua_open"
 	@# The format, on this machine, before anything is booted. It is the
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.

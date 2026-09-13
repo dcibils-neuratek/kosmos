@@ -2438,6 +2438,15 @@ static int l_libraries(lua_State *L)
  * `sys.kit(name)` is the door and it is deliberately dull: `use` turns
  * `/kits/pdf` into a call to it, so a kit is reached the way a library is,
  * through the namespace, and nothing has to know which of the two it got.
+ *
+ * **A kit is never also a global.** Doom's, Quake's and the Super
+ * Nintendo's were, set by `gfx.c` in every Lua state, and a global named
+ * after a program hides that program from the prompt - `snes --scale 3`
+ * printed a table. So a build function leaves its table on the stack and
+ * does nothing else: `make test` searches the C for `lua_setglobal`, and
+ * the display harness walks `/bin` against the shell's environment and
+ * checks that every kit listed here comes back a table (`testing.md`
+ * §18.40).
  */
 void kosmos_compress_kit(lua_State *L);
 void kosmos_pdf_kit(lua_State *L);
@@ -2450,6 +2459,15 @@ void kosmos_web_kit(lua_State *L);
 #endif
 #ifdef KOSMOS_LITEXL
 void kosmos_litexl_kit(lua_State *L);
+#endif
+#ifdef KOSMOS_DOOM
+void kosmos_doom_kit(lua_State *L);
+#endif
+#ifdef KOSMOS_QUAKE
+void kosmos_quake_kit(lua_State *L);
+#endif
+#ifdef KOSMOS_SNES
+void kosmos_snes_kit(lua_State *L);
 #endif
 
 static const struct {
@@ -2467,6 +2485,19 @@ static const struct {
 #endif
 #ifdef KOSMOS_LITEXL
     { "litexl",   kosmos_litexl_kit },
+#endif
+#ifdef KOSMOS_DOOM
+    /* `FULL=1`, the default, or `DOOM=1`; runtime/upstream/doom/README.md
+     * says what that makes of the image's licence. */
+    { "doom",     kosmos_doom_kit },
+#endif
+#ifdef KOSMOS_QUAKE
+    /* `QUAKE=1` or `MEGA=1`, which `FULL=1` does not turn on. */
+    { "quake",    kosmos_quake_kit },
+#endif
+#ifdef KOSMOS_SNES
+    /* `FULL=1`, the default, or `SNES=1`. */
+    { "snes",     kosmos_snes_kit },
 #endif
     { NULL, NULL }
 };

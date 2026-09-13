@@ -45,16 +45,6 @@
 
 void kosmos_png_open(lua_State *L);
 void kosmos_jpeg_open(lua_State *L);
-
-#ifdef KOSMOS_DOOM
-void kosmos_doom_open(lua_State *L);
-#endif
-#ifdef KOSMOS_QUAKE
-void kosmos_quake_open(lua_State *L);
-#endif
-#ifdef KOSMOS_SNES
-void kosmos_snes_open(lua_State *L);
-#endif
 void kosmos_docfont_open(lua_State *L);
 
 #define SURFACE_MT  "kosmos.surface"
@@ -2127,21 +2117,9 @@ int luaopen_gfx(lua_State *L)
     kosmos_png_open(L);
     kosmos_jpeg_open(L);
 
-#ifdef KOSMOS_DOOM
-    /* Only where Doom is compiled in: `FULL=1`, the default, or `DOOM=1`.
-     * runtime/upstream/doom/README.md says what that makes of the image's
-     * licence and what it costs every process. */
-    kosmos_doom_open(L);
-#endif
-#ifdef KOSMOS_QUAKE
-    /* `make QUAKE=1` only, which `FULL=1` does not turn on. */
-    kosmos_quake_open(L);
-#endif
-#ifdef KOSMOS_SNES
-    /* `FULL=1`, the default, or `SNES=1`. LakeSnes is MIT, so this one is
-     * about size and not licence: runtime/upstream/lakesnes/README.kosmos.md. */
-    kosmos_snes_open(L);
-#endif
+    /* Doom, Quake and the Super Nintendo were opened here too, as globals,
+     * and hid their own programs from the prompt. They are kits now, in
+     * `sys_user.c`'s list: `use("/kits/doom")`. */
     kosmos_docfont_open(L);
 
     return 1;

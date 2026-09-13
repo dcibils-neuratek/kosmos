@@ -23,7 +23,10 @@
 local ui = use("/lib/ui.lua")
 local wmproto = use("/lib/wmproto.lua")
 
-if type(quake) ~= "table" then
+-- A kit, not a global, for the reason `snes.lua` gives.
+local have, quake = pcall(use, "/kits/quake")
+
+if not have or type(quake) ~= "table" then
   print("quake: this image was not built with QUAKE=1")
   return
 end

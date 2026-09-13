@@ -51,14 +51,11 @@ ENVIRONMENTS = {
 
     # A program in /bin gets an environment built by the runner.
     #
-    # `doom`, `quake` and `snes` are there only in images that compile them
-    # in - `DOOM=1` and `SNES=1`, which `FULL=1` turns on, and `QUAKE=1` - and
-    # are listed here
-    # anyway, which is the honest way round. This checker asks "will this
-    # name exist", and the answer for `doom` is "in the image that has Doom
-    # in it". The application checks for itself before using it, because a
-    # program that assumes an optional global is a program that fails with a
-    # nil index instead of a sentence.
+    # `doom`, `quake` and `snes` used to be listed here, as globals only the
+    # images that compiled them had. They are kits now, `use("/kits/doom")`,
+    # because a global with a program's name hides the program from the
+    # prompt. Not listing them is what makes this checker refuse a program
+    # that reads one as a global again.
     #
     # `write` is `print`'s coloured sibling: one run of text, no newline
     # added. It is here rather than under `sys` because a program has no
@@ -66,7 +63,7 @@ ENVIRONMENTS = {
     # the only door to it, exactly as `print` is.
     #
     "user/bin/": {"sys", "gfx", "fs", "args", "cwd", "run",
-                  "interrupted", "use", "doom", "quake", "snes", "write"},
+                  "interrupted", "use", "write"},
 
     # A library is loaded into the environment of whoever asked for it, so it
     # sees the same names a program does - minus `args`, which belongs to the

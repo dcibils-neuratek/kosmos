@@ -63,11 +63,15 @@ corrupt the disk" is true because nothing else can name the disk.
 **A kit is C that runs inside your own process.** `use("/kits/compress")`
 hands back a table of C functions compiled into your address space. No
 process, no message, no ownership: calling it is a function call. `kits` at
-the prompt lists what a machine has; today that is `/kits/compress` to
-inflate, `/kits/pdf` to scan a content stream, `/kits/gl` for TinyGL, and
-`/kits/console` for the console's wire format.
+the prompt lists what a machine has: `/kits/compress` to inflate, `/kits/pdf`
+to scan a content stream, `/kits/gl` for TinyGL, `/kits/console` for the
+console's wire format, `/kits/mp3`, `/kits/network`, and in the images that
+compile them `/kits/web`, `/kits/litexl`, `/kits/doom`, `/kits/quake` and
+`/kits/snes`. **A kit is never a global as well**: one named after a program
+hides that program from the prompt, which is what the last three did until
+they moved here (`design.md` §6).
 
-That last one is the odd one and worth knowing about, because it is a kit for
+`/kits/console` is the odd one and worth knowing about, because it is a kit for
 a reason none of the others share. `/dev/console` is the only protocol here
 with **two implementations**: a terminal window mounts itself as its child's
 console, so an application answers the same ABI the server does. The kit is

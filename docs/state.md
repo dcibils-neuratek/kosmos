@@ -8,6 +8,71 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: Doom, Quake and the Super Nintendo are kits, and a program answers to its name
+
+**`snes --scale 3` at the prompt printed a table.** `gfx.c` opened the three
+game cores into every Lua state as globals named after their programs, and
+the shell gives a word that already names something in its environment to
+Lua, so the program could not be reached by name. Typed before touching it:
+in the default image `doom` and `snes --scale 3` printed tables while `quake`
+ran `/bin/quake.lua`, since Quake is not compiled in; in `MEGA=1` all three
+printed tables. A walk of `/bin` against the shell's environment found
+exactly those, of 109 programs, and nothing else. `wm snes:...` and launchers
+never noticed, because they start a program by path.
+
+**Fixed through the door every other kit uses**: `/kits/doom`, `/kits/quake`
+and `/kits/snes` in `sys_user.c`'s list under their build flags, and each
+program asks with `pcall(use, ...)`. The README row, `design.md` §6 - which
+had nothing on kits, although README's kits row has pointed there since the
+start of September - the glossary, and `testing.md` §18.40.
+
+**The fix was wrong once, and the harness phase written for it passed.** One
+`lua_setglobal` stayed in `snes_kosmos.c`, so `sys.kit("snes")` returned the
+string `"snes"` and `snes.lua` said the image was not built with SNES=1, in an
+image that was. A search of the C for `lua_setglobal` found it, and that
+search is now a step of `make test`: it reads every build variant, which the
+harness, booting only the default image, does not. The phase now also
+requires every listed kit to be a table and refuses "not built with" for one.
+
+**Checked:**
+
+- The `programs by name` phase, each half alone: fails on 0.10.45's default
+  and `MEGA=1` images, fails on the fix with the leftover, and passes 5/5 on
+  the fixed default and `MEGA=1` images. §18.40 has every output.
+- `make test`'s search fails on the leftover at `snes_kosmos.c:400` and passes
+  on the fix; `luaglobals.py` refuses 0.10.45's three programs and passes the
+  fixed ones.
+- `make snes-check ROM=smas.sfc`, through the kit: 7 checks, 23.9 s from the
+  device of which 75.2% sound, about 21 frames a second - 0.10.42's figures.
+- `make quake-check`, with the shareware pak copied out of the main
+  checkout's disk: 6 checks - a window, the engine started, a demo and its
+  map, the game drawn, a console command run, and closed without a fault.
+- Doom, by hand, on a scratch disk holding `doom1.wad`: `wm doom` printed
+  `doom: /home/doom1.wad, 4097 KB`, the line after the kit check and the
+  window, and no start failure in the fifteen seconds after. The picture was
+  not looked at; there is no `doom-check` to say more.
+- **The first `make prepush` failed in twelve seconds, on the new search**:
+  it matched the comment in `sys_user.c` that says the search exists. It
+  skips comment lines now, and was run again over a copy of the tree with the
+  leftover put back - that line and nothing else.
+- `make prepush`, the second, green in 17 minutes: `make test` with the
+  search, 153/153 and 149/149 in the guest suites, 63 on x86-64; the display
+  harness 96 checks on aarch64 and 94 on x86-64, 5 of each the new phase;
+  Lite XL's 7; the `MEGA=1` link; and `make shot`.
+
+Open:
+
+- **`kits <name>` lists every kit** instead of the one named: `kits.lua` reads
+  `args[1]`, and a program's `args` is a string. Seen while checking this and
+  offered as a task of its own; not fixed here.
+- **`--scale` is on `claude/exciting-montalcini-5b810a`**, committed as 0.10.51
+  and not on main. It changes `snes.lua` about twenty lines below this change.
+  Once both are in, the harness's `snes --scale 3` gets that branch's own
+  refusal, which the phase accepts.
+- **The version number.** Several worktrees hold unlanded commits numbered
+  0.10.46 and up, so this is committed on its branch and numbered when it
+  lands.
+
 ### 12 September: two threads on one stack
 
 **The x86 panic that stopped 0.10.53's gate was a context switch an interrupt

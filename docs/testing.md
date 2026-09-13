@@ -2192,3 +2192,99 @@ on every run for no reason in the kernel. Until that is fixed, touch
 `tests/tests.c` after changing a kernel header.
 
 The suites stand at aarch64 156/156 and x86-64 152/152.
+
+## 18.40 A program reached by typing its name
+
+`snes --scale 3` at the prompt printed `table: 0x00000081002300` and ran
+nothing. Doom's, Quake's and the Super Nintendo's kits were opened by `gfx.c`
+into every Lua state as globals named after their programs, and the shell
+sends a word that already names something in its environment to Lua. So
+`--scale 3` became a comment, and `doom /nowhere.wad` a division by a global
+called `nowhere`. They are `use("/kits/snes")` and so on now (`design.md` §6).
+Typed at 0.10.45, before the fix:
+
+```
+default image                              MEGA=1
+doom            table: 0x000000810075d0    doom            table: 0x000000810075d0
+quake           quake: this image was not  quake           table: 0x00000081007890
+                built with QUAKE=1
+snes --scale 3  table: 0x00000081007890    snes --scale 3  table: 0x00000081002300
+```
+
+The display harness's `programs by name` phase runs at the bare prompt, and
+has three checks:
+
+- **Nothing in `/bin` is hidden.** The shell walks `/bin` against its own
+  environment and prints every program whose name is already there. It fails
+  on any, not on a list of three, so the next thing to leak a global is caught
+  whatever it is called. It prints its count too, and fails under 20, because
+  a walk that saw nothing hides nothing.
+- **Every kit the image lists is a table**: `type(sys.kit(k))` for each name
+  `sys.kit_names()` gives.
+- **Three lines reach their programs.** `snes --scale 3`, `doom /nowhere.wad`
+  and `quake /nowhere.pak` must each print a line starting with the program's
+  name, which only the program prints - and must not say "not built with"
+  when the image lists that kit. Each argument is refused before a window
+  opens.
+
+**The second check is there because the first version of this phase passed a
+broken fix.** Moving the three to `/kits`, one `lua_setglobal` stayed in
+`snes_kosmos.c`. It popped the table into a global, so `sys.kit("snes")`
+returned what lay underneath - its own argument, the string `"snes"` - and the
+program, seeing a string, said:
+
+```
+snes --scale 3
+snes: this image was not built with SNES=1
+```
+
+in an image built with it. That line starts `snes: `, so the phase passed, in
+both images. What found it was a search of the source for `lua_setglobal`,
+which `make test` now runs for that reason: it reads every build variant,
+while the harness boots only the default image and cannot see a global that
+exists under `MEGA=1` alone. Before the fix, the default image's
+`quake /nowhere.pak` passed for exactly that reason - Quake is not compiled
+in, so nothing hid it.
+
+The typed lines are a function of their own, `reaches_program`, because the
+walk fails first on this bug and would otherwise be the only half ever seen
+failing. Every control, each half run alone against saved images:
+
+```
+=== the walk, before the fix, default image: must fail
+FAIL: 2 of 109 program(s) in /bin cannot be run by typing their name,
+because the shell's environment already holds that name: doom, snes.
+=== the walk, before the fix, MEGA=1: must fail
+FAIL: 3 of 109 program(s) in /bin ... doom, quake, snes.
+=== the typed lines alone, before the fix, MEGA=1: must fail
+FAIL: `snes --scale 3` ... table: 0x00000081002300
+FAIL: `doom /nowhere.wad` ... error: stdin:1: attempt to index a nil value (global 'nowhere')
+FAIL: `quake /nowhere.pak` ... error: stdin:1: attempt to index a nil value (global 'nowhere')
+=== the kit check, the fix with the leftover, default and MEGA=1: must fail
+FAIL: sys.kit answered with something other than a table for /kits/snes (a string).
+=== the typed lines alone, the fix with the leftover, snes and doom listed: must fail
+FAIL: `snes --scale 3` reached /bin/snes.lua, and it said the image was not
+built with it - but this image lists /kits/snes
+PASS: `doom /nowhere.wad` reached /bin/doom.lua
+=== fixed, default and MEGA=1: must pass
+PASS: 5 programs-by-name checks
+```
+
+**And the two source checks.** The search in `make test`, against the tree
+with the leftover:
+
+```
+user/lib/snes_kosmos.c:400:    lua_setglobal(L, "snes");
+FAIL (exit 1)
+```
+
+It skips comment lines, and learned it the usual way: its first run inside
+`make prepush` failed on the comment in `sys_user.c` that describes it. So it
+was run once more over a copy of the tree holding that comment, `lua_glue.c`
+and the leftover put back, and named the leftover alone.
+
+and `tools/luaglobals.py`, which no longer lists `doom`, `quake` and `snes`
+for `/bin`: run on the three programs as they were at 0.10.45 it refuses each
+for reading its global, and on the fixed ones it passes. `lua.ok` is a
+prerequisite of the image, so a program that goes back to reading one fails
+the build before anything boots.

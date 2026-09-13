@@ -90,6 +90,12 @@ So there are two phases here, and the second is the one that matters:
      keeps a core at a hundred per cent - the meter was right, which is why
      this reads the meter rather than trusting it.
 
+ 15. **Programs reached by typing their name**, at the bare prompt: nothing
+     in `/bin` hidden by a name in the shell's environment, every kit the
+     image lists a table, and `snes --scale 3`, `doom /nowhere.wad` and
+     `quake /nowhere.pak` each answered by its program. Three kits that set
+     globals once made `snes` print a table.
+
   2. **A pattern drawn from Lua**, through gfx.screen() at the shell prompt.
      Vertical bars, which is the shape a pitch error destroys: each row would
      shift by (4160 - 4096) / 4 = sixteen pixels, turning every vertical line
@@ -907,6 +913,156 @@ def check_keyboard(guest):
         )
 
     return 2
+
+
+# Typed at the prompt, and whose refusal each must print. Each argument is
+# one the program turns down before it opens a window or maps a byte, so the
+# refusal is quick and is the program's own sentence. `snes --scale 3` is the
+# line that found the bug; `quake` answers "not built with QUAKE=1" in an
+# image without it, which is the same proof - the program ran.
+PROGRAMS_BY_NAME = (
+    ("snes --scale 3", "snes"),
+    ("doom /nowhere.wad", "doom"),
+    ("quake /nowhere.pak", "quake"),
+)
+
+
+def check_programs_by_name(guest):
+    """A program in /bin reached by typing its name, and nothing hiding one.
+
+    The shell sends a word to Lua when the word already names something in
+    its environment - `print` stays the function - and to `/bin` otherwise.
+    So a *global* with a program's name makes the program unreachable, and
+    that is what the Doom, Quake and Super Nintendo kits did: each set a
+    global named after its program in every Lua state, the shell's included.
+    `snes --scale 3` printed `table: 0x00000081002300` and ran nothing, since
+    `--scale 3` became a comment. They are `use("/kits/snes")` now.
+
+    Three checks, and the first is the one that holds the class. The shell
+    walks `/bin` against its own environment and names every program it
+    hides - for any name, not only these three, so the next thing to leak a
+    global is caught whatever it is called. The second asks the image for
+    its kits and requires each to be a table. The third types the three
+    lines and requires each program's own refusal, which is what a person
+    sees - and not "not built with" from a program whose kit is listed,
+    which is what the second exists to make checkable.
+    """
+    mark = len(guest.seen)
+
+    # The count is printed so an empty `/bin` cannot pass by hiding nothing.
+    # Assembled at run time so waiting for it cannot match the echo.
+    guest.type('local n = 0 '
+               'for _, e in ipairs(fs.list("/bin") or {}) do '
+               'local w = tostring(e):match("^(.-)%.lua$") '
+               'if w then n = n + 1 '
+               'if _ENV[w] ~= nil then print("hidden: " .. w) end end end '
+               'print("bin" .. "-scanned " .. n)')
+    guest.wait_for("bin-scanned ", "walked /bin against its environment")
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        said = guest.seen[mark:].replace("\r", "")
+        counted = re.search(r"^bin-scanned (\d+)$", said, re.M)
+        if counted:
+            break
+        time.sleep(0.2)
+    else:
+        raise Failure("the /bin walk never printed its count.\n"
+                      f"--- what arrived ---\n{guest.seen[mark:]}")
+
+    hidden = re.findall(r"^hidden: (\S+)$", said, re.M)
+    scanned = int(counted.group(1))
+
+    if scanned < 20:
+        raise Failure(
+            f"the /bin walk saw {scanned} program(s), so it checked nothing "
+            "worth trusting - fs.list is not answering for /bin.\n"
+            f"--- what arrived ---\n{said}")
+
+    if hidden:
+        raise Failure(
+            f"{len(hidden)} of {scanned} program(s) in /bin cannot be run by "
+            f"typing their name, because the shell's environment already "
+            f"holds that name: {', '.join(hidden)}. A kit that sets a global "
+            "does this; a kit is reached with use(\"/kits/<name>\").")
+
+    #
+    # Which kits this image has, and that each one is a table.
+    #
+    # Without this the lines below cannot tell a missing build from a broken
+    # kit, because both end in the same refusal. The move that made these
+    # three kits left one `lua_setglobal` behind: `sys.kit("snes")` then
+    # returned its own argument, `snes.lua` saw a string, and said the image
+    # was not built with SNES=1 - in an image that was. This phase passed it.
+    #
+    mark = len(guest.seen)
+    guest.type('for _, k in ipairs(sys.kit_names()) do '
+               'print("kit: " .. k .. " " .. type(sys.kit(k))) end '
+               'print("kits" .. "-listed")')
+    guest.wait_for("kits-listed", "listed its kits")
+
+    said = guest.seen[mark:].replace("\r", "")
+    kits = dict(re.findall(r"^kit: (\S+) (\S+)$", said, re.M))
+    broken = sorted(k for k, kind in kits.items() if kind != "table")
+
+    if not kits:
+        raise Failure("sys.kit_names() listed no kits at all.\n"
+                      f"--- what arrived ---\n{said}")
+
+    if broken:
+        raise Failure(
+            "sys.kit answered with something other than a table for "
+            + ", ".join(f"/kits/{k} (a {kits[k]})" for k in broken)
+            + ". A kit's build function has to leave its table on top of "
+            "the stack; one that also sets a global leaves the caller's "
+            "argument there instead.")
+
+    for line, name in PROGRAMS_BY_NAME:
+        reaches_program(guest, line, name, built=name in kits)
+
+    return 2 + len(PROGRAMS_BY_NAME)
+
+
+def reaches_program(guest, line, name, built=None):
+    """Types `line` at the prompt and fails unless `/bin/<name>.lua` answered.
+
+    `built` is whether the image lists `/kits/<name>`. When it does, "this
+    image was not built with" is the wrong answer even though it is the
+    program's own.
+
+    Its own function so it can be run without the walk above, which fails
+    first on the same bug and would otherwise be the only half ever seen
+    failing.
+    """
+    mark = len(guest.seen)
+    guest.type(line)
+
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if PROMPT in guest.seen[mark:]:
+            break
+        time.sleep(0.2)
+    else:
+        raise Failure(f"`{line}` at the prompt never came back to it.\n"
+                      f"--- what arrived ---\n{guest.seen[mark:]}")
+
+    said = guest.seen[mark:].replace("\r", "")
+
+    if not re.search(rf"^{name}: ", said, re.M):
+        raise Failure(
+            f"`{line}` at the prompt did not reach /bin/{name}.lua - "
+            f"nothing it printed starts `{name}: `. A `table: 0x...`, or "
+            "an `error:` from Lua, means the shell took the line as Lua "
+            "because a global of that name exists.\n"
+            f"--- what arrived ---\n{said}")
+
+    if built and re.search(rf"^{name}: this image was not built with",
+                           said, re.M):
+        raise Failure(
+            f"`{line}` reached /bin/{name}.lua, and it said the image was "
+            f"not built with it - but this image lists /kits/{name}, so the "
+            "program did not get the kit it asked for.\n"
+            f"--- what arrived ---\n{said}")
 
 
 def _band_changed(width, height, a, b):
@@ -5344,6 +5500,8 @@ def main():
             return result
 
         key_checks = phase("keyboard", check_keyboard)
+        # At the bare prompt, before anything else has started a program.
+        name_checks = phase("programs by name", check_programs_by_name)
 
         latency_checks = phase("latency", check_latency)
         wm_latency_checks = phase("window manager latency", check_wm_latency)
@@ -5398,7 +5556,8 @@ def main():
              + idle_checks + terminal_checks + log_view_checks
              + direct_checks
              + three_d_checks + registry_checks + context_checks
-             + repaint_checks + power_checks + budget_checks + snes_checks)
+             + repaint_checks + power_checks + budget_checks + snes_checks
+             + name_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -5408,6 +5567,7 @@ def main():
     print(f"\nPASS: {total} display checks "
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
           f"Lua drew through gfx, {key_checks} on the keyboard, "
+          f"{name_checks} on programs reached by typing their name, "
           f"{bar_updates} on a detached program still drawing, "
           f"{stop_checks} on Control-C stopping it, "
           f"{wm_checks} on dragging a hung application's window, "

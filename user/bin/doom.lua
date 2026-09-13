@@ -27,7 +27,10 @@
 local ui = use("/lib/ui.lua")
 local wmproto = use("/lib/wmproto.lua")
 
-if type(doom) ~= "table" then
+-- A kit, not a global, for the reason `snes.lua` gives.
+local have, doom = pcall(use, "/kits/doom")
+
+if not have or type(doom) ~= "table" then
   print("doom: this image was not built with DOOM=1")
   return
 end

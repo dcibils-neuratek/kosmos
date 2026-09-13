@@ -451,10 +451,14 @@ static const luaL_Reg doom_lib[] = {
 };
 
 /*
- * The size Doom renders at, so the Lua side can make a window that fits
- * without either of them carrying the other's number.
+ * The kit, `use("/kits/doom")`, and the size Doom renders at, so the Lua side
+ * can make a window that fits without either of them carrying the other's
+ * number.
+ *
+ * Not a global, which it was: a global named `doom` hid `/bin/doom.lua` from
+ * the prompt. `snes_kosmos.c` has the longer account.
  */
-void kosmos_doom_open(lua_State *L)
+void kosmos_doom_kit(lua_State *L)
 {
     luaL_newlib(L, doom_lib);
 
@@ -463,6 +467,4 @@ void kosmos_doom_open(lua_State *L)
 
     lua_pushinteger(L, DOOMGENERIC_RESY);
     lua_setfield(L, -2, "height");
-
-    lua_setglobal(L, "doom");
 }

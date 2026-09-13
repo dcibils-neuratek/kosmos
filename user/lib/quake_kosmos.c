@@ -863,8 +863,14 @@ static const luaL_Reg quake_lib[] = {
     { NULL, NULL },
 };
 
-/* The window's size rides along, so the Lua side does not carry the number. */
-void kosmos_quake_open(lua_State *L)
+/*
+ * The kit, `use("/kits/quake")`. The window's size rides along, so the Lua
+ * side does not carry the number.
+ *
+ * Not a global, which it was: a global named `quake` hid `/bin/quake.lua`
+ * from the prompt. `snes_kosmos.c` has the longer account.
+ */
+void kosmos_quake_kit(lua_State *L)
 {
     luaL_newlib(L, quake_lib);
 
@@ -873,6 +879,4 @@ void kosmos_quake_open(lua_State *L)
 
     lua_pushinteger(L, QUAKE_H * SCALE);
     lua_setfield(L, -2, "height");
-
-    lua_setglobal(L, "quake");
 }

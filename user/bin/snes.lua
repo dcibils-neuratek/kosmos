@@ -30,7 +30,14 @@ local ui = use("/lib/ui.lua")
 local wmproto = use("/lib/wmproto.lua")
 local audio = use("/lib/audio.lua")
 
-if type(snes) ~= "table" then
+--
+-- The core is a kit, and only in an image built with it. It used to be a
+-- global, and a global named `snes` hid this program from the prompt: the
+-- shell gives a word that already names something to Lua.
+--
+local have, snes = pcall(use, "/kits/snes")
+
+if not have or type(snes) ~= "table" then
   print("snes: this image was not built with SNES=1")
   return
 end

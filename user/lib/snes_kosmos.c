@@ -365,7 +365,17 @@ static const char *const button_names[12] = {
     "a", "x", "l", "r",
 };
 
-void kosmos_snes_open(lua_State *L)
+/*
+ * The kit: `use("/kits/snes")`, built when it is asked for.
+ *
+ * It was a global called `snes`, set in every Lua state, and a global with a
+ * program's name hides the program: the shell sends a word that names
+ * something in Lua to Lua, so `snes --scale 3` at the prompt printed this
+ * table and ran nothing. Through the namespace only `snes.lua` has it, which
+ * is also the rule every other kit keeps - what you were not given, you do
+ * not have.
+ */
+void kosmos_snes_kit(lua_State *L)
 {
     int i;
 
@@ -385,6 +395,4 @@ void kosmos_snes_open(lua_State *L)
 
     lua_pushinteger(L, PICTURE_H);
     lua_setfield(L, -2, "height");
-
-    lua_setglobal(L, "snes");
 }

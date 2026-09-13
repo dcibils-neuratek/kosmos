@@ -431,6 +431,56 @@ So the split is **not** about privilege. A bug in `gfx.c` can corrupt the
 process it is in and nothing else, which is the same blast radius as a bug
 in the Lua above it. That is why the speed exceptions are allowed at all.
 
+### Kits: C in your process, reached through the namespace
+
+That C is reached two ways, and they are not equal. `sys` and `gfx` are
+opened into every Lua state by `kosmos_lua_open`, because every process asks
+the kernel for things and every process can draw. Everything else is a
+**kit**: `use("/kits/pdf")` asks `sys.kit`, which builds the table from the
+list in `sys_user.c`, and a program that does not ask does not have it. The
+caller writes the line it would write for `use("/lib/ui.lua")`, so a hot loop
+moved into C changes no call site.
+
+**A kit is never also a global.** Doom's, Quake's and the Super Nintendo's
+were: `gfx.c` opened each into every Lua state, as `doom`, `quake` and
+`snes`. The rule they broke was already written down, in the comment on
+`use` in `init.lua` - "what you were not given, you do not have" - and every
+process, the shell included, had been given three game cores. That part was
+invisible. What showed was the shell: a word that already names something in
+its environment goes to Lua, so that `print` stays the function and no
+installed program can shadow the language. A global named after a program
+hides the program. On 12 September `snes --scale 3` at the prompt printed
+`table: 0x00000081002300` and ran nothing, `--scale 3` having become a Lua
+comment; `doom` did the same in the default image, and `quake` in a `MEGA=1`
+one. `wm snes:--scale 2` and launchers worked, because they start
+`/bin/snes.lua` by path, which is how it went unnoticed.
+
+They are `/kits/doom`, `/kits/quake` and `/kits/snes` now, in the list only
+where the image compiles them, and each program asks with `pcall` and says
+which build it is on when the answer is no - as `browser.lua` asks for
+`/kits/web`.
+
+**The move went wrong once itself, and how is the other half of the rule.**
+One `lua_setglobal` stayed behind in `snes_kosmos.c`. A kit's build function
+has to leave its table on top of the stack; that call popped the table into a
+global instead, so `sys.kit("snes")` returned what was underneath - its own
+argument, the string `"snes"` - and `snes.lua`, seeing a string, said the
+image was not built with SNES=1, in an image that was. A refusal, from the
+right program: the harness phase written for this bug passed it.
+
+So four checks hold it, and each sees something the others cannot:
+
+- `make test` searches the C for `lua_setglobal` outside `kosmos_lua_open`.
+  It reads the source, so it sees every build variant, `MEGA=1` included,
+  and it is what found the leftover.
+- `tools/luaglobals.py` no longer lists the three names for `/bin`, so a
+  program that reads one as a global again fails the build.
+- The display harness walks `/bin` against the shell's own environment and
+  fails on any program hidden there, whatever it is called.
+- And it asks the image for its kits, requires each to be a table, and
+  refuses "not built with" from a program whose kit is listed
+  (`testing.md` §18.40).
+
 ### Where the line really falls: structure or a loop over bytes
 
 The rule at the top of this section answers "may this be C". It does not
