@@ -10,9 +10,10 @@ Last updated: 2026-09-13
 
 ### 13 September, afternoon: the ThinkPad boots through the loader
 
-**0.10.46 to 0.10.59 are on origin/main**, pushed on Diego's yes from the
-worktree they were folded into. A worktree session cannot run git in the main
-checkout, so that checkout catches up with `git merge --ff-only origin/main`.
+**0.10.46 to 0.10.60 are on origin/main**, pushed on Diego's yes, and the
+main checkout is the only one: every worktree is gone, the untracked files
+they held are in `~/Code/kosmos-leftovers/`, and their sessions are archived.
+One session works on `main` from now on (`CLAUDE.md`).
 
 **The first stick through Kosmos's loader was a black panel**, and a key press
 went back to the firmware's Boot Menu: the loader had refused, and said why
@@ -39,18 +40,11 @@ Bluetooth. The plug lines saw every change, but the mouse's first replug
 failed its first request 12 ms after the reset line, and the second, a second
 apart, was named.
 
-**Next, first: one session on `main` from now on** (`CLAUDE.md`), so the first
-job is housekeeping from the main checkout - fast-forward `main` to 0.10.60,
-remove the `snes-port` worktree (every tracked file matched its commit; its one
-untracked file is in `~/Code/kosmos-leftovers/snes-port/`) and this line's
-worktree, and delete the branches `worktree-snes-port` and
-`claude/exciting-montalcini-5b810a`. The six `backup/` branches are Diego's to
-keep or drop.
-
-**Then:** that replug, measured - how long after a port reset the first
+**Next:** that replug, measured - how long after a port reset the first
 request goes, and what the reused slot holds - before a mouse or bulk
 transfers, whose order is Diego's call. A disk bigger than 32 MB through the
-loader is the test that would lift `mkusb_image.py`'s refusal.
+loader is the test that would lift `mkusb_image.py`'s refusal. The six
+`backup/` branches are Diego's to keep or drop.
 
 ### 13 September: a PC boots through Kosmos's own loader
 
