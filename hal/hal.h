@@ -282,22 +282,25 @@ void hal_irq_set_masked(unsigned intid, bool masked);
  *
  * A `kind` names a programming model *and* the job, because both matter to
  * the driver: "a PL061 GPIO controller, whose `line` is the one wired to the
- * power key" is what the power-button driver needs to be told. False when
- * this board has nothing of that kind, which on a PC today is every kind.
+ * power key" is what the power-button driver needs to be told. `index`
+ * counts the devices of one kind from zero, and the answer is false past the
+ * last - or at once, when this board has nothing of that kind.
  *
  * Not speculative, which is the test `CLAUDE.md` sets for the HAL: it
  * arrived with the driver that calls it.
  */
 #define HAL_DEV_PL061_POWER_KEY  1u
+#define HAL_DEV_XHCI             2u     /* a USB host controller, on PCI */
 
 struct hal_device {
     unsigned long base;
     unsigned long size;
     unsigned      intid;
     unsigned      line;         /* which input on it, where that matters */
+    unsigned      where;        /* PCI bus << 8 | slot << 3 | function */
 };
 
-bool hal_device_find(unsigned kind, struct hal_device *out);
+bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out);
 
 /*
  * Which interrupt controller this machine turned out to have.

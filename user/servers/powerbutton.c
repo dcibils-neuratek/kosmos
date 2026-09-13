@@ -57,6 +57,7 @@
 #include "kosmos.h"
 #include "conproto.h"
 #include "mmio.h"
+#include "say.h"
 
 #define PL061_DIR           0x400u      /* 1 = output */
 #define PL061_IS            0x404u      /* 1 = level-sensitive */
@@ -69,81 +70,25 @@
 
 static long console = -1;
 
-/*
- * A line to the console server, as its client.
- *
- * Built in a stack buffer exactly the way `con_kosmos.c` builds one, because
- * the request is a declared shape - `user/include/conproto.h` - and there is
- * one way to fill it in.
- */
-static void say(const char *s)
-{
-    struct message msg, rep;
-    struct con_request *req = (struct con_request *)msg.data;
-    size_t n = strlen(s);
-
-    if (console < 0) {
-        return;
-    }
-
-    if (n > CON_TEXT_MAX) {
-        n = CON_TEXT_MAX;
-    }
-
-    memset(&msg, 0, sizeof(msg));
-    msg.length = sizeof(*req);
-    req->op = CON_OP_WRITE;
-    req->length = (uint32_t)n;
-    memcpy(req->text, s, n);
-
-    (void)kosmos_call(console, &msg, &rep);
-}
-
-/* A number in a sentence, without a formatted-print library in a server. */
-static void say_number(const char *before, unsigned n, const char *after)
-{
-    char line[96];
-    char digits[12];
-    size_t at = 0, d = 0, i;
-
-    for (i = 0; before[i] != '\0' && at < sizeof(line) - 1; i++) {
-        line[at++] = before[i];
-    }
-
-    do {
-        digits[d++] = (char)('0' + n % 10u);
-        n /= 10u;
-    } while (n != 0 && d < sizeof(digits));
-
-    while (d > 0 && at < sizeof(line) - 1) {
-        line[at++] = digits[--d];
-    }
-
-    for (i = 0; after[i] != '\0' && at < sizeof(line) - 1; i++) {
-        line[at++] = after[i];
-    }
-
-    line[at] = '\0';
-    say(line);
-}
-
 void powerbutton_server(long console_cap)
 {
     struct dev_info dev;
+    struct say_line line;
     uintptr_t base;
     uint32_t bit;
     long mapped, irq;
 
     console = console_cap;
 
-    if (kosmos_dev_find(DEV_PL061_POWER_KEY, &dev) != 0) {
+    if (kosmos_dev_find(DEV_PL061_POWER_KEY, 0, &dev) != 0) {
         kosmos_exit(0);                 /* this machine has none: not an error */
     }
 
     mapped = kosmos_dev_map((unsigned long)dev.base, 1);
 
     if (mapped < 0) {
-        say("powerbutton: the controller's registers could not be mapped\n");
+        say(console,
+            "powerbutton: the controller's registers could not be mapped\n");
         kosmos_exit(1);
     }
 
@@ -156,7 +101,7 @@ void powerbutton_server(long console_cap)
      * harmless.
      */
     if ((mmio_read32(base + PL061_PERIPH_ID0) & 0xffu) != 0x61u) {
-        say("powerbutton: that window is not a PL061\n");
+        say(console, "powerbutton: that window is not a PL061\n");
         kosmos_exit(1);
     }
 
@@ -177,15 +122,22 @@ void powerbutton_server(long console_cap)
     irq = kosmos_irq_claim(dev.intid);
 
     if (irq < 0) {
-        say_number("powerbutton: interrupt ", dev.intid, " was refused\n");
+        say_begin(&line);
+        say_text(&line, "powerbutton: interrupt ");
+        say_dec(&line, dev.intid);
+        say_text(&line, " was refused");
+        say_send(console, &line);
         kosmos_exit(1);
     }
 
-    say_number("powerbutton: waiting on line ", dev.line, "\n");
+    say_begin(&line);
+    say_text(&line, "powerbutton: waiting on line ");
+    say_dec(&line, dev.line);
+    say_send(console, &line);
 
     for (;;) {
         if (kosmos_irq_wait(irq) != 0) {
-            say("powerbutton: the interrupt line went away\n");
+            say(console, "powerbutton: the interrupt line went away\n");
             kosmos_exit(1);
         }
 
@@ -200,7 +152,7 @@ void powerbutton_server(long console_cap)
          */
         if ((mmio_read32(base + PL061_MIS) & bit) != 0) {
             mmio_write32(base + PL061_IC, bit);
-            say("powerbutton: pressed\n");
+            say(console, "powerbutton: pressed\n");
         }
 
         (void)kosmos_irq_ack(irq);

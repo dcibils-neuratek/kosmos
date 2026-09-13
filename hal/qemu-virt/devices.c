@@ -11,17 +11,18 @@
 #include "hal.h"
 #include "qemu-virt.h"
 
-bool hal_device_find(unsigned kind, struct hal_device *out)
+bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 {
     if (out == NULL) {
         return false;
     }
 
-    if (kind == HAL_DEV_PL061_POWER_KEY) {
+    if (kind == HAL_DEV_PL061_POWER_KEY && index == 0) {
         out->base  = PL061_BASE;
         out->size  = PL061_SIZE;
         out->intid = PL061_INTID;
         out->line  = PL061_POWER_KEY_LINE;
+        out->where = 0;
         return true;
     }
 

@@ -151,6 +151,62 @@ static void read_bars(struct pci_device *out)
     }
 }
 
+uint64_t pci_bar_size(const struct pci_device *dev, unsigned index)
+{
+    uint8_t bus = dev->bus, slot = dev->slot, fn = dev->function;
+    uint8_t at;
+    uint32_t command, low, high, mask_low, mask_high = 0xFFFFFFFFu;
+    uint64_t mask;
+    bool wide;
+
+    if (index >= 6) {
+        return 0;
+    }
+
+    at = (uint8_t)(PCI_BAR0 + index * 4);
+    low = pci_config_read(bus, slot, fn, at);
+
+    if (low == 0 || (low & BAR_IO) != 0) {
+        return 0;
+    }
+
+    wide = (low & BAR_TYPE_MASK) == BAR_TYPE_64;
+
+    if (wide && index >= 5) {
+        return 0;               /* a 64-bit BAR with no slot for its top half */
+    }
+
+    command = pci_config_read(bus, slot, fn, PCI_COMMAND);
+    pci_config_write(bus, slot, fn, PCI_COMMAND,
+                     command & ~(uint32_t)(COMMAND_MEMORY | COMMAND_IO));
+
+    pci_config_write(bus, slot, fn, at, 0xFFFFFFFFu);
+    mask_low = pci_config_read(bus, slot, fn, at);
+    pci_config_write(bus, slot, fn, at, low);
+
+    if (wide) {
+        high = pci_config_read(bus, slot, fn, (uint8_t)(at + 4));
+        pci_config_write(bus, slot, fn, (uint8_t)(at + 4), 0xFFFFFFFFu);
+        mask_high = pci_config_read(bus, slot, fn, (uint8_t)(at + 4));
+        pci_config_write(bus, slot, fn, (uint8_t)(at + 4), high);
+    }
+
+    pci_config_write(bus, slot, fn, PCI_COMMAND, command);
+
+    /*
+     * The bits that stayed set are the address; the ones that read back zero
+     * are the size. A 32-bit BAR has no upper half to ask, and all ones there
+     * is exactly what a 32-bit window means.
+     */
+    mask = ((uint64_t)mask_high << 32) | (mask_low & ~0xFu);
+
+    if ((mask_low & ~0xFu) == 0 && (!wide || mask_high == 0)) {
+        return 0;
+    }
+
+    return ~mask + 1u;
+}
+
 /*
  * What a caller is looking for.
  *

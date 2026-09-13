@@ -56,6 +56,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Milestones: `docs/roadmap.md`
 - Targets and HAL: `docs/hal.md`
 - Where a driver lives, and where its code comes from: `docs/drivers.md`
+- How USB works, from the host controller up, written as it is built: `docs/usb.md`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`
@@ -609,7 +610,7 @@ bool          hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long ctx);
 
 bool          hal_irq_available(unsigned intid);            /* drivers at EL0 */
 void          hal_irq_set_masked(unsigned intid, bool masked);
-bool          hal_device_find(unsigned kind, struct hal_device *out);
+bool          hal_device_find(unsigned kind, unsigned index, struct hal_device *out);
 ```
 
 The last three arrived together, with the first driver outside the kernel -

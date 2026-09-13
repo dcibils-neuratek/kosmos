@@ -1615,3 +1615,61 @@ size: (11, 507, 632, 1064) before the drag, (11, 507, 632, 1064) after.
 ```
 
 §18.23 said the same thing about the colour, and is corrected.
+
+---
+
+## 18.32 Two USB controllers, and a stick on the second
+
+`tools/run_x86.py` boots q35 with two `qemu-xhci` controllers and a
+`usb-storage` device on the second, and reads what `user/servers/xhci.c`
+says. It passes when the driver reports two controllers at different PCI
+addresses, exactly one device, on the second of them, and the closing line
+two controllers and one stick should give. The first boot of the harness,
+which has no USB controller, must hear nothing from the driver at all.
+
+**Two controllers because the index is the part one cannot test.** A driver
+that always asked for the first controller would find it, reset it and read
+its ports perfectly, and on a machine with two it would never see the other.
+
+What QEMU printed:
+
+```
+xhci: 00:03.0, version 1.0, 8 ports, 64 slots
+xhci: 00:03.0 has no firmware handoff to make
+xhci: 00:04.0, version 1.0, 8 ports, 64 slots
+xhci: 00:04.0 has no firmware handoff to make
+xhci: 00:04.0 port 1, USB 3: a SuperSpeed device (speed ID 4)
+xhci: 2 controllers, 1 port with something plugged in
+```
+
+**Both halves were broken on purpose and watched fail.** With the port
+registers read four bytes off, at PORTPMSC instead of PORTSC:
+
+```
+FAIL: 2 of 5
+  the driver did not report exactly one device plugged in:
+  ...
+    xhci: 2 controllers, 0 ports with something plugged in
+```
+
+And with every index answered by the first controller, the same controller
+four times and never the stick:
+
+```
+FAIL: 3 of 5
+  the driver did not report two different xHCI controllers:
+    xhci: 00:03.0, version 1.0, 8 ports, 64 slots
+    xhci: 00:03.0 has no firmware handoff to make
+  ...
+    xhci: 4 controllers, 0 ports with something plugged in
+```
+
+**The first attempt at that second control proved nothing, and it is worth
+saying why.** Written as `if (seen == 0)`, it left `index` unused, the build
+stopped on `-Werror=unused-parameter`, and the script moved on to restoring
+the file. A control that does not build has not run. It was rewritten as
+`seen == (index & 0u)`, which uses the parameter and ignores it.
+
+**What this cannot test is the firmware handoff**: QEMU's controller has no
+Legacy Support capability, so the driver says it has no handoff to make. The
+ThinkPad runs that path first, and `usb.md` lists what its line can say.

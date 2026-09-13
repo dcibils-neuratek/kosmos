@@ -8,6 +8,32 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: USB step one, the controllers up
+
+**Every xHCI controller is found, taken from the firmware, reset, and its
+ports read, by a driver in a process** - `user/servers/xhci.c`, and
+`docs/usb.md`, which Diego asked for as a document written as USB is built
+rather than after. Two controllers and a stick on the second under QEMU; both
+halves of the check broken on purpose and watched fail (`testing.md`
+§18.32).
+
+What changed underneath: `SYS_DEV_FIND` takes an index and reports the PCI
+address; the PC board finds xHCI controllers by class, sizes their BAR and
+enables each once (`hal/pc/devices.c`, `pci_bar_size`); and the power
+button's print helpers are `user/servers/say.h` now, shared.
+
+**"Bring the display up early" was already done**, since 0.10.12. The
+roadmap, `drivers.md` §6 and an entry below said otherwise and are corrected.
+
+**On the ThinkPad, next boot**: Log View should show a line per controller -
+version, ports, slots - one saying what happened with the firmware, and one
+per port with something plugged in. **The firmware line is the one to
+photograph**: QEMU has no firmware to take a controller from, so that code has
+never run. The stick itself should appear on one of the ports.
+
+**Next:** enumeration - slots, device contexts, the command and event rings,
+and the first interrupt a USB driver claims.
+
 ### 12 September: Log View looks like the Terminal, and follows the log
 
 Diego, from the ThinkPad: Log View should be black like the Terminal and
@@ -386,11 +412,10 @@ driver is Linux's under LinuxKPI. Two shims. That is a legitimate route and
 a real decision - port or write - but it is not a small one, and it is not
 the one that gets this laptop onto a network this month.
 
-**Before any of it**: bring the display up early. A machine with no serial
-port shows nothing until stage six, so a panic in memory setup and a hang in
-the loader look identical - which is what made tonight take four hours
-instead of one. The loader hands over the framebuffer address before
-`pmm_init` runs.
+**This entry said "before any of it, bring the display up early", and that
+was wrong when it was written**: the panel had shown the boot log from stage
+two since 0.10.12 (`hal_fb_early`). Found on 12 September, when the work was
+started and before any of it was written.
 
 **Audio, queued behind USB**: the codec is a **Realtek ALC257**
 (`VEN_10EC&DEV_0257`, Lenovo `SUBSYS_17AA22C9`). `hda.c` finds it and reports

@@ -74,6 +74,22 @@ bool pci_find_class(uint8_t class, uint8_t subclass, unsigned from,
                     struct pci_device *out, unsigned *found_at);
 
 /*
+ * How many bytes the memory BAR at `index` decodes, or 0 when there is none.
+ *
+ * Asked the way the PCI specification describes: all ones written, and what
+ * reads back says which address bits the device lets software set. **Memory
+ * decoding is off while it happens**, because for as long as the BAR holds
+ * all ones the device answers at an address that is somebody else's; the
+ * command register and the BAR are both put back. A 64-bit BAR is sized
+ * across both halves. `index` is the one `bar[]` uses.
+ *
+ * Needed because a driver in a process maps a window of a size, and the
+ * address alone does not say how big it is: an xHCI controller's extended
+ * capabilities can sit tens of kilobytes into its BAR.
+ */
+uint64_t pci_bar_size(const struct pci_device *dev, unsigned index);
+
+/*
  * Turns on the two bits a driver needs before a BAR means anything: memory
  * space decoding, and bus mastering so the device may fetch its own
  * descriptors. Off out of reset, and a device with them off is one that

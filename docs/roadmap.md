@@ -154,12 +154,20 @@ is the one that makes the machine Diego owns behave like a computer:
    QEMU's power button - proved them, so xHCI is a driver rather than kernel
    work.
 
-   **And a thing to fix on the way**: a machine with no serial port shows
-   nothing until stage six, when the framebuffer attaches and the log
-   replays - so a panic in memory setup and a hang inside the loader look
-   identical. The loader's framebuffer address arrives before `pmm_init`
-   runs, so there is no reason to wait. **Bring the display up early.** That
-   one costs an afternoon and would have saved a whole evening.
+   **Step one is built (0.10.48): the controllers are up.** Every xHCI
+   controller is found on PCI by its class, taken from the firmware, halted,
+   reset, and its ports read, by a driver in a process. `docs/usb.md` is
+   the account and grows with each step. Next: enumeration.
+
+   **The early display this paragraph asked for already existed.** It said,
+   for a day, that a machine with no serial port shows nothing until stage
+   six. The panel had shown the boot log from stage two since 0.10.12 -
+   `hal_fb_early` answers with the framebuffer the firmware set up, before
+   there is a page allocator (`thinkpad.md` §4) - and it was found when the
+   work was started, before any was written. What is still dark: a hang
+   inside GRUB, a fault before the trap table, and a firmware that puts the
+   framebuffer above 4 GB, which `hal_fb_early` refuses because the boot
+   page tables end there.
 
 **Agreed on 2026-09-10**, after the ThinkPad ran spread across eight
 processors, and still what follows USB:

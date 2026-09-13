@@ -114,6 +114,8 @@ static void copy_message_out(struct message *dst, const struct message *src)
  */
 _Static_assert(DEV_PL061_POWER_KEY == HAL_DEV_PL061_POWER_KEY,
                "a device kind must mean the same thing on both sides");
+_Static_assert(DEV_XHCI == HAL_DEV_XHCI,
+               "a device kind must mean the same thing on both sides");
 
 bool dev_range_ok(uintptr_t phys, size_t pages)
 {
@@ -1475,7 +1477,7 @@ void syscall_dispatch(struct syscall_frame *sc)
          */
         struct hal_device found;
         struct dev_info info = { 0 };
-        uintptr_t out_ptr = (uintptr_t)sc->arg[1];
+        uintptr_t out_ptr = (uintptr_t)sc->arg[2];
 
         if (!p->owns_devices) {
             result = SYS_ERR_DENIED;
@@ -1487,7 +1489,8 @@ void syscall_dispatch(struct syscall_frame *sc)
             break;
         }
 
-        if (!hal_device_find((unsigned)sc->arg[0], &found)) {
+        if (!hal_device_find((unsigned)sc->arg[0], (unsigned)sc->arg[1],
+                             &found)) {
             result = SYS_ERR_NO_DEVICE;
             break;
         }
@@ -1497,6 +1500,7 @@ void syscall_dispatch(struct syscall_frame *sc)
         info.line  = (uint32_t)found.line;
         info.base  = (uint64_t)found.base;
         info.size  = (uint64_t)found.size;
+        info.where = (uint32_t)found.where;
 
         *(struct dev_info *)out_ptr = info;
         result = 0;

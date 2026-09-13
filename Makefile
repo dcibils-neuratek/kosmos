@@ -742,6 +742,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/ramfs.c \
              user/servers/net.c \
              user/servers/powerbutton.c \
+             user/servers/xhci.c \
+             user/servers/say.c \
              user/lib/net_kosmos.c \
              user/lib/crypto.c \
              user/lib/lua_glue.c \

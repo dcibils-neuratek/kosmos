@@ -70,6 +70,7 @@ void net_server(long endpoint);
 /* Not a server anyone asks, and handed the console's endpoint rather than an
  * endpoint of its own: it is a driver, and it reports as a client. */
 void powerbutton_server(long console);
+void xhci_server(long console);
 
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
@@ -80,6 +81,7 @@ void powerbutton_server(long console);
 #define ROLE_RAMFS     1UL
 #define ROLE_NET      17UL
 #define ROLE_POWERBUTTON 18UL
+#define ROLE_XHCI     19UL
 
 static void say(const char *s)
 {
@@ -170,6 +172,11 @@ int main(unsigned long arg)
     if (arg == ROLE_POWERBUTTON) {
         named("powerbutton");
         powerbutton_server(0);
+    }
+
+    if (arg == ROLE_XHCI) {
+        named("xhci");
+        xhci_server(0);
     }
 
     L = kosmos_lua_open();

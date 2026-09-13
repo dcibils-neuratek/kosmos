@@ -151,8 +151,14 @@
  * userland too, so a driver cannot be *given* an address by anybody but the
  * kernel, and the kernel only relays what the board says. The address then
  * exists in userland solely as a value a driver was handed.
+ *
+ * **`index` is which one of that kind**, from zero, because "where is the
+ * xHCI controller" has more than one answer on the machine this is for: a
+ * laptop of the ThinkPad's generation is expected to carry one in its chipset
+ * and another for its USB-C ports. `SYS_ERR_NO_DEVICE` past the last, so a
+ * driver asks for 0, 1, 2 until it is told there are no more.
  */
-#define SYS_DEV_FIND   49   /* (kind, &info)          -> 0 or error         */
+#define SYS_DEV_FIND   49   /* (kind, index, &info)   -> 0 or error         */
 
 /*
  * Whether a physical range may be handed to a driver at all - size,
@@ -944,11 +950,17 @@ void syscall_dispatch(struct syscall_frame *sc);
  */
 #define DEV_PL061_POWER_KEY  1u
 
+/*
+ * An xHCI USB host controller: `base` and `size` are its first BAR, `intid`
+ * the interrupt it raises, and `where` its address on PCI.
+ */
+#define DEV_XHCI             2u
+
 struct dev_info {
     uint32_t kind;
     uint32_t intid;         /* for SYS_IRQ_CLAIM */
     uint32_t line;          /* which input on the device, where that matters */
-    uint32_t reserved;
+    uint32_t where;         /* PCI bus << 8 | slot << 3 | function, or 0 */
     uint64_t base;          /* for SYS_DEV_MAP */
     uint64_t size;
 };

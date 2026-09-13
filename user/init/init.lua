@@ -36,6 +36,7 @@ local ROLE_DISKFS    = 15 -- serves /disk: the block device, and only it
 local ROLE_AUDIO     = 16 -- serves /dev/audio: the one process that may play
 local ROLE_NET       = 17 -- serves /net: the one process that holds the card
 local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
+local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -4598,6 +4599,19 @@ if role == ROLE_INIT then
 
     if err then
       line("init: no power button driver: " .. tostring(err))
+    end
+  end
+
+  --
+  -- The USB host controllers, the same way and for the same reason: a driver
+  -- with device authority and the console's endpoint to report through. On a
+  -- machine with none it asks, is told so, and exits without a word.
+  --
+  do
+    local _, err = sys.spawn(ROLE_XHCI, { CONSOLE_EP }, SPAWN_DEVICES)
+
+    if err then
+      line("init: no USB driver: " .. tostring(err))
     end
   end
 

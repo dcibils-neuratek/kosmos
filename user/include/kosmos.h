@@ -230,11 +230,13 @@ static inline long kosmos_sysinfo(struct sysinfo *out)
  *
  * `kosmos_dev_find` is where a driver learns an address: the board knows it,
  * the kernel passes it on, and it appears here only as a value the driver
- * was handed - never as a constant in the driver's source.
+ * was handed - never as a constant in the driver's source. `index` is which
+ * one of that kind, from zero.
  */
-static inline long kosmos_dev_find(unsigned long kind, struct dev_info *out)
+static inline long kosmos_dev_find(unsigned long kind, unsigned long index,
+                                   struct dev_info *out)
 {
-    return sys2(SYS_DEV_FIND, (long)kind, (long)(uintptr_t)out);
+    return sys3(SYS_DEV_FIND, (long)kind, (long)index, (long)(uintptr_t)out);
 }
 
 /* The registers, mapped uncached. RAM is refused. */

@@ -45,12 +45,16 @@ ARGS = [
 PAGE_SIZE = 4096
 
 
-def boot(image, option, timeout, typed=(), extra=()):
+def boot(image, option, timeout, typed=(), extra=(), until=None):
     """Boots, optionally types at the prompt, and returns everything printed.
 
     One line per prompt, and only after the machine has been quiet for a
     moment: a line written into the middle of the boot log is a line the
     console server has not been asked for yet.
+
+    `until` is a line to wait for as well, for output that arrives on its
+    own clock rather than a prompt's - a driver reporting after the shell
+    is already up.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
 
@@ -97,6 +101,9 @@ def boot(image, option, timeout, typed=(), extra=()):
                 quiet = time.time()
 
             done = (prompts > len(typed)) if typed else (prompts > 0)
+
+            if until is not None and until.encode() not in out:
+                done = False
 
             if sent == len(typed) and done:
                 # A moment more, so a line arriving just after the last
@@ -231,6 +238,71 @@ def storage(image, check):
           "the file written over NVMe was not there after a reboot, so the "
           "writes never reached the drive - which a driver that formats and "
           "reads back its own cache looks exactly like")
+
+
+def usb(image, check):
+    """Two xHCI controllers, a USB stick on the second, and what the driver
+    in `user/servers/xhci.c` says it found.
+
+    **Two controllers, because the index is the part one cannot test.** A
+    driver that always asked for the first would find a controller, take it,
+    reset it and read its ports perfectly - and on a laptop with two it would
+    never see the other. With the stick on the second, that driver reports
+    nothing plugged in anywhere, and the check says so by name.
+
+    What this establishes is the first step of USB and nothing past it: the
+    board found the controllers by class, sized and handed over their
+    windows, and a process halted and reset each and read which ports have
+    a device behind them, at what speed. Nothing is enumerated yet. **The
+    firmware handoff is the one path QEMU cannot reach**: its controller has
+    no legacy-support capability, so there is nothing to hand over, and the
+    driver says that rather than claiming a handoff it never made.
+    """
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
+
+    with open(stick, "wb") as handle:
+        handle.truncate(16 * 1024 * 1024)
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "qemu-xhci,id=usb1",
+             "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+             "-device", "usb-storage,bus=usb1.0,drive=stick")
+
+    out = boot(image, None, 90.0, extra=extra, until="plugged in")
+
+    if out is None:
+        check(False, "the machine would not boot with two xHCI controllers")
+        return
+
+    said = [l[l.index("xhci:"):].strip()
+            for l in out.replace("\r", "").splitlines() if "xhci:" in l]
+    shown = "\n    ".join(said) or "(the driver said nothing)"
+
+    found = re.findall(r"xhci: ([0-9a-f]{2}:[0-9a-f]{2}\.[0-7]), "
+                       r"version (\d+\.\d+), "
+                       r"(\d+) ports, (\d+) slots", out)
+
+    check(len(found) == 2 and found[0][0] != found[1][0],
+          "the driver did not report two different xHCI controllers:\n    "
+          + shown)
+
+    ports = re.findall(r"xhci: ([0-9a-f]{2}:[0-9a-f]{2}\.[0-7]) port (\d+), "
+                       r"USB (\d): "
+                       r"a (\S+) device", out)
+
+    check(len(ports) == 1,
+          "the driver did not report exactly one device plugged in:\n    "
+          + shown)
+
+    if len(found) == 2 and len(ports) == 1:
+        check(ports[0][0] == found[1][0],
+              "the stick is on the second controller, %s, and the driver "
+              "reported it on %s - which is what asking for the first "
+              "controller twice looks like" % (found[1][0], ports[0][0]))
+
+    check("xhci: 2 controllers, 1 port with something plugged in" in out,
+          "the driver's closing line is not what two controllers and one "
+          "stick should give:\n    " + shown)
 
 
 def memdisk(image, check):
@@ -766,6 +838,12 @@ def main():
 
     checks += 1
 
+    # 2a. And the USB driver said nothing, because this machine has no USB
+    #     controller: it asks, is told there is none, and exits.
+    check("xhci:" not in out,
+          "a machine with no xHCI controller heard from the USB driver: "
+          + next((l.strip() for l in out.splitlines() if "xhci:" in l), ""))
+
     # 3. All twelve stages. The kernel prints one per subsystem it brings
     #    up, so a missing number is a subsystem that did not.
     for stage in range(1, 13):
@@ -1040,6 +1118,10 @@ def main():
     #
     memdisk(image, check)
 
+    # And USB: two controllers, one stick, and which of them it is on.
+    #
+    usb(image, check)
+
     # And the pointer a laptop has, with and without the serial port it does
     # not have. `pointer` says why the second half is the one that matters.
     #
@@ -1060,7 +1142,8 @@ def main():
           "reports what it was handed, plays a tone an Intel HDA "
           "controller hands back at the right pitch, keeps a file on an "
           "NVMe drive across a reboot, reads one off a disk the loader "
-          "handed over in memory, and opens a menu with a click through "
+          "handed over in memory, finds a USB stick on the second of two "
+          "xHCI controllers, and opens a menu with a click through "
           "a PS/2 mouse whether or not the machine has a serial port)."
           % checks)
     return 0

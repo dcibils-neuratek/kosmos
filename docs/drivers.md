@@ -140,7 +140,10 @@ never arrives. It reports through the console server as a client, because
 owning the console would also let it read every key on the machine.
 
 A device this simple was chosen so a failure would point at the primitives
-rather than at the device. The next driver is xHCI.
+rather than at the device. The next driver is xHCI, and its first step
+exists: `user/servers/xhci.c` (0.10.48) finds every controller, takes each
+from the firmware, resets it and reads its ports. `usb.md` is how USB works
+here, written as each step lands.
 
 Estimated at 500-800 lines in the kernel, and the largest architectural
 addition since capabilities - because it turns "a driver is kernel code"
@@ -229,7 +232,8 @@ Public Intel specification, no firmware, no crypto.
 - **And a real mouse**, which is its own reason.
 
 Build order, each step ending in something visible: controller up, then
-enumeration, then bulk transfers, then mass storage, then Ethernet.
+enumeration, then bulk transfers, then mass storage, then Ethernet. The
+first is built; `usb.md` has it, and takes each of the others as it lands.
 
 ### WiFi - OpenBSD, not FreeBSD
 
@@ -254,20 +258,17 @@ never in the repository.
 
 ---
 
-## 6. The order, and one thing in front of it
+## 6. The order
 
-**Before any of it: bring the display up early.**
+**This section opened with "before any of it: bring the display up early",
+and that was already done.** It rested on a machine with no serial port
+showing nothing until boot stage six; the panel had shown the boot log from
+stage two since 0.10.12, through `hal_fb_early`, which takes the framebuffer
+the firmware set up before there is a page allocator. Found on 12 September
+when the work was started.
 
-A machine with no serial port shows nothing until boot stage six, when the
-framebuffer attaches and the log replays - so a panic in memory setup and a
-hang inside the loader are the same blank screen. That is what turned one
-evening into four hours. The loader hands over the framebuffer address
-before `pmm_init` runs, so there is no reason to wait.
-
-It costs an afternoon and it is the difference between debugging the three
-subsystems below and guessing at them.
-
-Then:
+`roadmap.md` holds the order now, with USB at the front. The order as this
+section first wrote it:
 
 1. **NVMe** - a boot, not a project.
 2. **Audio** - dump the topology, then write the walk.
