@@ -8,6 +8,59 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: the Deskbar shows the focus where it went, at once
+
+Diego, on the ThinkPad: moving the focus to an application, its button on
+the Deskbar took "like half a second" to show as selected. **Measured before
+anything changed**, with two notes the window manager now stamps with the
+counter under `trace`: from the focus moving to the bar's next frame,
+Control-W Tab took 463, 1029, 290, 564 and 648 ms and a press on a window
+592. The bar asked for the list of windows on its tick, which is once a
+second - not twice, as its comments said. Its own presses took about 100 ms,
+because it paints what it asks for, so that path was never the cause.
+
+**The window manager tells a window when its list changes.** `windows` takes
+`watch` with the caller's handle; `tell_watchers` compares the list once a
+pass, before polls are answered, and posts each watcher a `windows` event
+that carries nothing. The bar asks again and repaints only if what it draws
+moved; its tick no longer asks. And **a button is pressed only while its
+window is focused and showing**: a window minimised by its own box stays on
+top of the stack, and the bar drew it as the selected one. `ui.md` §16.13
+has the reasoning, including "Instant feedback", which `deskbar.lua` had been
+citing from a section that did not exist.
+
+**Checked:**
+
+- The `deskbar focus` phase (`testing.md` §18.30): nine focus changes three
+  ways, each shown within 400 ms and with the right button pressed, and a
+  minimised window not drawn pressed. The fix: 115 to 145 ms on every path.
+  Against the old bar it failed on the time (a tab press, 906 to 1047 ms)
+  and, with the waits stepped, on the picture; against the fix with the old
+  reading of `focused` it failed on the minimised window.
+- `make prepush`, green: `make test` 153/153 and 149/149, the display
+  harness 94 checks on AArch64 and 92 on x86-64, `litexl-check`, the MEGA
+  link and `make shot`. The phase ran on both machines: 113 to 145 ms on
+  AArch64 and 101 to 142 on x86-64.
+
+**Found on the way, and left for their own tasks:**
+
+- **A press on the bar gives the bar the keyboard focus.** `pointer_pass`
+  raises whatever is under the pointer and `raise` refuses only the backdrop,
+  so the strip goes on top; after minimising from the bar, keys go to the
+  Deskbar. **A window minimised by its box keeps the keys** too, since
+  `minimise` does not reorder `windows`.
+- **The bar repaints itself every second** whether or not anything moved:
+  having a `tick` puts a window on the kit's repaint, and the clock shows
+  minutes. `win.dirty` is set in three places in `deskbar.lua` and read
+  nowhere; the two left are in the menu code.
+- The first measurement found every Control-W Tab at the same point of the
+  tick, because the harness does the same things between changes. The phase
+  steps its waits; the class is written up in §18.30.
+
+**Not tried on the ThinkPad.** Under QEMU every path now costs the bar's
+paint; on the machine it should cost what the press on the bar's own button
+already did, which Diego did not report as slow.
+
 ### 12 September: the ThinkPad's memory refusals, and the limits that go
 
 **The Terminal that would not grow and the JPEG that would not load were one

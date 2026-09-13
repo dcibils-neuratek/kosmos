@@ -3451,6 +3451,284 @@ def check_deskbar(guest):
     return 3
 
 
+def check_focus_shown(guest):
+    """The Deskbar shows where the focus went, at once.
+
+    Diego, on the ThinkPad: when he moved the focus to another application,
+    its button on the Deskbar took "like half a second" to show as selected.
+    The bar learned where the focus was by asking the window manager on its
+    tick, which is once a second, so a focus that moved anywhere but on the
+    bar reached it up to a second late. Measured here before anything
+    changed: 290 to 1029 ms from the focus moving to the bar's next frame,
+    about 600 on average. The window manager now posts the bar a `windows`
+    event when its list changes (`tell_watchers` in `wm.lua`).
+
+    **Timed on the guest's own counter**, by two notes the window manager
+    writes under `trace`: `focus <title> at <us>` when the top of its stack
+    changes, and `draw <title> at <us>` when a window finishes a frame. The
+    difference is how long the bar took to finish a frame after the focus
+    moved, on the one clock both happened on. A screendump takes most of a
+    second here and could not tell 50 ms from 500.
+
+    **The picture says what that frame showed.** After each change the
+    button of the window with the focus has to be drawn pressed and the
+    other not, so a frame that arrived quickly with the old focus in it does
+    not pass.
+
+    Three ways the focus moves, three rounds of each, and **every** sample
+    has to land under the bound. The press on the bar's own button was never
+    slow - it paints what it asked for - so it is here to stay that way; the
+    tab and the key are what a one-second tick fails. The wait before each
+    change is a little longer than the one before, so the samples land at
+    different points of such a tick rather than all at one: against the old
+    bar, before that wait was stepped, every Control-W Tab read about 280 ms
+    and would have passed on its own.
+
+    And one that is not about time. A window put away by its own minimise
+    box stays at the top of the window manager's stack, so it is still
+    reported `focused` - and the bar drew it pressed, as the window you are
+    in. Its button must not be.
+    """
+    #
+    # **The bound.** The old bar's frames came 1140 ms apart. The floor is the
+    # bar's own paint, which is what a press on its button has always cost -
+    # about 100 ms here, with `trace` printing every stage of every pass -
+    # and every path costs that now. 400 leaves room for a busy host and is
+    # still well inside the tick.
+    #
+    BOUND_MS = 400
+
+    mark = len(guest.seen)
+    guest.type("wm trace,deskbar,clock,calc")
+
+    #
+    # Where each window landed, and the order they opened in: the bar sorts
+    # its buttons by handle, and handles are given out in that order.
+    #
+    placed, order = {}, []
+    deadline = time.monotonic() + 40
+
+    while time.monotonic() < deadline:
+        for m in re.finditer(r"wm: window (.+?) at (\d+),(\d+) (\d+)x(\d+)",
+                             guest.seen[mark:]):
+            if m.group(1) not in placed:
+                placed[m.group(1)] = tuple(int(v) for v in m.groups()[1:])
+                order.append(m.group(1))
+
+        if {"Deskbar", "clock", "Calculator"} <= set(placed):
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "`wm trace,deskbar,clock,calc` did not open the bar and both "
+            f"windows; the window manager reported {order}.")
+
+    apps = [t for t in order if t != "Deskbar"]
+
+    while "wm: draw Deskbar at" not in guest.seen[mark:]:
+        if time.monotonic() > deadline:
+            raise Failure("the Deskbar never finished a frame.")
+        time.sleep(0.3)
+
+    time.sleep(2)
+    width, height, _ = parse_ppm(guest.screendump())
+
+    # wm.lua: BORDER is 2 and TAB_H is 26, and the minimise box is the first
+    # of the pair `boxes_x` puts 44 pixels in from the frame's right edge.
+    def frame(title):
+        x, y, w, h = placed[title]
+        return x - 2, y - 26, w + 4, h + 28
+
+    def tab_point(title):
+        """A point on the tab that the other window does not cover."""
+        fx, fy, fw, _ = frame(title)
+        ox, oy, ow, oh = frame([t for t in apps if t != title][0])
+        y = fy + 13
+
+        for x in range(fx + 40, fx + fw - 60, 8):
+            if not (ox <= x < ox + ow and oy <= y < oy + oh):
+                return x, y
+
+        raise Failure(f"no part of {title}'s tab is clear of the other "
+                      "window, so it cannot be pressed.")
+
+    # deskbar.lua: the Kosmos end is 12, a 32-pixel icon, 8, the word and
+    # 12; then a button per window, `TASK_W` 190 wide with a `GAP` of 4.
+    kosmos_w = 12 + 32 + 8 + len("Kosmos") * GLYPH_W + 12
+
+    def button_x(i):
+        return kosmos_w + 4 + i * (190 + 4)
+
+    # deskbar.lua's `lit`, and its ladder: a button is `FACE` per cent toward
+    # white from the strip, and pressed is 20 per cent darker than that.
+    def lit(c, k):
+        if k >= 0:
+            return tuple(v + ((255 - v) * k) // 100 for v in c)
+        return tuple(v + (v * k) // 100 for v in c)
+
+    face = lit(TAB, 24)
+    pressed = lit(face, -20)
+
+    def buttons_now():
+        w, _, px = parse_ppm(guest.screendump())
+        # Two in from the button's left edge: inside its fill, left of its
+        # icon, and on a row the rounded corners do not reach.
+        return [tuple(px[(18 * w + button_x(i) + 2) * 3:
+                         (18 * w + button_x(i) + 2) * 3 + 3])
+                for i in range(len(apps))]
+
+    def click(x, y):
+        guest.mouse_to(*_to_tablet(x, y, width, height))
+        time.sleep(0.2)
+        guest.mouse_button(True)
+        guest.mouse_button(False)
+
+    def shown(since, how):
+        """Where the focus went, and how long the bar took to finish a frame
+        after it did."""
+        limit = time.monotonic() + 6
+
+        while time.monotonic() < limit:
+            said = guest.seen[since:]
+
+            # The first move onto an application. A press on the bar raises
+            # the strip before the bar asks for anything, and that is noted
+            # as a move too.
+            for f in re.finditer(r"wm: focus (.+?) at (\d+)us", said):
+                if f.group(1) in apps:
+                    d = re.search(r"wm: draw Deskbar at (\d+)us",
+                                  said[f.end():])
+
+                    if d:
+                        return (f.group(1),
+                                (int(d.group(1)) - int(f.group(2))) / 1000.0)
+                    break
+
+            time.sleep(0.05)
+
+        raise Failure(
+            f"after {how}, the window manager noted no move of the focus "
+            "onto an application followed by a Deskbar frame, in 6 s.\n"
+            + "\n".join(l.strip() for l in guest.seen[since:].splitlines()
+                        if "wm: focus" in l or "draw Deskbar" in l)[-800:])
+
+    samples = []
+    current = None
+
+    def change(how, act):
+        nonlocal current
+
+        #
+        # **A different wait before each one, stepping through a second.**
+        #
+        # Everything between two changes - a screendump, the sleeps - takes
+        # about the same time, so without this every sample landed at the
+        # same point of the old bar's one-second tick: against the old bar
+        # every Control-W Tab read about 280 ms and every tab press about a
+        # second, and a small shift in the harness's timing could have put
+        # them all under the bound together. Stepped by 170 ms, the samples
+        # walk right round a tick that size instead of sitting at one point
+        # of it.
+        #
+        time.sleep(0.2 + (len(samples) * 0.17) % 1.2)
+
+        since = len(guest.seen)
+        act()
+        title, ms = shown(since, how)
+
+        if title == current:
+            raise Failure(f"{how} did not move the focus off {title}.")
+
+        current = title
+        samples.append((how, title, ms))
+
+        want = [pressed if t == title else face for t in apps]
+        got = buttons_now()
+
+        if got != want:
+            raise Failure(
+                f"after {how} moved the focus to {title}, the Deskbar's "
+                f"buttons for {apps} are {got}; pressed is {pressed} and a "
+                f"button that is not is {face}. A frame that arrives soon "
+                "after the move and shows the focus where it was is one "
+                "painted from a list asked for before the move - which is "
+                "what a bar that asks on a tick sends when the tick falls "
+                "just before the press.")
+
+        time.sleep(0.4)
+
+    def other():
+        return [t for t in apps if t != current][0]
+
+    def next_window():
+        guest.proc.stdin.write(b"\x17\t")          # Control-W, Tab
+        guest.proc.stdin.flush()
+
+    # The first window opened is never the last, so this always moves it.
+    change("a press on a window's tab", lambda: click(*tab_point(apps[0])))
+
+    for _ in range(3):
+        change("a press on the other window's tab",
+               lambda: click(*tab_point(other())))
+        change("Control-W Tab", next_window)
+        change("a press on the other window's Deskbar button",
+               lambda: click(button_x(apps.index(other())) + 60, 18))
+
+    report = ", ".join(f"{ms:.0f}" for _, _, ms in samples)
+    print(f"deskbar focus: the bar finished a frame {report} ms after the "
+          "focus moved")
+
+    slow = [(how, title, ms) for how, title, ms in samples if ms > BOUND_MS]
+
+    if slow:
+        raise Failure(
+            f"the Deskbar showed a focus change more than {BOUND_MS} ms after "
+            "it happened: "
+            + "; ".join(f"{how} to {title} took {ms:.0f} ms"
+                        for how, title, ms in slow)
+            + f". All of them: {report} ms. A bar that learns the focus by "
+            "asking on its one-second tick reads like this - the window "
+            "manager has to post it `windows` when the list changes "
+            "(`tell_watchers`).")
+
+    #
+    # Minimised by its own box, and not drawn as the window you are in.
+    #
+    since = len(guest.seen)
+    fx, fy, fw, _ = frame(current)
+    click(fx + fw - 44 + 9, fy + 13)
+
+    limit = time.monotonic() + 6
+
+    while not re.search(r"wm: draw Deskbar at", guest.seen[since:]):
+        if time.monotonic() > limit:
+            raise Failure("minimising a window drew nothing on the Deskbar "
+                          "in 6 s.")
+        time.sleep(0.05)
+
+    if buttons_now()[apps.index(current)] == pressed:
+        raise Failure(
+            f"{current}, minimised by its own box, is drawn pressed on the "
+            "Deskbar - as the window you are in. It stays at the top of the "
+            "window manager's stack and so is reported `focused`; the bar "
+            "has to read that as selected only while it is not hidden.")
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while PROMPT not in guest.seen[mark:]:
+        if time.monotonic() > deadline:
+            raise Failure("Control-C did not get the screen back from the "
+                          "desktop.")
+        time.sleep(0.3)
+
+    return 3
+
+
 def check_desktop(guest):
     """The desktop: below the strip, holding what it always holds, and an
     icon that stays where it is dragged.
@@ -4426,6 +4704,7 @@ def main():
                         if machine(args.image) == "aarch64" else 0)
         budget_checks = phase("compositor budget", check_budget)
         deskbar_checks = phase("deskbar", check_deskbar)
+        focus_checks = phase("deskbar focus", check_focus_shown)
         desktop_checks = phase("desktop", check_desktop)
         clip_checks = phase("clipboard", check_clipboard)
         cores_checks = phase("cores", check_cores)
@@ -4450,7 +4729,7 @@ def main():
              + stop_checks + wm_checks + latency_checks + editor_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + desktop_checks
+             + focus_checks + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + direct_checks
              + three_d_checks + registry_checks + context_checks
@@ -4481,6 +4760,8 @@ def main():
           f"something else owns it, "
           f"{click_checks} on the widgets under the pointer, "
           f"{deskbar_checks} on starting an application from the Deskbar, "
+          f"{focus_checks} on the Deskbar showing where the focus went at "
+          f"once, "
           f"{desktop_checks} on the desktop below the strip and an icon "
           f"staying where it is dragged, "
           f"{clip_checks} on copying text from one application into "

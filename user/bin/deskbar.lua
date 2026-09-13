@@ -437,13 +437,22 @@ win:publish("menu",
   end)
 
 --------------------------------------------------------------------------
--- What is running, asked twice a second.
+-- What is running, told by the window manager when it changes.
 --
 -- The window manager's list of windows, not `/app`: the registry holds
 -- applications that *registered*, and a program that opens a window by
 -- talking to the desktop directly has a window on screen and no
 -- registration anywhere. What belongs on a taskbar is what is on the
 -- screen, and the desktop is the only thing that knows that.
+--
+-- **Told, not asked on a clock.** This asked on its tick, which is once a
+-- second, so a focus that moved anywhere but here - a click on a window,
+-- Control-W Tab, a window opening - reached the bar up to a second late:
+-- 290 to 1029 ms measured under QEMU, about 600 on average, and "like half
+-- a second" on the ThinkPad. Every request for the list now says `watch`,
+-- and the window manager posts a `windows` event whenever its answer would
+-- be different (`tell_watchers` in `wm.lua`). The event says only that; the
+-- list is asked for again, so the reply stays the one place it is written.
 --
 -- Sorted by handle, which is the order the windows opened in and never
 -- changes. The reply comes back in *stacking* order, and stacking order
@@ -453,6 +462,18 @@ win:publish("menu",
 --------------------------------------------------------------------------
 
 local running = {}          -- { handle, title, icon, focused, hidden }
+
+--
+-- **Pressed in means the window you are in, and a minimised window is not
+-- one.** The window manager's `focused` is the top of its stack, and a
+-- window put away by its own minimise box stays at the top - so the bar drew
+-- a minimised window as the selected one. The click already knew better:
+-- a second click minimises only a window that is focused *and* showing.
+-- One predicate for both, so the picture and the gesture cannot disagree.
+--
+local function selected(w_)
+  return w_.focused and not w_.hidden
+end
 
 --
 -- What picture a window gets, by what was started to make it.
@@ -477,14 +498,16 @@ local function picture(program)
   return icon_of[program]
 end
 
--- Forward-declared: the tick below notices when the Kosmos menu has
--- closed, and the bar itself is built further down.
-local bar
-
-local watcher = ui.view{ x = 0, y = 0, w = 0, h = 0 }
-
-function watcher:tick()
-  local reply = fs.send("/app/wm", { type = "windows" })
+--
+-- The list, asked for again, and whether anything the bar draws from it
+-- changed - which is what a caller hands back to the kit, so an answer that
+-- moved nothing repaints nothing.
+--
+-- `watch` on every request rather than on the first, because it costs a
+-- field and the line that asks then says what it is asking for.
+--
+local function refresh()
+  local reply = fs.send("/app/wm", { type = "windows", watch = win.handle })
   local list = {}
 
   --
@@ -515,14 +538,29 @@ function watcher:tick()
 
   for i = #running, #list + 1, -1 do running[i] = nil end
 
-  -- And the Kosmos end stops being lit when its menu goes. The press is
-  -- immediate; noticing the menu closed is what a tick is for.
-  if bar and bar.lit_menu ~= (#win.menus > 0) then changed = true end
-
-  if changed then win.dirty = true end
+  return changed
 end
 
-win:add(watcher)
+--
+-- **The clock and the meters, which is all the tick is for now.**
+--
+-- Having a `tick` is what puts a window on the kit's once-a-second repaint
+-- (`window:add` in `ui.lua`), and that repaint is what moves the clock, the
+-- processor and memory meters, and the Kosmos end after its menu closes.
+-- The tick used to ask for the list of windows too, and that is what made
+-- the bar a second late.
+--
+-- Empty on purpose, which `testing.md` §18.23 warns is a hook the kit
+-- cannot tell from a full one - and it is exactly that: the whole bar is
+-- repainted every second whether or not the minute or a meter moved.
+--
+local clockwork = ui.view{ x = 0, y = 0, w = 0, h = 0 }
+
+function clockwork:tick() end
+
+win:add(clockwork)
+
+refresh()
 
 
 --
@@ -715,6 +753,16 @@ win.on_event = function(_, ev)
     return true
   end
 
+  --
+  -- The window manager saying its list of windows changed, which it posts
+  -- because `refresh` asks with `watch`. Repainted only when something the
+  -- bar draws from the list moved - a press on the bar has usually painted
+  -- the answer already, and then this finds nothing to do.
+  --
+  if ev.type == "windows" then
+    return refresh()
+  end
+
   return false
 end
 
@@ -900,7 +948,7 @@ local function rounded(g, x, y, w, h, colour)
   end
 end
 
-bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
+local bar = ui.view{ x = 0, y = 0, w = win.w, h = win.h }
 
 --
 -- Where the indicators start, worked out while drawing and remembered so
@@ -1017,8 +1065,6 @@ function bar:draw(g)
     rounded(g, 2, 2, KOSMOS_W - 4, self.h - 4,
             lit(lit(theme.tab, FACE), PRESSED))
   end
-
-  self.lit_menu = menu_up
 
   g:icon(12, iy, "App_Deskbar.png", ICON)
   g:text(12 + ICON + 8, ty, "Kosmos", theme.tab_text)
@@ -1176,7 +1222,7 @@ function bar:draw(g)
     -- is a rectangle drawn around a rounded rectangle, which is the two
     -- vocabularies at once.
     --
-    if w_.focused then
+    if selected(w_) then
       rounded(g, s.x, 2, s.w, self.h - 4, lit(face, PRESSED))
     elseif not w_.hidden then
       rounded(g, s.x, 2, s.w, self.h - 4, face)
@@ -1223,9 +1269,9 @@ function bar:mouse(action, x, y)
   if action ~= "press" then return false end
 
   if x < KOSMOS_W then
-    -- Lit in the same frame as the press, before the menu is even asked
-    -- for. See `instant feedback` in `ui.md`.
-    win.dirty = true
+    -- Lit by the repaint this press causes: returning true is what repaints,
+    -- and by then the menu is open and `#win.menus` says so. See "Instant
+    -- feedback" in `ui.md` §16.13.
     open_kosmos_menu()
     return true
   end
@@ -1269,22 +1315,29 @@ function bar:mouse(action, x, y)
       -- a second thing to be wrong.
       --
       local w_ = s.w_
-      local what = (w_.focused and not w_.hidden) and "minimise" or "raise"
+      local what = selected(w_) and "minimise" or "raise"
 
       --
-      -- **The button changes now, not at the next tick.**
+      -- **The button changes on this press, not when somebody says so.**
       --
-      -- `watcher:tick` is what discovers that the focus moved, and the kit
-      -- wakes twice a second - so the button a person just pressed sat
-      -- unchanged for up to half a second while everything else happened
-      -- first. On a ThinkPad that reads as the bar ignoring the click and
-      -- catching up later, which is the one thing a taskbar must not do:
-      -- it is the control you press when you cannot find a window, so it
-      -- has to answer immediately or you press it again.
+      -- It is the control you press when you cannot find a window, so it has
+      -- to answer at once or you press it again. So the bar draws what it is
+      -- about to ask for, out of what it already knows, and the repaint that
+      -- returning true causes shows it. The `windows` event the request
+      -- causes arrives after and finds nothing to change.
       --
-      -- This is not a second memory of the focus - `tick` still reads the
-      -- window manager and still wins. It is the same answer, half a second
-      -- earlier, and if the request is refused the next tick puts it back.
+      -- One answer is waited for first, the request's own, which is a pass
+      -- of the window manager. Painting before asking would put the bar's
+      -- frame ahead of the raise in the window manager's queue and bring the
+      -- window up later by the same few milliseconds, and the window coming
+      -- up is the larger part of what a person is watching. Measured under
+      -- QEMU with `trace` on: about a tenth of a second from the window
+      -- manager moving the focus to the bar's finished frame, on this path
+      -- and on a window's tab alike.
+      --
+      -- Not a second memory of the focus: the window manager's list still
+      -- wins. A refused request - the window closed in between - asks for
+      -- the list again at once, so the guess does not stick.
       --
       for _, other in ipairs(running) do other.focused = nil end
 
@@ -1295,9 +1348,12 @@ function bar:mouse(action, x, y)
         w_.hidden = true
       end
 
-      win.dirty = true
+      local ok = fs.send("/app/wm", { type = what, window = w_.handle })
 
-      fs.send("/app/wm", { type = what, window = w_.handle })
+      if not ok then
+        refresh()
+      end
+
       return true
     end
   end

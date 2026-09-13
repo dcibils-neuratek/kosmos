@@ -1407,3 +1407,81 @@ full-screen picture decoded - first: 'wm: no room for a 1920x1044 surface
 The lesson is the one the power button taught from the other side: **a
 negative control is not a formality.** Before it ran, this phase was a
 passing test that could not fail.
+
+## 18.30 A bar that shows the focus where it went, at once
+
+Diego, on the ThinkPad: when he moved the focus to another application, its
+button on the Deskbar took "like half a second" to show as selected. The bar
+learned where the focus was by asking the window manager for its list of
+windows on its tick, which is once a second.
+
+**Measured before anything changed.** Two notes the window manager writes
+under `wm trace`, each stamped with the counter at the moment it is written
+rather than when it is printed (`trace_us`): `focus <title> at <us>` when
+the top of its stack changes, and `draw <title> at <us>` when a window
+finishes a frame. The difference is how long the bar took to finish a frame
+after the focus moved, on the one clock both happened on. The bar's frames
+came about 1140 ms apart:
+
+| how the focus moved | focus to the bar's next frame |
+| ------------------- | ----------------------------- |
+| Control-W Tab, five times | 463, 1029, 290, 564, 648 ms |
+| a press on a window | 592 ms |
+| a press on the bar's own button | 92 and 102 ms |
+
+The bar's own presses were never the problem: it paints what it asked for.
+Everything else waited for the tick. The window manager now posts a window
+that asked with `watch` a `windows` event whenever its list would answer
+differently (`tell_watchers`, `ui.md` §16.13).
+
+**The `deskbar focus` phase of `tools/run_screenshot.py`** starts
+`wm trace,deskbar,clock,calc` and moves the focus three rounds of three
+ways - a press on the other window's tab, Control-W Tab, and a press on the
+other window's button on the bar - and every one has to be shown within
+400 ms, with the picture after it drawing that window's button pressed and
+the other not. Then it minimises the focused window by its own box, and that
+button must not be drawn pressed: the window stays at the top of the stack,
+so it is still reported `focused`, and the bar drew it as the window you are
+in. Every path now costs what the bar's own press always did, which is its
+paint - about a tenth of a second here, with `trace` printing every stage of
+every pass. **That is a QEMU number and the bound is not a speed claim**; it
+is there to tell a bar that is told from one that asks on a clock.
+
+```
+=== the fix
+deskbar focus: the bar finished a frame 124, 132, 121, 116, 145, 133, 115,
+133, 117, 119 ms after the focus moved
+PASS: 3 deskbar focus checks
+=== control: the old bar, a 300 ms bound, before the waits were stepped
+deskbar focus: the bar finished a frame 287, 1047, 285, 104, 928, 284, 101,
+906, 276, 97 ms after the focus moved
+FAIL: the Deskbar showed a focus change more than 300 ms after it happened:
+a press on the other window's tab to Calculator took 1047 ms; ...
+=== control: the old bar, the phase as committed
+FAIL: after a press on a window's tab moved the focus to Calculator, the
+Deskbar's buttons for ['Calculator', 'clock'] are [(255, 212, 61),
+(255, 212, 61)]; pressed is (204, 169, 48) ...
+=== control: the fix, with the bar's old reading of `focused`
+FAIL: Calculator, minimised by its own box, is drawn pressed on the Deskbar
+- as the window you are in. ...
+```
+
+**The first control is the one that changed the check.** Every Control-W
+Tab read about 280 ms against the old bar - under the bound - and every tab
+press about a second. The harness's own rhythm, a screendump and the same
+sleeps between each change, had put each kind of sample at the same point of
+the tick every time, so the keyboard alone would have passed against the bug.
+The wait before each change now grows by 170 ms and wraps, which walks the
+samples round a tick of that size. **A test made of identical repeated
+actions samples a periodic fault at one phase of it**, and a clock inside the
+thing being tested is a periodic fault.
+
+The second control failed on the picture rather than the time, and that is
+the check doing its job: the stepped wait put a press just after the old bar
+had asked for its list, so its next frame arrived within the bound and showed
+the focus where it had been.
+
+**Not covered, and each is its own task**: a press on the bar raises the
+strip and gives it the keyboard focus, and a window minimised by its box
+keeps the keys; and the bar repaints itself every second whether or not the
+minute or a meter moved.

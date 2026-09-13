@@ -541,6 +541,25 @@ local function step(what)
 end
 
 --
+-- **The counter, in microseconds, for a trace line another will be
+-- subtracted from.**
+--
+-- A note is printed at the start of the *next* pass, so the moment it is
+-- printed is up to a pass late and says nothing exact. The moment it is
+-- written is exact, and stamping it then is what lets two notes be compared:
+-- `focus` and the `draw` that follows it are how long the Deskbar took to
+-- show a change, measured on the one clock both happened on.
+--
+local function trace_us()
+  if not per_us then
+    per_us = math.max(1, counter_per_tick()
+                         * ((sys.info() or {}).tick_hz or 250) // 1000000)
+  end
+
+  return sys.ticks() // per_us
+end
+
+--
 -- **A poll and its answer get their own budget, and they have to.**
 --
 -- `step` stops at pass forty, which on a healthy desktop is about a third
@@ -2775,7 +2794,14 @@ handlers.draw = function(req)
     -- screen cannot show it either. The Terminal repainted itself once a
     -- second for months because there was nowhere to see that it did.
     --
-    note(("draw %s"):format(tostring(win.title)))
+    --
+    -- Behind `TRACE` here as well as inside `note`, because the string is
+    -- built before `note` can decline it, and this is every finished frame
+    -- of every window.
+    --
+    if TRACE then
+      note(("draw %s at %dus"):format(tostring(win.title), trace_us()))
+    end
 
     damage_window(win)
   end
@@ -2917,7 +2943,100 @@ handlers.windows = function(req)
                hidden = win.hidden or nil }
   end
 
+  -- `watch`: and post this window a `windows` event whenever this answer
+  -- would be different. See `tell_watchers` directly below.
+  local watcher = by_handle[tonumber(req.watch) or -1]
+
+  if watcher then
+    watcher.watching = true
+  end
+
   return { ok = true, windows = out }
+end
+
+--
+-- **Told when the list changes, rather than asking on a clock.**
+--
+-- The Deskbar learned where the focus was by asking `windows` on its tick,
+-- which is once a second, so a click on a window or a Control-W Tab sat on
+-- the bar unchanged until the tick came round. Measured under QEMU with the
+-- two notes this writes under `trace`: from the focus moving to the bar's
+-- next frame took 290 to 1029 ms, about 600 on average - which is Diego's
+-- "like half a second" on the ThinkPad. The bar's *own* clicks were already
+-- quick, because it paints what it asked for without waiting to be told.
+--
+-- So a window may ask to be told: `windows` with `watch` set to its own
+-- handle, and from then on it is posted a `windows` event whenever the
+-- answer would be different. **The event carries nothing.** A list of
+-- titles does not fit in an event, and the reply is the one place the list
+-- is written down - so the watcher asks again and draws what it is told,
+-- and there is no second copy of the list to fall out of step.
+--
+-- **Posted, never sent**, for `nothing blocks in the key path`'s reason:
+-- this runs inside the compositor's loop, and a synchronous call from here
+-- to a process that is not answering stops the desktop.
+--
+-- **Compared once a pass, not announced by each thing that moves a
+-- window.** The list changes in `raise`, `open`, `close`, `minimise`, the
+-- reaper and whatever sets a title, and a rule that needs every one of them
+-- to remember would miss the next one. This looks at the list itself. It
+-- runs before `answer_waiting`, so a change made this pass is delivered this
+-- pass, and it allocates nothing unless something changed - it is on the
+-- frame path.
+--
+local told = { n = 0, handle = {}, title = {}, hidden = {} }
+local told_focus = nil
+
+local function already_told(win)
+  for _, ev in ipairs(win.events) do
+    if ev.type == "windows" then return true end
+  end
+
+  return false
+end
+
+local function tell_watchers()
+  local n = #windows
+  local changed = (n ~= told.n)
+
+  for i = 1, n do
+    local w = windows[i]
+    local hidden = w.hidden or false
+
+    if told.handle[i] ~= w.handle or told.title[i] ~= w.title
+       or told.hidden[i] ~= hidden then
+      told.handle[i], told.title[i], told.hidden[i] = w.handle, w.title, hidden
+      changed = true
+    end
+  end
+
+  for i = n + 1, told.n do
+    told.handle[i], told.title[i], told.hidden[i] = nil, nil, nil
+  end
+
+  told.n = n
+
+  --
+  -- Under `trace`, when the focus moves, stamped with the counter. With the
+  -- `draw` note that follows it, this is how long the Deskbar took to show
+  -- where the focus went - which the display harness holds to a bound.
+  --
+  local top = windows[n]
+
+  if top ~= told_focus then
+    told_focus = top
+    note(("focus %s at %dus"):format(tostring(top and top.title), trace_us()))
+  end
+
+  if not changed then return end
+
+  for i = 1, n do
+    local w = windows[i]
+
+    if w.watching and not already_told(w) then
+      post(w, { type = "windows" })
+    end
+  end
 end
 
 --
@@ -5036,6 +5155,9 @@ while running do
   pointer_pass(input.pointer)
 
   if measuring then t, heap = charge("pointer", t, heap) end
+
+  -- 3b. Whoever asked to be told the list changed, before the answers go.
+  tell_watchers()
 
   step("waiting")
   -- 4. Anybody who has been waiting long enough, or now has something.

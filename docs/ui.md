@@ -619,6 +619,47 @@ gesture on the bar that has to be learned, and the alternative - a click
 always raises - leaves the button under the window you are in doing nothing
 at all.
 
+**Instant feedback.** A control paints its new state at the moment it is
+pressed, out of what the program already knows, and never waits for a
+periodic tick to learn what it just did. Diego's words, on the ThinkPad:
+the click has to feel like the interface responding in real time, not
+catching up. The server's answer still wins - the early picture is the same
+answer arriving sooner, and when the request is refused the program asks
+again at once rather than keeping its guess. A press on a window's button
+paints the button before the window manager's list says anything, and a
+press on the Kosmos end is lit by the repaint the press itself causes.
+
+**And the bar is told when the list changes, rather than asking on a
+clock.** It learned the focus by asking the window manager for its list of
+windows on its tick, which is once a second, so a focus that moved anywhere
+but on the bar - a click on a window, Control-W Tab, a window opening -
+reached the bar up to a second late: 290 to 1029 ms under QEMU, about 600
+on average, and "like half a second" on the ThinkPad. Its own clicks were
+quick all along, which is why the fault read as the bar being sometimes
+slow. Now a `windows` request may carry `watch` with the caller's handle,
+and the window manager posts that window a `windows` event whenever the
+answer would differ:
+
+- **The event carries nothing.** A list of titles does not fit in an event,
+  and the reply is the one place the list is written, so the bar asks again
+  and there is no second copy to fall out of step.
+- **Posted, never sent.** It is raised inside the compositor's loop, and a
+  synchronous call from there to a process that is not answering stops the
+  desktop.
+- **Compared once a pass, not announced by whatever moved a window.** The
+  list changes in `raise`, `open`, `close`, `minimise`, the reaper and
+  whatever sets a title; `tell_watchers` looks at the list itself, before
+  polls are answered, so a change is delivered in the pass that made it and
+  nobody has to remember to announce the next kind.
+
+**Pressed in means the window you are in, and a minimised window is not
+one.** The window manager reports as focused whatever is on top of its
+stack, and a window put away by its own minimise box stays on top - so the
+bar drew a minimised window as the selected one. The bar's click already
+treated a window as selected only while it was showing; the drawing now asks
+the same question, through one predicate, so the picture and the gesture
+cannot disagree.
+
 **Every window keeps a button, however many there are.** They share the room
 between the menu and the indicators, capped so that two windows do not each
 get half the screen, and shrink past that: icon and title, then icon alone,
