@@ -1574,14 +1574,25 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
-    case SYS_IRQ_WAIT:
+    case SYS_IRQ_WAIT: {
         /*
          * No device-authority check, and that is deliberate: holding the
          * capability *is* the authority. The grant was spent at the claim.
+         *
+         * The deadline is capped at an hour for `SYS_SLEEP`'s reason: a
+         * driver that computed it wrongly would otherwise wait a year and
+         * look exactly like a hang. Zero is for ever.
          */
+        unsigned long ticks = (unsigned long)sc->arg[1];
+
+        if (ticks > (unsigned long)TICK_HZ * 3600UL) {
+            ticks = (unsigned long)TICK_HZ * 3600UL;
+        }
+
         result = irq_wait(ipc_resolve_irq(thread_current(),
-                                          (cap_t)sc->arg[0]));
+                                          (cap_t)sc->arg[0]), ticks);
         break;
+    }
 
     case SYS_IRQ_ACK:
         result = irq_ack(ipc_resolve_irq(thread_current(),

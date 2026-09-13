@@ -132,7 +132,9 @@
  *
  *   `SYS_IRQ_WAIT` blocks until one arrives, or returns at once if one
  *   arrived while the driver was busy. A count rather than a flag, so an
- *   interrupt during servicing is not lost.
+ *   interrupt during servicing is not lost. **With `ticks` it waits no
+ *   longer than that** and says `SYS_NO_INTERRUPT`, so a driver whose
+ *   device never interrupts is told rather than hung; zero waits for ever.
  *
  *   `SYS_IRQ_ACK` unmasks. The kernel masks the line on delivery because a
  *   level-triggered source is still asserted when the handler returns, and
@@ -142,7 +144,7 @@
  *   wrote to the local APIC and nothing is left asserted.
  */
 #define SYS_IRQ_CLAIM  46   /* (intid)                -> cap or error       */
-#define SYS_IRQ_WAIT   47   /* (cap)                  -> 0 or error         */
+#define SYS_IRQ_WAIT   47   /* (cap, ticks)           -> 0, none, or error  */
 #define SYS_IRQ_ACK    48   /* (cap)                  -> 0 or error         */
 
 /*
@@ -884,6 +886,7 @@ struct diskinfo {
 #define SYS_ERR_NO_ROOM   (-105)    /* out of processes, or out of memory */
 #define SYS_ERR_NO_CAPS   (-109)    /* this thread's capability table is full */
 #define SYS_ERR_NO_DEVICE (-108)    /* this machine has nothing of that kind */
+#define SYS_NO_INTERRUPT  (-110)    /* a timed interrupt wait ran out; not an error */
 
 /*
  * Everything above is plain preprocessor because user programs written in
@@ -923,6 +926,7 @@ static inline void sys_result_codes_are_distinct(long result)
     case SYS_NO_MESSAGE:
     case SYS_ERR_NO_CAPS:
     case SYS_ERR_NO_DEVICE:
+    case SYS_NO_INTERRUPT:
     default:
         break;
     }

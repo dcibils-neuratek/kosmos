@@ -111,7 +111,12 @@ void             irq_release_owned_by(struct process *owner);
  */
 bool             irq_deliver(unsigned intid);
 
-long             irq_wait(struct irq_line *line);
+/*
+ * Takes an interrupt that has arrived, or blocks until one does - for no
+ * longer than `ticks` scheduler ticks when that is not zero, and zero is for
+ * ever. `SYS_NO_INTERRUPT` when the deadline came first.
+ */
+long             irq_wait(struct irq_line *line, unsigned long ticks);
 long             irq_ack(struct irq_line *line);
 
 #endif /* KERNEL_IRQ_H */

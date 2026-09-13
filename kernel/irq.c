@@ -14,6 +14,7 @@
 
 #include "irq.h"
 
+#include "cpu.h"
 #include "hal.h"
 #include "kernel.h"
 #include "process.h"
@@ -245,12 +246,29 @@ bool irq_deliver(unsigned intid)
  * to prevent: it blocks and drops the lock at the one instant where this
  * thread is both findable and asleep.
  */
-long irq_wait(struct irq_line *line)
+long irq_wait(struct irq_line *line, unsigned long ticks)
 {
+    struct thread *self = thread_current();
+    uint64_t deadline = 0;
     unsigned long flags;
 
     if (line == NULL) {
         return SYS_ERR_DENIED;
+    }
+
+    /*
+     * **A deadline, when one is asked for**, in the counter's clock like
+     * every deadline in the kernel (`thread.h` says why). Taken once, before
+     * the loop, so a wake that turns out to be for nothing does not start the
+     * wait again from the beginning.
+     *
+     * It exists because a driver on real hardware cannot know its device
+     * will ever interrupt. Without it, an xHCI controller whose MSI never
+     * arrives is a driver asleep for good and a machine that says nothing -
+     * and the ThinkPad is where that would happen first.
+     */
+    if (ticks != 0) {
+        deadline = thread_deadline_in(ticks);
     }
 
     for (;;) {
@@ -268,22 +286,45 @@ long irq_wait(struct irq_line *line)
         }
 
         /*
+         * The deadline, looked at under the lock and after `pending`, so an
+         * interrupt that arrived as the deadline passed is taken rather than
+         * reported missing.
+         *
+         * **And this thread takes itself off the line.** `irq_deliver` and
+         * `irq_release` clear `waiter` before they wake it; a deadline clears
+         * nothing. Left there, the next interrupt would wake a thread that
+         * has already returned and gone on to wait for something else - the
+         * hazard `ipc_receive`'s timeout takes itself off its queue for.
+         */
+        if (deadline != 0 && cpu_cycles() >= deadline) {
+            if (line->waiter == self) {
+                line->waiter = NULL;
+            }
+
+            spin_unlock(&lines_lock, flags);
+            return SYS_NO_INTERRUPT;
+        }
+
+        /*
          * One waiter, and a second is refused rather than queued. A line
          * belongs to one driver and a driver waits on it from one thread;
          * two threads waiting would be a design nobody has asked for, and
          * guessing at which should be woken is the kind of policy that is
          * wrong in a way nothing catches.
          */
-        if (line->waiter != NULL) {
+        if (line->waiter != NULL && line->waiter != self) {
             spin_unlock(&lines_lock, flags);
             return SYS_ERR_DENIED;
         }
 
-        line->waiter = thread_current();
+        line->waiter = self;
+        self->wake_at = deadline;
 
         thread_block_and_release(&lines_lock, flags);
 
-        /* Woken: either an interrupt arrived or the line went away. Round
+        self->wake_at = 0;
+
+        /* Woken: an interrupt, the line going away, or the deadline. Round
          * again, and the loop decides which. */
     }
 }

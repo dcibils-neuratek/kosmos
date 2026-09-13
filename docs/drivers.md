@@ -121,8 +121,17 @@ This is the actual work, and everything below depends on it.
    case on the ThinkPad rather than an edge.
 
    Refused: a number the board spends on itself (`hal_irq_available` - the
-   tick above all), and a line somebody already holds. The blocking half of `SYS_IRQ_WAIT` is tested by the first driver
-   (0.10.43), because only a real device can end that wait.
+   tick above all), and a line somebody already holds.
+
+   **And a wait can have a deadline** (0.10.52): `SYS_IRQ_WAIT (cap, ticks)`
+   returns `SYS_NO_INTERRUPT` when it runs out, and zero still waits for
+   ever. A driver on real hardware cannot know its device will ever
+   interrupt, and a wait that never ends is a driver that never says so. On
+   a deadline wake the waiter takes itself off the line, because delivery
+   and release clear it before they wake and a deadline does not. The
+   blocking half was first exercised by a device - the power button
+   (0.10.43) - when nothing else could end that wait; the deadline lets the
+   suite test it as well (`testing.md` §18.35).
 
 **The two mappings do not overlap, and that is deliberate**: registers are
 device memory and uncached, buffers are ordinary memory and cached, and a

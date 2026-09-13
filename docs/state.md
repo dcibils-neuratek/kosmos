@@ -8,6 +8,20 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: an interrupt wait with a deadline
+
+**`SYS_IRQ_WAIT (cap, ticks)`, and `SYS_NO_INTERRUPT` (-110) when the
+deadline comes first**; zero is still for ever, so the power button is
+unchanged. Built for USB step 2, where the xHCI driver waits on an MSI that has
+never been seen reaching a process on x86, and a driver whose interrupt never
+comes has to say so on the ThinkPad rather than hang. The waiter takes itself
+off the line on a deadline wake. The blocking half of `irq_wait` has a suite
+test for the first time; `testing.md` §18.35 has both controls.
+
+**Next**: USB step 2, enumeration - rings and an interrupter, a No-Op command
+answered through the event ring by the controller's first interrupt, USB 2
+ports reset, devices given slots and addresses, and their descriptors read.
+
 ### 12 September: the Super Nintendo at twice the size
 
 **`--scale 2` before the ROM, through `wm` or a launcher**, opens the

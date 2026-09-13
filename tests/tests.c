@@ -3723,9 +3723,9 @@ static bool test_a_driver_may_map_devices_and_not_ram(void)
  * deliver, count, take, release. What is *not* exercised is the blocking
  * half of `irq_wait` - a test thread with nothing pending would block for
  * ever and there is no interrupt coming to wake it - so every wait below
- * happens with something already delivered. The blocking path gets its test
- * from the first real driver, which is the only thing that can produce a
- * genuine interrupt.
+ * happens with something already delivered. The blocking path is the next
+ * test's: a deadline is what lets a test thread block with nothing coming
+ * and still come back.
  *
  * **The refusals are the interesting half.** A claim table that said yes to
  * everything would pass a test that only ever claimed a free line, and the
@@ -3772,7 +3772,7 @@ static bool test_a_driver_can_claim_an_interrupt(void)
 
     /* One interrupt, delivered the way the handler delivers it, then taken. */
     ok = irq_deliver(taken)                 /* it is somebody's */
-      && irq_wait(mine) == 0                /* and waiting finds it */
+      && irq_wait(mine, 0) == 0             /* and waiting finds it */
       && mine->pending == 0;                /* exactly once */
 
     /*
@@ -3784,8 +3784,8 @@ static bool test_a_driver_can_claim_an_interrupt(void)
       && irq_deliver(taken)
       && irq_deliver(taken)
       && mine->pending == 2
-      && irq_wait(mine) == 0
-      && irq_wait(mine) == 0
+      && irq_wait(mine, 0) == 0
+      && irq_wait(mine, 0) == 0
       && mine->pending == 0;
 
     irq_release(mine);
@@ -3793,8 +3793,160 @@ static bool test_a_driver_can_claim_an_interrupt(void)
     return ok
         && twice == NULL                    /* the second claim: refused */
         && !irq_deliver(taken)              /* released: nobody's again */
-        && irq_wait(mine) == SYS_ERR_DENIED /* and the capability is stale */
+        && irq_wait(mine, 0) == SYS_ERR_DENIED /* and the capability is stale */
         && !hal_irq_available(0);           /* and 0 is never a driver's */
+}
+
+/*
+ * An interrupt wait can have a deadline, and a delivery still ends one first.
+ *
+ * The blocking half of `irq_wait`, which the test above cannot reach: with
+ * nothing pending a waiter blocks, and before deadlines nothing a test could
+ * do would bring it back. A first waiter asks for ten ticks with nothing
+ * coming and must come back with `SYS_NO_INTERRUPT` - not before the ten, and
+ * long before a second - having taken itself off the line, so the next
+ * delivery is counted as pending rather than waking a thread that has gone.
+ * A second waiter asks for two seconds, is delivered to from here once it is
+ * seen blocked, and must come back with 0 long before its deadline.
+ *
+ * In threads of their own, because the suite's thread runs on core zero with
+ * nothing behind it and must never block (`test_a_caller_ends_a_watched_sleep`
+ * found that out). **`irq_release` at the end, always**, so a waiter still
+ * blocked is woken with SYS_ERR_DENIED and exits rather than being left on a
+ * line nobody owns.
+ */
+static struct irq_line *timed_line;
+static volatile bool timed_first_done;
+static volatile bool timed_second_done;
+static volatile long timed_first_result;
+static volatile long timed_second_result;
+static volatile bool timed_first_not_early;
+static volatile bool timed_first_not_late;
+static volatile bool timed_second_early;
+
+static void timed_first_waiter(void *arg)
+{
+    uint64_t not_before, not_after;
+
+    (void)arg;
+
+    /* Ten ticks asked, so not before nine and not as late as a second. */
+    not_before = thread_deadline_in(9);
+    not_after = thread_deadline_in(TICK_HZ);
+
+    timed_first_result = irq_wait(timed_line, 10);
+    timed_first_not_early = cpu_cycles() >= not_before;
+    timed_first_not_late = cpu_cycles() < not_after;
+    timed_first_done = true;
+    thread_exit();
+}
+
+static void timed_second_waiter(void *arg)
+{
+    uint64_t long_before;
+
+    (void)arg;
+
+    /* Two seconds asked for; one is "long before". */
+    long_before = thread_deadline_in(TICK_HZ);
+
+    timed_second_result = irq_wait(timed_line, 2u * TICK_HZ);
+    timed_second_early = cpu_cycles() < long_before;
+    timed_second_done = true;
+    thread_exit();
+}
+
+static bool test_an_interrupt_wait_can_have_a_deadline(void)
+{
+    struct thread *first, *second;
+    uint64_t give_up;
+    unsigned i, taken = 0;
+    bool found = false;
+    bool cleared = false, counted = false;
+    bool blocked = false, delivered = false;
+
+    timed_first_done = false;
+    timed_second_done = false;
+    timed_first_result = 1;
+    timed_second_result = 1;
+    timed_first_not_early = false;
+    timed_first_not_late = false;
+    timed_second_early = false;
+
+    /* The first number this board says a driver may have, as above. */
+    for (i = 0; i < 1024; i++) {
+        if (hal_irq_available(i)) {
+            taken = i;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        return false;
+    }
+
+    timed_line = irq_claim(taken, NULL);
+
+    if (timed_line == NULL) {
+        return false;
+    }
+
+    first = thread_create_suspended("timed-first", timed_first_waiter, NULL);
+    second = thread_create_suspended("timed-second", timed_second_waiter, NULL);
+
+    if (first == NULL || second == NULL) {
+        irq_release(timed_line);
+        return false;
+    }
+
+    thread_wake(first);
+    give_up = thread_deadline_in(2u * TICK_HZ);
+
+    while (!timed_first_done && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    if (timed_first_done) {
+        cleared = timed_line->waiter == NULL;
+        counted = irq_deliver(taken)
+               && timed_line->pending == 1
+               && irq_wait(timed_line, 0) == 0     /* pending: takes, no block */
+               && timed_line->pending == 0;
+    }
+
+    thread_wake(second);
+    give_up = thread_deadline_in(TICK_HZ);
+
+    while (timed_line->waiter == NULL && !timed_second_done
+           && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    blocked = timed_line->waiter != NULL;
+    delivered = irq_deliver(taken);
+    give_up = thread_deadline_in(3u * TICK_HZ);
+
+    while (!timed_second_done && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    irq_release(timed_line);
+
+    /* Whatever the release woke, a moment to finish. */
+    give_up = thread_deadline_in(TICK_HZ / 2u);
+
+    while ((!timed_first_done || !timed_second_done)
+           && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    return timed_first_done && timed_first_result == SYS_NO_INTERRUPT
+        && timed_first_not_early && timed_first_not_late
+        && cleared && counted
+        && blocked && delivered
+        && timed_second_done && timed_second_result == 0
+        && timed_second_early;
 }
 
 static bool test_a_region_can_be_one_physical_run(void)
@@ -6280,6 +6432,8 @@ static const struct test tests[] = {
     { "mem: a region can be one physical run", test_a_region_can_be_one_physical_run },
     { "irq: a line is claimed, counted and given back",
                                           test_a_driver_can_claim_an_interrupt },
+    { "irq: a wait with a deadline, and a delivery that ends one",
+                                          test_an_interrupt_wait_can_have_a_deadline },
     { "dev: registers may be mapped, RAM may not",
                                           test_a_driver_may_map_devices_and_not_ram },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },

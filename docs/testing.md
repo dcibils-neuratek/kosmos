@@ -1297,8 +1297,10 @@ the channel order, not the server's unity mix.
 
 The driver primitives had one piece no suite could reach: the blocking half of
 `SYS_IRQ_WAIT`. A kernel test can call `irq_deliver` the way the handler does,
-but a thread that waits with nothing pending waits for ever - only a device
-can end that wait. So the test is a device.
+but a thread that waited with nothing pending waited for ever - only a device
+could end that wait. So the test was a device. Since 0.10.52 a wait can have a
+deadline and the suite reaches that half too (§18.35); the power button stays,
+because it is still the one test in which a device is what ends the wait.
 
 QEMU `virt` wires its power key to a PL061 GPIO controller, and QMP's
 `system_powerdown` pulses it. `user/servers/powerbutton.c` finds the
@@ -1803,3 +1805,49 @@ name at the prompt is a separate fault, and older than this.
 **What neither can say is how a real game looks at 1024 by 960**, or what it
 costs in frames. That is `make snes-check ROM=...`'s, which needs a ROM, and
 the ThinkPad's.
+
+---
+
+## 18.35 An interrupt wait with a deadline
+
+`irq: a wait with a deadline, and a delivery that ends one`, in the kernel
+suite, and the first test of `irq_wait`'s blocking half that needs no device.
+
+The suite claims one line and both threads wait on it. The first waits ten
+ticks with nothing coming, and must come back with `SYS_NO_INTERRUPT` - not before nine
+ticks, and long before a second - with the line no longer naming it, so that
+a delivery afterwards is counted as pending and taken without anybody
+blocking. A second thread waits two seconds, is delivered to from the suite
+once it is seen blocked, and must come back with 0 long before its deadline.
+Both are threads of their own, because the suite's thread must never block,
+and the line is released at the end whatever happened, so a waiter still
+blocked is woken with `SYS_ERR_DENIED` rather than left on a line nobody owns.
+
+With the waiter left on the line after a deadline:
+
+```
+not ok 131 - irq: a wait with a deadline, and a delivery that ends one
+...
+FAIL: 1 of 155 test(s) failed:
+  not ok 131 - irq: a wait with a deadline, and a delivery that ends one
+```
+
+With no deadline ever set, the first waiter never came back. The test gave
+up rather than hanging the suite, which went on to finish all 155:
+
+```
+not ok 131 - irq: a wait with a deadline, and a delivery that ends one
+...
+FAIL: 1 of 155 test(s) failed:
+  not ok 131 - irq: a wait with a deadline, and a delivery that ends one
+```
+
+The suite reports the test as one result, so both controls print the same
+line; what differs is what was taken out. Each control restored `kernel/irq.c` a second and more after its build and
+gave the file a fresh timestamp, because of what §18.34 found GNU Make 3.81
+doing to a file restored within the same second. The suites stand at
+aarch64 155/155 and x86-64 151/151.
+
+**What this cannot show is an MSI reaching a process on x86**: nothing in
+either suite raises one, and the power button is on the ARM board. That is
+the xHCI driver's to show, with the controller's first interrupt.

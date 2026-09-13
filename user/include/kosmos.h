@@ -257,7 +257,18 @@ static inline long kosmos_irq_claim(unsigned long intid)
 /* Until one arrives, or at once if one arrived while this was busy. */
 static inline long kosmos_irq_wait(long cap)
 {
-    return sys1(SYS_IRQ_WAIT, cap);
+    return sys2(SYS_IRQ_WAIT, cap, 0);
+}
+
+/*
+ * The same, for no longer than `ticks` scheduler ticks, and
+ * `SYS_NO_INTERRUPT` when none came: what a driver on real hardware waits
+ * with, where a device that never interrupts has to be reported rather than
+ * waited on for ever.
+ */
+static inline long kosmos_irq_wait_for(long cap, unsigned long ticks)
+{
+    return sys2(SYS_IRQ_WAIT, cap, (long)ticks);
 }
 
 /* Unmask, once the device has been quietened. A no-op on an MSI. */
