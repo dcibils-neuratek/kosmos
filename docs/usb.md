@@ -8,7 +8,7 @@ else.
 | step | what it ends in | state |
 | ---- | --------------- | ----- |
 | 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
-| 2. enumeration | a device's descriptors read: what it is, who made it | built, and run under QEMU |
+| 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. bulk transfers | bytes to and from an endpoint | not started |
 | 4. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
 | 5. Ethernet | a USB-C adapter carrying the network stack | not started |
@@ -406,19 +406,126 @@ For each controller, after step 1:
    command inside the doorbell write: the answer is on the ring before anybody
    waits, and the first version of this reported no interrupt while one sat
    pending on its line;
-5. for every port with a device: reset it if it is USB 2 and print its speed
-   after; Enable Slot; Address Device; the device descriptor and the product
-   string, printed as one line;
-6. **stop the controller and reset it before exiting.** The kernel takes the
-   region back when the process ends, and a controller still running would go
-   on writing events into pages that may be somebody else's by then.
+5. for every port: its change bits cleared, and if it has a device, a reset
+   if it is USB 2 and its speed printed after; Enable Slot; Address Device,
+   once more if that fails; the device descriptor and the product string,
+   printed as one line;
+6. **keep every controller that started, and watch it** - below. One that did
+   not start is stopped and reset: the kernel takes the region back when the
+   process ends, and a controller still running would go on writing events
+   into pages that may be somebody else's by then. With none running, the
+   driver exits.
+
+### On the ThinkPad
+
+0.10.54 ran on the T14 on 12 September. Read off the photograph:
+
+- **Both controllers answered the No-Op by interrupt**, on interrupts 21 and
+  22: 00:14.0, the chipset's, and 00:0d.0 - most likely the one behind the
+  USB-C sockets. It is the first time a real
+  chipset's interrupt has reached a process on x86.
+- **Both asked for 34 scratchpad pages**, and ran with them - a path QEMU
+  never takes. **Both use 32-byte contexts**, so the 64-byte path has still
+  run nowhere.
+- **Three devices named themselves:** port 1, `04d9:fc38`, "USB Gaming
+  Mouse", full-speed - Diego's mouse; port 4, `04f2:b724`, "Integrated
+  Camera", class 239; port 3, `06cb:00bd`, class 255 and no product string.
+  Ports 3, 4, 7 and 10 are the four step 1 found on 00:14.0.
+  06cb is Synaptics, so port 3 is most likely the fingerprint reader; that is
+  an inference, not a lookup.
+- **Two did not**: port 7, high-speed, and port 10, full-speed, each "no slot
+  and address for the device" - which said nothing about which command
+  failed, or how. Diego sees three things plugged in, the stick, the mouse
+  and the camera, so port 7 is probably the stick Kosmos booted from and
+  port 10 something inside the laptop; both are guesses until a device is
+  pulled out and the driver says which port went quiet.
+
+So the driver now says why, tries once more, and stays to watch - the two
+sections below.
+
+### Why a device was not named, and a second try
+
+**Every failure now says which step failed and what the controller
+answered**: the completion code in its event (6.4.5, Table 6-91), named for
+codes 1 to 9 and given as a number beyond them, or "no answer within a
+second" when no event came. The form, which the ThinkPad has not yet
+printed:
+
+```
+xhci: 00:14.0 port 7: Address Device failed: USB Transaction Error (4)
+```
+
+**Then once more**, as 4.6.5's notes allow: a failed Address Device leaves
+its slot in Default, and software may disable the slot or reset the device
+and try again. So the slot is given back, a USB 2 port is reset again, the
+driver waits 50 ms, and Enable Slot and Address Device run from the start. A
+line says whether that worked. The wait stands for USB 2.0's recovery
+interval (9.2.6.3), which is not in the references here, so 50 ms is chosen
+well above it as remembered rather than quoted. **The first attempt is left
+as it was**, with no wait, so a photograph says which of the two a device
+needed.
+
+**Every slot is given back** - after an unplug, after a first failure, and
+after a second, which the first version of the retry forgot: the port
+records no slot for a device it could not address, so nothing later would
+have disabled it, and the ThinkPad's two failing ports would have held two of
+the eight slots from boot. A slot numbered past the ones enabled, which QEMU
+hands out and a controller should not (5.4.7), is given back too. Its entry
+in the context array goes to 0 once the controller has said it is disabled
+(4.6.4, 6.1).
+
+### Plugged in and pulled out
+
+**Diego asked for it on 12 September**: unplug the mouse and see which port
+went quiet, so the sockets on the outside of the laptop can be matched to the
+port numbers inside it. There were two ways. A `usbscan` command could run
+the driver again, but it would need a way to ask init for device authority.
+Or the driver could stay up and print changes as they happen. He chose the
+second, which is also the driver a mouse needs.
+
+**After the boot scan the driver stays**, with every controller that started.
+It loops over them: it waits up to 50 ms for a controller's interrupt, empties
+its event ring, and reads every port's status. **The ports decide, not the
+events.** 4.19.2 promises no agreement between a read of PORTSC and the
+events already on the ring, so an event only makes the driver look sooner. A
+plug interrupts at once; the 50 ms bounds a controller whose interrupt never
+comes.
+
+**A port's change bits are cleared before anything is done about it**,
+because a port raises no further change events until every one is clear
+(4.19.2). The boot scan clears them too, before it looks at each port, so a
+change after that instant belongs to the watch. On a connect change:
+
+- a device recorded on the port has left: a line saying "unplugged" and what
+  it was, and its slot given back;
+- and if the port holds a device now, it is reset, addressed and named
+  exactly as at boot.
+
+What QEMU prints, with a keyboard pulled out and put back:
+
+```
+xhci: watching for devices plugged in and out
+xhci: 00:03.0 port 5: unplugged, 0627:0001 "QEMU USB Keyboard"
+xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Keyboard"
+```
+
+**What it does not do is talk to a device after naming it.** A mouse needs
+its configuration set, an interrupt endpoint read, and a way for a process to
+move the pointer.
 
 ### What QEMU cannot show
 
 - **Scratchpad pages, 64-byte contexts, and a controller that addresses only
   32 bits.** QEMU's asks for no scratchpads (HCSPARAMS2 reads 0Fh), has CSZ
   clear and AC64 set. All three paths are written, and the "runs:" line says
-  which apply, so a photograph from the ThinkPad shows it.
+  which apply. The ThinkPad has run the first: both its controllers asked for
+  34 pages. Both use 32-byte contexts, so the second has run nowhere.
+- **A second attempt at an address.** QEMU addresses every device the first
+  time, so the retry, and the slots it gives back, are read and not run. The
+  ThinkPad's ports 7 and 10 are where they first run.
+- **A SuperSpeed device pulled out.** The check pulls the keyboard, a USB 2
+  device, and the stick stays in.
 - **A full-speed device's packet size.** QEMU attaches the keyboard at high
   speed and the stick at SuperSpeed, so Evaluate Context never runs.
 - **An interrupt that takes time.** QEMU's arrive with the answer; a real
@@ -442,6 +549,15 @@ one the QEMU binary carries: `info usb`'s "Product" is QEMU's name for the
 device model, and for the stick that is "QEMU USB MSD" while the stick itself
 says "QEMU USB HARDDRIVE" - which the first run found. 14 checks,
 with four negative controls in `testing.md` §18.37.
+
+**Then a keyboard is pulled out and put back** through QEMU's monitor, on
+the port it left, once for every slot its controller enabled - eight - and
+each time must bring exactly one unplug line and one named keyboard on that
+port. **Eight, because a replug alone cannot catch a driver that keeps its
+slots**: QEMU forgets a slot's port when its device leaves, and that driver
+passed two rounds. What QEMU keeps is the slot enabled, so the same driver
+now runs out on the eighth. 17 checks, with two negative controls in
+`testing.md` §18.38.
 
 What QEMU prints:
 

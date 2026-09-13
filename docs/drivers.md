@@ -158,7 +158,8 @@ A device this simple was chosen so a failure would point at the primitives
 rather than at the device. The next driver is xHCI, and its first step
 exists: `user/servers/xhci.c` (0.10.48) finds every controller, takes each
 from the firmware, resets it and reads its ports; its second (0.10.54) gives
-each device a slot and an address and reads what it is. `usb.md` is how USB
+each device a slot and an address and reads what it is, and since 0.10.55 it
+stays and does the same for a device plugged in later. `usb.md` is how USB
 works here, written as each step lands.
 
 Estimated at 500-800 lines in the kernel, and the largest architectural

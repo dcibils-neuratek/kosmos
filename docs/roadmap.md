@@ -162,7 +162,10 @@ is the one that makes the machine Diego owns behave like a computer:
    **Step two is built (0.10.54): devices are named.** Each controller is
    given its rings and interrupter and started, each device a slot, an
    address, and its descriptors read, by interrupt - MSI-X, which the PC
-   board gained for it. Next: bulk transfers.
+   board gained for it. On the ThinkPad it named three devices of five, so
+   since 0.10.55 a failure says why and gets a second attempt, and the
+   driver stays, naming devices as they are plugged in and pulled out. Next:
+   bulk transfers - or a USB mouse first, which is Diego's call.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage

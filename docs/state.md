@@ -8,6 +8,35 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: USB plug and unplug lines, and why a device is not named
+
+**Step 2 ran on the ThinkPad** (0.10.54). Both controllers, 00:14.0 and
+00:0d.0, answered by interrupt, asked for 34 scratchpad pages each and use
+32-byte contexts. Diego's mouse, the camera and a Synaptics device - most
+likely the fingerprint reader - named themselves; port 7 (high-speed) and
+port 10 (full-speed) did not, and the driver did not say why.
+
+**So a failure now says which step and what the controller answered**, and
+Address Device is tried once more after the slot is given back, the port
+reset and 50 ms. **And the driver stays**, printing a line for every device
+plugged in or pulled out - Diego's choice, over a `usbscan` command, for
+matching the laptop's sockets to port numbers, and the long-lived driver a
+mouse needs anyway. `usb.md` §4 has both, and `testing.md` §18.38 the check:
+the keyboard is put back once for every slot, because a driver that kept its
+slots passed two rounds, and it fails on the eighth. Reading the driver to
+write that down found the retry keeping a slot for good.
+
+**`-dirty` on the T14's build** was untracked files: `.vscode/` and a stray
+screenshot. The Makefile's rule leaves out `docs/screenshots` and top-level
+dot-directories now, and still counts the rest of `docs/`, because
+`docs/cheatsheet.html` is in the image.
+
+**Next**: a stick with this. On the T14, photograph the lines for ports 7 and
+10, then pull the mouse and the stick out and put them back, to see which
+socket is which port. Then Diego's call: a USB mouse - configuration,
+interrupt transfers, and a way for a process to move the pointer - before
+bulk transfers, or after.
+
 ### 12 September: USB step 2 - the devices say what they are
 
 **Enumeration works under QEMU, by interrupt.** Each controller gets its rings

@@ -12,9 +12,13 @@
  * each USB 2 port that has a device, gives every device a slot and an
  * address, and reads its descriptors: what it is and who made it - step two.
  *
- * **Then it stops the controller and exits.** Nothing yet uses a device once
- * it is named, and a controller left running would go on writing events into
- * rings whose pages the kernel takes back when this process ends.
+ * **Then it stays, and watches.** A device plugged in is reset, addressed and
+ * named as the ones found at boot were, and one pulled out has its slot given
+ * back, each with a line saying which port - which is how a socket on the
+ * outside of a machine is matched to a port number inside it. A controller
+ * that did not start is stopped, because its rings' pages go back to the
+ * kernel with this process and a controller still running would write into
+ * them.
  *
  * --------------------------------------------------------------------
  * Where the numbers come from.
@@ -105,6 +109,8 @@
 #define PORTSC_PP           (1u << 9)
 #define PORTSC_SPEED(v)     (((v) >> 10) & 0xFu)
 #define PORTSC_PRC          (1u << 21)
+#define PORTSC_CSC          (1u << 17)
+#define PORTSC_CHANGES      0x00FE0000u /* CSC PEC WRC OCC PRC PLC CEC, 17:23 */
 
 /* Runtime registers, interrupter 0: Table 5-37. */
 #define RT_IMAN             0x20u
@@ -162,6 +168,7 @@
 #define TRB_STATUS          4u
 #define TRB_LINK            6u
 #define TRB_ENABLE_SLOT     9u
+#define TRB_DISABLE_SLOT    10u
 #define TRB_ADDRESS_DEVICE  11u
 #define TRB_EVALUATE        13u
 #define TRB_NOOP            23u
@@ -194,6 +201,8 @@
 #define PAGE                4096u
 #define RING_TRBS           256u
 #define DEVICES_MAX         8u
+#define NAME_MAX_CHARS      48u         /* of a product string, kept */
+#define PORT_FAILED         0xFFu       /* a port whose device was not named */
 #define PAGES_A_DEVICE      4u
 #define PAGE_DCBAA          0u
 #define PAGE_COMMANDS       1u
@@ -219,6 +228,22 @@
 #define SETTLE_MS           500u
 #define ANSWER_MS           1000u       /* a command, a transfer, a port reset */
 #define EVENTS_MAX          64u         /* unrelated events borne while waiting */
+
+/*
+ * The pause before a second attempt to address a device. xHCI 1.2 4.6.5 puts
+ * timing USB's SetAddress recovery interval on software and names USB 2.0
+ * 9.2.6.3 for it; that specification is not in this project's references, so
+ * this is chosen well above the interval as remembered rather than quoted.
+ */
+#define RECOVERY_MS         50u
+
+/*
+ * How long the watch waits on one controller's interrupt before looking at the
+ * next. A plug or an unplug interrupts at once, so this bounds only a machine
+ * whose interrupt never arrives, and two controllers are looked at ten times a
+ * second between them.
+ */
+#define WATCH_MS            50u
 
 struct ring {
     uint32_t *trbs;                     /* RING_TRBS of them, the last a Link */
@@ -269,6 +294,18 @@ struct controller {
     unsigned      intid;
     unsigned      interrupts;           /* arrived, and counted */
     unsigned      named;                /* devices whose descriptors were read */
+    uint32_t      last_code;            /* the last answer's code; 0, none came */
+
+    bool          running;              /* started, and watched */
+
+    /* Each port's device: 0 none, its slot, or PORT_FAILED - there, not named. */
+    unsigned char port_slot[PORTS_MAX + 1];
+
+    /* What each slot's device said it was, for the line when it leaves. */
+    bool          described[DEVICES_MAX + 1];
+    uint16_t      vendor[DEVICES_MAX + 1];
+    uint16_t      product[DEVICES_MAX + 1];
+    char          name[DEVICES_MAX + 1][NAME_MAX_CHARS + 1];
 };
 
 static long console = -1;
@@ -673,6 +710,7 @@ static bool command(struct controller *c, uint32_t w0, uint32_t w1,
     unsigned seen;
 
     mmio_write32(c->doorbells, 0);      /* doorbell 0, target 0: commands */
+    c->last_code = 0;
 
     for (seen = 0; seen < EVENTS_MAX; seen++) {
         if (!wait_event(c, ticks_for(ANSWER_MS), done)) {
@@ -681,7 +719,8 @@ static bool command(struct controller *c, uint32_t w0, uint32_t w1,
 
         if (TRB_TYPE_OF(done[3]) == TRB_COMPLETION
             && (((uint64_t)done[1] << 32) | done[0]) == at) {
-            return TRB_CODE_OF(done[2]) == CC_SUCCESS;
+            c->last_code = TRB_CODE_OF(done[2]);
+            return c->last_code == CC_SUCCESS;
         }
     }
 
@@ -910,6 +949,58 @@ static bool reset_port(struct controller *c, unsigned port)
 
 /* ------------------------------------------------------------ a device */
 
+/*
+ * A completion code's name, for the ones Table 6-90 gives here legibly: 1 to 9.
+ * The number is printed beside every one, so a code past those is still
+ * exact, only unnamed. 0 is this driver's own: nothing answered in time.
+ */
+static const char *completion_name(uint32_t code)
+{
+    switch (code) {
+    case 0u: return "no answer within a second";
+    case 1u: return "Success";
+    case 2u: return "Data Buffer Error";
+    case 3u: return "Babble Detected Error";
+    case 4u: return "USB Transaction Error";
+    case 5u: return "TRB Error";
+    case 6u: return "Stall Error";
+    case 7u: return "Resource Error";
+    case 8u: return "Bandwidth Error";
+    case 9u: return "No Slots Available Error";
+    default: return "completion code";
+    }
+}
+
+/*
+ * "xhci: 00:14.0 port 7: Address Device failed: USB Transaction Error (4)",
+ * with what attempt it was when there was more than one. A step whose command
+ * succeeded and answered something unusable has no code to give, and its name
+ * says the whole of it.
+ */
+static void say_failure(struct controller *c, unsigned port, const char *step,
+                        const char *note, struct say_line *line)
+{
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, port);
+    say_text(line, ": ");
+    say_text(line, step);
+
+    if (c->last_code != CC_SUCCESS) {
+        say_text(line, " failed: ");
+        say_text(line, completion_name(c->last_code));
+
+        if (c->last_code != 0) {
+            say_text(line, " (");
+            say_dec(line, c->last_code);
+            say_text(line, ")");
+        }
+    }
+
+    say_text(line, note);
+    say_send(console, line);
+}
+
 /* Entry `index` of a context: 0 the input control context, 1 the slot, 2
  * endpoint 0 (6.2.5) - each 32 or 64 bytes. */
 static uint32_t *context(const struct controller *c, uint32_t *base,
@@ -919,25 +1010,58 @@ static uint32_t *context(const struct controller *c, uint32_t *base,
 }
 
 /*
- * A slot and an address (4.3.2 to 4.3.4): Enable Slot, then an input context
- * naming the port and the default control endpoint, an output context in
- * the array, and Address Device.
+ * A slot given back (4.6.4). Its entry in the context array goes to 0, what an
+ * unallocated slot's entry holds (6.1) - once the controller has said the slot
+ * is disabled, because software shall not modify the entry of a slot that is
+ * still enabled.
  */
-static bool address_device(struct controller *c, struct device *d)
+static void disable_slot(struct controller *c, unsigned slot)
+{
+    uint32_t done[4];
+
+    if (command(c, 0, 0, TRB_TYPE(TRB_DISABLE_SLOT) | TRB_SLOT(slot), done)) {
+        c->dcbaa[slot] = 0;
+    }
+}
+
+/*
+ * One attempt at a slot and an address (4.3.2 to 4.3.4): Enable Slot, then an
+ * input context naming the port and the default control endpoint, an output
+ * context in the array, and Address Device. NULL when it worked, and otherwise
+ * the step that failed, with its code in `last_code`.
+ */
+static const char *address_once(struct controller *c, struct device *d)
 {
     uintptr_t page;
     uint32_t done[4];
     uint32_t *icc, *slot, *ep0;
 
+    d->slot = 0;
+
     if (!command(c, 0, 0, TRB_TYPE(TRB_ENABLE_SLOT)
                           | ((uint32_t)c->slot_type[d->port] << 16), done)) {
-        return false;
+        return "Enable Slot";
     }
 
     d->slot = TRB_SLOT_OF(done[3]);
 
+    /*
+     * A slot past the ones enabled has no pages here, and should never come:
+     * MaxSlotsEn makes slots 1 to that number the active ones (5.4.7). QEMU
+     * gives one anyway - it looks for a free slot among all it has - so a
+     * driver that kept its slots would meet this. It is given back, without
+     * an array entry, which 6.1 sizes to the slots enabled; and the line says
+     * what came, not a failure code for a command that succeeded.
+     */
     if (d->slot == 0 || d->slot > c->slots) {
-        return false;
+        if (d->slot != 0) {
+            (void)command(c, 0, 0, TRB_TYPE(TRB_DISABLE_SLOT)
+                                   | TRB_SLOT(d->slot), done);
+        }
+
+        c->last_code = CC_SUCCESS;
+        d->slot = 0;
+        return "Enable Slot gave a slot past the ones enabled";
     }
 
     page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
@@ -977,8 +1101,77 @@ static bool address_device(struct controller *c, struct device *d)
 
     c->dcbaa[d->slot] = d->output_bus;
 
-    return command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
-                   TRB_TYPE(TRB_ADDRESS_DEVICE) | TRB_SLOT(d->slot), done);
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_ADDRESS_DEVICE) | TRB_SLOT(d->slot), done)) {
+        return "Address Device";
+    }
+
+    return NULL;
+}
+
+/*
+ * ...and a second, once, when the first fails - the way 4.6.5's notes put it:
+ * a failed Address Device leaves the slot in Default, and software may disable
+ * it or reset the device and try again; a Transaction Error may be a stall,
+ * for which Disable Slot then Enable Slot. So: the slot given back, the port
+ * reset again if it is USB 2, RECOVERY_MS, and the whole attempt once more.
+ *
+ * **The first attempt is left as it was**, with no pause after the reset, so
+ * that a photograph of the ThinkPad says which of the two a device needed.
+ */
+static bool address_device(struct controller *c, struct device *d,
+                           struct say_line *line)
+{
+    const char *failed = address_once(c, d);
+
+    if (failed == NULL) {
+        return true;
+    }
+
+    say_failure(c, d->port, failed, "", line);
+
+    if (d->slot != 0) {
+        disable_slot(c, d->slot);
+    }
+
+    if (c->usb[d->port] == 2 && !reset_port(c, d->port)) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": would not reset for a second attempt");
+        say_send(console, line);
+        return false;
+    }
+
+    kosmos_sleep(ticks_for(RECOVERY_MS));
+    d->speed = PORTSC_SPEED(mmio_read32(c->op + OP_PORTSC(d->port)));
+
+    failed = address_once(c, d);
+
+    /*
+     * **And given back after the second failure too.** The port records no
+     * slot for a device it could not address, so nothing later would disable
+     * this one: the ThinkPad's two such ports would have held two of the
+     * eight slots from boot, and a device that fails every time one more on
+     * each plug.
+     */
+    if (failed != NULL) {
+        say_failure(c, d->port, failed, ", again after a reset and a pause",
+                    line);
+
+        if (d->slot != 0) {
+            disable_slot(c, d->slot);
+        }
+
+        return false;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": addressed at a second attempt, after a reset and a pause");
+    say_send(console, line);
+    return true;
 }
 
 /*
@@ -1006,6 +1199,7 @@ static bool control_in(struct controller *c, struct device *d,
     status = ring_push(&d->ep0, 0, 0, 0, TRB_TYPE(TRB_STATUS) | TRB_IOC);
 
     mmio_write32(c->doorbells + 4u * d->slot, 1u);  /* target 1: endpoint 0 */
+    c->last_code = 0;
 
     for (seen = 0; seen < EVENTS_MAX; seen++) {
         uint32_t code;
@@ -1020,6 +1214,7 @@ static bool control_in(struct controller *c, struct device *d,
         }
 
         code = TRB_CODE_OF(done[2]);
+        c->last_code = code;
 
         if ((((uint64_t)done[1] << 32) | done[0]) == status) {
             return code == CC_SUCCESS;
@@ -1037,7 +1232,6 @@ static bool control_in(struct controller *c, struct device *d,
 #define GET_DESCRIPTOR      (0x80u | (6u << 8))
 #define DESC_DEVICE         0x0100u
 #define DESC_STRING         0x0300u
-#define NAME_MAX_CHARS      48u
 
 /*
  * A string descriptor as ASCII: UTF-16LE after a two-byte header, anything
@@ -1076,6 +1270,7 @@ static bool describe(struct controller *c, struct device *d,
     name[0] = '\0';
 
     if (!control_in(c, d, GET_DESCRIPTOR, DESC_DEVICE, 0, 8u)) {
+        say_failure(c, d->port, "GET_DESCRIPTOR for 8 bytes", "", line);
         return false;
     }
 
@@ -1093,12 +1288,23 @@ static bool describe(struct controller *c, struct device *d,
         if (!command(c, (uint32_t)d->input_bus,
                      (uint32_t)(d->input_bus >> 32),
                      TRB_TYPE(TRB_EVALUATE) | TRB_SLOT(d->slot), done)) {
+            say_failure(c, d->port, "Evaluate Context", "", line);
             return false;
         }
     }
 
-    if (!control_in(c, d, GET_DESCRIPTOR, DESC_DEVICE, 0, 18u)
-        || d->buffer[0] < 18u || d->buffer[1] != 1u) {
+    if (!control_in(c, d, GET_DESCRIPTOR, DESC_DEVICE, 0, 18u)) {
+        say_failure(c, d->port, "GET_DESCRIPTOR for 18 bytes", "", line);
+        return false;
+    }
+
+    if (d->buffer[0] < 18u || d->buffer[1] != 1u) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": answered with something that is not a device "
+                       "descriptor");
+        say_send(console, line);
         return false;
     }
 
@@ -1143,6 +1349,12 @@ static bool describe(struct controller *c, struct device *d,
 
     say_send(console, line);
     c->named++;
+
+    c->described[d->slot] = true;
+    c->vendor[d->slot] = (uint16_t)vendor;
+    c->product[d->slot] = (uint16_t)product;
+    memcpy(c->name[d->slot], name, sizeof(c->name[d->slot]));
+
     return true;
 }
 
@@ -1156,6 +1368,142 @@ static void stop(const struct controller *c, struct say_line *line)
 {
     mmio_write32(c->rt + RT_IMAN, IMAN_IP);
     (void)reset(c, line);
+}
+
+/*
+ * Port Power, and whichever change bits are set, written back as ones. The
+ * change bits are write-1-to-clear and nothing else in the word is written as a
+ * one: PED would disable the port and PR reset it (Table 5-27). **Until every
+ * change bit of a port is clear it raises no further change events** (4.19.2).
+ * This driver reads the ports on every pass as well, so one that forgot would
+ * see the same change again 50 ms later: with the write taken out, both
+ * devices were unplugged and named again on every pass from boot. Written only
+ * to a running controller, as 5.4.8 asks.
+ */
+static void clear_changes(const struct controller *c, unsigned port,
+                          uint32_t sc)
+{
+    if ((sc & PORTSC_CHANGES) != 0) {
+        mmio_write32(c->op + OP_PORTSC(port),
+                     PORTSC_PP | (sc & PORTSC_CHANGES));
+    }
+}
+
+/*
+ * A device on a port: its reset if it is USB 2, the port's line, a slot and an
+ * address, and what it says it is. The port keeps its slot, or the fact that a
+ * device is there and was not named, so an unplug later can say which.
+ */
+static void attach(struct controller *c, unsigned port, bool running,
+                   struct say_line *line)
+{
+    uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
+    struct device d;
+    bool reset_done = false;
+
+    c->port_slot[port] = PORT_FAILED;
+
+    /*
+     * **A speed only where the field holds one.** Table 5-27: the speed "is
+     * invalid on a USB2 protocol port until after the port is reset", because
+     * a USB 2 device says how fast it is during that reset. The ThinkPad
+     * showed what printing it anyway looks like: four USB 2 ports, every one
+     * of them "Full-speed", which nothing had yet asked.
+     */
+    if (running && c->usb[port] == 2) {
+        reset_done = reset_port(c, port);
+        sc = mmio_read32(c->op + OP_PORTSC(port));
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, port);
+
+    if (c->usb[port] >= 3 || reset_done) {
+        say_text(line, ", USB ");
+        say_dec(line, c->usb[port]);
+        say_text(line, ": a ");
+        say_text(line, speed_name(PORTSC_SPEED(sc)));
+        say_text(line, " device (speed ID ");
+        say_dec(line, PORTSC_SPEED(sc));
+        say_text(line, reset_done ? "), after its reset" : ")");
+    } else if (c->usb[port] == 2) {
+        say_text(line, running ? ", USB 2: a device whose port would not "
+                                 "reset"
+                               : ", USB 2: a device, its speed unknown until "
+                                 "the port is reset");
+    } else {
+        say_text(line, ": a device, on a port no protocol capability "
+                       "describes");
+    }
+
+    say_send(console, line);
+
+    if (!running || (c->usb[port] == 2 && !reset_done) || c->usb[port] < 2) {
+        return;
+    }
+
+    memset(&d, 0, sizeof(d));
+    d.port = port;
+    d.speed = PORTSC_SPEED(sc);
+
+    if (!address_device(c, &d, line)) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, port);
+        say_text(line, ": no slot and address for the device");
+        say_send(console, line);
+        return;
+    }
+
+    c->port_slot[port] = (unsigned char)d.slot;
+    c->described[d.slot] = false;
+
+    if (!describe(c, &d, line)) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, port);
+        say_text(line, ": the device did not say what it is");
+        say_send(console, line);
+    }
+}
+
+/*
+ * A device gone from a port: a line saying what left, then its slot given
+ * back. A controller hands out only slots that are not enabled, so a slot kept
+ * is one fewer for every device after it - QEMU forgets which port the slot
+ * was for, addresses the next device on that port in another, and runs out.
+ */
+static void detach(struct controller *c, unsigned port, struct say_line *line)
+{
+    unsigned slot = c->port_slot[port];
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, port);
+    say_text(line, ": unplugged");
+
+    if (slot != 0 && slot != PORT_FAILED && c->described[slot]) {
+        say_text(line, ", ");
+        say_hex(line, c->vendor[slot], 4);
+        say_text(line, ":");
+        say_hex(line, c->product[slot], 4);
+
+        if (c->name[slot][0] != '\0') {
+            say_text(line, " \"");
+            say_text(line, c->name[slot]);
+            say_text(line, "\"");
+        }
+    }
+
+    say_send(console, line);
+
+    if (slot != 0 && slot != PORT_FAILED) {
+        disable_slot(c, slot);
+        c->described[slot] = false;
+    }
+
+    c->port_slot[port] = 0;
 }
 
 /* One controller, start to finish. Answers how many ports have a device. */
@@ -1224,98 +1572,123 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
 
     for (port = 1; port <= c->ports; port++) {
         uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
-        struct device d;
-        bool reset_done = false;
+
+        /*
+         * Cleared before anything is done about the port, so that a change
+         * after this instant is one the watch sees rather than one the boot
+         * scan already had.
+         */
+        if (running) {
+            clear_changes(c, port, sc);
+        }
 
         if ((sc & PORTSC_CCS) == 0) {
             continue;
         }
 
         plugged++;
-
-        /*
-         * **A speed only where the field holds one.** Table 5-27: the speed
-         * "is invalid on a USB2 protocol port until after the port is
-         * reset", because a USB 2 device says how fast it is during that
-         * reset. The ThinkPad showed what printing it anyway looks like:
-         * four USB 2 ports, every one of them "Full-speed", which nothing had
-         * yet asked.
-         */
-        if (running && c->usb[port] == 2) {
-            reset_done = reset_port(c, port);
-            sc = mmio_read32(c->op + OP_PORTSC(port));
-        }
-
-        about(line, c);
-        say_text(line, " port ");
-        say_dec(line, port);
-
-        if (c->usb[port] >= 3 || reset_done) {
-            say_text(line, ", USB ");
-            say_dec(line, c->usb[port]);
-            say_text(line, ": a ");
-            say_text(line, speed_name(PORTSC_SPEED(sc)));
-            say_text(line, " device (speed ID ");
-            say_dec(line, PORTSC_SPEED(sc));
-            say_text(line, reset_done ? "), after its reset" : ")");
-        } else if (c->usb[port] == 2) {
-            say_text(line, running ? ", USB 2: a device whose port would "
-                                     "not reset"
-                                   : ", USB 2: a device, its speed unknown "
-                                     "until the port is reset");
-        } else {
-            say_text(line, ": a device, on a port no protocol capability "
-                           "describes");
-        }
-
-        say_send(console, line);
-
-        if (!running || (c->usb[port] == 2 && !reset_done)
-            || c->usb[port] < 2) {
-            continue;
-        }
-
-        memset(&d, 0, sizeof(d));
-        d.port = port;
-        d.speed = PORTSC_SPEED(sc);
-
-        if (!address_device(c, &d)) {
-            about(line, c);
-            say_text(line, " port ");
-            say_dec(line, port);
-            say_text(line, ": no slot and address for the device");
-            say_send(console, line);
-            continue;
-        }
-
-        if (!describe(c, &d, line)) {
-            about(line, c);
-            say_text(line, " port ");
-            say_dec(line, port);
-            say_text(line, ": the device did not say what it is");
-            say_send(console, line);
-        }
+        attach(c, port, running, line);
     }
 
-    if (c->bus != 0) {
+    /*
+     * **A running controller is kept running**, and watched. One that did not
+     * start is stopped: its rings' pages go back to the kernel with this
+     * process, and a controller still running would write into them.
+     */
+    if (running) {
+        c->running = true;
+    } else if (c->bus != 0) {
         stop(c, line);
     }
 
     return plugged;
 }
 
-/* As many controllers as the closing line names; the board keeps four. */
+/* A wait on one controller: its interrupt with a deadline, or a sleep. */
+static void nap(struct controller *c)
+{
+    if (c->irq < 0) {
+        kosmos_sleep(ticks_for(WATCH_MS));
+        return;
+    }
+
+    (void)kosmos_irq_wait_for(c->irq, ticks_for(WATCH_MS));
+
+    mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
+    mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
+    (void)kosmos_irq_ack(c->irq);
+}
+
+/*
+ * Until the machine stops: each running controller waited on, its event ring
+ * emptied, and its ports read. **The ports say what happened, not the
+ * events**: 4.19.2 promises no agreement between a read of PORTSC and the
+ * events already written, so an event is only a reason to look sooner.
+ *
+ * A connect change on a port with a device already recorded is that device
+ * leaving, even if another has arrived by the time the port is read; so it is
+ * detached first and whatever the port now holds attached after.
+ */
+static void watch(struct controller *controllers, unsigned count,
+                  struct say_line *line)
+{
+    uint32_t trb[4];
+
+    for (;;) {
+        unsigned i;
+
+        for (i = 0; i < count; i++) {
+            struct controller *c = &controllers[i];
+            unsigned port;
+
+            if (!c->running) {
+                continue;
+            }
+
+            nap(c);
+
+            while (take_event(c, trb)) {
+                /* taken for the dequeue; the ports are read below */
+            }
+
+            for (port = 1; port <= c->ports; port++) {
+                uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
+
+                if ((sc & PORTSC_CHANGES) == 0) {
+                    continue;
+                }
+
+                clear_changes(c, port, sc);
+
+                if ((sc & PORTSC_CSC) == 0) {
+                    continue;
+                }
+
+                if (c->port_slot[port] != 0) {
+                    detach(c, port, line);
+                }
+
+                if ((sc & PORTSC_CCS) != 0) {
+                    attach(c, port, true, line);
+                }
+            }
+        }
+    }
+}
+
+/* As many controllers as the closing line names and the driver keeps. The
+ * board keeps four, so the limit is never the one that stops the search. */
 #define NAMED_MAX           8u
 
 void xhci_server(long console_cap)
 {
-    static struct controller c;
+    static struct controller controllers[NAMED_MAX];
     struct sysinfo info = { 0 };
     struct dev_info dev;
     struct say_line line;
-    unsigned where[NAMED_MAX];
     unsigned index, i, plugged = 0, named = 0;
-    long asked;
+    bool watching = false;
+    long asked = 0;
 
     console = console_cap;
 
@@ -1323,17 +1696,14 @@ void xhci_server(long console_cap)
         tick_hz = info.tick_hz;
     }
 
-    for (index = 0; (asked = kosmos_dev_find(DEV_XHCI, index, &dev)) == 0;
-         index++) {
-        if (index < NAMED_MAX) {
-            where[index] = dev.where;
-        }
-
-        plugged += bring_up(&c, &dev, &line);
-        named += c.named;
+    for (index = 0; index < NAMED_MAX
+         && (asked = kosmos_dev_find(DEV_XHCI, index, &dev)) == 0; index++) {
+        plugged += bring_up(&controllers[index], &dev, &line);
+        named += controllers[index].named;
+        watching = watching || controllers[index].running;
     }
 
-    if (asked != SYS_ERR_NO_DEVICE) {
+    if (index < NAMED_MAX && asked != SYS_ERR_NO_DEVICE) {
         say_begin(&line);
         say_text(&line, "xhci: the board would not say where the "
                         "controllers are");
@@ -1356,12 +1726,12 @@ void xhci_server(long console_cap)
     say_dec(&line, index);
     say_text(&line, index == 1 ? " controller (" : " controllers (");
 
-    for (i = 0; i < index && i < NAMED_MAX; i++) {
+    for (i = 0; i < index; i++) {
         if (i > 0) {
             say_text(&line, ", ");
         }
 
-        address(&line, where[i]);
+        address(&line, controllers[i].where);
     }
 
     say_text(&line, "), ");
@@ -1372,5 +1742,13 @@ void xhci_server(long console_cap)
     say_text(&line, named == 1 ? " device named" : " devices named");
     say_send(console, &line);
 
-    kosmos_exit(0);
+    if (!watching) {
+        kosmos_exit(0);
+    }
+
+    say_begin(&line);
+    say_text(&line, "xhci: watching for devices plugged in and out");
+    say_send(console, &line);
+
+    watch(controllers, index, &line);
 }

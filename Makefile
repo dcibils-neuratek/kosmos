@@ -1590,7 +1590,14 @@ check-lua: $(HOSTDIR)/lua.ok
 # the previous one, which dirties the tree before this is evaluated, so
 # `make release` stamped every image it built "-dirty" while the source it
 # was built from was clean. The name is a claim about the source.
-KOSMOS_DIRTY := $(shell git status --porcelain -- . ':!builds' 2>/dev/null | head -1)
+#
+# `docs/screenshots` and the top-level dot-directories are left out for the
+# same reason: nothing in an image comes from them. A ThinkPad photograph of
+# 0.10.54 said `d6dfabb-dirty` because of an editor's `.vscode/` and a stray
+# screenshot. The rest of `docs/` still counts - `docs/cheatsheet.html` is in
+# the image - and so do untracked files elsewhere, because `user/bin/*.lua`
+# is picked up by wildcard.
+KOSMOS_DIRTY := $(shell git status --porcelain -- . ':!builds' ':!docs/screenshots' ':!.*' 2>/dev/null | head -1)
 KOSMOS_BUILD := $(shell git describe --always 2>/dev/null || echo "no-git")$(if $(KOSMOS_DIRTY),-dirty,)
 KOSMOS_DATE  := $(shell git log -1 --format=%cd --date=format:'%Y-%m-%d' \
                         2>/dev/null || echo "unknown")

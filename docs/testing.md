@@ -1980,3 +1980,85 @@ it returns: `boot()` hands back everything printed either way.
 a full-speed device's packet size, a chipset's MSI that takes time to arrive.
 The controller's "runs:" line is written so one photograph answers the first
 two.
+
+## 18.38 USB devices pulled out and put back
+
+`usb_hotplug` in `tools/run_x86.py` (`usb.md` §4): 17 checks, with the two
+negative controls below.
+
+The machine of §18.37 with a QEMU monitor. Once the driver says it is
+watching, `device_del` pulls the keyboard out and `device_add
+usb-kbd,bus=usb0.0,port=1` puts a new one on the port it left, which the
+driver calls port 5. Each round must bring exactly one unplug line naming the
+keyboard, then exactly one keyboard named on the same port and nothing
+unplugged. There are as many rounds as the keyboard's controller says it
+enabled slots: eight.
+
+**Two rounds were not enough, and a control is what said so.** The first
+version replugged twice, believing QEMU refuses to address a port that a slot
+still holds, so a driver that never disabled the slot could not name the
+second keyboard. With the driver's Disable Slot taken out it passed, 18 of
+18. QEMU's `hcd-xhci.c` says why: `xhci_address_slot` does refuse a port
+another slot holds, but `xhci_detach_slot` forgets the port as the device
+leaves. What QEMU keeps is the slot enabled - Enable Slot takes the lowest
+slot that is not - so a driver that keeps its slots runs out, and with the
+keyboard found at boot the check plugs in one keyboard more than there are
+slots.
+
+**Before that, the same port had to be asked for.** Without `port=`,
+`device_add` takes the next free port, and a probe put the new keyboards on
+ports 6 and 7, where a slot left on port 5 is in nobody's way.
+
+**Reading the driver to write this down found a slot kept for good.** A
+device that failed Address Device twice kept its second slot: the port
+records no slot for a device it could not address, so its unplug disabled
+nothing. Slots are given back through one function now, in all four places.
+QEMU addresses every device the first time, so that path is read and not
+run; the ThinkPad's ports 7 and 10 are where it runs.
+
+Full output was kept in a log per run this time. The runner prints the serial
+output in a failure as one quoted string; below it is a line to a line.
+
+With a port's change bits never cleared, both devices were unplugged and
+named again on every pass from boot, which fails §18.37's checks as well:
+
+```
+FAIL: 5 of 17
+  the driver did not report exactly two devices plugged in:
+  ...
+  the driver did not read two devices' descriptors and product strings:
+  ...
+  the devices' speeds are not the ones QEMU says it attached them at:
+  ...
+  the stick is on the second controller, 00:04.0, and the driver named it on ['00:04.0', '00:04.0', '00:04.0', ...
+  round 1 of 8: putting a keyboard back on port 5 did not name it there exactly once, with nothing unplugged:
+    ...
+    xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Keyboard"
+    xhci: 00:04.0 port 1: unplugged, 46f4:0001 "QEMU USB HARDDRIVE"
+    xhci: 00:04.0 port 1, USB 3: a SuperSpeed device (speed ID 4)
+    xhci: 00:04.0 port 1: 46f4:0001, USB 3.0, class 0, "QEMU USB HARDDRIVE"
+    xhci: 00:03.0 port 5: unplugged, 0627:0001 "QEMU USB Keyboard"
+    xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+    xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Keyboard"
+    ...
+```
+
+With an unplugged device's slot never given back:
+
+```
+FAIL: 1 of 31
+  round 8 of 8: putting a keyboard back on port 5 did not name it there exactly once, with nothing unplugged:
+    xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+    xhci: 00:03.0 port 5: Enable Slot gave a slot past the ones enabled
+    xhci: 00:03.0 port 5: Enable Slot gave a slot past the ones enabled, again after a reset and a pause
+    xhci: 00:03.0 port 5: no slot and address for the device
+```
+
+**QEMU handed out a ninth slot where the driver enabled eight** - it looks
+among all 64 it has, where 5.4.7 makes slots 1 to MaxSlotsEn the active ones.
+Before this revision the driver kept that slot and printed "failed: no answer
+within a second" for a command that had been answered; it gives the slot back
+now and says what came.
+
+Both runs counted with the no-controller boot and §18.37's checks, in a
+scratch script that runs only those; the driver as written passed all 31.

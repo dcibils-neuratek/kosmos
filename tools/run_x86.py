@@ -444,6 +444,147 @@ def usb(image, check):
           "and a keyboard should give:\n    " + shown)
 
 
+def usb_hotplug(image, check):
+    """A keyboard pulled out and put back, once for every slot it could take.
+
+    **Through QEMU's monitor, the way a person pulls a cable.** `device_del`
+    detaches the keyboard and `device_add` puts another on the same port -
+    `port=1` on its bus, which the driver calls port 5. The driver has to say
+    the port is unplugged and name what left, then name the new keyboard on
+    that port exactly as it named the one at boot.
+
+    **Every round must bring exactly one of each.** A port raises no further
+    change events until every change bit is cleared (xHCI 1.2 4.19.2), and a
+    driver that never clears them sees the same change on every pass.
+
+    **The rounds outnumber the slots, because a slot is what an unplug has to
+    give back.** QEMU forgets which port a slot was for as the device leaves
+    (`xhci_detach_slot` in `hcd-xhci.c`), so a replug is addressed whether or
+    not the driver disabled the slot before it: two rounds passed with that
+    code taken out, which is how this was found. What QEMU will not do is
+    hand out a slot that is still enabled. So the keyboard goes back once for
+    every slot its controller says it enabled - with the keyboard found at
+    boot, one more than there are slots - and a driver that keeps them runs
+    out before the last.
+    """
+    binary = os.path.join(os.path.dirname(image), "kosmos.bin")
+    work = tempfile.mkdtemp(prefix="kosmos-x86-hotplug-")
+    path = os.path.join(work, "monitor")
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
+
+    with open(stick, "wb") as handle:
+        handle.truncate(16 * 1024 * 1024)
+
+    cmd = [QEMU, "-M", "q35", "-m", "512M", "-no-reboot",
+           "-display", "none", "-serial", "stdio",
+           "-monitor", "unix:%s,server,nowait" % path,
+           "-device", "qemu-xhci,id=usb0",
+           "-device", "qemu-xhci,id=usb1",
+           "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+           "-device", "usb-storage,bus=usb1.0,drive=stick",
+           "-device", "usb-kbd,bus=usb0.0,id=kbd0",
+           "-kernel", binary]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL)
+    heard = bytearray()
+
+    # On a thread, for the pointer check's reason: a guest whose serial line
+    # is not read stops inside `kputc` once the pipe is full.
+    def drain():
+        while True:
+            chunk = os.read(proc.stdout.fileno(), 65536)
+
+            if not chunk:
+                return
+
+            heard.extend(chunk)
+
+    threading.Thread(target=drain, daemon=True).start()
+
+    def since(mark):
+        return heard[mark:].decode("utf-8", "replace").replace("\r", "")
+
+    def wait_for(mark, pattern, seconds):
+        until = time.time() + seconds
+
+        while time.time() < until:
+            if re.search(pattern, since(mark)):
+                return True
+
+            time.sleep(0.25)
+
+        return False
+
+    unplugged = (r'xhci: [0-9a-f]{2}:[0-9a-f]{2}\.[0-7] port (\d+): unplugged, '
+                 r'0627:0001 "QEMU USB Keyboard"')
+    named = (r'xhci: [0-9a-f]{2}:[0-9a-f]{2}\.[0-7] port (\d+): 0627:0001, '
+             r'USB 2\.0, class 0, "QEMU USB Keyboard"')
+
+    try:
+        monitor = Monitor(path)
+
+        if not wait_for(0, r"xhci: watching for devices plugged in and out",
+                        90.0):
+            check(False, "the USB driver never said it was watching for "
+                         "devices:\n    " + repr(since(0)[-400:]))
+            return
+
+        boot = since(0)
+        keyboard = re.search(r"xhci: ([0-9a-f]{2}:[0-9a-f]{2}\.[0-7]) port "
+                             r"\d+: 0627:0001", boot)
+        enabled = keyboard and re.search(
+            r"xhci: %s runs: [^\n]* (\d+) slots enabled"
+            % re.escape(keyboard.group(1)), boot)
+        rounds = int(enabled.group(1)) if enabled else 0
+
+        check(rounds >= 2,
+              "the keyboard's controller did not say it enabled two slots or "
+              "more, so there is nothing to run out of:\n    "
+              + repr(boot[-600:]))
+
+        # A failed round ends it: the next would start from a keyboard that
+        # is not where the check thinks, and wait out both timeouts to say so.
+        for round_ in range(1, rounds + 1):
+            gone, new = "kbd%d" % (round_ - 1), "kbd%d" % round_
+
+            mark = len(heard)
+            monitor.ask("device_del " + gone)
+            left = wait_for(mark, unplugged, 20.0)
+            time.sleep(1.0)
+            ports_left = re.findall(unplugged, since(mark))
+            ok = left and len(ports_left) == 1
+
+            check(ok, "round %d of %d: pulling the keyboard out did not bring "
+                      "exactly one unplug line naming it:\n    %r"
+                      % (round_, rounds, since(mark)[-400:]))
+
+            if not ok:
+                break
+
+            mark = len(heard)
+            monitor.ask("device_add usb-kbd,bus=usb0.0,port=1,id=" + new)
+            came = wait_for(mark, named, 30.0)
+            time.sleep(1.0)
+            after = since(mark)
+            ok = (came and re.findall(named, after) == ports_left
+                  and not re.search(unplugged, after))
+
+            check(ok, "round %d of %d: putting a keyboard back on port %s did "
+                      "not name it there exactly once, with nothing "
+                      "unplugged:\n    %r"
+                      % (round_, rounds, ports_left[0], after[-600:]))
+
+            if not ok:
+                break
+
+        monitor.close()
+    finally:
+        proc.kill()
+        proc.wait()
+
+
 def memdisk(image, check):
     """Boots with a disk the loader handed over, and reads a file off it.
 
@@ -1260,6 +1401,7 @@ def main():
     # And USB: two controllers, one stick, and which of them it is on.
     #
     usb(image, check)
+    usb_hotplug(image, check)
 
     # And the pointer a laptop has, with and without the serial port it does
     # not have. `pointer` says why the second half is the one that matters.
