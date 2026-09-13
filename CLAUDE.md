@@ -663,6 +663,26 @@ worktree or start work in one, and do not offer anything that would. **A fix
 or a follow-up noticed along the way goes into `docs/roadmap.md`**, and is
 done on `main` when its time comes.
 
+**A stick for the ThinkPad carries only a layout that has booted there.**
+Diego's words, on 13 September 2026: "please don't make me waste time again
+with these non booting usb images". That evening a stick with a 64 MB disk,
+which had never booted through Kosmos's loader, was handed over as the stick
+to write - because a summary said it had booted, while `docs/boot.md` said
+nobody knew - and it stopped after the loader's last line. It had passed
+every check under OVMF, which is necessary and not sufficient. So:
+
+- **The table in `docs/boot.md` decides**: what it does not show booting on
+  the ThinkPad does not go on a stick Diego is asked to write. Today that is
+  a disk of 32 MB or less.
+- **The stick is built by `make MEGA=1 x86-usb-image`**, which refuses a disk
+  over 32 MB, and never by anything that skips that refusal.
+- **The table is read before a stick is handed over** - not a summary, and
+  not a memory of the table.
+- **A layout that has not booted there is offered as the experiment it is**,
+  second, beside a stick that has.
+- **On a boot that works, the first photograph is `log loader`**, which is
+  what fills the table in.
+
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the
 wishlist because it looks cheap - that is the main way a project like this

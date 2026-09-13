@@ -227,12 +227,14 @@ position-independent with hidden visibility and no FP or SIMD registers, and
 relocation in it is anything but PC-relative, so the image needs no fixing up
 wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 
-**On the ThinkPad, 13 September.** Two sticks, the same kernel and disk:
+**On the ThinkPad, 13 September.** Every stick through this loader, in order:
 
 | stick | disk | on the ThinkPad |
 | ----- | ---- | --------------- |
 | 0.10.59 as committed | 32 MB | a black panel, no text; a key press went back to the firmware's Boot Menu |
 | the same kernel with 0.10.60's loader, which draws its own lines | 32 MB | booted to the desktop |
+| 0.10.60 (`13037a4`), built twice, with each disk | 32 or 64 MB | booted to the desktop - the 64 MB image was the one to write, but nothing photographed said which disk it carried |
+| 0.10.61 (`9ca683a`), MEGA | 64 MB | the loader's lines, `both copies of the kernel are the file`, `handing over` - and then nothing |
 
 The black panel was a refusal: only `refuse()` waits for a key, and what it
 printed went through a console that machine does not show. **Why it refused
@@ -255,6 +257,28 @@ What the kernel was handed on the boot that worked, read off the photograph:
 machine: usable from 1 MB to 0x8e36f000. The loader's own lines were not
 photographed - on a boot that works they last until the kernel draws - so
 whether that firmware has the console-control protocol is not known either.
+
+**And the first stick meant to carry a disk over 32 MB did not boot.** 0.10.61
+with the 64 MB disk stopped after the loader's last line, with nothing
+plugged in but the stick; the same image booted under OVMF, a USB mouse
+clicking through it. Its loader's screen line is the first ever photographed
+on the ThinkPad:
+
+```
+kosmos-boot: the screen: 1920x1080, 7680 bytes a row, at 0x0000004000000000, mode 0 of 6
+```
+
+**Above 4 GB**, so `hal_fb_early` refuses it - the boot page tables end at
+4 GB (`hal/pc/fb.c`) - and the kernel draws nothing until stage 6 maps the
+screen itself. If that is where this firmware always puts it, every boot of
+that machine is dark from the hand-over to stage 6, and a stall anywhere in
+between looks exactly like this one. One photograph does not say which.
+
+**So the rule `mkusb_image.py` enforces stands**: a stick for the ThinkPad
+carries a disk of 32 MB or less until a bigger one is seen booting there, and
+an image built to try a bigger one is offered as that experiment - never as
+the stick to use, which is how this one was offered. 0.10.61 with the 32 MB
+disk is the next stick.
 
 ---
 
