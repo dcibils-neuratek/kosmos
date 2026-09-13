@@ -8,6 +8,46 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 13 September, evening: a USB mouse moves the pointer
+
+Diego: "Mouse still doesn't work in the desktop", then "yes / lets make the
+mouse work" - the mouse before bulk transfers. **0.10.61 reads a USB mouse,
+under QEMU**; nothing of it has run on the ThinkPad yet.
+
+- **The pointer is the board's** (`hal/pc/pointer.c`). A TrackPoint and a
+  mouse both report how far, so both add into one position, each holding
+  its own buttons, down positive. `hal.h` and `CLAUDE.md` said pointing
+  devices are never merged; true of a tablet, which still stands alone, and
+  corrected for the rest.
+- **Two system calls.** `SYS_POINTER_MOVE` (51), device authority only, is
+  how the driver hands the kernel a report; `SYS_IRQ_WAIT_ANY` (52) is a
+  wait on several interrupt lines at once, so the driver waits on both of
+  the ThinkPad's controllers rather than on each in turn.
+- **The driver** reads a device's configuration (`usb_decode.c`, tested on
+  the host), and a HID boot mouse gets Configure Endpoint, SET_CONFIGURATION
+  and SET_PROTOCOL, then one request on its ring at a time. Reports kept
+  while a command is waited for; a held button let go on unplug; a failed
+  report stops the mouse, with a line.
+- **USB 2.0 and HID 1.11 are in the references now**, downloaded on Diego's
+  yes along with xHCI 1.2 and QEMU's HID model. With them came the waits a
+  device is owed and the driver never gave - 100 ms of debounce after a
+  plug, 10 ms after a reset, 2 ms after an address - which is the likeliest
+  reading of the ThinkPad's failed replug.
+
+**Found while testing it**, both by a control that should have failed and
+did not: on `opt/kosmos/irq=pic` QEMU's two xHCI controllers share line 11,
+so the second is polled and a driver waiting on one line passes - the mouse
+check boots on the I/O APIC now, as the ThinkPad does - and `Monitor.ask`
+cannot wait less than its socket's 50 ms timeout, so movements meant to be
+20 ms apart were 50. **QEMU's mouse also plugs in at full speed**, as
+Diego's does, so the millisecond interval is checked here rather than first
+on the ThinkPad. `usb.md` §5 is the account, `testing.md` §18.43 the checks
+and controls.
+
+**Next:** a stick with 0.10.61 for the T14 - the mouse should move and click,
+and a replug should be named the first time. `log xhci` after plugging it in
+and out twice is the photograph. Then bulk transfers.
+
 ### 13 September, afternoon: the ThinkPad boots through the loader
 
 **0.10.46 to 0.10.60 are on origin/main**, pushed on Diego's yes, and the

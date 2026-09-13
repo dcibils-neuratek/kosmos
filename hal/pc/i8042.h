@@ -7,8 +7,6 @@
 
 #include <stdbool.h>
 
-struct pointer_state;
-
 bool i8042_keyboard_init(void);
 int  i8042_getchar(void);
 bool i8042_present(void);
@@ -16,13 +14,13 @@ bool i8042_key_event(unsigned *code, bool *down);
 bool i8042_key_held(unsigned code);
 
 bool i8042_pointer_init(void);
-bool i8042_pointer_poll(struct pointer_state *out);
+
+/* What the controller holds, drained into the board's pointer (`pointer.c`)
+ * before it is read. False with no auxiliary device. */
+bool i8042_pointer_drain(void);
 
 bool i8042_input_pending(void);
 bool i8042_input_pending_peek(void);
 void i8042_interrupt(unsigned line);
-
-/* Read (0) or set the pointer's units-per-count. See `i8042.c`. */
-unsigned i8042_pointer_speed(unsigned scale);
 
 #endif

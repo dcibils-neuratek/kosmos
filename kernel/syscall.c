@@ -17,6 +17,7 @@
  * that panics on nonsense hands any process the power to stop the machine.
  */
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -1145,6 +1146,43 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_POINTER_MOVE: {
+        /*
+         * A driver's pointing device, added to the pointer. `syscall.h` has
+         * why this is a call and why device authority is what gates it.
+         *
+         * **Clamped to fifteen bits a report**, which no device comes near: a
+         * USB boot report says -127 to 127. The board multiplies by its speed
+         * in 64 bits either way, so the clamp is not arithmetic safety - it
+         * makes a count a driver got wrong one the pointer survives rather
+         * than one it is trusted with.
+         *
+         * **And the sleepers woken**, which is the half an interrupt would
+         * have done by itself. The i8042's arrives in the trap handler, which
+         * wakes whoever waits for input when the board says there is some; a
+         * report from a process arrives here instead, and without this the
+         * window manager would see where the pointer went only when its own
+         * deadline came round.
+         */
+        enum { COUNT_MAX = 32767 };
+        long dx = (long)sc->arg[0];
+        long dy = (long)sc->arg[1];
+
+        dx = dx > COUNT_MAX ? COUNT_MAX : dx < -COUNT_MAX ? -COUNT_MAX : dx;
+        dy = dy > COUNT_MAX ? COUNT_MAX : dy < -COUNT_MAX ? -COUNT_MAX : dy;
+
+        if (!p->owns_devices) {
+            result = SYS_ERR_DENIED;
+        } else if (!hal_pointer_move((int)dx, (int)dy,
+                                     (uint32_t)sc->arg[2])) {
+            result = SYS_ERR_NO_DEVICE;
+        } else {
+            thread_wake_sleepers_now();
+            result = 0;
+        }
+        break;
+    }
+
     case SYS_SCREEN_TAKE:
         /*
          * "I am drawing the whole screen now; stop printing on it."
@@ -1625,6 +1663,48 @@ void syscall_dispatch(struct syscall_frame *sc)
         result = irq_ack(ipc_resolve_irq(thread_current(),
                                          (cap_t)sc->arg[0]));
         break;
+
+    case SYS_IRQ_WAIT_ANY: {
+        /*
+         * `SYS_IRQ_WAIT` on several capabilities, each resolved exactly as
+         * that call resolves its one: holding them is the authority. A number
+         * that names no line in this process's table refuses the whole wait,
+         * rather than waiting on fewer lines than the driver believes.
+         *
+         * The array is read once, into the kernel, before anything waits, so
+         * a process that rewrote it during the wait would change nothing.
+         */
+        uintptr_t at = (uintptr_t)sc->arg[0];
+        unsigned long count = (unsigned long)sc->arg[1];
+        unsigned long ticks = (unsigned long)sc->arg[2];
+        struct irq_line *set[IRQ_WAIT_ANY_MAX];
+        unsigned long i;
+
+        if (count == 0 || count > IRQ_WAIT_ANY_MAX) {
+            result = SYS_ERR_DENIED;
+            break;
+        }
+
+        if (!process_may_read(p, at, count * sizeof(long))) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        for (i = 0; i < count; i++) {
+            long cap = ((const long *)at)[i];
+
+            set[i] = (cap < 0 || cap > INT_MAX)
+                   ? NULL
+                   : ipc_resolve_irq(thread_current(), (cap_t)cap);
+        }
+
+        if (ticks > (unsigned long)TICK_HZ * 3600UL) {
+            ticks = (unsigned long)TICK_HZ * 3600UL;
+        }
+
+        result = irq_wait_any(set, (unsigned)count, ticks);
+        break;
+    }
 
     case SYS_MEM_SIZE: {
         struct memobj *m = ipc_resolve_memory(thread_current(),

@@ -9,15 +9,18 @@ else.
 | ---- | --------------- | ----- |
 | 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
-| 3. bulk transfers | bytes to and from an endpoint | not started |
-| 4. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
-| 5. Ethernet | a USB-C adapter carrying the network stack | not started |
+| 3. a mouse | a HID boot mouse's reports moving the pointer the TrackPoint moves | built, and run under QEMU |
+| 4. bulk transfers | bytes to and from an endpoint | not started |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
+| 6. Ethernet | a USB-C adapter carrying the network stack | not started |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
-read the stick it booted from.
+read the stick it booted from. **The mouse went before bulk transfers on
+13 September**, Diego's call, because his USB mouse did nothing on the
+ThinkPad's desktop.
 
-**Where step 4 is going, as Diego put it**: once USB works, the drive is
+**Where step 5 is going, as Diego put it**: once USB works, the drive is
 mounted over USB, so big files live on the disk. Today the loader reads the
 whole disk image into memory before Kosmos starts, and a stick's image is kept
 to 32 MB or less until the ThinkPad has booted a bigger one through Kosmos's
@@ -395,7 +398,7 @@ For each controller, after step 1:
    which;
 2. one contiguous region: the context array, the command ring, the event
    segment, the segment table with the scratchpad array, four pages for each
-   of eight devices, and the scratchpad pages;
+   of eight devices - six since step 3 - and the scratchpad pages;
 3. program the slots enabled, DCBAAP, CRCR, the event ring in its order,
    moderation at 1 ms and both interrupt enables; claim the interrupt; Run -
    and print a line saying the context size, the scratchpads, the slots and
@@ -459,11 +462,12 @@ xhci: 00:14.0 port 7: Address Device failed: USB Transaction Error (4)
 its slot in Default, and software may disable the slot or reset the device
 and try again. So the slot is given back, a USB 2 port is reset again, the
 driver waits 50 ms, and Enable Slot and Address Device run from the start. A
-line says whether that worked. The wait stands for USB 2.0's recovery
-interval (9.2.6.3), which is not in the references here, so 50 ms is chosen
-well above it as remembered rather than quoted. **The first attempt is left
-as it was**, with no wait, so a photograph says which of the two a device
-needed.
+line says whether that worked. The wait stood for USB 2.0's recovery
+interval (9.2.6.3), which was not in the references then, so 50 ms was
+chosen well above it as remembered rather than quoted. **Since step 3 the
+first attempt waits what USB 2.0 asks** - 10 ms after the reset and 2 ms
+after the address (§5) - and the second 50 ms on top of that, so a photograph
+still says which of the two a device needed.
 
 **Every slot is given back** - after an unplug, after a first failure, and
 after a second, which the first version of the retry forgot: the port
@@ -484,8 +488,9 @@ Or the driver could stay up and print changes as they happen. He chose the
 second, which is also the driver a mouse needs.
 
 **After the boot scan the driver stays**, with every controller that started.
-It loops over them: it waits up to 50 ms for a controller's interrupt, empties
-its event ring, and reads every port's status. **The ports decide, not the
+It waits up to 50 ms for an interrupt - on each controller in turn until
+step 3, and on all of them at once since (§5) - then empties the event rings
+and reads every port's status. **The ports decide, not the
 events.** 4.19.2 promises no agreement between a read of PORTSC and the
 events already on the ring, so an event only makes the driver look sooner. A
 plug interrupts at once; the 50 ms bounds a controller whose interrupt never
@@ -499,7 +504,7 @@ change after that instant belongs to the watch. On a connect change:
 - a device recorded on the port has left: a line saying "unplugged" and what
   it was, and its slot given back;
 - and if the port holds a device now, it is reset, addressed and named
-  exactly as at boot.
+  exactly as at boot - after USB 2.0's debounce, since step 3.
 
 What QEMU prints, with a keyboard pulled out and put back:
 
@@ -510,9 +515,9 @@ xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
 xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Keyboard"
 ```
 
-**What it does not do is talk to a device after naming it.** A mouse needs
+**What it did not do was talk to a device after naming it.** A mouse needs
 its configuration set, an interrupt endpoint read, and a way for a process to
-move the pointer.
+move the pointer - which is step 3.
 
 ### On the ThinkPad, 13 September
 
@@ -546,8 +551,9 @@ was reset; the second time those two lines are a second apart, and it was
 named. On every boot photographed the same mouse was named on the same port.
 The first attempt deliberately has no wait (above), so the likeliest reading is
 a device asked before its reset recovery was over - a reading, not a
-measurement, and the next thing to measure, with what the reused slot's
-contexts still hold.
+measurement. USB 2.0 came into the references with the mouse, and step 3
+gives every device the intervals it is owed (§5); whether their absence was
+the fault is the ThinkPad's to say.
 
 ### What QEMU cannot show
 
@@ -614,6 +620,220 @@ xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in, 2 dev
 
 ---
 
+## 5. Step 3: a mouse
+
+**Diego's ThinkPad has a TrackPoint and a USB mouse, and the mouse did
+nothing on the desktop.** On 13 September his call was the mouse before bulk
+transfers: "yes / lets make the mouse work". It is the first time the driver
+talks to a device after naming it, and the first time anything goes round a
+ring.
+
+### The pointer: relative devices add
+
+The window manager asks one question, `hal_pointer_poll`, and a PC had one
+answer to it: a virtio tablet under QEMU, or the TrackPoint on the i8042's
+auxiliary port. `hal.h` said pointing devices are not merged, because a
+position has one source and a second would be a second opinion to choose
+between.
+
+**That is true of a tablet, and not of a mouse.** A tablet says where it is;
+a TrackPoint and a mouse say how far they moved, and two of those are only
+more movement. So the position, its range and its speed moved out of
+`i8042.c` into the board, `hal/pc/pointer.c`, and every relative device adds
+into it:
+
+- **each source holds its own buttons**, and the pointer reports them
+  together, so a TrackPoint packet with nothing held cannot release a button
+  the mouse is holding;
+- **down is positive**, USB's way round - HID 1.11 5.9 has a report's values
+  increase "from far to near" - and the i8042 turns PS/2's count over before
+  calling in;
+- **the speed is one number for both**, `pointer` at the prompt, which is a
+  follow-up in `roadmap.md`.
+
+**A driver in a process reaches it through `SYS_POINTER_MOVE (dx, dy,
+buttons)`**, and the kernel the board through `hal_pointer_move`, which a
+board whose pointer is a tablet refuses. The call is gated on device
+authority, because a process able to move the pointer and press its buttons
+can click anything on the screen; it clamps each count to fifteen bits; and
+it wakes whoever is asleep waiting for input, which the i8042's interrupt
+does for its own packets in the trap handler. `syscall.h` has why a report
+is a call and not a shared region - the question `CLAUDE.md`'s rule about
+streams asks. The window manager did not change.
+
+### The intervals a device is owed
+
+USB 2.0 came into the references with the mouse, and with it three waits the
+driver had never given:
+
+| interval | USB 2.0 | when |
+| -------- | ------- | ---- |
+| 100 ms | 7.1.7.3, TATTDB | after a device is plugged in, before its reset; a disconnect starts it again |
+| 10 ms | 7.1.7.5, 9.2.6.2, TRSTRCY | after a port's reset, before the first request |
+| 2 ms | 9.2.6.3 | after SET_ADDRESS - which Address Device sends, and whose timing xHCI 4.6.5 leaves to software - before a request to the new address |
+
+**The debounce is only for a plug**: a device found at boot has been in its
+socket since before the firmware ran. A connection that drops during the
+interval starts it again, five times at most, and each drop's change is
+cleared so the watch does not see it twice. The mouse's failed replug on the
+ThinkPad (§4) came 12 ms after its reset with none of these given; whether
+that was the fault is the ThinkPad's to say.
+
+### Choosing a mouse
+
+Once a device has said what it is, **its configuration is asked for** - nine
+bytes for the total, then all of it - and walked by
+`user/servers/usb_decode.c`. That file has no hardware and no system calls in
+it, so a host test can hand it what QEMU never sends: a length of zero, a
+descriptor past the end, a total longer than what arrived. The walk steps by
+each descriptor's own length (USB 2.0 9.5) and refuses one that does not add
+up.
+
+**One kind is taken: a HID boot mouse** - interface class 3, subclass 1,
+protocol 2 (HID 1.11 4.1 to 4.3) - at alternate setting 0, with an interrupt
+IN endpoint. HID 1.11 fixes a boot mouse's report (B.2), so nothing reads its
+report descriptor. Any other HID interface is said, with its subclass and
+protocol, and left alone. A SuperSpeed mouse is said and not read: its
+endpoint's largest payload an interval comes from a companion descriptor this
+does not walk (xHCI 4.14.2).
+
+Then **the controller before the device**, the order xHCI 4.3.5 gives,
+because a SET_CONFIGURATION after a Configure Endpoint that failed is
+undefined:
+
+1. **Configure Endpoint** (4.6.6), with an input context that adds the slot
+   and the endpoint and drops nothing; the slot's Context Entries raised to
+   the endpoint's index (6.2.2.2); and the endpoint as 4.8.2.4 describes an
+   interrupt IN one - three errors allowed, its packet and extra
+   transactions, its interval, its ring with the cycle bit at 1, its largest
+   payload an interval, and an average TRB length that is its one request's
+   (Tables 6-8 and 6-9). **The interval is translated** (6.2.3.6, Table
+   6-12): a full- or low-speed device gives milliseconds, rounded down to a
+   power of two in 125 µs steps, and a high-speed one gives the power
+   already, plus one.
+2. **SET_CONFIGURATION** (USB 2.0 9.4.7), a request with no data stage: in
+   xHCI a Setup stage of transfer type 0 and a Status stage that is IN
+   (Table 4-7).
+3. **SET_PROTOCOL for the boot protocol** (HID 1.11 7.2.6), because a device
+   starts in the report protocol and the host is to ask for the one it
+   wants. **SET_IDLE is not sent**: a boot mouse need not support it
+   (Appendix G), and a mouse's idle rate starts at infinity - a report only
+   when something changes (7.2.4).
+
+### Reading reports
+
+**One request on the ring at a time**: a Normal TRB over the mouse's report
+page, as long as its packet, that interrupts when it completes and when a
+report comes back short (6.4.1.1), and the doorbell with the endpoint's
+context index as its target. A Transfer Event says how many bytes did not
+arrive (Table 6-38), and a report of three or more is read as HID 1.11 B.2
+lays it out: the buttons, then X and Y as signed bytes. The movement and the
+buttons go to the pointer when there is something new in them, and the next
+request goes on the ring whatever there was. The first report is said.
+
+- **A report that arrives while the driver waits for a command or a control
+  transfer is kept, not passed over.** Passed over, its mouse would have no
+  request on its ring and would never send another. There are never more
+  kept than there are mice, since each has one request out.
+- **A mouse pulled out stops being read before its slot goes, and a button it
+  was holding is let go** - or the desktop would drag until something else
+  pressed and released that button. QEMU sends no release for a device it
+  deletes, which is the case the check makes.
+- **A report that failed stops the mouse**, with a line. Its endpoint is
+  halted (4.10.2.1, 4.10.2.3), and bringing it back is a Reset Endpoint, a
+  CLEAR_FEATURE and a new dequeue pointer - none of which QEMU's mouse can be
+  made to need, so none of which is written. Plugged in again, it is read
+  again. `roadmap.md` has it.
+- **The ring goes round.** A ring is 255 requests and a Link back to its
+  start (§2), and the mouse is the first thing to reach the Link - two seconds
+  after it starts moving - so the check sends past two rounds before it
+  clicks.
+
+### Waiting on every controller at once
+
+**The watch waited on each controller in turn, 50 ms apiece**, which a plug
+can afford and a mouse cannot: a mouse on the second of the ThinkPad's two
+controllers would have its reports sit behind the first's wait and reach the
+pointer in bursts. The kernel gained `SYS_IRQ_WAIT_ANY (&caps, count,
+ticks)` for it (`drivers.md` §4), and the watch waits on every running
+controller's interrupt at once, then looks at all of them. A controller whose
+interrupt could not be claimed is looked at when the wait's deadline comes
+round.
+
+**Found while testing it: under `opt/kosmos/irq=pic`, QEMU's two controllers
+share line 11.** The second's claim is refused, its line says "not claimed,
+so polled", and the shared line wakes the driver for both - so on the 8259s
+the wait on two lines never runs. That is a machine on the legacy path. The
+ThinkPad's ACPI describes an I/O APIC, its controllers each have an MSI of
+their own (§4), and the check boots the same way.
+
+What QEMU prints, with the mouse on the second controller, moved, clicked,
+held and pulled out, and plugged back in:
+
+```
+xhci: 00:02.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 20
+xhci: 00:03.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 21
+xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Mouse"
+xhci: 00:03.0 port 5: a boot mouse, read from endpoint 1, up to 4 bytes every 8 ms
+xhci: 2 controllers (00:02.0, 00:03.0), 1 port with something plugged in, 1 device named
+xhci: watching for devices plugged in and out
+xhci: 00:03.0 port 5: the mouse's first report: buttons 0, moved 3,-2
+wm: button down at 965,537 raw=1
+wm: button up at 965,537 raw=0
+wm: button down at 965,537 raw=1
+xhci: 00:03.0 port 5: unplugged, 0627:0001 "QEMU USB Mouse", after 6 reports
+wm: button up at 965,537 raw=0
+xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Mouse"
+xhci: 00:03.0 port 5: a boot mouse, read from endpoint 1, up to 4 bytes every 8 ms
+```
+
+The last `button up` is the driver letting go: nothing released the button
+in QEMU.
+
+### What QEMU cannot show
+
+- **A full-speed mouse whose endpoint 0 is bigger than 8 bytes.** QEMU's
+  mouse attaches at full speed when asked to (`usb_version=1`), and the check
+  plugs it back in that way, so turning milliseconds into an interval runs
+  here; but its endpoint 0 is 8 bytes, so Evaluate Context has still run
+  nowhere.
+- **A mouse that refuses SET_PROTOCOL**, or keeps sending report-protocol
+  reports anyway. QEMU's honours it; the line would name the step and the
+  code.
+- **A halted endpoint**, above.
+- **Contacts that bounce.** QEMU's plug is one clean change, so the debounce
+  is always a single interval.
+- **A thousand reports a second**, which a gaming mouse may send.
+
+### How it is tested
+
+- **`tools/test_usbdecode.c`, 32 checks** on the host: QEMU's mouse as its
+  device model declares it, HID 1.11 Appendix E's keyboard and mouse (the
+  mouse behind the keyboard, and not the keyboard's endpoint), a stick, and
+  every length a device can get wrong - each of which must end the walk.
+- **The suite, on both boards**: `irq: a wait on two lines takes whichever
+  has one`, and `input: a driver's movement adds to the pointer` - which on
+  the ARM board is the refusal, since its pointer is a tablet.
+- **`tools/run_x86.py`'s `usb_mouse`**, 16 checks, on q35 with two
+  controllers and QEMU's mouse on the second: the driver reads it there, on
+  two interrupts; 640 movements a little over 10 ms apart, and at least four
+  in five come back as reports of their own - QEMU folds a movement into the
+  one before while that is unread, so a driver reading late reads fewer - and
+  more than two rounds of a ring; then a click on the Deskbar's button opens
+  its menu, through USB alone; a button held as the mouse is pulled out comes
+  up; and a full-speed mouse plugged back in is read every 8 ms, from its
+  first report.
+
+The controls, each watched fail, are in `testing.md` §18.43.
+
+### On the ThinkPad
+
+Not run yet.
+
+---
+
 ## Sources
 
 - Intel, *eXtensible Host Controller Interface for Universal Serial Bus
@@ -624,3 +844,17 @@ xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in, 2 dev
   run against, read for how it behaves: that it has no Legacy Support
   capability, that its ports are USB 3 first and USB 2 after, four of each
   by default. Nothing is copied from it.
+- USB-IF, *Universal Serial Bus Specification*, revision 2.0, as usb.org
+  distributes it with its errata and engineering change notices - the
+  descriptors, the standard requests and the intervals a device is owed
+  (§5). Downloaded from usb.org on 13 September 2026 to read, and not kept
+  in the repository.
+- USB-IF, *Device Class Definition for Human Interface Devices (HID)*,
+  version 1.11 - the boot subclass and the mouse protocol, SET_PROTOCOL and
+  SET_IDLE, which of them a boot mouse must support, and a boot mouse's
+  report. Downloaded from usb.org on 13 September 2026, and not kept.
+- QEMU 11.1.1, `hw/usb/dev-hid.c` and `hw/input/hid.c` - the mouse the check
+  runs against, read for how it behaves: that it attaches at high speed with
+  a four-byte packet every 8 ms, honours SET_PROTOCOL, clamps a report's
+  movement to 127 and keeps the rest for the next, and folds movement into a
+  report the guest has not read yet. Nothing is copied from it.

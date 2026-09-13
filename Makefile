@@ -751,6 +751,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/net.c \
              user/servers/powerbutton.c \
              user/servers/xhci.c \
+             user/servers/usb_decode.c \
              user/servers/say.c \
              user/lib/net_kosmos.c \
              user/lib/crypto.c \
@@ -1566,6 +1567,16 @@ $(HOSTDIR)/test_smbiosdecode: tools/test_smbiosdecode.c hal/pc/smbios_decode.c h
 	        tools/test_smbiosdecode.c hal/pc/smbios_decode.c
 
 #
+# And a USB configuration descriptor, walked, for that reason a third time:
+# QEMU's mouse sends one well-formed configuration and nothing else, and a
+# device's lengths are the device's to get wrong. `usb_decode.h` has more.
+#
+$(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/servers/usb_decode.c user/servers/usb_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_usbdecode.c user/servers/usb_decode.c
+
+#
 # And whether the userland image's canary works, which is the same argument
 # a fourth time with one difference: the two halves are written in different
 # languages.
@@ -2283,6 +2294,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/virtio/input.c \
              hal/pc/i8042.c \
              hal/pc/input_bind.c \
+             hal/pc/pointer.c \
              hal/keys.c \
              hal/pc/input_describe.c \
              hal/virtio/snd.c \
@@ -2653,7 +2665,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2703,6 +2715,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	$(HOSTDIR)/test_apicdecode
 	$(HOSTDIR)/test_snesblit
 	$(HOSTDIR)/test_smbiosdecode
+	$(HOSTDIR)/test_usbdecode
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

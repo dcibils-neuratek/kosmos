@@ -34,6 +34,19 @@ bool hal_pointer_poll(struct pointer_state *out)
     return virtio_pointer_poll(out);
 }
 
+/*
+ * Refused: this board's pointer is a virtio tablet, which says where it is,
+ * and there is no position of the board's own for a movement to be added to -
+ * which is what `hal.h` asks a board with an absolute pointer to answer.
+ */
+bool hal_pointer_move(int dx, int dy, uint32_t buttons)
+{
+    (void)dx;
+    (void)dy;
+    (void)buttons;
+    return false;
+}
+
 bool hal_input_pending(void)      { return virtio_input_pending(); }
 bool hal_input_pending_peek(void) { return virtio_input_pending_peek(); }
 

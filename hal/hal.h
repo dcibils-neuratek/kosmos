@@ -530,10 +530,15 @@ struct pointer_state {
  * exactly as with the keyboard: a machine with a serial cable and no mouse
  * is a legitimate way to run this system and always will be.
  *
- * There is no `hal_pointer_getchar` equivalent - no merging of sources -
- * because unlike characters, a position has only one place it can come from.
- * A second pointing device would be a second thing to choose between, and
- * that choice does not exist until there is a board with two.
+ * **Relative devices are merged, and an absolute one is not.** This said
+ * there was no merging at all, because a position has only one place it can
+ * come from and a second pointing device would be a second thing to choose
+ * between - a choice that would not exist until there was a board with two.
+ * The ThinkPad is that board, and it showed which half of that was right. A
+ * tablet says where it is, and two of those would have to be chosen between.
+ * A TrackPoint and a USB mouse say how far, and there is nothing to choose:
+ * the board adds both into the one position it reports, and holds the
+ * buttons of each (`hal/pc/pointer.c`).
  */
 bool hal_pointer_init(void);
 
@@ -555,6 +560,21 @@ bool hal_pointer_poll(struct pointer_state *out);
  * tablet reports where it is, and there is no gain to apply to that.
  */
 unsigned hal_pointer_speed(unsigned units_per_count);
+
+/*
+ * Movement and buttons from a pointing device the kernel does not drive - a
+ * USB mouse, whose driver is a process (`SYS_POINTER_MOVE`).
+ *
+ * **Relative, in the device's own counts, right and down positive**, and
+ * `buttons` is that device's whole state: bit 0 left, bit 1 right. The board
+ * adds the movement to the position `hal_pointer_poll` reports, scaled by the
+ * speed its own relative devices move at, and holds the buttons beside
+ * theirs rather than in place of them.
+ *
+ * False when the board's pointer is absolute: a tablet says where it is, and
+ * there is no position of the board's own for a movement to be added to.
+ */
+bool hal_pointer_move(int dx, int dy, uint32_t buttons);
 
 /*
  * Has an input device raised an interrupt since this was last asked?

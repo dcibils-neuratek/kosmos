@@ -28,5 +28,6 @@ const char *hal_pointer_describe(void)
 {
     return pc_pointer_on_virtio()
          ? "virtio-input with absolute axes, reporting 0.."
-         : "the i8042 auxiliary port, relative counts made absolute over 0..";
+         : "the i8042 auxiliary port and any USB mouse, their counts added up "
+           "over 0..";
 }

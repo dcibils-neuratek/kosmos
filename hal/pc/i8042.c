@@ -68,6 +68,7 @@
 #include "keys.h"
 #include "i8042.h"
 #include "pc.h"
+#include "pointer.h"
 #include "spinlock.h"
 
 #define DATA        0x60
@@ -316,93 +317,25 @@ static void key_transition(unsigned code, bool down)
 }
 
 /*------------------------------------------------------------------------
- * Where the pointer is.
+ * The pointer.
  *
  * **A TrackPoint is relative and `hal_pointer_poll` is absolute**, and that
- * is the one real difference from the virtio tablet this replaces. A tablet
- * reports where it is; a mouse reports how far it moved. So the position
- * lives here, and the range below is this driver's own invention rather than
- * something the hardware said.
+ * is the one real difference from the virtio tablet this replaces: a tablet
+ * reports where it is, a mouse how far it moved. The position this driver's
+ * counts are added to used to live here, with its range and its speed. They
+ * are the board's now, in `pointer.c`, because a USB mouse moves the same
+ * pointer, and a position two devices move is not either driver's to keep.
  *
- * `hal.h` asks for the device's own units with the range beside them, and
- * that rule is what makes this honest: the window manager scales whatever
- * range it is given, so a made-up one is fine as long as it is *reported*
- * rather than assumed. 32767 is the tablet's, which means the desktop cannot
- * tell the two apart - which is the point.
+ * So this half decodes packets and hands the board each one's movement and
+ * buttons, and that is the whole of it.
  *----------------------------------------------------------------------*/
-
-#define RANGE 32767
-
-/*
- * Units per count, and the one number here that should be decided on the
- * machine rather than in this file.
- *
- * Eight put a count at about half a pixel on a 1920-wide screen, and the
- * paragraph that used to be here said it was "fine for a mouse and probably
- * slow for a TrackPoint". It was right, and the first machine to run this
- * measured it: the range is 32767 across 1920 pixels, so seventeen units to
- * the pixel, and a count moved 0.47 of one. The pointer worked and crawled.
- *
- * Thirty-two is about 1.9 pixels a count there, which is the speed a
- * TrackPoint wants. What decides it is the ratio of this to `RANGE`: the
- * window manager maps the whole range onto the screen, so the driver's
- * limits and the screen's edges are reached together and there is no
- * saturation to worry about - crossing the screen is a fixed number of
- * counts however big the panel is.
- *
- * **It is still one number for two devices, and that is the next thing.**
- * A TrackPoint is a strain gauge and a touchpad is a surface; they want
- * different speeds and both want a curve. `pointer` at the prompt sets this
- * one, through the function below, and nothing here can yet tell a
- * TrackPoint's packet from a touchpad's to give them two.
- */
-static unsigned pointer_scale = 32;
-
-/*
- * Read and set from userland through `hal_pointer_speed`.
- *
- * Zero asks without changing anything, which is what lets one program both
- * report and set. Clamped rather than validated: a speed of nought is a
- * pointer that cannot move and a huge one is a pointer that crosses the
- * screen on one count, and neither is worth a error path in a device
- * setting somebody is fiddling with to find what they like.
- */
-static unsigned pointer_speed_unlocked(unsigned scale)
-{
-    if (scale > 0) {
-        pointer_scale = scale > 512 ? 512 : scale;
-    }
-
-    return pointer_scale;
-}
-
-static uint32_t pointer_x = RANGE / 2;
-static uint32_t pointer_y = RANGE / 2;
-static uint32_t buttons;
-static bool     pointer_moved;
 
 /* The three bytes of a standard PS/2 packet, as they arrive. */
 static uint8_t packet[3];
 static unsigned packet_len;
 
-static void move_by(int dx, int dy)
-{
-    /*
-     * Scaled, because a TrackPoint reports a handful of counts per report
-     * and the range is fifteen bits. By how much is `pointer_scale` above,
-     * which the machine decides rather than this file.
-     */
-    int32_t nx = (int32_t)pointer_x + dx * (int32_t)pointer_scale;
-    int32_t ny = (int32_t)pointer_y - dy * (int32_t)pointer_scale;  /* up is + */
-
-    if (nx < 0) { nx = 0; }
-    if (ny < 0) { ny = 0; }
-    if (nx > RANGE) { nx = RANGE; }
-    if (ny > RANGE) { ny = RANGE; }
-
-    pointer_x = (uint32_t)nx;
-    pointer_y = (uint32_t)ny;
-}
+/* What the last packet's buttons were, so that a change is logged once. */
+static uint32_t buttons;
 
 /*
  * Button changes as this driver decoded them, bounded: the driver's end of a
@@ -494,19 +427,16 @@ static void aux_byte(uint8_t b)
     dx = (packet[0] & 0x40) ? 0 : (int)packet[1] - ((packet[0] & 0x10) ? 256 : 0);
     dy = (packet[0] & 0x80) ? 0 : (int)packet[2] - ((packet[0] & 0x20) ? 256 : 0);
 
-    if (dx != 0 || dy != 0) {
-        move_by(dx, dy);
-        pointer_moved = true;
-    }
-
     {
         uint32_t was = buttons;
 
         buttons = (uint32_t)(packet[0] & 0x01)          /* left  */
                 | (uint32_t)((packet[0] & 0x02) >> 0);  /* right */
 
+        /* PS/2 counts up as positive, and the board down (`pointer.c`). */
+        pc_pointer_move(PC_POINTER_AUX, dx, -dy, buttons);
+
         if (buttons != was) {
-            pointer_moved = true;
 
             /*
              * Both ends of a click, because a click that half-arrives has to
@@ -806,6 +736,7 @@ static bool pointer_init_unlocked(void)
     }
 
     aux_present = true;
+    pc_pointer_arrived(PC_POINTER_AUX);
 
     /* IRQ 12 is the auxiliary port's, on the slave controller - `pic.c`
      * opens the cascade for anything above seven. */
@@ -863,25 +794,17 @@ bool i8042_key_held(unsigned code)
     return (held[code >> 5] & (1u << (code & 31))) != 0;
 }
 
-static bool pointer_poll_unlocked(struct pointer_state *out)
+/*
+ * Whatever the controller is holding, into the board's pointer before anybody
+ * reads it. False when there is no auxiliary device to have sent any.
+ */
+static bool pointer_drain_unlocked(void)
 {
     if (!aux_present) {
         return false;
     }
 
     drain();
-
-    out->x = pointer_x;
-    out->y = pointer_y;
-    out->min_x = 0;
-    out->max_x = RANGE;
-    out->min_y = 0;
-    out->max_y = RANGE;
-    out->buttons = buttons;
-    out->moved = pointer_moved ? 1u : 0u;
-
-    pointer_moved = false;
-
     return true;
 }
 
@@ -902,8 +825,7 @@ static bool pending_unlocked(void)
 
     drain();
 
-    return chars_head != chars_tail || keyq_head != keyq_tail
-        || pointer_moved;
+    return chars_head != chars_tail || keyq_head != keyq_tail;
 }
 
 bool i8042_input_pending(void)
@@ -956,10 +878,10 @@ bool i8042_key_event(unsigned *code, bool *down)
     return got;
 }
 
-bool i8042_pointer_poll(struct pointer_state *out)
+bool i8042_pointer_drain(void)
 {
     unsigned long flags = spin_lock(&i8042_lock);
-    bool got = pointer_poll_unlocked(out);
+    bool got = pointer_drain_unlocked();
 
     spin_unlock(&i8042_lock, flags);
     return got;
@@ -980,15 +902,6 @@ void i8042_interrupt(unsigned line)
 
     interrupt_unlocked(line);
     spin_unlock(&i8042_lock, flags);
-}
-
-unsigned i8042_pointer_speed(unsigned scale)
-{
-    unsigned long flags = spin_lock(&i8042_lock);
-    unsigned speed = pointer_speed_unlocked(scale);
-
-    spin_unlock(&i8042_lock, flags);
-    return speed;
 }
 
 /*

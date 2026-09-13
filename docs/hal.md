@@ -426,6 +426,15 @@ void     hal_irq_set_masked(unsigned intid, bool masked);
 bool     hal_device_find(unsigned kind, unsigned index,  /* nth of a kind */
                          struct hal_device *out);
 
+// The pointer, in the device's own units with the range beside them. On a
+// board whose pointer is relative, every relative device adds into the one
+// position the board keeps, each holding its own buttons - and a device the
+// kernel does not drive, a USB mouse whose driver is a process, adds through
+// the second call. An absolute pointer, a tablet, stands alone and refuses
+// it. `CLAUDE.md` has the reasoning, and why it once said the opposite.
+bool     hal_pointer_poll(struct pointer_state *out);
+bool     hal_pointer_move(int dx, int dy, uint32_t buttons);
+
 // What the firmware says the machine is: manufacturer, product, version, and
 // where they were read - SMBIOS's System Information on a PC, found through
 // the EFI System Table or in the BIOS area, and copied before `mmu_init`

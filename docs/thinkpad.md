@@ -258,10 +258,12 @@ Design decisions worth keeping:
   and the other way round.
 - **A TrackPoint is relative and `hal_pointer_poll` is absolute.** A tablet
   reports where it is; a mouse reports how far it moved. So the position
-  lives in the driver, and the range it reports is the driver's own
-  invention - which `hal.h` permits, because its rule is the device's own
-  units *with the range beside them*. A made-up range is honest as long as
-  it is stated rather than assumed.
+  lived in the driver, and the range it reports is an invention - which
+  `hal.h` permits, because its rule is the device's own units *with the
+  range beside them*. A made-up range is honest as long as it is stated
+  rather than assumed. **Since 0.10.61 the position is the board's**
+  (`hal/pc/pointer.c`): a USB mouse moves the same pointer, and a position
+  two devices move is not either driver's to keep.
 - **Every way in takes one lock.** The interrupt and the system calls that
   drain were kept apart by running with interrupts masked on the one core
   that scheduled. With threads spread, the window manager asks for the

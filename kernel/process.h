@@ -357,8 +357,14 @@ struct process {
      * handed a capability naming one register range and cannot express any
      * other, which is the whole point of moving drivers out of the kernel.
      *
-     * So this is held by init and by whichever server it gives the job of
-     * enumerating hardware. A USB driver never has it.
+     * So this is held by init and, **for now, by the two drivers init
+     * starts** - the power button and the USB host controllers - because
+     * there is no devices server yet to hold it for them and hand each the
+     * capabilities for its own device. This comment said "a USB driver never
+     * has it", which was that plan written down as a fact: `init.lua` has
+     * spawned the xHCI driver with `SPAWN_DEVICES` since the driver existed.
+     * `SYS_POINTER_MOVE` is gated on it too, and moves with it once that
+     * server is here.
      *
      * It is the strongest grant in the system, above `owns_disk`: every
      * byte of physical memory, and every device on the machine. That is

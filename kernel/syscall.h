@@ -142,6 +142,10 @@
  *   at all. **On an MSI there is nothing to mask and this costs a syscall
  *   and changes nothing**, which is correct rather than missing: the device
  *   wrote to the local APIC and nothing is left asserted.
+ *
+ * And a fourth, arrived with the first driver that has more than one device
+ * and one thread to wait with: `SYS_IRQ_WAIT_ANY`, further down, is the
+ * second call's wait on several lines at once.
  */
 #define SYS_IRQ_CLAIM  46   /* (intid)                -> cap or error       */
 #define SYS_IRQ_WAIT   47   /* (cap, ticks)           -> 0, none, or error  */
@@ -331,7 +335,52 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_WAIT_INPUT_OR_CALL 50   /* (ticks, cap)     -> 0 or error         */
 
-#define SYS_MAX         51
+/*
+ * **A pointing device's movement, from the process that drives it.**
+ *
+ * A USB mouse's driver is a process, and what the mouse reports - how far,
+ * and which buttons are down - has to reach the one pointer the window
+ * manager asks `SYS_POINTER` about. This is that path: `dx` right and `dy`
+ * down, in the device's own counts, and `buttons` its whole state, bit 0
+ * left and bit 1 right. The board adds the movement to the position it keeps
+ * for its own relative devices, at their speed (`hal_pointer_move`), so the
+ * desktop cannot tell a USB mouse from a TrackPoint.
+ *
+ * **Three numbers in registers, one call a report - and `CLAUDE.md`'s rule
+ * about streams was asked about it rather than assumed away.** A report does
+ * recur because the hardware says so. What the rule protects against is a
+ * payload built, copied and collected on every recurrence, with a server in
+ * the path; here nothing is allocated or copied, no server is involved, and
+ * the kernel folds three integers into a position and keeps none of them -
+ * the same work the i8042's interrupt does for every packet. A ring shared
+ * with the kernel would still need this call, or an interrupt, to say it had
+ * something in it.
+ *
+ * **Gated on device authority.** A process able to move the pointer and press
+ * its buttons can click anything on the screen for the person at it. The one
+ * process with a reason to is a driver, and the driver there is holds
+ * `owns_devices` already; a grant of its own belongs with the devices server
+ * that will hand drivers their capabilities (`process.h`).
+ *
+ * `SYS_ERR_NO_DEVICE` when the board's pointer is absolute - a tablet, which
+ * says where it is and has no position for a movement to be added to.
+ */
+#define SYS_POINTER_MOVE 51 /* (dx, dy, buttons)      -> 0 or error         */
+
+/*
+ * **`SYS_IRQ_WAIT` on several lines at once**, for a driver with more than
+ * one device and one thread: the xHCI driver on the ThinkPad's two
+ * controllers, where a mouse on the second would wait out a nap on the first.
+ * `caps` is an array of `count` interrupt capabilities, no more than
+ * `IRQ_WAIT_ANY_MAX`. The answer is the place in it of a line that had an
+ * interrupt - taken, as `SYS_IRQ_WAIT` takes one - or `SYS_NO_INTERRUPT` when
+ * `ticks` ran out first; zero waits for ever. `kernel/irq.c` has the rest.
+ */
+#define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks)  -> which, none, error */
+
+#define IRQ_WAIT_ANY_MAX 8u
+
+#define SYS_MAX         53
 
 /*
  * What a spawn may hand its child beyond capabilities.

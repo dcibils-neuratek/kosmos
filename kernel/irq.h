@@ -117,6 +117,17 @@ bool             irq_deliver(unsigned intid);
  * ever. `SYS_NO_INTERRUPT` when the deadline came first.
  */
 long             irq_wait(struct irq_line *line, unsigned long ticks);
+
+/*
+ * `irq_wait` on several lines at once: whichever has an interrupt first,
+ * answered as its place in `set` - the lowest, when more than one has - and
+ * taken exactly as `irq_wait` takes one. `SYS_NO_INTERRUPT` at the deadline,
+ * and `SYS_ERR_DENIED` for a line released or one another thread waits on.
+ * `irq.c` has the argument.
+ */
+long             irq_wait_any(struct irq_line *const *set, unsigned count,
+                              unsigned long ticks);
+
 long             irq_ack(struct irq_line *line);
 
 #endif /* KERNEL_IRQ_H */

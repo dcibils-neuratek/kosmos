@@ -2570,3 +2570,93 @@ draws at all: under OVMF the firmware's text console shows either way.
 **What none of it shows** is the ThinkPad's own map at the moment the loader
 runs, and whether its firmware writes into memory it has handed out. The
 loader's lines on that machine are that measurement.
+
+## 18.43 A USB mouse, and the pointer it shares with the TrackPoint
+
+Four checks, all in `make test` (`usb.md` §5 has the mouse, and `CLAUDE.md`
+and `hal/pc/pointer.c` the pointer):
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_usbdecode.c`, 32 checks | a configuration descriptor walked on the host: QEMU's mouse, laid out from `dev-hid.c`'s declarations - configuration 1, interface 0, endpoint 1, 4 bytes, interval 7; HID 1.11 Appendix E's keyboard and mouse, where the mouse is behind the keyboard and must not take the keyboard's endpoint; a keyboard alone and a stick, neither of them a mouse; every length a device can get wrong - 0, 1, past the end, a total longer than what arrived, a total that cuts a descriptor or the configuration itself - each of which must end the walk; an OUT, bulk or zero endpoint, alternate setting 1 and a HID interface with no protocol, none of them taken; and high speed's extra transactions kept out of the packet size |
+| `irq: a wait on two lines takes whichever has one`, on both boards | `irq_wait_any` answers with the line that had an interrupt and takes that line's count, the lowest when both have one; blocks on both and is woken by a delivery on the second, long before its deadline; comes back at a deadline with nothing on either; leaves neither line naming it afterwards, so the next delivery is counted rather than waking a thread that has gone; and refuses a line released underneath it |
+| `input: a driver's movement adds to the pointer`, on both boards | on the PC, `hal_pointer_move` moves the position the TrackPoint moves, at its speed, from the corner: right and down positive, a button held and let go, each marked as moved once and cleared by the look, and a middle button that is not the pointer's. On the ARM board, whose pointer is a tablet or nothing, the call is refused and the speed is zero |
+| `tools/run_x86.py`'s `usb_mouse`, 16 checks | q35 on its I/O APIC with two xHCI controllers and QEMU's mouse on the second: the driver reads it there, the two controllers on interrupts of their own; 640 movements through `mouse_set`, no more than 30 ms apart - 11.5 on this Mac - answered by at least four reports in five and more than two rounds of a ring, 665 in all; a click on the Deskbar's button that opens its menu; a button pressed through USB, and let go by the driver when the mouse is pulled out holding it; and a full-speed mouse plugged back in, read every 8 ms for the 10 its descriptor asks, from its first report |
+
+`tools/test_syscall_args.lua` reads the two new calls as well: 53 cases, 55
+calls, none short.
+
+**Found on the way, each before it could matter:**
+
+- **The first run of `usb_mouse` was on the 8259s**, copied from `pointer`,
+  and it passed with the control that makes the driver wait on one
+  controller. Under `opt/kosmos/irq=pic` QEMU's two controllers share line
+  11: the second's claim is refused, it says "not claimed, so polled", and
+  the shared line woke the driver for both. The check boots on the I/O APIC
+  now, as the ThinkPad does, and asserts the two interrupts.
+- **And on the I/O APIC that control still passed**, because the movements
+  were not 20 ms apart. `Monitor.ask` waits for as much quiet as it is asked
+  for, and reads its socket with a 50 ms timeout, so it cannot see a shorter
+  quiet: every movement came 50 ms after the last, and a driver waiting 50 ms
+  on the other controller kept up. The movements go out on a 2 ms timeout
+  now, and the check measures their spacing and fails one over 30 ms before
+  it believes a count.
+- **No ring had gone round before.** A ring is 255 requests and a Link back
+  to its start, and nothing had sent one ring more than a few dozen: the
+  Link and the cycle bit it turns over had never run. A mouse reaches them
+  in two seconds of movement.
+- **The keyboard in `usb` and `usb_hotplug` is a HID device too**, and now
+  says it is not a boot mouse. Neither check's patterns match that line,
+  which running both confirmed.
+
+**The controls**, each an edit to one file, a build, the check that should
+catch it and a restore, by a script that compared every file with its
+original afterwards.
+
+The descriptor walk, as copies compiled beside the host test:
+
+| broken | what failed |
+| ------ | ----------- |
+| a descriptor's length not held to what is left of the total | 2 of 32: "a descriptor running past the end was walked", "a total that cuts the endpoint in half was walked" |
+| alternate settings not looked at | 1 of 32: "a mouse at alternate setting 1 was taken" |
+| a total longer than what arrived believed | 1 of 32: "a total longer than what arrived was believed" |
+| the endpoint's direction not looked at | 1 of 32: "an OUT endpoint was taken for the mouse's reports" |
+| a length of 0 accepted | no answer: the walk stops moving, and the run was killed after five seconds (exit 142) |
+
+The kernel, each against a whole suite:
+
+```
+irq_wait_any leaving its waiter on the other lines (AArch64):
+  not ok 133 - irq: a wait on two lines takes whichever has one
+  FAIL: 1 of 158 test(s) failed
+
+irq_wait_any recording itself as the first line's waiter only (AArch64):
+  not ok 133 - irq: a wait on two lines takes whichever has one
+  FAIL: 1 of 158 test(s) failed
+
+the board adding a report's Y upwards (x86-64):
+  not ok 133 - input: a driver's movement adds to the pointer
+  FAIL: 1 of 154 test(s) failed
+
+the board holding every bit of a source's buttons (x86-64):
+  not ok 133 - input: a driver's movement adds to the pointer
+  FAIL: 1 of 154 test(s) failed
+```
+
+The driver, each against `usb_mouse` as it stands - on the I/O APIC, with
+the movements' spacing measured:
+
+| broken | what failed |
+| ------ | ----------- |
+| `detach` not letting go of the mouse's buttons | 1 of 16: "a button held on the USB mouse as it was pulled out never came up" |
+| the watch waiting on the first controller's line only | 2 of 16: "the driver read 161 reports for 640 movements 11.6 ms apart - fewer than four in five", and fewer than two rounds of a ring |
+| a full-speed bInterval taken for a power of two | 1 of 16: "a full-speed mouse asking for a report every 10 ms was not read every 8 ms" |
+| `ring_push` not turning the cycle bit over at the Link | 5 of 16: the driver read exactly 255 reports - one ring - and then nothing: no menu, no button, no release |
+
+The one that waits on one line passed twice before it failed here - 13 of 13
+on the 8259s, and 14 of 14 on the I/O APIC with the movements 50 ms apart -
+which is where the first two findings above come from.
+
+And as written, after every restore: the host test 32 of 32, the suites 158
+of 158 and 154 of 154, and `usb_mouse` 16 of 16, the driver reading 665
+reports for 640 movements 11.5 ms apart.

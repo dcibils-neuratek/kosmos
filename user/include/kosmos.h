@@ -278,6 +278,19 @@ static inline long kosmos_irq_ack(long cap)
 }
 
 /*
+ * The same wait on up to `IRQ_WAIT_ANY_MAX` lines at once: which of `caps`
+ * had an interrupt, as its place in the array, or `SYS_NO_INTERRUPT` when
+ * `ticks` ran out. What a driver with several devices and one thread waits
+ * with, rather than on each device in turn.
+ */
+static inline long kosmos_irq_wait_any(const long *caps, unsigned long count,
+                                       unsigned long ticks)
+{
+    return sys3(SYS_IRQ_WAIT_ANY, (long)(uintptr_t)caps, (long)count,
+                (long)ticks);
+}
+
+/*
  * Pages of this process's own, for the things that do not fit on its heap.
  *
  * The heap is 2 MB and deliberately so; a full-screen surface is 3.2 MB.
@@ -542,6 +555,17 @@ static inline long kosmos_pointer(struct pointer_info *out)
 static inline long kosmos_pointer_speed(unsigned units)
 {
     return sys1(SYS_PTR_SPEED, (long)units);
+}
+
+/*
+ * A pointing device's movement and buttons, from the driver that reads it:
+ * counts right and down, bit 0 left and bit 1 right. Device authority only;
+ * `SYS_ERR_NO_DEVICE` on a board whose pointer is absolute.
+ */
+static inline long kosmos_pointer_move(long dx, long dy,
+                                       unsigned long buttons)
+{
+    return sys3(SYS_POINTER_MOVE, dx, dy, (long)buttons);
 }
 
 static inline long kosmos_reply(uint64_t sender, const struct message *msg)

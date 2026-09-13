@@ -606,6 +606,7 @@ bool          hal_fb_init(struct fb *out);  /* M6; false when there is no screen
 bool          hal_keyboard_init(void);      /* M6; false when there is none  */
 bool          hal_pointer_init(void);       /* M6; false when there is none  */
 bool          hal_pointer_poll(struct pointer_state *out);
+bool          hal_pointer_move(int dx, int dy, uint32_t buttons); /* a mouse a process drives */
 
 unsigned      hal_cpu_count(void);          /* how many processors exist */
 bool          hal_cpu_on(unsigned cpu, uintptr_t entry, unsigned long ctx);
@@ -625,7 +626,9 @@ come from the board, through the kernel, as a value the driver is handed.
 
 There is deliberately no `hal_keyboard_getchar`. A keyboard is a source of characters and `hal_getchar` is where characters come from, so the board answers from whichever of its sources has one. Nothing above the HAL changes because a keyboard exists.
 
-The pointer *does* get its own pair, and the difference is the point: a character can come from any of several sources and be the same character, so merging them costs nothing. A position cannot. It has exactly one source, and merging two would mean choosing between them - a choice that does not exist until there is a board with two pointing devices.
+The pointer *does* get its own pair, and the difference is the point: a character can come from any of several sources and be the same character, so merging them costs nothing. A position is like that only when it is relative. A tablet says where it is, and two of those would be two opinions to choose between. A TrackPoint and a mouse say how far they moved, and two of those are only more movement: **the board adds every relative device into the one position it reports, and holds each one's buttons** (`hal/pc/pointer.c`). `hal_pointer_move` is that for a device whose driver is a process - the ThinkPad's USB mouse.
+
+This paragraph used to say merging always meant choosing, "a choice that does not exist until there is a board with two pointing devices". The ThinkPad was that board, and it showed the choice exists only between absolute ones.
 
 `hal_pointer_poll` reports in the **device's own units, with the range beside them**, and does not scale to the screen. Same division as `sysinfo` and its raw ID registers: this layer says what the hardware said. Only the window manager knows how big the screen is, so only the window manager can scale.
 

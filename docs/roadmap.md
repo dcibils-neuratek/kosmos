@@ -135,9 +135,9 @@ was to make the disk smaller.
 So the next thing is not a subsystem this system lacks in the abstract. It
 is the one that makes the machine Diego owns behave like a computer:
 
-0. **USB.** xHCI, then enumeration, then bulk transfers, then mass storage,
-   then Ethernet. Each step ends in something visible, and two of them are
-   worth the whole milestone on their own:
+0. **USB.** xHCI, then enumeration, then a mouse, then bulk transfers, then
+   mass storage, then Ethernet. Each step ends in something visible, and two
+   of them are worth the whole milestone on their own:
 
    - **mass storage deletes the loader-disk problem.** No module, no
      relocator, no ceiling on what can be carried.
@@ -164,8 +164,13 @@ is the one that makes the machine Diego owns behave like a computer:
    address, and its descriptors read, by interrupt - MSI-X, which the PC
    board gained for it. On the ThinkPad it named three devices of five, so
    since 0.10.55 a failure says why and gets a second attempt, and the
-   driver stays, naming devices as they are plugged in and pulled out. Next:
-   bulk transfers - or a USB mouse first, which is Diego's call.
+   driver stays, naming devices as they are plugged in and pulled out.
+
+   **Step three is built (0.10.61), and has run under QEMU: a USB mouse
+   moves the pointer.** Diego's call, on 13 September - "yes / lets make the
+   mouse work" - because his USB mouse did nothing on the ThinkPad's desktop.
+   The board adds it into the position the TrackPoint moves, and the driver
+   waits on every controller at once (`usb.md` §5). Next: bulk transfers.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -333,6 +338,25 @@ the Pi", and the Pi is not here yet.
   unpacks two, so the `SKIP` it was written to print is a `ValueError`. Seen
   while reading it on 13 September 2026, and put here rather than fixed in
   passing.
+- **A USB mouse whose report fails is not brought back.** A stall, or a
+  transaction error after three tries, halts its endpoint, and the driver
+  stops reading it until it is plugged in again. Bringing it back is a Reset
+  Endpoint, a CLEAR_FEATURE to the device and a new dequeue pointer - none of
+  which QEMU's mouse can be made to need, so none of which a test here could
+  reach. Written down in `usb.md` §5 and left for a machine that needs it.
+- **A device being plugged in stalls every mouse for a moment.** The xHCI
+  driver has one thread, and a plug holds it for USB 2.0's debounce, the
+  reset and the commands - a fifth of a second or more - while a mouse on any
+  controller waits. Enumeration as steps the watch takes between reports
+  would remove it.
+- **A mouse that stays in the report protocol, or runs at SuperSpeed, is not
+  read.** The first needs a report descriptor parser and the second a
+  SuperSpeed Endpoint Companion; the driver says which it met.
+- **A button held when the xHCI driver dies stays held.** The pointer keeps
+  each source's buttons, and nothing lets go of the driver's if its process
+  ends with one down.
+- **One speed for every relative device.** A mouse and a TrackPoint want
+  different speeds, and both want a curve (`hal/pc/pointer.c`).
 
 ---
 

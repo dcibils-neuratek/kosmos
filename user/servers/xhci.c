@@ -1,16 +1,19 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The USB host controllers - steps one and two of the USB stack.
+ * The USB host controllers - steps one to three of the USB stack.
  *
- * `roadmap.md` builds USB in steps that each end in something visible:
- * controller up, enumeration, bulk transfers, mass storage, Ethernet. This is
- * the first two. For every xHCI controller the board reports it maps the
- * registers, takes the controller from the firmware if the firmware held it,
- * halts and resets it, and reads which ports have something plugged in -
- * step one. Then it gives the controller its rings and its interrupter,
- * starts it, proves the command ring and the event ring with a No-Op, resets
- * each USB 2 port that has a device, gives every device a slot and an
- * address, and reads its descriptors: what it is and who made it - step two.
+ * `docs/usb.md` builds USB in steps that each end in something visible:
+ * controllers up, enumeration, a mouse, bulk transfers, mass storage,
+ * Ethernet. This is the first three. For every xHCI controller the board
+ * reports it maps the registers, takes the controller from the firmware if
+ * the firmware held it, halts and resets it, and reads which ports have
+ * something plugged in - step one. Then it gives the controller its rings and
+ * its interrupter, starts it, proves the command ring and the event ring with
+ * a No-Op, resets each USB 2 port that has a device, gives every device a
+ * slot and an address, and reads its descriptors: what it is and who made it
+ * - step two. **And a device that is a mouse is read**: its configuration
+ * chosen, its interrupt endpoint given a ring, the boot protocol asked for,
+ * and each report it sends handed to the pointer - step three.
  *
  * **Then it stays, and watches.** A device plugged in is reset, addressed and
  * named as the ones found at boot were, and one pulled out has its slot given
@@ -29,11 +32,11 @@
  * is the model the tests run against and agrees with all of them; it was read
  * for how it behaves, and nothing here is taken from it.
  *
- * **The USB descriptors are the exception**: their layout is the USB 2.0
- * specification's (9.6.1, 9.6.7), which is not in this project's reference
- * material. The offsets used are few and universal, and the test compares
- * the product strings read here with what QEMU itself reports, but the
- * vendor and product numbers have no second source.
+ * **The USB descriptors and requests are the USB 2.0 specification's**
+ * (chapter 9), and the mouse's class request and report are HID 1.11's. Both
+ * came into the references with the mouse and are named beside what they
+ * give. Before that the descriptors' offsets here were remembered, and so
+ * were the intervals a device is owed - which turned out to be missing.
  *
  * --------------------------------------------------------------------
  * The firmware, which QEMU does not have.
@@ -67,6 +70,7 @@
 #include "kosmos.h"
 #include "mmio.h"
 #include "say.h"
+#include "usb_decode.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
@@ -153,16 +157,20 @@
  */
 #define TRB_C               (1u << 0)
 #define TRB_TC              (1u << 1)                   /* Link: toggle cycle */
+#define TRB_ISP             (1u << 2)                   /* Normal: short packet */
 #define TRB_IOC             (1u << 5)
 #define TRB_IDT             (1u << 6)                   /* Setup: data inline */
 #define TRB_TYPE(t)         ((uint32_t)(t) << 10)
 #define TRB_TYPE_OF(w)      (((w) >> 10) & 0x3Fu)
-#define TRB_DIR_IN          (1u << 16)                  /* Data stage */
+#define TRB_DIR_IN          (1u << 16)                  /* Data, Status: IN */
 #define TRB_TRT_IN          (3u << 16)                  /* Setup: IN data stage */
 #define TRB_SLOT(s)         ((uint32_t)(s) << 24)
 #define TRB_SLOT_OF(w)      (((w) >> 24) & 0xFFu)
+#define TRB_ENDPOINT_OF(w)  (((w) >> 16) & 0x1Fu)       /* word 3 of a transfer */
 #define TRB_CODE_OF(w)      (((w) >> 24) & 0xFFu)       /* word 2 of an event */
+#define TRB_LEFT_OF(w)      ((w) & 0xFFFFFFu)           /* ...and bytes not sent */
 
+#define TRB_NORMAL          1u
 #define TRB_SETUP           2u
 #define TRB_DATA            3u
 #define TRB_STATUS          4u
@@ -170,6 +178,7 @@
 #define TRB_ENABLE_SLOT     9u
 #define TRB_DISABLE_SLOT    10u
 #define TRB_ADDRESS_DEVICE  11u
+#define TRB_CONFIGURE       12u
 #define TRB_EVALUATE        13u
 #define TRB_NOOP            23u
 #define TRB_TRANSFER        32u
@@ -191,8 +200,10 @@
  *   1   the command ring, 256 TRBs, the last a Link back to the first
  *   2   the event ring's one segment, 256 TRBs (6.5)
  *   3   the one-entry Event Ring Segment Table, and the scratchpad array
- *   4+  four pages a device: input context, output context, the default
- *       control endpoint's ring, and a buffer for what it sends back
+ *   4+  six pages a device: input context, output context, the default
+ *       control endpoint's ring, a buffer for what it sends back, and - for
+ *       a mouse - its interrupt endpoint's ring and the page its reports
+ *       come back in
  *   then a page for each scratchpad buffer the controller asks for (4.20)
  *
  * Eight devices a controller, as a start: the slots enabled are that many,
@@ -203,12 +214,14 @@
 #define DEVICES_MAX         8u
 #define NAME_MAX_CHARS      48u         /* of a product string, kept */
 #define PORT_FAILED         0xFFu       /* a port whose device was not named */
-#define PAGES_A_DEVICE      4u
+#define PAGES_A_DEVICE      6u
 #define PAGE_DCBAA          0u
 #define PAGE_COMMANDS       1u
 #define PAGE_EVENTS         2u
 #define PAGE_ERST           3u
 #define PAGE_DEVICES        4u
+#define DEVICE_PAGE_RING    4u          /* of a device's own six: a mouse's */
+#define DEVICE_PAGE_REPORT  5u          /* ...ring, and its reports */
 #define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
 #define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
 
@@ -230,18 +243,42 @@
 #define EVENTS_MAX          64u         /* unrelated events borne while waiting */
 
 /*
- * The pause before a second attempt to address a device. xHCI 1.2 4.6.5 puts
- * timing USB's SetAddress recovery interval on software and names USB 2.0
- * 9.2.6.3 for it; that specification is not in this project's references, so
- * this is chosen well above the interval as remembered rather than quoted.
+ * **USB 2.0's own intervals**, which a device is owed and which the driver did
+ * not give until the specification was in the references. The ThinkPad showed
+ * the cost: its mouse, plugged back in, failed its first request with a USB
+ * Transaction Error 12 ms after its port's reset, and was named only at its
+ * next plug.
+ *
+ *   ATTACH_MS          7.1.7.3, TATTDB: a connection stable this long before
+ *                      the device is reset, started again by a disconnect
+ *   RESET_RECOVERY_MS  7.1.7.5 and 9.2.6.2, TRSTRCY: after a reset and before
+ *                      the first request, during which "the device may ignore
+ *                      any data transfers"
+ *   ADDRESS_MS         9.2.6.3: after SET_ADDRESS's status stage and before a
+ *                      request to the new address. Address Device is what
+ *                      sends it, and xHCI 1.2 4.6.5 leaves this to software
+ *
+ * `ATTACH_TRIES` is how many intervals a connection may bounce through before
+ * it is left for its next change to try again.
+ */
+#define ATTACH_MS           100u
+#define ATTACH_TRIES        5u
+#define RESET_RECOVERY_MS   10u
+#define ADDRESS_MS          2u
+
+/*
+ * The pause before a second attempt to address a device, on top of those:
+ * 4.6.5's notes allow a failed Address Device to be tried again after a reset,
+ * and a device that failed with USB 2.0's intervals given is given fifty
+ * milliseconds more.
  */
 #define RECOVERY_MS         50u
 
 /*
- * How long the watch waits on one controller's interrupt before looking at the
- * next. A plug or an unplug interrupts at once, so this bounds only a machine
- * whose interrupt never arrives, and two controllers are looked at ten times a
- * second between them.
+ * How long the watch waits for any controller's interrupt before looking at
+ * every port anyway. A plug, an unplug and a mouse's report all interrupt at
+ * once, so this bounds only a controller whose interrupt never arrives, or
+ * one whose interrupt could not be claimed and is polled.
  */
 #define WATCH_MS            50u
 
@@ -263,6 +300,23 @@ struct device {
     uint64_t  output_bus;
     uint64_t  buffer_bus;
     struct ring ep0;
+};
+
+/*
+ * A mouse: its interrupt endpoint, the ring its requests go on, and the page
+ * its reports come back in. One request is on the ring at a time, and the
+ * next is queued when a report is read - so `reading` is whether there is one.
+ */
+struct mouse {
+    bool          reading;
+    unsigned      port;
+    unsigned      dci;                  /* its endpoint's context index, 4.5.1 */
+    unsigned      length;               /* a request's buffer: its packet */
+    uint32_t      buttons;              /* what its last report held down */
+    unsigned long reports;              /* read, for the line when it leaves */
+    struct ring   ring;
+    uint8_t      *report;
+    uint64_t      report_bus;
 };
 
 struct controller {
@@ -306,9 +360,32 @@ struct controller {
     uint16_t      vendor[DEVICES_MAX + 1];
     uint16_t      product[DEVICES_MAX + 1];
     char          name[DEVICES_MAX + 1][NAME_MAX_CHARS + 1];
+
+    /* Each slot's mouse, when its device is one. */
+    struct mouse  mouse[DEVICES_MAX + 1];
+
+    /*
+     * Reports that arrived while a command or a control transfer was waited
+     * for, kept to be read after it. A mouse has one request on its ring at a
+     * time and gets the next only when a report is read, so there can never
+     * be more of these than there are mice.
+     */
+    uint32_t      kept[DEVICES_MAX][4];
+    unsigned      nkept;
 };
 
 static long console = -1;
+
+/*
+ * As many controllers as the closing line names and the driver keeps. The
+ * board keeps four, so the limit is never the one that stops the search. At
+ * file scope because a mouse's buttons are the pointer's together with every
+ * other mouse's, on whichever controller.
+ */
+#define NAMED_MAX           8u
+
+static struct controller controllers[NAMED_MAX];
+static unsigned controllers_found;
 
 /* Asked of the machine when the driver starts; 250 only if it will not say. */
 static unsigned long tick_hz = 250u;
@@ -699,9 +776,30 @@ static bool wait_event(struct controller *c, unsigned ticks, uint32_t *out)
 }
 
 /*
+ * A mouse's report that arrived while something else was waited for, kept
+ * rather than passed over: passed over, its mouse would have no request on its
+ * ring and would never send another. False for anything that is not one.
+ */
+static bool keep_report(struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+
+    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
+        || slot > DEVICES_MAX || !c->mouse[slot].reading
+        || TRB_ENDPOINT_OF(event[3]) != c->mouse[slot].dci
+        || c->nkept >= DEVICES_MAX) {
+        return false;
+    }
+
+    memcpy(c->kept[c->nkept++], event, 4u * sizeof(uint32_t));
+    return true;
+}
+
+/*
  * A command, and its Command Completion Event (4.6, 6.4.2.2). Events for
  * anything else that arrive first - a port changing - are passed over: the
- * port registers are what this driver reads for ports.
+ * port registers are what this driver reads for ports. A mouse's report is
+ * the exception, and is kept for afterwards (`keep_report`).
  */
 static bool command(struct controller *c, uint32_t w0, uint32_t w1,
                     uint32_t w3, uint32_t *done)
@@ -722,6 +820,8 @@ static bool command(struct controller *c, uint32_t w0, uint32_t w1,
             c->last_code = TRB_CODE_OF(done[2]);
             return c->last_code == CC_SUCCESS;
         }
+
+        (void)keep_report(c, done);
     }
 
     return false;
@@ -931,7 +1031,9 @@ static bool no_op(struct controller *c, struct say_line *line)
 /*
  * A USB 2 port reset (4.3.1): Port Reset written with Port Power and nothing
  * else - the change bits are write-1-to-clear and must not be echoed back -
- * then Port Reset Change awaited and cleared. Enabled after it, or not.
+ * then Port Reset Change awaited and cleared. Enabled after it, or not; and
+ * when it is, USB 2.0's reset recovery before anything is asked of the device
+ * (`RESET_RECOVERY_MS`).
  */
 static bool reset_port(struct controller *c, unsigned port)
 {
@@ -944,7 +1046,13 @@ static bool reset_port(struct controller *c, unsigned port)
     }
 
     mmio_write32(reg, PORTSC_PP | PORTSC_PRC);
-    return (mmio_read32(reg) & PORTSC_PED) != 0;
+
+    if ((mmio_read32(reg) & PORTSC_PED) == 0) {
+        return false;
+    }
+
+    kosmos_sleep(ticks_for(RESET_RECOVERY_MS));
+    return true;
 }
 
 /* ------------------------------------------------------------ a device */
@@ -1106,6 +1214,9 @@ static const char *address_once(struct controller *c, struct device *d)
         return "Address Device";
     }
 
+    /* The command sent SET_ADDRESS, and the device has 9.2.6.3's interval
+     * before it answers to its new address. */
+    kosmos_sleep(ticks_for(ADDRESS_MS));
     return NULL;
 }
 
@@ -1116,8 +1227,9 @@ static const char *address_once(struct controller *c, struct device *d)
  * for which Disable Slot then Enable Slot. So: the slot given back, the port
  * reset again if it is USB 2, RECOVERY_MS, and the whole attempt once more.
  *
- * **The first attempt is left as it was**, with no pause after the reset, so
- * that a photograph of the ThinkPad says which of the two a device needed.
+ * **The first attempt waits only what USB 2.0 asks for** - the reset's
+ * recovery and the address's - so that a photograph of the ThinkPad still
+ * says which of the two a device needed.
  */
 static bool address_device(struct controller *c, struct device *d,
                            struct say_line *line)
@@ -1175,28 +1287,19 @@ static bool address_device(struct controller *c, struct device *d,
 }
 
 /*
- * A control transfer that reads (4.11.2.2, 6.4.1.2): Setup with its eight
- * bytes inline, an IN Data stage into the device's buffer, and a Status stage
- * that interrupts on completion. True when the Status stage succeeded; a
- * short Data stage is no error - the descriptor says how long it is.
+ * The rest of a control transfer once its stages are on the ring: endpoint
+ * 0's doorbell, and its events until the Status stage's. True when that
+ * succeeded. A stage before it that failed ends the wait; a short Data stage
+ * is no error - a descriptor says how long it is.
+ *
+ * Endpoint 0's events only: a mouse's report on the same slot is kept for
+ * afterwards, like one from any other device (`keep_report`).
  */
-static bool control_in(struct controller *c, struct device *d,
-                       uint32_t request, uint16_t value, uint16_t index,
-                       uint16_t length)
+static bool control_wait(struct controller *c, struct device *d,
+                         uint64_t status)
 {
-    uint64_t status;
     uint32_t done[4];
     unsigned seen;
-
-    memset(d->buffer, 0, length);
-
-    (void)ring_push(&d->ep0, request | ((uint32_t)value << 16),
-                    index | ((uint32_t)length << 16), 8u,
-                    TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_TRT_IN);
-    (void)ring_push(&d->ep0, (uint32_t)d->buffer_bus,
-                    (uint32_t)(d->buffer_bus >> 32), length,
-                    TRB_TYPE(TRB_DATA) | TRB_DIR_IN);
-    status = ring_push(&d->ep0, 0, 0, 0, TRB_TYPE(TRB_STATUS) | TRB_IOC);
 
     mmio_write32(c->doorbells + 4u * d->slot, 1u);  /* target 1: endpoint 0 */
     c->last_code = 0;
@@ -1208,8 +1311,10 @@ static bool control_in(struct controller *c, struct device *d,
             return false;
         }
 
-        if (TRB_TYPE_OF(done[3]) != TRB_TRANSFER
-            || TRB_SLOT_OF(done[3]) != d->slot) {
+        if (keep_report(c, done)
+            || TRB_TYPE_OF(done[3]) != TRB_TRANSFER
+            || TRB_SLOT_OF(done[3]) != d->slot
+            || TRB_ENDPOINT_OF(done[3]) != 1u) {
             continue;
         }
 
@@ -1228,10 +1333,64 @@ static bool control_in(struct controller *c, struct device *d,
     return false;
 }
 
-/* GET_DESCRIPTOR: device-to-host, standard, device (USB 2.0, 9.4.3). */
+/*
+ * A control transfer that reads (4.11.2.2, 6.4.1.2): Setup with its eight
+ * bytes inline, an IN Data stage into the device's buffer, and a Status stage
+ * - OUT, the other way from the data (Table 4-7) - that interrupts on
+ * completion.
+ */
+static bool control_in(struct controller *c, struct device *d,
+                       uint32_t request, uint16_t value, uint16_t index,
+                       uint16_t length)
+{
+    uint64_t status;
+
+    memset(d->buffer, 0, length);
+
+    (void)ring_push(&d->ep0, request | ((uint32_t)value << 16),
+                    index | ((uint32_t)length << 16), 8u,
+                    TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_TRT_IN);
+    (void)ring_push(&d->ep0, (uint32_t)d->buffer_bus,
+                    (uint32_t)(d->buffer_bus >> 32), length,
+                    TRB_TYPE(TRB_DATA) | TRB_DIR_IN);
+    status = ring_push(&d->ep0, 0, 0, 0, TRB_TYPE(TRB_STATUS) | TRB_IOC);
+
+    return control_wait(c, d, status);
+}
+
+/*
+ * A control transfer with nothing to read or write - SET_CONFIGURATION, and
+ * HID's SET_PROTOCOL: Setup with a length of 0 and a Transfer Type of no data
+ * stage, which is 0 (Table 6-26), then a Status stage that is IN, because
+ * with no data stage it is the device that answers (Table 4-7).
+ */
+static bool control_nodata(struct controller *c, struct device *d,
+                           uint32_t request, uint16_t value, uint16_t index)
+{
+    uint64_t status;
+
+    (void)ring_push(&d->ep0, request | ((uint32_t)value << 16), index, 8u,
+                    TRB_TYPE(TRB_SETUP) | TRB_IDT);
+    status = ring_push(&d->ep0, 0, 0, 0,
+                       TRB_TYPE(TRB_STATUS) | TRB_DIR_IN | TRB_IOC);
+
+    return control_wait(c, d, status);
+}
+
+/*
+ * Requests, as bmRequestType and bRequest in the Setup stage's first word
+ * (Table 9-2). GET_DESCRIPTOR and SET_CONFIGURATION are standard requests to
+ * the device (9.4.3, 9.4.7, Table 9-4); SET_PROTOCOL is HID's, a class
+ * request to an interface (HID 1.11 7.2.6, its bRequest from 7.2's table).
+ * A descriptor's type is wValue's high byte (Table 9-5).
+ */
 #define GET_DESCRIPTOR      (0x80u | (6u << 8))
+#define SET_CONFIGURATION   (0x00u | (9u << 8))
+#define SET_PROTOCOL        (0x21u | (0x0Bu << 8))
 #define DESC_DEVICE         0x0100u
+#define DESC_CONFIGURATION  0x0200u
 #define DESC_STRING         0x0300u
+#define PROTOCOL_BOOT       0u          /* 7.2.6: 0 boot, 1 report */
 
 /*
  * A string descriptor as ASCII: UTF-16LE after a two-byte header, anything
@@ -1358,6 +1517,366 @@ static bool describe(struct controller *c, struct device *d,
     return true;
 }
 
+/* ---------------------------------------------------------------- a mouse */
+
+/*
+ * An endpoint descriptor's bInterval as an endpoint context's Interval, a
+ * power of two in steps of 125 microseconds (6.2.3.6, Table 6-12). A full- or
+ * low-speed device says milliseconds, 1 to 255, and the power is rounded down
+ * so the endpoint is asked at least as often as it said: 3 to 10. A high-speed
+ * device says the power already, plus one.
+ */
+static unsigned interval_for(unsigned speed, unsigned interval)
+{
+    unsigned power = 3u;                    /* 8 x 125 us: a millisecond */
+
+    if (speed == 1u || speed == 2u) {
+        unsigned steps = (interval == 0u ? 1u : interval) * 8u;
+
+        while (power < 10u && (2u << power) <= steps) {
+            power++;
+        }
+
+        return power;
+    }
+
+    if (interval < 1u) {
+        interval = 1u;
+    }
+
+    return (interval > 16u ? 16u : interval) - 1u;
+}
+
+/*
+ * Every mouse's buttons, on every controller, together. The pointer holds this
+ * driver's buttons as one source's (`hal_pointer_move`), so a release on one
+ * mouse must not let go of a button another is holding down.
+ */
+static uint32_t all_buttons(void)
+{
+    uint32_t held = 0;
+    unsigned i, slot;
+
+    for (i = 0; i < controllers_found; i++) {
+        for (slot = 1; slot <= DEVICES_MAX; slot++) {
+            held |= controllers[i].mouse[slot].buttons;
+        }
+    }
+
+    return held;
+}
+
+/*
+ * A movement and every mouse's buttons, to the pointer. Said once if the
+ * pointer will not take them - on a board whose pointer is a tablet - and
+ * after that only tried.
+ */
+static void to_pointer(int dx, int dy)
+{
+    static bool said;
+    long refused = kosmos_pointer_move(dx, dy, all_buttons());
+    struct say_line line;
+
+    if (refused == 0 || said) {
+        return;
+    }
+
+    said = true;
+    say_begin(&line);
+    say_text(&line, refused == SYS_ERR_NO_DEVICE
+                    ? "xhci: this machine's pointer is absolute, and a "
+                      "mouse's movement is not added to it"
+                    : "xhci: the kernel would not take a mouse's movement");
+    say_send(console, &line);
+}
+
+/*
+ * A request for one report (6.4.1.1): a Normal TRB over the mouse's report
+ * page, as long as its packet, that interrupts when it completes and when a
+ * report comes back shorter - then the endpoint's doorbell, whose target is
+ * its context index, as endpoint 0's is 1.
+ */
+static void ask_for_report(struct controller *c, unsigned slot)
+{
+    struct mouse *m = &c->mouse[slot];
+
+    (void)ring_push(&m->ring, (uint32_t)m->report_bus,
+                    (uint32_t)(m->report_bus >> 32), m->length,
+                    TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
+    mmio_write32(c->doorbells + 4u * slot, m->dci);
+}
+
+/* A report's X or Y: a signed byte, -127 to 127 (HID 1.11 B.2). */
+static int count_of(uint8_t byte)
+{
+    return byte < 0x80u ? (int)byte : (int)byte - 256;
+}
+
+static void say_count(struct say_line *line, int n)
+{
+    if (n < 0) {
+        say_text(line, "-");
+    }
+
+    say_dec(line, (unsigned long)(n < 0 ? -n : n));
+}
+
+/*
+ * A report, read (HID 1.11 B.2): byte 0 the buttons, bytes 1 and 2 the
+ * movement, anything after them the device's own. The movement and the
+ * buttons go to the pointer when there is something new in them, and the
+ * next request goes on the ring whatever there was. The first report is said,
+ * which is how a photograph of the ThinkPad tells a mouse that sends nothing
+ * from a pointer that does nothing with what it sends.
+ *
+ * **A report that failed stops the mouse**, and says so. The endpoint is
+ * halted by then (4.10.2.1, 4.10.2.3), and bringing it back is a Reset
+ * Endpoint, a CLEAR_FEATURE to the device and a new dequeue pointer - none of
+ * which QEMU's mouse can be made to need, so none of which a test here could
+ * reach. A mouse unplugged and plugged in again is read from the start.
+ */
+static void take_report(struct controller *c, const uint32_t *event)
+{
+    unsigned slot = TRB_SLOT_OF(event[3]);
+    struct say_line line;
+    struct mouse *m;
+    uint32_t code, left;
+
+    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
+        || slot > DEVICES_MAX) {
+        return;
+    }
+
+    m = &c->mouse[slot];
+
+    if (!m->reading || TRB_ENDPOINT_OF(event[3]) != m->dci) {
+        return;
+    }
+
+    code = TRB_CODE_OF(event[2]);
+    left = TRB_LEFT_OF(event[2]);
+
+    if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+        bool held = m->buttons != 0;
+
+        m->reading = false;
+        m->buttons = 0;
+
+        if (held) {
+            to_pointer(0, 0);
+        }
+
+        about(&line, c);
+        say_text(&line, " port ");
+        say_dec(&line, m->port);
+        say_text(&line, ": the mouse's report failed: ");
+        say_text(&line, completion_name(code));
+        say_text(&line, " (");
+        say_dec(&line, code);
+        say_text(&line, "); not read again until it is plugged in again");
+        say_send(console, &line);
+        return;
+    }
+
+    if (left < m->length && m->length - left >= 3u) {
+        uint32_t buttons = m->report[0] & 0x07u;
+        int dx = count_of(m->report[1]);
+        int dy = count_of(m->report[2]);
+
+        if (++m->reports == 1u) {
+            about(&line, c);
+            say_text(&line, " port ");
+            say_dec(&line, m->port);
+            say_text(&line, ": the mouse's first report: buttons ");
+            say_dec(&line, buttons);
+            say_text(&line, ", moved ");
+            say_count(&line, dx);
+            say_text(&line, ",");
+            say_count(&line, dy);
+            say_send(console, &line);
+        }
+
+        if (dx != 0 || dy != 0 || buttons != m->buttons) {
+            m->buttons = buttons;
+            to_pointer(dx, dy);
+        }
+    }
+
+    ask_for_report(c, slot);
+}
+
+/* The reports kept while a command or a control transfer was waited for. */
+static void take_kept(struct controller *c)
+{
+    uint32_t event[4];
+
+    while (c->nkept > 0) {
+        c->nkept--;
+        memcpy(event, c->kept[c->nkept], sizeof(event));
+        take_report(c, event);
+    }
+}
+
+/*
+ * A device that has just said what it is, asked whether it is a mouse this
+ * can read - and if it is, made ready to be read.
+ *
+ * **Its configuration**, asked for twice: nine bytes for the total length,
+ * then all of it, walked by `usb_decode.c`. A HID boot mouse - subclass 1,
+ * protocol 2 - with an interrupt IN endpoint is the one kind taken: HID 1.11
+ * fixes its reports' layout (B.2), so nothing has to read its report
+ * descriptor. Any other HID device is said and left alone.
+ *
+ * **Then the controller before the device**, the order 4.3.5 gives: Configure
+ * Endpoint with the endpoint's context first, because a SET_CONFIGURATION
+ * after one that failed is undefined behaviour; then SET_CONFIGURATION; then
+ * SET_PROTOCOL for the boot protocol, because a device starts in the report
+ * protocol and the host is to set the one it wants rather than assume (HID
+ * 1.11 7.2.6). SET_IDLE is not sent: a boot mouse need not support it
+ * (Appendix G), and a mouse's idle rate starts at infinity - a report only
+ * when something changes - which is what is wanted (7.2.4).
+ *
+ * **A SuperSpeed mouse is said and not read**: its endpoint's largest payload
+ * an interval comes from a companion descriptor this does not walk (4.14.2).
+ */
+static void use_mouse(struct controller *c, struct device *d,
+                      struct say_line *line)
+{
+    struct mouse *m = &c->mouse[d->slot];
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    struct usb_config found;
+    uint32_t done[4];
+    uint32_t *icc, *slot, *ep;
+    unsigned total, dci, interval, payload;
+
+    memset(m, 0, sizeof(*m));
+
+    if (!control_in(c, d, GET_DESCRIPTOR, DESC_CONFIGURATION, 0, 9u)) {
+        say_failure(c, d->port, "GET_DESCRIPTOR for its configuration", "",
+                    line);
+        return;
+    }
+
+    total = d->buffer[2] | (unsigned)d->buffer[3] << 8;
+    total = total > PAGE ? PAGE : total;
+
+    if (total > 9u && !control_in(c, d, GET_DESCRIPTOR, DESC_CONFIGURATION,
+                                  0, (uint16_t)total)) {
+        say_failure(c, d->port, "GET_DESCRIPTOR for all its configuration",
+                    "", line);
+        return;
+    }
+
+    usb_decode_config(d->buffer, total, &found);
+
+    if (found.kind == USB_CONFIG_NOT_HID) {
+        return;
+    }
+
+    if (found.kind != USB_CONFIG_BOOT_MOUSE || d->speed >= 4u) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+
+        if (found.kind == USB_CONFIG_MALFORMED) {
+            say_text(line, ": a configuration descriptor that does not add "
+                           "up; not read");
+        } else if (found.kind == USB_CONFIG_HID_OTHER) {
+            say_text(line, ": a HID device, not a boot mouse (subclass ");
+            say_dec(line, found.hid_subclass);
+            say_text(line, ", protocol ");
+            say_dec(line, found.hid_protocol);
+            say_text(line, "); not read");
+        } else {
+            say_text(line, ": a SuperSpeed boot mouse, which this does not "
+                           "read yet");
+        }
+
+        say_send(console, line);
+        return;
+    }
+
+    dci = 2u * found.endpoint + 1u;                 /* 4.5.1: an IN endpoint */
+    interval = interval_for(d->speed, found.interval);
+    payload = found.packet * (found.extra + 1u);    /* 4.14.2, for USB 2 */
+
+    m->port = d->port;
+    m->dci = dci;
+    m->length = found.packet;
+    m->report = (uint8_t *)(c->mem + (page + DEVICE_PAGE_REPORT) * PAGE);
+    m->report_bus = c->bus + (page + DEVICE_PAGE_REPORT) * PAGE;
+    ring_start(&m->ring,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_RING) * PAGE),
+               c->bus + (page + DEVICE_PAGE_RING) * PAGE);
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+    ep = context(c, d->input, dci + 1u);
+
+    /*
+     * The slot and this endpoint added, nothing dropped, and endpoint 0 left
+     * out, as Configure Endpoint wants (4.6.6, 6.2.5.1). The slot's Context
+     * Entries raised to this endpoint, now the last one (6.2.2.2). And the
+     * endpoint the way 4.8.2.4 describes an interrupt one: three errors
+     * allowed, IN, its packet and its extra transactions, its interval, its
+     * ring with the cycle bit at 1, and its largest payload an interval
+     * (Tables 6-8 and 6-9). Its average TRB length is its one request's,
+     * since every request it will have is that one (4.14.1.1).
+     */
+    icc[0] = 0;
+    icc[1] = 1u | (1u << dci);
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | (dci << 27);
+
+    memset(ep, 0, c->context);
+    ep[0] = interval << 16;
+    ep[1] = ((uint32_t)found.packet << 16) | ((uint32_t)found.extra << 8)
+          | (7u << 3) | (3u << 1);
+    ep[2] = (uint32_t)m->ring.bus | 1u;
+    ep[3] = (uint32_t)(m->ring.bus >> 32);
+    ep[4] = (payload << 16) | m->length;
+
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
+        say_failure(c, d->port, "Configure Endpoint",
+                    "; the mouse is not read", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_CONFIGURATION, found.configuration, 0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION",
+                    "; the mouse is not read", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_PROTOCOL, PROTOCOL_BOOT, found.interface)) {
+        say_failure(c, d->port, "SET_PROTOCOL for the boot protocol",
+                    "; the mouse is not read", line);
+        return;
+    }
+
+    m->reading = true;
+    ask_for_report(c, d->slot);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": a boot mouse, read from endpoint ");
+    say_dec(line, found.endpoint);
+    say_text(line, ", up to ");
+    say_dec(line, found.packet);
+    say_text(line, " bytes every ");
+
+    if (interval >= 3u) {
+        say_dec(line, (125ul << interval) / 1000ul);
+        say_text(line, " ms");
+    } else {
+        say_dec(line, 125ul << interval);
+        say_text(line, " us");
+    }
+
+    say_send(console, line);
+}
+
 /*
  * Stopped, and reset, before this process ends: Run/Stop and the interrupt
  * enable cleared, Halted awaited, then HCRST - which also forgets the context
@@ -1390,17 +1909,71 @@ static void clear_changes(const struct controller *c, unsigned port,
 }
 
 /*
- * A device on a port: its reset if it is USB 2, the port's line, a slot and an
- * address, and what it says it is. The port keeps its slot, or the fact that a
+ * Whether a device just plugged in stayed plugged in for USB 2.0's debounce
+ * interval (7.1.7.3, `ATTACH_MS`), which starts again when the connection
+ * drops in the meantime. Each drop's change is cleared here, so the watch does
+ * not see it again, and a connection still bouncing after `ATTACH_TRIES`
+ * intervals is said and left for its next change.
+ */
+static bool settled(struct controller *c, unsigned port,
+                    struct say_line *line)
+{
+    unsigned tries;
+
+    for (tries = 0; tries < ATTACH_TRIES; tries++) {
+        uint32_t sc;
+
+        kosmos_sleep(ticks_for(ATTACH_MS));
+        sc = mmio_read32(c->op + OP_PORTSC(port));
+
+        if ((sc & PORTSC_CSC) == 0) {
+            return (sc & PORTSC_CCS) != 0;
+        }
+
+        clear_changes(c, port, sc);
+
+        if ((sc & PORTSC_CCS) == 0) {
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, port);
+            say_text(line, ": plugged in and pulled out again");
+            say_send(console, line);
+            return false;
+        }
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, port);
+    say_text(line, ": a connection that would not settle, left for its next "
+                   "change");
+    say_send(console, line);
+    return false;
+}
+
+/*
+ * A device on a port: its debounce if it was just plugged in, its reset if it
+ * is USB 2, the port's line, a slot and an address, what it says it is - and,
+ * if it is a mouse, the mouse. The port keeps its slot, or the fact that a
  * device is there and was not named, so an unplug later can say which.
+ *
+ * **Debounced only when just plugged in** (7.1.7.3): contacts bounce as a
+ * plug goes in, and a reset sent during that resets a device that is not
+ * properly there yet. One found at boot has been in its socket since before
+ * the firmware ran.
  */
 static void attach(struct controller *c, unsigned port, bool running,
-                   struct say_line *line)
+                   bool plugged, struct say_line *line)
 {
-    uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
+    uint32_t sc;
     struct device d;
     bool reset_done = false;
 
+    if (plugged && running && !settled(c, port, line)) {
+        return;
+    }
+
+    sc = mmio_read32(c->op + OP_PORTSC(port));
     c->port_slot[port] = PORT_FAILED;
 
     /*
@@ -1465,7 +2038,10 @@ static void attach(struct controller *c, unsigned port, bool running,
         say_dec(line, port);
         say_text(line, ": the device did not say what it is");
         say_send(console, line);
+        return;
     }
+
+    use_mouse(c, &d, line);
 }
 
 /*
@@ -1477,6 +2053,8 @@ static void attach(struct controller *c, unsigned port, bool running,
 static void detach(struct controller *c, unsigned port, struct say_line *line)
 {
     unsigned slot = c->port_slot[port];
+    struct mouse *m = (slot != 0 && slot != PORT_FAILED) ? &c->mouse[slot]
+                                                          : NULL;
 
     about(line, c);
     say_text(line, " port ");
@@ -1496,7 +2074,30 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
         }
     }
 
+    if (m != NULL && m->dci != 0) {
+        say_text(line, ", after ");
+        say_dec(line, m->reports);
+        say_text(line, m->reports == 1 ? " report" : " reports");
+    }
+
     say_send(console, line);
+
+    /*
+     * **A mouse stops being read before its slot goes**, so a report the
+     * controller finishes as the slot is disabled is not answered with a
+     * request on a ring whose endpoint is gone - and a button it was holding
+     * is let go, or the pointer would go on holding it until something else
+     * pressed and released that button.
+     */
+    if (m != NULL) {
+        bool held = m->buttons != 0;
+
+        memset(m, 0, sizeof(*m));
+
+        if (held) {
+            to_pointer(0, 0);
+        }
+    }
 
     if (slot != 0 && slot != PORT_FAILED) {
         disable_slot(c, slot);
@@ -1587,7 +2188,7 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
         }
 
         plugged++;
-        attach(c, port, running, line);
+        attach(c, port, running, false, line);
     }
 
     /*
@@ -1604,85 +2205,112 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
     return plugged;
 }
 
-/* A wait on one controller: its interrupt with a deadline, or a sleep. */
-static void nap(struct controller *c)
-{
-    if (c->irq < 0) {
-        kosmos_sleep(ticks_for(WATCH_MS));
-        return;
-    }
-
-    (void)kosmos_irq_wait_for(c->irq, ticks_for(WATCH_MS));
-
-    mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
-    mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
-    (void)kosmos_irq_ack(c->irq);
-}
-
 /*
- * Until the machine stops: each running controller waited on, its event ring
- * emptied, and its ports read. **The ports say what happened, not the
- * events**: 4.19.2 promises no agreement between a read of PORTSC and the
- * events already written, so an event is only a reason to look sooner.
+ * One controller looked at: its interrupt acknowledged, its event ring
+ * emptied - a mouse's report read as it is taken, anything else passed over -
+ * and its ports read. **The ports say what happened, not the events**: 4.19.2
+ * promises no agreement between a read of PORTSC and the events already
+ * written, so a port's event is only a reason to look sooner.
+ *
+ * EINT is cleared before IP, the order 5.4.2 gives, and both before the ring
+ * is emptied, so an event written after the emptying raises the interrupt
+ * again rather than waiting for the next look.
  *
  * A connect change on a port with a device already recorded is that device
  * leaving, even if another has arrived by the time the port is read; so it is
- * detached first and whatever the port now holds attached after.
+ * detached first and whatever the port now holds attached after. The reports
+ * kept while their commands were waited for are read at each end, or their
+ * mice would have no request on a ring and nothing would interrupt for them.
  */
-static void watch(struct controller *controllers, unsigned count,
-                  struct say_line *line)
+static void service(struct controller *c, struct say_line *line)
 {
     uint32_t trb[4];
+    unsigned port;
+
+    if (c->irq >= 0) {
+        mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
+        mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
+        (void)kosmos_irq_ack(c->irq);
+    }
+
+    take_kept(c);
+
+    while (take_event(c, trb)) {
+        take_report(c, trb);
+    }
+
+    for (port = 1; port <= c->ports; port++) {
+        uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
+
+        if ((sc & PORTSC_CHANGES) == 0) {
+            continue;
+        }
+
+        clear_changes(c, port, sc);
+
+        if ((sc & PORTSC_CSC) == 0) {
+            continue;
+        }
+
+        if (c->port_slot[port] != 0) {
+            detach(c, port, line);
+        }
+
+        if ((sc & PORTSC_CCS) != 0) {
+            attach(c, port, true, true, line);
+        }
+    }
+
+    take_kept(c);
+}
+
+/*
+ * Until the machine stops: **every running controller's interrupt waited on
+ * at once**, and every controller looked at after any of them.
+ *
+ * It waited on each in turn, `WATCH_MS` apiece, which a plug or an unplug can
+ * afford and a mouse cannot: a mouse on the second controller would have its
+ * reports sit behind the first controller's wait and reach the pointer in
+ * bursts, ten a second. `SYS_IRQ_WAIT_ANY` is the kernel's wait on all of
+ * them. A controller whose interrupt could not be claimed is not among them,
+ * and is looked at when the wait's deadline comes round - polled, as its
+ * line said at the start.
+ */
+static void watch(struct controller *list, unsigned count,
+                  struct say_line *line)
+{
+    long lines[IRQ_WAIT_ANY_MAX];
+    unsigned waited = 0, i;
+
+    for (i = 0; i < count; i++) {
+        if (list[i].running && list[i].irq >= 0
+            && waited < IRQ_WAIT_ANY_MAX) {
+            lines[waited++] = list[i].irq;
+        }
+    }
 
     for (;;) {
-        unsigned i;
+        long woke = SYS_NO_INTERRUPT;
+
+        if (waited > 0) {
+            woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS));
+        }
+
+        /* Nothing to wait on, or a wait refused: slept instead, never spun. */
+        if (waited == 0 || (woke < 0 && woke != SYS_NO_INTERRUPT)) {
+            kosmos_sleep(ticks_for(WATCH_MS));
+        }
 
         for (i = 0; i < count; i++) {
-            struct controller *c = &controllers[i];
-            unsigned port;
-
-            if (!c->running) {
-                continue;
-            }
-
-            nap(c);
-
-            while (take_event(c, trb)) {
-                /* taken for the dequeue; the ports are read below */
-            }
-
-            for (port = 1; port <= c->ports; port++) {
-                uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
-
-                if ((sc & PORTSC_CHANGES) == 0) {
-                    continue;
-                }
-
-                clear_changes(c, port, sc);
-
-                if ((sc & PORTSC_CSC) == 0) {
-                    continue;
-                }
-
-                if (c->port_slot[port] != 0) {
-                    detach(c, port, line);
-                }
-
-                if ((sc & PORTSC_CCS) != 0) {
-                    attach(c, port, true, line);
-                }
+            if (list[i].running) {
+                service(&list[i], line);
             }
         }
     }
 }
 
-/* As many controllers as the closing line names and the driver keeps. The
- * board keeps four, so the limit is never the one that stops the search. */
-#define NAMED_MAX           8u
-
 void xhci_server(long console_cap)
 {
-    static struct controller controllers[NAMED_MAX];
     struct sysinfo info = { 0 };
     struct dev_info dev;
     struct say_line line;
@@ -1698,6 +2326,7 @@ void xhci_server(long console_cap)
 
     for (index = 0; index < NAMED_MAX
          && (asked = kosmos_dev_find(DEV_XHCI, index, &dev)) == 0; index++) {
+        controllers_found = index + 1u;
         plugged += bring_up(&controllers[index], &dev, &line);
         named += controllers[index].named;
         watching = watching || controllers[index].running;

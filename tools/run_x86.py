@@ -1071,6 +1071,285 @@ def pointer(image, check):
         proc.wait()
 
 
+# A ring's requests before its Link back to the first: `RING_TRBS - 1` in
+# `user/servers/xhci.c`.
+RING_REQUESTS = 255
+
+# Movements before the click - past two rounds of that, with room - and the
+# quiet asked for after each. QEMU folds a movement into the one before while
+# that one is unread, so a driver that reads late reads fewer reports; and a
+# gap has to be well under the 50 ms such a driver waits for that to show.
+MOVEMENTS_BEFORE_THE_CLICK = 640
+MOVEMENT_GAP = 0.01
+MOVEMENT_GAP_MOST_MS = 30.0
+
+
+def usb_mouse(image, check):
+    """A USB mouse on the second of two controllers moves the pointer and
+    clicks the Deskbar's button - after enough reports to go round its ring
+    twice - lets go of a button held as it is pulled out, and is read again
+    when it is plugged back in.
+
+    **The mouse is the first thing to go round a ring.** A ring is 255
+    requests and a Link back to its start (`ring_push` in `xhci.c`), and
+    nothing before the mouse sent one ring that many: a keyboard replugged
+    for every slot is a few dozen commands. A mouse sends a request for each
+    report, 125 a second, so the Link and the cycle bit it turns over are
+    reached within two seconds of moving it - on the ThinkPad, where a mistake
+    there is a mouse that stops. So the monitor moves it to and fro past two
+    rounds first, and the click comes after.
+
+    **The second controller, with nothing on the first**, because a driver
+    that waits on one controller at a time still clicks - its reports only
+    arrive late. What it cannot do is keep up: QEMU folds a movement into the
+    one before while that one is unread, so a mouse read late sends fewer
+    reports, and their count against the movements is the check. The
+    movements are 20 ms apart, and a driver asleep on the other controller for
+    50 ms reads fewer than one report in two. `mouse_set` routes the monitor's
+    movement to the USB mouse rather than the PS/2 mouse every q35 machine
+    also has, so the menu opens through USB or not at all.
+
+    **On the machine's own interrupt controller, as the ThinkPad boots**, and
+    not `opt/kosmos/irq=pic` as `pointer` does. Under the 8259s QEMU's two
+    controllers share line 11: the second's claim is refused, it is polled,
+    and the shared line wakes the driver for both - so the wait on two lines
+    would never run, and a driver waiting on one would pass. The first run of
+    this check was on the 8259s, and that is how it was found.
+
+    **A button held as the mouse is pulled out has to come up.** The pointer
+    holds each source's buttons, and a driver that forgot a mouse's as it left
+    would leave the desktop dragging for good. QEMU sends no release for a
+    device it deletes, which is exactly that case.
+
+    **And the mouse that goes back in is full-speed**, like the ThinkPad's,
+    whose interval is milliseconds rather than a power of two.
+    """
+    binary = os.path.join(os.path.dirname(image), "kosmos.bin")
+    work = tempfile.mkdtemp(prefix="kosmos-x86-usbmouse-")
+    path = os.path.join(work, "monitor")
+    cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+           "-display", "none", "-vga", "none", "-device", "ramfb",
+           "-monitor", "unix:%s,server,nowait" % path,
+           "-serial", "stdio",
+           "-device", "qemu-xhci,id=usb0",
+           "-device", "qemu-xhci,id=usb1",
+           "-device", "usb-mouse,bus=usb1.0,port=1,id=mouse0",
+           "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+           "-kernel", binary]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL)
+    heard = bytearray()
+
+    # On a thread, for the pointer check's reason: a guest whose serial line
+    # is not read stops inside `kputc` once the pipe is full.
+    def drain():
+        while True:
+            chunk = os.read(proc.stdout.fileno(), 65536)
+
+            if not chunk:
+                return
+
+            heard.extend(chunk)
+
+    threading.Thread(target=drain, daemon=True).start()
+
+    def since(mark):
+        return heard[mark:].decode("utf-8", "replace").replace("\r", "")
+
+    def wait_for(mark, pattern, seconds):
+        until = time.time() + seconds
+
+        while time.time() < until:
+            found = re.search(pattern, since(mark))
+
+            if found:
+                return found
+
+            time.sleep(0.25)
+
+        return None
+
+    def said():
+        return "\n    ".join(l.strip() for l in since(0).splitlines()
+                             if "xhci:" in l or "wm: button" in l)[-1500:]
+
+    def route_to_usb(monitor):
+        """The monitor's mouse, made QEMU's USB one. True if it took."""
+        listed = re.search(r"Mouse #(\d+): QEMU HID Mouse",
+                           monitor.ask("info mice", quiet=0.3))
+
+        if listed is None:
+            return False
+
+        monitor.ask("mouse_set " + listed.group(1), quiet=0.3)
+        return re.search(r"\* Mouse #\d+: QEMU HID Mouse",
+                         monitor.ask("info mice", quiet=0.3)) is not None
+
+    at = r"[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]"
+    reading = (r"xhci: (" + at + r") port (\d+): a boot mouse, read from "
+               r"endpoint (\d+), up to (\d+) bytes every (\d+) (ms|us)")
+    first_report = r"xhci: " + at + r" port \d+: the mouse's first report"
+
+    try:
+        monitor = Monitor(path)
+
+        mouse = wait_for(0, reading, 120.0)
+        closing = wait_for(0, r"xhci: 2 controllers \((" + at + r"), ("
+                           + at + r")\)", 30.0)
+        deskbar = wait_for(0, r"wm: window Deskbar at (\d+),(\d+) (\d+)x(\d+)",
+                           120.0)
+
+        check(mouse is not None,
+              "the USB driver did not say it was reading QEMU's mouse:\n    "
+              + said())
+
+        check(mouse is not None and closing is not None
+              and mouse.group(1) == closing.group(2),
+              "the mouse is on the second controller and was not read "
+              "there:\n    " + said())
+
+        # Two lines, or the wait on every controller at once waits on one.
+        lines = re.findall(r"xhci: " + at + r" runs: [^\n]*, interrupt (\d+)\n",
+                           since(0))
+
+        check(len(lines) == 2 and lines[0] != lines[1],
+              "the two controllers did not each run on an interrupt of their "
+              "own, so the driver's wait is not on two lines:\n    " + said())
+
+        check(deskbar is not None,
+              "booted into the desktop with a USB mouse, the Deskbar never "
+              "opened a window")
+
+        if mouse is None or deskbar is None:
+            return
+
+        # The rest of the login windows placed first, as in `pointer`.
+        time.sleep(6.0)
+
+        screen = monitor.screendump(os.path.join(work, "geometry.ppm"))
+
+        check(screen is not None, "QEMU would not screendump the desktop")
+
+        if screen is None:
+            return
+
+        width, height = screen[0], screen[1]
+        at_x, at_y = int(deskbar.group(1)) + 40, int(deskbar.group(2)) + 18
+
+        routed = route_to_usb(monitor)
+
+        check(routed, "QEMU would not route the monitor's mouse to its USB "
+                      "mouse: " + repr(monitor.ask("info mice", quiet=0.3)))
+
+        if not routed:
+            return
+
+        # To and fro, so the pointer ends where it started - on a socket that
+        # gives up after 2 ms rather than `Monitor`'s 50. `ask` returns once
+        # the monitor has been quiet as long as it was asked, and it cannot
+        # see a quiet shorter than its socket's timeout: at 50 ms every
+        # movement came 50 ms after the last, and a driver waiting 50 ms on
+        # the wrong controller kept up with them and passed.
+        monitor.sock.settimeout(0.002)
+        began = time.time()
+
+        for i in range(MOVEMENTS_BEFORE_THE_CLICK):
+            monitor.ask("mouse_move %d 0" % (1 if i % 2 == 0 else -1),
+                        quiet=MOVEMENT_GAP)
+
+        gap_ms = (time.time() - began) * 1000.0 / MOVEMENTS_BEFORE_THE_CLICK
+        monitor.sock.settimeout(0.05)
+
+        check(gap_ms <= MOVEMENT_GAP_MOST_MS,
+              "the movements were %.1f ms apart, too far apart to tell a "
+              "driver that reads late from one that does not" % gap_ms)
+
+        mark = len(heard)
+        click(monitor, at_x, at_y, width, height)
+        menu = wait_for(mark, r"wm: menu of Deskbar at (\d+),(\d+) (\d+)x(\d+)",
+                        20.0)
+
+        check(menu is not None,
+              "after %d movements a click on the Deskbar's button through "
+              "QEMU's USB mouse opened no menu; the driver and the window "
+              "manager said:\n    %s" % (MOVEMENTS_BEFORE_THE_CLICK, said()))
+
+        check(re.search(first_report, since(0)) is not None,
+              "the driver never said it read the mouse's first report:\n    "
+              + said())
+
+        # A button held, and the mouse pulled out while it is.
+        mark = len(heard)
+        monitor.ask("mouse_button 1", quiet=0.1)
+        down = wait_for(mark, r"wm: button down", 10.0)
+
+        check(down is not None,
+              "a button pressed on the USB mouse never reached the window "
+              "manager:\n    " + said())
+
+        mark = len(heard)
+        monitor.ask("device_del mouse0")
+        gone = wait_for(mark, r'xhci: ' + at + r' port \d+: unplugged, '
+                        r'0627:0001 "QEMU USB Mouse", after (\d+) reports?',
+                        20.0)
+        up = wait_for(mark, r"wm: button up", 10.0)
+
+        check(gone is not None,
+              "pulling the USB mouse out brought no unplug line naming it and "
+              "counting its reports:\n    " + said())
+
+        reports = int(gone.group(1)) if gone else 0
+
+        check(reports >= 2 * RING_REQUESTS,
+              "the driver read %d reports before the mouse was pulled out, "
+              "fewer than two rounds of a ring (%d), so its Link was not "
+              "tested" % (reports, 2 * RING_REQUESTS))
+
+        check(reports * 5 >= MOVEMENTS_BEFORE_THE_CLICK * 4,
+              "the driver read %d reports for %d movements %.1f ms apart - "
+              "fewer than four in five, which is a mouse read late: QEMU "
+              "folds a movement into the one before while that is unread"
+              % (reports, MOVEMENTS_BEFORE_THE_CLICK, gap_ms))
+
+        check(up is not None,
+              "a button held on the USB mouse as it was pulled out never came "
+              "up:\n    " + said())
+
+        # And plugged back in, where it is read again from its first report -
+        # a full-speed mouse this time, as the ThinkPad's is. `usb_version=1`
+        # gives QEMU's mouse only its full-speed descriptors, whose bInterval
+        # is 10 milliseconds rather than a power of two: the driver has to
+        # read it as 8 ms (xHCI 6.2.3.6), and taking it for a power would
+        # make it 64.
+        mark = len(heard)
+        monitor.ask("device_add usb-mouse,usb_version=1,bus=usb1.0,port=1,"
+                    "id=mouse1")
+        again = wait_for(mark, reading, 30.0)
+        full = re.search(r"xhci: " + at + r" port \d+, USB 2: a Full-speed "
+                         r"device \(speed ID 1\)", since(mark))
+        first = None
+
+        if again is not None and route_to_usb(monitor):
+            monitor.ask("mouse_move 5 5", quiet=0.1)
+            first = wait_for(mark, first_report, 10.0)
+
+        check(again is not None and first is not None,
+              "a USB mouse plugged back in was not read again from its first "
+              "report:\n    " + said())
+
+        check(full is not None and again is not None
+              and (again.group(5), again.group(6)) == ("8", "ms"),
+              "a full-speed mouse asking for a report every 10 ms was not "
+              "read every 8 ms:\n    " + said())
+
+        monitor.close()
+    finally:
+        proc.kill()
+        proc.wait()
+
+
 def row(out, label):
     """The value of one of `neofetch`'s rows, or None."""
     found = re.search(r"^%s +(.+?)\r?$" % label, out, re.MULTILINE)
@@ -1481,6 +1760,11 @@ def main():
     usb(image, check)
     usb_hotplug(image, check)
 
+    # And a USB mouse moving the pointer a TrackPoint moves. `usb_mouse` says
+    # why it goes round its ring twice before it clicks.
+    #
+    usb_mouse(image, check)
+
     # And what the machine says it is, which it used to read out of the
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.
     #
@@ -1508,8 +1792,9 @@ def main():
           "NVMe drive across a reboot, reads one off a disk the loader "
           "handed over in memory, names itself out of SMBIOS as QEMU and "
           "as a ThinkPad, finds a USB stick and a keyboard on two xHCI "
-          "controllers, and opens a menu with a click through "
-          "a PS/2 mouse whether or not the machine has a serial port)."
+          "controllers, moves the pointer and clicks with a USB mouse, and "
+          "opens a menu with a click through a PS/2 mouse whether or not "
+          "the machine has a serial port)."
           % checks)
     return 0
 

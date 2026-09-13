@@ -4151,6 +4151,165 @@ static bool test_an_interrupt_wait_can_have_a_deadline(void)
         && timed_second_early;
 }
 
+/*
+ * A wait on several interrupt lines takes whichever has one, and leaves no
+ * trace on the others.
+ *
+ * `irq_wait_any` is what lets the xHCI driver wait on every controller at
+ * once. What it must do, each with a way of getting it wrong that a driver
+ * servicing every device after any wake would never notice:
+ *
+ *   - **Answer with the line that had one, and take that one's count** - the
+ *     lowest first when both have one. A wait that answered 0 whatever came,
+ *     or took the wrong count, still wakes such a driver; it also leaves a
+ *     count behind to wake it again for nothing.
+ *   - **Block on both, and be woken by the second.** A wait that only really
+ *     waited on the first comes back at its deadline instead of at once.
+ *   - **Take itself off both when it returns** - at a deadline and after a
+ *     delivery on the other line. Left on one, the next delivery there wakes
+ *     a thread that has gone on to something else, and is not counted.
+ *
+ * The blocking halves in threads of their own, for the reason the deadline
+ * test above gives, and both lines released at the end whatever happened, so
+ * nothing is left blocked on a line nobody owns.
+ */
+static struct irq_line *any_lines[2];
+static volatile bool any_first_done;
+static volatile bool any_second_done;
+static volatile long any_first_result;
+static volatile long any_second_result;
+static volatile bool any_second_early;
+
+/* Five ticks, with nothing coming. */
+static void any_first_waiter(void *arg)
+{
+    (void)arg;
+
+    any_first_result = irq_wait_any(any_lines, 2, 5);
+    any_first_done = true;
+    thread_exit();
+}
+
+/* Two seconds, ended by a delivery on the second line. */
+static void any_second_waiter(void *arg)
+{
+    uint64_t long_before;
+
+    (void)arg;
+
+    long_before = thread_deadline_in(TICK_HZ);
+    any_second_result = irq_wait_any(any_lines, 2, 2u * TICK_HZ);
+    any_second_early = cpu_cycles() < long_before;
+    any_second_done = true;
+    thread_exit();
+}
+
+static bool test_an_interrupt_wait_takes_whichever_line_has_one(void)
+{
+    unsigned numbers[2], found = 0, n;
+    struct thread *first, *second;
+    uint64_t give_up;
+    bool taken = false, lowest = false, left_at_deadline = false;
+    bool blocked = false, delivered = false, left = false, counted = false;
+
+    any_first_done = false;
+    any_second_done = false;
+    any_first_result = 1;
+    any_second_result = -1;
+    any_second_early = false;
+
+    /* The first two numbers this board says a driver may have. */
+    for (n = 0; n < 1024 && found < 2; n++) {
+        if (hal_irq_available(n)) {
+            numbers[found++] = n;
+        }
+    }
+
+    if (found < 2) {
+        return false;
+    }
+
+    any_lines[0] = irq_claim(numbers[0], NULL);
+    any_lines[1] = irq_claim(numbers[1], NULL);
+
+    if (any_lines[0] == NULL || any_lines[1] == NULL) {
+        irq_release(any_lines[0]);
+        irq_release(any_lines[1]);
+        return false;
+    }
+
+    /* With something pending nothing blocks, so these run on this thread. */
+    taken = irq_deliver(numbers[1])
+         && irq_wait_any(any_lines, 2, 0) == 1
+         && any_lines[1]->pending == 0;
+
+    lowest = irq_deliver(numbers[1]) && irq_deliver(numbers[0])
+          && irq_wait_any(any_lines, 2, 0) == 0
+          && irq_wait_any(any_lines, 2, 0) == 1
+          && any_lines[0]->pending == 0 && any_lines[1]->pending == 0;
+
+    first = thread_create_suspended("any-first", any_first_waiter, NULL);
+    second = thread_create_suspended("any-second", any_second_waiter, NULL);
+
+    if (first == NULL || second == NULL) {
+        irq_release(any_lines[0]);
+        irq_release(any_lines[1]);
+        return false;
+    }
+
+    thread_wake(first);
+    give_up = thread_deadline_in(2u * TICK_HZ);
+
+    while (!any_first_done && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    left_at_deadline = any_first_done
+                    && any_first_result == SYS_NO_INTERRUPT
+                    && any_lines[0]->waiter == NULL
+                    && any_lines[1]->waiter == NULL;
+
+    thread_wake(second);
+    give_up = thread_deadline_in(TICK_HZ);
+
+    while ((any_lines[0]->waiter == NULL || any_lines[1]->waiter == NULL)
+           && !any_second_done && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    blocked = any_lines[0]->waiter != NULL && any_lines[1]->waiter != NULL;
+    delivered = irq_deliver(numbers[1]);
+    give_up = thread_deadline_in(3u * TICK_HZ);
+
+    while (!any_second_done && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    if (any_second_done) {
+        left = any_lines[0]->waiter == NULL && any_lines[1]->waiter == NULL;
+        counted = irq_deliver(numbers[0])
+               && any_lines[0]->pending == 1
+               && irq_wait_any(any_lines, 2, 0) == 0
+               && any_lines[0]->pending == 0;
+    }
+
+    irq_release(any_lines[0]);
+    irq_release(any_lines[1]);
+
+    /* Whatever the release woke, a moment to finish. */
+    give_up = thread_deadline_in(TICK_HZ / 2u);
+
+    while ((!any_first_done || !any_second_done) && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    return taken && lowest && left_at_deadline
+        && blocked && delivered
+        && any_second_done && any_second_result == 1 && any_second_early
+        && left && counted
+        && irq_wait_any(any_lines, 2, 0) == SYS_ERR_DENIED;  /* released */
+}
+
 static bool test_a_region_can_be_one_physical_run(void)
 {
     enum { RING_PAGES = 4 };
@@ -4604,6 +4763,52 @@ static bool test_the_keyboard_came_up(void)
      * Idempotent, so calling it here after kmain already did is safe.
      */
     return hal_keyboard_init();
+}
+
+/*
+ * A driver's movement adds to the pointer, down is positive, and a board
+ * whose pointer is absolute refuses it.
+ *
+ * `hal_pointer_move` is the board's half of `SYS_POINTER_MOVE`, which a USB
+ * mouse's driver makes for every report. On a PC with no tablet - the suite's
+ * - the movement is added to the position the TrackPoint moves, at the same
+ * speed, and the buttons are held as that source's own. The ARM board's
+ * pointer is a tablet or nothing, so the call is refused there, and its speed
+ * of zero has to agree.
+ *
+ * To the corner first, because where the pointer starts is wherever the boot
+ * left it and the board clamps at its range: enough movement up and to the
+ * left is exactly the origin.
+ */
+static bool test_a_driver_movement_adds_to_the_pointer(void)
+{
+    struct pointer_state corner, pressed, again, released;
+    unsigned speed;
+
+    if (!hal_pointer_move(0, 0, 0)) {
+        return hal_pointer_speed(0) == 0;
+    }
+
+    speed = hal_pointer_speed(0);
+
+    if (speed == 0 || !hal_pointer_move(-32767, -32767, 0)
+        || !hal_pointer_poll(&corner)) {
+        return false;
+    }
+
+    return corner.x == corner.min_x && corner.y == corner.min_y
+        && hal_pointer_move(10, 20, 0x1u)
+        && hal_pointer_poll(&pressed)
+        && pressed.x == corner.min_x + 10u * speed    /* right is + */
+        && pressed.y == corner.min_y + 20u * speed    /* and down is + */
+        && (pressed.buttons & 0x1u) != 0 && pressed.moved == 1
+        && hal_pointer_poll(&again) && again.moved == 0   /* the look took it */
+        && hal_pointer_move(0, 0, 0)
+        && hal_pointer_poll(&released)
+        && (released.buttons & 0x1u) == 0 && released.moved == 1
+        && hal_pointer_move(0, 0, 0x4u)               /* a middle button */
+        && hal_pointer_poll(&again)
+        && again.buttons == 0 && again.moved == 0;    /* is not the pointer's */
 }
 
 static bool test_the_boot_announced_every_stage(void)
@@ -6637,10 +6842,14 @@ static const struct test tests[] = {
                                           test_a_driver_can_claim_an_interrupt },
     { "irq: a wait with a deadline, and a delivery that ends one",
                                           test_an_interrupt_wait_can_have_a_deadline },
+    { "irq: a wait on two lines takes whichever has one",
+                                          test_an_interrupt_wait_takes_whichever_line_has_one },
     { "dev: registers may be mapped, RAM may not",
                                           test_a_driver_may_map_devices_and_not_ram },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },
     { "input: the keyboard came up",           test_the_keyboard_came_up },
+    { "input: a driver's movement adds to the pointer",
+                                          test_a_driver_movement_adds_to_the_pointer },
     { "boot: every stage was announced",       test_the_boot_announced_every_stage },
     { "fb: the display comes up",              test_the_display_comes_up },
     { "console: a write carries its colour, and UTF-8",

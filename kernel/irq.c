@@ -329,6 +329,111 @@ long irq_wait(struct irq_line *line, unsigned long ticks)
     }
 }
 
+/*
+ * **Several lines, one thread, and whichever interrupts first.**
+ *
+ * `irq_wait` takes one line, and a driver of one device needs no more. The
+ * xHCI driver is one process driving every USB controller on the machine -
+ * two on the ThinkPad - from one thread, and it waited on each in turn for a
+ * twentieth of a second. A plug or an unplug can afford that. A mouse cannot:
+ * its reports come every few milliseconds, and one on the second controller
+ * would wait out the first controller's nap and reach the pointer in bursts,
+ * ten a second.
+ *
+ * So the wait is on all of them, and everything `irq_wait` promises holds by
+ * the same means: every line is looked at, and this thread recorded as each
+ * one's waiter, under `lines_lock`, and it blocks and lets the lock go in one
+ * step. A delivery on any of the lines either comes first and is seen, or
+ * comes after and finds a waiter to wake.
+ *
+ * **And it takes itself off every line before it returns.** A delivery clears
+ * the waiter of its own line and no other, and a deadline clears none, so a
+ * line left naming this thread would wake it later out of whatever it was
+ * waiting for by then - the hazard `irq_wait`'s deadline handles for its one
+ * line, here for the rest.
+ *
+ * One interrupt is taken, from the lowest line that has one. A driver that
+ * looks at every device it holds after any wake loses nothing by that, and a
+ * line still pending makes the next wait return at once.
+ */
+long irq_wait_any(struct irq_line *const *set, unsigned count,
+                  unsigned long ticks)
+{
+    struct thread *self = thread_current();
+    uint64_t deadline = 0;
+    unsigned long flags;
+    unsigned i;
+
+    if (set == NULL || count == 0) {
+        return SYS_ERR_DENIED;
+    }
+
+    for (i = 0; i < count; i++) {
+        if (set[i] == NULL) {
+            return SYS_ERR_DENIED;
+        }
+    }
+
+    if (ticks != 0) {
+        deadline = thread_deadline_in(ticks);
+    }
+
+    for (;;) {
+        long answer = SYS_NO_INTERRUPT;
+        bool done = false;
+
+        flags = spin_lock(&lines_lock);
+
+        /* A line released underneath, or somebody else's wait: refused, as
+         * `irq_wait` refuses both. */
+        for (i = 0; i < count && !done; i++) {
+            if (!set[i]->in_use
+                || (set[i]->waiter != NULL && set[i]->waiter != self)) {
+                answer = SYS_ERR_DENIED;
+                done = true;
+            }
+        }
+
+        for (i = 0; i < count && !done; i++) {
+            if (set[i]->pending > 0) {
+                set[i]->pending--;
+                answer = (long)i;
+                done = true;
+            }
+        }
+
+        /* After the counts, so an interrupt that came as the deadline passed
+         * is taken rather than reported missing. */
+        if (!done && deadline != 0 && cpu_cycles() >= deadline) {
+            done = true;
+        }
+
+        if (done) {
+            for (i = 0; i < count; i++) {
+                if (set[i]->waiter == self) {
+                    set[i]->waiter = NULL;
+                }
+            }
+
+            spin_unlock(&lines_lock, flags);
+            return answer;
+        }
+
+        for (i = 0; i < count; i++) {
+            set[i]->waiter = self;
+        }
+
+        self->wake_at = deadline;
+
+        thread_block_and_release(&lines_lock, flags);
+
+        self->wake_at = 0;
+
+        /* Woken: an interrupt on one of them, a line going away, or the
+         * deadline. Round again, and the loop decides which. */
+    }
+}
+
 long irq_ack(struct irq_line *line)
 {
     unsigned long flags;
