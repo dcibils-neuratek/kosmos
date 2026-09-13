@@ -8,7 +8,7 @@ else.
 | step | what it ends in | state |
 | ---- | --------------- | ----- |
 | 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
-| 2. enumeration | a device's descriptors read: what it is, who made it | not started |
+| 2. enumeration | a device's descriptors read: what it is, who made it | built, and run under QEMU |
 | 3. bulk transfers | bytes to and from an endpoint | not started |
 | 4. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
 | 5. Ethernet | a USB-C adapter carrying the network stack | not started |
@@ -37,7 +37,8 @@ it the limit.
   cannot take for itself: the controller's address (`SYS_DEV_FIND`), its
   registers mapped uncached (`SYS_DEV_MAP`), memory a device can reach
   (`MEM_CONTIGUOUS` and `SYS_MEM_PHYS`), and its interrupt as a capability
-  (`SYS_IRQ_CLAIM`, `WAIT`, `ACK`). The kernel does not know what USB is.
+  (`SYS_IRQ_CLAIM`, `WAIT` - with a deadline since 0.10.52 - and `ACK`).
+  The kernel does not know what USB is.
 - **The driver** (`user/servers/xhci.c`) is a C server, spawned by init with
   device authority and the console's endpoint to report through.
 
@@ -145,24 +146,92 @@ initial state. **A port still reports a device while the controller is
 halted** (4.19.2), which is what lets step 1 read ports without starting
 anything.
 
-### What is not built yet
+### Rings and TRBs
 
-Named so the next step can be read against it. None of this exists in
-Kosmos:
+Work crosses between software and the controller in circular buffers of
+16-byte **TRBs** (6.4): four little-endian words, the type in word 3's bits
+15:10 and a **cycle bit** in its bit 0. A reader takes TRBs while their cycle
+bit matches its own copy, and the first that does not is where the writer has
+got to (4.9). A ring ends in a **Link TRB** pointing back to its start with
+Toggle Cycle set, so the cycle bit turns over each time round and the last
+pass's TRBs stop matching. **Software writes a TRB's last word last**, because
+the cycle bit is in it and the other three have to be in place first.
 
-- **Device slots and contexts.** Each attached device gets a slot, and the
-  controller keeps its state in a *device context* in memory software gives
-  it, reached through the Device Context Base Address Array (DCBAAP).
-- **Rings.** Work is exchanged through circular buffers of 16-byte *TRBs*: a
-  **command ring** (software to controller: "enable a slot", "address this
-  device"), an **event ring** per interrupter (controller to software:
-  "command done", "transfer done", "port changed"), and a **transfer ring**
-  per endpoint.
-- **Doorbells**, written to say a ring has new work.
-- **Interrupts**, which arrive when an event ring has something in it.
+Three kinds, and step 2 uses all three: the **command ring**, software to
+controller - No-Op, Enable Slot, Address Device, Evaluate Context; the
+**event ring**, controller to software - a command completed, a transfer
+completed, a port changed; and a **transfer ring** for each endpoint, here
+only the default control endpoint's. A **doorbell** says a ring has new work
+(5.6): doorbell 0, target 0, for commands; a device's own doorbell, target 1,
+for its control endpoint.
 
-That is step 2's work, and it is where the kernel's contiguous memory and
-interrupt capabilities are first used for real.
+| register | offset | fields used |
+| -------- | ------ | ----------- |
+| HCSPARAMS2 | 08h | 25:21 and 31:27 scratchpad pages |
+| HCCPARAMS1 | 10h | bit 0 64-bit addressing; bit 2 64-byte contexts |
+| DBOFF, RTSOFF | 14h, 18h | where the doorbells and runtime registers are |
+| USBCMD | op + 00h | bit 2 interrupt enable |
+| USBSTS | op + 04h | bit 3 event interrupt |
+| PAGESIZE | op + 08h | bit 0: 4K pages |
+| CRCR | op + 18h | the command ring, and its cycle bit in bit 0 |
+| DCBAAP | op + 30h | the context array |
+| CONFIG | op + 38h | 7:0 slots enabled |
+| PORTSC *n* | op + 400h + 10h × (*n* − 1) | bit 1 enabled; 4 reset; 9 power; 21 reset changed |
+| IMAN, IMOD | rt + 20h, 24h | interrupt pending and enable; moderation |
+| ERSTSZ, ERSTBA, ERDP | rt + 28h, 30h, 38h | the event ring |
+
+### The event ring and its interrupt
+
+The event ring is described by a table of segments (6.5), here one of 256
+TRBs. **The order of the writes matters**, and QEMU's model shows why: ERSTSZ,
+then ERDP, then ERSTBA's low half and **its high half last**, the write that
+starts the ring. Software takes events while their cycle bit matches its own,
+which starts at 1 and turns over where the segment wraps, and then writes
+ERDP - high half first, low half with Event Handler Busy set - which lets the
+controller interrupt again if more are waiting (5.5.2.3.3).
+
+An interrupt needs Interrupter Enable in IMAN **and** INTE in USBCMD (4.17).
+After one, USBSTS's EINT is cleared before IMAN's IP (5.4.2). On a PCI
+controller it is an MSI or an **MSI-X** message (5.2.8); QEMU's controller
+offers only MSI-X, and `hal/pc/pci.c` programs whichever the device has.
+
+### Slots, contexts and an address
+
+**Enable Slot** gives a device a slot ID (4.3.2), with the slot type the port's
+Supported Protocol capability declares (Table 7-9): the number is the
+controller's own, and software may not assume one. A device's state lives in
+a **device context** software provides, found through the Device Context Base
+Address Array - DCBAAP points at it, entry *n* is slot *n*'s context, and entry
+0 is the scratchpad array when the controller asks for scratchpad pages
+(4.20).
+
+**Address Device** takes an **input context** (6.2.5): an input control
+context whose add flags say which entries follow - A0 the slot, A1 endpoint 0 -
+then the slot context, with the root port in 23:16 and one context entry, and
+endpoint 0's, a control endpoint with its packet size by speed and its ring.
+Contexts are 32 bytes, or 64 when HCCPARAMS1's CSZ is set. QEMU refuses any
+add flags but those two.
+
+**A USB 2 port is reset first** (4.3.1): Port Reset written with Port Power and
+nothing else - the change bits are write-1-to-clear and must not be echoed -
+and Port Reset Change awaited. After that, and not before, its speed is valid.
+A USB 3 port enables itself.
+
+### Asking a device what it is
+
+A **control transfer** (4.11.2.2, 6.4.1.2) is three TRBs: Setup, with the
+eight setup bytes inline; Data, pointing at a buffer; Status, which
+interrupts on completion. GET_DESCRIPTOR - request type 80h, request 6 - with
+value 0100h returns the **device descriptor**: the USB version, the class, the
+vendor and product numbers, and which string names the product. A full-speed
+device's control packet size is not known until its first eight bytes are
+read, and Evaluate Context tells the controller (4.3.4). Strings are UTF-16,
+and string 0 lists the languages.
+
+**The descriptors' layout is the USB 2.0 specification's (9.6)**, which is not
+in this project's references. The fields read are few and universal; the
+product strings are checked against the emulator's own binary, and the vendor
+and product numbers have no second source here.
 
 ---
 
@@ -277,7 +346,8 @@ closing line naming both controllers. A boot with no controller must hear
 nothing from the driver. `testing.md` §18.32 has the negative controls, all
 run and watched fail.
 
-What QEMU prints:
+What QEMU printed at step 1 - step 2 resets the keyboard's port and names its
+speed after it (§4):
 
 ```
 xhci: 00:03.0, version 1.0, 8 ports, 64 slots
@@ -294,6 +364,102 @@ The stick is on port 1 because QEMU numbers its USB 3 ports first
 is on port 5, the first USB 2 port, and its speed is left unsaid: before a
 port reset QEMU's field reads High-speed, and the specification says not to
 believe that field yet.
+
+---
+
+## 4. Step 2: enumeration
+
+### The kernel: a deadline, a wrapper put right, and MSI-X
+
+- **`SYS_IRQ_WAIT (cap, ticks)`** returns `SYS_NO_INTERRUPT` when the deadline
+  passes (0.10.52, `testing.md` §18.35). A driver waiting on an interrupt that
+  never comes would otherwise hang and say nothing, and the ThinkPad is where
+  that would happen.
+- **`kosmos_mem_create` passes the flags argument the kernel reads** - found
+  wrong while writing this driver's wrappers (0.10.53, §18.36).
+- **MSI-X, in `hal/pc/pci.c`** (0.10.54). QEMU's xHCI controller has no MSI
+  capability - measured: its list is MSI-X at 90h and PCI Express at A0h, and
+  nothing else - so the controller was left on a PCI line and no interrupt
+  reached the driver. The same message MSI uses is written into entry 0 of a
+  table in one of the device's BARs. Enable and the mask bits are PCI 6.8.2's,
+  which is not in the references; a probe in the kernel then saw every
+  interrupt delivered to the driver's claim, and the check below fails when
+  MSI-X is not enabled (`testing.md` §18.37).
+
+### The driver
+
+For each controller, after step 1:
+
+1. read the page size, the context size, the scratchpad count and whether it
+   addresses 64 bits, and refuse to drive what this does not support, saying
+   which;
+2. one contiguous region: the context array, the command ring, the event
+   segment, the segment table with the scratchpad array, four pages for each
+   of eight devices, and the scratchpad pages;
+3. program the slots enabled, DCBAAP, CRCR, the event ring in its order,
+   moderation at 1 ms and both interrupt enables; claim the interrupt; Run -
+   and print a line saying the context size, the scratchpads, the slots and
+   the interrupt;
+4. a **No-Op command**, answered on the event ring, and then **the interrupt
+   line asked** whether its interrupt came - "by interrupt", or "found by
+   looking" when a second passes without one. Asked, because QEMU completes a
+   command inside the doorbell write: the answer is on the ring before anybody
+   waits, and the first version of this reported no interrupt while one sat
+   pending on its line;
+5. for every port with a device: reset it if it is USB 2 and print its speed
+   after; Enable Slot; Address Device; the device descriptor and the product
+   string, printed as one line;
+6. **stop the controller and reset it before exiting.** The kernel takes the
+   region back when the process ends, and a controller still running would go
+   on writing events into pages that may be somebody else's by then.
+
+### What QEMU cannot show
+
+- **Scratchpad pages, 64-byte contexts, and a controller that addresses only
+  32 bits.** QEMU's asks for no scratchpads (HCSPARAMS2 reads 0Fh), has CSZ
+  clear and AC64 set. All three paths are written, and the "runs:" line says
+  which apply, so a photograph from the ThinkPad shows it.
+- **A full-speed device's packet size.** QEMU attaches the keyboard at high
+  speed and the stick at SuperSpeed, so Evaluate Context never runs.
+- **An interrupt that takes time.** QEMU's arrive with the answer; a real
+  controller's do not, which is the path `wait_event` waits on.
+- **The firmware handoff**, as in step 1.
+
+### How it is tested
+
+`tools/run_x86.py`'s USB check boots q35 with the same two controllers, the
+stick on the second and the keyboard on the first, and asks for: both
+controllers running with their interrupts claimed; a No-Op answered **by
+interrupt** on each - the first MSI-X to reach a process on x86; the
+keyboard's port reset and named high-speed after it, and no USB 2 speed named
+without a reset; two devices' descriptors and product strings; and the closing
+line's two devices.
+
+**What the devices said is compared with QEMU, not with this driver's idea of
+it.** A second QEMU with the same devices, never started, is asked `info usb`
+over its monitor, and the speeds must match. The product strings must each be
+one the QEMU binary carries: `info usb`'s "Product" is QEMU's name for the
+device model, and for the stick that is "QEMU USB MSD" while the stick itself
+says "QEMU USB HARDDRIVE" - which the first run found. 14 checks,
+with four negative controls in `testing.md` §18.37.
+
+What QEMU prints:
+
+```
+xhci: 00:03.0, version 1.0, 8 ports, 64 slots
+xhci: 00:03.0 has no firmware handoff to make
+xhci: 00:03.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 20
+xhci: 00:03.0 answered a No-Op command on its event ring, by interrupt
+xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Keyboard"
+xhci: 00:04.0, version 1.0, 8 ports, 64 slots
+xhci: 00:04.0 has no firmware handoff to make
+xhci: 00:04.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 21
+xhci: 00:04.0 answered a No-Op command on its event ring, by interrupt
+xhci: 00:04.0 port 1, USB 3: a SuperSpeed device (speed ID 4)
+xhci: 00:04.0 port 1: 46f4:0001, USB 3.0, class 0, "QEMU USB HARDDRIVE"
+xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in, 2 devices named
+```
 
 ---
 

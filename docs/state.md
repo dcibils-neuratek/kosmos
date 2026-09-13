@@ -8,17 +8,40 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: USB step 2 - the devices say what they are
+
+**Enumeration works under QEMU, by interrupt.** Each controller gets its rings
+and interrupter, answers a No-Op command, and each device gets a slot, an
+address and its descriptors read. USB 2 ports are reset first, and their speed
+named only after. The driver stops the controller before it exits. The check
+compares the devices' speeds with QEMU's own `info usb` and their product
+strings with the QEMU binary; `testing.md` §18.37 has four controls, `usb.md`
+§2 and §4 the account.
+
+**MSI-X arrived with it**, in `hal/pc/pci.c`: QEMU's xHCI has no MSI
+capability, which a probe showed. And the driver asks its line whether an
+interrupt came, because QEMU answers commands inside the doorbell write.
+
+**Not yet on the ThinkPad**, which is where scratchpad pages, 64-byte contexts
+and a real chipset's interrupts run for the first time. The controller's
+"runs:" line says which of them apply.
+
+**Next**: a stick for the ThinkPad with this on it; then bulk transfers, or a
+USB mouse first if Diego moves it ahead (it needs configuration, interrupt
+transfers, a driver that stays up, and a way for a process to feed the
+pointer - a design question).
+
 ### 12 September: every syscall's arguments
 
 **`kosmos_mem_create` passed one argument to a call that reads two**, and the
 second is flags where bit 0 asks for one physical run. Both architectures
 pass the kernel whatever the unloaded register held, so an ordinary region -
 a window's shared surface, the audio ring, the network's TCP rings - could
-have asked for a run a fragmented machine can refuse. Found by reading while writing the xHCI
-driver's wrappers; not seen failing. Fixed, and `tools/test_syscall_args.lua`
-now fails any wrapper that passes fewer arguments than its case reads
-(`testing.md` §18.36). The driver's `kosmos_mem_create_flags` and
-`kosmos_mem_phys` came with it.
+have asked for a run a fragmented machine can refuse. Found by reading while
+writing the xHCI driver's wrappers; not seen failing. Fixed, and
+`tools/test_syscall_args.lua` now fails any wrapper that passes fewer
+arguments than its case reads (`testing.md` §18.36). The driver's
+`kosmos_mem_create_flags` and `kosmos_mem_phys` came with it.
 
 **Its first gate stopped on an x86 panic this revision did not cause.** In the
 x86 kernel suite, during `smp: a reply reaches a caller on another core`:

@@ -1,19 +1,20 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The USB host controllers - the first step of the USB stack, and only that.
+ * The USB host controllers - steps one and two of the USB stack.
  *
  * `roadmap.md` builds USB in steps that each end in something visible:
  * controller up, enumeration, bulk transfers, mass storage, Ethernet. This is
- * the first. For every xHCI controller the board reports it maps the
+ * the first two. For every xHCI controller the board reports it maps the
  * registers, takes the controller from the firmware if the firmware held it,
- * halts and resets it, and says which ports have something plugged in and at
- * what speed. Then it exits. With no rings there is nothing to wait for, and
- * a process that lingered would be holding controllers it does nothing with.
+ * halts and resets it, and reads which ports have something plugged in -
+ * step one. Then it gives the controller its rings and its interrupter,
+ * starts it, proves the command ring and the event ring with a No-Op, resets
+ * each USB 2 port that has a device, gives every device a slot and an
+ * address, and reads its descriptors: what it is and who made it - step two.
  *
- * **No interrupt is claimed**, for the same reason. Every question here is a
- * register read, and the waits - for a halt, a reset, the firmware - are
- * bounded and polled. The event ring is where interrupts start to matter,
- * and they arrive with it.
+ * **Then it stops the controller and exits.** Nothing yet uses a device once
+ * it is named, and a controller left running would go on writing events into
+ * rings whose pages the kernel takes back when this process ends.
  *
  * --------------------------------------------------------------------
  * Where the numbers come from.
@@ -23,6 +24,12 @@
  * table or section is named beside each. QEMU 11.1.1's `hw/usb/hcd-xhci.c`
  * is the model the tests run against and agrees with all of them; it was read
  * for how it behaves, and nothing here is taken from it.
+ *
+ * **The USB descriptors are the exception**: their layout is the USB 2.0
+ * specification's (9.6.1, 9.6.7), which is not in this project's reference
+ * material. The offsets used are few and universal, and the test compares
+ * the product strings read here with what QEMU itself reports, but the
+ * vendor and product numbers have no second source.
  *
  * --------------------------------------------------------------------
  * The firmware, which QEMU does not have.
@@ -38,11 +45,20 @@
  * QEMU's controller has no such capability, so under emulation this path
  * never runs and the log says so. The ThinkPad is where it runs first, and
  * the line it prints says which of the outcomes happened.
+ *
+ * --------------------------------------------------------------------
+ * What QEMU cannot show of step two.
+ *
+ * QEMU's controller asks for no scratchpad buffers, uses 32-byte contexts and
+ * addresses 64 bits. The ThinkPad's may do none of those, so all three paths
+ * are written and all three are said aloud in the controller's line, and the
+ * first place they run is there.
  */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "kosmos.h"
 #include "mmio.h"
@@ -51,24 +67,56 @@
 /* Capability registers, from the start of the BAR: Table 5-9. */
 #define CAP_LENGTH_VERSION  0x00u   /* CAPLENGTH 7:0, HCIVERSION 31:16 (BCD) */
 #define CAP_HCSPARAMS1      0x04u
+#define CAP_HCSPARAMS2      0x08u
 #define CAP_HCCPARAMS1      0x10u
+#define CAP_DBOFF           0x14u   /* 5.3.7: 31:2, in bytes */
+#define CAP_RTSOFF          0x18u   /* 5.3.8: 31:5, in bytes */
 
 #define HCS1_SLOTS(v)       ((v) & 0xFFu)               /* Table 5-10 */
 #define HCS1_PORTS(v)       (((v) >> 24) & 0xFFu)
+#define HCS2_SCRATCHPADS(v) (((((v) >> 21) & 0x1Fu) << 5) \
+                             | (((v) >> 27) & 0x1Fu))   /* Table 5-11 */
+#define HCC1_AC64           (1u << 0)                   /* Table 5-13 */
+#define HCC1_CSZ            (1u << 2)
 #define HCC1_XECP(v)        (((v) >> 16) & 0xFFFFu)     /* 5.3.6, in Dwords */
 
 /* Operational registers, from base + CAPLENGTH: Table 5-18. */
 #define OP_USBCMD           0x00u
 #define OP_USBSTS           0x04u
+#define OP_PAGESIZE         0x08u                       /* 5.4.3 */
+#define OP_CRCR             0x18u                       /* 5.4.5, 64 bits */
+#define OP_DCBAAP           0x30u                       /* 5.4.6, 64 bits */
+#define OP_CONFIG           0x38u                       /* 5.4.7 */
 #define OP_PORTSC(n)        (0x400u + 0x10u * ((n) - 1u))   /* 5.4.8, n >= 1 */
 
 #define USBCMD_RS           (1u << 0)                   /* 5.4.1 */
 #define USBCMD_HCRST        (1u << 1)
+#define USBCMD_INTE         (1u << 2)
 #define USBSTS_HCH          (1u << 0)                   /* 5.4.2 */
+#define USBSTS_EINT         (1u << 3)
 #define USBSTS_CNR          (1u << 11)
+#define PAGESIZE_4K         (1u << 0)
+#define CRCR_RCS            (1u << 0)
 
-#define PORTSC_CCS          (1u << 0)                   /* Table 5-27 */
+/* PORTSC, Table 5-27. The change bits are write-1-to-clear. */
+#define PORTSC_CCS          (1u << 0)
+#define PORTSC_PED          (1u << 1)
+#define PORTSC_PR           (1u << 4)
+#define PORTSC_PP           (1u << 9)
 #define PORTSC_SPEED(v)     (((v) >> 10) & 0xFu)
+#define PORTSC_PRC          (1u << 21)
+
+/* Runtime registers, interrupter 0: Table 5-37. */
+#define RT_IMAN             0x20u
+#define RT_IMOD             0x24u
+#define RT_ERSTSZ           0x28u
+#define RT_ERSTBA           0x30u                       /* 64 bits */
+#define RT_ERDP             0x38u                       /* 64 bits */
+
+#define IMAN_IP             (1u << 0)                   /* 5.5.2.1 */
+#define IMAN_IE             (1u << 1)
+#define IMOD_ONE_MS         4000u                       /* 5.5.2.2, 250 ns each */
+#define ERDP_EHB            (1u << 3)                   /* 5.5.2.3.3 */
 
 /* Extended capabilities: Tables 7-1 and 7-2. */
 #define XCAP_ID(v)          ((v) & 0xFFu)
@@ -85,14 +133,75 @@
 #define LEGCTLSTS           4u
 #define LEGCTLSTS_ENABLES   0x0000E011u
 
-/* Supported Protocol, Tables 7-6 and 7-8. */
+/* Supported Protocol, Tables 7-6, 7-8 and 7-9. */
 #define PROTO_MAJOR(v)      (((v) >> 24) & 0xFFu)       /* BCD: 02h, 03h */
 #define PROTO_PORTS         8u
 #define PROTO_FIRST(v)      ((v) & 0xFFu)
 #define PROTO_COUNT(v)      (((v) >> 8) & 0xFFu)
+#define PROTO_SLOT          0x0Cu
+#define PROTO_SLOT_TYPE(v)  ((v) & 0x1Fu)
+
+/*
+ * TRBs: sixteen bytes, four little-endian words (6.4). The type is word 3's
+ * 15:10 and the cycle bit its bit 0 (Table 6-91 for the numbers).
+ */
+#define TRB_C               (1u << 0)
+#define TRB_TC              (1u << 1)                   /* Link: toggle cycle */
+#define TRB_IOC             (1u << 5)
+#define TRB_IDT             (1u << 6)                   /* Setup: data inline */
+#define TRB_TYPE(t)         ((uint32_t)(t) << 10)
+#define TRB_TYPE_OF(w)      (((w) >> 10) & 0x3Fu)
+#define TRB_DIR_IN          (1u << 16)                  /* Data stage */
+#define TRB_TRT_IN          (3u << 16)                  /* Setup: IN data stage */
+#define TRB_SLOT(s)         ((uint32_t)(s) << 24)
+#define TRB_SLOT_OF(w)      (((w) >> 24) & 0xFFu)
+#define TRB_CODE_OF(w)      (((w) >> 24) & 0xFFu)       /* word 2 of an event */
+
+#define TRB_SETUP           2u
+#define TRB_DATA            3u
+#define TRB_STATUS          4u
+#define TRB_LINK            6u
+#define TRB_ENABLE_SLOT     9u
+#define TRB_ADDRESS_DEVICE  11u
+#define TRB_EVALUATE        13u
+#define TRB_NOOP            23u
+#define TRB_TRANSFER        32u
+#define TRB_COMPLETION      33u
+#define TRB_PORT_CHANGE     34u
+
+/* Completion codes, Table 6-90. */
+#define CC_SUCCESS          1u
+#define CC_SHORT_PACKET     13u
 
 #define PORTS_MAX           255u        /* MaxPorts is eight bits */
 #define CAPS_MAX            64u         /* a list longer than this is a loop */
+
+/*
+ * **Memory**: one region a controller, one physical run, so every address
+ * the controller is told is the region's bus address plus an offset. Pages:
+ *
+ *   0   the Device Context Base Address Array (5.4.6, 6.1)
+ *   1   the command ring, 256 TRBs, the last a Link back to the first
+ *   2   the event ring's one segment, 256 TRBs (6.5)
+ *   3   the one-entry Event Ring Segment Table, and the scratchpad array
+ *   4+  four pages a device: input context, output context, the default
+ *       control endpoint's ring, and a buffer for what it sends back
+ *   then a page for each scratchpad buffer the controller asks for (4.20)
+ *
+ * Eight devices a controller, as a start: the slots enabled are that many,
+ * so a slot ID is also the device's place in the region.
+ */
+#define PAGE                4096u
+#define RING_TRBS           256u
+#define DEVICES_MAX         8u
+#define PAGES_A_DEVICE      4u
+#define PAGE_DCBAA          0u
+#define PAGE_COMMANDS       1u
+#define PAGE_EVENTS         2u
+#define PAGE_ERST           3u
+#define PAGE_DEVICES        4u
+#define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
+#define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
 
 /*
  * **Waits in milliseconds**, turned into scheduler ticks by `ticks_for` once
@@ -108,14 +217,58 @@
 #define FIRMWARE_MS         1000u       /* 4.22.1: no more than a second */
 #define RESET_MS            1000u
 #define SETTLE_MS           500u
+#define ANSWER_MS           1000u       /* a command, a transfer, a port reset */
+#define EVENTS_MAX          64u         /* unrelated events borne while waiting */
+
+struct ring {
+    uint32_t *trbs;                     /* RING_TRBS of them, the last a Link */
+    uint64_t  bus;
+    unsigned  enqueue;
+    uint32_t  cycle;                    /* what goes in C: TRB_C or 0 */
+};
+
+struct device {
+    unsigned  slot;
+    unsigned  port;
+    unsigned  speed;
+    uint32_t *input;
+    uint32_t *output;
+    uint8_t  *buffer;
+    uint64_t  input_bus;
+    uint64_t  output_bus;
+    uint64_t  buffer_bus;
+    struct ring ep0;
+};
 
 struct controller {
     uintptr_t     base;                 /* the capability registers */
     uintptr_t     op;                   /* the operational registers */
+    uintptr_t     rt;                   /* the runtime registers */
+    uintptr_t     doorbells;
     unsigned long size;                 /* of the window, in bytes */
     unsigned      where;                /* bus << 8 | slot << 3 | function */
     unsigned      ports;
     unsigned char usb[PORTS_MAX + 1];   /* the USB major version, 0 unknown */
+    unsigned char slot_type[PORTS_MAX + 1];
+
+    unsigned      context;              /* bytes: 32, or 64 with CSZ */
+    unsigned      slots;                /* MaxSlotsEn */
+    unsigned      scratchpads;
+    uintptr_t     mem;                  /* the region, mapped here */
+    uint64_t      bus;                  /* and there, for the controller */
+    unsigned long pages;
+
+    uint64_t     *dcbaa;
+    struct ring   commands;
+    uint32_t     *events;               /* the segment */
+    uint64_t      events_bus;
+    unsigned      dequeue;
+    uint32_t      event_cycle;
+
+    long          irq;                  /* a capability, or negative */
+    unsigned      intid;
+    unsigned      interrupts;           /* arrived, and counted */
+    unsigned      named;                /* devices whose descriptors were read */
 };
 
 static long console = -1;
@@ -168,6 +321,18 @@ static bool settles(uintptr_t reg, uint32_t mask, uint32_t want,
 }
 
 /*
+ * A 64-bit register as two Dword writes, low then high (5.1: registers are
+ * read and written as Dwords). ERSTBA's high half is what arms the event
+ * ring, so the order is the point for that one. ERDP is the exception and
+ * has its own function below.
+ */
+static void write64(uintptr_t reg, uint64_t value)
+{
+    mmio_write32(reg, (uint32_t)value);
+    mmio_write32(reg + 4u, (uint32_t)(value >> 32));
+}
+
+/*
  * The OS semaphore set, and a second for the firmware to let go (4.22.1).
  *
  * Used either way when the second is up, and said so: the specification
@@ -216,8 +381,9 @@ static void take_from_firmware(const struct controller *c, uintptr_t legsup,
 
 /*
  * The extended capabilities: the firmware handoff, and which ports speak
- * which USB. Every read is checked against the window first, because the
- * pointers are the device's to set and a wrong one would fault this process.
+ * which USB with which slot type. Every read is checked against the window
+ * first, because the pointers are the device's to set and a wrong one would
+ * fault this process.
  */
 static void walk_capabilities(struct controller *c, struct say_line *line)
 {
@@ -229,7 +395,7 @@ static void walk_capabilities(struct controller *c, struct say_line *line)
     for (guard = 0; at != 0 && guard < CAPS_MAX; guard++) {
         uint32_t head;
 
-        if (at + 12u > c->size) {
+        if (at + 16u > c->size) {
             break;
         }
 
@@ -240,12 +406,19 @@ static void walk_capabilities(struct controller *c, struct say_line *line)
             legacy = true;
         } else if (XCAP_ID(head) == XCAP_PROTOCOL) {
             uint32_t ports = mmio_read32(c->base + at + PROTO_PORTS);
+            uint32_t slot = mmio_read32(c->base + at + PROTO_SLOT);
             unsigned p;
 
+            /*
+             * The slot type is the controller's own number for this protocol
+             * (Table 7-9, and its footnote: software shall not assume one),
+             * and Enable Slot has to be given it for a device on these ports.
+             */
             for (p = PROTO_FIRST(ports);
                  p < PROTO_FIRST(ports) + PROTO_COUNT(ports) && p <= PORTS_MAX;
                  p++) {
                 c->usb[p] = (unsigned char)PROTO_MAJOR(head);
+                c->slot_type[p] = (unsigned char)PROTO_SLOT_TYPE(slot);
             }
         }
 
@@ -279,7 +452,8 @@ static bool reset(const struct controller *c, struct say_line *line)
     } else {
         if ((mmio_read32(c->op + OP_USBSTS) & USBSTS_HCH) == 0) {
             mmio_write32(c->op + OP_USBCMD,
-                         mmio_read32(c->op + OP_USBCMD) & ~USBCMD_RS);
+                         mmio_read32(c->op + OP_USBCMD)
+                         & ~(USBCMD_RS | USBCMD_INTE));
 
             if (!settles(c->op + OP_USBSTS, USBSTS_HCH, USBSTS_HCH,
                          ticks_for(HALT_MS))) {
@@ -329,6 +503,661 @@ static const char *speed_name(unsigned id)
     }
 }
 
+/*
+ * The default control endpoint's packet size, by speed (4.3.3, 5): 8 for low
+ * and full speed - full speed's real size is read from the device and set
+ * afterwards - 64 for high speed, 512 for SuperSpeed.
+ */
+static unsigned default_packet(unsigned speed)
+{
+    switch (speed) {
+    case 1:
+    case 2:  return 8u;
+    case 3:  return 64u;
+    default: return 512u;
+    }
+}
+
+/* ------------------------------------------------------------------ rings */
+
+/*
+ * A ring of RING_TRBS in one page, the last a Link back to the first with
+ * Toggle Cycle set (4.9.2, 6.4.4.1). The cycle bit starts at 1, which is what
+ * CRCR's RCS and an endpoint context's DCS tell the controller.
+ */
+static void ring_start(struct ring *r, uint32_t *trbs, uint64_t bus)
+{
+    uint32_t *link = trbs + (RING_TRBS - 1u) * 4u;
+
+    memset(trbs, 0, PAGE);
+
+    r->trbs = trbs;
+    r->bus = bus;
+    r->enqueue = 0;
+    r->cycle = TRB_C;
+
+    link[0] = (uint32_t)bus;
+    link[1] = (uint32_t)(bus >> 32);
+    link[3] = TRB_TYPE(TRB_LINK) | TRB_TC | TRB_C;
+}
+
+/*
+ * One TRB onto a ring, and where it went in the controller's addresses.
+ *
+ * **Word 3 last**, because it carries the cycle bit, and a TRB whose cycle bit
+ * matches is one the controller may take: the other three words have to be
+ * in place first.
+ *
+ * At the Link the cycle bit turns over (4.9.2): the Link is given the current
+ * value, so the controller follows it, and everything written after carries
+ * the other - which is what makes last time round's TRBs stale.
+ */
+static uint64_t ring_push(struct ring *r, uint32_t w0, uint32_t w1,
+                          uint32_t w2, uint32_t w3)
+{
+    uint32_t *trb = r->trbs + r->enqueue * 4u;
+    uint64_t at = r->bus + (uint64_t)r->enqueue * 16u;
+
+    trb[0] = w0;
+    trb[1] = w1;
+    trb[2] = w2;
+    trb[3] = (w3 & ~TRB_C) | r->cycle;
+
+    r->enqueue++;
+
+    if (r->enqueue == RING_TRBS - 1u) {
+        uint32_t *link = r->trbs + r->enqueue * 4u;
+
+        link[3] = (link[3] & ~TRB_C) | r->cycle;
+        r->cycle ^= TRB_C;
+        r->enqueue = 0;
+    }
+
+    return at;
+}
+
+/*
+ * ERDP, high half first: the low half's write is where the controller looks
+ * at the pointer, and with Event Handler Busy written as 1 it raises the
+ * interrupt again if events are still waiting behind it (5.5.2.3.3).
+ */
+static void event_dequeue_to(const struct controller *c, uint64_t at,
+                             bool busy)
+{
+    mmio_write32(c->rt + RT_ERDP + 4u, (uint32_t)(at >> 32));
+    mmio_write32(c->rt + RT_ERDP, (uint32_t)at | (busy ? ERDP_EHB : 0u));
+}
+
+/*
+ * The next event, if there is one: a TRB whose cycle bit is the one this side
+ * expects (4.9.4). Taken, the dequeue moves on - turning the cycle bit over
+ * where the segment wraps, as the controller does - and the controller is
+ * told how far this side has read.
+ */
+static bool take_event(struct controller *c, uint32_t *out)
+{
+    uint32_t *trb = c->events + c->dequeue * 4u;
+
+    if ((trb[3] & TRB_C) != c->event_cycle) {
+        return false;
+    }
+
+    memcpy(out, trb, 4u * sizeof(uint32_t));
+
+    if (++c->dequeue == RING_TRBS) {
+        c->dequeue = 0;
+        c->event_cycle ^= TRB_C;
+    }
+
+    event_dequeue_to(c, c->events_bus + (uint64_t)c->dequeue * 16u, true);
+    return true;
+}
+
+/*
+ * An event within `ticks`, by interrupt when there is one to wait on.
+ *
+ * **The wait has a deadline** (`kosmos_irq_wait_for`): a controller whose
+ * interrupt never reaches this process would otherwise be a driver asleep
+ * for good. When the deadline passes the ring is looked at once more, so a
+ * missing interrupt costs a second rather than the device - and the
+ * controller's line says which it was.
+ *
+ * After an interrupt, EINT is cleared before IP, the order 5.4.2 gives.
+ */
+static bool wait_event(struct controller *c, unsigned ticks, uint32_t *out)
+{
+    unsigned idle = 0;
+
+    for (;;) {
+        if (take_event(c, out)) {
+            return true;
+        }
+
+        if (c->irq >= 0) {
+            long got = kosmos_irq_wait_for(c->irq, ticks);
+
+            mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
+            mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
+            (void)kosmos_irq_ack(c->irq);
+
+            if (got == 0) {
+                c->interrupts++;
+
+                /* A line can be shared: an interrupt with nothing on the
+                 * ring is somebody else's, and is borne only so long. */
+                if (idle++ < ticks) {
+                    continue;
+                }
+            }
+
+            return take_event(c, out);
+        }
+
+        if (idle++ >= ticks) {
+            return false;
+        }
+
+        kosmos_sleep(1);
+    }
+}
+
+/*
+ * A command, and its Command Completion Event (4.6, 6.4.2.2). Events for
+ * anything else that arrive first - a port changing - are passed over: the
+ * port registers are what this driver reads for ports.
+ */
+static bool command(struct controller *c, uint32_t w0, uint32_t w1,
+                    uint32_t w3, uint32_t *done)
+{
+    uint64_t at = ring_push(&c->commands, w0, w1, 0, w3);
+    unsigned seen;
+
+    mmio_write32(c->doorbells, 0);      /* doorbell 0, target 0: commands */
+
+    for (seen = 0; seen < EVENTS_MAX; seen++) {
+        if (!wait_event(c, ticks_for(ANSWER_MS), done)) {
+            return false;
+        }
+
+        if (TRB_TYPE_OF(done[3]) == TRB_COMPLETION
+            && (((uint64_t)done[1] << 32) | done[0]) == at) {
+            return TRB_CODE_OF(done[2]) == CC_SUCCESS;
+        }
+    }
+
+    return false;
+}
+
+/* --------------------------------------------------------------- starting */
+
+/*
+ * The region, the rings and the interrupter, then Run (4.2).
+ *
+ * Every write here is one 4.2 lists before Run/Stop, in its order: slots
+ * enabled, the context array, the command ring, the interrupter's event ring
+ * with ERSTBA's high half last, moderation, and the two interrupt enables.
+ */
+static bool start(struct controller *c, const struct dev_info *dev,
+                  struct say_line *line)
+{
+    uint32_t hcs1 = mmio_read32(c->base + CAP_HCSPARAMS1);
+    uint32_t hcs2 = mmio_read32(c->base + CAP_HCSPARAMS2);
+    uint32_t hcc1 = mmio_read32(c->base + CAP_HCCPARAMS1);
+    uint32_t *erst;
+    uint64_t *scratch;
+    const char *why = NULL;
+    long region, mapped, bus;
+    unsigned i;
+
+    c->rt = c->base + (mmio_read32(c->base + CAP_RTSOFF) & ~0x1Fu);
+    c->doorbells = c->base + (mmio_read32(c->base + CAP_DBOFF) & ~0x3u);
+    c->context = (hcc1 & HCC1_CSZ) != 0 ? 64u : 32u;
+    c->scratchpads = HCS2_SCRATCHPADS(hcs2);
+    c->slots = HCS1_SLOTS(hcs1) < DEVICES_MAX ? HCS1_SLOTS(hcs1) : DEVICES_MAX;
+    c->pages = PAGE_DEVICES + DEVICES_MAX * PAGES_A_DEVICE + c->scratchpads;
+    c->irq = -1;
+
+    if (c->rt + RT_ERDP + 8u > c->base + c->size
+        || c->doorbells + 4u * (DEVICES_MAX + 1u) > c->base + c->size) {
+        why = "'s runtime registers or doorbells lie outside its window";
+    } else if ((mmio_read32(c->op + OP_PAGESIZE) & PAGESIZE_4K) == 0) {
+        why = " does not take 4K pages; not driven";
+    } else if (c->scratchpads > SCRATCHPADS_MAX) {
+        why = " asks for more scratchpad buffers than one page lists; not driven";
+    } else if (c->slots == 0) {
+        why = " has no device slots";
+    }
+
+    if (why == NULL) {
+        region = kosmos_mem_create_flags(c->pages, MEM_CONTIGUOUS);
+        mapped = region < 0 ? region : kosmos_mem_map(region);
+        bus = region < 0 ? region : kosmos_mem_phys(region);
+
+        if (region < 0 || mapped < 0 || bus <= 0) {
+            why = " could not have memory it can reach";
+        } else {
+            c->mem = (uintptr_t)mapped;
+            c->bus = (uint64_t)bus;
+
+            /* 5.3.6: without AC64 the controller ignores the high half. */
+            if ((hcc1 & HCC1_AC64) == 0
+                && c->bus + (uint64_t)c->pages * PAGE > 0x100000000ull) {
+                why = " addresses 32 bits and its memory is above 4 GB; "
+                      "not driven";
+            }
+        }
+    }
+
+    if (why != NULL) {
+        about(line, c);
+        say_text(line, why);
+        say_send(console, line);
+        return false;
+    }
+
+    /* The context array, and its entry 0 for the scratchpads (4.20, 6.6). */
+    c->dcbaa = (uint64_t *)(c->mem + PAGE_DCBAA * PAGE);
+    erst = (uint32_t *)(c->mem + PAGE_ERST * PAGE);
+    scratch = (uint64_t *)(c->mem + PAGE_ERST * PAGE + SCRATCH_OFFSET);
+
+    if (c->scratchpads > 0) {
+        c->dcbaa[0] = c->bus + PAGE_ERST * PAGE + SCRATCH_OFFSET;
+
+        for (i = 0; i < c->scratchpads; i++) {
+            scratch[i] = c->bus + ((uint64_t)PAGE_DEVICES
+                                   + DEVICES_MAX * PAGES_A_DEVICE + i) * PAGE;
+        }
+    }
+
+    mmio_write32(c->op + OP_CONFIG,
+                 (mmio_read32(c->op + OP_CONFIG) & ~0xFFu) | c->slots);
+    write64(c->op + OP_DCBAAP, c->bus + PAGE_DCBAA * PAGE);
+
+    ring_start(&c->commands, (uint32_t *)(c->mem + PAGE_COMMANDS * PAGE),
+               c->bus + PAGE_COMMANDS * PAGE);
+    write64(c->op + OP_CRCR, c->commands.bus | CRCR_RCS);
+
+    /* The event ring: one segment, the table's one entry (6.5), then the
+     * registers in 4.9.4's order. */
+    c->events = (uint32_t *)(c->mem + PAGE_EVENTS * PAGE);
+    c->events_bus = c->bus + PAGE_EVENTS * PAGE;
+    c->dequeue = 0;
+    c->event_cycle = TRB_C;
+
+    erst[0] = (uint32_t)c->events_bus;
+    erst[1] = (uint32_t)(c->events_bus >> 32);
+    erst[2] = RING_TRBS;
+
+    mmio_write32(c->rt + RT_ERSTSZ, 1u);
+    event_dequeue_to(c, c->events_bus, false);
+    write64(c->rt + RT_ERSTBA, c->bus + PAGE_ERST * PAGE);
+
+    /*
+     * The interrupt, if it can be had: a claim refused is a controller driven
+     * by looking at its ring, which works, and is said.
+     */
+    c->intid = dev->intid;
+    c->irq = kosmos_irq_claim(dev->intid);
+
+    mmio_write32(c->rt + RT_IMOD, IMOD_ONE_MS);
+    mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
+    mmio_write32(c->op + OP_USBCMD,
+                 mmio_read32(c->op + OP_USBCMD) | USBCMD_INTE | USBCMD_RS);
+
+    if (!settles(c->op + OP_USBSTS, USBSTS_HCH, 0, ticks_for(HALT_MS))) {
+        about(line, c);
+        say_text(line, " would not run");
+        say_send(console, line);
+        return false;
+    }
+
+    about(line, c);
+    say_text(line, " runs: contexts of ");
+    say_dec(line, c->context);
+    say_text(line, " bytes, ");
+    say_dec(line, c->scratchpads);
+    say_text(line, c->scratchpads == 1 ? " scratchpad page, "
+                                       : " scratchpad pages, ");
+    say_dec(line, c->slots);
+    say_text(line, " slots enabled, ");
+
+    if (c->irq >= 0) {
+        say_text(line, "interrupt ");
+        say_dec(line, c->intid);
+    } else {
+        say_text(line, "interrupt ");
+        say_dec(line, c->intid);
+        say_text(line, " not claimed, so polled");
+    }
+
+    say_send(console, line);
+    return true;
+}
+
+/*
+ * The first proof that the rings work: a No-Op command (4.6.2), answered on
+ * the event ring - and whether its interrupt reached this process, which on
+ * x86 is the first MSI to do so.
+ *
+ * **Whether it arrived is asked, not inferred from how the answer was
+ * found.** QEMU completes a command inside the doorbell write, so the event
+ * is on the ring before anybody looks, and a driver that credits only an
+ * interrupt it waited for reports none while one sits pending on its line.
+ * The first run did exactly that, with a probe in the kernel saying the
+ * interrupt had been delivered to this claim. So once the answer is taken
+ * the line is asked, with the same deadline: an interrupt that arrived is
+ * there at once, and one that never did costs the second.
+ */
+static bool no_op(struct controller *c, struct say_line *line)
+{
+    uint32_t done[4];
+    unsigned before = c->interrupts;
+    bool answered = command(c, 0, 0, TRB_TYPE(TRB_NOOP), done);
+    bool arrived = c->interrupts > before;
+
+    if (answered && !arrived && c->irq >= 0) {
+        arrived = kosmos_irq_wait_for(c->irq, ticks_for(ANSWER_MS)) == 0;
+
+        mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
+        mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
+        (void)kosmos_irq_ack(c->irq);
+
+        if (arrived) {
+            c->interrupts++;
+        }
+    }
+
+    about(line, c);
+
+    if (!answered) {
+        say_text(line, " did not answer a No-Op command on its event ring");
+        say_send(console, line);
+        return false;
+    }
+
+    say_text(line, " answered a No-Op command on its event ring");
+
+    if (arrived) {
+        say_text(line, ", by interrupt");
+    } else if (c->irq >= 0) {
+        say_text(line, ", found by looking: no interrupt within a second");
+    } else {
+        say_text(line, ", found by looking");
+    }
+
+    say_send(console, line);
+    return true;
+}
+
+/*
+ * A USB 2 port reset (4.3.1): Port Reset written with Port Power and nothing
+ * else - the change bits are write-1-to-clear and must not be echoed back -
+ * then Port Reset Change awaited and cleared. Enabled after it, or not.
+ */
+static bool reset_port(struct controller *c, unsigned port)
+{
+    uintptr_t reg = c->op + OP_PORTSC(port);
+
+    mmio_write32(reg, PORTSC_PP | PORTSC_PR);
+
+    if (!settles(reg, PORTSC_PRC, PORTSC_PRC, ticks_for(ANSWER_MS))) {
+        return false;
+    }
+
+    mmio_write32(reg, PORTSC_PP | PORTSC_PRC);
+    return (mmio_read32(reg) & PORTSC_PED) != 0;
+}
+
+/* ------------------------------------------------------------ a device */
+
+/* Entry `index` of a context: 0 the input control context, 1 the slot, 2
+ * endpoint 0 (6.2.5) - each 32 or 64 bytes. */
+static uint32_t *context(const struct controller *c, uint32_t *base,
+                         unsigned index)
+{
+    return base + index * (c->context / 4u);
+}
+
+/*
+ * A slot and an address (4.3.2 to 4.3.4): Enable Slot, then an input context
+ * naming the port and the default control endpoint, an output context in
+ * the array, and Address Device.
+ */
+static bool address_device(struct controller *c, struct device *d)
+{
+    uintptr_t page;
+    uint32_t done[4];
+    uint32_t *icc, *slot, *ep0;
+
+    if (!command(c, 0, 0, TRB_TYPE(TRB_ENABLE_SLOT)
+                          | ((uint32_t)c->slot_type[d->port] << 16), done)) {
+        return false;
+    }
+
+    d->slot = TRB_SLOT_OF(done[3]);
+
+    if (d->slot == 0 || d->slot > c->slots) {
+        return false;
+    }
+
+    page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+
+    d->input = (uint32_t *)(c->mem + page * PAGE);
+    d->output = (uint32_t *)(c->mem + (page + 1u) * PAGE);
+    d->buffer = (uint8_t *)(c->mem + (page + 3u) * PAGE);
+    d->input_bus = c->bus + page * PAGE;
+    d->output_bus = c->bus + (page + 1u) * PAGE;
+    d->buffer_bus = c->bus + (page + 3u) * PAGE;
+
+    memset(d->input, 0, PAGE);
+    memset(d->output, 0, PAGE);
+    ring_start(&d->ep0, (uint32_t *)(c->mem + (page + 2u) * PAGE),
+               c->bus + (page + 2u) * PAGE);
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+    ep0 = context(c, d->input, 2);
+
+    icc[1] = 0x3u;                          /* A0, A1: slot and endpoint 0 */
+
+    /*
+     * Context Entries 1, and the speed in 23:20 - which 1.2 calls deprecated
+     * and reserved (Table 6-4), and which controllers written to earlier
+     * revisions still read. The root port in 23:16 of the next word, and a
+     * route string of 0 for a device on the root hub.
+     */
+    slot[0] = (1u << 27) | (d->speed << 20);
+    slot[1] = d->port << 16;
+
+    /* Control endpoint, three errors allowed, the default packet (6.2.3). */
+    ep0[1] = (default_packet(d->speed) << 16) | (4u << 3) | (3u << 1);
+    ep0[2] = (uint32_t)d->ep0.bus | 1u;     /* and DCS */
+    ep0[3] = (uint32_t)(d->ep0.bus >> 32);
+    ep0[4] = 8u;                            /* average TRB length, control */
+
+    c->dcbaa[d->slot] = d->output_bus;
+
+    return command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                   TRB_TYPE(TRB_ADDRESS_DEVICE) | TRB_SLOT(d->slot), done);
+}
+
+/*
+ * A control transfer that reads (4.11.2.2, 6.4.1.2): Setup with its eight
+ * bytes inline, an IN Data stage into the device's buffer, and a Status stage
+ * that interrupts on completion. True when the Status stage succeeded; a
+ * short Data stage is no error - the descriptor says how long it is.
+ */
+static bool control_in(struct controller *c, struct device *d,
+                       uint32_t request, uint16_t value, uint16_t index,
+                       uint16_t length)
+{
+    uint64_t status;
+    uint32_t done[4];
+    unsigned seen;
+
+    memset(d->buffer, 0, length);
+
+    (void)ring_push(&d->ep0, request | ((uint32_t)value << 16),
+                    index | ((uint32_t)length << 16), 8u,
+                    TRB_TYPE(TRB_SETUP) | TRB_IDT | TRB_TRT_IN);
+    (void)ring_push(&d->ep0, (uint32_t)d->buffer_bus,
+                    (uint32_t)(d->buffer_bus >> 32), length,
+                    TRB_TYPE(TRB_DATA) | TRB_DIR_IN);
+    status = ring_push(&d->ep0, 0, 0, 0, TRB_TYPE(TRB_STATUS) | TRB_IOC);
+
+    mmio_write32(c->doorbells + 4u * d->slot, 1u);  /* target 1: endpoint 0 */
+
+    for (seen = 0; seen < EVENTS_MAX; seen++) {
+        uint32_t code;
+
+        if (!wait_event(c, ticks_for(ANSWER_MS), done)) {
+            return false;
+        }
+
+        if (TRB_TYPE_OF(done[3]) != TRB_TRANSFER
+            || TRB_SLOT_OF(done[3]) != d->slot) {
+            continue;
+        }
+
+        code = TRB_CODE_OF(done[2]);
+
+        if ((((uint64_t)done[1] << 32) | done[0]) == status) {
+            return code == CC_SUCCESS;
+        }
+
+        if (code != CC_SUCCESS && code != CC_SHORT_PACKET) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+/* GET_DESCRIPTOR: device-to-host, standard, device (USB 2.0, 9.4.3). */
+#define GET_DESCRIPTOR      (0x80u | (6u << 8))
+#define DESC_DEVICE         0x0100u
+#define DESC_STRING         0x0300u
+#define NAME_MAX_CHARS      48u
+
+/*
+ * A string descriptor as ASCII: UTF-16LE after a two-byte header, anything
+ * that is not printable ASCII shown as '?', and no longer than a line has
+ * room for.
+ */
+static void as_ascii(char *out, const uint8_t *desc)
+{
+    unsigned chars = desc[0] >= 2u ? (unsigned)(desc[0] - 2u) / 2u : 0u;
+    unsigned i;
+
+    if (chars > NAME_MAX_CHARS) {
+        chars = NAME_MAX_CHARS;
+    }
+
+    for (i = 0; i < chars; i++) {
+        unsigned code = desc[2u + 2u * i] | (unsigned)desc[3u + 2u * i] << 8;
+
+        out[i] = (code >= 0x20u && code < 0x7Fu) ? (char)code : '?';
+    }
+
+    out[i] = '\0';
+}
+
+/*
+ * What it is and who made it: the device descriptor's first eight bytes, the
+ * packet size corrected for a full-speed device (4.3.4, step 7a), the whole
+ * eighteen, and the product string in the first language the device offers.
+ */
+static bool describe(struct controller *c, struct device *d,
+                     struct say_line *line)
+{
+    char name[NAME_MAX_CHARS + 1];
+    unsigned vendor, product, bcd, class, iproduct;
+
+    name[0] = '\0';
+
+    if (!control_in(c, d, GET_DESCRIPTOR, DESC_DEVICE, 0, 8u)) {
+        return false;
+    }
+
+    if (d->speed == 1 && d->buffer[7] != default_packet(d->speed)
+        && (d->buffer[7] == 16u || d->buffer[7] == 32u
+            || d->buffer[7] == 64u)) {
+        uint32_t done[4];
+        uint32_t *icc = context(c, d->input, 0);
+        uint32_t *ep0 = context(c, d->input, 2);
+
+        icc[0] = 0;
+        icc[1] = 0x2u;                      /* A1: endpoint 0 alone */
+        ep0[1] = (ep0[1] & 0xFFFFu) | ((uint32_t)d->buffer[7] << 16);
+
+        if (!command(c, (uint32_t)d->input_bus,
+                     (uint32_t)(d->input_bus >> 32),
+                     TRB_TYPE(TRB_EVALUATE) | TRB_SLOT(d->slot), done)) {
+            return false;
+        }
+    }
+
+    if (!control_in(c, d, GET_DESCRIPTOR, DESC_DEVICE, 0, 18u)
+        || d->buffer[0] < 18u || d->buffer[1] != 1u) {
+        return false;
+    }
+
+    bcd = d->buffer[2] | (unsigned)d->buffer[3] << 8;
+    class = d->buffer[4];
+    vendor = d->buffer[8] | (unsigned)d->buffer[9] << 8;
+    product = d->buffer[10] | (unsigned)d->buffer[11] << 8;
+    iproduct = d->buffer[15];
+
+    if (iproduct != 0
+        && control_in(c, d, GET_DESCRIPTOR, DESC_STRING, 0, 255u)
+        && d->buffer[0] >= 4u && d->buffer[1] == 3u) {
+        uint16_t language = (uint16_t)(d->buffer[2]
+                                       | (unsigned)d->buffer[3] << 8);
+
+        if (control_in(c, d, GET_DESCRIPTOR,
+                       (uint16_t)(DESC_STRING | iproduct), language, 255u)
+            && d->buffer[1] == 3u) {
+            as_ascii(name, d->buffer);
+        }
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": ");
+    say_hex(line, vendor, 4);
+    say_text(line, ":");
+    say_hex(line, product, 4);
+    say_text(line, ", USB ");
+    say_dec(line, ((bcd >> 12) & 0xFu) * 10u + ((bcd >> 8) & 0xFu));
+    say_text(line, ".");
+    say_dec(line, (bcd >> 4) & 0xFu);
+    say_text(line, ", class ");
+    say_dec(line, class);
+
+    if (name[0] != '\0') {
+        say_text(line, ", \"");
+        say_text(line, name);
+        say_text(line, "\"");
+    }
+
+    say_send(console, line);
+    c->named++;
+    return true;
+}
+
+/*
+ * Stopped, and reset, before this process ends: Run/Stop and the interrupt
+ * enable cleared, Halted awaited, then HCRST - which also forgets the context
+ * array and the rings. The pages those pointed at go back to the kernel when
+ * this process exits, and a controller still running would write into them.
+ */
+static void stop(const struct controller *c, struct say_line *line)
+{
+    mmio_write32(c->rt + RT_IMAN, IMAN_IP);
+    (void)reset(c, line);
+}
+
 /* One controller, start to finish. Answers how many ports have a device. */
 static unsigned bring_up(struct controller *c, const struct dev_info *dev,
                          struct say_line *line)
@@ -336,13 +1165,12 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
     uint32_t word, hcs1;
     unsigned port, plugged = 0;
     long mapped;
+    bool running;
 
-    for (port = 0; port <= PORTS_MAX; port++) {
-        c->usb[port] = 0;
-    }
-
+    memset(c, 0, sizeof(*c));
     c->where = dev->where;
     c->size = (unsigned long)dev->size;
+    c->irq = -1;
 
     mapped = kosmos_dev_map((unsigned long)dev->base,
                             (c->size + 4095u) / 4096u);
@@ -392,8 +1220,12 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
      */
     kosmos_sleep(ticks_for(SETTLE_MS));
 
+    running = start(c, dev, line) && no_op(c, line);
+
     for (port = 1; port <= c->ports; port++) {
         uint32_t sc = mmio_read32(c->op + OP_PORTSC(port));
+        struct device d;
+        bool reset_done = false;
 
         if ((sc & PORTSC_CCS) == 0) {
             continue;
@@ -401,35 +1233,72 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
 
         plugged++;
 
-        about(line, c);
-        say_text(line, " port ");
-        say_dec(line, port);
-
         /*
          * **A speed only where the field holds one.** Table 5-27: the speed
          * "is invalid on a USB2 protocol port until after the port is
          * reset", because a USB 2 device says how fast it is during that
-         * reset, and this step resets no port. The ThinkPad showed what
-         * printing it anyway looks like: four USB 2 ports, every one of them
-         * "Full-speed", which nothing had yet asked.
+         * reset. The ThinkPad showed what printing it anyway looks like:
+         * four USB 2 ports, every one of them "Full-speed", which nothing had
+         * yet asked.
          */
-        if (c->usb[port] >= 3) {
+        if (running && c->usb[port] == 2) {
+            reset_done = reset_port(c, port);
+            sc = mmio_read32(c->op + OP_PORTSC(port));
+        }
+
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, port);
+
+        if (c->usb[port] >= 3 || reset_done) {
             say_text(line, ", USB ");
             say_dec(line, c->usb[port]);
             say_text(line, ": a ");
             say_text(line, speed_name(PORTSC_SPEED(sc)));
             say_text(line, " device (speed ID ");
             say_dec(line, PORTSC_SPEED(sc));
-            say_text(line, ")");
+            say_text(line, reset_done ? "), after its reset" : ")");
         } else if (c->usb[port] == 2) {
-            say_text(line, ", USB 2: a device, its speed unknown until the "
-                           "port is reset");
+            say_text(line, running ? ", USB 2: a device whose port would "
+                                     "not reset"
+                                   : ", USB 2: a device, its speed unknown "
+                                     "until the port is reset");
         } else {
             say_text(line, ": a device, on a port no protocol capability "
                            "describes");
         }
 
         say_send(console, line);
+
+        if (!running || (c->usb[port] == 2 && !reset_done)
+            || c->usb[port] < 2) {
+            continue;
+        }
+
+        memset(&d, 0, sizeof(d));
+        d.port = port;
+        d.speed = PORTSC_SPEED(sc);
+
+        if (!address_device(c, &d)) {
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, port);
+            say_text(line, ": no slot and address for the device");
+            say_send(console, line);
+            continue;
+        }
+
+        if (!describe(c, &d, line)) {
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, port);
+            say_text(line, ": the device did not say what it is");
+            say_send(console, line);
+        }
+    }
+
+    if (c->bus != 0) {
+        stop(c, line);
     }
 
     return plugged;
@@ -445,7 +1314,7 @@ void xhci_server(long console_cap)
     struct dev_info dev;
     struct say_line line;
     unsigned where[NAMED_MAX];
-    unsigned index, i, plugged = 0;
+    unsigned index, i, plugged = 0, named = 0;
     long asked;
 
     console = console_cap;
@@ -461,6 +1330,7 @@ void xhci_server(long console_cap)
         }
 
         plugged += bring_up(&c, &dev, &line);
+        named += c.named;
     }
 
     if (asked != SYS_ERR_NO_DEVICE) {
@@ -496,8 +1366,10 @@ void xhci_server(long console_cap)
 
     say_text(&line, "), ");
     say_dec(&line, plugged);
-    say_text(&line, plugged == 1 ? " port with something plugged in"
-                                 : " ports with something plugged in");
+    say_text(&line, plugged == 1 ? " port with something plugged in, "
+                                 : " ports with something plugged in, ");
+    say_dec(&line, named);
+    say_text(&line, named == 1 ? " device named" : " devices named");
     say_send(console, &line);
 
     kosmos_exit(0);

@@ -15,6 +15,8 @@
 #include <stdint.h>
 
 #include "hal.h"
+#include "mmio.h"
+#include "mmu.h"
 #include "pci.h"
 #include "apic.h"
 #include "pc.h"
@@ -43,6 +45,24 @@
 /* Message Control, at +2 into the capability. */
 #define MSI_ENABLE          (1u << 0)
 #define MSI_64BIT           (1u << 7)
+
+/*
+ * MSI-X. The capability's shape - ID 11h, the table's offset in 31:3 of its
+ * second word and its BAR in 2:0 - and a table entry's sixteen bytes of
+ * address, upper address, data and vector control are xHCI 1.2 5.2.8.2 and
+ * 5.2.8.5. The three bits below are PCI 6.8.2's, which `msix_enable` says
+ * more about.
+ */
+#define CAP_ID_MSIX         0x11
+#define MSIX_ENABLE         (1u << 15)
+#define MSIX_FUNCTION_MASK  (1u << 14)
+#define MSIX_VECTOR_MASKED  (1u << 0)
+#define MSIX_BIR_MASK       0x7u
+#define MSIX_ENTRY_BYTES    16u
+#define MSIX_ENTRY_ADDRESS  0u
+#define MSIX_ENTRY_UPPER    4u
+#define MSIX_ENTRY_DATA     8u
+#define MSIX_ENTRY_CONTROL  12u
 
 #define COMMAND_IO          (1u << 0)
 #define COMMAND_MEMORY      (1u << 1)
@@ -396,6 +416,40 @@ static bool find(const struct match *want, unsigned from,
 static unsigned next_msi = MSI_IRQ_FIRST;
 
 /*
+ * Where capability `id` is in a device's list, or 0 when it has none.
+ *
+ * Bounded: a capability list is a linked list in memory a device controls,
+ * and a loop in it would be a hang at boot. One walk for MSI and MSI-X both,
+ * rather than a copy each.
+ */
+static uint8_t capability_at(const struct pci_device *dev, uint8_t id)
+{
+    uint8_t at;
+    unsigned guard;
+
+    if ((pci_config_read(dev->bus, dev->slot, dev->function, PCI_STATUS_REG)
+         & PCI_STATUS_CAPS) == 0) {
+        return 0;               /* no capability list at all */
+    }
+
+    at = (uint8_t)(pci_config_read(dev->bus, dev->slot, dev->function,
+                                   PCI_CAP_POINTER) & 0xFC);
+
+    for (guard = 0; at != 0 && guard < 48u; guard++) {
+        uint32_t head = pci_config_read(dev->bus, dev->slot, dev->function,
+                                        at);
+
+        if ((head & 0xFF) == id) {
+            return at;
+        }
+
+        at = (uint8_t)((head >> 8) & 0xFC);
+    }
+
+    return 0;
+}
+
+/*
  * Switches a device to Message Signalled Interrupts.
  *
  * **An MSI is not a wire.** The device writes a word to an address, and the
@@ -422,35 +476,15 @@ static unsigned next_msi = MSI_IRQ_FIRST;
 static bool msi_enable(struct pci_device *dev)
 {
     uint8_t at;
-    unsigned guard;
     unsigned irq;
 
     if (!pc_irq_on_apic() || next_msi > MSI_IRQ_LAST) {
         return false;
     }
 
-    if ((pci_config_read(dev->bus, dev->slot, dev->function, PCI_STATUS_REG)
-         & PCI_STATUS_CAPS) == 0) {
-        return false;           /* no capability list at all */
-    }
+    at = capability_at(dev, CAP_ID_MSI);
 
-    at = (uint8_t)(pci_config_read(dev->bus, dev->slot, dev->function,
-                                   PCI_CAP_POINTER) & 0xFC);
-
-    /* Bounded: a capability list is a linked list in memory a device
-     * controls, and a loop in it would be a hang at boot. */
-    for (guard = 0; at != 0 && guard < 48u; guard++) {
-        uint32_t head = pci_config_read(dev->bus, dev->slot, dev->function,
-                                        at);
-
-        if ((head & 0xFF) == CAP_ID_MSI) {
-            break;
-        }
-
-        at = (uint8_t)((head >> 8) & 0xFC);
-    }
-
-    if (at == 0 || guard >= 48u) {
+    if (at == 0) {
         return false;
     }
 
@@ -494,6 +528,89 @@ static bool msi_enable(struct pci_device *dev)
     return true;
 }
 
+/*
+ * **MSI-X, for a device that has no MSI capability.** QEMU's xHCI controller
+ * is one, and that was measured rather than assumed: its capability list is
+ * MSI-X at 90h and PCI Express at A0h and nothing else, so `msi_enable` found
+ * nothing and the controller was left on a line no interrupt arrived on.
+ *
+ * The message is MSI's - the local APIC's address with its id in 19:12, the
+ * vector as data (Intel SDM vol. 3 11.11) - written into entry 0 of a table
+ * the device keeps in one of its BARs, rather than into configuration space.
+ * Entry 0 is all a driver here needs: xHCI's interrupter 0 is its entry 0.
+ *
+ * In order: the function masked and MSI-X enabled, so nothing fires from a
+ * half-written entry; the entry written and its own mask cleared; the
+ * function unmasked.
+ *
+ * **Where the three bits come from.** The capability's shape and the entry's
+ * layout are xHCI 1.2's (5.2.8.2, 5.2.8.5). Enable at bit 15 and Function
+ * Mask at bit 14 of Message Control, and a vector's mask at bit 0 of Vector
+ * Control, are the PCI specification's 6.8.2, **which is not in this
+ * project's references**. What says they are right is an interrupt arriving:
+ * `run_x86.py`'s USB check fails when the controller's No-Op is answered and
+ * no interrupt reached the driver.
+ */
+static bool msix_enable(struct pci_device *dev)
+{
+    uint32_t control, table;
+    uint16_t message;
+    uintptr_t entry;
+    unsigned bir, irq;
+    uint8_t at;
+
+    if (!pc_irq_on_apic() || next_msi > MSI_IRQ_LAST) {
+        return false;
+    }
+
+    at = capability_at(dev, CAP_ID_MSIX);
+
+    if (at == 0) {
+        return false;
+    }
+
+    table = pci_config_read(dev->bus, dev->slot, dev->function,
+                            (uint8_t)(at + 4));
+    bir = table & MSIX_BIR_MASK;
+
+    if (bir >= 6 || dev->bar[bir] == 0) {
+        return false;
+    }
+
+    entry = mmu_map_device((uintptr_t)dev->bar[bir]
+                           + (table & ~MSIX_BIR_MASK), MSIX_ENTRY_BYTES);
+
+    if (entry == 0) {
+        return false;           /* the device window is full */
+    }
+
+    irq = next_msi;
+    control = pci_config_read(dev->bus, dev->slot, dev->function, at);
+    message = (uint16_t)(control >> 16);
+
+    pci_config_write(dev->bus, dev->slot, dev->function, at,
+                     (control & 0xFFFFu)
+                     | ((uint32_t)(message | MSIX_FUNCTION_MASK | MSIX_ENABLE)
+                        << 16));
+
+    mmio_write32(entry + MSIX_ENTRY_ADDRESS,
+                 0xFEE00000u | ((uint32_t)apic_id() << 12));
+    mmio_write32(entry + MSIX_ENTRY_UPPER, 0);
+    mmio_write32(entry + MSIX_ENTRY_DATA, PC_IRQ_BASE + irq);
+    mmio_write32(entry + MSIX_ENTRY_CONTROL,
+                 mmio_read32(entry + MSIX_ENTRY_CONTROL) & ~MSIX_VECTOR_MASKED);
+
+    pci_config_write(dev->bus, dev->slot, dev->function, at,
+                     (control & 0xFFFFu)
+                     | ((uint32_t)(uint16_t)((message | MSIX_ENABLE)
+                                             & ~MSIX_FUNCTION_MASK) << 16));
+
+    next_msi++;
+    dev->irq = (uint8_t)irq;
+
+    return true;
+}
+
 void pci_enable(struct pci_device *dev)
 {
     uint32_t command = pci_config_read(dev->bus, dev->slot, dev->function,
@@ -511,10 +628,13 @@ void pci_enable(struct pci_device *dev)
     pci_config_write(dev->bus, dev->slot, dev->function, PCI_COMMAND, command);
 
     /*
-     * And an MSI if this machine and this device can both do one. `dev->irq`
-     * changes when it can, which is the whole reason this takes a pointer.
+     * And an MSI if this machine and this device can both do one, or MSI-X
+     * where the device has only that. `dev->irq` changes when it can, which
+     * is the whole reason this takes a pointer.
      */
-    (void)msi_enable(dev);
+    if (!msi_enable(dev)) {
+        (void)msix_enable(dev);
+    }
 }
 
 /*

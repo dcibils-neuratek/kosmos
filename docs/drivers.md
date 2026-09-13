@@ -120,6 +120,12 @@ This is the actual work, and everything below depends on it.
    there is no line, so both directions are no-ops, and that is the normal
    case on the ThinkPad rather than an edge.
 
+   **And MSI-X** (0.10.54), for a device that has no MSI capability - QEMU's
+   xHCI controller, whose list is MSI-X and PCI Express and nothing else.
+   The same message, written into entry 0 of a table in one of the
+   device's BARs (`hal/pc/pci.c`), with the capability walk shared between
+   the two.
+
    Refused: a number the board spends on itself (`hal_irq_available` - the
    tick above all), and a line somebody already holds.
 
@@ -151,8 +157,9 @@ owning the console would also let it read every key on the machine.
 A device this simple was chosen so a failure would point at the primitives
 rather than at the device. The next driver is xHCI, and its first step
 exists: `user/servers/xhci.c` (0.10.48) finds every controller, takes each
-from the firmware, resets it and reads its ports. `usb.md` is how USB works
-here, written as each step lands.
+from the firmware, resets it and reads its ports; its second (0.10.54) gives
+each device a slot and an address and reads what it is. `usb.md` is how USB
+works here, written as each step lands.
 
 Estimated at 500-800 lines in the kernel, and the largest architectural
 addition since capabilities - because it turns "a driver is kernel code"
@@ -242,7 +249,8 @@ Public Intel specification, no firmware, no crypto.
 
 Build order, each step ending in something visible: controller up, then
 enumeration, then bulk transfers, then mass storage, then Ethernet. The
-first is built; `usb.md` has it, and takes each of the others as it lands.
+first two are built; `usb.md` has them, and takes each of the others as it
+lands.
 
 ### WiFi - OpenBSD, not FreeBSD
 

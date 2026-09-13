@@ -1893,3 +1893,90 @@ registers by hand - `user/hello-*.S`, `user/faulty-*.S` and init's
 `user/init/start-*.S`, on both architectures - and a case that read its
 arguments through a helper rather than `sc->arg` directly, which none does
 today: `syscall_dispatch` is the only function the frame is handed to.
+
+---
+
+## 18.37 USB enumeration, by interrupt, checked against QEMU
+
+`tools/run_x86.py`'s USB check, rewritten for step 2 (`usb.md` §4): 14
+checks, four of them with the negative controls below.
+
+**Compared with QEMU, not with this driver's idea of QEMU.** A second QEMU with
+the same `-device` lines, `-S` so it never runs an instruction, is asked
+`info usb` over its monitor, and the devices' speeds must match it. Its
+"Product" turned out to be QEMU's name for the device model - "QEMU USB MSD" -
+where the stick's own string descriptor says "QEMU USB HARDDRIVE", so product
+strings are checked against the QEMU binary instead, which carries both. Its
+first run also corrected this check's docstring, which had the keyboard as
+full-speed: QEMU attaches it at 480 Mb/s.
+
+**The first run's "no interrupt" was two faults, found by instrumenting.** A
+probe in `msi_enable` printed the controller's capability list - MSI-X at 90h,
+PCI Express at A0h, no MSI - and MSI-X went into `pci.c`. The check still
+failed, and a probe in `apic.c` then printed each interrupt as delivered to
+the driver's claim: the driver had found the No-Op's answer on the ring
+before it ever waited, because QEMU completes a command inside the doorbell
+write, and credited only interrupts it had waited for. It asks the line now.
+Both probes were taken out.
+
+For the first two controls the runner kept only the last thirty lines, which
+cut the `FAIL: N of 14` count; what is quoted is what it printed.
+
+With no USB 2 port reset:
+
+```
+xhci: 00:03.0 port 5, USB 2: a device whose port would not reset
+...
+the driver did not read two devices' descriptors and product strings
+the devices' speeds are not the ones QEMU says it attached them at:
+    driver: ['SuperSpeed']
+    QEMU:   ['High-speed', 'SuperSpeed']
+the driver's closing line is not what two controllers, a stick and a keyboard should give:
+    xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in, 1 device named
+```
+
+With the input control context adding the slot and not endpoint 0, which QEMU
+refuses with a TRB Error:
+
+```
+xhci: 00:03.0 port 5: no slot and address for the device
+xhci: 00:04.0 port 1: no slot and address for the device
+...
+the devices' speeds are not the ones QEMU says it attached them at:
+    driver: []
+    QEMU:   ['High-speed', 'SuperSpeed']
+a product string the driver read is not one the QEMU binary carries: []
+the driver's closing line is not what two controllers, a stick and a keyboard should give:
+    xhci: 2 controllers (00:03.0, 00:04.0), 2 ports with something plugged in, 0 devices named
+```
+
+With the interrupter never enabled:
+
+```
+FAIL: 1 of 14
+  a No-Op command was not answered by interrupt on both controllers - "found by looking" means the rings work and no interrupt reached the driver:
+    xhci: 00:03.0 answered a No-Op command on its event ring, found by looking: no interrupt within a second
+    xhci: 00:04.0 answered a No-Op command on its event ring, found by looking: no interrupt within a second
+```
+
+With the kernel never enabling MSI-X:
+
+```
+FAIL: 1 of 14
+  a No-Op command was not answered by interrupt on both controllers - "found by looking" means the rings work and no interrupt reached the driver:
+    xhci: 00:03.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 19
+    xhci: 00:03.0 answered a No-Op command on its event ring, found by looking: no interrupt within a second
+    xhci: 00:04.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 16
+    xhci: 00:04.0 answered a No-Op command on its event ring, found by looking: no interrupt within a second
+```
+
+While these ran, the check's boot waited for "devices named", which a run that
+names one device never prints, so the controls that named fewer than two
+waited out the 90-second timeout before failing. It waits for the closing
+line's "plugged in, " now. That changes when a failing run returns, not what
+it returns: `boot()` hands back everything printed either way.
+
+**What none of it shows** is the ThinkPad: scratchpad pages, 64-byte contexts,
+a full-speed device's packet size, a chipset's MSI that takes time to arrive.
+The controller's "runs:" line is written so one photograph answers the first
+two.

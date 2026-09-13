@@ -157,7 +157,12 @@ is the one that makes the machine Diego owns behave like a computer:
    **Step one is built (0.10.48): the controllers are up.** Every xHCI
    controller is found on PCI by its class, taken from the firmware, halted,
    reset, and its ports read, by a driver in a process. `docs/usb.md` is
-   the account and grows with each step. Next: enumeration.
+   the account and grows with each step.
+
+   **Step two is built (0.10.54): devices are named.** Each controller is
+   given its rings and interrupter and started, each device a slot, an
+   address, and its descriptors read, by interrupt - MSI-X, which the PC
+   board gained for it. Next: bulk transfers.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage

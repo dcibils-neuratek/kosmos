@@ -240,9 +240,66 @@ def storage(image, check):
           "reads back its own cache looks exactly like")
 
 
+def qemu_usb(extra):
+    """What QEMU itself says is on its USB buses, given these devices.
+
+    A second QEMU with the same `-device` lines, `-S` so it never runs an
+    instruction, asked `info usb` over its monitor and killed. `info usb`
+    describes QEMU's device model, not the guest, so this is an answer that
+    owes nothing to Kosmos - which is the point of asking it.
+
+    Product and speed, and not the port: QEMU numbers its buses' ports
+    itself, and the controller puts USB 3 ports first, so the keyboard QEMU
+    calls port 1 is the controller's port 5.
+    """
+    work = tempfile.mkdtemp(prefix="kosmos-infousb-")
+    path = os.path.join(work, "monitor")
+    cmd = [QEMU, "-M", "q35", "-m", "512M", "-S", "-no-reboot",
+           "-display", "none", "-serial", "none",
+           "-monitor", "unix:%s,server,nowait" % path] + list(extra)
+
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+    said = ""
+
+    try:
+        monitor = Monitor(path)
+        said = monitor.ask("info usb", quiet=0.5)
+        monitor.close()
+    except RuntimeError:
+        pass
+    finally:
+        proc.kill()
+        proc.wait()
+
+    return re.findall(r"Device \S+, Port \S+, Speed ([\d.]+) Mb/s, "
+                      r"Product ([^\r\n]+)", said)
+
+
+def qemu_binary():
+    """The bytes of the QEMU this runs, or None: strings a device model
+    carries are in it, which makes it a source for them that owes nothing
+    to Kosmos."""
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        path = os.path.join(folder, QEMU)
+
+        if os.path.isfile(path):
+            with open(path, "rb") as handle:
+                return handle.read()
+
+    return None
+
+
+# `info usb`'s rates as the controller names them (xHCI 1.2, Table 7-13).
+QEMU_SPEEDS = {"1.5": "Low-speed", "12": "Full-speed", "480": "High-speed",
+               "5000": "SuperSpeed", "10000": "SuperSpeedPlus"}
+
+
 def usb(image, check):
     """Two xHCI controllers, a USB stick on the second, a keyboard on the
-    first, and what the driver in `user/servers/xhci.c` says it found.
+    first, and what the driver in `user/servers/xhci.c` says it found and
+    what the devices said they are.
 
     **Two controllers, because the index is the part one cannot test.** A
     driver that always asked for the first would find a controller, take it,
@@ -250,21 +307,22 @@ def usb(image, check):
     never see the other. With the stick on the second, that driver reports
     nothing plugged in anywhere, and the check says so by name.
 
-    What this establishes is the first step of USB and nothing past it: the
-    board found the controllers by class, sized and handed over their
-    windows, and a process halted and reset each and read which ports have
-    a device behind them, at what speed. Nothing is enumerated yet. **The
-    firmware handoff is the one path QEMU cannot reach**: its controller has
-    no legacy-support capability, so there is nothing to hand over, and the
-    driver says that rather than claiming a handoff it never made.
+    **Step one** is the controllers found by class, taken from the firmware
+    where there is firmware, reset, and their ports read. **The firmware
+    handoff is the one path QEMU cannot reach**: its controller has no
+    legacy-support capability, and the driver says that rather than claiming
+    a handoff it never made.
 
-    **The keyboard is there for its port, not for typing.** QEMU puts a
-    full-speed device on a USB 2 port, and on a USB 2 port the speed field
-    is invalid until the port is reset (xHCI 1.2, Table 5-27), which this
-    step never does. The ThinkPad showed what a driver that printed it anyway
-    says: four USB 2 ports, every one "Full-speed". The check wants the
-    keyboard's port reported with its speed unknown, and no speed named on
-    any USB 2 port at all.
+    **Step two** is each controller given its rings and its interrupter and
+    started; a No-Op command answered on the event ring **by interrupt** -
+    the first MSI to reach a process on x86, which is why "found by looking"
+    fails here rather than passing quietly; the keyboard's USB 2 port reset,
+    after which, and only after which, its speed is named; and both devices
+    given a slot and an address and asked for their descriptors.
+
+    **What the devices say is compared with what QEMU says**, from a second
+    QEMU's monitor, as product and speed. The keyboard is high-speed - 480 Mb/s
+    - which this docstring once had as full-speed.
     """
     stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
 
@@ -277,7 +335,9 @@ def usb(image, check):
              "-device", "usb-storage,bus=usb1.0,drive=stick",
              "-device", "usb-kbd,bus=usb0.0")
 
-    out = boot(image, None, 90.0, extra=extra, until="plugged in")
+    # The closing line, whatever it counts: "devices named" is never printed
+    # by a run that names one device, which then waited out the timeout.
+    out = boot(image, None, 90.0, extra=extra, until="plugged in, ")
 
     if out is None:
         check(False, "the machine would not boot with two xHCI controllers")
@@ -286,44 +346,100 @@ def usb(image, check):
     said = [l[l.index("xhci:"):].strip()
             for l in out.replace("\r", "").splitlines() if "xhci:" in l]
     shown = "\n    ".join(said) or "(the driver said nothing)"
+    at = r"([0-9a-f]{2}:[0-9a-f]{2}\.[0-7])"
 
-    found = re.findall(r"xhci: ([0-9a-f]{2}:[0-9a-f]{2}\.[0-7]), "
-                       r"version (\d+\.\d+), "
+    found = re.findall(r"xhci: " + at + r", version (\d+\.\d+), "
                        r"(\d+) ports, (\d+) slots", out)
 
     check(len(found) == 2 and found[0][0] != found[1][0],
           "the driver did not report two different xHCI controllers:\n    "
           + shown)
 
-    ports = re.findall(r"xhci: ([0-9a-f]{2}:[0-9a-f]{2}\.[0-7]) port (\d+), "
-                       r"USB (\d): "
-                       r"a (\S+) device", out)
+    # Step two's start: both running, each with its interrupt claimed.
+    running = re.findall(r"xhci: " + at + r" runs: contexts of (\d+) bytes, "
+                         r"(\d+) scratchpad pages?, (\d+) slots enabled, "
+                         r"interrupt (\d+)(?! not claimed)", out)
 
-    check(len(ports) == 1,
-          "the driver did not report exactly one device plugged in:\n    "
+    check(len(running) == 2,
+          "the driver did not start both controllers with an interrupt "
+          "claimed:\n    " + shown)
+
+    answered = re.findall(r"xhci: " + at + r" answered a No-Op command on "
+                          r"its event ring, by interrupt", out)
+
+    check(len(answered) == 2,
+          "a No-Op command was not answered by interrupt on both controllers"
+          " - \"found by looking\" means the rings work and no interrupt "
+          "reached the driver:\n    " + shown)
+
+    ports = re.findall(r"xhci: " + at + r" port (\d+), USB (\d): a (\S+) "
+                       r"device \(speed ID (\d+)\)(, after its reset)?", out)
+
+    check(len(ports) == 2,
+          "the driver did not report exactly two devices plugged in:\n    "
           + shown)
 
-    if len(found) == 2 and len(ports) == 1:
-        check(ports[0][0] == found[1][0],
-              "the stick is on the second controller, %s, and the driver "
-              "reported it on %s - which is what asking for the first "
-              "controller twice looks like" % (found[1][0], ports[0][0]))
+    # A speed on a USB 2 port only once the port has been reset (Table 5-27).
+    check(all(usb_major != "2" or reset for _, _, usb_major, _, _, reset
+              in ports),
+          "a speed was named on a USB 2 port that had not been reset, where "
+          "the field is invalid:\n    " + shown)
 
     if len(found) == 2:
-        check(re.search(r"xhci: %s port \d+, USB 2: a device, its speed "
-                        r"unknown until the port is reset" % re.escape(found[0][0]),
-                        out) is not None,
+        check(re.search(r"xhci: %s port \d+, USB 2: a High-speed device "
+                        r"\(speed ID 3\), after its reset"
+                        % re.escape(found[0][0]), out) is not None,
               "the keyboard on the first controller, %s, was not reported as a "
-              "USB 2 device whose speed is unknown until its port is reset:\n    "
+              "high-speed device after its port's reset:\n    "
               % found[0][0] + shown)
 
-    check(re.search(r"USB 2: a \S+ device \(speed ID", out) is None,
-          "a speed was named on a USB 2 port, where the field is invalid "
-          "until the port is reset:\n    " + shown)
+    devices = re.findall(r"xhci: " + at + r" port (\d+): ([0-9a-f]{4}):"
+                         r"([0-9a-f]{4}), USB (\d+\.\d), class (\d+), "
+                         r"\"([^\"]*)\"", out)
+
+    check(len(devices) == 2,
+          "the driver did not read two devices' descriptors and product "
+          "strings:\n    " + shown)
+
+    # `info usb`'s "Product" is QEMU's name for the device model, and for the
+    # stick that is not its string descriptor - "QEMU USB MSD" against the
+    # "QEMU USB HARDDRIVE" the stick itself says, which the first run of this
+    # check found. So the speeds are compared with `info usb`, and each
+    # product string must be one the emulator itself carries.
+    speed_of = {(a, p): s for a, p, _, s, _, _ in ports}
+    from_driver = sorted(speed_of.get((a, p), "?")
+                         for a, p, _, _, _, _, _ in devices)
+    from_qemu = sorted(QEMU_SPEEDS.get(rate, rate + " Mb/s")
+                       for rate, _ in qemu_usb(extra))
+
+    check(len(from_qemu) == 2,
+          "QEMU's own monitor did not list the two devices to compare "
+          "with: %r" % (from_qemu,))
+
+    check(from_driver == from_qemu,
+          "the devices' speeds are not the ones QEMU says it attached "
+          "them at:\n    driver: %r\n    QEMU:   %r" % (from_driver, from_qemu))
+
+    carried = qemu_binary()
+    named = [name for _, _, _, _, _, _, name in devices]
+
+    check(carried is not None and named
+          and all(name.encode() in carried for name in named),
+          "a product string the driver read is not one the QEMU binary "
+          "carries: %r" % (named,))
+
+    if len(found) == 2:
+        stick_on = [a for a, _, usb_major, _, _, _ in ports
+                    if usb_major == "3"]
+
+        check(stick_on == [found[1][0]],
+              "the stick is on the second controller, %s, and the driver "
+              "named it on %r - which is what asking for the first "
+              "controller twice looks like" % (found[1][0], stick_on))
 
     check(re.search(r"xhci: 2 controllers \([0-9a-f]{2}:[0-9a-f]{2}\.[0-7], "
                     r"[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]\), 2 ports with something "
-                    r"plugged in", out) is not None,
+                    r"plugged in, 2 devices named", out) is not None,
           "the driver's closing line is not what two controllers, a stick "
           "and a keyboard should give:\n    " + shown)
 
