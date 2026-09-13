@@ -8,6 +8,72 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: three rows about the machine that nothing had read
+
+On the ThinkPad, with 0.10.48, `neofetch` said `Host  QEMU q35 x86-64`,
+`Disk  kfs, 30 of 32 MB free` and `Network  virtio-net at 0.0.0.0`, and About
+said `Platform: QEMU q35 x86-64`. **All three were reproduced in QEMU before
+anything was touched, and each was a label standing in for a reading.**
+`testing.md` §18.41 has the whole account and every control.
+
+- **Host.** The Makefile's `PLATFORM` was compiled into every PC build. The PC
+  board reads SMBIOS's System Information now (`hal/pc/smbios.c`, the decoder
+  in `smbios_decode.c`). On UEFI it finds it through the EFI System Table,
+  which GRUB passes as Multiboot 2 tag 12; under SeaBIOS it finds it in the
+  BIOS area. It copies the strings in `hal_early_init`, before `mmu_init`
+  unmaps firmware memory. `hal_machine_ident` is a new HAL entry, the ARM
+  board answers that it reads nothing, and `sysinfo` carries
+  `machine_vendor`, `machine_product`, `machine_version` and
+  `machine_source`. The boot log prints a `machine:` line. `neofetch`, About
+  ("Machine:" now) and `machine` read it through `/lib/hardware.lua`. The PC
+  string is `PC x86-64`, used only when the firmware names nothing.
+- **Disk.** `.super` answered `free_blocks = blocks - data_at` from the day
+  the disk became real. It is counted out of the bitmap now
+  (`kfs.free_blocks`), and `tools/kfs.lua df` gives the host's count.
+  `test_kfs.lua` had a check comparing a field kfs never had, nil with nil.
+- **Network.** The stack answers with or without a card, and any answer was
+  called virtio-net. Cards are named from the bus, driven or not, in
+  `neofetch`, `machine` and the Network preference; the kernel's boot line
+  says "no network card it can drive".
+
+**Checked:** `test_kfs.lua` 47, `test_smbiosdecode` 20, `run_interchange.py`
+9, `run_x86.py`'s `identity` 5, `run_uefi.py` 15, and `run_network.py`
+reading `virtio-net at 10.0.2.15` - each watched fail against its own control.
+By hand: OVMF's default 2.1 entry point names the machine through the EFI
+table too, and no harness boots that path. **`make test` passed whole**, in
+4 min 42 s: 153/153 and 149/149 in the guest suites, `run_x86.py` 68,
+`run_network.py` 24 on both boards, `run_uefi.py` 15. `make prepush` was not
+run.
+
+**Not committed and not landed.** It sits on 0.10.45 in worktree
+`kind-spence-736db7`. The xHCI session's unpushed 0.10.48 and 0.10.47 edit
+`hal/hal.h`, `kernel/syscall.c` and `kernel/syscall.h`,
+`hal/qemu-virt/devices.c` and the Makefile, so whichever lands second merges
+there. Neither adds anything the other depends on.
+
+**Next, on the ThinkPad:** the boot log's `machine:` line (expected
+`LENOVO ...`, from SMBIOS 3.x in the EFI system table), Host, a Network row
+that names an undriven Intel controller rather than virtio-net, and a Disk row
+near 16 of 32 MB free on the stick's disk.
+
+Open:
+
+- The free count scans the bitmap on every `.super` read: one block on these
+  disks, and not measured on a large one.
+- A 3.0 table above 4 GB is refused rather than read, because nothing maps
+  it at boot. Nothing here produces one.
+- **A second command typed into a display-harness boot is sometimes lost** -
+  no echo, a bare prompt. Six two-command boots through `run_network.boot`
+  lost it six times, including on 0.10.45 as committed (an archive of
+  `0075794`, built and probed with its own harness), and a serial-only boot
+  never did. Yet a full `run_network.py` run then passed all 24 checks,
+  resolver phase included, which types four commands into one boot. So it
+  is intermittent, or depends on something not found yet. One suspect,
+  unconfirmed: `boot()` resets `guest.seen` without the lock `Guest._drain`
+  appends under. The new `neofetch` check has a boot of its own because of
+  it, and the first `make test` of this change failed on exactly that when
+  the check shared `netframe`'s boot.
+
 ### 12 September: Doom, Quake and the Super Nintendo are kits, and a program answers to its name
 
 **`snes --scale 3` at the prompt printed a table.** `gfx.c` opened the three
@@ -1469,9 +1535,9 @@ since 0.10.22 not needed for this.
 - **One pointer speed for two devices.** `pointer 48` sets it, nothing
   persists it, and a TrackPoint and a touchpad want different curves from a
   driver that cannot tell their packets apart.
-- **`neofetch` on the T14 says `QEMU q35 x86-64` and `virtio-net`.** The
-  platform is a Makefile constant compiled into the kernel, and the network
-  row names the virtio driver whatever the machine has.
+- ~~**`neofetch` on the T14 says `QEMU q35 x86-64` and `virtio-net`.**~~
+  Fixed in the worktree on 12 September, together with its disk row; see the
+  entry at the top and `testing.md` §18.41. Not yet seen on the T14.
 - **The click probes are still in**: `i8042 buttons` and `wm: button`, both
   bounded. Clicks are confirmed on the machine now - the T14's log shows a
   release reaching the window manager and an application launched from it -

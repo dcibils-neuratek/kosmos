@@ -9,8 +9,10 @@
 -- reason Tracker builds its sidebar from `fs.mounts()`.
 --
 -- What "free" means differs by mount and only one of them can answer it.
--- The disk keeps a superblock with a block count and a free count, and
--- that is a real number. `/ramfs` is a fixed pool of nodes decided at
+-- The disk has a block count in its superblock and a bitmap of the blocks
+-- in use, and the disk server counts the free ones out of the bitmap, so
+-- that is a real number. (This said the superblock kept a free count. It
+-- never did, and the server's stand-in for one ignored every file.) `/ramfs` is a fixed pool of nodes decided at
 -- compile time. `/bin` and `/lib` are in the image and cannot grow at all.
 -- Rather than invent a total for each, this prints what each one is able
 -- to say and leaves the rest blank, which is the honest shape.
@@ -96,7 +98,10 @@ end
 
 print("")
 
-if sb and sb.formatted then
+if sb and sb.formatted and not sb.free_blocks then
+  print(("disk: %s, and how much of it is free could not be read (%s)")
+        :format(files.size(sb.blocks * sb.block_size), tostring(sb.free_why)))
+elseif sb and sb.formatted then
   local used = sb.blocks - sb.free_blocks
 
   print(("disk: %s used of %s, %d blocks free of %d")

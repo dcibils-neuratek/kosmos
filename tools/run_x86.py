@@ -1071,6 +1071,84 @@ def pointer(image, check):
         proc.wait()
 
 
+def row(out, label):
+    """The value of one of `neofetch`'s rows, or None."""
+    found = re.search(r"^%s +(.+?)\r?$" % label, out, re.MULTILINE)
+
+    return found.group(1) if found else None
+
+
+def identity(image, check):
+    """Boots as QEMU and as a ThinkPad, and asks the machine what it is.
+
+    **`neofetch` on a ThinkPad T14 printed two rows about the machine and
+    neither had read it.** `Host  QEMU q35 x86-64` was the Makefile's platform
+    string, compiled into every PC build. `Network  virtio-net at 0.0.0.0` was
+    any answer from the network stack, which has an address of four zero
+    bytes and no card on a machine with nothing it can drive.
+
+    Both are reproducible here without the laptop, and that is what makes
+    this worth two boots:
+
+      - q35 carries an Intel e1000e unless it is told otherwise, and nothing
+        in Kosmos drives one. That is the ThinkPad's shape exactly - an
+        Ethernet controller on the bus and no virtio-net.
+      - `-smbios type=1` puts any strings QEMU is given into System
+        Information, so the second boot *is* a ThinkPad as far as the table
+        is concerned. And `smbios-entry-point-type=64` gives it the 3.0 entry
+        point a 2021 firmware is likely to use; QEMU's default is 2.1, so
+        without it only the older half of `smbios_entry` would ever run.
+
+    The first boot is QEMU saying it is QEMU, which is the half that stops a
+    fix from being "print something else".
+    """
+    out = boot(image, None, 120.0, typed=("neofetch",))
+
+    if out is None:
+        check(False, "the machine would not boot to be asked what it is")
+        return
+
+    named = next((l.strip() for l in out.splitlines() if "machine:" in l), "")
+
+    check("machine: QEMU Standard PC" in named and "in the BIOS area" in named,
+          "the boot log did not name QEMU out of SMBIOS in the BIOS area: "
+          + (named or "no machine line"))
+
+    host = row(out, "Host") or ""
+
+    check(host.startswith("QEMU Standard PC") and host.endswith(", x86-64"),
+          "neofetch's Host is %r, not the name QEMU's firmware gives" % host)
+
+    network = row(out, "Network") or ""
+
+    check(re.match(r"not driven: Intel 8086:10d3 at 00:[0-9a-f]{2}\.\d$",
+                   network) is not None,
+          "neofetch's Network is %r on a machine with an undriven e1000e and "
+          "no virtio-net" % network)
+
+    extra = ("-machine", "smbios-entry-point-type=64",
+             "-smbios", "type=1,manufacturer=LENOVO,product=20W000T9US,"
+                        "version=ThinkPad T14 Gen 2i")
+
+    out = boot(image, None, 120.0, typed=("neofetch",), extra=extra)
+
+    if out is None:
+        check(False, "the machine would not boot with a ThinkPad's SMBIOS")
+        return
+
+    named = next((l.strip() for l in out.splitlines() if "machine:" in l), "")
+
+    check("machine: LENOVO 20W000T9US ThinkPad T14 Gen 2i, from SMBIOS 3."
+          in named,
+          "given a 3.0 entry point and a ThinkPad's System Information, the "
+          "boot log said: " + (named or "no machine line"))
+
+    host = row(out, "Host") or ""
+
+    check(host == "LENOVO 20W000T9US ThinkPad T14 Gen 2i, x86-64",
+          "neofetch's Host on the ThinkPad's table is %r" % host)
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     checks = 0
@@ -1403,6 +1481,11 @@ def main():
     usb(image, check)
     usb_hotplug(image, check)
 
+    # And what the machine says it is, which it used to read out of the
+    # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.
+    #
+    identity(image, check)
+
     # And the pointer a laptop has, with and without the serial port it does
     # not have. `pointer` says why the second half is the one that matters.
     #
@@ -1423,8 +1506,9 @@ def main():
           "reports what it was handed, plays a tone an Intel HDA "
           "controller hands back at the right pitch, keeps a file on an "
           "NVMe drive across a reboot, reads one off a disk the loader "
-          "handed over in memory, finds a USB stick and a keyboard on two "
-          "xHCI controllers, and opens a menu with a click through "
+          "handed over in memory, names itself out of SMBIOS as QEMU and "
+          "as a ThinkPad, finds a USB stick and a keyboard on two xHCI "
+          "controllers, and opens a menu with a click through "
           "a PS/2 mouse whether or not the machine has a serial port)."
           % checks)
     return 0

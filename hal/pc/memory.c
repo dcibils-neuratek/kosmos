@@ -157,6 +157,14 @@ static uint8_t loader_rsdp[36];
 static bool    loader_rsdp_valid;
 
 /*
+ * The EFI System Table's address, when a Multiboot 2 loader on UEFI passed it
+ * on, or 0. Only the address: the table is the firmware's, in memory it
+ * reserved, and `smbios.c` reads what it needs from it before `mmu_init`
+ * stops that memory being mapped.
+ */
+static uint64_t loader_efi_system;
+
+/*
  * Where the loader said ACPI's root pointer is, or NULL.
  *
  * **This is the entire reason `boot/x86_64/start.S` carries a second
@@ -168,6 +176,11 @@ static bool    loader_rsdp_valid;
 const void *pc_loader_rsdp(void)
 {
     return loader_rsdp_valid ? (const void *)loader_rsdp : NULL;
+}
+
+uint64_t pc_loader_efi_system_table(void)
+{
+    return loader_efi_system;
 }
 
 bool pc_trampoline_page_free(void)
@@ -484,6 +497,17 @@ static void capture_multiboot2(const struct mb2_info *info)
 
         memcpy(loader_rsdp, (const uint8_t *)tag + sizeof(*tag), bytes);
         loader_rsdp_valid = true;
+    }
+
+    /*
+     * And the EFI System Table, which is how UEFI hands over what it does not
+     * leave anywhere a scan would find - SMBIOS among it, which is what
+     * `smbios.c` wants it for.
+     */
+    tag = mb2_find(info, MB2_TAG_EFI64);
+
+    if (tag != NULL && tag->size >= sizeof(struct mb2_tag_efi64)) {
+        loader_efi_system = ((const struct mb2_tag_efi64 *)tag)->pointer;
     }
 
     tag = mb2_find(info, MB2_TAG_CMDLINE);

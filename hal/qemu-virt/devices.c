@@ -28,3 +28,25 @@ bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 
     return false;
 }
+
+/*
+ * What this machine is called: nothing is read, and that is said.
+ *
+ * This board boots with no firmware in front of it and looks for no SMBIOS.
+ * The build's platform string is true here by construction - every address
+ * in this directory is `virt`'s and the board runs nowhere else - so that is
+ * what a caller shows instead, and `source` says why it has to.
+ */
+bool hal_machine_ident(struct hal_machine *out)
+{
+    static const struct hal_machine none = {
+        .source = "this board does not read SMBIOS",
+    };
+
+    if (out == NULL) {
+        return false;
+    }
+
+    *out = none;
+    return false;
+}

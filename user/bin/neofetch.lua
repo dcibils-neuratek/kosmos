@@ -116,6 +116,8 @@ end
 -- as "there is no such thing", so the line stays and says so.
 --------------------------------------------------------------------------
 
+local hardware = use("/lib/hardware.lua")
+
 local b      = sys.build()
 local cpu    = fs.read("/dev/cpu")    or {}
 local mem    = fs.read("/dev/memory") or {}
@@ -134,12 +136,22 @@ end
 --------------------------------------------------------------------------
 
 --
--- The platform string carries the architecture already - it is "QEMU virt
--- aarch64" and "QEMU q35 x86-64" - so this does not append `cpu.arch` to
--- it. Two versions of that were written before anybody read the Makefile,
--- and both said "QEMU virt aarch64, aarch64".
+-- **What the firmware calls this machine**, and what the image was built for
+-- only when the firmware calls it nothing.
 --
-row("Host", b.platform or "unknown machine")
+-- This printed the platform string alone, and on a ThinkPad T14 that read
+-- `QEMU q35 x86-64`: the Makefile's, compiled into every PC build. The PC
+-- board reads SMBIOS now, and `hardware.name` is its three strings.
+--
+-- The architecture follows a firmware's name, which does not carry it. It is
+-- not added to the platform string, which does - "QEMU virt aarch64" - and
+-- two versions of this were written before anybody read the Makefile, both
+-- saying "QEMU virt aarch64, aarch64".
+--
+local name = hardware.name(info)
+
+row("Host", name and cpu.arch and (name .. ", " .. cpu.arch)
+            or name or b.platform or "unknown machine")
 
 -- Two names, and they are not interchangeable: Kosmos is the system this
 -- banner is the banner of, Nebula is the microkernel under it. The version
@@ -228,9 +240,15 @@ if sb and sb.present and sb.formatted then
   local block = sb.block_size or 4096
   local mb    = 1024 * 1024
 
-  row("Disk", ("kfs, %d of %d MB free"):format(
-        ((sb.free_blocks or 0) * block) // mb,
-        ((sb.blocks or 0) * block) // mb))
+  -- No `or 0` on the free count. It used to have one, and zero free is a
+  -- full disk: a count that could not be read must not say that.
+  if sb.free_blocks then
+    row("Disk", ("kfs, %d of %d MB free"):format(
+          (sb.free_blocks * block) // mb, ((sb.blocks or 0) * block) // mb))
+  else
+    row("Disk", ("kfs, %d MB; how much is free could not be read"):format(
+          ((sb.blocks or 0) * block) // mb))
+  end
 elseif sb and sb.present then
   row("Disk", "attached, no filesystem (" .. tostring(sb.why) .. ")")
 else
@@ -243,16 +261,36 @@ end
 -- `net_info` answers through the stack, and a program that was not handed
 -- `/net` gets nothing back - which is not the same fact as there being no
 -- card, and reporting it as one is the exact lie `machine` was written to
--- avoid. So whether a card *exists* comes from `sysinfo`, which is the
--- kernel describing the machine rather than handing anything over, and the
--- address is shown only when this program actually holds the stack.
+-- avoid. So whether a card *exists* comes from the kernel describing the
+-- machine rather than handing anything over - `sysinfo`, and the bus it
+-- enumerated - and the address is shown only when this program holds the
+-- stack *and the stack says it has a card*.
+--
+-- **That last part is what the ThinkPad found missing.** It said
+-- `virtio-net at 0.0.0.0`: the stack answers whether or not there is a card,
+-- its address is four zero bytes until init configures one, and any answer
+-- at all was printed as virtio-net. The card's name is the bus's now, and a
+-- controller nothing drives is named rather than called "no card".
 --
 local net = fs.net_info("/net")
+local driven, undriven = hardware.network(sys.bus())
 
-if net and type(net.address) == "string" and #net.address == 4 then
-  row("Network", ("virtio-net at %d.%d.%d.%d"):format(net.address:byte(1, 4)))
-elseif (info.net_mtu or 0) > 0 then
-  row("Network", "virtio-net, no address configured")
+if driven[1] or (info.net_mtu or 0) > 0 then
+  local card    = driven[1] and driven[1].name or "a card the bus did not list"
+  local address = net and net.card and net.address
+
+  if type(address) == "string" and #address == 4
+     and address ~= "\0\0\0\0" then
+    row("Network", ("%s at %d.%d.%d.%d"):format(card, address:byte(1, 4)))
+  elseif net and net.card then
+    row("Network", card .. ", no address configured")
+  else
+    row("Network", card .. "; its address is not this program's to ask")
+  end
+elseif undriven[1] then
+  row("Network", ("not driven: %s at %s%s"):format(undriven[1].name,
+        undriven[1].place,
+        (#undriven > 1) and (", and %d more"):format(#undriven - 1) or ""))
 else
   row("Network", "no card; this machine is on its own")
 end

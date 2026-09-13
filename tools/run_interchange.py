@@ -21,6 +21,7 @@ same idea still agree - which they would, right up until one changed.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -79,8 +80,20 @@ def main():
 
         checks += 1
 
+        #
+        # How much room is left, as this computer counts it.
+        #
+        # The machine's `df` must say the same number, and it did not: the
+        # disk server answered `blocks - data_at`, every block past the
+        # metadata, so a disk the host tool had filled with fourteen
+        # megabytes said thirty of thirty-two were free on the ThinkPad.
+        # Asked first, before anything below writes to the image.
+        #
+        host_free = re.search(r"(\d+) blocks free of (\d+)", kfs("df", disk))
+
         # ---- the machine reads what this computer wrote ----
         out = run_disk.boot(image, disk, [
+            "df",
             'local v = fs.read("/home/books/manual.txt") '
             'print("GUEST" .. "-READ", v and #v or -1)',
             'fs.write("/home/books/reply.txt", '
@@ -142,6 +155,21 @@ def main():
             raise Failure(
                 "the machine could not read a file this computer wrote "
                 f"into the image (expected {len(body)} bytes).\n"
+                + out[-900:]
+            )
+
+        checks += 1
+
+        # ---- the same free space, counted on both sides ----
+        guest_free = re.search(r"(\d+) blocks free of (\d+)", out)
+
+        if (host_free is None or guest_free is None
+                or guest_free.groups() != host_free.groups()):
+            raise Failure(
+                "the machine's `df` and this computer's `kfs.lua df` disagree "
+                "about the same image: "
+                f"{guest_free.group(0) if guest_free else 'nothing from df'} "
+                f"against {host_free.group(0) if host_free else 'nothing'}.\n"
                 + out[-900:]
             )
 

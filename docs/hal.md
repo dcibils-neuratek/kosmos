@@ -426,6 +426,15 @@ void     hal_irq_set_masked(unsigned intid, bool masked);
 bool     hal_device_find(unsigned kind, unsigned index,  /* nth of a kind */
                          struct hal_device *out);
 
+// What the firmware says the machine is: manufacturer, product, version, and
+// where they were read - SMBIOS's System Information on a PC, found through
+// the EFI System Table or in the BIOS area, and copied before `mmu_init`
+// unmaps firmware memory. The ARM board reads nothing and says so. Arrived
+// because `neofetch` on a ThinkPad printed the Makefile's "QEMU q35 x86-64":
+// the platform string is what the image was built for, and this is what it
+// runs on.
+bool     hal_machine_ident(struct hal_machine *out);
+
 // The half of irq_init and timer_init that belongs to *this* processor: its
 // GIC redistributor and CPU interface, its own generic timer. Both are
 // per-core by architecture, so no core can do them for another - and

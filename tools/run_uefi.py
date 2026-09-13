@@ -110,7 +110,12 @@ def capture(iso, moments):
            "-device", "usb-storage,bus=xhci.0,drive=stick",
            # Four, so that "how many processors" has an answer worth
            # checking: ACPI's MADT is the only place that number is.
-           "-smp", "4"]
+           "-smp", "4",
+           # SMBIOS 3.0, which OVMF then publishes under its own GUID in
+           # the EFI Configuration Table. QEMU's default is the 2.1 entry
+           # point, and a 2021 laptop's firmware is likely to hand over
+           # the newer one - so this is the path the ThinkPad's name takes.
+           "-machine", "smbios-entry-point-type=64"]
 
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
@@ -270,6 +275,25 @@ def main():
     check("interrupts: an I/O APIC" in serial,
           "booted through the loader the machine fell back to the 8259 "
           "pair, which is what no ACPI looks like")
+
+    #
+    # **The machine's name, through the only place UEFI leaves it.**
+    #
+    # `neofetch` on the ThinkPad said `QEMU q35 x86-64`, which was compiled
+    # in. The PC board reads SMBIOS now, and on a UEFI machine the entry
+    # point is in the EFI Configuration Table rather than below 1 MB - the
+    # same trap the RSDP was. Under `-kernel` SeaBIOS leaves it in the BIOS
+    # area, so this boot is the only one that walks the EFI System Table,
+    # and every offset in it: a wrong one finds no GUID and names nothing.
+    #
+    named = next((l.strip() for l in serial.splitlines() if "machine:" in l),
+                 "")
+
+    check("machine: QEMU Standard PC" in named
+          and "from SMBIOS 3." in named
+          and "in the EFI system table" in named,
+          "booted through the loader, the machine was not named out of "
+          "SMBIOS 3 in the EFI System Table: " + (named or "no machine line"))
 
     check("write-combining" in serial,
           "the framebuffer is not write-combining: "

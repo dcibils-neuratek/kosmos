@@ -338,7 +338,7 @@ assert(kfs.store(sb, "/from/song", string.rep("x", 9000), 1))
 
 local before_number, before_node = kfs.find(sb, "/from/song")
 local before_start = before_node.extents[1].start
-local free_before = sb.free
+local free_before = kfs.free_blocks(sb)
 
 check(kfs.rename(sb, "/from/song", "tune"),
       "a name changes inside one directory")
@@ -367,7 +367,13 @@ check(moved_node.size == 9000, "and still the same size")
 -- data and would show here as a smaller free count, which is the check that
 -- would fail first if this ever quietly became a copy.
 --
-check(sb.free == free_before, "and no blocks were allocated to do it")
+--
+-- **This compared `sb.free` with itself for as long as it existed**, and kfs
+-- has no such field: nil against nil, a check that could not fail. The free
+-- count is counted now, so the check can.
+--
+check(free_before ~= nil and kfs.free_blocks(sb) == free_before,
+      "and no blocks were allocated to do it")
 
 check(kfs.read_file(sb, moved_node) == string.rep("x", 9000),
       "the contents are what they were")
@@ -385,6 +391,83 @@ check(kfs.rename(sb, "/to/tune", "/nowhere/tune") == nil,
       "and neither can anything go to a directory that is not there")
 check(kfs.find(sb, "/to/tune") ~= nil,
       "after all of which it is still where it was")
+
+--------------------------------------------------------------------------
+-- How much room is left.
+--
+-- `.super` answered `free_blocks` with `blocks - data_at` - every block past
+-- the metadata, whatever was on the disk - so a disk made on the host with
+-- fourteen megabytes in it said thirty of thirty-two were free, on the
+-- ThinkPad and in `df`. It is counted out of the bitmap now, and these hold
+-- the count to two things that share none of its code: arithmetic about
+-- what was stored, and every bit of the bitmap read one at a time.
+--------------------------------------------------------------------------
+
+-- The slow way, and deliberately so: a block read per bit, no byte tricks.
+local function free_by_bits(sb)
+  local free = 0
+
+  for block = 0, sb.blocks - 1 do
+    local byte_index = block // 8
+    local bytes = kfs.read_block(sb.bitmap_at + byte_index // kfs.BLOCK)
+    local v = bytes:byte(byte_index % kfs.BLOCK + 1)
+
+    if (v & (1 << (block % 8))) == 0 then free = free + 1 end
+  end
+
+  return free
+end
+
+sb = fresh()
+
+local empty = kfs.free_blocks(sb)
+
+check(empty == free_by_bits(sb), "a fresh disk's free count is its bitmap's")
+check(empty < sb.blocks - sb.data_at,
+      "and the directories mkfs made are not counted as free")
+
+-- Nine thousand bytes is three blocks, and nothing else: the entry goes into
+-- the root's directory block, which has room.
+assert(kfs.store(sb, "/nine", string.rep("n", 9000), 1))
+check(kfs.free_blocks(sb) == empty - 3, "a file of three blocks takes three")
+
+assert(kfs.unlink(sb, "/nine"))
+check(kfs.free_blocks(sb) == empty, "and gives them back when it goes")
+
+-- The ThinkPad's disk in miniature: most of it filled from outside.
+assert(kfs.store(sb, "/wad", string.rep("w", 2 * 1024 * 1024 + 1), 1))
+check(kfs.free_blocks(sb) == empty - 513,
+      "two megabytes and a byte is 513 blocks gone")
+check(kfs.free_blocks(sb) == free_by_bits(sb),
+      "and the count agrees with every bit of the bitmap")
+
+--
+-- A disk that ends partway through a bitmap byte, and a bitmap that says a
+-- block past the end is free. `mkfs` never writes that; a damaged disk could,
+-- and the count must not believe it.
+--
+-- 1021 blocks: byte 127 holds blocks 1016 to 1023, so bits 0-4 are the disk
+-- and bits 5-7 are not. Byte 200 is wholly past the end.
+--
+disk = {}
+
+local odd = assert(kfs.mkfs(8 * 1021, 1))
+
+odd = assert(kfs.mount())
+
+local counted = kfs.free_blocks(odd)
+
+check(odd.blocks == 1021 and counted == free_by_bits(odd),
+      "a disk of 1021 blocks counts to its last block")
+
+local map = kfs.read_block(odd.bitmap_at)
+
+map = map:sub(1, 127) .. string.char(map:byte(128) & 0x1f)
+      .. map:sub(129, 200) .. "\0" .. map:sub(202)
+assert(#map == kfs.BLOCK and kfs.write_block(odd.bitmap_at, map))
+
+check(kfs.free_blocks(odd) == counted,
+      "a block past the end of the disk is never free, whatever the bitmap says")
 
 --------------------------------------------------------------------------
 

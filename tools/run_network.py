@@ -31,6 +31,7 @@ in `init.lua` carries a comment about the time it did not.
 
 import http.server
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -291,6 +292,35 @@ def main():
         if "no network card" in out:
             raise Failure("the machine did not find the card it was given.\n"
                           + out[-800:])
+
+        checks += 1
+
+        #
+        # **And the machine says which card, and where it is.** `neofetch`
+        # said `virtio-net at 0.0.0.0` on a ThinkPad with no virtio-net, so
+        # the half that must still be true is this one: a driven card, named
+        # by the bus, at the address init configured. `run_x86.py` boots the
+        # other half, a controller nothing drives.
+        #
+        # **In a boot of its own.** Typed into the same boot as `netframe`,
+        # whichever of the two went second was lost - no echo, a bare prompt
+        # - every time it was tried, and 0.10.45's harness lost `host` after
+        # `host 10.0.2.2` the same way. Yet the resolver phase below types
+        # four commands into one boot and passes. Not understood, and not
+        # this check's subject, so the banner shares a boot with nothing.
+        #
+        banner = boot(image, [
+            "-netdev", "user,id=net0",
+            "-device", run_screenshot.device(image, "net") + ",netdev=net0",
+        ], ["neofetch"])
+
+        found = re.search(r"^Network +(.+?)$", banner, re.MULTILINE)
+
+        if not found or found.group(1) != "virtio-net at 10.0.2.15":
+            raise Failure(
+                "neofetch's Network row on a machine with a configured "
+                f"virtio-net is {found.group(1) if found else None!r}.\n"
+                + banner[-800:])
 
         checks += 1
 

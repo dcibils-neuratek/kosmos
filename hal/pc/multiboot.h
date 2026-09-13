@@ -210,6 +210,10 @@ bool pc_framebuffer_from(const struct multiboot_info *info,
  * more than it sounds. */
 const void *pc_loader_rsdp(void);
 
+/* Where the EFI System Table is, or 0 - only a Multiboot 2 loader on UEFI
+ * passes it on. `smbios.c` finds the machine's name through it. */
+uint64_t pc_loader_efi_system_table(void);
+
 /* Whether the page `hal/pc/trampoline.S` is copied to was usable RAM in the
  * loader's map - answered from the walk at boot, because the map is gone by
  * the time a processor is started. */

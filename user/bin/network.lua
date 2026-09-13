@@ -20,6 +20,7 @@
 -- can be built then.
 
 local ui = use("/lib/ui.lua")
+local hardware = use("/lib/hardware.lua")
 local theme = ui.theme
 
 local W, H = 460, 420
@@ -74,6 +75,10 @@ end
 --------------------------------------------------------------------------
 
 local info = fs.net_info("/net")
+
+-- Which card, from the bus. See `/lib/hardware.lua` for why it is not the
+-- name of the driver.
+local driven, undriven = hardware.network(sys.bus())
 local status = ui.label{ x = 12, y = H - 30, w = W - 24, text = "",
                          follow = { "left", "right", "bottom" } }
 
@@ -97,13 +102,19 @@ function device:draw(g)
   local y = 6
 
   if not info or not info.card then
-    g:text(8, y, "no network card found", theme.bad, theme.sunken)
+    -- A controller found and not driven is not "no card", and on a laptop
+    -- with an Ethernet port that is the case this box is most likely to show.
+    g:text(8, y, undriven[1]
+                 and ("no driver for " .. undriven[1].name .. " at "
+                      .. undriven[1].place)
+                 or "no network card found", theme.bad, theme.sunken)
     g:text(8, y + gfx.font.h + 4,
            "nothing below will do anything", theme.text_dim, theme.sunken)
     return
   end
 
-  g:text(8, y, "virtio-net", theme.text, theme.sunken)
+  g:text(8, y, driven[1] and (driven[1].name .. " at " .. driven[1].place)
+               or "a card the bus did not list", theme.text, theme.sunken)
   y = y + gfx.font.h + 4
   g:text(8, y, "hardware address  " .. mac_text(info.mac),
          theme.text_dim, theme.sunken)

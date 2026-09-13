@@ -685,6 +685,33 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.bus_count = hal_bus_scan(info.bus, BUS_DEVICES_MAX);
 
     /*
+     * What the firmware calls the machine, copied out of the board's copy.
+     * Terminated here too: this struct crosses into a process, and a string
+     * with no end is a read past it on the other side.
+     */
+    {
+        struct hal_machine m;
+
+        _Static_assert(sizeof(m.vendor) == sizeof(info.machine_vendor)
+                       && sizeof(m.product) == sizeof(info.machine_product)
+                       && sizeof(m.version) == sizeof(info.machine_version)
+                       && sizeof(m.source) == sizeof(info.machine_source),
+                       "sysinfo's machine names are the HAL's size");
+
+        (void)hal_machine_ident(&m);
+
+        memcpy(info.machine_vendor, m.vendor, sizeof(info.machine_vendor));
+        memcpy(info.machine_product, m.product, sizeof(info.machine_product));
+        memcpy(info.machine_version, m.version, sizeof(info.machine_version));
+        memcpy(info.machine_source, m.source, sizeof(info.machine_source));
+
+        info.machine_vendor[sizeof(info.machine_vendor) - 1]   = '\0';
+        info.machine_product[sizeof(info.machine_product) - 1] = '\0';
+        info.machine_version[sizeof(info.machine_version) - 1] = '\0';
+        info.machine_source[sizeof(info.machine_source) - 1]   = '\0';
+    }
+
+    /*
      * Three numbers, because there are three questions.
      *
      *   cpus_present   what the machine has, from the firmware

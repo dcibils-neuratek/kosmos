@@ -419,6 +419,47 @@ void kmain(void)
     boot_fact_end();
 
     /*
+     * **The machine, as its firmware names it**, read in `hal_early_init`
+     * while that memory was still mapped.
+     *
+     * The banner above carries the build's platform string, and for a long
+     * time that was the only answer: "QEMU q35 x86-64", on a ThinkPad. That
+     * string is what the image was built for. This is what it is running on,
+     * and on a PC the two are different facts.
+     */
+    {
+        struct hal_machine m;
+        bool named = hal_machine_ident(&m);
+        const char *names[3] = { m.vendor, m.product, m.version };
+        bool first = true;
+
+        boot_fact_begin();
+        kputs("machine: ");
+
+        if (named) {
+            for (unsigned i = 0; i < 3; i++) {
+                if (names[i][0] == '\0') {
+                    continue;
+                }
+
+                if (!first) {
+                    kputc(' ');
+                }
+
+                kputs(names[i]);
+                first = false;
+            }
+
+            kputs(", from ");
+        } else {
+            kputs("not named; ");
+        }
+
+        kputs(m.source);
+        boot_fact_end();
+    }
+
+    /*
      * **How many are *given work* is deliberately not said here**, and this
      * line said it for a while and was wrong every time.
      *
@@ -891,7 +932,10 @@ void kmain(void)
             kputu(card.mtu);
             boot_fact_end();
         } else {
-            boot_fact("no network card; this machine is on its own");
+            /* "It can drive", because a laptop's Ethernet controller is on
+             * the bus whether or not this kernel has a driver for it, and
+             * `machine` lists it. This said "no network card" on one. */
+            boot_fact("no network card it can drive; this machine is on its own");
         }
     }
 

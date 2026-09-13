@@ -600,6 +600,75 @@ function kfs.free_block(sb, block)
   return bitmap_set(sb, block, false)
 end
 
+--
+-- How many blocks are free, counted out of the bitmap.
+--
+-- **Counted, because nothing keeps the number.** The superblock has no free
+-- count and never had one, and the disk server answered `.super` with
+-- `blocks - data_at` - every block past the metadata, as though nothing had
+-- ever been written. A disk the host tool had filled with fourteen megabytes
+-- said "30 of 32 MB free" on the ThinkPad, and `df` said the same.
+--
+-- Not kept beside the bitmap either. That would be a second copy of one
+-- fact, and a transaction rolled back or a journal replayed would have to
+-- put both right. The bitmap is what `alloc_block` believes, so it is what
+-- this reads - through `read_block`, so a transaction in progress sees its
+-- own allocations.
+--
+-- **Only the bits for blocks the disk has.** `mkfs` marks the tail of the
+-- last bitmap block used, and a count that leaned on that would be trusting
+-- a byte past the end of the disk to say so.
+--
+-- A byte that is all one thing is counted by `gsub`, in C, and only a byte
+-- that is both - the edge of what is allocated - is looked at bit by bit. A
+-- loop over every bit in Lua is 32,768 steps a bitmap block, and this runs
+-- every time a Terminal opens.
+--
+local FREE_IN = {}                      -- clear bits, for each byte value
+
+for v = 0, 255 do
+  local n = 0
+
+  for bit = 0, 7 do
+    if (v & (1 << bit)) == 0 then n = n + 1 end
+  end
+
+  FREE_IN[v] = n
+end
+
+function kfs.free_blocks(sb)
+  local per_block = kfs.BLOCK * 8
+  local free = 0
+
+  for at = 0, sb.bitmap_blocks - 1 do
+    local bits = math.min(per_block, sb.blocks - at * per_block)
+
+    -- A superblock claiming more bitmap than the disk needs. `sub` counts a
+    -- negative end from the far end of the string, so this must stop here.
+    if bits <= 0 then break end
+
+    local bytes = kfs.read_block(sb.bitmap_at + at)
+
+    if not bytes then return nil, "reading the bitmap" end
+
+    local whole = bits // 8
+    local span  = bytes:sub(1, whole)
+
+    free = free + select(2, span:gsub("\0", "")) * 8
+
+    for byte in span:gmatch("[^\0\255]") do
+      free = free + FREE_IN[byte:byte()]
+    end
+
+    -- The last few blocks, when the disk ends partway through a byte.
+    for bit = 0, bits % 8 - 1 do
+      if (bytes:byte(whole + 1) & (1 << bit)) == 0 then free = free + 1 end
+    end
+  end
+
+  return free
+end
+
 --------------------------------------------------------------------------
 -- The inode table.
 --------------------------------------------------------------------------

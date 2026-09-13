@@ -143,11 +143,19 @@ VARIANT := $(if $(filter-out aarch64,$(ARCH)),-$(ARCH))$(if $(TEST),-test)$(if $
 # up. `mmu_init` panics if RAM would reach that far.
 USER_BASE := $(if $(filter x86_64,$(ARCH)),0x40000000,0x80000000)
 
-# What the machine says it is, in the boot banner and along the bottom of
+# What the image was built for, in the boot banner and along the bottom of
 # the desktop. One place, because it was two: the kernel's generated
 # version.c had it right and the userland's had "QEMU virt aarch64" written
 # into it, so the desktop on the x86 machine named the other one.
-PLATFORM := $(if $(filter x86_64,$(ARCH)),QEMU q35 x86-64,QEMU virt aarch64)
+#
+# **What it was built for, not what it is running on.** The PC build said
+# "QEMU q35 x86-64" here, and a ThinkPad printed that as its Host in
+# `neofetch` and its Platform in About. The PC board reads the machine's name
+# out of SMBIOS now (`hal_machine_ident`), so this names the board, which is
+# true of every machine the image boots. The ARM string keeps QEMU in it
+# because it is true there: that board's addresses are `virt`'s, and it runs
+# on nothing else.
+PLATFORM := $(if $(filter x86_64,$(ARCH)),PC x86-64,QEMU virt aarch64)
 
 
 # Where generated sources go. Defined here rather than beside the rules that
@@ -1534,6 +1542,18 @@ $(HOSTDIR)/test_apicdecode: tools/test_apicdecode.c hal/pc/apic_decode.c hal/pc/
 	        tools/test_apicdecode.c hal/pc/apic_decode.c
 
 #
+# And what SMBIOS says the machine is called, for the same reason from the
+# other side: QEMU can be told to put a ThinkPad's name in its table, and
+# `run_x86.py` does, but it cannot be made to produce a *malformed* table -
+# and refusing those without walking off the end of memory at boot is most
+# of what the decoder is for.
+#
+$(HOSTDIR)/test_smbiosdecode: tools/test_smbiosdecode.c hal/pc/smbios_decode.c hal/pc/smbios_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_smbiosdecode.c hal/pc/smbios_decode.c
+
+#
 # And whether the userland image's canary works, which is the same argument
 # a fourth time with one difference: the two halves are written in different
 # languages.
@@ -2238,6 +2258,8 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/fwcfg_port.c \
              hal/pc/boot_option.c \
              hal/pc/acpi.c \
+             hal/pc/smbios.c \
+             hal/pc/smbios_decode.c \
              hal/pc/pci.c \
              hal/pc/virtio.c \
              hal/virtio/blk.c \
@@ -2619,7 +2641,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2667,6 +2689,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	$(HOSTDIR)/test_loaderfb
 	$(HOSTDIR)/test_apicdecode
 	$(HOSTDIR)/test_snesblit
+	$(HOSTDIR)/test_smbiosdecode
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

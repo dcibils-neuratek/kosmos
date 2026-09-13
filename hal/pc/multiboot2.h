@@ -40,6 +40,7 @@
 #define MB2_TAG_FRAMEBUFFER 8u
 #define MB2_TAG_ACPI_OLD    14u     /* an RSDP as ACPI 1.0 defined it */
 #define MB2_TAG_ACPI_NEW    15u     /* ...and as 2.0 and later do */
+#define MB2_TAG_EFI64       12u     /* the EFI System Table, 64-bit firmware */
 
 /*
  * The whole structure is a length, four reserved bytes, and then tags end
@@ -54,6 +55,14 @@ struct mb2_info {
 struct mb2_tag {
     uint32_t type;
     uint32_t size;
+} __attribute__((packed));
+
+/* Section 3.6.13 of the specification: sixteen bytes, and the pointer is the
+ * table's physical address - nothing has remapped it by the time a Multiboot
+ * kernel runs. */
+struct mb2_tag_efi64 {
+    struct mb2_tag tag;
+    uint64_t pointer;
 } __attribute__((packed));
 
 struct mb2_tag_mmap {

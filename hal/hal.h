@@ -303,6 +303,37 @@ struct hal_device {
 bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out);
 
 /*
+ * **What the firmware says this machine is.**
+ *
+ * The manufacturer, the product and the version as the firmware wrote them,
+ * each terminated and cut to fit - SMBIOS's System Information on a PC.
+ * `neofetch`, About and `machine` print them where they used to print the
+ * Makefile's platform string, which named QEMU on every PC the image booted,
+ * a ThinkPad among them. That string is what the image was built *for*; this
+ * is what it is running *on*.
+ *
+ * `source` says where the names were read and, when this returns false, why
+ * there are none: no table found, or a board that does not look. False leaves
+ * the names empty. Nothing past the strings is decoded, which is
+ * `hal_bus_scan`'s rule - what a name means is userland's business.
+ *
+ * Captured once, early in boot while firmware memory is still mapped, so this
+ * answers from a copy and may be asked from anywhere.
+ *
+ * Not speculative: it arrived with four callers and both boards answer it.
+ */
+#define HAL_MACHINE_TEXT 64
+
+struct hal_machine {
+    char vendor[HAL_MACHINE_TEXT];
+    char product[HAL_MACHINE_TEXT];
+    char version[HAL_MACHINE_TEXT];
+    char source[HAL_MACHINE_TEXT];
+};
+
+bool hal_machine_ident(struct hal_machine *out);
+
+/*
  * Which interrupt controller this machine turned out to have.
  *
  * A board with one answer returns a constant; a PC has two and chooses at

@@ -284,6 +284,24 @@ elseif command == "get" then
   out:close()
   image:close()
   print(("%s -> %s, %d bytes"):format(guest, host, node.size))
+elseif command == "df" then
+  local img = args[2]
+
+  if not img then die("usage: df <image>") end
+
+  open(img, "r")
+
+  local sb = mounted()
+  local free, err = kfs.free_blocks(sb)
+
+  if not free then die(tostring(err)) end
+
+  image:close()
+
+  -- The same words the machine's `df` ends its line with, so the two can be
+  -- held side by side - by a person, and by `run_interchange.py`.
+  print(("%d blocks free of %d, %d KB"):format(free, sb.blocks,
+                                                free * kfs.BLOCK // 1024))
 elseif command == "rm" then
   local img, path = args[2], args[3]
 
@@ -306,5 +324,6 @@ else
   print("  put    <image> <host> <path>           a file in")
   print("  get    <image> <path> <host>           a file out")
   print("  rm     <image> <path>                  a file gone")
+  print("  df     <image>                         how much room is left")
   os.exit(command and 1 or 0)
 end

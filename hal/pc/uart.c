@@ -19,6 +19,7 @@
 
 #include "hal.h"
 #include "pc.h"
+#include "smbios.h"
 #include "virtio.h"
 #include "spinlock.h"
 
@@ -136,6 +137,13 @@ void hal_early_init(void)
      * and reading it here means nothing later has to remember to.
      */
     pc_capture_memory();
+
+    /*
+     * And the machine's name, for the same reason and after the memory map,
+     * whose tags it needs: `smbios.c` reads firmware memory that `mmu_init`
+     * will stop mapping.
+     */
+    pc_capture_machine();
 }
 
 void hal_putchar(char c)

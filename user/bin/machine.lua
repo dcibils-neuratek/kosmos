@@ -23,6 +23,7 @@
 -- listed as unanswerable, with the reason.
 
 local ui = use("/lib/ui.lua")
+local hardware = use("/lib/hardware.lua")
 
 local W, H = 700, 720
 
@@ -115,9 +116,25 @@ end
 
 --------------------------------------------------------------------------
 
-out(b.platform or "this machine")
+--
+-- **The machine's name as its firmware wrote it, then what the image was
+-- built for.** Two facts, and this header ran them together as one for as
+-- long as the second was the only one there was - so on a ThinkPad it opened
+-- with "QEMU q35 x86-64".
+--
+local named = hardware.name(info)
+
+out(named or b.platform or "this machine")
 out((b.kernel or "Nebula") .. " " .. (b.version or "?") ..
     "   " .. (b.build or "?") .. "   " .. (b.date or "?"))
+
+if named then
+  out(("named by %s; the image was built for %s")
+      :format(info.machine_source or "the firmware", b.platform or "?"))
+else
+  out(("not named by the firmware: %s")
+      :format(info.machine_source or "no reason given"))
+end
 
 --------------------------------------------------------------------------
 head("Processor")
@@ -225,7 +242,8 @@ if disk then
   if sb and sb.present and sb.formatted then
     row("Filesystem", ("kfs version %d, %s blocks of %d bytes"):format(
           sb.version or 1, commas(sb.blocks), sb.block_size or 4096))
-    row("Free", commas(sb.free_blocks) .. " blocks")
+    row("Free", sb.free_blocks and (commas(sb.free_blocks) .. " blocks")
+                or ("unknown; " .. tostring(sb.free_why)))
     row("Journal", "at block " .. tostring(sb.journal_at))
   elseif sb and sb.present then
     row("Filesystem", "none (" .. tostring(sb.why) .. ")")
@@ -253,8 +271,16 @@ head("Network")
 -- which is the part you need the grant for - is shown only when this
 -- program actually holds it.
 --
+-- **And which card, from the bus rather than from the name of the one driver
+-- this system has.** It said "virtio-net" whenever a card was driven, which
+-- was true only because nothing else can be; on a machine with an Ethernet
+-- controller and no driver for it, the branch below said "no card".
+--
+local driven, undriven = hardware.network(sys.bus())
+
 if (info.net_mtu or 0) > 0 then
-  row("Card", "virtio-net")
+  row("Card", driven[1] and (driven[1].name .. " at " .. driven[1].place)
+              or "one the bus did not list")
   row("MTU", tostring(info.net_mtu))
 
   if net then
@@ -270,6 +296,10 @@ if (info.net_mtu or 0) > 0 then
   end
 
   row("Stack", "TCP/IP, in a process (see the Network preference)")
+elseif undriven[1] then
+  for _, card in ipairs(undriven) do
+    row("Card", card.name .. " at " .. card.place .. ", with no driver")
+  end
 else
   absent("Network", "no card; this machine is on its own")
 end
@@ -327,31 +357,11 @@ head("On the bus")
 -- turning 0x1af4:0x1041 into "virtio-net" is a table, and a table that
 -- lives in a driver is a driver deciding how somebody else prints.
 --
-local VENDORS = {
-  [0x1af4] = "Red Hat / virtio",
-  [0x8086] = "Intel",
-  [0x1b36] = "Red Hat / QEMU",
-}
-
--- PCI class codes, high byte, and only the ones a machine here can show.
-local CLASSES = {
-  [0x01] = "storage controller",
-  [0x02] = "network controller",
-  [0x03] = "display controller",
-  [0x04] = "multimedia device",
-  [0x06] = "bridge",
-  [0x09] = "input device",
-  [0x0c] = "serial bus controller",
-}
-
--- virtio device types, for a board whose bus reports the type directly
--- rather than a vendor and a device. `class` is zero there, which is how
--- this tells the two shapes apart.
-local VIRTIO = {
-  [1] = "virtio-net", [2] = "virtio-blk", [3] = "virtio-console",
-  [16] = "virtio-gpu", [18] = "virtio-input", [19] = "virtio-vsock",
-  [25] = "virtio-sound",
-}
+-- The tables are `/lib/hardware.lua`'s, so that a card this listing names is
+-- called the same thing by `neofetch` and the Network preference.
+local VENDORS = hardware.VENDORS
+local CLASSES = hardware.CLASSES
+local VIRTIO  = hardware.VIRTIO
 
 local bus = sys.bus()
 
@@ -401,8 +411,10 @@ out("  Listed rather than left out, because a blank line reads as")
 out("  \"there is none\" when it means \"nobody asked\".")
 out("")
 
-absent("Memory speed", "no SMBIOS reader; the firmware knows and is not asked")
-absent("Slots and DIMMs", "the same - a count of modules needs that table")
+absent("Memory speed", "SMBIOS is read for the machine's name and nothing " ..
+                       "else; the firmware knows and is not asked")
+absent("Slots and DIMMs", "the same - a count of modules is in that table, " ..
+                          "unread")
 absent("Graphics", "ramfb is a linear framebuffer from the firmware. There " ..
                    "is no accelerator to name, and no driver that would " ..
                    "know one if there were")

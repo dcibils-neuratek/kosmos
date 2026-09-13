@@ -1429,6 +1429,28 @@ static int l_unpack(lua_State *L)
  * tables belong up here - a processor this kernel has never heard of gets
  * described properly without the kernel changing.
  */
+/*
+ * A fixed-size string field of a kernel struct, as a Lua string: bounded by
+ * the field rather than trusted to end, and left out when it is empty, so
+ * `info.machine_vendor or ...` reads the way it looks.
+ */
+static void set_text(lua_State *L, const char *name, const char *field,
+                     size_t size)
+{
+    size_t n = 0;
+
+    while (n < size && field[n] != '\0') {
+        n++;
+    }
+
+    if (n == 0) {
+        return;
+    }
+
+    lua_pushlstring(L, field, n);
+    lua_setfield(L, -2, name);
+}
+
 static int l_info(lua_State *L)
 {
     struct sysinfo info;
@@ -1508,6 +1530,19 @@ static int l_info(lua_State *L)
     SET("cpus_present",     info.cpus_present);
     SET("tick_hz",          info.tick_hz);
     SET("current_el",       info.current_el);
+
+    /*
+     * What the firmware says the machine is. `machine_source` is always
+     * there: where the three names were read, or why there are none.
+     */
+    set_text(L, "machine_vendor", info.machine_vendor,
+             sizeof(info.machine_vendor));
+    set_text(L, "machine_product", info.machine_product,
+             sizeof(info.machine_product));
+    set_text(L, "machine_version", info.machine_version,
+             sizeof(info.machine_version));
+    set_text(L, "machine_source", info.machine_source,
+             sizeof(info.machine_source));
 
 #undef SET
 

@@ -16,6 +16,7 @@
 
 local ui = use("/lib/ui.lua")
 local licences = use("/lib/licences.lua")
+local hardware = use("/lib/hardware.lua")
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -66,16 +67,59 @@ win:add(banner)
 local facts = {}
 local y = 82
 
-local function fact(label, value)
-  win:add(ui.label{ x = 16, y = y, text = label, color = "text" })
-  local v = ui.label{ x = 16, y = y + 16, text = value,
-                      color = "text_dim" }
-  win:add(v)
-  facts[label] = v
-  y = y + 42
+--
+-- A value wider than the column goes onto more lines, broken between words.
+--
+-- Every value here was short until the machine's name arrived: a firmware
+-- writes "QEMU Standard PC (Q35 + ICH9, 2009) pc-q35-11.1", and the text
+-- on the right begins 270 pixels in. A label only ever updated in place -
+-- `Running:` and `Memory:` - is one line, and it is the first line that is
+-- kept in `facts`.
+--
+local COLUMN = (270 - 16 - 12) // gfx.font.w
+
+local function lines_of(text)
+  local out, line = {}, ""
+
+  for word in tostring(text):gmatch("%S+") do
+    if line ~= "" and #line + 1 + #word > COLUMN then
+      out[#out + 1] = line
+      line = word
+    else
+      line = (line == "") and word or (line .. " " .. word)
+    end
+  end
+
+  out[#out + 1] = line
+
+  return out
 end
 
-fact("Platform:", b.platform)
+local function fact(label, value)
+  win:add(ui.label{ x = 16, y = y, text = label, color = "text" })
+
+  local lines = lines_of(value)
+
+  for i, text in ipairs(lines) do
+    local v = ui.label{ x = 16, y = y + 16 * i, text = text,
+                        color = "text_dim" }
+    win:add(v)
+
+    if i == 1 then facts[label] = v end
+  end
+
+  y = y + 26 + 16 * #lines
+end
+
+--
+-- **What the firmware calls this machine**, and the image's platform only
+-- when it calls it nothing.
+--
+-- This was "Platform:" and `b.platform`, which on a ThinkPad T14 said
+-- "QEMU q35 x86-64": a string the Makefile compiled into every PC build. That
+-- is what the image was built for. This window is about the computer.
+--
+fact("Machine:", hardware.name(sys.info()) or b.platform)
 --
 -- Both numbers when they differ, which on this machine they do.
 --
@@ -161,7 +205,8 @@ win:add(ui.text{
     -- The architecture is asked for rather than written down. It said "on
     -- AArch64" for as long as there was only one, and then said it on a
     -- q35 - four lines above a "Platform:" field reading "QEMU q35
-    -- x86-64", so the window disagreed with itself in one screenful.
+    -- x86-64", so the window disagreed with itself in one screenful. That
+    -- field is "Machine:" now, and reads the firmware rather than the build.
     { style = "body", text =
       ("A microkernel with a Lua userland, on %s. The kernel knows "):
         format(cpu.arch or "this machine") ..

@@ -836,6 +836,20 @@ struct sysinfo {
     uint32_t tick_hz;
     uint32_t current_el;
     uint32_t page_size;
+
+    /*
+     * What the firmware says the machine is, from `hal_machine_ident`: three
+     * names, empty when it did not say, and where they were read - or, when
+     * they are empty, why. Each is terminated inside its field. What to make
+     * of them is the caller's: this is the manufacturer's own spelling.
+     *
+     * Here because neofetch printed "QEMU q35 x86-64" as the Host of a
+     * ThinkPad, from a string compiled into the image.
+     */
+    char machine_vendor[64];
+    char machine_product[64];
+    char machine_version[64];
+    char machine_source[64];
 };
 
 /*

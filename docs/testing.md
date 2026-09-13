@@ -2288,3 +2288,107 @@ for `/bin`: run on the three programs as they were at 0.10.45 it refuses each
 for reading its global, and on the fixed ones it passes. `lua.ok` is a
 prerequisite of the image, so a program that goes back to reading one fails
 the build before anything boots.
+
+---
+
+## 18.41 Three rows about the machine that nothing had read
+
+`neofetch` on the ThinkPad T14, photographed with 0.10.48:
+
+```
+Host      QEMU q35 x86-64
+Disk      kfs, 30 of 32 MB free
+Network   virtio-net at 0.0.0.0
+```
+
+The machine is not QEMU, has no virtio-net, and its disk had been made on the
+host with 14,656,879 bytes of files in 32 MB. **All three reproduced in QEMU
+before anything was changed**, on x86 with a disk made by the same command,
+and q35's default e1000e standing in for an Ethernet controller nothing
+drives:
+
+```
+Host       QEMU q35 x86-64
+Disk       kfs, 30 of 32 MB free
+Network    virtio-net at 0.0.0.0
+```
+
+The host's own count of that image's bitmap was 4,337 free blocks, 16.9 MB.
+So the host tool was right and the machine was not.
+
+**Each row was a label standing in for a reading.**
+
+- *Disk.* The disk server answered `.super` with `free_blocks = blocks -
+  data_at`, every block past the metadata, from the commit that made the disk
+  real. The superblock has no free count and never had. `kfs.free_blocks`
+  counts the bitmap, only for blocks the disk has, and `tools/kfs.lua df`
+  prints the same count on the host. `tools/test_kfs.lua` also had a check
+  comparing `sb.free` before and after a rename: kfs has no such field, so
+  it compared nil with nil and could not fail.
+- *Host.* `b.platform` was the Makefile's `PLATFORM`, compiled into every PC
+  build. The PC board now reads SMBIOS's System Information, through the EFI
+  System Table a Multiboot 2 loader passes on, or in the BIOS area. It copies
+  it during `hal_early_init`, because `mmu_init` stops mapping firmware
+  memory, and hands it to userland in `sysinfo` (`hal_machine_ident`).
+- *Network.* The stack answers `net_info` with or without a card, its address
+  is four zero bytes until init configures one, and `neofetch` called any
+  four-byte answer virtio-net. Cards are named from the bus now
+  (`/lib/hardware.lua`), driven or not, and the address is shown only when
+  the stack says it has a card.
+
+**What checks it**, each watched fail:
+
+```
+tools/test_kfs.lua              47 checks, 8 of them on the free count
+  free_blocks = blocks - data_at             FAIL: 6 of 47
+  every clear bit, past the end of the disk  FAIL: 1 of 47
+tools/run_interchange.py        the machine's df against kfs.lua df
+  .super answering blocks - data_at again    FAIL: ... 7918 blocks free of
+                                             8192 against 7910 blocks free
+                                             of 8192
+tools/test_smbiosdecode.c       20 checks on the decoder
+  checksums not checked                      FAIL: 2 of 20
+  the walk allowed 512 bytes past the table  FAIL: 1 of 20
+  control characters kept                    FAIL: 1 of 20
+tools/run_x86.py, identity      5 checks, two boots
+  Host from b.platform, no 3.0 entry point   3 fail: Host 'PC x86-64', and
+                                             "not named; no SMBIOS entry
+                                             point in the BIOS area"
+  the old Network row                        1 fails: 'virtio-net at 0.0.0.0'
+tools/run_uefi.py               the name, through the EFI System Table
+  ConfigurationTable read at offset 104      FAIL: 1 of 15 ... "not named; no
+                                             SMBIOS in the EFI system table
+                                             or the BIOS area"
+tools/run_network.py            a driven card still reads virtio-net at
+                                10.0.2.15, on both boards
+  the device-tree bus shape ignored          FAIL: 'a card the bus did not
+                                             list at 10.0.2.15'
+```
+
+**Why QEMU can stand in for the ThinkPad here.** `-smbios type=1` writes any
+strings into System Information, so the second identity boot names itself
+`LENOVO 20W000T9US ThinkPad T14 Gen 2i`. And `smbios-entry-point-type=64`
+gives it the 3.0 entry point a 2021 firmware is likely to use. QEMU's default
+is the 2.1 one, so without that option half of `smbios_entry` would never run
+under emulation. With it, SeaBIOS offers *only* the 3.0 anchor, which is why
+the control that disabled it named nothing at all.
+
+**What is not covered**, said rather than left to be found:
+
+- The 2.1 entry point reached through the EFI table (OVMF's default) was
+  seen once by hand, as `SMBIOS 2.8 in the EFI system table`. No harness
+  boots it: `run_uefi.py` asks for 3.0 because that is the ThinkPad's likely
+  path.
+- A table above 4 GB is refused rather than read, and nothing here produces
+  one.
+- **`run_network.py`'s `neofetch` check has a boot to itself**, and that is a
+  finding rather than a style. Typed into the same boot as `netframe`,
+  whichever went second never arrived - no echo, a bare prompt - and the
+  first `make test` of this change failed on it. The committed 0.10.45,
+  built from an archive and probed with its own harness, lost `host` after
+  `host 10.0.2.2` the same way, in both boots tried. Yet the same file's
+  resolver phase, four commands in one boot, passed in the next full run. So
+  it is intermittent or conditional, and not understood; `state.md` has what
+  is known.
+- The ThinkPad itself. The Lenovo strings in the tests are the shape Lenovo's
+  firmware uses, not a copy of this machine's table.

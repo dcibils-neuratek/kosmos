@@ -38,5 +38,8 @@ print(("  bitmap  at block %d, %d block(s)")
 print(("  inodes  at block %d, %d of them")
       :format(sb.inodes_at, sb.inode_count))
 print(("  journal at block %d, reserved and unused"):format(sb.journal_at))
-print(("  data    at block %d, %d blocks free of %d")
-      :format(sb.data_at, sb.free_blocks, sb.blocks))
+print(("  data    at block %d, %s blocks free of %d")
+      :format(sb.data_at,
+              sb.free_blocks and tostring(sb.free_blocks)
+                or ("an unreadable number of (" .. tostring(sb.free_why) .. ")"),
+              sb.blocks))

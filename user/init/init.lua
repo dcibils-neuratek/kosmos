@@ -2488,7 +2488,21 @@ local function diskfs_handlers(state)
     out.bytes       = disk.bytes
     out.formatted   = true
     out.present     = true
-    out.free_blocks = sb.blocks - sb.data_at
+
+    --
+    -- Counted out of the bitmap. This was `sb.blocks - sb.data_at` from the
+    -- day the disk became real - every block past the metadata - so a disk
+    -- holding fourteen megabytes said thirty of thirty-two were free.
+    -- `kfs.free_blocks` says why it is a count rather than a field.
+    --
+    -- Absent rather than zero when the bitmap cannot be read: zero is a
+    -- full disk, which is a different sentence.
+    --
+    local free, why = kfs.free_blocks(sb)
+
+    out.free_blocks = free
+
+    if not free then out.free_why = tostring(why) end
 
     return out
   end
