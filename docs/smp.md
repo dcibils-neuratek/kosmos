@@ -319,6 +319,10 @@ the call site because both failures are silent.
   holding it — two different failures.
 - `spin_panic` writes to the UART directly, past the console, because the
   lock that deadlocked might be the console's.
+- **A switch is made masked**, and `switch_into` panics otherwise. Releasing
+  a lock puts back the state from before it, which for a kernel thread is
+  interrupts on - so every path that blocks keeps the mask until the thread
+  runs again, and gives the caller's state back then.
 
 Locked today: `threads[]`, `processes[]`, `objects[]`, `spaces[]` on both
 boards, the physical page bitmap, every endpoint, every runqueue, and the
@@ -344,7 +348,8 @@ stack.
 
 `thread_block_and_release(lock, flags)` is how IPC blocks: it marks the
 thread blocked, picks a successor, releases the caller's lock at the instant
-the thread is both findable and blocked, and only then switches. It can
+the thread is both findable and blocked, and only then switches - with the
+mask still on, which it gives back when the thread runs again. It can
 release *before* the switch — where the textbook answer is to hand the lock
 to the next thread — precisely because a thread has a fixed home. The
 comment on it is where that cost returns if migration is ever added.
@@ -520,6 +525,65 @@ leaving with an address space loaded so that its last switch changes page
 tables inside the window, and a thread created on a third core the instant
 the slot reads dead. Without the fix it panics with the same message in two
 runs of two on each board; with it, it passes on both.
+
+**Two threads could end up on one stack, because a switch could be
+interrupted.** This stopped the gate for 0.10.53, in the x86 suite during `smp:
+a reply reaches a caller on another core`: `spinlock: console held by nobody,
+wanted by 0`, `PANIC: spinlock: gave up waiting`, and page faults in
+`this_cpu` reading `%gs:0`. It was older than that revision and it was not
+x86's. Forty runs of 0.10.52's x86 suite, on this Mac with other guests
+running, took a kernel fault in four: that panic once, a general protection
+fault at the `iretq` in `isr_common` twice, and once a jump into a page that
+holds no code.
+
+`thread_block` and `thread_block_and_release` released their locks, and with
+them the interrupt mask, before calling `switch_to`. `switch_into` sets
+`current = next` and only later reaches `context_switch`, which masks. A
+kernel thread runs with interrupts on, so when one blocked, an interrupt could
+land between the two: the scheduler ran on the blocking thread's stack
+believing it was `next`'s, enqueued `next`, switched away - and saved the
+registers it was really running on into `next`. Two threads then owned one
+stack, and whichever resumed second returned through a frame the other had
+already used. On x86 the code-segment word in that frame decides whether
+`isr_common` swaps GS, so a stale word that read as ring 3 swapped the
+kernel's GS base for a process's, which is zero, and the next `this_cpu`
+faulted.
+
+**"Held by nobody" was that fault, not a long critical section.** The core
+with GS at zero faulted inside `kputs`: `spin_lock` had taken the console lock
+and faulted on the next line, writing its holder. Every fault after that
+faulted again in `tlb_service` before printing a character, on the page-fault
+stack, which does not grow - so the core looped without a word until core zero
+gave up, and printed its own report only once the panic had switched locking
+off. The bound was never short. The most any lock waited in a whole suite run
+was 24 spins on x86, 587 with four x86 guests running at once, and 2,504 on
+AArch64; ten million spins are about a second and a half of a core under TCG
+on x86, and ten milliseconds on AArch64.
+
+It was found by asking the kernel rather than by reading it, one diagnostic
+build at a time, each run in a loop:
+
+- whether a thread was entered while still marked as running - seven times in
+  thirty-eight runs, always a reply thread entered from its core's idle thread;
+- whether a switch was ever made with interrupts on - on every run, from the
+  first kernel thread that blocked, on both boards;
+- whose stack an interrupt that preempts had landed on - thirteen times a
+  thread other than `current`: `idle2` on `reply-caller`'s stack, `idle3` on a
+  `fill` thread's, `boot` on `blocker`'s.
+
+**Both blocking paths now stay masked until the thread runs again**, as
+`thread_yield` already did for a neighbouring reason, and `switch_into` panics
+if it is entered unmasked. The x86 suite ran seventy-eight times afterwards,
+two guests at a time, without a fault. `thread: blocking switches mask, and
+unmask after` blocks all three ways - a plain block, a sleep, an IPC receive -
+from a thread with interrupts on; with the old release the suite panics at the
+first kernel thread that blocks, on both boards (`testing.md` §18.39).
+
+**And the suite had been passing runs with a halted core in them.** x86
+reported a kernel fault as `***` and ended in `halted.`, and the runner stops
+on `PANIC:`. Two of those four faults were on a secondary that stopped while
+the other cores finished, and both runs passed. It says `PANIC:` now, which is
+what AArch64 always said.
 
 **And one failure that was the probe, recorded so it is not chased again.**
 A click sent to QEMU's PS/2 mouse a millisecond after a large move arrives at

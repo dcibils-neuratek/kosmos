@@ -8,6 +8,46 @@ Last updated: 2026-09-12
 
 ## Where this left off
 
+### 12 September: two threads on one stack
+
+**The x86 panic that stopped 0.10.53's gate was a context switch an interrupt
+could land in**, on both boards, whenever a kernel thread blocked.
+`thread_block` and `thread_block_and_release` let go of the interrupt mask with
+their locks before switching; an interrupt after `current` named the next
+thread saved this one's registers into it, and two threads shared a stack.
+**"Console held by nobody" was a core faulting inside `kputs` with GS at zero**,
+not a long critical section: the most any lock waited in a suite run was 587
+spins against a bound of ten million. Measured before and after: a kernel fault
+in four of forty x86 runs of 0.10.52, none in seventy-eight with the fix. Both
+paths keep the mask until the thread runs again, `switch_into` panics if
+entered unmasked, and `thread: blocking switches mask, and unmask after` takes
+every blocking path. `smp.md` has the account, `testing.md` §18.39 the test and
+its three controls.
+
+**Also fixed**: x86 printed a kernel fault as `***`, and the runner stops only
+on `PANIC:`, so two of those four runs passed with a core halted in them.
+
+**Found and not fixed**, each offered as a task of its own: the x86 suite's
+`tests.c.o` does not rebuild when a kernel header changes, which turned a
+diagnostic control into a false failure; and with four x86 guests at once,
+`trap: a stack overflow is survivable` panicked once - the armed fault returns
+into `longjmp` on the overflowed stack with interrupts on, and a timer interrupt
+pushed its frame into the guard page. A third, also offered as a task:
+**`preempt_pending` outlives a voluntary switch.** The suite's thread is
+idle-band, so every thread it creates under the priority policy flags core
+zero, `thread_yield` leaves the flag, and the next interrupt preempts whoever
+runs - which is `sched: the policy is pluggable` failing with round robin
+running `231`, seven times in 230 loaded runs. The flag is set on every run,
+and on 0.10.54 without this work too.
+
+**Not offered as tasks yet**: `smp: a new thread avoids a loaded core` failed
+once in thirty on the old kernel and once in thirty on the fixed one, with four
+guests at once; and `thread: returning exits cleanly` failed twice without a
+word - once in sixty loaded runs, once in this change's first `make prepush` -
+and now says whose thread moved its count (`testing.md` §18.39).
+
+**Next**: what the USB step 2 entry below lists.
+
 ### 12 September: USB plug and unplug lines, and why a device is not named
 
 **Step 2 ran on the ThinkPad** (0.10.54). Both controllers, 00:14.0 and
@@ -79,8 +119,10 @@ waiting`, then page faults in `this_cpu` reading `%gs:0` as the machine went
 down. 0.10.53 changes no kernel code - one comment in `syscall.h` - and the
 same x86 test kernel passed in 0.10.52's gate and in three reruns straight
 after, so it is intermittent (one run in five so far) and older than this.
-Two questions are open and not answered here: what held the console lock for
-ten million spins, and why a core ran kernel code with a GS base of 0.
+Both questions it left open are answered in `two threads on one stack`, two
+entries up: nothing held the
+console lock for long - its holder had faulted - and the GS base was zero
+because two threads were sharing a stack.
 
 ### 12 September: an interrupt wait with a deadline
 

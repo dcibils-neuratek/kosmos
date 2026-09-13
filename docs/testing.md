@@ -2062,3 +2062,133 @@ now and says what came.
 
 Both runs counted with the no-controller boot and §18.37's checks, in a
 scratch script that runs only those; the driver as written passed all 31.
+
+---
+
+## 18.39 A switch with interrupts on, and a fault the runner passed
+
+`thread: blocking switches mask, and unmask after`, in the kernel suite on both
+boards, and the first word of x86's exception report.
+
+A thread - on core 1, where there is one - turns interrupts on and blocks
+three ways: `thread_block`, which the suite ends; `thread_sleep_until`, which a
+tick ends; and `ipc_receive`, which the endpoint's destruction ends. After each
+it checks that interrupts are on again. The suite waits to see each block
+before ending it, and gives up rather than hanging if one never comes.
+
+Then it waits for the thread to be gone - dead, and no longer named by core 1
+as leaving - and fails if it is not. `sched: the policy is pluggable` runs
+three tests later and swaps the scheduling policy, which is one global vtable
+that every core's queues go through, and its `init` clears all of them. It
+assumes nothing is scheduling anywhere else, and a thread still on its way out
+of core 1 is.
+
+What no test can do is put an interrupt inside the switch, which is a few
+instructions wide and was hit in four runs of forty. So `switch_into` panics
+when it is entered with interrupts on, and this test makes sure every blocking
+path reaches that check on every run. `docs/smp.md` has the bug and how it was
+measured.
+
+With the lock released into the caller's state before the switch, as it was:
+
+```
+ok 13 - thread: three threads interleave
+
+PANIC: thread: a switch with interrupts enabled
+
+FAIL: the kernel panicked. The dump above says which instruction faulted (elr) and on what address (far).
+```
+
+on AArch64, and after `ok 10` on x86: the first kernel thread that blocks is in
+`thread: block and wake`, before this test.
+
+With the switch masked and the caller's state never given back:
+
+```
+not ok 12 - thread: blocking switches mask, and unmask after
+...
+not ok 54 - ipc: a caller ends a watched sleep
+
+FAIL: the guest did not exit within 90.0s.
+```
+
+on x86 - a thread given back masked is never preempted, and the suite stalls.
+AArch64 the same, at the same two tests:
+
+```
+not ok 15 - thread: blocking switches mask, and unmask after
+...
+not ok 57 - ipc: a caller ends a watched sleep
+
+FAIL: the guest did not exit within 400.0s.
+```
+
+**How often, before and after.** Forty runs of 0.10.52's x86 suite, one or two
+guests at a time on this Mac, took a kernel fault in four - two of those runs
+failed and two passed - and a fifth failed `sched: the higher priority runs
+first` with no fault, which is not shown to be the same bug. Seventy-eight
+runs with the fix, two at a time, took no fault and failed nothing.
+
+With **four** guests at once the host is busier than a gate usually is, and
+three other tests showed through:
+
+- `sched: the policy is pluggable` failed seven times in 230 runs with the
+  fix - three in forty, none in ninety, four in a hundred - always with round
+  robin running its threads `231`, an order its long record of failures has
+  never shown. A count of switches per thread said thread 1 had been started,
+  preempted before its first line, and put behind the other two. What
+  preempted it was `preempt_pending`, already set on core zero before the test
+  began and still set when thread 1 started - on every run, and the same on
+  0.10.54 without this fix. The suite's own thread was never given a band, so
+  it is idle-band: every thread it creates under the priority policy outranks
+  it and flags core zero, `thread_yield` switches to that thread and leaves the
+  flag, and the next interrupt preempts whoever is running. LIFO is immune,
+  because a preempted thread goes back on top. It is older than this work and
+  is left for work of its own. Waiting for this test's thread to be gone was
+  added while it looked like the cause, and is kept because the hazard it
+  closes is real, not because it fixed anything;
+- the old kernel against the fixed one, thirty runs each, side by side: the
+  old one took this bug's panic once, and each failed `smp: a new thread
+  avoids a loaded core` once - so that one is older than this, and is a
+  placement count taken at an instant;
+- `thread: returning exits cleanly` failed twice without a word: once in
+  sixty loaded runs, and once in this change's first `make prepush`. It counts
+  live threads on every core after eight yields. This test's thread is dead
+  before it returns and is not counted, and the stale flag above costs a yield
+  round per spurious preemption, which is a suspicion rather than a diagnosis.
+  It now says which count was wrong and whose thread moved it, and a hundred
+  loaded runs since have not failed it once.
+
+**A kernel fault on a secondary passed.** x86 reported one as `***` and
+`halted.`, and `tools/run_tests.py` ends a run on `PANIC:` and nothing else. A
+scratch test at the end of the table that faults on the last core, with the
+old report:
+
+```
+*** page fault
+...
+ok 153 - scratch: a fault on another core
+
+PASS: 153/153
+```
+
+and with the report beginning `PANIC:`, as AArch64's always has:
+
+```
+PANIC: page fault
+...
+FAIL: the kernel panicked. The dump above says which instruction faulted (elr) and on what address (far).
+```
+
+The scratch test is not kept: it is a fault on purpose, and nothing in the
+suite can expect one on another core.
+
+**A control that proved nothing, so the next one does not.** The x86 suite's
+own object is not rebuilt when a kernel header changes - `tests.c.o` has a
+dependency file that nothing includes. One diagnostic build added a field to
+`struct percpu` and the next took it out, and the suite went on reading
+`idle_ticks` eight bytes off: `cpu: every processor idles as a thread` failed
+on every run for no reason in the kernel. Until that is fixed, touch
+`tests/tests.c` after changing a kernel header.
+
+The suites stand at aarch64 156/156 and x86-64 152/152.

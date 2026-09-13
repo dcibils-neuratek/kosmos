@@ -426,7 +426,15 @@ void trap_handle(struct trapframe *f)
      * and only the process stops. The low two bits of the saved CS are the
      * privilege level the processor was at, which it pushed for us.
      */
-    say((f->cs & 3) ? "\nprocess died: " : "\n*** ");
+    /*
+     * **`PANIC:` for the kernel, which is what AArch64's `dump` has always
+     * said.** This said `***` and ended in `halted.`, and the suite runner
+     * ends a run on `PANIC:` and on nothing else - so a secondary that took
+     * a kernel fault and stopped, while the other cores finished the suite,
+     * was a pass. It happened twice in the forty runs that measured the
+     * stack shared by two threads; `docs/smp.md` has both.
+     */
+    say((f->cs & 3) ? "\nprocess died: " : "\nPANIC: ");
     say(f->vector < 32 ? names[f->vector] : "unknown exception");
     say("\n");
 

@@ -75,8 +75,15 @@ struct spinlock {
 
 /*
  * How long a lock may be contended before this is a deadlock rather than a
- * wait. Ten million spins is milliseconds even under TCG, and every critical
- * section in this kernel is a handful of instructions.
+ * wait. Every critical section in this kernel is a handful of instructions.
+ *
+ * **Measured, because this said ten million spins was milliseconds even
+ * under TCG.** It is about ten milliseconds on AArch64 and a second and a
+ * half on x86, where every spin also answers shootdowns - and the most any
+ * lock waited in a whole suite run was 2,504 spins on one and 587 on the
+ * other, with four x86 guests running at once. The one time this fired in
+ * the suite it was not a wait at all: the holder had faulted after taking
+ * the lock and before writing its name. `docs/smp.md` has that.
  */
 #define SPIN_GIVE_UP    10000000UL
 

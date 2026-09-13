@@ -442,6 +442,144 @@ static bool test_block_and_wake(void)
     return woke;
 }
 
+/*
+ * Every way of blocking, from a thread with interrupts on.
+ *
+ * **Which is how a kernel thread runs**, and how a process's thread in a
+ * system call does not - a syscall arrives masked. `thread_block` and
+ * `thread_block_and_release` let go of their locks, and with them the mask,
+ * before switching, so an interrupt could land after `current` named the next
+ * thread and before this one's registers were saved. The scheduler then saved
+ * them into the next thread, and two threads shared a stack: the x86 suite
+ * faulted in four runs of forty - at an `iretq`, in ring 0 with GS at zero,
+ * or as `spinlock: console held by nobody`.
+ *
+ * The window is a few instructions and needs an interrupt inside it, so no
+ * test lands in it on purpose. `switch_into` says instead - it panics when
+ * entered unmasked - and this takes every path to it: a plain block, a sleep
+ * and an IPC receive. Without the fix the suite panics at the first kernel
+ * thread that blocks, which is before this one. Each is also checked for the
+ * other half, that the thread wakes with interrupts on again, because a thread
+ * given back masked is never preempted.
+ */
+static volatile cap_t masked_cap;
+static volatile bool  masked_ok;
+static volatile bool  masked_done;
+
+static void blocks_with_interrupts_on(void *arg)
+{
+    struct message msg;
+    struct thread *sender;
+    bool ok;
+
+    (void)arg;
+
+    cpu_irq_enable();
+
+    thread_block();
+    ok = cpu_interrupts_enabled();
+
+    thread_sleep_until(thread_deadline_in(2));
+    ok = ok && cpu_interrupts_enabled();
+
+    (void)ipc_receive(masked_cap, &msg, &sender, false, 0);
+    ok = ok && cpu_interrupts_enabled();
+
+    masked_ok = ok;
+    masked_done = true;
+}
+
+/* Until the thread is seen blocked the way asked, or a quarter of a second -
+ * yielding, so that on one processor it gets a turn at all. */
+static bool masked_wait_for(struct thread *t, bool receiving)
+{
+    unsigned long start = hal_ticks();
+
+    for (;;) {
+        bool blocked = t->state == THREAD_BLOCKED;
+
+        if (receiving ? (blocked && t->ipc.waiting_on != NULL)
+                      : (blocked && t->wake_at == 0)) {
+            return true;
+        }
+
+        if (hal_ticks() - start >= 250UL) {
+            return false;
+        }
+
+        thread_yield();
+        cpu_relax();
+    }
+}
+
+static bool test_blocking_switches_are_masked(void)
+{
+    struct thread *t;
+    unsigned long  start;
+    cap_t ep;
+    bool  reached;
+
+    masked_ok = false;
+    masked_done = false;
+
+    ep = ipc_endpoint_create();
+    if (ep < 0) {
+        return false;
+    }
+
+    t = thread_create_suspended("masked", blocks_with_interrupts_on, NULL);
+    if (t == NULL) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    masked_cap = ipc_cap_grant(t, ep);
+    if (masked_cap < 0) {
+        (void)ipc_endpoint_destroy(ep);
+        return false;
+    }
+
+    /* On another processor where there is one, so that the interrupts that
+     * could land in its switches are that core's own. */
+    if (smp_online() > 1) {
+        t->sched.cpu = 1;
+    }
+
+    thread_wake(t);
+
+    /* The plain block, then the sleep, which ends by itself, then the
+     * receive, which the endpoint going away ends. */
+    reached = masked_wait_for(t, false);
+    thread_wake(t);
+    reached = reached && masked_wait_for(t, true);
+
+    (void)ipc_endpoint_destroy(ep);
+
+    start = hal_ticks();
+    while (!masked_done && hal_ticks() - start < 250UL) {
+        thread_yield();
+        cpu_relax();
+    }
+
+    /*
+     * **And gone, not only finished.** `masked_done` is written before the
+     * thread returns, and it still has `thread_exit` to get through on core
+     * 1. A test after this one swaps the scheduling policy, which is global
+     * and assumes nothing is scheduling anywhere else - and a thread on its
+     * way out of another core is. Under a loaded host that exit can arrive
+     * in the middle of the swap.
+     */
+    start = hal_ticks();
+    while ((t->state != THREAD_DEAD || percpu_at(t->sched.cpu)->leaving == t)
+           && hal_ticks() - start < 250UL) {
+        thread_yield();
+        cpu_relax();
+    }
+
+    return reached && masked_done && masked_ok && t->state == THREAD_DEAD
+        && percpu_at(t->sched.cpu)->leaving != t;
+}
+
 static volatile uint64_t saved_x19;
 static volatile double saved_d8;
 
@@ -516,7 +654,20 @@ static void short_thread(void *arg)
 static bool test_a_thread_that_returns_exits_cleanly(void)
 {
     unsigned before = thread_count();
+    unsigned made;
+    unsigned after;
+    unsigned ids[THREAD_MAX];
+    unsigned states[THREAD_MAX];
     unsigned i;
+
+    /* Who was alive, slot by slot, so that a count that comes out wrong can
+     * say whose thread it was. */
+    for (i = 0; i < THREAD_MAX; i++) {
+        const struct thread *t = thread_by_index(i);
+
+        ids[i] = t != NULL ? t->id : 0;
+        states[i] = t != NULL ? (unsigned)t->state : 0;
+    }
 
     finished = false;
 
@@ -524,13 +675,13 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
         return false;
     }
 
-    if (thread_count() != before + 1) {
-        return false;
-    }
+    made = thread_count();
 
     for (i = 0; i < 8; i++) {
         thread_yield();
     }
+
+    after = thread_count();
 
     /*
      * It ran, it returned rather than falling off the end into whatever x30
@@ -538,7 +689,58 @@ static bool test_a_thread_that_returns_exits_cleanly(void)
      * to where it started is what says thread_exit ran: a thread that fell
      * through would still be counted as alive.
      */
-    return finished && thread_count() == before;
+    if (made == before + 1 && finished && after == before) {
+        return true;
+    }
+
+    /*
+     * **Which count, and whose thread.** This returned a bare false, and
+     * failed once in a gate and once in sixty loaded runs without a word -
+     * and a count of every live thread on every core can be moved by a
+     * thread that has nothing to do with this test. The same lesson
+     * `sched: the policy is pluggable` records: say so.
+     */
+    kputs("\n   (");
+    kputu(before);
+    kputs(" live before, ");
+    kputu(made);
+    kputs(" after the create, ");
+    kputu(after);
+    kputs(" after eight yields; the thread ");
+    kputs(finished ? "ran" : "never ran");
+    kputs(")\n");
+
+    for (i = 0; i < THREAD_MAX; i++) {
+        const struct thread *t = thread_by_index(i);
+        unsigned id = t != NULL ? t->id : 0;
+        unsigned st = t != NULL ? (unsigned)t->state : 0;
+
+        if (id == ids[i] && st == states[i]) {
+            continue;
+        }
+
+        kputs("   (slot ");
+        kputu(i);
+        kputs(": id ");
+        kputu(ids[i]);
+        kputs(" state ");
+        kputu(states[i]);
+        kputs(" -> id ");
+        kputu(id);
+        kputs(" state ");
+        kputu(st);
+
+        if (t != NULL) {
+            kputs(", ");
+            kputs(t->name);
+            kputs(" on core ");
+            kputu(t->sched.cpu);
+        }
+
+        kputs(")\n");
+    }
+
+    return false;
 }
 
 /*
@@ -6313,6 +6515,7 @@ static const struct test tests[] = {
     { "trap: a stack overflow is survivable",  test_a_stack_overflow_is_survivable },
     { "thread: three threads interleave",      test_threads_interleave },
     { "thread: block and wake",                test_block_and_wake },
+    { "thread: blocking switches mask, and unmask after", test_blocking_switches_are_masked },
     { "thread: a switch preserves x19 and d8", test_context_switch_preserves_registers },
     { "thread: returning exits cleanly",       test_a_thread_that_returns_exits_cleanly },
     { "sched: the policy is pluggable",        test_the_scheduler_is_pluggable },

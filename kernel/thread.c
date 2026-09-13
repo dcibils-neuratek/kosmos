@@ -856,6 +856,30 @@ void thread_switch_finished(void)
  */
 static void switch_into(struct thread *prev, struct thread *next)
 {
+    /*
+     * **With interrupts masked, and checked rather than hoped.**
+     *
+     * From `current = next` below until `context_switch` has saved `prev`'s
+     * registers, `current` names a thread whose registers are not the ones on
+     * this processor. An interrupt that lands in between runs the scheduler
+     * on `prev`'s stack believing it is `next`'s: it enqueues `next`,
+     * switches away, and saves the registers it is really running on into
+     * `next`. Two threads then own one stack.
+     *
+     * That was the x86 suite faulting in four runs of forty - a general
+     * protection fault at the `iretq` in `isr_common`, a `swapgs` in ring 0
+     * that left GS pointing at nothing, `spinlock: console held by nobody` -
+     * and every blocking path in this file had the window, on both boards,
+     * whenever a kernel thread blocked. `docs/smp.md` has the account.
+     *
+     * A panic, because the failure it replaces is two threads silently
+     * sharing a stack, and a panic here names the switch rather than a
+     * fault a long way from it.
+     */
+    if (cpu_interrupts_enabled()) {
+        panic("thread: a switch with interrupts enabled");
+    }
+
     next->state = THREAD_RUNNING;
     next->switches++;
     current = next;
@@ -1424,6 +1448,14 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
     struct thread *next;
     unsigned       cpu;
     unsigned long  rq;
+    unsigned long  irqstate;
+
+    /*
+     * Masked until this thread runs again, whatever the caller held - the
+     * rule `switch_into` checks. So `rq` below is a masked state, and it is
+     * what both locks are released into.
+     */
+    irqstate = cpu_interrupts_save();
 
     cpu = here();
     rq = spin_lock(&runq_lock[cpu]);
@@ -1436,9 +1468,15 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
     /*
      * Now, and not before: this thread is on the caller's list *and* is
      * blocked, so a waker on another core finds it and the wake sticks.
+     *
+     * **The lock goes and the mask stays.** This passed `flags` - the state
+     * from before the caller locked - and `spin_unlock` puts that back, so a
+     * kernel thread blocking here switched with interrupts on. They come back
+     * once this thread runs again, below.
      */
     if (lock != NULL) {
-        spin_unlock(lock, flags);
+        spin_unlock(lock, rq);
+        irqstate = flags;
     }
 
     /*
@@ -1465,6 +1503,9 @@ void thread_block_and_release(struct spinlock *lock, unsigned long flags)
     }
 
     switch_to(next);
+
+    /* Reached when this thread runs again: what the caller had. */
+    cpu_interrupts_restore(irqstate);
 }
 
 void thread_block(void)
@@ -1472,6 +1513,15 @@ void thread_block(void)
     struct thread *next;
     unsigned       cpu;
     unsigned long  flags;
+    unsigned long  irqstate;
+
+    /*
+     * Masked until this thread runs again, as `thread_yield` is and for the
+     * reason `switch_into` checks: releasing the queue lock puts back the
+     * state it found, which for a kernel thread is interrupts on, and the
+     * switch came after that.
+     */
+    irqstate = cpu_interrupts_save();
 
     /*
      * The state change and the pick under one lock.
@@ -1505,6 +1555,8 @@ void thread_block(void)
     }
 
     switch_to(next);
+
+    cpu_interrupts_restore(irqstate);
 }
 
 /*
