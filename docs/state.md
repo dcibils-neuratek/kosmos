@@ -2,11 +2,51 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 ---
 
 ## Where this left off
+
+### 13 September: every worktree folded into one line
+
+**Diego asked for one line instead of a worktree per session.** Main had
+0.10.46, the Deskbar told where the focus went, and 0.10.47, Log View. On top
+of them, in this order:
+
+- the USB branch's eight commits, first numbered 0.10.46 to 0.10.53, now
+  0.10.48 to 0.10.55: USB steps one and two and the plug lines, the window
+  manager's wake, the Super Nintendo's `--scale`, the interrupt wait's
+  deadline and the syscall argument check;
+- the x86 switch fix from `admiring-murdock-5b3d97`, first 0.10.53, now 0.10.56;
+- the kits change from `elegant-maxwell-e33d94`, never numbered, now 0.10.57;
+- the SMBIOS and `neofetch` work from `kind-spence-736db7`, never committed,
+  now 0.10.58.
+
+**Renumbered only where a commit wrote its own numbers.** Main's 0.10.46,
+0.10.47, 18.30 and 18.31 name different work than the branches' did, so each
+replayed commit had its versions and `testing.md` sections changed in the
+lines it added and nowhere else: the USB branch's 18.30 to 18.36 are 18.32 to
+18.38, the switch fix's 18.36 is 18.39, the kits' 18.30 is 18.40, and
+neofetch's 18.30 is 18.41. **Each renumbered commit's message says what it was
+first called**, because the ThinkPad's photographs and the session notes of 12
+September use the old numbers.
+
+**What the merge changed besides numbers.** The USB branch's code is
+byte-identical to what its gate passed. The conflicts were documents, plus the
+Makefile's `test:` prerequisites and run list, the display harness's check
+total, and `run_x86.py`'s closing sentence, each keeping both sides.
+
+**Set aside:** a Paint app left uncommitted in the `paint` worktree since 11
+September, discarded at Diego's word; and small uncommitted edits in three old
+worktrees, saved as patches in `~/Code/kosmos-leftovers` before they go.
+Removing the worktrees is Diego's to do.
+
+**Checked as one line**, since no replayed commit was gated on its new base:
+`make prepush` green - 156/156 and 152/152 in the guest suites, 98 checks on
+x86-64 with the USB and machine-identity checks among them, 15 under UEFI, 33
+on the disk, 24 on the network, the display harness 106 on aarch64 and 104 on
+x86-64, Lite XL's 7, and the `MEGA=1` link.
 
 ### 12 September: three rows about the machine that nothing had read
 
@@ -45,11 +85,11 @@ table too, and no harness boots that path. **`make test` passed whole**, in
 `run_network.py` 24 on both boards, `run_uefi.py` 15. `make prepush` was not
 run.
 
-**Not committed and not landed.** It sits on 0.10.45 in worktree
-`kind-spence-736db7`. The xHCI session's unpushed 0.10.48 and 0.10.47 edit
-`hal/hal.h`, `kernel/syscall.c` and `kernel/syscall.h`,
-`hal/qemu-virt/devices.c` and the Makefile, so whichever lands second merges
-there. Neither adds anything the other depends on.
+**Committed on 13 September as 0.10.58**, when every worktree was folded
+into one line. It was written on 0.10.45 in worktree `kind-spence-736db7`, and
+its changes to `hal/hal.h`, `kernel/syscall.c`, `kernel/syscall.h`,
+`hal/qemu-virt/devices.c` and the Makefile merged beside the USB work; the
+conflicts were the Makefile's test lists and `run_x86.py`'s closing sentence.
 
 **Next, on the ThinkPad:** the boot log's `machine:` line (expected
 `LENOVO ...`, from SMBIOS 3.x in the EFI system table), Host, a Network row
@@ -131,13 +171,6 @@ Open:
 - **`kits <name>` lists every kit** instead of the one named: `kits.lua` reads
   `args[1]`, and a program's `args` is a string. Seen while checking this and
   offered as a task of its own; not fixed here.
-- **`--scale` is on `claude/exciting-montalcini-5b810a`**, committed as 0.10.51
-  and not on main. It changes `snes.lua` about twenty lines below this change.
-  Once both are in, the harness's `snes --scale 3` gets that branch's own
-  refusal, which the phase accepts.
-- **The version number.** Several worktrees hold unlanded commits numbered
-  0.10.46 and up, so this is committed on its branch and numbered when it
-  lands.
 
 ### 12 September: two threads on one stack
 
@@ -429,7 +462,7 @@ log changes, rather than twice a second on a `tick`.
   change's. Before the rebase: the x86-64 HDA tone, 411 Hz for 371 ms, then
   green. Rebased onto another session's 0.10.46, the Deskbar focus change,
   so this is 0.10.47. After it: the x86 suite's `console held by nobody`
-  panic, which `claude/admiring-murdock-5b3d97` fixes and has not landed;
+  panic, which 0.10.56 fixes;
   the `compositor budget` measurement above; the x86-64 `registry` phase,
   which bets two seconds on a typed `fs.write` and passed 3 of 3 alone - its
   own task now; then green.
@@ -1536,8 +1569,8 @@ since 0.10.22 not needed for this.
   persists it, and a TrackPoint and a touchpad want different curves from a
   driver that cannot tell their packets apart.
 - ~~**`neofetch` on the T14 says `QEMU q35 x86-64` and `virtio-net`.**~~
-  Fixed in the worktree on 12 September, together with its disk row; see the
-  entry at the top and `testing.md` §18.41. Not yet seen on the T14.
+  Fixed in 0.10.58, together with its disk row; see its entry near the top
+  and `testing.md` §18.41. Not yet seen on the T14.
 - **The click probes are still in**: `i8042 buttons` and `wm: button`, both
   bounded. Clicks are confirmed on the machine now - the T14's log shows a
   release reaching the window manager and an application launched from it -
