@@ -8,6 +8,54 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 13 September: a PC boots through Kosmos's own loader
+
+**The ThinkPad had failed to boot three days running, and every fix had been a
+size.** 0.10.55 with a 32 MB disk hung after GRUB's last line, which broke the
+32 MB rule made the day before. Diego: "Just make a fix that works from now
+on. Test it on qemu as much as possible. Save all you learned so we don't
+stump in this problem again." `docs/boot.md` is where it is saved - the table
+of every stick, what was established, and how to read a boot on a machine
+with no serial port.
+
+**`boot/efi/` is `BOOTX64.EFI`**, in GRUB's place on the stick. It claims the
+kernel's memory from the firmware by address and refuses on the screen what it
+cannot claim; reads the kernel into two copies with a fingerprint a page;
+checks and repairs both before and after ExitBootServices, then the kernel in
+its place; and hands over the seven Multiboot 2 tags GRUB did, so the kernel
+did not change for it. What it repaired reaches the kernel as `kosmos-boot/`
+words on the command line, and the boot log's stage 4 prints them: `the
+loader: kosmos-boot, 0 pages repaired before the firmware let go, 0 after, 0
+lost; the disk: same`.
+
+**Its first run found the fault's shape under QEMU.** OVMF refused the
+kernel's range at 1 MB and the loader printed why: ACPI NVS at 8 MB and boot
+services data from 9 MB, which GRUB had been loading the kernel over for
+months. **The x86-64 kernel is linked at 16 MB now**, past the NVS and inside
+boot services memory, which the loader fills after the firmware lets go - so
+every UEFI test here takes that path. `kernel/main.c` had 1 MB hard-coded in
+four places, one of them the line saying where the kernel is.
+
+**GRUB is gone from the tree**: `mkusb_image.py --loader`, `make x86-uefi`
+boots the stick over USB, and `make test` boots a stick `mkusb_image.py` made
+rather than a `grub-mkrescue` ISO. The loader is built with the kernel's own
+compiler and binutils (`ld -m i386pep`), about 32 KB.
+
+**Checked:** `test_efiboot` 40 checks, 48 with the build's kernel;
+`run_uefi.py` 21 checks, with and without the 32 MB disk; `run_x86.py`'s USB
+checks through `-kernel` at 16 MB; both kernels build without a warning.
+Controls in `testing.md` §18.42: a page spoiled in a copy before the first
+check, and one spoiled in place after the firmware let go, were each repaired,
+reported by the kernel, and booted to userland. The kernel linked at 1 MB
+again is refused with OVMF's three ACPI NVS entries on the screen, and the
+host test fails with the map unmerged or the tags unpadded.
+
+**Next, on the ThinkPad**: a stick from this, and a photograph of the
+`kosmos-boot:` lines and the kernel's `the loader:` line - claimed, borrowed or
+refused, and whether anything was repaired. Then the USB test from 0.10.55
+(ports 7 and 10, unplug and replug). **Not changed**: the 32 MB disk refusal,
+until that machine boots a bigger disk through this loader.
+
 ### 13 September: every worktree folded into one line
 
 **Diego asked for one line instead of a worktree per session.** Main had

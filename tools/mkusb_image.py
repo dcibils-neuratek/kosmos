@@ -1,43 +1,39 @@
 #!/usr/bin/env python3
 #  Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.
-"""Builds the USB image the ThinkPad boots: GPT, one ESP, GRUB, Kosmos.
+"""Builds the USB image the ThinkPad boots: GPT, one ESP, Kosmos's own loader,
+and Kosmos.
 
-**This replaced a `grub-mkrescue` ISO, and the reason is a real failure on
-real firmware rather than a preference.**
+**The loader is `boot/efi/`, and it replaced GRUB on 13 September 2026.** An
+image GRUB loaded on the ThinkPad arrived with bytes already changed, in some
+layouts and not others, and GRUB reported nothing; under OVMF the same GRUB
+had been loading the kernel over memory the firmware keeps. `docs/boot.md`
+has the account. The loader claims the kernel's range from the firmware,
+refuses on the screen what it cannot claim, checks the kernel byte for byte
+before and after the firmware lets go, and says so.
 
-That ISO booted perfectly under OVMF and got this far on the machine:
+**GRUB taught this file two things that stay true without it:**
 
-    error: file '/boot/grub/x86_64-efi/boot.mod' not found.
-    Entering rescue mode...
+  - **one filesystem, FAT**, which is what a UEFI firmware is required to be
+    able to read. A `grub-mkrescue` ISO once booted under OVMF and dropped to
+    `grub rescue>` on the machine, because its modules were only inside an El
+    Torito image the firmware did not choose;
+  - **a plain GPT disk with a single EFI System Partition**, the arrangement
+    every UEFI machine is specified to boot and the one this machine has
+    proved it reads.
 
-Which is good news wearing a bad hat: the firmware found the stick, read
-its partition table, launched `BOOTX64.EFI`, and GRUB *ran*. What GRUB
-could not do was load its own modules - because `grub-mkrescue` puts them
-only inside the El Torito FAT image and leaves nothing at
-`/boot/grub/x86_64-efi` on the ISO9660 filesystem beside it. Under QEMU
-GRUB's idea of its root resolved to the FAT image and the modules were
-there; on this firmware it resolved somewhere else and they were not.
-
-So nothing here depends on which filesystem GRUB thinks it booted from:
-
-  - **the modules are built into `BOOTX64.EFI`**, so there is no loading to
-    fail. `grub-mkimage` takes them as arguments and links them in;
-  - **there is one filesystem, FAT**, which is what a UEFI firmware is
-    required to be able to read - no ISO9660 in the picture at all;
-  - `grub.cfg` and the kernel sit on that same partition, at the prefix the
-    image was built with.
-
-The result is a plain GPT disk with a single EFI System Partition, which is
-the arrangement every UEFI machine is specified to boot and the one this
-machine has already proved it can read.
+So the stick holds `\\EFI\\BOOT\\BOOTX64.EFI` (the loader), `\\boot\\kosmos.bin`
+(the kernel), `\\boot\\kosmos.cmdline` when there are words for the kernel's
+command line, and `\\boot\\disk.img` when there is a disk. That is everything
+the loader reads.
 
 **And a disk image beside the kernel, when there is one.** `--disk PATH`
-copies a kfs image onto the same partition and tells GRUB to load it as a
-module; `hal/pc/memdisk.c` then presents that memory as the machine's disk,
-which is how a ThinkPad this kernel cannot yet read a USB stick on gets its
-game data. The partition grows to hold it.
+copies a kfs image onto the partition; the loader reads it into memory and
+hands it over as a module, and `hal/pc/memdisk.c` presents that memory as the
+machine's disk - which is how a ThinkPad Kosmos cannot yet read a USB stick
+on gets its game data.
 
-Usage: mkusb_image.py KERNEL OUT [--disk IMAGE] [name=value ...]
+Usage: mkusb_image.py KERNEL OUT --loader BOOTX64.EFI [--disk IMAGE]
+                      [name=value ...]
 """
 
 import re
@@ -70,20 +66,20 @@ import zlib
 ESP_MB = 192
 
 #
-# **The disk image is 32 MB or less, and a bigger one is refused.**
+# **The disk image is 32 MB or less, and a bigger one is refused - for now.**
 #
-# Measured on the ThinkPad, not derived, and not understood. GRUB carries the
-# disk into memory as a module, and on that machine the module's size decides
-# whether the kernel it loaded survives: 0.10.48 with a 64 MB disk stopped
-# after GRUB's last line, twice, before printing a character, and the same
-# build with a 32 MB disk booted to the desktop. 32 MB is the size that has
-# booted every time it was tried. `docs/thinkpad.md` §6a has every stick and
-# what it did.
+# Measured on the ThinkPad with GRUB, not derived: GRUB carried the disk into
+# memory, and on that machine the size decided whether the kernel survived.
+# 0.10.48 with a 64 MB disk stopped after GRUB's last line, twice, and the
+# same build with a 32 MB disk booted; then 0.10.55 with a 32 MB disk stopped
+# too. Size was a knob that moved where things landed, not a cause
+# (`docs/boot.md`).
 #
-# QEMU boots the 64 MB stick perfectly - `run_uefi.py` passed it the evening
-# the machine would not - so a refusal here is the only place the lesson can
-# live. It goes away with USB mass storage, which reads the stick itself and
-# needs no module.
+# **Kept until the ThinkPad has booted a bigger disk through Kosmos's own
+# loader**, because a rule that came from a machine should go the same way.
+# The loader places the disk wherever the firmware gives it memory and checks
+# the kernel after, so there is no longer a reason the size should matter -
+# and "no reason" is a prediction until the machine agrees.
 #
 STICK_DISK_MAX_MB = 32
 
@@ -92,82 +88,6 @@ STICK_DISK_MAX_MB = 32
 ESP_TYPE_GUID = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 
 SECTOR = 512
-
-#
-# **Only what GRUB needs in order to read the partition it was loaded
-# from.** Everything else is loaded from that partition at run time, which
-# is not laziness - it is what works.
-#
-# The first version linked twenty-two modules in, including `efi_gop`, and
-# GRUB then would not set a video mode at all: Kosmos came up with `none
-# attached` on a machine whose firmware had a perfectly good panel.
-# Swapping in `grub-mkrescue`'s own 200 KB binary, into this same image,
-# fixed it immediately - so it was the core, not the layout, and a
-# minimal core that `insmod`s the rest is the arrangement known to work.
-#
-# What must be built in is exactly the bootstrap: a module that fails to
-# load cannot be the module that loads modules. `part_gpt` and `fat` to
-# find and read this partition, `normal` and `configfile` to run
-# `grub.cfg`, and `search` for when `$root` disappoints.
-#
-CORE_MODULES = [
-    "part_gpt", "part_msdos", "fat", "normal", "configfile",
-    "search", "search_fs_uuid", "search_label",
-]
-
-#
-# `insmod` rather than built in, for the reason above - and `efi_gop`
-# rather than `all_video`, which picks GRUB's own bochs driver under QEMU
-# and hands over 800x600 at 24 bits per pixel, a depth `loader_fb.c`
-# refuses because everything above `struct fb` treats a pixel as one
-# 32-bit word. A laptop has no bochs; asking the firmware directly gives
-# the panel its own mode.
-#
-#
-# **The loader is asked to say what it is doing, and the answer was
-# nothing.**
-#
-# GRUB printed something on the ThinkPad while loading a 64 MB module and
-# nobody could read it: it prints, hands over, and the kernel's first stage
-# scrolls it away inside a second. So an `echo` before each step, and each
-# load is now bracketed - a message that appears has something to be after.
-#
-# What it established: **GRUB reports no error at all.** Kernel, disk,
-# loaded, and then an image with eleven pages already corrupted. Whatever it
-# does wrong, it does quietly. The echoes stay because they cost nothing and
-# the next person to look will want the same bracket.
-#
-# **There was a `sleep --interruptible 6` here and it is gone.** It held the
-# screen so the message could be photographed, which worked twice - and then
-# a stick appeared to hang on that line. A diagnostic that stops the machine
-# it is diagnosing is not one, and this had already returned its answer.
-#
-# **And a `set debug=relocator,mm,efi` with `set pager=1`, also gone**, but
-# not before earning its keep. It showed that GRUB's allocations are
-# correct and non-overlapping on that machine - kernel at `0x100000+0xade000`
-# and the module immediately after it - and that the ThinkPad's firmware
-# hands GRUB the kernel's *final* address, where QEMU's stages it elsewhere
-# and moves it at `boot`. Different path through the relocator, which is a
-# large part of why no emulated machine here has ever shown the fault.
-#
-# The `pager` is worth its own warning: it waits for a key when the screen
-# fills, which on a laptop looks exactly like the hang being investigated.
-# It cost a boot and a wrong conclusion.
-#
-GRUB_CFG = """set timeout=3
-set default=0
-
-menuentry "Kosmos" {
-    insmod efi_gop
-    insmod multiboot2
-
-    echo "grub: loading the kernel..."
-    multiboot2 /boot/kosmos.bin@ARGS@
-@MODULE@
-    echo "grub: loaded. Anything above this line is the loader's."
-    boot
-}
-"""
 
 
 def guid_bytes(text):
@@ -188,18 +108,8 @@ def run(argv, **kw):
     return result.stdout
 
 
-def build_efi(grub_dir, out):
-    """GRUB, with every module it needs linked in rather than alongside."""
-    run(["x86_64-elf-grub-mkimage",
-         "-O", "x86_64-efi",
-         "-d", grub_dir,
-         # Where `grub.cfg` is, on the partition this image lives on.
-         "-p", "/boot/grub",
-         "-o", out] + CORE_MODULES)
-
-
-def build_esp(kernel, efi, out, grub_dir, args="", disk=None):
-    """A FAT filesystem holding the loader, its configuration and Kosmos."""
+def build_esp(kernel, loader, out, args="", disk=None):
+    """A FAT filesystem holding the loader, the kernel and what it reads."""
     size = ESP_MB * 1024 * 1024
 
     # The disk on top of what the rest needs, rounded up to a megabyte, and
@@ -210,62 +120,31 @@ def build_esp(kernel, efi, out, grub_dir, args="", disk=None):
     with open(out, "wb") as f:
         f.truncate(size)
 
-    # FAT32, one sector per cluster group chosen by mformat, and a label
-    # so `search --label` has something to find if `$root` ever goes wrong.
-    # `-c 2` - a kilobyte a cluster, said rather than left to mformat, which
-    # maximises the cluster *count* and so picks the smallest cluster that
-    # will do. See ESP_MB above for what that cost.
+    # FAT32 with a label, and `-c 2` - a kilobyte a cluster, said rather than
+    # left to mformat, which maximises the cluster *count* and so picks the
+    # smallest cluster that will do. See ESP_MB above for what that cost.
     run(["mformat", "-i", out, "-F", "-c", "2", "-v", "KOSMOS",
          "-T", str(size // SECTOR), "::"])
 
-    for d in ("::/EFI", "::/EFI/BOOT", "::/boot", "::/boot/grub"):
+    for d in ("::/EFI", "::/EFI/BOOT", "::/boot"):
         run(["mmd", "-i", out, d])
 
-    cfg = out + ".cfg"
-
-    with open(cfg, "w") as f:
-        # The disk gets an `echo` of its own, because *which of the two loads
-        # complained* is the question: the kernel is 10 MB and the module 64,
-        # and it is the module's size that decides whether this machine boots.
-        f.write(GRUB_CFG.replace("@ARGS@", (" " + args) if args else "")
-                        .replace("@MODULE@",
-                                 '    echo "grub: loading the disk..."\n'
-                                 "    module2 /boot/disk.img\n"
-                                 if disk else ""))
-
-    run(["mcopy", "-i", out, efi, "::/EFI/BOOT/BOOTX64.EFI"])
-    run(["mcopy", "-i", out, cfg, "::/boot/grub/grub.cfg"])
+    run(["mcopy", "-i", out, loader, "::/EFI/BOOT/BOOTX64.EFI"])
     run(["mcopy", "-i", out, kernel, "::/boot/kosmos.bin"])
+
+    # The kernel's command line, a file the loader reads rather than a line
+    # in a GRUB script. The words were checked in main().
+    if args:
+        cmdline = out + ".cmdline"
+
+        with open(cmdline, "w") as f:
+            f.write(args + "\n")
+
+        run(["mcopy", "-i", out, cmdline, "::/boot/kosmos.cmdline"])
+        os.remove(cmdline)
 
     if disk:
         run(["mcopy", "-i", out, disk, "::/boot/disk.img"])
-
-    #
-    # **And the module directory as well, beside the ones built in.**
-    #
-    # The built-in set is what has to work before anything can be read at
-    # all - a module that fails to load cannot be the thing that loads
-    # modules. This is the rest, and it exists because guessing the set was
-    # wrong once: with `efi_gop` linked in and the directory absent, GRUB
-    # would not set a video mode at all and Kosmos came up with `none
-    # attached` on a machine whose firmware had a perfectly good panel.
-    # `grub-mkrescue`'s image could load whatever it turned out to need;
-    # this one can now too.
-    #
-    # A few megabytes on a stick, against a class of failure that only
-    # appears on hardware.
-    #
-    run(["mmd", "-i", out, "::/boot/grub/x86_64-efi"])
-
-    mods = sorted(f for f in os.listdir(grub_dir)
-                  if f.endswith(".mod") or f.endswith(".lst"))
-
-    # In batches, because a command line has a limit and there are 268.
-    for i in range(0, len(mods), 40):
-        batch = [os.path.join(grub_dir, m) for m in mods[i:i + 40]]
-        run(["mcopy", "-i", out] + batch + ["::/boot/grub/x86_64-efi/"])
-
-    os.remove(cfg)
 
     return size
 
@@ -358,25 +237,35 @@ def main():
     kernel = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.bin"
     out = sys.argv[2] if len(sys.argv) > 2 else "build/x86_64/kosmos-usb.img"
 
-    # Words for the kernel's command line, after the path on GRUB's
-    # `multiboot2` line - `opt/kosmos/smp=1` and the like, which is how a
-    # machine with no fw_cfg is given a boot option at all. Checked, because
-    # they are written into a GRUB script, where a quote or a semicolon would
-    # make it a different script.
+    # Words for the kernel's command line - `opt/kosmos/smp=1` and the like,
+    # which is how a machine with no fw_cfg is given a boot option at all.
+    # Checked, because the loader passes on only these characters and a word
+    # it would cut short should be refused here, where somebody can read why.
     words = sys.argv[3:]
+    loader = None
     disk = None
 
-    if len(words) >= 2 and words[0] == "--disk":
-        disk, words = words[1], words[2:]
+    while len(words) >= 2 and words[0] in ("--loader", "--disk"):
+        if words[0] == "--loader":
+            loader = words[1]
+        else:
+            disk = words[1]
 
+        words = words[2:]
+
+    if loader is None or not os.path.isfile(loader):
+        sys.exit("mkusb_image: no loader at %s. Run `make %s`."
+                 % (loader, "build/x86_64/BOOTX64.EFI"))
+
+    if disk is not None:
         if not os.path.isfile(disk):
             sys.exit("mkusb_image: no disk image at %s" % disk)
 
         if os.path.getsize(disk) > STICK_DISK_MAX_MB * 1024 * 1024:
-            sys.exit("mkusb_image: %s is %.0f MB, and the ThinkPad does not boot "
-                     "with a disk over %d MB (docs/thinkpad.md, section 6a). "
-                     "Make one that size:\n  build/host/lua tools/kfs.lua "
-                     "create %s %d host-file:/home/name ..."
+            sys.exit("mkusb_image: %s is %.0f MB, and the ThinkPad has not yet "
+                     "booted a disk over %d MB (docs/boot.md). Make one that "
+                     "size:\n  build/host/lua tools/kfs.lua create %s %d "
+                     "host-file:/home/name ..."
                      % (disk, os.path.getsize(disk) / 1048576.0,
                         STICK_DISK_MAX_MB, disk, STICK_DISK_MAX_MB))
 
@@ -385,27 +274,22 @@ def main():
     if args and not re.fullmatch(r"[A-Za-z0-9_./=,:-]+( [A-Za-z0-9_./=,:-]+)*", args):
         sys.exit("mkusb_image: %r is not a list of name=value words" % args)
 
+    if len(args) > 200:
+        sys.exit("mkusb_image: the loader reads 200 characters of the command "
+                 "line, and these words are %d" % len(args))
+
     if not os.path.exists(kernel):
         sys.exit("mkusb_image: no %s. Run `make x86-build`." % kernel)
-
-    prefix = run(["brew", "--prefix", "x86_64-elf-grub"]).strip()
-    grub_dir = os.path.join(prefix, "lib/x86_64-elf/grub/x86_64-efi")
-
-    if not os.path.isdir(grub_dir):
-        sys.exit("mkusb_image: no GRUB modules at %s" % grub_dir)
 
     work = out + ".parts"
     os.makedirs(work, exist_ok=True)
 
-    efi = os.path.join(work, "BOOTX64.EFI")
     esp = os.path.join(work, "esp.img")
-
-    build_efi(grub_dir, efi)
-    esp_size = build_esp(kernel, efi, esp, grub_dir, args, disk)
+    esp_size = build_esp(kernel, loader, esp, args, disk)
     total = write_gpt(out, esp, esp_size)
 
-    print("%s  %.1f MB  (GRUB %.0f KB with %d modules built in)%s%s"
-          % (out, total / 1e6, os.path.getsize(efi) / 1024, len(CORE_MODULES),
+    print("%s  %.1f MB  (Kosmos's loader %.0f KB)%s%s"
+          % (out, total / 1e6, os.path.getsize(loader) / 1024,
              "; the kernel is told: " + args if args else "",
              "; with %s as its disk, %.1f MB" % (disk, os.path.getsize(disk) / 1e6)
              if disk else ""))

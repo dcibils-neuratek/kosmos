@@ -369,11 +369,11 @@ of a port: `arch/x86_64` is finished and tested at 136 checks, and the
 entire userland runs on both architectures unchanged.
 
 **Two things in `hal/pc` are closer to this machine than they look.**
-`memory.c` already reads a multiboot memory map, which is what GRUB hands
-over on a UEFI machine as well. And `timer.c` is the 8254 and `pic.c` the
-8259 - both of which Comet Lake's PCH still implements. They may work
-unmodified on the first boot, which would defer the whole APIC milestone
-past the first picture.
+`memory.c` already reads a multiboot memory map, which is what a Multiboot 2
+loader hands over on a UEFI machine as well. And `timer.c` is the 8254 and
+`pic.c` the 8259 - both of which Comet Lake's PCH still implements. They may
+work unmodified on the first boot, which would defer the whole APIC
+milestone past the first picture.
 
 **That is a hypothesis and it is written down as one.** It is cheap to test
 and expensive to assume.
@@ -439,7 +439,8 @@ loader is right depends on a fact about the laptop's firmware.
 2. **Is there a CSM or Legacy Boot option in the BIOS?** If there is, the
    first boot can use the multiboot 1 header that already exists and **no
    new loader code at all**. If there is not, it is Multiboot2 under a UEFI
-   GRUB, or a stub of our own.
+   GRUB, or a stub of our own. It was GRUB until 13 September 2026, and
+   has been a loader of Kosmos's own since (`boot.md`).
 3. **`lspci -nn`** - whether the NVMe is behind Intel VMD or a BIOS "RAID"
    mode, which is the thing that complicated the x14.
 

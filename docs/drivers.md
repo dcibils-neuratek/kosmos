@@ -240,8 +240,9 @@ say what it found.
 
 Public Intel specification, no firmware, no crypto.
 
-- **Mass storage deletes the loader-disk problem.** The 64 MB GRUB module
-  exists only because Kosmos cannot read the stick it booted from. See
+- **Mass storage deletes the loader's disk.** The disk the loader carries
+  into memory exists only because Kosmos cannot read the stick it booted
+  from. See
   `thinkpad.md` §6a.
 - **A USB Ethernet adapter puts the network stack on real hardware.** ARP,
   IP, TCP, DNS, `host` and the browser are written and have only ever run

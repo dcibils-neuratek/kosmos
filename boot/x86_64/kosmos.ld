@@ -1,10 +1,20 @@
 /*
  * Where an x86-64 Kosmos image goes.
  *
- * 1 MB, because that is where a multiboot loader puts a kernel and below it
- * is where the PC's own past lives: the BIOS data area, the VGA window, the
- * option ROMs. Nothing here is relocatable, and nothing needs to be while
- * there is one kernel in the machine.
+ * **16 MB, and it was 1 MB until 13 September 2026.** 1 MB is where a
+ * multiboot loader traditionally puts a kernel, above the PC's own past - the
+ * BIOS data area, the VGA window, the option ROMs - and on a UEFI machine
+ * nothing promises it is free. OVMF, the firmware every UEFI test here boots,
+ * keeps ACPI NVS at 0x800000..0x900000 and its own boot-time data from
+ * 0x900000 to 0x1780000. That was measured by Kosmos's own loader, which asks
+ * the firmware for this range by address and was refused; GRUB had loaded the
+ * image over both for months, and it survived because nothing wrote there.
+ *
+ * `boot/efi/loader.c` claims this range from the firmware, refuses on the
+ * screen if any of it is memory the firmware keeps, and copies the kernel in
+ * after ExitBootServices where the firmware was only borrowing it. Nothing
+ * here is relocatable, and nothing needs to be while there is one kernel in
+ * the machine - but the address is the loader's to check, not to assume.
  *
  * `.multiboot` is first and that is not tidiness: QEMU looks for the header
  * in the first 8 KB of the file and refuses to boot without it, with a
@@ -15,9 +25,10 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 1M;
+    . = 16M;
 
     __load_start = .;
+    __image_start = .;          /* the name boot/kosmos.ld gives it */
     __multiboot_header = .;
 
     .multiboot : { KEEP(*(.multiboot)) }

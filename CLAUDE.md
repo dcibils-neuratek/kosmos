@@ -65,6 +65,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Toolchain and build: `docs/setup.md`
 - Porting Lite XL, a real editor: `docs/litexl.md`
 - The first real machine, a ThinkPad T14: `docs/thinkpad.md`
+- How a PC boots, and why the loader is Kosmos's own: `docs/boot.md`
 - Glossary: `docs/glossary.md`
 
 ---
@@ -338,8 +339,9 @@ and what is left.
 
 **New threads spread across every processor that arrived, by default.**
 Each is homed on the least busy core when it is created and never moves.
-`opt/kosmos/smp=N` narrows that - `make SMPWORK=1 qemu`, or the word on
-GRUB's `multiboot2` line - and `=1` homes everything on core zero again, for
+`opt/kosmos/smp=N` narrows that - `make SMPWORK=1 qemu`, or the word in a
+stick's `\boot\kosmos.cmdline` (`make usb KOSMOS_ARGS=...`) - and `=1` homes
+everything on core zero again, for
 when something breaks; it cannot widen past what arrived.
 `thread_create_on(cpu, ...)` still crosses a core deliberately, and the
 guest suite pins itself to core zero and crosses only that way.
@@ -744,7 +746,7 @@ something you look at.
 ## Layout
 
 ```
-boot/           assembly entry, linker script
+boot/           assembly entry, linker scripts, efi/: the UEFI loader
 arch/           aarch64/ and x86_64/
 hal/            qemu-virt/, pc/  (pi5/ when the board is here)
 kernel/         mmu, sched, ipc, caps, exceptions

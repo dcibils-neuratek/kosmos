@@ -175,7 +175,7 @@ def share(pixels, colour):
 
 
 def main():
-    iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-usb.img"
+    iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-uefi.img"
     checks = 0
     fails = []
 
@@ -256,8 +256,9 @@ def main():
     #
     # **And the other three started, through the path a laptop takes.** Under
     # `-kernel` the trampoline page is below a map SeaBIOS wrote; here the map
-    # is the one GRUB passes on from UEFI, which is the map the ThinkPad hands
-    # over - so this is the check that says a processor can be started on the
+    # is the one Kosmos's loader passes on from UEFI, which is the map the
+    # ThinkPad hands over - so this is the check that says a processor can be
+    # started on the
     # machine the port is for, before that machine is asked.
     #
     check("3 of the others in the kernel too" in serial,
@@ -363,8 +364,55 @@ def main():
           or "bytes a row, which is width" not in serial,
           "the boot log claims the pitch is both padded and not")
 
+    #
+    # **Kosmos's own loader, in its own words.** `boot/efi/loader.c` prints
+    # through the firmware's console, which OVMF copies to the serial line.
+    # The kernel's place has to be claimed or borrowed - never refused - and
+    # both copies of the kernel have to match the file before it hands over.
+    #
+    loader = [l.strip() for l in serial.splitlines() if "kosmos-boot:" in l]
+
+    check(any("the kernel's place: 0x01000000.." in l for l in loader),
+          "the loader did not place the kernel at 16 MB: "
+          + repr(loader[:4]))
+    check(any("both copies of the kernel are the file, page for page" in l
+              for l in loader),
+          "the loader found the kernel's copies changed, or never checked: "
+          + repr(loader[-3:]))
+    check(any(l.startswith("kosmos-boot: handing over:") for l in loader),
+          "the loader never handed over: " + repr(loader[-3:]))
+
+    #
+    # **And the kernel's account of it**: what the loader repaired before and
+    # after the firmware let go, written into the command line and read back
+    # at boot. Nothing repaired and nothing lost is the only healthy answer
+    # under emulation.
+    #
+    handed = next((l.strip() for l in serial.splitlines()
+                   if "the loader: kosmos-boot," in l), "")
+
+    check("0 pages repaired before the firmware let go, 0 after, 0 lost"
+          in handed,
+          "the kernel does not report a clean hand-over from its loader: "
+          + (handed or "no loader line"))
+
+    #
+    # **And the kernel off the firmware's memory**, which is what moving it to
+    # 16 MB was for. Under GRUB this boot printed `UNDER THIS KERNEL` three
+    # times for OVMF's ACPI NVS at 8 MB, and nobody had asked what it meant.
+    #
+    check("this kernel is 0x01000000.." in serial,
+          "the kernel does not say it is at 16 MB: "
+          + next((l.strip() for l in serial.splitlines()
+                  if "this kernel is" in l), "no line"))
+    check("UNDER THIS KERNEL" not in serial
+          and "UNDER THE USERLAND IMAGE" not in serial,
+          "memory the firmware keeps is under the kernel: "
+          + next((l.strip() for l in serial.splitlines() if "UNDER" in l), "?"))
+
     if fails:
-        print("FAIL: %d of %d checks booting through GRUB under UEFI:"
+        print("FAIL: %d of %d checks booting through Kosmos's loader under "
+              "UEFI:"
               % (len(fails), len(fails) + checks))
 
         for f in fails:
@@ -372,10 +420,9 @@ def main():
 
         return 1
 
-    print("PASS: %d checks booting through GRUB under UEFI (the firmware "
-          "sets a mode, the loader passes it on, and Kosmos draws its own "
-          "%dx%d screen into memory nothing else in this project has ever "
-          "reached)." % (checks, width, height))
+    print("PASS: %d checks booting through Kosmos's loader under UEFI (the "
+          "firmware's memory claimed and checked, the kernel at 16 MB, and "
+          "Kosmos drawing its own %dx%d screen)." % (checks, width, height))
     return 0
 
 

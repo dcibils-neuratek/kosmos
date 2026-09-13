@@ -111,17 +111,17 @@ a module that fails to load cannot be the module that loads modules.
 
 ### Game data on the stick
 
-`make usb` carries `build/kosmos.img` when it holds a filesystem, and GRUB
-loads it into memory beside the kernel. Kosmos mounts it at boot ahead of the
-NVMe drive, so the files `make image` put in it are at `/home` on the
-machine:
+`make usb` carries `build/kosmos.img` when it holds a filesystem, and the
+loader reads it into memory beside the kernel. Kosmos mounts it at boot
+ahead of the NVMe drive, so the files `make image` put in it are at `/home`
+on the machine:
 
     make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
     make MEGA=1 usb
 
 Nothing written on such a boot survives power-off, and the drive's own
 `/home` is not mounted; boot a stick without a disk to have it back. The boot
-log says `a disk from the loader` when GRUB handed one over.
+log says `a disk from the loader` when the loader handed one over.
 
 First booted this way on 11 September 2026: Doom played E1M1 and Quake
 reached its menu, side by side, off a 64 MB disk holding `doom1.wad` and
@@ -465,8 +465,9 @@ not answer the video request - measured, not assumed - so the one path a
 laptop depends on entirely had never run once, while `test_loaderfb.c` asked
 the decision fourteen careful questions on the host and every one passed.
 
-`make x86-iso` builds the real artifact: GRUB, a filesystem, and an image
-that boots the way the ThinkPad will. `make x86-uefi` runs it under OVMF -
+`make x86-usb-image` builds the real artifact: Kosmos's own loader, a
+filesystem, and an image that boots the way the ThinkPad will. It was a GRUB
+ISO until 13 September 2026 (`boot.md`). `make x86-uefi` runs it under OVMF -
 the same EDK II a ThinkPad's firmware is built from. It works, and the
 screenshot in `docs/screenshots/` is a 1280x800 framebuffer the *firmware*
 set up.
@@ -924,6 +925,23 @@ the ThinkPad when it was written, because the partition was one the firmware
 refused - `ESP_MB` in `mkusb_image.py` has that story. One has not been tried
 since the partition was fixed.
 
+### 13 September: the loader, not the size
+
+**0.10.55 with a 32 MB disk hung after GRUB's last line**, and the rule this
+section had made the day before was a size too. Diego asked for a fix that
+works from now on, and it is not a size: **the PC boots through Kosmos's own
+UEFI loader**, and the kernel moved to 16 MB. `boot.md` is the whole account -
+the table of sticks, what was established, the loader step by step, and what
+its lines mean on a machine with no serial port.
+
+What it changes here: the loader claims the kernel's memory from the firmware
+by address and refuses on the screen what it cannot claim, checks the kernel
+byte for byte before and after ExitBootServices, repairs what changed, and the
+kernel prints what was repaired. **Its first run showed OVMF's ACPI NVS inside
+the kernel's old range** - the fault's shape, on the machine that can be
+watched. The 32 MB refusal stays until this machine boots a bigger disk
+through it.
+
 ---
 
 ## 7. The three questions the machine answers in half an hour
@@ -1028,7 +1046,7 @@ sounds like.
 | Framebuffer from the loader's boot information | **written and proven end to end** under GRUB + OVMF; 14 host checks and 7 boot checks | done |
 | i8042 keyboard | **in the build**, exercised by the display harness | done |
 | More than a gigabyte of RAM | **fixed**: 4 GB of boot page tables, and the low region chosen by what can be mapped | done |
-| A bootable stick | **`make x86-iso`**, hybrid GRUB image | done |
+| A bootable stick | **`make usb`**: GPT, FAT32, and Kosmos's own UEFI loader (`boot.md`) | done |
 | i8042 auxiliary port | **in the build**: the TrackPoint moves the pointer on the machine, and a click through QEMU's PS/2 mouse is checked on every gate | done |
 | ACPI: RSDP, XSDT, MADT, MCFG. **No AML** | **written and in the build** | done |
 | ~~Local APIC / IOAPIC / MSI~~ | **written and in the build**, both paths chosen at run time and both tested | done |

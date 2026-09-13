@@ -173,7 +173,7 @@ is the one that makes the machine Diego owns behave like a computer:
    `hal_fb_early` answers with the framebuffer the firmware set up, before
    there is a page allocator (`thinkpad.md` §4) - and it was found when the
    work was started, before any was written. What is still dark: a hang
-   inside GRUB, a fault before the trap table, and a firmware that puts the
+   after the loader's last line, a fault before the trap table, and a firmware that puts the
    framebuffer above 4 GB, which `hal_fb_early` refuses because the boot
    page tables end there.
 

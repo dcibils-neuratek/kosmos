@@ -18,11 +18,11 @@ decided it: the ThinkPad carries its disk as memory because Kosmos cannot
 read the stick it booted from.
 
 **Where step 4 is going, as Diego put it**: once USB works, the drive is
-mounted over USB, so big files live on the disk. Today GRUB loads the whole
-disk image into memory as a module before Kosmos starts, and on the ThinkPad
-that image must be 32 MB or less or the machine does not boot
-(`thinkpad.md` §6a). Reading the stick directly removes the module, and with
-it the limit.
+mounted over USB, so big files live on the disk. Today the loader reads the
+whole disk image into memory before Kosmos starts, and a stick's image is kept
+to 32 MB or less until the ThinkPad has booted a bigger one through Kosmos's
+own loader (`boot.md`). Reading the stick directly removes the copy in
+memory, and with it the limit.
 
 ---
 

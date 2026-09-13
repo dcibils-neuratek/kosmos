@@ -1505,6 +1505,18 @@ $(HOSTDIR)/test_loaderfb: tools/test_loaderfb.c hal/pc/loader_fb.c hal/pc/multib
 	        tools/test_loaderfb.c hal/pc/loader_fb.c
 
 #
+# And the UEFI loader's decisions - where the kernel goes, the firmware's map
+# in Multiboot 2's shape, the information structure - read back through
+# `loader_fb.c`, the kernel's own parser, because what counts is whether the
+# kernel agrees. With a kernel image as its argument it also asks that the
+# build's `kosmos.bin` is one the loader will take.
+#
+$(HOSTDIR)/test_efiboot: tools/test_efiboot.c boot/efi/mbi.c boot/efi/mbi.h hal/pc/loader_fb.c hal/pc/multiboot2.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -I boot/efi -I hal/pc -o $@ \
+	        tools/test_efiboot.c boot/efi/mbi.c hal/pc/loader_fb.c
+
+#
 # And the Super Nintendo's picture at a scale: the only code between the
 # core's pixels and the window, asked without a core or a ROM, including
 # every byte it must not touch.
@@ -2475,45 +2487,42 @@ X86_DEVICES := -device ramfb \
 # A stick somebody can boot, which is the thing `-kernel` is not.
 #
 # **QEMU's `-kernel` is not a loader**, and every x86 boot in this project
-# went through it until now. It reads the multiboot header, copies the image
-# in and jumps - and it does not answer the video request, so the one path a
-# laptop depends on entirely had never run. `docs/thinkpad.md` has what that
-# hid: three faults, none of them a driver, all of them fatal and silent on
-# a machine with no serial port.
+# went through it for a long time. It reads the multiboot header, copies the
+# image in and jumps - and it does not answer the video request, so the one
+# path a laptop depends on entirely had never run. `docs/thinkpad.md` has what
+# that hid: three faults, none of them a driver, all of them fatal and silent
+# on a machine with no serial port.
 #
-# So this builds the real thing: GRUB, a filesystem, and an image that boots
-# the way the ThinkPad will.
+# **The loader is Kosmos's own, and it was GRUB until 13 September 2026.**
+# `boot/efi/` is `BOOTX64.EFI`: it claims the kernel's memory from the
+# firmware by address, refuses on the screen what it cannot claim, keeps two
+# copies of the kernel with a checksum a page, and checks and repairs them
+# before and after ExitBootServices, then the kernel in its place. It hands
+# over the Multiboot 2 tags GRUB did, so the kernel did not change for it.
+# `docs/boot.md` has why: on the ThinkPad a GRUB-loaded image arrived with
+# bytes already changed in some layouts, and under OVMF GRUB had been loading
+# the kernel over memory the firmware keeps.
 #
-# **`insmod efi_gop` rather than `all_video`, and it is not a detail.** With
-# every video driver loaded GRUB picks its own - under QEMU that is the
-# bochs one, which hands over 800x600 at *24* bits per pixel, and
-# `loader_fb.c` refuses it because everything above `struct fb` treats a
-# pixel as one 32-bit word. Asking the firmware's own GOP gives the panel's
-# mode at 32 bits, which is what a laptop has and what OVMF reports here.
+# Built with the same x86-64 compiler as the kernel, freestanding and
+# position-independent, and linked as a PE32+ EFI application by the same
+# binutils, whose `i386pep` emulation does it. No other tool is needed.
 #
-# UEFI only, because that is what this GRUB was built for and because it is
-# the half that matters: a 2020 ThinkPad may have no CSM at all, and GRUB
-# under UEFI boots a multiboot 1 kernel perfectly well - which this proves
-# rather than assumes.
-#
-GRUB_MKRESCUE := x86_64-elf-grub-mkrescue
-ISO           := $(X86_BUILD)/kosmos.iso
+EFI_LOADER := $(X86_BUILD)/BOOTX64.EFI
+EFI_CFLAGS := -std=c11 -ffreestanding -fno-stack-protector -mno-red-zone \
+              -mgeneral-regs-only -fpie -fvisibility=hidden \
+              -fno-asynchronous-unwind-tables -fno-unwind-tables \
+              -fno-tree-loop-distribute-patterns -O2 -Wall -Wextra -Werror
 
-#
-# The recipe hangs off `x86-build` rather than off `kosmos.bin`, because a
-# prerequisite on that file asks *this* make to build it - and this make is
-# the AArch64 one, which greets `-mno-sse` with `did you mean -fno-dse`.
-# The x86 image is built by a sub-make with its own toolchain, and the only
-# honest way to say so is to depend on the target that runs it.
-#
-x86-iso: x86-build
-	@rm -rf $(X86_BUILD)/iso
-	@mkdir -p $(X86_BUILD)/iso/boot/grub
-	@cp $(X86_BUILD)/kosmos.bin $(X86_BUILD)/iso/boot/
-	@printf 'set timeout=0\nset default=0\n\nmenuentry "Kosmos" {\n  insmod efi_gop\n  multiboot2 /boot/kosmos.bin\n  boot\n}\n' \
-	  > $(X86_BUILD)/iso/boot/grub/grub.cfg
-	$(GRUB_MKRESCUE) -o $(ISO) $(X86_BUILD)/iso 2>/dev/null
-	@ls -l $(ISO)
+$(EFI_LOADER): boot/efi/loader.c boot/efi/mbi.c boot/efi/mbi.h boot/efi/trampoline.S
+	@mkdir -p $(X86_BUILD)/efi
+	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/loader.c -o $(X86_BUILD)/efi/loader.o
+	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/mbi.c -o $(X86_BUILD)/efi/mbi.o
+	x86_64-elf-gcc -c boot/efi/trampoline.S -o $(X86_BUILD)/efi/trampoline.o
+	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/loader.o
+	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/mbi.o
+	x86_64-elf-ld -m i386pep --subsystem 10 -e efi_main --image-base 0x10000000 \
+	    -o $@ $(X86_BUILD)/efi/loader.o $(X86_BUILD)/efi/mbi.o $(X86_BUILD)/efi/trampoline.o
+	@ls -l $@
 
 #
 # And booting it the way the machine will: firmware, a loader, an image.
@@ -2568,49 +2577,44 @@ PANEL_H := $(word 2,$(subst x, ,$(PANEL)))
 USB_IMG := $(X86_BUILD)/kosmos-usb.img
 
 #
-# The stick's image: a GPT, one EFI System Partition, GRUB and Kosmos.
+# The stick's image: a GPT, one EFI System Partition, Kosmos's loader and
+# Kosmos.
 #
-# **This replaced the `grub-mkrescue` ISO because the ISO failed on the
-# machine.** It booted perfectly under OVMF and reached this on a real
-# ThinkPad:
+# **One FAT partition and nothing else**, which is what a UEFI firmware is
+# required to read. A `grub-mkrescue` ISO once booted perfectly under OVMF and
+# dropped to `grub rescue>` on the ThinkPad, because its modules were only in
+# an El Torito image the firmware did not choose. `tools/mkusb_image.py` has
+# the rest.
 #
-#     error: file '/boot/grub/x86_64-efi/boot.mod' not found.
-#     Entering rescue mode...
-#
-# `grub-mkrescue` keeps its modules only inside the El Torito FAT image and
-# leaves nothing at that path on the ISO9660 filesystem beside it; under
-# QEMU GRUB's idea of its own root resolved to the FAT image and found
-# them, and on that firmware it resolved elsewhere and did not.
-# `tools/mkusb_image.py` has the whole account, including the two further
-# things that went wrong while fixing it.
-#
-# `KOSMOS_ARGS` puts words on GRUB's `multiboot2` line - the kernel's command
-# line, and on a machine with no fw_cfg the only way to give it a boot option:
+# `KOSMOS_ARGS` is the kernel's command line - on a machine with no fw_cfg,
+# the only way to give it a boot option. The loader reads it from
+# `\boot\kosmos.cmdline`:
 #
 #     make usb KOSMOS_ARGS=opt/kosmos/smp=1
 #
 # **And `$(DISK)` on the stick as well, when it holds a filesystem** - the
 # disk `make image FILES=...` makes, which is where Doom's WAD and Quake's
-# pak live. GRUB loads it into memory beside the kernel and Kosmos mounts it
-# at boot, ahead of the machine's own drive; `hal/pc/blk_bind.c` says why.
-# Only a disk `kfs.lua` can read goes on: `make qemu` leaves an empty one
-# behind, and carrying that would hide a ThinkPad's NVMe `/home` for nothing.
+# pak live. The loader reads it into memory and hands it over, and Kosmos
+# mounts it at boot, ahead of the machine's own drive; `hal/pc/blk_bind.c`
+# says why. Only a disk `kfs.lua` can read goes on: `make qemu` leaves an
+# empty one behind, and carrying that would hide a ThinkPad's NVMe `/home`
+# for nothing.
 #
 #     make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
 #     make MEGA=1 usb
 #
-x86-usb-image: x86-build $(HOSTDIR)/lua
+x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	@if [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
-	    echo "$(DISK) goes on the stick too: GRUB loads it, Kosmos mounts it"; \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --disk $(DISK) $(KOSMOS_ARGS); \
+	    echo "$(DISK) goes on the stick too: the loader reads it, Kosmos mounts it"; \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --disk $(DISK) $(KOSMOS_ARGS); \
 	else \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) $(KOSMOS_ARGS); \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) $(KOSMOS_ARGS); \
 	fi
 
 usb: x86-usb-image
 	@bash tools/mkusb.sh $(USB_IMG)
 
-x86-uefi: x86-iso
+x86-uefi: x86-usb-image
 	@cp $(OVMF_VARS) $(X86_BUILD)/ovmf-vars.fd
 	qemu-system-x86_64 -M q35 -m $(if $(MEM),$(MEM),16G) -no-reboot \
 	  -drive if=pflash,format=raw,unit=0,readonly=on,file=$(OVMF_CODE) \
@@ -2619,7 +2623,9 @@ x86-uefi: x86-iso
 	  -device ich9-intel-hda -device hda-output,audiodev=a0 \
 	  -audiodev coreaudio,id=a0 \
 	  $(if $(SERIAL),-display none -serial stdio,-display $(X86_DISPLAY) -serial mon:stdio) \
-	  -cdrom $(ISO)
+	  -device qemu-xhci,id=xhci \
+	  -drive if=none,id=stick,format=raw,file=$(USB_IMG) \
+	  -device usb-storage,bus=xhci.0,drive=stick
 
 x86: x86-build $(DISK)
 	qemu-system-x86_64 -M q35 -m 512M -no-reboot $(X86_ACCEL) -vga none \
@@ -2641,7 +2647,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2687,6 +2693,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# and QEMU does not.
 	$(HOSTDIR)/test_pmmplace
 	$(HOSTDIR)/test_loaderfb
+	$(HOSTDIR)/test_efiboot
 	$(HOSTDIR)/test_apicdecode
 	$(HOSTDIR)/test_snesblit
 	$(HOSTDIR)/test_smbiosdecode
@@ -2775,7 +2782,9 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@#
 	@# It also checks the *screen* rather than the serial line, because a
 	@# machine whose framebuffer works stops talking to the serial line at
-	@# stage six. Skipped where GRUB or OVMF is not installed, out loud.
+	@# stage six. It boots a stick `mkusb_image.py` made with Kosmos's own
+	@# loader, which is the image `make usb` writes. Skipped where OVMF is
+	@# not installed, out loud.
 	@#
 	@# `run_interchange.py` and `run_queries.py` are deliberately not
 	@# here, and this says so out loud rather than leaving a gap
@@ -2785,12 +2794,14 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# costs to check the same code twice.
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
 	    $(MAKE) --no-print-directory x86-build >/dev/null && \
+	    $(HOSTDIR)/test_efiboot build/x86_64/kosmos.bin && \
 	    python3 tools/run_x86.py build/x86_64/kosmos.elf && \
 	    python3 tools/run_headless.py build/x86_64/kosmos.elf && \
 	    python3 tools/run_disk.py build/x86_64/kosmos.elf && \
 	    python3 tools/run_network.py build/x86_64/kosmos.elf && \
-	    $(MAKE) --no-print-directory x86-iso >/dev/null 2>&1 && \
-	    python3 tools/run_uefi.py build/x86_64/kosmos.iso && \
+	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
+	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) >/dev/null && \
+	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img && \
 	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
 	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
 	else \

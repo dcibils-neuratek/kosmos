@@ -203,7 +203,10 @@ static void check_init_image(const char *when)
         (void)hal_loader_disk(&disk_base, &disk_bytes);
 
         for (pass = 0; pass < 2 && in == NULL; pass++) {
-            unsigned long from = (pass == 0) ? 0x100000UL : disk_base;
+            extern char __image_start[];
+            unsigned long from = (pass == 0)
+                                 ? (unsigned long)(uintptr_t)__image_start
+                                 : disk_base;
             unsigned long to = (pass == 0)
                                ? (unsigned long)(uintptr_t)__image_end
                                : disk_base + disk_bytes;
@@ -530,7 +533,8 @@ void kmain(void)
     {
         extern char __image_end[];
 
-        unsigned long kernel_lo = 0x100000UL;
+        extern char __image_start[];
+        unsigned long kernel_lo = (unsigned long)(uintptr_t)__image_start;
         unsigned long kernel_hi = (unsigned long)(uintptr_t)__image_end;
         unsigned long user_lo = (unsigned long)(uintptr_t)init_image;
         unsigned long user_hi = user_lo + init_image_len;
@@ -635,11 +639,13 @@ void kmain(void)
      * that has stopped printing boot facts.
      */
     {
+        extern char __image_start[];
+        extern char __image_end[];
+        unsigned long image_start = (unsigned long)(uintptr_t)__image_start;
+        unsigned long image_end = (unsigned long)(uintptr_t)__image_end;
         unsigned long disk_base, disk_bytes;
 
         if (hal_loader_disk(&disk_base, &disk_bytes)) {
-            extern char __image_end[];
-            unsigned long image_end = (unsigned long)__image_end;
 
             boot_fact_begin();
             kputs("a disk from the loader: ");
@@ -666,16 +672,66 @@ void kmain(void)
              * finds out: the machine has no serial port, the disk server
              * cannot print, and "ended, code 11" is all there was.
              */
+            if (disk_base < image_end && disk_base + disk_bytes > image_start) {
+                boot_fact_begin();
+                kputs("** THE LOADER'S DISK OVERLAPS THIS KERNEL **");
+                boot_fact_end();
+            }
+        }
+
+        /*
+         * **Where this kernel is, on every boot a loader describes**, and not
+         * only beside a disk. It was printed as 0x100000 whatever the link
+         * address said, and when the kernel moved to 16 MB on 13 September
+         * 2026 - because the firmware keeps memory under the old place,
+         * `docs/boot.md` - that line would have gone on saying 1 MB.
+         */
+        if (hal_memory_entries(NULL) > 0) {
             boot_fact_begin();
             kputs("this kernel is 0x");
-            kputx(0x100000UL, 8);
+            kputx(image_start, 8);
             kputs("..0x");
             kputx(image_end, 8);
+            boot_fact_end();
+        }
+    }
 
-            if (disk_base < image_end && disk_base + disk_bytes > 0x100000UL) {
-                kputs("  ** THE MODULE OVERLAPS IT **");
+    /*
+     * **What Kosmos's own loader repaired**, from the words `boot/efi/loader.c`
+     * writes into the command line: pages of this kernel that changed in
+     * memory before the firmware let go and after it, each repaired from a
+     * copy, and pages that could not be. The fault that loader exists for was
+     * silent on the ThinkPad; this line is how a photograph says whether it
+     * happened. A loader that checked nothing leaves no words, and then there
+     * is no line.
+     */
+    {
+        char before[8], after[8], lost[8], disk[8];
+        const char *word[3] = { before, after, lost };
+        unsigned long count[3] = { 0, 0, 0 };
+        unsigned w, digit;
+
+        if (hal_boot_option("kosmos-boot/before", before, sizeof(before))
+            && hal_boot_option("kosmos-boot/after", after, sizeof(after))
+            && hal_boot_option("kosmos-boot/lost", lost, sizeof(lost))
+            && hal_boot_option("kosmos-boot/disk", disk, sizeof(disk))) {
+            for (w = 0; w < 3; w++) {
+                for (digit = 0; word[w][digit] >= '0' && word[w][digit] <= '9';
+                     digit++) {
+                    count[w] = count[w] * 10
+                               + (unsigned long)(word[w][digit] - '0');
+                }
             }
 
+            boot_fact_begin();
+            kputs("the loader: kosmos-boot, ");
+            kputu(count[0]);
+            kputs(" pages repaired before the firmware let go, ");
+            kputu(count[1]);
+            kputs(" after, ");
+            kputu(count[2]);
+            kputs(" lost; the disk: ");
+            kputs(disk);
             boot_fact_end();
         }
     }

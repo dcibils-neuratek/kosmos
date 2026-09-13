@@ -13,7 +13,7 @@ halves of this document:
 
 | directory | what it is | the rule for putting something here |
 |---|---|---|
-| `boot/` | the assembly entry point and the linker script | the first instructions the machine runs, before there is a C stack |
+| `boot/` | the assembly entry points and the linker scripts, and `efi/`: Kosmos's own UEFI loader | the first instructions the machine runs, before there is a C stack - and on a PC, the loader that puts the kernel in memory at all (`boot.md`) |
 | `arch/aarch64/` | **which CPU you are.** Page tables, exception vector, context switch, barriers | it is different on another architecture and is *reimplemented*, not abstracted |
 | `hal/qemu-virt/` | **which peripherals you have.** UART, timer, interrupt controller, framebuffer, keyboard, block device | it is different on another board behind the same interface |
 | `kernel/` | Nebula: threads, address spaces, IPC, capabilities, physical memory | it must run at EL1, or it defines the isolation boundary |

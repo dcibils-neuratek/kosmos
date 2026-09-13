@@ -807,12 +807,13 @@ disabled, so the allocator is handed the module's pages, the boot log
 reports 510 MB of RAM at 1 MB instead of 487 MB above the module,
 `diskinfo` reports no disk, and the file never comes back.
 
-**The Multiboot 2 half is checked once, not on every run.** `run_uefi.py`
-boots the ISO, which carries no disk, and a USB image with one needs GRUB's
-tools and a minute of `mcopy`. So it was booted by hand: a USB image made
-with `mkusb_image.py --disk`, under OVMF as a USB stick, with the boot log
-saying `a disk from the loader: 8192 KB`. The T14 has since booted a
-stick from `make MEGA=1 usb` and run Doom and Quake off its disk.
+**The Multiboot 2 half was checked by hand once**, while `run_uefi.py`
+booted a GRUB ISO with no disk: a USB image made with `mkusb_image.py --disk`,
+under OVMF as a USB stick, with the boot log saying `a disk from the loader:
+8192 KB`. The T14 has since booted a stick from `make MEGA=1 usb` and run Doom
+and Quake off its disk. Since 13 September `run_uefi.py` boots the stick
+`make usb` writes, through Kosmos's own loader, and a stick with the 32 MB
+disk passes the same checks (§18.42).
 
 ## 18.19 The desktop, and names of sixty-four characters
 
@@ -2392,3 +2393,121 @@ the control that disabled it named nothing at all.
   is known.
 - The ThinkPad itself. The Lenovo strings in the tests are the shape Lenovo's
   firmware uses, not a copy of this machine's table.
+
+## 18.42 Kosmos's own UEFI loader, and the kernel at 16 MB
+
+Two checks, both in `make test` (`boot.md` has the loader and why it exists):
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_efiboot.c`, 40 checks, and 48 given `build/x86_64/kosmos.bin` | the header parser on synthetic images - a bad checksum, a MIPS header, an entry outside what is loaded, a `bss_end` below `load_end`, no entry tag, an unknown required tag, a header past 32 KB or past what was read - and on the build's own kernel, which must ask for 16 MB from offset 0 and be loaded whole; the firmware's map, unsorted and fragmented with 48-byte descriptors, merged into eight ranges and typed as GRUB typed it; and an information structure built by `mbi.c` read back with the kernel's own `mb2_find` and `mb2_framebuffer_from`: the command line, the disk, three map entries, the framebuffer, the EFI system table and the RSDP |
+| `tools/run_uefi.py`, 21 checks | the stick `mkusb_image.py` makes, booted under OVMF as a USB drive on an xHCI controller: the loader's own lines - the kernel's place at 16 MB, both copies matching the file, handing over - the kernel's line saying nothing was repaired and nothing lost, `this kernel is 0x01000000..`, and nothing of the firmware's under it; plus the fifteen it had, the screen, ACPI, SMBIOS through the EFI system table and the other processors among them |
+
+A stick with the 32 MB disk passes the same 21, so the module tag and the
+disk's placement by the firmware are covered too; that one was booted by hand
+rather than in `make test`, which keeps its stick without a disk.
+
+**Found on the way, each before it could matter:**
+
+- **The loader's first run was refused**, and that was the finding. OVMF
+  would not give the kernel 0x00100000..0x009c0000, and the loader printed
+  why: ACPI NVS at 0x800000..0x900000 and boot services data from 0x900000 -
+  memory GRUB had been loading the kernel over. The kernel moved to 16 MB.
+- **`kernel/main.c` said 1 MB whatever the link address said**: `0x100000UL`
+  in four places, the kernel's range line among them. The first boot at 16 MB
+  printed `this kernel is 0x00100000..0x018c0000` and three `UNDER THIS
+  KERNEL` lines that were no longer true. `__image_start` now, the name the
+  ARM linker script already had.
+- **The `before=` count was written fourteen characters late**, through an
+  offset worked out backwards from the next field. Read before the loader
+  first ran; a pointer is recorded where the word is appended now.
+- **Two references to the trampoline's bytes went through the GOT**, the only
+  relocations in the loader that were not PC-relative. Declared hidden, and
+  the build's own check says there are none.
+
+**The controls**, each an edit to one file, a build, a boot and a restore, with
+the full output kept per run. The two that spoil the kernel are the reason the
+loader exists, so each was booted a second time to read what the loader and
+the kernel said.
+
+With one byte of a page of one in-memory copy flipped before the first check:
+
+```
+kosmos-boot: 1 pages of the kernel changed in memory and were repaired, 0 could not be
+kosmos-boot: handing over: entry 0x01001000, information at 0x7c5cf000, trampoline at 0x7e3cd000
+       -> this kernel is 0x01000000..0x018c0000
+       -> the loader: kosmos-boot, 1 pages repaired before the firmware let go, 0 after, 0 lost; the disk: none
+init: process 11 exited cleanly
+
+FAIL: 2 of 21 checks booting through Kosmos's loader under UEFI:
+  the loader found the kernel's copies changed, or never checked: [...]
+  the kernel does not report a clean hand-over from its loader: -> the loader: kosmos-boot, 1 pages repaired before the firmware let go, 0 after, 0 lost; the disk: none
+```
+
+With one byte of the kernel flipped in its place, after the copy and after
+ExitBootServices:
+
+```
+kosmos-boot: both copies of the kernel are the file, page for page
+kosmos-boot: handing over: entry 0x01001000, information at 0x7c5cf000, trampoline at 0x7e3cd000
+       -> this kernel is 0x01000000..0x018c0000
+       -> the loader: kosmos-boot, 0 pages repaired before the firmware let go, 1 after, 0 lost; the disk: none
+init: process 11 exited cleanly
+
+FAIL: 1 of 21 checks booting through Kosmos's loader under UEFI:
+  the kernel does not report a clean hand-over from its loader: -> the loader: kosmos-boot, 0 pages repaired before the firmware let go, 1 after, 0 lost; the disk: none
+```
+
+**Both boots reached userland with the damage repaired and said.** That is the
+ThinkPad's fault from 11 September - bytes changed where nothing in Kosmos
+wrote them - happening on purpose, once on each side of the firmware letting
+go, and survived instead of silent.
+
+With the kernel linked at 1 MB again, the loader refuses, and the screen
+says why before it waits for a key:
+
+```
+kosmos-boot: the kernel must be at 0x00100000..0x009c0000, and the firmware keeps part of it:
+kosmos-boot:   0x00800000..0x00808000  ACPI NVS
+kosmos-boot:   0x0080b000..0x0080c000  ACPI NVS
+kosmos-boot:   0x00811000..0x00900000  ACPI NVS
+kosmos-boot: the kernel's memory is not the loader's to give
+kosmos-boot: Kosmos cannot start from this stick. Press a key to return to the firmware.
+
+FAIL: 15 of 21 checks booting through Kosmos's loader under UEFI:
+  the machine found no processor line; ACPI is not reaching the kernel through the loader
+  ...
+  the loader did not place the kernel at 16 MB: [...]
+  the loader never handed over: [...]
+```
+
+Boot services data at 0x900000 is not in that list, because the loader would
+have borrowed it; only what the firmware keeps is named.
+
+With the memory map left unmerged:
+
+```
+FAIL: the map is not merged into eight ranges
+FAIL: boot services data and free memory below 640 KB are not one range
+...
+FAIL: 9 of 48 checks on the UEFI loader's decisions
+```
+
+With information tags not padded to eight bytes, the kernel's own parser
+loses every tag after the first:
+
+```
+FAIL: the kernel does not find the disk where it was put
+FAIL: the kernel does not read three map entries of 24 bytes
+FAIL: the kernel refuses the framebuffer, or reads it wrong
+FAIL: the kernel does not find the EFI system table, and SMBIOS with it
+FAIL: the kernel does not get the RSDP, and ACPI with it
+FAIL: 5 of 47 checks on the UEFI loader's decisions
+```
+
+And the loader as written, after every restore: `run_uefi.py` 21 of 21, and
+the host test 48 of 48.
+
+**What none of it shows** is the ThinkPad's own map at the moment the loader
+runs, and whether its firmware writes into memory it has handed out. The
+loader's lines on that machine are that measurement.
