@@ -8,6 +8,50 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 13 September, afternoon: the ThinkPad boots through the loader
+
+**0.10.46 to 0.10.59 are on origin/main**, pushed on Diego's yes from the
+worktree they were folded into. A worktree session cannot run git in the main
+checkout, so that checkout catches up with `git merge --ff-only origin/main`.
+
+**The first stick through Kosmos's loader was a black panel**, and a key press
+went back to the firmware's Boot Menu: the loader had refused, and said why
+through a text console the ThinkPad's firmware does not show. Diego: "this was
+working before / not sure what did you change". GRUB's lines had always shown
+because GRUB switches that console to text mode first - read in GRUB 2.12's
+own `kernel.img`: the console-control protocol, which is not in the UEFI
+specification. **0.10.60's loader does the same, and draws every line itself**
+in the lower half of the framebuffer with the kernel's font. With it the same
+kernel booted to the desktop: nothing repaired, nothing lost, the disk the
+same, in the map GRUB saw. Why the first stick refused is not known; a refusal
+from now on is on the screen. `boot.md` §3.
+
+**`make test` boots a refusal now**: a stick whose kernel is zeros, whose lines
+must be drawn in the lower half of the screen, and a loader copy that draws
+nothing fails it. **And the check the loader's test lacked is in**: `the disk:
+same` or `none` by the loader's own line, with a 4 MB disk on the test stick;
+a loader copy that changes a byte of the disk passed 0.10.59's 21 checks and
+fails the new one. `testing.md` §18.42.
+
+**USB on the metal** (`usb.md`): ports 7 and 10 named themselves - 7 is the
+boot stick, after the second try; 10 is `8087:0026`, most likely the
+Bluetooth. The plug lines saw every change, but the mouse's first replug
+failed its first request 12 ms after the reset line, and the second, a second
+apart, was named.
+
+**Next, first: one session on `main` from now on** (`CLAUDE.md`), so the first
+job is housekeeping from the main checkout - fast-forward `main` to 0.10.60,
+remove the `snes-port` worktree (every tracked file matched its commit; its one
+untracked file is in `~/Code/kosmos-leftovers/snes-port/`) and this line's
+worktree, and delete the branches `worktree-snes-port` and
+`claude/exciting-montalcini-5b810a`. The six `backup/` branches are Diego's to
+keep or drop.
+
+**Then:** that replug, measured - how long after a port reset the first
+request goes, and what the reused slot holds - before a mouse or bulk
+transfers, whose order is Diego's call. A disk bigger than 32 MB through the
+loader is the test that would lift `mkusb_image.py`'s refusal.
+
 ### 13 September: a PC boots through Kosmos's own loader
 
 **The ThinkPad had failed to boot three days running, and every fix had been a
@@ -2220,10 +2264,14 @@ short until it emitted a newline.
 **Two scheduler tests flake, and it is the same shape both times.**
 `sched: the policy is pluggable` failed twice on an unchanged tree, and
 `sched: the higher priority runs first` once, each with three green runs of
-the same build either side. Both are timing tests about which thread runs
-next, so the suspicion is the harness's load rather than the scheduler -
-but that is a suspicion and not a diagnosis. Written down because a flake
-nobody records is a flake everybody re-discovers.
+the same build either side - and `the higher priority runs first` failed
+again in 0.10.60's first gate on 13 September, then passed three reruns of
+the same build. Both are timing tests about which thread runs next, so the
+suspicion is the harness's load rather than the scheduler - but that is a
+suspicion and not a diagnosis. A second one, as unmeasured: that test wakes
+the lower thread before the higher, so if the two are homed on different
+cores the lower can run before the higher is awake. Written down because a
+flake nobody records is a flake everybody re-discovers.
 
 **Some of it was self-inflicted and that is worth separating out.** A gate
 that failed on `timer: the period matches the rate` on x86-64 failed

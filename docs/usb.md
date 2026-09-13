@@ -437,8 +437,8 @@ For each controller, after step 1:
   and address for the device" - which said nothing about which command
   failed, or how. Diego sees three things plugged in, the stick, the mouse
   and the camera, so port 7 is probably the stick Kosmos booted from and
-  port 10 something inside the laptop; both are guesses until a device is
-  pulled out and the driver says which port went quiet.
+  port 10 something inside the laptop - and on 13 September both named
+  themselves, below.
 
 So the driver now says why, tries once more, and stays to watch - the two
 sections below.
@@ -513,6 +513,41 @@ xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Keyboard"
 **What it does not do is talk to a device after naming it.** A mouse needs
 its configuration set, an interrupt endpoint read, and a way for a process to
 move the pointer.
+
+### On the ThinkPad, 13 September
+
+The first boot with the second try and the plug lines, through Kosmos's own
+loader. Read off the photographs:
+
+- **Port 7 is the stick Kosmos booted from**, and it needed the second try:
+  Address Device had no answer within a second, and the device was addressed
+  after a reset and a pause - `abcd:1234`, class 0, its product string `UDisk`
+  padded with spaces.
+- **Port 10 is `8087:0026`, class 224**, a wireless controller under Intel's
+  vendor ID; `thinkpad.md` §0 lists Bluetooth among the machine's USB devices,
+  so most likely that. An inference, not a lookup.
+- **Five devices named on 00:14.0**, and both controllers by interrupt again.
+- **The plug lines on metal**: the mouse pulled out of port 1 and put back,
+  twice.
+
+```
+[37.501] xhci: 00:14.0 port 1: unplugged, 04d9:fc38 "USB Gaming Mouse"
+[44.850] xhci: 00:14.0 port 1, USB 2: a Full-speed device (speed ID 1), after its reset
+[44.862] xhci: 00:14.0 port 1: GET_DESCRIPTOR for 8 bytes failed: USB Transaction Error (4)
+[44.874] xhci: 00:14.0 port 1: the device did not say what it is
+[134.186] xhci: 00:14.0 port 1: unplugged
+[150.794] xhci: 00:14.0 port 1, USB 2: a Full-speed device (speed ID 1), after its reset
+[151.807] xhci: 00:14.0 port 1: 04d9:fc38, USB 2.0, class 0, "USB Gaming Mouse"
+```
+
+**Every change was seen, and a replug is not yet reliable.** The first time the
+mouse came back, its first request failed 12 ms after the line saying its port
+was reset; the second time those two lines are a second apart, and it was
+named. On every boot photographed the same mouse was named on the same port.
+The first attempt deliberately has no wait (above), so the likeliest reading is
+a device asked before its reset recovery was over - a reading, not a
+measurement, and the next thing to measure, with what the reused slot's
+contexts still hold.
 
 ### What QEMU cannot show
 

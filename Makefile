@@ -2505,7 +2505,9 @@ X86_DEVICES := -device ramfb \
 #
 # Built with the same x86-64 compiler as the kernel, freestanding and
 # position-independent, and linked as a PE32+ EFI application by the same
-# binutils, whose `i386pep` emulation does it. No other tool is needed.
+# binutils, whose `i386pep` emulation does it. No other tool is needed. It
+# carries the kernel's boot-log font, because it draws its own lines: the
+# ThinkPad's firmware console showed none of them.
 #
 EFI_LOADER := $(X86_BUILD)/BOOTX64.EFI
 EFI_CFLAGS := -std=c11 -ffreestanding -fno-stack-protector -mno-red-zone \
@@ -2513,15 +2515,19 @@ EFI_CFLAGS := -std=c11 -ffreestanding -fno-stack-protector -mno-red-zone \
               -fno-asynchronous-unwind-tables -fno-unwind-tables \
               -fno-tree-loop-distribute-patterns -O2 -Wall -Wextra -Werror
 
-$(EFI_LOADER): boot/efi/loader.c boot/efi/mbi.c boot/efi/mbi.h boot/efi/trampoline.S
+$(EFI_LOADER): boot/efi/loader.c boot/efi/mbi.c boot/efi/mbi.h boot/efi/trampoline.S \
+               $(X86_BUILD)/font_8x16.c
 	@mkdir -p $(X86_BUILD)/efi
 	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/loader.c -o $(X86_BUILD)/efi/loader.o
 	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/mbi.c -o $(X86_BUILD)/efi/mbi.o
+	x86_64-elf-gcc $(EFI_CFLAGS) -c $(X86_BUILD)/font_8x16.c -o $(X86_BUILD)/efi/font.o
 	x86_64-elf-gcc -c boot/efi/trampoline.S -o $(X86_BUILD)/efi/trampoline.o
 	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/loader.o
 	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/mbi.o
+	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/font.o
 	x86_64-elf-ld -m i386pep --subsystem 10 -e efi_main --image-base 0x10000000 \
-	    -o $@ $(X86_BUILD)/efi/loader.o $(X86_BUILD)/efi/mbi.o $(X86_BUILD)/efi/trampoline.o
+	    -o $@ $(X86_BUILD)/efi/loader.o $(X86_BUILD)/efi/mbi.o $(X86_BUILD)/efi/font.o \
+	    $(X86_BUILD)/efi/trampoline.o
 	@ls -l $@
 
 #
@@ -2783,7 +2789,12 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# It also checks the *screen* rather than the serial line, because a
 	@# machine whose framebuffer works stops talking to the serial line at
 	@# stage six. It boots a stick `mkusb_image.py` made with Kosmos's own
-	@# loader, which is the image `make usb` writes. Skipped where OVMF is
+	@# loader, which is the image `make usb` writes, with a 4 MB disk
+	@# `kfs.lua` made, so the loader's second look at a disk is checked as
+	@# well as its look at the kernel. And a second stick, whose kernel is
+	@# zeros, is booted to be refused: the loader's lines must be on the
+	@# screen while it waits for a key, drawn by the loader itself, because
+	@# the ThinkPad's firmware console showed nothing. Skipped where OVMF is
 	@# not installed, out loud.
 	@#
 	@# `run_interchange.py` and `run_queries.py` are deliberately not
@@ -2800,8 +2811,11 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	    python3 tools/run_disk.py build/x86_64/kosmos.elf && \
 	    python3 tools/run_network.py build/x86_64/kosmos.elf && \
 	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
-	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) >/dev/null && \
-	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img && \
+	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
+	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \
+	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
+	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null && \
+	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos-refusal.img && \
 	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
 	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
 	else \

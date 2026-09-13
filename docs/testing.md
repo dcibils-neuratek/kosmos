@@ -2401,11 +2401,13 @@ Two checks, both in `make test` (`boot.md` has the loader and why it exists):
 | check | what it establishes |
 | ----- | ------------------- |
 | `tools/test_efiboot.c`, 40 checks, and 48 given `build/x86_64/kosmos.bin` | the header parser on synthetic images - a bad checksum, a MIPS header, an entry outside what is loaded, a `bss_end` below `load_end`, no entry tag, an unknown required tag, a header past 32 KB or past what was read - and on the build's own kernel, which must ask for 16 MB from offset 0 and be loaded whole; the firmware's map, unsorted and fragmented with 48-byte descriptors, merged into eight ranges and typed as GRUB typed it; and an information structure built by `mbi.c` read back with the kernel's own `mb2_find` and `mb2_framebuffer_from`: the command line, the disk, three map entries, the framebuffer, the EFI system table and the RSDP |
-| `tools/run_uefi.py`, 21 checks | the stick `mkusb_image.py` makes, booted under OVMF as a USB drive on an xHCI controller: the loader's own lines - the kernel's place at 16 MB, both copies matching the file, handing over - the kernel's line saying nothing was repaired and nothing lost, `this kernel is 0x01000000..`, and nothing of the firmware's under it; plus the fifteen it had, the screen, ACPI, SMBIOS through the EFI system table and the other processors among them |
+| `tools/run_uefi.py`, 22 checks, and 24 given a refusal stick | the stick `mkusb_image.py` makes, with a 4 MB disk `kfs.lua` made, booted under OVMF as a USB drive on an xHCI controller: the loader's own lines - the kernel's place at 16 MB, both copies matching the file, handing over - the kernel's line saying nothing was repaired and nothing lost and `the disk: same` (`none` on a stick without one), `this kernel is 0x01000000..`, and nothing of the firmware's under it; plus the fifteen it had, the screen, ACPI, SMBIOS through the EFI system table and the other processors among them; and a second stick, whose kernel is 64 KB of zeros, refused on the serial line and drawn on by the loader in the lower half of the screen, its ground and its ink |
 
-A stick with the 32 MB disk passes the same 21, so the module tag and the
-disk's placement by the firmware are covered too; that one was booted by hand
-rather than in `make test`, which keeps its stick without a disk.
+`make test`'s stick carries a 4 MB disk, so the module tag, the firmware's
+placement of the disk and the loader's second look at it are checked on every
+run, and the ThinkPad's stick with the 32 MB disk passes the same 22 by hand.
+The disk check and the refusal came in 0.10.60, and the controls below ran
+before both, which is why their boots count 21.
 
 **Found on the way, each before it could matter:**
 
@@ -2507,6 +2509,63 @@ FAIL: 5 of 47 checks on the UEFI loader's decisions
 
 And the loader as written, after every restore: `run_uefi.py` 21 of 21, and
 the host test 48 of 48.
+
+**And the disk, since 0.10.60.** The loader fingerprints the disk when it
+reads it and again once the firmware has let go, and leaves `same`, `diff` or
+`none` for the kernel's line to print - and this check read only the part of
+that line about the kernel's pages. A loader built outside the tree that
+changes the last byte of the disk after fingerprinting it, which is free
+space on a fresh `kfs` disk so nothing else notices, shows the hole. Its
+stick, with a 4 MB disk, under the check as it was:
+
+```
+PASS: 21 checks booting through Kosmos's loader under UEFI (the firmware's memory claimed and checked, the kernel at 16 MB, and Kosmos drawing its own 1280x800 screen).
+```
+
+and under the check as it is:
+
+```
+FAIL: 1 of 22 checks booting through Kosmos's loader under UEFI:
+  the kernel does not say `the disk: same` after the loader read a disk: -> the loader: kosmos-boot, 0 pages repaired before the firmware let go, 0 after, 0 lost; the disk: diff
+```
+
+With the loader as written, a stick with the 4 MB disk and one without it
+both pass 22 of 22, the first held to `same` and the second to `none` by what
+the loader's own line said it carried.
+
+**And a refusal, on the screen, since 0.10.60.** The ThinkPad's first stick
+through this loader was a black panel that went back to the Boot Menu at a key
+press: a refusal, said through a firmware console that machine does not show,
+while every check here read the serial line and passed. So `make test` boots a
+second stick, whose kernel is 64 KB of zeros, and screendumps it while the
+loader waits for a key. With the loader as written:
+
+```
+PASS: 24 checks booting through Kosmos's loader under UEFI (the firmware's memory claimed and checked, the kernel at 16 MB, and Kosmos drawing its own 1280x800 screen).
+```
+
+With a copy of it built outside the tree whose `draw_line` returns at once -
+OVMF's own console still shows the refusal in the upper half, and the check
+does not count it:
+
+```
+FAIL: 1 of 24 checks booting through Kosmos's loader under UEFI:
+  the loader's refusal is not drawn in the lower half of the screen: 0.0% ground, 0.00% ink
+```
+
+And with a stick that boots given where the refusal belongs, both checks fail,
+the second on ink rather than ground - the desktop's ground fills the lower
+half, and none of it is the loader's lines (`[2J[01;01H` is the console being
+cleared, as it reaches the serial line):
+
+```
+FAIL: 2 of 24 checks booting through Kosmos's loader under UEFI:
+  a stick whose kernel is zeros was not refused on the serial line: [2J[01;01Hkosmos-boot: Kosmos's own loader, on EDK II firmware revision 0x00010000
+  the loader's refusal is not drawn in the lower half of the screen: 93.7% ground, 0.00% ink
+```
+
+What this cannot show is the ThinkPad's console, which is the reason the loader
+draws at all: under OVMF the firmware's text console shows either way.
 
 **What none of it shows** is the ThinkPad's own map at the moment the loader
 runs, and whether its firmware writes into memory it has handed out. The

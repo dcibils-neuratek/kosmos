@@ -649,6 +649,17 @@ right.
 
 ## How to work here
 
+**One session, on `main`, and no worktrees.** Decided by Diego on 13 September
+2026, the day eleven worktrees had to be folded back into one line: parallel
+sessions in `.claude/worktrees/` each took version numbers and edited the same
+README rows, `testing.md` sections and `state.md`, so every landing was a
+renumbering and a merge - and a session isolated in a worktree cannot run git
+on `main`, which left the git to Diego. So Kosmos is worked on by one session
+at a time, in the main checkout, committing on `main`. Do not create a
+worktree or start work in one, and do not offer anything that would. **A fix
+or a follow-up noticed along the way goes into `docs/roadmap.md`**, and is
+done on `main` when its time comes.
+
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the
 wishlist because it looks cheap - that is the main way a project like this

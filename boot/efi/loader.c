@@ -94,7 +94,22 @@ struct efi_text_out {
     efi_status (EFIAPI *reset)(struct efi_text_out *self, uint8_t verify);
     efi_status (EFIAPI *output_string)(struct efi_text_out *self,
                                        const char16 *text);
+    void *test_string;
+    void *query_mode;
+    void *set_mode;
+    efi_status (EFIAPI *set_attribute)(struct efi_text_out *self,
+                                       uint64_t attribute);
+    efi_status (EFIAPI *clear_screen)(struct efi_text_out *self);
 };
+
+/* SIMPLE_TEXT_OUTPUT_INTERFACE's order (eficon.h). */
+_Static_assert(offsetof(struct efi_text_out, set_attribute) == 40,
+               "EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.SetAttribute");
+_Static_assert(offsetof(struct efi_text_out, clear_screen) == 48,
+               "EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.ClearScreen");
+
+/* EFI_LIGHTGRAY on EFI_BACKGROUND_BLACK (eficon.h). */
+#define TEXT_LIGHTGRAY_ON_BLACK 0x07u
 
 struct efi_input_key {
     uint16_t scan_code;
@@ -204,10 +219,18 @@ struct efi_loaded_image {
     efi_handle parent;
     struct efi_system_table *system;
     efi_handle device;          /* the volume this file was read from */
+    void *file_path;
+    void *reserved;
+    uint32_t options_bytes;
+    void *options;
+    uint64_t image_base;        /* where the firmware put this loader */
+    uint64_t image_bytes;
 };
 
 _Static_assert(offsetof(struct efi_loaded_image, device) == 24,
                "EFI_LOADED_IMAGE_PROTOCOL.DeviceHandle");
+_Static_assert(offsetof(struct efi_loaded_image, image_base) == 64,
+               "EFI_LOADED_IMAGE_PROTOCOL.ImageBase");
 
 struct efi_file {
     uint64_t revision;
@@ -289,10 +312,38 @@ static const struct efi_guid ACPI_20_GUID =
 static const struct efi_guid ACPI_10_GUID =
     { 0xeb9d2d30, 0x2d88, 0x11d3, { 0x9a, 0x16, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } };
 
+/*
+ * **EFI_CONSOLE_CONTROL_PROTOCOL**, older than UEFI and not in its
+ * specification, which some firmware still keeps its text console behind: in
+ * graphics mode the console draws nothing at all. No header on this machine
+ * has it. The GUID and both calls are read out of GRUB 2.12's own
+ * `kernel.img`: its `grub_efi_set_text_mode` locates these sixteen bytes,
+ * calls offset 0 with a mode to fill and two nulls, then offset 8 with the
+ * mode wanted, and 0 is text. That is how GRUB's lines reached the
+ * ThinkPad's screen when this loader's first ones did not.
+ */
+static const struct efi_guid CONSOLE_CONTROL_GUID =
+    { 0xf42f7782, 0x012e, 0x4c12, { 0x99, 0x56, 0x49, 0xf9, 0x43, 0x04, 0xf7, 0x21 } };
+
+#define CONSOLE_TEXT    0u
+
+struct efi_console_control {
+    efi_status (EFIAPI *get_mode)(struct efi_console_control *self,
+                                  uint32_t *mode, uint8_t *graphics,
+                                  uint8_t *input_locked);
+    efi_status (EFIAPI *set_mode)(struct efi_console_control *self,
+                                  uint32_t mode);
+};
+
 /* The trampoline's bytes, from `trampoline.S`. Hidden, so they are reached
  * PC-relative rather than through a GOT entry the image would have to fix up. */
 extern const uint8_t efi_trampoline_start[] __attribute__((visibility("hidden")));
 extern const uint8_t efi_trampoline_end[] __attribute__((visibility("hidden")));
+
+/* The kernel's boot-log font, `tools/bdf2c.py` from Spleen 8x16: U+0020 to
+ * U+007E, then one glyph for anything else, sixteen rows of eight bits each
+ * with the leftmost pixel in the top bit. Hidden for the same reason. */
+extern const unsigned char font_8x16[] __attribute__((visibility("hidden")));
 
 /*------------------------------------------------------------------------
  * The three byte functions a compiler may call on its own, even here.
@@ -425,6 +476,8 @@ static void begin(struct line *l)
     add_text(l, "kosmos-boot: ");
 }
 
+static void draw_line(const struct line *l);
+
 static void send(struct line *l)
 {
     l->text[l->n] = '\r';
@@ -433,6 +486,17 @@ static void send(struct line *l)
 
     if (console_up && sys->con_out != NULL) {
         sys->con_out->output_string(sys->con_out, l->text);
+    }
+
+    /*
+     * **And onto the screen by this loader's own hand.** Whether the
+     * firmware's console shows is the firmware's business, and on the
+     * ThinkPad it showed nothing: a refusal waited for a key behind a black
+     * screen. The framebuffer is the path the kernel's boot log already
+     * takes on that machine.
+     */
+    if (console_up) {
+        draw_line(l);
     }
 }
 
@@ -850,20 +914,23 @@ struct screen {
     uint8_t  red_at, red_bits, green_at, green_bits, blue_at, blue_bits;
 };
 
-/* The firmware's current mode, as it is: that is the mode GRUB passed on. */
-static void find_screen(struct screen *s)
+/*
+ * The firmware's current mode, as it is: that is the mode GRUB passed on.
+ * Silent, because it runs before the first line, which it is there to draw;
+ * `find_screen` says what it found, later.
+ */
+static const char *probe_screen(struct screen *s, uint32_t *mode,
+                                uint32_t *modes)
 {
     struct efi_gop *gop;
     struct efi_gop_mode_info *info;
-    struct line l;
 
     s->valid = false;
 
     if (boot->locate_protocol(&GOP_GUID, NULL, (void **)&gop) != EFI_SUCCESS
         || gop == NULL || gop->mode == NULL || gop->mode->info == NULL) {
-        say("the firmware has no graphics output; Kosmos starts without a "
-            "screen");
-        return;
+        return "the firmware has no graphics output; Kosmos starts without a "
+               "screen";
     }
 
     info = gop->mode->info;
@@ -886,9 +953,8 @@ static void find_screen(struct screen *s)
         break;
 
     default:
-        say("the firmware's screen cannot be drawn into directly; Kosmos "
-            "starts without one");
-        return;
+        return "the firmware's screen cannot be drawn into directly; Kosmos "
+               "starts without one";
     }
 
     s->addr = gop->mode->frame_buffer_base;
@@ -896,6 +962,21 @@ static void find_screen(struct screen *s)
     s->height = info->height;
     s->pitch = info->pixels_per_scan_line * 4u;
     s->valid = s->addr != 0 && s->width != 0 && s->height != 0;
+    *mode = gop->mode->mode;
+    *modes = gop->mode->max_mode;
+    return NULL;
+}
+
+static void find_screen(struct screen *s)
+{
+    uint32_t mode = 0, modes = 0;
+    const char *why = probe_screen(s, &mode, &modes);
+    struct line l;
+
+    if (why != NULL) {
+        say(why);
+        return;
+    }
 
     begin(&l);
     add_text(&l, "the screen: ");
@@ -907,10 +988,118 @@ static void find_screen(struct screen *s)
     add_text(&l, " bytes a row, at ");
     add_hex(&l, s->addr, 16);
     add_text(&l, ", mode ");
-    add_dec(&l, gop->mode->mode);
+    add_dec(&l, mode);
     add_text(&l, " of ");
-    add_dec(&l, gop->mode->max_mode);
+    add_dec(&l, modes);
     send(&l);
+}
+
+/*------------------------------------------------------------------------
+ * The loader's own lines on the screen.
+ *----------------------------------------------------------------------*/
+
+#define GLYPH_W 8u
+#define GLYPH_H 16u
+
+static struct screen shown;     /* found before the first line */
+static uint32_t shown_rows;     /* lines drawn so far, wrapping */
+
+static uint32_t channel(uint8_t v, uint8_t at, uint8_t bits)
+{
+    uint32_t c = bits >= 8 ? (uint32_t)v << (bits - 8)
+                           : (uint32_t)v >> (8 - bits);
+
+    return c << at;
+}
+
+static uint32_t shade(const struct screen *s, uint8_t r, uint8_t g, uint8_t b)
+{
+    return channel(r, s->red_at, s->red_bits)
+         | channel(g, s->green_at, s->green_bits)
+         | channel(b, s->blue_at, s->blue_bits);
+}
+
+/*
+ * In the lower half, so that it never lands on the firmware console's own
+ * text where that one shows, and a whole row each - glyphs and the ground
+ * behind them - so nothing the firmware left there reads through. A line
+ * wider than the screen goes on in the rows below it; a full half starts
+ * again at its top.
+ */
+static void draw_line(const struct line *l)
+{
+    const struct screen *s = &shown;
+    uint32_t cols, first, rows, ink, paper;
+    unsigned i = 0;
+
+    if (!s->valid) {
+        return;
+    }
+
+    cols = s->width / GLYPH_W;
+    first = s->height / 2 / GLYPH_H;
+    rows = s->height / GLYPH_H - first;
+
+    if (cols == 0 || rows == 0) {
+        return;
+    }
+
+    ink = shade(s, 0xE6, 0xED, 0xF3);
+    paper = shade(s, 13, 17, 23);       /* the kernel's own ground */
+
+    do {
+        uint32_t row = first + shown_rows++ % rows;
+        uint32_t col, y, x;
+
+        for (col = 0; col < cols; col++) {
+            unsigned cp = i + col < l->n ? l->text[i + col] : ' ';
+            unsigned glyph = cp >= 0x20 && cp <= 0x7E ? cp - 0x20 : 0x7F - 0x20;
+            const unsigned char *bits = font_8x16 + glyph * GLYPH_H;
+
+            for (y = 0; y < GLYPH_H; y++) {
+                uint32_t *p = (uint32_t *)(uintptr_t)
+                    (s->addr + (uint64_t)(row * GLYPH_H + y) * s->pitch
+                     + (uint64_t)col * GLYPH_W * 4u);
+
+                for (x = 0; x < GLYPH_W; x++) {
+                    p[x] = (bits[y] & (0x80u >> x)) ? ink : paper;
+                }
+            }
+        }
+
+        i += cols;
+    } while (i < l->n);
+}
+
+/*
+ * The firmware's text console, made visible the way GRUB makes it: out of
+ * graphics mode where the console-control protocol exists, then light grey
+ * on black, and cleared. Returns what it had to change, to be said.
+ */
+static const char *console_ready(void)
+{
+    struct efi_console_control *control;
+    const char *said = NULL;
+    uint32_t mode;
+
+    if (boot->locate_protocol(&CONSOLE_CONTROL_GUID, NULL,
+                              (void **)&control) == EFI_SUCCESS
+        && control != NULL
+        && control->get_mode(control, &mode, NULL, NULL) == EFI_SUCCESS
+        && mode != CONSOLE_TEXT) {
+        said = control->set_mode(control, CONSOLE_TEXT) == EFI_SUCCESS
+             ? "the firmware's console was in graphics mode, and is in text "
+               "mode now"
+             : "the firmware's console is in graphics mode and would not "
+               "leave it";
+    }
+
+    if (sys->con_out != NULL) {
+        sys->con_out->set_attribute(sys->con_out, TEXT_LIGHTGRAY_ON_BLACK);
+        sys->con_out->clear_screen(sys->con_out);
+    }
+
+    return said;
 }
 
 /*------------------------------------------------------------------------
@@ -945,6 +1134,8 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     char *before_digits, *after_digits, *lost_digits, *disk_word;
     void *pool;
     struct mbi m;
+    const char *console_said;
+    uint32_t screen_mode, screen_modes;
 
     sys = table;
     boot = table->boot;
@@ -952,12 +1143,20 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     /* The five-minute watchdog would reset a machine waiting at a refusal. */
     boot->set_watchdog_timer(0, 0, 0, NULL);
 
+    /* Before the first line, so that the first line can be seen. */
+    console_said = console_ready();
+    probe_screen(&shown, &screen_mode, &screen_modes);
+
     begin(&l);
     add_text(&l, "Kosmos's own loader, on ");
     add_text16(&l, table->firmware_vendor);
     add_text(&l, " firmware revision ");
     add_hex(&l, table->firmware_revision, 8);
     send(&l);
+
+    if (console_said != NULL) {
+        say(console_said);
+    }
 
     /* The volume this file came from, which is where the kernel is. */
     status = boot->handle_protocol(image_handle, &LOADED_IMAGE_GUID,
@@ -967,6 +1166,14 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
         return refuse("the firmware will not say where this loader came from",
                       status);
     }
+
+    begin(&l);
+    add_text(&l, "this loader: ");
+    add_hex(&l, image->image_base, 8);
+    add_text(&l, "..");
+    add_hex(&l, image->image_base + image->image_bytes, 8);
+    add_text(&l, ", where the firmware put it");
+    send(&l);
 
     status = boot->handle_protocol(image->device, &FILE_SYSTEM_GUID,
                                    (void **)&volume);

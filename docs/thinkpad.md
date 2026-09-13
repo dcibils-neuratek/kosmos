@@ -942,6 +942,14 @@ the kernel's old range** - the fault's shape, on the machine that can be
 watched. The 32 MB refusal stays until this machine boots a bigger disk
 through it.
 
+**And on this machine, the same afternoon**: the committed stick showed a
+black panel and went back to the Boot Menu at a key press - the loader had
+refused, through a firmware console that shows nothing here. With the loader
+switching that console the way GRUB does and drawing its own lines, the same
+kernel booted to the desktop with nothing repaired, nothing lost and the disk
+the same, in the map GRUB saw. Why the first one refused is not known.
+`boot.md` §3 has both boots.
+
 ---
 
 ## 7. The three questions the machine answers in half an hour

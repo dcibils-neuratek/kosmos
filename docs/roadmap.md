@@ -328,6 +328,11 @@ the Pi", and the Pi is not here yet.
   scrollback itself through `ui.view` rather than through `ui.editor`, so
   it has no anchor and no cursor - and the honest fix is to lift that
   machinery out of the editor rather than to write it twice.
+- **`run_uefi.py` on a machine without OVMF crashes instead of skipping.**
+  `capture()` returns four values when it finds no firmware and `main`
+  unpacks two, so the `SKIP` it was written to print is a `ValueError`. Seen
+  while reading it on 13 September 2026, and put here rather than fixed in
+  passing.
 
 ---
 
@@ -404,6 +409,14 @@ half-drawn at that moment would fail exactly those three and leave 120 and
 page fault the only real fault and the other three its symptom.
 
 Seen once in six runs of the same image; not reproduced since.
+
+**Two scheduler checks fail now and then**, on AArch64, and each failure had
+three green runs of the same build beside it: `sched: the policy is pluggable`,
+twice, and `sched: the higher priority runs first`, twice - the second time in
+0.10.60's first `make prepush` on 13 September 2026. `state.md` has the two
+suspicions - the harness's load, and the two threads homed on different cores
+so that the lower runs before the higher is awake - and neither is measured.
+The next step is many runs with each thread's core printed.
 
 ---
 

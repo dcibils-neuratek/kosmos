@@ -25,6 +25,10 @@ So this boots the real artifact under OVMF - the same EDK II a ThinkPad's
 firmware is built from - and **checks the screen rather than the serial
 line**, because a machine whose framebuffer works stops talking to the
 serial line at stage six. That is the point: the picture is the result.
+
+Given a second image, whose kernel is zeros, it boots that one too, and the
+loader's refusal has to be on the screen while it waits for a key - drawn by
+the loader itself, because the ThinkPad's firmware console showed none of it.
 """
 
 import os
@@ -46,6 +50,14 @@ RED    = (204, 34, 51)          # the wordmark
 # The mode OVMF's GOP offers, which is *not* the 1920x1080 ramfb is asked
 # for - so the size alone says which of the two answered.
 LOADER_MODE = (1280, 800)
+
+# The loader's own lines, in the colour `draw_line` in `boot/efi/loader.c`
+# gives them, on the kernel's GROUND.
+LOADER_INK = (0xE6, 0xED, 0xF3)
+
+# Long enough for OVMF and the loader to reach a refusal under TCG, which
+# then waits for a key for ever.
+REFUSAL_AT = 15.0
 
 
 def firmware():
@@ -176,6 +188,7 @@ def share(pixels, colour):
 
 def main():
     iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-uefi.img"
+    refusal = sys.argv[2] if len(sys.argv) > 2 else None
     checks = 0
     fails = []
 
@@ -397,6 +410,22 @@ def main():
           + (handed or "no loader line"))
 
     #
+    # **And the disk, on the same terms.** The loader fingerprints it when it
+    # reads it off the stick and again once the firmware has let go, and
+    # leaves `same` or `diff` - or `none` when the stick carries no disk,
+    # which the loader's own line says. Until this check, a disk that changed
+    # in memory before Kosmos ran passed here: only the kernel's pages were
+    # held to account.
+    #
+    carried = any(l.startswith("kosmos-boot: the disk: 0x") for l in loader)
+    wanted = "the disk: same" if carried else "the disk: none"
+
+    check(handed.endswith(wanted),
+          "the kernel does not say `%s` after the loader %s: %s"
+          % (wanted, "read a disk" if carried else "found none",
+             handed or "no loader line"))
+
+    #
     # **And the kernel off the firmware's memory**, which is what moving it to
     # 16 MB was for. Under GRUB this boot printed `UNDER THIS KERNEL` three
     # times for OVMF's ACPI NVS at 8 MB, and nobody had asked what it meant.
@@ -409,6 +438,37 @@ def main():
           and "UNDER THE USERLAND IMAGE" not in serial,
           "memory the firmware keeps is under the kernel: "
           + next((l.strip() for l in serial.splitlines() if "UNDER" in l), "?"))
+
+    #
+    # **A refusal, on the screen.** The ThinkPad's first boot through this
+    # loader was a black panel that went back to the firmware's menu when a
+    # key was pressed: the loader had refused and said why, through a text
+    # console that machine's firmware did not show, and every check above
+    # passed because they all read the serial line. So a stick whose kernel
+    # is zeros is booted as well, and the refusal must be said and must be
+    # drawn: the ground and the ink of the loader's own lines in the lower
+    # half, where it draws them and where OVMF's console, with a refusal's
+    # few lines, does not reach.
+    #
+    if refusal is not None:
+        rframes, rserial = capture(refusal, (REFUSAL_AT,))
+
+        if rframes is None:
+            fails.append("the refusal stick gave no picture: %s" % rserial)
+        else:
+            rwidth, rheight, rpixels = rframes[0]
+            lower = rpixels[(rheight // 2) * rwidth * 3:]
+            ground_low = share(lower, GROUND)
+            ink_low = share(lower, LOADER_INK)
+
+            check("Press a key to return to the firmware" in rserial,
+                  "a stick whose kernel is zeros was not refused on the serial "
+                  "line: " + next((l.strip() for l in rserial.splitlines()
+                                   if "kosmos-boot:" in l), "no loader line"))
+            check(ground_low > 0.05 and ink_low > 0.005,
+                  "the loader's refusal is not drawn in the lower half of the "
+                  "screen: %.1f%% ground, %.2f%% ink"
+                  % (100.0 * ground_low, 100.0 * ink_low))
 
     if fails:
         print("FAIL: %d of %d checks booting through Kosmos's loader under "

@@ -9,8 +9,10 @@ The short version: **Kosmos has its own UEFI loader, `boot/efi/`, and it
 replaced GRUB on 13 September.** It claims the kernel's memory from the
 firmware by address, refuses on the screen what it cannot claim, checks the
 kernel byte for byte before and after the firmware lets go, repairs what
-changed and says so. The x86-64 kernel moved from 1 MB to 16 MB with it,
-because the firmware QEMU runs keeps memory under the old place.
+changed and says so - on the screen by its own hand as well as through the
+firmware's console, because the ThinkPad's console showed none of it. The
+x86-64 kernel moved from 1 MB to 16 MB with it, because the firmware QEMU runs
+keeps memory under the old place.
 
 AArch64 is not in this document: QEMU `virt` loads `build/kosmos.elf` at
 0x40080000 and jumps, and that has never been the problem.
@@ -30,7 +32,7 @@ GPT disk with one FAT32 EFI System Partition of 192 MB (the size is FAT32's,
 
 | file | what it is |
 | ---- | ---------- |
-| `\EFI\BOOT\BOOTX64.EFI` | the loader, about 32 KB |
+| `\EFI\BOOT\BOOTX64.EFI` | the loader, about 37 KB |
 | `\boot\kosmos.bin` | the kernel, a flat image with a Multiboot 2 header |
 | `\boot\kosmos.cmdline` | the kernel's command line, when `KOSMOS_ARGS` gave one |
 | `\boot\disk.img` | a kfs disk, when there is one; 32 MB at most for now |
@@ -117,6 +119,16 @@ can be watched.
 `boot/efi/loader.c`, `mbi.c` and `mbi.h`, and `trampoline.S`. What it does, in
 order, and why each step is there:
 
+0. **Makes itself seen.** Where the firmware has the console-control
+   protocol - older than UEFI and not in its specification - the loader asks
+   for text mode, then sets the console light grey on black and clears it. The
+   GUID and both calls are read out of GRUB 2.12's own `kernel.img`, and that
+   switch is how GRUB's lines reached the ThinkPad's screen when this loader's
+   first ones did not. It finds the framebuffer, and from then on **every line
+   is drawn by the loader itself as well**, in the lower half of the screen
+   with the kernel's 8x16 font on the kernel's ground, so a refusal can be read
+   on a machine whose firmware console shows nothing.
+
 1. **Reads the kernel's Multiboot 2 header out of the first 36 KB** of
    `kosmos.bin`, into the loader's own memory. `mb2_image_parse` in `mbi.c`
    finds where the image goes, what is loaded from the file and what is
@@ -160,21 +172,23 @@ order, and why each step is there:
 
 ```
 kosmos-boot: Kosmos's own loader, on EDK II firmware revision 0x00010000
-kosmos-boot: the kernel's place: 0x01000000..0x018c0000, 1280 KB claimed now and 7680 KB the firmware's until it lets go
-kosmos-boot: the kernel: 7916 KB in two copies, 1980 pages fingerprinted, entry 0x01001000
+kosmos-boot: this loader: 0x10000000..0x10029000, where the firmware put it
+kosmos-boot: the kernel's place: 0x01000000..0x01b47000, 3868 KB claimed now and 7680 KB the firmware's until it lets go
+kosmos-boot: the kernel: 10504 KB in two copies, 2627 pages fingerprinted, entry 0x01001000
 kosmos-boot: the disk: 0x79b3c000..0x7bb3c000, 32768 KB
 kosmos-boot: the screen: 1280x800, 5120 bytes a row, at 0x0000000080000000, mode 0 of 30
 kosmos-boot: both copies of the kernel are the file, page for page
-kosmos-boot: handing over: entry 0x01001000, information at 0x7c5cf000, trampoline at 0x7e3cd000
+kosmos-boot: handing over: entry 0x01001000, information at 0x7be38000, trampoline at 0x7e3cd000
 ```
 
 **And what the kernel says it was handed**, at boot stage 4:
 
 ```
 [4/12] physical memory
+       ...
        -> this kernel is inside the loader's 0x00900000..0x7ea2b000 (usable), of 23 entries
        -> a disk from the loader: 32768 KB at 0x79b3c000..0x7bb3c000, kept from the allocator
-       -> this kernel is 0x01000000..0x018c0000
+       -> this kernel is 0x01000000..0x01b47000
        -> the loader: kosmos-boot, 0 pages repaired before the firmware let go, 0 after, 0 lost; the disk: same
 ```
 
@@ -213,6 +227,35 @@ position-independent with hidden visibility and no FP or SIMD registers, and
 relocation in it is anything but PC-relative, so the image needs no fixing up
 wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 
+**On the ThinkPad, 13 September.** Two sticks, the same kernel and disk:
+
+| stick | disk | on the ThinkPad |
+| ----- | ---- | --------------- |
+| 0.10.59 as committed | 32 MB | a black panel, no text; a key press went back to the firmware's Boot Menu |
+| the same kernel with 0.10.60's loader, which draws its own lines | 32 MB | booted to the desktop |
+
+The black panel was a refusal: only `refuse()` waits for a key, and what it
+printed went through a console that machine does not show. **Why it refused
+is not known** - its reason never reached a screen, and the second loader
+differs only in what makes it seen. On the boot that worked, Kosmos's own USB
+driver needed a second Address Device for that stick, so a read error is one
+candidate; the loader growing by 5 KB is another. A refusal from here on says
+which.
+
+What the kernel was handed on the boot that worked, read off the photograph:
+
+```
+-> the userland image as the loader left it: 0x01022000..0x01a3cb34, as the build left it
+-> this kernel is inside the loader's 0x00100000..0x8e36f000 (usable), of 13 entries
+-> a disk from the loader: 32768 KB at 0x5d134000..0x5f134000, kept from the allocator
+-> the loader: kosmos-boot, 0 pages repaired before the firmware let go, 0 after, 0 lost; the disk: same
+```
+
+**Nothing was repaired and nothing lost**, in the map GRUB saw on that
+machine: usable from 1 MB to 0x8e36f000. The loader's own lines were not
+photographed - on a boot that works they last until the kernel draws - so
+whether that firmware has the console-control protocol is not known either.
+
 ---
 
 ## 4. Why the kernel is at 16 MB
@@ -238,8 +281,11 @@ address is.
 
 ## 5. Reading a boot on a machine with no serial port
 
-- **The loader's lines are on the screen** before the kernel's. Photograph
-  them if anything goes wrong.
+- **The loader's lines are on the screen twice** before the kernel's: at the
+  top through the firmware's console, where that console shows, and in the
+  lower half on a dark band the loader draws itself. Photograph them if
+  anything goes wrong. A black panel that goes back to the firmware's menu at
+  a key press is what a refusal looked like before the loader drew its own.
 - **A refusal waits for a key**, with the reason and the firmware's entries
   for the kernel's range on the screen. Nothing is loaded over them.
 - **"N pages of the kernel changed in memory and were repaired"** before
@@ -263,14 +309,19 @@ address is.
   structure built by `mbi.c` and read back with the kernel's own `mb2_find` and
   `mb2_framebuffer_from`. `testing.md` §18.42 has the controls.
 - **`tools/run_uefi.py`**, in `make test`: the stick `mkusb_image.py` makes,
-  booted under OVMF on an xHCI controller as a USB drive - the loader's lines,
-  the kernel's line about what it was handed, the kernel at 16 MB, nothing of
-  the firmware's under it, and the screen, ACPI, SMBIOS and the other
-  processors through that path.
+  with a 4 MB disk `kfs.lua` made, booted under OVMF on an xHCI controller as
+  a USB drive - the loader's lines, the kernel's line about what it was
+  handed, `the disk: same` in it (`none` for a stick without one), the kernel
+  at 16 MB, nothing of the firmware's under it, and the screen, ACPI, SMBIOS
+  and the other processors through that path. **And a refusal**: a second
+  stick, whose kernel is zeros, must be refused on the serial line and drawn
+  on in the lower half of the screen by the loader itself.
 
 **What QEMU cannot show**: the ThinkPad's own map at the moment the loader
-runs, and whether its firmware writes into memory it has handed out. The
-loader's lines on that machine are the measurement.
+runs, whether its firmware writes into memory it has handed out, and the
+console-control switch - under OVMF the loader never has to make it, so that
+call has run only on the ThinkPad, if at all. The loader's lines on that
+machine are the measurement.
 
 ---
 
@@ -283,3 +334,5 @@ loader's lines on that machine are the measurement.
 - **Secure Boot** is not supported; the loader is unsigned, as GRUB was.
 - **The screen is the firmware's current mode.** The loader does not choose
   one.
+- **Why the first ThinkPad stick through this loader refused** is not known;
+  §3 has both boots.
