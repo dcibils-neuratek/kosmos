@@ -1,0 +1,263 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  How Kosmos's Music app should look, before any of it is built: VOX for the
+  Mac as the reference Diego gave, on 14 September 2026 - now playing on top,
+  the library underneath, a mini player, and WAV, MP3 and FLAC. Every track
+  but Diego's Basket Case is an example.
+-->
+<title>Kosmos Music</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The Kosmos desktop, as drives.html draws it. */
+    --k-desk: #3d63b8;
+    --k-tab: #f2c230;
+    --k-tab-ink: #3a2e00;
+
+    /* The player's own look, VOX's: the same in either page theme. */
+    --p-ground: #242426;
+    --p-panel: #2e2e31;
+    --p-raised: #38383c;
+    --p-line: #3f3f44;
+    --p-ink: #ececec;
+    --p-dim: #9a9aa0;
+    --p-faint: #6d6d73;
+    --p-accent: #f28a2e;
+    --p-accent-dim: #7a4a1f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b;
+      --ink: #e6edf3;
+      --muted: #97a3b4;
+      --rule: #283241;
+      --accent: #85a8ff;
+      --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b;
+    --ink: #e6edf3;
+    --muted: #97a3b4;
+    --rule: #283241;
+    --accent: #85a8ff;
+    --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 900px; margin: 0 auto; padding: 44px 22px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 60ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  .desk { background: var(--k-desk); border-radius: 10px; padding: 26px 22px 30px; overflow-x: auto; margin-top: 20px; display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .tab { display: inline-block; background: var(--k-tab); color: var(--k-tab-ink); font: 500 13px/1.35 var(--mono); padding: 4px 16px 3px 10px; border: 1px solid #b08a10; border-bottom: 0; }
+
+  /* ---- the player window ---- */
+  .player { width: 380px; background: var(--p-ground); color: var(--p-ink); border: 1px solid #111; box-shadow: 3px 3px 0 rgba(0,0,0,.3); font: 13px/1.35 var(--body); }
+  .now { padding: 12px 14px 0; display: grid; grid-template-columns: 78px 1fr; gap: 12px; }
+  .art { width: 78px; height: 78px; border-radius: 3px; display: grid; place-items: center; font: 600 22px/1 var(--display); color: rgba(255,255,255,.9); }
+  .art.gd { background: linear-gradient(135deg, #3b3b3b 0 30%, #b7412e 30% 58%, #e8c24a 58%); }
+  .art.small { width: 44px; height: 44px; font-size: 13px; }
+  .art.df { background: linear-gradient(160deg, #1b1b1b, #6e5a2c); }
+  .art.wv { background: repeating-linear-gradient(90deg, #2c4a6e 0 4px, #4f7fd8 4px 8px); }
+  .art.nb { background: linear-gradient(135deg, #2f8a55, #9be38b); }
+  .art.none { background: var(--p-raised); color: var(--p-faint); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 5px; }
+  .chip { font: 500 10.5px/1 var(--mono); color: var(--p-dim); border: 1px solid var(--p-line); padding: 3px 5px; border-radius: 3px; white-space: nowrap; }
+  .chip.fmt { color: var(--p-accent); border-color: var(--p-accent-dim); }
+  .who { color: var(--p-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .times { display: flex; justify-content: space-between; color: var(--p-dim); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; padding: 8px 14px 3px; }
+  .seek { position: relative; height: 4px; margin: 0 14px; background: var(--p-raised); border-radius: 2px; }
+  .seek i { position: absolute; inset: 0 auto 0 0; width: 38%; background: var(--p-accent); border-radius: 2px; }
+  .seek b { position: absolute; left: 38%; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; background: #fff; border-radius: 50%; box-shadow: 0 0 0 3px rgba(242,138,46,.35); }
+  .transport { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; padding: 8px 8px 10px; border-bottom: 1px solid var(--p-line); }
+  .transport svg { width: 18px; height: 18px; justify-self: center; fill: var(--p-ink); }
+  .transport svg.big { width: 30px; height: 30px; }
+  .transport svg.dim { fill: var(--p-faint); }
+  .transport svg.on { fill: var(--p-accent); }
+  .vol { display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; color: var(--p-dim); font-size: 11px; }
+  .vol .bar { flex: 1; height: 3px; background: var(--p-raised); position: relative; }
+  .vol .bar i { position: absolute; inset: 0 auto 0 0; width: 72%; background: var(--p-dim); }
+  .meter { display: flex; gap: 2px; align-items: flex-end; height: 12px; }
+  .meter span { width: 3px; background: var(--p-accent); }
+
+  .sources { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--p-line); }
+  .sources div { text-align: center; padding: 8px 2px 6px; color: var(--p-dim); font-size: 11px; border-bottom: 2px solid transparent; }
+  .sources div.on { color: var(--p-ink); border-bottom-color: var(--p-accent); }
+  .sources div.later { color: var(--p-faint); }
+  .sources svg { display: block; width: 18px; height: 18px; margin: 0 auto 3px; fill: currentColor; }
+  .sub { display: flex; gap: 16px; align-items: center; padding: 9px 14px 6px; font-size: 12.5px; color: var(--p-dim); }
+  .sub .on { color: var(--p-accent); }
+  .find { margin-left: auto; background: var(--p-panel); border: 1px solid var(--p-line); color: var(--p-faint); padding: 2px 8px; border-radius: 3px; font-size: 11.5px; }
+
+  .tracks { list-style: none; margin: 0; padding: 0 0 6px; }
+  .tracks li { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 7px 14px; border-top: 1px solid var(--p-line); }
+  .tracks li.playing { background: var(--p-panel); box-shadow: inset 3px 0 0 var(--p-accent); }
+  .tracks .t { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tracks .a { color: var(--p-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tracks .r { text-align: right; font: 11.5px var(--mono); color: var(--p-dim); font-variant-numeric: tabular-nums; }
+  .tracks .r .chip { display: inline-block; margin-top: 3px; }
+  .foot { display: flex; justify-content: space-between; padding: 6px 14px 8px; color: var(--p-faint); font-size: 11px; border-top: 1px solid var(--p-line); }
+
+  /* ---- the mini player and the Deskbar ---- */
+  .side { display: flex; flex-direction: column; gap: 22px; }
+  .mini { width: 330px; background: var(--p-ground); color: var(--p-ink); border: 1px solid #111; box-shadow: 3px 3px 0 rgba(0,0,0,.3); font: 13px/1.35 var(--body); }
+  .mini .row { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px 8px; }
+  .mini .ctl { display: flex; gap: 10px; }
+  .mini .ctl svg { width: 16px; height: 16px; fill: var(--p-ink); }
+  .mini .seek { margin: 0 12px 10px; }
+  .deskbar { width: 330px; background: #f2c230; border: 1px solid #b08a10; font: 12px/1 var(--mono); color: #3a2e00; display: flex; align-items: center; gap: 10px; padding: 5px 8px; }
+  .deskbar .np { background: #262628; color: #ececec; padding: 4px 8px; display: flex; gap: 8px; align-items: center; border-radius: 2px; }
+  .deskbar .np i { font-style: normal; color: #f28a2e; }
+  .deskbar .clock { margin-left: auto; }
+  .caption { color: #eaf0ff; font-size: 12px; margin-top: 6px; max-width: 330px; }
+
+  .table-wrap { overflow-x: auto; }
+  .paths { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
+  .paths th, .paths td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .paths th { font: 600 13px/1.3 var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .state { font: 500 12px/1.2 var(--mono); padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+  .state.built { background: #dff3e6; color: #1f6b3e; }
+  .state.new { background: #fbefdc; color: #8a4f00; }
+  .state.later { background: #eceef2; color: #5b6677; }
+
+  ul.keys { list-style: none; padding: 0; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 22px; max-width: 72ch; }
+  ul.keys li { display: flex; gap: 10px; align-items: baseline; border-bottom: 1px solid var(--rule); padding: 5px 0; }
+  ul.keys kbd { font: 500 12px var(--mono); background: var(--card); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px; min-width: 64px; text-align: center; }
+
+  ol.decide { padding-left: 22px; max-width: 66ch; }
+  ol.decide li { margin-bottom: 10px; }
+  ol.decide b { display: block; }
+  ol.decide span { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos Music</h1>
+  <p class="note" style="margin:-2px 0 16px">A design, 14 September 2026, for Diego to change before any of it is written. The reference is <b>VOX</b> for the Mac. Basket Case is Diego's own file, on the disk now; every other track is an example.</p>
+  <p class="lede">What is playing on top, with what the file is and where you are in it; your music underneath, found by what it is rather than where it sits; and a mini player for when the music is all you want.</p>
+
+  <h2>The window</h2>
+  <p>VOX's shape, kept: the format across the top, the title large, a thin orange bar you can drag, the controls in one row, then where the music comes from and the list. What changes is where the list comes from - Kosmos's own attributes, so the Library is every song on <code>/home</code> and on any drive plugged in.</p>
+
+  <div class="desk">
+    <div>
+      <span class="tab">Music</span>
+      <div class="player">
+        <div class="now">
+          <div class="art gd">GD</div>
+          <div style="min-width:0">
+            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">128 kbps</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
+            <div class="who">Green Day &middot; Dookie</div>
+            <div class="title">Basket Case</div>
+          </div>
+        </div>
+        <div class="times"><span>1:52</span><span class="meter"><span style="height:5px"></span><span style="height:11px"></span><span style="height:8px"></span><span style="height:12px"></span><span style="height:6px"></span></span><span>-3:07</span></div>
+        <div class="seek"><i></i><b></b></div>
+        <div class="transport">
+          <svg class="dim" viewBox="0 0 24 24" aria-label="shuffle"><path d="M4 7h3l7 10h3v-2l3 3-3 3v-2h-4L6 9H4zm13-2V3l3 3-3 3V7h-3l-2.2 3.1-1.2-1.7L13 5z"/></svg>
+          <svg viewBox="0 0 24 24" aria-label="previous"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg>
+          <svg class="big" viewBox="0 0 24 24" aria-label="pause"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
+          <svg viewBox="0 0 24 24" aria-label="next"><path d="M16 5h2v14h-2zM5 5l10 7-10 7z"/></svg>
+          <svg class="on" viewBox="0 0 24 24" aria-label="repeat"><path d="M7 7h10V4l4 4-4 4V9H7v3H5V9a2 2 0 0 1 2-2zm10 10H7v3l-4-4 4-4v3h10v-3h2v3a2 2 0 0 1-2 2z"/></svg>
+          <svg class="dim" viewBox="0 0 24 24" aria-label="queue"><path d="M4 6h12v2H4zm0 5h12v2H4zm0 5h8v2H4zm14-1v-5l5 3.5z"/></svg>
+          <svg class="dim" viewBox="0 0 24 24" aria-label="mini player"><path d="M4 5h16v14H4zm2 8v4h12v-4z"/></svg>
+        </div>
+        <div class="vol"><svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#9a9aa0"><path d="M4 9h4l5-4v14l-5-4H4z"/></svg><span class="bar"><i></i></span></div>
+
+        <div class="sources">
+          <div class="on"><svg viewBox="0 0 24 24"><path d="M9 3h11v13.5a3.5 3.5 0 1 1-2-3.2V7h-7v11.5A3.5 3.5 0 1 1 9 15.3z"/></svg>Library</div>
+          <div><svg viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3z"/></svg>Folders</div>
+          <div><svg viewBox="0 0 24 24"><path d="M3 5h14v2H3zm0 4h14v2H3zm0 4h9v2H3zm12 0 6 3.5-6 3.5z"/></svg>Playlists</div>
+          <div><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>Queue</div>
+          <div class="later"><svg viewBox="0 0 24 24"><path d="M12 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM6.3 6.3l1.4 1.4a6 6 0 0 0 0 8.6l-1.4 1.4a8 8 0 0 1 0-11.4zm11.4 0a8 8 0 0 1 0 11.4l-1.4-1.4a6 6 0 0 0 0-8.6z"/></svg>Radio</div>
+        </div>
+        <div class="sub"><span class="on">Songs</span><span>Albums</span><span>Artists</span><span class="find">Search</span></div>
+        <ul class="tracks">
+          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">4:59<br><span class="chip fmt">MP3</span></div></li>
+          <li><div class="art df small">EA</div><div style="min-width:0"><div class="t">Example Track</div><div class="a">Example Artist &middot; Example Album</div></div><div class="r">6:09<br><span class="chip fmt">FLAC</span></div></li>
+          <li><div class="art wv small">WV</div><div style="min-width:0"><div class="t">Kosmos startup chime</div><div class="a">Kosmos &middot; /home/sounds</div></div><div class="r">0:03<br><span class="chip fmt">WAV</span></div></li>
+          <li><div class="art none small">?</div><div style="min-width:0"><div class="t">recording-2026-09-14</div><div class="a">no tags &middot; named by its file</div></div><div class="r">1:12<br><span class="chip fmt">WAV</span></div></li>
+        </ul>
+        <div class="foot"><span>4 songs &middot; 12 min</span><span>on /home and 1 drive</span></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div>
+        <span class="tab">Music</span>
+        <div class="mini">
+          <div class="row"><div class="art gd small">GD</div><div style="min-width:0"><div class="title" style="font-size:13.5px">Basket Case</div><div class="who">Green Day</div></div><div class="ctl"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3 7 10-7v14z"/></svg><svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5l10 7-10 7z"/></svg></div></div>
+          <div class="seek"><i></i></div>
+        </div>
+        <div class="caption">The mini player: the same window with its list folded away, as VOX folds.</div>
+      </div>
+      <div>
+        <div class="deskbar"><span>Kosmos</span><span class="np"><i>&#9654;</i> Basket Case &middot; 1:52</span><span class="clock">22:52</span></div>
+        <div class="caption">And in the Deskbar, as a replicant: what is playing, and a click to pause.</div>
+      </div>
+    </div>
+  </div>
+  <p class="note">A drawing, not a screenshot. The cover is drawn from the file's tags when it has a picture, and from the first letters of the artist when it has none; nothing here is album artwork. Basket Case's length is its size at 128 kbps, which is how the player estimates today.</p>
+
+  <h2>What it plays</h2>
+  <p>Every format ends in the same place: sixteen-bit samples at the sound device's own rate, 44.1 kHz, which is all the audio server takes. <code>sys.pcm</code> already converts rate and channels on the way, in C, by interpolating between samples.</p>
+  <div class="table-wrap">
+    <table class="paths">
+      <tr><th>format</th><th>decoded by</th><th>its tags</th><th>state</th></tr>
+      <tr><td>MP3</td><td>minimp3, public domain, already in the tree</td><td>ID3v2: title, artist, album, genre, year, track, and the cover</td><td><span class="state built">plays</span> tags new</td></tr>
+      <tr><td>WAV</td><td><code>wav.lua</code>, already in the tree</td><td>the <code>LIST INFO</code> chunk, when there is one</td><td><span class="state built">plays</span> tags new</td></tr>
+      <tr><td>FLAC</td><td>a decoder in C: vendored or written, for Diego to choose</td><td>Vorbis comments, and a <code>PICTURE</code> block for the cover</td><td><span class="state new">new</span></td></tr>
+    </table>
+  </div>
+  <p class="note"><b>FLAC's catch</b>: much of it is 24-bit, and <code>sys.pcm</code> takes 8 and 16 bits today, so it grows a 24-bit path. A 96 kHz file is brought down to the device's rate by the same interpolation, which is fine for listening and not what a hi-res purist wants; a proper resampler can come after, measured.</p>
+
+  <h2>Your music, found by what it is</h2>
+  <p>The first time the player meets a file it reads the file's tags and writes them onto it as <b>attributes</b> - artist, album, title, genre, length - the way BeOS and Haiku do. The Library is then a query rather than a folder walk: every song, wherever it is. Tracker shows the same attributes as columns, and a playlist can be a saved query, such as every song by one artist, that fills itself as music arrives.</p>
+
+  <h2>From the keyboard</h2>
+  <ul class="keys">
+    <li><kbd>Space</kbd> play and pause</li>
+    <li><kbd>&larr; &rarr;</kbd> back and forward five seconds</li>
+    <li><kbd>Super-&larr; &rarr;</kbd> previous and next song</li>
+    <li><kbd>Control-F</kbd> search the list</li>
+    <li><kbd>Control-M</kbd> the mini player</li>
+    <li><kbd>&uarr; &darr;</kbd> the volume</li>
+  </ul>
+
+  <h2>Left for later</h2>
+  <p><b>Radio</b> is drawn and greyed: internet radio is an MP3 stream over HTTP, which the network stack can carry and nothing reads yet. Crossfade, the equaliser - on the roadmap already, in the mixer - and gapless playback come after the player has been used for a while.</p>
+
+  <h2>For you to decide</h2>
+  <ol class="decide">
+    <li><b>Its own dark look, or the desktop's theme?</b><span>Dark and orange here, as VOX is, whatever the desktop is wearing. Every Kosmos theme today is light, so this would be the first app with a look of its own.</span></li>
+    <li><b>FLAC: vendor a decoder, or write one?</b><span>dr_flac is a single public-domain file; writing one from the specification is the FAT reader's choice again. Vendoring means a download, which needs your yes.</span></li>
+    <li><b>Tags written onto your files as attributes: yes?</b><span>It is what makes the Library a query. It writes to the file's attributes, never to the music inside it, and FAT and exFAT drives - read only - would be read each time instead.</span></li>
+    <li><b>The Deskbar replicant: now, or after the player?</b><span>After, here.</span></li>
+  </ol>
+</main>
+</body>
+</html>

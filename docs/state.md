@@ -65,6 +65,12 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
   ten lessons and fifteen apps in `/home/development`, from a window with a
   button to a music player and a paint program. Planned in `roadmap.md`, as
   the fourth of *Next, in this order*, and not started.
+- **Music, redesigned after VOX, drawn in `docs/music.html`** - Diego, 14
+  September, with WAV, MP3 and FLAC. Four choices are his before any of it is
+  written: its own dark look or the desktop's theme, FLAC's decoder vendored
+  or written, tags written onto files as attributes, and the Deskbar
+  replicant now or later. Found while drawing it: nothing reads tags yet,
+  `sys.pcm` takes 8 and 16 bits, and the device runs at 44.1 kHz.
 - **The brightness keys are on the roadmap**, Diego's yes on 14 September:
   beside the battery indicator, the third of *Next, in this order*, and
   starting from the same DSDT. First, a log line for every key the keyboard

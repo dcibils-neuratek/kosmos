@@ -513,7 +513,15 @@ the Pi", and the Pi is not here yet.
 - Doom's sound, behind a hook that already exists.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
-- Seeking in the music player: the bar is drawn and cannot be dragged.
+- **Music, as VOX is**, Diego's, 14 September: "the music player is really
+  barebones now. can we improve the functionality and style like vox player
+  for mac?" Designed in `docs/music.html`: what is playing on top with its
+  format, a bar you can drag, one row of controls, a Library found by
+  attributes written from each file's tags, playlists as saved queries, a
+  mini player and a Deskbar replicant - and FLAC beside WAV and MP3, which
+  needs a decoder and a 24-bit path in `sys.pcm`. Four choices are Diego's
+  first, on the page. Seeking, which this line used to be on its own, is part
+  of it.
 - A markdown viewer, for manuals inside the system.
 - **Selection in the terminal**, which is where people most want to copy
   from and is the one window the clipboard cannot reach. It draws its
