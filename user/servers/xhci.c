@@ -168,6 +168,7 @@
 #define TRB_SLOT(s)         ((uint32_t)(s) << 24)
 #define TRB_SLOT_OF(w)      (((w) >> 24) & 0xFFu)
 #define TRB_ENDPOINT_OF(w)  (((w) >> 16) & 0x1Fu)       /* word 3 of a transfer */
+#define TRB_ENDPOINT(e)     ((uint32_t)(e) << 16)       /* ...and of a command */
 #define TRB_CODE_OF(w)      (((w) >> 24) & 0xFFu)       /* word 2 of an event */
 #define TRB_LEFT_OF(w)      ((w) & 0xFFFFFFu)           /* ...and bytes not sent */
 
@@ -181,6 +182,9 @@
 #define TRB_ADDRESS_DEVICE  11u
 #define TRB_CONFIGURE       12u
 #define TRB_EVALUATE        13u
+#define TRB_RESET_ENDPOINT  14u
+#define TRB_STOP_ENDPOINT   15u
+#define TRB_SET_DEQUEUE     16u
 #define TRB_NOOP            23u
 #define TRB_TRANSFER        32u
 #define TRB_COMPLETION      33u
@@ -189,6 +193,7 @@
 /* Completion codes, Table 6-90. */
 #define CC_SUCCESS          1u
 #define CC_SHORT_PACKET     13u
+#define CC_CONTEXT_STATE    19u
 
 #define PORTS_MAX           255u        /* MaxPorts is eight bits */
 #define CAPS_MAX            64u         /* a list longer than this is a loop */
@@ -329,13 +334,16 @@ struct mouse {
 };
 
 /*
- * A stick: its two bulk endpoints' context indexes and rings, and the tag its
- * next command goes out with - which the stick sends back with the status, so
- * an answer can be told from the answer to something else.
+ * A stick: its two bulk endpoints' context indexes and rings, its interface
+ * for Bulk-Only's class reset, and the tag its next command goes out with -
+ * which the stick sends back with the status, so an answer can be told from
+ * the answer to something else. `spoil` is a test's (`transact_once`).
  */
 struct stick {
     unsigned      out_dci;
     unsigned      in_dci;
+    uint8_t       interface;
+    bool          spoil;
     uint32_t      tag;
     struct ring   out;
     struct ring   in;
@@ -1180,6 +1188,8 @@ static const char *completion_name(uint32_t code)
     case 7u: return "Resource Error";
     case 8u: return "Bandwidth Error";
     case 9u: return "No Slots Available Error";
+    case 19u: return "Context State Error";
+    case 26u: return "Stopped";
     default: return "completion code";
     }
 }
@@ -1463,10 +1473,11 @@ static bool control_in(struct controller *c, struct device *d,
 }
 
 /*
- * A control transfer with nothing to read or write - SET_CONFIGURATION, and
- * HID's SET_PROTOCOL: Setup with a length of 0 and a Transfer Type of no data
- * stage, which is 0 (Table 6-26), then a Status stage that is IN, because
- * with no data stage it is the device that answers (Table 4-7).
+ * A control transfer with nothing to read or write - SET_CONFIGURATION,
+ * HID's SET_PROTOCOL, CLEAR_FEATURE and Bulk-Only's reset: Setup with a
+ * length of 0 and a Transfer Type of no data stage, which is 0 (Table 6-26),
+ * then a Status stage that is IN, because with no data stage it is the
+ * device that answers (Table 4-7).
  */
 static bool control_nodata(struct controller *c, struct device *d,
                            uint32_t request, uint16_t value, uint16_t index)
@@ -1489,18 +1500,24 @@ static bool control_nodata(struct controller *c, struct device *d,
  * A descriptor's type is wValue's high byte (Table 9-5). A HID class
  * descriptor is GET_DESCRIPTOR asked of the interface instead - 10000001,
  * the interface in wIndex - and the Report descriptor is its type 0x22
- * (HID 1.11 7.1, 7.1.1).
+ * (HID 1.11 7.1, 7.1.1). CLEAR_FEATURE to an endpoint is 00000010, with
+ * ENDPOINT_HALT in wValue and the endpoint's address in wIndex (9.4.1, Table
+ * 9-6); Bulk-Only Transport's class reset is 00100001 and FFh, to the stick's
+ * interface (Bulk-Only 1.0 3.1).
  */
 #define GET_DESCRIPTOR      (0x80u | (6u << 8))
 #define GET_HID_DESCRIPTOR  (0x81u | (6u << 8))
 #define SET_CONFIGURATION   (0x00u | (9u << 8))
 #define SET_PROTOCOL        (0x21u | (0x0Bu << 8))
+#define CLEAR_FEATURE       (0x02u | (1u << 8))
+#define MASS_STORAGE_RESET  (0x21u | (0xFFu << 8))
 #define DESC_DEVICE         0x0100u
 #define DESC_CONFIGURATION  0x0200u
 #define DESC_STRING         0x0300u
 #define DESC_REPORT         0x2200u
 #define PROTOCOL_BOOT       0u          /* 7.2.6: 0 boot, 1 report */
 #define PROTOCOL_REPORT     1u
+#define ENDPOINT_HALT       0u
 
 /*
  * A string descriptor as ASCII: UTF-16LE after a two-byte header, anything
@@ -1939,8 +1956,8 @@ static void say_descriptor(const struct controller *c, unsigned port,
  * comes back short - then the endpoint's doorbell, its context index the
  * target, and the Transfer Event for that TRB. `moved` is how many bytes
  * went: the length, less what the event says was left. True for Success and
- * for a short IN; anything else leaves the code in `last_code`, and the
- * endpoint halted, which nothing here clears yet.
+ * for a short IN; anything else leaves the code in `last_code` - and after a
+ * stall or a transaction error the endpoint halted, which `reset_pipe` clears.
  */
 static bool bulk(struct controller *c, unsigned slot, unsigned dci,
                  struct ring *r, uint64_t bus, unsigned length,
@@ -2010,25 +2027,29 @@ static const char *named(const char *command, const char *part)
 }
 
 /*
- * **One SCSI command, through Bulk-Only Transport** (5.1 to 5.3.3): its
+ * **One SCSI command, through Bulk-Only Transport** (5.1 to 5.3.3), once: its
  * wrapper out; when it expects data, up to `length` bytes in, copied to
  * `into`, with how many came in `got`; then its status in, held to what 6.3
  * asks of a host by `bot_status_of`.
  *
  * NULL when the status says what happened - `*status` passed, or failed, which
  * REQUEST SENSE can explain - and otherwise the step that did not, for
- * `say_failure`. A stall on either endpoint, a status that is not valid or not
- * meaningful, and a phase error are what a host answers with a Reset Recovery
- * (5.3.4, 6.5). That is step 5b; until it lands the stick is said and left.
+ * `say_failure`. The data is copied out before the status is read, because
+ * both come through the device's buffer page.
  *
- * The data is copied out before the status is read, because both come through
- * the device's buffer page.
+ * **`spoil` is a test's, and nothing else's.** QEMU's stick stalls nothing a
+ * driver sends it well, and nothing in QEMU can make it; a wrapper with the
+ * wrong signature it stalls at once (`hw/usb/dev-storage.c`). So a machine
+ * started with `opt/kosmos/stickfault=signature` sends each stick's first
+ * wrapper with its signature's first byte turned over, and `run_x86.py`'s
+ * `usb` watches the recovery. The driver says so when it takes the option, so
+ * a log with that stall in it also says why.
  */
-static const char *transact(struct controller *c, struct device *d,
-                            struct stick *s, const char *command,
-                            const uint8_t *cdb, unsigned cdb_length,
-                            uint8_t *into, unsigned length, unsigned *got,
-                            enum bot_status *status)
+static const char *transact_once(struct controller *c, struct device *d,
+                                 struct stick *s, const char *command,
+                                 const uint8_t *cdb, unsigned cdb_length,
+                                 uint8_t *into, unsigned length,
+                                 unsigned *got, enum bot_status *status)
 {
     uint8_t *b = d->buffer;
     uint32_t tag = ++s->tag, residue;
@@ -2037,6 +2058,11 @@ static const char *transact(struct controller *c, struct device *d,
     *got = 0;
     *status = BOT_NOT_VALID;
     (void)bot_wrap(b, tag, length, length > 0u, 0, cdb, cdb_length);
+
+    if (s->spoil) {
+        b[0] ^= 0xFFu;
+        s->spoil = false;
+    }
 
     if (!bulk(c, d->slot, s->out_dci, &s->out, d->buffer_bus, BOT_CBW_LENGTH,
               &moved) || moved != BOT_CBW_LENGTH) {
@@ -2072,6 +2098,117 @@ static const char *transact(struct controller *c, struct device *d,
     default:
         return named(command, "'s status, which is not a valid one");
     }
+}
+
+/*
+ * **One endpoint made usable again**, from whatever a failure left it in, by
+ * xHCI 1.2 4.6.8's "reset a pipe" in its order. Reset Endpoint takes a Halted
+ * endpoint to Stopped; one that is not halted - a transfer that never
+ * answered, or a status that was not valid - is refused with a Context State
+ * Error, and stopped with Stop Endpoint instead (4.6.9). Then the device's
+ * halt is cleared, ENDPOINT_HALT to the endpoint's address (USB 2.0 9.4.1),
+ * and the controller's dequeue pointer is moved to where the next TRB will
+ * go, with the cycle bit it will carry (4.6.10) - so nothing left on the ring
+ * from before is tried again. NULL when it worked, and otherwise the step.
+ */
+static const char *reset_pipe(struct controller *c, struct device *d,
+                              struct ring *r, unsigned dci, uint8_t address,
+                              const char *which)
+{
+    uint64_t next = r->bus + (uint64_t)r->enqueue * 16u;
+    uint32_t target = TRB_ENDPOINT(dci) | TRB_SLOT(d->slot);
+    uint32_t done[4];
+
+    if (!command(c, 0, 0, TRB_TYPE(TRB_RESET_ENDPOINT) | target, done)) {
+        if (c->last_code != CC_CONTEXT_STATE) {
+            return named(which, "'s Reset Endpoint");
+        }
+
+        if (!command(c, 0, 0, TRB_TYPE(TRB_STOP_ENDPOINT) | target, done)
+            && c->last_code != CC_CONTEXT_STATE) {
+            return named(which, "'s Stop Endpoint");
+        }
+    }
+
+    if (!control_nodata(c, d, CLEAR_FEATURE, ENDPOINT_HALT, address)) {
+        return named(which, "'s CLEAR_FEATURE");
+    }
+
+    if (!command(c, (uint32_t)next | (r->cycle == TRB_C ? 1u : 0u),
+                 (uint32_t)(next >> 32), TRB_TYPE(TRB_SET_DEQUEUE) | target,
+                 done)) {
+        return named(which, "'s Set TR Dequeue Pointer");
+    }
+
+    return NULL;
+}
+
+/*
+ * **Reset Recovery** (Bulk-Only 1.0 5.3.4): the class reset to the stick's
+ * interface (3.1), then the halt cleared on bulk IN and then on bulk OUT - on
+ * the controller as well as the stick, which is `reset_pipe`. What a host does
+ * after a stall, a status that is not valid, or a phase error (6.4 to 6.6);
+ * done here after a transfer that never answered as well, because the other
+ * choice is a stick left in the middle of a command.
+ */
+static const char *recover(struct controller *c, struct device *d,
+                           struct stick *s)
+{
+    const char *failed;
+
+    if (!control_nodata(c, d, MASS_STORAGE_RESET, 0, s->interface)) {
+        return "the Bulk-Only Mass Storage Reset";
+    }
+
+    failed = reset_pipe(c, d, &s->in, s->in_dci,
+                        (uint8_t)(0x80u | (s->in_dci / 2u)), "bulk IN");
+
+    if (failed == NULL) {
+        failed = reset_pipe(c, d, &s->out, s->out_dci,
+                            (uint8_t)(s->out_dci / 2u), "bulk OUT");
+    }
+
+    return failed;
+}
+
+/*
+ * **A command, and a second chance.** `transact_once`; and when no status
+ * came back that says what happened, the failure is said, the stick is put
+ * through Reset Recovery, and the command is sent once more - so one stall is
+ * a line in the log rather than a stick left unused. A second failure is the
+ * caller's to say. A command the stick answered with a failed status is not
+ * the transport's fault and is not sent again: `say_why_failed` asks why.
+ */
+static const char *transact(struct controller *c, struct device *d,
+                            struct stick *s, const char *command,
+                            const uint8_t *cdb, unsigned cdb_length,
+                            uint8_t *into, unsigned length, unsigned *got,
+                            enum bot_status *status, struct say_line *line)
+{
+    const char *failed = transact_once(c, d, s, command, cdb, cdb_length,
+                                       into, length, got, status);
+
+    if (failed == NULL) {
+        return NULL;
+    }
+
+    say_failure(c, d->port, failed, ", so the stick is reset", line);
+    failed = recover(c, d, s);
+
+    if (failed != NULL) {
+        return failed;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": the stick is reset, and the ");
+    say_text(line, command);
+    say_text(line, " sent again");
+    say_send(console, line);
+
+    return transact_once(c, d, s, command, cdb, cdb_length, into, length, got,
+                         status);
 }
 
 /* An ASCII field of INQUIRY's data in quotes: its padding off the end, and
@@ -2114,6 +2251,43 @@ static void say_sense(struct say_line *line, const struct scsi_sense *sense)
 }
 
 /*
+ * A command the stick failed, and why. REQUEST SENSE is what a failed command
+ * leaves its reason in, so it is asked first, before the line is begun; the
+ * line says the command and, when what came back is sense data, the stick's
+ * reason for it.
+ */
+static void say_why_failed(struct controller *c, struct device *d,
+                           struct stick *s, const char *command,
+                           struct say_line *line)
+{
+    uint8_t cdb[16], data[SCSI_SENSE_LENGTH];
+    struct scsi_sense sense;
+    enum bot_status status;
+    unsigned got;
+    bool known;
+
+    memset(&sense, 0, sizeof(sense));
+    known = transact(c, d, s, "REQUEST SENSE", cdb,
+                     scsi_request_sense(cdb, SCSI_SENSE_LENGTH), data,
+                     SCSI_SENSE_LENGTH, &got, &status, line) == NULL
+            && status == BOT_PASSED && scsi_sense(data, got, &sense);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": the ");
+    say_text(line, command);
+    say_text(line, ", which the stick failed");
+
+    if (known) {
+        say_text(line, ": ");
+        say_sense(line, &sense);
+    }
+
+    say_send(console, line);
+}
+
+/*
  * **Whether the stick is ready**, by TEST UNIT READY, asked up to READY_TRIES
  * times. A failure is asked why with REQUEST SENSE, which also clears what it
  * reports, and a stick that says NOT READY is given READY_WAIT_MS before the
@@ -2125,7 +2299,7 @@ static void say_sense(struct say_line *line, const struct scsi_sense *sense)
 static const char *ready(struct controller *c, struct device *d,
                          struct stick *s, struct scsi_sense *first,
                          struct scsi_sense *last, unsigned *tries,
-                         bool *asked)
+                         bool *asked, struct say_line *line)
 {
     uint8_t cdb[16], data[SCSI_SENSE_LENGTH];
     enum bot_status status;
@@ -2138,7 +2312,8 @@ static const char *ready(struct controller *c, struct device *d,
 
     for (*tries = 1u; ; ++*tries) {
         failed = transact(c, d, s, "TEST UNIT READY", cdb,
-                          scsi_test_unit_ready(cdb), NULL, 0u, &got, &status);
+                          scsi_test_unit_ready(cdb), NULL, 0u, &got, &status,
+                          line);
 
         if (failed != NULL || status == BOT_PASSED) {
             return failed;
@@ -2146,7 +2321,7 @@ static const char *ready(struct controller *c, struct device *d,
 
         failed = transact(c, d, s, "REQUEST SENSE", cdb,
                           scsi_request_sense(cdb, SCSI_SENSE_LENGTH), data,
-                          SCSI_SENSE_LENGTH, &got, &status);
+                          SCSI_SENSE_LENGTH, &got, &status, line);
 
         if (failed != NULL) {
             return failed;
@@ -2176,20 +2351,16 @@ static const char *ready(struct controller *c, struct device *d,
 static uint8_t stick_block[BLOCK_MOST];
 
 static const char *read_block(struct controller *c, struct device *d,
-                              struct stick *s, uint32_t lba, unsigned size)
+                              struct stick *s, uint32_t lba, unsigned size,
+                              enum bot_status *status, struct say_line *line)
 {
     uint8_t cdb[16];
-    enum bot_status status;
     unsigned got;
     const char *failed = transact(c, d, s, "READ (10)", cdb,
                                   scsi_read_10(cdb, lba, 1u), stick_block,
-                                  size, &got, &status);
+                                  size, &got, status, line);
 
-    if (failed == NULL && status != BOT_PASSED) {
-        return named("READ (10)", ", which the stick failed");
-    }
-
-    if (failed == NULL && got != size) {
+    if (failed == NULL && *status == BOT_PASSED && got != size) {
         return named("READ (10)", ", which sent less than a block");
     }
 
@@ -2232,7 +2403,7 @@ static void first_blocks(struct controller *c, struct device *d,
     const char *failed;
     uint32_t end;
 
-    failed = ready(c, d, s, &first, &last, &tries, &asked);
+    failed = ready(c, d, s, &first, &last, &tries, &asked, line);
 
     if (asked) {
         about(line, c);
@@ -2259,11 +2430,14 @@ static void first_blocks(struct controller *c, struct device *d,
 
     failed = transact(c, d, s, "READ CAPACITY (10)", cdb,
                       scsi_read_capacity_10(cdb), data,
-                      SCSI_CAPACITY_10_LENGTH, &got, &status);
+                      SCSI_CAPACITY_10_LENGTH, &got, &status, line);
 
     if (failed == NULL && status != BOT_PASSED) {
-        failed = named("READ CAPACITY (10)", ", which the stick failed");
-    } else if (failed == NULL && !scsi_capacity_10(data, got, &capacity)) {
+        say_why_failed(c, d, s, "READ CAPACITY (10)", line);
+        return;
+    }
+
+    if (failed == NULL && !scsi_capacity_10(data, got, &capacity)) {
         failed = named("READ CAPACITY (10)", ", which answered no capacity");
     }
 
@@ -2299,13 +2473,18 @@ static void first_blocks(struct controller *c, struct device *d,
     say_send(console, line);
 
     end = (uint32_t)(capacity.blocks - 1u);
-    failed = read_block(c, d, s, 1u, capacity.block_size);
+    failed = read_block(c, d, s, 1u, capacity.block_size, &status, line);
 
-    if (failed == NULL) {
+    if (failed == NULL && status == BOT_PASSED) {
         primary = gpt_header_at(stick_block, capacity.block_size, 1u);
-        failed = read_block(c, d, s, end, capacity.block_size);
-        backup = failed == NULL
+        failed = read_block(c, d, s, end, capacity.block_size, &status, line);
+        backup = failed == NULL && status == BOT_PASSED
                  && gpt_header_at(stick_block, capacity.block_size, end);
+    }
+
+    if (failed == NULL && status != BOT_PASSED) {
+        say_why_failed(c, d, s, "READ (10)", line);
+        return;
     }
 
     if (failed != NULL) {
@@ -2343,12 +2522,14 @@ static void use_stick(struct controller *c, struct device *d,
     uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
     uint8_t cdb[16], data[INQUIRY_LENGTH];
     enum bot_status status;
+    char fault[16];
     uint32_t done[4];
     uint32_t *icc, *slot, *ep;
     unsigned got = 0, last;
     const char *failed;
 
     memset(s, 0, sizeof(*s));
+    s->interface = found->storage_interface;
     s->out_dci = 2u * found->bulk_out;
     s->in_dci = 2u * found->bulk_in + 1u;
     last = s->in_dci > s->out_dci ? s->in_dci : s->out_dci;
@@ -2418,12 +2599,24 @@ static void use_stick(struct controller *c, struct device *d,
 
     say_send(console, line);
 
+    if (kosmos_boot_option("opt/kosmos/stickfault", fault, sizeof(fault)) == 9
+        && memcmp(fault, "signature", 9u) == 0) {
+        s->spoil = true;
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": its first command goes out with a wrong signature, "
+                       "as opt/kosmos/stickfault asks");
+        say_send(console, line);
+    }
+
     failed = transact(c, d, s, "INQUIRY", cdb,
                       scsi_inquiry(cdb, INQUIRY_LENGTH), data, INQUIRY_LENGTH,
-                      &got, &status);
+                      &got, &status, line);
 
     if (failed == NULL && status != BOT_PASSED) {
-        failed = named("INQUIRY", ", which the stick failed");
+        say_why_failed(c, d, s, "INQUIRY", line);
+        return;
     }
 
     if (failed != NULL) {

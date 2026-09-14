@@ -458,6 +458,13 @@ def usb(image, check):
     block - where the stick, laid out by `mkusb_image.write_gpt` as a real one
     is, holds a GPT header and its backup. Each header is held to its CRC and
     to the block it says it is at, so a read of the wrong block fails.
+
+    **Step 5b is a stick recovered.** QEMU's stick stalls nothing a driver
+    sends it well, so this machine is started with
+    `opt/kosmos/stickfault=signature`: the driver sends the first wrapper with
+    a wrong signature, the stick stalls it, and the driver has to say so, run
+    Reset Recovery and send INQUIRY again - and everything after that, the
+    size and the partition table, comes from a stick that was recovered.
     """
     stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
     stick_blocks = stick_with_gpt(stick)
@@ -476,7 +483,9 @@ def usb(image, check):
     # The closing line, whatever it counts: "devices named" is never printed
     # by a run that names one device, which then waited out the timeout.
     out = boot(image, None, 90.0,
-               extra=extra + ("-trace", "usb_xhci_oper_write",
+               extra=extra + ("-fw_cfg",
+                              "name=opt/kosmos/stickfault,string=signature",
+                              "-trace", "usb_xhci_oper_write",
                               "-trace", "usb_xhci_runtime_write",
                               "-D", traced),
                until="plugged in, ")
@@ -610,6 +619,25 @@ def usb(image, check):
           "READ (10) did not find the stick's GPT header at block 1 and its "
           "backup at block %d, where `mkusb_image.write_gpt` put them:\n    "
           % (stick_blocks - 1) + shown)
+
+    # Step 5b: the first wrapper spoiled, the stall it earns, Reset Recovery,
+    # and INQUIRY sent again - after which every stick line above came from a
+    # stick that was recovered.
+    spoiled = re.search(r"xhci: " + at + r" port \d+: its first command goes "
+                        r"out with a wrong signature", out)
+    recovered = re.search(r"xhci: " + at + r" port \d+: the INQUIRY's command "
+                          r"failed: Stall Error \(6\), so the stick is reset"
+                          r".*?xhci: " + at + r" port \d+: the stick is "
+                          r"reset, and the INQUIRY sent again", out, re.S)
+
+    check(spoiled is not None,
+          "the driver did not say it spoiled the stick's first command, so "
+          "opt/kosmos/stickfault never reached it and nothing was "
+          "recovered:\n    " + shown)
+
+    check(recovered is not None,
+          "the stick's stall on a wrong signature was not met with Reset "
+          "Recovery and INQUIRY sent again:\n    " + shown)
 
     if len(found) == 2:
         stick_on = [a for a, _, usb_major, _, _, _ in ports

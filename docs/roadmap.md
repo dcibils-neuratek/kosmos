@@ -204,8 +204,15 @@ is the one that makes the machine Diego owns behave like a computer:
    TEST UNIT READY with REQUEST SENSE, READ CAPACITY (10), and READ (10) of
    block 1 and the last block, each checked for a GPT header, through
    `storage_decode.c` (`usb.md` §7). On the ThinkPad the boot stick itself
-   will answer. Next: 5b, Reset Recovery - and with it, REQUEST SENSE after
-   any command that fails, which today only TEST UNIT READY gets.
+   will answer.
+
+   **5b is built (14 September): a stick recovered.** Reset Recovery after a
+   command goes wrong - the class reset, then each bulk endpoint's halt
+   cleared on the controller and the stick - and the command sent again
+   once; REQUEST SENSE after any command the stick fails. The usb check boots
+   with `opt/kosmos/stickfault=signature` to make QEMU's stick stall
+   (`usb.md` §7). Next: 5c, the kernel's interrupt wait also taking an
+   endpoint.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -407,11 +414,6 @@ the Pi", and the Pi is not here yet.
   which the walk does not read; the driver says it met one. The other half of
   this line - a mouse that stays in the report protocol - was the ThinkPad's
   own, and is read by its Report descriptor since 13 September (`usb.md` §5).
-- **A stick that stalls, or answers with a status that is not valid, is left.**
-  Bulk-Only Transport answers both with a Reset Recovery - the class reset,
-  then CLEAR_FEATURE on each bulk endpoint (1.0 5.3.4) - and the driver says
-  which step failed instead. QEMU's stick never stalls, so it needs a way to
-  make one, or a machine that does it (`usb.md` §6).
 - **A stick's LUN 0 only.** Get Max LUN is not asked, because a stick with one
   unit may stall it and a stall on endpoint 0 is not recovered from.
 - **A screenshot shortcut**, Diego's, 14 September: a Super binding - and

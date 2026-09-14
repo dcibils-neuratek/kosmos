@@ -3507,9 +3507,42 @@ xhci: 00:04.0 port 1: the READ (10), which the stick failed
 ```
 
 It names the command and not why, because only TEST UNIT READY is followed by
-REQUEST SENSE - `usb.md` §7 has that as not done yet, with 5b.
+REQUEST SENSE. Since 5b it is followed by the stick's reason (§18.57).
 
 And as written, with every file put back byte for byte and the image rebuilt:
 `test_storagedecode` 48, `usb` 17, `usb_hotplug` 17, `usb_mouse` 22, and
 `make test` whole - x86-64 132, the UEFI boots 34, the stick check 10, and the
 suites 159 of 159 and 155 of 155.
+
+## 18.57 A stick recovered
+
+**USB step 5b**: Reset Recovery after a command goes wrong, and the command
+sent again, once; and REQUEST SENSE after any command the stick fails.
+`usb.md` §7 has how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/run_x86.py`'s `usb`, 19 checks, 2 of them new | started with `opt/kosmos/stickfault=signature`: the driver says it spoiled the first wrapper; QEMU's stick stalls it; the driver says so, runs Reset Recovery and sends INQUIRY again - and the checks before, INQUIRY's answer, the size and both GPT headers, all pass on a stick that was recovered |
+
+**Controls**, each put back byte for byte, and the image rebuilt after:
+
+| broken | what failed |
+| ------ | ----------- |
+| Set TR Dequeue Pointer skipped | `usb`, 3 of 19: the INQUIRY sent again stalled again - the controller retried the TRB that stalled - so no answer, size or table |
+| the command sent again without Reset Recovery | `usb`, 3 of 19: the INQUIRY sent again got `no answer within a second`, from an endpoint still halted |
+| `opt/kosmos/stickfault` taken and not acted on | `usb`, 1 of 19: the driver said it would spoil the first wrapper, and nothing stalled or was recovered |
+| a refused Reset Endpoint not followed by Stop Endpoint | `usb`, 4 of 19: `the bulk IN's Reset Endpoint failed: Context State Error (19)` - the endpoint that did not halt, which is why Stop Endpoint is there |
+| the backup read one past the last block | `usb`, 1 of 19: the table's line missing, and in its place the stick's reason, which no permanent check here can make it give |
+
+```
+xhci: 00:04.0 port 1: the stick holds 32768 blocks of 512 bytes, 16 MB
+xhci: 00:04.0 port 1: the READ (10), which the stick failed: ILLEGAL REQUEST (21h/00h)
+```
+
+The first two show why each half of "reset a pipe" is there, and the fourth
+that the endpoint that did not halt really takes the other path.
+
+And as written, with every file put back byte for byte and the image rebuilt:
+`usb` 19, `usb_hotplug` 17, `usb_mouse` 22, and `make test` whole - x86-64
+134, the UEFI boots 34, the stick check 10, and the suites 159 of 159 and 155
+of 155.

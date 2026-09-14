@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a of six parts, under QEMU (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a and 5b of six parts, under QEMU (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -1191,16 +1191,6 @@ xhci: 00:04.0 port 1: block 1 holds a GUID partition table's header, and block 3
 QEMU's stick passes the first TEST UNIT READY, so the line saying what a stick
 answered does not appear here. On the ThinkPad it may.
 
-### What is not done yet
-
-- **Why any other command failed.** Only TEST UNIT READY is followed by
-  REQUEST SENSE. A READ CAPACITY (10) or READ (10) that fails says only
-  `which the stick failed` - what the first control in `testing.md` §18.56
-  printed - where the stick would say why if asked. It belongs with 5b, which
-  is about what to do after a command goes wrong.
-- **Recovery**, still: a stall, a status that is not valid, or a phase error
-  leaves the stick said and left, as in step 4. That is 5b.
-
 ### What QEMU cannot show
 
 - **A stick that is not ready, or reports a unit attention.** The sense paths
@@ -1228,6 +1218,74 @@ answered does not appear here. On the ThinkPad it may.
   holds 32768 blocks of 512 bytes and find the header at block 1 and its
   backup at block 32767. Controls in `testing.md` §18.56.
 
+### 5b: Reset Recovery
+
+**A command that goes wrong is recovered from, and sent again once.** What
+Bulk-Only 1.0 asks of a host after a stall, a status that is not valid, or a
+phase error (6.4 to 6.6) - and done here after a transfer that never answered
+as well, because the other choice is a stick left in the middle of a
+command: the class reset to the stick's interface (3.1), then the halt
+cleared on bulk IN and then on bulk OUT (5.3.4).
+
+**Clearing a halt has two halves.** The stick's is CLEAR_FEATURE with
+ENDPOINT_HALT, to the endpoint's address (USB 2.0 9.4.1, Table 9-6). The
+controller's is xHCI's "reset a pipe" (4.6.8), which puts that request in the
+middle: Reset Endpoint, which takes a Halted endpoint to Stopped; the
+CLEAR_FEATURE; then Set TR Dequeue Pointer (4.6.10), which moves the
+controller past the TRB that stalled to where the next one will go, with the
+cycle bit it will carry. Without that last command a doorbell tries the
+stalled transfer again. The endpoint that did not halt - usually the other
+one - refuses Reset Endpoint with a Context State Error and is stopped with
+Stop Endpoint instead (4.6.9), so both are Stopped before their dequeue
+pointers move.
+
+**Then the command once more**; a second failure is said, and the stick left.
+One stall is a line in the log rather than a stick unused. A command the stick
+answers with a failed status is not sent again, because that is the stick
+working: REQUEST SENSE says why, now after any command rather than only TEST
+UNIT READY.
+
+**A fault on request, because QEMU has none.** QEMU's stick stalls nothing a
+driver sends it well, and nothing in QEMU makes it misbehave; a wrapper with
+the wrong signature it stalls at once (`hw/usb/dev-storage.c`). So a machine
+started with `opt/kosmos/stickfault=signature` sends each stick's first
+wrapper with its signature's first byte turned over, and the driver says so
+on a line of its own, so a log with that stall in it also says why. It is
+the one fault this driver makes when asked (`README.md`).
+
+What QEMU's stick makes the driver say, started that way:
+
+```
+xhci: 00:04.0 port 1: its first command goes out with a wrong signature, as opt/kosmos/stickfault asks
+xhci: 00:04.0 port 1: the INQUIRY's command failed: Stall Error (6), so the stick is reset
+xhci: 00:04.0 port 1: the stick is reset, and the INQUIRY sent again
+xhci: 00:04.0 port 1: the stick says it is "QEMU" "QEMU HARDDISK", revision "2.5+", device type 0
+xhci: 00:04.0 port 1: the stick holds 32768 blocks of 512 bytes, 16 MB
+xhci: 00:04.0 port 1: block 1 holds a GUID partition table's header, and block 32767 its backup
+```
+
+### What QEMU cannot show
+
+- **The stick's half.** QEMU's stick answers CLEAR_FEATURE and does nothing
+  with it, and its class reset only returns it to waiting for a wrapper -
+  which after a bad signature it already is (`dev-storage.c`). What QEMU
+  shows is the controller's half; whether a real stick's halt is cleared,
+  only a real stick can say.
+- **A stall on endpoint 0**, which the class reset or a CLEAR_FEATURE could
+  meet. Endpoint 0 is still not recovered (`roadmap.md`).
+- **A command the stick fails, in a permanent check.** QEMU's stick fails
+  nothing this driver sends it; the line that says why is shown by a control
+  in `testing.md` §18.57, and the sense it reads is `test_storagedecode`'s.
+
+### How it is tested
+
+- **`tools/run_x86.py`'s `usb`**, 19 checks, 2 of them new: started with
+  `opt/kosmos/stickfault=signature`, the driver has to say it spoiled the
+  first wrapper, meet the stall with Reset Recovery, and send INQUIRY again -
+  so the checks before them, INQUIRY's answer, the size and both GPT headers,
+  all pass on a stick that was recovered. `usb_hotplug` and `usb_mouse` run
+  without the fault. Controls in `testing.md` §18.57.
+
 ---
 
 ## Sources
@@ -1243,7 +1301,7 @@ answered does not appear here. On the ThinkPad it may.
 - USB-IF, *Universal Serial Bus Specification*, revision 2.0, as usb.org
   distributes it with its errata and engineering change notices - the
   descriptors, the standard requests and the intervals a device is owed
-  (§5). Downloaded from usb.org on 13 September 2026 to read, and not kept
+  (§5), and CLEAR_FEATURE with ENDPOINT_HALT (§7). Downloaded from usb.org on 13 September 2026 to read, and not kept
   in the repository.
 - USB-IF, *Universal Serial Bus Mass Storage Class Bulk-Only Transport*,
   revision 1.0, and the *Mass Storage Class Specification Overview*, revision
@@ -1258,7 +1316,8 @@ answered does not appear here. On the ThinkPad it may.
 - QEMU 11.1.1, `hw/usb/dev-storage.c` and `hw/scsi/scsi-disk.c` - the stick
   the check runs against, read for its descriptors at each speed, what it does
   with a wrapper and a status, and what INQUIRY, READ CAPACITY (10) and
-  REQUEST SENSE answer. Nothing is copied from them.
+  REQUEST SENSE answer; what makes the stick stall, and what it does with
+  CLEAR_FEATURE and the class reset. Nothing is copied from them.
 - USB-IF, *Device Class Definition for Human Interface Devices (HID)*,
   version 1.11 - the boot subclass and the mouse protocol, SET_PROTOCOL and
   SET_IDLE, which of them a boot mouse must support, and a boot mouse's

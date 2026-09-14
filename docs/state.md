@@ -20,13 +20,26 @@ prepush` and a bump.
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
-  proposal's five calls: 5a is built - a stick's size and its first blocks -
-  and 5b, Reset Recovery, is next; then a block protocol from the USB driver to a filesystem
+  proposal's five calls: 5a and 5b are built - a stick's size and its first
+  blocks, and Reset Recovery - and 5c, the kernel's wait on interrupt lines
+  and an endpoint, is next; then a block protocol from the USB driver to a filesystem
   server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
   read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 5b, a stick recovered
+
+- **Reset Recovery** after a stall, a status that is not valid, a phase error
+  or a transfer that never answered: the class reset, then each bulk
+  endpoint's halt cleared on the controller - Reset Endpoint or Stop
+  Endpoint, CLEAR_FEATURE, Set TR Dequeue Pointer - and the command sent
+  again once. REQUEST SENSE after any command the stick fails (`usb.md` §7).
+- **`opt/kosmos/stickfault=signature`** spoils each stick's first wrapper, so
+  QEMU's stick stalls it; the usb check boots that way (`README.md`).
+- **Tested**: `usb` 19; controls in `testing.md` §18.57.
+- **Next**: 5c, the kernel's interrupt wait also taking an endpoint.
 
 ### 14 September: USB step 5a, a stick's size and its first blocks
 
