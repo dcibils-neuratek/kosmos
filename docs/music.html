@@ -8,7 +8,8 @@
   How Kosmos's Music app should look, before any of it is built: VOX for the
   Mac as the reference Diego gave, on 14 September 2026 - now playing on top,
   the library underneath, a mini player, dark and light, and WAV and MP3 -
-  FLAC later, at Diego's word. Every track but Diego's Basket Case is an example.
+  FLAC later, at Diego's word - and one engine under it that a video app can
+  share later. Every track but Diego's Basket Case is an example.
 -->
 <title>Kosmos Music</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -136,6 +137,26 @@
   .deskbar .clock { margin-left: auto; }
   .caption { color: #eaf0ff; font-size: 12px; margin-top: 6px; max-width: 330px; }
 
+  /* ---- one engine, two apps ---- */
+  .engine { margin-top: 18px; display: grid; gap: 10px; }
+  .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .app { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; background: var(--card); }
+  .app b { display: block; font: 600 17px/1.2 var(--display); }
+  .app span { color: var(--muted); font-size: 14px; }
+  .app.now { box-shadow: inset 4px 0 0 var(--accent); }
+  .app.later { border-style: dashed; background: transparent; }
+  .app.later b { color: var(--muted); }
+  .kit { border: 2px solid var(--ink); border-radius: 10px; padding: 12px 14px 8px; background: var(--card); }
+  .kit-name { font: 600 16px/1.3 var(--display); margin-bottom: 8px; }
+  .calls { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .layer { display: grid; grid-template-columns: 64px 1fr auto; gap: 2px 12px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--rule); }
+  .layer b { font: 600 14px var(--mono); }
+  .layer span { font-size: 14.5px; }
+  .layer em { font-style: normal; justify-self: end; }
+  .layer small { grid-column: 2 / 4; color: var(--muted); font-size: 13px; }
+  .video-later { border: 1px dashed var(--rule); border-radius: 8px; padding: 10px 14px; }
+  .video-later b { display: block; font: 600 15px/1.3 var(--display); color: var(--muted); }
+  .video-later span { font-size: 14.5px; color: var(--muted); }
   .table-wrap { overflow-x: auto; }
   .paths { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
   .paths th, .paths td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
@@ -264,6 +285,27 @@
   </div>
   <p class="note">A drawing, not a screenshot. The cover is drawn from the file's tags when it has a picture, and from the first letters of the artist when it has none; nothing here is album artwork. Basket Case's length is its size at 128 kbps, which is how the player estimates today.</p>
 
+  <h2>One engine, two apps</h2>
+  <p>Playing a file is the same work whether it holds a song or a film: read it a window at a time, take it apart, decode it, keep time, let a person seek, and hand the sound to the audio server. So that work is one library, <code>/lib/media.lua</code>, and Music is its first face. A video app, later, is its second - there the window is the picture, where Music's window is a library - and it adds to the engine rather than copying it. BeOS split it the same way, with MediaPlayer for anything and SoundPlay for music.</p>
+
+  <div class="engine">
+    <div class="apps">
+      <div class="app now"><b>Music</b><span>the library, the queue, the dark and light looks</span></div>
+      <div class="app later"><b>Video</b><span>later: the picture, and controls that hide</span></div>
+    </div>
+    <div class="kit">
+      <div class="kit-name"><code>/lib/media.lua</code> - what both of them ask for</div>
+      <div class="calls"><code>media.open(path)</code><code>:play()</code><code>:pause()</code><code>:seek(seconds)</code><code>:position()</code><code>:volume(level)</code><code>:tick()</code><code>media.tags(path)</code></div>
+      <div class="layer"><b>read</b><span>the file a window at a time, into shared pages</span><em class="state built">built</em><small><code>fs.read_into</code></small></div>
+      <div class="layer"><b>tags</b><span>ID3v2, ID3v1 and <code>LIST INFO</code>, and the cover's bytes for <code>jpeg.c</code> or <code>png.c</code></span><em class="state new">new</em><small>the small reader above</small></div>
+      <div class="layer"><b>decode</b><span>MP3 and WAV, to samples</span><em class="state built">built</em><small><code>/kits/mp3</code> and <code>wav.lua</code></small></div>
+      <div class="layer"><b>time</b><span>where the sound is, which is where everything is; seeking moves it</span><em class="state new">new</em><small>what lets the bar be dragged</small></div>
+      <div class="layer"><b>out</b><span>samples at the device's rate, into the audio server's ring</span><em class="state built">built</em><small><code>sys.pcm_into</code></small></div>
+    </div>
+    <div class="video-later"><b>What a video app adds, later</b><span>taking an MP4 apart, H.264 for its picture and AAC for its sound, and each frame drawn onto a shared surface when the sound's clock reaches it.</span></div>
+  </div>
+  <p class="note"><b>The clock is the sound's</b>, and that one rule is what makes the second app possible: the audio server says how much it has played, the picture follows it, and nothing drifts. Decoding stays in C; what to decode next, and when, is Lua.</p>
+
   <h2>What it plays</h2>
   <p>Every format ends in the same place: sixteen-bit samples at the sound device's own rate, 44.1 kHz, which is all the audio server takes. <code>sys.pcm</code> already converts rate and channels on the way, in C, by interpolating between samples.</p>
   <div class="table-wrap">
@@ -291,7 +333,7 @@
   </ul>
 
   <h2>Left for later</h2>
-  <p><b>FLAC</b>, and the Deskbar replicant, at Diego's word. <b>Radio</b> is drawn and greyed: internet radio is an MP3 stream over HTTP, which the network stack can carry and nothing reads yet. Crossfade, the equaliser - on the roadmap already, in the mixer - and gapless playback come after the player has been used for a while.</p>
+  <p><b>FLAC</b>, and the Deskbar replicant, at Diego's word. <b>A video app</b>, on the same engine. <b>Radio</b> is drawn and greyed: internet radio is an MP3 stream over HTTP, which the network stack can carry and nothing reads yet. Crossfade, the equaliser - on the roadmap already, in the mixer - and gapless playback come after the player has been used for a while.</p>
 
   <h2>Decided, 14 September</h2>
   <ol class="decide">
@@ -299,6 +341,7 @@
     <li><b>No FLAC for now.</b><span>Diego: "dont do flac for now". WAV and MP3; FLAC stays on the roadmap.</span></li>
     <li><b>Tags read from the file by a reader, and not written onto it.</b><span>Diego: "cant we just gget the attributes from the mp3 file with a reader?" Yes - and that reader is needed either way, since attributes could only be written from what it reads.</span></li>
     <li><b>The Deskbar replicant after the player.</b><span>Diego: "after".</span></li>
+    <li><b>One engine that a video app can share.</b><span>Diego, asked whether Music could play video too: "yes add the shared engine to the design". Two apps, one <code>/lib/media.lua</code>.</span></li>
   </ol>
 </main>
 </body>

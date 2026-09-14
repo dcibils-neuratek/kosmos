@@ -70,7 +70,8 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
   MP3 with FLAC later, tags read from the file by a reader and never written
   onto it, and the Deskbar replicant after. Found while drawing it: nothing
   reads tags yet, `sys.pcm` takes 8 and 16 bits, and the device runs at
-  44.1 kHz. Not built; storage at full speed is first.
+  44.1 kHz. Its playing is one engine, `/lib/media.lua`, that a video app
+  can share later, at Diego's word. Not built; storage at full speed is first.
 - **The brightness keys are on the roadmap**, Diego's yes on 14 September:
   beside the battery indicator, the third of *Next, in this order*, and
   starting from the same DSDT. First, a log line for every key the keyboard
