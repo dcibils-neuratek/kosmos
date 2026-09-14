@@ -2807,8 +2807,16 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# well as its look at the kernel. And a second stick, whose kernel is
 	@# zeros, is booted to be refused: the loader's lines must be on the
 	@# screen while it waits for a key, drawn by the loader itself, because
-	@# the ThinkPad's firmware console showed nothing. Skipped where OVMF is
-	@# not installed, out loud.
+	@# the ThinkPad's firmware console showed nothing. And the first stick
+	@# once more, with its screen at 0x4000000000 where the ThinkPad's
+	@# firmware puts it: the boot log has to be on it by stage four, which
+	@# on that machine it was not for months. Skipped where OVMF is not
+	@# installed, out loud.
+	@#
+	@# `test_stickcheck.py` streams that stick, with faults put where mtools
+	@# says they are, into the check `mkusb.sh` runs on every stick it
+	@# writes: damage named where it is, and a mount's bookkeeping told
+	@# apart from it.
 	@#
 	@# `run_interchange.py` and `run_queries.py` are deliberately not
 	@# here, and this says so out loud rather than leaving a gap
@@ -2829,6 +2837,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
 	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null && \
 	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos-refusal.img && \
+	    python3 tools/test_stickcheck.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos.elf && \
 	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
 	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
 	else \

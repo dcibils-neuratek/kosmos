@@ -271,11 +271,13 @@ on the ThinkPad:
 kosmos-boot: the screen: 1920x1080, 7680 bytes a row, at 0x0000004000000000, mode 0 of 6
 ```
 
-**Above 4 GB**, so `hal_fb_early` refuses it - the boot page tables end at
-4 GB (`hal/pc/fb.c`) - and the kernel draws nothing until stage 6 maps the
-screen itself. If that is where this firmware always puts it, every boot of
-that machine is dark from the hand-over to stage 6, and a stall anywhere in
-between looks exactly like this one. One photograph does not say which.
+**Above 4 GB**, so `hal_fb_early` refused it - the boot page tables end at
+4 GB (`hal/pc/fb.c`) - and the kernel drew nothing until stage 6 mapped the
+screen itself. That is the graphics aperture's address, and nothing records a
+boot where it was anywhere else, so the machine was dark from the hand-over to
+stage 6 on the boots that worked too, and a stall anywhere in between looked
+exactly like this one. 0.10.62 maps that screen into the boot page tables and
+draws from stage 2 there (§5, `testing.md` §18.44).
 
 **And the 32 MB stick stopped in the same place**, so the disk's size is not
 what stops it; the 32 MB refusal in `mkusb_image.py` stays, and it is not a
@@ -339,12 +341,15 @@ address is.
   old fault happening and being survived. `lost` above zero means a page was
   wrong in both copies, and the kernel was started anyway: its canary
   (`testing.md` §18.22) will say which pages if they are userland's.
-- **"handing over" and then nothing** is anywhere from the trampoline to
-  stage 6 on the ThinkPad. Its screen is at `0x4000000000`, above the 4 GB
-  the boot page tables map, so `hal_fb_early` refuses it and the kernel draws
-  nothing until stage 6 maps the screen - on a boot that works as well. This
-  line used to say the kernel draws from stage 2, which is true under OVMF,
-  and it was read as true of the ThinkPad.
+- **"handing over" and then nothing** is the trampoline or the kernel's first
+  instructions, from 0.10.62 on. The ThinkPad's screen is at `0x4000000000`,
+  above the 4 GB the boot page tables map, and before 0.10.62 `hal_fb_early`
+  refused it: the kernel drew nothing until stage 6, on the boots that worked
+  as well, so a stall anywhere before that looked exactly like this. This line
+  said the kernel draws from stage 2, which was true only under OVMF, and it
+  was read as true of the ThinkPad. `mmu_boot_map_high` adds that screen to
+  the boot page tables now, and `run_uefi.py` boots a stick with its screen
+  moved there to hold it to it.
 - `the disk: diff` in the kernel's line is the disk changing after the loader
   read it.
 
@@ -364,14 +369,24 @@ address is.
   at 16 MB, nothing of the firmware's under it, and the screen, ACPI, SMBIOS
   and the other processors through that path. **And a refusal**: a second
   stick, whose kernel is zeros, must be refused on the serial line and drawn
-  on in the lower half of the screen by the loader itself.
+  on in the lower half of the screen by the loader itself. **And the
+  ThinkPad's screen**: the first stick again, stopped at the kernel's entry
+  with QEMU's gdbstub and its framebuffer tag rewritten to `0x4000000000` at
+  1920x1080, over memory that is in no map the firmware hands over - the boot
+  log has to be in those pixels when the page allocator starts (`testing.md`
+  §18.44).
+- **`tools/stickcheck.py`, run by `tools/mkusb.sh` after every write**: the
+  stick read back and compared with its image sector by sector, naming the
+  file, and in the kernel the page and section, of anything that differs, and
+  telling a macOS mount's bookkeeping from damage (`testing.md` §18.45).
 
 **What QEMU cannot show**: the ThinkPad's own map at the moment the loader
 runs, whether its firmware writes into memory it has handed out, and the
 console-control switch - under OVMF the loader never has to make it, so that
-call has run only on the ThinkPad, if at all - and whether the stick holds,
-and hands the firmware, the bytes the build wrote, since QEMU reads the image
-file. The loader's lines on that machine are the measurement.
+call has run only on the ThinkPad, if at all - and whether that firmware
+reads back the bytes the stick holds. QEMU reads the image file; `mkusb.sh`
+now checks the stick on the Mac, and nothing yet checks the read on the
+machine itself. The loader's lines on that machine are the measurement.
 
 ---
 

@@ -145,8 +145,41 @@ printf 'Writing (this needs your password, and Ctrl-T shows progress)...\n'
 sudo dd if="$IMG" of="/dev/r$CHOSEN" bs=4m
 
 sync
+
+#
+#  **And read back, because nothing had ever checked that a stick holds what
+#  was written to it.** The loader fingerprints what it reads, which says
+#  nothing about whether those are the build's bytes, and a stick that gives
+#  back bytes nobody wrote stops a ThinkPad boot after the loader's last line
+#  with nothing on the screen to say why (`docs/boot.md`). So every sector is
+#  read again here, while the stick is still on this Mac, and
+#  `stickcheck.py` names the file and the kernel page of any that differ.
+#
+#  The stick goes straight into the comparison rather than into a file,
+#  because this Mac's disk is the thing that fills up. macOS may mount the
+#  stick between the write and this, and a mount writes a little filesystem
+#  bookkeeping; `stickcheck.py` tells that apart from damage.
+#
+printf '\nReading it back, every sector...\n'
+diskutil unmountDisk "/dev/$CHOSEN" >/dev/null 2>&1 || true
+
+BLOCKS=$(( ($(stat -f %z "$IMG") + 4194303) / 4194304 ))
+
+if sudo dd if="/dev/r$CHOSEN" bs=4m count="$BLOCKS" 2>/dev/null \
+        | python3 "$(dirname "$0")/stickcheck.py" "$IMG" -; then
+    VERDICT=0
+else
+    VERDICT=$?
+fi
+
 printf '\nEjecting...\n'
 diskutil eject "/dev/$CHOSEN"
+
+if [ "$VERDICT" -ne 0 ] && [ "$VERDICT" -ne 3 ]; then
+    printf '\n** THIS STICK DOES NOT HOLD THE IMAGE THAT WAS WRITTEN TO IT. **\n'
+    printf 'Do not boot it. Write the image to a different stick.\n'
+    exit 1
+fi
 
 printf '\nDone. Boot it with Secure Boot disabled - an unsigned GRUB is\n'
 printf 'refused by firmware with a "Security Violation" and nothing of\n'

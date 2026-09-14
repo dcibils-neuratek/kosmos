@@ -747,6 +747,113 @@ void mmu_boot_uncached(uintptr_t base, size_t bytes)
 }
 
 /*
+ * **A screen above the four gigabytes `start.S` maps, added to those same
+ * tables, so the early screen works where the ThinkPad's firmware puts it.**
+ *
+ * That machine reports its framebuffer at 0x4000000000, 256 GB up, where its
+ * graphics aperture is. `hal_fb_early` refused anything past the boot
+ * identity map, so on the one machine the early screen was written for the
+ * kernel drew nothing until the display stage mapped the screen itself: every
+ * boot was dark from the loader's last line to stage six, the good ones too,
+ * and a stall anywhere in between looked like any other. Nobody knew for
+ * months, because under OVMF the screen is below the line.
+ *
+ * **2 MB entries, uncached**, for the reason `mmu_boot_uncached` gives, in
+ * tables from three pages kept in `.bss` for this: a page directory for each
+ * gigabyte the screen touches, and a PDPT when it is past the first 512 GB.
+ * Anything that needs more is refused rather than half mapped. Present and
+ * writable and nothing else - no NX, because EFER.NXE is not set until
+ * `mmu_init`, and an entry carrying a bit the processor calls reserved is a
+ * fault on the first pixel rather than a mapping.
+ *
+ * An entry that is already present is refused as well: that is a screen
+ * inside what `start.S` mapped, which does not need this.
+ */
+static uint64_t boot_spare[3][512] __attribute__((aligned(4096)));
+static unsigned boot_spare_used;
+
+static uint64_t *boot_table_under(uint64_t *entry)
+{
+    uint64_t *table;
+
+    if ((*entry & PTE_P) != 0) {
+        /* A large page here would be a map this was not written for. */
+        return (*entry & PTE_PS) != 0
+               ? NULL
+               : (uint64_t *)(uintptr_t)(*entry & PTE_ADDR_MASK);
+    }
+
+    if (boot_spare_used == sizeof(boot_spare) / sizeof(boot_spare[0])) {
+        return NULL;
+    }
+
+    table = boot_spare[boot_spare_used++];
+    *entry = (uint64_t)(uintptr_t)table | PTE_P | PTE_RW;
+
+    return table;
+}
+
+bool mmu_boot_map_high(uintptr_t base, size_t bytes)
+{
+    uint64_t cr3;
+    uint32_t highest, widths;
+    uintptr_t at, last;
+
+    if (bytes == 0) {
+        return false;
+    }
+
+    __asm__ volatile("cpuid" : "=a"(highest) : "a"(0x80000000u)
+                     : "ebx", "ecx", "edx");
+
+    if (highest < 0x80000008u) {
+        return false;
+    }
+
+    __asm__ volatile("cpuid" : "=a"(widths) : "a"(0x80000008u)
+                     : "ebx", "ecx", "edx");
+
+    last = base + bytes - 1;
+
+    /* CPUID.80000008H:EAX[7:0] is how many bits a physical address has. */
+    if (last < base || (last >> (widths & 0xff)) != 0) {
+        return false;
+    }
+
+    __asm__ volatile("movq %%cr3, %0" : "=r"(cr3));
+
+    for (at = base & ~(BLOCK_2M - 1); at <= last; at += BLOCK_2M) {
+        uint64_t *pml4 = (uint64_t *)(uintptr_t)(cr3 & PTE_ADDR_MASK);
+        uint64_t *pdpt = boot_table_under(&pml4[(at >> 39) & 511]);
+        uint64_t *pd = (pdpt == NULL)
+                     ? NULL
+                     : boot_table_under(&pdpt[(at >> 30) & 511]);
+        uint64_t *entry;
+
+        if (pd == NULL) {
+            return false;
+        }
+
+        entry = &pd[(at >> 21) & 511];
+
+        if ((*entry & PTE_P) != 0) {
+            return false;
+        }
+
+        *entry = (uint64_t)at | PTE_P | PTE_RW | PTE_PS | PTE_PCD | PTE_PWT;
+    }
+
+    /*
+     * Entries that were not present are not in the TLB, so nothing needs
+     * shooting down; the reload is for the paging-structure caches, which
+     * the architecture lets a processor keep, and costs nothing this early.
+     */
+    __asm__ volatile("movq %%cr3, %%rax; movq %%rax, %%cr3" ::: "rax", "memory");
+
+    return true;
+}
+
+/*
  * **Asked of the page table, not of CPUID.**
  *
  * This used to return `has_pat()`, which says the processor *could* do

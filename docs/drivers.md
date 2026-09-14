@@ -292,7 +292,10 @@ and that was already done.** It rested on a machine with no serial port
 showing nothing until boot stage six; the panel had shown the boot log from
 stage two since 0.10.12, through `hal_fb_early`, which takes the framebuffer
 the firmware set up before there is a page allocator. Found on 12 September
-when the work was started.
+when the work was started. **And on the ThinkPad it had not**, which nobody
+knew until 13 September: that firmware's screen is at `0x4000000000`, above
+the 4 GB `hal_fb_early` would take, so the machine was dark until stage six on
+every boot until 0.10.62 mapped it (`boot.md` §5).
 
 `roadmap.md` holds the order now, with USB at the front. The order as this
 section first wrote it:

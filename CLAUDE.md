@@ -678,6 +678,10 @@ every check under OVMF, which is necessary and not sufficient. So:
   decides it (`docs/boot.md`).
 - **The stick is built by `make MEGA=1 x86-usb-image`**, which refuses a disk
   over 32 MB, and never by anything that skips that refusal.
+- **`tools/mkusb.sh` reads the stick back after writing it, and a stick that
+  does not hold its image is not booted.** Nothing had ever checked that the
+  machine is given the bytes the build wrote: `dd` did not read back and the
+  loader fingerprints its own read (`docs/boot.md`).
 - **The table is read before a stick is handed over** - not a summary, and
   not a memory of the table.
 - **A layout that has not booted there is offered as the experiment it is**,

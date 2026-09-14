@@ -444,7 +444,9 @@ bool hal_fb_init(struct fb *out);
  *
  * It can only be answered where the pixels are reachable *before* the
  * kernel builds its own address space: a framebuffer the firmware set up,
- * inside what the boot page tables already cover. ramfb cannot - the guest
+ * which the boot page tables cover or the board can add to them - on a PC
+ * that includes a screen above four gigabytes, where the ThinkPad's firmware
+ * puts it, and the early screen was dark there until that was said. ramfb cannot - the guest
  * allocates those pixels and there is nothing to allocate from yet - so
  * `qemu-virt` says no and loses nothing, having a serial port and a cable
  * already attached to it.

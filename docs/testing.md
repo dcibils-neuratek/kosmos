@@ -2660,3 +2660,117 @@ which is where the first two findings above come from.
 And as written, after every restore: the host test 32 of 32, the suites 158
 of 158 and 154 of 154, and `usb_mouse` 16 of 16, the driver reading 665
 reports for 640 movements 11.5 ms apart.
+
+## 18.44 The ThinkPad's screen, above 4 GB
+
+**The early screen passed its check under OVMF for months while on the
+ThinkPad it had never once worked.** That machine's firmware puts its
+framebuffer at `0x4000000000`; `hal_fb_early` refused anything past the four
+gigabytes `start.S` maps; so every boot of it was dark from the loader's last
+line to stage six, and two sticks on 13 September stopped with nothing on the
+panel but the loader's lines. OVMF's screen is at `0x80000000`, which is why
+no check here could see it (`boot.md` §3 and §5).
+
+`mmu_boot_map_high` adds a screen above 4 GB to the boot page tables - 2 MB
+entries, uncached, from three pages kept in `.bss` - and `hal_fb_early` takes
+it instead of refusing.
+
+Five checks, in `tools/run_uefi.py`, which `make test` runs: the stick it
+already boots, booted once more with its screen where the ThinkPad's is.
+**Nothing in the loader or the kernel changes for the test.** QEMU starts
+paused with its gdbstub; a hardware breakpoint at `_start` stops it at the
+kernel's first instruction with the loader's structure in `ebx`; the
+framebuffer tag in that structure is rewritten to `0x4000000000` at 1920x1080
+with 7680 bytes a row; and the memory there is a `pc-dimm` that no map the
+firmware hands over contains, which is what a graphics aperture is. The
+monitor's `pmemsave` reads the pixels back.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| the tag moved | the harness stopped at the entry, found a Multiboot 2 structure in `ebx`, and the kernel is told 0x4000000000 at 1920x1080 |
+| drawn by stage four | at a second breakpoint, `pmm_init`, the pixels at 0x4000000000 are more than half the kernel's ground and carry the log's green: the screen was used before anything could have mapped it the late way |
+| since stage two | the kernel's own display fact is `the panel has had this log since stage two` |
+| 1920x1080 | the display stage took the screen it was handed |
+| at the prompt | the log's green and the wordmark's red are in those pixels once `kosmos>` is printed |
+
+**The control**, with `hal_fb_early` refusing a screen above 4 GB again, as
+before 0.10.62:
+
+```
+FAIL: 2 of 29 checks booting through Kosmos's loader under UEFI:
+  with the screen at 0x4000000000 nothing was drawn by the start of stage four (0.0% ground, 0.00% green): the kernel is dark there until stage six, as it was on the ThinkPad
+  with the screen at 0x4000000000 the kernel says: -> attached here; everything above it was replayed
+```
+
+Only those two: the late mapping at stage six still takes the screen, which
+is exactly why that machine reached its desktop and nobody knew. With
+`hal/pc/fb.c` restored byte for byte and rebuilt, 29 of 29.
+
+**Found before it was a check**: the same rig, as a scratch script, booted the
+exact 0.10.61 image that stopped on the ThinkPad with the screen moved there,
+and it reached the prompt - as it did with that machine's memory shape (16 GB,
+usable memory ending near 2.2 GB, eight processors), with QEMU's fullest
+processor, and with an Intel client model with SMEP on. Whatever stops that
+machine, it is in nothing QEMU models of it.
+
+## 18.45 A stick read back after it is written
+
+**Nothing between the build and the kernel ever asked whether the machine is
+handed the bytes the build wrote.** `mkusb.sh` wrote with `dd` and ejected;
+the loader reads the kernel off the stick once, and both of its copies and
+every fingerprint come from that read; the kernel's canary knows the build's
+sums for the userland image only. A stick that gives back bytes nobody wrote
+fits every ThinkPad boot since 11 September, and QEMU could never show it,
+because it reads the image file (`boot.md` §3).
+
+So `mkusb.sh` now reads every sector back before it ejects, straight into
+`tools/stickcheck.py` rather than into a file on this Mac's nearly full disk.
+The checker reads the image's GPT and FAT32 and names each difference: the
+MBR, the GPT, the FAT's own sectors, or a file and the offset in it - and in
+the kernel, the page, the address and the ELF section. **It tells two kinds
+apart**, because macOS may mount the stick as soon as `dd` lets go and a
+mount writes: a free cluster taken, a directory entry in a slot the image
+left empty, FSInfo's count, the dirty bits in the second FAT entry, a
+last-access date. That is *bookkeeping*, exit 3, and `mkusb.sh` accepts it;
+anything else is *damage* - a byte of a file, a FAT entry of a cluster a file
+uses, a directory entry the image wrote, the boot sector, the GPT - exit 1,
+and `mkusb.sh` says not to boot the stick.
+
+`tools/test_stickcheck.py`, in `make test`, 9 checks. It streams the stick
+`make test` has just built into the checker with faults applied on the way,
+copying nothing, and **places each fault from mtools' reading of the
+filesystem - `minfo`, `mshowfat` - not the checker's**, so a wrong offset in
+the checker cannot put the fault in the wrong place and then name that place
+correctly:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| the image itself | exit 0, every sector |
+| a byte of the kernel's `.text` | damage, `kernel page 2 at 0x01002000 in .text` |
+| a byte of the userland image | damage, `kernel page 512 at 0x01200000 in .rodata (the userland image)` |
+| a byte of the disk | damage, `/boot/disk.img, byte 0x10000` |
+| the GPT header's checksum | damage |
+| half a stick | exit 1, `gave back` - a short read is never a pass, even where the image's tail is zeros |
+| the kernel's directory entry | damage, `the directory /boot` |
+| a link in the kernel's FAT chain | damage |
+| what a mount writes, made by hand | exit 3: a free cluster taken in both FATs, an entry in an empty root slot pointing at it, data in it, FSInfo's count one lower |
+
+**Controls**, each a copy of the checker run by a copy of the test:
+
+| broken | what failed |
+| ------ | ----------- |
+| every difference called bookkeeping | 6 of 9: every kind of damage came back exit 3 |
+| the FAT's data region read one cluster late | 3 of 9: the kernel's `.text`, the userland image and the disk, each named at the wrong place |
+
+Before the test existed, the same kinds of fault were made by hand on a clone
+of the 0.10.61 stick image - five spoiled bytes, a short read, a
+`.fseventsd` written with `mmd` and `mcopy` as a mount would, a file renamed
+with `mren`, a FAT link broken - and each got the verdict above.
+
+**Found with it, the first time it was used**: the read-back of the stick
+that had stopped the ThinkPad was not Kosmos at all. The checker found a
+hybrid ISO where the GPT should be, and the volume descriptor said `Pop_OS
+24.04 amd64` - Diego had written a Linux distribution over the stick to try
+it on the ThinkPad in the meantime. So that stick's bytes are gone, and the
+first real read-back of a Kosmos stick is the next one `mkusb.sh` writes: the
+read-back itself needs a stick and `sudo`, which no test here has.

@@ -8,6 +8,42 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 13 September, night: the ThinkPad's stick, and what was never checked
+
+**0.10.61 did not boot the ThinkPad with either disk.** The 64 MB stick, then
+the 32 MB one `make MEGA=1 x86-usb-image` built: the loader's lines, `handing
+over`, and nothing. Diego: "Stuck here as well", and then "lets first
+understand why the image is not booting, then we can bring grub back".
+
+- **Everything QEMU can reproduce of that machine boots the exact image**:
+  the screen at `0x4000000000` at 1920x1080 (a rig that stops at the kernel's
+  entry and rewrites the loader's framebuffer tag, over a DIMM outside the
+  firmware's map), 16 GB with usable memory ending near 2.2 GB, eight
+  processors, `-cpu max`, and an Intel client model with SMEP on. The stop is
+  in something only the ThinkPad does.
+- **The ThinkPad was dark until stage six on every boot.** Its screen is
+  above 4 GB and `hal_fb_early` refused it; `boot.md` §5 said the kernel
+  draws from stage two, which was true only under OVMF. **0.10.62 maps it
+  early** (`mmu_boot_map_high`), and `run_uefi.py` holds that with the screen
+  moved there (`testing.md` §18.44: 2 of 29 fail without it).
+- **Nothing checked that the machine gets the bytes the build wrote.**
+  `mkusb.sh` did not read back, and the loader reads the kernel once and
+  fingerprints that read. A stick that gives back wrong bytes fits every
+  ThinkPad boot since 11 September. `mkusb.sh` now reads every stick back
+  through `tools/stickcheck.py`, which names the file and kernel page of any
+  difference and tells a macOS mount's bookkeeping from damage (§18.45).
+- **The failed stick could not be read back**: Diego had put Pop!_OS 24.04 on
+  it to try Linux on the ThinkPad while waiting, and the first read-back
+  found that instead of Kosmos.
+- **GRUB comes back once the cause is understood**, Diego's decision. The
+  loader was not the cure and GRUB was not the cause: 0.10.48 and 0.10.53
+  stopped the same way under it.
+
+**Next:** the loader checking what it read against page sums the build puts on
+the stick, so a boot says whether the firmware handed over the build's bytes.
+Then a stick when Diego wants one - read back on the Mac, the log on the panel
+from stage two, the loader's comparison on it - and then GRUB.
+
 ### 13 September, evening: a USB mouse moves the pointer
 
 Diego: "Mouse still doesn't work in the desktop", then "yes / lets make the

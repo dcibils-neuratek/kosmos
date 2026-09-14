@@ -153,14 +153,23 @@ const char *hal_fb_describe(void)
 }
 
 /*
- * The loader's framebuffer at the address it already answers on.
+ * The loader's framebuffer, at its own address.
  *
- * **No mapping, because there is nothing yet to map with** - and none is
- * needed: `boot/x86_64/start.S` identity maps the first four gigabytes, and
- * a multiboot loader hands over a 32-bit pointer, so everything it can
- * describe is inside that. The check below says so rather than assuming it,
- * because `framebuffer_addr` is a 64-bit field and a firmware is entitled
- * to put a framebuffer above the line even if none yet has.
+ * **`boot/x86_64/start.S` identity maps the first four gigabytes, and a
+ * screen below that line needs nothing more.** A screen above it has the
+ * mapping added to those same tables by `mmu_boot_map_high`, and that is not
+ * a hypothetical: the ThinkPad's firmware puts its screen at 0x4000000000.
+ *
+ * This function used to refuse it, on the reasoning that a multiboot loader
+ * hands over a 32-bit pointer and so everything it describes is below the
+ * line. The pointer is 32 bits; the framebuffer's address inside the
+ * structure is 64, and the one machine the early screen was written for used
+ * them. Every boot of it was dark from the loader's last line to stage six,
+ * and nothing said so, because under OVMF the screen is at 0x80000000 and
+ * this path never ran.
+ *
+ * A screen across the line is still refused: none has been reported, and it
+ * would need both kinds of mapping at once.
  *
  * ramfb is deliberately not tried. It needs fw_cfg, a DMA setup and memory
  * the guest allocates, and the allocator does not exist at this point in
@@ -170,34 +179,42 @@ const char *hal_fb_describe(void)
 
 bool hal_fb_early(struct fb *out)
 {
-    uint64_t addr;
+    uint64_t addr, bytes;
     uint32_t pitch, width, height;
 
     if (!pc_loader_framebuffer(&addr, &pitch, &width, &height)) {
         return false;
     }
 
-    if (addr + (uint64_t)pitch * height > BOOT_IDENTITY_END) {
-        return false;           /* outside what start.S mapped */
-    }
+    bytes = (uint64_t)pitch * height;
 
-    /*
-     * **And not write-back**, which is what `start.S` left it as.
-     *
-     * The boot page tables map the first four gigabytes with plain
-     * present-and-writable 2 MB entries, and plain means write-back cached -
-     * the one memory type MMIO may not have. Under QEMU it makes no
-     * difference, because TCG models no cache and every store lands at
-     * once; on a machine with a real one the boot log would sit in cache
-     * and reach the panel when a line happened to be evicted, which is
-     * exactly the failure this early screen exists to prevent.
-     */
-    mmu_boot_uncached((uintptr_t)addr, (size_t)pitch * height);
+    if (addr >= BOOT_IDENTITY_END) {
+        /* Added uncached, for the reason below; `mmu.c` has the rest. */
+        if (!mmu_boot_map_high((uintptr_t)addr, (size_t)bytes)) {
+            return false;
+        }
+    } else if (addr + bytes > BOOT_IDENTITY_END) {
+        return false;           /* across the line, which nothing has done */
+    } else {
+        /*
+         * **And not write-back**, which is what `start.S` left it as.
+         *
+         * The boot page tables map the first four gigabytes with plain
+         * present-and-writable 2 MB entries, and plain means write-back
+         * cached - the one memory type MMIO may not have. Under QEMU it makes
+         * no difference, because TCG models no cache and every store lands
+         * at once; on a machine with a real one the boot log would sit in
+         * cache and reach the panel when a line happened to be evicted, which
+         * is exactly the failure this early screen exists to prevent.
+         */
+        mmu_boot_uncached((uintptr_t)addr, (size_t)bytes);
+    }
 
     out->pixels = (volatile uint32_t *)(uintptr_t)addr;
 
     /* Identical before `mmu_init`, because the boot page tables identity
-     * map everything the loader can describe. */
+     * map it - from `start.S` below four gigabytes, and above from the
+     * entries added a few lines up. */
     out->phys = (uintptr_t)addr;
 
     out->width = width;

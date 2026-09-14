@@ -555,6 +555,17 @@ harness reads that line. Verified by reinstating the fault: with
 `hal_fb_early` returning false the check fails, and it is the only one that
 does.
 
+**And on the ThinkPad it did not, for months, and nothing said so.** That
+machine's firmware puts its screen at `0x4000000000`, above the four gigabytes
+`start.S` maps, and `hal_fb_early` refused a framebuffer past that line - so
+the machine this section was written for was dark on every boot from the
+loader's last line to stage six, while the harness passed on OVMF's screen at
+`0x80000000`. It came out on 13 September 2026, from the first photograph ever
+taken of the loader's screen line, after two sticks had stopped with nothing
+on the panel but the loader's lines. `mmu_boot_map_high` adds that screen to
+the boot page tables since 0.10.62, and `run_uefi.py` boots a stick with its
+screen moved to that address (`testing.md` §18.44).
+
 ### `hal/pc/apic.c` - the controller a machine built this decade has
 
 **The 8259 pair is from 1981 and may not be there.** Intel has been removing
@@ -906,8 +917,9 @@ carries into memory. Every stick whose disk was written down:
 It is the knob this section found on 11 September and did not explain: the
 module's size moves where things land, and some placements survive that
 machine's firmware and some do not. The 0.10.48 failure was the worst form
-yet - no stage, no character, the image dead before the early screen - and it
-looked like a regression in the code that had just landed. The same binary
+yet - no stage, no character, which on a machine whose screen was dark until
+stage six on every boot says only that it stopped before six - and it looked
+like a regression in the code that had just landed. The same binary
 with a smaller disk booted.
 
 **What has booted every time is 32 MB, so that is the rule**, until USB mass

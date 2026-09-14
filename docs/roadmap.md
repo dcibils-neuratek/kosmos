@@ -177,10 +177,26 @@ is the one that makes the machine Diego owns behave like a computer:
    six. The panel had shown the boot log from stage two since 0.10.12 -
    `hal_fb_early` answers with the framebuffer the firmware set up, before
    there is a page allocator (`thinkpad.md` §4) - and it was found when the
-   work was started, before any was written. What is still dark: a hang
-   after the loader's last line, a fault before the trap table, and a firmware that puts the
-   framebuffer above 4 GB, which `hal_fb_early` refuses because the boot
-   page tables end there.
+   work was started, before any was written. **And on the ThinkPad it had
+   not**: that firmware puts the framebuffer at `0x4000000000`, and
+   `hal_fb_early` refused anything above the 4 GB the boot page tables map,
+   so the machine was dark until stage six on every boot. 0.10.62 adds the
+   screen to the boot page tables (`boot.md` §5). What is still dark: a hang
+   after the loader's last line and before the kernel's first, and a fault
+   before the trap table.
+
+   **Before step four: the ThinkPad's boot, understood.** Diego, 13
+   September: "lets first understand why the image is not booting, then we
+   can bring grub back". 0.10.61 stopped after the loader's last line with a
+   64 MB disk and with a 32 MB one, and everything QEMU can reproduce of that
+   machine boots the same image (`boot.md` §3). In hand: `mkusb.sh` reads
+   every stick back through `tools/stickcheck.py`, and the kernel draws on
+   that machine's screen from stage two. Not yet: a check *on the machine*
+   that the loader read the build's bytes - the build writing the kernel's
+   and the disk's page sums onto the stick, and the loader comparing its read
+   with them and refusing on the screen with the pages that differ. **GRUB
+   comes back after that**, Diego's decision: it was never the cause, and it
+   brings boot arguments and a screen mode per machine.
 
 **Agreed on 2026-09-10**, after the ThinkPad ran spread across eight
 processors, and still what follows USB:

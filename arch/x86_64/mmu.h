@@ -302,6 +302,16 @@ bool mmu_entry_matches_framebuffer(uint64_t entry);
  */
 void mmu_boot_uncached(uintptr_t base, size_t bytes);
 
+/*
+ * Adds a range above the first four gigabytes to the page tables that are
+ * loaded *now*, uncached, in 2 MB entries: the early framebuffer again, for a
+ * firmware that puts its screen up there - as the ThinkPad's does, at
+ * 0x4000000000. False when the range needs more tables than the three kept
+ * for it, when part of it is already mapped, or when the processor's physical
+ * addresses do not reach it; `mmu.c` has why each.
+ */
+bool mmu_boot_map_high(uintptr_t base, size_t bytes);
+
 /* Builds the identity map and loads it. Needs pmm_init first, because the
  * tables come out of the page allocator. */
 void mmu_init(void);

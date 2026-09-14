@@ -29,14 +29,21 @@ serial line at stage six. That is the point: the picture is the result.
 Given a second image, whose kernel is zeros, it boots that one too, and the
 loader's refusal has to be on the screen while it waits for a key - drawn by
 the loader itself, because the ThinkPad's firmware console showed none of it.
+
+**And it boots the first stick once more with the screen where the ThinkPad's
+firmware puts it**: 0x4000000000, above the four gigabytes the boot page
+tables map, at 1920x1080. Under OVMF the screen is at 0x80000000, and the
+early screen was dark on that machine for months while this harness passed.
 """
 
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 QEMU = "qemu-system-x86_64"
@@ -58,6 +65,18 @@ LOADER_INK = (0xE6, 0xED, 0xF3)
 # Long enough for OVMF and the loader to reach a refusal under TCG, which
 # then waits for a key for ever.
 REFUSAL_AT = 15.0
+
+#
+# **Where the ThinkPad's firmware puts its screen, which OVMF never does**:
+# 256 GB up, past the four gigabytes `start.S` maps, at the panel's own size.
+# Every other boot here has its screen at 0x80000000, so the early screen was
+# checked for months on the one layout the machine it was written for does
+# not have.
+#
+THINKPAD_SCREEN = 0x4000000000
+THINKPAD_MODE = (1920, 1080, 7680)          # width, height, bytes a row
+MB2_BOOT_MAGIC = 0x36D76289
+MB2_TAG_FRAMEBUFFER = 8
 
 
 def firmware():
@@ -184,6 +203,259 @@ def share(pixels, colour):
             n += 1
 
     return n / (len(pixels) / 3.0)
+
+
+class Gdb:
+    """Just enough of GDB's remote protocol to stop a guest, read and write."""
+
+    def __init__(self, port):
+        self.buf = b""
+        self.s = None
+
+        for _ in range(100):
+            try:
+                self.s = socket.create_connection(("127.0.0.1", port), 2)
+                return
+            except OSError:
+                time.sleep(0.1)
+
+    def _byte(self):
+        while not self.buf:
+            chunk = self.s.recv(65536)
+
+            if not chunk:
+                raise EOFError("QEMU's gdbstub closed")
+
+            self.buf += chunk
+
+        b, self.buf = self.buf[:1], self.buf[1:]
+        return b
+
+    def ask(self, data, timeout=30.0):
+        body = data.encode()
+        self.s.settimeout(timeout)
+        self.s.sendall(b"$" + body + b"#%02x" % (sum(body) & 0xff))
+
+        while self._byte() != b"+":
+            pass
+
+        while self._byte() != b"$":
+            pass
+
+        reply = b""
+
+        while True:
+            c = self._byte()
+
+            if c == b"#":
+                break
+
+            reply += c
+
+        self._byte()
+        self._byte()
+        self.s.sendall(b"+")
+        return reply.decode()
+
+    def read(self, at, n):
+        return bytes.fromhex(self.ask("m%x,%x" % (at, n)))
+
+    def write(self, at, data):
+        return self.ask("M%x,%x:%s" % (at, len(data), data.hex())) == "OK"
+
+    def run_to(self, address, timeout):
+        """Continues to a hardware breakpoint there, and removes it."""
+        placed = self.ask("Z1,%x,1" % address) == "OK"
+        stop = self.ask("c", timeout=timeout) if placed else ""
+
+        self.ask("z1,%x,1" % address)
+        return placed and stop.startswith("T")
+
+
+def pmemsave(mon, address, size, path):
+    """Guest memory into a file, through the monitor; the bytes or None."""
+    s = socket.socket(socket.AF_UNIX)
+    s.connect(mon)
+    time.sleep(0.3)
+    s.recv(65536)
+    s.sendall(('pmemsave %#x %d "%s"\n' % (address, size, path)).encode())
+    time.sleep(1.0)
+    s.close()
+
+    for _ in range(40):
+        if os.path.exists(path) and os.path.getsize(path) == size:
+            with open(path, "rb") as f:
+                return f.read()
+
+        time.sleep(0.25)
+
+    return None
+
+
+def rgb(raw, width, height, pitch):
+    """The kernel's 32-bit XRGB rows as the 24-bit pixels `share` counts."""
+    out = bytearray()
+
+    for y in range(height):
+        row = raw[y * pitch:y * pitch + width * 4]
+        line = bytearray(width * 3)
+        line[0::3] = row[2::4]
+        line[1::3] = row[1::4]
+        line[2::3] = row[0::4]
+        out += line
+
+    return bytes(out)
+
+
+def thinkpad_screen(image, elf):
+    """Boots once with the screen where the ThinkPad's firmware puts it.
+
+    **Nothing in the loader or the kernel changes for this.** QEMU is started
+    paused with its gdbstub, run to the kernel's first instruction, and the
+    framebuffer tag in the structure the loader built is rewritten to name
+    0x4000000000 at 1920x1080. The memory there is a DIMM that is in no map
+    the firmware hands over, which is what a graphics aperture is: the
+    kernel draws into it, and the monitor reads the pixels back - once when
+    the page allocator is about to start, which is before `hal_fb_init`
+    could have mapped anything, and once at the prompt.
+
+    Returns (serial, tagged, early, late), or (None, why, None, None).
+    """
+    fw, why = firmware()
+
+    if fw is None:
+        return None, why, None, None
+
+    names = subprocess.run(["x86_64-elf-nm", elf], capture_output=True,
+                           text=True).stdout
+    symbols = {}
+
+    for line in names.splitlines():
+        parts = line.split()
+
+        if len(parts) == 3:
+            symbols[parts[2]] = int(parts[0], 16)
+
+    if "_start" not in symbols or "pmm_init" not in symbols:
+        return None, "no _start or pmm_init in %s" % elf, None, None
+
+    code, varsfd = fw
+    work = tempfile.mkdtemp()
+    mon = os.path.join(work, "mon")
+    writable = os.path.join(work, "vars.fd")
+    width, height, pitch = THINKPAD_MODE
+
+    shutil.copy(varsfd, writable)
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    cmd = [QEMU, "-M", "q35", "-m", "4G,slots=2,maxmem=300G",
+           "-object", "memory-backend-ram,id=aperture,size=16M",
+           "-device", "pc-dimm,memdev=aperture,addr=%#x" % THINKPAD_SCREEN,
+           "-no-reboot", "-vga", "std", "-display", "none",
+           "-serial", "stdio",
+           "-monitor", "unix:%s,server,nowait" % mon,
+           "-gdb", "tcp:127.0.0.1:%d" % port, "-S",
+           "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=" + code,
+           "-drive", "if=pflash,format=raw,unit=1,file=" + writable,
+           "-device", "qemu-xhci,id=xhci",
+           "-drive", "if=none,id=stick,format=raw,snapshot=on,file=" + image,
+           "-device", "usb-storage,bus=xhci.0,drive=stick",
+           "-smp", "4"]
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    heard = bytearray()
+
+    def drain():
+        while True:
+            chunk = os.read(p.stdout.fileno(), 65536)
+
+            if not chunk:
+                return
+
+            heard.extend(chunk)
+
+    threading.Thread(target=drain, daemon=True).start()
+
+    tagged = False
+    early = late = None
+
+    try:
+        g = Gdb(port)
+
+        if g.s is None:
+            return None, "QEMU's gdbstub did not answer", None, None
+
+        g.ask("?")
+
+        #
+        # The structure's address is in ebx at the kernel's entry. The stub
+        # sends each register as eight bytes here; four are tried as well,
+        # and whichever points at something shaped like a Multiboot 2
+        # structure - a sane total size, a zero reserved word - is it.
+        #
+        if g.run_to(symbols["_start"], 180.0):
+            regs = g.ask("g")
+            info = None
+
+            if int.from_bytes(bytes.fromhex(regs[0:8]), "little") \
+                    == MB2_BOOT_MAGIC:
+                for offset in (16, 8):
+                    at = int.from_bytes(bytes.fromhex(regs[offset:offset + 8]),
+                                        "little")
+                    total, reserved = struct.unpack("<II", g.read(at, 8))
+
+                    if 16 <= total <= 1 << 20 and reserved == 0:
+                        info = at
+                        break
+
+            if info is not None:
+                blob = g.read(info, total)
+                at = 8
+
+                while at + 8 <= total:
+                    kind, size = struct.unpack_from("<II", blob, at)
+
+                    if kind == 0 or size < 8:
+                        break
+
+                    if kind == MB2_TAG_FRAMEBUFFER:
+                        wanted = (THINKPAD_SCREEN, pitch, width, height)
+
+                        g.write(info + at + 8,
+                                struct.pack("<Q", THINKPAD_SCREEN))
+                        g.write(info + at + 16,
+                                struct.pack("<III", pitch, width, height))
+                        tagged = struct.unpack(
+                            "<QIII", g.read(info + at + 8, 20)) == wanted
+                        break
+
+                    at += (size + 7) & ~7
+
+        if tagged and g.run_to(symbols["pmm_init"], 60.0):
+            raw = pmemsave(mon, THINKPAD_SCREEN, pitch * height,
+                           os.path.join(work, "early.raw"))
+            early = rgb(raw, width, height, pitch) if raw else None
+
+        g.s.sendall(b"$D#44")
+
+        until = time.time() + 90.0
+
+        while time.time() < until and b"kosmos>" not in heard:
+            time.sleep(0.5)
+
+        time.sleep(2.0)
+        raw = pmemsave(mon, THINKPAD_SCREEN, pitch * height,
+                       os.path.join(work, "late.raw"))
+        late = rgb(raw, width, height, pitch) if raw else None
+    finally:
+        p.kill()
+        p.wait()
+
+    return heard.decode("utf-8", "replace"), tagged, early, late
 
 
 def main():
@@ -440,6 +712,62 @@ def main():
           + next((l.strip() for l in serial.splitlines() if "UNDER" in l), "?"))
 
     #
+    # **And the screen where the ThinkPad's firmware puts it, above 4 GB.**
+    #
+    # The early-screen check above passed for months while on the ThinkPad
+    # the early screen had never once worked: its framebuffer is at
+    # 0x4000000000, `hal_fb_early` refused anything past the four gigabytes
+    # `start.S` maps, and every boot of that machine was dark from the
+    # loader's last line to stage six. A stall anywhere in between was a
+    # photograph of the loader's lines and nothing else, which is what two
+    # sticks on 13 September were.
+    #
+    # So the same stick is booted with its screen moved there (see
+    # `thinkpad_screen`), and the pixels are read **when the page allocator
+    # is about to start**, at stage four - before `hal_fb_init` could have
+    # mapped anything the late way. The ground and the log's green have to be
+    # in them.
+    #
+    elf = os.path.join(os.path.dirname(iso) or ".", "kosmos.elf")
+
+    if not os.path.exists(elf):
+        fails.append("no %s beside the stick, so the ThinkPad's screen was "
+                     "not tried" % elf)
+    else:
+        hserial, tagged, early, late = thinkpad_screen(iso, elf)
+
+        if hserial is None:
+            fails.append("the ThinkPad's screen could not be tried: %s"
+                         % tagged)
+        else:
+            early_ground = share(early, GROUND) if early else 0.0
+            early_green = share(early, GREEN) if early else 0.0
+            said = next((l.strip() for l in hserial.splitlines()
+                         if "attached here" in l or "since stage" in l),
+                        "nothing about when the panel got the log")
+
+            check(tagged,
+                  "the harness did not stop at the kernel's entry and move "
+                  "the loader's framebuffer to 0x4000000000")
+            check(early_ground > 0.5 and early_green > 0.0005,
+                  "with the screen at 0x4000000000 nothing was drawn by the "
+                  "start of stage four (%s): the kernel is dark there until "
+                  "stage six, as it was on the ThinkPad"
+                  % ("no pixels read" if early is None else
+                     "%.1f%% ground, %.2f%% green"
+                     % (100.0 * early_ground, 100.0 * early_green)))
+            check("the panel has had this log since stage two" in hserial,
+                  "with the screen at 0x4000000000 the kernel says: " + said)
+            check(("%dx%d, 32-bit XRGB" % THINKPAD_MODE[:2]) in hserial,
+                  "the kernel did not take the 1920x1080 screen at "
+                  "0x4000000000")
+            check(late is not None
+                  and share(late, GREEN) > 0.001
+                  and share(late, RED) > 0.0005,
+                  "with the screen at 0x4000000000 the boot log and the "
+                  "wordmark are not on it at the prompt")
+
+    #
     # **A refusal, on the screen.** The ThinkPad's first boot through this
     # loader was a black panel that went back to the firmware's menu when a
     # key was pressed: the loader had refused and said why, through a text
@@ -481,8 +809,9 @@ def main():
         return 1
 
     print("PASS: %d checks booting through Kosmos's loader under UEFI (the "
-          "firmware's memory claimed and checked, the kernel at 16 MB, and "
-          "Kosmos drawing its own %dx%d screen)." % (checks, width, height))
+          "firmware's memory claimed and checked, the kernel at 16 MB, "
+          "Kosmos drawing its own %dx%d screen, and the ThinkPad's 1920x1080 "
+          "at 0x4000000000 from stage two)." % (checks, width, height))
     return 0
 
 
