@@ -8,6 +8,26 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
+**Next, with Diego, in the morning.** Thirteen commits on `main` are not on
+`origin`, from `13037a4` to `run_uefi.py`'s skip, and `VERSION` still says
+0.10.62. A push is his call, after `make prepush` and a bump.
+
+- **The ERDP stick first**, if it has been booted: `log xhci` after moving the
+  mouse and pulling it out - the naming steps milliseconds apart, and few of
+  the reports found by looking.
+- **Then a stick from `main`, offered as the experiment it is**, beside one
+  that has booted: This Machine, the disk started once and the loader that
+  holds its read to the build's sums have none of them run on the ThinkPad.
+  Its first photograph is `log loader`, which now also says whether the stick
+  held what the build wrote.
+- **Not started, on purpose**: enumeration as steps between a mouse's
+  reports - the roadmap's plug that stalls every mouse - which restructures
+  the xHCI driver. On the same stick as the unconfirmed ERDP fix it would make
+  whatever the ThinkPad shows harder to read.
+- **Checked at the end of the night, on `9014971`**: `make test` whole - the
+  suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
+  display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
 ### 14 September, small hours: `run_uefi.py`'s skip, and only for a missing firmware
 
 **A roadmap follow-up from 13 September**: on a machine without OVMF the
@@ -53,12 +73,6 @@ passed all of it, and nothing the ThinkPad has shown rules that out.
 - **The next ThinkPad stick carries this loader, which has not booted
   there**: an experiment until it does, offered beside a proven stick. On it
   `log loader` also says whether the stick held what the build wrote.
-
-**Next, with Diego:** whether the ERDP stick's mouse is smooth - the
-photograph `log xhci` after moving the mouse and pulling it out, where the
-naming steps should be milliseconds apart and few reports found by looking.
-Then This Machine on the ThinkPad, which is newer than any stick he has, and
-this loader - both on a stick offered as the experiment it is.
 
 ### 14 September, small hours: the disk started once
 
