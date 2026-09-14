@@ -32,6 +32,23 @@ local function now()
   return sys.ticks() / HZ
 end
 
+--
+-- What the disk server says its device has cost so far, in counter ticks:
+-- the time inside its block reads and writes (`diskfs_main` in `init.lua`).
+-- `/home/.device` touches no disk, so asking adds nothing to the answer. Nil
+-- from a server that does not count, and then no share is claimed.
+--
+-- Every request the server answered in the meantime is in it - the desktop's
+-- as well as this benchmark's - so a share is honest on a quiet machine.
+--
+local function device_ticks()
+  local d = fs.read("/home/.device")
+
+  if type(d) ~= "table" or not d.read_counter_ticks then return nil end
+
+  return (d.read_counter_ticks or 0) + (d.write_counter_ticks or 0)
+end
+
 diskbench.SECONDS = 2
 diskbench.RUNS = 3
 
@@ -144,6 +161,7 @@ local function file_ops(ctx)
   local pages = FILE_BYTES // 4096
 
   return {
+    probe = device_ticks,
     note = ("a %d KB file, read and written whole: kfs journals every block "
             .. "a write changes, and a transaction holds at most %d")
            :format(FILE_BYTES // 1024, kfs.JOURNAL_BLOCKS - 2),
@@ -223,8 +241,9 @@ end
 -- One run: `op` as many times as fit in `seconds`. Yields now and then, so a
 -- window resuming this keeps drawing; `diskbench` just runs it through.
 --
-local function timed(op, seconds)
+local function timed(op, seconds, probe)
   local count, bytes = 0, 0
+  local device_before = probe and probe()
   local began = now()
   local last_yield = began
   local t = began
@@ -247,19 +266,28 @@ local function timed(op, seconds)
   until t - began >= seconds
 
   local took = t - began
+  local device_after = probe and probe()
+  local device
+
+  -- The share of the run the device took, clamped: the two readings bracket
+  -- the run from outside it, so a rounding can put it a hair past either end.
+  if device_before and device_after then
+    device = math.max(0, math.min(1, (device_after - device_before) / HZ / took))
+  end
 
   return {
     bytes_per_second = bytes / took,
     per_second = count / took,
     ms = took * 1000 / count,
+    device = device,
   }
 end
 
-local function best_of(op, seconds, runs)
+local function best_of(op, seconds, runs, probe)
   local best
 
   for _ = 1, runs do
-    local r, why = timed(op, seconds)
+    local r, why = timed(op, seconds, probe)
 
     if not r then return { why = why } end
 
@@ -297,7 +325,8 @@ function diskbench.measure(target, seconds, runs)
 
     local table_of = ops(ctx)
     local result = {
-      target = target.name, note = table_of.note, seconds = seconds,
+      target = target.name, kind = target.kind, note = table_of.note,
+      seconds = seconds,
       runs = runs, version = (sys.build() or {}).version, rows = {},
     }
 
@@ -313,7 +342,7 @@ function diskbench.measure(target, seconds, runs)
         elseif type(op) == "string" then
           cell[side] = { why = op }
         else
-          cell[side] = best_of(op, seconds, runs)
+          cell[side] = best_of(op, seconds, runs, table_of.probe)
         end
       end
 

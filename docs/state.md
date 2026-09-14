@@ -17,9 +17,12 @@ nicely designed and modular system if it's slow and unusable". USB step 6
 waits for it (`roadmap.md`, *Being built now*). Disk Benchmark is drawn -
 `docs/diskbench.html`, which Diego liked - and its engine
 (`/lib/diskbench.lua`), a `diskbench` program and `blocks.lua`'s `fill` are
-built and tested (`testing.md` §18.63). Next: step 2 - the disk server timing
-its own device calls, so a row can say where its time went - and a baseline
-on the ThinkPad, then the largest measured cost. Diego allowed the
+built and tested (`testing.md` §18.63), and **step 2 says where the time
+went** (§18.64): on a USB stick's `/home` under QEMU the device calls are 70 to
+86% of a run, because kfs makes one per 4 KB. **Next: step 3, batching** - the
+kernel's disk call moving up to 124 KB, kfs reading a file's contiguous blocks
+in as few calls as that allows, and the journal writing likewise - measured
+before and after. The ThinkPad's own numbers are still to take. Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
@@ -79,6 +82,23 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: storage at full speed, step 2 - where the time went
+
+- **The disk server counts what its device costs**: `diskfs_main` wraps
+  `sys.disk_read` and `sys.disk_write` after `stick_home`, adding calls, bytes
+  and counter ticks - named as ticks, since this process cannot read
+  `counter_hz` - and answers `/home/.device`, a reserved name that touches no
+  disk. Disk Benchmark reads it around each `/home` run and prints the
+  device's share.
+- **Under QEMU, for shape**: on the kernel's virtio disk the device is 49 to
+  66% of a run; on a USB stick's `/home` - the ThinkPad's path, measured on
+  QEMU's x86 board - 70 to 86%, at 34.3 MB/s read and 13.6 written. kfs makes
+  one block call per 4 KB, a stick's call takes 124 KB, and the kernel's takes
+  4 KB in its bounce buffer and in the binding's `DISK_MAX_READ`.
+- **Tested**: `run_diskbench.py` 8, one new; control C6 in `testing.md`
+  §18.64.
+- **Next**: step 3, batching, measured before and after.
 
 ### 14 September: storage at full speed, step 1 - Disk Benchmark at the prompt
 

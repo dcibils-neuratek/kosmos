@@ -3827,3 +3827,44 @@ machine with no display on both boards with all 112 programs in `/bin`, the
 disk 33 across two boots, the argument audit 112, FAT 75 and 24, and the
 suites 160 of 160 and 156 of 156. The display harness was not run: nothing a
 screen shows changed.
+
+## 18.64 Where the time went
+
+**Storage at full speed, step 2** (`roadmap.md`, *Being built now*): the disk
+server counts what its device costs - calls, bytes and counter ticks inside
+`sys.disk_read` and `sys.disk_write`, wrapped after `stick_home` has put a
+stick's behind them - and answers `/home/.device`, which touches no disk, so
+asking adds nothing to the answer. Disk Benchmark reads it before and after
+each `/home` run and prints the device's share.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/run_diskbench.py`, 8 checks, 1 of them new | the sequential read and write and the random read on `/home` each say how much of their run was the device, above zero, and the two parts add to 100 |
+| `run_x86.py`'s `usb_diskbench` | unchanged: a drive's line says the USB driver does not count its own time yet |
+
+**Control**, made in the tree, built and run, and put back byte for byte
+against a checksum taken before (checked):
+
+| broken | what failed |
+| ------ | ----------- |
+| C6: the disk server's reads and writes not adding their counter ticks | `run_diskbench.py`, 1 of 8: all three shares were 0% |
+
+**What it showed under QEMU**, for the shape of it and not for a speed:
+
+| `/home` on | sequential read | sequential write | random 4 KB read |
+| ---------- | --------------- | ---------------- | ---------------- |
+| the kernel's disk, AArch64 and virtio | 90.4 MB/s, the device 66% | 26.0 MB/s, 51% | 1897 IOPS, 49% |
+| a USB stick's Kosmos partition, x86 | 34.3 MB/s, 86% | 13.6 MB/s, 70% | 975 IOPS, 72% |
+
+**"The device" is everything inside one block call**: the system call or the
+message to the USB driver, the driver, and QEMU's device behind it - and kfs
+makes one such call for every 4 KB it reads or writes, since `kfs.read_block`
+asks for one block and the journal writes one block at a time. On a stick's
+`/home`, which is the ThinkPad's path, that is most of every run. A stick's
+call already accepts 124 KB; the kernel's takes 4 KB, in both its bounce
+buffer and the binding's `DISK_MAX_READ`. That is step 3.
+
+And as written: `make test` whole - Disk Benchmark 8, x86-64 158, the UEFI
+boots 38, the stick check 12, the machine with no display on both boards with
+all 112 programs in `/bin`, the disk 33 across two boots, kfs's format 47, the
+argument audit 112, and the suites 160 of 160 and 156 of 156.

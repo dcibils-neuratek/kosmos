@@ -2196,7 +2196,7 @@ end
 --
 -- The dot is what keeps them from colliding with an ordinary file: nothing
 -- creates a name starting with one, and `store` refuses to.
-local RESERVED = { [".super"] = true, [".format"] = true }
+local RESERVED = { [".super"] = true, [".format"] = true, [".device"] = true }
 
 -- The attributes that are read out of the inode rather than stored beside
 -- it. `getattr` always reports these and `setattr` always refuses them.
@@ -2564,6 +2564,24 @@ local function diskfs_handlers(state)
 
       if name == ".super" or req.path == "/.super" then
         return { ok = true, value = describe() }
+      end
+
+      --
+      -- What the device has cost this server so far, and nothing else: no
+      -- mount, no bitmap, no block read, so a benchmark can ask before and
+      -- after a run without the asking showing up in the answer. The same
+      -- fields, zeroed, when nothing counts - `describe` gives the reason a
+      -- reply's shape must not depend on that.
+      --
+      if name == ".device" or req.path == "/.device" then
+        local d = state.device or {}
+
+        return { ok = true, value = {
+          reads = d.reads or 0, writes = d.writes or 0,
+          read_bytes = d.read_bytes or 0, write_bytes = d.write_bytes or 0,
+          read_counter_ticks = d.read_counter_ticks or 0,
+          write_counter_ticks = d.write_counter_ticks or 0,
+        } }
       end
 
       --
@@ -3493,7 +3511,47 @@ local function diskfs_main(endpoint, read_cap, write_cap)
     stick_home(read_cap, write_cap, kfs, home:upper())
   end
 
-  ok = pcall(serve, endpoint, { kfs = kfs }, diskfs_handlers)
+  --
+  -- What the device costs, counted where every block this server moves has
+  -- to pass (storage at full speed, step 2). kfs reads and writes through
+  -- `sys.disk_read` and `sys.disk_write`, looked up at each call, and
+  -- `stick_home` has already put a stick's behind them - so the time spent in
+  -- here is the device, its driver and the way to it, and the rest of a
+  -- request's time in this process is the filesystem.
+  --
+  -- **Counter ticks, and named so.** This process cannot read `counter_hz`,
+  -- and a number mailed to another process arrives naked (`CLAUDE.md`, two
+  -- clocks): whoever reads these divides by its own. They are answered from
+  -- `/home/.device`, which touches no disk, so asking what the device cost
+  -- adds nothing to it.
+  --
+  local device = { reads = 0, writes = 0, read_bytes = 0, write_bytes = 0,
+                   read_counter_ticks = 0, write_counter_ticks = 0 }
+  local disk_read, disk_write = sys.disk_read, sys.disk_write
+
+  sys.disk_read = function(sector, bytes)
+    local began = sys.ticks()
+    local got, why = disk_read(sector, bytes)
+
+    device.read_counter_ticks = device.read_counter_ticks + (sys.ticks() - began)
+    device.reads = device.reads + 1
+    device.read_bytes = device.read_bytes + (type(got) == "string" and #got or 0)
+
+    return got, why
+  end
+
+  sys.disk_write = function(sector, data)
+    local began = sys.ticks()
+    local wrote, why = disk_write(sector, data)
+
+    device.write_counter_ticks = device.write_counter_ticks + (sys.ticks() - began)
+    device.writes = device.writes + 1
+    device.write_bytes = device.write_bytes + #data
+
+    return wrote, why
+  end
+
+  ok = pcall(serve, endpoint, { kfs = kfs, device = device }, diskfs_handlers)
 
   if not ok then sys.exit(DIED_SERVING) end
 end

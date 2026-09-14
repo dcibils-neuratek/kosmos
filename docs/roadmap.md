@@ -106,8 +106,15 @@ the block path this replaces. In this order, each measured before and after:
    written; a filesystem through a test file, removed afterwards.
 2. **A baseline, and where the time goes**, under QEMU for the shape and on
    the ThinkPad for the numbers: the Kingston's blocks, `/home` on it, and the
-   NVMe once something outside the kernel can reach it.
-3. **The largest measured cost first.** The candidates reading found:
+   NVMe once something outside the kernel can reach it. **Where the time goes
+   is built** (`/home/.device`, `testing.md` §18.64): under QEMU the device
+   calls are 49 to 66% of a run on the kernel's disk and 70 to 86% on a
+   stick's `/home`, because kfs makes one per 4 KB. The ThinkPad's numbers
+   are still to take.
+3. **The largest measured cost first.** **Next is batching**, which step 2's
+   shares point at: the kernel's disk call moving up to 124 KB, kfs reading a
+   file's contiguous blocks in as few calls as that allows, and the journal's
+   writes likewise - measured before and after. The candidates reading found:
    `kfs`'s bytes through Lua strings; every block a write changes journaled,
    data included, so written twice; and no write bigger than the journal -
    254 blocks with the file's metadata, so under a megabyte, which Disk

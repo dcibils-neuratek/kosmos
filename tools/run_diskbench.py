@@ -91,6 +91,21 @@ def main():
               "%s x%d did not say %r for both its read and its write: %r"
               % (name, queue, QUEUED, r))
 
+    # Storage at full speed, step 2: the disk server counts what its device
+    # cost, and each side measured on /home says how much of its run that was.
+    # Zero is a failure, not a fast device - it is what a server that stopped
+    # counting would report.
+    shares = re.findall(r"^\s+(sequential|random) (read|write): the device "
+                        r"(\d+)%, everything else (\d+)%", out, re.M)
+    got = {(kind, side): (int(dev), int(rest)) for kind, side, dev, rest in shares}
+
+    check(set(got) == {("sequential", "read"), ("sequential", "write"),
+                       ("random", "read")}
+          and all(0 < dev <= 100 and dev + rest == 100
+                  for dev, rest in got.values()),
+          "where the time went did not give the device's share, above zero, "
+          "for the three sides measured on /home: %r" % (shares,))
+
     saved = re.search(r"saved (/home/benchmarks/([0-9A-Za-z-]+)\.bench)", out)
 
     check(saved is not None and (saved.group(2) + ".bench") in out.split(
@@ -114,7 +129,7 @@ def main():
         return 1
 
     print("PASS: %d checks on Disk Benchmark at the prompt (/home found, every "
-          "row it can run measured, every row it cannot run saying why, the "
+          "row it can run measured with the device's share of it, every row it cannot run saying why, the "
           "run kept, and its test file removed)." % checks)
     return 0
 

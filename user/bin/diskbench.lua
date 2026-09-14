@@ -115,7 +115,36 @@ end
 
 print("")
 print(result.note)
-print("where the time went: not measured yet")
+
+-- Where the time went: the share of each run spent inside the disk server's
+-- device calls, and everything else - kfs, the journal, the messages and the
+-- copies - is the rest.
+local shares = {}
+
+for _, row in ipairs(diskbench.ROWS) do
+  for _, which in ipairs({ "read", "write" }) do
+    local c = (result.rows[row.id] or {})[which] or {}
+
+    if c.device then
+      local pct = math.floor(c.device * 100 + 0.5)
+
+      shares[#shares + 1] = ("  %s %s: the device %d%%, everything else %d%%")
+        :format(row.name:match("^(%S+)"), which, pct, 100 - pct)
+    end
+  end
+end
+
+if #shares > 0 then
+  print("where the time went, as the share of each run inside the device calls:")
+
+  for _, line in ipairs(shares) do
+    print(line)
+  end
+elseif result.kind == "drive" then
+  print("where the time went: not measured for a drive yet - the USB driver does not count its own time")
+else
+  print("where the time went: not measured - the disk server did not say what its device cost")
+end
 
 local path, why = diskbench.save(result)
 
