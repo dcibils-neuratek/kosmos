@@ -111,6 +111,7 @@
   .row.sel { background: var(--k-sel); }
   .row .sub { color: var(--k-dim); font-size: 12px; }
   .row.collapsed { color: var(--k-dim); }
+  .row.fsrow { padding-left: 46px; }
   svg.ico { width: 16px; height: 16px; flex: none; }
 
   .drive-tile { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--k-line); }
@@ -203,11 +204,11 @@
 <body>
 <main>
   <h1>Kosmos Drives</h1>
-  <p class="note" style="margin:-2px 0 16px">A design, 14 September 2026. Nothing here is built yet, and the six decisions at the end are still open. The copy in the repository is <code>docs/drives.html</code>.</p>
+  <p class="note" style="margin:-2px 0 16px">A design, 14 September 2026, and its decisions taken with Diego the same day. Nothing here is built yet. The copy in the repository is <code>docs/drives.html</code>.</p>
   <p class="lede">Two pieces, both borrowed. <b>Tracker</b> shows your drives the way every desktop does: a list of drives, and inside each one, its files. <b>Drives</b>, a new app, shows the drives themselves: type, partitions, filesystems and sizes.</p>
 
   <h2>What Tracker would look like</h2>
-  <p>Three groups in the sidebar. <b>Places</b> for where you work, <b>Drives</b> for what is plugged in, <b>System</b> folded away. Click <b>Drives</b> and every drive is listed with how full it is.</p>
+  <p>Three groups in the sidebar, in this order: <b>Places</b> for where you work, <b>System</b> folded away, and <b>Drives</b> for what is plugged in - every filesystem with its type beside its name. Click <b>Drives</b> and every drive is listed with how full it is.</p>
 
   <div class="desk">
     <div class="win">
@@ -224,12 +225,16 @@
           <div class="row"><svg class="ico" viewBox="0 0 16 16"><path d="M2 8 8 2l6 6v6H2z" fill="#e0a020" stroke="#6b4a00"/><rect x="6.5" y="10" width="3" height="4" fill="#fff"/></svg>Home</div>
           <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="9" fill="#3d63b8" stroke="#1d2f5a"/><rect x="5" y="13" width="6" height="1.5" fill="#555"/></svg>Desktop</div>
           <div class="row"><svg class="ico" viewBox="0 0 16 16"><path d="M8 1.5l1.9 4.2 4.6.4-3.5 3 1.1 4.5L8 11.2 3.9 13.6 5 9.1 1.5 6.1l4.6-.4z" fill="#e8c14a" stroke="#7a5d00"/></svg>MyPhotos <span class="sub">on PHOTOS 2024</span></div>
-          <div class="group">Drives</div>
-          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="1" fill="#2b2b2b"/><rect x="5.5" y="12" width="5" height="3" fill="#e6b400"/></svg>Kingston DataTraveler <span class="sub">boot</span></div>
-          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1" fill="#7a8494" stroke="#394150"/><circle cx="12" cy="8" r="1" fill="#9be38b"/></svg>Internal drive</div>
-          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="1" fill="#e9e9e9" stroke="#777"/><rect x="5.5" y="12" width="5" height="3" fill="#8aa"/></svg>PHOTOS 2024</div>
           <div class="group">System</div>
           <div class="row collapsed">&#9656; bin, lib, app, dev, net, ramfs</div>
+          <div class="group">Drives</div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="1" fill="#2b2b2b"/><rect x="5.5" y="12" width="5" height="3" fill="#e6b400"/></svg>Kingston DataTraveler <span class="sub">boot</span></div>
+          <div class="row fsrow">KOSMOS HOME <span class="sub">kfs</span></div>
+          <div class="row fsrow">KOSMOS <span class="sub">FAT32</span></div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1" fill="#7a8494" stroke="#394150"/><circle cx="12" cy="8" r="1" fill="#9be38b"/></svg>Internal drive</div>
+          <div class="row fsrow">Windows <span class="sub">NTFS</span></div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="1" fill="#e9e9e9" stroke="#777"/><rect x="5.5" y="12" width="5" height="3" fill="#8aa"/></svg>PHOTOS 2024</div>
+          <div class="row fsrow">PHOTOS 2024 <span class="sub">FAT32</span></div>
         </div>
         <div class="main">
           <div class="drive-tile">
@@ -246,7 +251,7 @@
             <div>
               <div class="drive-name">Internal drive</div>
               <div class="drive-kind">NVMe, 512 GB</div>
-              <div class="fs cant"><span class="fsname">Windows</span><span class="fstype">NTFS</span><span class="free">Kosmos cannot read this filesystem</span></div>
+              <div class="fs"><span class="fsname">Windows</span><span class="fstype">NTFS</span><span><span class="bar"><i style="width:55%"></i></span><span class="free">read only, 230 of 512 GB free</span></span></div>
             </div>
           </div>
           <div class="drive-tile">
@@ -262,7 +267,7 @@
       <div class="foot">3 drives</div>
     </div>
   </div>
-  <p class="note">A drawing, not a screenshot. The Kingston and its two filesystems are your real stick. The internal drive and PHOTOS 2024 are examples, and the sizes on them are made up. <b>On your ThinkPad today</b> the list would be the Kingston, and the internal NVMe marked "not started" until Kosmos can start it.</p>
+  <p class="note">A drawing, not a screenshot. The Kingston and its two filesystems are your real stick. The internal drive and PHOTOS 2024 are examples, and the sizes on them are made up. <b>On your ThinkPad today</b> the list would be the Kingston, and the internal NVMe marked "not started" until Kosmos can start it. Once it can, its Windows filesystem is readable, read only - unless BitLocker has encrypted it, which Windows 11 laptops often do by default.</p>
 
   <h2>Your boot stick, opened</h2>
   <p>One drive can hold more than one filesystem. Your stick holds two: yours, and the small one the ThinkPad boots from.</p>
@@ -287,12 +292,16 @@
           <div class="group">Places</div>
           <div class="row">Home</div>
           <div class="row">Desktop</div>
-          <div class="group">Drives</div>
-          <div class="row sel">Kingston DataTraveler <span class="sub">boot</span></div>
-          <div class="row">Internal drive</div>
-          <div class="row">PHOTOS 2024</div>
           <div class="group">System</div>
           <div class="row collapsed">&#9656; bin, lib, app, dev, net, ramfs</div>
+          <div class="group">Drives</div>
+          <div class="row">Kingston DataTraveler <span class="sub">boot</span></div>
+          <div class="row fsrow sel">KOSMOS HOME <span class="sub">kfs</span></div>
+          <div class="row fsrow">KOSMOS <span class="sub">FAT32</span></div>
+          <div class="row">Internal drive</div>
+          <div class="row fsrow">Windows <span class="sub">NTFS</span></div>
+          <div class="row">PHOTOS 2024</div>
+          <div class="row fsrow">PHOTOS 2024 <span class="sub">FAT32</span></div>
         </div>
         <div class="main files">
           <div class="head"><span>Name</span><span>Size</span><span>Kind</span></div>
@@ -332,6 +341,7 @@
     </table>
   </div>
   <p class="note"><code>/drives</code> is one folder every program has from the moment it starts. Drives plugged in or pulled out appear and disappear inside it, so a program that is already running still finds a drive plugged in after it. A program never given <code>/drives</code> cannot reach any drive at all.</p>
+  <p class="note">Your Windows files on the internal drive would be at <code>/drives/Windows/Users/diego</code>, read only.</p>
 
   <h2>From an app</h2>
   <p>An app's <b>Open</b> and <b>Save</b> windows have the same sidebar as Tracker: Places and Drives. You go through whichever is quicker. <b>What the app gets is the file itself</b>, at its real place on the drive, so no app has to know that MyPhotos exists.</p>
@@ -345,9 +355,14 @@
           <div class="group">Places</div>
           <div class="row">Home</div>
           <div class="row sel">MyPhotos</div>
+          <div class="group">System</div>
+          <div class="row collapsed">&#9656; bin, lib, app, dev, net, ramfs</div>
           <div class="group">Drives</div>
           <div class="row">Kingston DataTraveler</div>
+          <div class="row fsrow">KOSMOS HOME <span class="sub">kfs</span></div>
+          <div class="row fsrow">KOSMOS <span class="sub">FAT32</span></div>
           <div class="row">PHOTOS 2024</div>
+          <div class="row fsrow">PHOTOS 2024 <span class="sub">FAT32</span></div>
         </div>
         <div class="main files" style="min-height:190px">
           <div class="head"><span>Name</span><span>Size</span><span>Kind</span></div>
@@ -447,14 +462,15 @@
     </div>
   </div>
 
-  <h2>Six things to decide</h2>
+  <h2>Decided, 14 September</h2>
   <ol class="decide">
-    <li><b>The group is called Drives.</b><span>Not Devices: in Kosmos, devices already means the processor, the screen and the keyboard.</span></li>
+    <li><b>The sidebar is Places, System, Drives, and every filesystem says what it is.</b><span>Drives, not Devices: in Kosmos, devices already means the processor, the screen and the keyboard. System comes after Places, folded by default. Each filesystem shows its type beside its name - kfs, FAT32, exFAT, NTFS.</span></li>
     <li><b>A drive with one filesystem opens straight into its files.</b><span>A drive with two, like your boot stick, first shows the two.</span></li>
     <li><b>The Desktop gets a disk icon for each drive</b><span>as BeOS did, in place of today's single Drive icon that opens everything at once.</span></li>
     <li><b>The Drives app shows before it changes anything.</b><span>Drives, partitions, filesystems and sizes first; formatting and partitioning later, each on its own.</span></li>
     <li><b>Places are shortcuts you add and name.</b><span>Drag a drive or a folder in and call it MyPhotos. A shortcut rather than a mount, so the drive itself never changes.</span></li>
     <li><b>One Open and Save window for every app.</b><span>The one Kosmos has, grown to what any system's does, and every app that opens or saves moved onto it.</span></li>
+    <li><b>Other machines' filesystems are read only: FAT32, exFAT and NTFS.</b><span>Your Windows files on the internal drive included, unless BitLocker has encrypted them. FAT32 and exFAT are Kosmos's own readers, from Microsoft's specifications; how the NTFS reader is made - Kosmos's own, or from what Linux and Haiku already have - is still to decide.</span></li>
   </ol>
 </main>
 

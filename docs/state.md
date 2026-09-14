@@ -35,7 +35,10 @@ prepush` and a bump.
   mounted. **Designed in `docs/drives.html`**, to design the apps from: named
   drives under `/drives` instead of letters, Places, Drives and System in
   Tracker, places as shortcuts, one Open and Save window for every app, and a
-  Drives app. Six decisions still open, and nothing built.
+  Drives app. **Decided with Diego the same day**: Places, System, Drives in
+  that order, every filesystem's type shown, and NTFS read only beside FAT32
+  and exFAT - his Windows files on the NVMe, unless BitLocker has encrypted
+  them. Nothing built.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and
