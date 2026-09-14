@@ -42,10 +42,14 @@ kfs.EXTENTS      = 12                  -- what fits in an inode after its
 
 kfs.ROOT_INODE   = 1                   -- 0 means "none", so the root is 1
 
--- Journal space, reserved and unused. Sized at a megabyte because a journal
--- holds one transaction's worth of blocks and a transaction here is a
--- handful; the number is round rather than derived, and it is reserved now
--- only so that turning it on later does not move the data blocks.
+-- The journal: where a transaction's blocks are written before they go
+-- where they belong ("The journal", below). Data blocks go through it as
+-- well as the filesystem's own, so every block a write changes is written
+-- twice. Sized at a megabyte, round rather than derived - and that is also
+-- the largest write there is: a transaction of more than JOURNAL_BLOCKS - 2
+-- blocks, the file's metadata included, is refused whole. This used to say
+-- the space was reserved and unused, which stopped being true when the
+-- journal was turned on; Disk Benchmark's first run is what noticed.
 kfs.JOURNAL_BLOCKS = 256
 
 kfs.KIND_FREE = 0

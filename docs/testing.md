@@ -3770,3 +3770,60 @@ with all 111 programs in `/bin`, the disk 33 across two boots, the argument
 audit 112, and the suites 160 of 160 and 156 of 156. The display harness was
 not run: nothing in the image changed, since `fat_decode.c` is not in it
 until 6b.
+
+## 18.63 Disk Benchmark at the prompt
+
+**Storage at full speed, step 1** (`roadmap.md`, *Being built now*):
+`/lib/diskbench.lua`, the `diskbench` program, and `blocks.lua`'s `fill`.
+The window comes later, from `docs/diskbench.html`. Under QEMU the speed is
+QEMU's, so what these hold the benchmark to is **saying what it measured and
+what it could not**.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/run_diskbench.py`, 7 checks | a blank disk the machine formats itself: `diskbench` lists `/home`; `diskbench /home 1 1` reads and writes sequentially at speeds above zero and reads 4 KB at random at a number of IOPS above zero; the random write says a write replaces the whole file; the rows eight and thirty-two at once each say, for read and write, that nothing queues; the run is saved in `/home/benchmarks` and `ls` shows it there; and its test file is gone from `/home/.diskbench` afterwards |
+| `tools/run_x86.py`'s `usb_diskbench`, 5 checks | the stick `usb_blocks` reads, with `diskbench usb 0 1 1`: listed as unit 0 by its INQUIRY names; its sequential and random reads measured through `/dev/blocks` and both writes refused by the program; its sequential reads said to be 124 KB, the most one USB read moves; and the stick's image file the same, by SHA-256, before and after |
+
+**Controls**, each made in the tree, built and run, and every file put back
+byte for byte after (checked):
+
+| broken | what failed |
+| ------ | ----------- |
+| C1: the test file not removed afterwards | `run_diskbench.py`: its test file was left in `/home/.diskbench` |
+| C2: the queued rows measured one at a time, and labelled eight and thirty-two at once | `run_diskbench.py`: `sequential 1 MB x8` read 90.1 and wrote 25.3 MB/s, and `random 4 KB x32` read 1954 IOPS - both caught as rows that should have said nothing queues |
+| C4: the run not saved | `run_diskbench.py`: nothing in `/home/benchmarks` |
+| C1, C2 and C4 together | 4 of 7, each failing its own check |
+| C3: a 1 MB test file again | `run_diskbench.py`, 6 of 7: the journal refused the file, so no row ran; only the listing passed |
+| C5: `fill` moving nothing | `usb_diskbench`, 2 of 5: both read rows said "nothing was moved" |
+
+**What QEMU cannot show**: any speed. The numbers that mean something are the
+ThinkPad's - the Kingston's blocks, and `/home` on its partition - and they
+are the baseline step 2 takes.
+
+**Found by the first run, and written into `kfs.lua`, `roadmap.md` and
+`README.md`**: a 1 MB test file could not be written at all - "more blocks
+changed than the journal can hold". kfs journals every block a write changes,
+data included, and one transaction holds at most 254 blocks with the file's
+metadata, so no write reaches a megabyte, though `diskfs` accepts one. The test
+file is sized from `kfs.JOURNAL_BLOCKS` now, and says why.
+
+**Not given a control**: the stick unchanged by SHA-256. Nothing in
+`diskbench` writes a drive, and `/dev/blocks` refuses a write from any program
+(`usb_blocks`), so there is no change to this program that could make it write
+one; the check stands as a guard for a later version that could.
+
+**And the first control script was wrong, and said it was right.** It kept
+each file it broke under its name alone, and two of them are called
+`diskbench.lua` - so the engine was put back as the program, and a check that
+compared each file with the copy it had kept said byte for byte. It came out
+because the second control found no text to change. The engine was rebuilt
+from its draft with the two changes made since, and the script now keeps each
+file by its whole path and compares against checksums taken before anything
+was broken; these are that script's results.
+
+And as written: `make test` whole - Disk Benchmark 7, x86-64 158 with
+`usb_diskbench`'s 5 among them, the UEFI boots 38, the stick check 12, the
+machine with no display on both boards with all 112 programs in `/bin`, the
+disk 33 across two boots, the argument audit 112, FAT 75 and 24, and the
+suites 160 of 160 and 156 of 156. The display harness was not run: nothing a
+screen shows changed.

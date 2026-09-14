@@ -108,7 +108,10 @@ the block path this replaces. In this order, each measured before and after:
    the ThinkPad for the numbers: the Kingston's blocks, `/home` on it, and the
    NVMe once something outside the kernel can reach it.
 3. **The largest measured cost first.** The candidates reading found:
-   `kfs`'s bytes through Lua strings, and no write over a megabyte; USB reads
+   `kfs`'s bytes through Lua strings; every block a write changes journaled,
+   data included, so written twice; and no write bigger than the journal -
+   254 blocks with the file's metadata, so under a megabyte, which Disk
+   Benchmark's first run found; USB reads
    of 124 KB, copied on their way; the kernel's NVMe driver, polled, one
    command at a time, 4 KB a call. What they point at: the byte path in C -
    which Diego allowed, "if you need to take the filesystem from lua to c do

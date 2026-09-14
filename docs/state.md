@@ -17,8 +17,9 @@ nicely designed and modular system if it's slow and unusable". USB step 6
 waits for it (`roadmap.md`, *Being built now*). Disk Benchmark is drawn -
 `docs/diskbench.html`, which Diego liked - and its engine
 (`/lib/diskbench.lua`), a `diskbench` program and `blocks.lua`'s `fill` are
-written, and not yet run or tested. Next: run it under QEMU, a permanent
-test, a baseline, then the largest measured cost. Diego allowed the
+built and tested (`testing.md` §18.63). Next: step 2 - the disk server timing
+its own device calls, so a row can say where its time went - and a baseline
+on the ThinkPad, then the largest measured cost. Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
@@ -71,6 +72,29 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: storage at full speed, step 1 - Disk Benchmark at the prompt
+
+- **`/lib/diskbench.lua` and `diskbench`**: CrystalDiskMark's four rows for
+  `/home`, through a test file removed afterwards, and for a USB stick,
+  through its blocks and never written. The rows nothing can run yet say why:
+  nothing queues, and a write on kfs replaces the whole file. Each run is
+  saved in `/home/benchmarks`. `blocks.lua`'s `fill` reads without copying
+  into a Lua string, so a stick's read is timed without that copy.
+- **Its first run found kfs's real ceiling**: a 1 MB file could not be written
+  at all, since kfs journals every block a write changes, data included, and a
+  transaction holds at most 254 blocks. The test file is sized from
+  `kfs.JOURNAL_BLOCKS`; `kfs.lua`'s comment calling the journal unused is
+  corrected; `roadmap.md` and `README.md` have the finding.
+- **Under QEMU, which is not a speed**: sequential 103.8 MB/s read and 29.0
+  written, random 4 KB 2132 IOPS read, on a 768 KB file.
+- **Reading found the likely first cost**, for a measurement to confirm: kfs
+  asks the device for one 4 KB block at a time - one USB request, or one
+  system call, a block - and writes every block twice through the journal.
+- **Tested**: `run_diskbench.py` 7, `usb_diskbench` 5; controls in
+  `testing.md` §18.63, and the control script's own mistake with them.
+- **`bench.lua`'s bulk-write comment corrected**: a large write has crossed in
+  a region since `fs.write` was fixed.
 
 ### 14 September: USB step 6a, FAT read on the Mac
 

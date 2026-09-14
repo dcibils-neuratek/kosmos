@@ -2809,6 +2809,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# harness: `wc` says five lines, so `head` and `tail` have to name
 	@# the first and last two of exactly those.
 	python3 tools/run_shell.py $(TARGET)
+	@# And Disk Benchmark, the instrument storage is being made fast with:
+	@# held to saying what it measured and what it could not, rather than to
+	@# a speed, since under QEMU the speed is QEMU's.
+	python3 tools/run_diskbench.py $(TARGET)
 	@# A frame off the card and onto the wire, read back out of QEMU's own
 	@# capture - because nothing inside the guest can establish that one
 	@# left. And a second boot with no card, which is the branch every

@@ -790,6 +790,76 @@ def usb_blocks(image, check):
           "read only, error 7:\n    %s" % shown)
 
 
+def usb_diskbench(image, check):
+    """**Disk Benchmark on a USB stick's blocks** (storage at full speed).
+
+    The stick `usb_blocks` reads, with `diskbench` pointed at it: listed as
+    unit 0 by its names; its two read rows measured through `/dev/blocks` -
+    sequential in the largest reads one USB transfer moves, random in 4 KB -
+    and both write rows refused by the program itself, because a drive's raw
+    blocks are never written. The numbers are QEMU's. What this holds is that
+    they arrive, and that the stick is byte for byte what it was.
+    """
+    import hashlib
+
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-diskbench.img")
+    stick_with_gpt(stick)
+
+    with open(stick, "rb") as f:
+        before = hashlib.sha256(f.read()).hexdigest()
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+             "-device", "usb-storage,bus=usb0.0,drive=stick")
+
+    out = boot(image, None, 180.0, typed=("diskbench", "diskbench usb 0 1 1"),
+               extra=extra, after="its backup")
+
+    if out is None:
+        check(False, "the machine would not boot with a USB stick for diskbench")
+        return
+
+    lines = out.splitlines()
+    shown = "\n    ".join(l.rstrip() for l in lines
+                           if "usb 0" in l or " x1" in l or " x8" in l
+                           or " x32" in l or "KB reads" in l
+                           or "diskbench" in l)
+
+    def row(start):
+        return next((l for l in lines if l.startswith(start)), "")
+
+    never = "never: a drive's blocks are not written"
+    seq = row("sequential 1 MB x1")
+    rnd = row("random 4 KB x1")
+
+    check(re.search(r"usb 0: QEMU QEMU HARDDISK", out) is not None,
+          "`diskbench` did not list the stick as usb 0, by the names it "
+          "answers INQUIRY with:\n    " + shown)
+
+    speeds = re.findall(r"(\d+\.\d) MB/s", seq)
+
+    check(len(speeds) == 1 and float(speeds[0]) > 0 and never in seq,
+          "sequential 1 MB x1 on the stick did not read at a speed above zero "
+          "and refuse to write: %r" % seq)
+
+    iops = re.search(r"(\d+) IOPS", rnd)
+
+    check(iops is not None and int(iops.group(1)) > 0 and never in rnd,
+          "random 4 KB x1 on the stick did not read a number of IOPS above "
+          "zero and refuse to write: %r" % rnd)
+
+    check("in 124 KB reads, the most one USB read moves" in out,
+          "`diskbench` did not say its sequential reads are 124 KB, the most "
+          "one USB read moves:\n    " + shown)
+
+    with open(stick, "rb") as f:
+        after = hashlib.sha256(f.read()).hexdigest()
+
+    check(before == after,
+          "the stick changed while `diskbench` measured it, and a drive's "
+          "blocks are never written")
+
+
 # The Kosmos partition's type (USB step 5e), as `user/init/init.lua` has it.
 # Three copies: this one, `tools/mkusb_image.py`'s, which `stick_with_home`
 # holds to this, and `init.lua`'s, which every check that boots a stick holds
@@ -2810,6 +2880,7 @@ def main():
     #
     usb(image, check)
     usb_blocks(image, check)
+    usb_diskbench(image, check)
     usb_home(image, check)
     usb_second_stick(image, check)
     usb_home_late(image, check)

@@ -128,6 +128,19 @@ function reader:read(unit, lba, count)
   return sys.region_read(self.cap, 0, r.count * r.block_size)
 end
 
+-- `count` blocks from `lba` of `unit`, left in the region: how many bytes
+-- arrived. For a caller that measures a read rather than keeps it - Disk
+-- Benchmark - since copying the bytes out into a Lua string would time the
+-- copy as well as the stick.
+function reader:fill(unit, lba, count)
+  local r, why = request(OP_READ, { unit = unit, lba = lba, count = count,
+                                    handle = self.handle })
+
+  if not r then return nil, why end
+
+  return r.count * r.block_size
+end
+
 -- The region given back, to the driver and then to the machine.
 function reader:close()
   local r, why = request(OP_CLOSE, { handle = self.handle })
