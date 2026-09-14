@@ -5,7 +5,7 @@
 /*
  * What a USB configuration descriptor says, for the xHCI driver: whether the
  * configuration holds a mouse this system can read, and where its reports
- * come from.
+ * come from - or a stick, and the two bulk endpoints it is spoken to through.
  *
  * Its own file, with no hardware and no system calls in it, for the reason
  * `hal/pc/smbios_decode.c` is: the bytes are the device's to choose, QEMU's
@@ -20,9 +20,11 @@
 /* How a configuration's interfaces came out. */
 enum usb_config_kind {
     USB_CONFIG_MALFORMED,       /* a length that walks off the end, or none */
-    USB_CONFIG_NOT_HID,         /* no interface of the HID class */
+    USB_CONFIG_NEITHER,         /* no HID interface and no mass storage one */
     USB_CONFIG_HID_OTHER,       /* HID, and no boot mouse this can read */
     USB_CONFIG_BOOT_MOUSE,      /* a boot mouse, with an interrupt IN endpoint */
+    USB_CONFIG_STORAGE_OTHER,   /* mass storage, and no stick this can speak to */
+    USB_CONFIG_BULK_ONLY,       /* SCSI over Bulk-Only, a bulk IN and a bulk OUT */
 };
 
 struct usb_config {
@@ -43,6 +45,22 @@ struct usb_config {
     /* Its HID descriptor's length for the Report descriptor (HID 1.11
      * 6.2.1, wDescriptorLength), which is how much to ask for; 0 if none. */
     uint16_t report_length;
+
+    /* The first mass storage interface's subclass and protocol, for
+     * STORAGE_OTHER's line. */
+    uint8_t  storage_subclass;
+    uint8_t  storage_protocol;
+
+    /* The stick, when there is one: its interface, and each bulk endpoint's
+     * number, largest packet, and burst - the SuperSpeed Endpoint Companion's
+     * bMaxBurst, 0 to 15, and 0 without one. All zero unless BULK_ONLY. */
+    uint8_t  storage_interface;
+    uint8_t  bulk_in;
+    uint8_t  bulk_out;
+    uint16_t bulk_in_packet;
+    uint16_t bulk_out_packet;
+    uint8_t  bulk_in_burst;
+    uint8_t  bulk_out_burst;
 };
 
 /*

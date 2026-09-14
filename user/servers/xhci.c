@@ -203,7 +203,8 @@
  *   4+  six pages a device: input context, output context, the default
  *       control endpoint's ring, a buffer for what it sends back, and - for
  *       a mouse - its interrupt endpoint's ring and the page its reports
- *       come back in
+ *       come back in, or - for a stick - its bulk OUT and bulk IN rings,
+ *       with what it is sent and sends back in the buffer
  *   then a page for each scratchpad buffer the controller asks for (4.20)
  *
  * Eight devices a controller, as a start: the slots enabled are that many,
@@ -222,6 +223,8 @@
 #define PAGE_DEVICES        4u
 #define DEVICE_PAGE_RING    4u          /* of a device's own six: a mouse's */
 #define DEVICE_PAGE_REPORT  5u          /* ...ring, and its reports */
+#define DEVICE_PAGE_OUT     4u          /* ...or a stick's bulk OUT ring */
+#define DEVICE_PAGE_IN      5u          /* ...and its bulk IN ring */
 #define SCRATCH_OFFSET      64u         /* the array, after the table's entry */
 #define SCRATCHPADS_MAX     ((PAGE - SCRATCH_OFFSET) / 8u)
 
@@ -324,6 +327,19 @@ struct mouse {
     struct usb_mouse_report layout;
 };
 
+/*
+ * A stick: its two bulk endpoints' context indexes and rings, and the tag its
+ * next command goes out with - which the stick sends back with the status, so
+ * an answer can be told from the answer to something else.
+ */
+struct stick {
+    unsigned      out_dci;
+    unsigned      in_dci;
+    uint32_t      tag;
+    struct ring   out;
+    struct ring   in;
+};
+
 struct controller {
     uintptr_t     base;                 /* the capability registers */
     uintptr_t     op;                   /* the operational registers */
@@ -369,6 +385,9 @@ struct controller {
 
     /* Each slot's mouse, when its device is one. */
     struct mouse  mouse[DEVICES_MAX + 1];
+
+    /* ...and its stick, when it is one of those. */
+    struct stick  stick[DEVICES_MAX + 1];
 };
 
 static long console = -1;
@@ -1880,9 +1899,330 @@ static void say_descriptor(const struct controller *c, unsigned port,
     }
 }
 
+/* ---------------------------------------------------------------- a stick */
+
 /*
- * A device that has just said what it is, asked whether it is a mouse this
- * can read - and if it is, made ready to be read.
+ * Bulk-Only Transport 1.0, Tables 5.1 and 5.2: a command goes out in a
+ * 31-byte wrapper and its status comes back in a 13-byte one, each opening
+ * with its signature, every field little-endian. The command block is at
+ * byte 15 of the wrapper; the status is byte 12 of the other, 0 passed, 1
+ * failed, 2 a phase error (Table 5.3).
+ */
+#define CBW_SIGNATURE       0x43425355u
+#define CSW_SIGNATURE       0x53425355u
+#define CBW_LENGTH          31u
+#define CSW_LENGTH          13u
+#define CBW_DATA_IN         0x80u       /* bmCBWFlags, bit 7 */
+#define CBW_BLOCK           15u
+#define CSW_STATUS          12u
+#define CSW_PASSED          0u
+#define CSW_FAILED          1u
+
+/*
+ * SCSI's INQUIRY, as the Seagate SCSI Commands Reference Manual (rev. J, SPC-5)
+ * gives it: operation code 12h, and the allocation length in bytes 3 and 4 of
+ * a six-byte command (Table 58). The standard data is at least 36 bytes
+ * (Table 59): the peripheral qualifier and device type in byte 0, then eight
+ * bytes of vendor, sixteen of product and four of revision, in ASCII padded
+ * with spaces.
+ */
+#define SCSI_INQUIRY        0x12u
+#define INQUIRY_COMMAND     6u
+#define INQUIRY_LENGTH      36u
+#define INQUIRY_VENDOR      8u
+#define INQUIRY_PRODUCT     16u
+#define INQUIRY_REVISION    32u
+
+/*
+ * A bulk endpoint's context (4.8.2.3): Bulk OUT or Bulk IN from Table 6-9,
+ * three errors allowed, its packet and - at SuperSpeed - its burst, its ring,
+ * and no streams. 4.14.1.1 gives three kilobytes as a reasonable first
+ * Average TRB Length for one.
+ */
+#define EP_TYPE_BULK_OUT    2u
+#define EP_TYPE_BULK_IN     6u
+#define BULK_TRB_AVERAGE    3072u
+
+static void put32le(uint8_t *at, uint32_t value)
+{
+    at[0] = (uint8_t)value;
+    at[1] = (uint8_t)(value >> 8);
+    at[2] = (uint8_t)(value >> 16);
+    at[3] = (uint8_t)(value >> 24);
+}
+
+static uint32_t get32le(const uint8_t *at)
+{
+    return at[0] | (uint32_t)at[1] << 8 | (uint32_t)at[2] << 16
+         | (uint32_t)at[3] << 24;
+}
+
+/*
+ * One bulk transfer (4.11.2.1, 6.4.1.1): a Normal TRB over `length` bytes at
+ * `bus` on a stick's ring - interrupting when it completes, and when an IN
+ * comes back short - then the endpoint's doorbell, its context index the
+ * target, and the Transfer Event for that TRB. `moved` is how many bytes
+ * went: the length, less what the event says was left. True for Success and
+ * for a short IN; anything else leaves the code in `last_code`, and the
+ * endpoint halted, which nothing here clears yet.
+ */
+static bool bulk(struct controller *c, unsigned slot, unsigned dci,
+                 struct ring *r, uint64_t bus, unsigned length,
+                 unsigned *moved)
+{
+    uint64_t at = ring_push(r, (uint32_t)bus, (uint32_t)(bus >> 32), length,
+                            TRB_TYPE(TRB_NORMAL) | TRB_ISP | TRB_IOC);
+    uint32_t done[4];
+    unsigned seen;
+
+    mmio_write32(c->doorbells + 4u * slot, dci);
+    c->last_code = 0;
+    *moved = 0;
+
+    for (seen = 0; seen < EVENTS_MAX; seen++) {
+        uint32_t left;
+
+        if (!wait_serving(c, ANSWER_MS, done)) {
+            return false;
+        }
+
+        if (TRB_TYPE_OF(done[3]) != TRB_TRANSFER
+            || TRB_SLOT_OF(done[3]) != slot
+            || TRB_ENDPOINT_OF(done[3]) != dci
+            || (((uint64_t)done[1] << 32) | done[0]) != at) {
+            continue;
+        }
+
+        c->last_code = TRB_CODE_OF(done[2]);
+
+        if (c->last_code != CC_SUCCESS && c->last_code != CC_SHORT_PACKET) {
+            return false;
+        }
+
+        left = TRB_LEFT_OF(done[2]);
+        *moved = left < length ? length - left : 0;
+        return true;
+    }
+
+    return false;
+}
+
+/*
+ * **INQUIRY, through Bulk-Only Transport**: the one command every SCSI device
+ * answers, and the smallest exchange that sends bytes each way - its wrapper
+ * out, 36 bytes in, and its status in (5.1 to 5.3.3). The data is left in
+ * `data`, how much of it came in `got`. NULL when the stick answered, and
+ * otherwise the step that did not, for `say_failure`.
+ *
+ * **What is checked of the status** is what 6.3 asks of a host: thirteen
+ * bytes, the signature, the tag this command went out with, and a residue no
+ * larger than what was asked for. A status that fails any of those is one a
+ * host would answer with a Reset Recovery (5.3.4, 6.5), and so is a stall on
+ * either endpoint - neither of which this does yet, so the stick is said and
+ * left.
+ */
+static const char *inquire(struct controller *c, struct device *d,
+                           struct stick *s, uint8_t *data, unsigned *got)
+{
+    uint8_t *b = d->buffer;
+    uint32_t tag = ++s->tag;
+    unsigned moved;
+
+    memset(b, 0, CBW_LENGTH);
+    put32le(b, CBW_SIGNATURE);
+    put32le(b + 4, tag);
+    put32le(b + 8, INQUIRY_LENGTH);
+    b[12] = CBW_DATA_IN;
+    b[13] = 0;                                  /* LUN 0 */
+    b[14] = INQUIRY_COMMAND;
+    b[CBW_BLOCK] = SCSI_INQUIRY;
+    b[CBW_BLOCK + 4] = INQUIRY_LENGTH;          /* the length's low byte */
+
+    if (!bulk(c, d->slot, s->out_dci, &s->out, d->buffer_bus, CBW_LENGTH,
+              &moved) || moved != CBW_LENGTH) {
+        return "the INQUIRY's command";
+    }
+
+    memset(b, 0, INQUIRY_LENGTH);
+
+    if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, INQUIRY_LENGTH,
+              &moved)) {
+        return "the INQUIRY's data";
+    }
+
+    memcpy(data, b, INQUIRY_LENGTH);
+    *got = moved;
+
+    if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, CSW_LENGTH,
+              &moved)) {
+        return "the INQUIRY's status";
+    }
+
+    c->last_code = CC_SUCCESS;
+
+    if (moved != CSW_LENGTH || get32le(b) != CSW_SIGNATURE
+        || get32le(b + 4) != tag || get32le(b + 8) > INQUIRY_LENGTH) {
+        return "the INQUIRY's status, which is not a valid one";
+    }
+
+    if (b[CSW_STATUS] == CSW_FAILED) {
+        return "the INQUIRY, which the stick failed";
+    }
+
+    if (b[CSW_STATUS] != CSW_PASSED) {
+        return "the INQUIRY, which ended in a phase error";
+    }
+
+    return NULL;
+}
+
+/* An ASCII field of INQUIRY's data in quotes: its padding off the end, and
+ * anything unprintable a '?'. */
+static void say_field(struct say_line *line, const uint8_t *bytes, unsigned n)
+{
+    char text[INQUIRY_PRODUCT + 1u];
+    unsigned i, end = 0;
+
+    for (i = 0; i < n && i < INQUIRY_PRODUCT; i++) {
+        text[i] = (bytes[i] >= 0x20u && bytes[i] < 0x7Fu) ? (char)bytes[i]
+                                                          : '?';
+
+        if (bytes[i] != ' ' && bytes[i] != 0) {
+            end = i + 1u;
+        }
+    }
+
+    text[end] = '\0';
+    say_text(line, "\"");
+    say_text(line, text);
+    say_text(line, "\"");
+}
+
+/*
+ * **A stick, and USB step 4: bytes each way on its bulk endpoints.** Its two
+ * endpoints given to the controller in one Configure Endpoint - bulk OUT at
+ * context index twice its number, bulk IN at one more (4.5.1) - then
+ * SET_CONFIGURATION, the order the mouse's comment gives; then INQUIRY, and
+ * what the stick says it is.
+ *
+ * Its rings are the device's pages 4 and 5, which a mouse would have used, and
+ * what it is sent and sends back goes in the device's buffer page, which
+ * enumeration is finished with by now. LUN 0 only: Get Max LUN is left
+ * unasked, because a stick with one unit may stall it (Bulk-Only 1.0 3.2),
+ * and a stall on endpoint 0 is not recovered from here (`roadmap.md`).
+ */
+static void use_stick(struct controller *c, struct device *d,
+                      const struct usb_config *found, struct say_line *line)
+{
+    struct stick *s = &c->stick[d->slot];
+    uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
+    uint8_t data[INQUIRY_LENGTH];
+    uint32_t done[4];
+    uint32_t *icc, *slot, *ep;
+    unsigned got = 0, last;
+    const char *failed;
+
+    memset(s, 0, sizeof(*s));
+    s->out_dci = 2u * found->bulk_out;
+    s->in_dci = 2u * found->bulk_in + 1u;
+    last = s->in_dci > s->out_dci ? s->in_dci : s->out_dci;
+
+    ring_start(&s->out,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_OUT) * PAGE),
+               c->bus + (page + DEVICE_PAGE_OUT) * PAGE);
+    ring_start(&s->in,
+               (uint32_t *)(c->mem + (page + DEVICE_PAGE_IN) * PAGE),
+               c->bus + (page + DEVICE_PAGE_IN) * PAGE);
+
+    icc = context(c, d->input, 0);
+    slot = context(c, d->input, 1);
+
+    /* Both endpoints and the slot added, nothing dropped, endpoint 0 left
+     * out; the slot's Context Entries raised to the higher of the two. */
+    icc[0] = 0;
+    icc[1] = 1u | (1u << s->out_dci) | (1u << s->in_dci);
+    slot[0] = (slot[0] & ~(0x1Fu << 27)) | (last << 27);
+
+    ep = context(c, d->input, s->out_dci + 1u);
+    memset(ep, 0, c->context);
+    ep[1] = ((uint32_t)found->bulk_out_packet << 16)
+          | ((uint32_t)found->bulk_out_burst << 8)
+          | (EP_TYPE_BULK_OUT << 3) | (3u << 1);
+    ep[2] = (uint32_t)s->out.bus | 1u;
+    ep[3] = (uint32_t)(s->out.bus >> 32);
+    ep[4] = BULK_TRB_AVERAGE;
+
+    ep = context(c, d->input, s->in_dci + 1u);
+    memset(ep, 0, c->context);
+    ep[1] = ((uint32_t)found->bulk_in_packet << 16)
+          | ((uint32_t)found->bulk_in_burst << 8)
+          | (EP_TYPE_BULK_IN << 3) | (3u << 1);
+    ep[2] = (uint32_t)s->in.bus | 1u;
+    ep[3] = (uint32_t)(s->in.bus >> 32);
+    ep[4] = BULK_TRB_AVERAGE;
+
+    if (!command(c, (uint32_t)d->input_bus, (uint32_t)(d->input_bus >> 32),
+                 TRB_TYPE(TRB_CONFIGURE) | TRB_SLOT(d->slot), done)) {
+        say_failure(c, d->port, "Configure Endpoint",
+                    "; the stick is not spoken to", line);
+        return;
+    }
+
+    if (!control_nodata(c, d, SET_CONFIGURATION, found->configuration, 0)) {
+        say_failure(c, d->port, "SET_CONFIGURATION",
+                    "; the stick is not spoken to", line);
+        return;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": a stick: SCSI over Bulk-Only, bulk IN endpoint ");
+    say_dec(line, found->bulk_in);
+    say_text(line, " and OUT endpoint ");
+    say_dec(line, found->bulk_out);
+    say_text(line, ", up to ");
+    say_dec(line, found->bulk_in_packet);
+    say_text(line, " bytes a packet");
+
+    if (found->bulk_in_burst > 0) {
+        say_text(line, " in bursts of ");
+        say_dec(line, found->bulk_in_burst + 1u);
+    }
+
+    say_send(console, line);
+
+    failed = inquire(c, d, s, data, &got);
+
+    if (failed != NULL) {
+        say_failure(c, d->port, failed, "", line);
+        return;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, ": the stick says it is ");
+    say_field(line, data + INQUIRY_VENDOR, 8u);
+    say_text(line, " ");
+    say_field(line, data + INQUIRY_PRODUCT, 16u);
+    say_text(line, ", revision ");
+    say_field(line, data + INQUIRY_REVISION, 4u);
+    say_text(line, ", device type ");
+    say_dec(line, data[0] & 0x1Fu);
+
+    if (got < INQUIRY_LENGTH) {
+        say_text(line, ", in ");
+        say_dec(line, got);
+        say_text(line, " bytes of 36");
+    }
+
+    say_send(console, line);
+}
+
+/*
+ * A device that has just said what it is, asked whether it is a mouse or a
+ * stick this can use - and if it is, made ready to be used.
  *
  * **Its configuration**, asked for twice: nine bytes for the total length,
  * then all of it, walked by `usb_decode.c`. A HID boot mouse - subclass 1,
@@ -1908,9 +2248,12 @@ static void say_descriptor(const struct controller *c, unsigned port,
  *
  * **A SuperSpeed mouse is said and not read**: its endpoint's largest payload
  * an interval comes from a companion descriptor this does not walk (4.14.2).
+ *
+ * **A stick** - mass storage, SCSI over Bulk-Only - goes to `use_stick`, and
+ * mass storage it cannot speak to is said.
  */
-static void use_mouse(struct controller *c, struct device *d,
-                      struct say_line *line)
+static void use_device(struct controller *c, struct device *d,
+                       struct say_line *line)
 {
     struct mouse *m = &c->mouse[d->slot];
     uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
@@ -1940,7 +2283,12 @@ static void use_mouse(struct controller *c, struct device *d,
 
     usb_decode_config(d->buffer, total, &found);
 
-    if (found.kind == USB_CONFIG_NOT_HID) {
+    if (found.kind == USB_CONFIG_NEITHER) {
+        return;
+    }
+
+    if (found.kind == USB_CONFIG_BULK_ONLY) {
+        use_stick(c, d, &found, line);
         return;
     }
 
@@ -1952,6 +2300,12 @@ static void use_mouse(struct controller *c, struct device *d,
         if (found.kind == USB_CONFIG_MALFORMED) {
             say_text(line, ": a configuration descriptor that does not add "
                            "up; not read");
+        } else if (found.kind == USB_CONFIG_STORAGE_OTHER) {
+            say_text(line, ": mass storage this does not speak to (subclass ");
+            say_dec(line, found.storage_subclass);
+            say_text(line, ", protocol ");
+            say_dec(line, found.storage_protocol);
+            say_text(line, "), or no bulk IN and OUT in it; not read");
         } else if (found.kind == USB_CONFIG_HID_OTHER) {
             say_text(line, ": a HID device, not a boot mouse (subclass ");
             say_dec(line, found.hid_subclass);
@@ -2268,7 +2622,7 @@ static void attach(struct controller *c, unsigned port, bool running,
         return;
     }
 
-    use_mouse(c, &d, line);
+    use_device(c, &d, line);
 }
 
 /*
@@ -2330,6 +2684,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
     }
 
     if (slot != 0 && slot != PORT_FAILED) {
+        memset(&c->stick[slot], 0, sizeof(c->stick[slot]));
         disable_slot(c, slot);
         c->described[slot] = false;
     }

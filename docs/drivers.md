@@ -257,10 +257,11 @@ Public Intel specification, no firmware, no crypto.
   against virtio-net under emulation. The T14 has no RJ45.
 - **And a real mouse**, which is its own reason.
 
-Build order, each step ending in something visible: controller up, then
-enumeration, then bulk transfers, then mass storage, then Ethernet. The
-first two are built; `usb.md` has them, and takes each of the others as it
-lands.
+Build order, each step ending in something visible: `usb.md`'s table is the
+order and says which steps are built. This paragraph used to repeat it -
+controller up, enumeration, bulk transfers, mass storage, Ethernet, "the
+first two are built" - and was three steps behind the table by the time
+bulk transfers landed.
 
 ### WiFi - OpenBSD, not FreeBSD
 

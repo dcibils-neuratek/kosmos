@@ -3363,3 +3363,66 @@ And as written, with `xhci.c` put back byte for byte and the image rebuilt:
 `usb_mouse` 22, `usb` 13, `usb_hotplug` 17, and `make test` whole - x86-64
 128, the UEFI boots 34, the stick check 10, and the suites 159 of 159 and 155
 of 155.
+
+## 18.54 Bulk transfers: a stick asked what it is
+
+**USB step 4, bytes each way on a bulk endpoint**, and the stick QEMU already
+plugs into the `usb` check as what proves it: a stick's bulk endpoints carry
+Bulk-Only Transport and nothing else, so the smallest real exchange is one
+command - INQUIRY, a 31-byte wrapper out, 36 bytes in, a 13-byte status in.
+Before it the driver read the stick's configuration, found no HID interface,
+and left it.
+
+**The decoder finds a stick** (`usb_decode.c`): mass storage, SCSI,
+Bulk-Only, alternate setting 0, a bulk IN and a bulk OUT, and at SuperSpeed
+each endpoint's companion burst. **The driver** configures both endpoints in
+one Configure Endpoint, sends SET_CONFIGURATION, carries INQUIRY with Normal
+TRBs through `wait_serving`, holds the status to Bulk-Only 1.0 6.3, and says
+what the stick answered.
+
+`tools/test_usbdecode.c`, 71 checks, 15 of them new:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| a high-speed stick | Bulk-Only, IN 1 and OUT 2 of 512 bytes, its interface, subclass and protocol |
+| QEMU's SuperSpeed stick, from `dev-storage.c` | 1024 bytes and bursts of 15, from the companions |
+| bursts of 3 and 7 | each companion's burst given to the endpoint before it |
+| a burst of 16 | refused, and nothing half-kept |
+| OUT before IN | each direction still its own |
+| USB Attached SCSI, subclass 00h, alternate setting 1 | mass storage this cannot speak to, said to be that |
+| an interrupt endpoint, endpoint 0, two INs, a packet size of 0 | no stick |
+| a keyboard, then a stick | the stick behind it found |
+| QEMU's mouse, then a stick | the mouse taken, the stick's fields left empty |
+| a hub's interface | neither |
+
+`tools/run_x86.py`'s `usb`, 15 checks, 2 of them new: the stick's line with
+its endpoints as QEMU declares them at SuperSpeed - IN 1 and OUT 2, 1024 bytes
+a packet in bursts of 16 - and INQUIRY answered through them as QEMU's disk
+answers it: "QEMU", "QEMU HARDDISK", device type 0.
+
+**Controls**, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| the decoder taking an endpoint of any type for bulk | `test_usbdecode`, 1 of 71: an interrupt endpoint taken for bulk IN |
+| the two bulk endpoint types swapped in their contexts | `usb`, 1 of 15: INQUIRY stalled at its command |
+| the command wrapper's signature one off | `usb`, 1 of 15: the same stall, at the same step |
+
+```
+  an interrupt endpoint was taken for bulk IN
+FAIL: 1 of 71 checks on USB configuration and report descriptors.
+
+usb: 1 of 15 checks failed
+  the stick did not answer INQUIRY through its bulk endpoints as QEMU's disk does - "QEMU", "QEMU HARDDISK", device type 0:
+    xhci: 00:04.0 port 1: a stick: SCSI over Bulk-Only, bulk IN endpoint 1 and OUT endpoint 2, up to 1024 bytes a packet in bursts of 16
+    xhci: 00:04.0 port 1: the INQUIRY's command failed: Stall Error (6)
+```
+
+The second and third print the same two lines: the check tells them apart from
+a stick that answers, not from each other, and the driver names the step and
+the code either way.
+
+And as written, with every file put back byte for byte and the image rebuilt:
+`test_usbdecode` 71, `usb` 15, `usb_hotplug` 17, `usb_mouse` 22, and `make test`
+whole - x86-64 130, the UEFI boots 34, the stick check 10, and the suites 159
+of 159 and 155 of 155.

@@ -67,6 +67,27 @@ static const uint8_t stick[] = {
     0x07, 0x05, 0x02, 0x02, 0x00, 0x02, 0x00,
 };
 
+/* Where the pieces of `stick` begin. */
+#define AT_STICK_IFACE  9
+#define AT_STICK_IN     18
+#define AT_STICK_OUT    25
+
+/* QEMU 11.1.1's usb-storage at SuperSpeed, laid out from the declarations in
+ * `hw/usb/dev-storage.c`: 1024-byte bulk endpoints, IN 1 and OUT 2, each
+ * followed by a SuperSpeed Endpoint Companion with a burst of 15. 44 bytes. */
+static const uint8_t superspeed_stick[] = {
+    0x09, 0x02, 0x2c, 0x00, 0x01, 0x01, 0x06, 0xc0, 0x00,
+    0x09, 0x04, 0x00, 0x00, 0x02, 0x08, 0x06, 0x50, 0x00,
+    0x07, 0x05, 0x81, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x0f, 0x00, 0x00, 0x00,
+    0x07, 0x05, 0x02, 0x02, 0x00, 0x04, 0x00,
+    0x06, 0x30, 0x0f, 0x00, 0x00, 0x00,
+};
+
+/* Where each companion's bMaxBurst is in `superspeed_stick`. */
+#define AT_IN_BURST     27
+#define AT_OUT_BURST    40
+
 static struct usb_config decode(const uint8_t *bytes, unsigned length)
 {
     struct usb_config got;
@@ -83,6 +104,32 @@ static struct usb_config mouse_with(unsigned at, uint8_t value)
     memcpy(copy, qemu_mouse, sizeof(copy));
     copy[at] = value;
     return decode(copy, sizeof(copy));
+}
+
+/* `stick` with one byte changed. */
+static struct usb_config stick_with(unsigned at, uint8_t value)
+{
+    uint8_t copy[sizeof(stick)];
+
+    memcpy(copy, stick, sizeof(copy));
+    copy[at] = value;
+    return decode(copy, sizeof(copy));
+}
+
+static int is_stick(struct usb_config got, unsigned in, unsigned out,
+                    unsigned in_packet, unsigned out_packet, unsigned in_burst,
+                    unsigned out_burst)
+{
+    return got.kind == USB_CONFIG_BULK_ONLY && got.bulk_in == in
+        && got.bulk_out == out && got.bulk_in_packet == in_packet
+        && got.bulk_out_packet == out_packet && got.bulk_in_burst == in_burst
+        && got.bulk_out_burst == out_burst;
+}
+
+static int no_stick(struct usb_config got)
+{
+    return got.bulk_in == 0 && got.bulk_out == 0 && got.bulk_in_packet == 0
+        && got.bulk_out_packet == 0 && got.storage_interface == 0;
 }
 
 /* HID 1.11 E.10, byte for byte: three buttons, five bits of padding, X and
@@ -235,10 +282,106 @@ int main(void)
               "a keyboard alone: its subclass and protocol");
     }
 
-    /* 4. A stick: not HID at all. */
+    /* 4. A stick: SCSI over Bulk-Only, bulk IN 1 and OUT 2, 512 bytes. */
     got = decode(stick, sizeof(stick));
-    check(got.kind == USB_CONFIG_NOT_HID, "a stick is not 'not HID'");
-    check(got.configuration == 1, "a stick: configuration value");
+    check(is_stick(got, 1, 2, 512, 512, 0, 0),
+          "a high-speed stick is not Bulk-Only with IN 1 and OUT 2 of 512");
+    check(got.configuration == 1 && got.storage_interface == 0,
+          "a stick: configuration value or interface number");
+    check(got.storage_subclass == 0x06 && got.storage_protocol == 0x50,
+          "a stick: its subclass and protocol");
+
+    /* ...and QEMU's at SuperSpeed, each companion's burst its endpoint's. */
+    check(is_stick(decode(superspeed_stick, sizeof(superspeed_stick)),
+                   1, 2, 1024, 1024, 15, 15),
+          "QEMU's SuperSpeed stick is not 1024-byte endpoints with bursts "
+          "of 15");
+
+    {
+        uint8_t bursts[sizeof(superspeed_stick)];
+
+        memcpy(bursts, superspeed_stick, sizeof(bursts));
+        bursts[AT_IN_BURST] = 3;
+        bursts[AT_OUT_BURST] = 7;
+        check(is_stick(decode(bursts, sizeof(bursts)), 1, 2, 1024, 1024, 3, 7),
+              "a companion's burst was given to the other endpoint");
+
+        bursts[AT_OUT_BURST] = 16;
+        got = decode(bursts, sizeof(bursts));
+        check(got.kind == USB_CONFIG_STORAGE_OTHER && no_stick(got),
+              "a burst of 16 was kept for a controller");
+    }
+
+    /* OUT before IN: each is still its own direction's. */
+    {
+        uint8_t swapped[sizeof(stick)];
+
+        memcpy(swapped, stick, AT_STICK_IN);
+        memcpy(swapped + AT_STICK_IN, stick + AT_STICK_OUT, 7);
+        memcpy(swapped + AT_STICK_OUT, stick + AT_STICK_IN, 7);
+        check(is_stick(decode(swapped, sizeof(swapped)), 1, 2, 512, 512, 0, 0),
+              "a stick with its OUT endpoint first had its directions mixed up");
+    }
+
+    /* Mass storage this cannot speak to: said to be that, with no endpoints. */
+    got = stick_with(AT_STICK_IFACE + 7, 0x62);
+    check(got.kind == USB_CONFIG_STORAGE_OTHER && got.storage_protocol == 0x62
+          && no_stick(got),
+          "USB Attached SCSI (62h) was taken for Bulk-Only");
+    check(stick_with(AT_STICK_IFACE + 6, 0x00).kind == USB_CONFIG_STORAGE_OTHER,
+          "a subclass of 00h was taken for SCSI transparent");
+    check(stick_with(AT_STICK_IFACE + 3, 1).kind == USB_CONFIG_STORAGE_OTHER,
+          "a stick at alternate setting 1 was taken");
+    check(stick_with(AT_STICK_IN + 3, 0x03).kind == USB_CONFIG_STORAGE_OTHER,
+          "an interrupt endpoint was taken for bulk IN");
+    check(stick_with(AT_STICK_OUT + 2, 0x80).kind == USB_CONFIG_STORAGE_OTHER,
+          "endpoint 0 was taken for bulk OUT");
+    check(stick_with(AT_STICK_OUT + 2, 0x82).kind == USB_CONFIG_STORAGE_OTHER,
+          "two IN endpoints were taken for an IN and an OUT");
+    check(stick_with(AT_STICK_IN + 5, 0x00).kind == USB_CONFIG_STORAGE_OTHER,
+          "a bulk endpoint with a packet size of 0 was taken");
+
+    /* A keyboard first and a stick behind it: the stick is what is used. */
+    {
+        uint8_t both[34 + sizeof(stick) - 9];
+
+        memcpy(both, hid_example, 34);
+        memcpy(both + 34, stick + 9, sizeof(stick) - 9);
+        both[2] = sizeof(both);
+        both[4] = 2;
+        both[34 + 2] = 1;                   /* the stick is interface 1 */
+        got = decode(both, sizeof(both));
+        check(is_stick(got, 1, 2, 512, 512, 0, 0)
+              && got.storage_interface == 1,
+              "a keyboard and a stick: the stick behind it was not found");
+    }
+
+    /* QEMU's mouse with a stick behind it: the mouse is taken, and the
+     * stick's fields are left empty rather than half-filled. */
+    {
+        uint8_t mouse_first[sizeof(qemu_mouse) + sizeof(stick) - 9];
+
+        memcpy(mouse_first, qemu_mouse, sizeof(qemu_mouse));
+        memcpy(mouse_first + sizeof(qemu_mouse), stick + 9, sizeof(stick) - 9);
+        mouse_first[2] = sizeof(mouse_first);
+        mouse_first[4] = 2;
+        mouse_first[sizeof(qemu_mouse) + 2] = 1;
+        got = decode(mouse_first, sizeof(mouse_first));
+        check(got.kind == USB_CONFIG_BOOT_MOUSE && no_stick(got),
+              "a mouse with a stick behind it was not taken as the mouse");
+    }
+
+    /* Neither HID nor mass storage: a hub's interface, class 09h. */
+    {
+        uint8_t hub[sizeof(stick)];
+
+        memcpy(hub, stick, sizeof(hub));
+        hub[AT_STICK_IFACE + 5] = 0x09;
+        hub[AT_STICK_IFACE + 6] = 0x00;
+        hub[AT_STICK_IFACE + 7] = 0x00;
+        check(decode(hub, sizeof(hub)).kind == USB_CONFIG_NEITHER,
+              "a hub's interface was taken for HID or mass storage");
+    }
 
     /* 5. Lengths a device can get wrong, each of which must end the walk. */
     check(mouse_with(AT_IFACE, 0).kind == USB_CONFIG_MALFORMED,
@@ -417,7 +560,8 @@ int main(void)
     if (fails == 0) {
         printf("PASS: %d checks on USB configuration and report descriptors "
                "(QEMU's mouse, HID 1.11's examples, a sixteen-button mouse, "
-               "Report IDs, and the lengths a device can get wrong).\n",
+               "Report IDs, sticks at high speed and SuperSpeed, and the "
+               "lengths a device can get wrong).\n",
                checks);
         return 0;
     }

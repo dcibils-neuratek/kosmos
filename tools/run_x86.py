@@ -420,6 +420,14 @@ def usb(image, check):
     **What the devices say is compared with what QEMU says**, from a second
     QEMU's monitor, as product and speed. The keyboard is high-speed - 480 Mb/s
     - which this docstring once had as full-speed.
+
+    **Step four is bytes each way on the stick's bulk endpoints**: its
+    configuration read as SCSI over Bulk-Only, both endpoints given to the
+    controller, and one command carried through them - INQUIRY, 31 bytes out,
+    36 in and a 13-byte status - which QEMU's stick answers from
+    `hw/scsi/scsi-disk.c` as "QEMU", "QEMU HARDDISK", a direct-access device.
+    It is at SuperSpeed here, on the second controller's USB 3 port, so its
+    endpoints are 1024 bytes a packet in bursts of 16 (`hw/usb/dev-storage.c`).
     """
     stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
 
@@ -533,6 +541,27 @@ def usb(image, check):
           and all(name.encode() in carried for name in named),
           "a product string the driver read is not one the QEMU binary "
           "carries: %r" % (named,))
+
+    # Step four: the stick's bulk endpoints, and INQUIRY through them.
+    bulk = re.search(r"xhci: " + at + r" port \d+: a stick: SCSI over "
+                     r"Bulk-Only, bulk IN endpoint (\d+) and OUT endpoint "
+                     r"(\d+), up to (\d+) bytes a packet in bursts of (\d+)",
+                     out)
+    inquiry = re.search(r"xhci: " + at + r" port \d+: the stick says it is "
+                        r"\"([^\"]*)\" \"([^\"]*)\", revision "
+                        r"\"([^\"]*)\", device type (\d+)", out)
+
+    check(bulk is not None and bulk.group(2, 3, 4, 5) == ("1", "2", "1024",
+                                                          "16"),
+          "the stick's bulk endpoints were not given to the controller as QEMU "
+          "declares them - IN 1 and OUT 2, 1024 bytes a packet in bursts of "
+          "16:\n    " + shown)
+
+    check(inquiry is not None
+          and inquiry.group(2, 3, 5) == ("QEMU", "QEMU HARDDISK", "0"),
+          "the stick did not answer INQUIRY through its bulk endpoints as "
+          "QEMU's disk does - \"QEMU\", \"QEMU HARDDISK\", device type "
+          "0:\n    " + shown)
 
     if len(found) == 2:
         stick_on = [a for a, _, usb_major, _, _, _ in ports
@@ -2189,7 +2218,8 @@ def main():
           "NVMe drive across a reboot, reads one off a disk the loader "
           "handed over in memory, names itself out of SMBIOS as QEMU and "
           "as a ThinkPad, finds a USB stick and a keyboard on two xHCI "
-          "controllers, moves the pointer and clicks with a USB mouse, reads "
+          "controllers and asks the stick what it is through its bulk "
+          "endpoints, moves the pointer and clicks with a USB mouse, reads "
           "it through a plug on either controller, and "
           "opens a menu with a click through a PS/2 mouse whether or not "
           "the machine has a serial port)."

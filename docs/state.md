@@ -19,11 +19,27 @@ prepush` and a bump.
   its read to the build's sums have not run on the ThinkPad - offered beside
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
-- **USB step 4, bulk transfers**, then mass storage, then another machine's
-  FAT32 and exFAT drives - Kosmos's own reader, read-only first (`usb.md`).
+- **USB step 5, mass storage**: READ CAPACITY and READ(10) through the same
+  bulk endpoints, and a block protocol from the USB driver to a filesystem
+  server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
+  read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: bulk transfers, and a stick asked what it is
+
+**USB step 4**, on Diego's word: a stick's configuration read for SCSI over
+Bulk-Only, both bulk endpoints configured, and INQUIRY carried through them.
+
+- **The decoder** finds a stick, its two endpoints and their bursts at
+  SuperSpeed; **the driver** configures them, sends INQUIRY with Normal TRBs
+  through `wait_serving`, checks the status as Bulk-Only 1.0 6.3 asks, and
+  prints what the stick says it is. QEMU's: "QEMU", "QEMU HARDDISK".
+- **Tested**: `test_usbdecode` 71 and `usb` 15; controls in `testing.md`
+  §18.54.
+- **Not yet**: Reset Recovery for a stick that stalls, and any LUN but 0
+  (`roadmap.md`). On the ThinkPad the boot stick itself would answer.
 
 ### 14 September: a plug does not hold a mouse
 

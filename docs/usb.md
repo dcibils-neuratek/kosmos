@@ -10,7 +10,7 @@ else.
 | 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
-| 4. bulk transfers | bytes to and from an endpoint | not started |
+| 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
@@ -1037,6 +1037,98 @@ pulled out 201 seconds into the boot:
 
 ---
 
+## 6. Step 4: bulk transfers
+
+**Bytes each way on a stick's two bulk endpoints**, and a stick to prove it
+with: nothing on a stick's bulk endpoints means anything except Bulk-Only
+Transport, so the smallest real exchange is one command carried by it. Diego's
+word, on 14 September, once a plug stopped holding the mouse: "then start bulk
+transfers".
+
+### What a stick declares
+
+**A configuration walked for a stick as well as a mouse** (`usb_decode.c`): an
+interface of class 08h, subclass 06h and protocol 50h - mass storage, SCSI
+transparent, Bulk-Only (Bulk-Only 1.0 Table 4.5; the Mass Storage Overview 1.4,
+Tables 1 and 2) - at alternate setting 0, with a bulk IN and a bulk OUT
+endpoint (4.4). At SuperSpeed each endpoint is followed by a SuperSpeed
+Endpoint Companion, whose `bMaxBurst` is the burst the controller is told;
+its layout is the one xHCI 1.2 gives its own Debug Capability (Table 7-37).
+A mouse is still taken first, then a stick, and mass storage that is neither
+is said: USB Attached SCSI, another subclass, an interface short of an
+endpoint, or a burst past fifteen.
+
+### The endpoints
+
+**One Configure Endpoint for both** (4.8.2.3): bulk OUT at context index twice
+its number and bulk IN at one more (4.5.1), Bulk Out and Bulk In from Table
+6-9, three errors allowed, the packet and the burst, no streams, and an
+Average TRB Length of three kilobytes, which 4.14.1 gives as a reasonable
+first value for a bulk endpoint. Then SET_CONFIGURATION, in the order a mouse
+takes. The two rings are the device's pages 4 and 5 - a mouse's ring and
+reports otherwise - and what is sent and received goes in the device's buffer
+page, which enumeration has finished with.
+
+**A transfer is one Normal TRB** (6.4.1.1): its length, interrupt on
+completion and on a short IN, the endpoint's doorbell, and the Transfer Event
+for that TRB, which says how much was left. It waits through `wait_serving`,
+so a stick answering slowly holds no mouse.
+
+### INQUIRY, through Bulk-Only Transport
+
+**A 31-byte wrapper out, 36 bytes in, and a 13-byte status in** (Bulk-Only 1.0
+5.1 to 5.3): the wrapper with its signature, a tag, the length expected, the
+direction, LUN 0, and INQUIRY's six bytes - operation code 12h and an
+allocation length of 36 (SPC, as Seagate's reference gives it, Table 58). The
+status is held to what 6.3 asks of a host: thirteen bytes, its signature, the
+same tag, a residue no larger than asked for. And the standard data's first
+36 bytes say what the stick is: the device type in byte 0, then vendor,
+product and revision (Table 59).
+
+What QEMU's stick makes the driver say, at SuperSpeed on the second
+controller:
+
+```
+xhci: 00:04.0 port 1, USB 3: a SuperSpeed device (speed ID 4)
+xhci: 00:04.0 port 1: 46f4:0001, USB 3.0, class 0, "QEMU USB HARDDRIVE"
+xhci: 00:04.0 port 1: a stick: SCSI over Bulk-Only, bulk IN endpoint 1 and OUT endpoint 2, up to 1024 bytes a packet in bursts of 16
+xhci: 00:04.0 port 1: the stick says it is "QEMU" "QEMU HARDDISK", revision "2.5+", device type 0
+```
+
+"QEMU", "QEMU HARDDISK" and the revision come from `hw/scsi/scsi-disk.c`, and
+the endpoints from `hw/usb/dev-storage.c`.
+
+### What is not done yet
+
+- **Recovery.** A stall on either bulk endpoint, or a status that is not
+  valid, is what Bulk-Only 1.0 answers with a Reset Recovery - the class
+  reset, then CLEAR_FEATURE on both endpoints (5.3.4). The driver says which
+  step failed and leaves the stick; `roadmap.md` has it.
+- **LUN 0 only.** Get Max LUN is not asked, because a stick with one unit may
+  stall it (3.2) and a stall on endpoint 0 is not recovered from either.
+- **No streams**, which Bulk-Only does not use; USB Attached SCSI does.
+
+### What QEMU cannot show
+
+- **A stick that stalls, is slow, or answers wrongly.** QEMU's answers every
+  command at once and well.
+- **A stick at high speed on a real controller**: here it is SuperSpeed, on a
+  USB 3 port, and the decoder's high-speed case is its host test.
+
+### How it is tested
+
+- **`tools/test_usbdecode.c`**, 71 checks, 15 of them new: a high-speed stick,
+  QEMU's SuperSpeed one with its companions, bursts given to the right
+  endpoint and one past fifteen refused, OUT before IN, USB Attached SCSI,
+  subclass 00h, alternate setting 1, an interrupt endpoint, endpoint 0, two
+  INs, a packet size of 0, a keyboard with a stick behind it, a mouse with a
+  stick behind it, and a hub's interface.
+- **`tools/run_x86.py`'s `usb`**, 15 checks, 2 of them new: the stick's
+  endpoints as QEMU declares them, and INQUIRY answered through them as QEMU's
+  disk answers it. Controls in `testing.md` §18.54.
+
+---
+
 ## Sources
 
 - Intel, *eXtensible Host Controller Interface for Universal Serial Bus
@@ -1052,6 +1144,18 @@ pulled out 201 seconds into the boot:
   descriptors, the standard requests and the intervals a device is owed
   (§5). Downloaded from usb.org on 13 September 2026 to read, and not kept
   in the repository.
+- USB-IF, *Universal Serial Bus Mass Storage Class Bulk-Only Transport*,
+  revision 1.0, and the *Mass Storage Class Specification Overview*, revision
+  1.4 - a stick's interface, its endpoints, the command and status wrappers,
+  and what a host checks and does when they are wrong (§6). Downloaded from
+  usb.org on 14 September 2026 to read, and not kept.
+- Seagate, *SCSI Commands Reference Manual*, rev. J (SPC-5 and SBC-4) -
+  INQUIRY's command and its standard data. Downloaded from seagate.com on 14
+  September 2026 to read, and not kept.
+- QEMU 11.1.1, `hw/usb/dev-storage.c` and `hw/scsi/scsi-disk.c` - the stick
+  the check runs against, read for its descriptors at each speed, what it does
+  with a wrapper and a status, and what INQUIRY answers. Nothing is copied
+  from them.
 - USB-IF, *Device Class Definition for Human Interface Devices (HID)*,
   version 1.11 - the boot subclass and the mouse protocol, SET_PROTOCOL and
   SET_IDLE, which of them a boot mouse must support, and a boot mouse's

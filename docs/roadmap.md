@@ -180,7 +180,14 @@ is the one that makes the machine Diego owns behave like a computer:
    Report descriptor since `a543f20`, and with ERDP written high half first
    its reports came on a deadline rather than by interrupt - fixed that
    night, and smooth on the machine the next morning: 13736 reports, none
-   found by looking. Next: bulk transfers.
+   found by looking.
+
+   **Step four is built (14 September): bytes each way on a stick's bulk
+   endpoints.** Diego's word once a plug stopped holding the mouse. A stick's
+   configuration is read for SCSI over Bulk-Only, both bulk endpoints are
+   configured, and one command goes through them - INQUIRY, a wrapper out, 36
+   bytes in and a status in - with what the stick says it is on its line
+   (`usb.md` §6). Next: mass storage, then another machine's drive.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -382,6 +389,13 @@ the Pi", and the Pi is not here yet.
   which the walk does not read; the driver says it met one. The other half of
   this line - a mouse that stays in the report protocol - was the ThinkPad's
   own, and is read by its Report descriptor since 13 September (`usb.md` §5).
+- **A stick that stalls, or answers with a status that is not valid, is left.**
+  Bulk-Only Transport answers both with a Reset Recovery - the class reset,
+  then CLEAR_FEATURE on each bulk endpoint (1.0 5.3.4) - and the driver says
+  which step failed instead. QEMU's stick never stalls, so it needs a way to
+  make one, or a machine that does it (`usb.md` §6).
+- **A stick's LUN 0 only.** Get Max LUN is not asked, because a stick with one
+  unit may stall it and a stall on endpoint 0 is not recovered from.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
 

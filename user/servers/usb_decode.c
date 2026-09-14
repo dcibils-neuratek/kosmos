@@ -3,7 +3,12 @@
  * A configuration descriptor, walked. `usb_decode.h` says what for.
  *
  * Every layout here is the USB 2.0 specification's, with its table beside it,
- * and the class, subclass and protocol numbers are HID 1.11's.
+ * and the class, subclass and protocol numbers are HID 1.11's and the Mass
+ * Storage Class's. The SuperSpeed Endpoint Companion's layout is from xHCI
+ * 1.2, whose Debug Capability declares one.
+ *
+ * **One device, one use.** A mouse is taken as soon as its endpoint is found;
+ * failing that a stick, and failing that what the line says about the rest.
  *
  * **The walk.** A configuration descriptor is followed by every interface,
  * endpoint and class descriptor of that configuration, one after another,
@@ -49,7 +54,23 @@
 #define EP_INTERVAL         6u
 #define EP_IN               0x80u
 #define EP_NUMBER           0x0Fu
+#define EP_TYPE             0x03u
+#define EP_BULK             0x02u
 #define EP_INTERRUPT        0x03u
+#define EP_PACKET_SIZE      0x7FFu      /* wMaxPacketSize 10:0 */
+
+/* xHCI 1.2 Table 7-37: a SuperSpeed Endpoint Companion, right after its
+ * endpoint - its length, its type, and bMaxBurst, 0 to 15. */
+#define DESC_COMPANION      0x30u
+#define COMPANION_LENGTH    6u
+#define COMPANION_BURST     2u
+#define BURST_MOST          15u
+
+/* Bulk-Only Transport 1.0, Table 4.5, and the Mass Storage Specification
+ * Overview 1.4, Tables 1 and 2: the class, SCSI transparent, Bulk-Only. */
+#define CLASS_STORAGE       0x08u
+#define SUBCLASS_SCSI       0x06u
+#define PROTOCOL_BULK_ONLY  0x50u
 
 /* HID 1.11, 4.1 to 4.3: the class, the boot subclass, the mouse protocol. */
 #define CLASS_HID           3u
@@ -64,11 +85,28 @@
 #define HID_COUNT           5u          /* bNumDescriptors */
 #define HID_ENTRIES         6u          /* bDescriptorType, wDescriptorLength */
 
+/* The stick's fields, for every answer that is not BULK_ONLY. */
+static void forget_stick(struct usb_config *out)
+{
+    out->storage_interface = 0;
+    out->bulk_in = out->bulk_out = 0;
+    out->bulk_in_packet = out->bulk_out_packet = 0;
+    out->bulk_in_burst = out->bulk_out_burst = 0;
+}
+
+/* Whether the stick interface being walked has both of its endpoints. */
+static bool has_both(const struct usb_config *out)
+{
+    return out->bulk_in != 0 && out->bulk_out != 0;
+}
+
 void usb_decode_config(const uint8_t *bytes, unsigned length,
                        struct usb_config *out)
 {
     unsigned total, at;
     bool hid = false, in_mouse = false;
+    bool storage = false, in_stick = false, stick_found = false;
+    unsigned last_bulk = 0;             /* 1 IN, 2 OUT: the endpoint just read */
 
     out->kind = USB_CONFIG_MALFORMED;
     out->configuration = 0;
@@ -80,6 +118,9 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
     out->extra = 0;
     out->interval = 0;
     out->report_length = 0;
+    out->storage_subclass = 0;
+    out->storage_protocol = 0;
+    forget_stick(out);
 
     if (bytes == NULL || length < CONFIG_LENGTH
         || bytes[0] < CONFIG_LENGTH || bytes[1] != DESC_CONFIGURATION) {
@@ -106,6 +147,12 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
         if (d[1] == DESC_INTERFACE && d[0] >= IFACE_LENGTH) {
             bool is_hid = d[IFACE_CLASS] == CLASS_HID;
 
+            /* The interface before this one ends here, companions and all:
+             * if it was a stick with both endpoints, it is the stick. */
+            if (in_stick && has_both(out)) {
+                stick_found = true;
+            }
+
             if (is_hid && !hid) {
                 hid = true;
                 out->hid_subclass = d[IFACE_SUBCLASS];
@@ -120,6 +167,29 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                 out->interface = d[IFACE_NUMBER];
                 out->report_length = 0;
             }
+
+            /*
+             * **A stick's interface**: mass storage, SCSI, Bulk-Only, at
+             * alternate setting 0. Its endpoints start afresh with each such
+             * interface until one has had both.
+             */
+            if (d[IFACE_CLASS] == CLASS_STORAGE && !storage) {
+                storage = true;
+                out->storage_subclass = d[IFACE_SUBCLASS];
+                out->storage_protocol = d[IFACE_PROTOCOL];
+            }
+
+            in_stick = !stick_found && d[IFACE_CLASS] == CLASS_STORAGE
+                    && d[IFACE_ALTERNATE] == 0
+                    && d[IFACE_SUBCLASS] == SUBCLASS_SCSI
+                    && d[IFACE_PROTOCOL] == PROTOCOL_BULK_ONLY;
+
+            if (in_stick) {
+                forget_stick(out);
+                out->storage_interface = d[IFACE_NUMBER];
+            }
+
+            last_bulk = 0;
         } else if (d[1] == DESC_HID && d[0] >= HID_LENGTH && in_mouse) {
             unsigned k;
 
@@ -135,6 +205,46 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                     break;
                 }
             }
+        } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH && in_stick) {
+            unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
+            uint8_t number = (uint8_t)(d[EP_ADDRESS] & EP_NUMBER);
+
+            last_bulk = 0;
+
+            /* A bulk endpoint, not endpoint 0, with a packet size: the first
+             * of each direction (Bulk-Only 1.0 4.4). */
+            if ((d[EP_ATTRIBUTES] & EP_TYPE) == EP_BULK && number != 0
+                && (packet & EP_PACKET_SIZE) != 0) {
+                if ((d[EP_ADDRESS] & EP_IN) != 0 && out->bulk_in == 0) {
+                    out->bulk_in = number;
+                    out->bulk_in_packet = (uint16_t)(packet & EP_PACKET_SIZE);
+                    last_bulk = 1;
+                } else if ((d[EP_ADDRESS] & EP_IN) == 0 && out->bulk_out == 0) {
+                    out->bulk_out = number;
+                    out->bulk_out_packet = (uint16_t)(packet & EP_PACKET_SIZE);
+                    last_bulk = 2;
+                }
+            }
+        } else if (d[1] == DESC_COMPANION && d[0] >= COMPANION_LENGTH
+                   && in_stick && last_bulk != 0) {
+            /*
+             * The burst of the endpoint just before it. Past fifteen is no
+             * burst a controller can be given, so that endpoint is dropped,
+             * and the interface is not a stick this can speak to.
+             */
+            if (d[COMPANION_BURST] > BURST_MOST) {
+                if (last_bulk == 1) {
+                    out->bulk_in = 0;
+                } else {
+                    out->bulk_out = 0;
+                }
+            } else if (last_bulk == 1) {
+                out->bulk_in_burst = d[COMPANION_BURST];
+            } else {
+                out->bulk_out_burst = d[COMPANION_BURST];
+            }
+
+            last_bulk = 0;
         } else if (d[1] == DESC_ENDPOINT && d[0] >= EP_LENGTH && in_mouse) {
             unsigned packet = d[EP_PACKET] | (unsigned)d[EP_PACKET + 1u] << 8;
 
@@ -147,12 +257,25 @@ void usb_decode_config(const uint8_t *bytes, unsigned length,
                 out->packet = (uint16_t)(packet & 0x7FFu);
                 out->extra = (uint8_t)((packet >> 11) & 0x3u);
                 out->interval = d[EP_INTERVAL];
+                forget_stick(out);
                 return;
             }
         }
     }
 
-    out->kind = hid ? USB_CONFIG_HID_OTHER : USB_CONFIG_NOT_HID;
+    /* The last interface ends with the configuration. */
+    if (stick_found || (in_stick && has_both(out))) {
+        out->kind = USB_CONFIG_BULK_ONLY;
+        return;
+    }
+
+    forget_stick(out);
+
+    if (storage) {
+        out->kind = USB_CONFIG_STORAGE_OTHER;
+    } else {
+        out->kind = hid ? USB_CONFIG_HID_OTHER : USB_CONFIG_NEITHER;
+    }
 }
 
 /*
