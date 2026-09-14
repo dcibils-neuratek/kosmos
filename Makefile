@@ -2740,6 +2740,9 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# against what userland passes. A wrapper that passes fewer hands the
 	@# kernel whatever the register last held - SYS_MEM_CREATE's flags did.
 	$(HOSTDIR)/lua tools/test_syscall_args.lua kernel/syscall.c $(sort $(wildcard user/*/*.c user/*/*.h lua/kosmos/*.c runtime/libc/*.c))
+	@# And `run_uefi.py` where it cannot boot anything: no OVMF is a skip
+	@# that says so, and a boot that gives no picture fails. Nothing boots.
+	python3 tools/test_run_uefi.py
 	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
 	python3 tools/run_tests.py build/test/kosmos.elf
 	@# And the same machine with nothing plugged into it. A second boot,

@@ -8,6 +8,17 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
+### 14 September, small hours: `run_uefi.py`'s skip, and only for a missing firmware
+
+**A roadmap follow-up from 13 September**: on a machine without OVMF the
+harness raised `ValueError` where it meant to skip. Reading it again found a
+boot that gave no picture printed as a skip as well, exit 0.
+
+- **`main` asks for the firmware first**, skips only when it is missing, and
+  fails a first boot with no picture; `capture()` answers two values.
+- **Tested** by `tools/test_run_uefi.py` in `make test`, with nothing booted:
+  3 of 3 failed against the old harness; controls in `testing.md` §18.52.
+
 ### 14 September, small hours: a dead driver's button comes up
 
 **The roadmap's "a button held when the xHCI driver dies stays held"**: the

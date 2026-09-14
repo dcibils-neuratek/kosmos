@@ -353,11 +353,6 @@ the Pi", and the Pi is not here yet.
   scrollback itself through `ui.view` rather than through `ui.editor`, so
   it has no anchor and no cursor - and the honest fix is to lift that
   machinery out of the editor rather than to write it twice.
-- **`run_uefi.py` on a machine without OVMF crashes instead of skipping.**
-  `capture()` returns four values when it finds no firmware and `main`
-  unpacks two, so the `SKIP` it was written to print is a `ValueError`. Seen
-  while reading it on 13 September 2026, and put here rather than fixed in
-  passing.
 - **A control request a mouse refuses leaves endpoint 0 halted.**
   GET_DESCRIPTOR for its Report descriptor and SET_PROTOCOL are the two a
   mouse can answer with a STALL, and the controller then holds its default

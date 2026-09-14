@@ -144,7 +144,7 @@ def capture(iso, moments):
     fw, why = firmware()
 
     if fw is None:
-        return None, None, None, why
+        return None, why
 
     code, varsfd = fw
     work = tempfile.mkdtemp()
@@ -533,11 +533,26 @@ def main():
         print("SKIP: no %s. Run `make x86-usb-image`." % iso)
         return 0
 
+    #
+    # **A machine without OVMF is a skip, and nothing else is.** The `None`
+    # a boot that started and gave no picture answers was printed as a skip
+    # as well, so a gate whose screendump failed passed without one check -
+    # and the skip itself had never run: `capture` answered four values
+    # without the firmware, where this takes two. `tools/test_run_uefi.py`
+    # asks both.
+    #
+    fw, why = firmware()
+
+    if fw is None:
+        print("SKIP: %s" % why)
+        return 0
+
     frames, serial = capture(iso, (30.0,))
 
     if frames is None:
-        print("SKIP: %s" % serial)
-        return 0
+        print("FAIL: the first boot through Kosmos's loader gave no "
+              "picture: %s" % serial)
+        return 1
 
     width, height, pixels = frames[0]
 

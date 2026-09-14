@@ -3241,3 +3241,61 @@ the check says.
 And as written, with both files put back byte for byte: the suites 159 of 159
 and 155 of 155, and `make test` whole - x86-64 124, the UEFI boots 34, the disk
 across two boots 33 and the stick check 10.
+
+## 18.52 A skip that says so, and only for a missing firmware
+
+**`run_uefi.py` had never run on a machine without OVMF.** `capture()`
+answered four values when it found no firmware and `main` took two, so the
+`SKIP` written for that machine was a `ValueError`; the roadmap had it from 13
+September. Reading it again found the other half: the same `None` from a boot
+that started and gave no picture was printed as a skip too, and exited 0 - so
+a gate whose screendump failed passed without a single check.
+
+**So `main` asks for the firmware before it boots**, skips only when that is
+missing, and fails a first boot that gives no picture; `capture()` answers the
+two values it was always read as.
+
+`tools/test_run_uefi.py` runs the harness's own `main` with its firmware and
+its boots replaced. Nothing is booted, so it runs in `make test` beside the
+other checks on this machine:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `capture()` with no firmware | it answers `(None, why)`, the two values `main` unpacks |
+| `main` with no firmware | exit 0 and a `SKIP:` line naming OVMF, with nothing raised |
+| `main` with the firmware and a boot that gives no picture | exit 1 and a `FAIL:` line naming it |
+
+**Run against the harness as it was**, before the fix:
+
+```
+FAIL: 3 of 3 checks on run_uefi.py where it cannot boot:
+  capture() without OVMF did not answer (None, why), which is what main unpacks: (None, None, None, 'OVMF is not installed beside qemu')
+  run_uefi.py without OVMF did not skip naming it: exit None, '', and raised ValueError('too many values to unpack (expected 2, got 4)')
+  run_uefi.py with OVMF and a boot that gave no picture did not fail naming it: exit 0, 'SKIP: the monitor wrote no screendump'
+```
+
+**Controls**, on the harness as it is now, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| `capture()` answering four values again | check 1, 1 of 3: `(None, None, None, 'OVMF is not installed beside qemu')` |
+| `main` not asking for the firmware before it boots | check 2, 1 of 3: exit 1 and a `FAIL:` line where the skip belongs |
+| a first boot with no picture printed as a skip again | check 3, 1 of 3: exit 0 and `SKIP: the monitor wrote no screendump` |
+
+```
+FAIL: 1 of 3 checks on run_uefi.py where it cannot boot:
+  capture() without OVMF did not answer (None, why), which is what main unpacks: (None, None, None, 'OVMF is not installed beside qemu')
+
+FAIL: 1 of 3 checks on run_uefi.py where it cannot boot:
+  run_uefi.py without OVMF did not skip naming it: exit 1, "FAIL: the first boot through Kosmos's loader gave no picture: OVMF is not installed beside qemu"
+
+FAIL: 1 of 3 checks on run_uefi.py where it cannot boot:
+  run_uefi.py with OVMF and a boot that gave no picture did not fail naming it: exit 0, 'SKIP: the monitor wrote no screendump'
+```
+
+Each breaks exactly one of the three, so no check stands in for another.
+
+And as written, with `run_uefi.py` put back byte for byte: the check 3 of 3,
+and `make test` whole with it among the checks on this machine -
+`run_uefi.py` 34 through a real boot on the path `main` now takes, x86-64 124,
+and the suites 159 of 159 and 155 of 155.
