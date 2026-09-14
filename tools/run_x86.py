@@ -1188,8 +1188,10 @@ def usb_mouse(image, check):
                          monitor.ask("info mice", quiet=0.3)) is not None
 
     at = r"[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]"
-    reading = (r"xhci: (" + at + r") port (\d+): a boot mouse, read from "
+    reading = (r"xhci: (" + at + r") port (\d+): a mouse, read from "
                r"endpoint (\d+), up to (\d+) bytes every (\d+) (ms|us)")
+    by_descriptor = (r"xhci: " + at + r" port \d+: its reports, by its "
+                     r"descriptor: ([^\n]*)")
     first_report = r"xhci: " + at + r" port \d+: the mouse's first report"
 
     try:
@@ -1204,6 +1206,22 @@ def usb_mouse(image, check):
         check(mouse is not None,
               "the USB driver did not say it was reading QEMU's mouse:\n    "
               + said())
+
+        #
+        # **And read by what its Report descriptor says**, which is QEMU's
+        # boot layout exactly - five buttons, padding, X, Y, a wheel - so the
+        # clicks and movements below pass either way. What they cannot tell
+        # is whether the driver read the descriptor, and a mouse that ignores
+        # the boot protocol, as the ThinkPad's does, is where that decides
+        # everything. `test_usbdecode.c` has the layouts QEMU cannot send.
+        #
+        layout = wait_for(0, by_descriptor, 10.0)
+
+        check(layout is not None and layout.group(1).strip()
+              == "5 buttons from bit 0, X from bit 8 in 8, Y from bit 16 in "
+                 "8, no report ID",
+              "the driver did not read QEMU's mouse by its Report descriptor "
+              "- five buttons, then X and Y a byte each:\n    " + said())
 
         check(mouse is not None and closing is not None
               and mouse.group(1) == closing.group(2),

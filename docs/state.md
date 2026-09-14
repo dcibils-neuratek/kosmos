@@ -8,6 +8,35 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 13 September, late: the ThinkPad's USB mouse, read by its Report descriptor
+
+**0.10.62 booted the ThinkPad, and its USB mouse moved the arrow the wrong
+way**: sideways moved it up and down, and up and down did nothing. The
+TrackPoint and the touchpad, through the board's merge, were fine. The driver
+asked a boot mouse for the boot protocol and read bytes 0, 1 and 2; Diego's
+04d9:fc38 took the request and went on sending its own reports, whose first
+was `buttons 0, moved 0,-1` - no Report ID in front, and most likely sixteen
+buttons in two bytes before X and Y. QEMU's mouse obeys the boot protocol, so
+no check here could see it.
+
+- **The driver reads the Report descriptor now** (`usb_decode_mouse_report`):
+  items, globals with Push and Pop, locals that end at each Main item, Report
+  IDs, signedness from the Logical Minimum, and refusals for what it cannot be
+  sure of. The mouse is put in the report protocol and read by that layout,
+  and the boot protocol is kept for a descriptor with no relative X and Y in
+  one packet. The descriptor's bytes and the layout are printed, so `log xhci`
+  on the ThinkPad says what the mouse declared.
+- **Tested on the host** against HID 1.11 E.10, QEMU's descriptor, a
+  sixteen-button layout that reproduces the ThinkPad's symptom, Report IDs and
+  the refusals - 56 checks, four controls; **under QEMU** the mouse check reads
+  the layout line - 17 checks, and 1 of 115 fails with the driver forced back
+  to the boot protocol (`testing.md` §18.46). `make test` green.
+- `roadmap.md` has the two follow-ups: a STALL on endpoint 0 is not recovered
+  from, and a SuperSpeed mouse is still not read.
+
+**Next:** a stick with this, read back, for the ThinkPad - offered as the
+experiment it is - and the photograph `log xhci` with the mouse plugged in.
+
 ### 13 September, night: the ThinkPad's stick, and what was never checked
 
 **0.10.61 did not boot the ThinkPad with either disk.** The 64 MB stick, then

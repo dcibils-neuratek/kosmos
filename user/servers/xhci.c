@@ -317,6 +317,10 @@ struct mouse {
     struct ring   ring;
     uint8_t      *report;
     uint64_t      report_bus;
+
+    /* Where its buttons and movement are, by its Report descriptor; when
+     * that is not `ok`, it is read as a boot mouse. */
+    struct usb_mouse_report layout;
 };
 
 struct controller {
@@ -1382,15 +1386,21 @@ static bool control_nodata(struct controller *c, struct device *d,
  * (Table 9-2). GET_DESCRIPTOR and SET_CONFIGURATION are standard requests to
  * the device (9.4.3, 9.4.7, Table 9-4); SET_PROTOCOL is HID's, a class
  * request to an interface (HID 1.11 7.2.6, its bRequest from 7.2's table).
- * A descriptor's type is wValue's high byte (Table 9-5).
+ * A descriptor's type is wValue's high byte (Table 9-5). A HID class
+ * descriptor is GET_DESCRIPTOR asked of the interface instead - 10000001,
+ * the interface in wIndex - and the Report descriptor is its type 0x22
+ * (HID 1.11 7.1, 7.1.1).
  */
 #define GET_DESCRIPTOR      (0x80u | (6u << 8))
+#define GET_HID_DESCRIPTOR  (0x81u | (6u << 8))
 #define SET_CONFIGURATION   (0x00u | (9u << 8))
 #define SET_PROTOCOL        (0x21u | (0x0Bu << 8))
 #define DESC_DEVICE         0x0100u
 #define DESC_CONFIGURATION  0x0200u
 #define DESC_STRING         0x0300u
+#define DESC_REPORT         0x2200u
 #define PROTOCOL_BOOT       0u          /* 7.2.6: 0 boot, 1 report */
+#define PROTOCOL_REPORT     1u
 
 /*
  * A string descriptor as ASCII: UTF-16LE after a two-byte header, anything
@@ -1622,8 +1632,51 @@ static void say_count(struct say_line *line, int n)
 }
 
 /*
- * A report, read (HID 1.11 B.2): byte 0 the buttons, bytes 1 and 2 the
- * movement, anything after them the device's own. The movement and the
+ * What one report says: by the mouse's Report descriptor when it gave one
+ * that `usb_decode.c` could lay out, and otherwise as a boot report (HID 1.11
+ * B.2) - byte 0 the buttons, bytes 1 and 2 the movement. False for a report
+ * about something else, under another Report ID (6.2.2.7), and for a boot
+ * report too short to be one.
+ *
+ * Buttons 1 to 3 are the pointer's, in the order the boot report has them:
+ * primary, secondary, tertiary. A field past what arrived reads as 0.
+ */
+static bool read_report(const struct mouse *m, unsigned got,
+                        uint32_t *buttons, int *dx, int *dy)
+{
+    const struct usb_mouse_report *l = &m->layout;
+    const uint8_t *r = m->report;
+
+    if (!l->ok) {
+        if (got < 3u) {
+            return false;
+        }
+
+        *buttons = r[0] & 0x07u;
+        *dx = count_of(r[1]);
+        *dy = count_of(r[2]);
+        return true;
+    }
+
+    if (l->id != 0) {
+        if (got == 0 || r[0] != l->id) {
+            return false;
+        }
+
+        r++;
+        got--;
+    }
+
+    *buttons = (uint32_t)usb_report_field(r, got, l->buttons_at,
+                                          l->buttons < 3u ? l->buttons : 3u,
+                                          false) & 0x07u;
+    *dx = usb_report_field(r, got, l->x_at, l->x_bits, l->x_signed);
+    *dy = usb_report_field(r, got, l->y_at, l->y_bits, l->y_signed);
+    return true;
+}
+
+/*
+ * A report, read by `read_report`. The movement and the
  * buttons go to the pointer when there is something new in them, and the
  * next request goes on the ring whatever there was. The first report is said,
  * which is how a photograph of the ThinkPad tells a mouse that sends nothing
@@ -1640,7 +1693,8 @@ static void take_report(struct controller *c, const uint32_t *event)
     unsigned slot = TRB_SLOT_OF(event[3]);
     struct say_line line;
     struct mouse *m;
-    uint32_t code, left;
+    uint32_t code, left, buttons;
+    int dx, dy;
 
     if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
         || slot > DEVICES_MAX) {
@@ -1678,11 +1732,8 @@ static void take_report(struct controller *c, const uint32_t *event)
         return;
     }
 
-    if (left < m->length && m->length - left >= 3u) {
-        uint32_t buttons = m->report[0] & 0x07u;
-        int dx = count_of(m->report[1]);
-        int dy = count_of(m->report[2]);
-
+    if (left < m->length
+        && read_report(m, m->length - left, &buttons, &dx, &dy)) {
         if (++m->reports == 1u) {
             about(&line, c);
             say_text(&line, " port ");
@@ -1718,22 +1769,69 @@ static void take_kept(struct controller *c)
 }
 
 /*
+ * A Report descriptor's bytes, thirty-two to a line and four lines at most.
+ * What a mouse declared is what turns the next one read wrongly into a
+ * reading rather than a guess: the ThinkPad's gaming mouse was worked out
+ * from a photograph of its first report, and this would have said it.
+ */
+static void say_descriptor(const struct controller *c, unsigned port,
+                           const uint8_t *bytes, unsigned length,
+                           struct say_line *line)
+{
+    unsigned from, i;
+
+    for (from = 0; from < length && from < 128u; from += 32u) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, port);
+
+        if (from == 0) {
+            say_text(line, ": its Report descriptor, ");
+            say_dec(line, length);
+            say_text(line, " bytes:");
+        } else {
+            say_text(line, ":   from byte ");
+            say_dec(line, from);
+            say_text(line, ":");
+        }
+
+        for (i = from; i < length && i < from + 32u; i++) {
+            say_text(line, " ");
+            say_hex(line, bytes[i], 2u);
+        }
+
+        if (from + 32u >= 128u && length > 128u) {
+            say_text(line, " ...");
+        }
+
+        say_send(console, line);
+    }
+}
+
+/*
  * A device that has just said what it is, asked whether it is a mouse this
  * can read - and if it is, made ready to be read.
  *
  * **Its configuration**, asked for twice: nine bytes for the total length,
  * then all of it, walked by `usb_decode.c`. A HID boot mouse - subclass 1,
- * protocol 2 - with an interrupt IN endpoint is the one kind taken: HID 1.11
- * fixes its reports' layout (B.2), so nothing has to read its report
- * descriptor. Any other HID device is said and left alone.
+ * protocol 2 - with an interrupt IN endpoint is the one kind taken. Any other
+ * HID device is said and left alone.
  *
  * **Then the controller before the device**, the order 4.3.5 gives: Configure
  * Endpoint with the endpoint's context first, because a SET_CONFIGURATION
- * after one that failed is undefined behaviour; then SET_CONFIGURATION; then
- * SET_PROTOCOL for the boot protocol, because a device starts in the report
- * protocol and the host is to set the one it wants rather than assume (HID
- * 1.11 7.2.6). SET_IDLE is not sent: a boot mouse need not support it
- * (Appendix G), and a mouse's idle rate starts at infinity - a report only
+ * after one that failed is undefined behaviour; then SET_CONFIGURATION.
+ *
+ * **Then its Report descriptor, and the protocol that follows from it.** A
+ * boot mouse's boot report is fixed (HID 1.11 B.2), and this used to ask for
+ * the boot protocol and read bytes 0, 1 and 2. QEMU's mouse obeys. The
+ * ThinkPad's 04d9:fc38 took the request without an error and went on sending
+ * its own reports, and the arrow went down when the mouse moved right. So the
+ * descriptor is asked of the interface (7.1.1), and when it lays out relative
+ * X and Y in a report that fits a packet the mouse is put in the report
+ * protocol and read by what it said; when it does not, the boot protocol and
+ * the boot report, as before. The host sets the protocol either way rather
+ * than assume it (7.2.6). SET_IDLE is not sent: a boot mouse need not support
+ * it (Appendix G), and a mouse's idle rate starts at infinity - a report only
  * when something changes - which is what is wanted (7.2.4).
  *
  * **A SuperSpeed mouse is said and not read**: its endpoint's largest payload
@@ -1748,6 +1846,7 @@ static void use_mouse(struct controller *c, struct device *d,
     uint32_t done[4];
     uint32_t *icc, *slot, *ep;
     unsigned total, dci, interval, payload;
+    const char *why = "it gave no Report descriptor";
 
     memset(m, 0, sizeof(*m));
 
@@ -1848,8 +1947,33 @@ static void use_mouse(struct controller *c, struct device *d,
         return;
     }
 
-    if (!control_nodata(c, d, SET_PROTOCOL, PROTOCOL_BOOT, found.interface)) {
-        say_failure(c, d->port, "SET_PROTOCOL for the boot protocol",
+    if (found.report_length > 0) {
+        why = "its Report descriptor could not be read";
+    }
+
+    if (found.report_length > 0 && found.report_length <= PAGE
+        && control_in(c, d, GET_HID_DESCRIPTOR, DESC_REPORT, found.interface,
+                      found.report_length)) {
+        say_descriptor(c, d->port, d->buffer, found.report_length, line);
+        usb_decode_mouse_report(d->buffer, found.report_length, &m->layout);
+        why = "its Report descriptor lays out no relative X and Y";
+
+        /* One report to a request: a longer one would arrive as several,
+         * which nothing here puts back together. */
+        if (m->layout.ok
+            && (m->layout.id != 0 ? 1u : 0u) + (m->layout.bits + 7u) / 8u
+               > found.packet) {
+            m->layout.ok = false;
+            why = "its reports are longer than its packet";
+        }
+    }
+
+    if (!control_nodata(c, d, SET_PROTOCOL,
+                        m->layout.ok ? PROTOCOL_REPORT : PROTOCOL_BOOT,
+                        found.interface)) {
+        say_failure(c, d->port,
+                    m->layout.ok ? "SET_PROTOCOL for the report protocol"
+                                 : "SET_PROTOCOL for the boot protocol",
                     "; the mouse is not read", line);
         return;
     }
@@ -1860,7 +1984,7 @@ static void use_mouse(struct controller *c, struct device *d,
     about(line, c);
     say_text(line, " port ");
     say_dec(line, d->port);
-    say_text(line, ": a boot mouse, read from endpoint ");
+    say_text(line, ": a mouse, read from endpoint ");
     say_dec(line, found.endpoint);
     say_text(line, ", up to ");
     say_dec(line, found.packet);
@@ -1872,6 +1996,37 @@ static void use_mouse(struct controller *c, struct device *d,
     } else {
         say_dec(line, 125ul << interval);
         say_text(line, " us");
+    }
+
+    say_send(console, line);
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+
+    if (m->layout.ok) {
+        say_text(line, ": its reports, by its descriptor: ");
+        say_dec(line, m->layout.buttons);
+        say_text(line, " buttons from bit ");
+        say_dec(line, m->layout.buttons_at);
+        say_text(line, ", X from bit ");
+        say_dec(line, m->layout.x_at);
+        say_text(line, " in ");
+        say_dec(line, m->layout.x_bits);
+        say_text(line, ", Y from bit ");
+        say_dec(line, m->layout.y_at);
+        say_text(line, " in ");
+        say_dec(line, m->layout.y_bits);
+
+        if (m->layout.id != 0) {
+            say_text(line, ", after report ID ");
+            say_dec(line, m->layout.id);
+        } else {
+            say_text(line, ", no report ID");
+        }
+    } else {
+        say_text(line, ": read as a boot mouse, because ");
+        say_text(line, why);
     }
 
     say_send(console, line);

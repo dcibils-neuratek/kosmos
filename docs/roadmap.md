@@ -354,6 +354,13 @@ the Pi", and the Pi is not here yet.
   unpacks two, so the `SKIP` it was written to print is a `ValueError`. Seen
   while reading it on 13 September 2026, and put here rather than fixed in
   passing.
+- **A control request a mouse refuses leaves endpoint 0 halted.**
+  GET_DESCRIPTOR for its Report descriptor and SET_PROTOCOL are the two a
+  mouse can answer with a STALL, and the controller then holds its default
+  endpoint halted: the next request fails and the mouse is not read. Bringing
+  it back is a Reset Endpoint and a new dequeue pointer, which QEMU's mouse
+  answers every request and cannot be made to need. Noticed writing the
+  report-protocol path on 13 September (`usb.md` §5).
 - **A USB mouse whose report fails is not brought back.** A stall, or a
   transaction error after three tries, halts its endpoint, and the driver
   stops reading it until it is plugged in again. Bringing it back is a Reset
@@ -365,9 +372,11 @@ the Pi", and the Pi is not here yet.
   reset and the commands - a fifth of a second or more - while a mouse on any
   controller waits. Enumeration as steps the watch takes between reports
   would remove it.
-- **A mouse that stays in the report protocol, or runs at SuperSpeed, is not
-  read.** The first needs a report descriptor parser and the second a
-  SuperSpeed Endpoint Companion; the driver says which it met.
+- **A mouse that runs at SuperSpeed is not read.** Its endpoint's largest
+  payload an interval comes from a SuperSpeed Endpoint Companion descriptor,
+  which the walk does not read; the driver says it met one. The other half of
+  this line - a mouse that stays in the report protocol - was the ThinkPad's
+  own, and is read by its Report descriptor since 13 September (`usb.md` §5).
 - **A button held when the xHCI driver dies stays held.** The pointer keeps
   each source's buttons, and nothing lets go of the driver's if its process
   ends with one down.

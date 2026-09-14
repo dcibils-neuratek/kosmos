@@ -39,6 +39,10 @@ struct usb_config {
     uint16_t packet;            /* wMaxPacketSize 10:0 */
     uint8_t  extra;             /* wMaxPacketSize 12:11: high speed's more */
     uint8_t  interval;          /* bInterval, as the device said it */
+
+    /* Its HID descriptor's length for the Report descriptor (HID 1.11
+     * 6.2.1, wDescriptorLength), which is how much to ask for; 0 if none. */
+    uint16_t report_length;
 };
 
 /*
@@ -47,5 +51,41 @@ struct usb_config {
  */
 void usb_decode_config(const uint8_t *bytes, unsigned length,
                        struct usb_config *out);
+
+/*
+ * Where a mouse's buttons and movement are in its reports, out of its Report
+ * descriptor (HID 1.11 6.2.2). Bit offsets are counted from the start of the
+ * report after its Report ID byte, when it has one. `ok` only for relative X
+ * and Y in one report, each 1 to 32 bits: an absolute pair is a tablet.
+ */
+struct usb_mouse_report {
+    bool     ok;
+    uint8_t  id;                /* its Report ID; 0 when reports carry none */
+    uint8_t  buttons;           /* one-bit Button fields in a row, up to 16 */
+    uint16_t buttons_at;        /* the first one's bit */
+    uint16_t x_at;
+    uint16_t y_at;
+    uint8_t  x_bits;
+    uint8_t  y_bits;
+    bool     x_signed;          /* HID 1.11 5.8: a negative Logical Minimum */
+    bool     y_signed;
+    uint16_t bits;              /* the whole report's, after the ID */
+};
+
+/*
+ * `bytes` is the Report descriptor and `length` how many of them there are.
+ * Nothing outside those is read. Not reentrant: one caller at a time, which
+ * is the driver's one loop.
+ */
+void usb_decode_mouse_report(const uint8_t *bytes, unsigned length,
+                             struct usb_mouse_report *out);
+
+/*
+ * `bits` bits of a report from bit `at`, the least significant first, as HID
+ * lays fields out - sign-extended when `is_signed`. 0 when `bits` is not 1 to
+ * 32 or any of them lies past `length` bytes.
+ */
+int32_t usb_report_field(const uint8_t *report, unsigned length, unsigned at,
+                         unsigned bits, bool is_signed);
 
 #endif /* KOSMOS_SERVERS_USB_DECODE_H */

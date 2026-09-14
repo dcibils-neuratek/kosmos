@@ -691,9 +691,9 @@ up.
 
 **One kind is taken: a HID boot mouse** - interface class 3, subclass 1,
 protocol 2 (HID 1.11 4.1 to 4.3) - at alternate setting 0, with an interrupt
-IN endpoint. HID 1.11 fixes a boot mouse's report (B.2), so nothing reads its
-report descriptor. Any other HID interface is said, with its subclass and
-protocol, and left alone. A SuperSpeed mouse is said and not read: its
+IN endpoint. Its HID descriptor, between the interface and the endpoint
+(7.1), gives the length of its Report descriptor (6.2.1), which is kept. Any
+other HID interface is said, with its subclass and protocol, and left alone. A SuperSpeed mouse is said and not read: its
 endpoint's largest payload an interval comes from a companion descriptor this
 does not walk (xHCI 4.14.2).
 
@@ -714,11 +714,59 @@ undefined:
 2. **SET_CONFIGURATION** (USB 2.0 9.4.7), a request with no data stage: in
    xHCI a Setup stage of transfer type 0 and a Status stage that is IN
    (Table 4-7).
-3. **SET_PROTOCOL for the boot protocol** (HID 1.11 7.2.6), because a device
-   starts in the report protocol and the host is to ask for the one it
-   wants. **SET_IDLE is not sent**: a boot mouse need not support it
-   (Appendix G), and a mouse's idle rate starts at infinity - a report only
-   when something changes (7.2.4).
+3. **Its Report descriptor**, asked of the interface - GET_DESCRIPTOR with
+   request type 10000001, type 0x22 in wValue and the interface in wIndex
+   (HID 1.11 7.1.1) - printed a byte at a time, and laid out by
+   `usb_decode_mouse_report` (below).
+4. **SET_PROTOCOL** (HID 1.11 7.2.6): the report protocol when the descriptor
+   lays out relative X and Y in a report that fits one packet, and the boot
+   protocol otherwise, with a line saying why. The host sets it either way
+   rather than assume. **SET_IDLE is not sent**: a boot mouse need not
+   support it (Appendix G), and a mouse's idle rate starts at infinity - a
+   report only when something changes (7.2.4).
+
+### Its Report descriptor, because a boot mouse need not honour the boot protocol
+
+**This used to ask for the boot protocol and read every report as B.2 lays
+one out**: a byte of buttons, a byte of X, a byte of Y. That is what a boot
+mouse is required to send once asked, and it is what QEMU's sends. **The
+ThinkPad's 04d9:fc38 "USB Gaming Mouse" took the request without an error
+and kept sending its own reports**: moved right, the arrow went down; left,
+up; up and down, nothing; and it never left the middle of the screen
+sideways. Its first report said `buttons 0, moved 0,-1`. A byte 0 of zero is
+no Report ID (6.2.2.7 reserves 0), so the second byte must be something that
+is zero while the mouse moves - the upper eight of sixteen buttons being the
+likeliest - with X third and Y fourth. Linux, Windows and macOS never meet
+this, because they never use the boot protocol: they read the Report
+descriptor and do what it says.
+
+So does `usb_decode_mouse_report` now, and it is the whole of the change:
+
+- **Items** (6.2.2.2): a prefix of tag, type and size, then 0, 1, 2 or 4
+  bytes, low byte first. A long item (6.2.2.3) is stepped over.
+- **Globals** (6.2.2.7) hold until changed - Usage Page, Logical Minimum,
+  Report Size, Report Count, Report ID - and Push and Pop keep four of them.
+  **Locals** (6.2.2.8) - Usage, Usage Minimum and Maximum - end at the next
+  Main item, and a usage of one or two bytes takes the page in force at that
+  Main item; a four-byte one carries its own.
+- **An Input item** (6.2.2.4) adds Report Size bits Report Count times. A
+  constant or an array one is stepped over; a variable one takes its usages a
+  field at a time, the last going on to any fields past them. X and Y are
+  Generic Desktop 0x30 and 0x31 and a button is the Button page, 0x09 - the
+  values E.10 encodes them with - and a field is signed when its Logical
+  Minimum is negative (5.8).
+- **Report IDs**: once one appears every report starts with its ID, so
+  offsets are kept for each ID, and the mouse is the first report with both
+  X and Y. A report under another ID - a consumer control's volume keys, say -
+  is skipped when it arrives.
+- **Refused rather than guessed**: an item running past the end, a Pop with
+  nothing pushed or a Push too deep, ID 0, a report over 65535 bits, and X or
+  Y that is absolute - a tablet, which the pointer takes from no driver - or
+  wider than 32 bits.
+
+Buttons 1 to 3 go to the pointer in the boot report's order - primary,
+secondary, tertiary - and a field is read least significant bit first, bit 0
+of byte 0 upwards (5.8).
 
 ### Reading reports
 
@@ -726,7 +774,8 @@ undefined:
 page, as long as its packet, that interrupts when it completes and when a
 report comes back short (6.4.1.1), and the doorbell with the endpoint's
 context index as its target. A Transfer Event says how many bytes did not
-arrive (Table 6-38), and a report of three or more is read as HID 1.11 B.2
+arrive (Table 6-38), and a report is read by its descriptor's layout - after
+its Report ID, when it has one - or, for a mouse read as a boot mouse, as B.2
 lays it out: the buttons, then X and Y as signed bytes. The movement and the
 buttons go to the pointer when there is something new in them, and the next
 request goes on the ring whatever there was. The first report is said.
@@ -767,26 +816,34 @@ the wait on two lines never runs. That is a machine on the legacy path. The
 ThinkPad's ACPI describes an I/O APIC, its controllers each have an MSI of
 their own (§4), and the check boots the same way.
 
-What QEMU prints, with the mouse on the second controller, moved, clicked,
-held and pulled out, and plugged back in:
+What QEMU prints, with the mouse on the second controller - its Report
+descriptor byte for byte the one in `hw/usb/dev-hid.c`, and the layout read
+from it - moved, clicked, held and pulled out, and plugged back in at full
+speed:
 
 ```
 xhci: 00:02.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 20
 xhci: 00:03.0 runs: contexts of 32 bytes, 0 scratchpad pages, 8 slots enabled, interrupt 21
 xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
 xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Mouse"
-xhci: 00:03.0 port 5: a boot mouse, read from endpoint 1, up to 4 bytes every 8 ms
+xhci: 00:03.0 port 5: its Report descriptor, 52 bytes: 05 01 09 02 a1 01 09 01 a1 00 05 09 19 01 29 05 15 00 25 01 95 05 75 01 81 02 95 01 75 03 81 01
+xhci: 00:03.0 port 5:   from byte 32: 05 01 09 30 09 31 09 38 15 81 25 7f 75 08 95 03 81 06 c0 c0
+xhci: 00:03.0 port 5: a mouse, read from endpoint 1, up to 4 bytes every 8 ms
+xhci: 00:03.0 port 5: its reports, by its descriptor: 5 buttons from bit 0, X from bit 8 in 8, Y from bit 16 in 8, no report ID
 xhci: 2 controllers (00:02.0, 00:03.0), 1 port with something plugged in, 1 device named
 xhci: watching for devices plugged in and out
 xhci: 00:03.0 port 5: the mouse's first report: buttons 0, moved 3,-2
 wm: button down at 965,537 raw=1
 wm: button up at 965,537 raw=0
 wm: button down at 965,537 raw=1
-xhci: 00:03.0 port 5: unplugged, 0627:0001 "QEMU USB Mouse", after 6 reports
+xhci: 00:03.0 port 5: unplugged, 0627:0001 "QEMU USB Mouse", after 4 reports
 wm: button up at 965,537 raw=0
-xhci: 00:03.0 port 5, USB 2: a High-speed device (speed ID 3), after its reset
+xhci: 00:03.0 port 5, USB 2: a Full-speed device (speed ID 1), after its reset
 xhci: 00:03.0 port 5: 0627:0001, USB 2.0, class 0, "QEMU USB Mouse"
-xhci: 00:03.0 port 5: a boot mouse, read from endpoint 1, up to 4 bytes every 8 ms
+xhci: 00:03.0 port 5: its Report descriptor, 52 bytes: 05 01 09 02 a1 01 09 01 a1 00 05 09 19 01 29 05 15 00 25 01 95 05 75 01 81 02 95 01 75 03 81 01
+xhci: 00:03.0 port 5:   from byte 32: 05 01 09 30 09 31 09 38 15 81 25 7f 75 08 95 03 81 06 c0 c0
+xhci: 00:03.0 port 5: a mouse, read from endpoint 1, up to 4 bytes every 8 ms
+xhci: 00:03.0 port 5: its reports, by its descriptor: 5 buttons from bit 0, X from bit 8 in 8, Y from bit 16 in 8, no report ID
 ```
 
 The last `button up` is the driver letting go: nothing released the button
@@ -799,9 +856,14 @@ in QEMU.
   plugs it back in that way, so turning milliseconds into an interval runs
   here; but its endpoint 0 is 8 bytes, so Evaluate Context has still run
   nowhere.
-- **A mouse that refuses SET_PROTOCOL**, or keeps sending report-protocol
-  reports anyway. QEMU's honours it; the line would name the step and the
-  code.
+- **A mouse that keeps sending its own reports after SET_PROTOCOL(boot)**,
+  which the ThinkPad's does. QEMU's honours the request and its report is
+  its boot report, so the clicks and movements here pass whichever way it is
+  read: the line naming the layout is what says the descriptor was read, and
+  `test_usbdecode.c` has the layouts QEMU cannot send.
+- **A mouse that refuses SET_PROTOCOL**, or GET_DESCRIPTOR for its Report
+  descriptor. QEMU's answers both; the line would name the step and the code,
+  and a STALL on endpoint 0 is not recovered from (`roadmap.md`).
 - **A halted endpoint**, above.
 - **Contacts that bounce.** QEMU's plug is one clean change, so the debounce
   is always a single interval.
@@ -809,16 +871,21 @@ in QEMU.
 
 ### How it is tested
 
-- **`tools/test_usbdecode.c`, 32 checks** on the host: QEMU's mouse as its
+- **`tools/test_usbdecode.c`, 56 checks** on the host: QEMU's mouse as its
   device model declares it, HID 1.11 Appendix E's keyboard and mouse (the
-  mouse behind the keyboard, and not the keyboard's endpoint), a stick, and
-  every length a device can get wrong - each of which must end the walk.
+  mouse behind the keyboard, and not the keyboard's endpoint, nor its Report
+  descriptor's length), a stick, and every length a device can get wrong -
+  each of which must end the walk. **And Report descriptors**: E.10's and
+  QEMU's, a sixteen-button layout made to match what the ThinkPad's mouse
+  did, Report IDs beside a consumer control and behind a keyboard, a Usage
+  Page given after its usages, signedness from the Logical Minimum, and the
+  descriptors to refuse (`testing.md` §18.46).
 - **The suite, on both boards**: `irq: a wait on two lines takes whichever
   has one`, and `input: a driver's movement adds to the pointer` - which on
   the ARM board is the refusal, since its pointer is a tablet.
-- **`tools/run_x86.py`'s `usb_mouse`**, 16 checks, on q35 with two
-  controllers and QEMU's mouse on the second: the driver reads it there, on
-  two interrupts; 640 movements a little over 10 ms apart, and at least four
+- **`tools/run_x86.py`'s `usb_mouse`**, 17 checks, on q35 with two
+  controllers and QEMU's mouse on the second: the driver reads it there, by
+  the layout its Report descriptor gives, on two interrupts; 640 movements a little over 10 ms apart, and at least four
   in five come back as reports of their own - QEMU folds a movement into the
   one before while that is unread, so a driver reading late reads fewer - and
   more than two rounds of a ring; then a click on the Deskbar's button opens
@@ -826,11 +893,19 @@ in QEMU.
   up; and a full-speed mouse plugged back in is read every 8 ms, from its
   first report.
 
-The controls, each watched fail, are in `testing.md` §18.43.
+The controls, each watched fail, are in `testing.md` §18.43 and §18.46.
 
 ### On the ThinkPad
 
-Not run yet.
+**0.10.62, 13 September**: the driver named Diego's mouse - `04d9:fc38, USB
+2.0, class 0, "USB Gaming Mouse"`, full speed, on `00:14.0` port 1 - and read
+it, `a boot mouse, read from endpoint 1, up to 8 bytes every 1 ms`, first
+report `buttons 0, moved 0,-1`. **With its axes wrong**: sideways moved the
+arrow up and down, and up and down did nothing - the boot protocol asked for
+and not given, above. The TrackPoint and the touchpad, through the board's
+merge, worked "great". The Report descriptor version has not run there yet;
+on its first boot the photograph is `log xhci`, which carries the descriptor's
+bytes and the layout read from them.
 
 ---
 

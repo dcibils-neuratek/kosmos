@@ -2801,3 +2801,66 @@ stick's image it failed 1 of 10, the checker rightly calling a write into the
 disk damage. The cluster comes from the image's FAT now, past the last
 cluster mtools lists, and the test passes against `make test`'s stick, the
 0.10.60 stick and the 0.10.62 stick alike.
+
+## 18.46 A mouse read by its Report descriptor
+
+**The ThinkPad's USB mouse took SET_PROTOCOL(boot) and went on sending its
+own reports.** On 0.10.62: moved right, the arrow went down; left, up; up and
+down, nothing; and it never left the middle of the screen sideways. The
+driver read bytes 0, 1 and 2 as a boot report (HID 1.11 B.2), and its first
+report was `buttons 0, moved 0,-1` - a zero byte 0, which is no Report ID -
+so the likeliest layout is sixteen buttons in two bytes before X and Y.
+QEMU's mouse honours the boot protocol, so nothing here could have seen it
+(`usb.md` §5).
+
+So the driver asks the interface for its Report descriptor (HID 1.11 7.1.1),
+prints its bytes, and `usb_decode_mouse_report` lays out the first report
+with relative X and Y - the buttons, bit offsets and sizes, signedness from
+the Logical Minimum (5.8), and the Report ID - and the mouse is put in the
+report protocol and read by that. A descriptor that lays out no such report,
+or one longer than a packet, leaves it read as a boot mouse, and the line
+says why.
+
+`tools/test_usbdecode.c`, 56 checks, 24 of them new:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| the Report descriptor's length | QEMU's 52 bytes, and in HID 1.11's keyboard and mouse the mouse's 0x32 rather than the keyboard's 0x3f in front of it |
+| HID 1.11 E.10, byte for byte | three buttons from bit 0, X and Y a byte each from bits 8 and 16, signed from a Logical Minimum of -127 |
+| QEMU's mouse, from `hw/usb/dev-hid.c` | five buttons, padding, X, Y and a wheel: 32 bits |
+| sixteen buttons, a layout made here | X and Y sixteen bits each after two bytes of buttons; a report read by it is the left button, 3 right and 2 up - where read as a boot report the same bytes are no sideways movement and 3 down, which is the ThinkPad's symptom |
+| a mouse with Report ID 1 beside a consumer control | ID 1, and the consumer's array stepped over |
+| a keyboard as Report ID 1 and the mouse as ID 2 | ID 2's fields alone; four-byte usages with the Button page still in force; a Push and a Pop putting the report size back |
+| a Usage Page given after X and Y's usages | theirs, because the page in force at the Main item is (6.2.2.8) |
+| a Logical Minimum of 0 | X and Y unsigned (5.8) |
+| refused | absolute X and Y, which is a tablet; X and Y 33 bits wide; an item whose data runs past the end; Report ID 0; a Pop with nothing pushed; a Push five deep; no descriptor at all |
+| a long item in front | stepped over |
+| fields | twelve bits across two bytes, signed and not; 32 bits, the least significant byte first; single bits; a field past the end, or of 0 or 33 bits, read as 0 |
+
+**Controls**, each a copy of `usb_decode.c` built with the test:
+
+| broken | what failed |
+| ------ | ----------- |
+| a usage's page taken when its Usage item is met, not at the Main item | 1 of 56: the Usage Page given after X and Y's usages |
+| Report IDs neither kept nor counted | 2 of 56: the mouse with Report ID 1, and the mouse behind the keyboard |
+| no check that an item's data is there | 1 of 56: the item cut at the end, whose missing byte is still in the array |
+| X and Y always signed | 1 of 56: the Logical Minimum of 0 |
+
+`tools/run_x86.py`'s `usb_mouse`, 17 checks, one of them new: QEMU's mouse
+read by its Report descriptor - `5 buttons from bit 0, X from bit 8 in 8, Y
+from bit 16 in 8, no report ID`. QEMU's report is its boot report, so the
+clicks and movements pass whichever way it is read, and that line is what
+says the descriptor was. **The control**, with the driver made to read every
+mouse as a boot mouse once it has laid out the descriptor:
+
+```
+FAIL: 1 of 115 checks on x86-64:
+  the driver did not read QEMU's mouse by its Report descriptor - five buttons, then X and Y a byte each:
+    xhci: 00:03.0 port 5: read as a boot mouse, because its Report descriptor lays out no relative X and Y
+```
+
+And as written, with `xhci.c` restored byte for byte: `make test` whole - the
+host test 56 of 56, x86-64 115, the UEFI boots 29, the stick check 10, and the
+suites 158 of 158 and 154 of 154. **The ThinkPad has not run it yet**; on its
+first boot the photograph is `log xhci`, which now carries the mouse's
+descriptor bytes and the layout read from them.
