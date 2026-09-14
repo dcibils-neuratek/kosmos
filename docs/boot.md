@@ -44,8 +44,9 @@ ESP without `\boot\disk.img` or `\boot\disk.sums`, and the kfs disk in a
 second partition right after it, of Kosmos's type
 `8A9DC8A8-83CF-4F7F-962B-43157A68F14A`, named `KOSMOS HOME`. The stick's
 command line gets `opt/kosmos/home=` and that partition's unique GUID, and
-Kosmos opens the partition as `/home` through its own USB driver. **No stick
-in this layout has booted on the ThinkPad.**
+Kosmos opens the partition as `/home` through its own USB driver. **It booted
+on the ThinkPad on 14 September** (§3's table), and is not yet what `make
+x86-usb-image` builds when not asked.
 
 Both paths end in the same place: `boot/x86_64/start.S` in 32-bit protected
 mode, paging off, `eax` the Multiboot 2 magic and `ebx` the information
@@ -262,6 +263,7 @@ wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 | `a543f20`, the 0.10.62 kernel with the mouse read by its Report descriptor, MEGA, from `make MEGA=1 x86-usb-image`, offered as an experiment - its read-back output not seen | 32 MB | booted to the desktop and ran for 25 minutes; the mouse's axes right and its movement in jumps, each step of naming it a second or two and 882 reports read (`usb.md` §5) |
 | `d6e7e12`, the 0.10.62 kernel with ERDP written low half first, MEGA, from `make MEGA=1 x86-usb-image`, offered as an experiment | 32 MB | back to the firmware's Boot Menu twice with nothing drawn, and to the desktop at the third try; `log loader` clean - 0 pages repaired before, 0 after, 0 lost, the disk the same, the userland image as the build left it - and the mouse smooth (`usb.md` §5) |
 | `b8c6f10`, the 0.10.62 kernel with USB mass storage's 5a to 5d, MEGA, from `make MEGA=1 x86-usb-image`, on a Kingston DataTraveler Exodia 128 GB, offered as an experiment - its read-back output not seen | 32 MB | booted to the prompt; `log loader` clean - 0 pages repaired before, 0 after, 0 lost, the disk the same, the stick against the build the same - and the stick it booted from read by Kosmos's own USB driver: `0951:1666` at SuperSpeed on `00:14.0` port 14, "Kingston" "DataTraveler 3.0", 242155520 blocks of 512 bytes, 115 GB, the GPT's header at block 1, and `sticks` reading its `KOSMOS` partition through `/dev/blocks` (`usb.md` §7) |
+| `c70d9df`, the 0.10.62 kernel with USB mass storage's 5e and 5f, MEGA, from `make MEGA=1 x86-usb-image USB_HOME=partition` - `/home` in a partition of its own, no disk in memory - on a Kingston DataTraveler Exodia 128 GB, offered as an experiment - its read-back output not seen | none; a 32 MB Kosmos partition | booted to the prompt and the desktop; `log loader` clean with `the disk: none`; `diskinfo` said the Kosmos partition on USB unit 0, blocks 393250 to 458785, kfs version 1; a file saved to `/home` read back. **The desktop came about 20 seconds late** - `neofetch` gave an uptime of 20 seconds at the shell - **and its bar and windows appeared only once the pointer moved**; neither is explained yet (`usb.md` §7) |
 
 The black panel was a refusal: only `refuse()` waits for a key, and what it
 printed went through a console that machine does not show. **Why it refused
@@ -460,9 +462,10 @@ measurement.
   loader can only check.
 - **The disk on a stick is still refused over 32 MB** by `mkusb_image.py`,
   until the ThinkPad has booted a bigger one through this loader.
-- **`/home` in a partition of its own** (`USB_HOME=partition`) has not booted
-  on the ThinkPad, and its partition is held to the same 32 MB, though
-  nothing reads it into memory.
+- **`/home` in a partition of its own** (`USB_HOME=partition`) has booted on
+  the ThinkPad once, with its desktop 20 seconds late; it is not the default
+  yet, and its partition is held to the same 32 MB, though nothing reads it
+  into memory.
 - **Secure Boot** is not supported; the loader is unsigned, as GRUB was.
 - **The screen is the firmware's current mode.** The loader does not choose
   one.

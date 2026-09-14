@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | built under QEMU, 5a to 5f; its stick not yet booted on the ThinkPad (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -1540,7 +1540,9 @@ names that partition when one differs, rather than calling it the backup GPT.
   and `sticks` reading its partition through `/dev/blocks`. Its last block
   holds **no backup** table, which is the image rather than the stick:
   `mkusb_image.py` writes the backup where the image ends, 475202 blocks in,
-  and the firmware boots it anyway. Writing to it (5e) has not run there.
+  and the firmware boots it anyway. **And written**: the `c70d9df` stick, whose
+  `/home` is its own partition (5f), booted there with no disk in memory, and
+  a file saved to `/home` read back.
 - **A stick that leaves while `/home` is on it.** The disk server's requests
   are refused as no stick at that unit, and `/home` stays gone until the
   machine starts again: a stick put back is a new unit. The journal is what
@@ -1552,8 +1554,10 @@ names that partition when one differs, rather than calling it the backup GPT.
 - **What a flush buys** is not visible under QEMU, whose stick writes straight
   to a file: the check sees the driver say one was sent and kept, not a power
   cut survived.
-- **A stick with `/home` in a partition has not booted on the ThinkPad.** Its
-  first is offered as an experiment, beside a stick that has (`boot.md`).
+- **Why that stick's desktop came 20 seconds late on the ThinkPad**, with its
+  bar and windows appearing only once the pointer moved. Not the USB driver
+  held back by init: under QEMU it starts at 0.126 s with `opt/kosmos/home`
+  and without it. The ThinkPad's own timestamps are what is needed.
 - **Two sticks written from one image** carry the same partition GUID, and the
   disk server takes the lower unit of the two.
 

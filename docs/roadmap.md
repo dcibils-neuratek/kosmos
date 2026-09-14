@@ -237,9 +237,12 @@ is the one that makes the machine Diego owns behave like a computer:
    a Kosmos partition beside the ESP and its GUID on the stick's command line,
    which the loader passes on unchanged; the disk server takes the partition
    by that GUID; the kernel keeps its whole command line; and `run_uefi.py`
-   boots the stick through OVMF to `/home` on it (`usb.md` §7). Next: the
-   ThinkPad booting that stick, offered as an experiment beside one that has
-   booted - and then step 6, another machine's drive.
+   boots the stick through OVMF to `/home` on it (`usb.md` §7). **It booted on
+   the ThinkPad the same day** - `/home` on the Kingston's own partition, a
+   file written and read back - with the desktop about 20 seconds late, not
+   yet explained. Next: step 6, another machine's drive, with the devices
+   view Diego asked for on seeing it: a place for each device, and the
+   filesystems inside it.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage

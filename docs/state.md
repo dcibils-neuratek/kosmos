@@ -19,17 +19,20 @@ prepush` and a bump.
   SuperSpeed, its partition through `sticks` (`boot.md`'s table, `usb.md`
   §7). So the loader's sums, the disk started once and USB 5a to 5d have run
   there now.
-- **Stick B, next**:
-  `build/x86_64/kosmos-usb-0.10.62-c70d9df-home-experiment.img`, built from
-  `c70d9df` (USB step 5f) by `make MEGA=1 x86-usb-image USB_HOME=partition`:
-  `/home` in a partition of its own on the stick, and nothing loaded into
-  memory. Its `kosmos.bin` is the build's, `run_uefi.py` passes on the exact
-  image, 31 checks, and so does its home boot through OVMF, 4 of 4. No stick in
-  this layout has booted on the ThinkPad, so it goes after the `b8c6f10`
-  stick, with the ERDP stick as the fallback. The photographs: `log loader`,
-  which should end `the disk: none; the stick against the build: same`;
-  `diskinfo`, which should say `/home` is the Kosmos partition on a USB unit;
-  and `sticks`. What is saved to `/home` there is written to the stick.
+- **Stick B booted on the ThinkPad too, 14 September**:
+  `kosmos-usb-0.10.62-c70d9df-home-experiment.img`, `/home` in a partition of
+  its own and no disk in memory. `log loader` said `the disk: none`,
+  `diskinfo` the Kosmos partition on USB unit 0, blocks 393250 to 458785, and
+  a `test.txt` saved there read back `hello`. **Two things to explain**: the
+  desktop came about 20 seconds late - `neofetch` gave an uptime of 20
+  seconds at the shell - and the bar and windows appeared only once the
+  pointer moved. Under QEMU the USB driver starts at the same moment with and
+  without `opt/kosmos/home`, so it is not init holding it back.
+- **Diego, on seeing Tracker there: "we need a devices view"**, and inside a
+  device the filesystems it holds. The sidebar is the mount table - `app`,
+  `bin`, `dev`, `lib`, `net`, `ramfs` beside `home`, and `system` and `user`,
+  which are the same disk - so nothing says what is a device or where it is
+  mounted. To be proposed with step 6, whose drives need that place too.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and
