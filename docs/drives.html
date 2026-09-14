@@ -251,7 +251,7 @@
             <div>
               <div class="drive-name">Internal drive</div>
               <div class="drive-kind">NVMe, 512 GB</div>
-              <div class="fs"><span class="fsname">Windows</span><span class="fstype">NTFS</span><span><span class="bar"><i style="width:55%"></i></span><span class="free">read only, 230 of 512 GB free</span></span></div>
+              <div class="fs cant"><span class="fsname">Windows</span><span class="fstype">NTFS</span><span class="free">listed, not opened: NTFS is left out for now</span></div>
             </div>
           </div>
           <div class="drive-tile">
@@ -267,7 +267,7 @@
       <div class="foot">3 drives</div>
     </div>
   </div>
-  <p class="note">A drawing, not a screenshot. The Kingston and its two filesystems are your real stick. The internal drive and PHOTOS 2024 are examples, and the sizes on them are made up. <b>On your ThinkPad today</b> the list would be the Kingston, and the internal NVMe marked "not started" until Kosmos can start it. Once it can, its Windows filesystem is readable, read only - unless BitLocker has encrypted it, which Windows 11 laptops often do by default.</p>
+  <p class="note">A drawing, not a screenshot. The Kingston and its two filesystems are your real stick. The internal drive and PHOTOS 2024 are examples, and the sizes on them are made up. <b>On your ThinkPad today</b> the list would be the Kingston, and the internal NVMe marked "not started" until Kosmos can start it. Once it can, its Windows filesystem is listed as NTFS, and not opened.</p>
 
   <h2>Your boot stick, opened</h2>
   <p>One drive can hold more than one filesystem. Your stick holds two: yours, and the small one the ThinkPad boots from.</p>
@@ -341,7 +341,6 @@
     </table>
   </div>
   <p class="note"><code>/drives</code> is one folder every program has from the moment it starts. Drives plugged in or pulled out appear and disappear inside it, so a program that is already running still finds a drive plugged in after it. A program never given <code>/drives</code> cannot reach any drive at all.</p>
-  <p class="note">Your Windows files on the internal drive would be at <code>/drives/Windows/Users/diego</code>, read only.</p>
 
   <h2>From an app</h2>
   <p>An app's <b>Open</b> and <b>Save</b> windows have the same sidebar as Tracker: Places and Drives. You go through whichever is quicker. <b>What the app gets is the file itself</b>, at its real place on the drive, so no app has to know that MyPhotos exists.</p>
@@ -470,7 +469,7 @@
     <li><b>The Drives app shows before it changes anything.</b><span>Drives, partitions, filesystems and sizes first; formatting and partitioning later, each on its own.</span></li>
     <li><b>Places are shortcuts you add and name.</b><span>Drag a drive or a folder in and call it MyPhotos. A shortcut rather than a mount, so the drive itself never changes.</span></li>
     <li><b>One Open and Save window for every app.</b><span>The one Kosmos has, grown to what any system's does, and every app that opens or saves moved onto it.</span></li>
-    <li><b>Other machines' filesystems are read only: FAT32, exFAT and NTFS.</b><span>Your Windows files on the internal drive included, unless BitLocker has encrypted them. FAT32 and exFAT are Kosmos's own readers, from Microsoft's specifications; how the NTFS reader is made - Kosmos's own, or from what Linux and Haiku already have - is still to decide.</span></li>
+    <li><b>Other machines' filesystems are read only: FAT32 and exFAT.</b><span>Kosmos's own readers, from Microsoft's specifications. NTFS is left out for now: a filesystem of that type is listed with its type, and not opened.</span></li>
     <li><b>Tracker shows where you are as the whole trail.</b><span>From the sidebar's group down to the folder you are in - <b>Drives &rsaquo; Kingston DataTraveler &rsaquo; KOSMOS HOME</b>, or <b>Places &rsaquo; MyPhotos &rsaquo; Italy</b> - as in the pictures above, rather than a raw path like <code>/home</code>.</span></li>
   </ol>
 </main>

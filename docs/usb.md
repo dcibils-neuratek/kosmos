@@ -12,7 +12,7 @@ else.
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
-| 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT32, exFAT and NTFS read, read only (`drives.html`) | designed, not started |
+| 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT32 and exFAT read, read only (`drives.html`) | designed, not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that

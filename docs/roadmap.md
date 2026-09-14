@@ -244,7 +244,8 @@ is the one that makes the machine Diego owns behave like a computer:
    decided with Diego on 14 September: Tracker's sidebar as Places, System
    and Drives with each filesystem's type, `/drives/<label>`, one Open and
    Save window for every app, a Drives app that shows before it changes
-   anything, and other machines' FAT32, exFAT and NTFS read, read only.
+   anything, and other machines' FAT32 and exFAT read, read only - NTFS
+   left out for now.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -431,6 +432,16 @@ the Pi", and the Pi is not here yet.
 
 ### The system
 
+- **NTFS, read only**, so the Windows files on the ThinkPad's NVMe open in
+  Kosmos. Asked for by Diego on 14 September while deciding the drives
+  design, then left out of USB step 6 to focus on FAT32 and exFAT: "we can
+  go back to ntfs anytime later in our roadmap". What is known: Microsoft
+  publishes no specification; Linux (ntfs-3g, ntfs3) and Haiku read it
+  already, and all of them are GPL, so it is Kosmos's own reader with those
+  as references, or their code under the GPL arrangement Doom's builds have;
+  and BitLocker, on by default on many Windows 11 laptops, leaves the
+  partition unreadable either way. Until then an NTFS filesystem is listed
+  with its type, and not opened (`docs/drives.html`).
 - **SMP.** Moved up to *Being built now* — see there, and `docs/smp.md` for
   the map. **This entry used to claim the kernel was "written SMP-ready: no
   loose mutable globals, a per-CPU pointer, a per-CPU runqueue with one CPU

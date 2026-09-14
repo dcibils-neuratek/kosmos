@@ -37,9 +37,8 @@ prepush` and a bump.
   Tracker, places as shortcuts, one Open and Save window for every app, and a
   Drives app. **Decided with Diego the same day**: Places, System, Drives in
   that order, every filesystem's type shown, where you are shown as the whole
-  trail (Drives › Kingston DataTraveler › KOSMOS HOME), and NTFS read only beside FAT32
-  and exFAT - his Windows files on the NVMe, unless BitLocker has encrypted
-  them. Nothing built.
+  trail (Drives › Kingston DataTraveler › KOSMOS HOME), and FAT32 and
+  exFAT read only - NTFS left out for now. Nothing built.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and
