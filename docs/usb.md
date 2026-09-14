@@ -12,7 +12,8 @@ else.
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | not started |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
-| 6. Ethernet | a USB-C adapter carrying the network stack | not started |
+| 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
+| 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
 decided it: the ThinkPad carries its disk as memory because Kosmos cannot
@@ -26,6 +27,11 @@ whole disk image into memory before Kosmos starts, and a stick's image is kept
 to 32 MB or less until the ThinkPad has booted a bigger one through Kosmos's
 own loader (`boot.md`). Reading the stick directly removes the copy in
 memory, and with it the limit.
+
+**And step 6 is Diego's too**, the same week: "we need fat32 driver so we can
+mount usb drives that i have with content that i would like to have avaiable
+on kosmos", "then you have exfat as well". Decided on 14 September: **Kosmos's
+own reader, read-only first** - `README.md` has the decision and why.
 
 ---
 

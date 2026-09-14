@@ -701,7 +701,9 @@ Attributes live alongside the file, typed and indexed by the filesystem server. 
 
 Live queries are the part of BeOS nobody replicated and that neither macOS nor Linux has today: you register a predicate over attributes and the server sends you a message when the result set changes. No polling. If another process writes a file that matches your query, your view updates on its own.
 
-FAT32 at first, because the Pi's firmware needs it to boot. An own filesystem with native attributes and indexes is stage 8, and that is where this part becomes real.
+This paragraph used to say FAT32 at first, because the Pi's firmware boots from it, and an own filesystem later. The own filesystem came instead: kfs, with the attributes on disk and the index rebuilt at mount (§8.3). FAT32 has no attributes, no journal and no way to say what a file is, and Kosmos's disk is not FAT32.
+
+**FAT32 and exFAT come back only as other machines' drives**, decided on 14 September 2026: Kosmos's own reader, read-only first, so a flash drive's files can be read in Kosmos. They are somebody else's filesystems, mounted, and nothing Kosmos stores lives in them.
 
 ### 8.3 What is in memory and what is on disk
 

@@ -136,7 +136,8 @@ So the next thing is not a subsystem this system lacks in the abstract. It
 is the one that makes the machine Diego owns behave like a computer:
 
 0. **USB.** xHCI, then enumeration, then a mouse, then bulk transfers, then
-   mass storage, then Ethernet. Each step ends in something visible, and two
+   mass storage, then another machine's drive - FAT32 and exFAT, read-only
+   first - then Ethernet. Each step ends in something visible, and two
    of them are worth the whole milestone on their own:
 
    - **mass storage deletes the loader-disk problem.** No module, no
@@ -147,6 +148,11 @@ is the one that makes the machine Diego owns behave like a computer:
      and its WiFi is an AX201 - a CNVi part, with the MAC inside the chipset
      and no public documentation - so a USB-C Ethernet adapter is the
      shortest path to metal, and those chips need no firmware and no crypto.
+
+   **Another machine's drive is Diego's step**, 14 September: his flash
+   drives hold files he wants in Kosmos, and they are FAT32, or exFAT when
+   they are big. Kosmos's own reader, a server in C, read-only first; writing
+   to them comes later and deliberately (`README.md`).
 
    **Where the stack lives is settled**: in userland, as servers, not in
    `hal/`. `docs/drivers.md` is the record. The three kernel primitives a
