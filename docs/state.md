@@ -12,17 +12,14 @@ Last updated: 2026-09-14
 `origin`, and `VERSION` still says 0.10.62; a push is his call, after `make
 prepush` and a bump.
 
-- **The stick Diego is to try on the ThinkPad**:
-  `build/x86_64/kosmos-usb-0.10.62-b8c6f10-experiment.img`, built by `make
-  MEGA=1 x86-usb-image` from a clean tree at `b8c6f10` (USB step 5d), its
-  `kosmos.bin` compared with the build's, and passing `run_uefi.py` on the
-  exact image, 32 checks. It is an experiment - This Machine, the disk started
-  once, the loader's sums and USB 5a to 5d have not run there - offered beside
-  the ERDP stick, `kosmos-usb-0.10.62-erdp-experiment.img`, which has. The
-  photographs: `log loader`, which should end `the stick against the build:
-  same`; `log xhci`, the Kingston named with its size and its GPT at both
-  ends; and `sticks`. `boot.md`'s table gets a row from what he sees.
-- **And a second experiment, for after it**:
+- **Stick A booted on the ThinkPad, 14 September**:
+  `kosmos-usb-0.10.62-b8c6f10-experiment.img` on a Kingston DataTraveler
+  Exodia 128 GB. `log loader` was clean, the stick against the build the
+  same, and Kosmos's own USB driver read the stick it booted from - 115 GB at
+  SuperSpeed, its partition through `sticks` (`boot.md`'s table, `usb.md`
+  §7). So the loader's sums, the disk started once and USB 5a to 5d have run
+  there now.
+- **Stick B, next**:
   `build/x86_64/kosmos-usb-0.10.62-c70d9df-home-experiment.img`, built from
   `c70d9df` (USB step 5f) by `make MEGA=1 x86-usb-image USB_HOME=partition`:
   `/home` in a partition of its own on the stick, and nothing loaded into

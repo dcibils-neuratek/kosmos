@@ -1533,8 +1533,14 @@ names that partition when one differs, rather than calling it the backup GPT.
   **the endpoint on the wait** is what makes a request prompt, and the check
   does not time one - a request left off the wait still waits at most 50 ms,
   and passes (`testing.md` §18.59).
-- **A stick's blocks on the ThinkPad** - its Kingston stick, a DataTraveler Exodia, is 128 GB, and
-  what `sticks` says there is the first real stick read through this.
+- **A stick's blocks on the ThinkPad were read on 14 September**, from the
+  Kingston DataTraveler Exodia 128 GB it booted from (`b8c6f10`, `boot.md`):
+  `0951:1666` at SuperSpeed on `00:14.0` port 14, in bursts of 4 where QEMU's
+  stick bursts 16, 242155520 blocks of 512 bytes, the GPT's header at block 1,
+  and `sticks` reading its partition through `/dev/blocks`. Its last block
+  holds **no backup** table, which is the image rather than the stick:
+  `mkusb_image.py` writes the backup where the image ends, 475202 blocks in,
+  and the firmware boots it anyway. Writing to it (5e) has not run there.
 - **A stick that leaves while `/home` is on it.** The disk server's requests
   are refused as no stick at that unit, and `/home` stays gone until the
   machine starts again: a stick put back is a new unit. The journal is what
