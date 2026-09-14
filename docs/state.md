@@ -30,6 +30,10 @@ prepush` and a bump.
   under QEMU - and next is 5f, the stick layout with that partition and the
   loader naming it; then another machine's FAT32 and exFAT drives, Kosmos's
   own reader, read-only first (`usb.md`).
+- **A tutorial for building Lua apps**, asked for by Diego on 14 September:
+  ten lessons and fifteen apps in `/home/development`, from a window with a
+  button to a music player and a paint program. Planned in `roadmap.md`, as
+  the fourth of *Next, in this order*, and not started.
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.

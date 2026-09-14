@@ -303,6 +303,42 @@ processors, and still what follows USB:
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine.
+4. **A tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+   Diego on 14 September - "a simple tutorial on extending kosmos with lua
+   which was always the idea", which is `design.md` §9.1: there is no
+   distinction between writing an app and modifying the system. Ten lessons,
+   from a window with a button to a music player and a paint program, and
+   fifteen apps, each a showcase of one part of Kosmos. They live in
+   `/home/development`, to be read, changed and run by their file: a folder a
+   lesson - `/home/development/01-hello-button/` - holding its apps and a
+   `lesson.md` that Reader shows. Their sources are in the tree under
+   `user/development/`, and the disk image puts them in `/home`.
+
+   | lesson | apps | what it shows of Kosmos |
+   | ------ | ---- | ----------------------- |
+   | 1. A window and a button | `hello-button` | an application declared in its header and run by its file; `ui.window`, `ui.label`, `ui.button`; drawing as commands the window manager keeps, and a control that paints at the click |
+   | 2. Controls and layout | `converter` | fields, checkboxes, lists and a menu bar; follow-mode layout; theme colours by name; keyboard focus |
+   | 3. Files and the namespace | `notes` | `fs.read`, `fs.write`, `fs.list` and `ui.editor`; what this process can reach, from `fs.mounts`, and why that is all there is |
+   | 4. Attributes and queries | `people` | contacts as files with attributes, as BeOS's People kept them: `fs.setattr`, `fs.getattr` and `fs.query`, and Tracker showing the same records |
+   | 5. Servers and devices | `taskview`, `deskclock` | a server is someone you ask: the process list and `-- kosmos: needs processes`, `/dev/cpu`, a stick's blocks through `/dev/blocks`; and a replicant that lives in the Deskbar |
+   | 6. Your own pixels | `sketch` | a direct window's shared surface, drawn with the surface's C primitives from the mouse; double buffering; why a pixel never sits in a Lua table, and which clock paces a frame |
+   | 7. Images, and an editor | `lightbox`, `paint` | pictures decoded by kits, thumbnails, drag and drop from Tracker, file types; then tools, a colour picker, undo and saving |
+   | 8. Sound | `piano`, `player` | `/dev/audio`'s shared ring - control by message, data by shared memory - with notes synthesised in time; then MP3 through its kit, a playlist from a query, position and seeking |
+   | 9. The network | `fetcher`, `guestbook` | `fs.resolve`, `fs.connect`, `fs.listen` and `fs.accept`, from a window that never waits on a socket; a web server with a window of its visitors |
+   | 10. 3D | `orrery`, `flyover` | TinyGL from Lua through `/kits/gl` - matrices, lights, display lists - and `/lib/g3d.lua`, whose maths is Lua and whose triangles are C; measuring before moving anything |
+
+   **Each app is finished the way the rest of the system is**: the licence
+   line, English, and a check in the display harness that opens it and sees
+   the one thing its lesson is about - the label that changed, the file that
+   was saved, the note that played.
+
+   **What it needs first, or will find out:** a PNG writer for `paint` to save
+   with, which the screenshot shortcut wants as well; that an application run
+   by its file from `/home` opens its window as one in `/bin` does, which
+   lesson 1 checks before anything is written on top of it; how
+   `/home/development` is filled on a stick, after USB step 5f, and on a
+   machine whose `/home` is memory; and that the ThinkPad has neither sound
+   nor a network yet, so lessons 8 and 9 are checked under QEMU.
 
 **A non-blocking send.** Half a browser frame is the application blocked on
 a `commit` whose handler swaps an index and records a rectangle. `SYS_CALL`,
