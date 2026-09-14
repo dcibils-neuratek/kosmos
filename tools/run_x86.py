@@ -711,6 +711,66 @@ def usb(image, check):
           % (len(wrote), why))
 
 
+def usb_blocks(image, check):
+    """**USB step 5d: the block protocol, from a program at the prompt.**
+
+    A stick laid out by `mkusb_image.write_gpt`, on the second controller.
+    Once the driver has read that stick's partition table itself, `sticks`
+    asks the driver for it through `/dev/blocks`: each unit's size and names,
+    the header at block 1, and the entries it points to - which have to be
+    the partition `write_gpt` wrote, read through a region the program handed
+    over. Then a read of one block past the last, by a two-line program
+    written to `/ramfs` and run by its file - the prompt's own Lua has no
+    `use`, which is a program's - and the driver has to refuse it by name
+    rather than send it to the stick.
+    """
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-blocks.img")
+    blocks = stick_with_gpt(stick)
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "qemu-xhci,id=usb1",
+             "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+             "-device", "usb-storage,bus=usb1.0,drive=stick")
+
+    out = boot(image, None, 120.0,
+               typed=("sticks",
+                      'fs.write("/ramfs/past.lua", [[local r = '
+                      'use("/lib/blocks.lua").open() print("past:", '
+                      'r:read(0, %d, 1)) r:close()]])' % blocks,
+                      "/ramfs/past.lua"),
+               extra=extra, after="its backup")
+
+    if out is None:
+        check(False, "the machine would not boot with a USB stick")
+        return
+
+    shown = "\n    ".join(l.strip() for l in out.splitlines()
+                           if "unit " in l or "partition" in l
+                           or "past:" in l or "sticks:" in l)
+
+    unit = re.search(r"unit 0: (\d+) blocks of (\d+) bytes, \"([^\"]*)\" "
+                     r"\"([^\"]*)\"", out)
+
+    check(unit is not None
+          and unit.group(1, 2, 3, 4) == (str(blocks), "512", "QEMU",
+                                         "QEMU HARDDISK"),
+          "`sticks` did not say, through /dev/blocks, that unit 0 is %d "
+          "blocks of 512 bytes, \"QEMU\" \"QEMU HARDDISK\":\n    %s"
+          % (blocks, shown))
+
+    part = re.search(r"partition 1: \"KOSMOS\", blocks 34 to (\d+), type "
+                     r"C12A7328-F81F-11D2-BA4B-00A0C93EC93B", out)
+
+    check(part is not None and part.group(1) == str(blocks - 34),
+          "`sticks` did not read, through the driver, the partition "
+          "`write_gpt` wrote - \"KOSMOS\", blocks 34 to %d, an EFI system "
+          "partition:\n    %s" % (blocks - 34, shown))
+
+    check("past:\tnil\tthat block is past the last" in out,
+          "a read of block %d, one past the last, was not refused by the "
+          "driver as past the last:\n    %s" % (blocks, shown))
+
+
 def usb_hotplug(image, check):
     """A keyboard pulled out and put back, once for every slot it could take.
 
@@ -2254,6 +2314,7 @@ def main():
     # And USB: two controllers, one stick, and which of them it is on.
     #
     usb(image, check)
+    usb_blocks(image, check)
     usb_hotplug(image, check)
 
     # And a USB mouse moving the pointer a TrackPoint moves. `usb_mouse` says

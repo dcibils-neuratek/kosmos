@@ -3254,7 +3254,8 @@ end
 local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
-                          lib_cap, app_cap, disk_cap, audio_cap, net_cap)
+                          lib_cap, app_cap, disk_cap, audio_cap, net_cap,
+                          blocks_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
   ns.mount("/ramfs", ramfs_cap, nil, "ram")
@@ -3276,6 +3277,14 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- rather than a refusal.
   --
   if audio_cap then ns.mount("/dev/audio", audio_cap) end
+
+  --
+  -- `/dev/blocks`: the USB sticks' blocks, served by the USB driver (USB step
+  -- 5d, `usb.md` §7). Read only - the driver refuses a write - and mounted
+  -- for every program, as `/dev/audio` is; writing will be given to one
+  -- process, the disk server, and not mounted like this.
+  --
+  if blocks_cap then ns.mount("/dev/blocks", blocks_cap) end
 
   --
   -- `/net`, not `/dev/net`, and the distinction is the one the window
@@ -3994,7 +4003,7 @@ query. `find` and `watch` are built on exactly these two calls.
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
                                         app_cap, disk_cap, audio_cap,
-                                        net_cap },
+                                        net_cap, blocks_cap },
                          flags)
 
     if not id then
@@ -4006,7 +4015,7 @@ query. `find` and `watch` are built on exactly these two calls.
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7, audio = 8, net = 9,
+      disk = 7, audio = 8, net = 9, blocks = 10,
       home_in_memory = home_in_memory or nil,
     })
 
@@ -4598,6 +4607,7 @@ if role == ROLE_INIT then
   local DISKFS_EP = sys.endpoint()
   local AUDIO_EP = sys.endpoint()
   local NET_EP = sys.endpoint()
+  local BLOCKS_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -4708,7 +4718,10 @@ if role == ROLE_INIT then
   -- machine with none it asks, is told so, and exits without a word.
   --
   do
-    local _, err = sys.spawn(ROLE_XHCI, { CONSOLE_EP }, SPAWN_DEVICES)
+    -- And the block endpoint it serves (USB step 5d): a stick's blocks, to
+    -- whoever is given `/dev/blocks`.
+    local _, err = sys.spawn(ROLE_XHCI, { CONSOLE_EP, BLOCKS_EP },
+                             SPAWN_DEVICES)
 
     if err then
       line("init: no USB driver: " .. tostring(err))
@@ -4794,7 +4807,7 @@ if role == ROLE_INIT then
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
-                        APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP },
+                        APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -4866,7 +4879,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
   return
 end
 
@@ -5022,6 +5035,7 @@ if role == ROLE_RUNNER then
   -- server from the one that answers the rest of it.
   if req.audio   then ns.mount("/dev/audio",   req.audio)   end
   if req.net     then ns.mount("/net",         req.net, nil, "net") end
+  if req.blocks  then ns.mount("/dev/blocks",  req.blocks) end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -5082,7 +5096,8 @@ if role == ROLE_RUNNER then
     -- "nothing is playing" while two tones were running, because they were
     -- not able to reach the server to say otherwise.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
-                   req.lib, req.app, req.disk, req.audio, req.net }
+                   req.lib, req.app, req.disk, req.audio, req.net,
+                   req.blocks }
     local mounts = {}
 
     --
@@ -5168,7 +5183,7 @@ if role == ROLE_RUNNER then
       path = path, args = argument or "", cwd = where or req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7, audio = 8, net = 9,
+      disk = 7, audio = 8, net = 9, blocks = 10,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Inherited rather than decided again. This is a program starting a

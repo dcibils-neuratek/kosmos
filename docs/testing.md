@@ -3581,3 +3581,43 @@ and `usb.md` §7 rather than on this suite, and is recorded as such.
 And as written, with both files put back and both test images rebuilt:
 `make test` whole - the suites 160 of 160 and 156 of 156, x86-64 134, the
 UEFI boots 34, the stick check 10, and the argument audit 112.
+
+## 18.59 The block protocol, served by the driver
+
+**USB step 5d**: `blockproto.h`, served by the USB driver on `/dev/blocks`,
+and `sticks`, which prints a stick's size, names and partitions through it.
+`usb.md` §7 has how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/run_x86.py`'s `usb_blocks`, 3 checks | `sticks` at the prompt says unit 0 is 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK"; it reads, through the driver, the partition `mkusb_image.write_gpt` wrote - "KOSMOS", blocks 34 to 32734, an EFI system partition - through a region it handed over; and a program written to `/ramfs` and run by its file reads one block past the last and is refused as past the last, by the driver |
+| `usb`, `usb_hotplug` and `usb_mouse` | still pass, with every command's data - INQUIRY's, READ CAPACITY's, the first blocks' - now coming through each stick's transfer buffer |
+
+**Controls**, each put back byte for byte, and the image rebuilt after:
+
+| broken | what failed |
+| ------ | ----------- |
+| the driver's past-the-end refusal taken out | `usb_blocks`, 1 of 3: the read went to the stick, which failed it - `the READ (10), which the stick failed: ILLEGAL REQUEST (21h/00h)` - and the program was told `the stick failed it`, not `that block is past the last` |
+| a read copied from the device's page, not the transfer buffer | `usb_blocks`, 1 of 3: `no GUID partition table at block 1` |
+| a stick never made a unit | `usb_blocks`, 3 of 3: `sticks: no USB stick is ready`, and the read `no stick at that unit` |
+| the block endpoint left off the watch's wait | **nothing: 3 of 3** |
+
+**The fourth passing is the check's limit, said out loud.** Off the wait, a
+request is answered at the watch's next deadline instead of at once - up to
+50 ms later - and `sticks` still prints everything, only slower. Nothing here
+times a request, so what 5c buys the driver is shown by §18.58's guest test,
+not by this one.
+
+**And one the gate found before the commit.** The driver first ended, on a
+machine with no USB controller, by destroying the block endpoint - so that a
+program asking would be refused rather than left waiting. But the endpoint
+is in the capability list every program is started with, and the kernel
+refuses a spawn that names a destroyed one: on AArch64 `run_headless.py` said
+`boot: hello: could not start a process for it`, after the suite's 160 had
+passed. The driver now stays and answers every request, as the audio and
+network servers do on a machine with no card.
+
+And as written, with every file put back byte for byte and the image rebuilt:
+`usb_blocks` 3, and `make test` whole - x86-64 137, the machine with no display
+on both boards with all 111 programs in `/bin`, the UEFI boots 34, the stick
+check 10, the argument audit 112, and the suites 160 of 160 and 156 of 156.

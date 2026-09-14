@@ -216,8 +216,13 @@ is the one that makes the machine Diego owns behave like a computer:
    **5c is built (14 September): one wait for interrupts and callers.**
    `SYS_IRQ_WAIT_ANY` takes an endpoint and answers `IRQ_WAIT_CALLER`, a line
    with an interrupt first, with no wake lost between the endpoint's lock
-   and the lines' (`usb.md` §7). Next: 5d, a block protocol served by the
-   driver.
+   and the lines' (`usb.md` §7).
+
+   **5d is built (14 September): the block protocol, served by the driver.**
+   `blockproto.h`, `/dev/blocks` read only for every program, and `sticks`,
+   which prints a stick's partitions through it; one read moves at most 124
+   KB, because one Normal TRB carries at most 131,071 bytes (`usb.md` §7).
+   Next: 5e, kfs on the boot stick's Kosmos partition, as `/home`.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -434,6 +439,17 @@ the Pi", and the Pi is not here yet.
   compress later. And the saving happens outside the key handler, which must
   never wait on anything: a synchronous call from there once deadlocked the
   desktop.
+- **A region's pages freed while a process still has it mapped.** Found by
+  reading, 14 September, and not yet shown by a test: `SYS_MEM_MAP` takes no
+  reference on a region, and `memobj_unref` frees its pages when its last
+  capability goes, so a process that drops the last capability to a region
+  it has mapped keeps reading and writing pages the allocator may give to
+  somebody else. `sys.release` and every C server here unmap first
+  (`SYS_SHARE_UNMAP`), so nothing does it today - but a process that did it
+  on purpose would, which is a hole in the capability system rather than a
+  convention to keep. The kernel should hold a reference for a mapping, or
+  unmap on the last drop. Diego asked for it on the roadmap rather than
+  fixed at once.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
 

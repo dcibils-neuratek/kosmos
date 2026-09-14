@@ -20,14 +20,31 @@ prepush` and a bump.
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
-  proposal's five calls: 5a to 5c are built - a stick's size and its first
-  blocks, Reset Recovery, and one kernel wait for interrupts and callers -
-  and next is 5d, a block protocol from the USB driver to a filesystem
+  proposal's five calls: 5a to 5d are built - a stick's size and its first
+  blocks, Reset Recovery, one kernel wait for interrupts and callers, and a
+  block protocol served on `/dev/blocks` - and next is 5e, kfs on the boot
+  stick's partition; before it was only a block protocol from the USB driver to a filesystem
   server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
   read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 5d, the block protocol
+
+- **`blockproto.h`**, served by the USB driver on `/dev/blocks`: info, open,
+  read and close, a write refused. A client's region handed over once and
+  named by a handle with a generation; reads through each stick's 128 KB
+  transfer buffer, at most 124 KB, because one Normal TRB carries at most
+  131,071 bytes - the proposal's 256 KB is corrected in `README.md`.
+- **`sticks`**, a program: each stick's size, names and GPT partitions,
+  through `/dev/blocks`. `/lib/blocks.lua` is the library. Read only, and
+  mounted for every program (`README.md`).
+- **Tested**: `usb_blocks` 3; controls in `testing.md` §18.59. On the
+  ThinkPad, `sticks` would read the Kensington stick.
+- **On the roadmap, Diego's call**: a mapped region's pages freed when its
+  last capability is dropped - a kernel gap found by reading.
+- **Next**: 5e, kfs on the boot stick's Kosmos partition, as `/home`.
 
 ### 14 September: USB step 5c, one wait for interrupts and callers
 

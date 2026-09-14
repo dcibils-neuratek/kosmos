@@ -70,6 +70,7 @@
 #include "kosmos.h"
 #include "mmio.h"
 #include "say.h"
+#include "blockproto.h"
 #include "storage_decode.h"
 #include "usb_decode.h"
 
@@ -347,6 +348,31 @@ struct stick {
     uint32_t      tag;
     struct ring   out;
     struct ring   in;
+
+    /*
+     * **Its device, kept.** `attach` holds a device in a variable of its own,
+     * gone when the plug is done; a stick is spoken to long after that, when
+     * a client asks, and Reset Recovery then goes on its endpoint 0 ring. So
+     * `use_stick` works on this copy from its first line.
+     */
+    struct device dev;
+
+    /*
+     * **The buffer every command's data comes through**: a run of its own
+     * that the controller reaches (`stick_buffer`), where the device's page is
+     * 4 KB and the status comes through that. A client's reads are copied out
+     * of it, so a client's pages are never the controller's to write.
+     */
+    long          transfer_cap;
+    uintptr_t     transfer;             /* mapped here, or 0 for none */
+    uint64_t      transfer_bus;
+
+    /* Once its size is known: a unit a client can name (`find_unit`). */
+    bool          ready;
+    uint64_t      blocks;
+    uint32_t      block_size;
+    char          vendor[8];
+    char          product[16];
 };
 
 struct controller {
@@ -361,6 +387,7 @@ struct controller {
     unsigned char slot_type[PORTS_MAX + 1];
 
     unsigned      context;              /* bytes: 32, or 64 with CSZ */
+    bool          ac64;                 /* it can reach memory above 4 GB */
     unsigned      slots;                /* MaxSlotsEn */
     unsigned      scratchpads;
     uintptr_t     mem;                  /* the region, mapped here */
@@ -988,6 +1015,8 @@ static bool start(struct controller *c, const struct dev_info *dev,
         } else {
             c->mem = (uintptr_t)mapped;
             c->bus = (uint64_t)bus;
+
+            c->ac64 = (hcc1 & HCC1_AC64) != 0;
 
             /* 5.3.6: without AC64 the controller ignores the high half. */
             if ((hcc1 & HCC1_AC64) == 0
@@ -2001,6 +2030,53 @@ static bool bulk(struct controller *c, unsigned slot, unsigned dci,
 }
 
 /*
+ * **A stick's transfer buffer**: `TRANSFER_PAGES` in one physical run, mapped
+ * here and told to the controller by its bus address - the same three calls
+ * that give a controller its memory, and the same refusal for a controller
+ * that cannot reach above 4 GB when the run is there (xHCI 1.2 5.3.6).
+ */
+#define TRANSFER_PAGES      32u         /* 128 KB: BLOCK_TRANSFER_MOST fits */
+
+static bool stick_buffer(const struct controller *c, struct stick *s)
+{
+    long region = kosmos_mem_create_flags(TRANSFER_PAGES, MEM_CONTIGUOUS);
+    long mapped = region < 0 ? region : kosmos_mem_map(region);
+    long bus = mapped < 0 ? mapped : kosmos_mem_phys(region);
+
+    if (region >= 0 && (mapped < 0 || bus <= 0
+                        || (!c->ac64 && (uint64_t)bus
+                            + (uint64_t)TRANSFER_PAGES * PAGE
+                            > 0x100000000ull))) {
+        if (mapped >= 0) {
+            (void)kosmos_share_unmap((unsigned long)mapped, TRANSFER_PAGES);
+        }
+
+        (void)kosmos_cap_drop(region);
+        return false;
+    }
+
+    if (region < 0) {
+        return false;
+    }
+
+    s->transfer_cap = region;
+    s->transfer = (uintptr_t)mapped;
+    s->transfer_bus = (uint64_t)bus;
+    return true;
+}
+
+/* Unmapped before the capability goes, as `sys.release` does it and for its
+ * reason: dropped first, the pages could be freed under this mapping. */
+static void stick_release_buffer(struct stick *s)
+{
+    if (s->transfer != 0) {
+        (void)kosmos_share_unmap((unsigned long)s->transfer, TRANSFER_PAGES);
+        (void)kosmos_cap_drop(s->transfer_cap);
+        s->transfer = 0;
+    }
+}
+
+/*
  * The step a command stopped at, for `say_failure`: "the READ (10)'s data".
  * One at a time - the driver has one thread - so one buffer does.
  */
@@ -2034,8 +2110,10 @@ static const char *named(const char *command, const char *part)
  *
  * NULL when the status says what happened - `*status` passed, or failed, which
  * REQUEST SENSE can explain - and otherwise the step that did not, for
- * `say_failure`. The data is copied out before the status is read, because
- * both come through the device's buffer page.
+ * `say_failure`. The data comes through the stick's transfer buffer and the
+ * status through the device's page, so neither is written over the other;
+ * the data is copied to `into` when there is one, and otherwise left in the
+ * transfer buffer for the caller.
  *
  * **`spoil` is a test's, and nothing else's.** QEMU's stick stalls nothing a
  * driver sends it well, and nothing in QEMU can make it; a wrapper with the
@@ -2070,13 +2148,16 @@ static const char *transact_once(struct controller *c, struct device *d,
     }
 
     if (length > 0u) {
-        memset(b, 0, length);
+        memset((void *)s->transfer, 0, length);
 
-        if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, length, got)) {
+        if (!bulk(c, d->slot, s->in_dci, &s->in, s->transfer_bus, length,
+                  got)) {
             return named(command, "'s data");
         }
 
-        memcpy(into, b, length);
+        if (into != NULL) {
+            memcpy(into, (void *)s->transfer, length);
+        }
     }
 
     if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, BOT_CSW_LENGTH,
@@ -2464,6 +2545,13 @@ static void first_blocks(struct controller *c, struct device *d,
     say_text(line, " bytes, ");
     say_size(line, capacity.blocks * capacity.block_size);
 
+    /* A unit from here: its size is known, and a block fits one read. */
+    if (capacity.block_size <= BLOCK_TRANSFER_MOST) {
+        s->blocks = capacity.blocks;
+        s->block_size = capacity.block_size;
+        s->ready = true;
+    }
+
     if (capacity.block_size > BLOCK_MOST || capacity.blocks < 3u) {
         say_text(line, ", and its blocks are not read");
         say_send(console, line);
@@ -2529,6 +2617,8 @@ static void use_stick(struct controller *c, struct device *d,
     const char *failed;
 
     memset(s, 0, sizeof(*s));
+    s->dev = *d;
+    d = &s->dev;                        /* the kept device, from here on */
     s->interface = found->storage_interface;
     s->out_dci = 2u * found->bulk_out;
     s->in_dci = 2u * found->bulk_in + 1u;
@@ -2581,6 +2671,13 @@ static void use_stick(struct controller *c, struct device *d,
         return;
     }
 
+    if (!stick_buffer(c, s)) {
+        c->last_code = CC_SUCCESS;
+        say_failure(c, d->port, "a transfer buffer the controller can reach",
+                    " could not be had; the stick is not spoken to", line);
+        return;
+    }
+
     about(line, c);
     say_text(line, " port ");
     say_dec(line, d->port);
@@ -2617,6 +2714,11 @@ static void use_stick(struct controller *c, struct device *d,
     if (failed == NULL && status != BOT_PASSED) {
         say_why_failed(c, d, s, "INQUIRY", line);
         return;
+    }
+
+    if (failed == NULL) {
+        memcpy(s->vendor, data + INQUIRY_VENDOR, sizeof(s->vendor));
+        memcpy(s->product, data + INQUIRY_PRODUCT, sizeof(s->product));
     }
 
     if (failed != NULL) {
@@ -3110,6 +3212,7 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
     }
 
     if (slot != 0 && slot != PORT_FAILED) {
+        stick_release_buffer(&c->stick[slot]);
         memset(&c->stick[slot], 0, sizeof(c->stick[slot]));
         disable_slot(c, slot);
         c->described[slot] = false;
@@ -3267,6 +3370,296 @@ static void service(struct controller *c, struct say_line *line)
 }
 
 /*
+ * **A client of the block protocol** (`blockproto.h`, USB step 5d): a region
+ * handed over with `BLOCK_OP_OPEN`, mapped here once, and named by a handle
+ * whose low byte is its place and whose other bits a generation - so a handle
+ * kept past its close, or guessed, names nothing rather than another client's
+ * region. `OPENS_MAX` at once; a client that ends without closing keeps its
+ * slot, and the region's address here, for the life of this process.
+ */
+#define OPENS_MAX           8u
+
+struct opened {
+    bool          used;
+    uint32_t      generation;
+    long          cap;
+    uintptr_t     at;
+    unsigned long pages;
+};
+
+static struct opened opens[OPENS_MAX];
+static long blocks_endpoint = -1;
+
+/*
+ * **The `unit`th stick that is ready**, counting controllers and then slots.
+ * Enough for a program at a prompt; a unit's number moves when a stick before
+ * it leaves, which is why a disk server will name its stick by partition
+ * instead (`usb.md` §7).
+ */
+static bool find_unit(uint32_t unit, struct controller **c_out,
+                      struct stick **s_out)
+{
+    uint32_t seen = 0;
+    unsigned i, slot;
+
+    for (i = 0; i < controllers_found; i++) {
+        for (slot = 1; slot <= DEVICES_MAX; slot++) {
+            if (!controllers[i].stick[slot].ready) {
+                continue;
+            }
+
+            if (seen++ == unit) {
+                *c_out = &controllers[i];
+                *s_out = &controllers[i].stick[slot];
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static struct opened *opened_by(uint32_t handle)
+{
+    uint32_t place = handle & 0xFFu;
+    struct opened *o;
+
+    if (place == 0u || place > OPENS_MAX) {
+        return NULL;
+    }
+
+    o = &opens[place - 1u];
+    return (o->used && o->generation == handle >> 8) ? o : NULL;
+}
+
+/* A region at least one read long, kept and mapped; its handle answered. */
+static void block_open(long cap, struct block_reply *rep)
+{
+    long pages = cap < 0 ? -1 : kosmos_mem_size(cap);
+    long at;
+    unsigned i;
+
+    if (pages < (long)(BLOCK_TRANSFER_MOST / PAGE)) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    for (i = 0; i < OPENS_MAX && opens[i].used; i++) {
+    }
+
+    if (i == OPENS_MAX) {
+        rep->error = BLOCK_ERR_FULL;
+        return;
+    }
+
+    at = kosmos_mem_map(cap);
+
+    if (at < 0) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    opens[i].used = true;
+    opens[i].generation = (opens[i].generation + 1u) & 0xFFFFFFu;
+    opens[i].cap = cap;
+    opens[i].at = (uintptr_t)at;
+    opens[i].pages = (unsigned long)pages;
+    rep->handle = (i + 1u) | (opens[i].generation << 8);
+}
+
+static void block_close(uint32_t handle, struct block_reply *rep)
+{
+    struct opened *o = opened_by(handle);
+
+    if (o == NULL) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    (void)kosmos_share_unmap(o->at, o->pages);
+    (void)kosmos_cap_drop(o->cap);
+    o->used = false;
+}
+
+/*
+ * **A read**: held to the unit, the handle, one read's size and the stick's
+ * last block before the stick is asked anything - so a block past the end is
+ * refused here, by name, rather than failed by the stick. Then READ (10)
+ * through the stick's transfer buffer, with Reset Recovery if it goes wrong
+ * (`transact`), and the blocks copied into the client's region.
+ */
+static void block_read(const struct block_request *req, struct say_line *line,
+                       struct block_reply *rep)
+{
+    struct opened *o = opened_by(req->handle);
+    struct controller *c;
+    struct stick *s;
+    uint8_t cdb[16];
+    enum bot_status status;
+    unsigned got, bytes;
+    const char *failed;
+
+    if (!find_unit(req->unit, &c, &s)) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return;
+    }
+
+    rep->block_size = s->block_size;
+    rep->blocks = s->blocks;
+
+    if (o == NULL) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return;
+    }
+
+    if (req->count == 0u || req->count > BLOCK_TRANSFER_MOST / s->block_size) {
+        rep->error = BLOCK_ERR_TOO_MANY;
+        return;
+    }
+
+    if (req->lba >= s->blocks || req->count > s->blocks - req->lba) {
+        rep->error = BLOCK_ERR_PAST_END;
+        return;
+    }
+
+    bytes = req->count * s->block_size;
+
+    failed = transact(c, &s->dev, s, "READ (10)", cdb,
+                      scsi_read_10(cdb, (uint32_t)req->lba,
+                                   (uint16_t)req->count),
+                      NULL, bytes, &got, &status, line);
+
+    if (failed != NULL) {
+        say_failure(c, s->dev.port, failed, "", line);
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    if (status != BOT_PASSED) {
+        say_why_failed(c, &s->dev, s, "READ (10)", line);
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    if (got != bytes) {
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    memcpy((void *)o->at, (void *)s->transfer, bytes);
+    rep->count = req->count;
+}
+
+/*
+ * One request, answered: exactly a `struct block_request` long, or refused as
+ * `audio.c` refuses one. A capability that arrives with anything but an open
+ * is given back rather than kept.
+ */
+static void block_answer(const struct message *in, uint64_t sender, long cap,
+                         struct say_line *line)
+{
+    struct message out;
+    struct block_reply *rep = (struct block_reply *)(void *)out.data;
+    const struct block_request *req =
+        (const struct block_request *)(const void *)in->data;
+    struct controller *c;
+    struct stick *s;
+
+    memset(&out, 0, sizeof(out));
+    out.tag = in->tag;
+    out.length = (uint32_t)sizeof(*rep);
+
+    if (in->length != sizeof(*req)) {
+        rep->error = BLOCK_ERR_BAD_OP;
+    } else {
+        switch (req->op) {
+        case BLOCK_OP_INFO:
+            if (find_unit(req->unit, &c, &s)) {
+                rep->block_size = s->block_size;
+                rep->blocks = s->blocks;
+                memcpy(rep->vendor, s->vendor, sizeof(rep->vendor));
+                memcpy(rep->product, s->product, sizeof(rep->product));
+            } else {
+                rep->error = BLOCK_ERR_NO_UNIT;
+            }
+            break;
+        case BLOCK_OP_OPEN:
+            block_open(cap, rep);
+            if (rep->error == BLOCK_OK) {
+                cap = -1;               /* kept, in `opens` */
+            }
+            break;
+        case BLOCK_OP_READ:
+            block_read(req, line, rep);
+            break;
+        case BLOCK_OP_WRITE:
+            rep->error = BLOCK_ERR_READ_ONLY;
+            break;
+        case BLOCK_OP_CLOSE:
+            block_close(req->handle, rep);
+            break;
+        default:
+            rep->error = BLOCK_ERR_BAD_OP;
+            break;
+        }
+    }
+
+    if (cap >= 0) {
+        (void)kosmos_cap_drop(cap);
+    }
+
+    (void)kosmos_reply(sender, &out);
+}
+
+/* Every request waiting on the block endpoint, answered without blocking. */
+static void serve_blocks(struct say_line *line)
+{
+    struct message msg;
+    uint64_t sender = 0;
+
+    while (blocks_endpoint >= 0
+           && kosmos_receive(blocks_endpoint, &msg, &sender, 1, 0) == 0) {
+        long cap = msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1;
+
+        block_answer(&msg, sender, cap, line);
+    }
+}
+
+/*
+ * **A driver with nothing to drive still answers.** The block endpoint is
+ * init's, and it is in the capability list every program is started with; a
+ * destroyed one makes the kernel refuse each of those spawns, so a machine
+ * with no USB controller could start no program at all - which is what
+ * `run_headless.py` found the first time this ended by destroying it. So with
+ * no controller to watch, this stays, as the audio and network servers stay
+ * on a machine with no card, and answers every request: no stick at that
+ * unit. Only a receive the kernel refuses - an endpoint that is not one -
+ * ends it.
+ */
+static void serve_without_controllers(int code)
+{
+    struct say_line line;
+    struct message msg;
+    uint64_t sender = 0;
+
+    say_begin(&line);
+
+    for (;;) {
+        long status = blocks_endpoint >= 0
+                      ? kosmos_receive(blocks_endpoint, &msg, &sender, 0, 0)
+                      : SYS_ERR_DENIED;
+
+        if (status != 0) {
+            kosmos_exit(code);
+        }
+
+        block_answer(&msg, sender,
+                     msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
+                     &line);
+    }
+}
+
+/*
  * Until the machine stops: **every running controller's interrupt waited on
  * at once**, and every controller looked at after any of them.
  *
@@ -3303,9 +3696,11 @@ static void watch(struct controller *list, unsigned count,
     for (;;) {
         long woke = SYS_NO_INTERRUPT;
 
+        /* And the block endpoint on the same wait (USB step 5c): a caller
+         * answers IRQ_WAIT_CALLER, a line with an interrupt first. */
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS),
-                                       -1);
+                                       blocks_endpoint);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -3320,10 +3715,12 @@ static void watch(struct controller *list, unsigned count,
                 service(&list[i], line);
             }
         }
+
+        serve_blocks(line);
     }
 }
 
-void xhci_server(long console_cap)
+void xhci_server(long console_cap, long blocks_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -3333,6 +3730,7 @@ void xhci_server(long console_cap)
     long asked = 0;
 
     console = console_cap;
+    blocks_endpoint = blocks_cap;
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;
@@ -3353,11 +3751,11 @@ void xhci_server(long console_cap)
         say_text(&line, "xhci: the board would not say where the "
                         "controllers are");
         say_send(console, &line);
-        kosmos_exit(1);
+        serve_without_controllers(1);
     }
 
     if (index == 0) {
-        kosmos_exit(0);                 /* no USB controller: not an error */
+        serve_without_controllers(0);   /* no USB controller: not an error */
     }
 
     /*
@@ -3388,7 +3786,7 @@ void xhci_server(long console_cap)
     say_send(console, &line);
 
     if (!watching) {
-        kosmos_exit(0);
+        serve_without_controllers(0);
     }
 
     say_begin(&line);

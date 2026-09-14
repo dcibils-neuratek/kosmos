@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a to 5c of six parts, under QEMU (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a to 5d of six parts, under QEMU (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -1329,6 +1329,97 @@ its waits until 5d gives it an endpoint.
   the endpoint's watcher, so a second thread's watch is not refused.
   Controls in `testing.md` §18.58.
 - **The USB checks**, `usb_mouse` among them, on the driver's new call.
+
+### 5d: the block protocol, served by the driver
+
+**A program reads a stick's blocks through the driver**, and `sticks` is the
+program: each stick's size and names, then its GUID partition table - the
+header at block 1, held to the block it says it is at, and the entries it
+points to - all asked of the driver through `/dev/blocks`.
+
+**The shape is `blockproto.h`**, declared as `audioproto.h` is: a 24-byte
+request - operation, unit, first block, count, handle - and a 48-byte reply -
+error, block size, blocks, count moved, handle, and the vendor and product
+INQUIRY answered. Info, open, read and close; a write is refused. The driver
+answers a request of any other length with `BLOCK_ERR_BAD_OP`, and
+`/lib/blocks.lua` writes the layout a second time in Lua and asserts its
+sizes when it loads, so a disagreement is loud.
+
+**Control by message, data by shared memory** (the fifth call, `README.md`).
+A client creates a region and hands it over once, with `BLOCK_OP_OPEN`; the
+driver maps it and answers a handle whose low byte is its place and whose
+other bits a generation, so a handle kept past its close, or guessed, names
+nothing. A read goes to the stick through the stick's own transfer buffer - a
+run the controller reaches - and is copied from there into the client's
+region; a client's pages are never the controller's to write. Eight opens at
+once. Every command's data now comes through that buffer, INQUIRY's
+included, and every status through the device's page, so neither is written
+over the other.
+
+**One read moves at most 124 KB**, and the proposal was wrong to promise 512
+sectors a command: a read is one Normal TRB, whose length is seventeen bits -
+at most 131,071 bytes (xHCI 1.2 6.4.1.1). 124 KB is the largest whole number
+of pages under that, and so of 512- and 4096-byte blocks; each stick's buffer
+is 128 KB. Chaining TRBs would lift it, when a measurement says it matters.
+
+**Checked before the stick is asked anything**: a unit that is ready, a handle
+that names an open region, a count from one to what one read can move, and a
+last block no further than the stick's - so a block past the end is refused
+by the driver, by name, rather than failed by the stick. A read that goes
+wrong at the stick goes through Reset Recovery and is sent again (5b), and
+one the stick fails says why (`say_why_failed`).
+
+**A unit is the Nth stick that is ready**, counting controllers and then
+slots. That is enough for a program at a prompt, and it is not a name: a
+stick's number moves when one before it leaves, which is why 5e's disk server
+will find its stick by partition instead. A stick becomes a unit once its
+size is known, keeps its own copy of its device from its first command -
+`attach` holds the device in a variable of its own, and Reset Recovery
+during a client's read goes on that device's endpoint 0 ring - and gives its
+buffer back when it is unplugged.
+
+**How it is wired.** init makes the endpoint and hands it to the driver as its
+second capability; the driver waits for callers on the same wait as its
+interrupts (5c) and serves every request waiting after each wake. The shell
+is given it too and mounts it as `/dev/blocks`, and so does every program it
+starts, as `/dev/audio` is. **Read only, and mounted for everybody for that
+reason**: writing will be given to one process, the disk server, in 5e
+(`README.md`). A driver that finds no controller stays, and answers every
+request with "no stick at that unit", as the audio and network servers answer
+on a machine with no card: the endpoint is in every program's capability
+list, and a destroyed one has the kernel refuse every spawn - which
+`run_headless.py` caught the first time the driver ended by destroying it.
+
+What `sticks` prints under QEMU, for the stick `mkusb_image.write_gpt` lays
+out:
+
+```
+kosmos> sticks
+unit 0: 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK"
+  partition 1: "KOSMOS", blocks 34 to 32734, type C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+```
+
+### What is not done yet, and what QEMU cannot show
+
+- **A client that ends without closing** keeps its open slot, and the region's
+  address in the driver, for the life of the driver. Nothing tells a server
+  that a client has gone.
+- **A handle's generation** is checked and nothing here presents a stale one;
+  **the endpoint on the wait** is what makes a request prompt, and the check
+  does not time one - a request left off the wait still waits at most 50 ms,
+  and passes (`testing.md` §18.59).
+- **A stick's blocks on the ThinkPad** - its Kensington stick is 128 GB, and
+  what `sticks` says there is the first real stick read through this.
+
+### How it is tested
+
+- **`tools/run_x86.py`'s `usb_blocks`**, 3 checks: `sticks` at the prompt says
+  unit 0 is 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK", through
+  `/dev/blocks`; it reads the partition `write_gpt` wrote, "KOSMOS", blocks 34
+  to 32734, an EFI system partition; and a two-line program written to
+  `/ramfs` and run by its file reads one block past the last and is refused as
+  past the last. `usb`, `usb_hotplug` and `usb_mouse` pass with every command's
+  data going through the transfer buffer. Controls in `testing.md` §18.59.
 
 ---
 
