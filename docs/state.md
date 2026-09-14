@@ -20,7 +20,7 @@ prepush` and a bump.
   once, the loader's sums and USB 5a to 5d have not run there - offered beside
   the ERDP stick, `kosmos-usb-0.10.62-erdp-experiment.img`, which has. The
   photographs: `log loader`, which should end `the stick against the build:
-  same`; `log xhci`, the Kensington named with its size and its GPT at both
+  same`; `log xhci`, the Kingston named with its size and its GPT at both
   ends; and `sticks`. `boot.md`'s table gets a row from what he sees.
 - **And a second experiment, for after it**:
   `build/x86_64/kosmos-usb-0.10.62-c70d9df-home-experiment.img`, built from
@@ -97,7 +97,7 @@ prepush` and a bump.
   through `/dev/blocks`. `/lib/blocks.lua` is the library. Read only, and
   mounted for every program (`README.md`).
 - **Tested**: `usb_blocks` 3; controls in `testing.md` §18.59. On the
-  ThinkPad, `sticks` would read the Kensington stick.
+  ThinkPad, `sticks` would read the Kingston stick.
 - **On the roadmap, Diego's call**: a mapped region's pages freed when its
   last capability is dropped - a kernel gap found by reading.
 - **Next**: 5e, kfs on the boot stick's Kosmos partition, as `/home`.

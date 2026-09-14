@@ -1533,7 +1533,7 @@ names that partition when one differs, rather than calling it the backup GPT.
   **the endpoint on the wait** is what makes a request prompt, and the check
   does not time one - a request left off the wait still waits at most 50 ms,
   and passes (`testing.md` §18.59).
-- **A stick's blocks on the ThinkPad** - its Kensington stick is 128 GB, and
+- **A stick's blocks on the ThinkPad** - its Kingston stick, a DataTraveler Exodia, is 128 GB, and
   what `sticks` says there is the first real stick read through this.
 - **A stick that leaves while `/home` is on it.** The disk server's requests
   are refused as no stick at that unit, and `/home` stays gone until the
