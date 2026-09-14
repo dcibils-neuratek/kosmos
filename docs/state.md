@@ -36,7 +36,8 @@ prepush` and a bump.
   drives under `/drives` instead of letters, Places, Drives and System in
   Tracker, places as shortcuts, one Open and Save window for every app, and a
   Drives app. **Decided with Diego the same day**: Places, System, Drives in
-  that order, every filesystem's type shown, and NTFS read only beside FAT32
+  that order, every filesystem's type shown, where you are shown as the whole
+  trail (Drives › Kingston DataTraveler › KOSMOS HOME), and NTFS read only beside FAT32
   and exFAT - his Windows files on the NVMe, unless BitLocker has encrypted
   them. Nothing built.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
