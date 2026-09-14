@@ -367,13 +367,28 @@ struct stick {
     uintptr_t     transfer;             /* mapped here, or 0 for none */
     uint64_t      transfer_bus;
 
-    /* Once its size is known: a unit a client can name (`find_unit`). */
+    /*
+     * Once its size is known: a unit a client can name (`find_unit`), by a
+     * number no other stick is ever given (`units_named`).
+     */
     bool          ready;
+    uint32_t      unit;
     uint64_t      blocks;
     uint32_t      block_size;
     char          vendor[8];
     char          product[16];
+
+    /* Whether a flush it kept has been said yet (USB step 5e). */
+    bool          flushed;
 };
+
+/*
+ * **How many unit numbers have been given out.** A stick takes the next as it
+ * becomes ready and keeps it until it leaves, and no other stick is ever given
+ * it (USB step 5e). The disk server keeps the unit its partition is on, so a
+ * number that could pass to another stick would be that stick written over.
+ */
+static uint32_t units_named;
 
 struct controller {
     uintptr_t     base;                 /* the capability registers */
@@ -2113,7 +2128,9 @@ static const char *named(const char *command, const char *part)
  * `say_failure`. The data comes through the stick's transfer buffer and the
  * status through the device's page, so neither is written over the other;
  * the data is copied to `into` when there is one, and otherwise left in the
- * transfer buffer for the caller.
+ * transfer buffer for the caller. With `out` it goes the other way: from the
+ * transfer buffer, where the caller has put it, to the stick's bulk OUT
+ * endpoint - all of it, or the data phase failed.
  *
  * **`spoil` is a test's, and nothing else's.** QEMU's stick stalls nothing a
  * driver sends it well, and nothing in QEMU can make it; a wrapper with the
@@ -2126,7 +2143,7 @@ static const char *named(const char *command, const char *part)
 static const char *transact_once(struct controller *c, struct device *d,
                                  struct stick *s, const char *command,
                                  const uint8_t *cdb, unsigned cdb_length,
-                                 uint8_t *into, unsigned length,
+                                 bool out, uint8_t *into, unsigned length,
                                  unsigned *got, enum bot_status *status)
 {
     uint8_t *b = d->buffer;
@@ -2135,7 +2152,7 @@ static const char *transact_once(struct controller *c, struct device *d,
 
     *got = 0;
     *status = BOT_NOT_VALID;
-    (void)bot_wrap(b, tag, length, length > 0u, 0, cdb, cdb_length);
+    (void)bot_wrap(b, tag, length, length > 0u && !out, 0, cdb, cdb_length);
 
     if (s->spoil) {
         b[0] ^= 0xFFu;
@@ -2147,7 +2164,12 @@ static const char *transact_once(struct controller *c, struct device *d,
         return named(command, "'s command");
     }
 
-    if (length > 0u) {
+    if (length > 0u && out) {
+        if (!bulk(c, d->slot, s->out_dci, &s->out, s->transfer_bus, length,
+                  got) || *got != length) {
+            return named(command, "'s data");
+        }
+    } else if (length > 0u) {
         memset((void *)s->transfer, 0, length);
 
         if (!bulk(c, d->slot, s->in_dci, &s->in, s->transfer_bus, length,
@@ -2263,11 +2285,12 @@ static const char *recover(struct controller *c, struct device *d,
 static const char *transact(struct controller *c, struct device *d,
                             struct stick *s, const char *command,
                             const uint8_t *cdb, unsigned cdb_length,
-                            uint8_t *into, unsigned length, unsigned *got,
-                            enum bot_status *status, struct say_line *line)
+                            bool out, uint8_t *into, unsigned length,
+                            unsigned *got, enum bot_status *status,
+                            struct say_line *line)
 {
     const char *failed = transact_once(c, d, s, command, cdb, cdb_length,
-                                       into, length, got, status);
+                                       out, into, length, got, status);
 
     if (failed == NULL) {
         return NULL;
@@ -2288,8 +2311,8 @@ static const char *transact(struct controller *c, struct device *d,
     say_text(line, " sent again");
     say_send(console, line);
 
-    return transact_once(c, d, s, command, cdb, cdb_length, into, length, got,
-                         status);
+    return transact_once(c, d, s, command, cdb, cdb_length, out, into, length,
+                         got, status);
 }
 
 /* An ASCII field of INQUIRY's data in quotes: its padding off the end, and
@@ -2349,8 +2372,8 @@ static void say_why_failed(struct controller *c, struct device *d,
 
     memset(&sense, 0, sizeof(sense));
     known = transact(c, d, s, "REQUEST SENSE", cdb,
-                     scsi_request_sense(cdb, SCSI_SENSE_LENGTH), data,
-                     SCSI_SENSE_LENGTH, &got, &status, line) == NULL
+                     scsi_request_sense(cdb, SCSI_SENSE_LENGTH), false,
+                     data, SCSI_SENSE_LENGTH, &got, &status, line) == NULL
             && status == BOT_PASSED && scsi_sense(data, got, &sense);
 
     about(line, c);
@@ -2393,16 +2416,16 @@ static const char *ready(struct controller *c, struct device *d,
 
     for (*tries = 1u; ; ++*tries) {
         failed = transact(c, d, s, "TEST UNIT READY", cdb,
-                          scsi_test_unit_ready(cdb), NULL, 0u, &got, &status,
-                          line);
+                          scsi_test_unit_ready(cdb), false, NULL, 0u, &got,
+                          &status, line);
 
         if (failed != NULL || status == BOT_PASSED) {
             return failed;
         }
 
         failed = transact(c, d, s, "REQUEST SENSE", cdb,
-                          scsi_request_sense(cdb, SCSI_SENSE_LENGTH), data,
-                          SCSI_SENSE_LENGTH, &got, &status, line);
+                          scsi_request_sense(cdb, SCSI_SENSE_LENGTH), false,
+                          data, SCSI_SENSE_LENGTH, &got, &status, line);
 
         if (failed != NULL) {
             return failed;
@@ -2438,8 +2461,8 @@ static const char *read_block(struct controller *c, struct device *d,
     uint8_t cdb[16];
     unsigned got;
     const char *failed = transact(c, d, s, "READ (10)", cdb,
-                                  scsi_read_10(cdb, lba, 1u), stick_block,
-                                  size, &got, status, line);
+                                  scsi_read_10(cdb, lba, 1u), false,
+                                  stick_block, size, &got, status, line);
 
     if (failed == NULL && *status == BOT_PASSED && got != size) {
         return named("READ (10)", ", which sent less than a block");
@@ -2510,7 +2533,7 @@ static void first_blocks(struct controller *c, struct device *d,
     }
 
     failed = transact(c, d, s, "READ CAPACITY (10)", cdb,
-                      scsi_read_capacity_10(cdb), data,
+                      scsi_read_capacity_10(cdb), false, data,
                       SCSI_CAPACITY_10_LENGTH, &got, &status, line);
 
     if (failed == NULL && status != BOT_PASSED) {
@@ -2545,11 +2568,18 @@ static void first_blocks(struct controller *c, struct device *d,
     say_text(line, " bytes, ");
     say_size(line, capacity.blocks * capacity.block_size);
 
-    /* A unit from here: its size is known, and a block fits one read. */
+    /*
+     * A unit from here: its size is known, and a block fits one read. Its
+     * number is the next never given out, kept until the stick leaves.
+     */
     if (capacity.block_size <= BLOCK_TRANSFER_MOST) {
         s->blocks = capacity.blocks;
         s->block_size = capacity.block_size;
-        s->ready = true;
+
+        if (!s->ready) {
+            s->unit = units_named++;
+            s->ready = true;
+        }
     }
 
     if (capacity.block_size > BLOCK_MOST || capacity.blocks < 3u) {
@@ -2708,8 +2738,8 @@ static void use_stick(struct controller *c, struct device *d,
     }
 
     failed = transact(c, d, s, "INQUIRY", cdb,
-                      scsi_inquiry(cdb, INQUIRY_LENGTH), data, INQUIRY_LENGTH,
-                      &got, &status, line);
+                      scsi_inquiry(cdb, INQUIRY_LENGTH), false, data,
+                      INQUIRY_LENGTH, &got, &status, line);
 
     if (failed == NULL && status != BOT_PASSED) {
         say_why_failed(c, d, s, "INQUIRY", line);
@@ -3389,28 +3419,29 @@ struct opened {
 
 static struct opened opens[OPENS_MAX];
 static long blocks_endpoint = -1;
+static long writes_endpoint = -1;       /* the disk server's, and nobody else's */
 
 /*
- * **The `unit`th stick that is ready**, counting controllers and then slots.
- * Enough for a program at a prompt; a unit's number moves when a stick before
- * it leaves, which is why a disk server will name its stick by partition
- * instead (`usb.md` §7).
+ * **The stick given the number `unit`**, while it is ready (`units_named`).
+ *
+ * Until 5e a unit was the `unit`th stick ready, counting controllers and then
+ * slots, which is a position and not a name: a stick plugged into an earlier
+ * controller moved every stick after it up one, and the disk server's writes
+ * went to the stick just plugged in (`usb.md` §7, `testing.md` §18.60).
  */
 static bool find_unit(uint32_t unit, struct controller **c_out,
                       struct stick **s_out)
 {
-    uint32_t seen = 0;
+    struct stick *s;
     unsigned i, slot;
 
     for (i = 0; i < controllers_found; i++) {
         for (slot = 1; slot <= DEVICES_MAX; slot++) {
-            if (!controllers[i].stick[slot].ready) {
-                continue;
-            }
+            s = &controllers[i].stick[slot];
 
-            if (seen++ == unit) {
+            if (s->ready && s->unit == unit) {
                 *c_out = &controllers[i];
-                *s_out = &controllers[i].stick[slot];
+                *s_out = s;
                 return true;
             }
         }
@@ -3488,10 +3519,50 @@ static void block_close(uint32_t handle, struct block_reply *rep)
  * through the stick's transfer buffer, with Reset Recovery if it goes wrong
  * (`transact`), and the blocks copied into the client's region.
  */
+/*
+ * **What a read and a write are both held to**, before the stick is asked
+ * anything: a unit that is ready, a handle that names an open region, a count
+ * from one to what one transfer can move, and a last block no further than the
+ * stick's. One function, so the two cannot come to disagree. False, with the
+ * reply's error set, when any is not so.
+ */
+static bool block_range(const struct block_request *req,
+                        struct block_reply *rep, struct opened **o,
+                        struct controller **c, struct stick **s)
+{
+    *o = opened_by(req->handle);
+
+    if (!find_unit(req->unit, c, s)) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return false;
+    }
+
+    rep->block_size = (*s)->block_size;
+    rep->blocks = (*s)->blocks;
+
+    if (*o == NULL) {
+        rep->error = BLOCK_ERR_NO_REGION;
+        return false;
+    }
+
+    if (req->count == 0u
+        || req->count > BLOCK_TRANSFER_MOST / (*s)->block_size) {
+        rep->error = BLOCK_ERR_TOO_MANY;
+        return false;
+    }
+
+    if (req->lba >= (*s)->blocks || req->count > (*s)->blocks - req->lba) {
+        rep->error = BLOCK_ERR_PAST_END;
+        return false;
+    }
+
+    return true;
+}
+
 static void block_read(const struct block_request *req, struct say_line *line,
                        struct block_reply *rep)
 {
-    struct opened *o = opened_by(req->handle);
+    struct opened *o;
     struct controller *c;
     struct stick *s;
     uint8_t cdb[16];
@@ -3499,26 +3570,7 @@ static void block_read(const struct block_request *req, struct say_line *line,
     unsigned got, bytes;
     const char *failed;
 
-    if (!find_unit(req->unit, &c, &s)) {
-        rep->error = BLOCK_ERR_NO_UNIT;
-        return;
-    }
-
-    rep->block_size = s->block_size;
-    rep->blocks = s->blocks;
-
-    if (o == NULL) {
-        rep->error = BLOCK_ERR_NO_REGION;
-        return;
-    }
-
-    if (req->count == 0u || req->count > BLOCK_TRANSFER_MOST / s->block_size) {
-        rep->error = BLOCK_ERR_TOO_MANY;
-        return;
-    }
-
-    if (req->lba >= s->blocks || req->count > s->blocks - req->lba) {
-        rep->error = BLOCK_ERR_PAST_END;
+    if (!block_range(req, rep, &o, &c, &s)) {
         return;
     }
 
@@ -3527,7 +3579,7 @@ static void block_read(const struct block_request *req, struct say_line *line,
     failed = transact(c, &s->dev, s, "READ (10)", cdb,
                       scsi_read_10(cdb, (uint32_t)req->lba,
                                    (uint16_t)req->count),
-                      NULL, bytes, &got, &status, line);
+                      false, NULL, bytes, &got, &status, line);
 
     if (failed != NULL) {
         say_failure(c, s->dev.port, failed, "", line);
@@ -3551,12 +3603,117 @@ static void block_read(const struct block_request *req, struct say_line *line,
 }
 
 /*
+ * **A write** (USB step 5e): held to what a read is held to, then the client's
+ * blocks copied out of its region into the stick's transfer buffer and sent
+ * with WRITE (10). The copy runs the other way from a read's, and for the
+ * same reason: a client's pages are never the controller's to touch. Reset
+ * Recovery and a second try come with `transact`, and the buffer still holds
+ * the same bytes when the command goes again.
+ */
+static void block_write(const struct block_request *req, struct say_line *line,
+                        struct block_reply *rep)
+{
+    struct opened *o;
+    struct controller *c;
+    struct stick *s;
+    uint8_t cdb[16];
+    enum bot_status status;
+    unsigned got, bytes;
+    const char *failed;
+
+    if (!block_range(req, rep, &o, &c, &s)) {
+        return;
+    }
+
+    bytes = req->count * s->block_size;
+    memcpy((void *)s->transfer, (void *)o->at, bytes);
+
+    failed = transact(c, &s->dev, s, "WRITE (10)", cdb,
+                      scsi_write_10(cdb, (uint32_t)req->lba,
+                                    (uint16_t)req->count),
+                      true, NULL, bytes, &got, &status, line);
+
+    if (failed != NULL) {
+        say_failure(c, s->dev.port, failed, "", line);
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    if (status != BOT_PASSED) {
+        say_why_failed(c, &s->dev, s, "WRITE (10)", line);
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    rep->count = req->count;
+}
+
+/*
+ * **A flush** (USB step 5e): SYNCHRONIZE CACHE (10) on every block the unit
+ * holds, and no data either way - only the stick's word that what it has
+ * acknowledged, it has kept. The disk server asks after each write to its
+ * journal's header block, which is the instant the journal's promise is
+ * about (`usb.md` §7). A stick that fails it says why, and the disk server is
+ * told rather than left to believe it.
+ */
+static void block_flush(const struct block_request *req, struct say_line *line,
+                        struct block_reply *rep)
+{
+    struct controller *c;
+    struct stick *s;
+    uint8_t cdb[16];
+    enum bot_status status;
+    unsigned got;
+    const char *failed;
+
+    if (!find_unit(req->unit, &c, &s)) {
+        rep->error = BLOCK_ERR_NO_UNIT;
+        return;
+    }
+
+    rep->block_size = s->block_size;
+    rep->blocks = s->blocks;
+
+    failed = transact(c, &s->dev, s, "SYNCHRONIZE CACHE (10)", cdb,
+                      scsi_synchronize_cache_10(cdb), false, NULL, 0u, &got,
+                      &status, line);
+
+    if (failed != NULL) {
+        say_failure(c, s->dev.port, failed, "", line);
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    if (status != BOT_PASSED) {
+        say_why_failed(c, &s->dev, s, "SYNCHRONIZE CACHE (10)", line);
+        rep->error = BLOCK_ERR_DEVICE;
+        return;
+    }
+
+    /*
+     * Said once a stick. What a flush buys is invisible until the power goes,
+     * so this line is the only sign one was ever sent and kept - on the
+     * ThinkPad, whether its stick takes the command at all.
+     */
+    if (!s->flushed) {
+        s->flushed = true;
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, s->dev.port);
+        say_text(line, ": the stick wrote out its cache when asked, by "
+                       "SYNCHRONIZE CACHE (10)");
+        say_send(console, line);
+    }
+}
+
+/*
  * One request, answered: exactly a `struct block_request` long, or refused as
  * `audio.c` refuses one. A capability that arrives with anything but an open
- * is given back rather than kept.
+ * is given back rather than kept. `may_write` is which endpoint it came in on,
+ * and a write or a flush from `/dev/blocks` is refused as read only.
  */
 static void block_answer(const struct message *in, uint64_t sender, long cap,
-                         struct say_line *line)
+                         bool may_write, struct say_line *line)
 {
     struct message out;
     struct block_reply *rep = (struct block_reply *)(void *)out.data;
@@ -3574,6 +3731,7 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
     } else {
         switch (req->op) {
         case BLOCK_OP_INFO:
+            rep->count = units_named;   /* every unit is below it, there or not */
             if (find_unit(req->unit, &c, &s)) {
                 rep->block_size = s->block_size;
                 rep->blocks = s->blocks;
@@ -3593,7 +3751,18 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
             block_read(req, line, rep);
             break;
         case BLOCK_OP_WRITE:
-            rep->error = BLOCK_ERR_READ_ONLY;
+            if (may_write) {
+                block_write(req, line, rep);
+            } else {
+                rep->error = BLOCK_ERR_READ_ONLY;
+            }
+            break;
+        case BLOCK_OP_FLUSH:
+            if (may_write) {
+                block_flush(req, line, rep);
+            } else {
+                rep->error = BLOCK_ERR_READ_ONLY;
+            }
             break;
         case BLOCK_OP_CLOSE:
             block_close(req->handle, rep);
@@ -3611,18 +3780,30 @@ static void block_answer(const struct message *in, uint64_t sender, long cap,
     (void)kosmos_reply(sender, &out);
 }
 
-/* Every request waiting on the block endpoint, answered without blocking. */
-static void serve_blocks(struct say_line *line)
+/* Every request waiting on one endpoint, answered without blocking. */
+static void drain(long endpoint, bool may_write, struct say_line *line)
 {
     struct message msg;
     uint64_t sender = 0;
 
-    while (blocks_endpoint >= 0
-           && kosmos_receive(blocks_endpoint, &msg, &sender, 1, 0) == 0) {
+    while (endpoint >= 0
+           && kosmos_receive(endpoint, &msg, &sender, 1, 0) == 0) {
         long cap = msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1;
 
-        block_answer(&msg, sender, cap, line);
+        block_answer(&msg, sender, cap, may_write, line);
     }
+}
+
+/*
+ * **Both block endpoints, after every wake**: the write endpoint's requests,
+ * which may write, then `/dev/blocks`', which may not. The write endpoint is
+ * the one on the watch's wait - the disk server is the busy client - so this
+ * is what answers a program on `/dev/blocks`, at the next wake.
+ */
+static void serve_blocks(struct say_line *line)
+{
+    drain(writes_endpoint, true, line);
+    drain(blocks_endpoint, false, line);
 }
 
 /*
@@ -3635,6 +3816,11 @@ static void serve_blocks(struct say_line *line)
  * on a machine with no card, and answers every request: no stick at that
  * unit. Only a receive the kernel refuses - an endpoint that is not one -
  * ends it.
+ *
+ * **`/dev/blocks` alone**, because with no interrupt line a wait can be on one
+ * endpoint and no more. Nothing is lost by it: no stick can be ready here, and
+ * the disk server finds its partition through `/dev/blocks` before it ever
+ * calls the write endpoint (`usb.md` §7).
  */
 static void serve_without_controllers(int code)
 {
@@ -3655,7 +3841,7 @@ static void serve_without_controllers(int code)
 
         block_answer(&msg, sender,
                      msg.cap_plus_one > 0 ? (long)msg.cap_plus_one - 1 : -1,
-                     &line);
+                     false, &line);
     }
 }
 
@@ -3696,11 +3882,13 @@ static void watch(struct controller *list, unsigned count,
     for (;;) {
         long woke = SYS_NO_INTERRUPT;
 
-        /* And the block endpoint on the same wait (USB step 5c): a caller
-         * answers IRQ_WAIT_CALLER, a line with an interrupt first. */
+        /* And the write endpoint on the same wait (USB step 5c): the disk
+         * server's, the busy client. A caller answers IRQ_WAIT_CALLER, a
+         * line with an interrupt first; `/dev/blocks` is served after every
+         * wake (`serve_blocks`). */
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS),
-                                       blocks_endpoint);
+                                       writes_endpoint);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -3720,7 +3908,7 @@ static void watch(struct controller *list, unsigned count,
     }
 }
 
-void xhci_server(long console_cap, long blocks_cap)
+void xhci_server(long console_cap, long blocks_cap, long writes_cap)
 {
     struct sysinfo info = { 0 };
     struct dev_info dev;
@@ -3731,6 +3919,7 @@ void xhci_server(long console_cap, long blocks_cap)
 
     console = console_cap;
     blocks_endpoint = blocks_cap;
+    writes_endpoint = writes_cap;
 
     if (kosmos_sysinfo(&info) == 0) {
         tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;

@@ -3621,3 +3621,77 @@ And as written, with every file put back byte for byte and the image rebuilt:
 `usb_blocks` 3, and `make test` whole - x86-64 137, the machine with no display
 on both boards with all 111 programs in `/bin`, the UEFI boots 34, the stick
 check 10, the argument audit 112, and the suites 160 of 160 and 156 of 156.
+
+## 18.60 `/home` on a stick
+
+**USB step 5e**: `/home` on a stick's Kosmos partition, asked for with
+`opt/kosmos/home=usb`; a write endpoint only the disk server holds; a flush
+after each write to the journal's header; a unit made a name; and the disk
+server waiting once for its stick. `usb.md` §7 has how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_storagedecode.c`, 50 checks, 2 of them new | WRITE (10) is 2Ah, laid out as READ (10); SYNCHRONIZE CACHE (10) is 35h with block 0 and a count of 0, which is every block |
+| `tools/run_x86.py`'s `usb_home`, 4 checks | two boots of one stick with a blank Kosmos partition: `diskinfo` says 28639 sectors, on the Kosmos partition, blocks 4096 to 32734, on both; the first boot formats the partition and saves a file; the driver says the stick kept the save's flush; the second boot reads the file back |
+| `usb_second_stick`, 4 checks | with `/home` on a stick on the second controller and a file saved, a stick holding a partition of its own is plugged into the first through QEMU's monitor: the driver reads it; not one of its 32768 blocks changes; a second file is saved and both are in `/home`; `sticks` shows `/home`'s stick as unit 0 and the new one as unit 1 |
+| `usb_home_late`, 3 checks | the machine started with `opt/kosmos/home=usb` and no stick, and the stick plugged in five seconds after the driver says it is watching: the driver reads it and a prompt comes; `diskinfo` says `/home` is the Kosmos partition; a file saved there has extents on a disk |
+| `usb_blocks`, 4 checks, 1 of them new | a program's write and flush sent on `/dev/blocks` are each answered 7, read only |
+| `usb`, `usb_hotplug` and `usb_mouse` | still pass, with a data phase that can go out as well as in, and each stick given its unit by number |
+
+**Controls**, each put back byte for byte, and the image rebuilt after. E1 to
+E4 ran before the wait was added, which touches none of the lines they break;
+E5 ran again once `usb_second_stick` moved onto `PluggedMachine`.
+
+| broken | what failed |
+| ------ | ----------- |
+| E1: the driver's read-only refusal taken out, for a write and a flush | `usb_blocks`, 1 of 4: `refused: 0 0` - and the driver said the check's stick had kept a flush a program sent |
+| E2: the partition's first block left out of the disk server's reads and writes | `usb_home`, 4 of 4: block 0 of the stick is its protective MBR, so the partition was neither blank nor a filesystem and was left alone; the shell, told there was no filesystem, kept `/home` in memory - `diskinfo: no such path`, and `save` put a file with 0 extents there |
+| E3: the disk server's writes sent on `/dev/blocks` | `usb_home`, 4 of 4: every write refused, so the blank partition would not format, and `/home` went to memory as in E2 |
+| E4: the flush after the journal's header left out | `usb_home`, 1 of 4: everything else passed, and the driver never said a flush was kept |
+| E5: a unit the Nth stick ready again | `usb_second_stick`, 2 of 4: the second save and the `cat` both answered `[string "kfs.lua"]:986: attempt to concatenate a nil value`, and `sticks` showed the new stick as unit 0 - but not one of its blocks changed, because the disk server read that stick's zeros as its filesystem and kfs failed before it could write |
+| E6: the disk server's wait for its stick taken out | `usb_home_late`, 2 of 3: the stick was read and a prompt came, and then `diskinfo` answered `no such path` and `save` put a file with 0 extents in `/home` - memory, for the life of the machine |
+
+**Two things were found before the commit, and neither by a check that
+existed.**
+
+**A unit was a position.** 5d made a unit the Nth stick ready, counting
+controllers and then slots, and 5d's own paragraph said a number moves when a
+stick before it leaves. The disk server keeps the unit it found its partition
+on, so reading that paragraph again while writing 5e's was enough: a stick
+plugged into an earlier controller would take `/home`'s requests.
+`usb_second_stick` was written against it and passed only once units became
+names. Put back, as E5, it fails - and not in the check written for it:
+the new stick's bytes stayed the same, because the disk server, sent to that
+stick, read its zeros as `/home`'s filesystem and kfs failed before it could
+write, with a Lua error from `walk` that is now on the roadmap. The files
+and `sticks` are what caught it, which is why the check has all three.
+
+**`/home` was decided before the stick was there.** What E2 printed was the
+clue: not `filesystem: none` but `diskinfo: no such path`, which is `/home` in
+memory. The shell decides where `/home` is once, from one read of
+`/home/.super` as it builds its namespace, and init does not wait for the USB
+driver. Under QEMU the driver names its stick before the shell starts, so
+`usb_home` passed; on the ThinkPad naming a stick takes seconds, and nothing
+said the shell would come later. `usb_home_late` plugs the stick in late to
+make it happen here, and the disk server now waits for its stick once,
+for at least twenty seconds. With the wait taken out, as E6, `usb_home_late`
+fails in exactly the way E2 showed.
+
+**And what the disk server printed went nowhere.** `usb_home`'s first run
+looked for a line the disk server printed when it found the partition, and
+the line never came: the kernel refuses a write from a process that does not
+own the console, as `run_disk.py` already says of its format line. So where
+`/home` is travels in `sys.disk()`'s answer and `diskinfo` says it, and the
+driver, which does own a line, says a stick's first kept flush.
+
+**What none of it shows** is a power cut survived: QEMU's stick writes
+straight to a file, so a flush is seen being sent and kept, and nothing more.
+
+And as written, with every file put back byte for byte and the image rebuilt:
+`make test` whole - x86-64 149, the machine with no display on both boards
+with all 111 programs in `/bin`, the disk 33 across two boots, the UEFI boots
+34, the stick check 10, the argument audit 112, and the suites 160 of 160 and
+156 of 156 - and `make screenshot`, 110 display checks on AArch64 and 108 on
+x86-64, on its second run. The first stopped on AArch64 in the `/bin` walk,
+which counted one program; the second passed on the same tree, and
+`roadmap.md`'s *Known and unexplained* has it.

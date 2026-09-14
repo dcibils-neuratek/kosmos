@@ -166,6 +166,19 @@ int main(void)
           "READ (10)'s block address is not bytes 2 to 5 and its length bytes "
           "7 and 8, big-endian (Table 97)");
 
+    n = scsi_write_10(cdb, 0x12345678u, 0x0102);
+    check(n == 10 && same(cdb, (const uint8_t[]){ 0x2A, 0, 0x12, 0x34, 0x56,
+                                                 0x78, 0, 0x01, 0x02, 0 }, 10),
+          "WRITE (10) is not READ (10)'s layout with operation code 2Ah "
+          "(Table 216)");
+
+    memset(cdb, 0xAA, sizeof(cdb));
+    n = scsi_synchronize_cache_10(cdb);
+    check(n == 10 && cdb[0] == 0x35
+          && same(cdb + 1, (const uint8_t[9]){ 0 }, 9),
+          "SYNCHRONIZE CACHE (10) is not 35h with block 0, a count of 0 - "
+          "every block - and IMMED clear (Table 199)");
+
     /* ---- the command status wrapper (5.2, 6.3) ---- */
 
     csw(status, 0x53425355u, 7, 0, 0x00);

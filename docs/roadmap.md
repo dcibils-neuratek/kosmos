@@ -222,7 +222,17 @@ is the one that makes the machine Diego owns behave like a computer:
    `blockproto.h`, `/dev/blocks` read only for every program, and `sticks`,
    which prints a stick's partitions through it; one read moves at most 124
    KB, because one Normal TRB carries at most 131,071 bytes (`usb.md` §7).
-   Next: 5e, kfs on the boot stick's Kosmos partition, as `/home`.
+
+   **5e is built (14 September): `/home` on a stick's Kosmos partition, read
+   and written.** With `opt/kosmos/home=usb` the disk server keeps kfs on the
+   first Kosmos partition a stick holds - found through `/dev/blocks`, written
+   through an endpoint only it is given, and waited for once, because the
+   shell decides where `/home` is from one read - with SYNCHRONIZE CACHE (10)
+   after each write to the journal's header; and a unit is made a name, after
+   reading found that a stick plugged in later would have taken `/home`'s
+   requests (`usb.md` §7). Next: 5f, the stick layout with that partition
+   beside the boot one and the loader naming it, offered as an experiment
+   beside a stick that has booted.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -450,6 +460,14 @@ the Pi", and the Pi is not here yet.
   convention to keep. The kernel should hold a reference for a mapping, or
   unmap on the last drop. Diego asked for it on the roadmap rather than
   fixed at once.
+- **kfs answers a Lua error for a root that is not a directory.** Found by a
+  control for USB step 5e, 14 September: `walk` in `user/lib/kfs.lua` names
+  the component before the one it has reached, and before the root there is
+  none, so a filesystem whose root inode is not a directory answers `attempt
+  to concatenate a nil value (field '?')` rather than a sentence. It was
+  reached by a disk server reading zeros where it expected its partition -
+  which 5e's units no longer allow - and a corrupted root is the other way.
+  The check belongs in `tools/test_kfs.lua`, beside its other damaged disks.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
 
@@ -467,6 +485,17 @@ wants real hardware.
 **One kernel check failed once**, 1 of 127, and has not since. The evidence
 was destroyed by a `grep` that kept only the summary line. Recorded as
 intermittent rather than fixed, because nothing fixed it.
+
+**The display harness's `/bin` walk counted one program, once.** 14
+September, AArch64, in USB step 5e's gate: the shell's `fs.list("/bin")`
+gave back a table with one name ending in `.lua`, where `/bin` holds 111,
+and `make screenshot` run again on the same tree passed all 110 checks.
+Neither obvious account fits. A request to `/bin`'s server that failed would
+give no table at all - nothing is mounted below `/bin` for `ns.list` to fall
+back on - and so a count of nought; and a first page alone holds 28 names
+(`BIN_CHUNK`), not one. The harness keeps only what arrived after the line
+it typed, so what the machine said before it is gone. Recorded as
+intermittent, with its one line of evidence, and nothing fixed.
 
 **A tick charged by every interrupt, fixed without a test that catches it.**
 Both trap handlers called `thread_tick` on every hardware interrupt, on the

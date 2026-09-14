@@ -2477,7 +2477,8 @@ local function diskfs_handlers(state)
     if not sb then
       return { sectors = disk.sectors, sector_size = disk.sector_size,
                bytes = disk.bytes, formatted = false, present = true,
-               why = "not a kosmos filesystem" }
+               why = "not a kosmos filesystem",
+               where = disk.where, flush_why = disk.flush_why }
     end
 
     local out = {}
@@ -2488,6 +2489,8 @@ local function diskfs_handlers(state)
     out.bytes       = disk.bytes
     out.formatted   = true
     out.present     = true
+    out.where       = disk.where        -- a stick's partition (USB step 5e)
+    out.flush_why   = disk.flush_why
 
     --
     -- Counted out of the bitmap. This was `sb.blocks - sb.data_at` from the
@@ -3196,7 +3199,236 @@ local DIED_LIBRARIES = 11    -- sys.libraries() or its chunk
 local DIED_KFS       = 12    -- kfs.lua would not load or run
 local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 
-local function diskfs_main(endpoint)
+--------------------------------------------------------------------------
+-- **`/home` on a USB stick's Kosmos partition** (USB step 5e, `usb.md` §7).
+--
+-- Asked for with `opt/kosmos/home=usb`. Without it nothing here runs, and the
+-- disk server's disk is the kernel's, as it always was. With it, `sys.disk`,
+-- `sys.disk_read` and `sys.disk_write` are replaced in this process - as
+-- `tools/kfs.lua` replaces them for a file on the Mac - by ones over the first
+-- Kosmos partition on a stick the USB driver has ready. `kfs.lua` does not
+-- change, and cannot tell.
+--
+-- **Found through `/dev/blocks`, written through the write endpoint.** The
+-- first is always answered, even by a driver with no controller; the second
+-- is asked only once a stick with the partition is there, so nothing ever
+-- waits on it where nobody would answer. Only this process holds it.
+--
+-- **Kept by its unit, and a unit is a name.** Once found, the partition's
+-- stick is asked for by the number the driver gave it, which no other stick
+-- is ever given: a stick plugged in later never takes its place, and one that
+-- leaves takes `/home` with it until the machine starts again, rather than
+-- another stick's blocks being written.
+--
+-- **Not there yet is not blank, and it is waited for.** Until the partition is found, the disk and
+-- its blocks answer nothing, so `mounted()` finds no filesystem, formats
+-- nothing, and tries again on the next request.
+--
+-- **A flush at the journal's header**: any write that begins with the
+-- journal's magic is followed by `BLOCK_OP_FLUSH` - SYNCHRONIZE CACHE (10) -
+-- so the moment the journal's promise is about is one the stick has kept. A
+-- data block that happens to begin the same way costs one flush more.
+--
+-- **Said through `diskinfo`, not printed.** This server owns no console, and
+-- the kernel refuses a write from a process that does not, so a `print` here
+-- reaches nobody. Where `/home` is, and the first flush a stick refused, go
+-- in `sys.disk()`'s answer, and from there into `/home/.super`.
+--------------------------------------------------------------------------
+local KOSMOS_PARTITION = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
+
+local function stick_home(read_cap, write_cap, kfs)
+  local REQUEST = "<I4I4I8I4I4"                -- blockproto.h, 24 bytes
+  local REPLY   = "<I4I4I8I4I4c8c16"           -- and its reply, 48
+  local OP_INFO, OP_OPEN, OP_READ, OP_WRITE, OP_FLUSH = 1, 2, 3, 4, 6
+  local SECTOR  = 512
+  local MOST    = 31 * 4096                    -- BLOCK_TRANSFER_MOST
+  local JOURNAL = string.pack("<I4", kfs.J_MAGIC)
+
+  local region, handle, unit, first, sectors, where, flush_why
+
+  local function ask(cap, op, u, lba, count, pass)
+    local reply, why = sys.call_raw(cap, string.pack(REQUEST, op, u or 0,
+                                    lba or 0, count or 0, handle or 0), pass)
+
+    if not reply then return nil, tostring(why) end
+
+    if #reply < 48 then
+      return nil, "the USB driver sent a reply of the wrong size"
+    end
+
+    local err, size, blocks, moved, got = string.unpack(REPLY, reply)
+
+    if err ~= 0 then
+      return nil, "the USB driver refused it, error " .. tostring(err)
+    end
+
+    return { block_size = size, blocks = blocks, count = moved, handle = got }
+  end
+
+  -- A GUID as it is written out: its first three fields are little-endian.
+  local function guid(entry, at)
+    local a, b, c = string.unpack("<I4I2I2", entry, at)
+
+    return string.format("%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+                         a, b, c, entry:byte(at + 8, at + 15))
+  end
+
+  -- How many unit numbers the driver has given out, which an INFO answers
+  -- whether or not the unit it asked about is there (`blockproto.h`).
+  local function units()
+    local reply = sys.call_raw(read_cap, string.pack(REQUEST, OP_INFO, 0, 0,
+                                                     0, 0))
+
+    if not reply or #reply < 48 then return 0 end
+
+    return (select(4, string.unpack(REPLY, reply)))
+  end
+
+  -- The first Kosmos partition on a ready stick. True once it has been found.
+  local function look()
+    if unit then return true end
+
+    if not region then
+      local cap = sys.memory(MOST // 4096)
+
+      if not cap then return false end
+
+      local r = ask(read_cap, OP_OPEN, 0, 0, 0, cap)
+
+      if not r then
+        sys.release(cap)
+        return false
+      end
+
+      region, handle = cap, r.handle
+    end
+
+    -- Every unit named, stepping over the gaps sticks that left have made.
+    for u = 0, units() - 1 do
+      local info = ask(read_cap, OP_INFO, u)
+
+      if info and info.block_size == SECTOR
+         and ask(read_cap, OP_READ, u, 1, 1) then
+        local header = sys.region_read(region, 0, SECTOR)
+        local entries_at, count, size =
+            string.unpack("<I8", header, 73), string.unpack("<I4", header, 81),
+            string.unpack("<I4", header, 85)
+        local need = (count * size + SECTOR - 1) // SECTOR
+
+        if header:sub(1, 8) == "EFI PART" and size >= 128 and need >= 1
+           and need * SECTOR <= MOST
+           and ask(read_cap, OP_READ, u, entries_at, need) then
+          local entries = sys.region_read(region, 0, need * SECTOR)
+
+          for i = 0, count - 1 do
+            local entry = entries:sub(i * size + 1, i * size + size)
+
+            if #entry == size and guid(entry, 1) == KOSMOS_PARTITION then
+              local lo, hi = string.unpack("<I8I8", entry, 33)
+
+              if hi >= lo and hi < info.blocks then
+                unit, first, sectors = u, lo, hi - lo + 1
+                where = ("the Kosmos partition on USB unit %d, blocks %d "
+                         .. "to %d"):format(u, lo, hi)
+                return true
+              end
+            end
+          end
+        end
+      end
+    end
+
+    return false
+  end
+
+  --
+  -- **Looked for on each request until it is found, and waited for once.**
+  -- The shell decides where `/home` is as it builds its namespace, from one
+  -- read of `/home/.super`: a filesystem, or memory for the life of the
+  -- machine. Nothing makes init wait for the USB driver, and on the ThinkPad
+  -- naming a stick takes seconds. So the first look that fails keeps looking,
+  -- a tenth of a second apart, for at least WAIT_SECONDS, and every request
+  -- after that looks once. This server answers nothing meanwhile, and what it
+  -- would have answered is only where `/home` is.
+  --
+  local WAIT_SECONDS = 20
+  local waited = false
+
+  local function found()
+    if look() then return true end
+
+    if waited then return false end
+
+    waited = true
+
+    local tenth = math.max(1, ((sys.info() or {}).tick_hz or 100) // 10)
+
+    for _ = 1, WAIT_SECONDS * 10 do
+      sys.sleep(tenth)
+
+      if look() then return true end
+    end
+
+    return false
+  end
+
+  local NOT_YET = "the USB stick's Kosmos partition is not there yet"
+
+  -- Inside the partition and nowhere else, before the driver is asked.
+  local function span(sector, bytes)
+    if not found() then return nil, NOT_YET end
+
+    local count = bytes // SECTOR
+
+    if bytes % SECTOR ~= 0 or count < 1 or bytes > MOST
+       or sector < 0 or sector + count > sectors then
+      return nil, "outside the Kosmos partition"
+    end
+
+    return count
+  end
+
+  sys.disk = function()
+    if not found() then return nil, NOT_YET end
+
+    return { sectors = sectors, sector_size = SECTOR,
+             bytes = sectors * SECTOR, where = where, flush_why = flush_why }
+  end
+
+  sys.disk_read = function(sector, bytes)
+    local count, why = span(sector, bytes)
+
+    if not count then return nil, why end
+
+    local r, err = ask(write_cap, OP_READ, unit, first + sector, count)
+
+    if not r then return nil, err end
+
+    return sys.region_read(region, 0, bytes)
+  end
+
+  sys.disk_write = function(sector, data)
+    local count, why = span(sector, #data)
+
+    if not count then return nil, why end
+
+    sys.region_write(region, 0, data)
+
+    local r, err = ask(write_cap, OP_WRITE, unit, first + sector, count)
+
+    if not r then return nil, err end
+
+    if data:sub(1, 4) == JOURNAL then
+      local flushed, refused = ask(write_cap, OP_FLUSH, unit)
+
+      if not flushed and not flush_why then flush_why = refused end
+    end
+
+    return true
+  end
+end
+
+local function diskfs_main(endpoint, read_cap, write_cap)
   --
   -- Split three ways, because "the libraries would not load" has two very
   -- different causes and they need opposite fixes:
@@ -3240,6 +3472,11 @@ local function diskfs_main(endpoint)
   end)
 
   if not ok then sys.exit(DIED_KFS) end
+
+  -- `/home` on a USB stick, when the machine was started asking for one.
+  if sys.boot("opt/kosmos/home") == "usb" then
+    stick_home(read_cap, write_cap, kfs)
+  end
 
   ok = pcall(serve, endpoint, { kfs = kfs }, diskfs_handlers)
 
@@ -4608,6 +4845,7 @@ if role == ROLE_INIT then
   local AUDIO_EP = sys.endpoint()
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
+  local BLOCKS_WRITE_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -4657,7 +4895,14 @@ if role == ROLE_INIT then
   -- The server itself starts either way and answers "there is no disk",
   -- which is what keeps this from being two boot paths: what differs is one
   -- flag, not whether a process exists.
-  local diskfs  = start("the disk server", ROLE_DISKFS, { DISKFS_EP },
+  --
+  -- And the USB driver's two block endpoints (USB step 5e): `/dev/blocks`, to
+  -- find a stick's Kosmos partition, and the write endpoint, which nothing
+  -- else is given - so `/home` on a stick is this process's to write and
+  -- nobody else's, as the kernel's disk is.
+  --
+  local diskfs  = start("the disk server", ROLE_DISKFS,
+                        { DISKFS_EP, BLOCKS_EP, BLOCKS_WRITE_EP },
                         sys.disk() and SPAWN_DISK or 0)
 
   --
@@ -4720,7 +4965,10 @@ if role == ROLE_INIT then
   do
     -- And the block endpoint it serves (USB step 5d): a stick's blocks, to
     -- whoever is given `/dev/blocks`.
-    local _, err = sys.spawn(ROLE_XHCI, { CONSOLE_EP, BLOCKS_EP },
+    -- And the write endpoint, which only the disk server is given as well
+    -- (USB step 5e): the right to write to a stick is holding it.
+    local _, err = sys.spawn(ROLE_XHCI,
+                             { CONSOLE_EP, BLOCKS_EP, BLOCKS_WRITE_EP },
                              SPAWN_DEVICES)
 
     if err then
@@ -4952,7 +5200,7 @@ end
 
 if role == ROLE_DISKFS then
   sys.name("diskfs")
-  diskfs_main(CAP)
+  diskfs_main(CAP, 1, 2)
   return
 end
 

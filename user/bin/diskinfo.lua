@@ -24,6 +24,17 @@ end
 print(("disk: %d sectors of %d bytes, %d MB")
       :format(sb.sectors, sb.sector_size, sb.bytes // (1024 * 1024)))
 
+-- Only for `/home` on a USB stick (`usb.md` §7, 5e): the kernel's disk has
+-- no partition to name, and nothing to refuse a flush.
+if sb.where then
+  print("  on " .. sb.where)
+end
+
+if sb.flush_why then
+  print("  its cache: not written out when asked, so a commit is only as "
+        .. "safe as the stick (" .. sb.flush_why .. ")")
+end
+
 if not sb.formatted then
   print("filesystem: none (" .. tostring(sb.why) .. ")")
   print("")

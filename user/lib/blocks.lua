@@ -9,7 +9,8 @@
 --
 -- **The blocks do not come back in the reply.** `open` creates a region and
 -- hands it to the driver once; a read fills it, and this copies out what was
--- read. Read only, for now: the driver refuses a write until step 5e.
+-- read. **Read only**: `/dev/blocks` refuses a write and a flush, and only the
+-- disk server holds the endpoint that takes them (`blockproto.h`).
 
 local blocks = {}
 
@@ -41,7 +42,7 @@ local ERRORS = {
   [4] = "more blocks than one read can move",
   [5] = "that block is past the last",
   [6] = "the stick failed it",
-  [7] = "writing is not allowed yet",
+  [7] = "that writes, and this endpoint only reads",
   [8] = "every open slot is taken",
 }
 
@@ -49,7 +50,9 @@ local function trimmed(s)
   return (s:gsub("[%z ]+$", ""))
 end
 
-local function request(op, fields, pass)
+-- One request and its reply, whatever the reply's error: an INFO says how
+-- many units have been named even when the unit it asked about is not there.
+local function exchange(op, fields, pass)
   local bytes = string.pack(REQUEST, op, fields.unit or 0, fields.lba or 0,
                             fields.count or 0, fields.handle or 0)
   local reply, why = fs.raw("/dev/blocks", bytes, pass)
@@ -63,17 +66,37 @@ local function request(op, fields, pass)
   local err, size, count, moved, handle, vendor, product =
       string.unpack(REPLY, reply)
 
-  if err ~= 0 then
-    return nil, ERRORS[err] or ("block error " .. tostring(err))
+  return { error = err, block_size = size, blocks = count, count = moved,
+           handle = handle, vendor = trimmed(vendor),
+           product = trimmed(product) }
+end
+
+local function request(op, fields, pass)
+  local r, why = exchange(op, fields, pass)
+
+  if not r then return nil, why end
+
+  if r.error ~= 0 then
+    return nil, ERRORS[r.error] or ("block error " .. tostring(r.error))
   end
 
-  return { block_size = size, blocks = count, count = moved, handle = handle,
-           vendor = trimmed(vendor), product = trimmed(product) }
+  return r
 end
 
 -- What a unit is: how many blocks, how long one is, and what it says it is.
 function blocks.info(unit)
   return request(OP_INFO, { unit = unit })
+end
+
+-- How many unit numbers the driver has given out. Every stick it holds is a
+-- unit below this; one that left is a gap, because its number is never given
+-- to another stick (`blockproto.h`).
+function blocks.units()
+  local r, why = exchange(OP_INFO, {})
+
+  if not r then return nil, why end
+
+  return r.count
 end
 
 local reader = {}

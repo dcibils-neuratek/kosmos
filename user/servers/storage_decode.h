@@ -26,6 +26,8 @@
 #define SCSI_INQUIRY            0x12u
 #define SCSI_READ_CAPACITY_10   0x25u
 #define SCSI_READ_10            0x28u
+#define SCSI_WRITE_10           0x2Au
+#define SCSI_SYNCHRONIZE_CACHE_10 0x35u
 
 #define SCSI_KEY_NOT_READY      0x2u
 #define SCSI_KEY_UNIT_ATTENTION 0x6u
@@ -64,14 +66,18 @@ enum bot_status bot_status_of(const uint8_t *csw, unsigned got, uint32_t tag,
 
 /*
  * Command blocks, written into `cdb` - which has room for sixteen bytes - and
- * their lengths returned. REQUEST SENSE asks for fixed-format sense data, and
- * READ (10) for `blocks` from `lba`.
+ * their lengths returned. REQUEST SENSE asks for fixed-format sense data;
+ * READ (10) and WRITE (10) move `blocks` at `lba`, in and out; SYNCHRONIZE
+ * CACHE (10) asks for every block the stick holds to be written out of any
+ * cache it keeps.
  */
 unsigned scsi_test_unit_ready(uint8_t *cdb);
 unsigned scsi_request_sense(uint8_t *cdb, uint8_t length);
 unsigned scsi_inquiry(uint8_t *cdb, uint16_t length);
 unsigned scsi_read_capacity_10(uint8_t *cdb);
 unsigned scsi_read_10(uint8_t *cdb, uint32_t lba, uint16_t blocks);
+unsigned scsi_write_10(uint8_t *cdb, uint32_t lba, uint16_t blocks);
+unsigned scsi_synchronize_cache_10(uint8_t *cdb);
 
 struct scsi_capacity {
     uint64_t blocks;            /* the last block's address, plus one */

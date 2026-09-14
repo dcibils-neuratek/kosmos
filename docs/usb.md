@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a to 5d of six parts, under QEMU (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a to 5e of six parts, under QEMU (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -1369,10 +1369,10 @@ by the driver, by name, rather than failed by the stick. A read that goes
 wrong at the stick goes through Reset Recovery and is sent again (5b), and
 one the stick fails says why (`say_why_failed`).
 
-**A unit is the Nth stick that is ready**, counting controllers and then
-slots. That is enough for a program at a prompt, and it is not a name: a
-stick's number moves when one before it leaves, which is why 5e's disk server
-will find its stick by partition instead. A stick becomes a unit once its
+**A unit is the number a stick is given as it becomes ready** - the next never
+given out, and never given to another stick. That is 5e's correction: here it
+was the Nth stick ready, counting controllers and then slots, which is a
+position rather than a name (5e, below). A stick becomes a unit once its
 size is known, keeps its own copy of its device from its first command -
 `attach` holds the device in a variable of its own, and Reset Recovery
 during a client's read goes on that device's endpoint 0 ring - and gives its
@@ -1383,8 +1383,8 @@ second capability; the driver waits for callers on the same wait as its
 interrupts (5c) and serves every request waiting after each wake. The shell
 is given it too and mounts it as `/dev/blocks`, and so does every program it
 starts, as `/dev/audio` is. **Read only, and mounted for everybody for that
-reason**: writing will be given to one process, the disk server, in 5e
-(`README.md`). A driver that finds no controller stays, and answers every
+reason**: writing is given to one process, the disk server, on 5e's second
+endpoint (`README.md`). A driver that finds no controller stays, and answers every
 request with "no stick at that unit", as the audio and network servers answer
 on a machine with no card: the endpoint is in every program's capability
 list, and a destroyed one has the kernel refuse every spawn - which
@@ -1399,6 +1399,92 @@ unit 0: 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK"
   partition 1: "KOSMOS", blocks 34 to 32734, type C12A7328-F81F-11D2-BA4B-00A0C93EC93B
 ```
 
+### 5e: `/home` on a stick's Kosmos partition, read and written
+
+**A machine started with `opt/kosmos/home=usb` keeps `/home` on a USB stick**:
+the first partition of Kosmos's own type,
+`8A9DC8A8-83CF-4F7F-962B-43157A68F14A`, on the first stick that has one.
+Without the option nothing changes - the disk server's disk is the kernel's,
+as it was - so every boot that exists keeps its one path, and this is a
+second beside it. In 5f the loader names the boot stick's own partition
+instead of `usb`.
+
+**`kfs.lua` does not change, and cannot tell.** It reaches blocks through
+`sys.disk`, `sys.disk_read` and `sys.disk_write` and nothing else, and `sys`
+is a plain table - so the disk server replaces those three in its own process
+with ones over the partition, as `tools/kfs.lua` replaces them with a file on
+the Mac. A block number has the partition's first block added to it, and one
+outside the partition is refused before the driver is asked.
+
+**Found through `/dev/blocks`, written through an endpoint of its own.** The
+disk server walks the units, reads each 512-byte stick's GPT header at block 1
+and the entries it points to, and takes the first entry of the Kosmos type. A
+server cannot tell its callers apart - it knows which endpoint a message came
+in on and nothing else - so the right to write is a second endpoint: init makes
+it and gives it to the driver and the disk server, and to nobody else. The
+driver answers a write or a flush there, and refuses both on `/dev/blocks`.
+
+**One wait, two endpoints.** `SYS_IRQ_WAIT_ANY` takes one endpoint (5c), and
+the write endpoint is the one on it: the disk server is the busy client,
+several requests a commit, where `sticks` reads a handful of blocks when
+somebody types it. After every wake the driver answers the write endpoint and
+then `/dev/blocks`, so a read waits at most for the watch's next deadline,
+50 ms. A driver with no controller has nothing to wait on but `/dev/blocks`,
+and nothing is left waiting on the write endpoint there: the disk server asks
+it only once a stick with its partition has been found, which on such a
+machine never happens.
+
+**Not there yet is not blank, and it is waited for.** The disk server starts
+before the driver has named any stick, and init does not wait for the driver -
+on the ThinkPad naming a stick takes seconds. The shell, meanwhile, decides
+where `/home` is from one read of `/home/.super` as it builds its namespace: a
+filesystem, or memory for the life of the machine. So the first time the disk
+server looks for its partition and does not find it, it keeps looking, a
+tenth of a second apart, for at least twenty seconds, and after that each
+request looks once. Until the partition is found the disk answers nothing, so
+nothing is formatted: a stick not named yet must never read as a blank disk.
+Once found, a blank partition is formatted the first time it is asked for, as
+a blank disk always was.
+
+**A commit the stick has kept.** kfs's journal promises one instant: once the
+journal's header block says COMMITTED, the transaction survives a power cut.
+A stick with a write cache can acknowledge a write it has not kept, so after
+any write that begins with the journal's magic - the header marked committed,
+and the header cleared again - the disk server asks for `BLOCK_OP_FLUSH`:
+SYNCHRONIZE CACHE (10), operation 35h, with block 0 and a count of 0 meaning
+every block, and IMMED clear so the status comes once the cache is written
+(Seagate's *SCSI Commands Reference Manual*, rev. J, 3.51). Two flushes a
+transaction, and none for the blocks between, which the journal covers.
+
+**Said through `diskinfo`, because the disk server cannot print.** It owns no
+console, and the kernel refuses a write from a process that does not -
+`run_disk.py` says the same of its format line. So where `/home` is, and the
+first flush a stick refused, come back in `sys.disk()`'s answer and through
+`/home/.super`; and the driver, which can print, says a stick's first flush
+that it kept, because nothing else shows one was ever sent:
+
+```
+kosmos> save notes.txt kept on a stick
+xhci: 00:04.0 port 1: the stick wrote out its cache when asked, by SYNCHRONIZE CACHE (10)
+saved notes.txt: 15 bytes, 1 extent(s)
+kosmos> diskinfo
+disk: 28639 sectors of 512 bytes, 13 MB
+  on the Kosmos partition on USB unit 0, blocks 4096 to 32734
+filesystem: version 1, 3579 blocks of 4096 bytes
+```
+
+**A unit is a name, and 5d's was not.** In 5d a unit was the Nth stick ready,
+counting controllers and then slots. The disk server keeps the unit it found
+its partition on, so a stick plugged into an earlier controller would have
+made itself unit 0, moved `/home`'s stick to 1, and taken `/home`'s next
+requests. It was found by reading 5d's own paragraph on units, before any
+stick was written, and `usb_second_stick` is the check. Now a stick is given
+the next number never given out as it becomes ready and keeps it until it
+leaves; `BLOCK_OP_INFO` answers how many have been given, so `sticks` and the
+disk server walk up to it and step over the gaps. A stick that leaves takes
+`/home` with it until the machine starts again, rather than another stick's
+blocks being written.
+
 ### What is not done yet, and what QEMU cannot show
 
 - **A client that ends without closing** keeps its open slot, and the region's
@@ -1410,16 +1496,48 @@ unit 0: 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK"
   and passes (`testing.md` §18.59).
 - **A stick's blocks on the ThinkPad** - its Kensington stick is 128 GB, and
   what `sticks` says there is the first real stick read through this.
+- **A stick that leaves while `/home` is on it.** The disk server's requests
+  are refused as no stick at that unit, and `/home` stays gone until the
+  machine starts again: a stick put back is a new unit. The journal is what
+  covers a write in flight. QEMU can pull a stick (`device_del`), and no check
+  does it yet.
+- **A stick that never comes**: with `opt/kosmos/home=usb` and no Kosmos
+  partition anywhere, the machine waits twenty seconds for `/home` and then
+  keeps it in memory.
+- **What a flush buys** is not visible under QEMU, whose stick writes straight
+  to a file: the check sees the driver say one was sent and kept, not a power
+  cut survived.
+- **Which partition**: `usb` takes the first Kosmos partition on the lowest
+  unit that has one. 5f has the loader name the boot stick's own by its
+  unique GUID, so a second Kosmos stick is never taken for it.
 
 ### How it is tested
 
-- **`tools/run_x86.py`'s `usb_blocks`**, 3 checks: `sticks` at the prompt says
+- **`tools/run_x86.py`'s `usb_blocks`**, 4 checks: `sticks` at the prompt says
   unit 0 is 32768 blocks of 512 bytes, "QEMU" "QEMU HARDDISK", through
   `/dev/blocks`; it reads the partition `write_gpt` wrote, "KOSMOS", blocks 34
-  to 32734, an EFI system partition; and a two-line program written to
-  `/ramfs` and run by its file reads one block past the last and is refused as
-  past the last. `usb`, `usb_hotplug` and `usb_mouse` pass with every command's
-  data going through the transfer buffer. Controls in `testing.md` §18.59.
+  to 32734, an EFI system partition; a two-line program written to `/ramfs`
+  and run by its file reads one block past the last and is refused as past the
+  last; and another sends a write and a flush there, each refused as read only
+  (5e). `usb`, `usb_hotplug` and `usb_mouse` pass with every command's data
+  going through the transfer buffer. Controls in `testing.md` §18.59.
+- **`usb_home`**, 4 checks (5e): a stick with an EFI partition and a blank
+  Kosmos partition, booted twice with `opt/kosmos/home=usb`. `diskinfo` says on
+  both boots that the disk is 28639 sectors, on the Kosmos partition, blocks
+  4096 to 32734; the first boot formats it and saves a file; the driver says the
+  stick kept the save's flush; and the second boot - a machine that has never
+  seen the stick - reads the file back.
+- **`usb_second_stick`**, 4 checks (5e): `/home` on a stick on the second
+  controller and a file saved; then a stick with a partition of its own plugged
+  into the first controller through QEMU's monitor, read by the driver, and a
+  second file saved. Not one of the new stick's blocks differs from what it
+  held; both files are in `/home`; and `sticks` shows `/home`'s stick as unit 0
+  and the new one as unit 1.
+- **`usb_home_late`**, 3 checks (5e): the machine started with
+  `opt/kosmos/home=usb` and no stick in, and the stick plugged in five seconds
+  after the driver says it is watching. The driver reads it and a prompt comes;
+  `diskinfo` says `/home` is the Kosmos partition; and a file saved there has
+  extents on a disk. Controls in `testing.md` §18.60.
 
 ---
 

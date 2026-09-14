@@ -17,8 +17,19 @@
  * controller reaches, and copies them into that region. A client's pages are
  * never given to the controller (`README.md`, the fifth of step 5's calls).
  *
- * **Read only, for now.** `BLOCK_OP_WRITE` is refused until step 5e, and then
- * only for the process given the right to write.
+ * **Two endpoints, one shape** (USB step 5e). `/dev/blocks` is for reading,
+ * and every program is given it; a write or a flush that arrives there is
+ * refused. The write endpoint takes every operation, and only the disk server
+ * is given it. Which endpoint a request came in on is the one thing a server
+ * knows about who sent it, so the right to write *is* that endpoint - the
+ * kernel's disk grant, pointed at a stick.
+ *
+ * **A unit is a name** (USB step 5e). A stick is given the next number as it
+ * becomes ready and keeps it until it leaves, and no other stick is ever given
+ * it - so a unit that has left answers `BLOCK_ERR_NO_UNIT` rather than being
+ * some other stick. `BLOCK_OP_INFO` answers, in `count`, how many numbers have
+ * been given out, whether or not the unit it asked about is there; a walk of
+ * the sticks goes up to it and steps over the gaps.
  */
 
 #include <stdint.h>
@@ -26,8 +37,9 @@
 #define BLOCK_OP_INFO       1u  /* a unit's size, its block length, its names */
 #define BLOCK_OP_OPEN       2u  /* a region capability travels with this one */
 #define BLOCK_OP_READ       3u  /* `count` blocks from `lba`, into the region */
-#define BLOCK_OP_WRITE      4u  /* refused until step 5e */
+#define BLOCK_OP_WRITE      4u  /* `count` blocks at `lba`, from the region */
 #define BLOCK_OP_CLOSE      5u  /* the region given back */
+#define BLOCK_OP_FLUSH      6u  /* every block the stick caches, written out */
 
 #define BLOCK_OK            0u
 #define BLOCK_ERR_BAD_OP    1u  /* no such operation, or a request the wrong size */
@@ -36,7 +48,7 @@
 #define BLOCK_ERR_TOO_MANY  4u  /* more than one read can move, or none */
 #define BLOCK_ERR_PAST_END  5u  /* a block past the last */
 #define BLOCK_ERR_DEVICE    6u  /* the stick failed it, or did not answer */
-#define BLOCK_ERR_READ_ONLY 7u  /* a write, which nobody may do yet */
+#define BLOCK_ERR_READ_ONLY 7u  /* a write or a flush, on the endpoint that reads */
 #define BLOCK_ERR_FULL      8u  /* every open slot is taken */
 
 /*
@@ -50,7 +62,7 @@
 
 struct block_request {
     uint32_t op;
-    uint32_t unit;              /* which stick: 0, 1, ... in the order made ready */
+    uint32_t unit;              /* which stick: the number it was given when ready */
     uint64_t lba;               /* the first block */
     uint32_t count;             /* how many blocks */
     uint32_t handle;            /* what `BLOCK_OP_OPEN` answered; 0 otherwise */
@@ -60,7 +72,7 @@ struct block_reply {
     uint32_t error;             /* BLOCK_OK, or why not */
     uint32_t block_size;        /* bytes in one block of the unit asked about */
     uint64_t blocks;            /* the unit's last block, plus one */
-    uint32_t count;             /* blocks moved */
+    uint32_t count;             /* blocks moved; for an INFO, units named so far */
     uint32_t handle;            /* for `BLOCK_OP_OPEN`: what reads name */
     char     vendor[8];         /* INQUIRY's, space-padded, as the stick said */
     char     product[16];

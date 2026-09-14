@@ -12,23 +12,50 @@ Last updated: 2026-09-14
 `origin`, and `VERSION` still says 0.10.62; a push is his call, after `make
 prepush` and a bump.
 
-- **A stick from `main`, on a branded stick** once he has one:
-  `build/x86_64/kosmos-usb-0.10.62-dd459ba-experiment.img`, built from
-  `dd459ba` and passing `run_uefi.py` on the exact image, 32 checks. It is an
-  experiment - This Machine, the disk started once and the loader that holds
-  its read to the build's sums have not run on the ThinkPad - offered beside
-  the ERDP stick, which has. The photographs: `log loader`, which should end
-  `the stick against the build: same`, and This Machine resized.
+- **The stick Diego is to try on the ThinkPad**:
+  `build/x86_64/kosmos-usb-0.10.62-b8c6f10-experiment.img`, built by `make
+  MEGA=1 x86-usb-image` from a clean tree at `b8c6f10` (USB step 5d), its
+  `kosmos.bin` compared with the build's, and passing `run_uefi.py` on the
+  exact image, 32 checks. It is an experiment - This Machine, the disk started
+  once, the loader's sums and USB 5a to 5d have not run there - offered beside
+  the ERDP stick, `kosmos-usb-0.10.62-erdp-experiment.img`, which has. The
+  photographs: `log loader`, which should end `the stick against the build:
+  same`; `log xhci`, the Kensington named with its size and its GPT at both
+  ends; and `sticks`. `boot.md`'s table gets a row from what he sees. 5e's
+  `/home` on a stick is not on it, and needs 5f's layout to be.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
-  proposal's five calls: 5a to 5d are built - a stick's size and its first
-  blocks, Reset Recovery, one kernel wait for interrupts and callers, and a
-  block protocol served on `/dev/blocks` - and next is 5e, kfs on the boot
-  stick's partition; before it was only a block protocol from the USB driver to a filesystem
-  server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
-  read-only first (`usb.md`).
+  proposal's five calls: 5a to 5e are built - a stick's size and its first
+  blocks, Reset Recovery, one kernel wait for interrupts and callers, a block
+  protocol served on `/dev/blocks`, and `/home` on a stick's Kosmos partition,
+  under QEMU - and next is 5f, the stick layout with that partition and the
+  loader naming it; then another machine's FAT32 and exFAT drives, Kosmos's
+  own reader, read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 5e, `/home` on a stick
+
+- **`opt/kosmos/home=usb`** keeps `/home` on the first Kosmos partition a
+  stick holds - type `8A9DC8A8-83CF-4F7F-962B-43157A68F14A` - found through
+  `/dev/blocks` and written through a second endpoint that only the driver and
+  the disk server hold. `kfs.lua` is untouched: the disk server swaps
+  `sys.disk` and its two block calls in its own process. No option, no change.
+- **WRITE (10) and SYNCHRONIZE CACHE (10)** in `storage_decode.c`; a flush
+  after each write to the journal's header, and the driver says a stick's
+  first kept one. `diskinfo` says where `/home` is, because the disk server
+  cannot print.
+- **Two things found before the commit, and fixed.** A unit was the Nth stick
+  ready, so a stick plugged into an earlier controller would have taken
+  `/home`'s requests - found by reading, shown by `usb_second_stick`. And the
+  shell decides where `/home` is from one read while init does not wait for
+  the driver, so a slow stick left `/home` in memory - found by a control,
+  shown by `usb_home_late`; the disk server now waits for its stick once.
+- **Tested**: `usb_home` 4, `usb_second_stick` 4, `usb_home_late` 3,
+  `usb_blocks` 4; controls in `testing.md` §18.60.
+- **On the roadmap**: kfs answers a Lua error for a root that is not a
+  directory, which a control reached.
+- **Next**: 5f, the stick layout and the loader naming the partition.
 
 ### 14 September: USB step 5d, the block protocol
 

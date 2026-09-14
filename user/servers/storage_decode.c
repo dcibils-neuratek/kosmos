@@ -7,8 +7,8 @@
  * command blocks and their answers are SCSI's, big-endian, as Seagate's SCSI
  * Commands Reference Manual, Rev. J, gives them: INQUIRY Table 58, READ (10)
  * Table 97, READ CAPACITY (10) Tables 119 and 120, REQUEST SENSE Table 164,
- * TEST UNIT READY Table 202, fixed-format sense data Table 27, and the sense
- * keys Table 28.
+ * SYNCHRONIZE CACHE (10) Table 199, TEST UNIT READY Table 202, WRITE (10)
+ * Table 216, fixed-format sense data Table 27, and the sense keys Table 28.
  */
 
 #include <string.h>
@@ -137,6 +137,27 @@ unsigned scsi_read_10(uint8_t *cdb, uint32_t lba, uint16_t blocks)
     cdb[5] = (uint8_t)lba;
     cdb[7] = (uint8_t)(blocks >> 8);
     cdb[8] = (uint8_t)blocks;
+    return 10u;
+}
+
+/* READ (10)'s layout, with the data going out: the address in bytes 2 to 5
+ * and the length in bytes 7 and 8. */
+unsigned scsi_write_10(uint8_t *cdb, uint32_t lba, uint16_t blocks)
+{
+    (void)scsi_read_10(cdb, lba, blocks);
+    cdb[0] = SCSI_WRITE_10;
+    return 10u;
+}
+
+/*
+ * **Every block, out of the cache.** Block 0 and a NUMBER OF BLOCKS of 0, which
+ * means from there to the last; IMMED clear, so the status comes only once
+ * the stick has done it - which is the whole point of asking.
+ */
+unsigned scsi_synchronize_cache_10(uint8_t *cdb)
+{
+    memset(cdb, 0, 10u);
+    cdb[0] = SCSI_SYNCHRONIZE_CACHE_10;
     return 10u;
 }
 

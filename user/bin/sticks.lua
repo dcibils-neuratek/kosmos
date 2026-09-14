@@ -95,20 +95,31 @@ if not r then
   return
 end
 
-local unit = 0
+-- Every number the driver has given out: a stick that left is a gap, and
+-- the numbers after it are not moved down (`blockproto.h`).
+local named, err = blocks.units()
 
-while true do
-  local info = blocks.info(unit)
-
-  if not info then break end
-
-  print(string.format("unit %d: %d blocks of %d bytes, \"%s\" \"%s\"", unit,
-                      info.blocks, info.block_size, info.vendor, info.product))
-  partitions(r, unit, info)
-  unit = unit + 1
+if not named then
+  print("sticks: " .. tostring(err))
+  r:close()
+  return
 end
 
-if unit == 0 then
+local ready = 0
+
+for unit = 0, named - 1 do
+  local info = blocks.info(unit)
+
+  if info then
+    print(string.format("unit %d: %d blocks of %d bytes, \"%s\" \"%s\"",
+                        unit, info.blocks, info.block_size, info.vendor,
+                        info.product))
+    partitions(r, unit, info)
+    ready = ready + 1
+  end
+end
+
+if ready == 0 then
   print("sticks: no USB stick is ready")
 end
 
