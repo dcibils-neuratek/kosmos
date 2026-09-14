@@ -38,15 +38,18 @@ prepush` and a bump.
   Drives app. **Decided with Diego the same day**: Places, System, Drives in
   that order, every filesystem's type shown, where you are shown as the whole
   trail (Drives › Kingston DataTraveler › KOSMOS HOME), and FAT32 and
-  exFAT read only - NTFS left out for now. Nothing built.
+  exFAT read only - NTFS left out for now. **Then FAT16 beside FAT32, names
+  without regard to case, and six pieces in this order**: 6a the FAT reader
+  on the Mac, 6b the drive server and `/drives`, 6c Tracker, 6d Open and
+  Save, 6e the Drives app, 6f exFAT - Diego: "yes to all three, go with your
+  order". **6a is built**; 6b is next.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and
   callers, a block protocol served on `/dev/blocks`, `/home` on a stick's
   Kosmos partition, and a stick whose `/home` is that partition, named by its
-  own command line. Next is that stick on the ThinkPad, as an experiment; then
-  another machine's FAT32 and exFAT drives, Kosmos's own reader, read-only
-  first (`usb.md`).
+  own command line. That stick booted on the ThinkPad; step 6, drives, is
+  what comes after it (`usb.md`).
 - **A tutorial for building Lua apps**, asked for by Diego on 14 September:
   ten lessons and fifteen apps in `/home/development`, from a window with a
   button to a music player and a paint program. Planned in `roadmap.md`, as
@@ -54,6 +57,29 @@ prepush` and a bump.
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 6a, FAT read on the Mac
+
+- **`user/servers/fat_decode.c`**: a FAT16 or FAT32 volume's boot sector held
+  to what one must be, the kind decided by its count of clusters, table
+  entries, and a directory's short and long names - every rule from
+  Microsoft's specification, 1.03, with its section named. FAT12 recognised
+  and refused. Read only, and nothing on the machine uses it yet.
+- **`tools/fatls.c`** walks a volume in an image file with nothing but that
+  file, and finds a path as FAT finds names.
+- **Two things only real volumes showed.** Windows NT keeps a short name's
+  lower case in two bits of `DIR_NTRes`, which the specification calls
+  reserved - mtools's `hello.txt` came back `HELLO.TXT`. And FAT32's free
+  cluster hint sends mtools past a hole, so a file never landed in two runs
+  until the test set the hint back to cluster 2.
+- **A control that did not bite, and what it meant**: turning 0x05 into 0xE5
+  changed nothing anyone could see, since both are shown as `_`; the line
+  went, and its one visible effect - such an entry is not free - is the
+  control now.
+- **Tested**: `test_fatdecode` 75, `test_fat.py` 24 on volumes mtools made;
+  controls in `testing.md` §18.62.
+- **Next**: 6b, the drive server - partitions found on every stick, and each
+  FAT one at `/drives/<label>`.
 
 ### 14 September: USB step 5f, a stick whose `/home` is a partition
 

@@ -240,12 +240,16 @@ is the one that makes the machine Diego owns behave like a computer:
    boots the stick through OVMF to `/home` on it (`usb.md` §7). **It booted on
    the ThinkPad the same day** - `/home` on the Kingston's own partition, a
    file written and read back - with the desktop about 20 seconds late, not
-   yet explained. Next: step 6, drives - designed in `docs/drives.html` and
+   yet explained. **Step 6, drives**, designed in `docs/drives.html` and
    decided with Diego on 14 September: Tracker's sidebar as Places, System
    and Drives with each filesystem's type, `/drives/<label>`, one Open and
    Save window for every app, a Drives app that shows before it changes
-   anything, and other machines' FAT32 and exFAT read, read only - NTFS
-   left out for now.
+   anything, and other machines' FAT16, FAT32 and exFAT read, read only, with
+   names found without regard to case - NTFS left out for now. **Built in six
+   pieces, in Diego's order**: 6a, the FAT reader tested on the Mac, is built
+   (`usb.md` §8); then 6b, the drive server and `/drives`; 6c, Tracker's
+   sidebar and trail; 6d, the Open and Save window; 6e, the Drives app; and
+   6f, exFAT.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage

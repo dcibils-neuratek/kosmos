@@ -3730,3 +3730,43 @@ stick check 12, the machine with no display on both boards with all 111
 programs in `/bin`, the disk 33 across two boots, the argument audit 112,
 and the suites 160 of 160 and 156 of 156 - and `make screenshot`, 110
 display checks on AArch64 and 108 on x86-64.
+
+## 18.62 FAT, read on the Mac
+
+**USB step 6a**: `fat_decode.c`, what a FAT16 or FAT32 volume's bytes mean,
+and `fatls`, which walks a volume in an image with nothing else. Nothing on
+the machine uses either yet. `usb.md` §8 has how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_fatdecode.c`, 75 checks | bytes built from the specification. A FAT16 and a FAT32 volume's geometry: RootDirSectors, FirstDataSector, the root and a cluster's sector, and the label, with `NO NAME` as none. 4,084 clusters is FAT12 and refused, 4,085 and 65,524 are FAT16, 65,525 is FAT32. Each field a boot sector is held to, refused one at a time. Where a cluster's entry is, and what it says: the end of a chain, a bad cluster, free, a cluster past the last, and FAT32's top four bits ignored. Short names: `DIR_NTRes`'s two case bits, 0x05, 0xE5, 0x00, a byte above 0x7F, dot and dotdot, the label, and an entry both a directory and a label. Long names: two pieces, another name's checksum, a piece that fills exactly, UTF-8 from UTF-16 and a surrogate pair, a lone surrogate, pieces out of order, a free entry inside a set, an `LDIR_Type` not zero, and 21 pieces. A name found without regard to case, and an accented one compared exactly |
+| `tools/test_fat.py`, 24 checks | four volumes mtools made in a 64 MB image - FAT16 at 4 sectors a cluster and FAT32 at 1, each with no partition table and in an MBR partition at sector 2048 - read by `fatls`: the kind and the label; every directory, three deep; every file's name, size and bytes, among them a long name, a name with an accent, an empty file and files one byte either side of a cluster; a file in two runs of clusters; and `photos 2024/ITALY/img_2213.jpg` finding `/Photos 2024/Italy/IMG_2213.JPG` |
+
+**Controls**, each a copy of `fat_decode.c` changed in the scratchpad and
+compiled with the tests there, so the tree was never touched:
+
+| broken | what failed |
+| ------ | ----------- |
+| C1: FAT12's boundary, `< 4085` made `<=` | `test_fatdecode`, 1 of 75: 4,085 clusters was no longer FAT16 |
+| C2: FAT32's boundary, `< 65525` made `<=` | `test_fatdecode`, 1 of 75: 65,525 clusters was no longer FAT32 |
+| C3: FAT32's top four bits kept | `test_fatdecode`, 2 of 75: 0x10000000 was not free, and 0x30000005 did not lead to cluster 5 |
+| C4: a long name's checksum not compared | `test_fatdecode`, 1 of 75: another name's pieces became this entry's name |
+| C5: 0x05 taken for a free entry | `test_fatdecode`, 1 of 75 |
+| C6: `DIR_NTRes`'s case bits ignored | `test_fatdecode`, 3 of 75; `test_fat.py`, 8 of 24: `HELLO.TXT`, `EMPTY.DAT`, `NOTES.TXT` and `SPREAD.BIN` in capitals on every volume |
+| C7: names compared with their case | `test_fatdecode`, 1 of 75: `readme.txt` did not find `README.TXT`; `test_fat.py`, 4 of 24: the picture not found in the wrong case, on every volume |
+| C8: a cluster's sector one cluster off | `test_fat.py`, 14 of 24: directories and files read from their neighbours - a `/Photos 2024/Rome`, and wrong bytes in `hello.txt` |
+
+**Two things these found before the controls ran.** The first `test_fat.py`
+failed its two-runs check on both FAT32 volumes with a correct reader: mtools
+follows FAT32's free cluster hint past a hole, so the file never went in two
+runs until the test set the hint back to cluster 2. And a control that did not
+bite: turning 0x05 back into 0xE5 changed nothing, because both are shown as
+`_`. That line was removed, and the rule's one visible effect - the entry is
+not free - is what C5 breaks.
+
+And as written: `make test` whole - FAT 75 and 24, x86-64 153, the UEFI
+boots 38, the stick check 12, the machine with no display on both boards
+with all 111 programs in `/bin`, the disk 33 across two boots, the argument
+audit 112, and the suites 160 of 160 and 156 of 156. The display harness was
+not run: nothing in the image changed, since `fat_decode.c` is not in it
+until 6b.

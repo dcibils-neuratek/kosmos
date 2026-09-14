@@ -72,6 +72,18 @@ sudo port install qemu       # MacPorts
 brew install qemu            # Homebrew
 ```
 
+### mtools
+
+`make test` makes FAT volumes with it and reads them back through Kosmos's
+own reader, and reads a stick image's boot partition with it
+(`tools/test_fat.py`, `tools/test_stickcheck.py`). Somebody else's reading of
+FAT is the point, so nothing in the tree stands in for it:
+
+```
+sudo port install mtools     # MacPorts
+brew install mtools          # Homebrew
+```
+
 ### Verify
 
 ```

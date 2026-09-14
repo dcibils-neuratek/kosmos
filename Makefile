@@ -1588,6 +1588,24 @@ $(HOSTDIR)/test_storagedecode: tools/test_storagedecode.c user/servers/storage_d
 	        tools/test_storagedecode.c user/servers/storage_decode.c
 
 #
+# And what a FAT volume's bytes mean - its boot sector, its table, and a
+# directory's short and long names - twice over, because this reader is ours
+# and the drives it will read are not. `test_fatdecode` builds its bytes from
+# the specification; `fatls` walks the volumes mtools makes, which is somebody
+# else's reading of the same format, and `tools/test_fat.py` holds the two to
+# the files that went in. `fat_decode.h` has more.
+#
+$(HOSTDIR)/test_fatdecode: tools/test_fatdecode.c user/servers/fat_decode.c user/servers/fat_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_fatdecode.c user/servers/fat_decode.c
+
+$(HOSTDIR)/fatls: tools/fatls.c user/servers/fat_decode.c user/servers/fat_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/fatls.c user/servers/fat_decode.c
+
+#
 # And whether the userland image's canary works, which is the same argument
 # a fourth time with one difference: the two halves are written in different
 # languages.
@@ -2691,7 +2709,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2743,6 +2761,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	$(HOSTDIR)/test_smbiosdecode
 	$(HOSTDIR)/test_usbdecode
 	$(HOSTDIR)/test_storagedecode
+	@# And FAT, the drives' filesystem, read from bytes the specification
+	@# describes and then from volumes mtools made.
+	$(HOSTDIR)/test_fatdecode
+	python3 tools/test_fat.py $(HOSTDIR)/fatls
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

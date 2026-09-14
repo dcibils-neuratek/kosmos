@@ -703,7 +703,7 @@ Live queries are the part of BeOS nobody replicated and that neither macOS nor L
 
 This paragraph used to say FAT32 at first, because the Pi's firmware boots from it, and an own filesystem later. The own filesystem came instead: kfs, with the attributes on disk and the index rebuilt at mount (§8.3). FAT32 has no attributes, no journal and no way to say what a file is, and Kosmos's disk is not FAT32.
 
-**FAT32 and exFAT come back only as other machines' drives**, decided on 14 September 2026: Kosmos's own reader, read-only first, so a flash drive's files can be read in Kosmos. They are somebody else's filesystems, mounted, and nothing Kosmos stores lives in them.
+**FAT32 and exFAT come back only as other machines' drives**, decided on 14 September 2026: Kosmos's own reader, read-only first, so a flash drive's files can be read in Kosmos. They are somebody else's filesystems, mounted, and nothing Kosmos stores lives in them. FAT16 is read too, since it is the same reader, and names are found without regard to case, as FAT finds them - which is the one place a path under `/drives` does not behave like a path in kfs.
 
 ### 8.3 What is in memory and what is on disk
 

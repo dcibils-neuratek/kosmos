@@ -12,7 +12,7 @@ else.
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | built, 5a to 5f, and run on the ThinkPad: `/home` on the stick it booted from (`roadmap.md`) |
-| 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT32 and exFAT read, read only (`drives.html`) | designed, not started |
+| 6. drives | every drive shown and named - Tracker, a Drives app, one Open and Save window - and FAT16, FAT32 and exFAT read, read only (`drives.html`) | 6a built: FAT's bytes, read on the Mac |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
 `roadmap.md` has why USB is first, and `thinkpad.md` §6a the evening that
@@ -35,7 +35,12 @@ cross between processes through a copy - `README.md` has each and why.
 **And step 6 is Diego's too**, the same week: "we need fat32 driver so we can
 mount usb drives that i have with content that i would like to have avaiable
 on kosmos", "then you have exfat as well". Decided on 14 September: **Kosmos's
-own reader, read-only first** - `README.md` has the decision and why.
+own reader, read-only first** - `README.md` has the decision and why. Built
+in six pieces, in the order Diego agreed ("go with your order"): **6a** the
+FAT reader, tested on the Mac; **6b** the drive server, and every FAT
+partition at `/drives/<label>`; **6c** Tracker's sidebar - Places, System,
+Drives - and the whole trail; **6d** one Open and Save window; **6e** the
+Drives app; **6f** exFAT.
 
 ---
 
@@ -1604,8 +1609,100 @@ names that partition when one differs, rather than calling it the backup GPT.
 
 ---
 
+## 8. Step 6: drives
+
+**Every drive shown and named, and other machines' filesystems read, read
+only.** `drives.html` is the design; the table at the top has the six pieces
+and their order.
+
+### 6a: what a FAT volume's bytes mean
+
+**`user/servers/fat_decode.c` reads FAT16 and FAT32, and nothing on the
+machine uses it yet.** It is what the drive server stands on from 6b, and it is
+a file of its own for `storage_decode.c`'s reason: no hardware and no system
+calls, so the host can ask it anything. Every rule in it is Microsoft's, from
+the FAT32 File System Specification, version 1.03, with the section named
+beside it. It writes nothing.
+
+- **A boot sector is held to what one must be before anything in it is
+  trusted**: 0x55 0xAA at byte 510, a jump at byte 0, 512 to 4096 bytes a
+  sector, a power of two sectors a cluster, clusters of 64 KB at most, a
+  reserved sector, a FAT, a sector count, a data region after the FATs, a
+  table long enough for every cluster, and for FAT32 FAT16's fields empty, a
+  root cluster the volume has, and version 0.0 - drivers "must check this
+  field and not mount the volume" otherwise.
+- **The kind is the count of clusters and nothing else**: under 4,085 is FAT12,
+  under 65,525 FAT16, and the rest FAT32 - "when it says <, it does not mean
+  <=". The name in the boot sector decides nothing. FAT12 is named and
+  refused.
+- **A table entry says where a file goes next**: two bytes on FAT16,
+  twenty-eight bits of four on FAT32, whose top four are reserved and ignored.
+  The end of a chain, a free cluster, the bad cluster mark and a number the
+  volume does not have are told apart, so a damaged chain is reported rather
+  than followed.
+- **A directory, an entry at a time**: 0x00 ends it, 0xE5 is a free entry, and
+  0x05 is a live one whose name begins with the character 0xE5. A long name is
+  gathered from its pieces, each carrying its ordinal and the short name's
+  checksum, and counts only when every piece came in order for that short
+  entry; otherwise they are orphans and the short name is shown, as the
+  specification says. UTF-16 comes out as UTF-8.
+- **Short names in the case they were saved in.** `hello.txt` is stored as
+  `HELLO   TXT`, and Windows NT keeps the lower case in two bits of
+  `DIR_NTRes` - 0x08 for the name, 0x10 for the extension. The specification
+  calls that byte reserved; mtools writes the bits, and its `hello.txt` came
+  back `HELLO.TXT` until they were read.
+- **A name is found as FAT finds it, without regard to case**, and a search
+  matches the long name or the short one. ASCII letters only: an accented
+  letter is compared exactly. A short name's bytes outside ASCII are shown as
+  `_`, because which code page wrote them is not recorded - the specification's
+  own rule for a character that cannot be translated.
+
+**`tools/fatls.c`** is the same file walking a volume in an image on the Mac:
+every directory and file, with its size, a hash of its bytes and how many runs
+of clusters it is in, or one path found in whatever case it is typed.
+
+**What mtools showed that the specification did not.** FAT32 keeps a hint of
+where to look for a free cluster (`FSI_Nxt_Free`), and mtools follows it: a
+file deleted from the middle leaves a hole the next file never goes into. The
+test sets the hint back to cluster 2, which is where the specification says a
+driver with no hint begins, so a file really does land in two runs. A reader
+never needs the hint; a writer will.
+
+### What is not done yet
+
+- **Nothing on the machine reads a drive yet.** 6b finds the partitions on
+  every stick and puts each FAT volume at `/drives/<label>`; whether a
+  volume's sector count fits its partition is checked there, since only the
+  caller knows the partition.
+- **exFAT is 6f.** FAT12 is refused, short names are not read through a code
+  page, and nothing is written.
+
+### How it is tested
+
+`tools/test_fatdecode.c` builds its bytes from the specification: 75 checks
+on each field a boot sector is held to, both type boundaries a cluster either
+side, the table entries of both kinds, and long names in order, out of order,
+orphaned and in UTF-16 surrogates. That cannot catch a field read at the wrong
+offset, since the test would write it at the same wrong offset - so
+`tools/test_fat.py` has **mtools**, somebody else's reading of the format, make
+FAT16 and FAT32 volumes with no partition table and inside an MBR partition,
+fill them with files, and `fatls` read every one back: 24 checks. Controls in
+`testing.md` §18.62.
+
+---
+
 ## Sources
 
+- Microsoft, *FAT32 File System Specification*, version 1.03, 6 December 2000
+  ("fatgen103") - every rule in `fat_decode.c`, with its section beside it.
+  Downloaded from download.microsoft.com on 14 September 2026 to read, and not
+  kept in the repository.
+- Microsoft, *exFAT File System Specification*, learn.microsoft.com - for
+  6f. Read on 14 September 2026, and not kept.
+- GNU mtools 4.0.49 - the FAT volumes `test_fat.py` holds the reader to,
+  used as a program and never read for how: its `hello.txt` is what showed
+  `DIR_NTRes`'s case bits, and its allocation what showed FAT32's free cluster
+  hint. Nothing is copied from it.
 - Intel, *eXtensible Host Controller Interface for Universal Serial Bus
   (xHCI)*, revision 1.2 - every offset and bit in `xhci.c`, with the table
   or section beside it. Downloaded from intel.com on 12 September 2026 to
