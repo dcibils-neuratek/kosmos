@@ -3087,3 +3087,107 @@ And as written, with both files put back byte for byte: `storage` 5 of 5 on
 q35, `run_disk.py` 34 on `virt` and 33 on q35, and `make test` whole - x86-64
 124, the UEFI boots 29, the stick check 10, and the suites 158 of 158 and 154
 of 154, the block device's tests among them asking what boot kept.
+
+## 18.50 The stick held to what the build wrote
+
+**Nothing on the machine checked that the stick handed over the build's
+bytes.** The loader read the kernel and the disk once and fingerprinted what
+it read, which catches memory changing afterwards and says nothing about the
+read itself; `mkusb.sh` has read a stick back on the Mac since §18.45, which
+is another machine's USB stack. Nothing the ThinkPad has shown rules out a
+stick returning other bytes there, and nothing there could have said so. The
+roadmap had it as the thing before USB step four.
+
+**So the build writes the sums, and the loader holds its read to them.**
+`mkusb_image.py` puts `\boot\kosmos.sums` beside the kernel and
+`\boot\disk.sums` beside the disk - "KOSMSUMS", the file's size, the page size,
+and FNV-1a over each 4096 bytes (`boot/efi/sums.h`). `sums.c` compares a read
+with them, with no firmware in it, and `against_build` in the loader says what
+it found: the build's, page for page, or a refusal on the screen with how
+many pages differ and the first. The kernel's loader line gains `the stick
+against the build: same`. A stick with no sums is said to be unchecked and
+used.
+
+What a stick says under OVMF, and then a copy of it with one byte of its
+kernel changed:
+
+```
+kosmos-boot: the kernel is the build's, page for page: 1988 pages
+kosmos-boot: the kernel: 7948 KB in two copies, 1988 pages fingerprinted, entry 0x01001000
+kosmos-boot: the disk is the build's, page for page: 1024 pages
+-> the loader: kosmos-boot, 0 pages repaired before the firmware let go, 0 after, 0 lost; the disk: same; the stick against the build: same
+
+kosmos-boot: the kernel: 1 of its 1988 pages is not the build's, the first page 3, at byte 0x00003000
+kosmos-boot: this stick does not hold the files the build wrote
+kosmos-boot: Kosmos cannot start from this stick. Press a key to return to the firmware.
+```
+
+`tools/test_efiboot.c`, 59 checks, 11 of them new:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| FNV-1a's published vectors | the empty string and "a", which pin the offset basis and the prime |
+| a file and its own sums | four pages the same, the last of them short |
+| one byte changed in the third page | one page wrong, the third |
+| a byte changed at the very end | the last, short page checked to its last byte |
+| a file a byte short | refused for its size, and the size the build wrote kept |
+| sums for three pages against a file of four | not taken for its sums |
+| no magic, pages of 4095 bytes, no sums at all | each refused as not a sums file |
+| an empty file and its empty sums | taken as the build's, with no pages to compare |
+
+`tools/run_uefi.py`, 34 checks, 5 of them new: the loader saying the kernel
+and the disk are the build's, the kernel saying the stick was held to them,
+and a copy of the stick with the thirteenth byte of its kernel's fourth page
+changed - its sums as the build wrote them - refused on the serial line with
+that page named.
+
+**The first run did not build**: `sums.h` included `stdint.h` and not
+`stddef.h`, and `sums.c` uses `NULL`. And the refusal said "1 of its 1988
+pages are not the build's" until one page became singular.
+
+**And the second control found a gap in the harness.** With the build's sums
+wrong the good stick is refused, which is right, and `run_uefi.py` did not say
+so: its third boot of that stick waits for the kernel's first instruction
+through QEMU's gdbstub, that wait ended in the socket's timeout, and the run
+died in a traceback before printing a single complaint. Any refusal of the
+good stick would have done the same. `run_to` now answers false when the
+guest does not get there, and `thinkpad_screen` hands back what the machine
+said, so the checks name what did not happen.
+
+**Controls**, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| the loader taking every read as the build's, whatever `sums_check` found | `run_uefi.py`, 2 of 34: the stick with one byte of its kernel changed booted, so it was neither refused nor named a page |
+| `mkusb_image.py` starting each page's sum one past FNV-1a's offset basis | `run_uefi.py`, 23 of 33: the good stick refused, all 1988 of its kernel's pages not the build's, and everything after the loader never reached |
+| `sums_check` stopping before the last page, which is the short one | `test_efiboot`, 1 of 59: a byte changed at the very end of a file not found |
+
+```
+FAIL: 2 of 34 checks booting through Kosmos's loader under UEFI:
+  a stick with one byte of its kernel changed was not refused: [..., 'kosmos-boot: both copies of the kernel are the file, page for page', 'kosmos-boot: handing over: entry 0x01001000, information at 0x7c1af000, trampoline at 0x7c1b6000']
+  the refusal of a changed kernel did not name the one page, the fourth: [...]
+
+FAIL: 23 of 33 checks booting through Kosmos's loader under UEFI:
+  the machine found no processor line; ACPI is not reaching the kernel through the loader
+  ...
+  the loader did not say the kernel it read is the build's: [..., "kosmos-boot: the kernel: 1988 of its 1988 pages are not the build's, the first page 0, at byte 0x00000000"]
+  ...
+  the kernel does not say its loader held the stick to the build's sums: no loader line
+  the harness did not stop at the kernel's entry and move the loader's framebuffer to 0x4000000000
+  ...
+
+FAIL: the last, short page is not checked to its last byte
+FAIL: 1 of 59 checks on the UEFI loader's decisions
+```
+
+Thirty-three rather than thirty-four in the second, because the disk's own
+check waits for the loader to name a disk, and a loader that refused the
+kernel never read one. **The first run of that control printed no FAIL line
+at all**: it ended in `TimeoutError: timed out`, raised in `run_to` while the
+harness waited for a kernel that the refusal meant would never start - which
+is the gap described above, and the reason for the second run.
+
+And as written, with every file put back byte for byte: `test_efiboot` 59,
+and 51 without a kernel to read; `run_uefi.py` 34; and `make test` whole -
+x86-64 124, the disk across two boots 33, the stick check 10, and the suites
+158 of 158 and 154 of 154.

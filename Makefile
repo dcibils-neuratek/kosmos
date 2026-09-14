@@ -1512,10 +1512,10 @@ $(HOSTDIR)/test_loaderfb: tools/test_loaderfb.c hal/pc/loader_fb.c hal/pc/multib
 # kernel agrees. With a kernel image as its argument it also asks that the
 # build's `kosmos.bin` is one the loader will take.
 #
-$(HOSTDIR)/test_efiboot: tools/test_efiboot.c boot/efi/mbi.c boot/efi/mbi.h hal/pc/loader_fb.c hal/pc/multiboot2.h
+$(HOSTDIR)/test_efiboot: tools/test_efiboot.c boot/efi/mbi.c boot/efi/mbi.h boot/efi/sums.c boot/efi/sums.h hal/pc/loader_fb.c hal/pc/multiboot2.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -I boot/efi -I hal/pc -o $@ \
-	        tools/test_efiboot.c boot/efi/mbi.c hal/pc/loader_fb.c
+	        tools/test_efiboot.c boot/efi/mbi.c boot/efi/sums.c hal/pc/loader_fb.c
 
 #
 # And the Super Nintendo's picture at a scale: the only code between the
@@ -2528,17 +2528,20 @@ EFI_CFLAGS := -std=c11 -ffreestanding -fno-stack-protector -mno-red-zone \
               -fno-tree-loop-distribute-patterns -O2 -Wall -Wextra -Werror
 
 $(EFI_LOADER): boot/efi/loader.c boot/efi/mbi.c boot/efi/mbi.h boot/efi/trampoline.S \
-               $(X86_BUILD)/font_8x16.c
+               boot/efi/sums.c boot/efi/sums.h $(X86_BUILD)/font_8x16.c
 	@mkdir -p $(X86_BUILD)/efi
 	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/loader.c -o $(X86_BUILD)/efi/loader.o
 	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/mbi.c -o $(X86_BUILD)/efi/mbi.o
+	x86_64-elf-gcc $(EFI_CFLAGS) -c boot/efi/sums.c -o $(X86_BUILD)/efi/sums.o
 	x86_64-elf-gcc $(EFI_CFLAGS) -c $(X86_BUILD)/font_8x16.c -o $(X86_BUILD)/efi/font.o
 	x86_64-elf-gcc -c boot/efi/trampoline.S -o $(X86_BUILD)/efi/trampoline.o
 	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/loader.o
 	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/mbi.o
+	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/sums.o
 	x86_64-elf-objcopy -R .comment $(X86_BUILD)/efi/font.o
 	x86_64-elf-ld -m i386pep --subsystem 10 -e efi_main --image-base 0x10000000 \
-	    -o $@ $(X86_BUILD)/efi/loader.o $(X86_BUILD)/efi/mbi.o $(X86_BUILD)/efi/font.o \
+	    -o $@ $(X86_BUILD)/efi/loader.o $(X86_BUILD)/efi/mbi.o $(X86_BUILD)/efi/sums.o \
+	    $(X86_BUILD)/efi/font.o \
 	    $(X86_BUILD)/efi/trampoline.o
 	@ls -l $@
 

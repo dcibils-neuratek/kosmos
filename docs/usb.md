@@ -9,7 +9,7 @@ else.
 | ---- | --------------- | ----- |
 | 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
-| 3. a mouse | a HID boot mouse's reports moving the pointer the TrackPoint moves | built, and run under QEMU |
+| 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built; on the ThinkPad in jumps, until the ERDP fix is seen there |
 | 4. bulk transfers | bytes to and from an endpoint | not started |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
 | 6. Ethernet | a USB-C adapter carrying the network stack | not started |

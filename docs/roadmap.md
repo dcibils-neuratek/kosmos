@@ -194,11 +194,12 @@ is the one that makes the machine Diego owns behave like a computer:
    64 MB disk and with a 32 MB one, and everything QEMU can reproduce of that
    machine boots the same image (`boot.md` §3). In hand: `mkusb.sh` reads
    every stick back through `tools/stickcheck.py`, and the kernel draws on
-   that machine's screen from stage two. Not yet: a check *on the machine*
-   that the loader read the build's bytes - the build writing the kernel's
-   and the disk's page sums onto the stick, and the loader comparing its read
-   with them and refusing on the screen with the pages that differ. **GRUB
-   comes back after that**, Diego's decision: it was never the cause, and it
+   that machine's screen from stage two. **And since 14 September a check on
+   the machine** that the loader read the build's bytes: the build writes the
+   kernel's and the disk's page sums onto the stick, and the loader holds its
+   read to them and refuses on the screen with the first page that differs
+   (`boot.md` §3). What it says on the ThinkPad is the next measurement.
+   **GRUB comes back after that**, Diego's decision: it was never the cause, and it
    brings boot arguments and a screen mode per machine.
 
 **Agreed on 2026-09-10**, after the ThinkPad ran spread across eight

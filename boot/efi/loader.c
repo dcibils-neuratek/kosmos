@@ -44,6 +44,7 @@
 #include <stdint.h>
 
 #include "mbi.h"
+#include "sums.h"
 
 #define EFIAPI __attribute__((ms_abi))
 
@@ -402,17 +403,11 @@ static uint64_t get64(const uint8_t *p)
     return (uint64_t)get32(p) | ((uint64_t)get32(p + 4) << 32);
 }
 
-/* FNV-1a: a changed byte changes the answer, and it needs no tables. */
+/* FNV-1a: a changed byte changes the answer, and it needs no tables. The
+ * one in `sums.c`, which is the one the build's sums are taken with. */
 static uint64_t fingerprint(const uint8_t *bytes, uint64_t size)
 {
-    uint64_t h = 0xcbf29ce484222325ull;
-    uint64_t i;
-
-    for (i = 0; i < size; i++) {
-        h = (h ^ bytes[i]) * 0x100000001b3ull;
-    }
-
-    return h;
+    return sums_fnv(bytes, size);
 }
 
 /*------------------------------------------------------------------------
@@ -726,6 +721,89 @@ static efi_status read_all(struct efi_file *file, uint8_t *into, uint64_t size)
     }
 
     return EFI_SUCCESS;
+}
+
+/*
+ * **Whether what was read is what the build wrote**, against the sums
+ * `mkusb_image.py` put beside the file.
+ *
+ * Everything else this loader checks is about memory: its fingerprints are
+ * taken from what was read, so a stick that handed over bytes the build
+ * never wrote passed all of it. A difference is a refusal - said with how
+ * many pages and the first, while there is a screen to say it on. A stick
+ * with no sums beside the file, made before they existed, is said to be
+ * unchecked and used, and `checked` is left false for the kernel's line.
+ *
+ * Answers NULL when the file may be used, and the refusal otherwise.
+ */
+static const char *against_build(struct efi_file *root, const char16 *name,
+                                 const char *what, const uint8_t *data,
+                                 uint64_t size, bool *checked)
+{
+    struct efi_file *file;
+    struct sums_result r;
+    struct line l;
+    uint64_t sums_size = 0;
+    void *pool = NULL;
+
+    *checked = false;
+
+    if (open_file(root, name, &file, &sums_size) != EFI_SUCCESS) {
+        begin(&l);
+        add_text(&l, what);
+        add_text(&l, ": no sums beside it on this stick, so what was read is "
+                     "not checked against the build");
+        send(&l);
+        return NULL;
+    }
+
+    if (sums_size > 64u * 1024 * 1024
+        || boot->allocate_pool(LOADER_DATA, sums_size + 1, &pool) != EFI_SUCCESS
+        || read_all(file, pool, sums_size) != EFI_SUCCESS) {
+        file->close(file);
+        return "the build's sums on this stick could not be read";
+    }
+
+    file->close(file);
+    sums_check(data, size, pool, sums_size, &r);
+    begin(&l);
+    add_text(&l, what);
+
+    switch (r.verdict) {
+    case SUMS_SAME:
+        add_text(&l, " is the build's, page for page: ");
+        add_dec(&l, r.pages);
+        add_text(&l, " pages");
+        send(&l);
+        *checked = true;
+        return NULL;
+
+    case SUMS_DIFFER:
+        add_text(&l, ": ");
+        add_dec(&l, r.wrong);
+        add_text(&l, " of its ");
+        add_dec(&l, r.pages);
+        add_text(&l, r.wrong == 1 ? " pages is not the build's, the first page "
+                                  : " pages are not the build's, the first page ");
+        add_dec(&l, r.first);
+        add_text(&l, ", at byte ");
+        add_hex(&l, r.first * SUMS_PAGE, 8);
+        send(&l);
+        return "this stick does not hold the files the build wrote";
+
+    case SUMS_SIZE:
+        add_text(&l, " is ");
+        add_dec(&l, size);
+        add_text(&l, " bytes on this stick, and the build wrote ");
+        add_dec(&l, r.built);
+        send(&l);
+        return "this stick does not hold the files the build wrote";
+
+    default:
+        add_text(&l, ": the sums beside it are not a sums file");
+        send(&l);
+        return "the build's sums on this stick are damaged";
+    }
 }
 
 /*------------------------------------------------------------------------
@@ -1135,6 +1213,7 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     void *pool;
     struct mbi m;
     const char *console_said;
+    bool kernel_checked = false, disk_checked = false;
     uint32_t screen_mode, screen_modes;
 
     sys = table;
@@ -1246,6 +1325,13 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
         return refuse("the kernel could not be read off the stick", status);
     }
 
+    why = against_build(root, u"\\boot\\kosmos.sums", "the kernel", k.a,
+                        kernel_size, &kernel_checked);
+
+    if (why != NULL) {
+        return refuse(why, EFI_SUCCESS);
+    }
+
     k.pages = ((uint64_t)k.img.load_bytes + PAGE - 1) / PAGE;
 
     if (boot->allocate_pool(LOADER_DATA, k.pages * PAGE, &pool) != EFI_SUCCESS) {
@@ -1315,6 +1401,14 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
 
         disk_print = fingerprint((uint8_t *)(uintptr_t)disk_at, disk_size);
 
+        why = against_build(root, u"\\boot\\disk.sums", "the disk",
+                            (const uint8_t *)(uintptr_t)disk_at, disk_size,
+                            &disk_checked);
+
+        if (why != NULL) {
+            return refuse(why, EFI_SUCCESS);
+        }
+
         begin(&l);
         add_text(&l, "the disk: ");
         add_hex(&l, disk_at, 8);
@@ -1346,6 +1440,13 @@ efi_status efi_main(efi_handle image_handle, struct efi_system_table *table)
     append(cmdline, &cmdline_n, "00000 kosmos-boot/disk=");
     disk_word = cmdline + cmdline_n;
     append(cmdline, &cmdline_n, disk_size > 0 ? "same" : "none");
+
+    /* Whether every file it read was held to the build's sums: a difference
+     * never reaches the kernel, so this is `same`, or `none` for a stick
+     * with a file that carried no sums. */
+    append(cmdline, &cmdline_n, " kosmos-boot/build=");
+    append(cmdline, &cmdline_n,
+           kernel_checked && (disk_size == 0 || disk_checked) ? "same" : "none");
 
     find_screen(&screen);
 

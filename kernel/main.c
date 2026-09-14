@@ -732,6 +732,18 @@ void kmain(void)
             kputu(count[2]);
             kputs(" lost; the disk: ");
             kputs(disk);
+
+            /* And whether the stick's bytes were the build's, from a loader
+             * that knows - one that does not leaves no word, and no clause. */
+            {
+                char build[8];
+
+                if (hal_boot_option("kosmos-boot/build", build, sizeof(build))) {
+                    kputs("; the stick against the build: ");
+                    kputs(build);
+                }
+            }
+
             boot_fact_end();
         }
     }

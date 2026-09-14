@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "mbi.h"
+#include "sums.h"
 #include "multiboot.h"
 #include "multiboot2.h"
 
@@ -397,11 +398,102 @@ static void test_mbi(void)
           "a structure that does not fit is not refused");
 }
 
+/*------------------------------------------------------------------------
+ * Whether a read is the build's (`sums.h`).
+ *----------------------------------------------------------------------*/
+
+#define SUMS_DATA   (3u * 4096u + 100u)
+
+static uint8_t sums_data[SUMS_DATA];
+static uint8_t sums_file[24u + 4u * 8u];
+
+/* A sums file for `sums_data` made here, field by field, the way
+ * `mkusb_image.py` makes one - so the check is held to the layout, and not to
+ * itself. */
+static void sums_make(uint64_t size, uint64_t page_size)
+{
+    unsigned page;
+
+    memcpy(sums_file, "KOSMSUMS", 8);
+    put64(sums_file + 8, size);
+    put64(sums_file + 16, page_size);
+
+    for (page = 0; page < 4; page++) {
+        uint64_t left = size - (uint64_t)page * 4096u;
+
+        put64(sums_file + 24 + page * 8,
+              sums_fnv(sums_data + page * 4096u, left < 4096u ? left : 4096u));
+    }
+}
+
+static void test_sums(void)
+{
+    struct sums_result r;
+    unsigned i;
+
+    /* FNV-1a's own published vectors, which are what pin the constants. */
+    check(sums_fnv((const uint8_t *)"", 0) == 0xcbf29ce484222325ull,
+          "FNV-1a of nothing is not its offset basis");
+    check(sums_fnv((const uint8_t *)"a", 1) == 0xaf63dc4c8601ec8cull,
+          "FNV-1a of \"a\" is not 0xaf63dc4c8601ec8c");
+
+    for (i = 0; i < SUMS_DATA; i++) {
+        sums_data[i] = (uint8_t)(i * 13 + 7);
+    }
+
+    sums_make(SUMS_DATA, 4096);
+    sums_check(sums_data, SUMS_DATA, sums_file, sizeof(sums_file), &r);
+    check(r.verdict == SUMS_SAME && r.pages == 4 && r.wrong == 0,
+          "a file and its own sums are not the same, four pages");
+
+    sums_data[2u * 4096u + 9u] ^= 0x40;
+    sums_check(sums_data, SUMS_DATA, sums_file, sizeof(sums_file), &r);
+    check(r.verdict == SUMS_DIFFER && r.wrong == 1 && r.first == 2,
+          "one byte changed in the third page is not one page wrong, the "
+          "third");
+    sums_data[2u * 4096u + 9u] ^= 0x40;
+
+    sums_data[SUMS_DATA - 1] ^= 1;
+    sums_check(sums_data, SUMS_DATA, sums_file, sizeof(sums_file), &r);
+    check(r.verdict == SUMS_DIFFER && r.first == 3,
+          "the last, short page is not checked to its last byte");
+    sums_data[SUMS_DATA - 1] ^= 1;
+
+    sums_check(sums_data, SUMS_DATA - 1, sums_file, sizeof(sums_file), &r);
+    check(r.verdict == SUMS_SIZE && r.built == SUMS_DATA,
+          "a file one byte short is not refused for its size");
+
+    sums_check(sums_data, SUMS_DATA, sums_file, sizeof(sums_file) - 8, &r);
+    check(r.verdict == SUMS_MALFORMED,
+          "sums for three pages are taken for a file of four");
+
+    sums_file[0] = 'k';
+    sums_check(sums_data, SUMS_DATA, sums_file, sizeof(sums_file), &r);
+    check(r.verdict == SUMS_MALFORMED, "a sums file without its magic is used");
+    sums_file[0] = 'K';
+
+    sums_make(SUMS_DATA, 4095);
+    sums_check(sums_data, SUMS_DATA, sums_file, sizeof(sums_file), &r);
+    check(r.verdict == SUMS_MALFORMED,
+          "sums taken over pages that are not 4096 bytes are used");
+
+    sums_check(sums_data, SUMS_DATA, NULL, 0, &r);
+    check(r.verdict == SUMS_MALFORMED, "no sums at all are taken for sums");
+
+    memcpy(sums_file, "KOSMSUMS", 8);
+    put64(sums_file + 8, 0);
+    put64(sums_file + 16, 4096);
+    sums_check(sums_data, 0, sums_file, 24, &r);
+    check(r.verdict == SUMS_SAME && r.pages == 0,
+          "an empty file is not the same as its empty sums");
+}
+
 int main(int argc, char **argv)
 {
     test_header();
     test_map();
     test_mbi();
+    test_sums();
 
     if (argc > 1) {
         test_kernel(argv[1]);

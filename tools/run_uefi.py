@@ -96,6 +96,43 @@ def firmware():
     return (code, varsfd), None
 
 
+def damaged_copy(iso):
+    """A copy of the stick `iso` with one byte of `\\boot\\kosmos.bin` changed
+    - the thirteenth byte of its fourth page - and its sums as the build wrote
+    them. None when it cannot be made.
+
+    The filesystem's first sector is read out of the GPT: the first entry's
+    starting LBA, at byte 32 of the entry array that begins at LBA 2.
+    """
+    work = tempfile.mkdtemp(prefix="kosmos-damaged-")
+    copy = os.path.join(work, "damaged.img")
+    kernel = os.path.join(work, "kosmos.bin")
+
+    try:
+        shutil.copy(iso, copy)
+
+        with open(copy, "rb") as handle:
+            head = handle.read(4096)
+
+        at = struct.unpack_from("<Q", head, 2 * 512 + 32)[0] * 512
+        image = "%s@@%d" % (copy, at)
+
+        subprocess.run(["mcopy", "-n", "-i", image, "::/boot/kosmos.bin",
+                        kernel], check=True, capture_output=True)
+
+        with open(kernel, "r+b") as handle:
+            handle.seek(3 * 4096 + 12)
+            byte = handle.read(1)
+            handle.seek(3 * 4096 + 12)
+            handle.write(bytes([byte[0] ^ 0x01]))
+
+        subprocess.run(["mcopy", "-o", "-i", image, kernel,
+                        "::/boot/kosmos.bin"], check=True, capture_output=True)
+        return copy
+    except (OSError, subprocess.CalledProcessError, struct.error):
+        return None
+
+
 def capture(iso, moments):
     """Boots once and screendumps at each moment; returns frames and serial.
 
@@ -264,9 +301,18 @@ class Gdb:
         return self.ask("M%x,%x:%s" % (at, len(data), data.hex())) == "OK"
 
     def run_to(self, address, timeout):
-        """Continues to a hardware breakpoint there, and removes it."""
+        """Continues to a hardware breakpoint there, and removes it.
+
+        False when the guest does not get there in time - a stick the loader
+        refuses never does - and then the guest is still running, breakpoint
+        and all, until QEMU is killed.
+        """
         placed = self.ask("Z1,%x,1" % address) == "OK"
-        stop = self.ask("c", timeout=timeout) if placed else ""
+
+        try:
+            stop = self.ask("c", timeout=timeout) if placed else ""
+        except socket.timeout:
+            return False
 
         self.ask("z1,%x,1" % address)
         return placed and stop.startswith("T")
@@ -397,7 +443,9 @@ def thinkpad_screen(image, elf):
         # and whichever points at something shaped like a Multiboot 2
         # structure - a sane total size, a zero reserved word - is it.
         #
-        if g.run_to(symbols["_start"], 180.0):
+        started = g.run_to(symbols["_start"], 180.0)
+
+        if started:
             regs = g.ask("g")
             info = None
 
@@ -434,6 +482,15 @@ def thinkpad_screen(image, elf):
                         break
 
                     at += (size + 7) & ~7
+
+        #
+        # A kernel that never started draws nothing and reaches no prompt, so
+        # there is nothing to wait for: what the machine said goes back, and
+        # the checks name each thing that did not happen. Until 14 September
+        # the socket's timeout ended the whole run in a traceback here.
+        #
+        if not started:
+            return heard.decode("utf-8", "replace"), False, None, None
 
         if tagged and g.run_to(symbols["pmm_init"], 60.0):
             raw = pmemsave(mon, THINKPAD_SCREEN, pitch * height,
@@ -668,6 +725,19 @@ def main():
           "the loader never handed over: " + repr(loader[-3:]))
 
     #
+    # **And the kernel read off the stick is the one the build wrote.** Every
+    # check above is about memory: the loader's fingerprints are of what it
+    # read, so a stick handing back other bytes passed all of them, and
+    # nothing the ThinkPad has shown rules that out. `mkusb_image.py` puts the
+    # build's sums beside each file now, and the loader holds its read to
+    # them.
+    #
+    check(any(l.startswith("kosmos-boot: the kernel is the build's, page for "
+                           "page: ") for l in loader),
+          "the loader did not say the kernel it read is the build's: "
+          + repr([l for l in loader if "kernel" in l][:4]))
+
+    #
     # **And the kernel's account of it**: what the loader repaired before and
     # after the firmware let go, written into the command line and read back
     # at boot. Nothing repaired and nothing lost is the only healthy answer
@@ -692,10 +762,24 @@ def main():
     carried = any(l.startswith("kosmos-boot: the disk: 0x") for l in loader)
     wanted = "the disk: same" if carried else "the disk: none"
 
-    check(handed.endswith(wanted),
+    check((wanted + ";") in (handed + ";"),
           "the kernel does not say `%s` after the loader %s: %s"
           % (wanted, "read a disk" if carried else "found none",
              handed or "no loader line"))
+
+    #
+    # **And the disk the build wrote**, when there is one, and the kernel told
+    # that everything the loader read was held to the build's sums.
+    #
+    if carried:
+        check(any(l.startswith("kosmos-boot: the disk is the build's, page for "
+                               "page: ") for l in loader),
+              "the loader did not say the disk it read is the build's: "
+              + repr([l for l in loader if "disk" in l][:4]))
+
+    check(handed.endswith("; the stick against the build: same"),
+          "the kernel does not say its loader held the stick to the build's "
+          "sums: " + (handed or "no loader line"))
 
     #
     # **And the kernel off the firmware's memory**, which is what moving it to
@@ -797,6 +881,33 @@ def main():
                   "the loader's refusal is not drawn in the lower half of the "
                   "screen: %.1f%% ground, %.2f%% ink"
                   % (100.0 * ground_low, 100.0 * ink_low))
+
+    #
+    # **A stick that does not hold what the build wrote is refused, with the
+    # page.** The same image with one byte of `kosmos.bin` changed on it, and
+    # the sums left as the build wrote them: what a stick returning wrong
+    # bytes looks like to the loader. Made here from the image being tested,
+    # through the partition table's own word for where the filesystem starts.
+    #
+    damaged = damaged_copy(iso)
+
+    if damaged is None:
+        fails.append("could not make a copy of the stick with one byte of its "
+                     "kernel changed")
+    else:
+        dframes, dserial = capture(damaged, (REFUSAL_AT,))
+        dloader = [l.strip() for l in (dserial or "").splitlines()
+                   if "kosmos-boot:" in l]
+
+        check("Press a key to return to the firmware" in (dserial or "")
+              and "Welcome to Kosmos" not in (dserial or ""),
+              "a stick with one byte of its kernel changed was not refused: "
+              + repr(dloader[-4:]))
+        check(any(l.startswith("kosmos-boot: the kernel: 1 of its ")
+                  and "pages is not the build's, the first page 3, at byte "
+                      "0x00003000" in l for l in dloader),
+              "the refusal of a changed kernel did not name the one page, the "
+              "fourth: " + repr(dloader[-4:]))
 
     if fails:
         print("FAIL: %d of %d checks booting through Kosmos's loader under "

@@ -36,6 +36,8 @@ GPT disk with one FAT32 EFI System Partition of 192 MB (the size is FAT32's,
 | `\boot\kosmos.bin` | the kernel, a flat image with a Multiboot 2 header |
 | `\boot\kosmos.cmdline` | the kernel's command line, when `KOSMOS_ARGS` gave one |
 | `\boot\disk.img` | a kfs disk, when there is one; 32 MB at most for now |
+| `\boot\kosmos.sums` | the build's sums of the kernel, a 64-bit FNV-1a a page, which the loader holds its read to |
+| `\boot\disk.sums` | the same for the disk, when there is one |
 
 Both paths end in the same place: `boot/x86_64/start.S` in 32-bit protected
 mode, paging off, `eax` the Multiboot 2 magic and `ebx` the information
@@ -143,13 +145,19 @@ order, and why each step is there:
    | boot services code or data (3, 4) | **borrows** it: the firmware's until ExitBootServices, nobody's after, so the kernel is copied in then |
    | anything else - ACPI, runtime services, reserved, a device window, or a loaded image's pages | **refuses**, printing each entry and waiting for a key |
 
-3. **Reads the kernel once, copies it twice and takes a fingerprint of every
-   page** (FNV-1a), then checks that every buffer it has allocated lies
-   outside the kernel's range. **The fingerprints are of what was read**: they
-   catch memory changing afterwards, and not a stick that gave back bytes the
-   build never wrote - nothing here knows what the build wrote.
+3. **Reads the kernel once, holds it to the build's sums, copies it twice
+   and takes a fingerprint of every page** (FNV-1a), then checks that every
+   buffer it has allocated lies outside the kernel's range. **The sums are
+   what the build wrote**: `mkusb_image.py` puts `\boot\kosmos.sums` beside the
+   kernel, and a read that differs from them is refused on the screen, with
+   how many pages and the first (`boot/efi/sums.h`). **The fingerprints are of
+   what was read**, and catch memory changing afterwards. Until 14 September
+   there were only fingerprints, so a stick that gave back bytes the build
+   never wrote passed everything here. A stick with no sums, made before they
+   existed, says so and is used.
 4. **Reads the disk** into memory below 4 GB, because a module's addresses
-   are 32 bits, and fingerprints it.
+   are 32 bits, holds it to `\boot\disk.sums` the same way, and fingerprints
+   it.
 5. **Reads `\boot\kosmos.cmdline`**, keeping only the characters
    `mkusb_image.py` allows, and appends four words of its own.
 6. **Finds the screen** - the firmware's current GOP mode, as GRUB passed on -
@@ -382,7 +390,9 @@ address is.
   images and on the build's own `kosmos.bin`, the map conversion on an
   unsorted, fragmented map with oversized descriptors, and an information
   structure built by `mbi.c` and read back with the kernel's own `mb2_find` and
-  `mb2_framebuffer_from`. `testing.md` §18.42 has the controls.
+  `mb2_framebuffer_from`; and whether a read is the build's (`sums.c`), from
+  FNV-1a's own vectors to a file a byte short. `testing.md` §18.42 and §18.50
+  have the controls.
 - **`tools/run_uefi.py`**, in `make test`: the stick `mkusb_image.py` makes,
   with a 4 MB disk `kfs.lua` made, booted under OVMF on an xHCI controller as
   a USB drive - the loader's lines, the kernel's line about what it was
@@ -390,7 +400,11 @@ address is.
   at 16 MB, nothing of the firmware's under it, and the screen, ACPI, SMBIOS
   and the other processors through that path. **And a refusal**: a second
   stick, whose kernel is zeros, must be refused on the serial line and drawn
-  on in the lower half of the screen by the loader itself. **And the
+  on in the lower half of the screen by the loader itself. **And a stick
+  holding other bytes**: a copy of the first with one byte of its kernel
+  changed, its sums as the build wrote them, refused with the page named -
+  where the first stick's loader and kernel both say it was the build's.
+  **And the
   ThinkPad's screen**: the first stick again, stopped at the kernel's entry
   with QEMU's gdbstub and its framebuffer tag rewritten to `0x4000000000` at
   1920x1080, over memory that is in no map the firmware hands over - the boot
@@ -406,8 +420,9 @@ runs, whether its firmware writes into memory it has handed out, and the
 console-control switch - under OVMF the loader never has to make it, so that
 call has run only on the ThinkPad, if at all - and whether that firmware
 reads back the bytes the stick holds. QEMU reads the image file; `mkusb.sh`
-now checks the stick on the Mac, and nothing yet checks the read on the
-machine itself. The loader's lines on that machine are the measurement.
+now checks the stick on the Mac, and the loader checks its own read on the
+machine against the build's sums. The loader's lines on that machine are the
+measurement.
 
 ---
 

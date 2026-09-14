@@ -108,6 +108,49 @@ def run(argv, **kw):
     return result.stdout
 
 
+def page_sums(path):
+    """The sums file the loader holds a read of `path` to (`boot/efi/sums.h`):
+    "KOSMSUMS", the file's size, the page size, and FNV-1a over each 4096
+    bytes of it.
+
+    A page of zeros is summed once, because most of a disk image is zeros and
+    this is Python: a 32 MB disk would otherwise be thirty-three million turns
+    of the loop below.
+    """
+    with open(path, "rb") as handle:
+        data = handle.read()
+
+    def fnv(chunk):
+        h = 0xcbf29ce484222325
+
+        for b in chunk:
+            h = ((h ^ b) * 0x100000001b3) & 0xffffffffffffffff
+
+        return h
+
+    zeros = bytes(4096)
+    zero_sum = fnv(zeros)
+    out = bytearray(b"KOSMSUMS")
+    out += struct.pack("<QQ", len(data), 4096)
+
+    for at in range(0, len(data), 4096):
+        chunk = data[at:at + 4096]
+        out += struct.pack("<Q", zero_sum if chunk == zeros else fnv(chunk))
+
+    return bytes(out)
+
+
+def put_sums(image, path, name):
+    """`path`'s sums, onto the stick as `name`."""
+    sums = image + ".sums"
+
+    with open(sums, "wb") as handle:
+        handle.write(page_sums(path))
+
+    run(["mcopy", "-i", image, sums, name])
+    os.remove(sums)
+
+
 def build_esp(kernel, loader, out, args="", disk=None):
     """A FAT filesystem holding the loader, the kernel and what it reads."""
     size = ESP_MB * 1024 * 1024
@@ -132,6 +175,10 @@ def build_esp(kernel, loader, out, args="", disk=None):
     run(["mcopy", "-i", out, loader, "::/EFI/BOOT/BOOTX64.EFI"])
     run(["mcopy", "-i", out, kernel, "::/boot/kosmos.bin"])
 
+    # And the build's sums of it, which the loader holds its read to: a stick
+    # that hands back other bytes is refused on the screen, with the page.
+    put_sums(out, kernel, "::/boot/kosmos.sums")
+
     # The kernel's command line, a file the loader reads rather than a line
     # in a GRUB script. The words were checked in main().
     if args:
@@ -145,6 +192,7 @@ def build_esp(kernel, loader, out, args="", disk=None):
 
     if disk:
         run(["mcopy", "-i", out, disk, "::/boot/disk.img"])
+        put_sums(out, disk, "::/boot/disk.sums")
 
     return size
 

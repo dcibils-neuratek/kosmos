@@ -2,11 +2,39 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 ---
 
 ## Where this left off
+
+### 14 September, small hours: the stick held to what the build wrote
+
+**The roadmap's "before step four", built**: a check on the machine that the
+loader read the build's bytes. Everything the loader checked was about memory
+- its fingerprints are of what it read - so a stick returning other bytes
+passed all of it, and nothing the ThinkPad has shown rules that out.
+
+- **`mkusb_image.py` writes `\boot\kosmos.sums` and `\boot\disk.sums`**, and
+  the loader holds each read to them (`boot/efi/sums.c`): the build's, page
+  for page, or a refusal on the screen naming how many pages and the first.
+  The kernel's line says `the stick against the build: same`.
+- **Tested**: `test_efiboot` 59 - FNV-1a's vectors, a changed byte, the last
+  short page, the wrong size, wrong sums - and `run_uefi.py` 34, a stick whose
+  kernel has one byte changed refused by page; controls in `testing.md`
+  §18.50.
+- **`run_uefi.py` reports a good stick that never reaches the kernel**,
+  where it used to die in a socket timeout before printing anything - found
+  by the control that breaks the build's sums.
+- **The next ThinkPad stick carries this loader, which has not booted
+  there**: an experiment until it does, offered beside a proven stick. On it
+  `log loader` also says whether the stick held what the build wrote.
+
+**Next, with Diego:** whether the ERDP stick's mouse is smooth - the
+photograph `log xhci` after moving the mouse and pulling it out, where the
+naming steps should be milliseconds apart and few reports found by looking.
+Then This Machine on the ThinkPad, which is newer than any stick he has, and
+this loader - both on a stick offered as the experiment it is.
 
 ### 14 September, small hours: the disk started once
 

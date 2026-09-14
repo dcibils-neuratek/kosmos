@@ -681,7 +681,9 @@ every check under OVMF, which is necessary and not sufficient. So:
 - **`tools/mkusb.sh` reads the stick back after writing it, and a stick that
   does not hold its image is not booted.** Nothing had ever checked that the
   machine is given the bytes the build wrote: `dd` did not read back and the
-  loader fingerprints its own read (`docs/boot.md`).
+  loader fingerprints its own read (`docs/boot.md`). Since 14 September the
+  loader holds that read to the build's sums as well, and refuses a stick
+  that differs, naming the page.
 - **The table is read before a stick is handed over** - not a summary, and
   not a memory of the table.
 - **A layout that has not booted there is offered as the experiment it is**,
