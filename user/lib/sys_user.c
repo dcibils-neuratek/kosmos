@@ -1713,9 +1713,11 @@ static int l_asset(lua_State *L)
  * A large *file* is a different question and gets a different answer - a
  * mapped region, see design.md 8.4 - because that is megabytes.
  */
-/* One filesystem block per call, which is what the kernel's bounce buffer
- * holds. Named here so the two sides cannot drift apart silently. */
-#define DISK_MAX_READ  4096
+/* The most one call moves, which is what the kernel's bounce buffer holds:
+ * 124 KB since storage at full speed, step 3. `sys.disk()` passes on the
+ * kernel's own number as `most`; this is only the ceiling a Lua buffer is
+ * sized against. */
+#define DISK_MAX_READ  (31 * 4096)
 
 static int l_disk(lua_State *L)
 {
@@ -1735,6 +1737,9 @@ static int l_disk(lua_State *L)
     lua_setfield(L, -2, "sector_size");
     lua_pushinteger(L, (lua_Integer)(info.sectors * info.sector_size));
     lua_setfield(L, -2, "bytes");
+
+    lua_pushinteger(L, (lua_Integer)(info.most != 0 ? info.most : 4096));
+    lua_setfield(L, -2, "most");
 
     return 1;
 }

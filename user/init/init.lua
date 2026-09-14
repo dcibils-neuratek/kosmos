@@ -2634,7 +2634,9 @@ local function diskfs_handlers(state)
 
         local from = tonumber(req.offset) or 0
         local want = tonumber(req.bytes) or node.size
-        local STEP = 64 * 1024
+        -- A disk call's worth: 124 KB, so a window is one call to the disk
+        -- rather than two (storage at full speed, step 3).
+        local STEP = 31 * 4096
         local done = 0
 
         while done < want do
@@ -3420,7 +3422,8 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
     if not found() then return nil, NOT_YET end
 
     return { sectors = sectors, sector_size = SECTOR,
-             bytes = sectors * SECTOR, where = where, flush_why = flush_why }
+             bytes = sectors * SECTOR, where = where, flush_why = flush_why,
+             most = MOST }
   end
 
   sys.disk_read = function(sector, bytes)

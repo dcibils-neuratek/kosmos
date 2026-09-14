@@ -233,12 +233,83 @@ end
 
 local txn = nil
 
+--
+-- The most one disk call moves, in whole blocks: 31 on a stick or the
+-- kernel's disk since storage at full speed, step 3, where every call was one
+-- block. Asked of `sys.disk()` and kept once it answers; a disk that does not
+-- say moves a block at a time, which is what every disk here once did, and a
+-- disk not there yet is asked again next time rather than remembered as one.
+--
+local run_blocks = nil
+
+local function blocks_a_call()
+  if run_blocks then return run_blocks end
+
+  -- A stand-in with no `sys.disk` at all - a host tool's - moves a block at a
+  -- time, and is not asked again.
+  if type(sys.disk) ~= "function" then
+    run_blocks = 1
+    return run_blocks
+  end
+
+  local d = sys.disk()
+
+  if type(d) ~= "table" then return 1 end
+
+  run_blocks = math.max(1, (tonumber(d.most) or kfs.BLOCK) // kfs.BLOCK)
+  return run_blocks
+end
+
 function kfs.read_block(n)
   if txn and txn.blocks[n] then
     return txn.blocks[n]
   end
 
   return sys.disk_read(n * kfs.PER_BLOCK, kfs.BLOCK)
+end
+
+--
+-- `count` blocks from `first`, as one string, in as few disk calls as the disk
+-- allows. A block the open transaction holds is answered from there, as
+-- `read_block` answers it - so a run with one of those in it is read a block
+-- at a time, which is the rare case and the simple one.
+--
+function kfs.read_blocks(first, count)
+  if txn then
+    for n = first, first + count - 1 do
+      if txn.blocks[n] then
+        local parts = {}
+
+        for m = first, first + count - 1 do
+          local bytes = kfs.read_block(m)
+
+          if not bytes then return nil, "reading a block" end
+
+          parts[#parts + 1] = bytes
+        end
+
+        return table.concat(parts)
+      end
+    end
+  end
+
+  local per = blocks_a_call()
+  local parts = {}
+  local at, left = first, count
+
+  while left > 0 do
+    local n = math.min(per, left)
+    local bytes, why = sys.disk_read(at * kfs.PER_BLOCK, n * kfs.BLOCK)
+
+    if not bytes or #bytes ~= n * kfs.BLOCK then
+      return nil, why or "a short read"
+    end
+
+    parts[#parts + 1] = bytes
+    at, left = at + n, left - n
+  end
+
+  return (#parts == 1) and parts[1] or table.concat(parts)
 end
 
 function kfs.write_block(n, bytes)
@@ -390,6 +461,40 @@ local function raw_write(n, bytes)
 end
 
 --
+-- Blocks that sit one after another from `first`, in as few disk calls as the
+-- disk allows, each padded to a whole block as `raw_write` pads one. It was a
+-- call a block, and a transaction of N blocks was 2N + 3 calls (storage at
+-- full speed, step 3).
+--
+local function write_run(first, blocks)
+  local per = blocks_a_call()
+  local i = 1
+
+  while i <= #blocks do
+    local piece = {}
+
+    for k = i, math.min(#blocks, i + per - 1) do
+      local bytes = blocks[k]
+
+      if #bytes < kfs.BLOCK then
+        bytes = bytes .. string.rep("\0", kfs.BLOCK - #bytes)
+      end
+
+      piece[#piece + 1] = bytes
+    end
+
+    local ok, err = sys.disk_write((first + i - 1) * kfs.PER_BLOCK,
+                                   table.concat(piece))
+
+    if not ok then return nil, err end
+
+    i = i + #piece
+  end
+
+  return true
+end
+
+--
 -- `stop` is where to pretend the power went, and it exists because the
 -- alternative is not testing this at all.
 --
@@ -434,15 +539,17 @@ function kfs.commit(sb, stop)
 
   local desc_bytes = table.concat(descriptor)
 
-  local ok, err = raw_write(at + 1, desc_bytes)
-
-  if not ok then return nil, err end
+  -- The descriptor and the data sit one after another in the journal, so
+  -- they go in together, in as few calls as the disk allows.
+  local journal = { desc_bytes }
 
   for i, bytes in ipairs(data) do
-    ok, err = raw_write(at + 1 + i, bytes)
-
-    if not ok then return nil, err end
+    journal[i + 1] = bytes
   end
+
+  local ok, err = write_run(at + 1, journal)
+
+  if not ok then return nil, err end
 
   -- 2. The commit. One block, and the whole guarantee turns on it.
   local sum = checksum({ desc_bytes, table.unpack(data) })
@@ -456,15 +563,38 @@ function kfs.commit(sb, stop)
     return true
   end
 
-  -- 3. Where the blocks actually belong.
+  -- 3. Where the blocks actually belong. Sorted, so blocks that are
+  --    neighbours on the disk go in one call; the order no longer matters,
+  --    because the commit above has already made each of them what the
+  --    transaction says.
+  local homes = {}
+
   for i, block in ipairs(t.order) do
-    ok, err = raw_write(block, data[i])
+    homes[i] = { block = block, bytes = data[i] }
+  end
+
+  table.sort(homes, function(a, b) return a.block < b.block end)
+
+  local i = 1
+
+  while i <= #homes do
+    local run = { homes[i].bytes }
+    local j = i
+
+    while j < #homes and homes[j + 1].block == homes[j].block + 1 do
+      j = j + 1
+      run[#run + 1] = homes[j].bytes
+    end
+
+    ok, err = write_run(homes[i].block, run)
 
     if not ok then
       -- Left committed on purpose. The next mount replays it and finishes
       -- what this could not, which is exactly the case the journal is for.
       return nil, err
     end
+
+    i = j + 1
   end
 
   -- 4. Done with. A crash before this replays a transaction that has
@@ -764,39 +894,29 @@ function kfs.read_range(sb, node, offset, want)
 
   local parts = {}
   local at = 0                     -- where this extent starts in the file
-  local left = want
+  local finish = offset + want     -- one past the last byte wanted
 
   for _, e in ipairs(node.extents) do
     local span = e.count * kfs.BLOCK
 
-    if left <= 0 then break end
+    if at >= finish then break end
 
-    -- Does the window reach into this extent at all?
+    -- The part of the window inside this extent, read as one run of blocks
+    -- in as few disk calls as the disk allows, and cut to the bytes asked
+    -- for: only its first block can be entered part way, and only its last
+    -- left part way.
     if offset < at + span then
       local from = math.max(offset, at)
+      local to = math.min(finish, at + span)
       local first = (from - at) // kfs.BLOCK
+      local last = (to - at - 1) // kfs.BLOCK
+      local bytes = kfs.read_blocks(e.start + first, last - first + 1)
 
-      for i = first, e.count - 1 do
-        if left <= 0 then break end
+      if not bytes then return nil, "reading a file" end
 
-        local bytes = kfs.read_block(e.start + i)
+      local skip = from - (at + first * kfs.BLOCK)
 
-        if not bytes then return nil, "reading a file" end
-
-        -- Where in this block the window starts. Only the first block of
-        -- the window is ever offset into; the rest begin at zero.
-        local skip = 0
-
-        if at + i * kfs.BLOCK < offset then
-          skip = offset - (at + i * kfs.BLOCK)
-        end
-
-        local piece = bytes:sub(skip + 1, skip + math.min(left,
-                                                          kfs.BLOCK - skip))
-
-        parts[#parts + 1] = piece
-        left = left - #piece
-      end
+      parts[#parts + 1] = bytes:sub(skip + 1, skip + (to - from))
     end
 
     at = at + span
@@ -809,16 +929,21 @@ function kfs.read_file(sb, node)
   local parts = {}
   local left = node.size
 
+  -- An extent at a time, each in as few disk calls as the disk allows.
   for _, e in ipairs(node.extents) do
-    for i = 0, e.count - 1 do
-      if left <= 0 then break end
+    if left <= 0 then break end
 
-      local bytes = kfs.read_block(e.start + i)
-      if not bytes then return nil, "reading a file" end
+    local count = math.min(e.count, (left + kfs.BLOCK - 1) // kfs.BLOCK)
+    local bytes = kfs.read_blocks(e.start, count)
 
-      parts[#parts + 1] = (left < kfs.BLOCK) and bytes:sub(1, left) or bytes
-      left = left - kfs.BLOCK
+    if not bytes then return nil, "reading a file" end
+
+    if left < count * kfs.BLOCK then
+      bytes = bytes:sub(1, left)
     end
+
+    parts[#parts + 1] = bytes
+    left = left - count * kfs.BLOCK
   end
 
   return table.concat(parts)

@@ -963,7 +963,7 @@ struct netinfo {
 struct diskinfo {
     uint64_t sectors;
     uint32_t sector_size;
-    uint32_t reserved;
+    uint32_t most;          /* the most bytes one SYS_DISK_READ or _WRITE moves */
 };
 
 #endif

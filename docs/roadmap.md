@@ -111,10 +111,15 @@ the block path this replaces. In this order, each measured before and after:
    calls are 49 to 66% of a run on the kernel's disk and 70 to 86% on a
    stick's `/home`, because kfs makes one per 4 KB. The ThinkPad's numbers
    are still to take.
-3. **The largest measured cost first.** **Next is batching**, which step 2's
-   shares point at: the kernel's disk call moving up to 124 KB, kfs reading a
-   file's contiguous blocks in as few calls as that allows, and the journal's
-   writes likewise - measured before and after. The candidates reading found:
+3. **The largest measured cost first.** **Batching is built** (`testing.md`
+   §18.65): the kernel's disk call moves up to 124 KB, kfs reads a file's
+   neighbouring blocks in as few calls as that allows, and the journal writes
+   in runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7
+   and 2.4. **Next is the ThinkPad's numbers**, before the write path is touched: under
+   QEMU a write is 81 to 91% kfs, but a profile on the Mac puts kfs's own work
+   at 1.3 ms for the 768 KB file, and QEMU makes CPU work large and its disk
+   small (`testing.md` §18.65). On a real stick, the journal writing every data
+   block twice may be the larger cost. The candidates reading found:
    `kfs`'s bytes through Lua strings; every block a write changes journaled,
    data included, so written twice; and no write bigger than the journal -
    254 blocks with the file's metadata, so under a megabyte, which Disk

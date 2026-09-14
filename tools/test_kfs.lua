@@ -34,12 +34,21 @@ local SECTORS = 8192          -- 4 MB, enough for a layout with room over
 local disk = {}
 local writes = 0
 
+-- Calls rather than blocks: what batching is about (storage at full speed,
+-- step 3). The most one call moves is the kernel's and a stick's, 124 KB.
+local reads = 0
+local write_calls = 0
+local MOST = 31 * 4096
+
 -- Everything the library expects to find in `sys`, and nothing else. If
 -- kfs starts using something new, this fails loudly here rather than
 -- quietly doing nothing.
 sys = {}
 
 function sys.disk_read(sector, bytes)
+  assert(bytes <= MOST, "a disk read of more than one call moves")
+  reads = reads + 1
+
   local out = {}
   local block = sector // 8
 
@@ -51,6 +60,9 @@ function sys.disk_read(sector, bytes)
 end
 
 function sys.disk_write(sector, data)
+  assert(#data <= MOST, "a disk write of more than one call moves")
+  write_calls = write_calls + 1
+
   local block = sector // 8
 
   for i = 0, (#data // 4096) - 1 do
@@ -62,7 +74,8 @@ function sys.disk_write(sector, data)
 end
 
 function sys.disk()
-  return { sectors = SECTORS, sector_size = 512, bytes = SECTORS * 512 }
+  return { sectors = SECTORS, sector_size = 512, bytes = SECTORS * 512,
+           most = MOST }
 end
 
 -- Attributes are serialised with the C serialiser, which is not here. A
@@ -175,6 +188,53 @@ check(kfs.read_range(sb, node, 12000, 10) == "",
       "a window starting past the end is empty")
 check(kfs.read_range(sb, node, 0, #body) == body,
       "and the whole file, a window at a time, is the file")
+
+--------------------------------------------------------------------------
+-- In runs, not a call a block (storage at full speed, step 3).
+--
+-- kfs asked the disk for one 4 KB block at a time and the journal wrote one
+-- at a time, and Disk Benchmark measured those calls as most of every run.
+-- A file's blocks sit next to each other, so they come back in as few calls
+-- as the disk allows, and a commit writes its neighbours together.
+--------------------------------------------------------------------------
+
+sb = fresh()
+
+local forty = {}
+
+for i = 1, 40 do
+  forty[i] = string.rep(string.char(64 + i), 4096)
+end
+
+local big = table.concat(forty)
+
+assert(kfs.store(sb, "/forty", big, 1))
+
+local _, forty_node = kfs.find(sb, "/forty")
+
+reads = 0
+check(kfs.read_file(sb, forty_node) == big, "a 40-block file reads back whole")
+check(reads <= 2,
+      ("a 40-block file is read in at most 2 disk calls, 31 blocks a call, "
+       .. "not %d"):format(reads))
+
+reads = 0
+check(kfs.read_range(sb, forty_node, 4000, 100000) == big:sub(4001, 104000),
+      "a window across 26 blocks reads back")
+check(reads == 1,
+      ("a window across 26 blocks is one disk call, not %d"):format(reads))
+
+assert(kfs.begin())
+assert(kfs.store(sb, "/forty-again", big, 2))
+
+writes, write_calls = 0, 0
+assert(kfs.commit(sb))
+
+check(write_calls * 4 <= writes,
+      ("a commit writes its blocks in runs: %d calls for %d blocks"):format(
+        write_calls, writes))
+check(kfs.read_file(sb, select(2, kfs.find(sb, "/forty-again"))) == big,
+      "and what it wrote in runs reads back")
 
 --------------------------------------------------------------------------
 -- A transaction is invisible until it commits.

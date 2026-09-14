@@ -488,11 +488,16 @@ static long sys_screen(struct process *p, uintptr_t out_ptr)
  * The copy also means the device never writes into a process's address
  * space directly, which is one fewer thing to be careful about.
  *
- * One filesystem block per call. A Lua caller that wants more loops, and a
- * fixed buffer is what `CLAUDE.md` asks for anyway - there is no allocator
- * here to size one against the request.
+ * Up to 124 KB a call: thirty-one pages, which is also the most one USB read
+ * moves, so both disks a filesystem stands on take the same size. It was one
+ * filesystem block a call, and kfs made a system call for every 4 KB it read
+ * or wrote - Disk Benchmark measured that as most of every run (storage at
+ * full speed, `testing.md` 18.64). Still one fixed buffer, as `CLAUDE.md`
+ * asks, since there is no allocator here to size one against the request;
+ * what it costs is 120 KB more of the kernel's .bss. `SYS_DISK_INFO` says the
+ * number, so nothing above has to know it.
  */
-#define DISK_CHUNK  4096u
+#define DISK_CHUNK  (31u * 4096u)
 
 static _Alignas(16) uint8_t disk_bounce[DISK_CHUNK];
 
@@ -1804,7 +1809,7 @@ void syscall_dispatch(struct syscall_frame *sc)
             info.sector_size = 0;
         }
 
-        info.reserved = 0;
+        info.most = DISK_CHUNK;
         *(struct diskinfo *)(uintptr_t)sc->arg[0] = info;
         result = 0;
         break;

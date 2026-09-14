@@ -3868,3 +3868,71 @@ And as written: `make test` whole - Disk Benchmark 8, x86-64 158, the UEFI
 boots 38, the stick check 12, the machine with no display on both boards with
 all 112 programs in `/bin`, the disk 33 across two boots, kfs's format 47, the
 argument audit 112, and the suites 160 of 160 and 156 of 156.
+
+## 18.65 In runs, not a call a block
+
+**Storage at full speed, step 3** (`roadmap.md`, *Being built now*): step 2
+measured the block calls as most of every run, and kfs made one for every
+4 KB. Now the kernel's disk call moves up to 124 KB - thirty-one pages, what
+one USB read moves - and says so in `struct diskinfo`'s `most`, which
+`sys.disk()` passes on and a stick's `/home` answers too; kfs reads a file's
+neighbouring blocks in as few calls as that allows, without cutting them into
+4 KB strings; the disk server hands a read over in 124 KB windows; and the
+journal writes its descriptor and data as one run, and after the commit block
+the blocks' homes sorted into runs.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_kfs.lua`, 53 checks, 6 of them new | the stand-in disk refuses a call over 124 KB and counts calls as well as blocks, and says `most`; a 40-block file reads back whole in at most two calls; a window across 26 blocks is one call and the right bytes; a commit makes at most a quarter as many write calls as it writes blocks, and reads back; and every check that was here - the power-loss window, a replay done twice, an uncommitted journal ignored - still passes with the journal written in runs |
+| `tools/kfs.lua`, the image tool, by hand | it stands in for the disk with no `sys.disk`, so kfs moves a block at a time for it, as it always did: a 1 MB file put into an image and got back identical on the patched kfs |
+| `tools/run_diskbench.py`, 8, and `run_x86.py`'s `usb_diskbench`, 5 | unchanged, and passing with the kernel moving 124 KB a call and kfs reading and journaling in runs |
+
+**Controls**, each in a copy of the patched `kfs.lua` beside a copy of the
+test, so the tree was never touched:
+
+| broken | what failed |
+| ------ | ----------- |
+| C7: a file's blocks read one a call | `test_kfs.lua`, 2 of 53: the 40-block file took 40 calls, and the 26-block window 26 |
+| C8: the journal's writes one block a call | `test_kfs.lua`, 1 of 53: 89 calls for 89 blocks |
+| C9: a window's offset into its first block lost | `test_kfs.lua`, 3 of 53: the new window's bytes, and two window checks that were already here |
+
+**Before and after, under QEMU** - the runs of §18.64 again, on the same
+footing, which is the one comparison QEMU's numbers are good for:
+
+| `/home` on | | sequential read | sequential write | random 4 KB read |
+| ---------- | - | --------------- | ---------------- | ---------------- |
+| the kernel's disk, AArch64 | before | 90.4 MB/s, the device 66% | 26.0 MB/s, 51% | 1897 IOPS, 49% |
+| | after | 352.6 MB/s, 40% | 43.9 MB/s, 9% | 1908 IOPS, 48% |
+| a USB stick's Kosmos partition, x86 | before | 34.3 MB/s, 86% | 13.6 MB/s, 70% | 975 IOPS, 72% |
+| | after | 211.8 MB/s, 57% | 33.3 MB/s, 19% | 958 IOPS, 72% |
+
+**What it says.** Sequential reads are 3.9 and 6.2 times as fast and writes
+1.7 and 2.4, because reading the 768 KB test file is now about seven device
+calls where it was a hundred and ninety-two. A random 4 KB read did not move,
+and was not expected to: it is one block, so it was one call before and is one
+call now, and its time is the request itself - from the program through the
+namespace to the disk server and back. And **a write is now mostly not the
+device**: 81 and 91% of a sequential write is kfs and what is around it - the
+whole file assembled in the disk server's Lua heap, cut into block strings,
+checksummed, and written twice through the journal. That is the next cost.
+
+**And why QEMU cannot say which part of it.** kfs's write path was profiled
+on this Mac, the same `kfs.lua` over a stand-in disk that costs nothing: ten
+stores of the 768 KB file in transactions took 1.3 ms each of kfs's own Lua -
+allocating its blocks about half a millisecond of it, since the bitmap scan
+skips a full byte in one test - plus the journal's checksum, which is C on the
+machine and was a Lua stand-in there. Under QEMU the same write took about
+17 ms, 91% of it not the device. The difference is QEMU: it runs the guest's
+code through a translator many times slower than the silicon, and its disk is a
+file on this Mac that costs almost nothing - so every write here is CPU work
+made large beside a device made small. `CLAUDE.md` says QEMU's numbers are not
+performance numbers, and this is the case that shows it: what a write costs on
+the ThinkPad, where the device is a real stick and the journal writes each
+data block twice, is the ThinkPad's to say.
+
+
+And as written: `make test` whole - kfs's format 53, Disk Benchmark 8, x86-64
+158 with `usb_diskbench`'s 5, the UEFI boots 38, the stick check 12, the
+machine with no display on both boards with all 112 programs in `/bin`, the
+disk 33 across two boots, the argument audit 112, and the suites 160 of 160
+and 156 of 156.

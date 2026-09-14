@@ -19,10 +19,13 @@ waits for it (`roadmap.md`, *Being built now*). Disk Benchmark is drawn -
 (`/lib/diskbench.lua`), a `diskbench` program and `blocks.lua`'s `fill` are
 built and tested (`testing.md` §18.63), and **step 2 says where the time
 went** (§18.64): on a USB stick's `/home` under QEMU the device calls are 70 to
-86% of a run, because kfs makes one per 4 KB. **Next: step 3, batching** - the
-kernel's disk call moving up to 124 KB, kfs reading a file's contiguous blocks
-in as few calls as that allows, and the journal writing likewise - measured
-before and after. The ThinkPad's own numbers are still to take. Diego allowed the
+86% of a run, because kfs makes one per 4 KB. **Step 3, batching, is built**
+(§18.65): the kernel's disk call moves up to 124 KB, kfs reads a file's
+neighbouring blocks in as few calls as that allows, and the journal writes in
+runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7 and
+2.4. **Next: the ThinkPad's numbers**, from a stick with this build: under QEMU a
+write is 81 to 91% kfs, but kfs's own work is 1.3 ms for the 768 KB file on the
+Mac, and QEMU inflates CPU work (§18.65). The ThinkPad's own numbers are still to take. Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
@@ -82,6 +85,29 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: storage at full speed, step 3 - in runs, not a call a block
+
+- **The kernel's disk call moves up to 124 KB** (`DISK_CHUNK`, 31 pages, what
+  one USB read moves), and `struct diskinfo`'s spare field is now `most`, which
+  `sys.disk()` passes on; a stick's `/home` answers the same, and the disk
+  server hands a read over in 124 KB windows.
+- **kfs reads a file's neighbouring blocks in as few calls as that allows**
+  (`read_blocks`, used by `read_range` and `read_file`), and **the journal
+  writes in runs**: descriptor and data together, and after the commit block
+  the homes sorted into runs. Nothing reaches its home before the commit
+  lands, so the power-loss guarantee is the same. A stand-in with no
+  `sys.disk` - `tools/kfs.lua`, the image tool - moves a block at a time.
+- **Under QEMU, before and after**: sequential reads 90.4 to 352.6 MB/s on the
+  kernel's disk and 34.3 to 211.8 on a stick's `/home`; writes 26.0 to 43.9 and
+  13.6 to 33.3; a random 4 KB read unchanged, as one block is one call either
+  way. A write is now 81 to 91% kfs, not the device.
+- **Tested**: `test_kfs.lua` 53, six new; controls C7 to C9, made in copies;
+  `run_diskbench.py` 8 and `usb_diskbench` 5 unchanged. `testing.md` §18.65.
+- **A profile on the Mac says QEMU cannot answer the write path**: kfs's own
+  work for the 768 KB file is 1.3 ms natively, and QEMU's translator makes CPU
+  work large beside a disk that costs nothing (`testing.md` §18.65).
+- **Next**: the ThinkPad's numbers, from a stick with this build.
 
 ### 14 September: storage at full speed, step 2 - where the time went
 
