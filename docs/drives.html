@@ -1,0 +1,462 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  How Kosmos shows drives, before any of it is built: named drives under
+  /drives instead of letters, Tracker's Places, Drives and System, places as
+  shortcuts, one Open and Save window for every app, and a Drives app that
+  shows before it changes anything. Designed with Diego on 14 September 2026
+  after the ThinkPad booted with /home on its USB stick; the page to design
+  the actual apps from. Its drives other than the Kingston are examples.
+-->
+<title>Kosmos Drives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The Kosmos desktop itself, the same in either theme. */
+    --k-desk: #3d63b8;
+    --k-tab: #f2c230;
+    --k-tab-ink: #3a2e00;
+    --k-win: #e4e4e2;
+    --k-pane: #fbfbfa;
+    --k-line: #b9b9b5;
+    --k-ink: #1e1e1e;
+    --k-dim: #6c6c68;
+    --k-sel: #cfdcf5;
+    --k-bar: #4f7fd8;
+    --k-bar-ground: #d6d6d2;
+    --k-boot: #2f8a55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b;
+      --ink: #e6edf3;
+      --muted: #97a3b4;
+      --rule: #283241;
+      --accent: #85a8ff;
+      --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b;
+    --ink: #e6edf3;
+    --muted: #97a3b4;
+    --rule: #283241;
+    --accent: #85a8ff;
+    --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 900px; margin: 0 auto; padding: 44px 22px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 60ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---- the Kosmos mockups ---- */
+  .desk {
+    background: var(--k-desk);
+    border-radius: 10px;
+    padding: 26px 22px 30px;
+    overflow-x: auto;
+    margin-top: 20px;
+  }
+  .win {
+    min-width: 700px;
+    background: var(--k-win);
+    border: 1px solid #7c7c78;
+    box-shadow: 3px 3px 0 rgba(0,0,0,.25);
+    font: 13px/1.35 var(--mono);
+    color: var(--k-ink);
+  }
+  .tab {
+    display: inline-block;
+    background: var(--k-tab);
+    color: var(--k-tab-ink);
+    font-weight: 500;
+    padding: 4px 16px 3px 10px;
+    border: 1px solid #b08a10;
+    border-bottom: 0;
+    margin: -1px 0 0 -1px;
+  }
+  .menus { padding: 4px 10px; border-bottom: 1px solid var(--k-line); }
+  .menus span { margin-right: 18px; }
+  .tools { display: flex; gap: 6px; padding: 7px 10px; align-items: center; }
+  .btn { border: 1px solid var(--k-line); background: var(--k-pane); padding: 2px 9px; }
+  .search { margin-left: auto; width: 170px; border: 1px solid var(--k-line); background: #fff; padding: 2px 6px; color: var(--k-dim); }
+  .where { padding: 2px 12px 8px; color: var(--k-dim); }
+  .where b { color: var(--k-ink); font-weight: 500; }
+  .body { display: grid; grid-template-columns: 250px 1fr; gap: 8px; padding: 0 10px 10px; }
+  .side, .main { background: var(--k-pane); border: 1px solid var(--k-line); padding: 8px 0; min-height: 300px; }
+  .group { padding: 6px 12px 2px; color: var(--k-dim); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 3px 12px 3px 22px; white-space: nowrap; }
+  .row.sel { background: var(--k-sel); }
+  .row .sub { color: var(--k-dim); font-size: 12px; }
+  .row.collapsed { color: var(--k-dim); }
+  svg.ico { width: 16px; height: 16px; flex: none; }
+
+  .drive-tile { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--k-line); }
+  .drive-tile:last-child { border-bottom: 0; }
+  .drive-tile svg { width: 36px; height: 36px; }
+  .drive-name { font-weight: 500; }
+  .badge { display: inline-block; font-size: 11px; color: #fff; background: var(--k-boot); padding: 0 6px; margin-left: 6px; }
+  .drive-kind { color: var(--k-dim); font-size: 12px; margin-bottom: 6px; }
+  .fs { display: grid; grid-template-columns: 150px 70px 1fr; gap: 10px; align-items: center; padding: 2px 0; }
+  .fs .fsname { white-space: nowrap; }
+  .fs .fstype { color: var(--k-dim); }
+  .bar { height: 9px; background: var(--k-bar-ground); position: relative; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--k-bar); }
+  .fs .free { font-size: 12px; color: var(--k-dim); }
+  .fs.cant .fsname, .fs.cant .free { color: var(--k-dim); }
+
+  .files .head, .files .file { display: grid; grid-template-columns: 1fr 90px 90px; padding: 3px 14px; }
+  .files .head { color: var(--k-dim); border-bottom: 1px solid var(--k-line); margin-bottom: 4px; }
+  .files .file { align-items: center; }
+  .files .file span:first-child { display: flex; gap: 8px; align-items: center; }
+
+  .foot { text-align: right; padding: 0 14px 8px; color: var(--k-dim); }
+  .gets { margin: 0 10px 10px; padding: 6px 10px; background: #fff7d6; border: 1px solid #d9b640; }
+  .gets b { font-weight: 500; }
+
+
+  .dtable { width: 100%; border-collapse: collapse; }
+  .dtable th, .dtable td { text-align: left; padding: 4px 14px; white-space: nowrap; }
+  .dtable th { color: var(--k-dim); font-weight: 400; border-bottom: 1px solid var(--k-line); }
+  .dtable tr.sel td { background: var(--k-sel); }
+  .map-wrap { padding: 12px 14px 6px; border-top: 1px solid var(--k-line); }
+  .map-title { color: var(--k-dim); margin-bottom: 6px; }
+  .map { display: flex; height: 46px; border: 1px solid #7c7c78; }
+  .seg { display: flex; flex-direction: column; justify-content: center; padding: 0 8px; border-right: 1px solid #7c7c78; font-size: 12px; line-height: 1.25; overflow: hidden; white-space: nowrap; }
+  .seg:last-child { border-right: 0; }
+  .seg.fat { background: #f6dd7d; min-width: 130px; }
+  .seg.kfs { background: #9fc0f2; min-width: 150px; }
+  .seg.free { background: repeating-linear-gradient(135deg, #f1f1ef 0 6px, #e1e1dd 6px 12px); flex: 1; color: var(--k-dim); }
+  .scale { font-size: 11px; color: var(--k-dim); margin-top: 4px; }
+  .actions { display: flex; gap: 8px; padding: 10px 14px 12px; }
+  .actions .btn.off { color: #a6a6a2; }
+
+  .paths { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
+  .paths th, .paths td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .paths th { font: 600 13px/1.3 var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .paths td code { white-space: nowrap; }
+  .paths tr.kosmos td { font-weight: 600; }
+  .table-wrap { overflow-x: auto; }
+  ul.checks { list-style: none; padding: 0; margin: 12px 0; max-width: 66ch; }
+  ul.checks li { padding: 6px 0 6px 28px; position: relative; border-bottom: 1px solid var(--rule); }
+  ul.checks li::before { content: ""; position: absolute; left: 4px; top: 13px; width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: 3px; }
+  ul.checks li.has::before { background: var(--accent); }
+  ul.checks span { color: var(--muted); }
+
+  /* ---- the explanations ---- */
+  .stick {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .stick .outer {
+    border: 2px solid var(--ink);
+    border-radius: 10px;
+    padding: 14px 16px 16px;
+    background: var(--card);
+  }
+  .stick .outer > b { font: 600 17px/1.3 var(--display); }
+  .parts { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 10px; }
+  .part { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; }
+  .part b { display: block; }
+  .part span { font-size: 14px; color: var(--muted); }
+  .part.home { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+
+  .borrowed { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 16px; }
+  .borrowed div { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; }
+  .borrowed h3 { font: 600 17px/1.25 var(--display); margin: 0 0 6px; }
+  .borrowed p { font-size: 14px; margin: 0 0 6px; }
+  .borrowed .take { color: var(--ink); }
+  .borrowed .take::before { content: "Kosmos takes: "; font-weight: 600; }
+  .borrowed .leave { color: var(--muted); }
+  .borrowed .leave::before { content: "Kosmos leaves: "; font-weight: 600; }
+
+  ol.decide { padding-left: 22px; max-width: 66ch; }
+  ol.decide li { margin-bottom: 10px; }
+  ol.decide b { display: block; }
+  ol.decide span { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos Drives</h1>
+  <p class="note" style="margin:-2px 0 16px">A design, 14 September 2026. Nothing here is built yet, and the six decisions at the end are still open. The copy in the repository is <code>docs/drives.html</code>.</p>
+  <p class="lede">Two pieces, both borrowed. <b>Tracker</b> shows your drives the way every desktop does: a list of drives, and inside each one, its files. <b>Drives</b>, a new app, shows the drives themselves: type, partitions, filesystems and sizes.</p>
+
+  <h2>What Tracker would look like</h2>
+  <p>Three groups in the sidebar. <b>Places</b> for where you work, <b>Drives</b> for what is plugged in, <b>System</b> folded away. Click <b>Drives</b> and every drive is listed with how full it is.</p>
+
+  <div class="desk">
+    <div class="win">
+      <span class="tab">Tracker</span>
+      <div class="menus"><span>File</span><span>Go</span><span>View</span></div>
+      <div class="tools">
+        <span class="btn">&lt;</span><span class="btn">&gt;</span><span class="btn">Up</span><span class="btn">Home</span>
+        <span class="search">Search</span>
+      </div>
+      <div class="where"><b>Drives</b></div>
+      <div class="body">
+        <div class="side">
+          <div class="group">Places</div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><path d="M2 8 8 2l6 6v6H2z" fill="#e0a020" stroke="#6b4a00"/><rect x="6.5" y="10" width="3" height="4" fill="#fff"/></svg>Home</div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="9" fill="#3d63b8" stroke="#1d2f5a"/><rect x="5" y="13" width="6" height="1.5" fill="#555"/></svg>Desktop</div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><path d="M8 1.5l1.9 4.2 4.6.4-3.5 3 1.1 4.5L8 11.2 3.9 13.6 5 9.1 1.5 6.1l4.6-.4z" fill="#e8c14a" stroke="#7a5d00"/></svg>MyPhotos <span class="sub">on PHOTOS 2024</span></div>
+          <div class="group">Drives</div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="1" fill="#2b2b2b"/><rect x="5.5" y="12" width="5" height="3" fill="#e6b400"/></svg>Kingston DataTraveler <span class="sub">boot</span></div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1" fill="#7a8494" stroke="#394150"/><circle cx="12" cy="8" r="1" fill="#9be38b"/></svg>Internal drive</div>
+          <div class="row"><svg class="ico" viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" rx="1" fill="#e9e9e9" stroke="#777"/><rect x="5.5" y="12" width="5" height="3" fill="#8aa"/></svg>PHOTOS 2024</div>
+          <div class="group">System</div>
+          <div class="row collapsed">&#9656; bin, lib, app, dev, net, ramfs</div>
+        </div>
+        <div class="main">
+          <div class="drive-tile">
+            <svg viewBox="0 0 36 36"><rect x="9" y="3" width="18" height="30" rx="2" fill="#2b2b2b"/><rect x="12" y="27" width="12" height="7" fill="#e6b400"/></svg>
+            <div>
+              <div class="drive-name">Kingston DataTraveler <span class="badge">BOOT DRIVE</span></div>
+              <div class="drive-kind">USB stick, 115 GB</div>
+              <div class="fs"><span class="fsname">KOSMOS HOME</span><span class="fstype">kfs</span><span><span class="bar"><i style="width:62%"></i></span><span class="free">12 of 32 MB free</span></span></div>
+              <div class="fs"><span class="fsname">KOSMOS</span><span class="fstype">FAT32</span><span><span class="bar"><i style="width:6%"></i></span><span class="free">180 of 192 MB free</span></span></div>
+            </div>
+          </div>
+          <div class="drive-tile">
+            <svg viewBox="0 0 36 36"><rect x="3" y="9" width="30" height="18" rx="2" fill="#7a8494" stroke="#394150"/><circle cx="27" cy="18" r="2" fill="#9be38b"/></svg>
+            <div>
+              <div class="drive-name">Internal drive</div>
+              <div class="drive-kind">NVMe, 512 GB</div>
+              <div class="fs cant"><span class="fsname">Windows</span><span class="fstype">NTFS</span><span class="free">Kosmos cannot read this filesystem</span></div>
+            </div>
+          </div>
+          <div class="drive-tile">
+            <svg viewBox="0 0 36 36"><rect x="9" y="3" width="18" height="30" rx="2" fill="#e9e9e9" stroke="#777"/><rect x="12" y="27" width="12" height="7" fill="#8aa"/></svg>
+            <div>
+              <div class="drive-name">PHOTOS 2024</div>
+              <div class="drive-kind">USB drive, 64 GB, read only</div>
+              <div class="fs"><span class="fsname">PHOTOS 2024</span><span class="fstype">FAT32</span><span><span class="bar"><i style="width:41%"></i></span><span class="free">38 of 64 GB free</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="foot">3 drives</div>
+    </div>
+  </div>
+  <p class="note">A drawing, not a screenshot. The Kingston and its two filesystems are your real stick. The internal drive and PHOTOS 2024 are examples, and the sizes on them are made up. <b>On your ThinkPad today</b> the list would be the Kingston, and the internal NVMe marked "not started" until Kosmos can start it.</p>
+
+  <h2>Your boot stick, opened</h2>
+  <p>One drive can hold more than one filesystem. Your stick holds two: yours, and the small one the ThinkPad boots from.</p>
+
+  <div class="stick">
+    <div class="outer">
+      <b>Kingston DataTraveler, the boot drive</b>
+      <div class="parts">
+        <div class="part home"><b>KOSMOS HOME</b><span>kfs, 32 MB. Your files: home, system, user.</span></div>
+        <div class="part"><b>KOSMOS</b><span>FAT32, 192 MB. The loader and the kernel.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="desk">
+    <div class="win">
+      <span class="tab">Tracker</span>
+      <div class="menus"><span>File</span><span>Go</span><span>View</span></div>
+      <div class="where">Drives &rsaquo; Kingston DataTraveler &rsaquo; <b>KOSMOS HOME</b></div>
+      <div class="body">
+        <div class="side">
+          <div class="group">Places</div>
+          <div class="row">Home</div>
+          <div class="row">Desktop</div>
+          <div class="group">Drives</div>
+          <div class="row sel">Kingston DataTraveler <span class="sub">boot</span></div>
+          <div class="row">Internal drive</div>
+          <div class="row">PHOTOS 2024</div>
+          <div class="group">System</div>
+          <div class="row collapsed">&#9656; bin, lib, app, dev, net, ramfs</div>
+        </div>
+        <div class="main files">
+          <div class="head"><span>Name</span><span>Size</span><span>Kind</span></div>
+          <div class="file"><span><svg class="ico" viewBox="0 0 16 16"><path d="M1.5 4h5l1.5 1.5h6.5v8h-13z" fill="#e8c14a" stroke="#7a5d00"/></svg>home</span><span>--</span><span>folder</span></div>
+          <div class="file"><span><svg class="ico" viewBox="0 0 16 16"><path d="M1.5 4h5l1.5 1.5h6.5v8h-13z" fill="#e8c14a" stroke="#7a5d00"/></svg>system</span><span>--</span><span>folder</span></div>
+          <div class="file"><span><svg class="ico" viewBox="0 0 16 16"><path d="M1.5 4h5l1.5 1.5h6.5v8h-13z" fill="#e8c14a" stroke="#7a5d00"/></svg>user</span><span>--</span><span>folder</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>Home</b> under Places is a shortcut straight to the <code>home</code> folder here. Programs keep using <code>/home</code> as they do today, so nothing that works now changes.</p>
+
+  <h2>Your own places</h2>
+  <p>A place is a <b>shortcut you make</b>. Drag PHOTOS 2024, or any folder on it, into Places and call it <b>MyPhotos</b>: it sits beside Home, and one click takes you there.</p>
+  <div class="stick">
+    <div class="outer">
+      <b>MyPhotos is a shortcut, not a second copy</b>
+      <div class="parts">
+        <div class="part home"><b>Places &rsaquo; MyPhotos</b><span>Points at PHOTOS 2024, or at a folder inside it, like PHOTOS 2024 &rsaquo; Italy.</span></div>
+        <div class="part"><b>Drives &rsaquo; PHOTOS 2024</b><span>Still listed here, as it always is.</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Unplug the drive and MyPhotos stays in Places, greyed out, saying the drive is not plugged in. Plug it back and it works again. That is what Finder's Favorites and Windows' Quick Access do, and why they are not mount points: nothing about the drive changes.</p>
+
+  <h2>Instead of drive letters</h2>
+  <p>A program needs a path to reach a file, so every filesystem it can read has one. Kosmos gives each a <b>named folder</b>, the way macOS and BeOS do, rather than a letter.</p>
+  <div class="table-wrap">
+    <table class="paths">
+      <thead><tr><th></th><th>Your files, on the boot drive</th><th>PHOTOS 2024, a USB drive</th></tr></thead>
+      <tbody>
+        <tr><td>Windows</td><td><code>C:\Users\diego</code></td><td><code>E:\Italy</code></td></tr>
+        <tr><td>macOS</td><td><code>/Users/diego</code></td><td><code>/Volumes/PHOTOS 2024/Italy</code></td></tr>
+        <tr><td>BeOS</td><td><code>/boot/home</code></td><td><code>/PHOTOS 2024/Italy</code></td></tr>
+        <tr class="kosmos"><td>Kosmos</td><td><code>/home</code></td><td><code>/drives/PHOTOS 2024/Italy</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><code>/drives</code> is one folder every program has from the moment it starts. Drives plugged in or pulled out appear and disappear inside it, so a program that is already running still finds a drive plugged in after it. A program never given <code>/drives</code> cannot reach any drive at all.</p>
+
+  <h2>From an app</h2>
+  <p>An app's <b>Open</b> and <b>Save</b> windows have the same sidebar as Tracker: Places and Drives. You go through whichever is quicker. <b>What the app gets is the file itself</b>, at its real place on the drive, so no app has to know that MyPhotos exists.</p>
+
+  <div class="desk">
+    <div class="win" style="min-width:640px">
+      <span class="tab">Photo &rsaquo; Open</span>
+      <div class="where">Places &rsaquo; MyPhotos &rsaquo; <b>Italy</b></div>
+      <div class="body" style="grid-template-columns:210px 1fr">
+        <div class="side" style="min-height:190px">
+          <div class="group">Places</div>
+          <div class="row">Home</div>
+          <div class="row sel">MyPhotos</div>
+          <div class="group">Drives</div>
+          <div class="row">Kingston DataTraveler</div>
+          <div class="row">PHOTOS 2024</div>
+        </div>
+        <div class="main files" style="min-height:190px">
+          <div class="head"><span>Name</span><span>Size</span><span>Kind</span></div>
+          <div class="file sel" style="background:var(--k-sel)"><span><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" fill="#bcd6f5" stroke="#34507a"/><path d="M2.5 12l4-4 3 3 2-2 2 3z" fill="#4c8a4c"/></svg>IMG_2211.JPG</span><span>3.1 MB</span><span>jpeg</span></div>
+          <div class="file"><span><svg class="ico" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" fill="#bcd6f5" stroke="#34507a"/><path d="M2.5 12l4-4 3 3 2-2 2 3z" fill="#4c8a4c"/></svg>IMG_2212.JPG</span><span>2.8 MB</span><span>jpeg</span></div>
+          <div class="file"><span><svg class="ico" viewBox="0 0 16 16"><path d="M1.5 4h5l1.5 1.5h6.5v8h-13z" fill="#e8c14a" stroke="#7a5d00"/></svg>Rome</span><span>--</span><span>folder</span></div>
+        </div>
+      </div>
+      <div class="gets">The app is handed: <b>PHOTOS 2024 &rsaquo; Italy &rsaquo; IMG_2211.JPG</b> - the same file whether you came through MyPhotos or through Drives.</div>
+    </div>
+  </div>
+  <p class="note">At the prompt there is no sidebar, so a file is typed by where it really is: <code>/home/notes.txt</code>, or <code>/drives/PHOTOS 2024/Italy/IMG_2211.JPG</code>. Today's <code>/home</code> paths stay exactly as they are.</p>
+
+  <h2>One Open and Save window, for every app</h2>
+  <p>Every system has one, so every app opens and saves the same way. <b>Kosmos has its start already</b>: <code>/lib/panel.lua</code>, after BeOS's file panel, a window each app opens for itself. The editor, Photo, Reader and the PDF viewer use it. It is small: a folder list, Up and Home, and a name when saving.</p>
+  <ul class="checks">
+    <li class="has">Hands the app one full path, or nothing if you close it <span>- has it</span></li>
+    <li>The sidebar: Places and Drives <span>- as in Tracker</span></li>
+    <li>Sizes, kinds and icons in the list <span>- as in Tracker</span></li>
+    <li>New folder <span>- from inside the window</span></li>
+    <li>Only the files an app can open <span>- Photo shows pictures, the music player shows songs</span></li>
+    <li>Asks before replacing a file that is already there</li>
+    <li>Read-only drives shown as read-only, and a save there refused with a sentence</li>
+    <li>Remembers the last folder each app used</li>
+  </ul>
+  <p><b>And every app that opens or saves uses it.</b> Paint cannot open or save a picture at all today; the music player, <code>play</code> and the Super Nintendo take a file only when they are started with one. Each gets an Open, and Paint a Save.</p>
+
+  <h2>The Drives app</h2>
+  <p>Tracker is for your files. <b>Drives</b> is for the drives themselves: every drive this machine found, what kind it is, how big, how it is split into partitions, and the filesystem in each. The same tool Haiku calls DriveSetup, Windows calls Disk Management and macOS calls Disk Utility.</p>
+
+  <div class="desk">
+    <div class="win">
+      <span class="tab">Drives</span>
+      <div class="menus"><span>Drive</span><span>Partition</span><span>View</span></div>
+      <div class="main" style="border:0;min-height:0;padding:6px 0 0;background:var(--k-pane)">
+        <table class="dtable">
+          <thead><tr><th>Drive</th><th>Type</th><th>Size</th><th>Partition table</th></tr></thead>
+          <tbody>
+            <tr class="sel"><td>Kingston DataTraveler 3.0 &nbsp;<span class="badge">BOOT DRIVE</span></td><td>USB stick</td><td>115 GB</td><td>GPT</td></tr>
+            <tr><td>Internal drive</td><td>NVMe</td><td>512 GB</td><td>GPT</td></tr>
+            <tr><td>PHOTOS 2024</td><td>USB drive</td><td>64 GB</td><td>MBR</td></tr>
+          </tbody>
+        </table>
+        <div class="map-wrap">
+          <div class="map-title">Kingston DataTraveler 3.0, 115 GB</div>
+          <div class="map">
+            <div class="seg fat"><b>KOSMOS</b>FAT32, 192 MB</div>
+            <div class="seg kfs"><b>KOSMOS HOME</b>kfs, 32 MB</div>
+            <div class="seg free"><b>Free space</b>114.8 GB, not in any partition</div>
+          </div>
+          <div class="scale">Not to scale: drawn to scale, the two partitions would be too thin to see.</div>
+        </div>
+        <table class="dtable" style="margin-top:6px">
+          <thead><tr><th>#</th><th>Name</th><th>Filesystem</th><th>Size</th><th>Used</th><th>In Tracker</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>KOSMOS</td><td>FAT32</td><td>192 MB</td><td>11 MB</td><td>the loader and the kernel</td></tr>
+            <tr class="sel"><td>2</td><td>KOSMOS HOME</td><td>kfs</td><td>32 MB</td><td>20 MB</td><td>your home, system and user</td></tr>
+            <tr><td></td><td>Free space</td><td>-</td><td>114.8 GB</td><td>-</td><td>-</td></tr>
+          </tbody>
+        </table>
+        <div class="actions">
+          <span class="btn">Open in Tracker</span>
+          <span class="btn off">Format...</span>
+          <span class="btn off">New partition...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>It shows first, and changes later.</b> Formatting and partitioning are greyed out: a mistake there erases a drive, so they come after the view has been lived with, one at a time. The Kingston numbers are your stick's; the other two drives are the same examples as above.</p>
+
+  <h2>Borrowed, not invented</h2>
+  <p>Each part of this already works somewhere else, for a lot of people.</p>
+  <div class="borrowed">
+    <div>
+      <h3>Windows: This PC</h3>
+      <p>Every drive is a tile with a bar showing how full it is.</p>
+      <p class="take">the overview with the bars.</p>
+      <p class="leave">drive letters. <code>D:</code> says nothing, and changes when drives are plugged in a different order.</p>
+    </div>
+    <div>
+      <h3>macOS: Finder</h3>
+      <p>Drives are listed by name in the sidebar, apart from your folders.</p>
+      <p class="take">the sidebar, split into places and drives, and Favorites you add yourself.</p>
+      <p class="leave">nothing yet. Ejecting a drive comes later.</p>
+    </div>
+    <div>
+      <h3>BeOS and Haiku: Tracker</h3>
+      <p>Every volume is a disk icon on the Desktop, named by its own label. You see drives, never mount points.</p>
+      <p class="take">drives named by their labels, and a disk icon on the Desktop for each.</p>
+      <p class="leave">nothing. Kosmos is BeOS's grandchild.</p>
+    </div>
+    <div>
+      <h3>DriveSetup, Disk Management, Disk Utility</h3>
+      <p>One window with every drive, and its partitions drawn as a bar.</p>
+      <p class="take">the drive list, the bar, and a row per partition with its filesystem.</p>
+      <p class="leave">changing anything, for now.</p>
+    </div>
+  </div>
+
+  <h2>Six things to decide</h2>
+  <ol class="decide">
+    <li><b>The group is called Drives.</b><span>Not Devices: in Kosmos, devices already means the processor, the screen and the keyboard.</span></li>
+    <li><b>A drive with one filesystem opens straight into its files.</b><span>A drive with two, like your boot stick, first shows the two.</span></li>
+    <li><b>The Desktop gets a disk icon for each drive</b><span>as BeOS did, in place of today's single Drive icon that opens everything at once.</span></li>
+    <li><b>The Drives app shows before it changes anything.</b><span>Drives, partitions, filesystems and sizes first; formatting and partitioning later, each on its own.</span></li>
+    <li><b>Places are shortcuts you add and name.</b><span>Drag a drive or a folder in and call it MyPhotos. A shortcut rather than a mount, so the drive itself never changes.</span></li>
+    <li><b>One Open and Save window for every app.</b><span>The one Kosmos has, grown to what any system's does, and every app that opens or saves moved onto it.</span></li>
+  </ol>
+</main>
+
+</body>
+</html>

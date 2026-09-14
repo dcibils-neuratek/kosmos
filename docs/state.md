@@ -32,7 +32,10 @@ prepush` and a bump.
   device the filesystems it holds. The sidebar is the mount table - `app`,
   `bin`, `dev`, `lib`, `net`, `ramfs` beside `home`, and `system` and `user`,
   which are the same disk - so nothing says what is a device or where it is
-  mounted. To be proposed with step 6, whose drives need that place too.
+  mounted. **Designed in `docs/drives.html`**, to design the apps from: named
+  drives under `/drives` instead of letters, Places, Drives and System in
+  Tracker, places as shortcuts, one Open and Save window for every app, and a
+  Drives app. Six decisions still open, and nothing built.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and
