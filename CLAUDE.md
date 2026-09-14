@@ -58,6 +58,7 @@ not another subsystem, but the speed and the feel of the ones that exist.
 - Where a driver lives, and where its code comes from: `docs/drivers.md`
 - How USB works, from the host controller up, written as it is built: `docs/usb.md`
 - How drives, places and the Open/Save window should look, before they are built: `docs/drives.html`
+- How Disk Benchmark should look, before it is built: `docs/diskbench.html`
 - What a target is, and what a new machine costs: `docs/targets.md`
 - UI kit and window manager: `docs/ui.md`
 - The path pixels take: `docs/gfx.md`
@@ -487,13 +488,19 @@ that dropped the pointer's range, a share that did not carry its protocol,
 five servers that had quietly stopped naming themselves, and a `/ramfs` that
 had always stored Lua values rather than bytes.
 
-**`diskfs` is the one left, and the one to leave alone**, for a reason that
-has nothing to do with its size. Its core is `kfs.lua`, which runs on the host *and* the
-guest, and that is what lets `make test` check the filesystem format and the
-journal's power-loss window without booting a machine - at an exact instant
-a SIGKILL aimed at a running QEMU hits only by luck. Rewriting it in C
-throws that away. It may still be right one day; it is not a consequence of
-"servers are C".
+**`diskfs` is the one left, and it is on the byte path.** Its core is
+`kfs.lua`, which runs on the host *and* the guest, and that is what lets
+`make test` check the filesystem format and the journal's power-loss window
+without booting a machine - at an exact instant a SIGKILL aimed at a running
+QEMU hits only by luck. This paragraph used to say leave it alone for that.
+**Diego changed it on 14 September 2026**: "it's bad to have a nicely
+designed and modular system if it's slow and unusable", and "if you need to
+take the filesystem from lua to c do it". Every block `kfs` reads is a Lua
+string, and a write over a megabyte is refused, so a file's bytes are exactly
+the loop over bytes this section says belongs in C. **It moves when Disk
+Benchmark says that is where the time is**, and the host testing goes with
+it rather than being given up: a C core compiles on the Mac as
+`fat_decode.c` does.
 
 **The argument for C is jitter, not speed.** Structure-shaped code in Lua
 costs about 2%, measured, which is nothing. What decides a server is
@@ -692,6 +699,16 @@ every check under OVMF, which is necessary and not sufficient. So:
   second, beside a stick that has.
 - **On a boot that works, the first photograph is `log loader`**, which is
   what fills the table in.
+
+**An app is drawn before it is written.** Diego, 14 September 2026: "from
+now on before coding an app let's go the mockup in HTML like you do for the
+tracker, so i can see it before is done and make adjustments". `docs/drives.html`
+is why: the sidebar's order, a filesystem's type beside its name and the whole
+trail were settled by looking at a page in an afternoon, where code would have
+settled them by being written first and argued with after. So an application -
+a window, as *app or program* above has it - starts as an HTML mockup of its
+windows in `docs/`, beside `drives.html`, shown to Diego and changed until he
+agrees; the code follows the page. A program at the prompt needs none.
 
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the

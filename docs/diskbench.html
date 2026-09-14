@@ -1,0 +1,268 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  How Disk Benchmark should look, before any of it is built: a drive's speed
+  as CrystalDiskMark shows it, what Kosmos cannot measure yet said as such,
+  where the time went layer by layer, and two runs compared. Designed on
+  14 September 2026 for Diego to change; every number on it is an example.
+-->
+<title>Kosmos Disk Benchmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* The Kosmos desktop itself, the same in either theme - drives.html's. */
+    --k-desk: #3d63b8;
+    --k-tab: #f2c230;
+    --k-tab-ink: #3a2e00;
+    --k-win: #e4e4e2;
+    --k-pane: #fbfbfa;
+    --k-line: #b9b9b5;
+    --k-ink: #1e1e1e;
+    --k-dim: #6c6c68;
+    --k-sel: #cfdcf5;
+    --k-bar: #4f7fd8;
+    --k-bar-ground: #d6d6d2;
+    --k-boot: #2f8a55;
+
+    /* The layers a byte crosses, in the order it crosses them. */
+    --l-device: #6f7a8c;
+    --l-driver: #4f7fd8;
+    --l-copy: #e0a020;
+    --l-fs: #c8553d;
+    --l-msg: #2f8a55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b;
+      --ink: #e6edf3;
+      --muted: #97a3b4;
+      --rule: #283241;
+      --accent: #85a8ff;
+      --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b;
+    --ink: #e6edf3;
+    --muted: #97a3b4;
+    --rule: #283241;
+    --accent: #85a8ff;
+    --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 900px; margin: 0 auto; padding: 44px 22px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 60ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---- the Kosmos mockups, as drives.html draws them ---- */
+  .desk { background: var(--k-desk); border-radius: 10px; padding: 26px 22px 30px; overflow-x: auto; margin-top: 20px; }
+  .win { min-width: 700px; background: var(--k-win); border: 1px solid #7c7c78; box-shadow: 3px 3px 0 rgba(0,0,0,.25); font: 13px/1.35 var(--mono); color: var(--k-ink); }
+  .tab { display: inline-block; background: var(--k-tab); color: var(--k-tab-ink); font-weight: 500; padding: 4px 16px 3px 10px; border: 1px solid #b08a10; border-bottom: 0; margin: -1px 0 0 -1px; }
+  .menus { padding: 4px 10px; border-bottom: 1px solid var(--k-line); }
+  .menus span { margin-right: 18px; }
+  .tools { display: flex; gap: 6px; padding: 8px 10px; align-items: center; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--k-line); background: var(--k-pane); padding: 2px 9px; white-space: nowrap; }
+  .btn.go { background: var(--k-bar); border-color: #2d57a6; color: #fff; font-weight: 500; margin-left: auto; }
+  .pick { border: 1px solid var(--k-line); background: #fff; padding: 2px 8px; white-space: nowrap; }
+  .pick::after { content: " \25BE"; color: var(--k-dim); }
+  .pick .sub { color: var(--k-dim); }
+  .foot { display: flex; justify-content: space-between; gap: 12px; padding: 6px 14px 8px; color: var(--k-dim); border-top: 1px solid var(--k-line); }
+
+  /* ---- the grid ---- */
+  .grid { display: grid; grid-template-columns: 150px 1fr 1fr; gap: 6px; padding: 4px 10px 10px; }
+  .grid .colhead { color: var(--k-dim); padding: 2px 4px; }
+  .grid .colhead.num { text-align: right; padding-right: 12px; }
+  .test { background: var(--k-pane); border: 1px solid var(--k-line); padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; }
+  .test b { font-weight: 500; }
+  .test span { color: var(--k-dim); font-size: 12px; }
+  .cell { position: relative; background: var(--k-pane); border: 1px solid var(--k-line); padding: 6px 12px 8px; text-align: right; overflow: hidden; min-height: 58px; }
+  .cell .fill { position: absolute; inset: 0 auto 0 0; background: #dbe6fb; }
+  .cell .v { position: relative; font: 500 24px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+  .cell .u { position: relative; font-size: 12px; color: var(--k-dim); }
+  .cell .extra { position: relative; display: block; font-size: 11.5px; color: var(--k-dim); font-variant-numeric: tabular-nums; }
+  .cell.off { background: repeating-linear-gradient(135deg, #f1f1ef 0 6px, #e7e7e3 6px 12px); text-align: left; color: var(--k-dim); display: flex; align-items: center; }
+  .test.off b { color: var(--k-dim); }
+  .cell.sel { outline: 2px solid var(--k-bar); outline-offset: -2px; }
+
+  /* ---- where the time went ---- */
+  .layers-wrap { padding: 10px 14px 12px; border-top: 1px solid var(--k-line); }
+  .layers-title { color: var(--k-dim); margin-bottom: 6px; }
+  .layers { display: flex; height: 30px; border: 1px solid #7c7c78; }
+  .layers i { display: flex; align-items: center; justify-content: center; color: #fff; font-style: normal; font-size: 12px; white-space: nowrap; overflow: hidden; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 7px; font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend span::before { content: ""; width: 10px; height: 10px; background: var(--c); }
+
+  /* ---- two runs compared ---- */
+  .cmp { width: 100%; border-collapse: collapse; }
+  .cmp th, .cmp td { text-align: right; padding: 5px 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cmp th:first-child, .cmp td:first-child { text-align: left; }
+  .cmp th { color: var(--k-dim); font-weight: 400; border-bottom: 1px solid var(--k-line); }
+  .cmp td.up { color: var(--k-boot); font-weight: 500; }
+  .cmp td.same { color: var(--k-dim); }
+  .runs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 10px 10px; }
+  .runs div { background: var(--k-pane); border: 1px solid var(--k-line); padding: 6px 10px; }
+  .runs b { font-weight: 500; }
+  .runs span { display: block; color: var(--k-dim); font-size: 12px; }
+
+  /* ---- the prompt ---- */
+  pre.prompt { background: #151515; color: #d8d8d2; font: 13px/1.5 var(--mono); padding: 14px 16px; border-radius: 8px; overflow-x: auto; margin: 16px 0 0; }
+  pre.prompt .p { color: #7fd49b; }
+  pre.prompt .d { color: #8a8a84; }
+
+  .table-wrap { overflow-x: auto; }
+  .paths { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
+  .paths th, .paths td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .paths th { font: 600 13px/1.3 var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+  ol.decide { padding-left: 22px; max-width: 66ch; }
+  ol.decide li { margin-bottom: 10px; }
+  ol.decide b { display: block; }
+  ol.decide span { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos Disk Benchmark</h1>
+  <p class="note" style="margin:-2px 0 16px">A design, 14 September 2026, for Diego to change before any of it is written. <b>Every number on this page is an example</b>: nothing has been measured yet.</p>
+  <p class="lede">How fast a drive is, the way CrystalDiskMark shows it - and, because this is the tool Kosmos's storage is being made fast with, <b>where the time went</b>, and whether a change made it faster.</p>
+
+  <h2>The window</h2>
+  <p>Pick a drive or a filesystem, a size and how many runs, and press <b>Start</b>. Each row reads and writes one way; the best run is kept. A row Kosmos cannot run yet says so, instead of showing a number for something else.</p>
+
+  <div class="desk">
+    <div class="win">
+      <span class="tab">Disk Benchmark</span>
+      <div class="menus"><span>File</span><span>Runs</span><span>View</span></div>
+      <div class="tools">
+        <span class="pick">KOSMOS HOME <span class="sub">kfs, on Kingston DataTraveler</span></span>
+        <span class="pick">16 MB</span>
+        <span class="pick">best of 3</span>
+        <span class="pick">MB/s</span>
+        <span class="btn go">Start</span>
+      </div>
+      <div class="grid">
+        <span></span><span class="colhead num">Read</span><span class="colhead num">Write</span>
+
+        <div class="test"><b>Sequential 1 MB</b><span>one at a time</span></div>
+        <div class="cell sel"><i class="fill" style="width:100%"></i><span class="v">41.2</span> <span class="u">MB/s</span></div>
+        <div class="cell"><i class="fill" style="width:23%"></i><span class="v">9.6</span> <span class="u">MB/s</span></div>
+
+        <div class="test off"><b>Sequential 1 MB</b><span>8 at once</span></div>
+        <div class="cell off">not yet: one command at a time</div>
+        <div class="cell off">not yet: one command at a time</div>
+
+        <div class="test"><b>Random 4 KB</b><span>one at a time</span></div>
+        <div class="cell"><i class="fill" style="width:8%"></i><span class="v">3.1</span> <span class="u">MB/s</span><span class="extra">790 IOPS &middot; 1.3 ms each</span></div>
+        <div class="cell"><i class="fill" style="width:2%"></i><span class="v">0.9</span> <span class="u">MB/s</span><span class="extra">230 IOPS &middot; 4.3 ms each</span></div>
+
+        <div class="test off"><b>Random 4 KB</b><span>32 at once</span></div>
+        <div class="cell off">not yet: one command at a time</div>
+        <div class="cell off">not yet: one command at a time</div>
+      </div>
+
+      <div class="layers-wrap">
+        <div class="layers-title">Where the time went &middot; Sequential 1 MB, read</div>
+        <div class="layers">
+          <i style="width:31%;background:var(--l-device)">stick 31%</i>
+          <i style="width:6%;background:var(--l-driver)"></i>
+          <i style="width:12%;background:var(--l-copy)">12%</i>
+          <i style="width:46%;background:var(--l-fs)">kfs 46%</i>
+          <i style="width:5%;background:var(--l-msg)"></i>
+        </div>
+        <div class="legend">
+          <span style="--c:var(--l-device)">the stick itself</span>
+          <span style="--c:var(--l-driver)">USB driver 6%</span>
+          <span style="--c:var(--l-copy)">copies between processes 12%</span>
+          <span style="--c:var(--l-fs)">the filesystem</span>
+          <span style="--c:var(--l-msg)">messages 5%</span>
+        </div>
+      </div>
+
+      <div class="foot"><span>Finished at 14:32 &middot; saved as /home/benchmarks/2026-09-14-1432.bench</span><span>0.10.63</span></div>
+    </div>
+  </div>
+  <p class="note">A drawing, not a screenshot, and the numbers are examples. Clicking a number shows its row's layers below the grid. The size menu offers only sizes that fit in the free space of what was picked, since a file is written to measure writing.</p>
+
+  <h2>What it can be pointed at</h2>
+  <p>A <b>drive</b> is measured by reading its blocks directly, so its numbers are the device and its driver. A <b>filesystem</b> is measured through a test file, as CrystalDiskMark does. The difference between the two, on the same drive, is what the filesystem costs.</p>
+  <div class="table-wrap">
+    <table class="paths">
+      <tr><th>picked</th><th>reads</th><th>writes</th></tr>
+      <tr><td>A drive: the Kingston, the NVMe</td><td>its blocks, directly</td><td>never - a drive's raw blocks are never written</td></tr>
+      <tr><td>A Kosmos filesystem: <code>/home</code></td><td>a test file</td><td>the same test file, removed afterwards</td></tr>
+      <tr><td>Another machine's: FAT32, exFAT</td><td>a file already there</td><td>none - they are read only</td></tr>
+    </table>
+  </div>
+
+  <h2>Before and after</h2>
+  <p>Every run is saved as a file with its drive, size and Kosmos version as attributes, so Tracker can list them. Pick two and the window shows what changed. This is how each step of making storage fast is shown to have worked, or not.</p>
+
+  <div class="desk">
+    <div class="win">
+      <span class="tab">Disk Benchmark &rsaquo; Compare</span>
+      <div class="tools" style="padding-bottom:4px"><span class="btn">&lt; Back</span></div>
+      <div class="runs">
+        <div><b>Before</b><span>14 September, 0.10.63</span><span>KOSMOS HOME, 16 MB, best of 3</span></div>
+        <div><b>After</b><span>kfs's bytes moved to C</span><span>KOSMOS HOME, 16 MB, best of 3</span></div>
+      </div>
+      <table class="cmp">
+        <tr><th>test</th><th>before</th><th>after</th><th>change</th></tr>
+        <tr><td>Sequential 1 MB, read</td><td>41.2 MB/s</td><td>93.8 MB/s</td><td class="up">2.3&times;</td></tr>
+        <tr><td>Sequential 1 MB, write</td><td>9.6 MB/s</td><td>37.1 MB/s</td><td class="up">3.9&times;</td></tr>
+        <tr><td>Random 4 KB, read</td><td>790 IOPS</td><td>1,950 IOPS</td><td class="up">2.5&times;</td></tr>
+        <tr><td>Random 4 KB, write</td><td>230 IOPS</td><td>240 IOPS</td><td class="same">same</td></tr>
+      </table>
+      <div class="foot"><span>Random writes did not move: the time is in the stick, not in Kosmos</span><span></span></div>
+    </div>
+  </div>
+  <p class="note">Examples again, and chosen to show the one case that matters most: a change that did nothing is reported as nothing.</p>
+
+  <h2>At the prompt</h2>
+  <p>The same engine prints the same rows, for a machine whose desktop is the thing in question and for the tests, which run with no screen.</p>
+<pre class="prompt"><span class="p">kosmos&gt;</span> diskbench /home 16
+Disk Benchmark 0.10.63: /home (kfs, on Kingston DataTraveler), 16 MB, best of 3
+
+                         read                    write
+sequential 1 MB  x1     41.2 MB/s                9.6 MB/s
+sequential 1 MB  x8     <span class="d">not yet: one command at a time</span>
+random 4 KB      x1      3.1 MB/s   790 IOPS     0.9 MB/s   230 IOPS
+random 4 KB      x32    <span class="d">not yet: one command at a time</span>
+
+where the time went, sequential read:
+  stick 31%   USB driver 6%   copies 12%   kfs 46%   messages 5%
+
+saved /home/benchmarks/2026-09-14-1432.bench</pre>
+
+  <h2>For you to decide</h2>
+  <ol class="decide">
+    <li><b>Rows Kosmos cannot run yet: shown and marked, or hidden?</b><span>Shown here, so the grid stays CrystalDiskMark's shape and fills in as queues arrive.</span></li>
+    <li><b>Where the time went: under the grid, or a separate view?</b><span>Under the grid here, for the number last clicked.</span></li>
+    <li><b>Runs saved automatically, or only when asked?</b><span>Automatically here, so a before always exists when an after is wanted.</span></li>
+    <li><b>Anything CrystalDiskMark has that this should too</b><span>Its profiles - peak, real world, a mixed read and write - are left out for now.</span></li>
+  </ol>
+</main>
+</body>
+</html>

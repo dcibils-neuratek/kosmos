@@ -8,9 +8,19 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
-**Next, with Diego.** Everything on `main` since `13037a4` is not on
-`origin`, and `VERSION` still says 0.10.62; a push is his call, after `make
-prepush` and a bump.
+**Pushed, 14 September: 0.10.63** (`8e10174`), after `make prepush` - USB
+5a to 5f, the drives design, FAT read on the Mac, and two roadmap entries.
+`main` and `origin` agree.
+
+**Now: storage at full speed, performance first.** Diego: "it's bad to have a
+nicely designed and modular system if it's slow and unusable". USB step 6
+waits for it (`roadmap.md`, *Being built now*). Disk Benchmark is drawn -
+`docs/diskbench.html`, which Diego liked - and its engine
+(`/lib/diskbench.lua`), a `diskbench` program and `blocks.lua`'s `fill` are
+written, and not yet run or tested. Next: run it under QEMU, a permanent
+test, a baseline, then the largest measured cost. Diego allowed the
+filesystem to move from Lua to C where the measurement says so (`README.md`,
+`CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
 - **Stick A booted on the ThinkPad, 14 September**:
   `kosmos-usb-0.10.62-b8c6f10-experiment.img` on a Kingston DataTraveler
@@ -42,7 +52,7 @@ prepush` and a bump.
   without regard to case, and six pieces in this order**: 6a the FAT reader
   on the Mac, 6b the drive server and `/drives`, 6c Tracker, 6d Open and
   Save, 6e the Drives app, 6f exFAT - Diego: "yes to all three, go with your
-  order". **6a is built**; 6b is next.
+  order". **6a is built**; 6b waits for storage at full speed.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and

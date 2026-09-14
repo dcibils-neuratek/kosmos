@@ -412,15 +412,15 @@ test("Filesystem", "write attributes", "writes", function(n)
   end
 end)
 
--- A kilobyte, not a megabyte, and that is a statement about the system
--- rather than a choice about the benchmark.
+-- A kilobyte, which is what this group has always measured, so its score
+-- stays comparable with the reference machine's.
 --
--- A write crosses as an IPC message and a message is 2048 bytes, so this
--- is close to the largest single write the system can currently do. The
--- roadmap's answer for real files is mapped pages - the same move shared
--- surfaces already make - and when that exists this test grows a sibling
--- that measures megabytes. Until then, a benchmark claiming to measure
--- large files would be measuring an error return.
+-- This used to say a kilobyte is close to the largest single write the
+-- system can do, because a write crossed as one 2048-byte message. That
+-- stopped being true when `fs.write` began sending a large value through a
+-- region, as `fs.write_from` does: the ceiling now is `diskfs` assembling a
+-- write in its own heap and refusing more than a megabyte. Megabytes are
+-- Disk Benchmark's to measure (`/lib/diskbench.lua`), not this group's.
 test("Filesystem", "bulk write", "bytes", function(n)
   local blob = string.rep("0123456789abcdef", 64)   -- 1 KB
 

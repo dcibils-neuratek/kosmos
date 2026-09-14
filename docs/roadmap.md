@@ -94,6 +94,29 @@ unblocks.
 
 ### Being built now
 
+**Storage at full speed, performance first.** Diego, 14 September: "I expect
+our usb drives and nvme to perform like any other os like Linux", and "it's
+bad to have a nicely designed and modular system if it's slow and unusable".
+USB step 6 waits for it, since the drive server would otherwise be built on
+the block path this replaces. In this order, each measured before and after:
+
+1. **Disk Benchmark**, drawn first (`docs/diskbench.html`): an engine in
+   `/lib/diskbench.lua`, a `diskbench` program, then the window once Diego
+   has changed the drawing. A drive is read through its blocks and never
+   written; a filesystem through a test file, removed afterwards.
+2. **A baseline, and where the time goes**, under QEMU for the shape and on
+   the ThinkPad for the numbers: the Kingston's blocks, `/home` on it, and the
+   NVMe once something outside the kernel can reach it.
+3. **The largest measured cost first.** The candidates reading found:
+   `kfs`'s bytes through Lua strings, and no write over a megabyte; USB reads
+   of 124 KB, copied on their way; the kernel's NVMe driver, polled, one
+   command at a time, 4 KB a call. What they point at: the byte path in C -
+   which Diego allowed, "if you need to take the filesystem from lua to c do
+   it" - a block protocol that queues on a shared ring, NVMe as a userland
+   driver, and chained USB transfers.
+4. **Open, for Diego, when a measurement asks**: a device writing straight
+   into a client's pages with no IOMMU to fence it.
+
 **SMP - the mechanism is finished on both boards, and new threads spread
 by default.** `docs/smp.md` is the map. **All seven steps are done**: per-CPU
 state, the locks, four processors each with their own vector table,
