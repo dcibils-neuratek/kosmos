@@ -21,8 +21,18 @@ prepush` and a bump.
   the ERDP stick, `kosmos-usb-0.10.62-erdp-experiment.img`, which has. The
   photographs: `log loader`, which should end `the stick against the build:
   same`; `log xhci`, the Kensington named with its size and its GPT at both
-  ends; and `sticks`. `boot.md`'s table gets a row from what he sees. 5e's
-  `/home` on a stick is not on it, and needs 5f's layout to be.
+  ends; and `sticks`. `boot.md`'s table gets a row from what he sees.
+- **And a second experiment, for after it**:
+  `build/x86_64/kosmos-usb-0.10.62-c70d9df-home-experiment.img`, built from
+  `c70d9df` (USB step 5f) by `make MEGA=1 x86-usb-image USB_HOME=partition`:
+  `/home` in a partition of its own on the stick, and nothing loaded into
+  memory. Its `kosmos.bin` is the build's, `run_uefi.py` passes on the exact
+  image, 31 checks, and so does its home boot through OVMF, 4 of 4. No stick in
+  this layout has booted on the ThinkPad, so it goes after the `b8c6f10`
+  stick, with the ERDP stick as the fallback. The photographs: `log loader`,
+  which should end `the disk: none; the stick against the build: same`;
+  `diskinfo`, which should say `/home` is the Kosmos partition on a USB unit;
+  and `sticks`. What is saved to `/home` there is written to the stick.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and
