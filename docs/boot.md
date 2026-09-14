@@ -39,6 +39,14 @@ GPT disk with one FAT32 EFI System Partition of 192 MB (the size is FAT32's,
 | `\boot\kosmos.sums` | the build's sums of the kernel, a 64-bit FNV-1a a page, which the loader holds its read to |
 | `\boot\disk.sums` | the same for the disk, when there is one |
 
+**Or, asked for with `USB_HOME=partition`** (`usb.md` §7, step 5f): the same
+ESP without `\boot\disk.img` or `\boot\disk.sums`, and the kfs disk in a
+second partition right after it, of Kosmos's type
+`8A9DC8A8-83CF-4F7F-962B-43157A68F14A`, named `KOSMOS HOME`. The stick's
+command line gets `opt/kosmos/home=` and that partition's unique GUID, and
+Kosmos opens the partition as `/home` through its own USB driver. **No stick
+in this layout has booted on the ThinkPad.**
+
 Both paths end in the same place: `boot/x86_64/start.S` in 32-bit protected
 mode, paging off, `eax` the Multiboot 2 magic and `ebx` the information
 structure. The kernel does not know which loader it had.
@@ -159,7 +167,7 @@ order, and why each step is there:
    are 32 bits, holds it to `\boot\disk.sums` the same way, and fingerprints
    it.
 5. **Reads `\boot\kosmos.cmdline`**, keeping only the characters
-   `mkusb_image.py` allows, and appends four words of its own.
+   `mkusb_image.py` allows, and appends five words of its own.
 6. **Finds the screen** - the firmware's current GOP mode, as GRUB passed on -
    **ACPI's root pointer** from the configuration table, the newer revision
    first, and **copies the trampoline** to a page below 4 GB allocated as
@@ -206,12 +214,15 @@ Those are the only memory lines left. Under GRUB the same OVMF boot printed
 `UNDER THIS KERNEL` for its three ACPI NVS entries; with the kernel at 16 MB
 there is nothing of the firmware's under it to name.
 
-The four words the loader adds to the command line are
-`kosmos-boot/before=`, `/after=`, `/lost=` - five digits each, pages repaired
-before ExitBootServices, after it, and pages that could not be - and
-`kosmos-boot/disk=same`, `diff` or `none`. `kernel/main.c` reads them with
-`hal_boot_option` and prints the line above; a boot through anything else has
-no such words and no such line.
+The five words the loader adds to the command line, after the stick's own,
+are `kosmos-boot/before=`, `/after=`, `/lost=` - five digits each, pages
+repaired before ExitBootServices, after it, and pages that could not be -
+`kosmos-boot/disk=same`, `diff` or `none`, and `kosmos-boot/build=same` or
+`none`, whether what was read was held to the build's sums. `kernel/main.c`
+reads them with `hal_boot_option` and prints the line above; a boot through
+anything else has no such words and no such line. **The kernel keeps 511
+characters of the line**, more than the loader's 384: it kept 255, and a
+stick's long words cut the loader's off the end (`usb.md` §7, 5f).
 
 **The information structure** carries the seven tags GRUB's did, because
 those are the seven the kernel reads: the command line (1), the disk as a
@@ -422,7 +433,10 @@ address is.
   with QEMU's gdbstub and its framebuffer tag rewritten to `0x4000000000` at
   1920x1080, over memory that is in no map the firmware hands over - the boot
   log has to be in those pixels when the page allocator starts (`testing.md`
-  §18.44).
+  §18.44). **And a stick with `/home` in a partition**, `USB_HOME=partition`'s
+  layout, booted with no screen: no disk handed over, the partition's GUID
+  reaching `sys.boot` from the stick's command line, and `diskinfo` saying
+  `/home` is that partition (`testing.md` §18.61).
 - **`tools/stickcheck.py`, run by `tools/mkusb.sh` after every write**: the
   stick read back and compared with its image sector by sector, naming the
   file, and in the kernel the page and section, of anything that differs, and
@@ -445,6 +459,9 @@ measurement.
   loader can only check.
 - **The disk on a stick is still refused over 32 MB** by `mkusb_image.py`,
   until the ThinkPad has booted a bigger one through this loader.
+- **`/home` in a partition of its own** (`USB_HOME=partition`) has not booted
+  on the ThinkPad, and its partition is held to the same 32 MB, though
+  nothing reads it into memory.
 - **Secure Boot** is not supported; the loader is unsigned, as GRUB was.
 - **The screen is the firmware's current mode.** The loader does not choose
   one.

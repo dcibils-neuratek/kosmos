@@ -3202,12 +3202,15 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 --------------------------------------------------------------------------
 -- **`/home` on a USB stick's Kosmos partition** (USB step 5e, `usb.md` §7).
 --
--- Asked for with `opt/kosmos/home=usb`. Without it nothing here runs, and the
+-- Asked for with `opt/kosmos/home`. `usb` takes the first Kosmos partition on
+-- a stick the USB driver has ready; a partition's unique GUID - which the
+-- loader names when it started from a Kosmos stick (USB step 5f) - takes that
+-- partition and no other, so a second Kosmos stick is never taken for the one
+-- the machine started from. Without the option nothing here runs, and the
 -- disk server's disk is the kernel's, as it always was. With it, `sys.disk`,
 -- `sys.disk_read` and `sys.disk_write` are replaced in this process - as
--- `tools/kfs.lua` replaces them for a file on the Mac - by ones over the first
--- Kosmos partition on a stick the USB driver has ready. `kfs.lua` does not
--- change, and cannot tell.
+-- `tools/kfs.lua` replaces them for a file on the Mac - by ones over that
+-- partition. `kfs.lua` does not change, and cannot tell.
 --
 -- **Found through `/dev/blocks`, written through the write endpoint.** The
 -- first is always answered, even by a driver with no controller; the second
@@ -3236,7 +3239,12 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 --------------------------------------------------------------------------
 local KOSMOS_PARTITION = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
 
-local function stick_home(read_cap, write_cap, kfs)
+-- A GUID as `opt/kosmos/home` may give one, in either case.
+local GUID_TEXT = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-"
+                  .. string.rep("%x", 12) .. "$"
+
+-- `wanted` is a partition's unique GUID in capitals, or nil for the first.
+local function stick_home(read_cap, write_cap, kfs, wanted)
   local REQUEST = "<I4I4I8I4I4"                -- blockproto.h, 24 bytes
   local REPLY   = "<I4I4I8I4I4c8c16"           -- and its reply, 48
   local OP_INFO, OP_OPEN, OP_READ, OP_WRITE, OP_FLUSH = 1, 2, 3, 4, 6
@@ -3323,7 +3331,9 @@ local function stick_home(read_cap, write_cap, kfs)
           for i = 0, count - 1 do
             local entry = entries:sub(i * size + 1, i * size + size)
 
-            if #entry == size and guid(entry, 1) == KOSMOS_PARTITION then
+            -- Its type at byte 0, and its own GUID at byte 16.
+            if #entry == size and guid(entry, 1) == KOSMOS_PARTITION
+               and (wanted == nil or guid(entry, 17) == wanted) then
               local lo, hi = string.unpack("<I8I8", entry, 33)
 
               if hi >= lo and hi < info.blocks then
@@ -3473,9 +3483,14 @@ local function diskfs_main(endpoint, read_cap, write_cap)
 
   if not ok then sys.exit(DIED_KFS) end
 
-  -- `/home` on a USB stick, when the machine was started asking for one.
-  if sys.boot("opt/kosmos/home") == "usb" then
+  -- `/home` on a USB stick, when the machine was started asking for one:
+  -- `usb` for the first Kosmos partition, or one partition by its GUID.
+  local home = sys.boot("opt/kosmos/home")
+
+  if home == "usb" then
     stick_home(read_cap, write_cap, kfs)
+  elseif home and home:match(GUID_TEXT) then
+    stick_home(read_cap, write_cap, kfs, home:upper())
   end
 
   ok = pcall(serve, endpoint, { kfs = kfs }, diskfs_handlers)

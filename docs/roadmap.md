@@ -230,9 +230,16 @@ is the one that makes the machine Diego owns behave like a computer:
    shell decides where `/home` is from one read - with SYNCHRONIZE CACHE (10)
    after each write to the journal's header; and a unit is made a name, after
    reading found that a stick plugged in later would have taken `/home`'s
-   requests (`usb.md` §7). Next: 5f, the stick layout with that partition
-   beside the boot one and the loader naming it, offered as an experiment
-   beside a stick that has booted.
+   requests (`usb.md` §7).
+
+   **5f is built (14 September): a stick whose `/home` is a partition of its
+   own.** `make MEGA=1 x86-usb-image USB_HOME=partition` puts the kfs disk in
+   a Kosmos partition beside the ESP and its GUID on the stick's command line,
+   which the loader passes on unchanged; the disk server takes the partition
+   by that GUID; the kernel keeps its whole command line; and `run_uefi.py`
+   boots the stick through OVMF to `/home` on it (`usb.md` §7). Next: the
+   ThinkPad booting that stick, offered as an experiment beside one that has
+   booted - and then step 6, another machine's drive.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -442,6 +449,8 @@ the Pi", and the Pi is not here yet.
 
 ### Smaller, and wanted
 
+- `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
+  GRUB, which it has not been since 13 September.
 - Doom's sound, behind a hook that already exists.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.

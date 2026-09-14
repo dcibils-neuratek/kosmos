@@ -2612,8 +2612,8 @@ USB_IMG := $(X86_BUILD)/kosmos-usb.img
 # The stick's image: a GPT, one EFI System Partition, Kosmos's loader and
 # Kosmos.
 #
-# **One FAT partition and nothing else**, which is what a UEFI firmware is
-# required to read. A `grub-mkrescue` ISO once booted perfectly under OVMF and
+# **One FAT partition, and the loader reads nothing else**, which is what a
+# UEFI firmware is required to read. A `grub-mkrescue` ISO once booted perfectly under OVMF and
 # dropped to `grub rescue>` on the ThinkPad, because its modules were only in
 # an El Torito image the firmware did not choose. `tools/mkusb_image.py` has
 # the rest.
@@ -2635,10 +2635,22 @@ USB_IMG := $(X86_BUILD)/kosmos-usb.img
 #     make image FILES="doom1.wad:/home/doom1.wad pak0.pak:/home/id1/pak0.pak"
 #     make MEGA=1 usb
 #
+# **Or `/home` in a partition of its own, when asked** (USB step 5f).
+# `USB_HOME=partition` puts the same disk in a second partition beside the ESP
+# rather than on it, and tells the kernel that partition's GUID: Kosmos opens
+# `/home` on the stick it started from through its own USB driver, and nothing
+# is loaded into memory. The ThinkPad has not booted this layout, so a stick
+# made with it is an experiment (`docs/boot.md`):
+#
+#     make MEGA=1 x86-usb-image USB_HOME=partition
+#
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	@if [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
-	    echo "$(DISK) goes on the stick too: the loader reads it, Kosmos mounts it"; \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --disk $(DISK) $(KOSMOS_ARGS); \
+	    echo "$(DISK) goes on the stick too: $(if $(filter partition,$(USB_HOME)),in a partition of its own that Kosmos opens as /home,the loader reads it and Kosmos mounts it)"; \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --$(if $(filter partition,$(USB_HOME)),home,disk) $(DISK) $(KOSMOS_ARGS); \
+	elif [ "$(USB_HOME)" = partition ]; then \
+	    echo "USB_HOME=partition puts /home in a partition, and $(DISK) holds no filesystem to put there: make image FILES=..."; \
+	    exit 1; \
 	else \
 	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) $(KOSMOS_ARGS); \
 	fi
@@ -2852,10 +2864,11 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
 	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \
+	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-home.img --loader $(EFI_LOADER) --home build/x86_64/uefi-disk.img >/dev/null && \
 	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
 	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null && \
-	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos-refusal.img && \
-	    python3 tools/test_stickcheck.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos.elf && \
+	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos-refusal.img build/x86_64/kosmos-uefi-home.img && \
+	    python3 tools/test_stickcheck.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos.elf build/x86_64/kosmos-uefi-home.img && \
 	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
 	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
 	else \

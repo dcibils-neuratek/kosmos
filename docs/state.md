@@ -24,12 +24,13 @@ prepush` and a bump.
   ends; and `sticks`. `boot.md`'s table gets a row from what he sees. 5e's
   `/home` on a stick is not on it, and needs 5f's layout to be.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
-  proposal's five calls: 5a to 5e are built - a stick's size and its first
-  blocks, Reset Recovery, one kernel wait for interrupts and callers, a block
-  protocol served on `/dev/blocks`, and `/home` on a stick's Kosmos partition,
-  under QEMU - and next is 5f, the stick layout with that partition and the
-  loader naming it; then another machine's FAT32 and exFAT drives, Kosmos's
-  own reader, read-only first (`usb.md`).
+  proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
+  its first blocks, Reset Recovery, one kernel wait for interrupts and
+  callers, a block protocol served on `/dev/blocks`, `/home` on a stick's
+  Kosmos partition, and a stick whose `/home` is that partition, named by its
+  own command line. Next is that stick on the ThinkPad, as an experiment; then
+  another machine's FAT32 and exFAT drives, Kosmos's own reader, read-only
+  first (`usb.md`).
 - **A tutorial for building Lua apps**, asked for by Diego on 14 September:
   ten lessons and fifteen apps in `/home/development`, from a window with a
   button to a music player and a paint program. Planned in `roadmap.md`, as
@@ -37,6 +38,20 @@ prepush` and a bump.
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 5f, a stick whose `/home` is a partition
+
+- **`make MEGA=1 x86-usb-image USB_HOME=partition`**: the kfs disk in a Kosmos
+  partition beside the ESP, and `opt/kosmos/home=` with its GUID in
+  `\boot\kosmos.cmdline`. The loader is unchanged, and so is the default stick.
+- **The disk server takes a partition by its GUID**, as well as `usb`.
+- **The kernel keeps 511 characters of its command line**, where it kept 255
+  and the loader passes up to 384.
+- **`stickcheck.py` names the partition** when a sector of it differs.
+- **Tested**: `usb_home_named` 3, `cmdline_long` 1, `run_uefi.py`'s home stick
+  4, `test_stickcheck.py` 12; controls in `testing.md` §18.61.
+- **Next**: that stick on the ThinkPad, as an experiment beside one that has
+  booted.
 
 ### 14 September: USB step 5e, `/home` on a stick
 

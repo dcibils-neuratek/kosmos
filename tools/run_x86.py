@@ -791,23 +791,30 @@ def usb_blocks(image, check):
 
 
 # The Kosmos partition's type (USB step 5e), as `user/init/init.lua` has it.
-# Two copies, and this check is what says they agree: a stick laid out with a
-# different one is a `/home` that is never found.
+# Three copies: this one, `tools/mkusb_image.py`'s, which `stick_with_home`
+# holds to this, and `init.lua`'s, which every check that boots a stick holds
+# to both. A stick laid out with a different one is a `/home` never found.
 KOSMOS_PARTITION = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
 
 
-def stick_with_home(path, megabytes=16):
+def stick_with_home(path, megabytes=16, unique=None):
     """A stick laid out as USB step 5 lays one out: a protective MBR, a GPT at
     both ends, an EFI system partition, and a Kosmos partition after it - left
     blank, because the disk server formats a blank disk the first time it is
     asked, and that is part of what is being checked. Answers the Kosmos
-    partition's first and last block."""
+    partition's first and last block.
+
+    `unique` is the Kosmos partition's own GUID, as text, for a check that
+    names it as the loader will; otherwise every GUID is a random one."""
     import struct
     import uuid
     import zlib
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import mkusb_image
+
+    assert mkusb_image.KOSMOS_TYPE_GUID == KOSMOS_PARTITION, \
+        "tools/mkusb_image.py and tools/run_x86.py name different Kosmos types"
 
     sector = mkusb_image.SECTOR
     total = megabytes * 1024 * 1024 // sector
@@ -816,16 +823,17 @@ def stick_with_home(path, megabytes=16):
 
     entries = bytearray(128 * 128)
 
-    def entry(i, type_guid, span, name):
+    def entry(i, type_guid, span, name, own=None):
         at = i * 128
         entries[at:at + 16] = mkusb_image.guid_bytes(type_guid)
-        entries[at + 16:at + 32] = uuid.uuid4().bytes_le
+        entries[at + 16:at + 32] = (uuid.UUID(own) if own
+                                    else uuid.uuid4()).bytes_le
         entries[at + 32:at + 48] = struct.pack("<QQ", span[0], span[1])
         label = name.encode("utf-16-le")
         entries[at + 56:at + 128] = label + b"\0" * (72 - len(label))
 
     entry(0, mkusb_image.ESP_TYPE_GUID, esp, "EFI")
-    entry(1, KOSMOS_PARTITION, home, "KOSMOS HOME")
+    entry(1, KOSMOS_PARTITION, home, "KOSMOS HOME", unique)
 
     entries_crc = zlib.crc32(bytes(entries)) & 0xFFFFFFFF
     disk_guid = uuid.uuid4().bytes_le
@@ -1163,6 +1171,99 @@ def usb_home_late(image, check):
           is not None,
           "a file saved to `/home` did not land on a disk, with extents:\n    %s"
           % "\n    ".join(l for l in saved.splitlines() if l.strip()))
+
+
+def usb_home_named(image, check):
+    """**USB step 5f: `/home` on the partition the machine was told, and no
+    other.**
+
+    Two sticks, each with a Kosmos partition, and a machine started with
+    `opt/kosmos/home` naming the second one's unique GUID - in small letters,
+    to see that case does not matter - as the loader names the partition on
+    the stick it started from. `usb` would take the first stick, unit 0. The
+    name has to take unit 1, on the second controller, whose partition is a
+    different size so the two cannot be mistaken; and the first stick's
+    blocks have to be exactly what they were.
+    """
+    import uuid
+
+    other = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-named-a.img")
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-named-b.img")
+    named = str(uuid.uuid4()).upper()
+
+    stick_with_home(other)
+    first, last = stick_with_home(stick, megabytes=24, unique=named)
+
+    with open(other, "rb") as handle:
+        before = handle.read()
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "qemu-xhci,id=usb1",
+             "-drive", "file=%s,format=raw,if=none,id=other" % other,
+             "-device", "usb-storage,bus=usb0.0,drive=other",
+             "-drive", "file=%s,format=raw,if=none,id=named" % stick,
+             "-device", "usb-storage,bus=usb1.0,drive=named",
+             "-fw_cfg", "name=opt/kosmos/home,string=%s" % named.lower())
+
+    out = boot(image, None, 150.0,
+               typed=("diskinfo", "save named.txt on the named stick"),
+               extra=extra, after="its backup")
+
+    if out is None:
+        check(False, "the machine would not boot with two Kosmos sticks")
+        return
+
+    shown = "\n    ".join(l.strip() for l in out.splitlines()
+                           if "disk:" in l or "Kosmos partition" in l
+                           or "filesystem:" in l or "saved" in l
+                           or "diskinfo:" in l)
+
+    said = ("disk: %d sectors of 512 bytes" % (last - first + 1),
+            "on the Kosmos partition on USB unit 1, blocks %d to %d"
+            % (first, last))
+
+    check(all(s in out for s in said),
+          "`/home` was not the partition named, on unit 1, blocks %d to %d:"
+          "\n    %s" % (first, last, shown))
+
+    check(re.search(r"saved named\.txt: \d+ bytes, [1-9]\d* extent", out)
+          is not None,
+          "a file saved to the named partition did not land on a disk:\n    %s"
+          % shown)
+
+    with open(other, "rb") as handle:
+        after = handle.read()
+
+    check(after == before,
+          "the stick whose partition was not named was written:\n    %s"
+          % shown)
+
+
+def cmdline_long(image, check):
+    """**A command line longer than 256 characters keeps its last word.**
+
+    The loader passes a stick's words and then 117 characters of its own, and
+    the kernel kept 255 of them, so a stick with long `KOSMOS_ARGS` lost the
+    loader's words from the end without a word said - and from USB step 5f
+    those words carry `opt/kosmos/home`. QEMU's `-kernel` fills the same
+    buffer through Multiboot 1's `-append`, so a line of 335 characters goes
+    in with a word at its very end, and the machine is asked for that word.
+    """
+    pad = " ".join("opt/kosmos/pad%02d=%s" % (n, "x" * 8) for n in range(12))
+    line = pad + " opt/kosmos/tail=reached"
+
+    out = boot(image, None, 60.0,
+               typed=('print("tail:", sys.boot("opt/kosmos/tail"))',),
+               extra=("-append", line))
+
+    if out is None:
+        check(False, "the machine would not boot with a long command line")
+        return
+
+    check("tail:\treached" in out,
+          "a word at the end of a %d-character command line did not reach "
+          "sys.boot:\n    %s" % (len(line), "\n    ".join(
+              l.strip() for l in out.splitlines() if "tail" in l)))
 
 
 def usb_hotplug(image, check):
@@ -2712,6 +2813,8 @@ def main():
     usb_home(image, check)
     usb_second_stick(image, check)
     usb_home_late(image, check)
+    usb_home_named(image, check)
+    cmdline_long(image, check)
     usb_hotplug(image, check)
 
     # And a USB mouse moving the pointer a TrackPoint moves. `usb_mouse` says

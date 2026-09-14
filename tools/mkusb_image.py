@@ -32,8 +32,17 @@ hands it over as a module, and `hal/pc/memdisk.c` presents that memory as the
 machine's disk - which is how a ThinkPad Kosmos cannot yet read a USB stick
 on gets its game data.
 
-Usage: mkusb_image.py KERNEL OUT --loader BOOTX64.EFI [--disk IMAGE]
-                      [name=value ...]
+**Or `/home` in a partition of its own** (USB step 5f). `--home PATH` writes
+the kfs image into a second partition, of Kosmos's type, right after the ESP
+rather than onto it, and puts `opt/kosmos/home=` and that partition's unique
+GUID on the kernel's command line. The loader reads nothing new - it passes
+the words on as it always has - and the disk server finds the partition
+through the USB driver, on the stick the machine started from, with nothing
+loaded into memory. The ThinkPad has not booted this layout, so it is asked
+for, and `--disk` stays what `make x86-usb-image` builds.
+
+Usage: mkusb_image.py KERNEL OUT --loader BOOTX64.EFI
+                      [--disk IMAGE | --home IMAGE] [name=value ...]
 """
 
 import re
@@ -41,6 +50,7 @@ import os
 import struct
 import subprocess
 import sys
+import uuid
 import zlib
 
 #
@@ -86,6 +96,10 @@ STICK_DISK_MAX_MB = 32
 # The partition type every UEFI firmware looks for, and the one this image
 # has exactly one of. UEFI 2.10, table 5.7.
 ESP_TYPE_GUID = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
+
+# The Kosmos partition's type (USB step 5e), as `user/init/init.lua` and
+# `tools/run_x86.py` have it - which holds its copy to this one.
+KOSMOS_TYPE_GUID = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
 
 SECTOR = 512
 
@@ -197,8 +211,10 @@ def build_esp(kernel, loader, out, args="", disk=None):
     return size
 
 
-def write_gpt(path, esp, esp_size):
-    """A protective MBR, a GPT at both ends, and one partition between them.
+def write_gpt(path, esp, esp_size, home=None, home_guid=None):
+    """A protective MBR, a GPT at both ends, and the ESP between them - and,
+    with `home`, a Kosmos partition holding that kfs image right after it,
+    whose unique GUID is `home_guid`.
 
     Written here rather than shelled out to, because the tools that do this
     on a Mac want to be root and this does not need to be: the image is a
@@ -206,7 +222,15 @@ def write_gpt(path, esp, esp_size):
     """
     first_usable = 34
     esp_sectors = esp_size // SECTOR
-    last = first_usable + esp_sectors - 1
+    esp_last = first_usable + esp_sectors - 1
+    last = esp_last
+
+    # The Kosmos partition starts where the ESP ends, and is the kfs image's
+    # size exactly: kfs was made for that many sectors.
+    if home:
+        home_first = esp_last + 1
+        last = home_first + (os.path.getsize(home) + SECTOR - 1) // SECTOR - 1
+
     total = last + 34            # room for the backup table at the end
 
     with open(path, "wb") as f:
@@ -226,7 +250,7 @@ def write_gpt(path, esp, esp_size):
         entries[0:16] = guid_bytes(ESP_TYPE_GUID)
         entries[16:32] = os.urandom(16)             # this partition's own id
         entries[32:40] = struct.pack("<Q", first_usable)
-        entries[40:48] = struct.pack("<Q", last)
+        entries[40:48] = struct.pack("<Q", esp_last)
         entries[48:56] = struct.pack("<Q", 0)
         # **Padded to the full 72 bytes on purpose.** Assigning a shorter
         # value into a longer slice of a `bytearray` *resizes* it, which
@@ -236,6 +260,15 @@ def write_gpt(path, esp, esp_size):
         # nothing on screen to say why.
         name = "KOSMOS".encode("utf-16-le")
         entries[56:128] = name + b"\x00" * (72 - len(name))
+
+        # The second entry, sized to the byte for the reason above.
+        if home:
+            entries[128:144] = guid_bytes(KOSMOS_TYPE_GUID)
+            entries[144:160] = guid_bytes(home_guid)
+            entries[160:176] = struct.pack("<QQ", home_first, last)
+            entries[176:184] = struct.pack("<Q", 0)
+            label = "KOSMOS HOME".encode("utf-16-le")
+            entries[184:256] = label + b"\x00" * (72 - len(label))
 
         entries_crc = zlib.crc32(bytes(entries)) & 0xFFFFFFFF
         disk_guid = os.urandom(16)
@@ -270,6 +303,12 @@ def write_gpt(path, esp, esp_size):
         with open(esp, "rb") as src:
             f.write(src.read())
 
+        if home:
+            f.seek(home_first * SECTOR)
+
+            with open(home, "rb") as src:
+                f.write(src.read())
+
         # And the same table again at the far end, which the specification
         # requires and some firmware checks.
         f.seek((total - 33) * SECTOR)
@@ -292,12 +331,15 @@ def main():
     words = sys.argv[3:]
     loader = None
     disk = None
+    home = None
 
-    while len(words) >= 2 and words[0] in ("--loader", "--disk"):
+    while len(words) >= 2 and words[0] in ("--loader", "--disk", "--home"):
         if words[0] == "--loader":
             loader = words[1]
-        else:
+        elif words[0] == "--disk":
             disk = words[1]
+        else:
+            home = words[1]
 
         words = words[2:]
 
@@ -305,17 +347,36 @@ def main():
         sys.exit("mkusb_image: no loader at %s. Run `make %s`."
                  % (loader, "build/x86_64/BOOTX64.EFI"))
 
-    if disk is not None:
-        if not os.path.isfile(disk):
-            sys.exit("mkusb_image: no disk image at %s" % disk)
+    if disk is not None and home is not None:
+        sys.exit("mkusb_image: --disk and --home are two places for one disk; "
+                 "give one of them")
 
-        if os.path.getsize(disk) > STICK_DISK_MAX_MB * 1024 * 1024:
+    for image in (disk, home):
+        if image is None:
+            continue
+
+        if not os.path.isfile(image):
+            sys.exit("mkusb_image: no disk image at %s" % image)
+
+        if os.path.getsize(image) > STICK_DISK_MAX_MB * 1024 * 1024:
             sys.exit("mkusb_image: %s is %.0f MB, and the ThinkPad has not yet "
                      "booted a disk over %d MB (docs/boot.md). Make one that "
                      "size:\n  build/host/lua tools/kfs.lua create %s %d "
                      "host-file:/home/name ..."
-                     % (disk, os.path.getsize(disk) / 1048576.0,
-                        STICK_DISK_MAX_MB, disk, STICK_DISK_MAX_MB))
+                     % (image, os.path.getsize(image) / 1048576.0,
+                        STICK_DISK_MAX_MB, image, STICK_DISK_MAX_MB))
+
+    # The partition's own GUID, on the command line with the other words, so
+    # the check on their length below counts it too.
+    home_guid = None
+
+    if home is not None:
+        if any(w.startswith("opt/kosmos/home=") for w in words):
+            sys.exit("mkusb_image: --home names the partition itself; take "
+                     "opt/kosmos/home off the words")
+
+        home_guid = str(uuid.uuid4()).upper()
+        words = words + ["opt/kosmos/home=" + home_guid]
 
     args = " ".join(words)
 
@@ -334,13 +395,15 @@ def main():
 
     esp = os.path.join(work, "esp.img")
     esp_size = build_esp(kernel, loader, esp, args, disk)
-    total = write_gpt(out, esp, esp_size)
+    total = write_gpt(out, esp, esp_size, home, home_guid)
 
-    print("%s  %.1f MB  (Kosmos's loader %.0f KB)%s%s"
+    print("%s  %.1f MB  (Kosmos's loader %.0f KB)%s%s%s"
           % (out, total / 1e6, os.path.getsize(loader) / 1024,
              "; the kernel is told: " + args if args else "",
              "; with %s as its disk, %.1f MB" % (disk, os.path.getsize(disk) / 1e6)
-             if disk else ""))
+             if disk else "",
+             "; with %s as /home, in a partition of its own, %.1f MB"
+             % (home, os.path.getsize(home) / 1e6) if home else ""))
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a to 5e of six parts, under QEMU (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | built under QEMU, 5a to 5f; its stick not yet booted on the ThinkPad (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -1406,8 +1406,7 @@ the first partition of Kosmos's own type,
 `8A9DC8A8-83CF-4F7F-962B-43157A68F14A`, on the first stick that has one.
 Without the option nothing changes - the disk server's disk is the kernel's,
 as it was - so every boot that exists keeps its one path, and this is a
-second beside it. In 5f the loader names the boot stick's own partition
-instead of `usb`.
+second beside it. From 5f a stick names its own partition instead of `usb`.
 
 **`kfs.lua` does not change, and cannot tell.** It reaches blocks through
 `sys.disk`, `sys.disk_read` and `sys.disk_write` and nothing else, and `sys`
@@ -1485,6 +1484,46 @@ disk server walk up to it and step over the gaps. A stick that leaves takes
 `/home` with it until the machine starts again, rather than another stick's
 blocks being written.
 
+### 5f: a stick whose `/home` is a partition of its own
+
+**`make MEGA=1 x86-usb-image USB_HOME=partition`** writes the stick's kfs disk
+into a second partition, of Kosmos's type, right after the EFI system
+partition, rather than as `\boot\disk.img` inside it; and it puts
+`opt/kosmos/home=` and that partition's unique GUID on the kernel's command
+line, in `\boot\kosmos.cmdline`. Kosmos starts with no disk in memory, and the
+disk server opens the partition through the USB driver as `/home`, on the
+stick the machine started from. Without `USB_HOME` nothing changes: the stick
+is the layout that has booted (`boot.md` §1).
+
+**The stick names its partition, and the loader passes the name on.** The
+call was that the loader passes the partition's unique ID (`README.md`), and
+there were two ways to do it: the loader finds the Kosmos partition on the
+disk it started from, through the firmware's Block I/O and the GPT; or the
+image builder writes the GUID into the words the loader already passes. This
+is the second, for two reasons. The loader does not change at all, on the
+machine where the loader is what has failed (`boot.md` §3). And the GUID is
+written in the same moment as the partition it names, so a stick names its
+own. What it gives up: a loader that searched could not name a partition on
+another disk, where this one passes on whatever the stick says - which the
+disk server holds to the partition's type as well as its GUID.
+
+**One partition, by name.** `opt/kosmos/home` takes `usb`, or a GUID in either
+case; given a GUID, the disk server takes only the Kosmos partition that has
+it, and waits for it once as it waits for any (5e), so a second Kosmos stick
+plugged in beside the one the machine started from is never taken for it.
+
+**The kernel's command line is longer than any the loader passes.** The
+loader passes up to 384 characters - a stick's words first, then 117 of its
+own `kosmos-boot/...` words - and the kernel kept 255. So long `KOSMOS_ARGS`
+lost the loader's words from the end without a sign, and would have lost the
+partition's name with them. It keeps 511 now.
+
+**The partition is compared, and not checked.** The loader holds the kernel,
+and a `\boot\disk.img`, to the build's page sums; nothing holds the partition
+to anything before Kosmos mounts it, because the loader never reads it. What
+`mkusb.sh`'s read-back compares is every sector of it, and `stickcheck.py`
+names that partition when one differs, rather than calling it the backup GPT.
+
 ### What is not done yet, and what QEMU cannot show
 
 - **A client that ends without closing** keeps its open slot, and the region's
@@ -1507,9 +1546,10 @@ blocks being written.
 - **What a flush buys** is not visible under QEMU, whose stick writes straight
   to a file: the check sees the driver say one was sent and kept, not a power
   cut survived.
-- **Which partition**: `usb` takes the first Kosmos partition on the lowest
-  unit that has one. 5f has the loader name the boot stick's own by its
-  unique GUID, so a second Kosmos stick is never taken for it.
+- **A stick with `/home` in a partition has not booted on the ThinkPad.** Its
+  first is offered as an experiment, beside a stick that has (`boot.md`).
+- **Two sticks written from one image** carry the same partition GUID, and the
+  disk server takes the lower unit of the two.
 
 ### How it is tested
 
@@ -1538,6 +1578,19 @@ blocks being written.
   after the driver says it is watching. The driver reads it and a prompt comes;
   `diskinfo` says `/home` is the Kosmos partition; and a file saved there has
   extents on a disk. Controls in `testing.md` §18.60.
+- **`usb_home_named`**, 3 checks (5f): two sticks with a Kosmos partition each,
+  and `opt/kosmos/home` naming the second's GUID in small letters. `/home` is
+  that stick's partition, on unit 1; a file saved there has extents; and the
+  other stick's blocks are unchanged.
+- **`cmdline_long`**, 1 check (5f): a word at the end of a 335-character
+  command line reaches `sys.boot`.
+- **`tools/run_uefi.py`'s home stick**, 4 checks (5f): the stick `mkusb_image.py
+  --home` makes, booted through OVMF with no screen. The loader hands over no
+  disk and a kernel that is the build's; `sys.boot` gives the partition's GUID
+  from the stick's command line; `diskinfo` says `/home` is that partition; and
+  a file saved there has extents. `test_stickcheck.py` asks about the same
+  stick: itself, and a byte of its partition changed, named as `/home`'s
+  partition. Controls in `testing.md` §18.61.
 
 ---
 

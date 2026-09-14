@@ -110,8 +110,15 @@ static unsigned low_region_count;
  * It is where boot options come from on a machine with no fw_cfg - a laptop
  * booted by GRUB is told `opt/kosmos/smp=1` on the `multiboot2` line or not
  * at all.
+ *
+ * **Longer than any line the loader passes** - `CMDLINE_MAX` in
+ * `boot/efi/loader.c` is 384 - because a line cut here is cut silently at
+ * its end, and the end is where the loader's own `kosmos-boot/...` words go,
+ * after the stick's. It was 256, which 200 characters of a stick's words and
+ * the loader's 117 did not fit (USB step 5f, `tools/run_x86.py`'s
+ * `cmdline_long`).
  */
-static char loader_cmdline[256];
+static char loader_cmdline[512];
 
 static void keep_cmdline(const char *from, size_t max)
 {

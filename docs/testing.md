@@ -3695,3 +3695,38 @@ with all 111 programs in `/bin`, the disk 33 across two boots, the UEFI boots
 x86-64, on its second run. The first stopped on AArch64 in the `/bin` walk,
 which counted one program; the second passed on the same tree, and
 `roadmap.md`'s *Known and unexplained* has it.
+
+## 18.61 A stick whose `/home` is a partition of its own
+
+**USB step 5f**: `mkusb_image.py --home` and `USB_HOME=partition`; the disk
+server taking a partition by its GUID; the kernel's command line no shorter
+than the loader's; and `stickcheck.py` naming the partition. `usb.md` §7 has
+how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/run_x86.py`'s `usb_home_named`, 3 checks | two sticks with a Kosmos partition each, and `opt/kosmos/home` naming the second's GUID in small letters: `/home` is unit 1's 21 MB partition, a file saved there has extents, and the first stick's bytes are unchanged |
+| `cmdline_long`, 1 check | a word at the end of a 335-character command line, given through Multiboot 1's `-append`, reaches `sys.boot` |
+| `tools/run_uefi.py`'s home stick, 4 checks | the stick `mkusb_image.py --home` makes, booted through OVMF on xHCI with no screen: the kernel's line says the loader handed over no disk and the stick against the build is the same; `sys.boot` gives the partition's GUID, from the stick's command line; `diskinfo` says `/home` is that partition's sectors and blocks; a file saved there has extents |
+| `tools/test_stickcheck.py`, 12 checks, 2 of them new | the home stick, streamed as a stick is read back, holds its image; and a byte of its Kosmos partition changed is damage, named `the Kosmos partition, /home` |
+| `usb`, `usb_hotplug`, `usb_mouse`, `usb_blocks`, `usb_home`, `usb_second_stick` and `usb_home_late` | still pass, and so do `run_uefi.py`'s first stick and its refusals, with a kernel that keeps twice the command line it did |
+
+**Controls**, each put back byte for byte, and the images rebuilt after:
+
+| broken | what failed |
+| ------ | ----------- |
+| F1: the partition's GUID ignored by the disk server | `usb_home_named`, 2 of 3: `/home` was unit 0's 13 MB partition, and the stick not named was written |
+| F2: the kernel's command line back to 256 bytes | `cmdline_long`, 1 of 1: `tail: nil` - the word at the end of the 335-character line was cut off |
+| F3: `mkusb_image.py --home` not putting the GUID on the command line | `run_uefi.py`'s home stick, 3 of 4: the loader handed over no disk and a kernel that was the build's, and then `sys.boot` answered `named: nil`, `diskinfo` did not name the partition, and `save` put a file with 0 extents in `/home` - memory, since nothing had asked for the stick |
+| F4: `stickcheck.py` not naming the partition | `test_stickcheck.py`, 1 of 12: the changed byte was still damage, exit 1, and was named `past the ESP, where the backup GPT is` |
+
+**What neither the image nor QEMU can show**: whether the ThinkPad's firmware
+boots a stick with a second partition after its ESP, and whether the stick it
+boots from answers the disk server's writes as QEMU's does. The first is a
+stick to try, offered beside one that has booted.
+
+And as written: `make test` whole - x86-64 153, the UEFI boots 38, the
+stick check 12, the machine with no display on both boards with all 111
+programs in `/bin`, the disk 33 across two boots, the argument audit 112,
+and the suites 160 of 160 and 156 of 156 - and `make screenshot`, 110
+display checks on AArch64 and 108 on x86-64.

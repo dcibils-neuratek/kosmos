@@ -19,7 +19,11 @@ Every variant has the verdict it must get and a phrase that has to be in the
 answer, because a checker that says "differs" about the right stick and the
 wrong place is the failure worth catching.
 
-Usage: test_stickcheck.py IMAGE [KERNEL.ELF]
+Given a third image, one `mkusb_image.py --home` made, it asks about that
+one too: the image itself, and a byte of its Kosmos partition changed - which
+has to be damage, named as `/home`'s partition rather than as the backup GPT.
+
+Usage: test_stickcheck.py IMAGE [KERNEL.ELF [HOME-IMAGE]]
 """
 
 import os
@@ -243,6 +247,23 @@ def main():
 
     expect("what mounting the stick writes", ask(image, elf, mount), 3,
            "which is what mounting the stick writes")
+
+    home = sys.argv[3] if len(sys.argv) > 3 else None
+
+    if home is not None:
+        with open(home, "rb") as f:
+            f.seek(SECTOR)
+            header = f.read(92)
+            f.seek(struct.unpack_from("<Q", header, 72)[0] * SECTOR + 128)
+            second = f.read(128)
+
+        start = struct.unpack_from("<Q", second, 32)[0] * SECTOR
+
+        expect("the home stick itself", ask(home, None), 0,
+               "the stick holds the image")
+        expect("a byte of /home's partition",
+               ask(home, None, [(start + 5000, b"\xA5")]), 1,
+               "the Kosmos partition, /home")
 
     if fails:
         print("FAIL: %d of %d stickcheck checks:" % (len(fails),

@@ -37,6 +37,7 @@ early screen was dark on that machine for months while this harness passed.
 """
 
 import os
+import re
 import shutil
 import socket
 import struct
@@ -45,6 +46,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 
 QEMU = "qemu-system-x86_64"
 
@@ -515,9 +517,121 @@ def thinkpad_screen(image, elf):
     return heard.decode("utf-8", "replace"), tagged, early, late
 
 
+def home_boot(image, check):
+    """**USB step 5f: `/home` on a partition of the stick the machine started
+    from.**
+
+    A stick `mkusb_image.py --home` made carries no disk for the loader to
+    read. Its kfs image is a second partition, of Kosmos's type, and its
+    command line names that partition's unique GUID. So nothing here is
+    QEMU's but the machine: the firmware finds the stick over xHCI, the loader
+    passes the stick's words on as it always has, and Kosmos's own USB driver
+    has to find the partition named on that same stick for `diskinfo` to say
+    it is `/home`, and for a file saved there to have extents on a disk.
+
+    **With no screen**, which the loader allows - Kosmos starts without one -
+    so the prompt stays on the serial line to be typed at. **And on a snapshot
+    of the image**, so a save leaves the file as the build wrote it for
+    `test_stickcheck.py`, which reads it after.
+    """
+    fw, why = firmware()
+
+    if fw is None:
+        check(False, "no firmware to boot the home stick with: %s" % why)
+        return
+
+    code, varsfd = fw
+    work = tempfile.mkdtemp()
+    writable = os.path.join(work, "vars.fd")
+    shutil.copy(varsfd, writable)
+
+    # The partition the image names, read off it as the disk server reads it
+    # off the stick: the header at block 1, and the entry after the ESP's.
+    with open(image, "rb") as f:
+        f.seek(512)
+        header = f.read(92)
+        f.seek(struct.unpack_from("<Q", header, 72)[0] * 512 + 128)
+        second = f.read(128)
+
+    first, last = struct.unpack_from("<QQ", second, 32)
+    own = str(uuid.UUID(bytes_le=second[16:32])).upper()
+
+    cmd = [QEMU, "-M", "q35", "-m", "4G", "-no-reboot",
+           "-vga", "none", "-display", "none", "-serial", "stdio",
+           "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=" + code,
+           "-drive", "if=pflash,format=raw,unit=1,file=" + writable,
+           "-device", "qemu-xhci,id=xhci",
+           "-drive", "if=none,id=stick,format=raw,snapshot=on,file=" + image,
+           "-device", "usb-storage,bus=xhci.0,drive=stick"]
+
+    typed = ('print("named:", sys.boot("opt/kosmos/home"))', "diskinfo",
+             "save home.txt kept where it started")
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
+    os.set_blocking(p.stdout.fileno(), False)
+
+    out, sent = b"", 0
+    start = quiet = time.time()
+
+    try:
+        while time.time() - start < 240.0:
+            chunk = p.stdout.read()
+
+            if chunk:
+                out += chunk
+                quiet = time.time()
+            else:
+                time.sleep(0.1)
+
+            prompts = out.count(b"kosmos>")
+
+            if (sent < len(typed) and prompts > sent
+                    and time.time() - quiet > 0.5):
+                p.stdin.write(typed[sent].encode() + b"\n")
+                p.stdin.flush()
+                sent += 1
+                quiet = time.time()
+
+            if sent == len(typed) and prompts > len(typed):
+                time.sleep(0.8)
+                out += p.stdout.read() or b""
+                break
+    finally:
+        p.kill()
+        p.wait()
+
+    said = out.decode("utf-8", "replace").replace("\r", "")
+    shown = "\n    ".join(l.strip() for l in said.splitlines()
+                           if "named:" in l or "disk:" in l
+                           or "Kosmos partition" in l or "filesystem:" in l
+                           or "saved" in l or "the loader:" in l)
+
+    check("the disk: none" in said
+          and "the stick against the build: same" in said,
+          "the home stick's boot did not say the loader handed over no disk "
+          "and a kernel that was the build's:\n    " + shown)
+
+    check(("named:\t" + own) in said,
+          "the stick's command line did not name its Kosmos partition, %s, "
+          "to sys.boot:\n    %s" % (own, shown))
+
+    check(("disk: %d sectors of 512 bytes" % (last - first + 1)) in said
+          and ("on the Kosmos partition on USB unit 0, blocks %d to %d"
+               % (first, last)) in said,
+          "/home was not the partition the stick names, blocks %d to %d:"
+          "\n    %s" % (first, last, shown))
+
+    check(re.search(r"saved home\.txt: \d+ bytes, [1-9]\d* extent", said)
+          is not None,
+          "a file saved to /home on the stick did not land on a disk:\n    "
+          + shown)
+
+
 def main():
     iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-uefi.img"
     refusal = sys.argv[2] if len(sys.argv) > 2 else None
+    home = sys.argv[3] if len(sys.argv) > 3 else None
     checks = 0
     fails = []
 
@@ -924,6 +1038,9 @@ def main():
               "the refusal of a changed kernel did not name the one page, the "
               "fourth: " + repr(dloader[-4:]))
 
+    if home is not None:
+        home_boot(home, check)
+
     if fails:
         print("FAIL: %d of %d checks booting through Kosmos's loader under "
               "UEFI:"
@@ -937,7 +1054,10 @@ def main():
     print("PASS: %d checks booting through Kosmos's loader under UEFI (the "
           "firmware's memory claimed and checked, the kernel at 16 MB, "
           "Kosmos drawing its own %dx%d screen, and the ThinkPad's 1920x1080 "
-          "at 0x4000000000 from stage two)." % (checks, width, height))
+          "at 0x4000000000 from stage two%s)."
+          % (checks, width, height,
+             "; and /home on a partition of the stick it started from"
+             if home is not None else ""))
     return 0
 
 
