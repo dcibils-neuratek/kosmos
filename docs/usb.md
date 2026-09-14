@@ -670,7 +670,10 @@ can click anything on the screen; it clamps each count to fifteen bits; and
 it wakes whoever is asleep waiting for input, which the i8042's interrupt
 does for its own packets in the trap handler. `syscall.h` has why a report
 is a call and not a shared region - the question `CLAUDE.md`'s rule about
-streams asks. The window manager did not change.
+streams asks. **And when that process ends** - killed, faulted, or gone
+between a press and its release - the kernel reports no movement and no
+buttons for it (`process_exit`), so a button it held comes up. The window
+manager did not change.
 
 ### The intervals a device is owed
 

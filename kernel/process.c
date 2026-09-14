@@ -17,6 +17,7 @@
 #include "pmm.h"
 #include "panic.h"
 #include "console.h"
+#include "hal.h"
 
 
 static struct process processes[PROCESS_MAX];
@@ -1216,6 +1217,25 @@ void process_exit(struct process *p, int code)
      * Before the capabilities, because those name these.
      */
     irq_release_owned_by(p);
+
+    /*
+     * **And the pointer's buttons, for the same reason**: a driver that
+     * reported one down and ended - killed, faulted, or gone before its
+     * device said the button came up - leaves the desktop dragging for
+     * good, because it was the only one who could ever have said so. No
+     * movement and no buttons, reported on its behalf, is that release,
+     * and the sleepers are woken as its own report would have woken them,
+     * so the window manager sees the button come up now rather than at its
+     * next deadline.
+     *
+     * The board keeps one set of buttons for every device a process drives,
+     * so a second such driver's would come up too. There is one, the USB
+     * driver.
+     */
+    if (p->moved_pointer) {
+        (void)hal_pointer_move(0, 0, 0);
+        thread_wake_sleepers_now();
+    }
 
     /*
      * Capabilities before memory. A shared region's pages come back only

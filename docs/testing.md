@@ -3191,3 +3191,53 @@ And as written, with every file put back byte for byte: `test_efiboot` 59,
 and 51 without a kernel to read; `run_uefi.py` 34; and `make test` whole -
 x86-64 124, the disk across two boots 33, the stick check 10, and the suites
 158 of 158 and 154 of 154.
+
+## 18.51 A dead driver's button comes up
+
+**A button a driver reported down stayed down when the driver ended.** The
+board keeps each pointing device's buttons until the device says they came up
+(`hal/pc/pointer.c`), and the USB driver is a process: killed, faulted, or
+stopped between a mouse's press and its release, nothing would ever say so,
+and the desktop would go on dragging for the life of the machine. The roadmap
+had it since the mouse arrived. A mouse pulled out with a button down was
+already let go of by the driver, and `usb_mouse` checks that; this is the case
+where the driver is what went.
+
+**So the kernel lets go on its behalf**, beside masking the interrupt lines it
+claimed: `SYS_POINTER_MOVE` records that a process reported buttons, and
+`process_exit` reports no movement and no buttons for it, then wakes the
+sleepers as the report itself would have.
+
+`user/pointer-$(ARCH).S` is an EL0 fixture that reports the left button down
+and exits without reporting it up, with what the kernel answered as its exit
+code:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `dev: a dead driver's button comes up`, on x86-64 | the report taken, and the board's pointer with no button down once the fixture has exited |
+| the same, on AArch64 | the report refused, because this board's pointer is a tablet, and the board refusing it again |
+
+**Not checked with the real driver.** `usb_mouse` boots into the desktop and
+ends nothing. The fixture makes the system call the driver makes, and the
+release does not ask which process it is releasing for.
+
+**Controls**, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| `process_exit` not letting go for a process that reported buttons | the x86-64 suite, 1 of 155: `dev: a dead driver's button comes up` |
+| `SYS_POINTER_MOVE` not recording that a process reported them | the same, 1 of 155 |
+
+```
+not ok 22 - dev: a dead driver's button comes up
+FAIL: 1 of 155 test(s) failed:
+  not ok 22 - dev: a dead driver's button comes up
+```
+
+The same line for both. On AArch64 neither can fail, because the report is
+refused before either link is reached - which is what that board's half of
+the check says.
+
+And as written, with both files put back byte for byte: the suites 159 of 159
+and 155 of 155, and `make test` whole - x86-64 124, the UEFI boots 34, the disk
+across two boots 33 and the stick check 10.

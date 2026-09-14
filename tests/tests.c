@@ -1037,6 +1037,7 @@ extern char user_fault_null_start[],   user_fault_null_end[];
 extern char user_fault_kernel_start[], user_fault_kernel_end[];
 extern char user_fault_text_start[],   user_fault_text_end[];
 extern char user_bad_pointer_start[],  user_bad_pointer_end[];
+extern char user_pointer_held_start[], user_pointer_held_end[];
 
 /* Runs a blob to completion and returns its exit code, or a large negative
  * on anything going wrong. The process is reaped, so the slot comes back. */
@@ -1438,6 +1439,53 @@ static bool test_only_the_console_owner_may_print(void)
     /* 1 is what hello exits with when the write did not return what it
      * asked for, which is what being refused looks like from inside. */
     return with_console == 0 && without == 1;
+}
+
+static bool test_a_driver_that_ends_lets_go_of_the_pointer(void)
+{
+    /*
+     * **A button a driver held comes up when the driver ends.**
+     *
+     * The fixture reports the left button down through `SYS_POINTER_MOVE`,
+     * as the USB driver does for a mouse, and exits without reporting it
+     * up - which is what a driver killed or faulted mid-click looks like to
+     * the board. Before the kernel let go on its behalf, the button stayed
+     * down for the life of the machine.
+     *
+     * On a board whose pointer is a tablet the report is refused and the
+     * fixture exits with the refusal, so there is nothing held; what is
+     * checked there is that the board really does refuse.
+     */
+    struct pointer_state state;
+    struct process *p;
+    unsigned i;
+    int code;
+
+    p = process_create("t-held", user_pointer_held_start,
+                       (size_t)(user_pointer_held_end
+                                - user_pointer_held_start), 0);
+    if (p == NULL) {
+        return false;
+    }
+    process_grant_devices(p);
+    process_start(p);
+
+    for (i = 0; i < 200 && !p->exited; i++) {
+        thread_yield();
+    }
+    if (!p->exited) {
+        return false;
+    }
+    code = p->exit_code;
+    process_reap(p);
+
+    if (code == SYS_ERR_NO_DEVICE) {
+        return !hal_pointer_move(0, 0, 0);
+    }
+
+    /* Taken, so the button was down when it ended - and is up now. */
+    return code == 0 && hal_pointer_poll(&state)
+           && (state.buttons & 1u) == 0;
 }
 
 static bool test_the_same_server_under_two_names(void)
@@ -6733,6 +6781,7 @@ static const struct test tests[] = {
     { "el0: two processes swap a Lua table",   test_two_processes_exchange_a_lua_table },
     { "ns: same server, two names, two views", test_the_same_server_under_two_names },
     { "dev: only the owner may print",         test_only_the_console_owner_may_print },
+    { "dev: a dead driver's button comes up",  test_a_driver_that_ends_lets_go_of_the_pointer },
     { "spawn: a child runs and is waited for", test_a_process_can_spawn_and_wait },
     { "el0: a null deref kills only it",       test_a_null_dereference_kills_only_the_process },
     { "el0: it cannot read the kernel",        test_a_process_cannot_read_the_kernel },

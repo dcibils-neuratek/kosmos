@@ -373,6 +373,17 @@ struct process {
     bool              owns_devices;
 
     /*
+     * **It has reported a pointing device's buttons** (`SYS_POINTER_MOVE`),
+     * so whatever it holds down is the kernel's to let go of when it ends.
+     *
+     * Nothing else ever would. The board holds a driver's buttons until the
+     * driver says they came up (`hal/pc/pointer.c`), and a driver killed or
+     * faulted mid-click says nothing again: the desktop went on dragging for
+     * good. `process_exit` reports no movement and no buttons for it.
+     */
+    bool              moved_pointer;
+
+    /*
      * Pages this process asked for with SYS_MAP: where the next one goes,
      * and how many it holds. The count is both the budget and what
      * `release_memory` walks to give them back - a process that exits

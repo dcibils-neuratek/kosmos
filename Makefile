@@ -324,7 +324,7 @@ ifdef TEST
   BUILD     := build/test
   SRCS      += tests/tests.c
   # The EL0 fixture blobs, which only the suite runs.
-  SRCS      += user/hello-$(ARCH).S user/faulty-$(ARCH).S
+  SRCS      += user/hello-$(ARCH).S user/faulty-$(ARCH).S user/pointer-$(ARCH).S
   # The libc the kernel no longer links, because the unit tests for it are
   # here and they call it directly. The shipping image needs none of it.
   SRCS      += runtime/libc/malloc.c runtime/libc/misc.c \
@@ -2329,7 +2329,7 @@ ifdef TEST
   # the kernel no longer links because the unit tests for it call it
   # directly.
   X86_SRCS += tests/tests.c \
-              user/hello-x86_64.S user/faulty-x86_64.S \
+              user/hello-x86_64.S user/faulty-x86_64.S user/pointer-x86_64.S \
               runtime/libc/malloc.c runtime/libc/misc.c \
               runtime/libc/math.c runtime/libc/snprintf.c \
               runtime/libc/strtod.c

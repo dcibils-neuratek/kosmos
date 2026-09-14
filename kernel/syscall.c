@@ -1197,6 +1197,7 @@ void syscall_dispatch(struct syscall_frame *sc)
                                      (uint32_t)sc->arg[2])) {
             result = SYS_ERR_NO_DEVICE;
         } else {
+            p->moved_pointer = true;
             thread_wake_sleepers_now();
             result = 0;
         }

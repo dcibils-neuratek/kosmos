@@ -8,6 +8,19 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
+### 14 September, small hours: a dead driver's button comes up
+
+**The roadmap's "a button held when the xHCI driver dies stays held"**: the
+board holds a driver's buttons until the driver says they came up, and a
+driver killed or faulted mid-click never would.
+
+- **The kernel lets go**: `SYS_POINTER_MOVE` records that a process reported
+  buttons, and `process_exit` reports none held for it and wakes the window
+  manager - beside masking its interrupt lines, for the same reason.
+- **Tested** by an EL0 fixture that holds the left button and exits,
+  `dev: a dead driver's button comes up` in both guest suites; controls in
+  `testing.md` §18.51.
+
 ### 14 September, small hours: the stick held to what the build wrote
 
 **The roadmap's "before step four", built**: a check on the machine that the

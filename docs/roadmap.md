@@ -381,9 +381,6 @@ the Pi", and the Pi is not here yet.
   which the walk does not read; the driver says it met one. The other half of
   this line - a mouse that stays in the report protocol - was the ThinkPad's
   own, and is read by its Report descriptor since 13 September (`usb.md` §5).
-- **A button held when the xHCI driver dies stays held.** The pointer keeps
-  each source's buttons, and nothing lets go of the driver's if its process
-  ends with one down.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
 

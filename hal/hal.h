@@ -575,6 +575,10 @@ unsigned hal_pointer_speed(unsigned units_per_count);
  *
  * False when the board's pointer is absolute: a tablet says where it is, and
  * there is no position of the board's own for a movement to be added to.
+ *
+ * The kernel calls it too, with no movement and no buttons, when a process
+ * that reported buttons ends (`process_exit`): nothing else would ever let
+ * go of a button a dead driver held.
  */
 bool hal_pointer_move(int dx, int dy, uint32_t buttons);
 
