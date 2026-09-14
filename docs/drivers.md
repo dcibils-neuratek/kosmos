@@ -140,12 +140,21 @@ This is the actual work, and everything below depends on it.
    suite test it as well (`testing.md` §18.35).
 
    **And a wait on several lines at once** (0.10.61): `SYS_IRQ_WAIT_ANY
-   (&caps, count, ticks)` answers which of the capabilities had an
-   interrupt. The xHCI driver drives every controller from one thread, and
+   (&caps, count, ticks, endpoint)` answers which of the capabilities had
+   an interrupt. The xHCI driver drives every controller from one thread, and
    waiting on each in turn left a mouse on the second behind the first's
    wait. It keeps every promise `SYS_IRQ_WAIT` makes, by the same lock, and
    takes its thread off every line before it returns, so a line never names
    a waiter that has gone (`testing.md` §18.43).
+
+   **And a caller, on the same wait** (USB step 5c): given an endpoint, it
+   answers `IRQ_WAIT_CALLER` when somebody is queued there - a line with an
+   interrupt first - so a driver with clients serves them without looking
+   at its endpoint between interrupts. The thread is the endpoint's watcher
+   and the lines' waiter at once, recorded under the endpoint's lock and then
+   the lines', and a caller wakes a watcher only under the lines' lock, so
+   the wake cannot fall between the two releases (`usb.md` §7, `testing.md`
+   §18.58).
 
 **The two mappings do not overlap, and that is deliberate**: registers are
 device memory and uncached, buffers are ordinary memory and cached, and a

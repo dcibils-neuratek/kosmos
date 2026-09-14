@@ -126,7 +126,8 @@ long             irq_wait(struct irq_line *line, unsigned long ticks);
  * `irq.c` has the argument.
  */
 long             irq_wait_any(struct irq_line *const *set, unsigned count,
-                              unsigned long ticks);
+                              unsigned long ticks, int endpoint);
+void             irq_wake_watcher(struct thread *t);
 
 long             irq_ack(struct irq_line *line);
 

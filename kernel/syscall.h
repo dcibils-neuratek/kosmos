@@ -374,11 +374,18 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * `caps` is an array of `count` interrupt capabilities, no more than
  * `IRQ_WAIT_ANY_MAX`. The answer is the place in it of a line that had an
  * interrupt - taken, as `SYS_IRQ_WAIT` takes one - or `SYS_NO_INTERRUPT` when
- * `ticks` ran out first; zero waits for ever. `kernel/irq.c` has the rest.
+ * `ticks` ran out first; zero waits for ever.
+ *
+ * **And an endpoint, when `endpoint` is not negative** (USB step 5c): a caller
+ * waiting there answers `IRQ_WAIT_CALLER`, to be collected with a receive
+ * that does not block, so a driver with clients of its own waits for them and
+ * its devices on one wait. A line with an interrupt is answered first.
+ * `kernel/irq.c` has the rest.
  */
-#define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks)  -> which, none, error */
+#define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks, ep) -> which, caller, none */
 
 #define IRQ_WAIT_ANY_MAX 8u
+#define IRQ_WAIT_CALLER  ((long)IRQ_WAIT_ANY_MAX)   /* never a line's place */
 
 #define SYS_MAX         53
 

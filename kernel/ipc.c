@@ -761,7 +761,7 @@ static void teardown(struct endpoint *ep)
     if (ep->watcher != NULL) {
         t = ep->watcher;
         ep->watcher = NULL;
-        thread_wake(t);
+        irq_wake_watcher(t);            /* the lines' lock too: see ipc_call */
     }
 
     /*
@@ -961,12 +961,17 @@ int ipc_call(cap_t index, const struct message *msg, struct message *reply)
          * lock it checked the queue under, so it cannot look, find nothing,
          * and sleep through this: it is either already blocked and findable
          * here, or it has not looked yet and will find this thread queued.
+         *
+         * **And under the interrupt lines' lock** (`irq_wake_watcher`): a
+         * watcher in `irq_wait_any` lets this endpoint's lock go before it
+         * blocks, holding that one until it has, so a wake without it could
+         * land in between and be lost.
          */
         if (ep->watcher != NULL) {
             struct thread *w = ep->watcher;
 
             ep->watcher = NULL;
-            thread_wake(w);
+            irq_wake_watcher(w);
         }
     }
 
@@ -1198,6 +1203,59 @@ int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input)
     self->wake_at = 0;
 
     return IPC_OK;
+}
+
+struct endpoint *ipc_endpoint_lock(struct thread *t, cap_t index,
+                                   unsigned long *flags)
+{
+    struct endpoint *ep = resolve(t, index);
+
+    if (ep == NULL) {
+        return NULL;
+    }
+
+    *flags = spin_lock(&ep->lock);
+
+    /* Looked at again under the lock, as `ipc_endpoint_destroy` looks: the
+     * endpoint may have been taken down since `resolve` read it. */
+    if (!ep->in_use || t->caps[index].generation != ep->generation) {
+        spin_unlock(&ep->lock, *flags);
+        return NULL;
+    }
+
+    return ep;
+}
+
+void ipc_endpoint_unlock(struct endpoint *ep, unsigned long flags)
+{
+    spin_unlock(&ep->lock, flags);
+}
+
+bool ipc_endpoint_has_caller(const struct endpoint *ep)
+{
+    return ep->senders != NULL;
+}
+
+bool ipc_endpoint_watch(struct endpoint *ep, struct thread *t)
+{
+    if (ep->watcher != NULL && ep->watcher != t) {
+        return false;
+    }
+
+    ep->watcher = t;
+    t->ipc.watching = ep;
+    return true;
+}
+
+void ipc_endpoint_unwatch(struct endpoint *ep, struct thread *t)
+{
+    if (ep->watcher == t) {
+        ep->watcher = NULL;
+    }
+
+    if (t->ipc.watching == ep) {
+        t->ipc.watching = NULL;
+    }
 }
 
 int ipc_reply(struct thread *sender, const struct message *msg)

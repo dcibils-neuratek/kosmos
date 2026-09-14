@@ -256,6 +256,20 @@ int ipc_receive(cap_t index, struct message *msg, struct thread **sender,
  */
 int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input);
 
+/*
+ * For `irq_wait_any`'s endpoint, and nothing else: an endpoint locked by the
+ * capability `t` holds for it, whether a caller is queued there, and a
+ * watcher recorded or taken off - the last three under the lock the first
+ * took. `irq.c` has why that wait holds an endpoint's lock and the lines'.
+ */
+struct endpoint;
+struct endpoint *ipc_endpoint_lock(struct thread *t, cap_t index,
+                                   unsigned long *flags);
+void ipc_endpoint_unlock(struct endpoint *ep, unsigned long flags);
+bool ipc_endpoint_has_caller(const struct endpoint *ep);
+bool ipc_endpoint_watch(struct endpoint *ep, struct thread *t);
+void ipc_endpoint_unwatch(struct endpoint *ep, struct thread *t);
+
 int ipc_reply(struct thread *sender, const struct message *msg);
 
 /* For tests and inspection. */

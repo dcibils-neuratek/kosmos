@@ -211,8 +211,13 @@ is the one that makes the machine Diego owns behave like a computer:
    cleared on the controller and the stick - and the command sent again
    once; REQUEST SENSE after any command the stick fails. The usb check boots
    with `opt/kosmos/stickfault=signature` to make QEMU's stick stall
-   (`usb.md` §7). Next: 5c, the kernel's interrupt wait also taking an
-   endpoint.
+   (`usb.md` §7).
+
+   **5c is built (14 September): one wait for interrupts and callers.**
+   `SYS_IRQ_WAIT_ANY` takes an endpoint and answers `IRQ_WAIT_CALLER`, a line
+   with an interrupt first, with no wake lost between the endpoint's lock
+   and the lines' (`usb.md` §7). Next: 5d, a block protocol served by the
+   driver.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage

@@ -1694,10 +1694,14 @@ void syscall_dispatch(struct syscall_frame *sc)
          *
          * The array is read once, into the kernel, before anything waits, so
          * a process that rewrote it during the wait would change nothing.
+         *
+         * And an endpoint, when `arg[3]` is not negative, resolved by `ipc.c`
+         * as every endpoint is: a number that names none refuses the wait.
          */
         uintptr_t at = (uintptr_t)sc->arg[0];
         unsigned long count = (unsigned long)sc->arg[1];
         unsigned long ticks = (unsigned long)sc->arg[2];
+        long endpoint = (long)sc->arg[3];
         struct irq_line *set[IRQ_WAIT_ANY_MAX];
         unsigned long i;
 
@@ -1723,7 +1727,9 @@ void syscall_dispatch(struct syscall_frame *sc)
             ticks = (unsigned long)TICK_HZ * 3600UL;
         }
 
-        result = irq_wait_any(set, (unsigned)count, ticks);
+        result = irq_wait_any(set, (unsigned)count, ticks,
+                              endpoint < 0 ? -1
+                              : endpoint > INT_MAX ? INT_MAX : (int)endpoint);
         break;
     }
 

@@ -4236,7 +4236,7 @@ static void any_first_waiter(void *arg)
 {
     (void)arg;
 
-    any_first_result = irq_wait_any(any_lines, 2, 5);
+    any_first_result = irq_wait_any(any_lines, 2, 5, -1);
     any_first_done = true;
     thread_exit();
 }
@@ -4249,7 +4249,7 @@ static void any_second_waiter(void *arg)
     (void)arg;
 
     long_before = thread_deadline_in(TICK_HZ);
-    any_second_result = irq_wait_any(any_lines, 2, 2u * TICK_HZ);
+    any_second_result = irq_wait_any(any_lines, 2, 2u * TICK_HZ, -1);
     any_second_early = cpu_cycles() < long_before;
     any_second_done = true;
     thread_exit();
@@ -4291,12 +4291,12 @@ static bool test_an_interrupt_wait_takes_whichever_line_has_one(void)
 
     /* With something pending nothing blocks, so these run on this thread. */
     taken = irq_deliver(numbers[1])
-         && irq_wait_any(any_lines, 2, 0) == 1
+         && irq_wait_any(any_lines, 2, 0, -1) == 1
          && any_lines[1]->pending == 0;
 
     lowest = irq_deliver(numbers[1]) && irq_deliver(numbers[0])
-          && irq_wait_any(any_lines, 2, 0) == 0
-          && irq_wait_any(any_lines, 2, 0) == 1
+          && irq_wait_any(any_lines, 2, 0, -1) == 0
+          && irq_wait_any(any_lines, 2, 0, -1) == 1
           && any_lines[0]->pending == 0 && any_lines[1]->pending == 0;
 
     first = thread_create_suspended("any-first", any_first_waiter, NULL);
@@ -4340,7 +4340,7 @@ static bool test_an_interrupt_wait_takes_whichever_line_has_one(void)
         left = any_lines[0]->waiter == NULL && any_lines[1]->waiter == NULL;
         counted = irq_deliver(numbers[0])
                && any_lines[0]->pending == 1
-               && irq_wait_any(any_lines, 2, 0) == 0
+               && irq_wait_any(any_lines, 2, 0, -1) == 0
                && any_lines[0]->pending == 0;
     }
 
@@ -4358,7 +4358,246 @@ static bool test_an_interrupt_wait_takes_whichever_line_has_one(void)
         && blocked && delivered
         && any_second_done && any_second_result == 1 && any_second_early
         && left && counted
-        && irq_wait_any(any_lines, 2, 0) == SYS_ERR_DENIED;  /* released */
+        && irq_wait_any(any_lines, 2, 0, -1) == SYS_ERR_DENIED;  /* released */
+}
+
+/*
+ * **A wait on interrupt lines and an endpoint takes a caller too** (USB step
+ * 5c, `usb.md` §7) - what lets the xHCI driver serve requests without looking
+ * at its endpoint between interrupts. What it must do, each with a way of
+ * getting it wrong:
+ *
+ *   - **Answer a line before a caller** when both are there, and the caller
+ *     on the next wait, at once. A wait that looked only at lines sleeps to
+ *     its deadline with somebody at the door; one that looked at the caller
+ *     first lets requests hold off a mouse.
+ *   - **Be woken by a caller that arrives while it sleeps**, long before its
+ *     deadline, and take itself off the lines. A wait that never became the
+ *     endpoint's watcher sleeps to the deadline.
+ *   - **Take itself off the endpoint when an interrupt ends it.** Left as its
+ *     watcher, it makes the next thread's watch refused - which is what is
+ *     looked at.
+ *
+ * The waits in a thread of their own, for the reason the tests above give; a
+ * second thread makes the calls; the suite's thread delivers the interrupt
+ * once the waiter is blocked on both lines, and tears everything down.
+ */
+static struct irq_line *either_lines[2];
+static cap_t either_waiter_cap;
+static cap_t either_caller_cap;
+static volatile bool either_waiter_done;
+static volatile bool either_caller_done;
+static volatile bool either_call_again;
+static volatile bool either_want_interrupt;
+static volatile long either_line_first;
+static volatile long either_caller_next;
+static volatile bool either_caller_at_once;
+static volatile bool either_first_collected;
+static volatile long either_woken;
+static volatile bool either_woken_early;
+static volatile bool either_lines_left;
+static volatile bool either_second_collected;
+static volatile long either_interrupted;
+static volatile bool either_interrupted_early;
+static volatile bool either_unwatched;
+static volatile int either_call_result;
+
+/* Collects the message a wait said was there, and answers it. */
+static bool either_collect(uint64_t tag)
+{
+    struct message msg = { 0 };
+    struct message answer = { 0 };
+    struct thread *sender = NULL;
+
+    answer.length = 1;
+
+    if (ipc_receive(either_waiter_cap, &msg, &sender, true, 0) != IPC_OK
+        || msg.tag != tag) {
+        return false;
+    }
+
+    return ipc_reply(sender, &answer) == IPC_OK;
+}
+
+static void either_waiter(void *arg)
+{
+    uint64_t long_before, began, two_ticks;
+    unsigned i;
+
+    (void)arg;
+
+    /* The caller's first call is queued before anything here looks. */
+    for (i = 0; i < 5; i++) {
+        thread_sleep_until(thread_deadline_in(1));
+    }
+
+    (void)irq_deliver(either_lines[1]->intid);
+    either_line_first = irq_wait_any(either_lines, 2, TICK_HZ,
+                                     either_waiter_cap);
+
+    two_ticks = thread_deadline_in(2) - cpu_cycles();
+    began = cpu_cycles();
+    either_caller_next = irq_wait_any(either_lines, 2, TICK_HZ,
+                                      either_waiter_cap);
+    either_caller_at_once = cpu_cycles() - began < two_ticks;
+    either_first_collected = either_collect(60u);
+
+    /* Two seconds asked for, ended by a call ten ticks in. */
+    either_call_again = true;
+    long_before = thread_deadline_in(TICK_HZ / 2u);
+    either_woken = irq_wait_any(either_lines, 2, 2u * TICK_HZ,
+                                either_waiter_cap);
+    either_woken_early = cpu_cycles() < long_before;
+    either_lines_left = either_lines[0]->waiter == NULL
+                     && either_lines[1]->waiter == NULL;
+    either_second_collected = either_collect(61u);
+
+    /* Two seconds asked for, ended by an interrupt the suite delivers. */
+    either_want_interrupt = true;
+    long_before = thread_deadline_in(TICK_HZ / 2u);
+    either_interrupted = irq_wait_any(either_lines, 2, 2u * TICK_HZ,
+                                      either_waiter_cap);
+    either_interrupted_early = cpu_cycles() < long_before;
+
+    either_waiter_done = true;
+    thread_exit();
+}
+
+static void either_caller(void *arg)
+{
+    struct message msg = { 0 };
+    struct message reply = { 0 };
+    unsigned i;
+
+    (void)arg;
+
+    msg.tag = 60u;
+    either_call_result = ipc_call(either_caller_cap, &msg, &reply);
+
+    while (!either_call_again && either_call_result == IPC_OK) {
+        thread_sleep_until(thread_deadline_in(1));
+    }
+
+    for (i = 0; i < 10; i++) {
+        thread_sleep_until(thread_deadline_in(1));
+    }
+
+    msg.tag = 61u;
+
+    if (either_call_result == IPC_OK) {
+        either_call_result = ipc_call(either_caller_cap, &msg, &reply);
+    }
+
+    /* After the interrupt ended the last wait: a watch of this thread's own
+     * is refused if that wait left itself watching. */
+    while (!either_waiter_done) {
+        thread_sleep_until(thread_deadline_in(1));
+    }
+
+    either_unwatched = ipc_wait_for_caller(either_caller_cap, 1, false)
+                       == IPC_OK;
+
+    either_caller_done = true;
+    thread_exit();
+}
+
+static bool test_an_interrupt_wait_takes_a_caller_too(void)
+{
+    unsigned numbers[2], found = 0, n;
+    struct thread *waiter, *caller;
+    uint64_t give_up;
+    bool delivered = false;
+    cap_t ep;
+
+    either_waiter_done = false;
+    either_caller_done = false;
+    either_call_again = false;
+    either_want_interrupt = false;
+    either_line_first = -1;
+    either_caller_next = -1;
+    either_caller_at_once = false;
+    either_first_collected = false;
+    either_woken = -1;
+    either_woken_early = false;
+    either_lines_left = false;
+    either_second_collected = false;
+    either_interrupted = -1;
+    either_interrupted_early = false;
+    either_unwatched = false;
+    either_call_result = IPC_OK;
+
+    for (n = 0; n < 1024 && found < 2; n++) {
+        if (hal_irq_available(n)) {
+            numbers[found++] = n;
+        }
+    }
+
+    if (found < 2) {
+        return false;
+    }
+
+    either_lines[0] = irq_claim(numbers[0], NULL);
+    either_lines[1] = irq_claim(numbers[1], NULL);
+    ep = ipc_endpoint_create();
+
+    waiter = thread_create_suspended("either-waiter", either_waiter, NULL);
+    caller = thread_create_suspended("either-caller", either_caller, NULL);
+
+    if (either_lines[0] == NULL || either_lines[1] == NULL || ep < 0
+        || waiter == NULL || caller == NULL) {
+        irq_release(either_lines[0]);
+        irq_release(either_lines[1]);
+        return false;
+    }
+
+    either_waiter_cap = ipc_cap_grant(waiter, ep);
+    either_caller_cap = ipc_cap_grant(caller, ep);
+
+    if (either_waiter_cap < 0 || either_caller_cap < 0) {
+        irq_release(either_lines[0]);
+        irq_release(either_lines[1]);
+        return false;
+    }
+
+    thread_wake(caller);
+    thread_wake(waiter);
+
+    /* Every wait running out unwoken is under seven seconds; past that,
+     * waiting longer would show nothing new. */
+    give_up = thread_deadline_in(8u * TICK_HZ);
+
+    while ((!either_waiter_done || !either_caller_done)
+           && cpu_cycles() < give_up) {
+        if (either_want_interrupt && !delivered
+            && either_lines[0]->waiter != NULL
+            && either_lines[1]->waiter != NULL) {
+            delivered = irq_deliver(numbers[0]);
+        }
+
+        thread_yield();
+    }
+
+    /* Always, so a thread still blocked on either is released. */
+    (void)ipc_endpoint_destroy(ep);
+    irq_release(either_lines[0]);
+    irq_release(either_lines[1]);
+
+    give_up = thread_deadline_in(TICK_HZ / 2u);
+
+    while ((!either_waiter_done || !either_caller_done)
+           && cpu_cycles() < give_up) {
+        thread_yield();
+    }
+
+    return either_waiter_done && either_caller_done && delivered
+        && either_line_first == 1
+        && either_caller_next == IRQ_WAIT_CALLER && either_caller_at_once
+        && either_first_collected
+        && either_woken == IRQ_WAIT_CALLER && either_woken_early
+        && either_lines_left && either_second_collected
+        && either_interrupted == 0 && either_interrupted_early
+        && either_unwatched
+        && either_call_result == IPC_OK;
 }
 
 static bool test_a_region_can_be_one_physical_run(void)
@@ -6896,6 +7135,8 @@ static const struct test tests[] = {
                                           test_an_interrupt_wait_can_have_a_deadline },
     { "irq: a wait on two lines takes whichever has one",
                                           test_an_interrupt_wait_takes_whichever_line_has_one },
+    { "irq: a wait on lines and an endpoint takes a caller too",
+                                          test_an_interrupt_wait_takes_a_caller_too },
     { "dev: registers may be mapped, RAM may not",
                                           test_a_driver_may_map_devices_and_not_ram },
     { "as: one space per possible process",    test_enough_address_spaces_for_every_process },

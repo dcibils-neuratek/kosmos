@@ -889,7 +889,7 @@ static bool wait_serving(struct controller *c, unsigned long ms,
             ticks = 1;
         }
 
-        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks)
+        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks, -1)
                          : SYS_NO_INTERRUPT;
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -3304,7 +3304,8 @@ static void watch(struct controller *list, unsigned count,
         long woke = SYS_NO_INTERRUPT;
 
         if (waited > 0) {
-            woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS));
+            woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS),
+                                       -1);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */

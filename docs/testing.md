@@ -3546,3 +3546,38 @@ And as written, with every file put back byte for byte and the image rebuilt:
 `usb` 19, `usb_hotplug` 17, `usb_mouse` 22, and `make test` whole - x86-64
 134, the UEFI boots 34, the stick check 10, and the suites 159 of 159 and 155
 of 155.
+
+## 18.58 One wait for interrupts and callers
+
+**USB step 5c**: `SYS_IRQ_WAIT_ANY` takes an endpoint, and answers
+`IRQ_WAIT_CALLER` when a caller is queued there - a line with an interrupt
+first. `usb.md` §7 has why and how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `irq: a wait on lines and an endpoint takes a caller too`, in the guest suite on both boards | a line with an interrupt answered before a queued caller, and the caller at once on the next wait, its message still there to collect; a caller ten ticks into a two-second wait ends it long before its deadline, with the wait off both lines; an interrupt ending a two-second wait early leaves it no longer the endpoint's watcher, so another thread's watch is not refused |
+| `tools/test_syscall_args.lua`, 112 checks | the fourth argument the kernel now reads is one the wrapper passes, `sys4`: still 53 cases and 55 calls, none short |
+
+**Controls**, on the AArch64 guest suite, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| a queued caller not looked at | the new test, 1 of 160 |
+| a caller answered before a pending line | the same |
+| the wait never recorded as the endpoint's watcher | the same |
+| the watcher left in place when an interrupt ends the wait | the same |
+| `ipc_call` waking a watcher with a bare `thread_wake`, outside the lines' lock | **nothing: 160 of 160** |
+
+The test is one verdict, so the first four fail it identically; which part
+failed is known from the control, not from the output.
+
+**The fifth passing is the honest result, not a gap papered over.** What the
+lines' lock closes is a window a few instructions wide - after the waiting
+thread lets the endpoint's lock go and before it has blocked - and a caller
+has to arrive inside it, on another core, for the wake to be lost. No test
+here can aim at that, so the guard rests on the argument in `kernel/irq.c`
+and `usb.md` §7 rather than on this suite, and is recorded as such.
+
+And as written, with both files put back and both test images rebuilt:
+`make test` whole - the suites 160 of 160 and 156 of 156, x86-64 134, the
+UEFI boots 34, the stick check 10, and the argument audit 112.

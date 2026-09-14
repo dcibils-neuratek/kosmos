@@ -20,14 +20,24 @@ prepush` and a bump.
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
-  proposal's five calls: 5a and 5b are built - a stick's size and its first
-  blocks, and Reset Recovery - and 5c, the kernel's wait on interrupt lines
-  and an endpoint, is next; then a block protocol from the USB driver to a filesystem
+  proposal's five calls: 5a to 5c are built - a stick's size and its first
+  blocks, Reset Recovery, and one kernel wait for interrupts and callers -
+  and next is 5d, a block protocol from the USB driver to a filesystem
   server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
   read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 5c, one wait for interrupts and callers
+
+- **`SYS_IRQ_WAIT_ANY` takes an endpoint** and answers `IRQ_WAIT_CALLER`
+  when a caller is queued there, a line with an interrupt first. Two locks -
+  the endpoint's, then the lines' - and a caller wakes a watcher only under
+  the lines' lock (`usb.md` §7). The first of step 5's calls.
+- **Tested**: a guest test on both boards; controls in `testing.md` §18.58.
+  `xhci.c` passes -1 until 5d.
+- **Next**: 5d, a block protocol - `blockproto.h` - served by the driver.
 
 ### 14 September: USB step 5b, a stick recovered
 

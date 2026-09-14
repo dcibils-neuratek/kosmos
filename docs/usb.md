@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a and 5b of six parts, under QEMU (`roadmap.md`) |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a to 5c of six parts, under QEMU (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -827,9 +827,10 @@ request goes on the ring whatever there was. The first report is said.
 **The watch waited on each controller in turn, 50 ms apiece**, which a plug
 can afford and a mouse cannot: a mouse on the second of the ThinkPad's two
 controllers would have its reports sit behind the first's wait and reach the
-pointer in bursts. The kernel gained `SYS_IRQ_WAIT_ANY (&caps, count,
-ticks)` for it (`drivers.md` §4), and the watch waits on every running
-controller's interrupt at once, then looks at all of them. A controller whose
+pointer in bursts. The kernel gained `SYS_IRQ_WAIT_ANY` for it
+(`drivers.md` §4), and the watch waits on every running controller's
+interrupt at once, then looks at all of them; since step 5c the same wait
+can take an endpoint too (§7). A controller whose
 interrupt could not be claimed is looked at when the wait's deadline comes
 round.
 
@@ -1285,6 +1286,49 @@ xhci: 00:04.0 port 1: block 1 holds a GUID partition table's header, and block 3
   so the checks before them, INQUIRY's answer, the size and both GPT headers,
   all pass on a stick that was recovered. `usb_hotplug` and `usb_mouse` run
   without the fault. Controls in `testing.md` §18.57.
+
+### 5c: one wait for interrupts and callers
+
+**The first of the five calls** (`README.md`): a driver with clients of its
+own waits for them on the same wait as its interrupt lines. The xHCI driver
+is one thread, waiting on every controller's interrupt so that no mouse
+waits behind anything; a request from a disk server, from 5d on, has to reach
+that same thread without it looking at its endpoint between interrupts -
+which on an idle machine would make every block wait out a nap.
+
+**`SYS_IRQ_WAIT_ANY` takes an endpoint**, as a fourth argument, or -1 for
+none. A caller queued there answers `IRQ_WAIT_CALLER`, which is never a
+line's place in the array, and the driver collects the message with a
+receive that does not block. **A line with an interrupt is answered before a
+caller**, and the caller on the next wait, at once - so a stream of requests
+cannot hold off a mouse.
+
+**Two locks, and no wake lost between them** (`kernel/irq.c`). The endpoint
+belongs to `ipc.c`, under its own lock, and the lines to `irq.c`, under
+theirs. Each round takes the endpoint's lock and then the lines', looks at
+both, and records the thread as the lines' waiter and the endpoint's watcher
+with both held. It then lets the endpoint's go - into the masked state,
+since the lines' is still held - and blocks releasing the lines'. A caller
+wakes a watcher only under the lines' lock (`irq_wake_watcher`), so its wake
+waits until the thread is blocked: a bare `thread_wake` does nothing to a
+thread that has not blocked yet, and there it would be lost. Nothing takes
+the two locks in the other order.
+
+`ipc.c` exports four small things for it and for nothing else: an endpoint
+locked by a capability, whether a caller is queued on it, and a watcher
+recorded or taken off, each under that lock. The driver passes -1 on both of
+its waits until 5d gives it an endpoint.
+
+### How it is tested
+
+- **The guest suite, on both boards**: `irq: a wait on lines and an endpoint
+  takes a caller too`. With an interrupt pending and a caller queued, the
+  line comes first and the caller at once on the next wait; a caller ten
+  ticks into a two-second wait ends it long before its deadline, with the
+  wait off both lines; and an interrupt ending another leaves it no longer
+  the endpoint's watcher, so a second thread's watch is not refused.
+  Controls in `testing.md` §18.58.
+- **The USB checks**, `usb_mouse` among them, on the driver's new call.
 
 ---
 
