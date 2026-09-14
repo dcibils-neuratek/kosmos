@@ -776,11 +776,47 @@ void process_wake_audio(void)
     }
 }
 
+/*
+ * **The disk, started once.** `hal_blk_init` starts the controller - an NVMe
+ * drive reset and given new queues, or a virtio device taken back to status 0
+ * and brought up again - and it was called for every `SYS_DISK_INFO` and
+ * every grant: every `sys.disk()` anybody made, including the one the disk
+ * server makes each time `/home/.super` is read, and the one This Machine
+ * makes as it opens. QEMU's trace counted the NVMe controller started ten
+ * times in a boot that ran `diskinfo` three times, and a virtio disk walked
+ * through its whole start again for each; on x86 every NVMe start also spent
+ * one of four MSI vectors and a mapping. It worked for as long as nothing was
+ * in flight when it happened, which was all anything had tested.
+ *
+ * So `kmain` starts it here, beside sound, while it is the only thing running
+ * - no other thread, no other processor started, no process - and what it
+ * answered is kept. Nothing writes these afterwards, which is why reading
+ * them takes no lock.
+ */
+static struct blkdev kept_disk;
+static bool kept_disk_found;
+
+void process_disk_start(void)
+{
+    kept_disk_found = hal_blk_init(&kept_disk);
+}
+
+bool process_disk(struct blkdev *out)
+{
+    if (!kept_disk_found) {
+        return false;
+    }
+
+    if (out != NULL) {
+        *out = kept_disk;
+    }
+
+    return true;
+}
+
 bool process_grant_disk(struct process *p)
 {
-    struct blkdev dev;
-
-    if (p == NULL || !hal_blk_init(&dev)) {
+    if (p == NULL || !process_disk(NULL)) {
         return false;
     }
 

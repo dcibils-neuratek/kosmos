@@ -17,6 +17,7 @@ previous run - which is the same failure as not having written anything.
 """
 
 import os
+import re
 import select
 import subprocess
 import sys
@@ -71,10 +72,16 @@ def qemu_args(disk, image):
     ]
 
 
-def boot(image, disk, commands, boot_timeout=90, each=25):
-    """One run of the machine. Returns everything printed after the prompt."""
+def boot(image, disk, commands, boot_timeout=90, each=25, trace=None):
+    """One run of the machine. Returns everything printed after the prompt.
+
+    `trace`, when given, is a file for QEMU to write each virtio device's
+    status changes into (`virtio_set_status`), which is how a device being
+    started more than once is counted.
+    """
     proc = subprocess.Popen(
-        [*qemu_args(disk, image), "-kernel", image],
+        [*qemu_args(disk, image), "-kernel", image]
+        + (["-trace", "virtio_set_status", "-D", trace] if trace else []),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, bufsize=0,
     )
@@ -158,6 +165,7 @@ def main():
 
     try:
         # ---- first boot: there is nothing, then there is, then a file ----
+        started = disk + ".starts"
         first = boot(image, disk, [
             "diskinfo",
             "mkfs --yes",
@@ -194,7 +202,7 @@ def main():
             'string.rep(string.char(65 + i % 26), 4096)) end '
             'print("BIGWROTE", fs.write_from("/home/big", buf, 200 * 1024))',
             "ls /home",
-        ])
+        ], trace=started)
 
         #
         # **A blank disk formats itself, and this used to insist it did
@@ -261,6 +269,42 @@ def main():
             raise Failure("the file is not in the directory listing.\n" + first)
 
         checks += 1
+
+        #
+        # **And every virtio device started once**, however many times the
+        # disk was asked about in that boot. A start ends in DRIVER_OK, status
+        # 15, written once for each device; every `sys.disk()` used to take
+        # the disk through its whole start again, and QEMU's trace showed it -
+        # the same device at 0, 1, 3, 11 and 15 again for each `diskinfo`.
+        #
+        # **On `virt`, and not on q35.** The PC's firmware sets the disk
+        # ready before the kernel runs - SeaBIOS starts it to look for
+        # something to boot - and nothing in this trace tells its start from
+        # the kernel's, which the first run on q35 counted as the kernel's
+        # second. `run_x86.py`'s `storage` is the PC's half, where an NVMe
+        # drive's start can be told apart; the kernel's code is the same for
+        # every disk on both boards.
+        if machine(image) == "aarch64":
+            try:
+                with open(started) as handle:
+                    traced = handle.read()
+            except OSError:
+                traced = ""
+
+            ready = re.findall(r"virtio_set_status vdev (0x[0-9a-f]+) "
+                               r"val 15\b", traced)
+            again = sorted({vdev for vdev in ready if ready.count(vdev) > 1})
+
+            if not ready or again:
+                raise Failure(
+                    "QEMU's trace of the first boot has %d virtio devices "
+                    "set ready, and %s set ready more than once - a device "
+                    "started again each time the disk is asked about.\n"
+                    % (len(set(ready)), ", ".join(again) or "none")
+                    + traced[-1500:]
+                )
+
+            checks += 1
 
         # ---- the file verbs, on a real filesystem ------------------------
         #
@@ -599,6 +643,9 @@ def main():
         return 1
     finally:
         os.unlink(disk)
+
+        if os.path.exists(disk + ".starts"):
+            os.unlink(disk + ".starts")
 
 
 if __name__ == "__main__":

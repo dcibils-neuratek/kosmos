@@ -8,6 +8,21 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 14 September, small hours: the disk started once
+
+**Every `sys.disk()` started the disk controller again** - found while This
+Machine was being built, then counted in QEMU's trace: ten NVMe starts in a
+boot that ran `diskinfo` three times, and a virtio disk through its whole
+start for each. The disk server asks every time `/home/.super` is read, and
+This Machine asks as it opens.
+
+- **`kmain` starts it once**, beside sound and before any thread, processor
+  or process, and keeps the answer, which `SYS_DISK_INFO` and the disk grant
+  read without a lock. The boot log names the disk.
+- **Tested in the trace**: one NVMe start by the kernel in `run_x86.py`'s
+  `storage`, after the one SeaBIOS makes, and each virtio device set ready
+  once in `run_disk.py` on `virt`; controls in `testing.md` §18.49.
+
 ### 14 September, small hours: This Machine on a real bus
 
 Diego, looking at This Machine on the ThinkPad: "reporting old things, we neee
@@ -27,7 +42,7 @@ on bus 0, all "NO DRIVER", no NVMe drive, and a closing paragraph about q35.
 - **Found on the way**: every `sys.disk()` started the disk controller again
   - ten NVMe starts in one boot in QEMU's trace, and a virtio disk through its
   whole start for each `diskinfo`. Harmless while idle, and This Machine is
-  one of the callers. In `roadmap.md`, and next.
+  one of the callers. Fixed next, in the section above.
 
 ### 13 September, night: the ThinkPad's mouse in jumps, and ERDP's two halves
 

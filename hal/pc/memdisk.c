@@ -17,9 +17,11 @@
  * so an image that does not fit is refused by name in `memdisk_describe`
  * rather than turning into a disk that is not there.
  *
- * Set up once, under a lock: `hal_blk_init` is asked by the process that is
- * given the disk and, separately, by `SYS_DISK_INFO` on behalf of anybody
- * who wants its size, and two cores asking at once must not map it twice.
+ * Set up once, under a lock, although it is asked once: `kmain` starts the
+ * disk before anything else runs, and every question after that is answered
+ * from what it found (`process_disk_start` in `kernel/process.c`). It used to
+ * be asked for every `SYS_DISK_INFO` and every grant of the disk, from any
+ * core, which is what the lock was for - and it costs nothing to keep.
  * Reads and writes take no lock - each is one copy to or from bytes nothing
  * else maps, and the filesystem server is the one process holding the disk.
  */

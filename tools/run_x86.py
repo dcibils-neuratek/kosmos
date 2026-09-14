@@ -211,11 +211,21 @@ def storage(image, check):
     extra = ("-drive", "file=%s,format=raw,if=none,id=nvme0" % disk,
              "-device", "nvme,drive=nvme0,serial=kosmos")
 
-    first = boot(image, None, 90.0, extra=extra, typed=(
-        "diskinfo",
-        "mkfs --yes",
-        "save notes.txt written before the reboot",
-    ))
+    # QEMU's own record of each time the controller is started and stopped,
+    # in a file of its own, for the check after this boot.
+    started = os.path.join(tempfile.mkdtemp(prefix="kosmos-nvme-trace-"),
+                           "starts")
+
+    first = boot(image, None, 90.0,
+                 extra=extra + ("-trace", "pci_nvme_mmio_start_success",
+                                "-trace", "pci_nvme_mmio_stopped",
+                                "-D", started),
+                 typed=(
+                     "diskinfo",
+                     "mkfs --yes",
+                     "save notes.txt written before the reboot",
+                     "diskinfo",
+                 ))
 
     if first is None:
         check(False, "the machine would not boot with an NVMe drive")
@@ -232,6 +242,40 @@ def storage(image, check):
 
     check("saved notes.txt" in first,
           "`save` did not report writing the file")
+
+    #
+    # **And the controller started once by the kernel**, however many times
+    # the disk was asked about. Every `sys.disk()` used to start it again -
+    # `diskinfo` reads `/home/.super`, and the server answering asks the
+    # kernel about the disk - and QEMU counted ten starts in a boot that ran
+    # `diskinfo` three times. Nothing broke, because nothing was in flight
+    # when it happened; the kernel now starts it at boot and keeps what it
+    # found.
+    #
+    # **The firmware starts it first**, and the first run of this check
+    # counted that as a second start: SeaBIOS brings the drive up to look for
+    # something to boot, and leaves it running. The kernel's start begins by
+    # stopping it - `nvme_init` clears the enable bit before it sets it - so
+    # a start before the first stop is the firmware's, and every start after
+    # it is the kernel's.
+    #
+    try:
+        with open(started) as handle:
+            traced = handle.read()
+    except OSError:
+        traced = ""
+
+    stopped = traced.find("pci_nvme_mmio_stopped")
+    starts = (traced[stopped:].count("pci_nvme_mmio_start_success")
+              if stopped >= 0 else 0)
+
+    check(stopped >= 0 and starts == 1,
+          "QEMU saw the kernel start the NVMe controller %d times in one boot "
+          "that asked about the disk four times%s; it is meant to start it "
+          "once and keep what it found"
+          % (starts, "" if stopped >= 0 else
+             ", and never saw it stopped, so no start of the kernel's could "
+             "be told from the firmware's"))
 
     second = boot(image, None, 90.0, extra=extra,
                   typed=("cat /home/notes.txt",))

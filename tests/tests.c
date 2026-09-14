@@ -3686,7 +3686,10 @@ static bool test_block_device_is_present(void)
 {
     struct blkdev dev;
 
-    if (!hal_blk_init(&dev)) {
+    /* What boot started and kept, and not the controller started again:
+     * a test that restarts the disk is the fault `process_disk_start` is
+     * there to remove. The reads and writes below still go to the driver. */
+    if (!process_disk(&dev)) {
         return false;
     }
 
@@ -3764,7 +3767,7 @@ static bool test_block_refuses_past_the_end(void)
 {
     struct blkdev dev;
 
-    if (!hal_blk_init(&dev)) {
+    if (!process_disk(&dev)) {
         return false;
     }
 

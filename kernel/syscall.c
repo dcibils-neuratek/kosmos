@@ -1787,8 +1787,9 @@ void syscall_dispatch(struct syscall_frame *sc)
         /* Readable without holding the disk. It says whether there is one
          * and how big it is, which is not authority over it - and init has
          * to be able to ask before deciding whether to start a filesystem
-         * server at all. */
-        if (hal_blk_init(&dev)) {
+         * server at all. Answered from what boot kept, and never by starting
+         * the controller again (`process_disk_start` says why). */
+        if (process_disk(&dev)) {
             info.sectors     = dev.sectors;
             info.sector_size = dev.sector_size;
         } else {

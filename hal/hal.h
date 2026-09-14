@@ -775,6 +775,11 @@ struct bus_device;
 bool          hal_blk_present(void);
    /* a disk was found and claimed */
 
+/* Which disk answered, or why none did - for the boot log, the way
+ * `hal_snd_describe` names the sound device. Both boards had one and
+ * nothing declared it, so nothing could call it. */
+const char   *hal_blk_describe(void);
+
 unsigned      hal_bus_scan(struct bus_device *out, unsigned max);
 
 bool          hal_snd_init(void);       /* false when there is no device */

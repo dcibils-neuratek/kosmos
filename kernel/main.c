@@ -929,6 +929,38 @@ void kmain(void)
     }
 
     /*
+     * The disk, started once and kept, for the reason `process_disk_start`
+     * gives: every question about it used to start the controller again.
+     * Here because this is the last point at which nothing else runs - no
+     * other thread, no other processor started, no interrupt taken - which
+     * is what lets the answer be read afterwards without a lock. And said,
+     * as sound and the network are, because which disk a machine turned out
+     * to have, or why it has none, is worth a line.
+     */
+    process_disk_start();
+
+    {
+        struct blkdev found;
+
+        boot_fact_begin();
+
+        if (process_disk(&found)) {
+            kputs("disk: ");
+            kputs(hal_blk_describe());
+            kputs(", ");
+            kputu((unsigned long)found.sectors);
+            kputs(" sectors of ");
+            kputu((unsigned long)found.sector_size);
+            kputs(" bytes");
+        } else {
+            kputs("no disk: ");
+            kputs(hal_blk_describe());
+        }
+
+        boot_fact_end();
+    }
+
+    /*
      * Sound, and what a machine turned out to have is worth saying once, at
      * the start - which is why the board is asked to name the device rather
      * than this printing one. On `virt` there is one possible answer and on

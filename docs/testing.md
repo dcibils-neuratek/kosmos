@@ -3027,3 +3027,63 @@ And as written, with every control put back byte for byte: `machine_report`
 6 of 6, the display harness 107 with This Machine's report following its
 window, and `make test` whole - x86-64 123, the UEFI boots 29, the stick check
 10, the disk 33, and the suites 158 of 158 and 154 of 154.
+
+## 18.49 The disk started once
+
+**Every question about the disk started it again.** `SYS_DISK_INFO` and the
+grant of the disk to a process both called `hal_blk_init`, and that starts the
+controller: an NVMe drive disabled, reset and given new queues, a virtio disk
+taken back to status 0 and walked up to DRIVER_OK. Init asked at boot, the
+disk server asked every time `/home/.super` was read, and This Machine asks as
+it opens. Found by reading while This Machine was being built, then counted
+in QEMU's own trace: a boot that ran `diskinfo` three times started the NVMe
+controller ten times, and the virtio disk went through 0, 1, 3, 11 and 15
+again for each. On x86 every NVMe start also spent one of the four MSI vectors
+and a mapping of the registers. Nothing had broken, because nothing was in
+flight when it happened - the disk server asks between its own requests - and
+a `sys.disk()` from another process, on another core, had nothing like that
+to rely on.
+
+**So the kernel starts it once**, in `kmain` beside sound, while nothing else
+runs - no other thread, no other processor started, no interrupt taken - and
+keeps what the board answered (`process_disk_start`, `process_disk`).
+`SYS_DISK_INFO` and `process_grant_disk` answer from that, without a lock,
+and the boot log names the disk through `hal_blk_describe`, which both boards
+had and nothing had declared. The guest suite's two tests that called
+`hal_blk_init` themselves ask what boot kept; its reads and writes still go
+to the driver.
+
+**Checked in QEMU's trace, which is where a start can be seen:**
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `run_x86.py`'s `storage`: the NVMe controller started once by the kernel | `pci_nvme_mmio_start_success` once after the first `pci_nvme_mmio_stopped`, in a boot that asks about the disk four times |
+| `run_disk.py` on `virt`: each virtio device set ready once | `virtio_set_status ... val 15` no more than once for any device, over the first boot's dozen commands |
+
+**The firmware starts the disk too**, and the first run of both checks on
+q35 counted it: two NVMe starts, and the virtio disk set ready twice. SeaBIOS
+brings a drive up to look for something to boot and leaves it running. The
+kernel's NVMe start begins by stopping the controller, so a start before the
+first stop is the firmware's; a virtio start has no such mark, so the virtio
+count runs on `virt`, which has no firmware, and the PC's half is the NVMe
+drive's.
+
+**Controls**, with the kernel starting the disk at every question again:
+
+| broken | what failed |
+| ------ | ----------- |
+| `SYS_DISK_INFO` and the grant calling `hal_blk_init` again, as before | `storage`, 1 of 5: the kernel's starts counted after the firmware's, eleven of them; and `run_disk.py` on `virt`, the virtio disk set ready more than once |
+
+```
+storage: 1 of 5 checks failed
+  QEMU saw the kernel start the NVMe controller 11 times in one boot that asked about the disk four times; it is meant to start it once and keep what it found
+
+FAIL: QEMU's trace of the first boot has 1 virtio devices set ready, and 0x1038fbd20 set ready more than once - a device started again each time the disk is asked about.
+```
+
+Eleven where the build before the fix made nine, because the control keeps the start at boot and adds one for every question after it.
+
+And as written, with both files put back byte for byte: `storage` 5 of 5 on
+q35, `run_disk.py` 34 on `virt` and 33 on q35, and `make test` whole - x86-64
+124, the UEFI boots 29, the stick check 10, and the suites 158 of 158 and 154
+of 154, the block device's tests among them asking what boot kept.

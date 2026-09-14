@@ -385,13 +385,6 @@ the Pi", and the Pi is not here yet.
   ends with one down.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
-- **Every `sys.disk()` starts the disk controller again.** `SYS_DISK_INFO`
-  and `process_grant_disk` call `hal_blk_init`, which resets an NVMe drive or
-  a virtio disk and brings it up again - QEMU's trace counted ten NVMe starts
-  in a boot that ran `diskinfo` three times, and on x86 each spends an MSI
-  vector and a mapping. The disk server asks each time `/home/.super` is read,
-  and This Machine asks as it opens. Harmless while nothing is in flight.
-  Found building This Machine on 14 September.
 
 ---
 

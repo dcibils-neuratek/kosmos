@@ -481,6 +481,20 @@ bool process_grant_audio(struct process *p);
 bool process_grant_disk(struct process *p);
 bool process_grant_net(struct process *p);
 
+/*
+ * The machine's disk, started once at boot and kept: whether there is one,
+ * and how big. `SYS_DISK_INFO` answers from it and `process_grant_disk`
+ * grants it, and neither starts the controller again.
+ *
+ * `process_disk_start` is called once, from `kmain`, while it is the only
+ * thing running - which is what lets `process_disk` read what it kept without
+ * a lock. `out` may be NULL, to ask only whether there is a disk.
+ */
+struct blkdev;
+
+void process_disk_start(void);
+bool process_disk(struct blkdev *out);
+
 /* The sound device wants a period: wake the one process that holds it, if
  * it is waiting. Called from the interrupt path. */
 void process_wake_audio(void);
