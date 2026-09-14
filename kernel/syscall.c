@@ -683,7 +683,9 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
      * tell a machine with no sound card from one whose card nothing claims.
      * The board fills this; nothing in the kernel decodes an id.
      */
-    info.bus_count = hal_bus_scan(info.bus, BUS_DEVICES_MAX);
+    info.bus_found = hal_bus_scan(info.bus, BUS_DEVICES_MAX);
+    info.bus_count = info.bus_found < BUS_DEVICES_MAX ? info.bus_found
+                                                     : BUS_DEVICES_MAX;
 
     /*
      * What the firmware calls the machine, copied out of the board's copy.
@@ -710,6 +712,24 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
         info.machine_product[sizeof(info.machine_product) - 1] = '\0';
         info.machine_version[sizeof(info.machine_version) - 1] = '\0';
         info.machine_source[sizeof(info.machine_source) - 1]   = '\0';
+    }
+
+    /*
+     * And where the screen came from, when there is one, in the words the
+     * boot log already has - copied up to its field and terminated, for the
+     * same reason as the names above.
+     */
+    if (info.screen_width > 0) {
+        const char *source = hal_fb_describe();
+        unsigned i = 0;
+
+        while (source != NULL && source[i] != '\0'
+               && i + 1 < sizeof(info.screen_source)) {
+            info.screen_source[i] = source[i];
+            i++;
+        }
+
+        info.screen_source[i] = '\0';
     }
 
     /*

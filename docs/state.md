@@ -8,6 +8,27 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 14 September, small hours: This Machine on a real bus
+
+Diego, looking at This Machine on the ThinkPad: "reporting old things, we neee
+to update it and make sure is resizable as well". It listed twenty-two devices
+on bus 0, all "NO DRIVER", no NVMe drive, and a closing paragraph about q35.
+
+- **The PC's bus scan follows bridges** and puts the bus in `where`, and a
+  device is **driven when a driver's `pci_enable` took it** - recorded in
+  `pci.c`, rather than known by a list of kinds. `BUS_DEVICES_MAX` is 64, and
+  `sysinfo` carries `bus_found` and `screen_source`.
+- **The report says what the machine said**: the screen's source from the
+  board, the sound and xHCI controllers from the bus, class codes as numbers,
+  and three processor counts when they differ - and it follows its window.
+- **Tested**: `machine_report` in `run_x86.py` - a drive behind a root port,
+  two xHCI controllers, QEMU's own `info pci` as the reference - and a grip
+  drag in the display harness; controls in `testing.md` §18.48.
+- **Found on the way**: every `sys.disk()` started the disk controller again
+  - ten NVMe starts in one boot in QEMU's trace, and a virtio disk through its
+  whole start for each `diskinfo`. Harmless while idle, and This Machine is
+  one of the callers. In `roadmap.md`, and next.
+
 ### 13 September, night: the ThinkPad's mouse in jumps, and ERDP's two halves
 
 **`a543f20` booted the ThinkPad and read its mouse by the descriptor**:

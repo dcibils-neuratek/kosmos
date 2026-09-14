@@ -760,6 +760,11 @@ unsigned long hal_rtc_seconds(void);
  * compared or shown, never followed.
  *
  * A board with no enumerable bus returns 0 and that is a complete answer.
+ *
+ * **It answers how many it found, and writes the first `max`.** A PC's
+ * enumeration follows its bridges to the buses behind them, which is where a
+ * laptop keeps its drive, so the count can pass the room a caller made; the
+ * caller can then say so, rather than the list stopping without a word.
  */
 /* Defined by `kernel/syscall.h`, because it is part of what `sysinfo`
  * hands to userland. Only ever a pointer here, so the declaration is all

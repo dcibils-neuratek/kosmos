@@ -45,7 +45,7 @@ ARGS = [
 PAGE_SIZE = 4096
 
 
-def boot(image, option, timeout, typed=(), extra=(), until=None):
+def boot(image, option, timeout, typed=(), extra=(), until=None, after=None):
     """Boots, optionally types at the prompt, and returns everything printed.
 
     One line per prompt, and only after the machine has been quiet for a
@@ -55,6 +55,11 @@ def boot(image, option, timeout, typed=(), extra=(), until=None):
     `until` is a line to wait for as well, for output that arrives on its
     own clock rather than a prompt's - a driver reporting after the shell
     is already up.
+
+    `after` is a line to see before typing anything, for a command whose
+    answer depends on something that starts on its own clock - the USB
+    driver taking its controllers, which a report asked for sooner has, and
+    truthfully, as undriven.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
 
@@ -94,7 +99,8 @@ def boot(image, option, timeout, typed=(), extra=(), until=None):
             prompts = out.count(b"kosmos>")
 
             if (sent < len(typed) and prompts > sent
-                    and time.time() - quiet > 0.4):
+                    and time.time() - quiet > 0.4
+                    and (after is None or after.encode() in out)):
                 p.stdin.write(typed[sent].encode() + b"\n")
                 p.stdin.flush()
                 sent += 1
@@ -275,6 +281,45 @@ def qemu_usb(extra):
 
     return re.findall(r"Device \S+, Port \S+, Speed ([\d.]+) Mb/s, "
                       r"Product ([^\r\n]+)", said)
+
+
+def qemu_pci(extra):
+    """Every PCI function QEMU itself has, given these devices, as
+    `vendor:device` strings - from `info pci` on a second QEMU, as `qemu_usb`
+    asks `info usb`.
+
+    **Asked once its firmware has run, and not before.** The bus behind a
+    bridge is numbered by the firmware, which writes the number into the
+    bridge as it enumerates, and QEMU's `info pci` walks the buses by those
+    numbers - so a machine stopped before its first instruction lists nothing
+    behind a root port. The first run of `machine_report` asked that one and
+    was told the drive did not exist. SeaBIOS numbers the buses within a
+    second, and then looks for something to boot, of which there is none.
+    """
+    work = tempfile.mkdtemp(prefix="kosmos-infopci-")
+    path = os.path.join(work, "monitor")
+    cmd = [QEMU] + ARGS + ["-S", "-serial", "none",
+                           "-monitor", "unix:%s,server,nowait" % path] \
+        + list(extra)
+
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+    said = ""
+
+    try:
+        monitor = Monitor(path)
+        monitor.ask("cont", quiet=0.3)
+        time.sleep(3.0)
+        said = monitor.ask("info pci", quiet=0.5)
+        monitor.close()
+    except RuntimeError:
+        pass
+    finally:
+        proc.kill()
+        proc.wait()
+
+    return re.findall(r"PCI device ([0-9a-f]{4}:[0-9a-f]{4})", said)
 
 
 def qemu_binary():
@@ -1452,6 +1497,110 @@ def usb_mouse(image, check):
         proc.wait()
 
 
+def machine_report(image, check):
+    """`machine` at the prompt, on a q35 with a drive behind a bridge.
+
+    **This Machine described a q35 on the ThinkPad.** It listed twenty-two
+    devices on bus 0, every one "NO DRIVER" - the two xHCI controllers the
+    USB driver runs among them - and closed on a paragraph about QEMU's
+    bridges and SATA controller. The board's scan walked bus 0 alone, so
+    nothing behind a bridge was listed, and it called a device driven only if
+    `claimed_here` had been taught its kind: virtio, and one class of sound
+    controller.
+
+    **So this machine has the ThinkPad's shape where it matters**: an NVMe
+    drive behind a PCI Express root port, on the bus behind it, and two xHCI
+    controllers. `machine` is typed once the USB driver has said it runs
+    both, because the driver is a process that takes its controllers one
+    after the other as it starts, and a report asked for sooner has the
+    second undriven - which is what the first run of this check did. Without
+    a window manager `machine` prints its report, which is the text its
+    window shows.
+
+    **What QEMU has is asked of QEMU**: the vendor and device of every PCI
+    function, from `info pci` on a second QEMU, must be what the listing
+    holds - which a scan that stops at bus 0 fails by exactly the drive. Then
+    the drive driven and off bus 0, both controllers driven, the count
+    agreeing with the lines, the screen's source in the words of the boot
+    log, and neither of the two things the report said that were never true
+    of a ThinkPad.
+    """
+    disk = os.path.join(tempfile.gettempdir(), "kosmos-x86-machine-nvme.img")
+
+    with open(disk, "wb") as handle:
+        handle.truncate(16 * 1024 * 1024)
+
+    extra = ("-device", "ramfb",
+             "-device", "pcie-root-port,id=rp0,bus=pcie.0,chassis=1,slot=1",
+             "-drive", "file=%s,format=raw,if=none,id=nvme0" % disk,
+             "-device", "nvme,drive=nvme0,serial=kosmos,bus=rp0",
+             "-device", "qemu-xhci,id=usb0",
+             "-device", "qemu-xhci,id=usb1")
+
+    out = boot(image, None, 120.0, typed=("machine",), extra=extra,
+               after="xhci: 2 controllers")
+
+    if out is None:
+        check(False, "the machine would not boot with a drive behind a bridge")
+        return
+
+    parts = out.replace("\r", "").split("kosmos>")
+    report = next((p for p in reversed(parts) if "On the bus" in p), "")
+    shown = report[report.find("On the bus"):][:3000] or "(no report)"
+
+    listed = re.findall(r"^([0-9a-f]{2}):([0-9a-f]{2})\.([0-7]) +"
+                        r"(driven|no driver) +(.*) ([0-9a-f]{6}) "
+                        r"\(([0-9a-f]{4}:[0-9a-f]{4})\)$",
+                        report, re.MULTILINE)
+    driven = sum(1 for l in listed if l[3] == "driven")
+    from_qemu = sorted(qemu_pci(extra))
+
+    check(len(from_qemu) > 0 and sorted(l[6] for l in listed) == from_qemu,
+          "`machine` did not list every PCI function QEMU has, behind the "
+          "root port as well as on bus 0:\n    machine: %r\n    QEMU:    %r"
+          % (sorted(l[6] for l in listed), from_qemu))
+
+    drives = [l for l in listed if l[5].startswith("0108")]
+
+    check(len(drives) == 1 and drives[0][0] != "00"
+          and drives[0][3] == "driven",
+          "the NVMe drive behind the root port was not listed once, off bus 0 "
+          "and driven:\n    " + shown)
+
+    controllers = [l for l in listed if l[5] == "0c0330"]
+
+    check(len(controllers) == 2
+          and all(l[3] == "driven" for l in controllers),
+          "the two xHCI controllers the USB driver took were not both listed "
+          "as driven:\n    " + shown)
+
+    counted = re.search(r"(\d+) devices? found, (\d+) driven, (\d+) without "
+                        r"a driver\.", report)
+
+    check(counted is not None and int(counted.group(1)) == len(listed)
+          and int(counted.group(2)) == driven,
+          "the report's count does not agree with its own lines, %d listed "
+          "and %d driven: %s" % (len(listed), driven,
+                                 counted.group(0) if counted else "no count"))
+
+    frame = re.search(r"^Framebuffer +(.+?) *$", report, re.MULTILINE)
+
+    check(frame is not None and frame.group(1).startswith("ramfb")
+          and frame.group(1) in parts[0],
+          "the report's framebuffer is %r, not the board's own description of "
+          "its screen in the boot log" % (frame.group(1) if frame else None))
+
+    # The sentences themselves, and not "q35": that word is in the machine's
+    # own name here, which SMBIOS gives as QEMU's q35.
+    stale = [l.strip() for l in report.splitlines()
+             if "on a q35" in l or "SMP is being built" in l
+             or "no host controller driver" in l]
+
+    check(report != "" and not stale,
+          "the report still says what was never true of a ThinkPad:\n    "
+          + ("\n    ".join(stale) or "(no report at all)"))
+
+
 def row(out, label):
     """The value of one of `neofetch`'s rows, or None."""
     found = re.search(r"^%s +(.+?)\r?$" % label, out, re.MULTILINE)
@@ -1871,6 +2020,12 @@ def main():
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.
     #
     identity(image, check)
+
+    # And the machine's own report of what is on its bus, which on the
+    # ThinkPad listed bus 0 and nothing driven. `machine_report` says why the
+    # drive is behind a bridge.
+    #
+    machine_report(image, check)
 
     # And the pointer a laptop has, with and without the serial port it does
     # not have. `pointer` says why the second half is the one that matters.

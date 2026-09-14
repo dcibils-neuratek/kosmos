@@ -152,21 +152,25 @@ end
 
 row("Architecture", cpu.arch or "unknown")
 --
--- Two numbers, because they are not the same one.
+-- Three numbers, because they are three questions, and `sysinfo` has the
+-- long version: what the firmware says the machine has, how many processors
+-- are running kernel code, and how many are given new threads. One number
+-- when they agree, which on a machine given no boot option they do. A gap
+-- between the first two is a processor that never arrived; between the last
+-- two, `opt/kosmos/smp` asking for fewer.
 --
--- `cpus_present` is what the firmware says the machine has; `cpus` is what
--- this kernel is scheduling on. A report that gave only the second would
--- describe a four-core laptop as a one-core machine, which is true about
--- Kosmos and false about the computer - and the gap is exactly what
--- `docs/smp.md` measures its own progress by.
+-- It said "(SMP is being built)" beside any gap, long after it was built.
 --
-local present = (sys.info() or {}).cpus_present or 1
-local in_use  = (sys.info() or {}).cpus or 1
+local present = info.cpus_present or 1
+local online  = info.cpus_online or present
+local in_use  = info.cpus or 1
 
-row("Cores", (present == in_use)
-             and tostring(present)
-             or ("%d present, %d scheduling  (SMP is being built)")
-                :format(present, in_use))
+if present == online and online == in_use then
+  row("Cores", tostring(present))
+else
+  row("Cores", ("%d present, %d running the kernel, %d given threads")
+               :format(present, online, in_use))
+end
 
 if cpu.counter_hz and cpu.counter_hz > 0 then
   row("Counter", ("%d MHz"):format(cpu.counter_hz // 1000000))
@@ -209,7 +213,11 @@ if screen then
   -- and every drawing bug this system has had came from assuming it was.
   row("Bytes a row", ("%d  (%d x 4 is %d)"):format(
         screen.pitch or 0, screen.width or 0, (screen.width or 0) * 4))
-  row("Framebuffer", "linear, from the firmware (ramfb)")
+  -- Where the pixels come from, as the board tells its own boot log. This
+  -- said "ramfb" on every machine, and on the ThinkPad the screen is the
+  -- loader's.
+  row("Framebuffer", ((info.screen_source or "") ~= "") and info.screen_source
+                     or "linear, and the board did not say from where")
 else
   absent("Display", "none attached; this machine is serial-only")
 end
@@ -307,13 +315,29 @@ end
 --------------------------------------------------------------------------
 head("Audio")
 
+--
+-- **Which controller, from the bus**, for the reason the Network section
+-- gives: this said "virtio-sound" whenever there was sound, which was true
+-- only while nothing else could make any. A controller a driver took and
+-- got no sound out of is a third answer, and the ThinkPad's is that one.
+--
+local sound, silent = hardware.audio(sys.bus())
+
 if (info.audio_rate or 0) > 0 then
-  row("Device", "virtio-sound")
+  row("Device", sound[1] and (sound[1].name .. " at " .. sound[1].place)
+                or "one the bus did not list")
   row("Format", ("%d Hz, %d channel%s, 16-bit"):format(
         info.audio_rate, info.audio_channels or 2,
         (info.audio_channels == 1) and "" or "s"))
   row("Period", ("%d bytes, %d of them"):format(
         info.audio_period or 0, info.audio_periods or 0))
+elseif sound[1] then
+  row("Device", sound[1].name .. " at " .. sound[1].place
+                .. ", driven, and nothing playing through it")
+elseif silent[1] then
+  for _, card in ipairs(silent) do
+    row("Device", card.name .. " at " .. card.place .. ", with no driver")
+  end
 else
   absent("Audio", "no device; this machine is silent")
 end
@@ -363,42 +387,50 @@ local VENDORS = hardware.VENDORS
 local CLASSES = hardware.CLASSES
 local VIRTIO  = hardware.VIRTIO
 
-local bus = sys.bus()
+local bus, found = sys.bus()
+
+found = found or (bus and #bus) or 0
 
 if bus and #bus > 0 then
   local undriven = 0
 
+  --
+  -- **A column each: where, whether anything drives it, and what it is.**
+  -- The status trailed the name, and on the ThinkPad the names ran to the
+  -- edge. The class code goes out whole - class, subclass and interface -
+  -- because what those numbers mean is a table this project's references do
+  -- not have, and a number is better than a name guessed at.
+  --
   for _, d in ipairs(bus) do
-    local name, place
+    local name
 
     if d.class == 0 then
       -- A device-tree window: the type is the whole identity.
-      name  = VIRTIO[d.device] or ("virtio type " .. d.device)
-      place = "window " .. d.where
+      name = VIRTIO[d.device] or ("virtio type " .. d.device)
     else
-      local vendor = VENDORS[d.vendor] or ("vendor 0x%04x"):format(d.vendor)
-      local kind   = CLASSES[d.class >> 16] or ("class 0x%02x"):format(d.class >> 16)
-      name  = ("%s %s (0x%04x:0x%04x)"):format(vendor, kind, d.vendor, d.device)
-      place = ("%02x:%02x.%d"):format(0, d.where >> 3, d.where & 7)
+      name = ("%s %s %06x (%04x:%04x)"):format(hardware.vendor(d),
+                                              CLASSES[d.class >> 16] or "device",
+                                              d.class, d.vendor, d.device)
     end
 
-    if d.claimed then
-      row(place, name .. "  -  driven")
-    else
-      row(place, name .. "  -  NO DRIVER")
-      undriven = undriven + 1
-    end
+    if not d.claimed then undriven = undriven + 1 end
+
+    out(("%-9s %-10s %s"):format(hardware.place(d),
+                                 d.claimed and "driven" or "no driver", name))
   end
 
   out("")
   out(("  %d device%s found, %d driven, %d without a driver."):format(
-      #bus, (#bus == 1) and "" or "s", #bus - undriven, undriven))
+      found, (found == 1) and "" or "s", #bus - undriven, undriven))
+
+  if found > #bus then
+    out(("  The first %d are listed; the kernel's answer has room for no"
+         .. " more."):format(#bus))
+  end
 
   if undriven > 0 then
     out("  A device with no driver is not a fault. It is hardware this")
-    out("  system has not been taught, and on a q35 most of it never will")
-    out("  be: the bridges and the SATA controller are QEMU's, not")
-    out("  something Kosmos asked for.")
+    out("  system has not been taught.")
   end
 else
   absent("Bus", "this board reports no enumerable bus")
@@ -415,10 +447,35 @@ absent("Memory speed", "SMBIOS is read for the machine's name and nothing " ..
                        "else; the firmware knows and is not asked")
 absent("Slots and DIMMs", "the same - a count of modules is in that table, " ..
                           "unread")
-absent("Graphics", "ramfb is a linear framebuffer from the firmware. There " ..
-                   "is no accelerator to name, and no driver that would " ..
-                   "know one if there were")
-absent("USB", "no host controller driver, so no tree to walk")
+absent("Graphics", "the screen is a linear framebuffer somebody else set " ..
+                   "up; nothing here drives a display controller, so there " ..
+                   "is no accelerator to name")
+
+-- The USB tree is walked by the xHCI driver, which names what it finds in the
+-- log and has no node or call a program could read. What can be said here is
+-- whether there is a driver to walk it.
+local function usb_tree()
+  local driven, undriven = 0, 0
+
+  for _, d in ipairs(bus or {}) do
+    if d.class == 0x0c0330 then
+      if d.claimed then driven = driven + 1 else undriven = undriven + 1 end
+    end
+  end
+
+  if driven > 0 then
+    return ("%d xHCI controller%s driven; the devices on %s are named in " ..
+            "the log (log xhci), and no program can ask for them yet")
+           :format(driven, (driven == 1) and "" or "s",
+                   (driven == 1) and "it" or "them")
+  elseif undriven > 0 then
+    return "an xHCI controller on the bus, and no driver on it"
+  end
+
+  return "no USB host controller on the bus"
+end
+
+absent("USB devices", usb_tree())
 absent("Temperature", "nothing here reads a sensor")
 absent("Pointer", "sys.pointer answers nil both for a board with none and " ..
                   "for a program not granted one, and a window never is - " ..
@@ -457,8 +514,16 @@ if not win then
   return
 end
 
+--
+-- **Pinned to all four edges**, like the Log window, so a bigger window is a
+-- bigger report. The window manager always let this window be resized; the
+-- editor followed its left and top alone, so what grew was a border of
+-- window colour round a report the size it opened at.
+--
 win:add(ui.editor{ x = 8, y = 8, w = W - 32, h = H - 74,
-                   text = report, gutter = false, read_only = true })
+                   text = report, gutter = false, read_only = true,
+                   follow = { left = true, right = true,
+                              top = true, bottom = true } })
 
 -- Said rather than left to be discovered. There are no modifier keys on
 -- this machine, so the clipboard lives behind the window manager's prefix,
@@ -466,6 +531,7 @@ win:add(ui.editor{ x = 8, y = 8, w = W - 32, h = H - 74,
 win:add(ui.label{ x = 10, y = H - 60,
                   text = "Drag to select, or Control-A for all."
                          .. "   Control-C copies it.",
-                  color = "text_dim" })
+                  color = "text_dim",
+                  follow = { left = true, bottom = true } })
 
 win:run()

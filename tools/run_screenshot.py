@@ -3750,6 +3750,11 @@ def check_clipboard(guest):
     silence, so the highlight comes back to exactly the run that left, and
     that is what the third measurement below is looking at: the selection
     getting *smaller* when you copy it.
+
+    **And This Machine's report follows its window when it is made bigger**,
+    checked here because this is the window already open: the window manager
+    always put a grip on it, and the editor inside was pinned to its left
+    and top alone, so what grew was a border of window colour.
     """
     #
     # **Where both windows are is read from the window manager, not assumed.**
@@ -3953,6 +3958,79 @@ def check_clipboard(guest):
             "was truncated without saying so."
         )
 
+    #
+    # **And the report follows its window.** The window manager has always
+    # put a grip on this window, and the editor was built at the size the
+    # window opened with and pinned to its left and top alone - so made
+    # bigger, the window showed a border of its own colour round a report
+    # the size it started. Diego, on the ThinkPad: "make sure is resizable
+    # as well".
+    #
+    # Measured by the editor's own background, the commonest colour in a
+    # band of it with nothing selected, against the window's colour in the
+    # margin beside it: the two have to differ, or a report that did not grow
+    # would read as one that did.
+    #
+    rx, ry, rw, rh = report
+    guest.mouse_to(*_to_tablet(rx + 200, ry + 200, width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.2)
+    guest.mouse_button(False)
+    time.sleep(0.8)
+
+    width, height, px = parse_ppm(guest.screendump())
+    paper = _commonest(width, px, (rx + 40, ry + rh - 200, rw - 120, 100))
+    margin = _commonest(width, px, (rx + rw - 12, ry + rh // 3, 6, rh // 3))
+
+    if paper == margin:
+        raise Failure(
+            f"This Machine's report and the window round it are both "
+            f"{paper}, so whether the report grows with its window cannot be "
+            "seen."
+        )
+
+    before = _colour_area(width, height, px, paper)
+    grip_x, grip_y = rx + rw - 3, ry + rh - 3
+    room_x = (width - 6) - (grip_x + 3)
+    room_y = (height - 6) - (grip_y + 3)
+
+    if room_x < 60 or room_y < 40:
+        raise Failure(
+            f"no room to make This Machine bigger: {room_x}x{room_y} left on "
+            f"a {width}x{height} screen."
+        )
+
+    guest.mouse_to(*_to_tablet(grip_x, grip_y, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+
+    # In steps, the way the Terminal's is dragged, and for its reason.
+    for i in range(1, 9):
+        guest.mouse_to(*_to_tablet(grip_x + room_x * i // 8,
+                                   grip_y + room_y * i // 8,
+                                   width, height))
+        time.sleep(0.12)
+
+    guest.mouse_button(False)
+
+    # What the editor gains if it follows both edges, on the quarter of the
+    # pixels `_colour_area` counts - and half of that, so text drawn into the
+    # new room cannot fail a report that grew.
+    gained = (room_x * (rh - 80) + room_y * (rw - 40)) // 4 // 2
+
+    def followed(w_, h_, px_):
+        grown = _colour_area(w_, h_, px_, paper) - before
+
+        return True if grown > gained else None
+
+    settle(guest, followed,
+           "This Machine's window was made bigger and its report stayed the "
+           "size it opened at: an editor that never said it follows the right "
+           "and bottom edges, in a window the manager resized.",
+           seconds=20)
+
     mark = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
@@ -3970,7 +4048,7 @@ def check_clipboard(guest):
         raise Failure("Control-C did not get the screen back after the "
                       "clipboard.")
 
-    return 3
+    return 4
 
 
 def check_deskbar(guest):
@@ -5591,7 +5669,7 @@ def main():
           f"{desktop_checks} on the desktop below the strip and an icon "
           f"staying where it is dragged, "
           f"{clip_checks} on copying text from one application into "
-          f"another, "
+          f"another and on This Machine's report following its window, "
           f"{reaped_checks} on an application that dies saying why and "
           "losing its window, "
           f"{cores_checks} on a processor meter moving when the machine is "

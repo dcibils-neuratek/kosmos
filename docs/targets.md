@@ -112,7 +112,8 @@ of the PCI capability list on x86 - and the split between `hal/virtio/`
 rest of the pool should copy.
 
 `hal_bus_scan` is the discovery half, and it is already written: it walks
-the bus, reports what it found, and says whether a driver claimed each one.
+every bus a bridge leads to, reports what it found, and says whether a driver
+took each one - which `pci_enable` records as the driver does.
 `machine` prints that list. What is missing is drivers to match against it,
 not the mechanism for matching.
 

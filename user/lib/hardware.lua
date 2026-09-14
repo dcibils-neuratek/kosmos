@@ -5,6 +5,7 @@
 --
 --   hardware.name(sys.info())      "LENOVO 20W000T9US ThinkPad T14 Gen 2i"
 --   hardware.network(sys.bus())    network controllers, driven and not
+--   hardware.audio(sys.bus())      sound controllers, driven and not
 --
 -- **Two rows were wrong on the ThinkPad, and both were a label standing in
 -- for a reading.** `neofetch` said `Host  QEMU q35 x86-64`, the Makefile's
@@ -88,12 +89,14 @@ hardware.VIRTIO = {
   [25] = "virtio-sound",
 }
 
--- Where a device is, in its board's own terms: a PCI address on bus 0, which
--- is the one a PC's scan walks, or the device-tree window it was found in.
+-- Where a device is, in its board's own terms: a PCI address - bus, slot and
+-- function, with the bus in `where`'s high byte now that a PC's scan follows
+-- its bridges - or the device-tree window it was found in.
 function hardware.place(d)
   if d.class == 0 then return "window " .. tostring(d.where) end
 
-  return ("%02x:%02x.%d"):format(0, d.where >> 3, d.where & 7)
+  return ("%02x:%02x.%d"):format(d.where >> 8, (d.where >> 3) & 0x1f,
+                                 d.where & 7)
 end
 
 function hardware.vendor(d)
@@ -128,6 +131,42 @@ function hardware.network(bus)
     elseif (d.class >> 16) == 0x02 then
       name = (d.vendor == 0x1af4) and hardware.VIRTIO[1]
              or ("%s %04x:%04x"):format(hardware.vendor(d), d.vendor, d.device)
+    end
+
+    if name then
+      local list = d.claimed and driven or undriven
+
+      list[#list + 1] = { name = name, place = hardware.place(d) }
+    end
+  end
+
+  return driven, undriven
+end
+
+--------------------------------------------------------------------------
+-- The sound controllers.
+--------------------------------------------------------------------------
+
+--
+-- The same two lists for class 04h, multimedia, which is where a PC's sound
+-- controller is, and virtio's type 25 on a board of windows. The name
+-- carries the whole class code, because the HDA driver takes subclass 03h
+-- alone (`hal/pc/hda.c`), and a controller with another subclass sits on the
+-- bus with no driver - which is the question a ThinkPad's silence asks.
+--
+function hardware.audio(bus)
+  local driven, undriven = {}, {}
+
+  for _, d in ipairs(bus or {}) do
+    local name
+
+    if d.class == 0 then
+      if d.device == 25 then name = hardware.VIRTIO[25] end
+    elseif (d.class >> 16) == 0x04 then
+      name = (d.vendor == 0x1af4) and hardware.VIRTIO[25]
+             or ("%s %04x:%04x, class %06x"):format(hardware.vendor(d),
+                                                   d.vendor, d.device,
+                                                   d.class)
     end
 
     if name then

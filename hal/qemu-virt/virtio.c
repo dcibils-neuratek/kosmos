@@ -223,7 +223,7 @@ unsigned hal_bus_scan(struct bus_device *out, unsigned max)
 {
     unsigned i, n = 0;
 
-    for (i = 0; i < VIRTIO_MMIO_COUNT && n < max; i++) {
+    for (i = 0; i < VIRTIO_MMIO_COUNT; i++) {
         uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)i * VIRTIO_MMIO_STRIDE;
         uint32_t type;
 
@@ -235,6 +235,12 @@ unsigned hal_bus_scan(struct bus_device *out, unsigned max)
 
         if (type == 0) {
             continue;                   /* an empty window, not a device */
+        }
+
+        /* Found, and counted, past the room the caller made. */
+        if (n >= max) {
+            n++;
+            continue;
         }
 
         out[n].id       = type;

@@ -36,6 +36,17 @@
 #define PCI_CLASS            0x08
 #define PCI_INTERRUPT_LINE  0x3C
 #define PCI_INTERRUPT_PIN   0x3D
+
+/*
+ * A PCI-to-PCI bridge's bus numbers start at 18h - primary, secondary,
+ * subordinate - and its header type's layout code is 01h. From the bridge
+ * header as gnu-efi's `pci22.h` lays it out (`PCI_BRIDGE_CONTROL_REGISTER`,
+ * `HEADER_TYPE_PCI_TO_PCI_BRIDGE`); the PCI specification is not in this
+ * project's references.
+ */
+#define PCI_BUS_NUMBERS     0x18
+#define HEADER_LAYOUT       0x7Fu
+#define HEADER_BRIDGE       0x01u
 #define PCI_CAP_POINTER     0x34
 #define PCI_STATUS_REG      0x04
 #define PCI_STATUS_CAPS     (1u << 20)
@@ -611,10 +622,71 @@ static bool msix_enable(struct pci_device *dev)
     return true;
 }
 
+/*
+ * **Which devices a driver took**, by address, for `hal_bus_scan`.
+ *
+ * `pci_enable` is the one call every driver on this board makes when it
+ * takes a device - virtio's, the NVMe drive's, the sound controller's, and
+ * the xHCI controllers the board hands to a process - so it is where "driven"
+ * is written down. It was a function that knew each driver instead,
+ * `claimed_here`, and it knew virtio and one class of sound controller: on
+ * the ThinkPad every device on the bus read "NO DRIVER", the two xHCI
+ * controllers a process was driving among them.
+ *
+ * **Taken is not the same as working.** A driver that enabled a device and
+ * then failed with it has still taken it, and its line in the boot log says
+ * why. And a full table is a seventeenth device listed as undriven - a wrong
+ * row in a report, never a driver refused.
+ */
+#define TAKEN_MAX   16u
+
+static struct spinlock taken_lock = SPINLOCK("pci taken");
+static uint16_t taken[TAKEN_MAX];
+static unsigned taken_count;
+
+static uint16_t where_of(uint8_t bus, uint8_t slot, uint8_t function)
+{
+    return (uint16_t)(((unsigned)bus << 8) | ((unsigned)slot << 3)
+                      | (unsigned)function);
+}
+
+static void take(const struct pci_device *dev)
+{
+    uint16_t where = where_of(dev->bus, dev->slot, dev->function);
+    unsigned long flags = spin_lock(&taken_lock);
+    unsigned i = 0;
+
+    while (i < taken_count && taken[i] != where) {
+        i++;
+    }
+
+    if (i == taken_count && taken_count < TAKEN_MAX) {
+        taken[taken_count++] = where;
+    }
+
+    spin_unlock(&taken_lock, flags);
+}
+
+static bool was_taken(uint16_t where)
+{
+    unsigned long flags = spin_lock(&taken_lock);
+    bool found = false;
+    unsigned i;
+
+    for (i = 0; i < taken_count && !found; i++) {
+        found = taken[i] == where;
+    }
+
+    spin_unlock(&taken_lock, flags);
+    return found;
+}
+
 void pci_enable(struct pci_device *dev)
 {
     uint32_t command = pci_config_read(dev->bus, dev->slot, dev->function,
                                        PCI_COMMAND);
+
+    take(dev);
 
     /*
      * Memory decoding, so a BAR answers at all, and bus mastering, so the
@@ -637,104 +709,93 @@ void pci_enable(struct pci_device *dev)
     }
 }
 
-/*
- * Whether one of this system's drivers took this device.
- *
- * Two drivers can claim something. The sound controller is found by its
- * class, so it is answered by its class here too - and it is the only
- * device in this system that is neither virtio nor firmware.
- *
- * For virtio the question reduces to: is this a virtio device, of which
- * type, and did that driver come up? The type is not simply the device id -
- * a *transitional* device answers in the legacy range and puts its type in
- * the subsystem id instead, which is the same trap `is_kind` in `virtio.c`
- * documents and the reason `virtio-net-pci` was invisible until it was
- * handled.
- *
- * Everything else on a q35 - the host bridge, the ISA bridge, the SATA
- * controller QEMU puts there whether or not a disk is attached - is
- * genuinely undriven, and saying so is the point of this file's new
- * function.
- */
-static uint8_t claimed_here(uint8_t slot, uint8_t fn, uint32_t id)
-{
-    uint16_t vendor = (uint16_t)(id & 0xFFFF);
-    uint16_t device = (uint16_t)((id >> 16) & 0xFFFF);
-    uint32_t cls = pci_config_read(0, slot, fn, PCI_CLASS);
-    uint32_t type;
-
-    if ((uint8_t)(cls >> 24) == 0x04 && (uint8_t)(cls >> 16) == 0x03) {
-        return hda_present() ? 1u : 0u;
-    }
-
-    if (vendor != 0x1AF4) {
-        return 0;                       /* not virtio; nothing here drives it */
-    }
-
-    if (device >= 0x1040) {
-        type = device - 0x1040u;
-    } else {
-        type = (pci_config_read(0, slot, fn, 0x2C) >> 16) & 0xFFFF;
-    }
-
-    switch (type) {
-    case 1:  return hal_net_present()      ? 1u : 0u;   /* virtio-net */
-    case 2:  return hal_blk_present()      ? 1u : 0u;   /* virtio-blk */
-    case 18: return keyboard_present()     ? 1u : 0u;   /* virtio-input */
-    case 25: return virtio_snd_present()      ? 1u : 0u;   /* virtio-sound */
-    default: return 0;
-    }
-}
 
 /*
- * Everything on the bus, and whether we drive it.
+ * Everything on the bus, and whether we drive it - **every bus a bridge
+ * leads to, and not bus 0 alone.**
  *
  * `pci_find` answers "is there one of these", which is what a driver wants
  * and cannot answer the question a person asks: a slot holding a device
- * nothing claims is invisible to it. This walks the whole of bus 0 instead
- * and reports what is there either way.
+ * nothing claims is invisible to it. This walks the buses and reports what is
+ * there either way, each device's bus in the high byte of `where`.
  *
- * Bus 0 only, and function 0 of each slot unless the device says it is
- * multi-function. That is every device QEMU's q35 puts in front of us, and
- * a machine with a bridge to walk behind would need the recursion this
- * deliberately does not have - there is no such machine here yet, and
- * `hal.md` says not to write the interface before the second caller.
+ * It walked bus 0 and nothing more, under a comment that a machine with a
+ * bridge to walk behind would need a recursion this did not have, "and there
+ * is no such machine here yet". The ThinkPad is one - its drive is behind a
+ * PCI Express root port - and This Machine listed twenty-two devices there
+ * with no drive among them.
+ *
+ * **Followed, and not recursed.** A bridge says which bus is behind it, and
+ * each bus reached that way is marked and walked in turn, in order: a chain
+ * of bridges is a loop here rather than a recursion on a kernel stack. A
+ * bridge whose secondary bus is not above its own is one the firmware did
+ * not number, and is not followed.
+ *
+ * **The count is of everything found**, and the first `max` are written.
+ * `find` walks every bus number blind instead, which is half a million reads
+ * once, when a driver starts; this is asked whenever a program wants the
+ * list, and costs a bus's worth of reads for each bus that exists.
  */
 unsigned hal_bus_scan(struct bus_device *out, unsigned max)
 {
+    uint8_t reached[32] = { 1 };        /* a bit a bus, and bus 0 to start */
     unsigned n = 0;
-    uint8_t slot;
+    unsigned bus;
 
-    for (slot = 0; slot < 32 && n < max; slot++) {
-        uint8_t fn, functions = 1;
+    for (bus = 0; bus < 256; bus++) {
+        uint8_t slot;
 
-        for (fn = 0; fn < functions && n < max; fn++) {
-            uint32_t id = pci_config_read(0, slot, fn, 0x00);
-            uint32_t cls;
+        if ((reached[bus >> 3] & (1u << (bus & 7))) == 0) {
+            continue;
+        }
 
-            if ((id & 0xFFFF) == 0xFFFF) {
-                continue;                       /* nothing in this function */
-            }
+        for (slot = 0; slot < 32; slot++) {
+            uint8_t fn, functions = 1;
 
-            /* Header type bit 7: this slot has more than one function, so
-             * the other seven are worth reading. Asked once, on function 0,
-             * because that is the only one required to answer. */
-            if (fn == 0) {
-                uint32_t hdr = pci_config_read(0, slot, 0, 0x0C);
+            for (fn = 0; fn < functions; fn++) {
+                uint32_t id = pci_config_read((uint8_t)bus, slot, fn, 0x00);
+                uint32_t type;
+                uint16_t where;
 
-                if (((hdr >> 16) & 0x80) != 0) {
+                if ((id & 0xFFFF) == 0xFFFF) {
+                    continue;                   /* nothing in this function */
+                }
+
+                type = (pci_config_read((uint8_t)bus, slot, fn, 0x0C) >> 16)
+                       & 0xFF;
+
+                /* Header type bit 7: this slot has more than one function, so
+                 * the other seven are worth reading. Asked of function 0,
+                 * because that is the only one required to answer. */
+                if (fn == 0 && (type & 0x80) != 0) {
                     functions = 8;
                 }
+
+                if ((type & HEADER_LAYOUT) == HEADER_BRIDGE) {
+                    unsigned secondary = (pci_config_read((uint8_t)bus, slot,
+                                                          fn, PCI_BUS_NUMBERS)
+                                          >> 8) & 0xFF;
+
+                    if (secondary > bus) {
+                        reached[secondary >> 3] |=
+                            (uint8_t)(1u << (secondary & 7));
+                    }
+                }
+
+                where = where_of((uint8_t)bus, slot, fn);
+
+                if (n < max) {
+                    out[n].id       = ((id & 0xFFFF) << 16)
+                                    | ((id >> 16) & 0xFFFF);
+                    out[n].class    = pci_config_read((uint8_t)bus, slot, fn,
+                                                      0x08) >> 8;
+                    out[n].where    = where;
+                    out[n].claimed  = was_taken(where) ? 1u : 0u;
+                    out[n].reserved = 0;
+                }
+
+                n++;
             }
-
-            cls = pci_config_read(0, slot, fn, 0x08);
-
-            out[n].id       = ((id & 0xFFFF) << 16) | ((id >> 16) & 0xFFFF);
-            out[n].class    = cls >> 8;         /* class/subclass/prog-if */
-            out[n].where    = (uint16_t)((slot << 3) | fn);
-            out[n].claimed  = claimed_here(slot, fn, id);
-            out[n].reserved = 0;
-            n++;
         }
     }
 

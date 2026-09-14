@@ -1543,6 +1543,8 @@ static int l_info(lua_State *L)
              sizeof(info.machine_version));
     set_text(L, "machine_source", info.machine_source,
              sizeof(info.machine_source));
+    set_text(L, "screen_source", info.screen_source,
+             sizeof(info.screen_source));
 
 #undef SET
 
@@ -2452,7 +2454,10 @@ static int l_bus(lua_State *L)
         lua_rawseti(L, -2, (lua_Integer)(i + 1));
     }
 
-    return 1;
+    /* And how many the board found, which is more than the list holds on a
+     * machine with more devices than `BUS_DEVICES_MAX`. */
+    lua_pushinteger(L, (lua_Integer)info.bus_found);
+    return 2;
 }
 
 static int l_programs(lua_State *L)

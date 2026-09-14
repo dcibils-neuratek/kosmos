@@ -52,8 +52,8 @@ USB either.
 
 **There is no VMD.** The NVMe is a plain PCIe device on bus 4 behind the
 bridge at `0:06.0`. `pci_find` walks all 256 buses, so it is reachable;
-`hal_bus_scan` walks bus 0 only, so `devices` will not list it until that is
-widened.
+`hal_bus_scan` walked bus 0 only, so This Machine did not list it until the
+scan followed bridges, on 14 September.
 
 **And there is no Ethernet at all.** §9 sizes "Intel I219, which is the
 e1000e family" at ~1500 lines. **That device is not on this machine.**

@@ -385,13 +385,13 @@ the Pi", and the Pi is not here yet.
   ends with one down.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
-- **This Machine describes a q35.** On the ThinkPad it listed 22 devices on
-  bus 0 and "0 driven": `claimed_here` in `hal/pc/pci.c` knows the sound
-  controller by its class and virtio devices, and not the xHCI controllers a
-  process drives; `hal_bus_scan` walks bus 0 alone, so nothing behind a bridge
-  is listed; and its last paragraph says "on a q35 most of it never will be".
-  Diego, 13 September: "we need to update it and make sure is resizable as
-  well".
+- **Every `sys.disk()` starts the disk controller again.** `SYS_DISK_INFO`
+  and `process_grant_disk` call `hal_blk_init`, which resets an NVMe drive or
+  a virtio disk and brings it up again - QEMU's trace counted ten NVMe starts
+  in a boot that ran `diskinfo` three times, and on x86 each spends an MSI
+  vector and a mapping. The disk server asks each time `/home/.super` is read,
+  and This Machine asks as it opens. Harmless while nothing is in flight.
+  Found building This Machine on 14 September.
 
 ---
 

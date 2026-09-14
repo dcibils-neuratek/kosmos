@@ -690,10 +690,16 @@ struct bus_device {
     uint8_t  reserved;
 };
 
-/* Enough for QEMU's q35 with every device this system knows attached, and
- * for the thirty-two virtio-mmio windows the ARM board lays out. A machine
- * with more says so by filling this and stopping. */
-#define BUS_DEVICES_MAX 32
+/*
+ * Room for sixty-four, and a machine with more says how many more.
+ *
+ * It was thirty-two - QEMU's q35 with every device this system knows
+ * attached, and the thirty-two virtio-mmio windows the ARM board lays out -
+ * and the ThinkPad has twenty-two on bus 0 alone, before its bridges are
+ * followed to the drive behind one. `bus_found` in `sysinfo` is how many the
+ * board found, so a list this cuts short can say so.
+ */
+#define BUS_DEVICES_MAX 64
 
 /*
  * What one processor has been doing, since boot.
@@ -899,6 +905,23 @@ struct sysinfo {
     char machine_product[64];
     char machine_version[64];
     char machine_source[64];
+
+    /*
+     * How many devices the bus enumeration found. The same number as
+     * `bus_count` until there are more than `bus` holds; then this is all of
+     * them, and `bus_count` is how many are in the array.
+     */
+    uint32_t bus_found;
+
+    /*
+     * Where the screen's pixels come from, in the board's own words - the
+     * line `hal_fb_describe` gives the boot log - and empty when there is no
+     * screen. Terminated inside its field.
+     *
+     * Here because This Machine said "ramfb" on a ThinkPad, whose screen is
+     * the loader's: the word was written into the program.
+     */
+    char screen_source[128];
 };
 
 /*

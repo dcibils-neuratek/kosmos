@@ -2943,3 +2943,87 @@ And as written, with `xhci.c` restored byte for byte: `usb` 13 of 13 and
 and 154 of 154. **The ThinkPad has
 not run it yet**; the photograph is `log xhci` after pulling the mouse out,
 for the naming steps' times and the count found by looking.
+
+## 18.48 This Machine on a real machine's bus
+
+**On the ThinkPad, This Machine described a q35.** It listed twenty-two
+devices on bus 0 and called every one "NO DRIVER" - the two xHCI controllers
+a process was driving among them - and closed on a paragraph about QEMU's
+bridges and SATA controller. The NVMe drive was not listed at all, and the
+window could be resized while the report inside it could not. Diego, 13
+September: "The this machine app is reporting old things, we neee to update it
+and make sure is resizable as well".
+
+Four things were wrong, each with a cause of its own:
+
+- **Bus 0 alone.** `hal_bus_scan` walked it and nothing more, and the drive
+  is behind a PCI Express root port. It follows bridges now, marking each bus
+  a bridge leads to and walking them in order, with a device's bus in the
+  high byte of `where` - the bridge offsets from gnu-efi's `pci22.h`, since the
+  PCI specification is not in the references.
+- **"Driven" was a list of what `claimed_here` had been taught**: virtio, and
+  one class of sound controller. `pci_enable` is the one call every driver
+  makes as it takes a device, so it records the address, and the scan asks
+  that record.
+- **Words written into the program**: "ramfb" as every screen's source,
+  "virtio-sound" as every sound device, "no host controller driver" for USB,
+  and "(SMP is being built)" beside the cores. The screen's source comes from
+  the board now (`screen_source` in `sysinfo`, the line `hal_fb_describe`
+  gives the boot log), the sound and xHCI controllers from the bus, and the
+  three processor counts are shown when they differ.
+- **The editor followed its left and top alone.**
+
+`tools/run_x86.py`'s `machine_report`, 6 checks, on a q35 with an NVMe drive
+behind a `pcie-root-port` and two xHCI controllers, with `machine` typed once
+the USB driver has said it runs both:
+
+| check | what it establishes |
+| ----- | ------------------- |
+| the listing against QEMU | the vendor and device of every PCI function, as QEMU's own `info pci` gives them once its firmware has numbered the buses |
+| the drive | listed once, off bus 0, and driven |
+| the controllers | both xHCI controllers driven |
+| the count | "N devices found, M driven" agreeing with the lines |
+| the screen | the Framebuffer row is the board's own description from the boot log |
+| nothing stale | none of the three sentences that were never true of a ThinkPad |
+
+`tools/run_screenshot.py`, one more check in the clipboard phase: This
+Machine's window dragged bigger by its grip, and the report's own background
+colour grows with it, measured against the window's colour beside it.
+
+**Two of the first run's three failures were the check's own**, and are worth
+keeping. `info pci` on a QEMU stopped before its first instruction lists
+nothing behind a root port, because it is the firmware that numbers the bus
+there - so the reference said the drive did not exist. And a report typed at
+the first prompt had the second xHCI controller undriven, truthfully, because
+the USB driver takes its controllers one after the other; `boot` gained
+`after=` for it. The third was a stale-text check matching "q35" in the
+machine's own SMBIOS name.
+
+**Controls**, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| the PC's scan following no bridge | 2 of 6 in `machine_report`: QEMU's list and the report differ by exactly the drive, and the drive check |
+| `pci_enable` recording nothing | 2 of 6: the drive and both xHCI controllers undriven, on a report of "10 devices found, 0 driven" |
+| the report pinned to its left and top | the display harness, in the clipboard phase |
+
+```
+machine_report: 2 of 6 checks failed
+  `machine` did not list every PCI function QEMU has, behind the root port as well as on bus 0:
+    machine: ['1234:1111', '1b36:000c', '1b36:000d', '1b36:000d', '8086:10d3', '8086:2918', '8086:2922', '8086:2930', '8086:29c0']
+    QEMU:    ['1234:1111', '1b36:000c', '1b36:000d', '1b36:000d', '1b36:0010', '8086:10d3', '8086:2918', '8086:2922', '8086:2930', '8086:29c0']
+  the NVMe drive behind the root port was not listed once, off bus 0 and driven:
+
+machine_report: 2 of 6 checks failed
+  the NVMe drive behind the root port was not listed once, off bus 0 and driven:
+  the two xHCI controllers the USB driver took were not both listed as driven:
+
+FAIL: waited 20s and This Machine's window was made bigger and its report stayed the size it opened at: an editor that never said it follows the right and bottom edges, in a window the manager resized.
+```
+
+Each `machine_report` complaint is followed by the report it read, cut here; the second's ends `10 devices found, 0 driven, 10 without a driver.`
+
+And as written, with every control put back byte for byte: `machine_report`
+6 of 6, the display harness 107 with This Machine's report following its
+window, and `make test` whole - x86-64 123, the UEFI boots 29, the stick check
+10, the disk 33, and the suites 158 of 158 and 154 of 154.
