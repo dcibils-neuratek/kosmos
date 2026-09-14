@@ -386,6 +386,30 @@ QEMU_SPEEDS = {"1.5": "Low-speed", "12": "Full-speed", "480": "High-speed",
                "5000": "SuperSpeed", "10000": "SuperSpeedPlus"}
 
 
+def stick_with_gpt(path):
+    """A 16 MB stick laid out as `mkusb_image.py` lays out a real one: a
+    protective MBR, a GPT at both ends, and one partition of zeros between
+    them, so step 5a has a header to find at block 1 and its backup at the
+    last block. Its size in blocks is returned."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mkusb_image
+
+    blocks = 16 * 1024 * 1024 // mkusb_image.SECTOR
+    partition = path + ".partition"
+
+    # write_gpt puts 34 blocks before the partition and 33 after it.
+    with open(partition, "wb") as handle:
+        handle.truncate((blocks - 67) * mkusb_image.SECTOR)
+
+    try:
+        size = mkusb_image.write_gpt(path, partition,
+                                     (blocks - 67) * mkusb_image.SECTOR)
+    finally:
+        os.unlink(partition)
+
+    return size // mkusb_image.SECTOR
+
+
 def usb(image, check):
     """Two xHCI controllers, a USB stick on the second, a keyboard on the
     first, and what the driver in `user/servers/xhci.c` says it found and
@@ -428,11 +452,15 @@ def usb(image, check):
     `hw/scsi/scsi-disk.c` as "QEMU", "QEMU HARDDISK", a direct-access device.
     It is at SuperSpeed here, on the second controller's USB 3 port, so its
     endpoints are 1024 bytes a packet in bursts of 16 (`hw/usb/dev-storage.c`).
+
+    **Step 5a is the stick's size and its first blocks**: TEST UNIT READY until
+    it is ready, READ CAPACITY (10), and READ (10) of block 1 and of the last
+    block - where the stick, laid out by `mkusb_image.write_gpt` as a real one
+    is, holds a GPT header and its backup. Each header is held to its CRC and
+    to the block it says it is at, so a read of the wrong block fails.
     """
     stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
-
-    with open(stick, "wb") as handle:
-        handle.truncate(16 * 1024 * 1024)
+    stick_blocks = stick_with_gpt(stick)
 
     extra = ("-device", "qemu-xhci,id=usb0",
              "-device", "qemu-xhci,id=usb1",
@@ -562,6 +590,26 @@ def usb(image, check):
           "the stick did not answer INQUIRY through its bulk endpoints as "
           "QEMU's disk does - \"QEMU\", \"QEMU HARDDISK\", device type "
           "0:\n    " + shown)
+
+    # Step 5a: the stick's size, then a GPT header at block 1 and its backup
+    # at the last block, through READ CAPACITY (10) and READ (10).
+    capacity = re.search(r"xhci: " + at + r" port \d+: the stick holds (\d+) "
+                         r"blocks of (\d+) bytes", out)
+    table = re.search(r"xhci: " + at + r" port \d+: block 1 holds (a|no) GUID "
+                      r"partition table's header, and block (\d+) (its|no) "
+                      r"backup", out)
+
+    check(capacity is not None
+          and capacity.group(2, 3) == (str(stick_blocks), "512"),
+          "the stick did not say it holds %d blocks of 512 bytes, which READ "
+          "CAPACITY (10) should find in its 16 MB:\n    " % stick_blocks
+          + shown)
+
+    check(table is not None
+          and table.group(2, 3, 4) == ("a", str(stick_blocks - 1), "its"),
+          "READ (10) did not find the stick's GPT header at block 1 and its "
+          "backup at block %d, where `mkusb_image.write_gpt` put them:\n    "
+          % (stick_blocks - 1) + shown)
 
     if len(found) == 2:
         stick_on = [a for a, _, usb_major, _, _, _ in ports

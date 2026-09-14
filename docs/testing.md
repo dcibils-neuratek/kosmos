@@ -3478,3 +3478,38 @@ And as written, with every file put back byte for byte and the image rebuilt:
 `make screenshot` 110 on AArch64 and 108 on x86-64, and `make test` whole -
 `test_filetypes` 24, `run_shell` 25, x86-64 130, the UEFI boots 34, the stick
 check 10, and the suites 159 of 159 and 155 of 155.
+
+## 18.56 A stick's size, and its first blocks
+
+**USB step 5a**: after INQUIRY, TEST UNIT READY until the stick is ready, READ
+CAPACITY (10), and READ (10) of block 1 and of the last block, each asked
+whether it holds a GUID partition table's header. `usb.md` §7 has how.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_storagedecode.c`, 48 checks | the wrappers byte for byte as Tables 5.1 and 5.2 lay them out, and the lengths they have no room for; every command block; a status valid and meaningful by 6.3, and each way it is not; capacity from QEMU's answer, in 4096-byte blocks, past 32 bits and past what READ CAPACITY (10) counts; sense in both formats, deferred, short and cut off; CRC-32's check value; and GPT headers written by `zlib`, read at the wrong block, changed, resized and empty |
+| `tools/run_x86.py`'s `usb`, 17 checks, 2 of them new | its stick laid out by `mkusb_image.write_gpt`, as a real one is; the driver says it holds 32768 blocks of 512 bytes, and finds the header at block 1 and its backup at block 32767 |
+
+**Controls**, each put back byte for byte, and the image rebuilt after:
+
+| broken | what failed |
+| ------ | ----------- |
+| READ (10)'s block address written little-endian | `test_storagedecode`, 1 of 48: the address not bytes 2 to 5, big-endian; and `usb`, 1 of 17: block 1 asked for as block 16777216, which the stick failed |
+| a GPT header's MyLBA not checked | `test_storagedecode`, 2 of 48: the primary header taken for one at block 32767, and the backup for one at block 1. **`usb` passed all 17** - both headers sit where they say they are, so QEMU cannot tell - which is what the host test is for |
+| the backup read one past the last block | `usb`, 1 of 17: READ (10) of block 32768, which the stick failed |
+| a status wrapper's tag not checked | `test_storagedecode`, 1 of 48: the status for another command's tag taken for this one's |
+
+The first and third print the same line where the table should be:
+
+```
+xhci: 00:04.0 port 1: the stick holds 32768 blocks of 512 bytes, 16 MB
+xhci: 00:04.0 port 1: the READ (10), which the stick failed
+```
+
+It names the command and not why, because only TEST UNIT READY is followed by
+REQUEST SENSE - `usb.md` §7 has that as not done yet, with 5b.
+
+And as written, with every file put back byte for byte and the image rebuilt:
+`test_storagedecode` 48, `usb` 17, `usb_hotplug` 17, `usb_mouse` 22, and
+`make test` whole - x86-64 132, the UEFI boots 34, the stick check 10, and the
+suites 159 of 159 and 155 of 155.

@@ -20,13 +20,26 @@ prepush` and a bump.
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
-  proposal's five calls, and started once this lands: READ CAPACITY and READ(10) through the same
-  bulk endpoints, and a block protocol from the USB driver to a filesystem
+  proposal's five calls: 5a is built - a stick's size and its first blocks -
+  and 5b, Reset Recovery, is next; then a block protocol from the USB driver to a filesystem
   server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
   read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: USB step 5a, a stick's size and its first blocks
+
+**Step 5 approved** - "usb step 5 sounds good. go for it." - with the five
+calls in `README.md`, in six parts (`roadmap.md`).
+
+- **5a**: TEST UNIT READY with REQUEST SENSE, READ CAPACITY (10), and READ (10)
+  of block 1 and the last block, each checked for a GPT header; the wrappers,
+  command blocks and answers are read in `storage_decode.c` (`usb.md` §7).
+  QEMU's stick: 32768 blocks of 512 bytes, the header and its backup found.
+- **Tested**: `test_storagedecode` 48, `usb` 17; controls in `testing.md`
+  §18.56. On the ThinkPad the boot stick itself would answer.
+- **Next**: 5b, Reset Recovery.
 
 ### 14 September: a program run by its file
 

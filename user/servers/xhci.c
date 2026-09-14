@@ -70,6 +70,7 @@
 #include "kosmos.h"
 #include "mmio.h"
 #include "say.h"
+#include "storage_decode.h"
 #include "usb_decode.h"
 
 /* Capability registers, from the start of the BAR: Table 5-9. */
@@ -1902,36 +1903,25 @@ static void say_descriptor(const struct controller *c, unsigned port,
 /* ---------------------------------------------------------------- a stick */
 
 /*
- * Bulk-Only Transport 1.0, Tables 5.1 and 5.2: a command goes out in a
- * 31-byte wrapper and its status comes back in a 13-byte one, each opening
- * with its signature, every field little-endian. The command block is at
- * byte 15 of the wrapper; the status is byte 12 of the other, 0 passed, 1
- * failed, 2 a phase error (Table 5.3).
+ * Bulk-Only Transport's two wrappers and SCSI's command blocks are laid out,
+ * and what comes back is read, in `storage_decode.c` - where
+ * `tools/test_storagedecode.c` hands them what QEMU's stick never sends.
+ *
+ * What stays here is where INQUIRY's standard data keeps its fields, as the
+ * Seagate SCSI Commands Reference Manual (rev. J, SPC-5) gives them: at least
+ * 36 bytes (Table 59), the peripheral qualifier and device type in byte 0,
+ * then eight bytes of vendor, sixteen of product and four of revision, in
+ * ASCII padded with spaces. And how long a stick is given to become ready,
+ * and the largest block read - one page, because a block comes through the
+ * device's buffer page.
  */
-#define CBW_SIGNATURE       0x43425355u
-#define CSW_SIGNATURE       0x53425355u
-#define CBW_LENGTH          31u
-#define CSW_LENGTH          13u
-#define CBW_DATA_IN         0x80u       /* bmCBWFlags, bit 7 */
-#define CBW_BLOCK           15u
-#define CSW_STATUS          12u
-#define CSW_PASSED          0u
-#define CSW_FAILED          1u
-
-/*
- * SCSI's INQUIRY, as the Seagate SCSI Commands Reference Manual (rev. J, SPC-5)
- * gives it: operation code 12h, and the allocation length in bytes 3 and 4 of
- * a six-byte command (Table 58). The standard data is at least 36 bytes
- * (Table 59): the peripheral qualifier and device type in byte 0, then eight
- * bytes of vendor, sixteen of product and four of revision, in ASCII padded
- * with spaces.
- */
-#define SCSI_INQUIRY        0x12u
-#define INQUIRY_COMMAND     6u
 #define INQUIRY_LENGTH      36u
 #define INQUIRY_VENDOR      8u
 #define INQUIRY_PRODUCT     16u
 #define INQUIRY_REVISION    32u
+#define READY_TRIES         8u
+#define READY_WAIT_MS       250u        /* between tries, when NOT READY */
+#define BLOCK_MOST          4096u
 
 /*
  * A bulk endpoint's context (4.8.2.3): Bulk OUT or Bulk IN from Table 6-9,
@@ -1942,20 +1932,6 @@ static void say_descriptor(const struct controller *c, unsigned port,
 #define EP_TYPE_BULK_OUT    2u
 #define EP_TYPE_BULK_IN     6u
 #define BULK_TRB_AVERAGE    3072u
-
-static void put32le(uint8_t *at, uint32_t value)
-{
-    at[0] = (uint8_t)value;
-    at[1] = (uint8_t)(value >> 8);
-    at[2] = (uint8_t)(value >> 16);
-    at[3] = (uint8_t)(value >> 24);
-}
-
-static uint32_t get32le(const uint8_t *at)
-{
-    return at[0] | (uint32_t)at[1] << 8 | (uint32_t)at[2] << 16
-         | (uint32_t)at[3] << 24;
-}
 
 /*
  * One bulk transfer (4.11.2.1, 6.4.1.1): a Normal TRB over `length` bytes at
@@ -2008,72 +1984,94 @@ static bool bulk(struct controller *c, unsigned slot, unsigned dci,
 }
 
 /*
- * **INQUIRY, through Bulk-Only Transport**: the one command every SCSI device
- * answers, and the smallest exchange that sends bytes each way - its wrapper
- * out, 36 bytes in, and its status in (5.1 to 5.3.3). The data is left in
- * `data`, how much of it came in `got`. NULL when the stick answered, and
- * otherwise the step that did not, for `say_failure`.
- *
- * **What is checked of the status** is what 6.3 asks of a host: thirteen
- * bytes, the signature, the tag this command went out with, and a residue no
- * larger than what was asked for. A status that fails any of those is one a
- * host would answer with a Reset Recovery (5.3.4, 6.5), and so is a stall on
- * either endpoint - neither of which this does yet, so the stick is said and
- * left.
+ * The step a command stopped at, for `say_failure`: "the READ (10)'s data".
+ * One at a time - the driver has one thread - so one buffer does.
  */
-static const char *inquire(struct controller *c, struct device *d,
-                           struct stick *s, uint8_t *data, unsigned *got)
+static const char *named(const char *command, const char *part)
+{
+    static char step[80];
+    const char *pieces[3] = { "the ", command, part };
+    size_t at = 0;
+    unsigned i;
+
+    for (i = 0; i < 3u; i++) {
+        size_t n = strlen(pieces[i]);
+
+        if (n > sizeof(step) - 1u - at) {
+            n = sizeof(step) - 1u - at;
+        }
+
+        memcpy(step + at, pieces[i], n);
+        at += n;
+    }
+
+    step[at] = '\0';
+    return step;
+}
+
+/*
+ * **One SCSI command, through Bulk-Only Transport** (5.1 to 5.3.3): its
+ * wrapper out; when it expects data, up to `length` bytes in, copied to
+ * `into`, with how many came in `got`; then its status in, held to what 6.3
+ * asks of a host by `bot_status_of`.
+ *
+ * NULL when the status says what happened - `*status` passed, or failed, which
+ * REQUEST SENSE can explain - and otherwise the step that did not, for
+ * `say_failure`. A stall on either endpoint, a status that is not valid or not
+ * meaningful, and a phase error are what a host answers with a Reset Recovery
+ * (5.3.4, 6.5). That is step 5b; until it lands the stick is said and left.
+ *
+ * The data is copied out before the status is read, because both come through
+ * the device's buffer page.
+ */
+static const char *transact(struct controller *c, struct device *d,
+                            struct stick *s, const char *command,
+                            const uint8_t *cdb, unsigned cdb_length,
+                            uint8_t *into, unsigned length, unsigned *got,
+                            enum bot_status *status)
 {
     uint8_t *b = d->buffer;
-    uint32_t tag = ++s->tag;
+    uint32_t tag = ++s->tag, residue;
     unsigned moved;
 
-    memset(b, 0, CBW_LENGTH);
-    put32le(b, CBW_SIGNATURE);
-    put32le(b + 4, tag);
-    put32le(b + 8, INQUIRY_LENGTH);
-    b[12] = CBW_DATA_IN;
-    b[13] = 0;                                  /* LUN 0 */
-    b[14] = INQUIRY_COMMAND;
-    b[CBW_BLOCK] = SCSI_INQUIRY;
-    b[CBW_BLOCK + 4] = INQUIRY_LENGTH;          /* the length's low byte */
+    *got = 0;
+    *status = BOT_NOT_VALID;
+    (void)bot_wrap(b, tag, length, length > 0u, 0, cdb, cdb_length);
 
-    if (!bulk(c, d->slot, s->out_dci, &s->out, d->buffer_bus, CBW_LENGTH,
-              &moved) || moved != CBW_LENGTH) {
-        return "the INQUIRY's command";
+    if (!bulk(c, d->slot, s->out_dci, &s->out, d->buffer_bus, BOT_CBW_LENGTH,
+              &moved) || moved != BOT_CBW_LENGTH) {
+        return named(command, "'s command");
     }
 
-    memset(b, 0, INQUIRY_LENGTH);
+    if (length > 0u) {
+        memset(b, 0, length);
 
-    if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, INQUIRY_LENGTH,
-              &moved)) {
-        return "the INQUIRY's data";
+        if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, length, got)) {
+            return named(command, "'s data");
+        }
+
+        memcpy(into, b, length);
     }
 
-    memcpy(data, b, INQUIRY_LENGTH);
-    *got = moved;
-
-    if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, CSW_LENGTH,
+    if (!bulk(c, d->slot, s->in_dci, &s->in, d->buffer_bus, BOT_CSW_LENGTH,
               &moved)) {
-        return "the INQUIRY's status";
+        return named(command, "'s status");
     }
 
     c->last_code = CC_SUCCESS;
+    *status = bot_status_of(b, moved, tag, length, &residue);
 
-    if (moved != CSW_LENGTH || get32le(b) != CSW_SIGNATURE
-        || get32le(b + 4) != tag || get32le(b + 8) > INQUIRY_LENGTH) {
-        return "the INQUIRY's status, which is not a valid one";
+    switch (*status) {
+    case BOT_PASSED:
+    case BOT_FAILED:
+        return NULL;
+    case BOT_PHASE_ERROR:
+        return named(command, ", which ended in a phase error");
+    case BOT_NOT_MEANINGFUL:
+        return named(command, "'s status, which is not a meaningful one");
+    default:
+        return named(command, "'s status, which is not a valid one");
     }
-
-    if (b[CSW_STATUS] == CSW_FAILED) {
-        return "the INQUIRY, which the stick failed";
-    }
-
-    if (b[CSW_STATUS] != CSW_PASSED) {
-        return "the INQUIRY, which ended in a phase error";
-    }
-
-    return NULL;
 }
 
 /* An ASCII field of INQUIRY's data in quotes: its padding off the end, and
@@ -2099,11 +2097,238 @@ static void say_field(struct say_line *line, const uint8_t *bytes, unsigned n)
 }
 
 /*
+ * "UNIT ATTENTION (29h/00h)": a sense key's name, and the additional sense
+ * code and its qualifier when the stick sent them.
+ */
+static void say_sense(struct say_line *line, const struct scsi_sense *sense)
+{
+    say_text(line, scsi_sense_key_name(sense->key));
+
+    if (sense->coded) {
+        say_text(line, " (");
+        say_hex(line, sense->asc, 2u);
+        say_text(line, "h/");
+        say_hex(line, sense->ascq, 2u);
+        say_text(line, "h)");
+    }
+}
+
+/*
+ * **Whether the stick is ready**, by TEST UNIT READY, asked up to READY_TRIES
+ * times. A failure is asked why with REQUEST SENSE, which also clears what it
+ * reports, and a stick that says NOT READY is given READY_WAIT_MS before the
+ * next try. A unit attention is what a device says first after a reset, and
+ * this one's port has just been reset, so a first try that fails is not a
+ * surprise. `first` and `last` are what the stick said and `asked` whether it
+ * said anything; `tries` is how many it took.
+ */
+static const char *ready(struct controller *c, struct device *d,
+                         struct stick *s, struct scsi_sense *first,
+                         struct scsi_sense *last, unsigned *tries,
+                         bool *asked)
+{
+    uint8_t cdb[16], data[SCSI_SENSE_LENGTH];
+    enum bot_status status;
+    const char *failed;
+    unsigned got;
+
+    memset(first, 0, sizeof(*first));
+    memset(last, 0, sizeof(*last));
+    *asked = false;
+
+    for (*tries = 1u; ; ++*tries) {
+        failed = transact(c, d, s, "TEST UNIT READY", cdb,
+                          scsi_test_unit_ready(cdb), NULL, 0u, &got, &status);
+
+        if (failed != NULL || status == BOT_PASSED) {
+            return failed;
+        }
+
+        failed = transact(c, d, s, "REQUEST SENSE", cdb,
+                          scsi_request_sense(cdb, SCSI_SENSE_LENGTH), data,
+                          SCSI_SENSE_LENGTH, &got, &status);
+
+        if (failed != NULL) {
+            return failed;
+        }
+
+        if (status != BOT_PASSED || !scsi_sense(data, got, last)) {
+            return named("REQUEST SENSE", ", which answered no sense data");
+        }
+
+        if (!*asked) {
+            *first = *last;
+            *asked = true;
+        }
+
+        if (*tries == READY_TRIES) {
+            return named("TEST UNIT READY",
+                         ", which the stick failed every time");
+        }
+
+        if (last->key == SCSI_KEY_NOT_READY) {
+            (void)wait_serving(c, READY_WAIT_MS, NULL);
+        }
+    }
+}
+
+/* One block, read into `stick_block`. */
+static uint8_t stick_block[BLOCK_MOST];
+
+static const char *read_block(struct controller *c, struct device *d,
+                              struct stick *s, uint32_t lba, unsigned size)
+{
+    uint8_t cdb[16];
+    enum bot_status status;
+    unsigned got;
+    const char *failed = transact(c, d, s, "READ (10)", cdb,
+                                  scsi_read_10(cdb, lba, 1u), stick_block,
+                                  size, &got, &status);
+
+    if (failed == NULL && status != BOT_PASSED) {
+        return named("READ (10)", ", which the stick failed");
+    }
+
+    if (failed == NULL && got != size) {
+        return named("READ (10)", ", which sent less than a block");
+    }
+
+    return failed;
+}
+
+/* "16 MB", or "119 GB" from ten gigabytes up. */
+static void say_size(struct say_line *line, uint64_t bytes)
+{
+    if (bytes < (10ull << 30)) {
+        say_dec(line, (unsigned long)(bytes >> 20));
+        say_text(line, " MB");
+    } else {
+        say_dec(line, (unsigned long)(bytes >> 30));
+        say_text(line, " GB");
+    }
+}
+
+/*
+ * **USB step 5a: the stick's size, and its first blocks read.** Ready, by
+ * `ready`; how many blocks and how big, by READ CAPACITY (10); then block 1
+ * and the last block, by READ (10), asked whether they hold a GUID partition
+ * table's header and its backup - which a stick made by `mkusb_image.py` does,
+ * and which is the first thing a filesystem will be looked for by (`usb.md`
+ * §7).
+ *
+ * READ CAPACITY (10) counts to 2^32 blocks, about 2 TB; a stick past that is
+ * said, and READ CAPACITY (16) waits for one. A block larger than a page is
+ * said and not read.
+ */
+static void first_blocks(struct controller *c, struct device *d,
+                         struct stick *s, struct say_line *line)
+{
+    uint8_t cdb[16], data[SCSI_CAPACITY_10_LENGTH];
+    struct scsi_sense first, last;
+    struct scsi_capacity capacity;
+    enum bot_status status;
+    unsigned tries, got;
+    bool asked, primary = false, backup = false;
+    const char *failed;
+    uint32_t end;
+
+    failed = ready(c, d, s, &first, &last, &tries, &asked);
+
+    if (asked) {
+        about(line, c);
+        say_text(line, " port ");
+        say_dec(line, d->port);
+        say_text(line, ": the stick said ");
+        say_sense(line, &first);
+
+        if (failed == NULL) {
+            say_text(line, ", and was ready on try ");
+            say_dec(line, tries);
+        } else {
+            say_text(line, ", and last ");
+            say_sense(line, &last);
+        }
+
+        say_send(console, line);
+    }
+
+    if (failed != NULL) {
+        say_failure(c, d->port, failed, "", line);
+        return;
+    }
+
+    failed = transact(c, d, s, "READ CAPACITY (10)", cdb,
+                      scsi_read_capacity_10(cdb), data,
+                      SCSI_CAPACITY_10_LENGTH, &got, &status);
+
+    if (failed == NULL && status != BOT_PASSED) {
+        failed = named("READ CAPACITY (10)", ", which the stick failed");
+    } else if (failed == NULL && !scsi_capacity_10(data, got, &capacity)) {
+        failed = named("READ CAPACITY (10)", ", which answered no capacity");
+    }
+
+    if (failed != NULL) {
+        say_failure(c, d->port, failed, "", line);
+        return;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+
+    if (capacity.too_many) {
+        say_text(line, ": the stick has more blocks than READ CAPACITY (10) "
+                       "counts, and READ CAPACITY (16) is not asked yet");
+        say_send(console, line);
+        return;
+    }
+
+    say_text(line, ": the stick holds ");
+    say_dec(line, (unsigned long)capacity.blocks);
+    say_text(line, " blocks of ");
+    say_dec(line, capacity.block_size);
+    say_text(line, " bytes, ");
+    say_size(line, capacity.blocks * capacity.block_size);
+
+    if (capacity.block_size > BLOCK_MOST || capacity.blocks < 3u) {
+        say_text(line, ", and its blocks are not read");
+        say_send(console, line);
+        return;
+    }
+
+    say_send(console, line);
+
+    end = (uint32_t)(capacity.blocks - 1u);
+    failed = read_block(c, d, s, 1u, capacity.block_size);
+
+    if (failed == NULL) {
+        primary = gpt_header_at(stick_block, capacity.block_size, 1u);
+        failed = read_block(c, d, s, end, capacity.block_size);
+        backup = failed == NULL
+                 && gpt_header_at(stick_block, capacity.block_size, end);
+    }
+
+    if (failed != NULL) {
+        say_failure(c, d->port, failed, "", line);
+        return;
+    }
+
+    about(line, c);
+    say_text(line, " port ");
+    say_dec(line, d->port);
+    say_text(line, primary ? ": block 1 holds a" : ": block 1 holds no");
+    say_text(line, " GUID partition table's header, and block ");
+    say_dec(line, end);
+    say_text(line, backup ? " its backup" : " no backup");
+    say_send(console, line);
+}
+
+/*
  * **A stick, and USB step 4: bytes each way on its bulk endpoints.** Its two
  * endpoints given to the controller in one Configure Endpoint - bulk OUT at
  * context index twice its number, bulk IN at one more (4.5.1) - then
  * SET_CONFIGURATION, the order the mouse's comment gives; then INQUIRY, and
- * what the stick says it is.
+ * what the stick says it is; then step 5a's, in `first_blocks`.
  *
  * Its rings are the device's pages 4 and 5, which a mouse would have used, and
  * what it is sent and sends back goes in the device's buffer page, which
@@ -2116,7 +2341,8 @@ static void use_stick(struct controller *c, struct device *d,
 {
     struct stick *s = &c->stick[d->slot];
     uintptr_t page = PAGE_DEVICES + (d->slot - 1u) * PAGES_A_DEVICE;
-    uint8_t data[INQUIRY_LENGTH];
+    uint8_t cdb[16], data[INQUIRY_LENGTH];
+    enum bot_status status;
     uint32_t done[4];
     uint32_t *icc, *slot, *ep;
     unsigned got = 0, last;
@@ -2192,7 +2418,13 @@ static void use_stick(struct controller *c, struct device *d,
 
     say_send(console, line);
 
-    failed = inquire(c, d, s, data, &got);
+    failed = transact(c, d, s, "INQUIRY", cdb,
+                      scsi_inquiry(cdb, INQUIRY_LENGTH), data, INQUIRY_LENGTH,
+                      &got, &status);
+
+    if (failed == NULL && status != BOT_PASSED) {
+        failed = named("INQUIRY", ", which the stick failed");
+    }
 
     if (failed != NULL) {
         say_failure(c, d->port, failed, "", line);
@@ -2218,6 +2450,7 @@ static void use_stick(struct controller *c, struct device *d,
     }
 
     say_send(console, line);
+    first_blocks(c, d, s, line);
 }
 
 /*

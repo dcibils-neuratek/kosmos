@@ -189,6 +189,24 @@ is the one that makes the machine Diego owns behave like a computer:
    bytes in and a status in - with what the stick says it is on its line
    (`usb.md` §6). Next: mass storage, then another machine's drive.
 
+   **Step five, mass storage, approved on 14 September** - "usb step 5 sounds
+   good. go for it." - in six parts, each ending in something visible: **5a**
+   the stick's size and its first blocks read; **5b** Reset Recovery, for a
+   stick that stalls; **5c** the kernel's interrupt wait also taking an
+   endpoint; **5d** a block protocol, a declared shape in `blockproto.h`,
+   served by the driver; **5e** kfs on the boot stick's Kosmos partition, as
+   `/home`, read and written; **5f** the new stick layout - that partition
+   beside the boot one - and the loader naming it, offered as an experiment
+   beside a stick that has booted. The five calls under it are in
+   `README.md`.
+
+   **5a is built (14 September): a stick's size, and its first blocks.**
+   TEST UNIT READY with REQUEST SENSE, READ CAPACITY (10), and READ (10) of
+   block 1 and the last block, each checked for a GPT header, through
+   `storage_decode.c` (`usb.md` §7). On the ThinkPad the boot stick itself
+   will answer. Next: 5b, Reset Recovery - and with it, REQUEST SENSE after
+   any command that fails, which today only TEST UNIT READY gets.
+
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
    six. The panel had shown the boot log from stage two since 0.10.12 -

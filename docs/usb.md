@@ -11,7 +11,7 @@ else.
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
 | 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | built, and run under QEMU |
-| 5. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
+| 5. mass storage | the stick Kosmos booted from, mounted as its disk | being built: 5a of six parts, under QEMU (`roadmap.md`) |
 | 6. another machine's drive | a FAT32 or exFAT flash drive's files read in Kosmos, read-only first | not started |
 | 7. Ethernet | a USB-C adapter carrying the network stack | not started |
 
@@ -26,7 +26,11 @@ mounted over USB, so big files live on the disk. Today the loader reads the
 whole disk image into memory before Kosmos starts, and a stick's image is kept
 to 32 MB or less until the ThinkPad has booted a bigger one through Kosmos's
 own loader (`boot.md`). Reading the stick directly removes the copy in
-memory, and with it the limit.
+memory, and with it the limit. Decided on 14 September, in five calls Diego
+approved together: the driver hears requests through the kernel's interrupt
+wait, a Kosmos stick carries kfs in a partition of its own, only that
+partition is mounted, as `/home`, it is written as well as read, and bytes
+cross between processes through a copy - `README.md` has each and why.
 
 **And step 6 is Diego's too**, the same week: "we need fat32 driver so we can
 mount usb drives that i have with content that i would like to have avaiable
@@ -1129,6 +1133,103 @@ the endpoints from `hw/usb/dev-storage.c`.
 
 ---
 
+## 7. Step 5: mass storage
+
+**The stick Kosmos booted from, mounted as its disk**, in six parts that each
+end in something visible. `roadmap.md` has the list, and `README.md` the five
+calls Diego approved under it on 14 September. This section grows a part at a
+time.
+
+### 5a: the stick's size, and its first blocks
+
+**Ready, how big, and two blocks read.** After INQUIRY the driver asks TEST
+UNIT READY until the stick is ready, READ CAPACITY (10) for its size, and READ
+(10) for block 1 and for the last block, and asks of each whether it holds a
+GUID partition table's header. A stick made by `mkusb_image.py` holds one at
+each end, and that table is what a disk server will find Kosmos's partition
+by.
+
+**Laid out and read in `storage_decode.c`**, with no hardware in it: the
+command and status wrappers, the command blocks, READ CAPACITY's answer, sense
+data and a GPT header. The driver's `inquire` became `transact`, which carries
+any command: its wrapper out, its data in - copied out of the buffer page
+before the status comes back through the same page - and the status held to
+6.3, valid first and then meaningful. A status of 01h is not the transport
+failing. It is the stick saying the command did, and REQUEST SENSE says why.
+
+**TEST UNIT READY, and why it may fail at first.** A device reports a unit
+attention after a reset, and the driver has just reset the stick's port; a
+real stick may also say NOT READY while it wakes. So a failure is asked why
+with REQUEST SENSE, which also clears what it reports (Seagate's REQUEST SENSE,
+3.37), a stick that says NOT READY is given 250 ms, and the command is tried up
+to eight times. What the stick said is printed, first and last. Sense data is
+read in both formats: fixed, which is what is asked for, and descriptor, which
+a device may send anyway (Tables 27 and 28).
+
+**READ CAPACITY (10)** answers the last block's address and the block's size,
+big-endian (Table 120). FFFFFFFFh means more blocks than it can count - about
+2 TB - which READ CAPACITY (16) would answer, and nothing here asks it yet.
+**READ (10)** takes a 32-bit address and a 16-bit count (Table 97). One block
+at a time for now, through the 4 KB buffer page, so a block larger than a page
+is said and not read; the 256 KB transfer buffer is 5d's.
+
+**A GPT header** is held to its signature, a header size from 92 bytes to the
+block's, its CRC-32 over that size with its own field taken as zero, and MyLBA
+equal to the block it was read from - so a backup read from the wrong block
+does not pass. Those are the UEFI specification's checks as `mkusb_image.py`
+already writes to them, for sticks OVMF and the ThinkPad's firmware both
+boot; a copy of the specification was not downloaded for this.
+
+What QEMU's stick makes the driver say:
+
+```
+xhci: 00:04.0 port 1: the stick says it is "QEMU" "QEMU HARDDISK", revision "2.5+", device type 0
+xhci: 00:04.0 port 1: the stick holds 32768 blocks of 512 bytes, 16 MB
+xhci: 00:04.0 port 1: block 1 holds a GUID partition table's header, and block 32767 its backup
+```
+
+QEMU's stick passes the first TEST UNIT READY, so the line saying what a stick
+answered does not appear here. On the ThinkPad it may.
+
+### What is not done yet
+
+- **Why any other command failed.** Only TEST UNIT READY is followed by
+  REQUEST SENSE. A READ CAPACITY (10) or READ (10) that fails says only
+  `which the stick failed` - what the first control in `testing.md` §18.56
+  printed - where the stick would say why if asked. It belongs with 5b, which
+  is about what to do after a command goes wrong.
+- **Recovery**, still: a stall, a status that is not valid, or a phase error
+  leaves the stick said and left, as in step 4. That is 5b.
+
+### What QEMU cannot show
+
+- **A stick that is not ready, or reports a unit attention.** The sense paths
+  are `test_storagedecode`'s.
+- **Blocks of 4096 bytes, and a stick past 2 TB.**
+- **A stick that stalls a command it does not support**, which is 5b.
+
+### How it is tested
+
+- **`tools/test_storagedecode.c`**, 48 checks: INQUIRY's wrapper byte for byte
+  as Table 5.1 lays it out, one with no data, one for LUN 3, and the lengths a
+  wrapper has no room for; each command block; statuses that pass, fail, end
+  in a phase error with any residue, are twelve bytes, carry the wrong
+  signature or tag, a residue past the length or a status of 03h; QEMU's
+  capacity for 16 MB, 4096-byte blocks, a count past 32 bits, FFFFFFFFh, seven
+  bytes and a block of no bytes; sense in fixed format as QEMU sends it and
+  for a unit attention, with VALID set, deferred, short and with an additional
+  length that stops short, and in descriptor format; the sense keys' names;
+  CRC-32's check value, and carried across two calls; and GPT headers written
+  by Python's `zlib`, at their own block and the wrong one, changed by a bit,
+  sized to the whole block, 91 bytes, larger than the block, with a lowercase
+  signature, and empty.
+- **`tools/run_x86.py`'s `usb`**, 17 checks, 2 of them new: its stick is laid
+  out by `mkusb_image.write_gpt` as a real one is, and the driver has to say it
+  holds 32768 blocks of 512 bytes and find the header at block 1 and its
+  backup at block 32767. Controls in `testing.md` §18.56.
+
+---
+
 ## Sources
 
 - Intel, *eXtensible Host Controller Interface for Universal Serial Bus
@@ -1150,12 +1251,14 @@ the endpoints from `hw/usb/dev-storage.c`.
   and what a host checks and does when they are wrong (§6). Downloaded from
   usb.org on 14 September 2026 to read, and not kept.
 - Seagate, *SCSI Commands Reference Manual*, rev. J (SPC-5 and SBC-4) -
-  INQUIRY's command and its standard data. Downloaded from seagate.com on 14
-  September 2026 to read, and not kept.
+  INQUIRY's command and its standard data (§6); TEST UNIT READY, REQUEST
+  SENSE, READ CAPACITY (10) and READ (10), sense data in both formats, and the
+  sense keys (§7). Downloaded from seagate.com on 14 September 2026 to read,
+  and not kept.
 - QEMU 11.1.1, `hw/usb/dev-storage.c` and `hw/scsi/scsi-disk.c` - the stick
   the check runs against, read for its descriptors at each speed, what it does
-  with a wrapper and a status, and what INQUIRY answers. Nothing is copied
-  from them.
+  with a wrapper and a status, and what INQUIRY, READ CAPACITY (10) and
+  REQUEST SENSE answer. Nothing is copied from them.
 - USB-IF, *Device Class Definition for Human Interface Devices (HID)*,
   version 1.11 - the boot subclass and the mouse protocol, SET_PROTOCOL and
   SET_IDLE, which of them a boot mouse must support, and a boot mouse's
