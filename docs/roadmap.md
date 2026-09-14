@@ -517,11 +517,12 @@ the Pi", and the Pi is not here yet.
   barebones now. can we improve the functionality and style like vox player
   for mac?" Designed in `docs/music.html`: what is playing on top with its
   format, a bar you can drag, one row of controls, a Library found by
-  attributes written from each file's tags, playlists as saved queries, a
-  mini player and a Deskbar replicant - and FLAC beside WAV and MP3, which
-  needs a decoder and a 24-bit path in `sys.pcm`. Four choices are Diego's
-  first, on the page. Seeking, which this line used to be on its own, is part
-  of it.
+  each file's tags read by a reader, playlists, a mini player, and a dark
+  look and a light one; WAV and MP3. Decided with Diego the same day
+  (`README.md`): tags read from the file rather than written onto it, FLAC
+  later - it needs a decoder and a 24-bit path in `sys.pcm` - and the Deskbar
+  replicant after the player. Seeking, which this line used to be on its
+  own, is part of it.
 - A markdown viewer, for manuals inside the system.
 - **Selection in the terminal**, which is where people most want to copy
   from and is the one window the clipboard cannot reach. It draws its
