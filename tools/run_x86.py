@@ -320,6 +320,13 @@ def usb(image, check):
     after which, and only after which, its speed is named; and both devices
     given a slot and an address and asked for their descriptors.
 
+    **And every 64-bit register written low half first and high half
+    second** (xHCI 1.2 5.1), read out of QEMU's own trace of the writes the
+    controllers were given. QEMU acts on ERDP's low half, so nothing it does
+    can show the order; the driver wrote ERDP high half first from 0.10.54,
+    and on the ThinkPad that fits every naming step taking a second and a
+    mouse read only when a deadline came round.
+
     **What the devices say is compared with what QEMU says**, from a second
     QEMU's monitor, as product and speed. The keyboard is high-speed - 480 Mb/s
     - which this docstring once had as full-speed.
@@ -335,9 +342,18 @@ def usb(image, check):
              "-device", "usb-storage,bus=usb1.0,drive=stick",
              "-device", "usb-kbd,bus=usb0.0")
 
+    # QEMU's trace of what the controllers were written, in a file of its
+    # own: on the serial line its lines would land inside the driver's.
+    traced = os.path.join(tempfile.mkdtemp(prefix="kosmos-xhci-trace-"),
+                          "writes")
+
     # The closing line, whatever it counts: "devices named" is never printed
     # by a run that names one device, which then waited out the timeout.
-    out = boot(image, None, 90.0, extra=extra, until="plugged in, ")
+    out = boot(image, None, 90.0,
+               extra=extra + ("-trace", "usb_xhci_oper_write",
+                              "-trace", "usb_xhci_runtime_write",
+                              "-D", traced),
+               until="plugged in, ")
 
     if out is None:
         check(False, "the machine would not boot with two xHCI controllers")
@@ -442,6 +458,62 @@ def usb(image, check):
                     r"plugged in, 2 devices named", out) is not None,
           "the driver's closing line is not what two controllers, a stick "
           "and a keyboard should give:\n    " + shown)
+
+    #
+    # **The 64-bit registers, low half first** (5.1): CRCR and DCBAAP among
+    # the operational registers, ERSTBA and ERDP among interrupter 0's.
+    #
+    # QEMU's firmware drives the controllers before Kosmos does and writes
+    # the same registers, so the writes looked at start from the driver's
+    # own CONFIG - the slots its line says it enabled, where SeaBIOS enables
+    # every slot there is. Everything after that is the driver's: it is one
+    # thread, and nothing else in the machine writes a controller.
+    #
+    wrote = []
+
+    try:
+        with open(traced) as handle:
+            wrote = re.findall(r"usb_xhci_(oper|runtime)_write off "
+                               r"0x([0-9a-f]+), val 0x([0-9a-f]+)",
+                               handle.read())
+    except OSError:
+        pass
+
+    wrote = [(kind, int(off, 16), int(val, 16)) for kind, off, val in wrote]
+    halves = {("oper", 0x18): "CRCR", ("oper", 0x30): "DCBAAP",
+              ("runtime", 0x30): "ERSTBA", ("runtime", 0x38): "ERDP"}
+    slots = int(running[0][3]) if running else -1
+    first = next((i for i, (kind, off, val) in enumerate(wrote)
+                  if (kind, off) == ("oper", 0x38) and val == slots), None)
+    counted = {}
+    wrong = []
+
+    for i in range(len(wrote) if first is None else first, len(wrote)):
+        kind, off, _ = wrote[i]
+
+        if (kind, off) in halves:
+            name = halves[(kind, off)]
+            counted[name] = counted.get(name, 0) + 1
+
+            if i + 1 >= len(wrote) or wrote[i + 1][:2] != (kind, off + 4):
+                wrong.append("%s's low half with no high half after it"
+                             % name)
+        elif (kind, off - 4) in halves and wrote[i - 1][:2] != (kind, off - 4):
+            wrong.append("%s's high half before its low half"
+                         % halves[(kind, off - 4)])
+
+    if first is None:
+        why = "no CONFIG write of %d slots to start from" % slots
+    elif wrong:
+        why = "the order broken in %d places, the first %s" % (len(wrong),
+                                                                wrong[0])
+    else:
+        why = "only %s written" % ", ".join(sorted(counted))
+
+    check(first is not None and len(counted) == 4 and not wrong,
+          "the driver did not write every 64-bit register low half first and "
+          "high half second (xHCI 1.2 5.1), in QEMU's trace of %d writes: %s"
+          % (len(wrote), why))
 
 
 def usb_hotplug(image, check):
@@ -1310,8 +1382,8 @@ def usb_mouse(image, check):
         mark = len(heard)
         monitor.ask("device_del mouse0")
         gone = wait_for(mark, r'xhci: ' + at + r' port \d+: unplugged, '
-                        r'0627:0001 "QEMU USB Mouse", after (\d+) reports?',
-                        20.0)
+                        r'0627:0001 "QEMU USB Mouse", after (\d+) reports?, '
+                        r'(\d+) found by looking', 20.0)
         up = wait_for(mark, r"wm: button up", 10.0)
 
         check(gone is not None,
@@ -1330,6 +1402,18 @@ def usb_mouse(image, check):
               "fewer than four in five, which is a mouse read late: QEMU "
               "folds a movement into the one before while that is unread"
               % (reports, MOVEMENTS_BEFORE_THE_CLICK, gap_ms))
+
+        # **And brought by the controller's interrupt**, which a count of
+        # reports cannot tell from a driver that looks often enough. The line
+        # when the mouse leaves says how many were found by looking instead,
+        # which is also how a photograph of the ThinkPad says whether its
+        # reports come by interrupt.
+        looked = int(gone.group(2)) if gone else reports
+
+        check(gone is not None and looked * 10 <= reports,
+              "%d of the %d reports were found by looking rather than brought "
+              "by the controller's interrupt, more than one in ten"
+              % (looked, reports))
 
         check(up is not None,
               "a button held on the USB mouse as it was pulled out never came "

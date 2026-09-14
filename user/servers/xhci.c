@@ -314,6 +314,7 @@ struct mouse {
     unsigned      length;               /* a request's buffer: its packet */
     uint32_t      buttons;              /* what its last report held down */
     unsigned long reports;              /* read, for the line when it leaves */
+    unsigned long looked;               /* of those, found without its interrupt */
     struct ring   ring;
     uint8_t      *report;
     uint64_t      report_bus;
@@ -355,6 +356,7 @@ struct controller {
     uint32_t      last_code;            /* the last answer's code; 0, none came */
 
     bool          running;              /* started, and watched */
+    bool          woken;                /* this look is its own interrupt's */
 
     /* Each port's device: 0 none, its slot, or PORT_FAILED - there, not named. */
     unsigned char port_slot[PORTS_MAX + 1];
@@ -439,10 +441,11 @@ static bool settles(uintptr_t reg, uint32_t mask, uint32_t want,
 }
 
 /*
- * A 64-bit register as two Dword writes, low then high (5.1: registers are
- * read and written as Dwords). ERSTBA's high half is what arms the event
- * ring, so the order is the point for that one. ERDP is the exception and
- * has its own function below.
+ * A 64-bit register as two Dword writes, **low half first and high half
+ * second** - 5.1's words for every register with a 64-bit address in it are
+ * "low Dword-first, high-Dword second". ERSTBA's high half is what arms the
+ * event ring in QEMU's model. ERDP comes through here too, from
+ * `event_dequeue_to`, and for a while it did not.
  */
 static void write64(uintptr_t reg, uint64_t value)
 {
@@ -695,15 +698,26 @@ static uint64_t ring_push(struct ring *r, uint32_t w0, uint32_t w1,
 }
 
 /*
- * ERDP, high half first: the low half's write is where the controller looks
- * at the pointer, and with Event Handler Busy written as 1 it raises the
- * interrupt again if events are still waiting behind it (5.5.2.3.3).
+ * ERDP, with Event Handler Busy written as 1 once events are taken, so the
+ * controller clears it and interrupts again if more are waiting behind the
+ * pointer (5.5.2.3.3, 4.17.2) - and like every 64-bit register, low half
+ * first and high half second (`write64`, 5.1).
+ *
+ * **It was the other way round from 0.10.54 until the ThinkPad**, under a
+ * comment saying the low half's write is where the controller looks. That is
+ * QEMU's model, which acts on the low write (`hcd-xhci.c`), and not the
+ * specification. What the ThinkPad showed on 13 September fits a controller
+ * that takes the register when its high half arrives, and so cleared Busy one
+ * write late: once events had been taken, no interrupt came for the next -
+ * a second for each step of naming its mouse, and 882 reports read in 25
+ * minutes from a mouse that offers one a millisecond while it moves. QEMU
+ * cannot show the order's effect, so `run_x86.py`'s `usb` reads the order out
+ * of QEMU's own trace of the writes.
  */
 static void event_dequeue_to(const struct controller *c, uint64_t at,
                              bool busy)
 {
-    mmio_write32(c->rt + RT_ERDP + 4u, (uint32_t)(at >> 32));
-    mmio_write32(c->rt + RT_ERDP, (uint32_t)at | (busy ? ERDP_EHB : 0u));
+    write64(c->rt + RT_ERDP, at | (busy ? ERDP_EHB : 0u));
 }
 
 /*
@@ -1747,6 +1761,10 @@ static void take_report(struct controller *c, const uint32_t *event)
             say_send(console, &line);
         }
 
+        if (!c->woken) {
+            m->looked++;
+        }
+
         if (dx != 0 || dy != 0 || buttons != m->buttons) {
             m->buttons = buttons;
             to_pointer(dx, dy);
@@ -2233,6 +2251,9 @@ static void detach(struct controller *c, unsigned port, struct say_line *line)
         say_text(line, ", after ");
         say_dec(line, m->reports);
         say_text(line, m->reports == 1 ? " report" : " reports");
+        say_text(line, ", ");
+        say_dec(line, m->looked);
+        say_text(line, " found by looking");
     }
 
     say_send(console, line);
@@ -2430,16 +2451,25 @@ static void service(struct controller *c, struct say_line *line)
  * them. A controller whose interrupt could not be claimed is not among them,
  * and is looked at when the wait's deadline comes round - polled, as its
  * line said at the start.
+ *
+ * **And whether each look was the controller's own interrupt**, kept in
+ * `woken` for the pass: a mouse's report taken on any other look - a
+ * deadline, or the other controller's interrupt - is counted as found by
+ * looking, and the line when the mouse leaves says how many. A mouse whose
+ * reports stop coming by interrupt still moves, only badly, and that count
+ * is what a photograph can read it from.
  */
 static void watch(struct controller *list, unsigned count,
                   struct say_line *line)
 {
     long lines[IRQ_WAIT_ANY_MAX];
+    unsigned owner[IRQ_WAIT_ANY_MAX] = { 0 };
     unsigned waited = 0, i;
 
     for (i = 0; i < count; i++) {
         if (list[i].running && list[i].irq >= 0
             && waited < IRQ_WAIT_ANY_MAX) {
+            owner[waited] = i;
             lines[waited++] = list[i].irq;
         }
     }
@@ -2458,6 +2488,8 @@ static void watch(struct controller *list, unsigned count,
 
         for (i = 0; i < count; i++) {
             if (list[i].running) {
+                list[i].woken = woke >= 0 && (unsigned long)woke < waited
+                                && owner[woke] == i;
                 service(&list[i], line);
             }
         }

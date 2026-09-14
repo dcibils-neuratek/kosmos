@@ -166,11 +166,14 @@ is the one that makes the machine Diego owns behave like a computer:
    since 0.10.55 a failure says why and gets a second attempt, and the
    driver stays, naming devices as they are plugged in and pulled out.
 
-   **Step three is built (0.10.61), and has run under QEMU: a USB mouse
-   moves the pointer.** Diego's call, on 13 September - "yes / lets make the
-   mouse work" - because his USB mouse did nothing on the ThinkPad's desktop.
-   The board adds it into the position the TrackPoint moves, and the driver
-   waits on every controller at once (`usb.md` §5). Next: bulk transfers.
+   **Step three is built (0.10.61): a USB mouse moves the pointer.** Diego's
+   call, on 13 September - "yes / lets make the mouse work" - because his USB
+   mouse did nothing on the ThinkPad's desktop. The board adds it into the
+   position the TrackPoint moves, and the driver waits on every controller at
+   once (`usb.md` §5). **On the ThinkPad it moved, in jumps**: read by its
+   Report descriptor since `a543f20`, and with ERDP written high half first
+   its reports came on a deadline rather than by interrupt - fixed that
+   night, and waiting for the machine to say so. Next: bulk transfers.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -382,6 +385,13 @@ the Pi", and the Pi is not here yet.
   ends with one down.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
+- **This Machine describes a q35.** On the ThinkPad it listed 22 devices on
+  bus 0 and "0 driven": `claimed_here` in `hal/pc/pci.c` knows the sound
+  controller by its class and virtio devices, and not the xHCI controllers a
+  process drives; `hal_bus_scan` walks bus 0 alone, so nothing behind a bridge
+  is listed; and its last paragraph says "on a q35 most of it never will be".
+  Diego, 13 September: "we need to update it and make sure is resizable as
+  well".
 
 ---
 

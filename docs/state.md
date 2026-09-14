@@ -8,6 +8,37 @@ Last updated: 2026-09-13
 
 ## Where this left off
 
+### 13 September, night: the ThinkPad's mouse in jumps, and ERDP's two halves
+
+**`a543f20` booted the ThinkPad and read its mouse by the descriptor**:
+sixteen buttons, X and Y in sixteen bits, and the axes right. **It moved in
+jumps** - Diego: "really jumpy and slow", "like the kernel is reading the
+mouse coordinates in intervals of 20ms", with the TrackPoint and touchpad
+smooth. The log said the driver read 882 reports in 25 minutes and took a
+second or two for each step of naming the mouse: answers on the ring, and
+their interrupts not coming.
+
+- **The reading: ERDP written high half first**, since 0.10.54, where xHCI
+  1.2 5.1 says low half first. QEMU clears Event Handler Busy on the low
+  write, so it never showed; a controller that takes the register on its
+  high half clears Busy one write late, and once events are taken no
+  interrupt comes for the next. Ruled out under QEMU first: plain MSI, and
+  one, four and eight processors (`usb.md` §5).
+- **The fix** writes ERDP through `write64`, low half first. The line when a
+  mouse leaves counts the reports found by looking; `run_x86.py`'s `usb`
+  reads the order of all four 64-bit registers out of QEMU's trace, and
+  `usb_mouse` wants no more than one report in ten found by looking.
+  Controls: 1 of 13 and 3 of 18 (`testing.md` §18.47). `make test` green,
+  x86-64 117.
+- **This Machine is out of date**, Diego says, and it is: on the ThinkPad it
+  listed 22 devices on bus 0 and "0 driven", nothing behind a bridge, and a
+  closing paragraph about q35 - and he wants its window resizable
+  (`roadmap.md`).
+
+**Next:** a stick with this for the ThinkPad, and the photograph `log xhci`
+after pulling the mouse out - the naming steps' times, and how many reports
+were found by looking. Then This Machine.
+
 ### 13 September, late: the ThinkPad's USB mouse, read by its Report descriptor
 
 **0.10.62 booted the ThinkPad, and its USB mouse moved the arrow the wrong

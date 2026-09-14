@@ -190,8 +190,19 @@ TRBs. **The order of the writes matters**, and QEMU's model shows why: ERSTSZ,
 then ERDP, then ERSTBA's low half and **its high half last**, the write that
 starts the ring. Software takes events while their cycle bit matches its own,
 which starts at 1 and turns over where the segment wraps, and then writes
-ERDP - high half first, low half with Event Handler Busy set - which lets the
-controller interrupt again if more are waiting (5.5.2.3.3).
+ERDP with Event Handler Busy set, which lets the controller interrupt again
+if more are waiting (5.5.2.3.3).
+
+**Every one of those 64-bit registers is written low half first and high
+half second**, because 5.1 says so in as many words: "low Dword-first,
+high-Dword second". ERDP was written the other way round from 0.10.54 to 13
+September, under a comment saying the low half's write is where the
+controller looks - which is QEMU's model and not the specification:
+`hcd-xhci.c` clears Busy and raises the interrupt again on the low write,
+and only stores the high one. The ThinkPad's controller behaved as one that
+takes the register when its high half arrives would (§5, On the ThinkPad).
+QEMU cannot show the difference, so `run_x86.py` reads the order out of
+QEMU's own trace of the writes (`testing.md` §18.47).
 
 An interrupt needs Interrupter Enable in IMAN **and** INTE in USBCMD (4.17).
 After one, USBSTS's EINT is cleared before IMAN's IP (5.4.2). On a PCI
@@ -868,6 +879,10 @@ in QEMU.
 - **Contacts that bounce.** QEMU's plug is one clean change, so the debounce
   is always a single interval.
 - **A thousand reports a second**, which a gaming mouse may send.
+- **A controller that takes a 64-bit register when its high half arrives.**
+  QEMU acts on ERDP's low half, so a driver writing the halves in the wrong
+  order works perfectly here; the order is read out of QEMU's trace instead
+  (§2).
 
 ### How it is tested
 
@@ -883,17 +898,19 @@ in QEMU.
 - **The suite, on both boards**: `irq: a wait on two lines takes whichever
   has one`, and `input: a driver's movement adds to the pointer` - which on
   the ARM board is the refusal, since its pointer is a tablet.
-- **`tools/run_x86.py`'s `usb_mouse`**, 17 checks, on q35 with two
+- **`tools/run_x86.py`'s `usb_mouse`**, 18 checks, on q35 with two
   controllers and QEMU's mouse on the second: the driver reads it there, by
   the layout its Report descriptor gives, on two interrupts; 640 movements a little over 10 ms apart, and at least four
   in five come back as reports of their own - QEMU folds a movement into the
   one before while that is unread, so a driver reading late reads fewer - and
   more than two rounds of a ring; then a click on the Deskbar's button opens
   its menu, through USB alone; a button held as the mouse is pulled out comes
-  up; and a full-speed mouse plugged back in is read every 8 ms, from its
-  first report.
+  up, and the line it leaves counts no more than one report in ten found by
+  looking rather than brought by the controller's interrupt; and a full-speed
+  mouse plugged back in is read every 8 ms, from its first report.
 
-The controls, each watched fail, are in `testing.md` §18.43 and §18.46.
+The controls, each watched fail, are in `testing.md` §18.43, §18.46 and
+§18.47.
 
 ### On the ThinkPad
 
@@ -903,9 +920,63 @@ it, `a boot mouse, read from endpoint 1, up to 8 bytes every 1 ms`, first
 report `buttons 0, moved 0,-1`. **With its axes wrong**: sideways moved the
 arrow up and down, and up and down did nothing - the boot protocol asked for
 and not given, above. The TrackPoint and the touchpad, through the board's
-merge, worked "great". The Report descriptor version has not run there yet;
-on its first boot the photograph is `log xhci`, which carries the descriptor's
-bytes and the layout read from them.
+merge, worked "great".
+
+**The Report descriptor version, `a543f20`, 13 September**, with the mouse in
+port 7 at boot and moved to port 1 after 25 minutes. Its descriptor, 67
+bytes, lays out sixteen buttons in two bytes, then X and Y in sixteen bits
+each from -32767 to 32767, a wheel and a horizontal pan - eight bytes, no
+Report ID - and the driver read it so:
+
+```
+[1507.858] xhci: 00:14.0 port 1, USB 2: a Full-speed device (speed ID 1), after its reset
+[1509.874] xhci: 00:14.0 port 1: 04d9:fc38, USB 2.0, class 0, "USB Gaming Mouse"
+[1511.881] xhci: 00:14.0 port 1: its Report descriptor, 67 bytes: 05 01 09 02 a1 01 09 01 a1 00 05 09 19 01 29 10 15 00 25 01 75 01 95 10 81 02 05 01 09 30 09 31
+[1511.893] xhci: 00:14.0 port 1:   from byte 32: 16 01 80 26 ff 7f 75 10 95 02 81 06 09 38 15 81 25 7f 75 08 95 01 81 06 05 0c 0a 38 02 95 01 81
+[1511.893] xhci: 00:14.0 port 1:   from byte 64: 06 c0 c0
+[1512.900] xhci: 00:14.0 port 1: a mouse, read from endpoint 1, up to 8 bytes every 1 ms
+[1512.913] xhci: 00:14.0 port 1: its reports, by its descriptor: 16 buttons from bit 0, X from bit 16 in 16, Y from bit 32 in 16, no report ID
+[1513.177] xhci: 00:14.0 port 1: the mouse's first report: buttons 0, moved 207,-391
+```
+
+**The axes were right, and the mouse was not.** Diego: "really jumpy and
+slow. the trackpad is perfectly smooth though", and then "the mouse feels
+like the kernel is reading the mouse coordinates in intervals of 20ms". The
+same log says why, three ways:
+
+- **882 reports in 25 minutes** on port 7, for clicks, drags and a Deskbar
+  menu - the clicks with no `i8042` line beside them, which the i8042 prints
+  for its first twenty button changes - from a mouse that sends one a
+  millisecond while it moves.
+- **Each step of naming it took a second, or two**: 1507.858 its reset,
+  1509.874 named, 1511.881 its Report descriptor, 1512.900 read - and 43.327
+  to 44.335 on port 7. A second is the driver's deadline for an answer that
+  comes by interrupt; when it passes, the driver looks at the ring and finds
+  the answer there.
+- **Its first reports moved hundreds of counts** at once, `-446,102` and
+  `207,-391`: movement kept in the mouse because nobody had asked for it.
+
+So the answers were on the ring and their interrupts did not come, and a
+mouse's reports would be read only when the watch's 50 ms deadline came
+round. **The reading is the ERDP order** (§2): the driver wrote the high half
+first, and a controller that takes the register when its high half arrives
+clears Event Handler Busy one write late - so once events were taken, Busy
+stayed set and no interrupt came for the next ones. It fits every line
+above, and the No-Op answered by interrupt on 0.10.54 too, which came while
+Busy was still clear.
+
+**Ruled out under QEMU first**, with scratch copies of the mouse check:
+plain MSI, as that machine has, rather than QEMU's MSI-X (`msix=off,msi=on`),
+and one, four and eight processors - every run passed, and those that
+printed the count read 658 to 668 reports for 640 movements. And the four
+MSI vectors do not run out on the stick's boot: its disk is in memory, so
+the NVMe driver does not start, and audio and the two controllers take at
+most three.
+
+**The fix writes ERDP low half first**, and the line when a mouse leaves
+counts the reports found by looking rather than brought by their
+controller's interrupt, so the next photograph says whether the reading was
+right: naming steps in milliseconds, and almost no report found by looking.
 
 ---
 

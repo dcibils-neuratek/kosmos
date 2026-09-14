@@ -2864,3 +2864,82 @@ host test 56 of 56, x86-64 115, the UEFI boots 29, the stick check 10, and the
 suites 158 of 158 and 154 of 154. **The ThinkPad has not run it yet**; on its
 first boot the photograph is `log xhci`, which now carries the mouse's
 descriptor bytes and the layout read from them.
+
+## 18.47 The 64-bit registers, low half first, and reports by interrupt
+
+**The ThinkPad's USB mouse moved in jumps** - Diego: "the mouse feels like the
+kernel is reading the mouse coordinates in intervals of 20ms and the trackpad
+feels 100% realtime and smooth". Its log said the driver had read 882 reports
+in 25 minutes and taken a second or two for each step of naming it: answers on
+the event ring, and their interrupts not coming (`usb.md` §5). The driver
+wrote ERDP high half first, where xHCI 1.2 5.1 says "low Dword-first,
+high-Dword second" - and QEMU clears Event Handler Busy on the low half's
+write, so nothing QEMU did could show it.
+
+**Ruled out before that**, with scratch copies of `usb_mouse`: plain MSI, as
+the ThinkPad's controllers use, instead of QEMU's MSI-X - 17 of 17; and one,
+four and eight processors on MSI-X and on plain MSI, 658 to 668 reports for
+640 movements in every run that printed them.
+
+**What QEMU can show is the order itself.** It traces every write to a
+controller's operational and runtime registers, and `run_x86.py`'s `usb` now
+boots with `-trace usb_xhci_oper_write -trace usb_xhci_runtime_write` into a
+file of their own (`-D`) - on the serial line the trace's lines would land
+inside the driver's. The check reads CRCR and DCBAAP, ERSTBA and ERDP, and
+wants each low half followed at once by its high half, and no high half
+alone. SeaBIOS writes the same registers before Kosmos runs, so the writes
+read start at the driver's CONFIG, which carries the slots its line says it
+enabled - SeaBIOS writes all 64 there. On the build before the fix the trace
+has the firmware's writes, low half first, and then the driver's:
+
+```
+usb_xhci_oper_write off 0x0038, val 0x00000008
+usb_xhci_oper_write off 0x0030, val 0x08380000
+usb_xhci_oper_write off 0x0034, val 0x00000000
+usb_xhci_oper_write off 0x0018, val 0x08381001
+usb_xhci_oper_write off 0x001c, val 0x00000000
+usb_xhci_runtime_write off 0x0028, val 0x00000001
+usb_xhci_runtime_write off 0x003c, val 0x00000000
+usb_xhci_runtime_write off 0x0038, val 0x08382000
+```
+
+**The count of places it breaks is not the count of wrong writes.** A run of
+ERDP updates written high then low reads, by offset alone, as low-high pairs
+in its middle, so each run breaks in two places however long it is. It cannot
+pass: every run begins with a high half after another register.
+
+**And a count that says whether reports come by interrupt**, because the
+ThinkPad cannot be traced. The line when a mouse leaves now ends `N found by
+looking`: its reports taken on any look that was not its own controller's
+interrupt - a deadline, or the other controller's. `usb_mouse` wants no more
+than one in ten.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `usb`: the 64-bit registers in 5.1's order | CRCR, DCBAAP, ERSTBA and ERDP all written, each low half then high half, in QEMU's trace from the driver's first CONFIG |
+| `usb_mouse`: reports by interrupt | the line when the mouse is pulled out counts its reports found by looking, and no more than one in ten were |
+
+**Controls**, each a copy of `xhci.c` built and booted, and put back byte for
+byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| ERDP written high half first again | 1 of 13 in `usb` |
+| the watch waiting on no interrupt | 3 of 18 in `usb_mouse`: the new check, and the two that count reports |
+
+```
+usb: 1 of 13 checks failed
+  the driver did not write every 64-bit register low half first and high half second (xHCI 1.2 5.1), in QEMU's trace of 292 writes: the order broken in 12 places, the first ERDP's high half before its low half
+
+usb_mouse: 3 of 18 checks failed
+  the driver read 162 reports before the mouse was pulled out, fewer than two rounds of a ring (510), so its Link was not tested
+  the driver read 162 reports for 640 movements 11.8 ms apart - fewer than four in five, which is a mouse read late: QEMU folds a movement into the one before while that is unread
+  162 of the 162 reports were found by looking rather than brought by the controller's interrupt, more than one in ten
+```
+
+And as written, with `xhci.c` restored byte for byte: `usb` 13 of 13 and
+`usb_mouse` 18 of 18, and `make test` whole - x86-64 117, the UEFI boots
+29, the stick check 10, the host test 56 of 56, and the suites 158 of 158
+and 154 of 154. **The ThinkPad has
+not run it yet**; the photograph is `log xhci` after pulling the mouse out,
+for the naming steps' times and the count found by looking.

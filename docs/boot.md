@@ -240,6 +240,7 @@ wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 | 0.10.61 (`9ca683a`), MEGA, from `make MEGA=1 x86-usb-image` | 32 MB | the same: the kernel's place all claimed, the disk at `0x5d125000`, `handing over` - and then nothing |
 | 0.10.60 (`13037a4`), MEGA, from `make MEGA=1 x86-usb-image` at that commit, the stick read back and every sector the image's | 32 MB | booted to the prompt and the desktop, on the stick both 0.10.61 sticks had stopped on: `LENOVO 20W1S1Y500 ThinkPad T14 Gen 2i`, 8 cores, both xHCI controllers and the USB mouse, camera and stick named |
 | 0.10.62 (`56625f2`), MEGA, from `make MEGA=1 x86-usb-image`, written with the fixed `mkusb.sh` - its read-back output not yet seen | 32 MB | booted to the prompt, and the USB mouse driver reads the mouse on the machine, `a boot mouse, read from endpoint 1, up to 8 bytes every 1 ms` - with its axes wrong: sideways moves the arrow up and down, and up and down does nothing |
+| `a543f20`, the 0.10.62 kernel with the mouse read by its Report descriptor, MEGA, from `make MEGA=1 x86-usb-image`, offered as an experiment - its read-back output not seen | 32 MB | booted to the desktop and ran for 25 minutes; the mouse's axes right and its movement in jumps, each step of naming it a second or two and 882 reports read (`usb.md` §5) |
 
 The black panel was a refusal: only `refuse()` waits for a key, and what it
 printed went through a console that machine does not show. **Why it refused
