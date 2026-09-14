@@ -25,7 +25,15 @@ neighbouring blocks in as few calls as that allows, and the journal writes in
 runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7 and
 2.4. **Next: the ThinkPad's numbers**, from a stick with this build: under QEMU a
 write is 81 to 91% kfs, but kfs's own work is 1.3 ms for the 768 KB file on the
-Mac, and QEMU inflates CPU work (§18.65). The ThinkPad's own numbers are still to take. Diego allowed the
+Mac, and QEMU inflates CPU work (§18.65). **The stick is built, as an
+experiment**: `build/x86_64/kosmos-usb-0.10.63-9af841c-home-experiment.img`,
+from `make MEGA=1 x86-usb-image USB_HOME=partition` - `/home` in a partition of
+its own, holding `build/kosmos.img` with Diego's Basket Case MP3, the WAD and
+the video clip. It is offered beside `c70d9df`, the same layout, which booted
+there. Under OVMF, on a snapshot: the loader clean, `/home` the partition its
+command line names, the files there, and `diskbench /home` running. On the
+ThinkPad the first photograph is `log loader`, then `diskbench /home` and
+`diskbench usb 0`. Its sound does not play there yet. The ThinkPad's own numbers are still to take. Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
