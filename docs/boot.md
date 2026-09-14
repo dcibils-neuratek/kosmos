@@ -249,6 +249,7 @@ wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 | 0.10.60 (`13037a4`), MEGA, from `make MEGA=1 x86-usb-image` at that commit, the stick read back and every sector the image's | 32 MB | booted to the prompt and the desktop, on the stick both 0.10.61 sticks had stopped on: `LENOVO 20W1S1Y500 ThinkPad T14 Gen 2i`, 8 cores, both xHCI controllers and the USB mouse, camera and stick named |
 | 0.10.62 (`56625f2`), MEGA, from `make MEGA=1 x86-usb-image`, written with the fixed `mkusb.sh` - its read-back output not yet seen | 32 MB | booted to the prompt, and the USB mouse driver reads the mouse on the machine, `a boot mouse, read from endpoint 1, up to 8 bytes every 1 ms` - with its axes wrong: sideways moves the arrow up and down, and up and down does nothing |
 | `a543f20`, the 0.10.62 kernel with the mouse read by its Report descriptor, MEGA, from `make MEGA=1 x86-usb-image`, offered as an experiment - its read-back output not seen | 32 MB | booted to the desktop and ran for 25 minutes; the mouse's axes right and its movement in jumps, each step of naming it a second or two and 882 reports read (`usb.md` §5) |
+| `d6e7e12`, the 0.10.62 kernel with ERDP written low half first, MEGA, from `make MEGA=1 x86-usb-image`, offered as an experiment | 32 MB | back to the firmware's Boot Menu twice with nothing drawn, and to the desktop at the third try; `log loader` clean - 0 pages repaired before, 0 after, 0 lost, the disk the same, the userland image as the build left it - and the mouse smooth (`usb.md` §5) |
 
 The black panel was a refusal: only `refuse()` waits for a key, and what it
 printed went through a console that machine does not show. **Why it refused
@@ -257,6 +258,18 @@ differs only in what makes it seen. On the boot that worked, Kosmos's own USB
 driver needed a second Address Device for that stick, so a read error is one
 candidate; the loader growing by 5 KB is another. A refusal from here on says
 which.
+
+**The two returns to the Boot Menu on 14 September were not the loader.**
+Every way `efi_main` gives up draws a line and waits for a key, so a return
+with nothing drawn is the firmware not starting it at all. The stick is the
+likeliest reason: Kosmos's own driver named it - "UDisk", `abcd:1234`, an ID
+that looks like a placeholder rather than a maker's - only at a second Address
+Device on the boot that worked, as on the boot before, and saw it unplugged
+and back twice in three and a half minutes with nobody pulling it out, as far
+as anyone knows. A stick that drops off its bus fits both returns, and would
+fit the stops after the loader's last line too; it is a lead, not a finding.
+**Diego's answer, the same morning, is branded sticks**, "so we dont keep
+stumbling into issues with this generic one".
 
 What the kernel was handed on the boot that worked, read off the photograph:
 

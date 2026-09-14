@@ -173,7 +173,8 @@ is the one that makes the machine Diego owns behave like a computer:
    once (`usb.md` §5). **On the ThinkPad it moved, in jumps**: read by its
    Report descriptor since `a543f20`, and with ERDP written high half first
    its reports came on a deadline rather than by interrupt - fixed that
-   night, and waiting for the machine to say so. Next: bulk transfers.
+   night, and smooth on the machine the next morning: 13736 reports, none
+   found by looking. Next: bulk transfers.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -199,6 +200,10 @@ is the one that makes the machine Diego owns behave like a computer:
    kernel's and the disk's page sums onto the stick, and the loader holds its
    read to them and refuses on the screen with the first page that differs
    (`boot.md` §3). What it says on the ThinkPad is the next measurement.
+   **And the stick is the lead now**: on 14 September the one the ThinkPad
+   booted from dropped off its bus twice in one boot, after two tries that
+   went back to the firmware's menu with nothing drawn - so the next sticks
+   are branded ones (Diego).
    **GRUB comes back after that**, Diego's decision: it was never the cause, and it
    brings boot arguments and a screen mode per machine.
 

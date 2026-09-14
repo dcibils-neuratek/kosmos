@@ -8,25 +8,37 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
-**Next, with Diego, in the morning.** Thirteen commits on `main` are not on
-`origin`, from `13037a4` to `run_uefi.py`'s skip, and `VERSION` still says
-0.10.62. A push is his call, after `make prepush` and a bump.
+**Next, with Diego.** Fifteen commits on `main` are not on `origin`, and
+`VERSION` still says 0.10.62; a push is his call, after `make prepush` and a
+bump.
 
-- **The ERDP stick first**, if it has been booted: `log xhci` after moving the
-  mouse and pulling it out - the naming steps milliseconds apart, and few of
-  the reports found by looking.
-- **Then a stick from `main`, offered as the experiment it is**, beside one
-  that has booted: This Machine, the disk started once and the loader that
-  holds its read to the build's sums have none of them run on the ThinkPad.
-  Its first photograph is `log loader`, which now also says whether the stick
-  held what the build wrote.
-- **Not started, on purpose**: enumeration as steps between a mouse's
-  reports - the roadmap's plug that stalls every mouse - which restructures
-  the xHCI driver. On the same stick as the unconfirmed ERDP fix it would make
-  whatever the ThinkPad shows harder to read.
+- **A stick from `main`, on a branded stick** once he has one:
+  `build/x86_64/kosmos-usb-0.10.62-dd459ba-experiment.img`, built from
+  `dd459ba` and passing `run_uefi.py` on the exact image, 32 checks. It is an
+  experiment - This Machine, the disk started once and the loader that holds
+  its read to the build's sums have not run on the ThinkPad - offered beside
+  the ERDP stick, which has. The photographs: `log loader`, which should end
+  `the stick against the build: same`, and This Machine resized.
+- **Enumeration as steps between a mouse's reports** - the roadmap's plug that
+  stalls every mouse - is no longer held back: the ERDP fix it would have
+  made harder to read is confirmed.
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September, morning: the mouse smooth on the ThinkPad
+
+**The ERDP stick booted the ThinkPad**, at the third try, and Diego: "Mouse
+works perfectly now!" - the mouse, the touchpad and the TrackPoint together.
+
+- **`log xhci`**: 13736 reports and 0 found by looking, and each step of
+  naming the mouse milliseconds apart. The reading was right (`usb.md` §5).
+- **`log loader`**: 0 pages repaired before, 0 after, 0 lost, the disk the
+  same (`boot.md`, the table).
+- **The first two tries went back to the Boot Menu with nothing drawn**, which
+  no path in the loader does, and the stick - "UDisk", `abcd:1234` - dropped
+  off its bus twice during the boot that worked. Diego is getting branded
+  sticks, "so we dont keep stumbling into issues with this generic one".
 
 ### 14 September, small hours: `run_uefi.py`'s skip, and only for a missing firmware
 

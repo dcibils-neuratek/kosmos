@@ -9,7 +9,7 @@ else.
 | ---- | --------------- | ----- |
 | 1. controllers up | every xHCI controller found, taken from the firmware, reset, and its ports read | built, and run on the ThinkPad |
 | 2. enumeration | a device's descriptors read: what it is, who made it | built, and run on the ThinkPad |
-| 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built; on the ThinkPad in jumps, until the ERDP fix is seen there |
+| 3. a mouse | a HID mouse's reports moving the pointer the TrackPoint moves | built, and run on the ThinkPad |
 | 4. bulk transfers | bytes to and from an endpoint | not started |
 | 5. mass storage | the stick Kosmos booted from, mounted as its disk | not started |
 | 6. Ethernet | a USB-C adapter carrying the network stack | not started |
@@ -980,6 +980,19 @@ most three.
 counts the reports found by looking rather than brought by their
 controller's interrupt, so the next photograph says whether the reading was
 right: naming steps in milliseconds, and almost no report found by looking.
+
+**And it was right.** The stick built from the fix booted the ThinkPad on the
+morning of 14 September, and Diego: "Mouse works perfectly now!" - the mouse,
+the touchpad and the TrackPoint together. Its `log xhci`, with the mouse
+pulled out 201 seconds into the boot:
+
+- **13736 reports, 0 found by looking**: every one brought by the
+  controller's interrupt, where the build before read 882 in 25 minutes.
+- **Each step of naming it milliseconds apart**: 4.670 its reset, 4.686
+  named, 4.698 its Report descriptor, 4.709 read.
+- **Its last report failed as it left** - `USB Transaction Error (4)` twelve
+  milliseconds before the unplug line - which is a request that was out when
+  the device went, not a failure while it was there.
 
 ---
 
