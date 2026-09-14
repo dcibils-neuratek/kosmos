@@ -1136,7 +1136,9 @@ right depends on a fact about the laptop's firmware.
 And agreed for after Lite XL and Quake: **a battery indicator on the top
 bar**, read from the embedded controller with the register map this machine's
 DSDT describes, without an AML interpreter. It starts with a DSDT dump
-from a Linux live boot on this machine.
+from a Linux live boot on this machine. **The brightness keys go with it**,
+from the same dump: nothing sets a brightness today, and `roadmap.md` has
+where they start.
 
 And still open, whenever it is cheap: **which change made QEMU's PS/2 mouse
 stream** - §6 names the three. One reading of `pckbd.c`, and it decides

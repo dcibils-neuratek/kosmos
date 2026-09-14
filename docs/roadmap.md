@@ -320,6 +320,19 @@ processors, and still what follows USB:
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine.
+
+   **And the brightness keys beside it**, asked for by Diego on 14 September:
+   "how can i make the brightness buttons on the thinkpad actually work?".
+   Nothing in Kosmos sets a brightness, and the keyboard driver drops any
+   extended key it has no entry for (`extended_code` in `hal/pc/i8042.c`), so
+   Fn+F5 and Fn+F6 vanish there if they arrive at all. On a ThinkPad they are
+   expected to come from the embedded controller as ACPI events rather than as
+   keys - expected, and not yet seen on this one. So it starts where the
+   battery does: first a log line for every key the driver drops, which QEMU
+   can test and one photograph on the ThinkPad can read; then the DSDT, for
+   where brightness is set - an embedded controller register, or the graphics
+   device's backlight, with its offsets from the documentation rather than from
+   memory; then a driver, the two keys, and the level shown on the bar.
 4. **A tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no

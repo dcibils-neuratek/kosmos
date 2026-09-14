@@ -54,6 +54,10 @@ prepush` and a bump.
   ten lessons and fifteen apps in `/home/development`, from a window with a
   button to a music player and a paint program. Planned in `roadmap.md`, as
   the fourth of *Next, in this order*, and not started.
+- **The brightness keys are on the roadmap**, Diego's yes on 14 September:
+  beside the battery indicator, the third of *Next, in this order*, and
+  starting from the same DSDT. First, a log line for every key the keyboard
+  driver drops. Not started.
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
