@@ -8,9 +8,9 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
-**Next, with Diego.** Fifteen commits on `main` are not on `origin`, and
-`VERSION` still says 0.10.62; a push is his call, after `make prepush` and a
-bump.
+**Next, with Diego.** Everything on `main` since `13037a4` is not on
+`origin`, and `VERSION` still says 0.10.62; a push is his call, after `make
+prepush` and a bump.
 
 - **A stick from `main`, on a branded stick** once he has one:
   `build/x86_64/kosmos-usb-0.10.62-dd459ba-experiment.img`, built from
@@ -19,12 +19,28 @@ bump.
   its read to the build's sums have not run on the ThinkPad - offered beside
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
-- **Enumeration as steps between a mouse's reports** - the roadmap's plug that
-  stalls every mouse - is no longer held back: the ERDP fix it would have
-  made harder to read is confirmed.
+- **USB step 4, bulk transfers**, then mass storage, then another machine's
+  FAT32 and exFAT drives - Kosmos's own reader, read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: a plug does not hold a mouse
+
+**The roadmap's "a device being plugged in stalls every mouse for a moment"**,
+started on Diego's word once the ERDP fix was confirmed. Every wait a plug
+makes - the debounce, a reset, each command and transfer - reads every
+controller's mice while it waits (`wait_serving`), where it used to keep their
+reports for afterwards.
+
+- **Measured in QEMU's trace**, before and after: the longest gap between the
+  mouse's requests during a plug went from 107 and 104 ms to 12.5 and 11.4,
+  against 12 between movements.
+- **Tested** in `usb_mouse`, a keyboard plugged into each controller while the
+  mouse moves; controls in `testing.md` §18.53. On the ThinkPad the stick that
+  drops off its bus is what would have shown it.
+- **Decided on 14 September too: another machine's USB drive**, FAT32 and
+  exFAT, through Kosmos's own reader, read-only first (`usb.md` step 6).
 
 ### 14 September, morning: the mouse smooth on the ThinkPad
 

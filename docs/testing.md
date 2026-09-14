@@ -3299,3 +3299,67 @@ And as written, with `run_uefi.py` put back byte for byte: the check 3 of 3,
 and `make test` whole with it among the checks on this machine -
 `run_uefi.py` 34 through a real boot on the path `main` now takes, x86-64 124,
 and the suites 159 of 159 and 155 of 155.
+
+## 18.53 A plug does not hold a mouse
+
+**A device plugged in held every USB mouse until it was named**, on either
+controller. The xHCI driver has one thread, and a plug's waits - USB 2.0's
+debounce, a port's reset, each command and control transfer - waited on one
+controller's interrupt and kept any report that came meanwhile for
+afterwards; a mouse gets its next request only when its report is read. The
+roadmap had it from the mouse's first day, and the ThinkPad showed what it can
+cost on 14 September: the stick that dropped off its bus took 2.3 seconds to
+be named again.
+
+**Measured first**, with a scratch copy of the check: QEMU's mouse moved every
+10 ms on the second controller, a keyboard plugged in part way through, and
+every doorbell the driver rang for the mouse's endpoint read out of QEMU's
+trace with its time (`-msg timestamp=on`, `usb_xhci_ep_kick`):
+
+| keyboard plugged into | longest gap before the plug | after it, as it was | after it, fixed |
+| --------------------- | --------------------------- | ------------------- | --------------- |
+| the mouse's own controller | 12.2 ms | 106.6 ms | 12.5 ms |
+| the other controller | 11.8 ms | 103.7 ms | 11.4 ms |
+
+The hundred milliseconds are the debounce: QEMU answers commands and transfers
+at once, so nothing else a plug waits for shows here.
+
+**The fix is one wait** (`wait_serving` in `xhci.c`): every running
+controller's interrupt, each mouse's report read as it comes, the waiter
+answered only with an event that is not a report, and a deadline measured on
+the counter rather than counted in wakes. Every wait a plug or an unplug makes
+goes through it, and the kept reports went.
+
+`tools/run_x86.py`'s `usb_mouse`, 22 checks, 4 of them new: a keyboard plugged
+into the other controller and then into the mouse's own while the mouse
+moves, each named, and the longest gap between two of the mouse's requests in
+the 1.5 s after each plug no more than 50 ms - read out of the trace once QEMU
+has gone, since it writes the file when it pleases. `usb` and `usb_hotplug`
+pass unchanged, 13 and 17.
+
+**Controls**, each put back byte for byte:
+
+| broken | what failed |
+| ------ | ----------- |
+| `xhci.c` as it was before the fix | `usb_mouse`, 2 of 22: 152.3 ms between two of the mouse's requests with the keyboard plugged into the other controller, and 148.7 with it on the mouse's own |
+| the fix with only the debounce slept rather than serving | `usb_mouse`, 2 of 22: 83.5 ms and 79.8 |
+
+```
+usb_mouse: 2 of 22 checks failed
+  with a keyboard plugged into the other controller, the USB mouse's requests in the 1.5 s after were 328, and the longest gap between two was 152.3 ms, more than 50: the plug held the mouse (QEMU's trace, 3286 of the mouse's requests in all)
+  with a keyboard plugged into the mouse's own controller, the USB mouse's requests in the 1.5 s after were 325, and the longest gap between two was 148.7 ms, more than 50: the plug held the mouse (QEMU's trace, 3286 of the mouse's requests in all)
+
+usb_mouse: 2 of 22 checks failed
+  with a keyboard plugged into the other controller, the USB mouse's requests in the 1.5 s after were 348, and the longest gap between two was 83.5 ms, more than 50: the plug held the mouse (QEMU's trace, 3297 of the mouse's requests in all)
+  with a keyboard plugged into the mouse's own controller, the USB mouse's requests in the 1.5 s after were 345, and the longest gap between two was 79.8 ms, more than 50: the plug held the mouse (QEMU's trace, 3297 of the mouse's requests in all)
+```
+
+The first is longer than the scratch measurement's 104 and 107 ms, which booted
+the MEGA image into a machine doing nothing else; both are a plug holding the
+mouse. The second breaks only the debounce, the one wait QEMU makes long enough
+to see, and the check still sees it.
+
+And as written, with `xhci.c` put back byte for byte and the image rebuilt:
+`usb_mouse` 22, `usb` 13, `usb_hotplug` 17, and `make test` whole - x86-64
+128, the UEFI boots 34, the stick check 10, and the suites 159 of 159 and 155
+of 155.

@@ -869,6 +869,34 @@ xhci: 00:03.0 port 5: its reports, by its descriptor: 5 buttons from bit 0, X fr
 The last `button up` is the driver letting go: nothing released the button
 in QEMU.
 
+### A plug does not hold a mouse
+
+**Naming a device held every mouse until it was done.** The driver has one
+thread, and a plug's waits were that thread's: USB 2.0's debounce, the port's
+reset and its recovery, and one command or control transfer at a time, each
+waiting on its own controller's interrupt and keeping any report that came
+meanwhile to read afterwards. A mouse's next request goes on its ring only
+when its report is read, so it sent nothing until the plug was done - on
+either controller. In QEMU's trace, with the mouse moved every 10 ms and a
+keyboard plugged in, the longest gap between two of the mouse's requests
+went from 12 ms to 107 with the keyboard on the mouse's own controller and 104
+on the other: the debounce, since QEMU answers everything else at once. On
+the ThinkPad, the stick that dropped off its bus on 14 September took 2.3
+seconds to be named again.
+
+**So every one of those waits reads mice** (`wait_serving`): it waits on
+every running controller's interrupt, reads each mouse's report as it comes,
+and answers the waiter only with an event that is not one. The same trace
+gave 12.5 ms and 11.4. What it does not do is attach or detach: a port that
+changes meanwhile keeps its change bits for the watch, so nothing re-enters.
+
+**It is not enumeration rewritten as steps**, which is what `roadmap.md` had
+proposed: the sequence stays a sequence, and a failure is still said where it
+happened. Two consequences are worth writing down. **The deadline is the
+counter's** (`counter_hz`, from `sysinfo`), because a wait counted in wakes
+would let a mouse's thousand interrupts a second use up a command's second;
+and **the kept reports are gone**, since nothing waits without reading them.
+
 ### What QEMU cannot show
 
 - **A full-speed mouse whose endpoint 0 is bigger than 8 bytes.** QEMU's
@@ -888,6 +916,10 @@ in QEMU.
 - **Contacts that bounce.** QEMU's plug is one clean change, so the debounce
   is always a single interval.
 - **A thousand reports a second**, which a gaming mouse may send.
+- **A command or a transfer that takes time.** QEMU answers at once, so the
+  check measures what a plug's debounce cost a mouse and nothing else a plug
+  waits for. The commands wait through the same `wait_serving`, and the
+  ThinkPad's 2.3 seconds are what they can cost.
 - **A controller that takes a 64-bit register when its high half arrives.**
   QEMU acts on ERDP's low half, so a driver writing the halves in the wrong
   order works perfectly here; the order is read out of QEMU's trace instead
@@ -907,7 +939,7 @@ in QEMU.
 - **The suite, on both boards**: `irq: a wait on two lines takes whichever
   has one`, and `input: a driver's movement adds to the pointer` - which on
   the ARM board is the refusal, since its pointer is a tablet.
-- **`tools/run_x86.py`'s `usb_mouse`**, 18 checks, on q35 with two
+- **`tools/run_x86.py`'s `usb_mouse`**, 22 checks, on q35 with two
   controllers and QEMU's mouse on the second: the driver reads it there, by
   the layout its Report descriptor gives, on two interrupts; 640 movements a little over 10 ms apart, and at least four
   in five come back as reports of their own - QEMU folds a movement into the
@@ -916,10 +948,13 @@ in QEMU.
   its menu, through USB alone; a button held as the mouse is pulled out comes
   up, and the line it leaves counts no more than one report in ten found by
   looking rather than brought by the controller's interrupt; and a full-speed
-  mouse plugged back in is read every 8 ms, from its first report.
+  mouse plugged back in is read every 8 ms, from its first report. **And a
+  keyboard plugged in while it moves**, into the other controller and then
+  into its own: each named, and no gap over 50 ms between two of the mouse's
+  requests in the second and a half after, read out of QEMU's trace.
 
-The controls, each watched fail, are in `testing.md` §18.43, §18.46 and
-§18.47.
+The controls, each watched fail, are in `testing.md` §18.43, §18.46, §18.47
+and §18.53.
 
 ### On the ThinkPad
 

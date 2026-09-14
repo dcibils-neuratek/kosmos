@@ -377,11 +377,6 @@ the Pi", and the Pi is not here yet.
   Endpoint, a CLEAR_FEATURE to the device and a new dequeue pointer - none of
   which QEMU's mouse can be made to need, so none of which a test here could
   reach. Written down in `usb.md` §5 and left for a machine that needs it.
-- **A device being plugged in stalls every mouse for a moment.** The xHCI
-  driver has one thread, and a plug holds it for USB 2.0's debounce, the
-  reset and the commands - a fifth of a second or more - while a mouse on any
-  controller waits. Enumeration as steps the watch takes between reports
-  would remove it.
 - **A mouse that runs at SuperSpeed is not read.** Its endpoint's largest
   payload an interval comes from a SuperSpeed Endpoint Companion descriptor,
   which the walk does not read; the driver says it met one. The other half of

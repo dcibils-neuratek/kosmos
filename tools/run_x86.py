@@ -22,6 +22,7 @@ interrupts masked halts for ever where AArch64's `wfi` wakes - and a boot
 test that only read the boot log would have called that a pass.
 """
 
+import datetime
 import os
 import re
 import socket
@@ -1244,6 +1245,17 @@ MOVEMENTS_BEFORE_THE_CLICK = 640
 MOVEMENT_GAP = 0.01
 MOVEMENT_GAP_MOST_MS = 30.0
 
+# A keyboard plugged in while the mouse moves, once on each controller: the
+# movements around it and the one it comes before, how long after it the
+# mouse's requests are read, and the longest gap between two of them that
+# still counts as a mouse being read. A plug that held the mouse made it 104
+# and 107 ms in QEMU's trace - USB 2.0's debounce - where movements are 12
+# apart.
+PLUG_MOVEMENTS = 240
+PLUG_AT = 80
+PLUG_WINDOW = 1.5
+PLUG_GAP_MOST_MS = 50.0
+
 
 def usb_mouse(image, check):
     """A USB mouse on the second of two controllers moves the pointer and
@@ -1282,12 +1294,23 @@ def usb_mouse(image, check):
     would leave the desktop dragging for good. QEMU sends no release for a
     device it deletes, which is exactly that case.
 
+    **A keyboard plugged in while the mouse moves does not stop it being
+    read**, on the other controller or on its own. Naming a device waits -
+    USB 2.0's debounce, a reset, commands and transfers - and every one of
+    those waits reads mice (`wait_serving` in `xhci.c`). When they did not,
+    QEMU's trace had 104 and 107 ms between two of the mouse's requests
+    during a plug, where the movements are 12 ms apart; the trace is read
+    once QEMU has gone, because it writes as it pleases.
+
     **And the mouse that goes back in is full-speed**, like the ThinkPad's,
     whose interval is milliseconds rather than a power of two.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
     work = tempfile.mkdtemp(prefix="kosmos-x86-usbmouse-")
     path = os.path.join(work, "monitor")
+    traced = os.path.join(work, "trace")
+    plugs = []
+    endpoint = 0
     cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
            "-display", "none", "-vga", "none", "-device", "ramfb",
            "-monitor", "unix:%s,server,nowait" % path,
@@ -1296,6 +1319,9 @@ def usb_mouse(image, check):
            "-device", "qemu-xhci,id=usb1",
            "-device", "usb-mouse,bus=usb1.0,port=1,id=mouse0",
            "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+           # Every doorbell the driver rings for an endpoint, with its time.
+           "-msg", "timestamp=on", "-trace", "usb_xhci_ep_kick",
+           "-D", traced,
            "-kernel", binary]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
@@ -1459,6 +1485,37 @@ def usb_mouse(image, check):
               "the driver never said it read the mouse's first report:\n    "
               + said())
 
+        #
+        # A keyboard plugged in while the mouse moves - into the other
+        # controller, then into the mouse's own - and named. The times of the
+        # plugs are kept, and the mouse's requests around them are read out of
+        # the trace below, once QEMU has gone.
+        #
+        endpoint = int(mouse.group(3))
+
+        for n, (bus, where) in enumerate(
+                (("usb0.0,port=1", "the other controller"),
+                 ("usb1.0,port=2", "the mouse's own controller"))):
+            mark = len(heard)
+            monitor.sock.settimeout(0.002)
+
+            for i in range(PLUG_MOVEMENTS):
+                if i == PLUG_AT:
+                    plugs.append((where, time.time()))
+                    monitor.ask("device_add usb-kbd,bus=%s,id=plugged%d"
+                                % (bus, n), quiet=MOVEMENT_GAP)
+
+                monitor.ask("mouse_move %d 0" % (1 if i % 2 == 0 else -1),
+                            quiet=MOVEMENT_GAP)
+
+            monitor.sock.settimeout(0.05)
+            named = wait_for(mark, r'xhci: [^\n]*: 0627:0001, [^\n]*'
+                             r'"QEMU USB Keyboard"', 20.0)
+
+            check(named is not None,
+                  "a keyboard plugged into %s while the USB mouse moved was "
+                  "never named:\n    %s" % (where, said()))
+
         # A button held, and the mouse pulled out while it is.
         mark = len(heard)
         monitor.ask("mouse_button 1", quiet=0.1)
@@ -1539,6 +1596,45 @@ def usb_mouse(image, check):
     finally:
         proc.kill()
         proc.wait()
+
+    #
+    # **The mouse's requests after each plug**, from QEMU's trace now that it
+    # has written all of it: each doorbell for the mouse's endpoint is a
+    # `usb_xhci_ep_kick` with the time it was rung, and a mouse being read
+    # has one for every movement.
+    #
+    if not plugs:
+        return
+
+    dci = 2 * endpoint + 1
+    kicks = []
+
+    try:
+        with open(traced) as handle:
+            for text in handle:
+                found = re.match(r"(\S+)Z usb_xhci_ep_kick slotid \d+, "
+                                 r"epid (\d+)", text)
+
+                if found and int(found.group(2)) == dci:
+                    stamp = datetime.datetime.strptime(
+                        found.group(1), "%Y-%m-%dT%H:%M:%S.%f")
+                    kicks.append(stamp.replace(
+                        tzinfo=datetime.timezone.utc).timestamp())
+    except OSError:
+        pass
+
+    for where, at in plugs:
+        after = [t for t in kicks if at <= t < at + PLUG_WINDOW]
+        gaps = [b - a for a, b in zip(after, after[1:])]
+        longest = 1000.0 * max(gaps) if gaps else float("inf")
+
+        check(len(after) >= 20 and longest <= PLUG_GAP_MOST_MS,
+              "with a keyboard plugged into %s, the USB mouse's requests in "
+              "the %.1f s after were %d, and the longest gap between two was "
+              "%.1f ms, more than %.0f: the plug held the mouse (QEMU's trace, "
+              "%d of the mouse's requests in all)"
+              % (where, PLUG_WINDOW, len(after), longest, PLUG_GAP_MOST_MS,
+                 len(kicks)))
 
 
 def machine_report(image, check):
@@ -2093,7 +2189,8 @@ def main():
           "NVMe drive across a reboot, reads one off a disk the loader "
           "handed over in memory, names itself out of SMBIOS as QEMU and "
           "as a ThinkPad, finds a USB stick and a keyboard on two xHCI "
-          "controllers, moves the pointer and clicks with a USB mouse, and "
+          "controllers, moves the pointer and clicks with a USB mouse, reads "
+          "it through a plug on either controller, and "
           "opens a menu with a click through a PS/2 mouse whether or not "
           "the machine has a serial port)."
           % checks)

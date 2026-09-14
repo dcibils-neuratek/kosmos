@@ -369,15 +369,6 @@ struct controller {
 
     /* Each slot's mouse, when its device is one. */
     struct mouse  mouse[DEVICES_MAX + 1];
-
-    /*
-     * Reports that arrived while a command or a control transfer was waited
-     * for, kept to be read after it. A mouse has one request on its ring at a
-     * time and gets the next only when a report is read, so there can never
-     * be more of these than there are mice.
-     */
-    uint32_t      kept[DEVICES_MAX][4];
-    unsigned      nkept;
 };
 
 static long console = -1;
@@ -396,11 +387,22 @@ static unsigned controllers_found;
 /* Asked of the machine when the driver starts; 250 only if it will not say. */
 static unsigned long tick_hz = 250u;
 
+/* And the counter's rate, which a wait's deadline is measured in: 62.5 MHz,
+ * QEMU's on `virt`, only if the machine will not say. */
+static unsigned long counter_hz = 62500000u;
+
 /* Milliseconds as scheduler ticks, rounded up so no wait is shorter than
  * asked for. */
 static unsigned ticks_for(unsigned long ms)
 {
     return (unsigned)((ms * tick_hz + 999u) / 1000u);
+}
+
+/* Milliseconds in the counter's units, for a deadline that is measured
+ * rather than slept (`wait_serving`). */
+static unsigned long counter_for(unsigned long ms)
+{
+    return (unsigned long)((uint64_t)ms * counter_hz / 1000u);
 }
 
 /* A PCI address the way people write one: 00:0d.0. */
@@ -746,78 +748,143 @@ static bool take_event(struct controller *c, uint32_t *out)
 }
 
 /*
- * An event within `ticks`, by interrupt when there is one to wait on.
- *
- * **The wait has a deadline** (`kosmos_irq_wait_for`): a controller whose
- * interrupt never reaches this process would otherwise be a driver asleep
- * for good. When the deadline passes the ring is looked at once more, so a
- * missing interrupt costs a second rather than the device - and the
- * controller's line says which it was.
- *
- * After an interrupt, EINT is cleared before IP, the order 5.4.2 gives.
+ * A controller's interrupt acknowledged: EINT cleared before IP, the order
+ * 5.4.2 gives, and the line unmasked - before its ring is emptied, so an event
+ * written after the emptying raises it again rather than waiting for a look.
  */
-static bool wait_event(struct controller *c, unsigned ticks, uint32_t *out)
+static void acknowledge(const struct controller *c)
 {
-    unsigned idle = 0;
-
-    for (;;) {
-        if (take_event(c, out)) {
-            return true;
-        }
-
-        if (c->irq >= 0) {
-            long got = kosmos_irq_wait_for(c->irq, ticks);
-
-            mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
-            mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
-            (void)kosmos_irq_ack(c->irq);
-
-            if (got == 0) {
-                c->interrupts++;
-
-                /* A line can be shared: an interrupt with nothing on the
-                 * ring is somebody else's, and is borne only so long. */
-                if (idle++ < ticks) {
-                    continue;
-                }
-            }
-
-            return take_event(c, out);
-        }
-
-        if (idle++ >= ticks) {
-            return false;
-        }
-
-        kosmos_sleep(1);
+    if (c->irq >= 0) {
+        mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
+        mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
+        (void)kosmos_irq_ack(c->irq);
     }
 }
 
-/*
- * A mouse's report that arrived while something else was waited for, kept
- * rather than passed over: passed over, its mouse would have no request on its
- * ring and would never send another. False for anything that is not one.
- */
-static bool keep_report(struct controller *c, const uint32_t *event)
+/* Whether an event is a mouse's report: a transfer on the endpoint of a mouse
+ * that is being read. */
+static bool is_report(const struct controller *c, const uint32_t *event)
 {
     unsigned slot = TRB_SLOT_OF(event[3]);
 
-    if (TRB_TYPE_OF(event[3]) != TRB_TRANSFER || slot == 0
-        || slot > DEVICES_MAX || !c->mouse[slot].reading
-        || TRB_ENDPOINT_OF(event[3]) != c->mouse[slot].dci
-        || c->nkept >= DEVICES_MAX) {
-        return false;
+    return TRB_TYPE_OF(event[3]) == TRB_TRANSFER && slot != 0
+           && slot <= DEVICES_MAX && c->mouse[slot].reading
+           && TRB_ENDPOINT_OF(event[3]) == c->mouse[slot].dci;
+}
+
+static void take_report(struct controller *c, const uint32_t *event);
+
+/*
+ * **A wait that goes on reading mice.** Until `c` has an event that is not a
+ * mouse's report - put in `out`, and true - or until `ms` have passed, and
+ * false; with `out` NULL, only the time. Meanwhile every running controller's
+ * mice have their reports read as they come, `c`'s among them.
+ *
+ * Every wait a plug or an unplug makes comes through here: USB 2.0's
+ * debounce, a port's reset and its recovery, and every command and control
+ * transfer. They waited on `c`'s interrupt alone, and kept a report that came
+ * meanwhile to read afterwards - so a plug held every mouse, on every
+ * controller, for as long as naming the device took. QEMU's trace put that at
+ * 104 and 107 ms, the debounce; on the ThinkPad a stick that dropped off its
+ * bus took 2.3 seconds to be named again, and a mouse would have waited all
+ * of it.
+ *
+ * **The deadline is the counter's**, not a count of wakes: a mouse interrupts
+ * a thousand times a second, and a wait counted in wakes would give a command
+ * a quarter of the second it is owed. When it passes, every ring is looked at
+ * once more, so a missing interrupt costs the time rather than the device.
+ * A controller that is polled is looked at every tick.
+ *
+ * **Nothing here attaches or detaches.** A port that changes meanwhile keeps
+ * its change bits, and the watch reads them when the plug in hand is done.
+ */
+static bool wait_serving(struct controller *c, unsigned long ms,
+                         uint32_t *out)
+{
+    unsigned long start = kosmos_ticks();
+    unsigned long span = counter_for(ms);
+    long lines[IRQ_WAIT_ANY_MAX];
+    struct controller *owner[IRQ_WAIT_ANY_MAX];
+    unsigned count = 0, i;
+    bool polled = false;
+    long woke = SYS_NO_INTERRUPT;
+
+    for (i = 0; i < controllers_found; i++) {
+        struct controller *o = &controllers[i];
+
+        if (o->events == NULL || !(o->running || o == c)) {
+            continue;
+        }
+
+        if (o->irq < 0 || count == IRQ_WAIT_ANY_MAX) {
+            polled = true;
+        } else {
+            owner[count] = o;
+            lines[count++] = o->irq;
+        }
     }
 
-    memcpy(c->kept[c->nkept++], event, 4u * sizeof(uint32_t));
-    return true;
+    for (;;) {
+        unsigned long passed, ticks;
+
+        for (i = 0; i < controllers_found; i++) {
+            struct controller *o = &controllers[i];
+            uint32_t event[4];
+
+            if (o->events == NULL || !(o->running || o == c)) {
+                continue;
+            }
+
+            o->woken = woke >= 0 && (unsigned long)woke < count
+                       && owner[woke] == o;
+
+            while (take_event(o, event)) {
+                if (o == c && out != NULL && !is_report(o, event)) {
+                    memcpy(out, event, sizeof(event));
+                    return true;
+                }
+
+                take_report(o, event);
+            }
+        }
+
+        passed = kosmos_ticks() - start;
+
+        if (passed >= span) {
+            return false;
+        }
+
+        ticks = (unsigned long)(((uint64_t)(span - passed) * tick_hz
+                                 + counter_hz - 1u) / counter_hz);
+
+        if (polled || ticks == 0) {
+            ticks = 1;
+        }
+
+        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks)
+                         : SYS_NO_INTERRUPT;
+
+        /* Nothing to wait on, or a wait refused: slept instead, never spun. */
+        if (count == 0 || (woke < 0 && woke != SYS_NO_INTERRUPT)) {
+            kosmos_sleep(1);
+            woke = SYS_NO_INTERRUPT;
+        }
+
+        if (woke >= 0 && (unsigned long)woke < count) {
+            owner[woke]->interrupts++;
+        }
+
+        for (i = 0; i < count; i++) {
+            acknowledge(owner[i]);
+        }
+    }
 }
 
 /*
  * A command, and its Command Completion Event (4.6, 6.4.2.2). Events for
  * anything else that arrive first - a port changing - are passed over: the
- * port registers are what this driver reads for ports. A mouse's report is
- * the exception, and is kept for afterwards (`keep_report`).
+ * port registers are what this driver reads for ports. A mouse's report, on
+ * this controller or another, is read as it comes (`wait_serving`).
  */
 static bool command(struct controller *c, uint32_t w0, uint32_t w1,
                     uint32_t w3, uint32_t *done)
@@ -829,7 +896,7 @@ static bool command(struct controller *c, uint32_t w0, uint32_t w1,
     c->last_code = 0;
 
     for (seen = 0; seen < EVENTS_MAX; seen++) {
-        if (!wait_event(c, ticks_for(ANSWER_MS), done)) {
+        if (!wait_serving(c, ANSWER_MS, done)) {
             return false;
         }
 
@@ -838,8 +905,6 @@ static bool command(struct controller *c, uint32_t w0, uint32_t w1,
             c->last_code = TRB_CODE_OF(done[2]);
             return c->last_code == CC_SUCCESS;
         }
-
-        (void)keep_report(c, done);
     }
 
     return false;
@@ -1014,10 +1079,7 @@ static bool no_op(struct controller *c, struct say_line *line)
 
     if (answered && !arrived && c->irq >= 0) {
         arrived = kosmos_irq_wait_for(c->irq, ticks_for(ANSWER_MS)) == 0;
-
-        mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
-        mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
-        (void)kosmos_irq_ack(c->irq);
+        acknowledge(c);
 
         if (arrived) {
             c->interrupts++;
@@ -1056,11 +1118,16 @@ static bool no_op(struct controller *c, struct say_line *line)
 static bool reset_port(struct controller *c, unsigned port)
 {
     uintptr_t reg = c->op + OP_PORTSC(port);
+    unsigned long start = kosmos_ticks();
 
     mmio_write32(reg, PORTSC_PP | PORTSC_PR);
 
-    if (!settles(reg, PORTSC_PRC, PORTSC_PRC, ticks_for(ANSWER_MS))) {
-        return false;
+    while ((mmio_read32(reg) & PORTSC_PRC) == 0) {
+        if (kosmos_ticks() - start >= counter_for(ANSWER_MS)) {
+            return false;
+        }
+
+        (void)wait_serving(c, 1u, NULL);
     }
 
     mmio_write32(reg, PORTSC_PP | PORTSC_PRC);
@@ -1069,7 +1136,7 @@ static bool reset_port(struct controller *c, unsigned port)
         return false;
     }
 
-    kosmos_sleep(ticks_for(RESET_RECOVERY_MS));
+    (void)wait_serving(c, RESET_RECOVERY_MS, NULL);
     return true;
 }
 
@@ -1234,7 +1301,7 @@ static const char *address_once(struct controller *c, struct device *d)
 
     /* The command sent SET_ADDRESS, and the device has 9.2.6.3's interval
      * before it answers to its new address. */
-    kosmos_sleep(ticks_for(ADDRESS_MS));
+    (void)wait_serving(c, ADDRESS_MS, NULL);
     return NULL;
 }
 
@@ -1273,7 +1340,7 @@ static bool address_device(struct controller *c, struct device *d,
         return false;
     }
 
-    kosmos_sleep(ticks_for(RECOVERY_MS));
+    (void)wait_serving(c, RECOVERY_MS, NULL);
     d->speed = PORTSC_SPEED(mmio_read32(c->op + OP_PORTSC(d->port)));
 
     failed = address_once(c, d);
@@ -1310,8 +1377,8 @@ static bool address_device(struct controller *c, struct device *d,
  * succeeded. A stage before it that failed ends the wait; a short Data stage
  * is no error - a descriptor says how long it is.
  *
- * Endpoint 0's events only: a mouse's report on the same slot is kept for
- * afterwards, like one from any other device (`keep_report`).
+ * Endpoint 0's events only: a mouse's report, from this device or any other,
+ * is read as it comes (`wait_serving`).
  */
 static bool control_wait(struct controller *c, struct device *d,
                          uint64_t status)
@@ -1325,12 +1392,11 @@ static bool control_wait(struct controller *c, struct device *d,
     for (seen = 0; seen < EVENTS_MAX; seen++) {
         uint32_t code;
 
-        if (!wait_event(c, ticks_for(ANSWER_MS), done)) {
+        if (!wait_serving(c, ANSWER_MS, done)) {
             return false;
         }
 
-        if (keep_report(c, done)
-            || TRB_TYPE_OF(done[3]) != TRB_TRANSFER
+        if (TRB_TYPE_OF(done[3]) != TRB_TRANSFER
             || TRB_SLOT_OF(done[3]) != d->slot
             || TRB_ENDPOINT_OF(done[3]) != 1u) {
             continue;
@@ -1774,18 +1840,6 @@ static void take_report(struct controller *c, const uint32_t *event)
     ask_for_report(c, slot);
 }
 
-/* The reports kept while a command or a control transfer was waited for. */
-static void take_kept(struct controller *c)
-{
-    uint32_t event[4];
-
-    while (c->nkept > 0) {
-        c->nkept--;
-        memcpy(event, c->kept[c->nkept], sizeof(event));
-        take_report(c, event);
-    }
-}
-
 /*
  * A Report descriptor's bytes, thirty-two to a line and four lines at most.
  * What a mouse declared is what turns the next one read wrongly into a
@@ -2096,7 +2150,7 @@ static bool settled(struct controller *c, unsigned port,
     for (tries = 0; tries < ATTACH_TRIES; tries++) {
         uint32_t sc;
 
-        kosmos_sleep(ticks_for(ATTACH_MS));
+        (void)wait_serving(c, ATTACH_MS, NULL);
         sc = mmio_read32(c->op + OP_PORTSC(port));
 
         if ((sc & PORTSC_CSC) == 0) {
@@ -2394,22 +2448,15 @@ static unsigned bring_up(struct controller *c, const struct dev_info *dev,
  *
  * A connect change on a port with a device already recorded is that device
  * leaving, even if another has arrived by the time the port is read; so it is
- * detached first and whatever the port now holds attached after. The reports
- * kept while their commands were waited for are read at each end, or their
- * mice would have no request on a ring and nothing would interrupt for them.
+ * detached first and whatever the port now holds attached after - and while
+ * either waits, every controller's mice go on being read (`wait_serving`).
  */
 static void service(struct controller *c, struct say_line *line)
 {
     uint32_t trb[4];
     unsigned port;
 
-    if (c->irq >= 0) {
-        mmio_write32(c->op + OP_USBSTS, USBSTS_EINT);
-        mmio_write32(c->rt + RT_IMAN, IMAN_IE | IMAN_IP);
-        (void)kosmos_irq_ack(c->irq);
-    }
-
-    take_kept(c);
+    acknowledge(c);
 
     while (take_event(c, trb)) {
         take_report(c, trb);
@@ -2436,8 +2483,6 @@ static void service(struct controller *c, struct say_line *line)
             attach(c, port, true, true, line);
         }
     }
-
-    take_kept(c);
 }
 
 /*
@@ -2507,8 +2552,10 @@ void xhci_server(long console_cap)
 
     console = console_cap;
 
-    if (kosmos_sysinfo(&info) == 0 && info.tick_hz != 0) {
-        tick_hz = info.tick_hz;
+    if (kosmos_sysinfo(&info) == 0) {
+        tick_hz = info.tick_hz != 0 ? info.tick_hz : tick_hz;
+        counter_hz = info.counter_hz != 0 ? (unsigned long)info.counter_hz
+                                          : counter_hz;
     }
 
     for (index = 0; index < NAMED_MAX
