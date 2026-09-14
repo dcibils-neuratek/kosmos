@@ -30,12 +30,18 @@ the image left empty, a last-access date, FSInfo - and **damage** everywhere
 else: any byte of a file, any FAT entry of a cluster a file uses, any
 directory entry the image wrote, the boot sector, the GPT.
 
-The stick arrives on stdin, so a 250 MB read-back never has to be a file on
-a disk that may be nearly full. Exit 0 when every sector matches; 3 when only
-bookkeeping differs; 1 for damage, or when the stick gave back fewer bytes
-than the image has; 2 when it could not be asked.
+**READBACK is the stick's raw device**, which `mkusb.sh` hands it as root,
+so nothing is copied onto a disk that may be nearly full and there is no pipe
+between the stick and the verdict - the first version had `dd` piped in, and
+its SIGPIPE refused a stick this had just called perfect. `-` reads standard
+input instead, which is how `test_stickcheck.py` streams its faults in. Either
+way only as much is read as the image has.
 
-Usage: stickcheck.py IMAGE READBACK|- [KERNEL.ELF]
+Exit 0 when every sector matches; 3 when only bookkeeping differs; 1 for
+damage, or when the stick gave back fewer bytes than the image has; 2 when it
+could not be asked.
+
+Usage: stickcheck.py IMAGE DEVICE|READBACK|- [KERNEL.ELF]
 """
 
 import struct
@@ -308,7 +314,17 @@ def main():
 
     kernel = Kernel(sys.argv[3]) if len(sys.argv) > 3 else None
     image = open(sys.argv[1], "rb")
-    back = sys.stdin.buffer if sys.argv[2] == "-" else open(sys.argv[2], "rb")
+
+    #
+    # A device is read unbuffered, so every read is exactly the size asked
+    # for - a whole number of sectors, which is all a raw disk will answer.
+    #
+    try:
+        back = (sys.stdin.buffer if sys.argv[2] == "-"
+                else open(sys.argv[2], "rb", buffering=0))
+    except OSError as e:
+        print("stickcheck: cannot read %s: %s" % (sys.argv[2], e))
+        return 2
 
     image.seek(0, 2)
     size = image.tell()

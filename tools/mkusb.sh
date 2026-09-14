@@ -51,6 +51,11 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 
 command -v diskutil >/dev/null 2>&1 || die "mkusb: no diskutil."
 
+#  Asked for before anything is written: the stick is read back with it, and
+#  finding it missing after `dd` would leave a written stick and no verdict.
+#  A path rather than a name, because `sudo` looks names up in its own PATH.
+PYTHON="$(command -v python3)" || die "mkusb: no python3, which reads the stick back after writing it."
+
 #
 #  What this computer says is external and physical, with the size and name
 #  a person would recognise the drive by.
@@ -155,18 +160,24 @@ sync
 #  read again here, while the stick is still on this Mac, and
 #  `stickcheck.py` names the file and the kernel page of any that differ.
 #
-#  The stick goes straight into the comparison rather than into a file,
-#  because this Mac's disk is the thing that fills up. macOS may mount the
-#  stick between the write and this, and a mount writes a little filesystem
-#  bookkeeping; `stickcheck.py` tells that apart from damage.
+#  **The checker reads the stick itself, as root, and its exit code is the
+#  verdict.** The first version piped `sudo dd` into it. `dd` reads in 4 MB
+#  blocks, so it read past the end of the image; the checker stopped once it
+#  had compared the image and exited; and `dd` died of SIGPIPE, 141, which
+#  `pipefail` made the status of the whole pipeline. The first real stick it
+#  checked printed "the stick holds the image, every one of its 475203
+#  sectors as written" - and was then refused. It had been tried only on an
+#  image file, where `dd` stops at the file's end, so it never showed. No pipe
+#  now, so there is no second exit code to be mistaken for the first.
+#
+#  Nothing is copied onto this Mac's disk, which is the thing that fills up.
+#  macOS may mount the stick between the write and this, and a mount writes a
+#  little filesystem bookkeeping; `stickcheck.py` tells that apart from damage.
 #
 printf '\nReading it back, every sector...\n'
 diskutil unmountDisk "/dev/$CHOSEN" >/dev/null 2>&1 || true
 
-BLOCKS=$(( ($(stat -f %z "$IMG") + 4194303) / 4194304 ))
-
-if sudo dd if="/dev/r$CHOSEN" bs=4m count="$BLOCKS" 2>/dev/null \
-        | python3 "$(dirname "$0")/stickcheck.py" "$IMG" -; then
+if sudo "$PYTHON" "$(dirname "$0")/stickcheck.py" "$IMG" "/dev/r$CHOSEN"; then
     VERDICT=0
 else
     VERDICT=$?

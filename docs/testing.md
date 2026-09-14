@@ -2723,8 +2723,9 @@ sums for the userland image only. A stick that gives back bytes nobody wrote
 fits every ThinkPad boot since 11 September, and QEMU could never show it,
 because it reads the image file (`boot.md` §3).
 
-So `mkusb.sh` now reads every sector back before it ejects, straight into
-`tools/stickcheck.py` rather than into a file on this Mac's nearly full disk.
+So `mkusb.sh` now reads every sector back before it ejects:
+`tools/stickcheck.py` reads the stick's raw device itself, as root, rather
+than a copy on this Mac's nearly full disk, and its exit code is the verdict.
 The checker reads the image's GPT and FAT32 and names each difference: the
 MBR, the GPT, the FAT's own sectors, or a file and the offset in it - and in
 the kernel, the page, the address and the ELF section. **It tells two kinds
@@ -2736,7 +2737,7 @@ anything else is *damage* - a byte of a file, a FAT entry of a cluster a file
 uses, a directory entry the image wrote, the boot sector, the GPT - exit 1,
 and `mkusb.sh` says not to boot the stick.
 
-`tools/test_stickcheck.py`, in `make test`, 9 checks. It streams the stick
+`tools/test_stickcheck.py`, in `make test`, 10 checks. It streams the stick
 `make test` has just built into the checker with faults applied on the way,
 copying nothing, and **places each fault from mtools' reading of the
 filesystem - `minfo`, `mshowfat` - not the checker's**, so a wrong offset in
@@ -2746,6 +2747,7 @@ correctly:
 | check | what it establishes |
 | ----- | ------------------- |
 | the image itself | exit 0, every sector |
+| the image read through a path | exit 0, the checker opening a file itself and reading it unbuffered, as `mkusb.sh` has it read a stick's raw device |
 | a byte of the kernel's `.text` | damage, `kernel page 2 at 0x01002000 in .text` |
 | a byte of the userland image | damage, `kernel page 512 at 0x01200000 in .rodata (the userland image)` |
 | a byte of the disk | damage, `/boot/disk.img, byte 0x10000` |
@@ -2753,14 +2755,14 @@ correctly:
 | half a stick | exit 1, `gave back` - a short read is never a pass, even where the image's tail is zeros |
 | the kernel's directory entry | damage, `the directory /boot` |
 | a link in the kernel's FAT chain | damage |
-| what a mount writes, made by hand | exit 3: a free cluster taken in both FATs, an entry in an empty root slot pointing at it, data in it, FSInfo's count one lower |
+| what a mount writes, made by hand | exit 3: a cluster the image's FAT leaves free taken in both FATs, an entry in an empty root slot pointing at it, data in it, FSInfo's count one lower |
 
 **Controls**, each a copy of the checker run by a copy of the test:
 
 | broken | what failed |
 | ------ | ----------- |
-| every difference called bookkeeping | 6 of 9: every kind of damage came back exit 3 |
-| the FAT's data region read one cluster late | 3 of 9: the kernel's `.text`, the userland image and the disk, each named at the wrong place |
+| every difference called bookkeeping | 6 of 10: every kind of damage came back exit 3 |
+| the FAT's data region read one cluster late | 3 of 10: the kernel's `.text`, the userland image and the disk, each named at the wrong place |
 
 Before the test existed, the same kinds of fault were made by hand on a clone
 of the 0.10.61 stick image - five spoiled bytes, a short read, a
@@ -2771,6 +2773,31 @@ with `mren`, a FAT link broken - and each got the verdict above.
 that had stopped the ThinkPad was not Kosmos at all. The checker found a
 hybrid ISO where the GPT should be, and the volume descriptor said `Pop_OS
 24.04 amd64` - Diego had written a Linux distribution over the stick to try
-it on the ThinkPad in the meantime. So that stick's bytes are gone, and the
-first real read-back of a Kosmos stick is the next one `mkusb.sh` writes: the
-read-back itself needs a stick and `sudo`, which no test here has.
+it on the ThinkPad in the meantime. So that stick's bytes are gone.
+
+**And found in `mkusb.sh`, the first time it read back a real stick.** 0.10.60
+was written, the checker said `the stick holds the image, every one of its
+475203 sectors as written` - and the script then printed `THIS STICK DOES NOT
+HOLD THE IMAGE`. It piped `sudo dd` into the checker: `dd` reads in 4 MB
+blocks and so read past the image, the checker exited once it had compared
+the image, `dd` died of SIGPIPE, and under `pipefail` its 141 was the verdict.
+Every check here had streamed an image *file*, where `dd` stops at the file's
+end. Reproduced on the Mac before it was fixed, with the script's own lines
+and a file shaped like a stick - the image followed by 4 MB more:
+
+| the lines | on the stick-shaped file | the same with one kernel byte spoiled |
+| --- | --- | --- |
+| as first written, `dd` piped in | verdict 141, refused | - |
+| as fixed, the checker reading the device | verdict 0, accepted | verdict 1, refused, `kernel page 2 at 0x01002000` |
+
+The half that could not run here - the script's use of the checker - was the
+half that was wrong. `the image read through a path` is the checker's side of
+the path the script now takes; `sudo` and a real stick stay the other side.
+
+**And one of this test's own checks was wrong for a real stick.** The mount
+made by hand took a cluster a fixed 8 MB into the disk: free on `make test`'s
+4 MB disk, inside the 32 MB disk a ThinkPad stick carries. Run against that
+stick's image it failed 1 of 10, the checker rightly calling a write into the
+disk damage. The cluster comes from the image's FAT now, past the last
+cluster mtools lists, and the test passes against `make test`'s stick, the
+0.10.60 stick and the 0.10.62 stick alike.

@@ -238,6 +238,8 @@ wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 | 0.10.60 (`13037a4`), built twice, with each disk | 32 or 64 MB | booted to the desktop - the 64 MB image was the one to write, but nothing photographed said which disk it carried |
 | 0.10.61 (`9ca683a`), MEGA | 64 MB | the loader's lines, `both copies of the kernel are the file`, `handing over` - and then nothing |
 | 0.10.61 (`9ca683a`), MEGA, from `make MEGA=1 x86-usb-image` | 32 MB | the same: the kernel's place all claimed, the disk at `0x5d125000`, `handing over` - and then nothing |
+| 0.10.60 (`13037a4`), MEGA, from `make MEGA=1 x86-usb-image` at that commit, the stick read back and every sector the image's | 32 MB | booted to the prompt and the desktop, on the stick both 0.10.61 sticks had stopped on: `LENOVO 20W1S1Y500 ThinkPad T14 Gen 2i`, 8 cores, both xHCI controllers and the USB mouse, camera and stick named |
+| 0.10.62 (`56625f2`), MEGA, from `make MEGA=1 x86-usb-image`, written with the fixed `mkusb.sh` - its read-back output not yet seen | 32 MB | booted to the prompt, and the USB mouse driver reads the mouse on the machine, `a boot mouse, read from endpoint 1, up to 8 bytes every 1 ms` - with its axes wrong: sideways moves the arrow up and down, and up and down does nothing |
 
 The black panel was a refusal: only `refuse()` waits for a key, and what it
 printed went through a console that machine does not show. **Why it refused
@@ -303,6 +305,24 @@ to QEMU, which reads the image file and not the stick. The stick that booted
 on the 13th enumerated as `abcd:1234 "UDisk"`, an ID no registered vendor
 has, and needed a second Address Device. **That stick, read back on the Mac
 and compared with its image, is the next measurement - not another boot.**
+
+**It could not be read back**: by then it held Pop!_OS, and Pop!_OS and
+elementary OS both booted from it perfectly. **So it was written again, with
+0.10.60 built at its own commit, and read back - every one of its 475203
+sectors the image's - and 0.10.60 booted to the prompt from it.** The machine
+boots Kosmos and the stick holds what is written to it. 0.10.61 stopped twice
+on that stick and 0.10.60 does not; the 0.10.61 writes were never read back,
+so a bad write is not excluded for them, but a stick that has since held three
+images exactly makes it the least likely explanation.
+
+**And 0.10.62, built and read back the same way, booted as well** - and it is
+0.10.61 with the early screen added, which moves the kernel's end by the three
+table pages the early screen keeps. So what stopped 0.10.61 is one of two
+things, and one stick tells them apart: its two writes, which nothing read
+back, or its exact layout. **The 0.10.61 image written again and read back is
+that stick**: if it boots, the stops were the writes, which `mkusb.sh` now
+catches; if it stops with its bytes checked, it is that layout, and a stop
+that can be repeated is one that can be found.
 
 ---
 

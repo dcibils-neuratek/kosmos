@@ -37,6 +37,18 @@ def mtools(*argv):
     return subprocess.run(list(argv), capture_output=True, text=True).stdout
 
 
+def last_cluster(spec, path):
+    """The highest cluster mtools lists for a file, over all its runs."""
+    listing = mtools("mshowfat", "-i", spec, path)
+    runs = re.findall(r"<(\d+)(?:-(\d+))?>", listing)
+
+    if not runs:
+        raise SystemExit("test_stickcheck: mshowfat has no clusters for %s: %r"
+                         % (path, listing))
+
+    return max(int(b or a) for a, b in runs)
+
+
 def first_cluster(spec, path):
     listing = mtools("mshowfat", "-i", spec, path)
     found = re.search(r"<(\d+)", listing)
@@ -134,8 +146,23 @@ def main():
     entry = listing.find(b"KOSMOS  BIN")
     free_slot = next(o for o in range(0, cluster, 32) if root[o] == 0)
 
-    # A cluster well past everything the image wrote, and free in it.
-    spare = first_cluster(spec, "::/boot/disk.img") + (8 << 20) // cluster
+    #
+    # **A cluster the image left free**, found in its FAT rather than guessed.
+    # This was a fixed eight megabytes past the start of the disk, which is
+    # free on `make test`'s 4 MB disk and inside the 32 MB one a ThinkPad stick
+    # carries - where the "mount" wrote into the disk, and the checker quite
+    # rightly called it damage. The FAT is read here, past the last cluster
+    # mtools lists for any file, not by `stickcheck.py`.
+    #
+    with open(image, "rb") as f:
+        f.seek(fat)
+        table = f.read(fat_len * bps)
+
+    after = max(last_cluster(spec, path) for path in
+                ("::/EFI/BOOT/BOOTX64.EFI", "::/boot/kosmos.bin",
+                 "::/boot/disk.img")) + 64
+    spare = next(c for c in range(after, len(table) // 4)
+                 if struct.unpack_from("<I", table, c * 4)[0] & 0x0FFFFFFF == 0)
     free_count = struct.unpack_from("<I", fsinfo, 488)[0]
 
     checks = 0
@@ -153,6 +180,21 @@ def main():
                             "\n    ".join(text.splitlines()[:6])))
 
     expect("the image itself", ask(image, elf), 0, "the stick holds the image")
+
+    #
+    # **And read through a path, which is how `mkusb.sh` reads a stick** -
+    # the raw device, unbuffered, with no pipe. The first version piped `dd`
+    # in, and on a real stick `dd` read past the image, died of SIGPIPE when
+    # the checker was done, and its exit code refused a stick that had just
+    # been called perfect. There is no pipe to break now; this is the path
+    # that replaced it.
+    #
+    direct = subprocess.run([sys.executable, os.path.join(HERE, "stickcheck.py"),
+                             image, image] + ([elf] if elf else []),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    expect("the image read through a path, as mkusb.sh reads a stick",
+           (direct.returncode, direct.stdout.decode("utf-8", "replace")), 0,
+           "the stick holds the image")
 
     expect("a byte of the kernel's .text",
            ask(image, elf, [(kernel + 0x2000, b"\xa5")]), 1,
@@ -211,9 +253,10 @@ def main():
 
         return 1
 
-    print("PASS: %d stickcheck checks (the image itself, six kinds of damage "
-          "named where they are, a short read, and a mount's bookkeeping told "
-          "from damage)." % checks)
+    print("PASS: %d stickcheck checks (the image itself, streamed and read "
+          "through a path as mkusb.sh reads a stick, six kinds of damage named "
+          "where they are, a short read, and a mount's bookkeeping told from "
+          "damage)." % checks)
     return 0
 
 

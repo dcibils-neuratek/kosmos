@@ -39,10 +39,25 @@ understand why the image is not booting, then we can bring grub back".
   loader was not the cure and GRUB was not the cause: 0.10.48 and 0.10.53
   stopped the same way under it.
 
-**Next:** the loader checking what it read against page sums the build puts on
-the stick, so a boot says whether the firmware handed over the build's bytes.
-Then a stick when Diego wants one - read back on the Mac, the log on the panel
-from stage two, the loader's comparison on it - and then GRUB.
+**Then two sticks, and both booted.** 0.10.60 built at its own commit, read
+back before it was booted, to the prompt and the desktop - after
+`mkusb.sh`'s first real read-back said every one of 475203 sectors was the
+image's and then, from a bug in its own verdict, refused the stick: `dd` read
+past the image, died of SIGPIPE when the checker had finished, and `pipefail`
+made 141 the verdict. The checker reads the raw device itself now, and the
+fix was reproduced and checked on a stick-shaped file first (`testing.md`
+§18.45). Then 0.10.62, written with the fixed script, to the prompt, with the
+USB mouse driver reading the ThinkPad's mouse - wrongly: sideways moves the
+arrow up and down and up and down does nothing, which is a report read one
+byte early. The mouse most likely puts a report ID first and ignored
+SET_PROTOCOL(boot), which QEMU's mouse obeys; the driver has to read the
+mouse's report descriptor, as every other system does.
+
+**Next:** the 0.10.61 image written again and read back, offered as the
+experiment it is. Booting says its two stops were writes nothing checked;
+stopping with checked bytes says its layout, reproducibly (`boot.md` §3).
+Then GRUB, Diego's decision, and the loader-side check against the build's
+page sums if a stop is ever still unexplained.
 
 ### 13 September, evening: a USB mouse moves the pointer
 
