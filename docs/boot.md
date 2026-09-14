@@ -143,9 +143,11 @@ order, and why each step is there:
    | boot services code or data (3, 4) | **borrows** it: the firmware's until ExitBootServices, nobody's after, so the kernel is copied in then |
    | anything else - ACPI, runtime services, reserved, a device window, or a loaded image's pages | **refuses**, printing each entry and waiting for a key |
 
-3. **Reads the kernel into two copies and takes a fingerprint of every
+3. **Reads the kernel once, copies it twice and takes a fingerprint of every
    page** (FNV-1a), then checks that every buffer it has allocated lies
-   outside the kernel's range.
+   outside the kernel's range. **The fingerprints are of what was read**: they
+   catch memory changing afterwards, and not a stick that gave back bytes the
+   build never wrote - nothing here knows what the build wrote.
 4. **Reads the disk** into memory below 4 GB, because a module's addresses
    are 32 bits, and fingerprints it.
 5. **Reads `\boot\kosmos.cmdline`**, keeping only the characters
@@ -235,6 +237,7 @@ wherever the firmware loads it. `make build/x86_64/BOOTX64.EFI`.
 | the same kernel with 0.10.60's loader, which draws its own lines | 32 MB | booted to the desktop |
 | 0.10.60 (`13037a4`), built twice, with each disk | 32 or 64 MB | booted to the desktop - the 64 MB image was the one to write, but nothing photographed said which disk it carried |
 | 0.10.61 (`9ca683a`), MEGA | 64 MB | the loader's lines, `both copies of the kernel are the file`, `handing over` - and then nothing |
+| 0.10.61 (`9ca683a`), MEGA, from `make MEGA=1 x86-usb-image` | 32 MB | the same: the kernel's place all claimed, the disk at `0x5d125000`, `handing over` - and then nothing |
 
 The black panel was a refusal: only `refuse()` waits for a key, and what it
 printed went through a console that machine does not show. **Why it refused
@@ -274,11 +277,30 @@ screen itself. If that is where this firmware always puts it, every boot of
 that machine is dark from the hand-over to stage 6, and a stall anywhere in
 between looks exactly like this one. One photograph does not say which.
 
-**So the rule `mkusb_image.py` enforces stands**: a stick for the ThinkPad
-carries a disk of 32 MB or less until a bigger one is seen booting there, and
-an image built to try a bigger one is offered as that experiment - never as
-the stick to use, which is how this one was offered. 0.10.61 with the 32 MB
-disk is the next stick.
+**And the 32 MB stick stopped in the same place**, so the disk's size is not
+what stops it; the 32 MB refusal in `mkusb_image.py` stays, and it is not a
+guarantee of anything.
+
+**Everything about the ThinkPad that QEMU can reproduce was then run against
+that exact image, and it booted to the prompt every time**: the screen at
+`0x4000000000` at 1920x1080 - put there by stopping QEMU at the kernel's
+entry and rewriting the loader's framebuffer tag, over memory at that address
+that is outside the firmware's map, as a graphics aperture is - its memory
+shape, eight processors, and an Intel processor with SMEP on. The screen above
+4 GB takes the ThinkPad's path: nothing drawn until stage 6, then `attached
+here; everything above it was replayed`, and the whole log on the panel.
+
+**What nothing in the chain has ever checked is that the machine gets the bytes
+the build wrote.** `tools/mkusb.sh` writes with `dd` and does not read back.
+The loader fingerprints what it read (step 3). The kernel's canary knows the
+build's sums for the userland image only, and on this machine cannot say
+anything before stage 6. A stick that gives back wrong bytes stops a boot
+exactly here, follows the build and the disk size because they decide which
+bytes land where, happens under GRUB and this loader alike, and is invisible
+to QEMU, which reads the image file and not the stick. The stick that booted
+on the 13th enumerated as `abcd:1234 "UDisk"`, an ID no registered vendor
+has, and needed a second Address Device. **That stick, read back on the Mac
+and compared with its image, is the next measurement - not another boot.**
 
 ---
 
@@ -317,9 +339,12 @@ address is.
   old fault happening and being survived. `lost` above zero means a page was
   wrong in both copies, and the kernel was started anyway: its canary
   (`testing.md` §18.22) will say which pages if they are userland's.
-- **"handing over" and then nothing** is the trampoline or the kernel's first
-  instructions: the kernel draws its boot log from stage 2, so a black panel
-  after that line is before `hal_fb_early`.
+- **"handing over" and then nothing** is anywhere from the trampoline to
+  stage 6 on the ThinkPad. Its screen is at `0x4000000000`, above the 4 GB
+  the boot page tables map, so `hal_fb_early` refuses it and the kernel draws
+  nothing until stage 6 maps the screen - on a boot that works as well. This
+  line used to say the kernel draws from stage 2, which is true under OVMF,
+  and it was read as true of the ThinkPad.
 - `the disk: diff` in the kernel's line is the disk changing after the loader
   read it.
 
@@ -344,8 +369,9 @@ address is.
 **What QEMU cannot show**: the ThinkPad's own map at the moment the loader
 runs, whether its firmware writes into memory it has handed out, and the
 console-control switch - under OVMF the loader never has to make it, so that
-call has run only on the ThinkPad, if at all. The loader's lines on that
-machine are the measurement.
+call has run only on the ThinkPad, if at all - and whether the stick holds,
+and hands the firmware, the bytes the build wrote, since QEMU reads the image
+file. The loader's lines on that machine are the measurement.
 
 ---
 

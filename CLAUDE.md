@@ -672,8 +672,10 @@ nobody knew - and it stopped after the loader's last line. It had passed
 every check under OVMF, which is necessary and not sufficient. So:
 
 - **The table in `docs/boot.md` decides**: what it does not show booting on
-  the ThinkPad does not go on a stick Diego is asked to write. Today that is
-  a disk of 32 MB or less.
+  the ThinkPad does not go on a stick Diego is asked to write. On 13 September
+  that is the 0.10.60 kernel with a disk of 32 MB or less: 0.10.61 stopped
+  after the loader's last line with both disks, and a disk's size is not what
+  decides it (`docs/boot.md`).
 - **The stick is built by `make MEGA=1 x86-usb-image`**, which refuses a disk
   over 32 MB, and never by anything that skips that refusal.
 - **The table is read before a stick is handed over** - not a summary, and
