@@ -404,7 +404,8 @@ between an intention and a fact.
 
 ## app or program
 
-- **program**: console-based. Prints, reads lines, run by name at the prompt.
+- **program**: console-based. Prints, reads lines, run by name at the prompt,
+  or by its file (`./hello.lua`).
 - **app**: graphical. Opens a window, driven with the pointer, listed in the
   Deskbar, and marked `-- kosmos: application` on its first line.
 

@@ -971,25 +971,35 @@ local function open_selected()
   elseif e.kind == "directory" then
     visit(path_of(e))
   else
-    -- Which program opens it is `/lib/filetypes.lua`'s answer, not
-    -- Tracker's. Tracker does not need to know what an editor is - only
-    -- that opening a file is somebody else's job and that something knows
-    -- whose.
+    -- How it opens is `/lib/filetypes.lua`'s answer, not Tracker's.
+    -- Tracker does not need to know what an editor is - only that opening
+    -- a file is somebody else's job and that something knows whose. A Lua
+    -- file is a program and runs, which needs its opening comment to say
+    -- whether it is an application; nothing else is read.
     local full = path_of(e)
-    local opener = types.opener(full)
+    local source = types.kind_of(full) == "lua" and fs.read(full) or nil
+    local how = types.how_to_open(full, nil,
+                                  type(source) == "string" and source or nil)
 
-    if not opener then
+    if not how then
       status.text = e.name .. ": nothing claims a ."
                     .. tostring(types.kind_of(full) or "?") .. " file"
       return
     end
 
     local ok, why = fs.send("/app/wm", { type = "launch",
-                                         program = opener,
-                                         args = full })
+                                         program = how.program,
+                                         args = how.args })
 
-    status.text = ok and ("opened " .. e.name .. " in " .. opener)
-                  or ("could not open it: " .. tostring(why))
+    if not ok then
+      status.text = "could not open it: " .. tostring(why)
+    elseif how.program == full then
+      status.text = "started " .. e.name
+    elseif how.program == "terminal" then
+      status.text = "running " .. e.name .. " in a Terminal"
+    else
+      status.text = "opened " .. e.name .. " in " .. how.program
+    end
   end
 end
 
@@ -1984,6 +1994,26 @@ local function do_open()
   open_selected()
 end
 
+-- Edit, beside Open: a Lua file opens by running now, and this is the way to
+-- change one. Whatever handles the file's type - the editor, for a `.lua`.
+local function do_edit()
+  local e = chosen()
+
+  if not e then status.text = "nothing is selected" return end
+
+  if e.kind == "directory" or e.kind == "launcher" then
+    status.text = e.name .. ": not a file to edit"
+    return
+  end
+
+  local program = types.opener(path_of(e)) or "editor"
+  local ok, why = fs.send("/app/wm", { type = "launch", program = program,
+                                       args = path_of(e) })
+
+  status.text = ok and ("editing " .. e.name .. " in " .. program)
+                or ("could not edit it: " .. tostring(why))
+end
+
 local function sort_on(key)
   if sort_by == key then reversed = not reversed else sort_by, reversed = key, false end
 end
@@ -2003,6 +2033,7 @@ win:add(ui.menubar{
     { title = "File",
       items = {
         { text = "Open",       on_choose = do_open },
+        { text = "Edit",       on_choose = do_edit },
         { text = "New folder", on_choose = function() new_folder() end },
         { separator = true },
         { text = "Rename",     on_choose = function() do_rename() end },

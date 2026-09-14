@@ -763,6 +763,47 @@ View no longer asks the kit for a cell; the kit's own widgets do.
 
 `testing.md` §18.31 has the check and its negative controls.
 
+## 16.15 A program, run by its file
+
+Diego, on 14 September 2026, having written a console program called
+`diego.lua` in his home folder: "we need to have an easy way to run programs
+from the command line and from the tracker". It could be run - `run
+/home/diego.lua` - and none of the things he tried first did it.
+
+**A file is named from where you are.** At the prompt a first word that ends
+in `.lua` is a file, and in a Terminal and after `run` so is a word with a
+`/` in it: `./diego.lua`, `diego.lua`, `../diego.lua`, `/home/diego.lua`. The
+prompt keeps a leading `/` without `.lua` for commands, as it always has.
+`.` and `..` are taken out of the path before anything is asked, because no
+server has a directory called `..`.
+
+**A bare name is still a program in `/bin`, and only that.** The current
+directory is not searched for a word. If it were, a file called `ls.lua` left
+in a folder would be what `ls` ran there - the reason `.` is kept off a Unix
+`PATH` - and `ls` and `./ls.lua` would stop being two different requests: one
+for a program, one for a file.
+
+**At the prompt, what was Lua stays Lua.** `hello.lua` could be the field of
+a table called `hello`, so a name whose stem already means something in Lua
+is still Lua, and so is a line that carries on the way Lua would - `m.lua(3)`,
+`t.lua = 1`. What changed is only what used to fail.
+
+**Opening a Lua file in Tracker runs it.** Tracker asks
+`filetypes.how_to_open`, as it asked `opener` before: a file whose opening
+comment says `kosmos: application` starts as itself, and draws its own
+window; anything else is a console program and gets a Terminal of its own,
+started with the file's path as its argument, which runs that in place of the
+banner, from the file's folder. The window stays when the program ends, with
+what it printed and a prompt. The comment is read by the rule `/bin`'s server
+reads - the lines from the top that are empty or begin with `--`, and nothing
+below them - because two rules would let a program be an application in the
+Deskbar and a console program in Tracker.
+
+**Edit is beside Open** in Tracker's File menu, since opening a Lua file no
+longer edits it. It asks `opener`, which is still the editor for a `.lua`.
+
+`testing.md` §18.55 has the checks and their controls.
+
 ## 16.10 What we do not copy from BeOS
 
 **The C++ class hierarchy.** `BApplication`, `BLooper`, `BHandler`, `BWindow`, `BView`, `BArchivable`, `BInvoker`. It existed because 1990s C++ had no better way to express composition. In Lua it is table composition with closures, no inheritance.

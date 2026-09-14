@@ -396,6 +396,19 @@ the Pi", and the Pi is not here yet.
   make one, or a machine that does it (`usb.md` §6).
 - **A stick's LUN 0 only.** Get Max LUN is not asked, because a stick with one
   unit may stall it and a stall on endpoint 0 is not recovered from.
+- **A screenshot shortcut**, Diego's, 14 September: a Super binding - and
+  PrtSc, where the keyboard has one - saves the whole screen as a PNG in
+  `/home/screenshots`, named by the date and time it was taken, with no
+  spaces so the prompt can name it: `2026-09-14-153012.png`. Most of it is
+  here already: the window manager composes every frame into its backbuffer,
+  `SUPER_BINDINGS` in `wm.lua` is where a shortcut goes and what the Shortcuts
+  window lists, and `sysinfo`'s `epoch` is the board's real-time clock, in
+  UTC, for Date & Time's offset to turn into the time on the wall. **What is
+  not: nothing in Kosmos writes a PNG** - `png.c` and `inflate.c` read one -
+  so it wants a writer in C, which can start with deflate's stored blocks and
+  compress later. And the saving happens outside the key handler, which must
+  never wait on anything: a synchronous call from there once deadlocked the
+  desktop.
 - **One speed for every relative device.** A mouse and a TrackPoint want
   different speeds, and both want a curve (`hal/pc/pointer.c`).
 

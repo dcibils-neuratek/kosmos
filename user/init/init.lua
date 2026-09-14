@@ -3403,7 +3403,8 @@ The prompt takes commands as well as Lua. `/commands` lists them.
   /devices             the same command, said explicitly
   fs.list("/dev")      the same thing, as a program
 
-**A leading slash always means a command.** Without one, a bare word is
+**A leading slash means a command**, unless the word is a file ending in
+`.lua`, which runs: `/home/hello.lua`. Without one, a bare word is
 only treated as a command when it does not also name something in Lua -
 so `devices` works, and if you ever alias `print` or `type` you will have
 to say `/print`. A shell where `type` sometimes means a command and
@@ -3411,6 +3412,7 @@ sometimes means the function is a shell you cannot write anything in.
 
   ls /bin        the programs this image carries
   run <name>     run one, in a process of its own (a bare name works too)
+  ./hello.lua    run a file from where you are - so does hello.lua
 
   help "shell"   every command worth typing, in one page
   help "fs"      files, through this process's namespace
@@ -3798,6 +3800,22 @@ query. `find` and `watch` are built on exactly these two calls.
     return cwd .. "/" .. path
   end
 
+  -- A path with its `.` and `..` taken out, so `../hello.lua` names the file a
+  -- person means rather than a directory called `..` that no server has.
+  local function tidy(path)
+    local parts = {}
+
+    for part in path:gmatch("[^/]+") do
+      if part == ".." then
+        parts[#parts] = nil
+      elseif part ~= "." then
+        parts[#parts + 1] = part
+      end
+    end
+
+    return "/" .. table.concat(parts, "/")
+  end
+
   -- A value, printed so a person can read it. Tables are what servers
   -- return, so this has to handle them rather than saying "table: 0x...".
   local function show(value, indent)
@@ -4008,13 +4026,20 @@ query. `find` and `watch` are built on exactly these two calls.
 
   commands.run = function(arg)
     if arg == "" then
-      out("usage: run <program> [arguments]\n")
-      out("`ls /bin` lists them. A bare program name works too.\n")
+      out("usage: run <program or file> [arguments]\n")
+      out("`ls /bin` lists the programs. A bare program name works too,\n")
+      out("and so does a file from where you are: ./hello.lua\n")
       return
     end
 
     local name, rest = arg:match("^(%S+)%s*(.*)$")
     local argument, detach = split_detach(rest)
+
+    -- A file, from where you are, as the prompt takes one.
+    if name:match("%.lua$") or name:find("/", 1, true) then
+      name = tidy(resolve(name))
+    end
+
     local ok, err = run_program(name, argument, detach)
 
     if not ok then out("run: " .. tostring(err) .. "\n") end
@@ -4232,8 +4257,9 @@ query. `find` and `watch` are built on exactly these two calls.
     table.sort(names)
     out("  " .. table.concat(names, "  ") .. "\n")
     out("\nAnything that is not one of these is evaluated as Lua. A leading\n")
-    out("slash always means a command: /ps runs the command even if `ps`\n")
-    out("has been given a meaning in Lua.\n")
+    out("slash means a command: /ps runs the command even if `ps`\n")
+    out("has been given a meaning in Lua. A word ending in .lua is a file,\n")
+    out("and runs: ./hello.lua, /home/hello.lua.\n")
     out("`alias` on its own lists the aliases; `alias <name> <command>`\n")
     out("makes one.\n")
   end
@@ -4365,6 +4391,48 @@ query. `find` and `watch` are built on exactly these two calls.
       -- equals sign appears somewhere in the middle broke a spelling this
       -- shell's own help had already promised.
       --------------------------------------------------------------------
+      --------------------------------------------------------------------
+      -- A program by its file: `./hello.lua`, `notes/hello.lua`,
+      -- `/home/hello.lua`, or `hello.lua` - found from where you are.
+      --
+      -- A first word ending in `.lua` is none of the other things a line can
+      -- be: not a command's name, and not Lua unless its stem already names
+      -- something in Lua, in which case `hello.lua` is a field and stays one.
+      -- It was: `hello.lua` went to Lua and failed on a table called `hello`,
+      -- and `/home/hello.lua` was taken for a command called `home`.
+      --
+      -- **A bare name still means `/bin` and nothing else.** The current
+      -- directory is never searched for a word, so a file that happens to be
+      -- where you are cannot stand in for a program you meant.
+      --------------------------------------------------------------------
+      do
+        local file, after = input:match("^(%S+)%s*(.*)$")
+        local stem = file and file:match("^([%a_][%w_]*)%.lua$")
+
+        if file and file:match("%.lua$")
+           and not after:match("^[=%(%:%[%,]")
+           and not (stem and shadows_lua(stem)) then
+          local path = tidy(resolve(file))
+          local argument, detach = split_detach(after)
+
+          if not ns.getattr(path) then
+            out("run: " .. path .. ": no such program\n")
+          else
+            local started, ok, err = pcall(run_program, path, argument,
+                                           detach)
+
+            if not started then
+              out("run: " .. tostring(ok) .. "\n")
+            elseif not ok then
+              out("run: " .. tostring(err) .. "\n")
+            end
+          end
+
+          reap()
+          goto next_line
+        end
+      end
+
       local slashed = input:match("^/(.*)$")
       local word, rest = (slashed or input):match("^([%a][%w_%-]*)%s*(.*)$")
       local name = word and (aliases[word] or word)

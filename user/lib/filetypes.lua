@@ -114,4 +114,57 @@ function filetypes.opener(path, attrs)
   return kind and filetypes.by_extension[kind] or nil
 end
 
+--
+-- **What a program declares about itself**, in its opening comment block:
+-- `kosmos: application`, for one, means it draws a window.
+--
+-- The rule `/bin`'s server reads, and it has to be the same rule or a program
+-- would be an application in the Deskbar and a console program in Tracker
+-- (`user/servers/binfs.c`): the block is every line from the top that is
+-- empty or begins with `--`, and it ends at the first that is neither - so
+-- the same words in a string further down declare nothing.
+--
+function filetypes.declares(source, word)
+  for line in (tostring(source or "") .. "\n"):gmatch("(.-)\n") do
+    if line ~= "" and line:sub(1, 2) ~= "--" then
+      return false
+    end
+
+    if line:match("kosmos:%s*(%a+)") == word then
+      return true
+    end
+  end
+
+  return false
+end
+
+--
+-- **How to open a path**: the program to start, and what to hand it - or nil
+-- when nothing claims it.
+--
+-- A Lua file is a program, so opening one runs it. An application - its
+-- opening comment says `kosmos: application` - starts as itself and opens its
+-- own window. Anything else is a console program, and runs in a Terminal of
+-- its own, which is where its output has somewhere to go. `source` is the
+-- file's beginning, and only a Lua file needs it.
+--
+-- Editing one is still `opener`'s answer - the editor - which is what
+-- Tracker's File menu asks when you choose Edit.
+--
+function filetypes.how_to_open(path, attrs, source)
+  local kind = filetypes.kind_of(path, attrs)
+
+  if kind == "lua" then
+    if filetypes.declares(source, "application") then
+      return { program = path, args = "" }
+    end
+
+    return { program = "terminal", args = path }
+  end
+
+  local program = kind and filetypes.by_extension[kind]
+
+  return program and { program = program, args = path } or nil
+end
+
 return filetypes

@@ -100,6 +100,58 @@ check(types.kind_of("/home/odd.txt", { kind = "directory" }) == "txt",
       "only a launcher is read out of `kind`; anything else falls through "
       .. "to the extension")
 
+--------------------------------------------------------------------------
+-- A program says what it is in its opening comment, and a Lua file opens by
+-- running: an application as itself, anything else in a Terminal.
+--------------------------------------------------------------------------
+
+local app = "-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE.\n"
+         .. "-- clock: the time.\n--\n-- kosmos: application\n\nlocal ui = 1\n"
+local console = "-- hello: says hello.\nprint(\"hello\")\n"
+local late = "-- a program\nlocal s = \"-- kosmos: application\"\n"
+local blank = "\n-- kosmos: application\n"
+
+check(types.declares(app, "application"),
+      "an application on the fourth line of its opening comment is one")
+
+check(not types.declares(console, "application"),
+      "a program that says nothing is not an application")
+
+check(not types.declares(late, "application"),
+      "the words in a string after the comment declare nothing")
+
+check(types.declares(blank, "application"),
+      "an empty line is still inside the opening comment, as binfs reads it")
+
+check(not types.declares(nil, "application"),
+      "no source declares nothing")
+
+local how = types.how_to_open("/home/clock.lua", nil, app)
+
+check(how and how.program == "/home/clock.lua" and how.args == "",
+      "an application opens as itself")
+
+how = types.how_to_open("/home/diego.lua", nil, console)
+
+check(how and how.program == "terminal" and how.args == "/home/diego.lua",
+      "a console program opens in a Terminal, which is handed its path")
+
+how = types.how_to_open("/home/diego.lua", nil, nil)
+
+check(how and how.program == "terminal",
+      "a Lua file whose source could not be read still runs in a Terminal")
+
+how = types.how_to_open("/home/notes.txt")
+
+check(how and how.program == "editor" and how.args == "/home/notes.txt",
+      "anything else opens in what handles its type, as before")
+
+check(types.how_to_open("/home/nothing") == nil,
+      "and a file nothing claims still opens in nothing")
+
+check(types.opener("/home/diego.lua") == "editor",
+      "the editor is still what handles a .lua, for Edit")
+
 if failed == 0 then
   print(("PASS: %d checks on what a file is and what opens it, on this "
          .. "machine."):format(checks))

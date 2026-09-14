@@ -86,6 +86,8 @@ source into the caller's own environment. `ui`, `panel`, `pdf`, `kfs`.
 
 **A program** is console-based: it prints, it reads lines, it lives in
 `/bin` and you type its name at the prompt. `ls`, `cat`, `htop`, `stress`.
+One that lives anywhere else is typed as the file it is - `./hello.lua` -
+and opening it in Tracker runs it in a Terminal.
 
 **An app** is graphical: it opens a window, it is driven with the pointer
 and the keyboard, and it appears in the Deskbar. It says so with

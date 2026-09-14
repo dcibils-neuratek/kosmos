@@ -39,6 +39,22 @@ local ui = use("/lib/ui.lua")
 -- never to a server: a server is always told a whole path and knows nothing
 -- about where anybody thinks they are.
 local cwd = "/home"
+
+-- A path with its `.` and `..` taken out, so `../hello.lua` names the file a
+-- person means rather than a directory called `..` that no server has.
+local function tidy(path)
+  local parts = {}
+
+  for part in path:gmatch("[^/]+") do
+    if part == ".." then
+      parts[#parts] = nil
+    elseif part ~= "." then
+      parts[#parts + 1] = part
+    end
+  end
+
+  return "/" .. table.concat(parts, "/")
+end
 -- The *kit's* palette, not a copy of it.
 --
 -- `use` runs the chunk again and hands back a different table, and only the
@@ -106,7 +122,8 @@ end
 -- the first thing typed lands on the end of the banner.
 --------------------------------------------------------------------------
 local lines = {
-  { { text = "Kosmos terminal. Type a program's name; `help` lists them." } },
+  { { text = "Kosmos terminal. Type a program's name, or a file such as "
+             .. "./hello.lua; `help` lists the programs." } },
   {},
 }
 local input = ""
@@ -309,7 +326,19 @@ local function launch(text)
     return
   end
 
-  local path = name:sub(1, 1) == "/" and name or ("/bin/" .. name .. ".lua")
+  --
+  -- A name is a program in /bin; a file - `./hello.lua`, `notes/x.lua`,
+  -- `/home/x.lua`, or `hello.lua` - is found from where this window is. The
+  -- current directory is never searched for a bare name, so a file that is
+  -- where you are cannot stand in for the program you meant.
+  --
+  local path
+
+  if name:match("%.lua$") or name:find("/", 1, true) then
+    path = tidy(resolve(name))
+  else
+    path = "/bin/" .. name .. ".lua"
+  end
 
   if not fs.getattr(path) then
     emit(name .. ": no such program\n")
@@ -629,6 +658,24 @@ end
 -- messages that `on_frame` is already serving, and a Terminal whose banner
 -- failed is a Terminal with a prompt in it.
 --------------------------------------------------------------------------
-launch("neofetch")
+--
+-- **Or what it was opened to run.** Tracker opens a program that is not an
+-- application in a Terminal of its own, by starting this with the program's
+-- path as its argument - so that runs in place of the banner, from its own
+-- folder, and its output has a window to go to.
+--
+local asked = tostring(args or ""):match("^%s*(.-)%s*$")
+
+if asked ~= "" then
+  local folder = asked:match("^(.*)/[^/]+$")
+
+  if folder then
+    cwd = folder == "" and "/" or folder
+  end
+
+  launch(asked)
+else
+  launch("neofetch")
+end
 
 win:run()

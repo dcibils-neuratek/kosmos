@@ -174,6 +174,48 @@ def main():
         checks += 1
 
         #
+        # ---- a program by its file ---------------------------------------
+        #
+        # A file of Lua made at the prompt, run from the current directory
+        # with `./`, by its bare file name, by its whole path and through
+        # `run` - and from a directory below it, with `..`. Each prints its
+        # argument, so every landing is told from the others and none of
+        # them can be the echo of the line that was typed. A `.lua` that is
+        # not there says so, rather than being handed to Lua as a field of a
+        # table nobody made.
+        #
+        programs = run_disk.boot(image, handle.name, [
+            "cd /ramfs",
+            'fs.write("/ramfs/hi.lua", "print(\\"hi-\\" .. args)")',
+            "./hi.lua one",
+            "hi.lua two",
+            "/ramfs/hi.lua three",
+            "run hi.lua four",
+            "mkdir sub",
+            "cd sub",
+            "../hi.lua five",
+            "nothere.lua",
+        ])
+
+        for marker, what in [
+            ("hi-one", "./hi.lua did not run the file in the current "
+                       "directory"),
+            ("hi-two", "hi.lua did not run the file by its bare name"),
+            ("hi-three", "/ramfs/hi.lua did not run the file by its whole "
+                         "path"),
+            ("hi-four", "run hi.lua did not run the file from the current "
+                        "directory"),
+            ("hi-five", "../hi.lua did not run the file in the directory "
+                        "above"),
+            ("run: /ramfs/sub/nothere.lua: no such program",
+             "a .lua that is not there did not say so"),
+        ]:
+            if marker not in programs:
+                raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
+                              + programs[-1500:])
+            checks += 1
+
+        #
         # ---- naming and ending things ------------------------------------
         #
         # `kill` is run through `run` with an id found at the prompt rather
@@ -229,7 +271,7 @@ def main():
         print(f"PASS: {checks} checks on the shell as a place to work "
               "(a file made at the prompt, then counted, read from both "
               "ends, searched, walked and measured - each verb agreeing "
-              "with the others about it).")
+              "with the others about it - and a program run by its file).")
         return 0
     except Failure as e:
         print(f"FAIL: {e}")

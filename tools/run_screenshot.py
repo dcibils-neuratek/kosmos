@@ -2931,6 +2931,138 @@ def check_terminal(guest):
     return 2
 
 
+def check_programs_by_file(guest):
+    """A program run by its file in the Terminal, and one opened as Tracker
+    opens it.
+
+    **In the Terminal**: `cd /ramfs`, then `./term.lua` - a file made at the
+    prompt before the desktop starts - and its output has to be drawn in the
+    window, counted by ink as `check_terminal` counts `hello`'s.
+
+    **As Tracker opens it**: Tracker asks `/lib/filetypes.lua` how to open a
+    file and sends what it answers to the window manager - for a Lua program
+    that is not an application, a Terminal with the program's path as its
+    argument. `opener.lua` does exactly that, from inside the first Terminal.
+    So the window manager has to say it launched a Terminal, and the kernel
+    has to say `term` ended after that: the second window ran the file in
+    place of its banner. Tracker's own double-click is not driven here; the
+    decision it asks is `test_filetypes.lua`'s, and the rest of the way is
+    this.
+    """
+    guest.type('fs.write("/ramfs/term.lua", '
+               '[[for i = 1, 30 do print("term-" .. i) end]]) '
+               'fs.write("/ramfs/opener.lua", '
+               '[[local t = use("/lib/filetypes.lua") '
+               'local how = t.how_to_open("/ramfs/term.lua", nil, '
+               'fs.read("/ramfs/term.lua")) '
+               'fs.send("/app/wm", { type = "launch", program = how.program, '
+               'args = how.args })]]) '
+               'print("programs-by" .. "-file")')
+    guest.wait_for("programs-by-file",
+                   "wrote the two programs the Terminal runs")
+
+    guest.type("wm terminal")
+    started(guest)
+
+    width, height, px = parse_ppm(guest.screendump())
+    x0, y0, w, h = 100, 100, 600, 500
+
+    def ink(pixels):
+        n = 0
+        base = pixels[((y0 + h - 4) * width + x0 + 4) * 3:
+                      ((y0 + h - 4) * width + x0 + 4) * 3 + 3]
+
+        for y in range(y0, y0 + h, 2):
+            for x in range(x0, x0 + w, 2):
+                at = (y * width + x) * 3
+
+                if pixels[at:at + 3] != base:
+                    n += 1
+
+        return n
+
+    def typed(text):
+        for ch in text:
+            guest.proc.stdin.write(ch.encode())
+            guest.proc.stdin.flush()
+            time.sleep(0.08)
+
+    guest.mouse_to(*_to_tablet(300, 200, width, height))
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    guest.mouse_button(False)
+    time.sleep(0.6)
+
+    typed("cd /ramfs\n")
+    typed("clear\n")
+    time.sleep(1.5)
+
+    width, height, px = parse_ppm(guest.screendump())
+    before = ink(px)
+
+    typed("./term.lua\n")
+
+    settle(guest,
+           lambda w_, h_, px_: True if ink(px_) > before + 200 else None,
+           "typing `./term.lua` into the Terminal in /ramfs put nothing in its "
+           "window: a file is not being run from where the window is.",
+           seconds=25)
+
+    #
+    # And the way Tracker opens it. The mark is taken after the first run, so
+    # a `term` ending before it cannot stand in for the second.
+    #
+    time.sleep(1.0)
+    guest._read_available()
+    mark = len(guest.seen)
+
+    typed("./opener.lua\n")
+
+    deadline = time.monotonic() + 30
+    launched = ended = False
+
+    while time.monotonic() < deadline and not (launched and ended):
+        guest._read_available()
+        after = guest.seen[mark:]
+        at = after.find("wm: launched terminal -> true")
+        launched = at >= 0
+        ended = launched and re.search(r"process \d+ \(term\) ended, code 0",
+                                       after[at:]) is not None
+        time.sleep(0.3)
+
+    if not launched:
+        raise Failure(
+            "a Lua program opened the way Tracker opens one did not get a "
+            "Terminal from the window manager:\n"
+            + guest.seen[mark:][-1200:])
+
+    if not ended:
+        raise Failure(
+            "the Terminal the window manager started for `/ramfs/term.lua` "
+            "never ran it - no `term` ended after the launch:\n"
+            + guest.seen[mark:][-1200:])
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-W Q did not get the screen back from the "
+                      "Terminals.")
+
+    return 3
+
+
 def _log_view_area(width, height, px, win):
     """Where Log View draws its rows, or None if it has no console.
 
@@ -5596,6 +5728,7 @@ def main():
         direct_checks = phase("direct", check_direct)
         three_d_checks = phase("3d", check_3d)
         terminal_checks = phase("terminal", check_terminal)
+        file_checks = phase("programs by file", check_programs_by_file)
         log_view_checks = phase("log view", check_log_view)
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
@@ -5635,7 +5768,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + name_checks)
+             + name_checks + file_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")
@@ -5678,6 +5811,8 @@ def main():
           f"{terminal_checks} on a terminal window (a program printing into "
           f"one, and its character grid following the window when it is "
           f"resized), "
+          f"{file_checks} on a program run by its file, in a Terminal and "
+          f"as Tracker opens one, "
           f"{log_view_checks} on Log View (rows on black that do not "
           f"overlap, following what is logged and holding still while "
           f"scrolled back), "

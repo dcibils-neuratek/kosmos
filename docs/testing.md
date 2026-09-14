@@ -3426,3 +3426,55 @@ And as written, with every file put back byte for byte and the image rebuilt:
 `test_usbdecode` 71, `usb` 15, `usb_hotplug` 17, `usb_mouse` 22, and `make test`
 whole - x86-64 130, the UEFI boots 34, the stick check 10, and the suites 159
 of 159 and 155 of 155.
+
+## 18.55 A program run by its file
+
+**Diego's `diego.lua`, and the three places it should have run from**: the
+prompt, a Terminal and Tracker. Before this a bare word looked only in
+`/bin`, `/home/diego.lua` at the prompt was taken for a command called
+`home`, `diego.lua` went to Lua and failed on a table called `diego`, and
+Tracker opened it in the editor. `ui.md` §16.15 has the rules.
+
+| check | run by | what it establishes |
+| ----- | ------ | ------------------- |
+| `tools/test_filetypes.lua`, 24 checks, 11 of them new | `make test` | `kosmos: application` on the fourth line of an opening comment declares an application, after an empty line too; a program that says nothing, no source, and the same words in a string below the comment do not; an application opens as itself with no arguments, and a console program - or a Lua file whose source could not be read - in a Terminal handed its path; a `.txt` still opens in the editor, a file nothing claims in nothing, and the editor is still what handles a `.lua`, for Edit |
+| `tools/run_shell.py`, 25 checks, 6 of them new | `make test` | in `/ramfs`, a file made at the prompt runs as `./hi.lua`, `hi.lua`, `/ramfs/hi.lua` and `run hi.lua`, and from a folder below it as `../hi.lua` - each printing the argument it was given, so no landing can be mistaken for another or for the echo of the line; a `.lua` that is not there says `no such program` with the path it looked for |
+| `programs by file` phase of `tools/run_screenshot.py`, 3 checks | `make screenshot`, and so `make prepush` | in a Terminal, `cd /ramfs` and then `./term.lua` draws its thirty lines in the window; and a program opened as Tracker opens one - `how_to_open`'s answer sent to the window manager - gets a Terminal from it, which runs the program: `term` ends, code 0, after the launch |
+
+Tracker's own double-click is not driven: the decision it asks is
+`test_filetypes`'s, and the phase sends what that decision answers exactly as
+Tracker sends it.
+
+**Controls**, each put back byte for byte, and the image rebuilt after:
+
+| broken | what failed |
+| ------ | ----------- |
+| the prompt's rule for a file taken out | `run_shell`: `./hi.lua did not run the file in the current directory` |
+| a declaration read past the opening comment | `test_filetypes`, 1 of 24: the words in a string after the comment taken for an application |
+| the Terminal ignoring what it was opened to run | the display harness: the Terminal the window manager started never ran `/ramfs/term.lua` - `wm: launched terminal -> true`, and no `term` ended |
+| the Terminal taking `./term.lua` for a program in `/bin` | the display harness: `./term.lua` put nothing in the Terminal's window in 25 seconds |
+
+The first control's session is the prompt as it was, and worth having in full:
+
+```
+kosmos> ./hi.lua one
+error: stdin:1: unexpected symbol near '.'
+kosmos> hi.lua two
+error: stdin:1: syntax error near 'two'
+kosmos> /ramfs/hi.lua three
+no command called ramfs; `/commands` lists them
+kosmos> run hi.lua four
+hi-four
+process 15 (hi) ended, code 0
+kosmos> nothere.lua
+error: stdin:1: attempt to index a nil value (global 'nothere')
+```
+
+**`run hi.lua four` still ran under it**, because `run` finds a file itself
+rather than through the prompt's rule - which is why the check has a line for
+each spelling rather than one.
+
+And as written, with every file put back byte for byte and the image rebuilt:
+`make screenshot` 110 on AArch64 and 108 on x86-64, and `make test` whole -
+`test_filetypes` 24, `run_shell` 25, x86-64 130, the UEFI boots 34, the stick
+check 10, and the suites 159 of 159 and 155 of 155.

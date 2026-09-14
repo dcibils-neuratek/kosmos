@@ -19,13 +19,29 @@ prepush` and a bump.
   its read to the build's sums have not run on the ThinkPad - offered beside
   the ERDP stick, which has. The photographs: `log loader`, which should end
   `the stick against the build: same`, and This Machine resized.
-- **USB step 5, mass storage**: READ CAPACITY and READ(10) through the same
+- **USB step 5, mass storage**, approved by Diego on 14 September with the
+  proposal's five calls, and started once this lands: READ CAPACITY and READ(10) through the same
   bulk endpoints, and a block protocol from the USB driver to a filesystem
   server - then another machine's FAT32 and exFAT drives, Kosmos's own reader,
   read-only first (`usb.md`).
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: a program run by its file
+
+**Diego's `diego.lua`**, a console program in `/home`, and his words: "we need
+to have an easy way to run programs from the command line and from the
+tracker".
+
+- **At the prompt, in a Terminal and after `run`**, a file is named from
+  where you are: `./diego.lua`, `diego.lua`, `../diego.lua`,
+  `/home/diego.lua`. A bare name is still a program in `/bin` and nothing
+  else (`ui.md` §16.15).
+- **In Tracker**, opening a Lua file runs it: an application as itself,
+  anything else in a Terminal of its own. Edit is beside Open.
+- **Tested**: `test_filetypes` 24, `run_shell` 25, and the display harness's
+  `programs by file` 3; controls in `testing.md` §18.55.
 
 ### 14 September: bulk transfers, and a stick asked what it is
 
