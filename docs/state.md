@@ -44,11 +44,13 @@ much.
 **One stable build, and development on top of it** - Diego, 14 September: "we
 always need 1 stable build we agree is stable to use", "on top of that we
 develop new features", labelled `-stable` and `-development` (`CLAUDE.md`).
-**Stable: `build/x86_64/kosmos-usb-0.10.63-stable.img`**, `main` at `9af841c`,
-which booted on the ThinkPad that night - `log loader` clean, `/home` on the
-stick, the prompt at 22 seconds (`boot.md`), and no sound yet. It was
-`kosmos-usb-last-good.img` until the labels, and Diego agreed on 14 September
-that it is the stable one. **Development: `build/x86_64/kosmos-usb-0.10.64-development.img`**, `main`
+**Stable: `build/x86_64/kosmos-usb-0.10.70-stable.img`**, `main` at `b5ce4a4`,
+since Diego said so on 15 September - "this build is stable" - after it started
+the desktop by itself on the ThinkPad and played Basket Case through its speaker
+(`boot.md`). The same bytes that were handed over as 0.10.70-development,
+renamed and not rebuilt. The stable build before it, `kosmos-usb-0.10.63-stable.img`
+(`9af841c`, booted to the prompt with no sound), went to the Trash. **The first
+development build was `build/x86_64/kosmos-usb-0.10.64-development.img`**, `main`
 at `986a627`, handed to Diego: the stable build plus Music's engine and tags,
 a stick that refuses SYNCHRONIZE CACHE told once (`testing.md` §18.68), the
 disk server's search for the stick said by `diskinfo` in the log's seconds
@@ -174,7 +176,9 @@ works!", "it works great" - sound through the laptop's speaker, for the first
 time. What was missing was EAPD: the pin, the converter and the samples were
 the same in 0.10.68, which was silent. Headphones not reported yet; jack
 sensing is next for sound (`roadmap.md`), and Music's length for a VBR MP3
-(it said 9:58 for a 3:14 song) is on the list beside it.
+(it said 9:58 for a 3:14 song) is on the list beside it. **And it is the
+stable build**: Diego, the same day, "this build is stable. push to repo." -
+`kosmos-usb-0.10.70-stable.img`.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
