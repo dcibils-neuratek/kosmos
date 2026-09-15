@@ -127,6 +127,14 @@ codec announced itself 1 ms after reset, and answered its root node in 0 ms`.
 **What Diego does with it**: boot, play Basket Case in Music, and if there is no
 sound, the `codec` line in Log says how long the codec was waited for.
 Committed, not pushed.
+
+**0.10.68-development is the build to write now**:
+`build/x86_64/kosmos-usb-0.10.68-development.img`, `main` at `bf8568d` -
+0.10.67-development plus the Processes window without its idle row
+(`testing.md` §18.74). Under OVMF: the desktop by itself, the loader clean,
+the codec announcing itself in 1 ms. **What Diego does with it**: boot, play
+Basket Case (the `codec` line in Log if it is silent), and see Processes list
+nothing at 99% on an idle desktop. Committed, not pushed.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a

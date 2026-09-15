@@ -326,7 +326,8 @@ is the one that makes the machine Diego owns behave like a computer:
      window's own, made from the kernel's idle ticks - 99% at the top of the
      list on an idle ThinkPad. The shares stay a share of every tick, so an
      idle machine reads near nothing, the kernel's row stays, and Monitor
-     still draws what is idle.
+     still draws what is idle. **Built** (`testing.md` §18.74): the shares come from
+     `/lib/procshare.lua`, tested on the Mac.
    - **Music opens the song Tracker gives it.** Opened from Tracker on the
      ThinkPad, Music said "(nothing to play in /home)" beside a Tracker
      window listing the MP3 in `/home` - being found. **Music now says why
