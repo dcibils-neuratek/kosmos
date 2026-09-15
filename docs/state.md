@@ -135,6 +135,22 @@ Committed, not pushed.
 the codec announcing itself in 1 ms. **What Diego does with it**: boot, play
 Basket Case (the `codec` line in Log if it is silent), and see Processes list
 nothing at 99% on an idle desktop. Committed, not pushed.
+
+**On the ThinkPad, 0.10.68 played and was silent**: Music showed `44100 Hz
+stereo 16-bit MP3` with its position and meter moving, and Diego heard nothing
+from the speaker or from headphones in the jack. So the codec answers and takes
+the samples, and the pin it plays through is wired to neither, or is the right
+pin with something left off.
+
+**0.10.69-development is the build to write now**:
+`build/x86_64/kosmos-usb-0.10.69-development.img`, `main` at `3efb57d` -
+0.10.68-development plus the boot log naming the converter and pin the codec
+plays through, and every pin's raw capabilities and configuration default
+(`testing.md` §18.75). Under OVMF: the desktop by itself, the loader clean, and
+`the codec plays converter 0x02 through pin 0x03`. **What Diego does with it**:
+boot, play Basket Case for a few seconds, `diagnose` in a Terminal, and `make
+stick-log` - the ThinkPad's pins, read from the machine, decide the fix.
+Committed, not pushed.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
