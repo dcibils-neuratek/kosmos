@@ -192,7 +192,7 @@
         <div class="now">
           <div class="art gd">GD</div>
           <div style="min-width:0">
-            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">128 kbps</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
+            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">197 kbps VBR</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
             <div class="who">Green Day &middot; Dookie</div>
             <div class="title">Basket Case</div>
           </div>
@@ -219,7 +219,7 @@
         </div>
         <div class="sub"><span class="on">Songs</span><span>Albums</span><span>Artists</span><span class="find">Search</span></div>
         <ul class="tracks">
-          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">4:59<br><span class="chip fmt">MP3</span></div></li>
+          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">3:14<br><span class="chip fmt">MP3</span></div></li>
           <li><div class="art df small">EA</div><div style="min-width:0"><div class="t">Example Track</div><div class="a">Example Artist &middot; Example Album</div></div><div class="r">6:09<br><span class="chip fmt">MP3</span></div></li>
           <li><div class="art wv small">WV</div><div style="min-width:0"><div class="t">Kosmos startup chime</div><div class="a">Kosmos &middot; /home/sounds</div></div><div class="r">0:03<br><span class="chip fmt">WAV</span></div></li>
           <li><div class="art none small">?</div><div style="min-width:0"><div class="t">recording-2026-09-14</div><div class="a">no tags &middot; named by its file</div></div><div class="r">1:12<br><span class="chip fmt">WAV</span></div></li>
@@ -234,7 +234,7 @@
         <div class="now">
           <div class="art gd">GD</div>
           <div style="min-width:0">
-            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">128 kbps</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
+            <div class="chips"><span class="chip fmt">MP3</span><span class="chip">197 kbps VBR</span><span class="chip">44.1 kHz</span><span class="chip">#punk</span></div>
             <div class="who">Green Day &middot; Dookie</div>
             <div class="title">Basket Case</div>
           </div>
@@ -261,7 +261,7 @@
         </div>
         <div class="sub"><span class="on">Songs</span><span>Albums</span><span>Artists</span><span class="find">Search</span></div>
         <ul class="tracks">
-          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">4:59<br><span class="chip fmt">MP3</span></div></li>
+          <li class="playing"><div class="art gd small">GD</div><div style="min-width:0"><div class="t">Basket Case</div><div class="a">Green Day &middot; Dookie</div></div><div class="r">3:14<br><span class="chip fmt">MP3</span></div></li>
           <li><div class="art df small">EA</div><div style="min-width:0"><div class="t">Example Track</div><div class="a">Example Artist &middot; Example Album</div></div><div class="r">6:09<br><span class="chip fmt">MP3</span></div></li>
         </ul>
         <div class="foot"><span>The light look</span><span>View &rsaquo; Light</span></div>
@@ -283,7 +283,7 @@
       </div>
     </div>
   </div>
-  <p class="note">A drawing, not a screenshot. The cover is drawn from the file's tags when it has a picture, and from the first letters of the artist when it has none; nothing here is album artwork. Basket Case's length is its size at 128 kbps, which is how the player estimates today.</p>
+  <p class="note">A drawing, not a screenshot. The cover is drawn from the file's tags when it has a picture, and from the first letters of the artist when it has none; nothing here is album artwork. Basket Case is 3:14 at 197 kbps on average, read from the Xing header its encoder wrote - which is what the player does since 15 September, after it had shown 9:58 at 64 kbps by taking that header frame for the music (<code>testing.md</code> §18.77).</p>
 
   <h2>One engine, two apps</h2>
   <p>Playing a file is the same work whether it holds a song or a film: read it a window at a time, take it apart, decode it, keep time, let a person seek, and hand the sound to the audio server. So that work is one library, <code>/lib/media.lua</code>, and Music is its first face. A video app, later, is its second - there the window is the picture, where Music's window is a library - and it adds to the engine rather than copying it. BeOS split it the same way, with MediaPlayer for anything and SoundPlay for music.</p>
