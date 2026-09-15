@@ -4339,3 +4339,36 @@ And as written: `make test` whole - the Processes window's shares 11, x86-64
 168, the media engine 9, the UEFI boots 38, the stick check 12, the disk 33
 across two boots, the machine with no display on both boards with all 113
 programs in `/bin`, and the suites 161 of 161 and 157 of 157.
+
+## 18.75 Where the sound goes, said when it plays
+
+**What the ThinkPad showed.** With the codec given milliseconds
+(0.10.68-development), Music played Basket Case - `44100 Hz stereo 16-bit
+MP3`, its position moving and its meter green - and Diego heard nothing. So
+the codec answers and samples reach it, and the sound goes to a pin that is not
+the speaker, or to the speaker with something left off. The driver chooses the
+first output pin that routes, in the codec's order, and printed what the codec
+is made of only when nothing routed - so a machine that played and was silent
+said nothing about where.
+
+**The change.** On success too, the boot log names the converter and the pin
+the codec plays through, and then every pin: whether it is an output, its raw
+pin capabilities and its configuration default, which is where "internal
+speaker" and "headphone jack" are written (spec section 7.3.3.31). Printed
+raw rather than named, as the failure dump already was. Under QEMU:
+
+```
+-> the codec plays converter 0x02 through pin 0x03
+->   codec node 0x03 is a pin, output, pin caps 0x00000010, config 0x00004010, from 0x02
+```
+
+**The check**: `run_x86.py`'s `sound` needs both lines, beside the tone it
+already plays and hears - 11 checks with `sound_slow_codec`.
+
+| Control | What failed |
+|---|---|
+| C15: the route line reworded, as a driver that no longer says it would | `sound`, 1 of 10: `the codec plays through 0x02 through pin 0x03` is not the converter and pin said |
+
+And as written: `make test` whole - x86-64 169, one more than before (`sound`
+saying its route), the media engine 9, the Processes window's shares 11, the
+UEFI boots 38, and the suites 161 of 161 and 157 of 157.

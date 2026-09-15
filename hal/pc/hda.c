@@ -709,9 +709,12 @@ static unsigned connections(unsigned nid, unsigned *out, unsigned max)
  * in `/proc/asound/card0/codec#0`, produced by this driver on the machine in
  * question.
  *
- * Only on failure, so a working machine pays nothing, and this is the same
- * principle `check_init_image` in `kernel/main.c` follows: when something
- * cannot be worked out from here, make the machine say what it found.
+ * On failure every widget, and on success every pin: the ThinkPad's codec
+ * answered, Music played with its meter moving, and nothing was heard - a
+ * working route that was the wrong one, or the right one with something left
+ * off, and only the pins' own configuration can say which. The same principle
+ * `check_init_image` in `kernel/main.c` follows: when something cannot be
+ * worked out from here, make the machine say what it found.
  */
 static void describe_widget(unsigned nid, uint32_t caps)
 {
@@ -736,6 +739,8 @@ static void describe_widget(unsigned nid, uint32_t caps)
 
         if (pin != CODEC_NO_ANSWER) {
             kputs((pin & PIN_CAP_OUTPUT) ? ", output" : ", not an output");
+            kputs(", pin caps 0x");
+            kputx(pin, 8);
         }
 
         if (config != CODEC_NO_ANSWER) {
@@ -1003,6 +1008,29 @@ static bool find_widgets(void)
 
                     if (caps != CODEC_NO_ANSWER) {
                         unmute(hda.pin, (unsigned)caps, fg);
+                    }
+                }
+
+                /*
+                 * **Where the sound goes, said when it plays.** The converter
+                 * and the pin, then every pin with its configuration default
+                 * - which is where "internal speaker" and "headphone jack"
+                 * are written - so a machine that plays and is silent says
+                 * which pin it was playing into.
+                 */
+                boot_fact_begin();
+                kputs("the codec plays converter 0x");
+                kputx(hda.dac, 2);
+                kputs(" through pin 0x");
+                kputx(hda.pin, 2);
+                boot_fact_end();
+
+                for (w = wstart; w < wstart + wcount; w++) {
+                    uint32_t each = get_param(w, PARAM_WIDGET_CAPS);
+
+                    if (each != CODEC_NO_ANSWER
+                        && WIDGET_TYPE(each) == WIDGET_PIN) {
+                        describe_widget(w, each);
                     }
                 }
 

@@ -1770,6 +1770,18 @@ def sound(image, check):
           + next((l.strip() for l in out.splitlines() if "sound" in l),
                  "nothing was said about sound at all"))
 
+    # **And where the sound goes, said on a machine that plays it**: the
+    # converter and the pin, and the pins' configuration after it. The
+    # ThinkPad played with its meter moving and was silent, and this line is
+    # what says which pin the codec was playing into.
+    check(re.search(r"the codec plays converter 0x[0-9a-f]{2} through pin "
+                    r"0x[0-9a-f]{2}", out) is not None
+          and re.search(r"codec node 0x[0-9a-f]{2} is a pin, output, pin caps "
+                        r"0x[0-9a-f]{8}, config 0x[0-9a-f]{8}", out) is not None,
+          "the HDA driver played without saying which converter and pin, and "
+          "what the pin is: "
+          + "; ".join(l.strip() for l in out.splitlines() if "codec" in l)[:400])
+
     check(re.search(r"beep: %d Hz, \d+ ms of sound" % TONE_HZ, out) is not None,
           "`beep` did not report that it had played anything")
 

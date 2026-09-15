@@ -582,6 +582,14 @@ the Pi", and the Pi is not here yet.
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
   GRUB, which it has not been since 13 September.
 - Doom's sound, behind a hook that already exists.
+- **Music's length and bitrate for a VBR MP3.** On the ThinkPad it said
+  `MP3 64 k` and `9:58` for Basket Case. Checked against the file on the Mac,
+  frame by frame: its first frame is a **Xing header** marked 64 kbps - the
+  frame an encoder writes to say how many frames follow - and the 7,442 frames
+  after it run at 160 to 256 kbps, **3:14** long. `9:58` is the file's size
+  over that first frame's 64 kbps. So: read the Xing (and `Info`) header's
+  frame count for the length, and do not take that frame's bitrate for the
+  file's.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really
@@ -700,6 +708,18 @@ to announce itself and 500 ms to answer, on the 8253 that needs no interrupt,
 and a line in the boot log saying how long it took - or how long it was waited
 for (`testing.md` §18.73). If it still does not answer with that, the other
 account is left: a controller in the mode Intel's DSP firmware (SOF) drives.
+
+**And then it played, and was silent** (0.10.68-development, 15 September):
+Music showed `44100 Hz stereo 16-bit MP3`, its position moving and its meter
+green, and Diego heard nothing. So the codec answers, samples reach it, and
+the sound goes somewhere that is not the speaker - or reaches the speaker with
+something left off. The driver takes the first output pin that routes, in the
+codec's own order, skipping pins wired to nothing, and does not set anything
+beyond pin control and the amplifiers' mute and gain. **Next**: the boot log
+says which converter and pin it plays through, and every pin's configuration
+default - which is where "internal speaker" and "headphone jack" are written -
+read from the machine rather than from memory of what an ALC257 is; and Diego
+tries headphones in the jack.
 
 **One kernel check failed once**, 1 of 127, and has not since. The evidence
 was destroyed by a `grep` that kept only the summary line. Recorded as
