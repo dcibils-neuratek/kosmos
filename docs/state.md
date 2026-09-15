@@ -8,9 +8,12 @@ Last updated: 2026-09-14
 
 ## Where this left off
 
-**Pushed, 14 September: 0.10.63** (`8e10174`), after `make prepush` - USB
-5a to 5f, the drives design, FAT read on the Mac, and two roadmap entries.
-`main` and `origin` agree.
+**Pushed, 14 September: 0.10.64** (`f73e2b0`), after `make prepush` -
+storage at full speed's steps 1 to 3, Music's engine and tags, and
+0.10.64-development: `diagnose` and `make stick-log`, `log save`, a refused
+flush told once, and the disk server's search for the stick counted. 0.10.63
+before it (`8e10174`) was USB 5a to 5f, the drives design and FAT read on the
+Mac.
 
 **Now: storage at full speed, performance first.** Diego: "it's bad to have a
 nicely designed and modular system if it's slow and unusable". USB step 6
