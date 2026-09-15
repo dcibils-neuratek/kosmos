@@ -12,6 +12,9 @@ system" means Kosmos.
 **Versions are `major.minor.revision`, in the `VERSION` file.** A revision
 per push, a minor when something substantial lands, and a major when we
 decide something was big enough to be one. `make bump`, `make bump-minor`, `make bump-major`.
+**A build handed to Diego for the ThinkPad takes a revision of its own** as
+well, and carries a label in its file's name - `-development` until he agrees
+it is stable, `-stable` after (*How to work here*).
 
 A personal learning project. There are no users, no compatibility to maintain, no deadline. **Correctness and simplicity always win over delivery speed.**
 
@@ -673,6 +676,13 @@ worktree or start work in one, and do not offer anything that would. **A fix
 or a follow-up noticed along the way goes into `docs/roadmap.md`**, and is
 done on `main` when its time comes.
 
+**Every feature Diego asks for and we agree to build goes into
+`docs/roadmap.md` the day it is agreed**, before any of it is built. Diego, 14
+September 2026: "all the things i request will be pushed to the roadmap file",
+"make sure you update the roadmap file with all the new features we agree on
+developing". A request that lives only in a conversation is lost at the next
+summary, which is the same reason a decision goes into the documents.
+
 **A stick for the ThinkPad carries only a layout that has booted there.**
 Diego's words, on 13 September 2026: "please don't make me waste time again
 with these non booting usb images". That evening a stick with a 64 MB disk,
@@ -696,16 +706,23 @@ every check under OVMF, which is necessary and not sufficient. So:
   that differs, naming the page.
 - **The table is read before a stick is handed over** - not a summary, and
   not a memory of the table.
-- **One stick, and each build adds to the last one that booted.** Diego, on
+- **One stick, one stable build, and development on top of it.** Diego, on
   14 September 2026: "i am not keen on keeping booting sticks A and B.. its
   complicated to follow. Make it simple and just make iterative builds so we
   keep testing new additions on top of things that we know they work. its
-  incremental". So there is one stick and one image,
-  `build/x86_64/kosmos-usb.img`, built from `main` and booted under OVMF before
-  it is handed over; the image that last booted on the ThinkPad is kept on the
-  Mac as `build/x86_64/kosmos-usb-last-good.img`, and a stick that does not boot
-  is written with that one. Each build is the last good one plus what came
-  since, so a stick that stops points at what came since.
+  incremental" - and then "we always need 1 stable build we agree is stable
+  to use", "on top of that we develop new features", "we can label builds
+  with -stable and -development suffixes". So:
+  - `make MEGA=1 x86-usb-image` writes
+    `build/x86_64/kosmos-usb-<version>-development.img`, from `main`, booted
+    under OVMF before it is handed over. Each build handed over takes its own
+    revision first (`make bump`), so no two builds share a name.
+  - **A build is stable when Diego says so**, after using it on the ThinkPad,
+    and not before. Its file is then renamed `-stable` - the bytes he used,
+    never rebuilt - and the stable image before it goes to the Trash. There is
+    always exactly one, and a stick that misbehaves is written back with it.
+  - Each development build is the stable one plus what came since, so a stick
+    that stops points at what came since.
 - **On a boot that works, the first photograph is `log loader`**, which is
   what fills the table in.
 

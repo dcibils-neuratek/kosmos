@@ -253,6 +253,21 @@ const char *scsi_sense_key_name(unsigned key)
     return names[key & 0x0Fu];
 }
 
+/*
+ * The two codes by the names SPC gives them; a copy of SPC was not read for
+ * this. What holds them is that the ThinkPad's stick sent one and QEMU's sends
+ * the other, and `test_storagedecode` checks both. With any other qualifier
+ * the same two codes name other conditions, and every other ILLEGAL REQUEST
+ * names something in the request - a block out of range - that the next
+ * request need not repeat.
+ */
+bool scsi_not_supported(const struct scsi_sense *sense)
+{
+    return sense->coded && sense->key == SCSI_KEY_ILLEGAL_REQUEST
+           && sense->ascq == 0x00u
+           && (sense->asc == 0x20u || sense->asc == 0x24u);
+}
+
 uint32_t storage_crc32(uint32_t crc, const uint8_t *bytes, unsigned n)
 {
     unsigned i, bit;

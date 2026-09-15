@@ -2624,7 +2624,14 @@ PANEL_H := $(word 2,$(subst x, ,$(PANEL)))
 # script's own header gives: a `dd` copied out of a README is one keystroke
 # from the disk this Mac boots from, and it gives no warning at all.
 #
-USB_IMG := $(X86_BUILD)/kosmos-usb.img
+# **Named for its version, and a development build until Diego says
+# otherwise.** Diego, 14 September 2026: "we always need 1 stable build we
+# agree is stable to use", with `-stable` and `-development` in the names.
+# So this writes `kosmos-usb-<version>-development.img`; a build he agrees is
+# stable is renamed `-stable` by hand, the same bytes, never by a rebuild
+# (`CLAUDE.md`, *How to work here*).
+#
+USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 
 #
 # The stick's image: a GPT, one EFI System Partition, Kosmos's loader and
@@ -2675,6 +2682,14 @@ x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 
 usb: x86-usb-image
 	@bash tools/mkusb.sh $(USB_IMG)
+
+# A file from `/home` on a Kosmos stick, onto this Mac: `diagnose` on the
+# machine, then `make stick-log` here, which puts `/home/diagnose.txt` in
+# `build/stick-diagnose.txt` - `FILE=/home/log.txt` for what `log save` wrote,
+# or any other file. It reads the stick and never writes it; macOS asks for a
+# password, because only root may read a whole disk (`tools/sticklog.sh`).
+stick-log: $(HOSTDIR)/lua
+	@bash tools/sticklog.sh $(if $(FILE),$(FILE),/home/diagnose.txt) $(HOSTDIR)/lua
 
 x86-uefi: x86-usb-image
 	@cp $(OVMF_VARS) $(X86_BUILD)/ovmf-vars.fd
@@ -2768,6 +2783,10 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# describes and then from volumes mtools made.
 	$(HOSTDIR)/test_fatdecode
 	python3 tools/test_fat.py $(HOSTDIR)/fatls
+	@# `make stick-log` without the stick: an image built as `mkusb_image.py`
+	@# builds one, its Kosmos partition copied out by `sticklog.py`, and a log
+	@# taken from the copy by `kfs.lua`.
+	python3 tools/test_sticklog.py $(HOSTDIR)/lua
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

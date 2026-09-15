@@ -41,9 +41,13 @@
 
 set -euo pipefail
 
-IMG="${1:-build/x86_64/kosmos-usb.img}"
+IMG="${1:-}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
+
+#  Named every time, because there is more than one to choose from: the stable
+#  build and the development one (`CLAUDE.md`, *How to work here*).
+[ -n "$IMG" ] || die "mkusb: name the image to write - build/x86_64/kosmos-usb-<version>-stable.img or -development.img."
 
 [ "$(uname)" = "Darwin" ] || die "mkusb: macOS only - see the comment at the top of this file."
 

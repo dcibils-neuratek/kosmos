@@ -1476,6 +1476,8 @@ static int l_info(lua_State *L)
      */
     SET("cpu_arch",         info.cpu_arch);
     SET("counter_hz",       info.counter_hz);
+    /* The counter at the log's zero, so a moment is said in its seconds. */
+    SET("log_origin",       info.log_origin);
 
     lua_createtable(L, (int)info.cpu_words, 0);
 

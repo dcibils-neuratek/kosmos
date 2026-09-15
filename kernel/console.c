@@ -873,6 +873,17 @@ static void log_byte(char c)
 static uint64_t stamp_hz;
 static uint64_t stamp_base;
 
+/*
+ * The counter's reading at the log's zero, or 0 until the first stamp. A
+ * program's `sys.ticks()` reads the same counter from power-on, and the log
+ * begins later by however long the firmware took; with this, a moment a
+ * program measured can be said in the log's own seconds (`SYS_SYSINFO`).
+ */
+uint64_t console_log_origin(void)
+{
+    return stamp_base;
+}
+
 static void log_stamp(void)
 {
     unsigned long whole;

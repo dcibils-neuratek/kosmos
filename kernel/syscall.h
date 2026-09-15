@@ -929,6 +929,16 @@ struct sysinfo {
      * the loader's: the word was written into the program.
      */
     char screen_source[128];
+
+    /*
+     * The counter's reading at the boot log's zero: `sys.ticks()`'s counter,
+     * which runs from power-on, when the kernel's first stamped line was
+     * written. A moment taken with `sys.ticks()` is `(t - log_origin) /
+     * counter_hz` seconds in the log's own time, which is how `diskinfo` puts
+     * the disk server's wait for a stick beside the driver's lines. Zero if
+     * the log was never stamped from the counter.
+     */
+    uint64_t log_origin;
 };
 
 /*

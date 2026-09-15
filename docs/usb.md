@@ -1462,10 +1462,11 @@ transaction, and none for the blocks between, which the journal covers.
 
 **Said through `diskinfo`, because the disk server cannot print.** It owns no
 console, and the kernel refuses a write from a process that does not -
-`run_disk.py` says the same of its format line. So where `/home` is, and the
-first flush a stick refused, come back in `sys.disk()`'s answer and through
-`/home/.super`; and the driver, which can print, says a stick's first flush
-that it kept, because nothing else shows one was ever sent:
+`run_disk.py` says the same of its format line. So where `/home` is, why a
+stick's cache is not written out, and what finding the stick took come back in
+`sys.disk()`'s answer and through `/home/.super`; and the driver, which can
+print, says a stick's first flush that it kept, because nothing else shows one
+was ever sent:
 
 ```
 kosmos> save notes.txt kept on a stick
@@ -1476,6 +1477,86 @@ disk: 28639 sectors of 512 bytes, 13 MB
   on the Kosmos partition on USB unit 0, blocks 4096 to 32734
 filesystem: version 1, 3579 blocks of 4096 bytes
 ```
+
+**A stick that does not do SYNCHRONIZE CACHE is told once.** The ThinkPad's
+Kingston answers every one with ILLEGAL REQUEST, 20h/00h - INVALID COMMAND
+OPERATION CODE - and the driver asked it twice a commit, each time with a
+REQUEST SENSE after it and a line on the screen. A command block that never
+changes gets the same answer every time, so `scsi_not_supported` - ILLEGAL
+REQUEST with 20h/00h, or 24h/00h, INVALID FIELD IN CDB - marks the stick, the
+driver says so once, and every later flush is answered `BLOCK_ERR_NO_FLUSH`
+without a transfer. **The disk server still asks every time**: one memory of
+the answer, in the driver that owns the stick. A second memory in the disk
+server was tried first and hid the driver's - it stopped asking after the first
+refusal, so the driver was never asked twice, and the check passed with the
+driver's memory taken out. QEMU's stick does every flush, so to see this under
+QEMU blkdebug fails the image's flushes with EINVAL, which QEMU's SCSI disk
+answers as 24h/00h:
+
+```
+xhci: 00:04.0 port 1: the stick does not do SYNCHRONIZE CACHE (10), so it is not asked again: ILLEGAL REQUEST (24h/00h)
+saved a.txt: 3 bytes, 1 extent(s)
+saved b.txt: 3 bytes, 1 extent(s)
+saved c.txt: 5 bytes, 1 extent(s)
+kosmos> diskinfo
+disk: 28639 sectors of 512 bytes, 13 MB
+  on the Kosmos partition on USB unit 0, blocks 4096 to 32734
+  found at 1.36 s, by look 1; the first look was at 0.10 s
+  its cache: not written out when asked, so a commit is only as safe as the stick (the stick does not do SYNCHRONIZE CACHE)
+```
+
+Before, the same stick printed `the SYNCHRONIZE CACHE (10), which the stick
+failed: ILLEGAL REQUEST (24h/00h)` twice for every save.
+
+**What finding the stick took.** On the ThinkPad the driver had the Kingston
+ready at 4.963 s and the prompt came at 22, and the disk server may spend up
+to twenty seconds looking without a word to anyone. So it counts every look,
+the step each look that found nothing stopped at - no stick named yet, a stick
+with no GPT, no Kosmos partition, and the rest - and the counter at the first
+look and at the one that found it. `diskinfo` says them in the log's own
+seconds: the kernel hands out the counter's reading at the log's zero as
+`sys.info().log_origin`, so they read beside the driver's stamped lines in
+`log`. A stick plugged in five seconds after the driver started watching:
+
+```
+kosmos> diskinfo
+disk: 28639 sectors of 512 bytes, 13 MB
+  on the Kosmos partition on USB unit 0, blocks 4096 to 32734
+  found at 6.52 s, by look 47; the first look was at 0.10 s
+    46 look(s) before it found no stick named yet
+```
+
+**The log's zero is the moment the kernel first knew the counter's rate**,
+not power-on and not necessarily the kernel's first line: lines before it are
+stamped from the scheduler tick, which has not started, so they read `0.000`.
+Under QEMU on x86 the rate is measured rather than stated, and a first look at
+0.10 s says that happened shortly before init first asked for `/home`.
+
+**And a diagnosis off the stick, on the Mac.** A photograph of the screen
+was the only way anything reached this Mac from the ThinkPad. `diagnose`
+writes the build, the machine as `sys.info()` has it, the device server's
+nodes, `/home/.super` and `/home/.device`, `/home`, the sticks, the processes
+and the whole log to `/home/diagnose.txt`, the log last so that a file cut
+short shows it; `log save` writes the log alone to `/home/log.txt`. Both go
+through pages (`fs.write_from`), since the log is a quarter of a megabyte and
+a message is two kilobytes. Then, with the stick in the Mac:
+
+```
+make stick-log                          # /home/diagnose.txt -> build/stick-diagnose.txt
+make stick-log FILE=/home/log.txt       # what `log save` wrote
+```
+
+`tools/sticklog.sh` offers only external physical drives, as `mkusb.sh` does,
+and `tools/sticklog.py` reads the stick's GPT as the disk server does - the
+header at block 1, the first entry of Kosmos's type - and copies that
+partition out through the raw device, as root because macOS lets nobody else
+read a whole disk. **Nothing opens the stick for writing.** `kfs.lua get` takes
+the file from the copy, which is the filesystem code the machine itself runs.
+
+Three names in `/dev` are not read by `diagnose`, because they are other
+servers mounted there: `/dev/audio` and `/dev/blocks` speak their own
+protocols, and a read of `/dev/console` is a line somebody types - which the
+first version found by waiting at the prompt for one and writing nothing.
 
 **A unit is a name, and 5d's was not.** In 5d a unit was the Nth stick ready,
 counting controllers and then slots. The disk server keeps the unit it found

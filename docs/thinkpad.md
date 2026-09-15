@@ -1016,6 +1016,26 @@ processor ever halts - which failed against the build before the fix, where
 the stuck button, depending on timing a harness does not reproduce on demand,
 did not.
 
+**A diagnosis leaves the machine as a file, not as photographs.** Until 14
+September 2026 everything that reached the Mac from here was a photograph of
+forty lines of a screen. Diego, that night: "a log file of things you need so
+I can send it to you for a full diagnosis ... instead of photos of logs". So,
+on the ThinkPad (the line as QEMU prints it, where the log is short):
+
+```
+kosmos> diagnose
+diagnose: 13 KB saved to /home/diagnose.txt - on the Mac, `make stick-log` brings it back
+```
+
+and on the Mac, with the stick moved across, `make stick-log` puts it in
+`build/stick-diagnose.txt`. `diagnose` writes the build, the machine as
+`sys.info()` has it, the device server's nodes, the disk, `/home`, the sticks,
+the processes and the whole log - the loader's lines and the codec's among it -
+to `/home` on the stick; `make stick-log` reads the stick's Kosmos partition
+through its raw device, read only, and takes the file out with `kfs.lua`
+(`usb.md` §7). `log save` writes the log alone, and
+`make stick-log FILE=/home/log.txt` fetches that.
+
 ---
 
 ## 8a. Where the register values come from

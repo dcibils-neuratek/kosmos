@@ -6,6 +6,7 @@
 --   log all          all of it
 --   log wm           every line mentioning `wm`
 --   log screen       every line mentioning `screen`
+--   log save         all of it, to /home/log.txt (`log save name` for another)
 --
 -- **The console half of `logview`, and it exists because the window half
 -- cannot be trusted to run.**
@@ -52,6 +53,43 @@ local text = sys.log(262144)
 
 if not text or text == "" then
   print("log: the ring is empty, which should not happen while you are reading this")
+  return
+end
+
+--
+-- **`log save`: all of it, to a file.** Diego, on the ThinkPad: "can i
+-- export the log file on the thinkpad to a txt and send it here?" A photo of
+-- a screen holds forty lines and this holds every one, in `/home` - which on
+-- a stick is its Kosmos partition, and `make stick-log` on the Mac reads the
+-- file back off it (`usb.md` §7).
+--
+-- Through pages rather than a message: a message holds two kilobytes and the
+-- ring a quarter of a megabyte, so the bytes go in a region and the request
+-- says only where (`fs.write_from`).
+--
+if want == "save" then
+  local name = args:match("^%s*save%s+(%S+)") or "log.txt"
+  local path = name:sub(1, 1) == "/" and name or ("/home/" .. name)
+  local buf = sys.memory((#text + 4095) // 4096)
+
+  if not buf then
+    print(("log: no memory for %d bytes"):format(#text))
+    return
+  end
+
+  sys.region_write(buf, 0, text)
+
+  local wrote, err = fs.write_from(path, buf, #text)
+
+  sys.release(buf)
+
+  if not wrote then
+    print("log: " .. path .. ": " .. tostring(err))
+    return
+  end
+
+  print(("log: %d lines, %d KB, saved to %s")
+        :format(select(2, text:gsub("\n", "")), (#text + 1023) // 1024, path))
   return
 end
 

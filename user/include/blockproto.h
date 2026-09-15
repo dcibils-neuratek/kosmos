@@ -50,6 +50,7 @@
 #define BLOCK_ERR_DEVICE    6u  /* the stick failed it, or did not answer */
 #define BLOCK_ERR_READ_ONLY 7u  /* a write or a flush, on the endpoint that reads */
 #define BLOCK_ERR_FULL      8u  /* every open slot is taken */
+#define BLOCK_ERR_NO_FLUSH  9u  /* a flush, to a stick that has said it does not do one */
 
 /*
  * **The most one read moves: 124 KB.** A read is one Normal TRB, and a Normal

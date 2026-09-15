@@ -23,26 +23,30 @@ went** (§18.64): on a USB stick's `/home` under QEMU the device calls are 70 to
 (§18.65): the kernel's disk call moves up to 124 KB, kfs reads a file's
 neighbouring blocks in as few calls as that allows, and the journal writes in
 runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7 and
-2.4. **Next: the ThinkPad's numbers**, from a stick with this build: under QEMU a
-write is 81 to 91% kfs, but kfs's own work is 1.3 ms for the 768 KB file on the
-Mac, and QEMU inflates CPU work (§18.65). **One stick now, built incrementally** - Diego, 14 September: "make
-iterative builds so we keep testing new additions on top of things that we know
-they work". The stick is `build/x86_64/kosmos-usb.img`, from `main` at
-`3bf6ca6` with `make MEGA=1 x86-usb-image USB_HOME=partition`: the storage
-work and Music's engine and tags on top of `c70d9df`, which booted there.
-Under OVMF on a snapshot: the loader clean, `/home` the partition its command
-line names, Diego's files there, and `diskbench /home` running. **`9af841c` booted
-on the ThinkPad the same night** - the storage steps, with the kernel's disk
-call at 124 KB: `log loader` clean, `/home` on the stick, the prompt at 22
-seconds (`boot.md`) - so it is now the last good one,
-`build/x86_64/kosmos-usb-last-good.img`, for when a new one does not. Photos to take: `log loader`,
-`diskinfo`, `ls /home`, `diskbench /home`, `diskbench usb 0`. Its sound does
-not play there yet. Meanwhile Music's
+2.4. **On the ThinkPad the device is the cost** (Diego's photos, 14 September,
+build `9af841c`): `diskbench /home` read 16.3 MB/s and wrote 4.6 MB/s, 39 IOPS,
+with the device calls 92 to 100% of each run; `diskbench usb 0`, the stick's
+blocks straight through the driver, 2.1 MB/s and 17 IOPS - 58 ms a request,
+close to the driver's 50 ms watch (`WATCH_MS`). So the next storage work is
+the USB driver's request path, not kfs.
+
+**One stable build, and development on top of it** - Diego, 14 September: "we
+always need 1 stable build we agree is stable to use", "on top of that we
+develop new features", labelled `-stable` and `-development` (`CLAUDE.md`).
+**Stable: `build/x86_64/kosmos-usb-0.10.63-stable.img`**, `main` at `9af841c`,
+which booted on the ThinkPad that night - `log loader` clean, `/home` on the
+stick, the prompt at 22 seconds (`boot.md`), and no sound yet. It was
+`kosmos-usb-last-good.img` until the labels, and waits for Diego to agree it is
+the stable one. **Development: 0.10.64**, being built: `log save` and `make
+stick-log`, so a log reaches the Mac as text; a stick that refuses SYNCHRONIZE
+CACHE told once and not asked again; the disk server's search for the stick,
+reported by `diskinfo`, to find the 20 seconds; and Music's engine and tags.
+Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
 scaled blit, covers named from inside a file, a window asking for its own
 size, and a title bigger than the text roles - proposed to Diego
-(`roadmap.md`). The ThinkPad's own numbers are still to take. Diego allowed the
+(`roadmap.md`). Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 

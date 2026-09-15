@@ -4022,3 +4022,132 @@ Benchmark 8, kfs's format 53, x86-64 158, the UEFI boots 38, the stick check
 12, the machine with no display on both boards with all 112 programs in
 `/bin`, the disk 33 across two boots, the argument audit 112, and the suites
 160 of 160 and 156 of 156.
+
+## 18.68 A stick that does not do SYNCHRONIZE CACHE, told once
+
+**What it found on the ThinkPad.** The Kingston answers every SYNCHRONIZE
+CACHE (10) with ILLEGAL REQUEST, 20h/00h, and the driver sent one after each
+write to the journal's header - twice a commit - each followed by a REQUEST
+SENSE and a line on the screen (`usb.md` §7).
+
+**Seen under QEMU first, before any fix.** QEMU's stick does every flush, so
+the stick's image is opened through blkdebug with a rule that fails each flush
+with EINVAL, which QEMU's SCSI disk answers as ILLEGAL REQUEST, 24h/00h:
+
+```
+[inject-error]
+event = "flush_to_disk"
+iotype = "flush"
+errno = "22"
+once = "off"
+```
+
+On the 0.10.63 build three saves printed `the SYNCHRONIZE CACHE (10), which
+the stick failed: ILLEGAL REQUEST (24h/00h)` six times, and `diskinfo` gave the
+reason as `the USB driver refused it, error 6` - the ThinkPad's photographs,
+reproduced.
+
+**Two checks, one on each side.** `test_storagedecode` holds
+`scsi_not_supported` to six senses: 20h/00h and 24h/00h are a command the
+stick does not do; 24h/02h, 21h/00h (a block out of range), NOT READY with
+20h/00h and ILLEGAL REQUEST with no code sent are not - 56 checks. And
+`run_x86.py`'s `usb_flush_refused` boots that stick, saves three files and asks
+`diskinfo`: the driver says once that the stick does not do the command and
+never that the stick failed it, the saves land, and the cache line gives the
+reason:
+
+```
+xhci: 00:04.0 port 1: the stick does not do SYNCHRONIZE CACHE (10), so it is not asked again: ILLEGAL REQUEST (24h/00h)
+  its cache: not written out when asked, so a commit is only as safe as the stick (the stick does not do SYNCHRONIZE CACHE)
+```
+
+| Control | What failed |
+|---|---|
+| C5: `scsi_not_supported` ignores the qualifier | 1 of 56: 24h/02h taken as 24h/00h |
+| C1: the driver does not remember the refusal | `usb_flush_refused`: 6 lines saying the stick does not do it, one a flush |
+
+**C1 did not bite the first time, and that is why there is one memory.** The
+disk server also stopped asking after the first refusal, so the driver was
+never sent a second flush - and with the driver's memory taken out, the check
+still passed with one line. Two memories of one fact are
+two things to keep in step, and here one hid the other from the test. So the
+driver, which owns the stick, remembers; the disk server asks every time and
+is answered from that memory without a transfer, which costs it a message.
+
+## 18.69 What finding the stick took
+
+**What it is for.** On the ThinkPad the driver had the stick ready at 4.963 s
+and the prompt came at 22 (`boot.md`), and the disk server may wait up to
+twenty seconds for the stick without a word to anyone - it owns no console.
+So it counts every look, the step each look that found nothing stopped at, and
+the counter at the first look and at the one that found it; `diskinfo` says
+them in the log's own seconds, from `sys.info().log_origin`, the counter's
+reading at the log's zero, which the kernel now hands out.
+
+**Checked twice.** `usb_home`, where the stick is there at boot: the origin is
+set and no later than `sys.ticks()`, and `diskinfo` names a first look no later
+than the look that found it. `usb_home_late`, where the stick goes in five
+seconds after the driver starts watching: at least ten looks, at least nine of
+them finding no stick named, and the find at least a second after the first:
+
+```
+  found at 6.52 s, by look 47; the first look was at 0.10 s
+    46 look(s) before it found no stick named yet
+```
+
+| Control | What failed |
+|---|---|
+| C2: a look that finds nothing is not counted by where it stopped | `usb_home_late`: `found at 6.77 s, by look 48`, and no line of looks before it |
+| C6: `console_log_origin` answers 0 | `usb_home`: `origin false` |
+
+**What C6 cannot show under QEMU**, and says so: the times themselves barely
+move without the origin - first look 0.33 s rather than 0.10 - because QEMU's
+counter starts with the machine, a moment before the kernel. On the ThinkPad
+the firmware's seconds come first, and that is the difference the field exists
+for; the check holds the field to its definition instead.
+
+## 18.70 A diagnosis off the stick
+
+**What it replaces.** Everything that reached this Mac from the ThinkPad was a
+photograph of forty lines of a screen. Diego: "a log file of things you need so
+I can send it to you for a full diagnosis ... instead of photos of logs".
+`diagnose` writes the build, the machine, the device server's nodes, the disk,
+`/home`, the sticks, the processes and the whole log to `/home/diagnose.txt`;
+`log save` writes the log alone; `make stick-log` on the Mac copies the stick's
+Kosmos partition out through its raw device and takes the file from the copy
+with `kfs.lua` (`usb.md` §7).
+
+**On the Mac, `test_sticklog.py`** (6 checks): a stick image built as
+`mkusb_image.py` builds one, with a log on a kfs disk in its Kosmos partition;
+`sticklog.py` copies that partition byte for byte and leaves the stick as it
+was; `kfs.lua get` gives the log back from the copy; and a disk with no GPT, a
+GPT with no Kosmos partition and a source ending inside the partition are each
+refused by name.
+
+**On the machine, `usb_home`**: `log save` and `diagnose` are typed on the
+first boot, and after both boots the stick's partition is copied out by
+`sticklog.py` and both files taken from it by `kfs.lua` - the whole way a
+diagnosis reaches the Mac but the raw device. The log has to end with the
+command that saved it; the diagnosis has to begin `Kosmos diagnosis`, hold all
+eight sections and the Kosmos partition's line, and end with `diagnose`.
+
+| Control | What failed |
+|---|---|
+| C4: `sticklog.py` starts a block late | 2 of 6: the copy is not the disk put in it, and `kfs: that image does not hold a Kosmos filesystem` |
+| C3: `log save` writes 4096 bytes | `usb_home`: what came back was 4096 bytes ending in the middle of the driver's start |
+| C7: `diagnose` leaves out the log | `usb_home`: 12451 bytes, missing `== log` |
+
+**The first `diagnose` wrote nothing, and the check is what said so.** It read
+every name `/dev` lists, and `fs.list` gives what is mounted below a directory
+as well as what its server holds - `/dev/console` among them, whose read is a
+line somebody types. It sat at the prompt waiting for one: 0 bytes on the stick,
+where `log save` beside it had worked. Now three names are written as not read,
+with the reason: `/dev/console`, and `/dev/audio` and `/dev/blocks`, which speak
+protocols of their own.
+
+And as written: `make test` whole - x86-64 166, eight more than before
+(`usb_flush_refused` 3, four more in `usb_home` and one in `usb_home_late`),
+a file read off a stick's Kosmos partition 6, what a stick is sent and answers
+56, the UEFI boots 38, the stick check 12, the disk 33 across two boots, the
+machine with no display on both boards with all 113 programs in `/bin`, the
+argument audit 112, and the suites 160 of 160 and 156 of 156.

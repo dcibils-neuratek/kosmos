@@ -585,6 +585,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.cpu_arch   = cpu_arch();
     info.cpu_words  = cpu_raw(&cpu, info.cpu_raw, CPU_RAW_WORDS);
     info.counter_hz = cpu.counter_hz;
+    info.log_origin = console_log_origin();
 
     info.ram_base    = ram.base;
     info.ram_size    = ram.size;

@@ -2478,7 +2478,8 @@ local function diskfs_handlers(state)
       return { sectors = disk.sectors, sector_size = disk.sector_size,
                bytes = disk.bytes, formatted = false, present = true,
                why = "not a kosmos filesystem",
-               where = disk.where, flush_why = disk.flush_why }
+               where = disk.where, flush_why = disk.flush_why,
+               search = disk.search }
     end
 
     local out = {}
@@ -2491,6 +2492,7 @@ local function diskfs_handlers(state)
     out.present     = true
     out.where       = disk.where        -- a stick's partition (USB step 5e)
     out.flush_why   = disk.flush_why
+    out.search      = disk.search       -- what finding a stick took
 
     --
     -- Counted out of the bitmap. This was `sb.blocks - sb.data_at` from the
@@ -3250,12 +3252,15 @@ local DIED_SERVING   = 13    -- the loop raised, which is the interesting one
 -- **A flush at the journal's header**: any write that begins with the
 -- journal's magic is followed by `BLOCK_OP_FLUSH` - SYNCHRONIZE CACHE (10) -
 -- so the moment the journal's promise is about is one the stick has kept. A
--- data block that happens to begin the same way costs one flush more.
+-- data block that happens to begin the same way costs one flush more. A stick
+-- that has said it does not do one is answered by the driver from memory,
+-- without a transfer.
 --
 -- **Said through `diskinfo`, not printed.** This server owns no console, and
 -- the kernel refuses a write from a process that does not, so a `print` here
--- reaches nobody. Where `/home` is, and the first flush a stick refused, go
--- in `sys.disk()`'s answer, and from there into `/home/.super`.
+-- reaches nobody. Where `/home` is, why a stick's cache is not written out,
+-- and what finding the stick took go in `sys.disk()`'s answer, and from there
+-- into `/home/.super`.
 --------------------------------------------------------------------------
 local KOSMOS_PARTITION = "8A9DC8A8-83CF-4F7F-962B-43157A68F14A"
 
@@ -3274,6 +3279,25 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
 
   local region, handle, unit, first, sectors, where, flush_why
 
+  --
+  -- **What finding the stick cost**, for the ThinkPad's twenty seconds: its
+  -- driver said the Kingston was ready at 4.963 s and the prompt came at 22,
+  -- and this server may spend WAIT_SECONDS looking without a word to anyone.
+  -- So every look is counted, a look that found nothing counts the step it
+  -- stopped at, and the counter is read at the first look and at the one
+  -- that found it - handed out by `sys.disk()`, and said by `diskinfo` in the
+  -- log's own seconds.
+  --
+  local search = { looks = 0, stops = {} }
+
+  -- The two refusals a flush can come back with, in `blockproto.h`'s numbers
+  -- and as `diskinfo` shows them.
+  local ERR_DEVICE, ERR_NO_FLUSH = 6, 9
+  local REFUSED = {
+    [ERR_DEVICE]   = "the stick failed it, or did not answer",
+    [ERR_NO_FLUSH] = "the stick does not do SYNCHRONIZE CACHE",
+  }
+
   local function ask(cap, op, u, lba, count, pass)
     local reply, why = sys.call_raw(cap, string.pack(REQUEST, op, u or 0,
                                     lba or 0, count or 0, handle or 0), pass)
@@ -3287,7 +3311,8 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
     local err, size, blocks, moved, got = string.unpack(REPLY, reply)
 
     if err ~= 0 then
-      return nil, "the USB driver refused it, error " .. tostring(err)
+      return nil, REFUSED[err]
+                  or ("the USB driver refused it, error " .. tostring(err)), err
     end
 
     return { block_size = size, blocks = blocks, count = moved, handle = got }
@@ -3312,55 +3337,107 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
     return (select(4, string.unpack(REPLY, reply)))
   end
 
+  -- How far a look got, in order: a look over several units is said by the
+  -- furthest any of them reached, which is the nearest thing to what is wrong.
+  local STEPS = {
+    "no memory for its buffer",
+    "the USB driver refusing its buffer",
+    "no stick named yet",
+    "a unit named but not ready",
+    "a stick whose blocks are not 512 bytes",
+    "a stick whose block 1 would not read",
+    "a stick with no GPT",
+    "a GPT whose partitions would not read",
+    "a stick with no Kosmos partition",
+    "a Kosmos partition, not the one asked for",
+    "a Kosmos partition past the stick's end",
+  }
+
   -- The first Kosmos partition on a ready stick. True once it has been found.
   local function look()
     if unit then return true end
 
+    search.looks = search.looks + 1
+    search.first = search.first or sys.ticks()
+
+    local stop = 0
+
+    local function reached(step)
+      if step > stop then stop = step end
+    end
+
+    local function stopped()
+      local name = STEPS[stop]
+
+      search.stops[name] = (search.stops[name] or 0) + 1
+      return false
+    end
+
     if not region then
       local cap = sys.memory(MOST // 4096)
 
-      if not cap then return false end
+      if not cap then
+        reached(1)
+        return stopped()
+      end
 
       local r = ask(read_cap, OP_OPEN, 0, 0, 0, cap)
 
       if not r then
         sys.release(cap)
-        return false
+        reached(2)
+        return stopped()
       end
 
       region, handle = cap, r.handle
     end
 
+    reached(3)
+
     -- Every unit named, stepping over the gaps sticks that left have made.
     for u = 0, units() - 1 do
       local info = ask(read_cap, OP_INFO, u)
 
-      if info and info.block_size == SECTOR
-         and ask(read_cap, OP_READ, u, 1, 1) then
+      if not info then
+        reached(4)
+      elseif info.block_size ~= SECTOR then
+        reached(5)
+      elseif not ask(read_cap, OP_READ, u, 1, 1) then
+        reached(6)
+      else
         local header = sys.region_read(region, 0, SECTOR)
         local entries_at, count, size =
             string.unpack("<I8", header, 73), string.unpack("<I4", header, 81),
             string.unpack("<I4", header, 85)
         local need = (count * size + SECTOR - 1) // SECTOR
 
-        if header:sub(1, 8) == "EFI PART" and size >= 128 and need >= 1
-           and need * SECTOR <= MOST
-           and ask(read_cap, OP_READ, u, entries_at, need) then
+        if header:sub(1, 8) ~= "EFI PART" or size < 128 or need < 1
+           or need * SECTOR > MOST then
+          reached(7)
+        elseif not ask(read_cap, OP_READ, u, entries_at, need) then
+          reached(8)
+        else
           local entries = sys.region_read(region, 0, need * SECTOR)
+
+          reached(9)
 
           for i = 0, count - 1 do
             local entry = entries:sub(i * size + 1, i * size + size)
 
             -- Its type at byte 0, and its own GUID at byte 16.
-            if #entry == size and guid(entry, 1) == KOSMOS_PARTITION
-               and (wanted == nil or guid(entry, 17) == wanted) then
+            if #entry == size and guid(entry, 1) == KOSMOS_PARTITION then
               local lo, hi = string.unpack("<I8I8", entry, 33)
 
-              if hi >= lo and hi < info.blocks then
+              if wanted ~= nil and guid(entry, 17) ~= wanted then
+                reached(10)
+              elseif hi >= lo and hi < info.blocks then
                 unit, first, sectors = u, lo, hi - lo + 1
                 where = ("the Kosmos partition on USB unit %d, blocks %d "
                          .. "to %d"):format(u, lo, hi)
+                search.found = sys.ticks()
                 return true
+              else
+                reached(11)
               end
             end
           end
@@ -3368,7 +3445,7 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
       end
     end
 
-    return false
+    return stopped()
   end
 
   --
@@ -3423,7 +3500,7 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
 
     return { sectors = sectors, sector_size = SECTOR,
              bytes = sectors * SECTOR, where = where, flush_why = flush_why,
-             most = MOST }
+             most = MOST, search = search }
   end
 
   sys.disk_read = function(sector, bytes)
@@ -3449,10 +3526,20 @@ local function stick_home(read_cap, write_cap, kfs, wanted)
 
     if not r then return nil, err end
 
+    --
+    -- **Asked every time, and one memory of the answer, in the driver.** A
+    -- stick that has said it does not do SYNCHRONIZE CACHE is answered from
+    -- the driver's memory without a transfer, which costs this a message. A
+    -- second memory here was tried first, and it hid the driver's: this server
+    -- stopped asking after the first refusal, so the driver was never asked
+    -- twice, and its check passed with the driver's memory taken out.
+    --
     if data:sub(1, 4) == JOURNAL then
-      local flushed, refused = ask(write_cap, OP_FLUSH, unit)
+      local flushed, refused, code = ask(write_cap, OP_FLUSH, unit)
 
-      if not flushed and not flush_why then flush_why = refused end
+      if not flushed and (code == ERR_NO_FLUSH or not flush_why) then
+        flush_why = refused
+      end
     end
 
     return true

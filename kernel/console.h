@@ -3,6 +3,7 @@
 #define KERNEL_CONSOLE_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * The kernel's output. Sits directly on hal_putchar, because until M1 there
@@ -140,6 +141,9 @@ void console_screen_resume(void);
 #define CONSOLE_LOG_BYTES 262144
 
 size_t console_log(char *out, size_t max);
+
+/* The counter's reading at the log's zero; 0 before the first stamp. */
+uint64_t console_log_origin(void);
 
 void console_tick(void);
 

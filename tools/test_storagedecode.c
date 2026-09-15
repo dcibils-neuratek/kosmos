@@ -321,6 +321,44 @@ int main(void)
           && strcmp(scsi_sense_key_name(12), "a reserved sense key") == 0,
           "a sense key's name is not Table 28's");
 
+    /* ---- a command the device does not do (USB step 5e) ---- */
+
+    memset(&sense, 0, sizeof(sense));
+    sense.key = 0x5;
+    sense.coded = true;
+    sense.asc = 0x20;
+    check(scsi_not_supported(&sense),
+          "ILLEGAL REQUEST, 20h/00h - the ThinkPad's stick's answer to "
+          "SYNCHRONIZE CACHE (10) - was not taken as a command it does not do");
+
+    sense.asc = 0x24;
+    check(scsi_not_supported(&sense),
+          "ILLEGAL REQUEST, 24h/00h - QEMU's stick's, when its flush fails - "
+          "was not taken as a command it does not do");
+
+    sense.ascq = 0x02;
+    check(!scsi_not_supported(&sense),
+          "24h/02h was taken as 24h/00h, where a qualifier names another "
+          "condition");
+
+    sense.ascq = 0x00;
+    sense.asc = 0x21;
+    check(!scsi_not_supported(&sense),
+          "ILLEGAL REQUEST, 21h/00h - a block out of range, which the next "
+          "request need not repeat - was taken as a command the stick does "
+          "not do");
+
+    sense.asc = 0x20;
+    sense.key = 0x2;
+    check(!scsi_not_supported(&sense),
+          "NOT READY with 20h/00h was taken as a command the stick does not do");
+
+    sense.key = 0x5;
+    sense.coded = false;
+    check(!scsi_not_supported(&sense),
+          "ILLEGAL REQUEST with no additional sense code sent was taken as a "
+          "command the stick does not do");
+
     /* ---- CRC-32 and a GPT header ---- */
 
     check(storage_crc32(0, (const uint8_t *)"123456789", 9) == 0xCBF43926u,
@@ -386,7 +424,8 @@ int main(void)
     if (fails == 0) {
         printf("PASS: %d checks on what a stick is sent and answers (Bulk-Only "
                "wrappers, SCSI command blocks, capacity, sense in both formats, "
-               "and a GPT header's CRC and place).\n", checks);
+               "a command the stick does not do, and a GPT header's CRC and "
+               "place).\n", checks);
         return 0;
     }
 

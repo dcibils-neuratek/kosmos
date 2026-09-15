@@ -964,7 +964,10 @@ def usb_home(image, check):
              "-fw_cfg", "name=opt/kosmos/home,string=usb")
 
     one = boot(image, None, 150.0,
-               typed=("diskinfo", "save notes.txt kept on a stick"),
+               typed=("diskinfo", "save notes.txt kept on a stick",
+                      'print("origin", sys.info().log_origin > 0 and '
+                      'sys.info().log_origin <= sys.ticks())',
+                      "log save", "diagnose"),
                extra=extra, after="its backup")
 
     two = boot(image, None, 150.0,
@@ -979,7 +982,9 @@ def usb_home(image, check):
         return "\n    ".join(l.strip() for l in out.splitlines()
                               if "disk:" in l or "filesystem:" in l
                               or "Kosmos partition" in l or "cache" in l
-                              or "saved" in l or "kept on a stick" in l)
+                              or "saved" in l or "kept on a stick" in l
+                              or "found at" in l or "look(s)" in l
+                              or "log:" in l)
 
     # The disk server owns no console, so what it found comes back through
     # `/home/.super` and `diskinfo` says it: the partition's own size rather
@@ -1005,6 +1010,142 @@ def usb_home(image, check):
           and "kept on a stick" in two.split("cat /home/notes.txt")[-1],
           "the second boot did not find the file the first saved to /home on "
           "the stick:\n    %s" % shown(two))
+
+    # **What finding the stick took**, said by `diskinfo` in the log's own
+    # seconds: the look that found it, and a first look no later than that.
+    found = re.search(r"found at (\d+\.\d+) s, by look (\d+); the first look "
+                      r"was at (\d+\.\d+) s", one)
+
+    # The counter's reading at the log's zero, which those seconds count from:
+    # set, and not after now.
+    check(re.search(r"^origin\s+true\s*$", one, re.M) is not None,
+          "sys.info().log_origin was not the counter at the log's zero - set, "
+          "and no later than sys.ticks()")
+
+    check(found is not None
+          and 0.0 < float(found.group(3)) <= float(found.group(1)) < 150.0,
+          "diskinfo did not say, in the log's seconds, when the stick was "
+          "found and when the first look for it was:\n    %s" % shown(one))
+
+    # **`log save`, and the log off the stick as `make stick-log` takes it**:
+    # the Kosmos partition copied out by `sticklog.py` and the file taken from
+    # the copy by `kfs.lua` - from the stick the machine wrote it to, so what
+    # is checked is the whole way a log reaches the Mac but the raw device.
+    # The end of the file is the command that saved it, which a save of part
+    # of the ring would not reach.
+    tools = os.path.dirname(os.path.abspath(__file__))
+    part, log, text = stick + ".home", stick + ".log.txt", ""
+    report, diagnosis = stick + ".diagnose.txt", ""
+
+    with open(part, "wb") as out:
+        copied = subprocess.run([sys.executable,
+                                 os.path.join(tools, "sticklog.py"), stick],
+                                stdout=out, stderr=subprocess.PIPE)
+
+    if copied.returncode == 0:
+        subprocess.run([os.path.join("build", "host", "lua"),
+                        os.path.join(tools, "kfs.lua"), "get", part,
+                        "/home/log.txt", log], capture_output=True)
+
+        if os.path.exists(log):
+            with open(log, errors="replace") as f:
+                text = f.read()
+
+        subprocess.run([os.path.join("build", "host", "lua"),
+                        os.path.join(tools, "kfs.lua"), "get", part,
+                        "/home/diagnose.txt", report], capture_output=True)
+
+        if os.path.exists(report):
+            with open(report, errors="replace") as f:
+                diagnosis = f.read()
+
+    check(re.search(r"log: \d+ lines, \d+ KB, saved to /home/log\.txt", one)
+          and "saved notes.txt" in text and "xhci:" in text
+          and "log save" in text[-200:],
+          "`log save` did not put the log on the stick in a form `make "
+          "stick-log` reads back - the save said:\n    %s\n  and what came "
+          "back was %d bytes ending %r (%s)"
+          % (shown(one), len(text), text[-120:],
+             copied.stderr.decode("utf-8", "replace").strip()))
+
+    # **`diagnose`, off the same stick**: one file with what a diagnosis of
+    # the ThinkPad asks for, instead of photographs - the build, the machine,
+    # its devices, the disk as `/home/.super` has it, the sticks, the
+    # processes, and the whole log last, so the file ends with the command
+    # that wrote it.
+    sections = ("== build", "== machine", "== devices", "== disk",
+                "== /home", "== sticks", "== processes", "== log")
+    missing = [s for s in sections if ("\n%s\n" % s) not in diagnosis]
+
+    check(diagnosis.startswith("Kosmos diagnosis") and not missing
+          and "Kosmos partition on USB unit 0" in diagnosis
+          and "diagnose" in diagnosis[-200:],
+          "`diagnose` did not put a whole diagnosis on the stick - %d bytes, "
+          "missing %s, ending %r"
+          % (len(diagnosis), ", ".join(missing) or "no section",
+             diagnosis[-120:]))
+
+
+def usb_flush_refused(image, check):
+    """**USB step 5e: a stick that does not do SYNCHRONIZE CACHE is told once.**
+
+    The ThinkPad's Kingston answers every SYNCHRONIZE CACHE (10) with ILLEGAL
+    REQUEST, 20h/00h, and the driver asked it twice a commit, each time with a
+    REQUEST SENSE and a line on the screen. QEMU's stick does every flush, so
+    this one's are made to fail: blkdebug fails each flush of the image with
+    EINVAL, which QEMU's SCSI disk answers as ILLEGAL REQUEST, 24h/00h.
+
+    The format and three saves are several commits, each flushed twice. The
+    driver has to say once that the stick does not do the command and never
+    that the stick failed it; the saves have to land; and `diskinfo` has to
+    say the cache is not written out, and why.
+    """
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-no-flush.img")
+    rules = stick + ".blkdebug"
+    stick_with_home(stick)
+
+    with open(rules, "w") as f:
+        f.write('[inject-error]\nevent = "flush_to_disk"\niotype = "flush"\n'
+                'errno = "22"\nonce = "off"\n')
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-device", "qemu-xhci,id=usb1",
+             "-drive", "file=blkdebug:%s:%s,format=raw,if=none,id=stick"
+             % (rules, stick),
+             "-device", "usb-storage,bus=usb1.0,drive=stick",
+             "-fw_cfg", "name=opt/kosmos/home,string=usb")
+
+    out = boot(image, None, 150.0,
+               typed=("save a.txt one", "save b.txt two", "save c.txt three",
+                      "diskinfo"),
+               extra=extra, after="its backup")
+
+    if out is None:
+        check(False, "the machine would not boot with a stick whose flushes "
+                     "fail")
+        return
+
+    lines = [l.strip() for l in out.splitlines()]
+    told = [l for l in lines if "does not do SYNCHRONIZE CACHE (10)" in l]
+    failed = [l for l in lines
+              if "SYNCHRONIZE CACHE (10), which the stick failed" in l]
+
+    check(len(told) == 1 and not failed,
+          "a stick that does not do SYNCHRONIZE CACHE was not told once and "
+          "left alone - %d line(s) saying it does not, %d saying it failed:"
+          "\n    %s" % (len(told), len(failed),
+                        "\n    ".join((told + failed)[:6])))
+
+    check(all("saved %s" % name in out for name in ("a.txt", "b.txt", "c.txt")),
+          "saves to a stick that does not flush did not land:\n    %s"
+          % "\n    ".join(l for l in lines if "save" in l))
+
+    cache = [l for l in lines if "its cache:" in l]
+
+    check(len(cache) == 1
+          and "the stick does not do SYNCHRONIZE CACHE" in cache[0],
+          "diskinfo did not say why the stick's cache is not written out:"
+          "\n    %s" % "\n    ".join(cache or lines[-8:]))
 
 
 class PluggedMachine:
@@ -1241,6 +1382,24 @@ def usb_home_late(image, check):
           is not None,
           "a file saved to `/home` did not land on a disk, with extents:\n    %s"
           % "\n    ".join(l for l in saved.splitlines() if l.strip()))
+
+    # **The wait, counted.** The stick went in five seconds after the driver
+    # started watching, so the disk server looked many times, a tenth of a
+    # second apart; the looks before it found no stick named; and the one that
+    # found it came well after the first - which is what `diskinfo` has to be
+    # able to say about the ThinkPad's twenty seconds.
+    found = re.search(r"found at (\d+\.\d+) s, by look (\d+); the first look "
+                      r"was at (\d+\.\d+) s", info)
+    before = re.search(r"(\d+) look\(s\) before it found no stick named yet",
+                       info)
+
+    check(found is not None and before is not None
+          and int(found.group(2)) >= 10 and int(before.group(1)) >= 9
+          and float(found.group(1)) - float(found.group(3)) >= 1.0,
+          "diskinfo did not count the disk server's wait for a stick plugged in "
+          "late - many looks, the ones before finding no stick named, and the "
+          "find well after the first:\n    %s"
+          % "\n    ".join(l for l in info.splitlines() if l.strip()))
 
 
 def usb_home_named(image, check):
@@ -2885,6 +3044,7 @@ def main():
     usb_second_stick(image, check)
     usb_home_late(image, check)
     usb_home_named(image, check)
+    usb_flush_refused(image, check)
     cmdline_long(image, check)
     usb_hotplug(image, check)
 

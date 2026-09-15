@@ -109,13 +109,17 @@ the block path this replaces. In this order, each measured before and after:
    NVMe once something outside the kernel can reach it. **Where the time goes
    is built** (`/home/.device`, `testing.md` §18.64): under QEMU the device
    calls are 49 to 66% of a run on the kernel's disk and 70 to 86% on a
-   stick's `/home`, because kfs makes one per 4 KB. The ThinkPad's numbers
-   are still to take.
+   stick's `/home`, because kfs makes one per 4 KB. **On the ThinkPad**
+   (`9af841c`, 14 September) `/home` read 16.3 MB/s and wrote 4.6 MB/s, 39
+   IOPS, with the device 92 to 100% of each run; the stick's blocks straight
+   through the driver, 2.1 MB/s and 17 IOPS - 58 ms a request, close to the
+   driver's 50 ms watch.
 3. **The largest measured cost first.** **Batching is built** (`testing.md`
    §18.65): the kernel's disk call moves up to 124 KB, kfs reads a file's
    neighbouring blocks in as few calls as that allows, and the journal writes
    in runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7
-   and 2.4. **Next is the ThinkPad's numbers**, before the write path is touched: under
+   and 2.4. **Next is the USB driver's request path**, because on the
+   ThinkPad the device is almost all of a run; the write path waits. Under
    QEMU a write is 81 to 91% kfs, but a profile on the Mac puts kfs's own work
    at 1.3 ms for the 768 KB file, and QEMU makes CPU work large and its disk
    small (`testing.md` §18.65). On a real stick, the journal writing every data
@@ -278,7 +282,22 @@ is the one that makes the machine Diego owns behave like a computer:
    boots the stick through OVMF to `/home` on it (`usb.md` §7). **It booted on
    the ThinkPad the same day** - `/home` on the Kingston's own partition, a
    file written and read back - with the desktop about 20 seconds late, not
-   yet explained. **Step 6, drives**, designed in `docs/drives.html` and
+   yet explained.
+
+   **Being built for 0.10.64-development**, asked for by Diego on 14
+   September: the disk server's search for the stick, counted and reported by
+   `diskinfo` in the log's own seconds, to find those 20 seconds; a stick that
+   does not do SYNCHRONIZE CACHE - the Kingston answers ILLEGAL REQUEST,
+   20h/00h, to every one, twice a commit - told once and not asked again;
+   `log save`, the whole log to a file on `/home`; `diagnose`, asked for the
+   same night - "a log file of things you need so I can send it to you for a
+   full diagnosis ... instead of photos of logs" - which puts the build, the
+   machine, its devices, the disk, the sticks, the processes and the whole log
+   in one file on `/home`; and `make stick-log`, which reads that file off the
+   stick on the Mac and never writes it, so a diagnosis reaches this Mac as
+   text rather than as photographs of a screen.
+
+   **Step 6, drives**, designed in `docs/drives.html` and
    decided with Diego on 14 September: Tracker's sidebar as Places, System
    and Drives with each filesystem's type, `/drives/<label>`, one Open and
    Save window for every app, a Drives app that shows before it changes
@@ -627,6 +646,16 @@ interrupt, the C rewrite, and measuring during play rather than after. 194
 interrupts per 400 periods says the device services about two periods per
 raise, which is QEMU's model rather than this one. The next measurement
 wants real hardware.
+
+**No sound on the ThinkPad.** Its codec, a Realtek ALC257, does not answer
+its root node: `[3.092] the codec did not answer its root node, so nothing
+about it is known`, then `no sound: an HDA codec with no output path` (build
+`9af841c`, 14 September). Two accounts fit and neither is tested: a Tiger
+Lake controller in the mode Intel's DSP firmware (SOF) drives, where the
+codec is reached through the DSP; or a codec asked before it is out of reset.
+Next: the controller's PCI identity, and whether a longer wait after reset
+changes the answer, read beside Haiku's own HDA driver. Wanted - Diego asked
+to hear his MP3 there - and after storage.
 
 **One kernel check failed once**, 1 of 127, and has not since. The evidence
 was destroyed by a `grep` that kept only the summary line. Recorded as

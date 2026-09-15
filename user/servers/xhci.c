@@ -380,6 +380,14 @@ struct stick {
 
     /* Whether a flush it kept has been said yet (USB step 5e). */
     bool          flushed;
+
+    /*
+     * Whether it has said it does not do SYNCHRONIZE CACHE (10) at all
+     * (`scsi_not_supported`), after which none is sent to it and a flush is
+     * answered BLOCK_ERR_NO_FLUSH. The ThinkPad's Kingston said so to every
+     * one - two a commit, each with a REQUEST SENSE and a line on the screen.
+     */
+    bool          no_flush;
 };
 
 /*
@@ -2355,27 +2363,33 @@ static void say_sense(struct say_line *line, const struct scsi_sense *sense)
 }
 
 /*
- * A command the stick failed, and why. REQUEST SENSE is what a failed command
- * leaves its reason in, so it is asked first, before the line is begun; the
- * line says the command and, when what came back is sense data, the stick's
- * reason for it.
+ * Why a command failed. REQUEST SENSE is what a failed command leaves its
+ * reason in, so it is asked before any line about the failure is begun. True
+ * when what came back is sense data, which is then in `sense`.
  */
-static void say_why_failed(struct controller *c, struct device *d,
-                           struct stick *s, const char *command,
-                           struct say_line *line)
+static bool why_failed(struct controller *c, struct device *d, struct stick *s,
+                       struct scsi_sense *sense, struct say_line *line)
 {
     uint8_t cdb[16], data[SCSI_SENSE_LENGTH];
-    struct scsi_sense sense;
     enum bot_status status;
     unsigned got;
-    bool known;
 
-    memset(&sense, 0, sizeof(sense));
-    known = transact(c, d, s, "REQUEST SENSE", cdb,
-                     scsi_request_sense(cdb, SCSI_SENSE_LENGTH), false,
-                     data, SCSI_SENSE_LENGTH, &got, &status, line) == NULL
-            && status == BOT_PASSED && scsi_sense(data, got, &sense);
+    memset(sense, 0, sizeof(*sense));
 
+    return transact(c, d, s, "REQUEST SENSE", cdb,
+                    scsi_request_sense(cdb, SCSI_SENSE_LENGTH), false,
+                    data, SCSI_SENSE_LENGTH, &got, &status, line) == NULL
+           && status == BOT_PASSED && scsi_sense(data, got, sense);
+}
+
+/*
+ * The line for a command the stick failed: the command and, when `known`, the
+ * stick's reason for it.
+ */
+static void say_failed(struct controller *c, struct device *d,
+                       const char *command, bool known,
+                       const struct scsi_sense *sense, struct say_line *line)
+{
     about(line, c);
     say_text(line, " port ");
     say_dec(line, d->port);
@@ -2385,10 +2399,21 @@ static void say_why_failed(struct controller *c, struct device *d,
 
     if (known) {
         say_text(line, ": ");
-        say_sense(line, &sense);
+        say_sense(line, sense);
     }
 
     say_send(console, line);
+}
+
+/* A command the stick failed, and why. */
+static void say_why_failed(struct controller *c, struct device *d,
+                           struct stick *s, const char *command,
+                           struct say_line *line)
+{
+    struct scsi_sense sense;
+    bool known = why_failed(c, d, s, &sense, line);
+
+    say_failed(c, d, command, known, &sense, line);
 }
 
 /*
@@ -3655,16 +3680,25 @@ static void block_write(const struct block_request *req, struct say_line *line,
  * journal's header block, which is the instant the journal's promise is
  * about (`usb.md` §7). A stick that fails it says why, and the disk server is
  * told rather than left to believe it.
+ *
+ * **And a stick that does not do it is told once.** The ThinkPad's Kingston
+ * answers every SYNCHRONIZE CACHE (10) with ILLEGAL REQUEST, 20h/00h - no such
+ * command - and was asked twice a commit, each time with a REQUEST SENSE after
+ * it and a line on the screen. The command block never changes, so neither
+ * does the answer: once `scsi_not_supported` says so, the stick is sent no
+ * other, and a flush is answered BLOCK_ERR_NO_FLUSH without a transfer.
  */
 static void block_flush(const struct block_request *req, struct say_line *line,
                         struct block_reply *rep)
 {
     struct controller *c;
     struct stick *s;
+    struct scsi_sense sense;
     uint8_t cdb[16];
     enum bot_status status;
     unsigned got;
     const char *failed;
+    bool known;
 
     if (!find_unit(req->unit, &c, &s)) {
         rep->error = BLOCK_ERR_NO_UNIT;
@@ -3673,6 +3707,11 @@ static void block_flush(const struct block_request *req, struct say_line *line,
 
     rep->block_size = s->block_size;
     rep->blocks = s->blocks;
+
+    if (s->no_flush) {
+        rep->error = BLOCK_ERR_NO_FLUSH;
+        return;
+    }
 
     failed = transact(c, &s->dev, s, "SYNCHRONIZE CACHE (10)", cdb,
                       scsi_synchronize_cache_10(cdb), false, NULL, 0u, &got,
@@ -3685,7 +3724,22 @@ static void block_flush(const struct block_request *req, struct say_line *line,
     }
 
     if (status != BOT_PASSED) {
-        say_why_failed(c, &s->dev, s, "SYNCHRONIZE CACHE (10)", line);
+        known = why_failed(c, &s->dev, s, &sense, line);
+
+        if (known && scsi_not_supported(&sense)) {
+            s->no_flush = true;
+            about(line, c);
+            say_text(line, " port ");
+            say_dec(line, s->dev.port);
+            say_text(line, ": the stick does not do SYNCHRONIZE CACHE (10), "
+                           "so it is not asked again: ");
+            say_sense(line, &sense);
+            say_send(console, line);
+            rep->error = BLOCK_ERR_NO_FLUSH;
+            return;
+        }
+
+        say_failed(c, &s->dev, "SYNCHRONIZE CACHE (10)", known, &sense, line);
         rep->error = BLOCK_ERR_DEVICE;
         return;
     }

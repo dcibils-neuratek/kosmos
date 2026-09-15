@@ -30,6 +30,7 @@
 #define SCSI_SYNCHRONIZE_CACHE_10 0x35u
 
 #define SCSI_KEY_NOT_READY      0x2u
+#define SCSI_KEY_ILLEGAL_REQUEST 0x5u
 #define SCSI_KEY_UNIT_ATTENTION 0x6u
 
 #define SCSI_SENSE_LENGTH       18u     /* fixed format, bytes 0 to 17 */
@@ -106,6 +107,16 @@ bool scsi_sense(const uint8_t *data, unsigned got, struct scsi_sense *out);
 
 /* A sense key's name, as SPC gives it: "NOT READY", "UNIT ATTENTION". */
 const char *scsi_sense_key_name(unsigned key);
+
+/*
+ * Whether sense data says the device does not do the command it was sent, as
+ * it was sent: ILLEGAL REQUEST with 20h/00h, INVALID COMMAND OPERATION CODE,
+ * or 24h/00h, INVALID FIELD IN CDB. A command block that does not change is
+ * answered the same way every time, so this is an answer to remember rather
+ * than a failure to report again - the ThinkPad's Kingston said 20h/00h to
+ * every SYNCHRONIZE CACHE (10) it was sent (`usb.md` §7).
+ */
+bool scsi_not_supported(const struct scsi_sense *sense);
 
 /*
  * CRC-32 as zlib computes it - reflected, polynomial EDB88320h - carried on
