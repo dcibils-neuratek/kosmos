@@ -2731,6 +2731,9 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# fastest of the three and the one that fails first when the disk
 	@# layout is wrong.
 	$(HOSTDIR)/lua tools/test_kfs.lua
+	@# And what an audio file says about itself - ID3v2, ID3v1 and a WAV's
+	@# INFO - read through the same tags.lua Music uses, on this machine.
+	$(HOSTDIR)/lua tools/test_tags.lua
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua

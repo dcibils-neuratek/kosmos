@@ -34,7 +34,11 @@ there. Under OVMF, on a snapshot: the loader clean, `/home` the partition its
 command line names, the files there, and `diskbench /home` running. On the
 ThinkPad the first photograph is `log loader`, then `diskbench /home` and
 `diskbench usb 0`. Its sound does not play there yet. Meanwhile Music's
-engine, `/lib/media.lua`, is built and heard (§18.66); the tag reader is next. The ThinkPad's own numbers are still to take. Diego allowed the
+engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
+(§18.67); the window from `docs/music.html` needs four things first - a
+scaled blit, covers named from inside a file, a window asking for its own
+size, and a title bigger than the text roles - proposed to Diego
+(`roadmap.md`). The ThinkPad's own numbers are still to take. Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
@@ -94,6 +98,28 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: Music, step 2 - tags read from the file
+
+- **`/lib/tags.lua`**, the reader Diego chose over attributes written onto
+  files: an MP3's ID3v2 tag - 2.2, 2.3 and 2.4 - with ID3v1 filling in or
+  standing alone, and a WAV's `LIST INFO`; title, artist, album, genre, year,
+  track, and where the cover is rather than its bytes. Pure over a read
+  function, as `wav.scan` is, so the host test runs the same file.
+  `media.tags(path)` reads through one page.
+- **Left out, and said so**: ID3v1's numbered genres, whose names would be
+  written from memory; compressed and encrypted frames; a cover inside a tag
+  unsynchronised as a whole.
+- **Diego's Basket Case has no song details**: only an MP4 container's `TXXX`
+  frames and the encoder's `TSSE`. The host and the machine both read nothing,
+  so Music names such a song by its file.
+- **Tested**: `tools/test_tags.lua` 23 in `make test`; controls C13 to C15,
+  where C13 first passed - every ID3v2.4 frame was under 128 bytes, where a
+  syncsafe size and a plain one are the same bytes - until a 1000-byte frame
+  was added. `testing.md` §18.67.
+- **Next**: the window, once Diego has seen what it needs first - a scaled
+  blit in `gfx`, covers out of an MP3, a window asking for its own size, and a
+  title bigger than the text roles (`roadmap.md`).
 
 ### 14 September: Music, step 1 - the engine, heard
 

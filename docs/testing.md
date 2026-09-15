@@ -3971,3 +3971,54 @@ kfs's format 53, x86-64 158, the UEFI boots 38, the stick check 12, the
 machine with no display on both boards with all 112 programs in `/bin`, the
 disk 33 across two boots, the argument audit 112, and the suites 160 of 160
 and 156 of 156.
+
+## 18.67 What an audio file says about itself
+
+**Music, step 2** (`docs/music.html`): `/lib/tags.lua`, the reader Diego
+chose - "cant we just gget the attributes from the mp3 file with a reader?" -
+so a song's title, artist, album, genre, year, track and cover are read from
+the file and nothing is written onto it; and `media.tags(path)` in front of it,
+reading through one page. An MP3's ID3v2 tag, versions 2.2, 2.3 and 2.4, with
+ID3v1 filling what it leaves out or standing alone, and a WAV's `LIST INFO`.
+The cover comes back as where it is and how long, not its bytes.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/test_tags.lua`, 23 checks | files built by hand from the format and read back on the host through the same `tags.lua`. **ID3v2.3**: a Latin-1 title, a UTF-16 artist with a byte order mark, an album ended by a NUL, `(43)Punk` read as Punk, the year and the track, and a 5000-byte cover found at the byte where its picture starts. **ID3v2.4**: syncsafe frame sizes - including a 1000-byte cover with a frame after it, which only a size read as seven bits a byte finds - UTF-8, a year out of a whole date, a genre that is only a number left out, and a compressed frame skipped. **ID3v2.2**: three-letter frames and a PNG cover in place. An extended header stepped over; a tag that says it is longer than the file read as far as it goes, without failing. **UTF-16**: a surrogate pair one character and a lone half U+FFFD. **ID3v1** alone, with ID3v1.1's track, and filling in after ID3v2. A **WAV's** `LIST INFO`, with odd lengths padded. A file with no tag says nothing; Latin-1 that is not UTF-8 becomes UTF-8 |
+
+**Controls**, each in a copy of `tags.lua` beside a copy of the test, so the
+tree was never touched:
+
+| broken | what failed |
+| ------ | ----------- |
+| C13: ID3v2.4's frame sizes read as plain numbers | first nothing - and then, with the 1000-byte frame added, 2 of 23: the frame after it was not found, and the cover was not in place |
+| C14: a cover's description skipped a byte short | 2 of 21: the ID3v2.3 cover at 160 for 5001 bytes where it is 161 for 5000, and the ID3v2.2 cover |
+| C15: ID3v2.3's extended header not stepped over | 1 of 21: the title after it was not read |
+
+**C13 is the one worth keeping.** Every ID3v2.4 frame the test first built
+was under 128 bytes, and below 128 a syncsafe size and a plain one are the same
+four bytes - so a reader that got the size wrong passed a test that could not
+tell. A cover is thousands of bytes, and a tagger's comment is often hundreds;
+the frame of 1000 is there so the difference is one the test can see.
+
+**What it does not do, as `tags.lua` says**: a genre given only as ID3v1's
+number is left out, since the table of names would be written from memory;
+compressed and encrypted frames are skipped; and a tag unsynchronised as a
+whole gives its text and no cover.
+
+**And the first real file, which said nothing.** Diego's Basket Case, the MP3
+on his disk, was read twice by the same `tags.lua` - on this Mac from the file
+in his Downloads, and on the machine through `media.tags` from a copy of his
+disk - and both answered that it has no title, artist, album, genre, year,
+track or cover. The bytes agree: its ID3v2.4 tag is 127 bytes, three `TXXX`
+frames an MP4 container carried over (`major_brand dash`, `minor_version 0`,
+`compatible_brands iso6mp41`) and `TSSE Lavf62.3.100`, the encoder, with no
+ID3v1 and no APE tag at its end. A file converted from a video, and a reader
+that is right to find nothing: so Music names a song like it by its file, as
+`docs/music.html` already draws one.
+
+And as written: `make test` whole - audio tags 23, the media engine 8, Disk
+Benchmark 8, kfs's format 53, x86-64 158, the UEFI boots 38, the stick check
+12, the machine with no display on both boards with all 112 programs in
+`/bin`, the disk 33 across two boots, the argument audit 112, and the suites
+160 of 160 and 156 of 156.

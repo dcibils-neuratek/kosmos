@@ -5,6 +5,7 @@
 --   local p, why = media.open("/home/song.mp3")
 --   p:play()                     -- and p:tick() on the caller's own tick
 --   p:seek(90)   p:position()   p:volume(0.5)   p:finished()   p:close()
+--   media.tags("/home/song.mp3")   -- { title, artist, album, ..., cover }
 --
 -- **The engine under Music, and under a video app later** (`docs/music.html`,
 -- decided with Diego on 14 September 2026). Playing a file is the same work
@@ -25,6 +26,7 @@
 local audio = use("/lib/audio.lua")
 local wav   = use("/lib/wav.lua")
 local mp3   = use("/kits/mp3")
+local tags  = use("/lib/tags.lua")
 
 local media = {}
 
@@ -345,6 +347,52 @@ function player:finished()
   return self.at >= self.last and #self.pending == 0
          and #self.carry < self.info.frame * 2
          and self.stream:queued() == 0
+end
+
+--
+-- What a file says about itself - title, artist, album, genre, year, track,
+-- and where its cover is - read from the file and never written onto it
+-- (`/lib/tags.lua`). An empty table when it says nothing, and nil with why
+-- when it cannot be read at all.
+--
+-- Through one page, read a window at a time as `tags.lua` asks: a tag's
+-- frames are small, and a cover is found in place rather than read, so a
+-- Library of a thousand songs reads a thousand beginnings and no pictures.
+--
+function media.tags(path)
+  local size = (fs.getattr(path) or {}).size
+
+  if not size then return nil, "no such file: " .. tostring(path) end
+
+  local page = sys.memory(1)
+
+  if not page then return nil, "no memory for a read buffer" end
+
+  local function read(offset, n)
+    local out = {}
+
+    while n > 0 do
+      local want = math.min(n, 4096)
+      local got = fs.read_into(path, page, offset, want)
+
+      if not got or got == 0 then break end
+
+      out[#out + 1] = sys.region_read(page, 0, got)
+      offset, n = offset + got, n - got
+
+      if got < want then break end
+    end
+
+    return (#out > 0) and table.concat(out) or nil
+  end
+
+  local ok, t = pcall(tags.read, read, size)
+
+  sys.release(page)
+
+  if not ok then return nil, tostring(t) end
+
+  return t
 end
 
 -- The stream, and the pages it read through, given back.

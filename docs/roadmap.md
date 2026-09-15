@@ -537,7 +537,25 @@ the Pi", and the Pi is not here yet.
   engine a video app can share later, at Diego's word. Seeking, which this
   line used to be on its own, is part of it. **Step 1, the engine, is
   built** (`testing.md` §18.66): Music plays through it and its bar seeks.
-  Next, the tag reader.
+  **Step 2, the tag reader, is built** (§18.67). Next, the window from
+  `docs/music.html`.
+
+  **Step 3 needs four things the system does not have yet**, found by reading
+  on 14 September, and proposed to Diego before any is built:
+  1. **A scaled blit in `gfx`**, in C: a cover is hundreds of pixels and
+     drawn at 78 and 44. `photo.lua` already says one belongs there, and that
+     a scaler in Lua would be the per-pixel loop `gfx.md` 19.2 forbids.
+  2. **Covers out of an MP3.** `ui.image` names a picture and the window
+     manager decodes it, so a cover that is bytes inside a file has no name.
+     Proposed: `media.lua` copies those bytes to `/ramfs` once and names that
+     - no change to the protocol.
+  3. **A window asking for its own size**, for the mini player: the window
+     manager resizes a window when a person drags it, and nothing lets an
+     application ask. A small request in `wm.lua` and `window:resize`.
+  4. **A title larger than the three text roles**, which an ordinary window
+     draws at the sizes the desktop's font settings give: either a window
+     that draws its own pixels (`direct = true`, `gfx.use_font` at any size)
+     or a text command that carries a size. Diego's choice.
 - A markdown viewer, for manuals inside the system.
 - **Selection in the terminal**, which is where people most want to copy
   from and is the one window the clipboard cannot reach. It draws its
