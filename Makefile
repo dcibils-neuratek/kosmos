@@ -2669,15 +2669,22 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 #
 #     make MEGA=1 x86-usb-image USB_HOME=partition
 #
+# **And the desktop, started by itself.** Diego, 15 September: "i think the
+# desktop should start automatically yes upon booting". The shell starts what
+# `opt/kosmos/boot` names exactly as though it were typed, and the prompt is
+# back when it ends. `USB_BOOT=` makes a stick that stops at the prompt.
+#
+USB_BOOT ?= wm
+
 x86-usb-image: x86-build $(HOSTDIR)/lua $(EFI_LOADER)
 	@if [ -f $(DISK) ] && $(HOSTDIR)/lua tools/kfs.lua ls $(DISK) >/dev/null 2>&1; then \
 	    echo "$(DISK) goes on the stick too: $(if $(filter partition,$(USB_HOME)),in a partition of its own that Kosmos opens as /home,the loader reads it and Kosmos mounts it)"; \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --$(if $(filter partition,$(USB_HOME)),home,disk) $(DISK) $(KOSMOS_ARGS); \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) --$(if $(filter partition,$(USB_HOME)),home,disk) $(DISK) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	elif [ "$(USB_HOME)" = partition ]; then \
 	    echo "USB_HOME=partition puts /home in a partition, and $(DISK) holds no filesystem to put there: make image FILES=..."; \
 	    exit 1; \
 	else \
-	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) $(KOSMOS_ARGS); \
+	    python3 tools/mkusb_image.py $(X86_BUILD)/kosmos.bin $(USB_IMG) --loader $(EFI_LOADER) $(if $(USB_BOOT),opt/kosmos/boot=$(USB_BOOT)) $(KOSMOS_ARGS); \
 	fi
 
 usb: x86-usb-image

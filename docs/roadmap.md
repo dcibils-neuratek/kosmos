@@ -304,6 +304,31 @@ is the one that makes the machine Diego owns behave like a computer:
    stick on the Mac and never writes it, so a diagnosis reaches this Mac as
    text rather than as photographs of a screen.
 
+   **Asked for by Diego on 15 September, after reading 0.10.65-development's
+   diagnosis**:
+
+   - **The stick starts the desktop by itself.** "i do type wm at the prompt,
+     i think the desktop should start automatically yes upon booting". The
+     shell already starts what `opt/kosmos/boot` names, so the stick's
+     command line says `boot=wm`; the prompt is still there when the window
+     manager ends. **Built**: `USB_BOOT ?= wm` in the Makefile puts
+     `opt/kosmos/boot=wm` on the stick's command line, and under OVMF the
+     desktop came up with nothing typed; `USB_BOOT=` makes a stick that
+     stops at the prompt.
+   - **The loader says when it ran**, in seconds of the counter it shares
+     with the kernel: when it started and when it handed over. The kernel's
+     first line came 16.6 s after the counter's zero, and Diego picks the
+     stick with F12 and it "boots instantly" - so that time is the
+     firmware's or the loader's, and one line tells them apart.
+   - **Music opens the song Tracker gives it.** Opened from Tracker on the
+     ThinkPad, Music said "(nothing to play in /home)" beside a Tracker
+     window listing the MP3 in `/home` - being found. **Music now says why
+     its list is empty** (`testing.md` §18.72), in the window and as a
+     `music:` line in the log `diagnose` keeps. The cause on the ThinkPad is
+     not found: under OVMF the same stick image, with a sound device, after
+     `diskbench` and `diagnose`, and Music launched as Tracker launches it,
+     listed the song every time.
+
    **Step 6, drives**, designed in `docs/drives.html` and
    decided with Diego on 14 September: Tracker's sidebar as Places, System
    and Drives with each filesystem's type, `/drives/<label>`, one Open and

@@ -219,6 +219,37 @@ def main():
     finally:
         guest.close()
 
+    #
+    # **And a folder Music cannot list says why.** On the ThinkPad Music said
+    # "(nothing to play in /home)" beside a Tracker window listing the MP3, and
+    # could not have said anything else: a list that failed and a folder with
+    # no music in it looked the same. Pointed at a folder that is not there, it
+    # has to name the folder and the reason, in the log `diagnose` keeps. A
+    # machine of its own, because the shell is inside `wm` until it ends.
+    #
+    guest = Guest(image, 600)
+
+    try:
+        guest.wait_for(PROMPT, "reached a shell")
+        mark = len(guest.seen)
+        guest.type("wm music:/home/nowhere/song.mp3")
+
+        said = None
+        deadline = time.monotonic() + 60
+
+        while said is None and time.monotonic() < deadline:
+            said = re.search(r"music: could not list /home/nowhere: \S",
+                             guest.seen[mark:])
+            time.sleep(0.25)
+
+        check(said is not None,
+              "Music pointed at a folder that is not there did not say it "
+              "could not list it, and why:\n" + guest.seen[mark:][-800:])
+    except Failure as e:
+        fails.append(str(e))
+    finally:
+        guest.close()
+
     if fails:
         print("FAIL: %d of %d checks on media.lua, heard:" % (len(fails), len(fails) + checks))
         for complaint in fails:
@@ -226,8 +257,9 @@ def main():
         return 1
 
     print("PASS: %d checks on media.lua, heard (a tone played, sought and "
-          "finished at the prompt with the position following the sound, and "
-          "Music's Play and bar doing the same)." % checks)
+          "finished at the prompt with the position following the sound, "
+          "Music's Play and bar doing the same, and Music saying why it could "
+          "not list a folder)." % checks)
     return 0
 
 

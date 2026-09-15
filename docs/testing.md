@@ -4210,3 +4210,44 @@ And as written: `make test` whole - x86-64 167, one more than before
 38, the stick check 12, the disk 33 across two boots, the machine with no
 display on both boards with all 113 programs in `/bin`, and the suites 161 of
 161 and 157 of 157.
+
+## 18.72 Music says why its list is empty, and the stick starts the desktop
+
+**What the ThinkPad showed.** Opened from Tracker - "opened
+Green-Day-Basket-Case.mp3 in music" - Music said "(nothing to play in /home)"
+beside a Tracker window listing the MP3 in `/home`. Music lists its folder
+with `fs.list` and keeps the names that end in `.mp3` or `.wav`, and it threw
+away why that came to nothing: a list that failed and a folder with no music
+in it drew the same line and logged nothing.
+
+**Not reproduced.** Under OVMF, the ThinkPad's own stick image
+(`0.10.65-development`) listed `/home` whole in a program started at the
+prompt and in one started by `wm` - 20 names, then 23 after `diskbench` and
+`diagnose` - and Music, started by `wm` and launched through `/app/wm` as
+Tracker launches it, with an Intel HDA device and without one, listed the
+song and selected it every time. So what is checked is that the next time it
+happens it says why.
+
+**The check**, in `run_media.py`: a machine of its own, because the shell is
+inside `wm` until it ends, runs `wm music:/home/nowhere/song.mp3`, and Music
+has to log `music: could not list /home/nowhere:` with a reason - the line
+`diagnose` will carry off the ThinkPad. And the existing window check still
+finds no `music:` line on a folder that lists - 9 checks.
+
+**The stick starts the desktop by itself.** Diego had been typing `wm` at the
+prompt on every boot. `USB_BOOT ?= wm` puts `opt/kosmos/boot=wm` on the stick's
+command line, which the shell starts as though it were typed. Checked under
+OVMF on a stick built that way: the command line the loader reads says
+`opt/kosmos/boot=wm opt/kosmos/home=...`, the shell says `starting wm`, and the
+desktop, the Deskbar and the four programs started at login arrive with nothing
+typed. `make test` builds its own sticks with `mkusb_image.py` and so boots
+them to a prompt as before.
+
+| Control | What failed |
+|---|---|
+| C12: Music keeps why it could not list a folder to itself | `run_media.py`, 1 of 9: the log said `wm: window Music` and nothing about `/home/nowhere` |
+
+And as written: `make test` whole - the media engine 9, x86-64 167, the UEFI
+boots 38, the stick check 12, the disk 33 across two boots, the machine with no
+display on both boards with all 113 programs in `/bin`, and the suites 161 of
+161 and 157 of 157.

@@ -89,6 +89,20 @@ sound controller came up** - `sound: Intel HDA, 44100 Hz stereo`, where
 `STATESTS` by a spin count rather than a time, which fits a codec that answers
 on one boot and not another. Diego to try Music on it. `diskbench`'s rows went
 to the Terminal and are not in the diagnosis.
+
+**The two-endpoint wait on the ThinkPad** (Diego's photograph of the
+Terminal, the same boot): `diskbench usb 0` read random 4 KB at **303 IOPS,
+1.1 MB/s, where `9af841c` read 17** - the stick's blocks no longer wait out the
+driver's deadline. The sequential row was behind a window.
+
+**And Music did not list the song.** Opened from Tracker - "opened
+Green-Day-Basket-Case.mp3 in music" - it said "(nothing to play in /home)"
+beside a Tracker window listing the MP3. Under OVMF the same stick image, a
+sound device, `diskbench` and `diagnose` first, and Music launched through
+`/app/wm` as Tracker launches it, all found the song and selected it. Music
+threw away why its list was empty, so it now says - in the window, and as a
+`music:` line in the log for `diagnose` (roadmap, *asked for on 15
+September*).
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a

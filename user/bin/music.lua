@@ -105,17 +105,30 @@ end
 --------------------------------------------------------------------------
 
 local files = {}
+local listed, list_why = fs.list(FOLDER)
 
-for _, f in ipairs(fs.list(FOLDER) or {}) do
-  local low = f:lower()
+for _, f in ipairs(listed or {}) do
+  local low = tostring(f):lower()
 
   if low:match("%.wav$") or low:match("%.mp3$") then
     files[#files + 1] = f
   end
 end
 
-if #files == 0 then
+--
+-- **Why there is nothing, said rather than hidden.** On the ThinkPad, opened
+-- from Tracker beside a Tracker window listing the MP3 in `/home`, this window
+-- said "(nothing to play in /home)" and nothing else - and under QEMU the same
+-- stick, the same launch and the same listing found the song every time. A
+-- folder that could not be listed and one with no music in it looked the
+-- same, so the window says which, and the log keeps it for `diagnose`.
+--
+if not listed then
+  files = { ("(could not list %s: %s)"):format(FOLDER, tostring(list_why)) }
+  print(("music: could not list %s: %s"):format(FOLDER, tostring(list_why)))
+elseif #files == 0 then
   files = { "(nothing to play in " .. FOLDER .. ")" }
+  print(("music: nothing to play among %d names in %s"):format(#listed, FOLDER))
 end
 
 local list = ui.list{ x = 10, y = 10, w = W - 20, h = 150, items = files }
