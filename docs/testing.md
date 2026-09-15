@@ -4438,3 +4438,59 @@ And as written: `make test` whole - x86-64 172, three more than before (`sound`
 reading its pin back, `sound_eapd`'s write and its line), the media engine 9,
 the Processes window's shares 11, the UEFI boots 38, and the suites 161 of 161
 and 157 of 157.
+
+## 18.77 An MP3's length from its Xing header, and the sound held to its decoder
+
+**What the ThinkPad showed.** With sound working (0.10.70), Music said `MP3 64
+kbps` and `9:58` for Basket Case, and Diego heard it as low quality: "64kbps
+and sounds low quality. can we play 196kbps mp3?". Two questions, answered
+separately.
+
+**Is anything lowering the quality?** No, measured. Twenty seconds of Basket
+Case played through `media.lua` under QEMU, written out by QEMU's WAV writer,
+and compared with the same MP3 decoded on the Mac by the same vendored minimp3
+(`hostdecode.c` in the session's scratchpad, the kit's own definitions):
+
+```
+frames with sound: 835965 (18.96 s)
+identical to the Mac's decode: 835930 (99.9958%)
+different: 35                  each one step of 65536, in one channel
+silent gaps after the first sound: none
+```
+
+The 35 are most likely rounding in the decoder's floating point - an ARM build
+here, an x86 one on the Mac - and are not heard. The file really is 197 kbps on
+average (`afinfo`: 197002 bits per second), and what reaches the device is its
+decode. The conversion to the device's rate is a copy at 44100 Hz, the mixer
+is unity at full gain, and the ThinkPad's amplifiers are written at 0 dB. So
+what sounded thin is the laptop's speaker.
+
+**Why Music said 64.** The file is a 137-byte ID3 tag, then **a Xing header
+frame** - 64 kbps, 208 bytes, holding no music but `Xing`, flags `0x0f`, 7441
+frames, 4786800 bytes, a seek table and the encoder's name - then 7441 frames
+at 32 to 320 kbps. `mp3.probe` took the first frame that decodes, which is the
+header frame, for the file: 64 kbps, and a length of the file's bytes over 64
+kbps, `9:58`.
+
+**The change.** The kit reads a Xing or Info header where a Layer III frame's
+side information ends - 32 bytes after the header for MPEG-1 in stereo, 17 in
+mono, 17 and 9 for MPEG-2 and 2.5, two more with a CRC, which is what minimp3's
+`L3_read_side_info` reads - and when it counts the frames, `probe` returns the
+length exactly (frames times 1152 samples over the rate), the average bitrate
+from the bytes, `vbr`, and an offset past the header frame. `media.lua` takes
+that length; Music says `MP3 197 kbps VBR`. On the Mac, the reader drafted for
+it gave Basket Case 194.377 s and 197.0 kbps, which is what `afinfo` says.
+
+**The check.** Diego's song is not the repository's, so `run_media.py` makes a
+VBR MP3 of its own - a Xing header frame, then 400 silent frames of 128 and
+192 kbps alternating - which minimp3 on the Mac decodes as 401 frames of 1152
+samples. `media.open` has to say 10.449 s, 160 kbps and VBR, where the header
+frame taken for the music is 64 kbps and 26 s. 10 checks.
+
+| Control | What failed |
+|---|---|
+| C17: `vbr_header` returning false, as a kit that does not read the header | `run_media.py`, 1 of 10: `media: vbr 26.101 s 64 kbps nil` - the header frame read as the music, as Music said for Basket Case |
+
+And as written: `make test` whole - the media engine 10, one more than before
+(the VBR MP3), audio tags 23, x86-64 172, the Processes window's shares 11, the
+UEFI boots 38, and the suites 161 of 161 and 157 of 157.

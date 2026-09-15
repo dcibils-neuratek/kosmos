@@ -187,6 +187,15 @@ sensing is next for sound (`roadmap.md`), and Music's length for a VBR MP3
 (it said 9:58 for a 3:14 song) is on the list beside it. **And it is the
 stable build**: Diego, the same day, "this build is stable. push to repo." -
 `kosmos-usb-0.10.70-stable.img`.
+
+**Music's length for a VBR MP3, and the sound measured** (15 September,
+committed, not pushed). Diego heard Basket Case as low quality with Music
+saying `MP3 64 kbps` and `9:58`. Measured under QEMU: what plays is the
+decoder's output - 99.996% of frames identical to the Mac's decode of the same
+file, the rest one step off, no gaps - so the thin sound is the laptop's
+speaker. The 64 was the file's Xing header frame; the kit now reads that
+header, so Music gives 3:14 and `197 kbps VBR` (`testing.md` §18.77). Not yet
+on a stick.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
@@ -226,7 +235,7 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
   without regard to case, and six pieces in this order**: 6a the FAT reader
   on the Mac, 6b the drive server and `/drives`, 6c Tracker, 6d Open and
   Save, 6e the Drives app, 6f exFAT - Diego: "yes to all three, go with your
-  order". **6a is built**; 6b waits for storage at full speed.
+  order". **6a is built**; 6b waited for storage at full speed, and since 15 September does not - Diego put the `/home` measurement for later.
 - **USB step 5, mass storage**, approved by Diego on 14 September with the
   proposal's five calls: 5a to 5f are built, under QEMU - a stick's size and
   its first blocks, Reset Recovery, one kernel wait for interrupts and

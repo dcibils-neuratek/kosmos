@@ -93,7 +93,8 @@ local function load(file)
             info.channels == 2 and "stereo" or "mono", info.bits)
 
   if info.format == "MP3" then
-    status = status .. (" MP3 %d kbps"):format(info.bitrate or 0)
+    status = status .. (" MP3 %d kbps%s"):format(info.bitrate or 0,
+                                               info.vbr and " VBR" or "")
   end
 
   player = p

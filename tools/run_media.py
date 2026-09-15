@@ -54,6 +54,30 @@ def tone(path):
         w.writeframes(bytes(frames))
 
 
+def vbr_mp3(path, count=400):
+    """A variable-bitrate MP3 made here, whose length only its Xing header says.
+
+    A first frame of 64 kbps holding no music but "Xing", its flags, the count
+    of frames after it and their bytes; then frames of 128 and 192 kbps
+    alternating, each silent - side information all zero, so no main data.
+    Read as music, the header frame makes it 64 kbps and 26 seconds, which is
+    how Basket Case came to say `9:58` on the ThinkPad; counted, it is 400
+    frames of 1152 samples, 10.449 s, at 160 kbps on average.
+    """
+    def frame(index, kbps):
+        # MPEG-1 Layer III, no CRC, 44100 Hz, joint stereo.
+        return bytes([0xFF, 0xFB, index << 4, 0x44]) + bytes(144000 * kbps // 44100 - 4)
+
+    audio = b"".join(frame(9, 128) if i % 2 == 0 else frame(11, 192)
+                     for i in range(count))
+    first = bytearray(frame(5, 64))
+    tag = b"Xing" + struct.pack(">III", 3, count, len(first) + len(audio))
+    first[36:36 + len(tag)] = tag           # after 4 of header, 32 of side information
+
+    with open(path, "wb") as f:
+        f.write(bytes(first) + audio)
+
+
 def heard(path):
     """(seconds not silent, loudest sample) in what QEMU has written so far."""
     if not os.path.exists(path):
@@ -85,6 +109,7 @@ def main():
     wav_in = os.path.join(work, "tone.wav")
     disk = os.path.join(work, "disk.img")
     wav_out = os.path.join(work, "heard.wav")
+    vbr_in = os.path.join(work, "vbr.mp3")
     checks, fails = 0, []
 
     def check(ok, complaint):
@@ -95,8 +120,9 @@ def main():
             fails.append(complaint)
 
     tone(wav_in)
+    vbr_mp3(vbr_in)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
-                    wav_in + ":/home/tone.wav"], check=True,
+                    wav_in + ":/home/tone.wav", vbr_in + ":/home/vbr.mp3"], check=True,
                    capture_output=True, cwd=os.path.dirname(HERE))
 
     # Both read by run_screenshot when it is imported, so they are set first.
@@ -109,6 +135,9 @@ def main():
     # typed to start it - which the shell echoes - never holds the words
     # waited for.
     program = ('local media = use("/lib/media.lua") '
+               'local v = assert(media.open("/home/vbr.mp3")) '
+               'print("media" .. ": vbr " .. v.info.seconds .. " s " .. v.info.bitrate '
+               '.. " kbps " .. tostring(v.info.vbr)) v:close() '
                'local p = assert(media.open("/home/tone.wav")) '
                'local hz = fs.read("/dev/cpu").counter_hz '
                'local function run(s) local stop = sys.ticks() + math.floor(s * hz) '
@@ -136,6 +165,14 @@ def main():
             return float(m.group(1)) if m else None
 
         length = number("seconds")
+        vbr = re.search(r"^media: vbr ([\d.]+) s (\d+) kbps (\w+)", said, re.M)
+
+        check(vbr is not None
+              and abs(float(vbr.group(1)) - 400 * 1152 / 44100.0) < 0.01
+              and vbr.group(2) == "160" and vbr.group(3) == "true",
+              "a variable-bitrate MP3 with a Xing header was not 10.449 s at 160 "
+              "kbps on average and VBR - its header frame read as the music is 64 "
+              "kbps and 26 s: %r" % (vbr.group(0) if vbr else None))
         after_one = number("after 1 s")
         after_seek = number("after the seek to 4")
         end = re.search(r"^media: finished (\w+) ([\d.]+)", said, re.M)
@@ -256,7 +293,7 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (a variable-bitrate MP3's length and bitrate from its Xing header, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
           "Music's Play and bar doing the same, and Music saying why it could "
           "not list a folder)." % checks)

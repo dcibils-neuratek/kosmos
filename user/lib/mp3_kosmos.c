@@ -20,6 +20,7 @@
  * system had answered.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -148,6 +149,69 @@ static int l_decode(lua_State *L)
 }
 
 /*
+ * **A Xing or Info header**, which an encoder writes into a first frame that
+ * holds no music: how many frames follow and how many bytes they take.
+ *
+ * It sits where the side information ends, and how long that is depends on
+ * the frame - 32 bytes for MPEG-1 in stereo, 17 in mono, 17 and 9 for MPEG-2
+ * and 2.5 - after the four-byte header and a CRC's two when there is one.
+ * Those are what `L3_read_side_info` in minimp3 reads; "Xing" then a
+ * big-endian flags word, bit 0 the frame count following, bit 1 the byte
+ * count after it.
+ *
+ * **Why it matters**: without it the header frame was taken for the music.
+ * Basket Case's is 64 kbps and 208 bytes, and its 7441 frames after it run at
+ * 160 to 320 - so Music said `MP3 64 kbps` and `9:58` for a song of 3:14 at
+ * 197 on average. Checked against that file on the Mac: 7441 frames and
+ * 4786800 bytes, the file less its ID3 tag, give 194.377 s, which is what
+ * macOS says too.
+ */
+static uint32_t be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
+           | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static bool vbr_header(const uint8_t *frame, size_t frame_bytes,
+                       uint32_t *frames, uint32_t *bytes, bool *variable)
+{
+    bool mpeg1 = (frame[1] & 0x08u) != 0;
+    bool mono = (frame[3] & 0xc0u) == 0xc0u;
+    bool crc = (frame[1] & 0x01u) == 0;
+    size_t at = 4u + (crc ? 2u : 0u)
+                + (mpeg1 ? (mono ? 17u : 32u) : (mono ? 9u : 17u));
+    uint32_t flags;
+
+    if (frame_bytes < 8u || at + 8u > frame_bytes
+        || (memcmp(frame + at, "Xing", 4) != 0
+            && memcmp(frame + at, "Info", 4) != 0)) {
+        return false;
+    }
+
+    /* "Info" is what LAME writes for a constant bitrate, "Xing" otherwise. */
+    *variable = memcmp(frame + at, "Xing", 4) == 0;
+    flags = be32(frame + at + 4u);
+    at += 8u;
+    *frames = 0;
+    *bytes = 0;
+
+    if ((flags & 1u) != 0) {
+        if (at + 4u > frame_bytes) {
+            return false;
+        }
+
+        *frames = be32(frame + at);
+        at += 4u;
+    }
+
+    if ((flags & 2u) != 0 && at + 4u <= frame_bytes) {
+        *bytes = be32(frame + at);
+    }
+
+    return *frames != 0;
+}
+
+/*
  * What this file is, without committing to playing it.
  *
  * The player wants a rate and a channel count before the first period, to
@@ -180,7 +244,14 @@ static int l_probe(lua_State *L)
         at += (size_t)info.frame_bytes;
 
         if (samples > 0) {
-            lua_createtable(L, 0, 6);
+            const uint8_t *frame = in + at - (size_t)info.frame_bytes;
+            uint32_t frames = 0, bytes = 0;
+            bool variable = false;
+            bool counted = vbr_header(frame, (size_t)info.frame_bytes,
+                                      &frames, &bytes, &variable);
+            lua_Integer kbps = info.bitrate_kbps;
+
+            lua_createtable(L, 0, 9);
 
             lua_pushinteger(L, info.hz);
             lua_setfield(L, -2, "rate");
@@ -188,14 +259,40 @@ static int l_probe(lua_State *L)
             lua_setfield(L, -2, "channels");
             lua_pushinteger(L, 16);
             lua_setfield(L, -2, "bits");
-            lua_pushinteger(L, info.bitrate_kbps);
-            lua_setfield(L, -2, "bitrate");
             lua_pushinteger(L, info.layer);
             lua_setfield(L, -2, "layer");
 
+            /*
+             * A header that counts the frames gives the length exactly -
+             * each frame is `samples` long, 1152 for MPEG-1 - and with the
+             * bytes, the average bitrate, which is what a variable file is
+             * said to be. The music starts after that frame, not at it.
+             */
+            if (counted) {
+                double seconds = (double)frames * (double)samples
+                                 / (double)info.hz;
+
+                lua_pushnumber(L, (lua_Number)seconds);
+                lua_setfield(L, -2, "seconds");
+                lua_pushinteger(L, (lua_Integer)frames);
+                lua_setfield(L, -2, "frames");
+                lua_pushboolean(L, variable);
+                lua_setfield(L, -2, "vbr");
+
+                if (bytes > 0 && seconds > 0.0) {
+                    kbps = (lua_Integer)((double)bytes * 8.0 / seconds
+                                         / 1000.0 + 0.5);
+                }
+            }
+
+            lua_pushinteger(L, kbps);
+            lua_setfield(L, -2, "bitrate");
+
             /* Where the audio starts, so the player can skip an ID3 tag
              * rather than feeding it to the decoder every time it rewinds. */
-            lua_pushinteger(L, (lua_Integer)(at - (size_t)info.frame_bytes));
+            lua_pushinteger(L, (lua_Integer)(counted
+                                             ? at
+                                             : at - (size_t)info.frame_bytes));
             lua_setfield(L, -2, "offset");
 
             return 1;

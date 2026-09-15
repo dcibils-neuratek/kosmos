@@ -67,7 +67,11 @@ address bar. UDP exists only as far as this needs it — no sockets, because
 nothing else has asked for any.
 
 **Audio.** virtio-snd and Intel HDA - heard through the ThinkPad's own
-speaker since 0.10.70 - a mixer, WAV and MP3.
+speaker since 0.10.70 - a mixer, WAV and MP3. An MP3's length and bitrate come
+from its Xing header when the encoder wrote one, and what plays is the
+decoder's output sample for sample: Basket Case, recorded out of QEMU, matched
+the Mac's decode in 99.996% of its frames and was one step off in the rest
+(`testing.md` §18.77).
 
 **Applications.** A PDF reader, a paint program, a text editor, a photo
 viewer, a calculator, a music player, a file manager, a process list, a
@@ -98,8 +102,11 @@ unblocks.
 **Storage at full speed, performance first.** Diego, 14 September: "I expect
 our usb drives and nvme to perform like any other os like Linux", and "it's
 bad to have a nicely designed and modular system if it's slow and unusable".
-USB step 6 waits for it, since the drive server would otherwise be built on
-the block path this replaces. In this order, each measured before and after:
+USB step 6 waited for it, since the drive server would otherwise be built on
+the block path this replaces - **and does not any more**: on 15 September,
+with the stick's blocks from 17 to 303 IOPS on the ThinkPad, Diego put the
+next measurement, `/home`'s path through the disk server and kfs, for later -
+"we will measure /home later". In this order, each measured before and after:
 
 1. **Disk Benchmark**, drawn first (`docs/diskbench.html`): an engine in
    `/lib/diskbench.lua`, a `diskbench` program, then the window once Diego
@@ -590,14 +597,6 @@ the Pi", and the Pi is not here yet.
   by an unsolicited response - is what mutes the speaker when headphones go
   in. The account of how the ThinkPad got sound, from a codec that did not
   answer to an amplifier nobody switched on, is in `thinkpad.md`.
-- **Music's length and bitrate for a VBR MP3.** On the ThinkPad it said
-  `MP3 64 k` and `9:58` for Basket Case. Checked against the file on the Mac,
-  frame by frame: its first frame is a **Xing header** marked 64 kbps - the
-  frame an encoder writes to say how many frames follow - and the 7,442 frames
-  after it run at 160 to 256 kbps, **3:14** long. `9:58` is the file's size
-  over that first frame's 64 kbps. So: read the Xing (and `Info`) header's
-  frame count for the length, and do not take that frame's bitrate for the
-  file's.
 - An equaliser in the mixer — the first thing that will want the ring to
   carry something other than what was written to it.
 - **Music, as VOX is**, Diego's, 14 September: "the music player is really

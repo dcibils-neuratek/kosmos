@@ -118,16 +118,20 @@ function media.open(path)
 
     if info then
       --
-      -- The whole file after the tag is audio, and how long it runs comes
-      -- from the bitrate: exact for a constant-bitrate file and an estimate
-      -- for a variable one. An MP3 is not required to write its length down
-      -- anywhere, so knowing it properly means trusting a Xing header some
-      -- encoders omit, or decoding every frame before playing the first.
+      -- The whole file after the tag is audio. How long it runs comes from a
+      -- Xing or Info header when the encoder wrote one - `mp3.probe` reads
+      -- its frame count, exact, and the average bitrate beside it - and from
+      -- the bitrate otherwise: exact for a constant-bitrate file and an
+      -- estimate for a variable one, because an MP3 is not required to write
+      -- its length down anywhere.
       --
       info.bytes = ((fs.getattr(path) or {}).size or 0) - info.offset
       info.frame = 1
-      info.seconds = (info.bitrate > 0)
-                     and (info.bytes * 8 / (info.bitrate * 1000)) or 0
+
+      if not info.seconds then
+        info.seconds = (info.bitrate > 0)
+                       and (info.bytes * 8 / (info.bitrate * 1000)) or 0
+      end
       decoder = mp3.decoder()
     end
   else
