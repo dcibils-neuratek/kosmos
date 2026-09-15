@@ -480,6 +480,11 @@ for now: muting the speaker when headphones go in waits for jack sensing. And
 the driver's "not connected" was 3, from memory, where the specification says
 01b (`testing.md` §18.76).
 
+**And it plays.** Diego, the same day, on 0.10.70-development: "basket case
+works!", and then "it works great". The ThinkPad has sound through its own
+speaker - which puts EAPD down as what was missing, since the pin, the
+converter and the samples reaching the codec were all the same in 0.10.68.
+
 ### The boot path, end to end - and the three faults it was hiding
 
 **`-kernel` is not a loader, and every x86 boot in this project went through

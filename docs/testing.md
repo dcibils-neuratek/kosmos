@@ -4431,6 +4431,9 @@ output pin plays - QEMU's codec has one output pin, so the loop over the others
 runs first on the ThinkPad. Its boot log names each pin driven and what the
 codec kept.
 
+**And the ThinkPad answered**: Diego heard Basket Case through its speaker on
+0.10.70-development the same day - "it works great".
+
 And as written: `make test` whole - x86-64 172, three more than before (`sound`
 reading its pin back, `sound_eapd`'s write and its line), the media engine 9,
 the Processes window's shares 11, the UEFI boots 38, and the suites 161 of 161

@@ -168,6 +168,13 @@ control 0x00000040`. **What Diego does with it**: boot, play Basket Case, and
 listen to the speaker and to headphones; if it is still silent, `diagnose` in a
 Terminal and `make stick-log` - the `the codec drives pin` lines say what the
 ALC257 kept. Committed, not pushed.
+
+**On the ThinkPad, 0.10.70 plays.** Diego, 15 September: "basket case
+works!", "it works great" - sound through the laptop's speaker, for the first
+time. What was missing was EAPD: the pin, the converter and the samples were
+the same in 0.10.68, which was silent. Headphones not reported yet; jack
+sensing is next for sound (`roadmap.md`), and Music's length for a VBR MP3
+(it said 9:58 for a 3:14 song) is on the list beside it.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a

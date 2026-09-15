@@ -66,7 +66,8 @@ server answers with. `host example.com` at a prompt, and the browser's
 address bar. UDP exists only as far as this needs it — no sockets, because
 nothing else has asked for any.
 
-**Audio.** virtio-snd, a mixer, WAV and MP3.
+**Audio.** virtio-snd and Intel HDA - heard through the ThinkPad's own
+speaker since 0.10.70 - a mixer, WAV and MP3.
 
 **Applications.** A PDF reader, a paint program, a text editor, a photo
 viewer, a calculator, a music player, a file manager, a process list, a
@@ -582,6 +583,13 @@ the Pi", and the Pi is not here yet.
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
   GRUB, which it has not been since 13 September.
 - Doom's sound, behind a hook that already exists.
+- **Jack sensing for the ThinkPad's headphones.** Since 0.10.70 the speaker
+  and the headphone jack play together (`testing.md` §18.76), and Diego heard
+  Basket Case through the speaker. The jack's pin, 0x21, reports presence
+  detect (pin capabilities `0x0001001c`, bit 2): reading it - asked, or told
+  by an unsolicited response - is what mutes the speaker when headphones go
+  in. The account of how the ThinkPad got sound, from a codec that did not
+  answer to an amplifier nobody switched on, is in `thinkpad.md`.
 - **Music's length and bitrate for a VBR MP3.** On the ThinkPad it said
   `MP3 64 k` and `9:58` for Basket Case. Checked against the file on the Mac,
   frame by frame: its first frame is a **Xing header** marked 64 kbps - the
@@ -694,45 +702,6 @@ interrupt, the C rewrite, and measuring during play rather than after. 194
 interrupts per 400 periods says the device services about two periods per
 raise, which is QEMU's model rather than this one. The next measurement
 wants real hardware.
-
-**No sound on the ThinkPad, on some boots.** Its codec, a Realtek ALC257,
-did not answer its root node on `9af841c`'s boot - `the codec did not answer
-its root node` - answered on `895aa3f`'s, where sound came up, and was gone
-again on `ce21147`'s, Music saying "this machine has no sound device". Nothing
-in `hal/pc/hda.c` changed between them. **The driver gave the codec a count of
-reads**, half a million, which a Tiger Lake processor finishes in a few
-milliseconds - where the specification gives codecs 521 microseconds to
-announce themselves after a reset and puts no bound on the first answer. So
-**0.10.67-development gives it time**: a millisecond after reset, up to 200 ms
-to announce itself and 500 ms to answer, on the 8253 that needs no interrupt,
-and a line in the boot log saying how long it took - or how long it was waited
-for (`testing.md` §18.73). If it still does not answer with that, the other
-account is left: a controller in the mode Intel's DSP firmware (SOF) drives.
-
-**And then it played, and was silent** (0.10.68-development, 15 September):
-Music showed `44100 Hz stereo 16-bit MP3`, its position moving and its meter
-green, and Diego heard nothing. So the codec answers, samples reach it, and
-the sound goes somewhere that is not the speaker - or reaches the speaker with
-something left off. The driver takes the first output pin that routes, in the
-codec's own order, skipping pins wired to nothing, and does not set anything
-beyond pin control and the amplifiers' mute and gain. **Next**: the boot log
-says which converter and pin it plays through, and every pin's configuration
-default - which is where "internal speaker" and "headphone jack" are written -
-read from the machine rather than from memory of what an ALC257 is; and Diego
-tries headphones in the jack.
-
-**What the ThinkPad's codec said** (0.10.69-development, `make stick-log`):
-the driver plays converter 0x02 through **pin 0x14, configuration
-`0x90170110` - fixed, internal, a speaker** - so it chose the right pin. The
-headphone jack is **pin 0x21, `0x0421101f`**, which the driver never enables:
-that is why headphones were silent too. And both pins' capabilities have bit
-16 set (`0x00010014`, `0x0001001c`): *EAPD Capable*, by the HDA specification
-(Rev. 1.0a, §7.3.4.9, read from the document). EAPD, bit 1 of verb 70Ch, powers
-the amplifier the pin feeds, and the driver never set it. **0.10.70-development
-sets it** on each pin that has it, enables the jack beside the speaker, reads
-back what the codec kept, and corrects "not connected" to 01b (`testing.md`
-§18.76). **Next, once Diego hears it**: jack sensing, so the speaker goes quiet
-when headphones go in.
 
 **One kernel check failed once**, 1 of 127, and has not since. The evidence
 was destroyed by a `grep` that kept only the summary line. Recorded as
