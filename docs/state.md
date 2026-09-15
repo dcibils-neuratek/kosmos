@@ -36,8 +36,8 @@ develop new features", labelled `-stable` and `-development` (`CLAUDE.md`).
 **Stable: `build/x86_64/kosmos-usb-0.10.63-stable.img`**, `main` at `9af841c`,
 which booted on the ThinkPad that night - `log loader` clean, `/home` on the
 stick, the prompt at 22 seconds (`boot.md`), and no sound yet. It was
-`kosmos-usb-last-good.img` until the labels, and waits for Diego to agree it is
-the stable one. **Development: `build/x86_64/kosmos-usb-0.10.64-development.img`**, `main`
+`kosmos-usb-last-good.img` until the labels, and Diego agreed on 14 September
+that it is the stable one. **Development: `build/x86_64/kosmos-usb-0.10.64-development.img`**, `main`
 at `986a627`, handed to Diego: the stable build plus Music's engine and tags,
 a stick that refuses SYNCHRONIZE CACHE told once (`testing.md` §18.68), the
 disk server's search for the stick said by `diskinfo` in the log's seconds
