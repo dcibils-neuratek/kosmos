@@ -103,6 +103,20 @@ sound device, `diskbench` and `diagnose` first, and Music launched through
 threw away why its list was empty, so it now says - in the window, and as a
 `music:` line in the log for `diagnose` (roadmap, *asked for on 15
 September*).
+
+**0.10.66-development is the build to write now**:
+`build/x86_64/kosmos-usb-0.10.66-development.img`, `main` at `ce21147` -
+0.10.65-development plus the stick starting the desktop by itself
+(`opt/kosmos/boot=wm` on its command line) and Music saying why its list is
+empty (`testing.md` §18.72). Under OVMF, with a screen and a sound device and
+nothing typed: the loader clean with the stick against the build the same,
+`starting wm`, the desktop, the Deskbar and the programs started at login,
+and nothing refused or left at a prompt. A stick that starts `wm` cannot be
+checked by typing at its prompt, so the handover boot now waits for the
+desktop instead. **What Diego does with it**: boot and see the desktop come up
+alone; open Basket Case from Tracker; and if Music still finds nothing, run
+`diagnose` in a Terminal and `make stick-log` - the `music:` line says why.
+Committed, not pushed.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
