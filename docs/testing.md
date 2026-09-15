@@ -4372,3 +4372,66 @@ already plays and hears - 11 checks with `sound_slow_codec`.
 And as written: `make test` whole - x86-64 169, one more than before (`sound`
 saying its route), the media engine 9, the Processes window's shares 11, the
 UEFI boots 38, and the suites 161 of 161 and 157 of 157.
+
+## 18.76 The amplifier switched on, and the jack beside the speaker
+
+**What the ThinkPad said.** 0.10.69-development's boot log, through
+`make stick-log`: the codec plays converter 0x02 through pin 0x14, whose
+configuration default `0x90170110` is a fixed internal speaker - the right pin.
+Music played into it and nothing was heard, and headphones were silent as well.
+Three things in the driver, each read against the HDA specification (Rev. 1.0a,
+downloaded for this) rather than from memory:
+
+- **EAPD was never set.** The speaker's and the jack's pin capabilities,
+  `0x00010014` and `0x0001001c`, both have bit 16, *EAPD Capable* (§7.3.4.9).
+  EAPD is bit 1 of verb 70Ch (§7.3.3.16, Table 93), the power of the amplifier
+  the pin feeds - 0 is that amplifier in D3 and 1 is it in D0 - and nothing
+  wrote it.
+- **The headphone jack was never enabled.** The driver enabled the first pin
+  that routed and stopped; pin 0x21, `0x0421101f`, is a jack and routes from
+  converter 0x02 as well.
+- **"Not connected" was the wrong value.** The driver skipped a pin whose
+  connectivity bits read 3. Table 109 says 01b is no physical connection and
+  11b is a jack and an internal device both. The ThinkPad's unused pins read
+  `0x411111f0`, 01b, and were not skipped - harmless there only because the
+  speaker came first.
+
+**The change.** `drive_pin` enables a pin's output, and its headphone amplifier
+where it has one, unmutes it, and on a pin that controls EAPD sets bit 1,
+keeping BTL and the swap as the codec had them; then it reads back the pin
+control (F07h) and EAPD/BTL (F0Ch) and says them. The first route is driven,
+then every other connected output pin that routes from the same converter -
+speaker and jack together, until something reads the jack's presence.
+`CONFIG_PORT_NONE` is 1. Under QEMU:
+
+```
+-> the codec drives pin 0x03: control 0x00000040
+```
+
+**The check.** QEMU's codec has no EAPD pin, so `opt/kosmos/hdaeapd=1` has the
+driver take its output pin for one. **And QEMU's codec keeps no EAPD/BTL
+register** - it answers 0 to F0Ch whatever was written - so a read-back could
+not tell a driver that sets EAPD from one that does not. `run_x86.py`'s
+`sound_eapd` boots the codec with `debug=1` instead, which names every verb it
+does not handle, and needs 70Ch to arrive carrying bit 1:
+
+```
+hda-output: hda_audio_command: not handled: nid 3 (out), verb 0x70c, payload 0x2
+```
+
+and sound up, with the pin's line saying what EAPD/BTL reads back. `sound`
+needs the pin's control read back as well: 14 checks with `sound_slow_codec`.
+
+| Control | What failed |
+|---|---|
+| C16: the 70Ch write taken out, as a driver that finds the EAPD pin and never sets it | `sound_eapd`, 1 of 2: `70Ch never arrived at the codec` |
+
+**What QEMU cannot say**: whether an amplifier comes up, and whether a second
+output pin plays - QEMU's codec has one output pin, so the loop over the others
+runs first on the ThinkPad. Its boot log names each pin driven and what the
+codec kept.
+
+And as written: `make test` whole - x86-64 172, three more than before (`sound`
+reading its pin back, `sound_eapd`'s write and its line), the media engine 9,
+the Processes window's shares 11, the UEFI boots 38, and the suites 161 of 161
+and 157 of 157.

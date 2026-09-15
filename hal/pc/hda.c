@@ -170,6 +170,18 @@
 #define VERB_SET_POWER_STATE    0x705u
 #define VERB_SET_STREAM_CHANNEL 0x706u
 #define VERB_SET_PIN_CONTROL    0x707u
+#define VERB_GET_PIN_CONTROL    0xf07u      /* section 7.3.3.13 */
+
+/*
+ * EAPD/BTL Enable, section 7.3.3.16 of the specification (Rev. 1.0a, page
+ * 167): Get F0Ch, Set 70Ch, bit 2 the left-right swap, **bit 1 EAPD**, bit 0
+ * BTL. Read from the document, which was downloaded for it on 15 September
+ * rather than recalled. The codec has one EAPD line, so every pin that
+ * controls it reads and writes the same bit.
+ */
+#define VERB_GET_EAPD_BTL       0xf0cu
+#define VERB_SET_EAPD_BTL       0x70cu
+#define EAPD_BTL_EAPD           (1u << 1)
 
 /* The two verbs with a sixteen-bit payload, whose opcode is four bits. */
 #define VERB_SET_FORMAT         0x2u
@@ -199,19 +211,25 @@
 
 #define PIN_CAP_HEADPHONE       (1u << 3)
 #define PIN_CAP_OUTPUT          (1u << 4)
+#define PIN_CAP_EAPD            (1u << 16)  /* section 7.3.4.9, figure 89 */
 
 #define PIN_CTL_OUT_ENABLE      (1u << 6)
 #define PIN_CTL_HP_ENABLE       (1u << 7)
 
 /*
- * The configuration default's top two bits: how the pin is connected.
+ * The configuration default's top two bits: how the pin is connected. Table
+ * 109 of the specification (Rev. 1.0a, section 7.3.3.31): 00b a jack, **01b
+ * no physical connection**, 10b a fixed device such as a laptop's speaker,
+ * 11b a jack and an internal device both. 01b is the one value that
+ * disqualifies a pin outright.
  *
- * 3 means "not connected to anything" - a pin the board designer brought
- * out of the codec and wired to nothing - and it is the one value that
- * disqualifies a pin outright. Everything else is a jack, a fixed internal
- * device (which is what a laptop's speakers are), or both.
+ * **This was 3, written from memory**, which is "both" - so a pin wired to
+ * nothing was driven and one with a jack and a speaker was skipped. The
+ * ThinkPad's codec is what showed it: its unused pins read 0x411111f0, 01b,
+ * beside a speaker at 0x90170110, 10b, and a headphone jack at 0x0421101f,
+ * 00b.
  */
-#define CONFIG_PORT_NONE        3u
+#define CONFIG_PORT_NONE        1u
 
 /*------------------------------------------------------------------------
  * The ring, and how deep it is.
@@ -291,6 +309,7 @@ static struct {
     unsigned  answer_ms;
     unsigned  root_ms;
     bool      gave_up;
+    bool      fake_eapd;        /* `opt/kosmos/hdaeapd`: QEMU's pin taken for one */
 
     unsigned  write_slot;
 
@@ -766,6 +785,58 @@ static void describe_widget(unsigned nid, uint32_t caps)
 }
 
 /*
+ * **A pin made to play**: its output enabled, its headphone amplifier as well
+ * when it has one, its output amplifier unmuted - and EAPD set, when the pin
+ * controls the codec's EAPD line.
+ *
+ * EAPD is the power of the amplifier the pin feeds, section 7.3.3.16: 0 is
+ * that amplifier in D3 and 1 is it in D0 - "It is strongly recommended to
+ * set the EAPD default value to 1." Nothing here set it. On the ThinkPad the codec took the
+ * samples through its speaker pin, Music's meter moved, and there was no
+ * sound - with that pin's capabilities saying EAPD Capable, bit 16. Only bit 1
+ * is changed: BTL and the swap keep whatever the codec had.
+ *
+ * And what the codec kept is read back and said, because a register written
+ * and not read is a guess about a machine this driver cannot hear.
+ */
+static void drive_pin(unsigned pin, unsigned group)
+{
+    uint32_t caps = get_param(pin, PARAM_WIDGET_CAPS);
+    uint32_t pincaps = get_param(pin, PARAM_PIN_CAPS);
+    bool known = pincaps != CODEC_NO_ANSWER;
+    bool eapd = known && ((pincaps & PIN_CAP_EAPD) != 0 || hda.fake_eapd);
+
+    (void)command(verb8(pin, VERB_SET_PIN_CONTROL,
+                        PIN_CTL_OUT_ENABLE
+                        | ((known && (pincaps & PIN_CAP_HEADPHONE) != 0)
+                           ? PIN_CTL_HP_ENABLE : 0u)));
+
+    if (caps != CODEC_NO_ANSWER) {
+        unmute(pin, (unsigned)caps, group);
+    }
+
+    if (eapd) {
+        uint32_t now = command(verb8(pin, VERB_GET_EAPD_BTL, 0));
+        unsigned keep = (now == CODEC_NO_ANSWER) ? 0u : (unsigned)(now & 0x5u);
+
+        (void)command(verb8(pin, VERB_SET_EAPD_BTL, keep | EAPD_BTL_EAPD));
+    }
+
+    boot_fact_begin();
+    kputs("the codec drives pin 0x");
+    kputx(pin, 2);
+    kputs(": control 0x");
+    kputx(command(verb8(pin, VERB_GET_PIN_CONTROL, 0)), 8);
+
+    if (eapd) {
+        kputs(", EAPD/BTL 0x");
+        kputx(command(verb8(pin, VERB_GET_EAPD_BTL, 0)), 8);
+    }
+
+    boot_fact_end();
+}
+
+/*
  * A path from this pin back to a converter, one widget deep.
  *
  * **Two levels is what real codecs need and one is what QEMU has.** The
@@ -949,7 +1020,7 @@ static bool find_widgets(void)
          */
         unsigned dacs[8], pins[16];
         unsigned ndac = 0, npin = 0;
-        unsigned d, p;
+        unsigned d, p, q;
 
         for (w = wstart; w < wstart + wcount; w++) {
             uint32_t caps = get_param(w, PARAM_WIDGET_CAPS);
@@ -993,23 +1064,8 @@ static bool find_widgets(void)
                     continue;
                 }
 
-                {
-                    uint32_t caps = get_param(pins[p], PARAM_WIDGET_CAPS);
-                    uint32_t pin = get_param(pins[p], PARAM_PIN_CAPS);
-
-                    hda.pin = pins[p];
-                    hda.dac = dacs[d];
-
-                    (void)command(verb8(hda.pin, VERB_SET_PIN_CONTROL,
-                                        PIN_CTL_OUT_ENABLE
-                                        | ((pin != CODEC_NO_ANSWER
-                                            && (pin & PIN_CAP_HEADPHONE))
-                                           ? PIN_CTL_HP_ENABLE : 0u)));
-
-                    if (caps != CODEC_NO_ANSWER) {
-                        unmute(hda.pin, (unsigned)caps, fg);
-                    }
-                }
+                hda.pin = pins[p];
+                hda.dac = dacs[d];
 
                 /*
                  * **Where the sound goes, said when it plays.** The converter
@@ -1031,6 +1087,22 @@ static bool find_widgets(void)
                     if (each != CODEC_NO_ANSWER
                         && WIDGET_TYPE(each) == WIDGET_PIN) {
                         describe_widget(w, each);
+                    }
+                }
+
+                drive_pin(hda.pin, fg);
+
+                /*
+                 * **And every other connected output that converter
+                 * reaches** - on a laptop, the headphone jack beside the
+                 * speaker. The ThinkPad's jack, pin 0x21, was never enabled,
+                 * which is why headphones were silent as well. Both play
+                 * until something reads the jack's presence and mutes the
+                 * speaker.
+                 */
+                for (q = p + 1; q < npin; q++) {
+                    if (route(pins[q], hda.dac, fg)) {
+                        drive_pin(pins[q], fg);
                     }
                 }
 
@@ -1238,6 +1310,12 @@ bool hda_init(void)
                 hda.slow_ms = hda.slow_ms * 10u + (unsigned)(word[c] - '0');
             }
         }
+
+        /* And a pin taken for one that controls the EAPD line, because
+         * QEMU's codec has none (`run_x86.py`'s `sound_eapd`). */
+        hda.fake_eapd = hal_boot_option("opt/kosmos/hdaeapd", word,
+                                        sizeof(word))
+                        && word[0] == '1';
     }
 
     if (!reset_controller()) {

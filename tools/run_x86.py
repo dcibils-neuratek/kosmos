@@ -1716,6 +1716,51 @@ def memdisk(image, check):
 
 
 
+def sound_eapd(image, check):
+    """**A pin that controls an amplifier's power has it switched on.**
+
+    EAPD/BTL Enable, section 7.3.3.16 of the HDA specification: bit 1 of verb
+    70Ch powers the amplifier a pin feeds. The ThinkPad's speaker and headphone
+    pins are EAPD Capable, and nothing set it - the codec took the samples and
+    made no sound. QEMU's codec has no such pin, so `opt/kosmos/hdaeapd=1` has
+    the driver take its output pin for one.
+
+    **And QEMU's codec keeps no EAPD/BTL register** - it reads back 0 whatever
+    was written - so the write is seen where it arrives instead: with
+    `debug=1` the codec names every verb it does not handle, and 70Ch is one.
+    That has to carry bit 1; sound has to come up; and the pin's line has to
+    say what EAPD/BTL reads back. What QEMU cannot say is whether that makes a
+    speaker audible; only the ThinkPad can.
+    """
+    out = boot(image, None, 90.0, extra=(
+        "-device", "ich9-intel-hda",
+        "-device", "hda-output,audiodev=a0,debug=1",
+        "-audiodev", "none,id=a0",
+        "-fw_cfg", "name=opt/kosmos/hdaeapd,string=1",
+    ))
+
+    if out is None:
+        check(False, "the machine would not boot with a pin taken for EAPD")
+        return
+
+    wrote = [int(m.group(1), 16) for m in re.finditer(
+        r"nid \d+ \(\w+\), verb 0x70c, payload 0x([0-9a-f]+)", out)]
+
+    check(any(w & 0x2 for w in wrote),
+          "the pin taken for EAPD was not sent 70Ch with EAPD, bit 1, set: "
+          + ("sent " + ", ".join("0x%x" % w for w in wrote) if wrote
+             else "70Ch never arrived at the codec"))
+
+    # QEMU's debug lines land in the middle of the kernel's, so the pin's line
+    # is looked for in pieces rather than whole.
+    check("sound: Intel HDA" in out
+          and "the codec drives pin 0x" in out and "EAPD/BTL 0x" in out,
+          "sound did not come up with a pin taken for EAPD, or the pin's line "
+          "did not say what EAPD/BTL reads back: "
+          + "; ".join(l.strip() for l in out.splitlines()
+                      if "codec drives" in l or "sound:" in l)[:400])
+
+
 def sound_slow_codec(image, check):
     """**A codec that is slow after reset is waited for, in milliseconds.**
 
@@ -1780,6 +1825,13 @@ def sound(image, check):
                         r"0x[0-9a-f]{8}, config 0x[0-9a-f]{8}", out) is not None,
           "the HDA driver played without saying which converter and pin, and "
           "what the pin is: "
+          + "; ".join(l.strip() for l in out.splitlines() if "codec" in l)[:400])
+
+    # **And what the pin was set to, read back**: a pin made to play says what
+    # the codec kept of its control, rather than what was written to it.
+    check(re.search(r"the codec drives pin 0x[0-9a-f]{2}: control 0x[0-9a-f]{8}",
+                    out) is not None,
+          "the HDA driver did not say what its output pin was set to: "
           + "; ".join(l.strip() for l in out.splitlines() if "codec" in l)[:400])
 
     check(re.search(r"beep: %d Hz, \d+ ms of sound" % TONE_HZ, out) is not None,
@@ -3074,6 +3126,7 @@ def main():
     #
     sound(image, check)
     sound_slow_codec(image, check)
+    sound_eapd(image, check)
 
     # And the disk, which is the other thing this board does not take from
     # virtio. A ThinkPad's storage is NVMe or nothing - `docs/thinkpad.md`

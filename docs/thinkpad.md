@@ -468,6 +468,18 @@ interrupt at stage seven - up to 200 ms to announce, 500 ms to answer - and
 the boot log says how long the codec took, which is the number a boot with
 no sound needs (`testing.md` §18.73).
 
+**The amplifier switched on, and the jack beside the speaker** (15 September,
+0.10.70). 0.10.68 played Basket Case into the right pin - 0x14, the internal
+speaker, which 0.10.69's boot log named - and nothing was heard, from the
+speaker or from headphones. The ALC257's speaker and jack pins are both EAPD
+Capable, and EAPD, bit 1 of verb 70Ch, powers the amplifier behind them; the
+driver never set it, and never enabled the jack at all. Now every connected
+output from the chosen converter is enabled, EAPD is set on the pins that
+control it, and the boot log says what the codec read back. Both play together
+for now: muting the speaker when headphones go in waits for jack sensing. And
+the driver's "not connected" was 3, from memory, where the specification says
+01b (`testing.md` §18.76).
+
 ### The boot path, end to end - and the three faults it was hiding
 
 **`-kernel` is not a loader, and every x86 boot in this project went through

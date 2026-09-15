@@ -721,6 +721,19 @@ default - which is where "internal speaker" and "headphone jack" are written -
 read from the machine rather than from memory of what an ALC257 is; and Diego
 tries headphones in the jack.
 
+**What the ThinkPad's codec said** (0.10.69-development, `make stick-log`):
+the driver plays converter 0x02 through **pin 0x14, configuration
+`0x90170110` - fixed, internal, a speaker** - so it chose the right pin. The
+headphone jack is **pin 0x21, `0x0421101f`**, which the driver never enables:
+that is why headphones were silent too. And both pins' capabilities have bit
+16 set (`0x00010014`, `0x0001001c`): *EAPD Capable*, by the HDA specification
+(Rev. 1.0a, §7.3.4.9, read from the document). EAPD, bit 1 of verb 70Ch, powers
+the amplifier the pin feeds, and the driver never set it. **0.10.70-development
+sets it** on each pin that has it, enables the jack beside the speaker, reads
+back what the codec kept, and corrects "not connected" to 01b (`testing.md`
+§18.76). **Next, once Diego hears it**: jack sensing, so the speaker goes quiet
+when headphones go in.
+
 **One kernel check failed once**, 1 of 127, and has not since. The evidence
 was destroyed by a `grep` that kept only the summary line. Recorded as
 intermittent rather than fixed, because nothing fixed it.
