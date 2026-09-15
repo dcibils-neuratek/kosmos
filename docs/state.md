@@ -8,6 +8,14 @@ Last updated: 2026-09-15
 
 ## Where this left off
 
+**Pushed, 15 September: 0.10.70**, after `make prepush` - the build Diego
+made stable (`kosmos-usb-0.10.70-stable.img`): sound through the ThinkPad's
+speaker (EAPD set and the jack driven, the codec waited for in milliseconds,
+`testing.md` §18.73 to §18.76), the desktop starting by itself from the stick,
+the USB driver's wait on both of its endpoints (the stick's blocks from 17 to
+303 IOPS on the ThinkPad), Music saying why its list is empty, and the
+Processes window without its idle row.
+
 **Pushed, 14 September: 0.10.64** (`f73e2b0`), after `make prepush` -
 storage at full speed's steps 1 to 3, Music's engine and tags, and
 0.10.64-development: `diagnose` and `make stick-log`, `log save`, a refused
