@@ -60,6 +60,17 @@ it**: boot it, run `diagnose`, and on the Mac `make stick-log` - then
 `build/stick-diagnose.txt` holds the whole diagnosis, the twenty seconds and
 the codec among it. A stick that does not boot is written back with the
 stable one.
+
+**0.10.65-development supersedes it before it was tried**:
+`build/x86_64/kosmos-usb-0.10.65-development.img`, `main` at `895aa3f` - the
+same build plus the USB driver's wait on both of its endpoints (`70ff5e6`,
+§18.71). Under OVMF on a snapshot: `log loader` clean with the stick against
+the build the same, `/home` the named partition, `found at 0.68 s, by look 1`,
+`diagnose` 14 KB, `diskbench /home` running, and `diskbench usb 0` at
+764 MB/s and 10006 IOPS on the stick's blocks. **This is the one Diego writes**,
+and does the same with: boot, `diagnose`, `make stick-log`. The ThinkPad's
+`diskbench usb 0` and the twenty seconds are what it is for; the stable one is
+still what a stick that misbehaves is written back with. Committed, not pushed.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
