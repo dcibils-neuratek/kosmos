@@ -459,6 +459,15 @@ driver that has to work on a laptop should be the one that is exercised
 every time somebody runs the system. `virt` still runs virtio-sound, so
 neither driver is orphaned.
 
+**The codec is given milliseconds, not reads** (15 September). On the
+ThinkPad sound came up on one boot and not on the boots either side of it,
+with nothing in this driver changed: it gave the codec half a million reads to
+announce itself and to answer, and a Tiger Lake finishes those in a few
+milliseconds. The waits are now time on the 8253's channel 2, which needs no
+interrupt at stage seven - up to 200 ms to announce, 500 ms to answer - and
+the boot log says how long the codec took, which is the number a boot with
+no sound needs (`testing.md` §18.73).
+
 ### The boot path, end to end - and the three faults it was hiding
 
 **`-kernel` is not a loader, and every x86 boot in this project went through

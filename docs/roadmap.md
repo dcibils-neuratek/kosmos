@@ -679,15 +679,19 @@ interrupts per 400 periods says the device services about two periods per
 raise, which is QEMU's model rather than this one. The next measurement
 wants real hardware.
 
-**No sound on the ThinkPad.** Its codec, a Realtek ALC257, does not answer
-its root node: `[3.092] the codec did not answer its root node, so nothing
-about it is known`, then `no sound: an HDA codec with no output path` (build
-`9af841c`, 14 September). Two accounts fit and neither is tested: a Tiger
-Lake controller in the mode Intel's DSP firmware (SOF) drives, where the
-codec is reached through the DSP; or a codec asked before it is out of reset.
-Next: the controller's PCI identity, and whether a longer wait after reset
-changes the answer, read beside Haiku's own HDA driver. Wanted - Diego asked
-to hear his MP3 there - and after storage.
+**No sound on the ThinkPad, on some boots.** Its codec, a Realtek ALC257,
+did not answer its root node on `9af841c`'s boot - `the codec did not answer
+its root node` - answered on `895aa3f`'s, where sound came up, and was gone
+again on `ce21147`'s, Music saying "this machine has no sound device". Nothing
+in `hal/pc/hda.c` changed between them. **The driver gave the codec a count of
+reads**, half a million, which a Tiger Lake processor finishes in a few
+milliseconds - where the specification gives codecs 521 microseconds to
+announce themselves after a reset and puts no bound on the first answer. So
+**0.10.67-development gives it time**: a millisecond after reset, up to 200 ms
+to announce itself and 500 ms to answer, on the 8253 that needs no interrupt,
+and a line in the boot log saying how long it took - or how long it was waited
+for (`testing.md` §18.73). If it still does not answer with that, the other
+account is left: a controller in the mode Intel's DSP firmware (SOF) drives.
 
 **One kernel check failed once**, 1 of 127, and has not since. The evidence
 was destroyed by a `grep` that kept only the summary line. Recorded as

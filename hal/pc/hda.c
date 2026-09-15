@@ -74,6 +74,7 @@
 #include "console.h"
 #include "mmio.h"
 #include "mmu.h"
+#include "multiboot.h"
 #include "pc.h"
 #include "pci.h"
 #include "spinlock.h"
@@ -279,6 +280,18 @@ static struct {
     unsigned  corb_wp;
     unsigned  rirb_rp;
 
+    /*
+     * The codec's time, in milliseconds since the controller left reset as
+     * the waits below count them; `opt/kosmos/hdaslow`, for a codec made to
+     * be late; and what the boot log is told about how long it took.
+     */
+    unsigned  since_reset_ms;
+    unsigned  slow_ms;
+    unsigned  announced_ms;
+    unsigned  answer_ms;
+    unsigned  root_ms;
+    bool      gave_up;
+
     unsigned  write_slot;
 
     bool              primed;
@@ -324,14 +337,50 @@ static void publish(void)
 }
 
 /*
- * How long to wait for a bit to change, in reads.
- *
- * A number rather than a clock, for `i8042.c`'s reason: sound is brought up
- * from `kernel/main.c` and a driver that needed a working timer in order to
- * report that it had failed would be no use at all. Generous - a real
- * controller answers a reset in microseconds.
+ * How long to wait for one of the controller's own bits to change, in reads.
+ * A number rather than a clock, and generous: a real controller answers a
+ * reset in microseconds. **Not for the codec** - see below.
  */
 #define PATIENCE    500000u
+
+/*
+ * **The codec is given time, measured, and not a number of reads.**
+ *
+ * It was given `PATIENCE` reads, and on the ThinkPad sound came up on one boot
+ * of 0.10.65 and not on the boots either side of it, with nothing in this file
+ * changed between them. A fast processor gets through half a million reads in
+ * a few milliseconds, and a codec that needs longer than that after a reset
+ * looked like no codec, or like a codec that did not answer. The
+ * specification gives codecs 521 microseconds to announce themselves after a
+ * reset; how long one takes to answer its first verb it does not bound.
+ *
+ * So the codec's waits are milliseconds on channel 2 of the 8253, which
+ * `pc_timer_wait_ms` watches directly and which needs no interrupt: sound is
+ * brought up at stage seven, before the timer, and that was the whole reason
+ * this counted reads. A codec that answers at once still costs nothing -
+ * every wait reads `QUICK_READS` times before its first millisecond.
+ */
+#define CODEC_ANNOUNCE_MS   200u    /* for a codec to show itself in STATESTS */
+#define CODEC_ANSWER_MS     500u    /* for one verb's response */
+#define QUICK_READS         1000u   /* before a wait waits a millisecond */
+
+/* One millisecond, counted from the controller leaving reset. */
+static void codec_wait_ms(void)
+{
+    pc_timer_wait_ms(1);
+    hda.since_reset_ms++;
+}
+
+/*
+ * Whether the codec is to be treated as not there yet. `opt/kosmos/hdaslow`,
+ * in milliseconds, holds back what a codec announces and answers until that
+ * long after the reset - which is how QEMU's codec, which answers at once, is
+ * made to be a late one (`run_x86.py`'s `sound_slow_codec`).
+ */
+static bool codec_held_back(void)
+{
+    return hda.since_reset_ms < hda.slow_ms;
+}
 
 /*------------------------------------------------------------------------
  * The command ring, which is how a codec is spoken to at all.
@@ -374,7 +423,7 @@ static uint32_t verb16(unsigned nid, unsigned opcode, unsigned payload)
 
 static uint32_t command(uint32_t verb)
 {
-    unsigned n;
+    unsigned n, waited = 0;
     unsigned wp = (hda.corb_wp + 1) % CORB_ENTRIES;
 
     corb[wp] = verb;
@@ -383,11 +432,18 @@ static uint32_t command(uint32_t verb)
     hda.corb_wp = wp;
     write16(hda.base + CORBWP, (uint16_t)wp);
 
-    for (n = 0; n < PATIENCE; n++) {
+    /*
+     * Quick reads first, then a millisecond at a time up to CODEC_ANSWER_MS -
+     * and not again once a verb has gone unanswered, so a codec that answers
+     * nothing costs one wait rather than one for every verb a dump asks.
+     */
+    for (n = 0; ; n++) {
         unsigned hw = read16(hda.base + RIRBWP) & (RIRB_ENTRIES - 1u);
 
-        if (hw != hda.rirb_rp) {
+        if (hw != hda.rirb_rp && !codec_held_back()) {
             uint32_t response;
+
+            hda.answer_ms = waited;
 
             hda.rirb_rp = (hda.rirb_rp + 1) % RIRB_ENTRIES;
             response = rirb[hda.rirb_rp].response;
@@ -402,9 +458,21 @@ static uint32_t command(uint32_t verb)
 
             return response;
         }
+
+        if (n < QUICK_READS) {
+            continue;
+        }
+
+        if (hda.gave_up || waited >= CODEC_ANSWER_MS) {
+            break;
+        }
+
+        codec_wait_ms();
+        waited++;
     }
 
-
+    hda.gave_up = true;
+    hda.answer_ms = waited;
     return CODEC_NO_ANSWER;
 }
 
@@ -798,6 +866,8 @@ static bool find_widgets(void)
     unsigned silent = 0, other = 0, no_nodes = 0;
     uint32_t other_type = 0;
 
+    hda.root_ms = hda.answer_ms;
+
     if (roots == CODEC_NO_ANSWER) {
         /*
          * The codec did not answer the very first question. Nothing below
@@ -807,7 +877,11 @@ static bool find_widgets(void)
          * link up - so this line is worth more than any other here.
          */
         boot_fact_begin();
-        kputs("the codec did not answer its root node, so nothing about it is known");
+        kputs("the codec announced itself ");
+        kputu(hda.announced_ms);
+        kputs(" ms after reset and did not answer its root node in ");
+        kputu(hda.root_ms);
+        kputs(" ms, so nothing about it is known");
         boot_fact_end();
         return false;
     }
@@ -1079,16 +1153,20 @@ static bool reset_controller(void)
      * not. The codecs on the link need 25 frames - 521 microseconds - to
      * announce themselves in `STATESTS`, and reading it immediately reads
      * zero on hardware that has four of them. There is no bit to poll; the
-     * specification gives a duration. This is a spin because the timer is
-     * not necessarily up yet, and it is generous for the same reason
-     * `PATIENCE` is.
+     * specification gives a duration. So a millisecond first, always, and then
+     * a millisecond at a time until a codec shows or CODEC_ANNOUNCE_MS pass -
+     * on the 8253, where this was a count of reads a fast processor finished
+     * too soon.
      */
-    for (n = 0; n < PATIENCE; n++) {
-        if (read16(hda.base + STATESTS) != 0) {
-            break;
-        }
+    hda.since_reset_ms = 0;
+    codec_wait_ms();
+
+    while ((codec_held_back() || read16(hda.base + STATESTS) == 0)
+           && hda.since_reset_ms < CODEC_ANNOUNCE_MS) {
+        codec_wait_ms();
     }
 
+    hda.announced_ms = hda.since_reset_ms;
     return true;
 }
 
@@ -1120,14 +1198,33 @@ bool hda_init(void)
 
     hda.irq = dev.irq;
 
+    /* A codec made to be late, for the check that one is waited for. */
+    {
+        char word[8];
+        unsigned c;
+
+        hda.slow_ms = 0;
+
+        if (hal_boot_option("opt/kosmos/hdaslow", word, sizeof(word))) {
+            for (c = 0; word[c] >= '0' && word[c] <= '9'; c++) {
+                hda.slow_ms = hda.slow_ms * 10u + (unsigned)(word[c] - '0');
+            }
+        }
+    }
+
     if (!reset_controller()) {
         description = "an HDA controller that would not leave reset";
         return false;
     }
 
-    states = read16(hda.base + STATESTS);
+    states = codec_held_back() ? 0 : read16(hda.base + STATESTS);
 
     if (states == 0) {
+        boot_fact_begin();
+        kputs("no codec announced itself on the link in ");
+        kputu(hda.announced_ms);
+        kputs(" ms after the controller left reset");
+        boot_fact_end();
         description = "an HDA controller with no codec on the link";
         return false;
     }
@@ -1197,6 +1294,16 @@ bool hda_init(void)
      */
     mmio_write32(hda.base + INTCTL, INTCTL_GIE | (1u << hda.stream_index));
     pc_irq_unmask(hda.irq);
+
+    /* How long the codec took, which is the number that decided whether a
+     * ThinkPad had sound on a given boot. */
+    boot_fact_begin();
+    kputs("the codec announced itself ");
+    kputu(hda.announced_ms);
+    kputs(" ms after reset, and answered its root node in ");
+    kputu(hda.root_ms);
+    kputs(" ms");
+    boot_fact_end();
 
     description = "Intel HDA";
     return true;

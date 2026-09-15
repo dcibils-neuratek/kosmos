@@ -4251,3 +4251,52 @@ And as written: `make test` whole - the media engine 9, x86-64 167, the UEFI
 boots 38, the stick check 12, the disk 33 across two boots, the machine with no
 display on both boards with all 113 programs in `/bin`, and the suites 161 of
 161 and 157 of 157.
+
+## 18.73 A codec given time, and a codec made to be late
+
+**What the ThinkPad showed.** Its codec did not answer its root node on
+`9af841c`'s boot, answered on `895aa3f`'s - `sound: Intel HDA`, where Music
+could have played - and was gone again on `ce21147`'s, where Music said "this
+machine has no sound device". Nothing in `hal/pc/hda.c` changed across the
+three. **The driver gave the codec half a million reads**, to announce itself
+in `STATESTS` after the reset and to answer each verb, and a Tiger Lake
+finishes those in a few milliseconds.
+
+**The fix**: milliseconds on channel 2 of the 8253, which
+`pc_timer_wait_ms` polls without an interrupt - sound comes up at stage seven,
+before the timer, which is why it counted reads. A millisecond after reset,
+then up to 200 ms for a codec to announce itself and 500 ms for an answer,
+each after a thousand quick reads so a codec that answers at once costs
+nothing, and no long wait again once a verb has gone unanswered. And the boot
+log says how long it took:
+
+```
+-> the codec announced itself 1 ms after reset, and answered its root node in 0 ms
+-> sound: Intel HDA, 44100 Hz stereo, 256-frame periods (5 ms), 4 deep
+```
+
+**A codec made to be late.** QEMU's codec answers at once, so
+`opt/kosmos/hdaslow=150` holds back what it announces and answers until 150 ms
+after the reset. `run_x86.py`'s `sound_slow_codec` boots with it and needs
+sound up and the codec said to have announced itself at least 150 ms in:
+
+```
+-> the codec announced itself 150 ms after reset, and answered its root node in 0 ms
+```
+
+`sound`, the tone played through the HDA device and heard back, is unchanged
+and passes.
+
+| Control | What failed |
+|---|---|
+| C13: both waits a millisecond, as a count of reads is on a fast processor | `sound_slow_codec`: `no codec announced itself on the link in 1 ms after the controller left reset`, then `no sound: an HDA controller with no codec on the link` |
+
+**What it cannot show** is that the ThinkPad's codec was late rather than
+unreachable. The next boot's log says which: a number of milliseconds and
+sound, or the same failure after the full wait - and then the other account,
+a controller in the mode Intel's DSP firmware drives, is the one left.
+
+And as written: `make test` whole - x86-64 168, one more than before
+(`sound_slow_codec`), the media engine 9, the UEFI boots 38, the stick check
+12, the disk 33 across two boots, the machine with no display on both boards
+with all 113 programs in `/bin`, and the suites 161 of 161 and 157 of 157.

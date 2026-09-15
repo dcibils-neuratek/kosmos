@@ -1716,6 +1716,38 @@ def memdisk(image, check):
 
 
 
+def sound_slow_codec(image, check):
+    """**A codec that is slow after reset is waited for, in milliseconds.**
+
+    The HDA driver gave the codec half a million reads, and on the ThinkPad
+    sound came up on one boot and not the next with nothing changed: a fast
+    processor finishes those reads in a few milliseconds. QEMU's codec answers
+    at once, so `opt/kosmos/hdaslow=150` holds back what it announces and
+    answers until 150 ms after the controller leaves reset. The driver has to
+    wait that out, bring sound up, and say how long the codec took.
+    """
+    out = boot(image, None, 90.0, extra=(
+        "-device", "ich9-intel-hda",
+        "-device", "hda-output,audiodev=a0",
+        "-audiodev", "none,id=a0",
+        "-fw_cfg", "name=opt/kosmos/hdaslow,string=150",
+    ))
+
+    if out is None:
+        check(False, "the machine would not boot with a slow HDA codec")
+        return
+
+    said = [l.strip() for l in out.splitlines()
+            if "codec" in l or "sound" in l]
+    took = re.search(r"the codec announced itself (\d+) ms after reset, and "
+                     r"answered its root node in (\d+) ms", out)
+
+    check("sound: Intel HDA" in out and took is not None
+          and int(took.group(1)) >= 150,
+          "a codec held back for 150 ms after reset was not waited for: "
+          + ("; ".join(said[:4]) or "nothing was said about sound"))
+
+
 def sound(image, check):
     """Boots with a real HDA controller, plays a tone, and listens."""
     wav = os.path.join(tempfile.gettempdir(), "kosmos-x86-hda.wav")
@@ -3029,6 +3061,7 @@ def main():
     # interface a ThinkPad has, so what passes here is what will run there.
     #
     sound(image, check)
+    sound_slow_codec(image, check)
 
     # And the disk, which is the other thing this board does not take from
     # virtio. A ThinkPad's storage is NVMe or nothing - `docs/thinkpad.md`
