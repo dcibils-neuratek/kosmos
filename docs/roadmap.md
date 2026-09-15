@@ -284,8 +284,8 @@ is the one that makes the machine Diego owns behave like a computer:
    file written and read back - with the desktop about 20 seconds late, not
    yet explained.
 
-   **Being built for 0.10.64-development**, asked for by Diego on 14
-   September: the disk server's search for the stick, counted and reported by
+   **Built as 0.10.64-development** (`986a627`, handed to Diego to try on
+   the ThinkPad), asked for by Diego on 14 September: the disk server's search for the stick, counted and reported by
    `diskinfo` in the log's own seconds, to find those 20 seconds; a stick that
    does not do SYNCHRONIZE CACHE - the Kingston answers ILLEGAL REQUEST,
    20h/00h, to every one, twice a commit - told once and not asked again;
