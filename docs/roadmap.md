@@ -615,7 +615,14 @@ the Pi", and the Pi is not here yet.
   `docs/music.html`.
 
   **Step 3 needs four things the system does not have yet**, found by reading
-  on 14 September, and proposed to Diego before any is built:
+  on 14 September, and proposed to Diego before any is built. **He answered on
+  15 September - "music first, yes to all"**: Music's window comes before USB
+  step 6b, the large title is a size the UI kit carries rather than an
+  application drawing its own pixels, and **Music is the pilot of the flat
+  look**, after which he decides whether the other applications follow
+  (`ui.md` §16.8b). What he said first: "i love the music app design. can we do
+  it for real in kosmos?", and "i might redo a lot of the current apps with
+  this style and design aesthetic".
   1. **A scaled blit in `gfx`**, in C: a cover is hundreds of pixels and
      drawn at 78 and 44. `photo.lua` already says one belongs there, and that
      a scaler in Lua would be the per-pixel loop `gfx.md` 19.2 forbids.
@@ -627,9 +634,11 @@ the Pi", and the Pi is not here yet.
      manager resizes a window when a person drags it, and nothing lets an
      application ask. A small request in `wm.lua` and `window:resize`.
   4. **A title larger than the three text roles**, which an ordinary window
-     draws at the sizes the desktop's font settings give: either a window
-     that draws its own pixels (`direct = true`, `gfx.use_font` at any size)
-     or a text command that carries a size. Diego's choice.
+     draws at the sizes the desktop's font settings give. **Decided: a text
+     command that carries a size**, so every application restyled after Music
+     gets large text without drawing its own pixels - which is what a window
+     with `direct = true` would have meant, and it would have helped Music
+     alone.
 - A markdown viewer, for manuals inside the system.
 - **Selection in the terminal**, which is where people most want to copy
   from and is the one window the clipboard cannot reach. It draws its

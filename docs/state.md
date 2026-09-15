@@ -196,6 +196,18 @@ file, the rest one step off, no gaps - so the thin sound is the laptop's
 speaker. The 64 was the file's Xing header frame; the kit now reads that
 header, so Music gives 3:14 and `197 kbps VBR` (`testing.md` §18.77). Not yet
 on a stick.
+
+**Next: Music's window, and it is the pilot of a second look.** Diego, 15
+September, on `docs/music.html`: "i love the music app design. can we do it
+for real in kosmos?", "i might redo a lot of the current apps with this style
+and design aesthetic", and then "music first, yes to all". So Music's window
+comes **before USB 6b**; the large title is **a size the UI kit carries**
+rather than an application drawing its own pixels, because what comes after
+Music is other applications restyled; and Music is built as the **pilot**,
+after which he decides whether the flat look spreads (`ui.md` §16.8b, two rows
+in `README.md`). The four things it needs are in `roadmap.md`: a scaled blit in
+`gfx`, covers out of an MP3, a window that can ask for its own size, and the
+title size. In that order, each with its test.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a

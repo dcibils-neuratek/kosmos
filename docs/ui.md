@@ -344,6 +344,16 @@ would be the one genuinely wasteful thing it could do.
 So: **Kosmos is dimensional, and it means it.** The palette in
 `/system/ui/theme` is ours and is chosen fresh; the geometry is deliberate.
 
+**And a second look is being tried, in one application first** (15 September).
+Diego, seeing `docs/music.html`: "i love the music app design. can we do it
+for real in kosmos?", then "i might redo a lot of the current apps with this
+style and design aesthetic". That design is flat, dark with an orange accent
+and a large title - not what this section says the system is. So Music is
+built as the **pilot**: what it needs goes into the kit (a text size, pictures
+drawn at any size) rather than into Music, and when Diego has used it he
+decides whether the other applications follow. Until he does, this section
+stands and the flat look is one application's.
+
 | | Kosmos does | Why |
 |---|---|---|
 | Buttons | Raised, with a light top-left and a dark bottom-right edge | It says "press me" before you have read the label |
