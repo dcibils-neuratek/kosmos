@@ -696,8 +696,16 @@ every check under OVMF, which is necessary and not sufficient. So:
   that differs, naming the page.
 - **The table is read before a stick is handed over** - not a summary, and
   not a memory of the table.
-- **A layout that has not booted there is offered as the experiment it is**,
-  second, beside a stick that has.
+- **One stick, and each build adds to the last one that booted.** Diego, on
+  14 September 2026: "i am not keen on keeping booting sticks A and B.. its
+  complicated to follow. Make it simple and just make iterative builds so we
+  keep testing new additions on top of things that we know they work. its
+  incremental". So there is one stick and one image,
+  `build/x86_64/kosmos-usb.img`, built from `main` and booted under OVMF before
+  it is handed over; the image that last booted on the ThinkPad is kept on the
+  Mac as `build/x86_64/kosmos-usb-last-good.img`, and a stick that does not boot
+  is written with that one. Each build is the last good one plus what came
+  since, so a stick that stops points at what came since.
 - **On a boot that works, the first photograph is `log loader`**, which is
   what fills the table in.
 

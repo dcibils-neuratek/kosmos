@@ -25,15 +25,17 @@ neighbouring blocks in as few calls as that allows, and the journal writes in
 runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7 and
 2.4. **Next: the ThinkPad's numbers**, from a stick with this build: under QEMU a
 write is 81 to 91% kfs, but kfs's own work is 1.3 ms for the 768 KB file on the
-Mac, and QEMU inflates CPU work (§18.65). **The stick is built, as an
-experiment**: `build/x86_64/kosmos-usb-0.10.63-9af841c-home-experiment.img`,
-from `make MEGA=1 x86-usb-image USB_HOME=partition` - `/home` in a partition of
-its own, holding `build/kosmos.img` with Diego's Basket Case MP3, the WAD and
-the video clip. It is offered beside `c70d9df`, the same layout, which booted
-there. Under OVMF, on a snapshot: the loader clean, `/home` the partition its
-command line names, the files there, and `diskbench /home` running. On the
-ThinkPad the first photograph is `log loader`, then `diskbench /home` and
-`diskbench usb 0`. Its sound does not play there yet. Meanwhile Music's
+Mac, and QEMU inflates CPU work (§18.65). **One stick now, built incrementally** - Diego, 14 September: "make
+iterative builds so we keep testing new additions on top of things that we know
+they work". The stick is `build/x86_64/kosmos-usb.img`, from `main` at
+`3bf6ca6` with `make MEGA=1 x86-usb-image USB_HOME=partition`: the storage
+work and Music's engine and tags on top of `c70d9df`, which booted there.
+Under OVMF on a snapshot: the loader clean, `/home` the partition its command
+line names, Diego's files there, and `diskbench /home` running. The image that
+last booted on the ThinkPad is `build/x86_64/kosmos-usb-last-good.img`
+(`c70d9df`'s), for when a new one does not. Photos to take: `log loader`,
+`diskinfo`, `ls /home`, `diskbench /home`, `diskbench usb 0`. Its sound does
+not play there yet. Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
 scaled blit, covers named from inside a file, a window asking for its own
