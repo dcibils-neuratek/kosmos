@@ -1248,7 +1248,12 @@ exits that all printed the same sentence. It now counts what it skipped and
 prints one line on the way out with nothing (`testing.md` §18.28). The next
 ThinkPad boot's log is what to read. If it says the root node did not answer,
 the likely cause is Intel's DSP firmware owning the audio controller - a
-much larger job than a graph walk.
+much larger job than a graph walk. **It said so, on 14 September**, from
+`9af841c` on the Kingston: `the codec did not answer its root node, so
+nothing about it is known`, then `no sound: an HDA codec with no output path`,
+at 3.1 seconds. So the ThinkPad's sound is the larger job, and the next step is
+finding out whether the controller is in its DSP's hands before any routing is
+written.
 
 **4K: the goal is decided and the plan is not.** Diego will connect a 4K
 monitor, and every compiled-in limit sized for a 512 MB QEMU guest has to be
