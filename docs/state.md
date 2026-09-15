@@ -2,7 +2,7 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 ---
 
@@ -151,6 +151,23 @@ plays through, and every pin's raw capabilities and configuration default
 boot, play Basket Case for a few seconds, `diagnose` in a Terminal, and `make
 stick-log` - the ThinkPad's pins, read from the machine, decide the fix.
 Committed, not pushed.
+
+**On the ThinkPad, 0.10.69 named the pins**: the codec plays converter 0x02
+through pin 0x14, `0x90170110`, the internal speaker - the right pin - and the
+headphone jack, pin 0x21, was never enabled. Both pins control the power of the
+amplifier behind them (EAPD), which the driver never switched on, and its "not
+connected" value was 3 where the HDA specification says 01b (`roadmap.md`).
+
+**0.10.70-development is the build to write now**:
+`build/x86_64/kosmos-usb-0.10.70-development.img`, `main` at `b5ce4a4` -
+0.10.69-development plus EAPD set on each pin that controls it, the jack driven
+beside the speaker, "not connected" read as the specification says, and each
+driven pin's settings read back into the log (`testing.md` §18.76). Under OVMF:
+the desktop by itself, the loader clean, and `the codec drives pin 0x03:
+control 0x00000040`. **What Diego does with it**: boot, play Basket Case, and
+listen to the speaker and to headphones; if it is still silent, `diagnose` in a
+Terminal and `make stick-log` - the `the codec drives pin` lines say what the
+ALC257 kept. Committed, not pushed.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
