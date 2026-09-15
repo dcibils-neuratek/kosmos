@@ -31,9 +31,11 @@ they work". The stick is `build/x86_64/kosmos-usb.img`, from `main` at
 `3bf6ca6` with `make MEGA=1 x86-usb-image USB_HOME=partition`: the storage
 work and Music's engine and tags on top of `c70d9df`, which booted there.
 Under OVMF on a snapshot: the loader clean, `/home` the partition its command
-line names, Diego's files there, and `diskbench /home` running. The image that
-last booted on the ThinkPad is `build/x86_64/kosmos-usb-last-good.img`
-(`c70d9df`'s), for when a new one does not. Photos to take: `log loader`,
+line names, Diego's files there, and `diskbench /home` running. **`9af841c` booted
+on the ThinkPad the same night** - the storage steps, with the kernel's disk
+call at 124 KB: `log loader` clean, `/home` on the stick, the prompt at 22
+seconds (`boot.md`) - so it is now the last good one,
+`build/x86_64/kosmos-usb-last-good.img`, for when a new one does not. Photos to take: `log loader`,
 `diskinfo`, `ls /home`, `diskbench /home`, `diskbench usb 0`. Its sound does
 not play there yet. Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
