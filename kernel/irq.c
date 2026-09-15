@@ -357,33 +357,45 @@ long irq_wait(struct irq_line *line, unsigned long ticks)
  * looks at every device it holds after any wake loses nothing by that, and a
  * line still pending makes the next wait return at once.
  *
- * **And an endpoint, when `endpoint` is not negative** (USB step 5c,
+ * **And endpoints, up to two, each when it is not negative** (USB step 5c,
  * `usb.md` §7). A driver with clients waits for them on the same wait, rather
  * than looking at its endpoint between interrupts - which on an idle machine
  * would make every request wait out a nap. A caller already queued answers
- * `IRQ_WAIT_CALLER`, for a receive that does not block to collect; otherwise
- * this thread becomes the endpoint's watcher, which `ipc_call` wakes. **A line
- * with an interrupt is answered before a caller**, so a stream of requests
- * cannot hold off a mouse.
+ * `IRQ_WAIT_CALLER` plus its endpoint's place, for a receive that does not
+ * block to collect; otherwise this thread becomes each endpoint's watcher,
+ * which `ipc_call` wakes. **A line with an interrupt is answered before a
+ * caller**, and the first endpoint's caller before the second's, so a stream
+ * of requests cannot hold off a mouse.
  *
- * **Two locks, and no wake lost between them.** Every round takes the
- * endpoint's lock first and the lines' second, looks and records with both
- * held, then lets the endpoint's go - into the masked state, because the
+ * **Two, because the xHCI driver's clients come in on two**: the disk
+ * server's write endpoint and `/dev/blocks`. With one on the wait, a read on
+ * `/dev/blocks` waited out the driver's 50 ms deadline - 17 a second, the
+ * ThinkPad's number and QEMU's alike, where `/home` on the same stick read
+ * 938 (`testing.md` §18.71).
+ *
+ * **The locks, and no wake lost between them.** Every round takes the
+ * endpoints' locks first and the lines' last, looks and records with all of
+ * them held, then lets the endpoints' go - into the masked state, because the
  * lines' is still held - and blocks releasing the lines' into the state from
- * before either. A caller wakes a watcher only under the lines' lock
- * (`irq_wake_watcher`), so it cannot land between the endpoint's release and
+ * before any. A caller wakes a watcher only under the lines' lock
+ * (`irq_wake_watcher`), so it cannot land between an endpoint's release and
  * the block, where `thread_wake` - which does nothing to a thread that is not
  * blocked - would lose it. An interrupt needs nothing new: it takes the lines'
- * lock as it always has. Nothing takes the two in the other order.
+ * lock as it always has. Nothing takes an endpoint's lock after the lines',
+ * and **two endpoints are taken in the order of where they are**, lower first,
+ * so two waits naming the same pair the other way round cannot each hold one
+ * and want the other. Nothing else in the kernel holds two endpoints' locks.
  */
 long irq_wait_any(struct irq_line *const *set, unsigned count,
-                  unsigned long ticks, int endpoint)
+                  unsigned long ticks, const int *endpoints, unsigned ends)
 {
     struct thread *self = thread_current();
     uint64_t deadline = 0;
-    unsigned i;
+    unsigned order[IPC_WATCH_MAX] = { 0, 1 };
+    unsigned i, e, k;
 
-    if (set == NULL || count == 0) {
+    if (set == NULL || count == 0 || ends > IPC_WATCH_MAX
+        || (ends > 0 && endpoints == NULL)) {
         return SYS_ERR_DENIED;
     }
 
@@ -393,26 +405,57 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
         }
     }
 
+    /* Lower first, and one endpoint named twice refused, because its lock
+     * would be taken twice. */
+    if (ends == 2 && endpoints[0] >= 0 && endpoints[1] >= 0) {
+        uintptr_t first = (uintptr_t)ipc_endpoint_peek(self, endpoints[0]);
+        uintptr_t second = (uintptr_t)ipc_endpoint_peek(self, endpoints[1]);
+
+        if (first != 0 && first == second) {
+            return SYS_ERR_DENIED;
+        }
+
+        if (second < first) {
+            order[0] = 1;
+            order[1] = 0;
+        }
+    }
+
     if (ticks != 0) {
         deadline = thread_deadline_in(ticks);
     }
 
     for (;;) {
-        struct endpoint *ep = NULL;
-        unsigned long epflags = 0, flags;
+        struct endpoint *ep[IPC_WATCH_MAX] = { NULL, NULL };
+        unsigned long epflags[IPC_WATCH_MAX] = { 0, 0 };
+        unsigned long flags, before = 0;
         long answer = SYS_NO_INTERRUPT;
-        bool done = false;
+        bool done = false, held = false;
 
-        if (endpoint >= 0) {
-            ep = ipc_endpoint_lock(self, endpoint, &epflags);
+        for (k = 0; k < ends; k++) {
+            e = order[k];
+
+            if (endpoints[e] < 0) {
+                continue;
+            }
+
+            ep[e] = ipc_endpoint_lock(self, endpoints[e], &epflags[e]);
+
+            /* The state from before any lock, kept by the first one taken. */
+            if (ep[e] != NULL && !held) {
+                before = epflags[e];
+                held = true;
+            }
         }
 
         flags = spin_lock(&lines_lock);
 
         /* An endpoint that names nothing, or went away while this slept. */
-        if (endpoint >= 0 && ep == NULL) {
-            answer = SYS_ERR_DENIED;
-            done = true;
+        for (e = 0; e < ends && !done; e++) {
+            if (endpoints[e] >= 0 && ep[e] == NULL) {
+                answer = SYS_ERR_DENIED;
+                done = true;
+            }
         }
 
         /* A line released underneath, or somebody else's wait: refused, as
@@ -433,21 +476,25 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
             }
         }
 
-        if (!done && ep != NULL && ipc_endpoint_has_caller(ep)) {
-            answer = IRQ_WAIT_CALLER;
-            done = true;
+        for (e = 0; e < ends && !done; e++) {
+            if (ep[e] != NULL && ipc_endpoint_has_caller(ep[e])) {
+                answer = IRQ_WAIT_CALLER + (long)e;
+                done = true;
+            }
         }
 
-        /* After the counts and the caller, so an interrupt or a call that
+        /* After the counts and the callers, so an interrupt or a call that
          * came as the deadline passed is taken rather than reported missing. */
         if (!done && deadline != 0 && cpu_cycles() >= deadline) {
             done = true;
         }
 
-        /* One watcher, as `ipc_wait_for_caller` allows one. */
-        if (!done && ep != NULL && !ipc_endpoint_watch(ep, self)) {
-            answer = SYS_ERR_DENIED;
-            done = true;
+        /* One watcher an endpoint, as `ipc_wait_for_caller` allows one. */
+        for (e = 0; e < ends && !done; e++) {
+            if (ep[e] != NULL && !ipc_endpoint_watch(ep[e], self, e)) {
+                answer = SYS_ERR_DENIED;
+                done = true;
+            }
         }
 
         if (done) {
@@ -459,11 +506,16 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
 
             spin_unlock(&lines_lock, flags);
 
-            if (ep != NULL) {
-                ipc_endpoint_unwatch(ep, self);
-                ipc_endpoint_unlock(ep, epflags);
-            } else if (endpoint >= 0) {
-                self->ipc.watching = NULL;      /* its endpoint is gone */
+            /* In the reverse of the order taken, each into its own state. */
+            for (k = ends; k-- > 0;) {
+                e = order[k];
+
+                if (ep[e] != NULL) {
+                    ipc_endpoint_unwatch(ep[e], self, e);
+                    ipc_endpoint_unlock(ep[e], epflags[e]);
+                } else if (endpoints[e] >= 0) {
+                    self->ipc.watching[e] = NULL;   /* its endpoint is gone */
+                }
             }
 
             return answer;
@@ -475,16 +527,24 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
 
         self->wake_at = deadline;
 
-        if (ep != NULL) {
-            ipc_endpoint_unlock(ep, flags);     /* masked: lines' still held */
-            flags = epflags;
+        /* Masked, every one: the lines' lock is still held. */
+        for (k = ends; k-- > 0;) {
+            e = order[k];
+
+            if (ep[e] != NULL) {
+                ipc_endpoint_unlock(ep[e], flags);
+            }
+        }
+
+        if (held) {
+            flags = before;
         }
 
         thread_block_and_release(&lines_lock, flags);
 
         self->wake_at = 0;
 
-        /* Woken: an interrupt on one of them, a caller, a line or the
+        /* Woken: an interrupt on one of them, a caller, a line or an
          * endpoint going away, or the deadline. Round again, and the loop
          * decides which. */
     }
@@ -492,10 +552,10 @@ long irq_wait_any(struct irq_line *const *set, unsigned count,
 
 /*
  * **A watcher woken under the lines' lock**, for `ipc.c`, which calls this
- * holding an endpoint's lock. `irq_wait_any` with an endpoint lets that
- * endpoint's lock go before it blocks and holds this one until it has, so a
- * wake taken under this lock finds it blocked; a bare `thread_wake` could find
- * it between the two and do nothing. Always an endpoint's lock, then this one.
+ * holding an endpoint's lock. `irq_wait_any` with endpoints lets their locks
+ * go before it blocks and holds this one until it has, so a wake taken under
+ * this lock finds it blocked; a bare `thread_wake` could find it between the
+ * two and do nothing. Always an endpoint's lock, then this one.
  */
 void irq_wake_watcher(struct thread *t)
 {

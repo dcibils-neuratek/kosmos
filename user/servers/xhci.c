@@ -939,7 +939,7 @@ static bool wait_serving(struct controller *c, unsigned long ms,
             ticks = 1;
         }
 
-        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks, -1)
+        woke = count > 0 ? kosmos_irq_wait_any(lines, count, ticks, -1, -1)
                          : SYS_NO_INTERRUPT;
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */
@@ -3850,9 +3850,8 @@ static void drain(long endpoint, bool may_write, struct say_line *line)
 
 /*
  * **Both block endpoints, after every wake**: the write endpoint's requests,
- * which may write, then `/dev/blocks`', which may not. The write endpoint is
- * the one on the watch's wait - the disk server is the busy client - so this
- * is what answers a program on `/dev/blocks`, at the next wake.
+ * which may write, then `/dev/blocks`', which may not. Both are on the watch's
+ * wait, so a caller on either wakes it at once.
  */
 static void serve_blocks(struct say_line *line)
 {
@@ -3936,13 +3935,15 @@ static void watch(struct controller *list, unsigned count,
     for (;;) {
         long woke = SYS_NO_INTERRUPT;
 
-        /* And the write endpoint on the same wait (USB step 5c): the disk
-         * server's, the busy client. A caller answers IRQ_WAIT_CALLER, a
-         * line with an interrupt first; `/dev/blocks` is served after every
-         * wake (`serve_blocks`). */
+        /* And both block endpoints on the same wait: the disk server's write
+         * endpoint (USB step 5c) and `/dev/blocks`, whose reads waited out
+         * WATCH_MS while the wait could watch one endpoint - 17 a second, on
+         * the ThinkPad and under QEMU alike. A caller answers
+         * IRQ_WAIT_CALLER or IRQ_WAIT_CALLER + 1, a line with an interrupt
+         * first; both are served after every wake (`serve_blocks`). */
         if (waited > 0) {
             woke = kosmos_irq_wait_any(lines, waited, ticks_for(WATCH_MS),
-                                       writes_endpoint);
+                                       writes_endpoint, blocks_endpoint);
         }
 
         /* Nothing to wait on, or a wait refused: slept instead, never spun. */

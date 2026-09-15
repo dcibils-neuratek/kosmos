@@ -113,6 +113,8 @@ static void copy_message_out(struct message *dst, const struct message *src)
  * board's, which the HAL answers to. Kept separate so `hal/` does not include
  * the syscall header, and held together here so they cannot drift.
  */
+_Static_assert(IRQ_WAIT_ENDPOINTS_MAX == IPC_WATCH_MAX,
+               "a wait watches as many endpoints as a thread has slots for");
 _Static_assert(DEV_PL061_POWER_KEY == HAL_DEV_PL061_POWER_KEY,
                "a device kind must mean the same thing on both sides");
 _Static_assert(DEV_XHCI == HAL_DEV_XHCI,
@@ -1701,13 +1703,16 @@ void syscall_dispatch(struct syscall_frame *sc)
          * The array is read once, into the kernel, before anything waits, so
          * a process that rewrote it during the wait would change nothing.
          *
-         * And an endpoint, when `arg[3]` is not negative, resolved by `ipc.c`
-         * as every endpoint is: a number that names none refuses the wait.
+         * And two endpoints, `arg[3]` and `arg[4]`, each when it is not
+         * negative, resolved by `ipc.c` as every endpoint is: a number that
+         * names none refuses the wait.
          */
         uintptr_t at = (uintptr_t)sc->arg[0];
         unsigned long count = (unsigned long)sc->arg[1];
         unsigned long ticks = (unsigned long)sc->arg[2];
         long endpoint = (long)sc->arg[3];
+        long second = (long)sc->arg[4];
+        int endpoints[IRQ_WAIT_ENDPOINTS_MAX];
         struct irq_line *set[IRQ_WAIT_ANY_MAX];
         unsigned long i;
 
@@ -1733,9 +1738,13 @@ void syscall_dispatch(struct syscall_frame *sc)
             ticks = (unsigned long)TICK_HZ * 3600UL;
         }
 
-        result = irq_wait_any(set, (unsigned)count, ticks,
-                              endpoint < 0 ? -1
-                              : endpoint > INT_MAX ? INT_MAX : (int)endpoint);
+        endpoints[0] = endpoint < 0 ? -1
+                     : endpoint > INT_MAX ? INT_MAX : (int)endpoint;
+        endpoints[1] = second < 0 ? -1
+                     : second > INT_MAX ? INT_MAX : (int)second;
+
+        result = irq_wait_any(set, (unsigned)count, ticks, endpoints,
+                              IRQ_WAIT_ENDPOINTS_MAX);
         break;
     }
 

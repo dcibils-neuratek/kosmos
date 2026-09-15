@@ -118,8 +118,15 @@ the block path this replaces. In this order, each measured before and after:
    §18.65): the kernel's disk call moves up to 124 KB, kfs reads a file's
    neighbouring blocks in as few calls as that allows, and the journal writes
    in runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7
-   and 2.4. **Next is the USB driver's request path**, because on the
-   ThinkPad the device is almost all of a run; the write path waits. Under
+   and 2.4. **The USB driver's request path came next**, because on the
+   ThinkPad the device was almost all of a run - and its first cost was not
+   the device: the driver's wait watched only the disk server's endpoint, so
+   a read on `/dev/blocks` waited out a 50 ms deadline, 17 IOPS on the
+   ThinkPad and under QEMU alike. **Built** (`testing.md` §18.71): the wait
+   watches both endpoints, and under QEMU the stick's blocks read 759 MB/s
+   and 9765 IOPS where `/home` on the same stick reads 219 MB/s and 928 - so
+   the `/home` path, the disk server and kfs, is the next cost to measure on
+   the ThinkPad. Under
    QEMU a write is 81 to 91% kfs, but a profile on the Mac puts kfs's own work
    at 1.3 ms for the 768 KB file, and QEMU makes CPU work large and its disk
    small (`testing.md` §18.65). On a real stick, the journal writing every data

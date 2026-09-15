@@ -376,16 +376,22 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  * interrupt - taken, as `SYS_IRQ_WAIT` takes one - or `SYS_NO_INTERRUPT` when
  * `ticks` ran out first; zero waits for ever.
  *
- * **And an endpoint, when `endpoint` is not negative** (USB step 5c): a caller
- * waiting there answers `IRQ_WAIT_CALLER`, to be collected with a receive
- * that does not block, so a driver with clients of its own waits for them and
- * its devices on one wait. A line with an interrupt is answered first.
+ * **And two endpoints, each when it is not negative** (USB step 5c, and
+ * storage at full speed): a caller waiting on the first answers
+ * `IRQ_WAIT_CALLER`, and on the second `IRQ_WAIT_CALLER + 1`, to be collected
+ * with a receive that does not block - so a driver with clients of its own
+ * waits for them and its devices on one wait. The xHCI driver's are the disk
+ * server's write endpoint and `/dev/blocks`, whose reads waited out the
+ * driver's 50 ms deadline while the wait could watch only one. A line with an
+ * interrupt is answered first, and one endpoint named twice is refused.
  * `kernel/irq.c` has the rest.
  */
-#define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks, ep) -> which, caller, none */
+#define SYS_IRQ_WAIT_ANY 52 /* (&caps, count, ticks, ep, ep2) -> which, caller, none */
 
-#define IRQ_WAIT_ANY_MAX 8u
-#define IRQ_WAIT_CALLER  ((long)IRQ_WAIT_ANY_MAX)   /* never a line's place */
+#define IRQ_WAIT_ANY_MAX       8u
+#define IRQ_WAIT_ENDPOINTS_MAX 2u
+/* Never a line's place; plus one, the second endpoint's caller. */
+#define IRQ_WAIT_CALLER  ((long)IRQ_WAIT_ANY_MAX)
 
 #define SYS_MAX         53
 

@@ -282,17 +282,23 @@ void ipc_abort(struct thread *t)
     /*
      * A thread that dies watching an endpoint must not stay its watcher: the
      * next caller would wake a thread slot that belongs to somebody else by
-     * then.
+     * then. Either of the two a wait can watch.
      */
-    if (t->ipc.watching != NULL) {
-        struct endpoint *w = t->ipc.watching;
-        unsigned long wflags = spin_lock(&w->lock);
+    for (unsigned s = 0; s < IPC_WATCH_MAX; s++) {
+        struct endpoint *w = t->ipc.watching[s];
+        unsigned long wflags;
+
+        if (w == NULL) {
+            continue;
+        }
+
+        wflags = spin_lock(&w->lock);
 
         if (w->watcher == t) {
             w->watcher = NULL;
         }
 
-        t->ipc.watching = NULL;
+        t->ipc.watching[s] = NULL;
         spin_unlock(&w->lock, wflags);
     }
 
@@ -1173,13 +1179,13 @@ int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input)
     }
 
     ep->watcher = self;
-    self->ipc.watching = ep;
+    self->ipc.watching[0] = ep;
     self->wake_at = thread_deadline_in(ticks);
     self->wake_on_input = or_input;
 
     if (or_input && hal_input_pending()) {
         ep->watcher = NULL;
-        self->ipc.watching = NULL;
+        self->ipc.watching[0] = NULL;
         self->wake_on_input = false;
         self->wake_at = 0;
         spin_unlock(&ep->lock, epflags);
@@ -1196,7 +1202,7 @@ int ipc_wait_for_caller(cap_t index, unsigned long ticks, bool or_input)
         ep->watcher = NULL;
     }
 
-    self->ipc.watching = NULL;
+    self->ipc.watching[0] = NULL;
     spin_unlock(&ep->lock, epflags);
 
     self->wake_on_input = false;
@@ -1236,26 +1242,31 @@ bool ipc_endpoint_has_caller(const struct endpoint *ep)
     return ep->senders != NULL;
 }
 
-bool ipc_endpoint_watch(struct endpoint *ep, struct thread *t)
+bool ipc_endpoint_watch(struct endpoint *ep, struct thread *t, unsigned slot)
 {
     if (ep->watcher != NULL && ep->watcher != t) {
         return false;
     }
 
     ep->watcher = t;
-    t->ipc.watching = ep;
+    t->ipc.watching[slot] = ep;
     return true;
 }
 
-void ipc_endpoint_unwatch(struct endpoint *ep, struct thread *t)
+void ipc_endpoint_unwatch(struct endpoint *ep, struct thread *t, unsigned slot)
 {
     if (ep->watcher == t) {
         ep->watcher = NULL;
     }
 
-    if (t->ipc.watching == ep) {
-        t->ipc.watching = NULL;
+    if (t->ipc.watching[slot] == ep) {
+        t->ipc.watching[slot] = NULL;
     }
+}
+
+struct endpoint *ipc_endpoint_peek(struct thread *t, cap_t index)
+{
+    return resolve(t, index);
 }
 
 int ipc_reply(struct thread *sender, const struct message *msg)

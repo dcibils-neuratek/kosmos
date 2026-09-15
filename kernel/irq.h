@@ -123,10 +123,13 @@ long             irq_wait(struct irq_line *line, unsigned long ticks);
  * answered as its place in `set` - the lowest, when more than one has - and
  * taken exactly as `irq_wait` takes one. `SYS_NO_INTERRUPT` at the deadline,
  * and `SYS_ERR_DENIED` for a line released or one another thread waits on.
+ * And a caller on any of `ends` endpoints, no more than `IPC_WATCH_MAX` and
+ * each skipped when negative, answered `IRQ_WAIT_CALLER` plus its place.
  * `irq.c` has the argument.
  */
 long             irq_wait_any(struct irq_line *const *set, unsigned count,
-                              unsigned long ticks, int endpoint);
+                              unsigned long ticks, const int *endpoints,
+                              unsigned ends);
 void             irq_wake_watcher(struct thread *t);
 
 long             irq_ack(struct irq_line *line);

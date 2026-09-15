@@ -1301,9 +1301,10 @@ waits behind anything; a request from a disk server, from 5d on, has to reach
 that same thread without it looking at its endpoint between interrupts -
 which on an idle machine would make every block wait out a nap.
 
-**`SYS_IRQ_WAIT_ANY` takes an endpoint**, as a fourth argument, or -1 for
-none. A caller queued there answers `IRQ_WAIT_CALLER`, which is never a
-line's place in the array, and the driver collects the message with a
+**`SYS_IRQ_WAIT_ANY` takes endpoints**, as its fourth argument and - since
+storage at full speed - its fifth, each -1 for none. A caller queued on the
+first answers `IRQ_WAIT_CALLER` and on the second `IRQ_WAIT_CALLER + 1`, never
+a line's place in the array, and the driver collects the message with a
 receive that does not block. **A line with an interrupt is answered before a
 caller**, and the caller on the next wait, at once - so a stream of requests
 cannot hold off a mouse.
@@ -1428,15 +1429,35 @@ in on and nothing else - so the right to write is a second endpoint: init makes
 it and gives it to the driver and the disk server, and to nobody else. The
 driver answers a write or a flush there, and refuses both on `/dev/blocks`.
 
-**One wait, two endpoints.** `SYS_IRQ_WAIT_ANY` takes one endpoint (5c), and
-the write endpoint is the one on it: the disk server is the busy client,
-several requests a commit, where `sticks` reads a handful of blocks when
-somebody types it. After every wake the driver answers the write endpoint and
-then `/dev/blocks`, so a read waits at most for the watch's next deadline,
-50 ms. A driver with no controller has nothing to wait on but `/dev/blocks`,
-and nothing is left waiting on the write endpoint there: the disk server asks
-it only once a stick with its partition has been found, which on such a
-machine never happens.
+**One wait, both endpoints.** The driver's wait watches the write endpoint
+and `/dev/blocks` together, and a caller on either wakes it at once; after
+every wake it answers the write endpoint and then `/dev/blocks`.
+
+**It watched one, and that cost 17 requests a second.** `SYS_IRQ_WAIT_ANY`
+took a single endpoint in 5c, and the write endpoint had it: the disk server
+was the busy client, and `sticks` reads a handful of blocks when somebody types
+it, so a read on `/dev/blocks` waiting for the watch's next deadline, 50 ms,
+looked affordable. Disk Benchmark reads `/dev/blocks` continuously, and on the
+ThinkPad `diskbench usb 0` gave 2.1 MB/s and 17 IOPS - 58 ms a request. QEMU
+gave the same 17 on a stick whose `/home` read at 938, and that is what said
+the stick was not the cost. The disk server's search for its partition asks
+`/dev/blocks` too, four or five requests a look, and every one of them waited
+the same way.
+
+So the wait takes a second endpoint (`kernel/irq.c`): both locked in the order
+of where they are, lower first - nothing else in the kernel holds two
+endpoints' locks - one endpoint named twice refused, and a caller on the first
+answering `IRQ_WAIT_CALLER`, on the second `IRQ_WAIT_CALLER + 1`. **Two
+endpoints rather than one for both**, because a server knows which endpoint a
+message came in on and nothing else, so the right to write stays an endpoint of
+its own. Under QEMU the same stick's blocks then read at 759 MB/s and 9765 IOPS
+(`testing.md` §18.71) - numbers that say the wait is gone, not how fast a stick
+is.
+
+A driver with no controller has nothing to wait on but `/dev/blocks`, and
+nothing is left waiting on the write endpoint there: the disk server asks it
+only once a stick with its partition has been found, which on such a machine
+never happens.
 
 **Not there yet is not blank, and it is waited for.** The disk server starts
 before the driver has named any stick, and init does not wait for the driver -

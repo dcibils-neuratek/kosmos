@@ -848,6 +848,16 @@ def usb_diskbench(image, check):
           "random 4 KB x1 on the stick did not read a number of IOPS above "
           "zero and refuse to write: %r" % rnd)
 
+    # **And no request waits for the driver's deadline.** `/dev/blocks` was not
+    # on the USB driver's wait, so every read there waited out its 50 ms: 17
+    # IOPS, the ThinkPad's own number, where `/home` on the same stick model
+    # read 938. At 200 a request is answered on its own clock rather than the
+    # driver's; past that, QEMU's numbers say nothing.
+    check(iops is not None and int(iops.group(1)) >= 200,
+          "random 4 KB reads on the stick's blocks came at %s IOPS - a request "
+          "on /dev/blocks is waiting for the USB driver's 50 ms deadline: %r"
+          % (iops.group(1) if iops else "no", rnd))
+
     check("in 124 KB reads, the most one USB read moves" in out,
           "`diskbench` did not say its sequential reads are 124 KB, the most "
           "one USB read moves:\n    " + shown)

@@ -110,6 +110,14 @@ enum thread_state {
 struct process;
 struct addrspace;
 
+/*
+ * **How many endpoints one wait can watch**: two, for a driver whose clients
+ * come in on two - the xHCI driver's write endpoint and `/dev/blocks`
+ * (`irq_wait_any`). `ipc.watching` has a slot for each, so a thread that dies
+ * watching both is taken off both.
+ */
+#define IPC_WATCH_MAX 2u
+
 struct thread {
     /* First, because switch.S reaches it through the thread pointer and a
      * zero offset is one instruction cheaper to think about. */
@@ -281,7 +289,7 @@ struct thread {
         struct thread  *next;       /* link in an endpoint's wait queue */
         struct thread  *peer;       /* who sent to us, or who we sent to */
         struct endpoint *waiting_on;/* so destroying an endpoint can find us */
-        struct endpoint *watching;  /* whose callers end this thread's sleep */
+        struct endpoint *watching[IPC_WATCH_MAX]; /* whose callers end its sleep */
         int             status;     /* the result handed over on waking */
     } ipc;
 

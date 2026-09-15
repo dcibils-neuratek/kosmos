@@ -4151,3 +4151,62 @@ a file read off a stick's Kosmos partition 6, what a stick is sent and answers
 56, the UEFI boots 38, the stick check 12, the disk 33 across two boots, the
 machine with no display on both boards with all 113 programs in `/bin`, the
 argument audit 112, and the suites 160 of 160 and 156 of 156.
+
+## 18.71 Two endpoints on one wait
+
+**What it found.** On the ThinkPad `diskbench usb 0` read the stick's blocks
+at 2.1 MB/s and 17 IOPS, 58 ms a request. Under QEMU, before anything was
+changed, the same stick model gave the same: 2.1 MB/s, 17 IOPS, 58.8 ms a
+request - while `diskbench /home`, through the disk server's write endpoint,
+read 220.5 MB/s and 938 IOPS, 1.1 ms. A stick that answers `/home` in a
+millisecond does not take fifty-eight to answer its own blocks: the USB
+driver's `SYS_IRQ_WAIT_ANY` watched only the write endpoint, and a request on
+`/dev/blocks` waited for the wait's 50 ms deadline (`usb.md` §7).
+
+**The fix**: the wait takes a second endpoint, as the syscall's fifth
+argument; a caller on the first answers `IRQ_WAIT_CALLER` and on the second
+`IRQ_WAIT_CALLER + 1`; the two endpoints' locks are taken in the order of where
+the endpoints are, and one named twice is refused; a thread has a watch slot
+for each, so one that dies watching both is taken off both. The xHCI driver
+waits on its write endpoint and `/dev/blocks` together.
+
+**Under QEMU, the same two boots before and after** (`diskbench ... 1 1`):
+
+| | sequential read | random 4 KB read |
+|---|---|---|
+| `/dev/blocks`, before | 2.1 MB/s | 17 IOPS, 58.8 ms a request |
+| `/dev/blocks`, after | 759.4 MB/s | 9765 IOPS, 0.1 ms |
+| `/home` on the same stick model, before | 220.5 MB/s | 938 IOPS, 1.1 ms |
+| `/home`, after | 218.8 MB/s | 928 IOPS, 1.1 ms |
+
+QEMU's numbers, and what they say is that the wait is gone - not how fast a
+stick is. `/home` is now the slower of the two by a long way, which is the disk
+server, kfs and the filesystem's messages, and that is the next thing to
+measure on the ThinkPad.
+
+**Three checks.**
+
+- **The guest suite, on both boards**: `irq: a wait on two endpoints takes a
+  caller on either`. A call on the second endpoint ten ticks into a two-second
+  wait ends it early with `IRQ_WAIT_CALLER + 1`, and one on the first with
+  `IRQ_WAIT_CALLER`; one endpoint named twice is refused; and neither is left
+  watched, so another thread's watch of each is not refused - 161 of 161 on
+  AArch64 and 157 of 157 on x86-64. The eleven calls the suite already made
+  moved to the new signature.
+- **`run_x86.py`'s `usb_diskbench`**: random reads on the stick's blocks at
+  200 IOPS or more, where the wait's deadline allows 20 - 6 checks.
+- **The syscall audit**: `SYS_IRQ_WAIT_ANY` reads `arg[4]`, and
+  `kosmos_irq_wait_any` passes five - 112 checks.
+
+| Control | What failed |
+|---|---|
+| C8: the driver leaves `/dev/blocks` off its wait | `usb_diskbench`: random reads at 18 IOPS |
+| C9: the wait looks at the first endpoint's caller only, and watches only it | the AArch64 suite, 1 of 161: the two-endpoint test |
+| C10: one endpoint named twice answered as a deadline, not refused | the AArch64 suite, 1 of 161: the two-endpoint test |
+| C11: the wait never takes itself off its endpoints | the AArch64 suite, 2 of 161: this test and `a wait on lines and an endpoint takes a caller too`, each finding another thread's watch refused |
+
+And as written: `make test` whole - x86-64 167, one more than before
+(`usb_diskbench`'s floor of 200 IOPS), the syscall audit 112, the UEFI boots
+38, the stick check 12, the disk 33 across two boots, the machine with no
+display on both boards with all 113 programs in `/bin`, and the suites 161 of
+161 and 157 of 157.

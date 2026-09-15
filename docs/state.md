@@ -30,8 +30,16 @@ runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7 and
 build `9af841c`): `diskbench /home` read 16.3 MB/s and wrote 4.6 MB/s, 39 IOPS,
 with the device calls 92 to 100% of each run; `diskbench usb 0`, the stick's
 blocks straight through the driver, 2.1 MB/s and 17 IOPS - 58 ms a request,
-close to the driver's 50 ms watch (`WATCH_MS`). So the next storage work is
-the USB driver's request path, not kfs.
+close to the driver's 50 ms watch (`WATCH_MS`). So the next storage work was
+the USB driver's request path, not kfs. **That was the wait, and it is fixed**
+(the night of 14 September, committed and not pushed): the driver's
+`SYS_IRQ_WAIT_ANY` watched only the disk server's endpoint, so every read on
+`/dev/blocks` waited out 50 ms - QEMU gave exactly the ThinkPad's 17 IOPS on a
+stick whose `/home` read 938. The wait now takes two endpoints (`usb.md` §7,
+`testing.md` §18.71), and under QEMU the stick's blocks read 759 MB/s and 9765
+IOPS. The disk server's search for the stick asks `/dev/blocks` too, so the
+twenty seconds should shrink with it; the next ThinkPad build says by how
+much.
 
 **One stable build, and development on top of it** - Diego, 14 September: "we
 always need 1 stable build we agree is stable to use", "on top of that we

@@ -279,17 +279,19 @@ static inline long kosmos_irq_ack(long cap)
 
 /*
  * The same wait on up to `IRQ_WAIT_ANY_MAX` lines at once, and on `endpoint`
- * when it is not negative: which of `caps` had an interrupt, as its place in
- * the array; `IRQ_WAIT_CALLER` when a caller is waiting on the endpoint
- * instead, for a receive that does not block; or `SYS_NO_INTERRUPT` when
- * `ticks` ran out. What a driver with several devices, one thread and clients
- * of its own waits with, rather than on each in turn.
+ * and `second` when each is not negative: which of `caps` had an interrupt,
+ * as its place in the array; `IRQ_WAIT_CALLER` when a caller is waiting on
+ * `endpoint` instead, and `IRQ_WAIT_CALLER + 1` on `second`, for a receive
+ * that does not block; or `SYS_NO_INTERRUPT` when `ticks` ran out. What a
+ * driver with several devices, one thread and clients of its own waits with,
+ * rather than on each in turn.
  */
 static inline long kosmos_irq_wait_any(const long *caps, unsigned long count,
-                                       unsigned long ticks, long endpoint)
+                                       unsigned long ticks, long endpoint,
+                                       long second)
 {
-    return sys4(SYS_IRQ_WAIT_ANY, (long)(uintptr_t)caps, (long)count,
-                (long)ticks, endpoint);
+    return sys5(SYS_IRQ_WAIT_ANY, (long)(uintptr_t)caps, (long)count,
+                (long)ticks, endpoint, second);
 }
 
 /*
