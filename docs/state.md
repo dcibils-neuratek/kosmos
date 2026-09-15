@@ -117,6 +117,16 @@ desktop instead. **What Diego does with it**: boot and see the desktop come up
 alone; open Basket Case from Tracker; and if Music still finds nothing, run
 `diagnose` in a Terminal and `make stick-log` - the `music:` line says why.
 Committed, not pushed.
+
+**0.10.67-development is the build to write now**:
+`build/x86_64/kosmos-usb-0.10.67-development.img`, `main` at `8431fb4` -
+0.10.66-development plus the HDA codec given milliseconds rather than a count
+of reads (`testing.md` §18.73), after the ThinkPad had sound on one boot and
+not the next. Under OVMF: the desktop by itself, the loader clean, and `the
+codec announced itself 1 ms after reset, and answered its root node in 0 ms`.
+**What Diego does with it**: boot, play Basket Case in Music, and if there is no
+sound, the `codec` line in Log says how long the codec was waited for.
+Committed, not pushed.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a

@@ -320,6 +320,13 @@ is the one that makes the machine Diego owns behave like a computer:
      first line came 16.6 s after the counter's zero, and Diego picks the
      stick with F12 and it "boots instantly" - so that time is the
      firmware's or the loader's, and one line tells them apart.
+   - **The Processes window has no idle row.** "lets remove the idle process
+     from the processes app as its confusing as it looks like there is a
+     process consuming most of the cpu all the time". The row was the
+     window's own, made from the kernel's idle ticks - 99% at the top of the
+     list on an idle ThinkPad. The shares stay a share of every tick, so an
+     idle machine reads near nothing, the kernel's row stays, and Monitor
+     still draws what is idle.
    - **Music opens the song Tracker gives it.** Opened from Tracker on the
      ThinkPad, Music said "(nothing to play in /home)" beside a Tracker
      window listing the MP3 in `/home` - being found. **Music now says why
