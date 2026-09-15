@@ -71,6 +71,24 @@ the build the same, `/home` the named partition, `found at 0.68 s, by look 1`,
 and does the same with: boot, `diagnose`, `make stick-log`. The ThinkPad's
 `diskbench usb 0` and the twenty seconds are what it is for; the stable one is
 still what a stick that misbehaves is written back with. Committed, not pushed.
+
+**What 0.10.65-development said on the ThinkPad, 15 September** - the first
+diagnosis read as a file (`build/stick-diagnose.txt`, `boot.md`'s table). It
+booted, `log loader` clean. **The twenty seconds are mostly before Kosmos**:
+the kernel's first line came 16.6 s after the counter started (`log_origin`),
+and the prompt 3.0 s after that - neofetch's 19 seconds. `/home` was found on
+the disk server's first look, at 2.81 s, 10 ms after the USB driver began
+watching, so the search is no longer in it. **The 9.7 s before the desktop is
+the prompt waiting**: a log line is stamped when it begins, so `[3.007]
+kosmos> wm` is the prompt and not the Enter, and the stick does not start `wm`
+by itself; under OVMF the window manager starts the desktop 60 ms after `wm`
+is typed. Open for Diego: whether the stick should start the desktop itself,
+and whether his twenty seconds include the firmware's boot menu. **And the
+sound controller came up** - `sound: Intel HDA, 44100 Hz stereo`, where
+`9af841c`'s codec did not answer its root node. `reset_controller` waits for
+`STATESTS` by a spin count rather than a time, which fits a codec that answers
+on one boot and not another. Diego to try Music on it. `diskbench`'s rows went
+to the Terminal and are not in the diagnosis.
 Meanwhile Music's
 engine, `/lib/media.lua`, is built and heard (§18.66), and the tag reader
 (§18.67); the window from `docs/music.html` needs four things first - a
