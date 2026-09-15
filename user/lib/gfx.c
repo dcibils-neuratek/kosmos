@@ -1801,6 +1801,113 @@ static int l_set(lua_State *L)
     return 0;
 }
 
+/*
+ * `dst:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh [, alpha])` - a rectangle
+ * of `src` drawn into a rectangle of `dst` of another size.
+ *
+ * **Nearest neighbour, for the reason `snes_blit.c` gives**: what this is for
+ * is a cover or an icon, drawn when something changes rather than every
+ * frame, and a smooth resampler is a different primitive with a different
+ * cost. What is not acceptable is this loop written in Lua, which is what
+ * `photo.lua` and the image widget each say they are waiting for - the
+ * per-pixel loop `gfx.md` 19.2 forbids.
+ *
+ * **The step is fixed point, not a division per pixel**: 16.16 over the
+ * source, so a 500-pixel cover into 78 costs an add per pixel.
+ *
+ * **Only the destination is clipped**, and that is the difference from
+ * `blit`. `clip()` moves a paired source origin one for one, which is
+ * exactly wrong here: a destination edge cut by a window's border maps back
+ * to a fraction of a source pixel rather than to the same number of them. So
+ * the destination is clipped against `dst` and each source position is
+ * computed from where the pixel actually landed; a source position outside
+ * `src` is clamped to its edge rather than refused, because a caller should
+ * not have to measure before it can draw.
+ *
+ * `alpha` is `blend`'s: absent, the pixels are copied as `blit` copies them;
+ * given, they are composited over what is there. One primitive rather than
+ * two, because the difference is a branch and the pair would be two entries
+ * in every list that names the primitives.
+ */
+static int l_stretch(lua_State *L)
+{
+    struct surface *d = check_surface(L, 1);
+    struct surface *s = check_surface(L, 2);
+    long sx = (long)luaL_checkinteger(L, 3);
+    long sy = (long)luaL_checkinteger(L, 4);
+    long sw = (long)luaL_checkinteger(L, 5);
+    long sh = (long)luaL_checkinteger(L, 6);
+    long dx = (long)luaL_checkinteger(L, 7);
+    long dy = (long)luaL_checkinteger(L, 8);
+    long dw = (long)luaL_checkinteger(L, 9);
+    long dh = (long)luaL_checkinteger(L, 10);
+    long global = (long)luaL_optinteger(L, 11, -1);
+    long x0, y0, x1, y1, y;
+    uint32_t xstep, ystep;
+
+    if (global > 255 || (global < 0 && !lua_isnoneornil(L, 11))) {
+        return luaL_error(L, "alpha is 0 to 255, not %d", (int)global);
+    }
+
+    /* Nothing to draw rather than something to complain about, which is the
+     * answer `clip()` gives for a rectangle that is entirely off-screen. */
+    if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) {
+        return 0;
+    }
+
+    x0 = dx < 0 ? 0 : dx;
+    y0 = dy < 0 ? 0 : dy;
+    x1 = dx + dw > (long)d->width ? (long)d->width : dx + dw;
+    y1 = dy + dh > (long)d->height ? (long)d->height : dy + dh;
+
+    if (x0 >= x1 || y0 >= y1) {
+        return 0;
+    }
+
+    xstep = (uint32_t)((sw << 16) / dw);
+    ystep = (uint32_t)((sh << 16) / dh);
+
+    for (y = y0; y < y1; y++) {
+        uint32_t *dp = row_of(d, (unsigned)y) + x0;
+        long from = sy + (long)(((uint32_t)(y - dy) * ystep) >> 16);
+        const uint32_t *sp;
+        uint32_t at = (uint32_t)(x0 - dx) * xstep;
+        long x;
+
+        if (from < 0) {
+            from = 0;
+        }
+
+        if (from > (long)s->height - 1) {
+            from = (long)s->height - 1;
+        }
+
+        sp = row_of(s, (unsigned)from);
+
+        for (x = x0; x < x1; x++, at += xstep) {
+            long take = sx + (long)(at >> 16);
+
+            if (take < 0) {
+                take = 0;
+            }
+
+            if (take > (long)s->width - 1) {
+                take = (long)s->width - 1;
+            }
+
+            if (global < 0) {
+                *dp = sp[take];
+            } else {
+                *dp = over(sp[take], *dp, (uint32_t)global);
+            }
+
+            dp++;
+        }
+    }
+
+    return 0;
+}
+
 static const luaL_Reg surface_methods[] = {
     { "size",   l_size },
     { "pitch",  l_pitch },
@@ -1810,6 +1917,7 @@ static const luaL_Reg surface_methods[] = {
     { "disc",   l_disc },
     { "blit",   l_blit },
     { "blend",  l_blend },
+    { "stretch", l_stretch },
     { "text",   l_text },
     { "get",    l_get },
     { "set",    l_set },

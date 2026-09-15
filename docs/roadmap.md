@@ -626,13 +626,27 @@ the Pi", and the Pi is not here yet.
   1. **A scaled blit in `gfx`**, in C: a cover is hundreds of pixels and
      drawn at 78 and 44. `photo.lua` already says one belongs there, and that
      a scaler in Lua would be the per-pixel loop `gfx.md` 19.2 forbids.
+     **Built, 15 September** (`testing.md` §18.78): `dst:stretch(...)`,
+     nearest neighbour, the step in 16.16 fixed point, only the destination
+     clipped - control C18 watched fail.
   2. **Covers out of an MP3.** `ui.image` names a picture and the window
      manager decodes it, so a cover that is bytes inside a file has no name.
-     Proposed: `media.lua` copies those bytes to `/ramfs` once and names that
-     - no change to the protocol.
-  3. **A window asking for its own size**, for the mini player: the window
-     manager resizes a window when a person drags it, and nothing lets an
-     application ask. A small request in `wm.lua` and `window:resize`.
+     **The `/ramfs` copy this line proposed cannot work**, found by reading on
+     15 September: a ramfs value is capped at 16384 bytes and `read_into` is
+     not served by the ram proto at all, while a cover is hundreds of
+     kilobytes. **Instead the picture travels as a region** - a request
+     carrying the pages and a name, decoded by `gfx.png`/`gfx.jpeg`, which
+     already take an address and a length. That is *control by message, data
+     by shared memory* rather than a special case, and it keeps working when
+     `/home` is not a disk.
+  3. **A window asking for its own size**, for the mini player. **The window
+     manager has served this since 2 September** (`handlers.resize`,
+     `89bba71`), and refuses only a window that draws its own pixels, which
+     Music is not - so what is missing is the application's half: a
+     `window:resize` beside `window:move`. Two things found with it: the
+     `resize` event leaves the kit's own `w`/`h` stale, and Music's widgets
+     sit at fixed coordinates with no follow mode, so folding needs a layout
+     that runs again.
   4. **A title larger than the three text roles**, which an ordinary window
      draws at the sizes the desktop's font settings give. **Decided: a text
      command that carries a size**, so every application restyled after Music

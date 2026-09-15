@@ -69,6 +69,7 @@ local R_NAMES_MAIN   = 44
 local R_NAMES_HOLDER = 45
 local R_NAMES_ASKER  = 46
 local R_JPEG         = 47
+local R_STRETCH      = 48
 
 -- The /app registry's role in `user/init/main.c`. Not offset by BASE: a
 -- server role is dispatched before any chunk is chosen, so this is the
@@ -1636,6 +1637,100 @@ if role == R_NAMES_ASKER then
 
   local answer, why = sys.call(got, { ask = true })
   sys.call(0, { from = answer and answer.from, error = why })
+  sys.exit(0)
+end
+
+if role == R_STRETCH then
+  --------------------------------------------------------------------------
+  -- A picture drawn at a size that is not its own.
+  --
+  -- Nearest neighbour, so every answer here is exact and none of it is a
+  -- tolerance: at twice the size each source pixel is a 2x2 block, and at
+  -- half the size every second one survives. What the checks are really for
+  -- is the two ways this can be wrong and still look right - a destination
+  -- clipped at an edge whose source is then taken from the wrong place, and
+  -- a row address computed as width * 4 where the pitch is padded.
+  --------------------------------------------------------------------------
+  local src = gfx.surface { w = 2, h = 2 }
+
+  src:set(0, 0, 0xff111111)
+  src:set(1, 0, 0xff222222)
+  src:set(0, 1, 0xff333333)
+  src:set(1, 1, 0xff444444)
+
+  local up = gfx.surface { w = 6, h = 6 }
+
+  up:fill(0, 0, 6, 6, 0xff000000)
+  up:stretch(src, 0, 0, 2, 2, 0, 0, 4, 4)
+
+  check(up:get(0, 0) == 0xff111111 and up:get(1, 1) == 0xff111111,
+        "the first source pixel did not fill its block")
+  check(up:get(2, 0) == 0xff222222 and up:get(3, 1) == 0xff222222,
+        "the second source pixel did not fill its block")
+  check(up:get(0, 2) == 0xff333333 and up:get(1, 3) == 0xff333333,
+        "the third source pixel did not fill its block")
+  check(up:get(3, 3) == 0xff444444,
+        "the fourth source pixel did not fill its block")
+  check(up:get(4, 0) == 0xff000000 and up:get(0, 4) == 0xff000000,
+        "stretch wrote outside the rectangle it was given")
+
+  local down = gfx.surface { w = 2, h = 2 }
+
+  down:fill(0, 0, 2, 2, 0xff000000)
+  down:stretch(up, 0, 0, 4, 4, 0, 0, 2, 2)
+
+  check(down:get(0, 0) == 0xff111111 and down:get(1, 0) == 0xff222222
+        and down:get(0, 1) == 0xff333333 and down:get(1, 1) == 0xff444444,
+        "shrinking did not take the pixel nearest each destination")
+
+  -- Clipped on the left: the part that is drawn has to be the source's
+  -- right-hand part. This is what fails if the clip moves the source origin
+  -- one for one, which is what `clip()` does for `blit` and is wrong here.
+  local edge = gfx.surface { w = 4, h = 4 }
+
+  edge:fill(0, 0, 4, 4, 0xff000000)
+  edge:stretch(src, 0, 0, 2, 2, -2, 0, 4, 4)
+
+  check(edge:get(0, 0) == 0xff222222 and edge:get(1, 1) == 0xff222222,
+        "a rectangle clipped on the left drew the wrong source pixel")
+  check(edge:get(2, 0) == 0xff000000, "a clipped rectangle drew past its width")
+
+  -- Ten pixels wide is forty bytes, and the pitch is padded to a cache line:
+  -- a scaler doing its own row arithmetic reads the wrong row from row one.
+  local wide = gfx.surface { w = 10, h = 4 }
+
+  wide:fill(0, 0, 10, 4, 0xff000000)
+  wide:stretch(src, 0, 0, 2, 2, 0, 0, 10, 4)
+
+  check(wide:get(0, 3) == 0xff333333 and wide:get(9, 3) == 0xff444444,
+        "the last row came out wrong, which is the padded pitch")
+
+  local white = gfx.surface { w = 1, h = 1 }
+
+  white:set(0, 0, 0xffffffff)
+
+  local mixed = gfx.surface { w = 2, h = 2 }
+
+  mixed:fill(0, 0, 2, 2, 0xff000000)
+  mixed:stretch(white, 0, 0, 1, 1, 0, 0, 2, 2, 128)
+
+  check(mixed:get(0, 0) == 0xff808080,
+        "half of white over black was "
+        .. string.format("%08x", mixed:get(0, 0)))
+
+  -- Nothing to draw is not an error, the way an off-screen blit is not.
+  mixed:stretch(white, 0, 0, 1, 1, 0, 0, 0, 0)
+  mixed:stretch(white, 0, 0, 0, 0, 0, 0, 2, 2)
+  mixed:stretch(white, 0, 0, 1, 1, 50, 50, 4, 4)
+
+  check(mixed:get(1, 1) == 0xff808080, "an empty stretch changed the surface")
+
+  local took = pcall(function()
+    mixed:stretch(white, 0, 0, 1, 1, 0, 0, 2, 2, 300)
+  end)
+
+  check(not took, "an alpha of 300 was accepted")
+
   sys.exit(0)
 end
 

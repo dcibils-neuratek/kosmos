@@ -19,9 +19,10 @@
 -- is why opening a photograph off the disk was a File menu here and one
 -- branch there, rather than a picture travelling through messages.
 --
--- Drag it, or use the arrows, if it is bigger than its frame. There is no
--- scaler: one written in Lua would be the per-pixel loop `gfx.md` 19.2
--- forbids, and when one exists it will be a `gfx` primitive.
+-- Drag it, or use the arrows, if it is bigger than its frame. **The scaler
+-- this comment waited for exists** - `s:stretch`, added on 15 September for
+-- Music's covers - so fitting a photograph to its frame is now a change to
+-- this program rather than something the system cannot do.
 
 local ui    = use("/lib/ui.lua")
 local panel = use("/lib/panel.lua")

@@ -51,6 +51,7 @@ The minimum set, and it should not grow much beyond this:
 s:fill(x, y, w, h, color)              solid fill
 s:blit(src, sx, sy, w, h, dx, dy)      rectangle to rectangle copy
 s:blend(src, ..., alpha)               the same with alpha
+s:stretch(src, ..., dw, dh [, alpha])  the same at another size
 s:span(x, y, len, color)               one horizontal row
 s:get(x,y) / s:set(x,y,c)              a single pixel, for one-off cases
 s:map(fn)                              apply a Lua function to every pixel
@@ -237,7 +238,7 @@ Two consequences worth stating, because both are easy to get backwards:
 ## 19.9 What is left open
 
 - **Undo in Paint.** Copying the whole surface per operation does not scale. The sensible approach is tile-based undo with copy-on-write, but it is not designed and it is not needed until M7.
-- **Scaling and rotation.** Not in the primitive set. They get added when a case appears, not before.
+- **Rotation.** Not in the primitive set. It gets added when a case appears, not before. **Scaling was in this line until 15 September**, and the case that appeared is Music: an album cover is five hundred pixels and its design draws it at 78 and at 44. `s:stretch` is nearest neighbour, which is sharp and exact and is what a cover and an icon want; a smooth one is a different primitive and waits for a case of its own.
 - **Video.** A decoder needs a YUV to RGB path and possibly surfaces in a different format. Out of scope until there is a real case.
 
 ---

@@ -3689,6 +3689,7 @@ static bool test_gfx_surfaces(void)                    { return luatest_role(24)
 static bool test_gfx_alpha_is_exact(void)              { return luatest_role(25); }
 static bool test_a_process_without_the_screen(void)    { return luatest_role(26); }
 static bool test_gfx_text(void)                        { return luatest_role(27); }
+static bool test_gfx_stretch(void)                     { return luatest_role(48); }
 
 /*
  * Shared memory: two processes on one set of pages, and the pages back
@@ -7373,6 +7374,7 @@ static const struct test tests[] = {
     { "gfx: the alpha multiply is exact",      test_gfx_alpha_is_exact },
     { "gfx: no screen unless it was granted",  test_a_process_without_the_screen },
     { "gfx: the font rasterises correctly",    test_gfx_text },
+    { "gfx: a picture drawn at another size",  test_gfx_stretch },
     { "irq: interrupts are unmasked",          test_irqs_are_unmasked },
     { "timer: ticks advance",                  test_timer_ticks_advance },
     { "timer: the period matches the rate",    test_timer_period_matches_the_rate },

@@ -4494,3 +4494,48 @@ frame taken for the music is 64 kbps and 26 s. 10 checks.
 And as written: `make test` whole - the media engine 10, one more than before
 (the VBR MP3), audio tags 23, x86-64 172, the Processes window's shares 11, the
 UEFI boots 38, and the suites 161 of 161 and 157 of 157.
+
+## 18.78 A picture drawn at a size that is not its own
+
+**Why there is one now.** `gfx.md` 19.9 listed scaling among the things
+deliberately left out - "they get added when a case appears, not before" - and
+the case appeared: Music's design draws an album cover at 78 pixels beside
+what is playing and at 44 in each row of its list, and a cover inside an MP3
+is five hundred pixels or more. Without a scaler Music would draw the corner
+of a cover twice. Three other places had been waiting in comments for the
+same thing: the photo viewer, which can only pan, and the image widget every
+application inherits, and icons fixed at one size because any other would be
+a crop.
+
+**It is C because it touches every pixel it writes** - `gfx.md` 19.2's rule,
+and the one measurement that settles it is already in the tree: a PDF scanner
+that took 538 ms in Lua and 4.7 ms in C for identical output.
+
+**The primitive.** `dst:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh
+[, alpha])`, nearest neighbour, the step held in 16.16 fixed point so a
+five-hundred-pixel cover costs an add per pixel rather than a division.
+`alpha` is `blend`'s: absent it copies, given it composites.
+
+**The one thing that is not like `blit`.** `clip()` moves a paired source
+origin one for one, and that is exactly wrong when the rectangles are
+different sizes - a destination edge cut by a window's border maps back to a
+fraction of a source pixel. So the destination is clipped and each source
+position is computed from where the pixel landed, with a position outside the
+source clamped to its edge rather than refused.
+
+**The checks** (`luatest.lua` role 48, `tests.c`): doubling, where each source
+pixel has to fill a 2x2 block and nothing outside the rectangle may be
+touched; halving, where the surviving pixel has to be the nearest one; a
+rectangle clipped on the left, which must draw the source's right-hand part -
+the check that fails if the clip moves the source origin; a ten-pixel-wide
+surface, whose rows are padded to a cache line, so a scaler doing its own row
+arithmetic reads the wrong row from row one; alpha, half of white over black;
+empty and off-surface rectangles, which draw nothing rather than raising; and
+an alpha of 300, which is refused.
+
+| Control | What failed |
+|---|---|
+| C18: the step fixed at one source pixel per destination pixel, as a scaler that ignores the size it was asked for | `run_tests.py`, 1 of 162: `not ok 153 - gfx: a picture drawn at another size` |
+
+And as written: `make test` whole - the guest suites 162 of 162 and 158 of
+158, each one more than before, and every other line as it was.

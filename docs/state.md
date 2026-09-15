@@ -197,6 +197,15 @@ speaker. The 64 was the file's Xing header frame; the kit now reads that
 header, so Music gives 3:14 and `197 kbps VBR` (`testing.md` §18.77). Not yet
 on a stick.
 
+**Music's window, piece 1 of 4 is built** (15 September, committed): a
+picture drawn at a size that is not its own - `dst:stretch`, nearest
+neighbour, in C where the per-pixel loop belongs (`testing.md` §18.78), with
+control C18 watched fail. `gfx.md` said scaling was deliberately not a
+primitive "until a case appears", and the case is Music's cover at 78 and 44
+pixels out of five hundred. The photo viewer and the image widget had been
+waiting for it in comments; both now say it exists, and using it there is a
+change to each rather than a gap in the system.
+
 **Next: Music's window, and it is the pilot of a second look.** Diego, 15
 September, on `docs/music.html`: "i love the music app design. can we do it
 for real in kosmos?", "i might redo a lot of the current apps with this style

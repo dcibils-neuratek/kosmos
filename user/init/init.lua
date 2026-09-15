@@ -3953,6 +3953,7 @@ On a surface:
   s:text(x, y, string, fg [, bg]) -> the x the next character starts at
   s:blit(src, sx, sy, w, h, dx, dy)
   s:blend(src, sx, sy, w, h, dx, dy [, alpha])
+  s:stretch(src, sx, sy, sw, sh, dx, dy, dw, dh [, alpha])
   s:get(x, y) / s:set(x, y, colour)
   s:free()
 

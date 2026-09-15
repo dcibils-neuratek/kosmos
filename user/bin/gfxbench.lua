@@ -50,6 +50,20 @@ local blit_rate = timed("blit, whole surface", W * H * N, function()
   for _ = 1, N do b:blit(a, 0, 0, W, H, 0, 0) end
 end)
 
+-- A cover out of an MP3 at the two sizes Music's design draws it, which is
+-- what the scaler was added for: the pixels counted are the ones written.
+local cover = gfx.surface { w = 500, h = 500 }
+
+timed("stretch, 500 to 78", 78 * 78 * N, function()
+  for _ = 1, N do a:stretch(cover, 0, 0, 500, 500, 0, 0, 78, 78) end
+end)
+
+timed("stretch, 500 to 44", 44 * 44 * N, function()
+  for _ = 1, N do a:stretch(cover, 0, 0, 500, 500, 0, 0, 44, 44) end
+end)
+
+cover:free()
+
 timed("span, one row at a time", W * H, function()
   for y = 0, H - 1 do a:span(0, y, W, 0xff203040) end
 end)

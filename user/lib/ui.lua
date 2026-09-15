@@ -2317,9 +2317,10 @@ end
 -- is exactly why it could be extended without touching a call site.
 --
 -- Bigger than its box is normal - a photograph is - so it pans rather than
--- scaling. There is no scaler, and a nearest-neighbour one written in Lua
--- would be exactly the per-pixel loop `gfx.md` 19.2 forbids. When one
--- arrives it will be a `gfx` primitive and this widget will use it.
+-- scaling. **The primitive that would change that exists** since 15
+-- September: `s:stretch`, nearest neighbour, in C where the per-pixel loop
+-- belongs. Drawing through it here is a change to this widget - and to what
+-- the `image` op carries - rather than a gap in the system.
 --
 function ui.image(spec)
   local v = ui.view(spec)
