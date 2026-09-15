@@ -4300,3 +4300,42 @@ And as written: `make test` whole - x86-64 168, one more than before
 (`sound_slow_codec`), the media engine 9, the UEFI boots 38, the stick check
 12, the disk 33 across two boots, the machine with no display on both boards
 with all 113 programs in `/bin`, and the suites 161 of 161 and 157 of 157.
+
+## 18.74 The Processes window without an idle row
+
+**What the ThinkPad showed.** On an idle desktop the Processes window's top
+row read `idle 99%` in red, and a person reads that as a process eating the
+machine. Diego, 15 September: "its confusing as it looks like there is a
+process consuming most of the cpu all the time". The row was the window's own,
+made from the kernel's idle ticks beside the kernel's row.
+
+**The change.** The shares move out of `procs.lua` into `/lib/procshare.lua`,
+a function the window calls every sample: each process's ticks since the last
+sample over every tick that passed, idle ones included - what `sysmon` divides
+by - and the kernel's row, busy ticks less every tick charged to a process.
+No idle row. An idle machine reads near nothing everywhere, and Monitor still
+draws what is idle.
+
+**The check, on this Mac**: `tools/test_procshare.lua` holds the function to
+numbers - the first look all nought, a hundred ticks later 30% for the process
+that ran 30 of them and 10% for the kernel, exactly three rows for two
+processes and the kernel, a process started between looks at nought rather
+than its whole life, and a kernel row that never goes below nought - 11 checks.
+And the window itself opened on AArch64 in the display harness with no error.
+
+| Control | What failed |
+|---|---|
+| C14: an idle row put back among the rows | `test_procshare.lua`: four rows where there should be three, and a row that is the machine's idle time |
+
+**A slip worth recording.** The first run of C14 was applied while an x86
+build was starting in the background, and the file is a build input; it was
+restored by checksum within a second, and the next build regenerated what it
+needed. Controls run only with nothing building since. And the first check
+that the window opened was an x86 boot, whose machine `run_x86.py` gives no
+screen unless a check asks for `ramfb` - so the window manager never started,
+which looked like a window that never appeared.
+
+And as written: `make test` whole - the Processes window's shares 11, x86-64
+168, the media engine 9, the UEFI boots 38, the stick check 12, the disk 33
+across two boots, the machine with no display on both boards with all 113
+programs in `/bin`, and the suites 161 of 161 and 157 of 157.

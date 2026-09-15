@@ -114,9 +114,8 @@ end
 
 local rows = {}          -- { name, kind, id, pct, pages, caps, owns, exited }
 local totals = { procs = 0, threads = 0 }
-local last = {}          -- ticks per process, from the previous sample
-local last_total         -- idle + busy from the previous sample: the machine
-local last_idle, last_busy
+local share = use("/lib/procshare.lua")
+local sampled = {}       -- what `share.rows` keeps from one sample to the next
 
 --
 -- How each process gets its pixels, asked of the desktop.
@@ -625,90 +624,33 @@ function sampler:tick()
 
   if not list then return end
 
-  local now = {}
-
-  for _, p in ipairs(list) do now[p.id] = p.ticks end
-
   --
-  -- A share of the *machine*, not a share of the work that happened.
+  -- Each process's share of every tick since the last sample, and the
+  -- kernel's row beside them - and no idle row, which read as a process
+  -- eating the machine. `/lib/procshare.lua` has why, and is tested on the
+  -- Mac.
   --
-  -- This used to divide each process's ticks by the sum of every process's
-  -- ticks, which makes the column always add up to a hundred whatever the
-  -- machine is doing. On an idle desktop that reads "100%" beside whichever
-  -- process did the small amount of work there was - while `sysmon`, two
-  -- windows away, correctly said the processor was one per cent busy. Both
-  -- numbers were right and one of them was a lie, because the column is
-  -- headed with a percentage and a person reads that as "of the processor".
-  --
-  -- The denominator is now every tick that passed, idle ones included,
-  -- which is exactly what `sysmon` divides by. The two agree now, and a
-  -- process at 100% here is a process actually eating the machine.
-  --
-  -- Elapsed ticks come from the kernel rather than from a clock read here,
-  -- so a slow pass does not turn into a spike: the numerator and the
-  -- denominator are counted by the same interrupt.
-  --
-  local elapsed = 0
-
-  if k and last_total then
-    elapsed = (k.idle_ticks + k.busy_ticks) - last_total
-  end
-
-  if k then last_total = k.idle_ticks + k.busy_ticks end
-
   local fresh = {}
-  local charged = 0
 
-  for _, p in ipairs(list) do
-    local delta = p.ticks - (last[p.id] or p.ticks)
+  for _, r in ipairs(share.rows(sampled, list, k)) do
+    local p = r.process
 
-    charged = charged + delta
-
-    fresh[#fresh + 1] = {
-      id = p.id, name = p.name, pages = p.pages, caps = p.caps,
-      owns = p.owns, kind = kind_of(p), video = video[p.id],
-      band = BANDS[p.priority or 2] or tostring(p.priority),
-      kb = ((p.held or p.pages or 0) * 4096) // 1024,
-      exited = p.exited,
-      cpu    = p.cpu,
-      pct = (elapsed > 0) and math.min(100, delta * 100 // elapsed) or 0,
-    }
+    if r.kernel then
+      fresh[#fresh + 1] = { id = 0, name = "kernel", kind = "threads",
+                            band = "", video = "", kb = 0, pct = r.pct,
+                            synthetic = true }
+    else
+      fresh[#fresh + 1] = {
+        id = p.id, name = p.name, pages = p.pages, caps = p.caps,
+        owns = p.owns, kind = kind_of(p), video = video[p.id],
+        band = BANDS[p.priority or 2] or tostring(p.priority),
+        kb = ((p.held or p.pages or 0) * 4096) // 1024,
+        exited = p.exited,
+        cpu    = p.cpu,
+        pct = r.pct,
+      }
+    end
   end
-
-  --
-  -- Where the rest of the machine went.
-  --
-  -- Two rows that are not processes, and saying so is the point rather than
-  -- a caveat. Everything above them runs at EL0; these two are the time the
-  -- machine spent somewhere a process cannot be:
-  --
-  --   kernel   threads Nebula owns - not the idle one. The busy ticks the
-  --            kernel counted, less every tick charged to a process.
-  --   idle     nothing wanted the processor.
-  --
-  -- No kernel change was needed for this. The kernel already counts idle
-  -- and busy, and the difference between busy and the sum of the processes
-  -- is exactly what ran in the kernel and was not idle. It also makes the
-  -- column add up: if these two and the processes do not come to a hundred,
-  -- one of the three is wrong, and that is worth being able to see.
-  --
-  if k and elapsed > 0 then
-    local idle_delta = (last_idle and (k.idle_ticks - last_idle)) or 0
-    local busy_delta = (last_busy and (k.busy_ticks - last_busy)) or 0
-    local in_kernel = busy_delta - charged
-
-    if in_kernel < 0 then in_kernel = 0 end
-
-    fresh[#fresh + 1] = { id = 0, name = "kernel", kind = "threads",
-                          band = "", video = "", kb = 0,
-                          pct = in_kernel * 100 // elapsed, synthetic = true }
-
-    fresh[#fresh + 1] = { id = 0, name = "idle", kind = "", band = "",
-                          video = "", kb = 0,
-                          pct = idle_delta * 100 // elapsed, synthetic = true }
-  end
-
-  if k then last_idle, last_busy = k.idle_ticks, k.busy_ticks end
 
   -- Busiest first, which is what a list like this is for.
   table.sort(fresh, function(a, b)
@@ -717,7 +659,6 @@ function sampler:tick()
   end)
 
   rows = fresh
-  last = now
 
   -- Find where the selected process ended up in the new order. It may have
   -- exited, in which case the row number is kept and whatever is there now
