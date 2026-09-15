@@ -3936,3 +3936,38 @@ And as written: `make test` whole - kfs's format 53, Disk Benchmark 8, x86-64
 machine with no display on both boards with all 112 programs in `/bin`, the
 disk 33 across two boots, the argument audit 112, and the suites 160 of 160
 and 156 of 156.
+
+## 18.66 The media engine, heard
+
+**Music, step 1** (`docs/music.html`, `roadmap.md`): `/lib/media.lua`, the
+engine under Music and under a video app later - reading a file a window at
+a time, decoding, converting to what the device takes, feeding the audio
+server without waiting on it, the clock and seeking - taken out of `music.lua`,
+which is now its first user and looks as it did, with a bar that seeks when it
+is clicked. Time is the sound's: the position is the frames that came out of
+the speaker plus where the last seek landed. A seek closes the stream and opens
+it again, since nothing can drop what a stream has queued, and the engine gives
+its read pages back when it closes, which `music.lua` never did.
+
+| check | what it establishes |
+| ----- | ------------------- |
+| `tools/run_media.py`, 8 checks | a six-second tone made on the host, on a disk; QEMU's virtio-sound writing what the guest plays to a WAV here. **At the prompt**: `media.open` says six seconds; after a second of playing the position is about one; after a seek to four and a little more, about four and a half; the file finishes at about six; and about three seconds of tone come out of the speaker - one before the seek and two after - at the level they went in. **In Music**: Play clicked and then the bar three quarters along, and about three more seconds come out, not six; and Music prints no error |
+
+**Controls**, made in the tree, built and run, and put back byte for byte
+against checksums taken before:
+
+| broken | what failed |
+| ------ | ----------- |
+| C10: a seek moves the clock and not the reading | `run_media.py`, 2 of 8: 5.73 seconds of tone came out at the prompt, and 5.64 in Music |
+| C11: a seek forgets where it landed | `run_media.py`, 2 of 8: 0.586 just after the seek to four, and finished at 1.985 |
+| C12: Music's bar does not seek when clicked | `run_media.py`, 1 of 8: 6.01 seconds came out of Music |
+
+The engine's first run, before the test existed, printed a position of 1.016
+after a second, 4.580 after the seek to four and 0.6 more, finished at 5.985,
+and 3.04 seconds of tone heard.
+
+And as written: `make test` whole - the media engine 8, Disk Benchmark 8,
+kfs's format 53, x86-64 158, the UEFI boots 38, the stick check 12, the
+machine with no display on both boards with all 112 programs in `/bin`, the
+disk 33 across two boots, the argument audit 112, and the suites 160 of 160
+and 156 of 156.

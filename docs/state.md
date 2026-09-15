@@ -33,7 +33,8 @@ the video clip. It is offered beside `c70d9df`, the same layout, which booted
 there. Under OVMF, on a snapshot: the loader clean, `/home` the partition its
 command line names, the files there, and `diskbench /home` running. On the
 ThinkPad the first photograph is `log loader`, then `diskbench /home` and
-`diskbench usb 0`. Its sound does not play there yet. The ThinkPad's own numbers are still to take. Diego allowed the
+`diskbench usb 0`. Its sound does not play there yet. Meanwhile Music's
+engine, `/lib/media.lua`, is built and heard (§18.66); the tag reader is next. The ThinkPad's own numbers are still to take. Diego allowed the
 filesystem to move from Lua to C where the measurement says so (`README.md`,
 `CLAUDE.md`), and from now on every app is drawn in HTML before it is written.
 
@@ -93,6 +94,27 @@ filesystem to move from Lua to C where the measurement says so (`README.md`,
 - **Checked at the end of the night, on `9014971`**: `make test` whole - the
   suites 159 of 159 and 155 of 155, x86-64 124, the UEFI boots 34 - and the
   display harness on both boards, 107 checks on AArch64 and 105 on x86-64.
+
+### 14 September: Music, step 1 - the engine, heard
+
+- **`/lib/media.lua`**, the engine drawn in `docs/music.html` and decided with
+  Diego: `open`, `play`, `pause`, `tick`, `position`, `seek`, `volume`, `peak`,
+  `finished`, `close`, for WAV and MP3. Taken out of `music.lua`, which is now
+  its first user, looks as it did, and seeks when its bar is clicked.
+- **Time is the sound's**: the position is the frames out of the speaker, from
+  the stream's ring, plus where the last seek landed. A seek closes the stream
+  and opens it again, since nothing can drop what a stream has queued, and the
+  decoder is reset and finds the next MP3 frame by itself.
+- **It gives its read pages back** when it closes; `music.lua` dropped them.
+- **Heard**: a six-second tone at the prompt - position 1.016 after a second,
+  4.580 after a seek to four and 0.6 more, finished at 5.985, and 3.04 seconds
+  of tone out of the speaker - and in Music, Play and a click three quarters
+  along the bar, about three seconds more.
+- **Tested**: `tools/run_media.py` 8, in `make test`; controls C10 to C12 in
+  `testing.md` §18.66.
+- **Next**: the tag reader - ID3v2, ID3v1 and `LIST INFO` - with a host test.
+  Diego's storage numbers from the ThinkPad stick still come first when he is
+  back.
 
 ### 14 September: storage at full speed, step 3 - in runs, not a call a block
 

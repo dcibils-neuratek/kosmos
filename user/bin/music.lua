@@ -7,8 +7,9 @@
 --
 -- The plain one. A list of what is in `/home`, a play button, a bar that
 -- says where you are, and a meter that says it is really coming out. The
--- Winamp-shaped one comes after this and can borrow all of it; what this
--- exists to settle is that an *application* can feed the audio server
+-- VOX-shaped one drawn in `docs/music.html` comes after this, and the playing
+-- itself is `/lib/media.lua`'s now, so it borrows all of it; what this exists
+-- to settle is that an *application* can feed the audio server
 -- without going deaf or going still, which is a different problem from
 -- what `play` solves at a prompt.
 --
@@ -22,8 +23,7 @@
 
 local ui    = use("/lib/ui.lua")
 local audio = use("/lib/audio.lua")
-local wav   = use("/lib/wav.lua")
-local mp3   = use("/kits/mp3")
+local media = use("/lib/media.lua")
 
 local theme = ui.theme
 
@@ -58,8 +58,6 @@ end
 
 local W, H   = 420, 300
 
-local fmt = audio.format()
-
 local win, err = ui.window{ title = "Music", w = W, h = H, x = 200, y = 130 }
 
 if not win then
@@ -68,251 +66,38 @@ if not win then
 end
 
 --------------------------------------------------------------------------
--- What is playing, and how far in.
+-- What is playing. The playing itself is `/lib/media.lua`'s - reading,
+-- decoding, feeding, the clock and seeking - and this window chooses what,
+-- shows where, and asks.
 --------------------------------------------------------------------------
 
-local stream                    -- the open audio stream, or nil
-local info                      -- what the format said about the file
-local decoder                   -- the MP3 decoder, for an MP3; nil for WAV
-
---
--- Two buffers, because a compressed file has two stages.
---
--- `carry` is what came off the disk and `samples` is what the resampler
--- eats. For a WAV they are the same bytes and `samples` is simply `carry` -
--- the file already holds PCM. For an MP3 the decoder sits between them, and
--- `used` from `sys.pcm` has to come off `samples` while `used` from the
--- decoder comes off `carry`, which is why they cannot be one variable.
---
-local samples = ""
-local name                      -- what is loaded, for the label
-local window_page               -- a page to read the file through
-local at, last                  -- where we are in the file, and where it ends
-local carry, pending, phase     -- bytes read but not converted, and converted
-local played                    -- bytes of source handed over, for the bar
+local player                    -- the media player, or nil
 local status = "nothing loaded"
 
-
---
--- How much of the file to fetch at a time.
---
--- This was one page, on the reasoning that a window has a tick to keep and
--- a big read inside one is a stutter. That reasoning was wrong in an
--- interesting way, and the instrument said so: a page is a tenth of a
--- second of audio, so it meant forty-odd round trips to the disk every
--- second, and each tick that had to do one took long enough that the tick
--- rate collapsed from 250 a second to ten. Twelve periods a tick times ten
--- ticks is 120 periods a second against the 172 the device drains, and the
--- music played at two thirds speed.
---
--- Bigger and rarer wins: 32 KB is about 190 ms of audio and is fetched
--- roughly five times a second, so most ticks touch no disk at all.
---
-local READ = 32768
-
 local function unload()
-  if stream then stream:close() end
+  if player then player:close() end
 
-  stream, info, window_page, decoder = nil, nil, nil, nil
-  carry, samples, pending, phase = "", "", "", 0.0
-  at, last, played = 0, 0, 0
+  player = nil
 end
-
-unload()
 
 local function load(file)
   unload()
 
-  local path = FOLDER .. "/" .. file
-  -- Sized to the read, which is not a detail: `fs.read_into` writes what it
-  -- is asked for, and asking for 32 KB into one page is a buffer overrun
-  -- with the length written three lines away from the allocation.
-  local page = sys.memory(READ // 4096)
+  local p, why = media.open(FOLDER .. "/" .. file)
 
-  if not page then status = "no memory for a read buffer" return end
+  if not p then status = tostring(why) return end
 
-  local read_at = function(off, n)
-    local n2 = fs.read_into(path, page, off, n)
+  local info = p.info
 
-    if not n2 or n2 == 0 then return nil end
+  status = ("%d Hz %s %d-bit"):format(info.rate,
+            info.channels == 2 and "stereo" or "mono", info.bits)
 
-    return sys.region_read(page, 0, n2)
+  if info.format == "MP3" then
+    status = status .. (" MP3 %d kbps"):format(info.bitrate or 0)
   end
 
-  local got, why, dec
-
-  if file:lower():match("%.mp3$") then
-    --
-    -- An MP3 has no header, only a run of frames, so the first frame *is*
-    -- the header - and finding it means decoding one. `mp3.probe` does that
-    -- with a decoder of its own so the real one does not start life holding
-    -- half a frame of somebody else's overlap.
-    --
-    -- 32 KB is plenty to find it in: a frame is at most 1728 bytes and an
-    -- ID3v2 tag ahead of it is usually a few kilobytes of cover art.
-    --
-    local head = read_at(0, READ)
-
-    if not head then status = "cannot read " .. file return end
-
-    got, why = mp3.probe(head)
-
-    if got then
-      dec = mp3.decoder()
-
-      -- The whole file after the tag is audio. There is no length field to
-      -- read, which is why the bar below measures bytes of *source* rather
-      -- than seconds: seconds would need either a Xing header or a scan of
-      -- every frame, and neither is worth it to draw a bar.
-      local size = (fs.getattr(path) or {}).size or 0
-
-      got.bytes = size - got.offset
-      got.frame = 1                 -- no fixed source frame; see `feed`
-
-      --
-      -- How long it runs, from the bitrate.
-      --
-      -- Exact for a constant-bitrate file and an estimate for a variable
-      -- one, and there is no third option worth taking: the length is not
-      -- written down anywhere an MP3 is required to have, so knowing it
-      -- properly means either trusting a Xing header some encoders omit or
-      -- decoding every frame in the file before playing the first.
-      --
-      -- **Not optional, which is how this was found.** The transport draws
-      -- `info.seconds * frac`, so a nil here is an arithmetic error inside
-      -- a draw handler - and a view whose draw raises keeps whatever it
-      -- last painted. The window went on showing "nothing loaded" while the
-      -- file was loaded, playing, and printing its own success to the
-      -- console.
-      --
-      got.seconds = (got.bitrate > 0)
-                    and (got.bytes * 8 / (got.bitrate * 1000)) or 0
-    end
-  else
-    got, why = wav.scan(read_at)
-  end
-
-  if not got then status = tostring(why) return end
-
-  local s
-  s, why = audio.open(file)
-
-  if not s then status = tostring(why) return end
-
-  info, stream, window_page, name, decoder = got, s, page, file, dec
-  at, last, played = got.offset, got.offset + got.bytes, 0
-  status = ("%d Hz %s %d-bit"):format(got.rate,
-            got.channels == 2 and "stereo" or "mono", got.bits)
-
-  if decoder then
-    status = status .. (" MP3 %d kbps"):format(got.bitrate or 0)
-  end
-end
-
-local function finished()
-  return info ~= nil and at >= last and #pending == 0 and #carry < info.frame * 2
-end
-
---
--- Hand over as much as the server will take, and not one period more.
---
--- The loop has a ceiling rather than running until "full" alone, because
--- the server answering "full" is what *should* stop it and a bug that made
--- it always answer "taken" would otherwise be an application that reads a
--- whole file inside one tick and stops painting. A ceiling turns that into
--- audio that runs ahead, which is visible and recoverable.
---
---
--- How many periods one turn may hand over.
---
--- A ceiling rather than "until full", so that a server which wrongly always
--- answered "taken" would make the audio run ahead - visible and
--- recoverable - instead of reading the whole file inside one tick and
--- taking the window still with it.
---
--- Sixteen, against the 172 periods a second the device drains and the
--- seventeen turns a second this loop actually gets: 272 of headroom over
--- 172 needed, which is margin rather than a fit.
---
-local FEED_MAX = 16
-
-local function feed()
-  if not stream or not info then return 0 end
-
-  local fed = 0
-
-  for _ = 1, FEED_MAX do
-    if #pending == 0 then
-      if at < last and #carry < READ then
-        local n = fs.read_into(FOLDER .. "/" .. name, window_page, at,
-                               math.min(READ, last - at))
-
-        if not n or n == 0 then at = last break end
-
-        carry = carry .. sys.region_read(window_page, 0, n)
-        at = at + n
-      end
-
-      --
-      -- Decode, for a format that needs it. A WAV's bytes are already
-      -- samples and go straight through.
-      --
-      -- `played` counts *source* bytes either way, because that is what the
-      -- progress bar measures against the file's length. For an MP3 that is
-      -- what the decoder consumed, not what it produced.
-      --
-      if decoder then
-        if #samples < fmt.period * 4 and #carry > 0 then
-          local pcm, used = decoder:decode(carry, fmt.period * 8)
-
-          if used == 0 then
-            -- Not a whole frame yet. If the file is finished there will
-            -- never be one, so stop rather than spin on the same bytes.
-            if at >= last then carry = "" end
-            break
-          end
-
-          samples = samples .. pcm
-          played = played + used
-          carry = carry:sub(used + 1)
-        end
-      else
-        samples, carry = carry, ""
-      end
-
-      if #samples < info.channels * 2 * 2 then break end
-
-      local pcm, used
-      pcm, used, phase = sys.pcm(samples, info.rate, info.channels, info.bits,
-                                 phase, fmt.period * 4)
-
-      if used == 0 or #pcm == 0 then break end
-
-      if not decoder then played = played + used end
-
-      samples = samples:sub(used + 1)
-
-      -- What the resampler did not take goes back, so a WAV keeps its one
-      -- buffer and the next turn reads on from where this one stopped.
-      if not decoder then carry, samples = samples, "" end
-
-      pending = pcm
-    end
-
-    local chunk = pending:sub(1, fmt.period)
-    local took, why = stream:play(chunk)
-
-    if not took then
-      if why ~= "full" then status = tostring(why) unload() end
-
-      return fed                -- the server is ahead; come back next tick
-    end
-
-    pending = pending:sub(fmt.period + 1)
-    fed = fed + 1
-  end
-
-  return fed
+  player = p
+  player:play()
 end
 
 --------------------------------------------------------------------------
@@ -346,19 +131,23 @@ end
 
 local transport = ui.view{ x = 10, y = 200, w = W - 20, h = 60 }
 
+local function clock(secs)
+  local whole = math.floor(secs)
+
+  return ("%d:%02d"):format(whole // 60, whole % 60)
+end
+
 function transport:draw(g)
   g:fill(0, 0, self.w, self.h, theme.window)
 
   --
-  -- Where we are, as a fraction of the samples rather than of the file:
-  -- a file with four kilobytes of padding in front of it would otherwise
-  -- start the bar a little way along, which looks like a bug and is one.
+  -- Where we are, from what came out of the speaker (`media.lua` says why a
+  -- count of what was handed over would run ahead), as a fraction of the
+  -- file's length.
   --
-  local frac = 0
-
-  if info and info.bytes > 0 then
-    frac = math.min(1.0, played / info.bytes)
-  end
+  local secs = player and player:position() or 0
+  local total = player and player.info.seconds or 0
+  local frac = (total > 0) and math.min(1.0, secs / total) or 0
 
   g:sunken(0, 0, self.w, 12, "sunken")
 
@@ -366,13 +155,8 @@ function transport:draw(g)
     g:fill(2, 2, math.floor((self.w - 4) * frac), 8, theme.accent)
   end
 
-  local secs = info and (info.seconds * frac) or 0
-  local total = info and info.seconds or 0
-
   g:text(0, 12 + gfx.font.h + 4,
-         ("%d:%02d / %d:%02d"):format(secs // 60, math.floor(secs) % 60,
-                                      total // 60, math.floor(total) % 60),
-         theme.text)
+         ("%s / %s"):format(clock(secs), clock(total)), theme.text)
 
   --
   -- Far enough right that the clock cannot run into it. "0:00 / 0:00" is
@@ -381,21 +165,15 @@ function transport:draw(g)
   -- "0:00 / 0:00press Play" and looked like one broken string.
   --
   g:text(150, 12 + gfx.font.h + 4, status,
-         stream and theme.text or theme.dim)
+         player and theme.text or theme.dim)
 
   --
   -- The meter, straight off the server's own peak - the same number the
   -- Mixer draws, and the honest answer to "is this actually coming out".
   -- A progress bar moves whether or not there is a sound device.
   --
-  local peak = 0
-
-  for _, one in ipairs(audio.streams() or {}) do
-    if stream and one.stream == stream.id then peak = one.peak or 0 end
-  end
-
   local mw = self.w - 4
-  local lit = math.min(mw, (peak * mw) // 32767)
+  local lit = math.min(mw, math.floor((player and player:peak() or 0) * mw))
 
   g:fill(2, self.h - 8, mw, 5, theme.sunken)
 
@@ -403,6 +181,20 @@ function transport:draw(g)
     g:fill(2, self.h - 8, lit, 5,
            lit > (mw * 4) // 5 and theme.bad or theme.good)
   end
+end
+
+--
+-- A click on the bar is a place to go: that far across it, of the file's
+-- length. Only the bar - the top twelve pixels; the clock and the meter below
+-- it are for looking at. The coordinates are the view's own.
+--
+function transport:on_click(x, y)
+  if not player or y >= 12 then return end
+
+  local frac = math.max(0, math.min(1, (x - 2) / (self.w - 4)))
+
+  player:seek(frac * player.info.seconds)
+  win:paint()
 end
 
 local play_btn = ui.button{ x = 10, y = 168, text = "Play" }
@@ -427,7 +219,7 @@ local stop_btn = ui.button{ x = 90, y = 168, text = "Stop" }
 local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 
 local function pace()
-  if stream then
+  if player then
     win.poll_wait_ticks = 1                     -- 4 ms, one scheduler tick
     win.tick_every = counter_hz // 250    -- 4 ms, in the counter's units
   else
@@ -441,7 +233,7 @@ function play_btn:on_click()
 
   if not pick or pick:sub(1, 1) == "(" then return end
 
-  if stream and name == pick then return end        -- already on it
+  if player and player.name == pick then return end   -- already on it
 
   load(pick)
   pace()
@@ -480,28 +272,27 @@ local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 local PAINT_EVERY = 10          -- ticks; 4 ms each, so about 25 Hz
 local since_paint = 0
 
-
 function ticker:tick()
-  if not stream then return end
+  if not player then return end
 
-  feed()
+  player:tick()
 
+  if player.error then
+    status = player.error
+    unload()
+    pace()
+    win:paint()
+    return
+  end
 
   since_paint = since_paint + 1
 
-  if finished() then
-    --
-    -- The samples are all handed over, which is not the same as played:
-    -- the server still holds up to four periods. Letting go here would cut
-    -- the last twenty milliseconds off every file.
-    --
-    if stream:queued() == 0 then
-      unload()
-      status = "finished"
-      pace()
-      win:paint()
-      return
-    end
+  if player:finished() then
+    unload()
+    status = "finished"
+    pace()
+    win:paint()
+    return
   end
 
   if since_paint >= PAINT_EVERY then
@@ -517,6 +308,6 @@ win:add(stop_btn)
 win:add(transport)
 win:add(ticker)
 
-if fmt.period == 0 then status = "this machine has no sound device" end
+if audio.format().period == 0 then status = "this machine has no sound device" end
 
 win:run()

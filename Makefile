@@ -2813,6 +2813,9 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# held to saying what it measured and what it could not, rather than to
 	@# a speed, since under QEMU the speed is QEMU's.
 	python3 tools/run_diskbench.py $(TARGET)
+	@# And the media engine under Music, held to what it sounds like: a tone
+	@# played, sought and finished, counted in the WAV QEMU wrote.
+	python3 tools/run_media.py $(TARGET)
 	@# A frame off the card and onto the wire, read back out of QEMU's own
 	@# capture - because nothing inside the guest can establish that one
 	@# left. And a second boot with no card, which is the branch every

@@ -535,7 +535,9 @@ the Pi", and the Pi is not here yet.
   later - it needs a decoder and a 24-bit path in `sys.pcm` - and the Deskbar
   replicant after the player. Its playing lives in `/lib/media.lua`, one
   engine a video app can share later, at Diego's word. Seeking, which this
-  line used to be on its own, is part of it.
+  line used to be on its own, is part of it. **Step 1, the engine, is
+  built** (`testing.md` §18.66): Music plays through it and its bar seeks.
+  Next, the tag reader.
 - A markdown viewer, for manuals inside the system.
 - **Selection in the terminal**, which is where people most want to copy
   from and is the one window the clipboard cannot reach. It draws its
