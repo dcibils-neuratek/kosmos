@@ -1712,6 +1712,173 @@ def tab_top(width, height, px):
     return None
 
 
+def check_text_size(guest):
+    """A window with a heading larger than the desktop's own text.
+
+    `ui.md` said outright that a window drawing through commands "cannot have
+    a heading at 28 pixels and a paragraph at 16 on the same screen", because
+    a text command carried a role - one of four sizes chosen in Appearance -
+    and nothing else. Music's design wants a large title, and Diego chose a
+    size the kit carries over a window drawing its own pixels, so that every
+    application restyled after Music gets it for nothing.
+
+    **A TrueType face first, and that is not incidental.** The default face
+    for every role is the bitmap, which exists at one size; asking it for 28
+    pixels can only fall back, and both lines would come out identical - a
+    check that measures nothing and passes. So this chooses a scalable face,
+    the way the log view phase does, and only then asks for the size.
+
+    What is measured is the consequence on the screen rather than a reply: the
+    rows of ink each line puts down. The line asked for at 28 has to be taller
+    than the line drawn at the role's own size. A compositor that ignored the
+    size, or resolved it against a face index that means nothing in its own
+    process - which is what sending a face number rather than a size would
+    have done - draws both the same and fails here.
+    """
+    guest.type('fs.write("/home/.appearance", { fonts = { '
+               'ui = { font = "ibmplexmono", px = 20 }, '
+               'mono = { font = "ibmplexmono", px = 20 } } }) '
+               'print("sized-font" .. "-ready")')
+    guest.wait_for("sized-font-ready", "chose a scalable face for the widgets")
+
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Sized', w = 320, h = 150, "
+        "x = 760, y = 130 } "
+        "if not w then return end "
+        "local v = ui.view{ x = 0, y = 0, w = 320, h = 150 } "
+        "function v:draw(gc) "
+        "gc:fill(0, 0, 320, 150, 0xff000000) "
+        "gc:text(12, 24, 'HHHH', 0xffffffff, nil, 'ui') "
+        "gc:text(12, 96, 'HHHH', 0xffffffff, nil, 'ui', 28) "
+        "end "
+        "w:add(v) w:run()"
+    )
+
+    guest.type("fs.write('/ramfs/sized.lua', %r)" % program)
+    guest.type("wm sized,/ramfs/sized.lua")
+
+    mark = len(guest.seen)
+    placed, deadline = None, time.monotonic() + 40
+
+    while placed is None and time.monotonic() < deadline:
+        found = re.search(r"wm: window Sized at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen)
+        if found:
+            placed = tuple(int(v) for v in found.groups())
+        time.sleep(0.3)
+
+    if placed is None:
+        raise Failure("the window that draws two sizes never opened:\n"
+                      + guest.seen[mark:][-900:])
+
+    wx, wy, ww, wh = placed
+    time.sleep(2.0)
+    width, height, px = parse_ppm(guest.screendump())
+
+    def ink_runs(top, bottom):
+        """Each block of consecutive rows that has ink in it: (first, height).
+
+        **Blocks rather than a count per band**, and the difference is what
+        made the first version of this check worthless. Counting inked rows
+        in a band above and a band below passed with the size resolution
+        removed: the window has a few rows of chrome near its bottom edge,
+        and three of those plus a small line out-counted the small line
+        alone. A block is the line itself, so its height is the letters'
+        height and nothing else can pad it.
+
+        Specks of one or two rows are left out for the same reason.
+        """
+        runs, start = [], None
+
+        for dy in range(top, bottom):
+            y = wy + dy
+            lit = 0
+
+            if 0 <= y < height:
+                for x in range(wx, min(wx + ww, width)):
+                    o = (y * width + x) * 3
+
+                    if px[o] > 200 and px[o + 1] > 200 and px[o + 2] > 200:
+                        lit += 1
+
+                        if lit >= 2:
+                            break
+
+            if lit >= 2:
+                if start is None:
+                    start = dy
+            elif start is not None:
+                runs.append((start, dy - start))
+                start = None
+
+        if start is not None:
+            runs.append((start, bottom - start))
+
+        return [r for r in runs if r[1] >= 3]
+
+    runs = ink_runs(0, min(wh, 130))
+
+    if len(runs) < 2:
+        raise Failure(
+            f"the window drew {len(runs)} block(s) of text where two were "
+            f"asked for, at {runs}. One of the lines is not on screen."
+        )
+
+    small, large = runs[0][1], runs[1][1]
+
+    if large <= small + 2:
+        raise Failure(
+            f"the line asked for at 28 pixels is {large} rows tall and the "
+            f"line at the role's size is {small}, so the size the command "
+            f"carried changed nothing that shows. The blocks found: {runs}."
+        )
+
+    # **The screen back first, and the order is the whole of it.** The shell
+    # is blocked running this window manager, so anything typed now is queued
+    # and runs only once it exits - which is how the restore below waited
+    # thirty seconds for a marker that could not be printed yet.
+    mark = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "Control-C did not get the screen back after the text size "
+            "phase.\n--- what the guest said ---\n"
+            + (guest.seen[mark:][-2000:] or "(nothing at all)"))
+
+    # **And the face back to the desktop's own**, which matters more than it
+    # looks. The Deskbar sizes its Kosmos button with `gfx.measure("Kosmos")`
+    # in whatever face is loaded, while the focus phase below computes that
+    # width as `len("Kosmos") * GLYPH_W` - the bitmap's 8-pixel cell. Leave a
+    # 20-pixel TrueType face behind and every button sits further right than
+    # that phase assumes, so it samples a bevel instead of a button face and
+    # calls the focus colours wrong. Found by breaking exactly that.
+    # **The palette goes back with it.** Writing an empty table put the face
+    # right and took the palette away, and the setup above chose `dark` on
+    # purpose: every colour this file looks for is a field of that palette.
+    # The focus phase then read its buttons three greens off - the right
+    # pixels, the wrong palette - which is a subtler failure than the wrong
+    # pixels and took one more run to see.
+    guest.type('fs.write("/home/.appearance", { palette = "dark" }) '
+               'print("sized-font" .. "-back")')
+    guest.wait_for("sized-font-back",
+                   "put the desktop's own face and palette back")
+
+    return 2
+
+
 def check_scripting(guest):
     """An application scripted by another, with no scripting code in either.
 
@@ -5730,6 +5897,7 @@ def main():
         terminal_checks = phase("terminal", check_terminal)
         file_checks = phase("programs by file", check_programs_by_file)
         log_view_checks = phase("log view", check_log_view)
+        sized_checks = phase("text size", check_text_size)
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
@@ -5765,6 +5933,7 @@ def main():
              + focus_checks + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
+             + sized_checks
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
@@ -5779,6 +5948,7 @@ def main():
           f"({splash_checks} on the kernel's boot screen, {bar_checks} on what "
           f"Lua drew through gfx, {key_checks} on the keyboard, "
           f"{name_checks} on programs reached by typing their name, "
+          f"{sized_checks} on a heading larger than the desktop's text, "
           f"{bar_updates} on a detached program still drawing, "
           f"{stop_checks} on Control-C stopping it, "
           f"{wm_checks} on dragging a hung application's window, "

@@ -369,15 +369,28 @@ the worst case is one application dying. That is the *whole* of the
 mitigation, and it stops being sufficient the moment fonts arrive from
 somewhere other than the build. See §19.13.
 
-### Three faces, not one
+### Four faces, not one - and a size beside them
 
-Text appears in three places that want different things:
+Text appears in four places that want different things:
 
 | role | where | what it needs |
 |---|---|---|
-| `ui` | titlebars, buttons, menus, the Deskbar | to match how the desk looks |
+| `ui` | buttons, menus, the Deskbar | to match how the desk looks |
+| `title` | a window's tab, and a heading inside one | to read as the name of the thing |
 | `text` | documents, labels, anything to read | proportional, comfortable |
 | `mono` | the Terminal, the editor, hex dumps | **fixed width**, or columns stop lining up |
+
+**This said three for a long time while four existed**, and the kit believed
+it: `ui.lua` applied `ui`, `text` and `mono`, so an application asking for
+`title` measured against a face it had never loaded. Corrected on 15
+September, with the size below.
+
+**A drawing command may also carry a size** - `{ op = "text", role = "ui",
+px = 28 }` - and each side resolves it against its own pool of faces, eight
+beyond the four roles. A *size* crosses and never a face number: `role_of`
+takes a number, so an index would resolve in the compositor's process, where
+that slot was never loaded, and the text would come out in the bitmap with
+nothing raised (`testing.md` §18.79).
 
 One setting for all three could only ever be right for one of them. The
 terminal's face has to be fixed-width whatever the other two are, and that

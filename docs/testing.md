@@ -4539,3 +4539,73 @@ an alpha of 300, which is refused.
 
 And as written: `make test` whole - the guest suites 162 of 162 and 158 of
 158, each one more than before, and every other line as it was.
+
+## 18.79 A heading larger than the desktop's text
+
+**What this retires.** `ui.md` said a window drawing through commands "cannot
+have a heading at 28 pixels and a paragraph at 16 on the same screen": a text
+command carried a role - one of four faces, each at a size chosen in
+Appearance - and nothing else. Music's design wants a large title, and Diego
+chose on 15 September ("yes to all") **a size the kit carries** over a window
+drawing its own pixels, because what comes after Music is other applications
+restyled and a size in the kit gives every one of them large text for nothing.
+
+**What crosses is a size, never a face number.** `gfx`'s `role_of` does take a
+number, so an index would have resolved in the *compositor's* process - where
+that slot was never loaded - and `l_text` would have fallen through to the
+8x16 bitmap with nothing raised anywhere. Silently wrong is worse than
+refused, so `{ op = "text", ..., role = "ui", px = 28 }` carries the size and
+each side resolves it against its own pool of faces.
+
+**When the pool is full.** `gfx.face` keeps eight slots beyond the four roles
+and answers `nil, "no room for another face"` rather than evicting one - so a
+window asking for more sizes than the machine will hold draws those at the
+role's own size, said once in the log, instead of losing its headings to the
+bitmap font.
+
+**Measuring happens in the face that draws**, which is the way this goes
+wrong quietly: a widget laid out on the widget font's cell and drawn at 28
+pixels runs off its own edge. The kit asks for the same face in its own
+process - every application links `gfx` - and clips against that.
+
+**Two things already wrong, corrected with it**: the kit applied three of the
+desktop's four roles, so an application asking for `title` measured against a
+face it had never loaded; and `gfx.md` was headed "Three faces, not one" while
+four exist.
+
+**The check** (`run_screenshot.py`, the `text size` phase): a window draws one
+line at the role's size and one asked for at 28, and each **block of
+consecutive inked rows** is measured off the screenshot - 15 rows against 10.
+**A scalable face is chosen first**, because the default face for every role
+is the bitmap, which exists at one size: asking it for 28 can only fall back,
+and both lines would come out identical - a check that measures nothing and
+passes.
+
+**The first version of this check did not bite, and that is the part worth
+recording.** It counted inked *rows in two bands*, above and below. The window
+has a few rows of chrome near its bottom edge, inside the lower band, so with
+C19 applied - every line drawn at its role's size - the lower band still
+counted 13 against the upper band's 10 and **the control passed**. A test that
+passes whether or not the feature is there is worth nothing, and the only
+reason this was caught is that the control is run rather than assumed. What
+found the cause was printing rather than asserting: one boot that dumped the
+ink profile of the window, which showed the two lines at rows 30-39 and
+103-117 and the chrome at 137, 142 and 147. Blocks of consecutive rows cannot
+be padded that way; specks under three rows are ignored.
+
+**And three runs were lost to a phase that did not put the machine back.** It
+left its window open, so a later phase that finds the Deskbar's buttons by
+position read the wrong pixels; then it left a 20-pixel face loaded, and that
+phase computes a button's place from `len("Kosmos") * GLYPH_W`, the bitmap's
+8-pixel cell, so every button had moved; then it wrote an empty settings file
+and took the dark palette with it, and the same phase read the right pixels in
+the wrong palette - three greens out. **A phase hands back the screen, the
+face and the palette**, and the order matters: anything typed while a window
+manager holds the screen does not run until it lets go.
+
+| Control | What failed |
+|---|---|
+| C19: the compositor resolving no size, so every line comes out at its role's | the `text size` phase, 1 of 112: `the line asked for at 28 pixels is 10 rows tall and the line at the role's size is 10 ... The blocks found: [(30, 10), (102, 10)]` |
+
+And as written: the display harness 112 checks, two more than before, and
+`make test` whole as it was.

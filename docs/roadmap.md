@@ -590,6 +590,13 @@ the Pi", and the Pi is not here yet.
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
   GRUB, which it has not been since 13 September.
 - Doom's sound, behind a hook that already exists.
+- **The display harness finds things by an assumed font width.** `kosmos_w`
+  in the focus phase is `len("Kosmos") * GLYPH_W`, the bitmap's 8-pixel cell,
+  while the Deskbar sizes that button with `gfx.measure("Kosmos")` in whatever
+  face is loaded. Any phase that leaves a different face behind moves every
+  button, and the failure reads as a colour being wrong rather than a position
+  - it cost three runs on 15 September (`testing.md` §18.79). Asking the guest
+  where the buttons are, rather than computing it here, is the fix.
 - **Jack sensing for the ThinkPad's headphones.** Since 0.10.70 the speaker
   and the headphone jack play together (`testing.md` §18.76), and Diego heard
   Basket Case through the speaker. The jack's pin, 0x21, reports presence
@@ -652,7 +659,10 @@ the Pi", and the Pi is not here yet.
      command that carries a size**, so every application restyled after Music
      gets large text without drawing its own pixels - which is what a window
      with `direct = true` would have meant, and it would have helped Music
-     alone.
+     alone. **Built, 15 September** (`testing.md` §18.79): `gc:text(...,
+     role, px)`, resolved against a pool of faces on each side, with the
+     role's own size as the answer when the pool is full - control C19
+     watched fail, after a first version of the check that did not.
 - A markdown viewer, for manuals inside the system.
 - **Selection in the terminal**, which is where people most want to copy
   from and is the one window the clipboard cannot reach. It draws its

@@ -206,6 +206,16 @@ pixels out of five hundred. The photo viewer and the image widget had been
 waiting for it in comments; both now say it exists, and using it there is a
 change to each rather than a gap in the system.
 
+**Music's window, piece 2 of 4 is built** (15 September, committed): a text
+command carries a size beside its role, so a window drawing through commands
+can have a heading larger than the desktop's text - which `ui.md` said outright
+it could not (`testing.md` §18.79). The kit and the compositor each resolve the
+size against their own pool of faces, and a pool that is full answers with the
+role's own size rather than silently falling back to the bitmap. **The first
+version of its check did not bite**: it counted inked rows in two bands and the
+window's own chrome padded the lower one, so the control passed. Rewritten to
+measure each block of inked rows - 15 against 10 - and C19 then failed it.
+
 **Next: Music's window, and it is the pilot of a second look.** Diego, 15
 September, on `docs/music.html`: "i love the music app design. can we do it
 for real in kosmos?", "i might redo a lot of the current apps with this style

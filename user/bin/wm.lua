@@ -193,6 +193,40 @@ local saved_wallpaper = nil
 -- other two are. `theme.fonts` is what was asked for, which is not always
 -- what is loaded - a face that will not parse leaves the previous one in
 -- place, and saying so is the caller's job.
+--
+-- **A role's font at a size an application asked for.**
+--
+-- Eight slots beyond the four roles, and `gfx.face` says no rather than
+-- evicting one - so a window that asks for more sizes than the machine will
+-- hold draws those at the role's own size, said once, instead of silently
+-- losing its headings to the bitmap font.
+--
+local sized_faces, sized_full = {}, false
+
+local function sized(role, px)
+  role = role or "ui"
+
+  local want = theme.fonts[role]
+
+  if not want or px == want.px then return role end
+
+  local key = role .. "@" .. px
+  local got = sized_faces[key]
+
+  if got == nil then
+    got = gfx.face(want.font, px) or false
+    sized_faces[key] = got
+
+    if not got and not sized_full then
+      sized_full = true
+      print("wm: no room for another face, so " .. key
+            .. " draws at the role's size")
+    end
+  end
+
+  return got or role
+end
+
 local function apply_fonts(fonts)
   if type(fonts) ~= "table" then return end
 
@@ -212,6 +246,9 @@ local function apply_fonts(fonts)
       end
     end
   end
+
+  -- Sized faces were cut from the fonts that have just been replaced.
+  sized_faces, sized_full = {}, false
 
   return why
 end
@@ -1037,9 +1074,11 @@ local ops = {
 
   text = function(s, o)
     -- `o.role` picks the face. Absent, `gfx` uses the interface font, which
-    -- is what every application that does not care wants.
+    -- is what every application that does not care wants. `o.px` asks for
+    -- that role's font at another size, which is resolved here rather than
+    -- sent as a number: a face index means nothing in this process.
     s:text(o.x or 0, o.y or 0, tostring(o.s or ""),
-           o.color or 0xffffffff, o.bg, o.role)
+           o.color or 0xffffffff, o.bg, o.px and sized(o.role, o.px) or o.role)
   end,
 
   --

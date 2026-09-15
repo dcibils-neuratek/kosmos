@@ -168,18 +168,25 @@ end
 -- kept drawing in whatever the widgets were using, which for a
 -- proportional face means the columns it is made of stop lining up.
 --
-function gc:text(x, y, s, color, bg, role)
+-- `px` asks for that role's font at a size of its own, which is what a title
+-- larger than the three roles needs. **A size crosses, never a face number**:
+-- `gfx`'s `role_of` does take a number, so an index would resolve in the
+-- compositor's process - where that slot was never loaded - and the text
+-- would quietly come out in the 8x16 bitmap. Each side resolves the size
+-- against its own pool instead, and measuring happens in the face that draws.
+function gc:text(x, y, s, color, bg, role, px)
   color, bg = shade(color), shade(bg)
   local ax, ay = self.ox + x, self.oy + y
 
   local GW, GH = GW, GH
+  local face = px and ui.sized(role, px) or role
 
   -- A role's own metrics, for the clipping below. The widget font's cell is
   -- the wrong ruler for a face that is not the widget font, and clipping by
   -- the wrong cell width drops characters that would have fitted.
-  if role then
-    GW = math.max(1, gfx.measure("0", role))
-    GH = gfx.height(role)
+  if face then
+    GW = math.max(1, gfx.measure("0", face))
+    GH = gfx.height(face)
   end
 
   if ay + GH <= self.cy or ay >= self.cy + self.ch then return end
@@ -229,7 +236,7 @@ function gc:text(x, y, s, color, bg, role)
 
   self.ops[#self.ops + 1] = { op = "text", x = ax, y = ay,
                               s = shown, color = color, bg = bg,
-                              role = role }
+                              role = role, px = px }
 end
 
 --
@@ -2810,6 +2817,10 @@ local function op_cost(o)
   if o.asset then cost = cost + #tostring(o.asset) end
   if o.role then cost = cost + #tostring(o.role) end
 
+  -- A size is one more key and its number, and the generous base above is
+  -- not a licence to stop counting: this is what the send would raise on.
+  if o.px then cost = cost + 16 end
+
   return cost
 end
 
@@ -2867,10 +2878,16 @@ end
 -- raising: a font is a preference, and an application that dies because
 -- somebody picked an odd one is worse than an application with the old
 -- font.
+local sized_faces = {}
+
 local function apply_fonts(fonts)
   if type(fonts) ~= "table" then return end
 
-  for _, role in ipairs { "ui", "text", "mono" } do
+  -- **Four roles, which this loop said three of.** The compositor applies
+  -- `title` as well, so an application that asked for it measured against a
+  -- face it had never loaded - the 8x16 bitmap - while the compositor drew
+  -- the desktop's title face. Found on 15 September, writing the size below.
+  for _, role in ipairs { "ui", "title", "text", "mono" } do
     local want = fonts[role]
 
     if type(want) == "table" and want.font then
@@ -2878,6 +2895,36 @@ local function apply_fonts(fonts)
       theme.fonts[role] = { font = want.font, px = tonumber(want.px) or 16 }
     end
   end
+
+  -- The faces asked for by size were cut from the old fonts.
+  sized_faces = {}
+end
+
+--
+-- **A role's font at a size of its own.**
+--
+-- `gfx.face` keeps a pool of eight beyond the four roles and answers `nil,
+-- "no room for another face"` rather than throwing one out - so a size that
+-- cannot be served falls back to the role itself, which draws at the
+-- desktop's size rather than in the bitmap font. Remembered per role and
+-- size, and forgotten when the fonts change.
+--
+function ui.sized(role, px)
+  role = role or "ui"
+
+  local want = theme.fonts[role]
+
+  if not want or not px or px == want.px then return role end
+
+  local key = role .. "@" .. px
+  local got = sized_faces[key]
+
+  if got == nil then
+    got = gfx.face(want.font, px) or false
+    sized_faces[key] = got
+  end
+
+  return got or role
 end
 
 function ui.window(spec)
