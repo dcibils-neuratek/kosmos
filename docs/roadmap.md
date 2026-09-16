@@ -585,6 +585,51 @@ the Pi", and the Pi is not here yet.
 - **File types**, as a preferences application rather than a table compiled
   into the image.
 
+- **App Inspector: an x-ray of one application, by layer.** Diego, 15
+  September, after a page took a while to load in the browser: "allows you to
+  do an xray of an app and what app is doing internally where is spending time
+  in lua land, in c land, in servers, drivers, etc", "so the profiling is
+  necessary to understand where the app is wasting time in loops in lua or in
+  the filesystem, what servers are being called", "will allow me to see and
+  understand where is the cpu time spent by layers, modules, services". This
+  is the *app profile* he asked for on 11 September, widened from "C, Lua,
+  messages" to the servers and drivers underneath.
+
+  **His condition stands and decides the design**: "not sure if we can do this
+  already or we need plumbing on every app. if every app needs plumbing thats
+  not really necessary then." So nothing an application has to opt into.
+
+  **What exists already, and it is more than half of the vocabulary.** The
+  window manager keeps seven counters and hands them over, which is what
+  `frames` divides by a clock - stage by stage, with what each allocates,
+  which is how the console's marshalling was found to cost four times the
+  worst collector pause. Processes has per-thread CPU accounting and shares
+  (`/lib/procshare.lua`). `sys.info` reports the pools and `gc_pause_max`.
+  None of that says *which layer inside one process*, and none of it says
+  which server a process is waiting on.
+
+  **The shape that needs no plumbing**, to be checked against the code before
+  any of it is built: the kernel records, on each timer tick, the interrupted
+  user PC of the processes being watched and whether the thread was running,
+  in a syscall, or blocked in IPC - which is thread accounting, and stays
+  inside what the kernel is allowed to know. Every process runs the same
+  userland image, so **one symbol table classifies all of them** - the Lua VM
+  and its collector, the C kits, the libc, the syscall path - and the
+  symbolisation belongs in userland where the image is. Time blocked in IPC is
+  attributed to the endpoint waited on, which is what names the *server*: the
+  filesystem, the compositor, the disk. A driver's own time is that driver's
+  process, which the same sampling already covers.
+
+  **What is not yet answered**: whether the tick handler can record a PC
+  cheaply enough to leave on; where the symbol table comes from at runtime;
+  and how a server's time is divided among the clients that asked for it,
+  which is the difference between "the filesystem is slow" and "this
+  application asks it too often".
+
+  **Drawn before it is built**, like every app since 14 September:
+  `docs/appinspector.html` first, changed until Diego agrees, then the code.
+  The browser loading a page is the first thing to point it at.
+
 ### Smaller, and wanted
 
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
