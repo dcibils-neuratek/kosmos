@@ -488,7 +488,16 @@ end
 -- filesystem on the machine to draw a pane four rows tall, and one of them
 -- is a disk.
 --
-local PLACES_W = 150
+-- **210 rather than 150, Diego's call on 16 September.**
+--
+-- `drives.html` puts a volume's filesystem beside its name - `KOSMOS HOME`
+-- and then `kfs`, quieter and to the right. At 150 a depth-one row left
+-- about 104 pixels and only a short pair fit: `BACKUP FAT16` drew, while
+-- `KOSMOS HOME kfs`, `PHOTOS 2024 FAT32` and `Untitled 2 FAT32` all
+-- suppressed the type. That is a feature which works under QEMU, where
+-- there are no drives, and vanishes on the ThinkPad, where there are - so
+-- the pane carries the design instead of the design being cut to the pane.
+local PLACES_W = 210
 
 local function subdirs(node)
   local out = {}
