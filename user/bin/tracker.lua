@@ -583,11 +583,124 @@ local function mount_roots()
   return out
 end
 
+--
+-- **Three groups, in the order `docs/drives.html` draws them**: Places for
+-- where you work, System folded away, and Drives for what is plugged in.
+--
+-- The groups are `heading` nodes, which `ui.tree` draws dim and refuses to
+-- select: a heading names a set of places and is not one itself, so clicking
+-- it neither highlights nor navigates.
+--
+-- **The design's list, not a guess at one.** `drives.html` folds away
+-- `bin, lib, app, dev, net, ramfs`, and that is what System holds. An
+-- earlier version here was a set literal of my own invention: it swallowed
+-- `/system` and `/user` as well, so Places was left holding `user` - which
+-- the drawing never mentions - and no `Desktop`, which it does.
+local SYSTEM_MOUNTS = {
+  ["/bin"] = true, ["/lib"] = true, ["/app"] = true,
+  ["/dev"] = true, ["/net"] = true, ["/ramfs"] = true,
+}
+
+--
+-- **The drives, asked for only when the group is opened.**
+--
+-- `mount_roots` above records what probing mounts at startup once cost: 18.4
+-- seconds on a laptop with no network card, with the whole desktop looking
+-- hung, because Tracker *is* the desktop. Asking `/drives` what is plugged
+-- in is the same shape of question one mount further along, so it is asked
+-- here - inside `children`, which `ui.tree` calls when somebody opens the
+-- group - and never on the way to a first frame.
+--
+-- `fs.volumes` rather than a listing, because a listing gives names and then
+-- costs a `getattr` for each one; this returns the filesystem, the size and
+-- how much is free in a single call, which is what the rows want.
+--
+local function drive_rows()
+  local out = {}
+  local volumes = fs.volumes and fs.volumes("/drives")
+
+  for _, v in ipairs(volumes or {}) do
+    --
+    -- `note` is the quiet half of the row: `KOSMOS HOME` and then `kfs`.
+    -- A volume this system cannot open says so there rather than being
+    -- hidden, because a drive with a partition missing looks broken.
+    --
+    local note = v.filesystem or "unknown"
+
+    if not v.readable then note = note .. ", not opened" end
+
+    out[#out + 1] = { text = v.name, path = files.join("/drives", v.name),
+                      note = note, children = subdirs }
+  end
+
+  if #out == 0 then
+    --
+    -- A group with nothing under it reads as broken; this says which of the
+    -- two it is.
+    --
+    -- **Short on purpose.** The pane is 150 pixels and `gc:text` clips by
+    -- whole character cells, so "(nothing plugged in)" came out as
+    -- "(nothing plugge" - the same clipping that cost three wrong guesses on
+    -- Music's footer (`testing.md` 18.85).
+    --
+    out[1] = { text = "(no drives)", quiet = true }
+  end
+
+  return out
+end
+
+--
+-- **Places is where you work**, and `drives.html` names it: Home, Desktop,
+-- and shortcut places. It is not "every mount that is not a system one" -
+-- that was an earlier guess here, and it put `user` in the list and left
+-- `Desktop` out.
+--
+-- Shortcuts - the drawing's `MyPhotos on PHOTOS 2024` - are not built yet.
+-- They have to survive a drive being unplugged and plugged back in, and a
+-- volume's *name* can renumber when that happens (Diego, 16 September), so
+-- a shortcut has to key on the unit and partition rather than on the path.
+-- That is a persistence question of its own and is on the roadmap.
+--
+local function place_rows()
+  local out = {
+    { text = "Home", path = "/home", children = subdirs },
+    { text = "Desktop", path = "/home/Desktop", children = subdirs },
+  }
+
+  return out
+end
+
+local function grouped_roots()
+  local system, other = {}, {}
+
+  for _, m in ipairs(mount_roots()) do
+    if m.path == "/drives" then
+      -- The Drives group answers for it, with what each volume is.
+    elseif SYSTEM_MOUNTS[m.path] then
+      system[#system + 1] = m
+    elseif m.path ~= "/home" then
+      -- Everything else the process can reach, under System as well: it is
+      -- somewhere you *can* go rather than somewhere you work, and hiding a
+      -- mount a program holds would be the sidebar disagreeing with the
+      -- namespace.
+      other[#other + 1] = m
+    end
+  end
+
+  for _, m in ipairs(other) do system[#system + 1] = m end
+
+  return {
+    { text = "Places", heading = true, open = true, kids = place_rows() },
+    { text = "System", heading = true, kids = system },
+    { text = "Drives", heading = true, open = true, children = drive_rows },
+  }
+end
+
 local places = ui.tree{
   x = 12, y = CONTENT_Y + BAR_H, w = PLACES_W,
   h = H - CONTENT_Y - BAR_H - FOOT_H - 6,
   follow = { "left", "top", "bottom" },
-  roots = mount_roots(),
+  roots = grouped_roots(),
   on_select = function(_, node) visit(node.path) end,
 }
 

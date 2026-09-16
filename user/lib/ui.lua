@@ -850,6 +850,19 @@ local function tree_rows(nodes, depth, out)
   for _, n in ipairs(nodes) do
     out[#out + 1] = { node = n, depth = depth }
 
+    --
+    -- **A node that starts open fetches its children here.**
+    --
+    -- This read `n.open and n.kids`, and `children` was called only from the
+    -- mouse handler - so a root created with `open = true` and a `children`
+    -- callback drew its triangle, claimed to be open, and never had anything
+    -- under it. Tracker's Drives group was exactly that: the callback was
+    -- never called, so not even its "nothing plugged in" row appeared.
+    --
+    if n.open and not n.kids and n.children then
+      n.kids = n.children(n) or {}
+    end
+
     if n.open and n.kids then
       tree_rows(n.kids, depth + 1, out)
     end
@@ -895,9 +908,26 @@ function ui.tree(spec)
 
       local y = 2 + i * GH
       local x = 4 + r.depth * TREE_INDENT
-      local on = (r.node == self.chosen)
+
+      --
+      -- **A heading is a label, not a place.** `drives.html` wants Places,
+      -- System and Drives as groups over the rows rather than as rows you
+      -- can stand in, so a heading never highlights and never reports a
+      -- selection - see `mouse` below, which returns before `chosen` moves.
+      --
+      --
+      -- **Two ways a row can be unselectable, and they look different.** A
+      -- `heading` names a group; a `quiet` row is an ordinary row that has
+      -- nothing to go to - "no drives plugged in". Making the second a
+      -- heading drew it at heading weight and it read as a fourth group.
+      --
+      local head = r.node.heading and true or false
+      local on = (not head) and (not r.node.quiet)
+                 and (r.node == self.chosen)
       local bg = on and theme.accent or theme.sunken
-      local fg = on and theme.text_on or theme.text
+      local fg = on and theme.text_on
+                     or ((head or r.node.quiet) and theme.text_dim
+                                                or theme.text)
 
       if on then g:fill(2, y, room, GH, bg) end
 
@@ -926,6 +956,28 @@ function ui.tree(spec)
       end
 
       g:text(x + TREE_ARROW, y, tostring(r.node.text or "?"), fg, bg)
+
+      --
+      -- **What a row is, beside what it is called**: `KOSMOS HOME` and then
+      -- `kfs`, quieter and to the right (`drives.html`).
+      --
+      -- Measured with `gfx.measure` rather than `#text * gfx.font.w`, which
+      -- is the whole reason that binding exists: the drawing face is
+      -- proportional, and a right edge computed from a glyph count lands in
+      -- the wrong place - the mistake that cost three wrong guesses on
+      -- Music's footer (`testing.md` 18.85).
+      --
+      if r.node.note and not on then
+        local note = tostring(r.node.note)
+        local width = gfx.measure(note, "ui")
+        local at = room - width - 2
+
+        -- Only when it does not crowd the name. A note that overlapped
+        -- would be worse than no note at all.
+        if at > x + TREE_ARROW + gfx.measure(tostring(r.node.text or ""), "ui") + 6 then
+          g:text(at, y, note, theme.text_dim, bg)
+        end
+      end
     end
   end
 
@@ -967,6 +1019,9 @@ function ui.tree(spec)
 
       return true
     end
+
+    -- A heading names a group, and a quiet row has nowhere to go.
+    if r.node.heading or r.node.quiet then return true end
 
     self.chosen = r.node
 
