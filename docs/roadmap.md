@@ -178,6 +178,21 @@ than queue behind them, and today it stops neither them nor itself. Step
 seven needed no IPI on AArch64 - `as_switch` uses `tlbi vmalle1is`, which the
 hardware broadcasts - and needed one on x86-64, which has it now.
 
+### Known, and not ours to fix
+
+**QEMU's CoreAudio backend plays at about twice speed on this Mac.** Diego,
+16 September: Music "sounds like a chipmunk" under `make qemu` and is correct
+on the ThinkPad. Measured at 2.09x under `-audiodev coreaudio` and exactly
+1.00x under the WAV writer and under `none` at either rate, so it is not a
+rate conversion and there is nothing in Kosmos to change (`testing.md`
+§18.86). QEMU 11.1.1, the same install whose `hvf` acceleration does not boot
+a Kosmos kernel at all. `make NOAUDIO=1 qemu` sidesteps it.
+
+**What it cost us was a test, and that is built**: the media suite now boots a
+second guest against a device that keeps its own time. Worth revisiting if a
+later QEMU fixes the backend, or if sound is ever wrong on hardware in a way
+this now-real-time check would catch.
+
 ### Next, in this order
 
 **Reordered on 2026-09-11, and USB went to the front.**

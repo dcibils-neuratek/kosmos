@@ -216,6 +216,7 @@ def main():
     os.environ["KOSMOS_DISK"] = disk
     os.environ["KOSMOS_AUDIO_WAV"] = wav_out
     sys.path.insert(0, HERE)
+    import run_screenshot                                            # noqa: E402
     from run_screenshot import Guest, Failure, PROMPT, _to_tablet, parse_ppm  # noqa: E402
 
     # Each line the program prints is put together from pieces, so the line
@@ -611,6 +612,100 @@ def main():
     finally:
         guest.close()
 
+    #
+    # **A device that keeps its own time**, which nothing here had ever used.
+    #
+    # Every check above listens to the WAV writer, and the writer is paced by
+    # QEMU's own timer: it waits for the guest. So both ends share one clock
+    # and the reading is a tautology - the sound agrees with the machine that
+    # made it, however fast either is going.
+    #
+    # Diego, 16 September: Music played at twice speed under `make qemu` and
+    # was correct on the ThinkPad, with the progress bar "advancing like 2 or
+    # 3 seconds per real second" - while this suite was green. A three-clock
+    # probe (host time, the guest's counter, `p:position()`) read 2.09x under
+    # coreaudio and exactly 1.00x under the wav writer, `none`, and `none`
+    # forced to 44100 and to 48000. Not a rate mismatch: forcing coreaudio to
+    # 44100 left it at 2.08x.
+    #
+    # So the gap was never a missing assertion, it was a missing *device*.
+    # `none` keeps its own time and makes no sound, which is what lets this
+    # run in a suite nobody is listening to.
+    #
+    run_screenshot.use_audiodev("none,id=snd0")
+
+    clock = ('local media = use("/lib/media.lua") '
+             'local p = assert(media.open("/home/tone.wav")) '
+             'local hz = fs.read("/dev/cpu").counter_hz '
+             'local t0 = sys.ticks() '
+             'p:play() '
+             'for i = 1, 8 do '
+             'local stop = sys.ticks() + math.floor(0.5 * hz) '
+             'while sys.ticks() < stop and not p:finished() do p:tick() sys.sleep(1) end '
+             'print("clock" .. ": " .. ((sys.ticks() - t0) / hz) .. " " '
+             '.. p:position()) '
+             'end '
+             'p:close() print("clock" .. ": done")')
+
+    guest = Guest(image, 600)
+    rows = []
+
+    try:
+        guest.wait_for(PROMPT, "reached a shell")
+
+        # `use` is a global inside a program the loader runs, not in the chunk
+        # the shell evaluates from stdin - so the program goes to a file and
+        # the file is run, exactly as the phases above do it.
+        guest.type('fs.write("/ramfs/clock.lua", [[' + clock + ']])')
+        time.sleep(1.5)
+        guest.type("/ramfs/clock.lua")
+
+        start = time.monotonic()
+        taken = 0
+        deadline = start + 120
+
+        while time.monotonic() < deadline:
+            # **No `$` in this pattern.** Serial output carries a carriage
+            # return before the newline, so an end-anchored match never fires
+            # and every reading is silently dropped - which threw away three
+            # runs of the probe this check came from.
+            found = re.findall(r"clock: ([\d.]+) ([\d.]+)", guest.seen)
+
+            while taken < len(found):
+                rows.append((time.monotonic() - start,
+                             float(found[taken][0]), float(found[taken][1])))
+                taken += 1
+
+            if "clock: done" in guest.seen:
+                break
+
+            time.sleep(0.02)
+
+        if len(rows) < 4:
+            raise Failure("the tone never reported its position against the "
+                          "clock:\n" + guest.seen[-1200:])
+
+        # First row to last, rather than from zero: the first reading carries
+        # however long the boot took to reach it, which is not playback.
+        real = rows[-1][0] - rows[0][0]
+        inside = rows[-1][1] - rows[0][1]
+        heard = rows[-1][2] - rows[0][2]
+
+        check(real > 0 and 0.85 <= heard / real <= 1.15,
+              "on a device that keeps its own time, %.2f s of sound came out "
+              "in %.2f s of real time - %.2fx. Diego heard this at 2.09x "
+              "under coreaudio on 16 September, as a chipmunk"
+              % (heard, real, heard / real if real else 0))
+
+        check(inside > 0 and 0.85 <= heard / inside <= 1.15,
+              "the position disagreed with the guest's own clock: %.2f s of "
+              "sound against %.2f s measured inside the machine - %.2fx"
+              % (heard, inside, heard / inside if inside else 0))
+    except Failure as e:
+        fails.append(str(e))
+    finally:
+        guest.close()
+
     if fails:
         print("FAIL: %d of %d checks on media.lua, heard:" % (len(fails), len(fails) + checks))
         for complaint in fails:
@@ -619,8 +714,9 @@ def main():
 
     print("PASS: %d checks on media.lua, heard (Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
-          "Music's Play and bar doing the same, and Music saying why it could "
-          "not list a folder)." % checks)
+          "Music's Play and bar doing the same, Music saying why it could "
+          "not list a folder, and the sound keeping real time on a device "
+          "that keeps its own)." % checks)
     return 0
 
 

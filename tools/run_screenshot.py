@@ -279,6 +279,34 @@ QEMU_ARGS = [
     "-device", "virtio-sound-device,audiodev=snd0",
 ] if _WAV else [])
 
+
+def use_audiodev(spec):
+    """Swap the audiodev for the next guest this process boots.
+
+    **The wav writer is paced by QEMU's own timer, and a real device is
+    not.** That is the difference this exists for: the writer waits for the
+    guest, so a guest that hands over periods too slowly - or a backend that
+    retires them too fast - still measures perfect, because both ends are on
+    the same clock. A device on a real clock drains whether or not anybody
+    is ready.
+
+    Found on 16 September: Diego heard Music play at twice speed under
+    `make qemu`, where the backend is coreaudio, while the ThinkPad was
+    correct and the whole suite was green. Six runs of a three-clock probe
+    put it at 2.09x under coreaudio and exactly 1.00x under the wav writer,
+    `none`, and `none` forced to either rate - so no test in this tree had
+    ever exercised a device that keeps its own time.
+
+    `none` is that device and makes no sound, which is why the suite can
+    boot against it without a person having to listen.
+    """
+    global QEMU_ARGS
+
+    args = list(QEMU_ARGS)
+    args[args.index("-audiodev") + 1] = spec
+    QEMU_ARGS = args
+
+
 PROMPT = "kosmos>"          # printed once the shell is serving
 
 # The kernel's display stage prints its geometry as part of narrating the

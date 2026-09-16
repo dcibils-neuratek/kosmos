@@ -4910,3 +4910,59 @@ filled with. That grey is exactly what Diego saw.
 seventh transport control folds the window to 330x150 and folds it back. The
 library, the sources and the foot are given no height when folded, so the same
 window is two windows - which is how `docs/music.html` draws it.
+
+## 18.86 A device that keeps its own time
+
+**Diego, 16 September: "there is a issue with the music player as in qemu is
+playing at 2x speed or more, it sounds like a chipmunk! in the thinkpad is
+ok", and "the progress bar is not real time, instead is advancing like 2 o 3
+seconds per real second".** The media suite was green at 16 checks while this
+was true, and had been green over it for as long as the suite existed.
+
+**The suite could not have caught it, and the reason is the interesting
+part.** Every check in `run_media.py` listens to QEMU's WAV writer, and the
+writer is paced by QEMU's own timer: it waits for the guest. Both ends are
+therefore on one clock, and "the sound agrees with the machine that made it"
+is a tautology however fast either of them is going. A real device is not
+like that - it drains on its own clock and the guest keeps up or does not.
+
+**What the measurement said**, from a three-clock probe printing host time,
+the guest's counter and `p:position()` together:
+
+| backend | position / real time |
+|---|---|
+| `wav` | 1.00 |
+| `none` | 1.00 |
+| `none`, forced 48000 | 1.00 |
+| `none`, forced 44100 | 1.00 |
+| `coreaudio` | **2.09** |
+| `coreaudio`, forced 44100 | **2.08** |
+
+A six-second tone played out in 2.36 seconds. Host time and guest time agreed
+with each other to a few milliseconds in every one of the six runs; only the
+count of frames the *device* reported having played doubled. Forcing the
+backend to 44100 changed nothing, so it is not a rate conversion - it is
+QEMU 11.1.1's CoreAudio backend retiring buffers at about twice real time, on
+the same install where `make fast`'s hvf is already recorded broken. There is
+nothing to fix in Kosmos, which is why the ThinkPad is correct.
+
+**Five mechanisms were proposed and the measurements killed all five**: a
+rate disagreement between `HAL_SND_RATE` and the driver, stereo data consumed
+as mono, the previous night's MP3 `frame_offset` change, TCG running behind
+real time, and a 44100-into-48000 conversion. Each was plausible from the
+symptom and none survived contact with a number. Three complete runs were
+also thrown away by a regex anchored on `$`, which serial output's carriage
+return can never match - the same never-matching-matcher fault as §18.85's
+`on_key`, made twice more in one day.
+
+What it proves now (`run_media.py`, the last phase, two checks): the suite
+boots a second guest against `-audiodev none`, which keeps its own time and
+makes no sound, plays the tone, and holds the position to real time and to
+the guest's own clock, both within 0.85 to 1.15.
+
+| Control | What failed |
+|---|---|
+| C27: the same phase pointed at `coreaudio`, the backend Diego heard | 2 of 18: `4.91 s of sound came out in 2.25 s of real time - 2.18x`, and `the position disagreed with the guest's own clock - 2.17x` |
+
+**The gap was never a missing assertion. It was a missing device**, and
+`run_screenshot.use_audiodev` exists so any harness can ask for one.
