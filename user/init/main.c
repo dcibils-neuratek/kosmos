@@ -72,6 +72,11 @@ void net_server(long endpoint);
 void powerbutton_server(long console);
 void xhci_server(long console, long blocks, long writes);
 
+/* Its own endpoint, the USB driver's *read* endpoint, and the console's.
+ * Never the write endpoint: `/drives` is read-only by what it was handed
+ * rather than by what it agrees to. */
+void drives_server(long endpoint, long blocks, long console);
+
 #define ROLE_AUDIO    16UL
 #define ROLE_DEVICES   9UL
 #define ROLE_BINFS    11UL
@@ -82,6 +87,7 @@ void xhci_server(long console, long blocks, long writes);
 #define ROLE_NET      17UL
 #define ROLE_POWERBUTTON 18UL
 #define ROLE_XHCI     19UL
+#define ROLE_DRIVES   20UL
 
 static void say(const char *s)
 {
@@ -177,6 +183,11 @@ int main(unsigned long arg)
     if (arg == ROLE_XHCI) {
         named("xhci");
         xhci_server(0, 1, 2);
+    }
+
+    if (arg == ROLE_DRIVES) {
+        named("drives");
+        drives_server(0, 1, 2);
     }
 
     L = kosmos_lua_open();

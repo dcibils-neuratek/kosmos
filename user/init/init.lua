@@ -37,6 +37,7 @@ local ROLE_AUDIO     = 16 -- serves /dev/audio: the one process that may play
 local ROLE_NET       = 17 -- serves /net: the one process that holds the card
 local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
+local ROLE_DRIVES     = 20 -- serves /drives: every volume on every drive, read only
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -596,6 +597,62 @@ local function new_namespace()
   -- nonsense.
   --------------------------------------------------------------------------
 
+  --------------------------------------------------------------------------
+  -- /drives: every volume on every drive, read only (USB step 6b).
+  --
+  -- `user/servers/drives.c` is the server and `drivesproto.h` the shapes.
+  -- Its own protocol rather than /ramfs's, because a read-only drive server
+  -- would implement three of that one's eleven operations and refuse eight.
+  --
+  -- **The sizes are the compiler's, not arithmetic done here.** Every field
+  -- below was measured with `offsetof` against `drivesproto.h` before these
+  -- formats were written: 280, 1056, 104 and 80 bytes. Lua packs without
+  -- alignment and C pads, so the two agree only by luck unless somebody
+  -- checks - and the asserts are what turn luck into a load-time failure.
+  --------------------------------------------------------------------------
+
+  local DRIVES_REQUEST = "<I4I4I8I4I4c256"    -- op, offset, at, length, _, path
+  local DRIVES_REPLY   = "<I4I4I4I4I8I4I4c1024"
+  local DRIVES_VOLUME  = "<c64I4I4I8I8I4I4I4I4"
+  local DRIVES_ENTRY   = "<c64I8I4I4"
+
+  assert(#string.pack(DRIVES_REQUEST, 0, 0, 0, 0, 0, "") == 280,
+         "namespace: the /drives request layout does not match drivesproto.h")
+  assert(#string.pack(DRIVES_REPLY, 0, 0, 0, 0, 0, 0, 0, "") == 1056,
+         "namespace: the /drives reply layout does not match drivesproto.h")
+  assert(#string.pack(DRIVES_VOLUME, "", 0, 0, 0, 0, 0, 0, 0, 0) == 104,
+         "namespace: the /drives volume layout does not match drivesproto.h")
+  assert(#string.pack(DRIVES_ENTRY, "", 0, 0, 0) == 80,
+         "namespace: the /drives entry layout does not match drivesproto.h")
+
+  -- Cut to the field and zero-padded to it. `string.pack`'s `c` raises on a
+  -- string longer than the field, and the namespace already has a `fixed`
+  -- for this - but that one is declared six hundred lines further down, so
+  -- at this point the name is a nil global rather than the function. Its
+  -- own, beside the constants it pads to.
+  local function drives_fixed(text, n)
+    text = tostring(text or "")
+
+    if #text >= n then return text:sub(1, n) end
+
+    return text .. string.rep("\0", n - #text)
+  end
+
+  local DRIVES_OPS = { volumes = 1, list = 2, read = 3, getattr = 4 }
+  local DRIVES_PATH_MAX, DRIVES_DATA_MAX = 256, 1024
+  local DRIVES_ENTRIES_MAX, DRIVES_VOLUMES_MAX = 4, 8
+
+  local DRIVES_FS_NAMES = { [0] = "none", "FAT16", "FAT32", "kfs", "unknown" }
+
+  local DRIVES_ERRORS = {
+    [1] = "no such path",
+    [2] = "not a directory",
+    [3] = "the drive server did not understand that",
+    [4] = "the drive would not read",
+    [5] = "a filesystem this cannot read",
+    [6] = "the volume is damaged",
+  }
+
   local DEV_REQUEST = "<I4c20"          -- op, name[20]
   local DEV_FIELD   = "<I8I4c20c32"     -- number, kind, name[20], text[32]
   local DEV_HEAD    = "<I4I4"           -- error, count
@@ -613,6 +670,97 @@ local function new_namespace()
   }
 
   local function trim(s) return (s:gsub("%z.*$", "")) end
+
+  --
+  -- A request to the drive server, and its answer.
+  --
+  -- Three operations and no fourth: `list`, `read` and `getattr`, plus
+  -- `volumes`, which is what the Drives list asks and no other mount has.
+  -- There is deliberately no write of any kind - `drivesproto.h` has no
+  -- operation for one and this process was never given the endpoint that
+  -- would carry it.
+  --
+  local function drives_request(capability, op, rest, extra)
+    local code = DRIVES_OPS[op]
+
+    if not code then
+      return nil, "no such operation: " .. tostring(op)
+    end
+
+    extra = extra or {}
+
+    -- A path longer than the field is no path the server holds, and is
+    -- answered as one. `string.pack` would raise instead, ending whoever
+    -- asked with a line about packing.
+    if #(rest or "") > DRIVES_PATH_MAX - 1 then
+      return nil, DRIVES_ERRORS[1]
+    end
+
+    local want = math.min(tonumber(extra.length) or DRIVES_DATA_MAX,
+                          DRIVES_DATA_MAX)
+
+    local reply, why = sys.call_raw(capability,
+                                    string.pack(DRIVES_REQUEST, code,
+                                                tonumber(extra.offset) or 0,
+                                                tonumber(extra.at) or 0,
+                                                want, 0,
+                                                drives_fixed(rest or "",
+                                                     DRIVES_PATH_MAX)))
+
+    if not reply then return nil, tostring(why) end
+
+    if #reply < 1056 then return nil, "a /drives reply of the wrong size" end
+
+    local err, more, count, length, size, directory, _, blob =
+        string.unpack(DRIVES_REPLY, reply)
+
+    if err ~= 0 then
+      return nil, DRIVES_ERRORS[err]
+                  or ("the drive server refused it, error " .. tostring(err))
+    end
+
+    if op == "getattr" then
+      return { ok = true, size = size,
+               kind = (directory ~= 0) and "directory" or "file" }
+    end
+
+    if op == "read" then
+      return { ok = true, value = blob:sub(1, length), more = more ~= 0 }
+    end
+
+    if op == "volumes" then
+      local out = {}
+
+      for i = 1, math.min(count, DRIVES_VOLUMES_MAX) do
+        local at = (i - 1) * 104 + 1
+        local name, fs, exact, bytes, free, unit, part, readable =
+            string.unpack(DRIVES_VOLUME, blob, at)
+
+        out[i] = { name = trim(name), filesystem = DRIVES_FS_NAMES[fs] or "unknown",
+                   bytes = bytes, free = free, free_exact = exact ~= 0,
+                   unit = unit, partition = part, readable = readable ~= 0 }
+      end
+
+      return { ok = true, volumes = out, more = more ~= 0 }
+    end
+
+    -- `list`: names, with what each one is, so a column does not cost a
+    -- second request per row.
+    local names, entries = {}, {}
+
+    for i = 1, math.min(count, DRIVES_ENTRIES_MAX) do
+      local at = (i - 1) * 80 + 1
+      local name, bytes, directory_flag = string.unpack(DRIVES_ENTRY, blob, at)
+
+      name = trim(name)
+      names[#names + 1] = name
+      entries[#entries + 1] = { name = name, size = bytes,
+                                kind = (directory_flag ~= 0) and "directory"
+                                                             or "file" }
+    end
+
+    return { ok = true, value = names, entries = entries, more = more ~= 0 }
+  end
 
   local function dev_request(capability, op, rest)
     local code = DEV_OPS[op]
@@ -1430,6 +1578,10 @@ local function new_namespace()
 
     if proto == "dev" then
       return dev_request(capability, op, rest)
+    end
+
+    if proto == "drives" then
+      return drives_request(capability, op, rest, extra)
     end
 
     if proto == "bin" then
@@ -3655,7 +3807,7 @@ local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
-                          blocks_cap)
+                          blocks_cap, drives_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
   ns.mount("/ramfs", ramfs_cap, nil, "ram")
@@ -3665,6 +3817,16 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- under one directory, and neither knows about the other - which is what a
   -- per-process mount table buys.
   ns.mount("/dev", devices_cap, nil, "dev")
+
+  --
+  -- Every volume on every drive (USB step 6b, `docs/drives.html`).
+  --
+  -- **One server owns the whole prefix** rather than a mount per volume:
+  -- drives appear and disappear while programs run, and a mount is made when
+  -- a process is built, so a volume plugged in later could never be given a
+  -- mount of its own in a namespace that already exists.
+  --
+  if drives_cap then ns.mount("/drives", drives_cap, nil, "drives") end
 
   --
   -- Over the top of `/dev`, because longest prefix wins.
@@ -4404,7 +4566,7 @@ query. `find` and `watch` are built on exactly these two calls.
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
                                         app_cap, disk_cap, audio_cap,
-                                        net_cap, blocks_cap },
+                                        net_cap, blocks_cap, drives_cap },
                          flags)
 
     if not id then
@@ -4416,7 +4578,7 @@ query. `find` and `watch` are built on exactly these two calls.
       path = path, args = argument or "", cwd = cwd,
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7, audio = 8, net = 9, blocks = 10,
+      disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       home_in_memory = home_in_memory or nil,
     })
 
@@ -5010,6 +5172,7 @@ if role == ROLE_INIT then
   local NET_EP = sys.endpoint()
   local BLOCKS_EP = sys.endpoint()
   local BLOCKS_WRITE_EP = sys.endpoint()
+  local DRIVES_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -5141,6 +5304,22 @@ if role == ROLE_INIT then
   end
 
   --
+  -- And the drive server, which reads what is on those sticks (USB step 6b).
+  --
+  -- **It is given `BLOCKS_EP` and never `BLOCKS_WRITE_EP`**, so `/drives` is
+  -- read-only by what this process holds rather than by what its code agrees
+  -- to. Writing to another machine's filesystem comes later and deliberately.
+  --
+  -- Started whether or not there is a USB driver, for the disk server's
+  -- reason: a machine with no stick is a supported way to run - it is how
+  -- every display test runs - and a server that answers "no volumes" keeps
+  -- one boot path where a spawn that is skipped would leave `/drives`
+  -- unmounted and every program asking about it getting a different error.
+  --
+  start("the drive server", ROLE_DRIVES,
+        { DRIVES_EP, BLOCKS_EP, CONSOLE_EP })
+
+  --
   -- And its address, which init has to give it because the stack has no
   -- namespace to read one from.
   --
@@ -5218,8 +5397,12 @@ if role == ROLE_INIT then
   -- like everything else, and `sys.write` from the prompt returning -102 is
   -- the demonstration.
   local shell = start("the shell", ROLE_SHELL,
+                      -- `DRIVES_EP` last, so no index already given out
+                      -- moves: every one of these is positional and the
+                      -- runner names them by number further down.
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
-                        APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP },
+                        APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
+                        DRIVES_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5291,7 +5474,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
   return
 end
 
@@ -5448,6 +5631,7 @@ if role == ROLE_RUNNER then
   if req.audio   then ns.mount("/dev/audio",   req.audio)   end
   if req.net     then ns.mount("/net",         req.net, nil, "net") end
   if req.blocks  then ns.mount("/dev/blocks",  req.blocks) end
+  if req.drives  then ns.mount("/drives",      req.drives, nil, "drives") end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -5507,9 +5691,13 @@ if role == ROLE_RUNNER then
     -- without it `/dev/audio` is a path that does not exist. The Mixer said
     -- "nothing is playing" while two tones were running, because they were
     -- not able to reach the server to say otherwise.
+    -- `req.drives` last, matching `drives = 11` in the request below and
+    -- the order init hands them to the shell. Every entry here is named by
+    -- number on the other side, so a new one goes on the end or every index
+    -- after it means something different.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
                    req.lib, req.app, req.disk, req.audio, req.net,
-                   req.blocks }
+                   req.blocks, req.drives }
     local mounts = {}
 
     --
@@ -5595,7 +5783,7 @@ if role == ROLE_RUNNER then
       path = path, args = argument or "", cwd = where or req.cwd or "/",
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
-      disk = 7, audio = 8, net = 9, blocks = 10,
+      disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Inherited rather than decided again. This is a program starting a

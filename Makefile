@@ -753,6 +753,9 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/xhci.c \
              user/servers/usb_decode.c \
              user/servers/storage_decode.c \
+             user/servers/drives.c \
+             user/servers/drives_decode.c \
+             user/servers/fat_decode.c \
              user/servers/say.c \
              user/lib/net_kosmos.c \
              user/lib/crypto.c \
@@ -1604,6 +1607,38 @@ $(HOSTDIR)/fatls: tools/fatls.c user/servers/fat_decode.c user/servers/fat_decod
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/fatls.c user/servers/fat_decode.c
+
+#
+# And where the volumes on a drive are, and what they are called (USB step
+# 6b): the two partition tables, kfs's superblock, FAT32's free-cluster hint,
+# and the naming Diego settled on 16 September - `Untitled` for a volume with
+# no label, and a repeated label numbered in arrival order.
+#
+# **The kfs half is held to a volume `mkfs` really wrote**, and that is the
+# point of the fixture rather than a convenience. `drives_decode.h` is the
+# *second* place kfs's superblock layout is written down - the first is
+# `string.pack` in `user/lib/kfs.lua`, and there is no way to share a format
+# string between Lua and C. This test first built a superblock by hand from
+# the C header's own constants and passed while agreeing with nothing: a real
+# 32 MB volume has 512 inodes, its journal at block 18 and its data at 274,
+# where the invented numbers were 64, 40 and 64. The layout check accepts
+# both. So the fixture is made by the same `tools/kfs.lua` the machine runs.
+#
+$(HOSTDIR)/kfs-fixture.img: tools/kfs.lua user/lib/kfs.lua $(HOSTDIR)/lua
+	@mkdir -p $(dir $@)
+	@rm -f $@
+	$(HOSTDIR)/lua tools/kfs.lua create $@ 32 >/dev/null
+
+$(HOSTDIR)/test_drivesdecode: tools/test_drivesdecode.c \
+	        user/servers/drives_decode.c user/servers/drives_decode.h \
+	        user/servers/fat_decode.c user/servers/fat_decode.h \
+	        user/servers/storage_decode.c user/servers/storage_decode.h \
+	        $(HOSTDIR)/kfs-fixture.img
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        -DKFS_FIXTURE='"$(HOSTDIR)/kfs-fixture.img"' \
+	        tools/test_drivesdecode.c user/servers/drives_decode.c \
+	        user/servers/fat_decode.c user/servers/storage_decode.c
 
 #
 # And whether the userland image's canary works, which is the same argument
@@ -2731,7 +2766,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2791,6 +2826,11 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# describes and then from volumes mtools made.
 	$(HOSTDIR)/test_fatdecode
 	python3 tools/test_fat.py $(HOSTDIR)/fatls
+	@# And where a drive's volumes are, which is the step above reading one:
+	@# both partition tables, kfs's superblock read from a volume mkfs wrote,
+	@# FAT32's free-cluster hint, and what an unlabelled or repeated name is
+	@# called (USB step 6b).
+	$(HOSTDIR)/test_drivesdecode
 	@# `make stick-log` without the stick: an image built as `mkusb_image.py`
 	@# builds one, its Kosmos partition copied out by `sticklog.py`, and a log
 	@# taken from the copy by `kfs.lua`.
