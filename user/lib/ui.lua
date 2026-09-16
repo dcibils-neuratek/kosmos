@@ -307,6 +307,39 @@ function gc:triangle(x1, y1, x2, y2, x3, y3, color)
   }
 end
 
+--
+-- **A named picture, drawn at a size.**
+--
+-- `ui.image` is a widget: it holds a picture, pans it, and says so when there
+-- is none. That is right for Photo and wrong inside a window that draws its
+-- own layout - Music paints a cover into a square it has already decided the
+-- size of, and when there is no cover it wants to paint something else there
+-- rather than a placeholder saying so.
+--
+-- The whole picture, scaled to the box, through the same command `ui.image{
+-- fit = true }` sends (`testing.md` 18.82).
+--
+function gc:picture(x, y, w, h, name)
+  if not name or w <= 0 or h <= 0 then return end
+
+  local ax, ay = self.ox + x, self.oy + y
+
+  if ax + w <= self.cx or ax >= self.cx + self.cw
+     or ay + h <= self.cy or ay >= self.cy + self.ch then
+    return
+  end
+
+  local size = fs.send("/app/wm", { type = "image_size", asset = name })
+
+  if not size or (size.w or 0) <= 0 then return end
+
+  self.ops[#self.ops + 1] = {
+    op = "image", asset = name,
+    sx = 0, sy = 0, w = size.w, h = size.h,
+    x = ax, y = ay, dw = w, dh = h,
+  }
+end
+
 function gc:frame(x, y, w, h, color)
   color = shade(color)
   self:fill(x, y, w, 1, color)
