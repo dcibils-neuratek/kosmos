@@ -402,7 +402,24 @@ is the one that makes the machine Diego owns behave like a computer:
    deliberately: the common case is one drive with a label, and reading well
    there beats being stable in a case that is rare.
 
-   **6b is unblocked and is the next thing to build.**
+   **6b is built, as far as naming volumes goes** (16 September, `usb.md`
+   §8). `user/servers/drives.c` owns the whole `/drives` prefix, started by
+   init as `ROLE_DRIVES` with the USB driver's *read* endpoint and never the
+   write one - so read-only is what the process can do rather than what its
+   code agrees to. `drives_decode.c` is the pure half and is tested on the
+   Mac: 51 checks over both partition tables, a protective MBR that must not
+   be offered as a volume, kfs's superblock read from an image `mkfs` really
+   wrote, FAT32's FSInfo hint, and the naming Diego settled - three controls
+   watched failing. A booted machine confirms `/drives` is mounted, lists
+   empty with no stick attached, and answers "no such path" for a volume that
+   is not there.
+
+   **What is left of 6b is opening a volume**: the FAT directory walk and
+   file read, so `/drives/PHOTOS 2024/Italy/x.jpg` is a file rather than
+   `DRIVES_ERR_UNREADABLE`; free space checked against a real FAT volume
+   rather than only a made one; and a permanent guest test with a control -
+   the host test covers the decoder, not the server. kfs volumes are listed
+   and never opened, because kfs's reader is Lua and this server is C.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage

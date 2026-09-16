@@ -1772,10 +1772,20 @@ never needs the hint; a writer will.
 
 ### What is not done yet
 
-- **Nothing on the machine reads a drive yet.** 6b finds the partitions on
-  every stick and puts each FAT volume at `/drives/<label>`; whether a
-  volume's sector count fits its partition is checked there, since only the
-  caller knows the partition.
+- **6b is built, as far as naming volumes goes** (16 September). A drive
+  server in C owns the whole `/drives` prefix - one server, not a mount per
+  volume, because a volume plugged in later could never be given a mount in a
+  namespace that already exists. It walks every unit, reads whichever
+  partition table the drive has, identifies FAT16, FAT32 and kfs, names each
+  volume (`Untitled` for no label, `PHOTOS 2` for a repeat) and measures free
+  space. Whether a volume's sector count fits its partition is checked there,
+  since only the caller knows the partition.
+
+  **What it does not do yet is open one.** A FAT volume is named, sized and
+  listed; asking for its contents answers `DRIVES_ERR_UNREADABLE` until the
+  directory walk is written. kfs volumes are listed and never opened, because
+  kfs's reader is `user/lib/kfs.lua` and this server is C - reading one here
+  means kfs in C, which is its own piece of work behind Disk Benchmark.
 - **exFAT is 6f.** FAT12 is refused, short names are not read through a code
   page, and nothing is written.
 

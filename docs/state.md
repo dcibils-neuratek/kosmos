@@ -6,6 +6,39 @@ Last updated: 2026-09-16
 
 ---
 
+## Where 6b stands, 16 September
+
+**`/drives` exists in a running machine.** `user/servers/drives.c` is a C
+server owning the whole prefix; init starts it as `ROLE_DRIVES` (20) with
+`{DRIVES_EP, BLOCKS_EP, CONSOLE_EP}`, matching `drives_server(0, 1, 2)`. It
+is given the USB driver's *read* endpoint and never the write one, and
+`drivesproto.h` has no write operation, so read-only is structural.
+
+**Proven in a boot, not only at compile time**: `/drives` appears in
+`fs.mounts()`, the server says `drives: serving /drives`, `fs.list("/drives")`
+returns an empty list with no stick attached, and `/drives/nonesuch` answers
+"no such path". The guest suite is 162/162 and the host decoder test 51.
+
+**Two bugs worth keeping, because neither would have failed loudly.**
+`units()` returned a count out of a `block_reply` that a failed call had
+never filled - stack garbage as a unit count. And `volume_for` could not tell
+"the root was asked for" from "a name matched nothing", since both leave the
+rest of the path empty, so `/drives/nonesuch` was answered with the *list of
+volumes*; `n` is the difference and the function was throwing it away.
+
+**Four probes were wasted on faults in the probes**, which is the day's
+pattern rather than an accident: `pairs()` over `ns.mounts()`, which returns
+plain strings; Lua comments in a program written with `fs.write`, which puts
+it on one line so `--` kills the rest; a capture sliced from the echoed
+command; and `procs`, which cannot answer at a bare prompt at all because it
+needs `/app/wm`. That last one is now a task of its own.
+
+**What 6b still owes**: the FAT directory walk and file read - a volume's
+contents answer `DRIVES_ERR_UNREADABLE` today; free space checked against a
+real FAT volume; and a permanent guest test with a control, since the host
+test covers the decoder and not the server. kfs volumes are listed and never
+opened, because kfs's reader is Lua.
+
 ## Where the night of 15-16 September ended
 
 **It is pushed. 0.10.71, `0b28356`, on the morning of 16 September**, on
