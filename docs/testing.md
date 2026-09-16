@@ -4667,3 +4667,44 @@ first pixel `20 c0 40`.
 | C20: the picture decoded and then forgotten, so the reply says it worked and the cache holds nothing | `run_media.py`, 1 of 11: `the cover's own colour covers 0 of the 4096 pixels it was drawn into`, with the program still reporting `cover:/home/cover.mp3 64x64` |
 
 And as written: the media suite 11 checks, one more than before.
+\n
+## 18.81 A window that asks for its own size
+
+**Most of this already existed.** `handlers.resize` has been in the window
+manager since 2 September and refuses only a window that draws its own pixels,
+whose two buffers are the application's own region and cannot be grown from
+the compositor's side. **Nothing in the userland ever asked**: the only
+matches for a resize in `user/` were the kit's own layout walk and the event
+it receives. So Music's mini player - that window with its list folded away -
+had no way to fold, and the roadmap's "nothing lets an application ask" was
+wrong about where the gap was.
+
+**And the half that was missing came with a bug attached.** The `resize` event
+lays the view tree out again and *left the window's own `w` and `h` as they
+were*, so after a drag on the grip a window's own numbers were the ones it
+opened with. Nothing caught it because `window.width` reads the root view
+rather than those fields. `window:resize` takes its size from the reply for
+the same reason, rather than waiting for the event that follows.
+
+**The check** (`run_screenshot.py`, the `window resize` phase, 3 checks): a
+window opens at 300x200 drawing one block of colour over its whole area, a
+click asks for 160x90, and then - the reply says `true 160x90`; the kit's own
+fields say 160x90; and **the block of colour on screen is narrower and
+shorter than it was**. The third is the one that matters: the compositor
+throws the old surface away and allocates a new one, so a window whose
+*numbers* changed and whose surface did not would answer perfectly and still
+be the old size in front of you.
+
+| Control | What failed |
+|---|---|
+| C21: the method reporting success, updating its own numbers, and never sending the request | the `window resize` phase, 1 of 115: `the window's colour still covers 300 columns and 200 rows, where it covered 300 and 200 before: the reply said 160x90 but the surface on screen did not change` |
+
+**The first version of that control was not worth having**, and it is the
+same lesson as §18.79 one step further. It left the method reading a field of
+a reply that no longer existed, so the click handler raised and the phase
+failed with "the window never said what its resize answered" - evidence that
+the program stopped printing, not that the window failed to resize. **A
+control has to fail for the reason the check exists**, or all it proves is
+that the code was disturbed.
+
+And as written: the display harness 115 checks, three more than before.

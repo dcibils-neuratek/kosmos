@@ -3181,6 +3181,33 @@ function window:move(x, y)
 end
 
 --
+-- **A window asking for its own size**, which is what a window that folds
+-- needs: Music's mini player is this window with its list put away.
+--
+-- The window manager has served the request since 2 September and refuses
+-- only a window that draws its own pixels - those buffers are the
+-- application's own region, sized for exactly those dimensions, and cannot be
+-- grown from this side. **Nothing in the userland ever asked**, so this is the
+-- half that was missing rather than a new feature.
+--
+-- **The size is taken from the reply**, not from the `resize` event that
+-- follows it. The event lays the view tree out again and leaves `self.w` and
+-- `self.h` as they were, so a window that resized itself and then read its own
+-- width got the old one.
+--
+function window:resize(w, h)
+  local reply, why = fs.send("/app/wm", { type = "resize",
+                                          window = self.handle, w = w, h = h })
+
+  if not reply then return false, why end
+
+  self.w, self.h = reply.w, reply.h
+  self.root:resize(reply.w, reply.h)
+
+  return true, reply.w, reply.h
+end
+
+--
 -- One request from the shell, or from anything else holding this window's
 -- endpoint. Non-blocking, drained every pass of the loop below, so a slow
 -- reader cannot slow the interface down.
@@ -4082,6 +4109,14 @@ function window:run()
         -- the new one, so this repaints unconditionally rather than only
         -- when something moved. There is nothing underneath to keep.
         --
+        -- **And the window's own size with it.** This laid the tree out and
+        -- left `self.w` and `self.h` as they were, so after a drag on the
+        -- grip the window's own numbers were the ones it opened with - and
+        -- `window.width` reads the root view instead, which is why nothing
+        -- caught it. Found writing `window:resize`, where the same two
+        -- fields are taken from the reply.
+        --
+        self.w, self.h = ev.w, ev.h
         self.root:resize(ev.w, ev.h)
 
         if self.on_resize then pcall(self.on_resize, self, ev.w, ev.h) end

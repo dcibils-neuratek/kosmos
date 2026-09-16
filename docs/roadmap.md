@@ -710,7 +710,10 @@ the Pi", and the Pi is not here yet.
      `window:resize` beside `window:move`. Two things found with it: the
      `resize` event leaves the kit's own `w`/`h` stale, and Music's widgets
      sit at fixed coordinates with no follow mode, so folding needs a layout
-     that runs again.
+     that runs again. **Built, 15 September** (`testing.md` §18.81):
+     `window:resize`, the size taken from the reply, and the event path now
+     keeping those two fields - control C21 watched fail, after a first
+     control that crashed instead of demonstrating it.
   4. **A title larger than the three text roles**, which an ordinary window
      draws at the sizes the desktop's font settings give. **Decided: a text
      command that carries a size**, so every application restyled after Music

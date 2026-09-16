@@ -224,6 +224,20 @@ found it before anything was written: a value there is capped at 16 KB and
 the compositor as pages with a name instead, decoded by the library it already
 uses, and held in the same cache as every other picture (`testing.md` §18.80).
 
+**Music's window: all four things it needed are built** (15 September). Piece
+4 is a window asking for its own size (`testing.md` §18.81) - and most of it
+existed: the compositor has served the request since 2 September and nothing
+in the userland had ever asked. The missing half arrived with a bug attached,
+since the `resize` event laid the tree out and left the window's own width and
+height at what it opened with.
+
+**So the window itself is next**, drawn in `docs/music.html`: the player at 380
+wide, the cover at 78 and at 44 through the scaler, the title through the size
+a command now carries, the cover out of the file through the picture request,
+and the mini player through the resize. **The icons are decided**: Haiku's
+where they fit - `App_MediaPlayer`, `File_Audio`, `Misc_Speaker` - and the
+seven transport controls drawn, because the vendored set has none of them.
+
 **Next: Music's window, and it is the pilot of a second look.** Diego, 15
 September, on `docs/music.html`: "i love the music app design. can we do it
 for real in kosmos?", "i might redo a lot of the current apps with this style

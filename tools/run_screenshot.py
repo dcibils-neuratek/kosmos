@@ -1879,6 +1879,149 @@ def check_text_size(guest):
     return 2
 
 
+def check_window_resize(guest):
+    """A window asking for its own size, and getting it on the screen.
+
+    The window manager has served `resize` since 2 September and refuses only
+    a window that draws its own pixels. **Nothing in the userland ever asked**
+    - the only matches were the kit's own layout and the event it receives -
+    so Music's mini player, which is that window with its list folded away,
+    had no way to fold.
+
+    Measured on the screen rather than from the reply, and the difference
+    matters: the compositor throws the old surface away and allocates a new
+    one, so a window whose *numbers* changed and whose surface did not would
+    answer correctly and still be the old size on screen. The window draws one
+    block of colour over its whole area; the block has to shrink with it.
+
+    The reply is checked too, because the second half of this fix is that the
+    size comes back in it: the `resize` event lays the tree out again but used
+    to leave the window's own width and height as they were.
+    """
+    BLOCK = (0x30, 0x80, 0xd0)
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Folds', w = 300, h = 200, "
+        "x = 700, y = 200 } "
+        "if not w then return end "
+        "local v = ui.view{ x = 0, y = 0, w = 300, h = 200 } "
+        "function v:draw(gc) gc:fill(0, 0, w.w or 300, w.h or 200, 0xff3080d0) end "
+        "w:add(v) "
+        "function v:mouse(action) "
+        "if action == 'release' then "
+        "local ok, nw, nh = w:resize(160, 90) "
+        "print('folds: ' .. tostring(ok) .. ' ' .. tostring(nw) .. 'x' .. tostring(nh) "
+        ".. ' kit ' .. tostring(w.w) .. 'x' .. tostring(w.h)) "
+        "end return true end "
+        "w:run()"
+    )
+
+    guest.type("fs.write('/ramfs/folds.lua', %r)" % program)
+    guest.type("wm folds,/ramfs/folds.lua")
+
+    mark = len(guest.seen)
+    placed, deadline = None, time.monotonic() + 40
+
+    while placed is None and time.monotonic() < deadline:
+        found = re.search(r"wm: window Folds at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen)
+        if found:
+            placed = tuple(int(v) for v in found.groups())
+        time.sleep(0.3)
+
+    if placed is None:
+        raise Failure("the window that resizes itself never opened:\n"
+                      + guest.seen[mark:][-900:])
+
+    wx, wy, ww, wh = placed
+    time.sleep(1.5)
+
+    def block(px, width, height):
+        """How many rows and columns of the window's colour are on screen."""
+        rows, cols = 0, 0
+
+        for y in range(wy, min(wy + wh + 40, height)):
+            o = (y * width + wx + 4) * 3
+
+            if (px[o], px[o + 1], px[o + 2]) == BLOCK:
+                rows += 1
+
+        for x in range(wx, min(wx + ww + 40, width)):
+            o = ((wy + 4) * width + x) * 3
+
+            if (px[o], px[o + 1], px[o + 2]) == BLOCK:
+                cols += 1
+
+        return rows, cols
+
+    width, height, px = parse_ppm(guest.screendump())
+    was = block(px, width, height)
+
+    if was[0] < 150 or was[1] < 250:
+        raise Failure(
+            f"the window did not draw its block at the size it opened with: "
+            f"{was[1]} columns and {was[0]} rows of colour, where 300x200 was "
+            "asked for.")
+
+    # The click is what asks: a window cannot resize itself before it is up
+    # without racing its own first paint.
+    guest.mouse_to(*_to_tablet(wx + 40, wy + 40, width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.2)
+    guest.mouse_button(False)
+    time.sleep(2.5)
+
+    said = re.search(r"folds: (\w+) (\d+)x(\d+) kit (\d+)x(\d+)",
+                     guest.seen[mark:])
+
+    if not said:
+        raise Failure("the window never said what its resize answered:\n"
+                      + guest.seen[mark:][-900:])
+
+    if said.group(1) != "true" or said.group(2) != "160" or said.group(3) != "90":
+        raise Failure(
+            f"asking for 160x90 answered {said.group(0)!r}, so the window "
+            "manager refused a window it can resize.")
+
+    if said.group(4) != "160" or said.group(5) != "90":
+        raise Failure(
+            f"the window manager resized to {said.group(2)}x{said.group(3)} "
+            f"and the kit still thinks it is {said.group(4)}x{said.group(5)}: "
+            "the size has to come back in the reply, because the event that "
+            "follows does not carry it into those fields.")
+
+    width, height, px = parse_ppm(guest.screendump())
+    now = block(px, width, height)
+
+    if now[0] >= was[0] or now[1] >= was[1]:
+        raise Failure(
+            f"the window's colour still covers {now[1]} columns and {now[0]} "
+            f"rows, where it covered {was[1]} and {was[0]} before: the reply "
+            "said 160x90 but the surface on screen did not change.")
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "Control-C did not get the screen back after the resize phase.\n"
+            + (guest.seen[mark:][-2000:] or "(nothing at all)"))
+
+    return 3
+
+
 def check_scripting(guest):
     """An application scripted by another, with no scripting code in either.
 
@@ -5898,6 +6041,7 @@ def main():
         file_checks = phase("programs by file", check_programs_by_file)
         log_view_checks = phase("log view", check_log_view)
         sized_checks = phase("text size", check_text_size)
+        fold_checks = phase("window resize", check_window_resize)
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
@@ -5933,7 +6077,7 @@ def main():
              + focus_checks + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
-             + sized_checks
+             + sized_checks + fold_checks
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
@@ -5949,6 +6093,7 @@ def main():
           f"Lua drew through gfx, {key_checks} on the keyboard, "
           f"{name_checks} on programs reached by typing their name, "
           f"{sized_checks} on a heading larger than the desktop's text, "
+          f"{fold_checks} on a window asking for its own size, "
           f"{bar_updates} on a detached program still drawing, "
           f"{stop_checks} on Control-C stopping it, "
           f"{wm_checks} on dragging a hung application's window, "
