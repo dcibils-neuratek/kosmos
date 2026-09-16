@@ -384,6 +384,20 @@ in the profile rather than a thing to assume is free.
 
 ---
 
+**Where an application's own look is switched, decided 16 September.**
+Music is the pilot for the flat look and carries both palettes, and it began
+with the `V` key - which is to say with nothing a person could find. Diego's
+answer is **a control in the window**, in the foot rather than the transport
+row: the transport is a seven-column grid of drawn controls and an eighth
+would re-space every one of them, while the foot already holds quiet
+secondary text. The key stays as a shortcut for whoever learns it.
+
+**This is the pilot's answer, not yet the system's.** If the flat look
+spreads, a per-application switch in every window is the wrong shape and it
+becomes a desktop setting in Appearance - which is the third option Diego was
+offered and deliberately did not take yet, because Music has to be lived with
+first (§16.8b).
+
 ## 16.9 Themes, and colours that are named rather than captured
 
 There are two palettes - `dark`, which is what Kosmos looked like first, and

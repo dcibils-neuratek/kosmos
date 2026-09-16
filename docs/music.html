@@ -122,6 +122,9 @@
   .tracks .a { color: var(--p-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tracks .r { text-align: right; font: 11.5px var(--mono); color: var(--p-dim); font-variant-numeric: tabular-nums; }
   .tracks .r .chip { display: inline-block; margin-top: 3px; }
+  .foot .look { display: inline-flex; align-items: center; cursor: pointer; }
+  .foot .look svg { width: 13px; height: 13px; fill: var(--p-faint); }
+  .foot .look:hover svg { fill: var(--p-accent); }
   .foot { display: flex; justify-content: space-between; padding: 6px 14px 8px; color: var(--p-faint); font-size: 11px; border-top: 1px solid var(--p-line); }
 
   /* ---- the mini player and the Deskbar ---- */
@@ -224,7 +227,7 @@
           <li><div class="art wv small">WV</div><div style="min-width:0"><div class="t">Kosmos startup chime</div><div class="a">Kosmos &middot; /home/sounds</div></div><div class="r">0:03<br><span class="chip fmt">WAV</span></div></li>
           <li><div class="art none small">?</div><div style="min-width:0"><div class="t">recording-2026-09-14</div><div class="a">no tags &middot; named by its file</div></div><div class="r">1:12<br><span class="chip fmt">WAV</span></div></li>
         </ul>
-        <div class="foot"><span>4 songs &middot; 12 min</span><span>on /home and 1 drive</span></div>
+        <div class="foot"><span>4 songs &middot; 12 min</span><span class="look" title="Light or dark"><svg viewBox="0 0 24 24" aria-label="light or dark"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></span><span>on /home and 1 drive</span></div>
       </div>
     </div>
 

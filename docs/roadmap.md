@@ -388,10 +388,21 @@ is the one that makes the machine Diego owns behave like a computer:
    over the gaps pulled sticks leave - and reads each one's partition table.
    6b adds the server, not the reading.
 
-   **Two things the design does not say, and they are Diego's to answer**:
-   what a volume with *no* label is called - its filesystem and size, the way
-   Finder says "Untitled", or its unit and partition number - and what happens
-   when two volumes carry the *same* label, since a path has to name one drive.
+   **Both naming questions are answered, by Diego on 16 September.** A volume
+   with *no* label is **`Untitled`**, which is Finder's answer and the one a
+   person already recognises. Two volumes carrying the *same* label are
+   **numbered in arrival order** - `PHOTOS`, then `PHOTOS 2` - and the same
+   rule settles the first question's own collision, so two unlabelled sticks
+   are `Untitled` and `Untitled 2`.
+
+   **What that costs, recorded because it will be felt**: a name depends on
+   plug order, so pulling the first `PHOTOS` and replugging it can make it
+   `PHOTOS 2`. A path is therefore not stable across a replug, and anything
+   wanting a stable handle needs the unit and partition instead. Accepted
+   deliberately: the common case is one drive with a label, and reading well
+   there beats being stable in a case that is rare.
+
+   **6b is unblocked and is the next thing to build.**
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
