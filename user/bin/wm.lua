@@ -820,6 +820,27 @@ local from_file = {}
 local FILE_PICTURES = 4
 
 --
+-- A decoded picture into the cache, under that queue.
+--
+-- Factored out of `picture_named` when pictures started arriving from
+-- applications as well: two queues would be two answers to "how many decoded
+-- photographs may the one process the desktop depends on hold at once".
+--
+local function remember_picture(name, picture)
+  image_cache[name] = picture
+  from_file[#from_file + 1] = name
+
+  while #from_file > FILE_PICTURES do
+    local old = table.remove(from_file, 1)
+    local gone = image_cache[old]
+
+    image_cache[old] = nil
+
+    if gone and gone ~= picture then gone:free() end
+  end
+end
+
+--
 -- A picture by name, decoded once.
 --
 -- **A leading slash means a file; anything else is an asset.** That one
@@ -850,16 +871,7 @@ local function picture_named(name)
 
     if made then
       picture = made
-      from_file[#from_file + 1] = name
-
-      while #from_file > FILE_PICTURES do
-        local old = table.remove(from_file, 1)
-        local gone = image_cache[old]
-
-        image_cache[old] = nil
-
-        if gone then gone:free() end
-      end
+      remember_picture(name, made)
     end
   else
     local bytes = sys.asset(name)
@@ -3189,6 +3201,84 @@ end
 -- hand - and having two paths that agree only by accident is how they stop
 -- agreeing.
 --
+--
+-- **A picture an application hands over, rather than one this process opens.**
+--
+-- `ui.image` names a picture and this process finds it: an asset compiled in,
+-- or a file on the disk. **A cover inside an MP3 is neither** - it is bytes in
+-- the middle of somebody else's file, and `tags.lua` reports where they are
+-- rather than reading them, so that a library of a thousand songs does not
+-- decode a thousand pictures to show ten.
+--
+-- So the application reads those bytes into a region and hands the region over
+-- with a name. `gfx.png` and `gfx.jpeg` already take an address and a length,
+-- and `picture_from_file` already maps and decodes - the only new part is
+-- taking the caller's pages instead of opening a file. **Control by message,
+-- data by shared memory**, which is the system's rule rather than an exception
+-- here, and it keeps working where a copy through a file would not: `/home` is
+-- not always a disk, and `/ramfs` caps a file at 16 KB where a cover is
+-- hundreds.
+--
+-- **The name carries the track**, because the cache is keyed by name: one
+-- fixed name would hand every song the first song's picture.
+--
+local MIMES = { ["image/png"] = gfx.png, ["image/jpeg"] = gfx.jpeg }
+
+handlers.picture = function(req, who, cap)
+  --
+  -- Let go of the capability on every path out, not only the happy one.
+  -- Sixteen is all a thread gets, and a server that keeps them answers
+  -- sixteen requests and refuses every one after - which is what a PDF read
+  -- in small windows found on its fifteenth read (`init.lua`).
+  --
+  local function done(answer)
+    if cap and cap >= 0 then sys.release(cap) end
+
+    return answer
+  end
+
+  local name = tostring(req.name or "")
+  local bytes = tonumber(req.bytes) or 0
+  local decode = MIMES[tostring(req.mime or "")]
+
+  if name == "" or name:sub(1, 1) == "/" then
+    return done({ ok = false,
+                  error = "a handed-over picture needs a name of its own, "
+                          .. "and a leading slash means a file on the disk" })
+  end
+
+  if not decode then
+    return done({ ok = false,
+                  error = "this decodes image/png and image/jpeg, and "
+                          .. tostring(req.mime) .. " is neither" })
+  end
+
+  if bytes <= 0 or not cap or cap < 0 then
+    return done({ ok = false,
+                  error = "a picture needs its length and the pages holding it" })
+  end
+
+  local at, why = sys.memory_map(cap)
+
+  if not at then
+    return done({ ok = false,
+                  error = "could not map the picture: " .. tostring(why) })
+  end
+
+  local ok, made = pcall(decode, at, bytes)
+
+  if not ok or not made then
+    return done({ ok = false,
+                  error = tostring(made or "those bytes did not decode") })
+  end
+
+  remember_picture(name, made)
+
+  local w, h = made:size()
+
+  return done({ ok = true, w = w, h = h })
+end
+
 handlers.resize = function(req)
   local win = by_handle[req.window]
 

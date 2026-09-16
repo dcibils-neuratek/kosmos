@@ -399,6 +399,62 @@ function media.tags(path)
   return t
 end
 
+--
+-- **The picture inside a file, handed to the window manager as pages.**
+--
+-- `tags.read` says where the cover is and how long it is and stops there, so
+-- that listing a library costs no pictures. This is the other half, asked for
+-- one song at a time: the bytes into a region, the region to the compositor
+-- with a name, and `ui.image` draws that name like any other picture.
+--
+-- Returns the name, and its size, so a caller can place it before it is
+-- drawn.
+--
+function media.cover(path)
+  local t, why = media.tags(path)
+
+  if not t then return nil, why end
+
+  if not t.cover or not t.cover.bytes then
+    return nil, "this file carries no picture"
+  end
+
+  local bytes = tonumber(t.cover.bytes) or 0
+
+  if bytes <= 0 then return nil, "the picture in this file is empty" end
+
+  local region = sys.memory((bytes + 4095) // 4096)
+
+  if not region then return nil, "no memory for a picture that size" end
+
+  --
+  -- One read, from where the tag says the picture begins. `read_into` puts
+  -- what it read at the region's start rather than at the offset it was
+  -- given, so a second call would land on top of the first instead of after
+  -- it - a short read is said rather than stitched.
+  --
+  local got = fs.read_into(path, region, t.cover.offset, bytes)
+
+  if not got or got < bytes then
+    sys.release(region)
+
+    return nil, "could only read " .. tostring(got) .. " of " .. bytes
+                .. " bytes of the picture"
+  end
+
+  local name = "cover:" .. path
+  local reply, err = fs.send("/app/wm",
+                             { type = "picture", name = name,
+                               mime = t.cover.mime, bytes = bytes }, region)
+
+  -- The compressed copy was scratch: the compositor holds the pixels now.
+  sys.release(region)
+
+  if not reply then return nil, tostring(err) end
+
+  return name, reply.w, reply.h
+end
+
 -- The stream, and the pages it read through, given back.
 function player:close()
   if self.stream then self.stream:close() end

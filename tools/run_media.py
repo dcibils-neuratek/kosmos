@@ -32,6 +32,7 @@ import sys
 import tempfile
 import time
 import wave
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LUA = os.path.join(os.path.dirname(HERE), "build", "host", "lua")
@@ -78,6 +79,61 @@ def vbr_mp3(path, count=400):
         f.write(bytes(first) + audio)
 
 
+def png_of(width, height, rgb):
+    """A PNG of one colour, written here rather than taken from anywhere.
+
+    Three chunks and a CRC each, which is the same construction
+    `run_screenshot.py` uses to save a screenshot - and a picture whose colour
+    this file chose is what lets the check below say the cover reached the
+    screen rather than something else did.
+    """
+    raw = bytearray()
+
+    for _ in range(height):
+        raw.append(0)                       # no filter on this row
+        raw += bytes(rgb) * width
+
+    def chunk(tag, body):
+        return (struct.pack(">I", len(body)) + tag + body
+                + struct.pack(">I", zlib.crc32(tag + body) & 0xffffffff))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+            + chunk(b"IEND", b""))
+
+
+def mp3_with_cover(path, rgb, count=40):
+    """An MP3 whose ID3v2.3 tag carries a real picture of one colour.
+
+    The tag is built the way `test_tags.lua` builds one - a syncsafe size, an
+    `APIC` frame with its mime type, its kind and a description - and the
+    audio after it is the silent frames `vbr_mp3` uses. The picture is a real
+    PNG rather than the stand-in bytes the tag tests use, because this one has
+    to decode and appear on a screen.
+    """
+    picture = png_of(64, 64, rgb)
+    apic = b"\0image/png\0\3front\0" + picture
+
+    def syncsafe(n):
+        return bytes(((n >> 21) & 0x7f, (n >> 14) & 0x7f,
+                      (n >> 7) & 0x7f, n & 0x7f))
+
+    def frame(tag, body):
+        return tag + struct.pack(">IH", len(body), 0) + body
+
+    body = frame(b"TIT2", b"\0One Colour") + frame(b"APIC", apic)
+    tag = b"ID3" + bytes((3, 0, 0)) + syncsafe(len(body)) + body
+
+    def audio_frame(index, kbps):
+        return bytes([0xFF, 0xFB, index << 4, 0x44]) + bytes(144000 * kbps // 44100 - 4)
+
+    with open(path, "wb") as f:
+        f.write(tag + b"".join(audio_frame(9, 128) for _ in range(count)))
+
+    return picture
+
+
 def heard(path):
     """(seconds not silent, loudest sample) in what QEMU has written so far."""
     if not os.path.exists(path):
@@ -110,6 +166,8 @@ def main():
     disk = os.path.join(work, "disk.img")
     wav_out = os.path.join(work, "heard.wav")
     vbr_in = os.path.join(work, "vbr.mp3")
+    cover_in = os.path.join(work, "cover.mp3")
+    COVER = (0x20, 0xc0, 0x40)
     checks, fails = 0, []
 
     def check(ok, complaint):
@@ -121,8 +179,10 @@ def main():
 
     tone(wav_in)
     vbr_mp3(vbr_in)
+    mp3_with_cover(cover_in, COVER)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
-                    wav_in + ":/home/tone.wav", vbr_in + ":/home/vbr.mp3"], check=True,
+                    wav_in + ":/home/tone.wav", vbr_in + ":/home/vbr.mp3",
+                    cover_in + ":/home/cover.mp3"], check=True,
                    capture_output=True, cwd=os.path.dirname(HERE))
 
     # Both read by run_screenshot when it is imported, so they are set first.
@@ -257,6 +317,78 @@ def main():
         guest.close()
 
     #
+    # **A cover inside an MP3, on the screen.**
+    #
+    # `tags.lua` reports where a picture is rather than reading it, so a
+    # library does not decode a thousand covers to show ten; `media.cover`
+    # is the other half, for the one song being played. The bytes go into a
+    # region and the region to the window manager with a name, because the
+    # picture is data and the message is control - and because `/ramfs` caps
+    # a file at 16 KB where a cover is hundreds.
+    #
+    # The picture is one colour this file chose, so finding that colour on
+    # screen says the cover arrived rather than that something did.
+    #
+    guest = Guest(image, 600)
+
+    try:
+        guest.wait_for(PROMPT, "reached a shell")
+
+        program = (
+            "local ui = use('/lib/ui.lua') "
+            "local media = use('/lib/media.lua') "
+            "local name, cw, ch = media.cover('/home/cover.mp3') "
+            "if not name then print('cover: ' .. tostring(cw)) return end "
+            "print('cover: ' .. name .. ' ' .. tostring(cw) .. 'x' .. tostring(ch)) "
+            "local w = ui.window{ title = 'Cover', w = 200, h = 200, "
+            "x = 700, y = 200 } "
+            "if not w then return end "
+            "local v = ui.view{ x = 0, y = 0, w = 200, h = 200 } "
+            "v:add(ui.image{ x = 20, y = 20, w = 64, h = 64, asset = name }) "
+            "w:add(v) w:run()"
+        )
+
+        guest.type("fs.write('/ramfs/cover.lua', %r)" % program)
+        guest.type("wm cover,/ramfs/cover.lua")
+
+        mark = len(guest.seen)
+        placed, deadline = None, time.monotonic() + 40
+
+        while placed is None and time.monotonic() < deadline:
+            found = re.search(r"wm: window Cover at (\d+),(\d+) (\d+)x(\d+)",
+                              guest.seen)
+            if found:
+                placed = tuple(int(v) for v in found.groups())
+            time.sleep(0.3)
+
+        said = [l.strip() for l in guest.seen[mark:].splitlines()
+                if l.strip().startswith("cover:")]
+
+        if placed is None:
+            check(False, "the window that draws a cover never opened: %r" % said)
+        else:
+            time.sleep(2.5)
+            wx, wy, _, _ = placed
+            width, height, px = parse_ppm(guest.screendump())
+            found_colour = 0
+
+            for y in range(wy + 20, min(wy + 84, height)):
+                for x in range(wx + 20, min(wx + 84, width)):
+                    o = (y * width + x) * 3
+
+                    if (px[o], px[o + 1], px[o + 2]) == COVER:
+                        found_colour += 1
+
+            check(found_colour > 2000,
+                  "the cover's own colour covers %d of the 4096 pixels it was "
+                  "drawn into, so the picture inside the MP3 did not reach the "
+                  "screen. What the program said: %r" % (found_colour, said))
+    except Failure as e:
+        fails.append(str(e))
+    finally:
+        guest.close()
+
+    #
     # **And a folder Music cannot list says why.** On the ThinkPad Music said
     # "(nothing to play in /home)" beside a Tracker window listing the MP3, and
     # could not have said anything else: a list that failed and a folder with
@@ -293,7 +425,7 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (a variable-bitrate MP3's length and bitrate from its Xing header, a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
           "Music's Play and bar doing the same, and Music saying why it could "
           "not list a folder)." % checks)

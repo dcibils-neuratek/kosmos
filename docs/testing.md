@@ -4609,3 +4609,61 @@ manager holds the screen does not run until it lets go.
 
 And as written: the display harness 112 checks, two more than before, and
 `make test` whole as it was.
+
+## 18.80 A cover out of an MP3, drawn without a file
+
+**What this is for.** Music's design shows the album cover twice, at 78 pixels
+beside what is playing and at 44 in each row of the list. A cover lives inside
+the file: `tags.lua` finds it and returns `{ mime, offset, bytes }` rather than
+the bytes, deliberately, so that listing a library of a thousand songs does not
+decode a thousand pictures to show ten.
+
+**The plan in `roadmap.md` could not work, and reading said so before anything
+was built.** It proposed copying those bytes to `/ramfs` and naming that path,
+since `ui.image` names a picture and the compositor finds it. But a `/ramfs`
+value is capped at 16384 bytes and `read_into` is not served by the ram proto
+at all, while a cover is hundreds of kilobytes.
+
+**So the picture travels as pages.** A request carries the name, the mime type
+and the length, with the region holding the bytes: **control by message, data
+by shared memory**, which is the system's own rule rather than an exception
+made here. It needed no decoder work - `gfx.png` and `gfx.jpeg` already take
+an address and a length, and `picture_from_file` already maps a region and
+decodes out of it - and it keeps working where a copy through a file would
+not, since `/home` is not always a disk.
+
+Three things it has to get right, and each is a bug that would look like
+something else:
+
+- **The capability is let go on every path out**, not only the happy one. A
+  thread gets sixteen, and a server that keeps them answers sixteen requests
+  and refuses every one after - which is what a PDF read in small windows
+  found on its fifteenth read (`init.lua`).
+- **The name carries the track.** The cache is keyed by name, so one fixed
+  name would hand every song the first song's picture - and it would read as a
+  caching bug in Music rather than a naming mistake here.
+- **One cache and one eviction rule.** `remember_picture` is shared with the
+  file path, so a handed-over picture is held and freed exactly as one read
+  off the disk is: four at a time. Two queues would be two answers to how many
+  decoded photographs the one process the desktop depends on may hold.
+
+`media.cover(path)` is the other half: the bytes into a region with one read
+from where the tag says the picture begins - `read_into` puts what it read at
+the region's start rather than at the offset it was given, so a short read is
+reported rather than stitched - then the region handed over, released, and the
+name returned.
+
+**The check** (`run_media.py`): an MP3 built here whose ID3v2.3 tag carries a
+**real** 64x64 PNG of one colour, opened through `media.cover`, drawn with
+`ui.image`, and that colour counted on the screen - more than 2000 of the 4096
+pixels it was drawn into. The tag is built as `test_tags.lua` builds one; the
+picture is a real PNG rather than the stand-in bytes those tests use, because
+this one has to decode. It was decoded on this Mac first, against the same
+vendored stb the compositor uses, before any of it reached a guest: 64x64,
+first pixel `20 c0 40`.
+
+| Control | What failed |
+|---|---|
+| C20: the picture decoded and then forgotten, so the reply says it worked and the cache holds nothing | `run_media.py`, 1 of 11: `the cover's own colour covers 0 of the 4096 pixels it was drawn into`, with the program still reporting `cover:/home/cover.mp3 64x64` |
+
+And as written: the media suite 11 checks, one more than before.

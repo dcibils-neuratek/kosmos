@@ -216,6 +216,14 @@ version of its check did not bite**: it counted inked rows in two bands and the
 window's own chrome padded the lower one, so the control passed. Rewritten to
 measure each block of inked rows - 15 against 10 - and C19 then failed it.
 
+**Music's window, piece 3 of 4 is built** (15 September, committed): a cover
+inside an MP3 reaches the screen without ever becoming a file. The roadmap's
+plan - copy it to `/ramfs` and name that path - was impossible and reading
+found it before anything was written: a value there is capped at 16 KB and
+`read_into` is not served by that filesystem at all. The picture is handed to
+the compositor as pages with a name instead, decoded by the library it already
+uses, and held in the same cache as every other picture (`testing.md` §18.80).
+
 **Next: Music's window, and it is the pilot of a second look.** Diego, 15
 September, on `docs/music.html`: "i love the music app design. can we do it
 for real in kosmos?", "i might redo a lot of the current apps with this style

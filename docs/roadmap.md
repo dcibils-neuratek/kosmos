@@ -645,7 +645,10 @@ the Pi", and the Pi is not here yet.
      carrying the pages and a name, decoded by `gfx.png`/`gfx.jpeg`, which
      already take an address and a length. That is *control by message, data
      by shared memory* rather than a special case, and it keeps working when
-     `/home` is not a disk.
+     `/home` is not a disk. **Built, 15 September** (`testing.md` §18.80):
+     the compositor's `picture` request and `media.cover`, sharing the one
+     picture cache and its four-at-a-time eviction - control C20 watched
+     fail.
   3. **A window asking for its own size**, for the mini player. **The window
      manager has served this since 2 September** (`handlers.resize`,
      `89bba71`), and refuses only a window that draws its own pixels, which
