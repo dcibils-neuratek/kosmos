@@ -42,10 +42,17 @@ because a guest whose line is not read stops inside `kputc`. With the mtools
 fixture on xHCI the sidebar shows `PHOTOS FAT32` and `BACKUP FAT16`, dim and
 to the right.
 
-**Still to build**: the fullness bars, the clickable trail (new drawing and
-new hit-testing, not a reformat of the `here` label), and shortcut places -
-which must key on unit and partition, because a volume's name can renumber
-across a replug.
+**Still to build**: the clickable trail (new drawing and new hit-testing,
+not a reformat of the `here` label), and shortcut places - which must key on
+unit and partition, because a volume's name can renumber across a replug.
+
+**The fullness bars are not 6c's, and nearly were.** Every bar in
+`drives.html` sits inside a `drive-tile` - `KOSMOS HOME  kfs  [bar]  12 of 32
+MB free` - which is the Drives app, step 6e. The sidebar rows in the same
+drawing carry a name and a type and nothing else, which is what is built and
+photographed. At 210 pixels a bar and "12 of 32 MB free" would not have fitted
+beside the name anyway, so building them here would have been a feature the
+design does not ask for, in a pane with no room for it.
 
 **Two faults of my own, both found by looking rather than by a test**: Places
 was a set literal I invented rather than the design's list, so it held `user`

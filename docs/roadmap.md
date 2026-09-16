@@ -402,10 +402,12 @@ is the one that makes the machine Diego owns behave like a computer:
    no drives, and vanishes on the ThinkPad, where there are. Photographed on
    x86 with the mtools fixture attached: `PHOTOS FAT32` and `BACKUP FAT16`,
    dim and to the right. The file list loses 60 pixels and both display
-   harnesses are unchanged at 118 and 116. **Still to build**: the fullness
-   bars per volume, the clickable trail, and shortcut places, which must key
-   on unit and partition because a volume's name can renumber across a
-   replug; **6d** the Open and Save window;
+   harnesses are unchanged at 118 and 116. **Still to build**: the clickable trail,
+   and shortcut places, which must key on unit and partition because a
+   volume's name can renumber across a replug. **The fullness bars are not
+   6c's** - read again on 16 September, every bar in `drives.html` sits
+   inside a `drive-tile`, which is the Drives app, and the sidebar rows there
+   carry a name and a type and nothing else. They move to 6e; **6d** the Open and Save window;
    **6e** the Drives app; **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
