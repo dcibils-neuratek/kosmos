@@ -356,6 +356,28 @@ is the one that makes the machine Diego owns behave like a computer:
    sidebar and trail; 6d, the Open and Save window; 6e, the Drives app; and
    6f, exFAT.
 
+   **6b's shape, read out of the code on 16 September, for Diego to agree
+   before it is built.** `drives.html` says `/drives` is "one folder every
+   program has from the moment it starts", and that drives appear and
+   disappear inside it while programs run. That settles the design question:
+   **one server owns the whole `/drives` prefix**, rather than a mount per
+   volume. A mount is an entry in a process's *own* namespace, made when that
+   process is built - so a volume appearing later would mean editing the
+   namespace of every running program, which nothing can do. A server behind
+   one prefix needs none of that: the matcher already routes
+   `/drives/PHOTOS 2024/Italy` to it with the rest of the path intact, exactly
+   as `/home` is routed today.
+
+   What it stands on is built: `fat_decode.c` reads FAT16 and FAT32 with no
+   hardware in it, and the disk server already walks every USB unit - stepping
+   over the gaps pulled sticks leave - and reads each one's partition table.
+   6b adds the server, not the reading.
+
+   **Two things the design does not say, and they are Diego's to answer**:
+   what a volume with *no* label is called - its filesystem and size, the way
+   Finder says "Untitled", or its unit and partition number - and what happens
+   when two volumes carry the *same* label, since a path has to name one drive.
+
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
    six. The panel had shown the boot log from stage two since 0.10.12 -
