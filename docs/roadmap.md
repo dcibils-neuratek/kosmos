@@ -671,9 +671,19 @@ the Pi", and the Pi is not here yet.
   preferences - so Music takes `App_MediaPlayer` for its window and Deskbar
   button, `File_Audio` for a track with no cover and `Misc_Speaker` beside the
   volume, and **draws** shuffle, previous, play, next, repeat, queue and the
-  mini player with `fill`, `triangle` and `disc`. Diego chose that over
-  vendoring more, which would be a licence and a pinned commit to keep in step
-  for shapes that are four lines of Lua each (`docs/music.html`).
+  mini player. Diego chose that over vendoring more, which would be a licence
+  and a pinned commit to keep in step for shapes that are four lines of Lua
+  each (`docs/music.html`).
+
+  **And drawing them needs a triangle command**, found while building: an
+  application that draws through commands has `fill`, `text` and `image` and
+  nothing else - `triangle` and `disc` are surface methods, reachable only by
+  a window that draws its own pixels, which Music is not. Rectangles cover
+  pause, the skip bars and the queue; the play arrow as a staircase of fills
+  is visibly stepped at 18 pixels. **Diego chose to add the command** (16
+  September) rather than accept that or generate seven pictures: the primitive
+  is already in C, and the restyle after Music wants triangles for menus,
+  sliders and disclosure arrows.
 
   **Step 3 needs four things the system does not have yet**, found by reading
   on 14 September, and proposed to Diego before any is built. **He answered on
