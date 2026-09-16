@@ -6,6 +6,45 @@ Last updated: 2026-09-16
 
 ---
 
+## Where 6c stands, 16 September
+
+**Tracker's sidebar is three groups and they draw.** `Places` holds Home and
+Desktop, `System` is folded away, `Drives` opens to what is plugged in -
+`(no drives)` under QEMU, which is correct there. Seen in a picture rather
+than inferred: a guest booted, `wm tracker` opened, the framebuffer captured
+and cropped.
+
+**`ui.tree` gained `heading`, `quiet` and `note`**, and a real fix: it
+descended only when `kids` already existed, and `children` was called only
+from the mouse handler, so a node created `open = true` with a callback drew
+its triangle, claimed to be open, and never had anything under it. Tracker is
+its only caller, so all three fields are additive.
+
+**`fs.volumes()` is fetched lazily, when the Drives group is opened.** Never
+on the way to a first frame: `mount_roots` records that probing mounts at
+startup once cost 18.4 seconds on a laptop with no network card, with the
+desktop looking hung because Tracker *is* the desktop. That comment is the
+reason the Drives group is built the way it is.
+
+**What stops here, and it is Diego's call.** The design puts a volume's
+filesystem beside its name. The pane is 150 pixels, a depth-one row leaves
+about 104, and only a short pair fits: `BACKUP FAT16` draws, while
+`KOSMOS HOME kfs`, `PHOTOS 2024 FAT32` and `Untitled 2 FAT32` suppress the
+type. So it works under QEMU, where there are no drives, and vanishes on the
+ThinkPad, where there are - which is why it is a question rather than a
+guess. The options are in `roadmap.md`.
+
+**Still to build**: the fullness bars, the clickable trail (new drawing and
+new hit-testing, not a reformat of the `here` label), and shortcut places -
+which must key on unit and partition, because a volume's name can renumber
+across a replug.
+
+**Two faults of my own, both found by looking rather than by a test**: Places
+was a set literal I invented rather than the design's list, so it held `user`
+and omitted `Desktop`; and the empty-group placeholder was too long for the
+pane and came out `(nothing plugge`, which is `testing.md` §18.85's clipping
+again.
+
 ## Where 6b stands, 16 September
 
 **`/drives` exists in a running machine.** `user/servers/drives.c` is a C
