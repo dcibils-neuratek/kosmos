@@ -242,7 +242,23 @@ through commands - and Diego chose the command over rectangles or seven
 generated pictures, because the restyle after Music wants the shape for menus
 and sliders too.
 
-**So the window itself is next**, drawn in `docs/music.html`: the player at 380
+**Music's window is built** (15 September, `testing.md` §18.84, committed):
+the design drawn, the cover out of the file at 78 and at 44, the title larger
+than the text, the transport drawn with the new triangle command, and the
+library. Its checks caught a real bug a picture could not - pressing play left
+the window waking once a second, so sound starved after a third of a second -
+and the screenshots caught four layout faults, the last of which took three
+wrong guesses before a probe measured it: `gc:text` clips by whole character
+cells, so a right-aligned string given exactly its width loses its tail.
+
+**What Music still owes the design**: the mini player's fold bound to a
+control, the light look behind a View menu, and shuffle, repeat and queue,
+which are drawn and inert. **And one limitation worth a decision**: a title
+only comes out larger when the desktop's face is a scalable one, since a
+command carries a size and not a font name - on a default desktop the bitmap
+face has one size and the title falls back to it.
+
+**The window as it was next**, drawn in `docs/music.html`: the player at 380
 wide, the cover at 78 and at 44 through the scaler, the title through the size
 a command now carries, the cover out of the file through the picture request,
 and the mini player through the resize. **The icons are decided**: Haiku's

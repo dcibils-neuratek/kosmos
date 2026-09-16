@@ -688,7 +688,14 @@ the Pi", and the Pi is not here yet.
   box instead - which is the mistake worth guarding against, and which a check
   asking only "did the ink appear" would have passed.
 
-  **Step 3 needs four things the system does not have yet**, found by reading
+  **Step 3, the window, is built** (15 September, `testing.md` §18.84): the
+  design drawn, in its own flat palette, with the cover at 78 and at 44, the
+  larger title, the drawn transport and the library. Control C24 watched fail.
+  **Left for the next pass**: the mini player's fold bound to a control (the
+  resize underneath it is built), the light look behind a View menu, and
+  shuffle, repeat and queue, which are drawn and inert.
+
+  **Step 3 needed four things the system did not have**, found by reading
   on 14 September, and proposed to Diego before any is built. **He answered on
   15 September - "music first, yes to all"**: Music's window comes before USB
   step 6b, the large title is a size the UI kit carries rather than an

@@ -4787,3 +4787,55 @@ is the mistake that would really have been made, and only the second check
 catches it.
 
 And as written: the display harness 117 checks, two more than before.
+\n
+## 18.84 Music's window, and what a screenshot cannot tell you
+
+**The design built.** `docs/music.html`, approved on 14 September and the
+pilot of a second look for the whole system: what is playing across the top
+with its cover, the chips saying what the file is, a title larger than the
+text under it, a seek bar, the transport in one row, the sources, the library
+and the foot - in its own flat palette rather than the desktop's. `ui.md`
+§16.8b still says Kosmos is dimensional on purpose, and stands until Diego has
+used this.
+
+**Six pieces had to exist first** (§18.78 to §18.83), and two of them existed
+only because building this window asked how it would actually draw: the scaler
+and the triangle were both in `gfx.c` and unreachable from an application.
+
+**The check** (`run_media.py`, three of its fifteen): the cover square shows
+**four colours**, not one - the test's song carries a picture of four quarters,
+so a crop or a failure to fetch shows a single colour; the title's rows of ink
+are **taller** than the artist line above it; and the play arrow's base is a
+different colour from the space past its point, which is what tells a triangle
+from a rectangle.
+
+| Control | What failed |
+|---|---|
+| C24: Music never fetching the cover, so the square shows the file's icon on a panel | `run_media.py`, 1 of 15: `the cover in Music's window shows 1 of its four colours ([(56, 56, 60)])` - the panel grey, which is what a window with no picture draws |
+
+**And the bug the checks caught, which no screenshot would have.** Pressing
+play loaded the track, started it, and left the window waking once a second -
+so it handed the audio server twelve periods a second where it drains far
+more. Sound started and starved: a third of a second, then nothing. The window
+before this one set its pacing from its Play button; this one called `load`
+and stopped. **A picture of a window says nothing about whether it feeds a
+deadline**, which is the whole argument for a check that listens.
+
+**Four faults the screenshots did find**, and they were only found by looking:
+the cover square drew the image widget's "no picture" apology, because the
+window had never handed it a name - which is why a window that paints its own
+layout now has `gc:picture` instead; the meter drew as a row of dashes at a
+peak of zero; shuffle and queue were unreadable at 18 pixels; and every
+right-aligned string lost its tail.
+
+**That last one took three wrong guesses and then a measurement**, which is
+the lesson worth keeping. It was not the font used for measuring (that was
+half of it), and not the window's width (the client area really is 380), and
+not the published `width` property (which reads `nil` as a field, and quietly
+left the layout wrong). **`gc:text` clips by whole character cells**, a cell
+being the width of "0" in the drawing face, so a string given exactly its
+measured width of room loses its last characters. A probe that printed the
+numbers from inside a running window settled in two minutes what three
+plausible theories could not.
+
+And as written: the media suite 15 checks, three more than before.
