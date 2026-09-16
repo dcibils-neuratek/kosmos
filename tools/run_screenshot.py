@@ -2000,6 +2000,22 @@ def check_window_resize(guest):
             f"rows, where it covered {was[1]} and {was[0]} before: the reply "
             "said 160x90 but the surface on screen did not change.")
 
+    #
+    # **And an application that lays itself out again fills the new size.**
+    #
+    # Diego dragged Music wider on 16 September and the design stayed as it
+    # was, with the rest of the window `0xff202020` - the grey a freshly
+    # allocated surface is filled with. The window above shrinks; this one
+    # grows, which is the direction that leaves room to not draw, and the
+    # check is that none of the new room is that grey.
+    #
+    #
+    # **A fresh mark before waiting**, or this looks at output from earlier in
+    # the phase, decides the prompt is already back, and types the next
+    # command into a window manager that still has the screen - which is how
+    # a stray `q` ended up at a prompt and this phase failed on its own
+    # interrupt rather than on anything it was testing.
+    #
     mark = len(guest.seen)
     guest.proc.stdin.write(STOP_DESKTOP)
     guest.proc.stdin.flush()
@@ -2016,10 +2032,86 @@ def check_window_resize(guest):
         time.sleep(0.3)
     else:
         raise Failure(
-            "Control-C did not get the screen back after the resize phase.\n"
+            "Control-C did not get the screen back before the grown window.\n"
+            + (guest.seen[mark:][-1500:] or "(nothing at all)"))
+
+    grower = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Grew', w = 200, h = 140, "
+        "x = 700, y = 200, background = false } "
+        "if not w then return end "
+        "local v = ui.view{ x = 0, y = 0, w = 200, h = 140 } "
+        "function v:draw(gc) gc:fill(0, 0, self.w, self.h, 0xff20a060) end "
+        "w:add(v) "
+        "function w:on_resize(nw, nh) v.w, v.h = nw, nh end "
+        "function v:mouse(action) "
+        "if action == 'release' then w:resize(340, 260) end return true end "
+        "w:run()"
+    )
+
+    guest.type("fs.write('/ramfs/grew.lua', %r)" % grower)
+    guest.type("wm grew,/ramfs/grew.lua")
+
+    mark = len(guest.seen)
+    grown, deadline = None, time.monotonic() + 40
+
+    while grown is None and time.monotonic() < deadline:
+        found = re.search(r"wm: window Grew at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen)
+        if found:
+            grown = tuple(int(v) for v in found.groups())
+        time.sleep(0.3)
+
+    if grown is None:
+        raise Failure("the window that grows itself never opened:\n"
+                      + guest.seen[mark:][-800:])
+
+    gx, gy = grown[0], grown[1]
+    width, height, px = parse_ppm(guest.screendump())
+
+    guest.mouse_to(*_to_tablet(gx + 40, gy + 40, width, height))
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.2)
+    guest.mouse_button(False)
+    time.sleep(2.5)
+
+    width, height, px = parse_ppm(guest.screendump())
+    undrawn = 0
+
+    for dy in range(4, 256, 4):
+        for dx in range(4, 336, 4):
+            o = ((gy + dy) * width + gx + dx) * 3
+
+            if (px[o], px[o + 1], px[o + 2]) == (0x20, 0x20, 0x20):
+                undrawn += 1
+
+    if undrawn:
+        raise Failure(
+            f"{undrawn} places in the grown window are the grey a new surface "
+            "is filled with, so the application laid out for its old size and "
+            "the new room was never drawn.")
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "Control-C did not get the screen back after growing.\n"
             + (guest.seen[mark:][-2000:] or "(nothing at all)"))
 
-    return 3
+    return 4
 
 
 def check_triangle(guest):

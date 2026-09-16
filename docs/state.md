@@ -258,8 +258,12 @@ dragged bigger keeping its old layout; and a flicker while dragging, which
 turned out to be every window's clear-then-draw caught by a drag's composite,
 visible only on the one window that repaints continuously.
 
-**What Music still owes the design**: the mini player's fold bound to a
-control, the light look behind a View menu, and shuffle, repeat and queue,
+**The mini player is built**: Music's seventh transport control folds the
+window and folds it back, on the resize piece from the morning. And the resize
+finally has its evidence - a window that grows and fills the room it gains,
+with control C26 watched fail at 3562 grey places (`testing.md` §18.85).
+
+**What Music still owes the design**: the light look behind a View menu, and shuffle, repeat and queue,
 which are drawn and inert. **And one limitation worth a decision**: a title
 only comes out larger when the desktop's face is a scalable one, since a
 command carries a size and not a font name - on a default desktop the bitmap

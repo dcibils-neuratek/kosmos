@@ -4888,3 +4888,25 @@ empty one. And Music repaints ten times a second instead of twenty-five, which
 is more than a person can see on a clock and a fifth of the exposure.
 
 And as written: the media suite 16 checks, one more than before.
+
+**The resize claim got its evidence afterwards**, and it took four goes - all
+of them this file's scaffolding rather than the window. A phase that left its
+own window open, a stale mark that made a wait look already satisfied, a
+duplicated teardown that typed into a shell which had already come back, and
+twice a patch written against text that had not been printed first. The
+feature was never in doubt; the proof was.
+
+What it proves now (`run_screenshot.py`, the `window resize` phase, four
+checks): a window asks to shrink and the reply, the kit's own fields and the
+drawing all agree - and then **a second window asks to grow, and none of the
+room it gains may be `0xff202020`**, the grey a freshly allocated surface is
+filled with. That grey is exactly what Diego saw.
+
+| Control | What failed |
+|---|---|
+| C26: an application that ignores its resize event, laying out for the size it opened with | the `window resize` phase, 1 of 118: `3562 places in the grown window are the grey a new surface is filled with` |
+
+**And the mini player, which is what the resize was built for**: Music's
+seventh transport control folds the window to 330x150 and folds it back. The
+library, the sources and the foot are given no height when folded, so the same
+window is two windows - which is how `docs/music.html` draws it.

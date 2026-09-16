@@ -63,7 +63,8 @@ local P = LOOKS[look]
 --------------------------------------------------------------------------
 
 local W, H      = 380, 520
-local MINI_W, MINI_H = 330, 116
+local W_FULL, H_FULL = W, H
+local MINI_W, MINI_H = 330, 150
 local PAD       = 14
 local COVER     = 78
 local ROW_H     = 58
@@ -171,6 +172,7 @@ end
 --------------------------------------------------------------------------
 
 local player, cover_name
+local folded = false
 local status = trouble or "nothing loaded"
 
 local function unload()
@@ -470,7 +472,6 @@ end
 -- The transport, and the volume under it.
 --------------------------------------------------------------------------
 
-local folded = false
 local transport = ui.view{ x = 0, y = TRANS_Y, w = W, h = TRANS_H + 26 }
 
 local function slot(i)
@@ -517,6 +518,19 @@ function transport:on_click(x, y)
       pace()
     else
       load(chosen)
+    end
+  elseif which == 7 then
+    --
+    -- **The mini player**: the same window with its library folded away,
+    -- which is what `docs/music.html` draws and what `window:resize` was
+    -- built for (`testing.md` §18.81).
+    --
+    folded = not folded
+
+    if folded then
+      win:resize(MINI_W, MINI_H)
+    else
+      win:resize(W_FULL, H_FULL)
     end
   elseif which == 2 then
     load(math.max(1, chosen - 1))
@@ -696,17 +710,23 @@ end
 --
 local function relayout(w, h)
   W, H = w, h
+  folded = h <= MINI_H + 8
 
   now.w = w
   transport.w = w
+  transport.y = folded and (MINI_H - TRANS_H) or TRANS_Y
   sources.w = w
 
+  -- Folded, the library and the sources are not there at all: a view with no
+  -- height draws nothing, which is how the same window is two windows.
+  sources.h = folded and 0 or (SRC_H + 28)
   list.w = w
-  list.y = LIST_Y
-  list.h = math.max(ROW_H, h - LIST_Y - FOOT_H)
+  list.y = folded and h or LIST_Y
+  list.h = folded and 0 or math.max(ROW_H, h - LIST_Y - FOOT_H)
 
   foot.w = w
-  foot.y = h - FOOT_H
+  foot.y = folded and h or (h - FOOT_H)
+  foot.h = folded and 0 or FOOT_H
 end
 
 function win:on_resize(w, h)
