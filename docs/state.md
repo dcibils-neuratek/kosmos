@@ -2,7 +2,63 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-15
+Last updated: 2026-09-16
+
+---
+
+## Where the night of 15-16 September ended
+
+**Music's window is built and its three reported faults are fixed**, each with
+a control watched fail. Both suites are green: the media suite at 16 checks,
+the display harness at 118.
+
+**Diego found three faults in ten minutes with the app in front of him**, and
+that is the note to keep: a window that passes its checks is not a window
+somebody has used.
+
+1. `MP3 64 kbps` and 9:55 for a song of 3:14 at 197. The decoder counts the
+   bytes it skips to find a frame inside that frame's length, and every real
+   file opens with an ID3 tag - while the generated test file had none, the
+   one shape a real file never comes in. Control C25 reproduces his symptom.
+2. A window dragged bigger kept its old layout. Music lays out again now, and
+   the harness grows a window and forbids any of the room it gains to be the
+   grey a new surface is filled with; C26 failed it at 3562 places.
+3. Flicker while dragging - and *only* Music, which he noticed himself. Every
+   frame clears the window and draws over it; damage waits for the last batch,
+   so a repaint is whole, but a drag composites on every pointer step. A window
+   whose views cover every pixel can now say `background = false`, and Music
+   repaints ten times a second rather than twenty-five.
+
+**Also built**: the mini player's fold (the seventh transport control), shuffle
+and repeat deciding what follows a track, and the light look kept in
+`/home/.music`.
+
+**Six of the night's own mistakes are recorded in `testing.md` §18.84 and
+§18.85**, because they are a pattern rather than six accidents: four test
+scaffolding faults against one real bug of Diego's, twice patching against text
+that had not been printed first, once believing a suite that had run against
+the previous image after a failed build, and once committing the light look as
+working when the key handler compared a key *code* to the string `"v"` and
+could never have matched.
+
+**Waiting on Diego, and deliberately not invented:**
+
+- **Where the light/dark switch belongs.** `docs/music.html` says "View
+  switches" and draws no menu bar. A menubar was tried; it displaced the whole
+  window and three checks caught it at once. The look is on **V** until he
+  says.
+- **USB 6b's two naming questions**: what a volume with no label is called, and
+  what happens when two drives carry the same one. 6b's shape is settled and
+  written into `roadmap.md` - one server owning the whole `/drives` prefix,
+  because a mount is an entry in a process's own namespace and a drive plugged
+  in later cannot edit every running program's.
+- **A title is only larger where the desktop's face is scalable**, since a
+  command carries a size and not a font name. On a default desktop the bitmap
+  face has one size and the title falls back to it.
+- **Sixteen commits, unpushed.** A push needs his yes and `make prepush` first.
+
+---
+
 
 ---
 
