@@ -251,6 +251,13 @@ and the screenshots caught four layout faults, the last of which took three
 wrong guesses before a probe measured it: `gc:text` clips by whole character
 cells, so a right-aligned string given exactly its width loses its tail.
 
+**Three faults Diego found in ten minutes on 16 September**, all fixed
+(`testing.md` §18.85): the bitrate and length wrong again on any file with an
+ID3 tag - the test's own file was the one shape that has none; a window
+dragged bigger keeping its old layout; and a flicker while dragging, which
+turned out to be every window's clear-then-draw caught by a drag's composite,
+visible only on the one window that repaints continuously.
+
 **What Music still owes the design**: the mini player's fold bound to a
 control, the light look behind a View menu, and shuffle, repeat and queue,
 which are drawn and inert. **And one limitation worth a decision**: a title

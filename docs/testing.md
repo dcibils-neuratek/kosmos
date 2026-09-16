@@ -4839,3 +4839,52 @@ numbers from inside a running window settled in two minutes what three
 plausible theories could not.
 
 And as written: the media suite 15 checks, three more than before.
+\n
+## 18.85 Three faults Diego found in ten minutes
+
+He opened Music under QEMU on 16 September and reported two things; the
+screenshot he sent showed a third he had not mentioned.
+
+**"MP3 64 kbps" and 9:55, for a song of 3:14 at 197.** The fault §18.77 was
+supposed to have fixed, in a file that has an ID3 tag - which is every file
+anybody owns. `mp3dec_decode_frame` reports `frame_bytes` as *everything it
+consumed*, the bytes skipped to find the frame included, and `frame_offset` as
+how many of those were skipped. The probe subtracted only `frame_bytes`, so on
+a file with a 137-byte tag it looked for the Xing header inside the tag, found
+nothing, and fell back to the header frame's own 64 kbps.
+
+**The test could not have caught it**, and that is the part worth keeping: the
+VBR file `run_media.py` generates had no ID3 tag, which is the one shape a real
+file never comes in. It carries one now.
+
+| Control | What failed |
+|---|---|
+| C25: the frame taken from where the decoder was asked to start rather than where the frame began | `run_media.py`, 1 of 16: `a variable-bitrate MP3 ... its header frame read as the music is 64 kbps and 26 s` - Diego's symptom exactly, on the generated file |
+
+**"Resizing does not work."** Music placed its five views once, at the size
+the window opened with, and nothing moved them - so a window dragged bigger
+kept the design at its old size with the rest showing `0xff202020`, the grey a
+freshly allocated surface is filled with. It lays out again now: the player,
+the transport and the sources keep their heights, the library takes the room
+that appears, and every right-hand edge follows the width.
+
+The check here is the *symptom* rather than the mechanism - no pixel of
+Music's window may be that grey - because a window whose numbers changed and
+whose drawing did not is exactly the fault. The relayout itself belongs in the
+display harness, where a window can be told to grow.
+
+**"When dragging its all flickery."** And, decisively: *the other windows are
+not*. Every frame begins by clearing the window and draws over it, and the
+compositor holds the damage back until the last batch, so a repaint is never
+seen half-drawn. **A drag is the exception**: it damages the window on every
+step of the pointer and composites whatever is in the surface at that instant.
+Only Music repaints continuously - to move a clock and a meter - so only Music
+was caught in the gap between the clear and the contents.
+
+Two changes, and the first is the real one: **a window whose views cover every
+pixel can say `background = false`** and the clear is not sent, so the worst a
+mid-drag composite can catch is a window with some parts updated rather than an
+empty one. And Music repaints ten times a second instead of twenty-five, which
+is more than a person can see on a clock and a fifth of the exposure.
+
+And as written: the media suite 16 checks, one more than before.

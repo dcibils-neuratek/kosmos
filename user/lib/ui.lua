@@ -3774,9 +3774,29 @@ function window:paint()
   local g = new_gc()
   g.cw, g.ch = self.root.w, self.root.h
 
-  g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
-                        w = self.root.w, h = self.root.h,
-                        color = self.background or theme.window }
+  --
+  -- **The clear, which a window whose views cover it does not need.**
+  --
+  -- Every frame starts by filling the window and then drawing over it, and
+  -- the compositor holds the damage back until the last batch, so a repaint
+  -- is never seen half-drawn. **A drag is the exception**: it damages the
+  -- window on every step of the pointer and composites whatever is in the
+  -- surface at that instant, which for a window repainting many times a
+  -- second lands in the gap between the clear and the contents. Diego saw it
+  -- on Music on 16 September - "when dragging its all flickery the window" -
+  -- and noticed the other windows do not, which is what named the cause:
+  -- they repaint when something happens, and Music repaints to move a clock
+  -- and a meter.
+  --
+  -- So `background = false` says the views paint every pixel themselves.
+  -- Then the worst a mid-drag composite can catch is a window with some of
+  -- its parts updated, rather than an empty one.
+  --
+  if self.background ~= false then
+    g.ops[#g.ops + 1] = { op = "fill", x = 0, y = 0,
+                          w = self.root.w, h = self.root.h,
+                          color = self.background or theme.window }
+  end
 
   self.root:paint(g)
 

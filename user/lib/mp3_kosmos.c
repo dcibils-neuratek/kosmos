@@ -244,10 +244,25 @@ static int l_probe(lua_State *L)
         at += (size_t)info.frame_bytes;
 
         if (samples > 0) {
-            const uint8_t *frame = in + at - (size_t)info.frame_bytes;
+            /*
+             * **Where the frame starts, which is not where the decoder was
+             * asked to look.** `frame_bytes` counts everything consumed -
+             * the bytes skipped to find the frame as well as the frame - and
+             * `frame_offset` is how many of those were skipped. Every real
+             * MP3 opens with an ID3 tag, so subtracting only `frame_bytes`
+             * pointed at the tag and the Xing header was never found: Diego's
+             * file said `MP3 64 kbps` and 9:58 for a song of 3:14, which is
+             * the fault §18.77 was supposed to have fixed.
+             *
+             * The test did not catch it because the file it generates has no
+             * tag, which is the one thing every file it stands for has.
+             */
+            const uint8_t *frame = in + at - (size_t)info.frame_bytes
+                                   + (size_t)info.frame_offset;
+            size_t frame_len = (size_t)(info.frame_bytes - info.frame_offset);
             uint32_t frames = 0, bytes = 0;
             bool variable = false;
-            bool counted = vbr_header(frame, (size_t)info.frame_bytes,
+            bool counted = vbr_header(frame, frame_len,
                                       &frames, &bytes, &variable);
             lua_Integer kbps = info.bitrate_kbps;
 
@@ -292,7 +307,8 @@ static int l_probe(lua_State *L)
              * rather than feeding it to the decoder every time it rewinds. */
             lua_pushinteger(L, (lua_Integer)(counted
                                              ? at
-                                             : at - (size_t)info.frame_bytes));
+                                             : at - (size_t)info.frame_bytes
+                                               + (size_t)info.frame_offset));
             lua_setfield(L, -2, "offset");
 
             return 1;

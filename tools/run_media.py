@@ -75,8 +75,23 @@ def vbr_mp3(path, count=400):
     tag = b"Xing" + struct.pack(">III", 3, count, len(first) + len(audio))
     first[36:36 + len(tag)] = tag           # after 4 of header, 32 of side information
 
+    #
+    # **And an ID3 tag in front of it, because every real file has one.**
+    #
+    # Without this the generated file was the one shape that does not occur.
+    # The decoder reports a frame's length including the bytes it skipped to
+    # find it, so a reader that subtracts only that length lands on the tag
+    # and never sees the Xing header - and Diego's Basket Case said `MP3 64
+    # kbps` and 9:58 for a song of 3:14 while this test passed.
+    #
+    body = b"TIT2" + struct.pack(">IH", 12, 0) + b"\0Made here"
+    id3 = b"ID3" + bytes((3, 0, 0)) + bytes(((len(body) >> 21) & 0x7f,
+                                             (len(body) >> 14) & 0x7f,
+                                             (len(body) >> 7) & 0x7f,
+                                             len(body) & 0x7f)) + body
+
     with open(path, "wb") as f:
-        f.write(bytes(first) + audio)
+        f.write(id3 + bytes(first) + audio)
 
 
 def png_of(width, height, rgb, quarters=None):
@@ -528,6 +543,33 @@ def main():
                   "the play arrow draws the same colour at its base and past "
                   "its point (%r), so it is a rectangle rather than a triangle"
                   % (wide_end,))
+
+            #
+            # **The window's own ground reaches its bottom edge.**
+            #
+            # Diego dragged this window wider on 16 September and the design
+            # stayed the size it opened at, with the rest of the window the
+            # grey a new surface is filled with - the views were placed once
+            # and nothing moved them. The relayout is checked properly in the
+            # display harness, where a window can be made to grow; what is
+            # worth asserting here is the thing that fault looked like: the
+            # compositor's fill showing through, which is `0xff202020` and is
+            # not a colour this window's palette contains.
+            #
+            fill_grey = (0x20, 0x20, 0x20)
+            showing = 0
+
+            for dy in range(8, wh - 8, 4):
+                for dx in range(8, ww - 8, 4):
+                    o = ((wy + dy) * width + wx + dx) * 3
+
+                    if (px[o], px[o + 1], px[o + 2]) == fill_grey:
+                        showing += 1
+
+            check(showing == 0,
+                  "%d places in Music's window are the grey a new surface is "
+                  "filled with, so part of the window is not being drawn"
+                  % showing)
 
         mark = len(guest.seen)
         guest.proc.stdin.write(b"\x17q")

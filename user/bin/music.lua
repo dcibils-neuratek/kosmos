@@ -105,7 +105,8 @@ do
   end
 end
 
-local win, err = ui.window{ title = "Music", w = W, h = H, x = 180, y = 90 }
+local win, err = ui.window{ title = "Music", w = W, h = H, x = 180, y = 90,
+                           background = false }
 
 if not win then
   print("music: " .. tostring(err))
@@ -639,7 +640,14 @@ function pace()
   end
 end
 
-local PAINT_EVERY = 10
+--
+-- **Ten times a second, not twenty-five.**
+--
+-- The clock changes once a second and the meter is five small bars; what a
+-- person sees is unchanged, and the window spends less of its life mid-frame
+-- - which is what a drag composites into. Diego's flicker, 16 September.
+--
+local PAINT_EVERY = 25
 local since_paint = 0
 local ticker = ui.view{ x = 0, y = 0, w = 0, h = 0 }
 
@@ -671,12 +679,48 @@ function ticker:tick()
   end
 end
 
+--
+-- **Laid out again when the window changes size.**
+--
+-- Diego dragged this window bigger and the design stayed the size it was,
+-- with the rest of the window grey: the views were placed once, at the size
+-- the window opened with, and nothing moved them. The window manager
+-- reallocates the surface and fills it, so what is not redrawn is what the
+-- fill left behind.
+--
+-- The top of the window keeps its height - what is playing, the transport
+-- and the sources are the design's, and stretching them would not make them
+-- better - and the library takes the rest, which is what a taller window is
+-- for. The width follows everywhere, because every right-hand edge is
+-- measured from it.
+--
+local function relayout(w, h)
+  W, H = w, h
+
+  now.w = w
+  transport.w = w
+  sources.w = w
+
+  list.w = w
+  list.y = LIST_Y
+  list.h = math.max(ROW_H, h - LIST_Y - FOOT_H)
+
+  foot.w = w
+  foot.y = h - FOOT_H
+end
+
+function win:on_resize(w, h)
+  relayout(w, h)
+end
+
 win:add(now)
 win:add(transport)
 win:add(sources)
 win:add(list)
 win:add(foot)
 win:add(ticker)
+
+relayout(W, H)
 
 if tracks[chosen] then cover_for(chosen) end
 
