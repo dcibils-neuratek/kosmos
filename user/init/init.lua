@@ -1712,6 +1712,26 @@ local function new_namespace()
   -- The honest answer to "what can this process reach", and a process
   -- asking that is asking about itself: the table is in here and nowhere
   -- else, so nothing outside can answer it.
+  --
+  -- Every volume on every drive, with what a sidebar needs to draw one.
+  --
+  -- **Its own verb, because nothing else could reach the operation.**
+  -- `/drives` speaks a declared shape, so `ns.send` refuses it - a struct
+  -- server must not be handed an arbitrary table - and `ns.raw` would make
+  -- the caller pack `drivesproto.h` itself, which is exactly the knowledge a
+  -- namespace exists to hold. `fs.list("/drives")` gives the names; this
+  -- gives the filesystem, the size, how much is free, whether that number
+  -- was counted or is FAT32's hint, and the unit and partition - which are
+  -- the stable handle, since a *name* can renumber when a drive is replugged.
+  --
+  function ns.volumes(path)
+    local r, e = request("volumes", path or "/drives")
+
+    if not r then return nil, e end
+
+    return r.volumes or {}
+  end
+
   function ns.mounts()
     local out = {}
     for _, m in ipairs(mounts) do out[#out + 1] = m.prefix end

@@ -1004,6 +1004,10 @@ def usb_drives(image, check):
         'print("drives" .. ": roma " .. tostring(roma)) '
         'local big = fs.read("/drives/PHOTOS/A Long File Name.txt") '
         'print("drives" .. ": big " .. tostring(big and #big or -1)) '
+        'local second = fs.list("/drives/BACKUP") '
+        'print("drives" .. ": second " .. table.concat(second or {}, "|")) '
+        'local notes = fs.read("/drives/BACKUP/notes.txt") '
+        'print("drives" .. ": notes " .. tostring(notes)) '
         'print("drives" .. ": done")'
     )
 
@@ -1056,6 +1060,40 @@ def usb_drives(image, check):
 
     # The chain, which is the part nothing else here can show.
     big = re.search(r"drives: big (-?\d+)", out)
+
+    # **The second volume, which is what a one-volume fixture cannot show.**
+    #
+    # A listing of `/drives` was answered with 104-byte volume records and
+    # decoded as 80-byte entries, so the first name was right - a name is the
+    # first 64 bytes of both - and the second read 24 bytes into the middle
+    # of the first record. One volume is exactly the case where that is
+    # invisible, and this test was green over it.
+    # **The exact set, not a substring, and the difference is the whole
+    # point.** Decoding two 104-byte volume records at a stride of 80 gives
+    # `PHOTOS` and then an *empty* name - the second read lands 24 bytes into
+    # the first record, in the middle of its sizes, which trim to nothing. An
+    # empty entry is invisible to `"BACKUP" in volumes`, so a substring test
+    # passes on corrupted data. The set cannot: a missing volume, an extra
+    # blank, or a garbage name all fail here and say what came back.
+    found = re.search(r"drives: volumes (\S*) err=", out)
+    names = sorted(n for n in (found.group(1).split(",") if found else [])
+                   if n != "")
+
+    check(names == ["BACKUP", "PHOTOS"],
+          "/drives listed %r where both volumes should be there, exactly. "
+          "A stride error decodes the second name as empty, which a "
+          "substring test cannot see:\n    %s"
+          % (names, shown))
+
+    # And FAT16, whose root directory is a fixed run of sectors rather than a
+    # cluster chain - a different walk from everything above.
+    check("notes.txt" in said("second"),
+          "the FAT16 volume did not list notes.txt from its fixed root "
+          "directory:\n    " + shown)
+
+    check("the second volume" in said("notes"),
+          "notes.txt on the FAT16 volume did not read back its bytes:"
+          "\n    " + shown)
 
     check(big is not None and int(big.group(1)) == 3000,
           "a 3000-byte file on a volume of one-sector clusters read back %s "

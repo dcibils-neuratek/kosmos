@@ -871,6 +871,49 @@ static bool resolve_in(const struct volume *v, const char *rest,
     return true;
 }
 
+/*
+ * The volumes, as a directory's entries.
+ *
+ * **A listing is a listing at every path, and that is the whole of the fix.**
+ * This used to call `answer_volumes` for a listing of the root, which fills
+ * `u.volumes` with 104-byte records - and the namespace decodes a listing as
+ * 80-byte entries. The first name came out right, because a name is the
+ * first 64 bytes of both, and the second read 24 bytes into the middle of
+ * the first record. A fixture with one volume is the one case that cannot
+ * tell the two apart, which is why a green test did not catch it.
+ *
+ * `DRIVES_OP_VOLUMES` still answers with the rich records, for a sidebar
+ * that wants a filesystem's name and how full it is.
+ */
+static void answer_volume_entries(uint64_t sender, uint32_t offset)
+{
+    struct drives_reply rep;
+    unsigned taken = 0, i;
+
+    zero(&rep, sizeof(rep));
+    rep.directory = 1u;
+
+    for (i = offset; i < volume_count && taken < DRIVES_ENTRIES_MAX; i++) {
+        unsigned k;
+
+        for (k = 0; k + 1u < DRIVES_NAME_BYTES
+                    && volumes[i].name[k] != '\0'; k++) {
+            rep.u.entries[taken].name[k] = volumes[i].name[k];
+        }
+
+        /* Every volume is a directory, whether or not this server can open
+         * one: a kfs volume is still a folder in `/drives`, and asking for
+         * its contents is what says otherwise. */
+        rep.u.entries[taken].directory = 1u;
+        rep.u.entries[taken].size = 0u;
+        taken++;
+    }
+
+    rep.count = taken;
+    rep.more = (offset + taken < volume_count) ? 1u : 0u;
+    reply_with(sender, &rep);
+}
+
 /* A directory's entries, from `offset`, up to a page of them. */
 static void answer_list(uint64_t sender, const struct volume *v,
                         uint32_t cluster, bool root, uint32_t offset)
@@ -1049,7 +1092,7 @@ static void answer(const struct message *msg, uint64_t sender)
                 return;
             }
 
-            answer_volumes(sender, &req);
+            answer_volume_entries(sender, req.offset);
             return;
         }
 

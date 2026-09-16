@@ -4966,3 +4966,57 @@ the guest's own clock, both within 0.85 to 1.15.
 
 **The gap was never a missing assertion. It was a missing device**, and
 `run_screenshot.use_audiodev` exists so any harness can ask for one.
+
+## 18.87 A stride, and two faults in the proof of it
+
+**The feature is small and the lesson is not.** `/drives` answered a listing
+with 104-byte `drives_volume` records while the namespace decoded 80-byte
+`drives_entry` records. Only the first volume was ever right - a name is the
+first 64 bytes of both structs - and the second was read 24 bytes into the
+middle of the first record, the third 48, the fourth 72.
+
+**The first proof could not have found it, in two independent ways.**
+
+The fixture had *one* volume, which is exactly the case where a stride error
+is invisible: with one record there is no second offset to get wrong. And the
+check was `"BACKUP" in volumes`, a substring test. Decoded offline, two
+records at a stride of 80 give `PHOTOS` and then an **empty string** - the
+second read lands in the middle of the first record's sizes, which trim to
+nothing - and an empty name is invisible to a substring test. So even with
+two volumes the old check would have passed.
+
+It was reported green at 7 of 7, and marked DONE in the roadmap, before any
+of that was known. The bug was found by reading the code while planning 6c,
+not by testing.
+
+**Then the control could not run, twice, and said nothing about it.** The
+mutation reverted the call site and left `answer_volume_entries` defined and
+unused - a hard error under `-Werror`. The build failed, `make` kept the
+previous good binary, and the phase booted the *fixed* image. Both runs
+reported "10 passed, 0 failed" and both were meaningless. Timestamps could
+not tell that apart, because the control's own cleanup rebuild touched the
+same files.
+
+**What settled it was making the mutated build say who it was.** A `say()`
+line printed at startup, checked in the guest's own output: `marker seen: NO`
+is what proved the control had never run. The third attempt kept every symbol
+referenced - the faulty body calls through to `answer_volumes` - compiled,
+booted, and printed its marker.
+
+What it proves now (`run_x86.py`, the `usb_drives` phase, ten checks): a
+stick with two volumes - `PHOTOS` (FAT32, one sector a cluster) and `BACKUP`
+(FAT16, four) - listed as an exact set, a short name and a long name, a file
+one directory down, a 3000-byte file that is a chain of six clusters, and
+FAT16's fixed root directory read. `tools/fatstick.py` builds it with mtools,
+and `fatls` and `mdir` read it identically.
+
+| Control | What failed |
+|---|---|
+| C31: the cluster chain is never followed | 1 of 10: the 3000-byte file read back -1 bytes |
+| C32: a path stops at its first component | 2 of 10: `hello.txt` and the chain |
+| C33: the listing answers with volume records | 1 of 10: `/drives listed ['PHOTOS'] where both volumes should be there, exactly` |
+
+**Three rules out of it.** A fixture with one of something cannot test how
+that something is counted. A substring test passes on an empty string, so
+assert the set. And a control that does not say which binary it is, is not a
+control - it is a rebuild you are hoping happened.

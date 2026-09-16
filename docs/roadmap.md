@@ -381,7 +381,11 @@ is the one that makes the machine Diego owns behave like a computer:
    names found without regard to case - NTFS left out for now. **Built in six
    pieces, in Diego's order**: 6a, the FAT reader tested on the Mac, is built
    (`usb.md` §8) - **6a DONE**; **6b DONE** (16 September), the drive server
-   and `/drives`, with FAT16 and FAT32 volumes named, listed, and read;
+   and `/drives`, with FAT16 and FAT32 volumes named, listed and read: ten
+   checks on a stick carrying two volumes, and a control watched failing
+   (`testing.md` §18.87). It was marked done once before it was: the first
+   green run used a fixture with one volume and a substring check, which a
+   stride bug in the listing reply also passed;
    **6c NEXT**, Tracker's sidebar and trail; **6d** the Open and Save window;
    **6e** the Drives app; **6f** exFAT.
 

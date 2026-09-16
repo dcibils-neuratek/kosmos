@@ -53,9 +53,27 @@ short name, a 3000-byte long name (a chain of six clusters) and
 image identically, which is what makes it a fixture rather than the reader
 agreeing with itself.
 
-**What 6b still owes**: the phase run green, a negative control watched
-failing, and free space checked against a volume this project did not make.
-kfs volumes are listed and never opened, because kfs's reader is Lua.
+**6b is done**: ten checks over a stick carrying two volumes, and C33
+watched failing - `/drives listed ['PHOTOS'] where both volumes should be
+there`. What it still owes is free space checked against a volume this
+project did not make. kfs volumes are listed and never opened, because kfs's
+reader is Lua.
+
+**Two faults in the proof itself, both mine, both worth keeping.** The first
+green run was 7 of 7 over a fixture with *one* volume, and a listing of
+`/drives` was answered with 104-byte volume records while the namespace
+decodes 80-byte entries - so only the first name was ever right, and one
+volume is exactly the case where that cannot be seen. Decoded offline, two
+records at stride 80 give `PHOTOS` and then an empty string, and an empty
+name is invisible to a substring test, so the check could not have caught it
+either. The fixture now carries `PHOTOS` (FAT32) and `BACKUP` (FAT16) and the
+check asserts the exact set.
+
+**And the control could not run for two attempts.** Reverting the call site
+left `answer_volume_entries` defined and unused, which is a hard error under
+`-Werror`: the build failed, `make` kept the previous good binary, and the
+phase booted the *fixed* image both times. Timestamps could not tell that
+apart - a startup marker printed by the mutated build could, and did.
 
 ## Where the night of 15-16 September ended
 
