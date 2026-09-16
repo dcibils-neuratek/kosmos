@@ -236,6 +236,12 @@ from piece 1 could not be reached from an application at all, because a
 drawing command said *which part* of a picture and never *how big*. A cover
 would have been the corner of a sleeve. The command carries a drawn size now.
 
+**And a sixth** (`testing.md` §18.83): a triangle command. The same gap as the
+scaler - the primitive in `gfx.c`, unreachable from a window that draws
+through commands - and Diego chose the command over rectangles or seven
+generated pictures, because the restyle after Music wants the shape for menus
+and sliders too.
+
 **So the window itself is next**, drawn in `docs/music.html`: the player at 380
 wide, the cover at 78 and at 44 through the scaler, the title through the size
 a command now carries, the cover out of the file through the picture request,

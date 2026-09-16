@@ -2022,6 +2022,97 @@ def check_window_resize(guest):
     return 3
 
 
+def check_triangle(guest):
+    """A triangle drawn by a window that does not own its pixels.
+
+    An application drawing through commands had rectangles, text and pictures.
+    The triangle primitive has been in `gfx.c` since it was written and was
+    reachable only by a window that draws its own pixels, so Music's play
+    arrow would have been a staircase of thin fills - visibly stepped at the
+    18 pixels the design draws it at. Diego chose the command over generating
+    seven pictures, because the restyle after Music wants the same shape for
+    menus, sliders and disclosure arrows.
+
+    **A triangle is told from a box by what is missing.** The window draws one
+    filling the lower-left half of a square of known colour. A point well
+    inside the shape is that colour; the opposite corner, outside the
+    hypotenuse, is not. A compositor that drew the bounding box instead - or a
+    kit that quietly sent a fill - paints both, and fails here.
+    """
+    INK = (0xf0, 0x90, 0x20)
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Tri', w = 200, h = 160, "
+        "x = 820, y = 240 } "
+        "if not w then return end "
+        "local v = ui.view{ x = 0, y = 0, w = 200, h = 160 } "
+        "function v:draw(gc) "
+        "gc:fill(0, 0, 200, 160, 0xff101010) "
+        "gc:triangle(20, 20, 20, 120, 120, 120, 0xfff09020) "
+        "end "
+        "w:add(v) w:run()"
+    )
+
+    guest.type("fs.write('/ramfs/tri.lua', %r)" % program)
+    guest.type("wm tri,/ramfs/tri.lua")
+
+    mark = len(guest.seen)
+    placed, deadline = None, time.monotonic() + 40
+
+    while placed is None and time.monotonic() < deadline:
+        found = re.search(r"wm: window Tri at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen)
+        if found:
+            placed = tuple(int(v) for v in found.groups())
+        time.sleep(0.3)
+
+    if placed is None:
+        raise Failure("the window that draws a triangle never opened:\n"
+                      + guest.seen[mark:][-900:])
+
+    wx, wy = placed[0], placed[1]
+    time.sleep(2.0)
+    width, height, px = parse_ppm(guest.screendump())
+
+    def at(dx, dy):
+        o = ((wy + dy) * width + wx + dx) * 3
+        return (px[o], px[o + 1], px[o + 2])
+
+    inside = at(35, 105)          # low and left, well inside the shape
+    outside = at(110, 30)         # the corner the hypotenuse cuts off
+
+    if inside != INK:
+        raise Failure(
+            f"a point inside the triangle is {inside}, not {INK}: the shape "
+            "was not drawn at all.")
+
+    if outside == INK:
+        raise Failure(
+            f"the corner beyond the triangle's long edge is {outside} as well, "
+            "so what was drawn is the bounding box and not a triangle.")
+
+    mark = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[mark:]:
+            break
+
+        time.sleep(0.3)
+    else:
+        raise Failure(
+            "Control-C did not get the screen back after the triangle phase.\n"
+            + (guest.seen[mark:][-2000:] or "(nothing at all)"))
+
+    return 2
+
+
 def check_scripting(guest):
     """An application scripted by another, with no scripting code in either.
 
@@ -6042,6 +6133,7 @@ def main():
         log_view_checks = phase("log view", check_log_view)
         sized_checks = phase("text size", check_text_size)
         fold_checks = phase("window resize", check_window_resize)
+        tri_checks = phase("triangle", check_triangle)
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
@@ -6077,7 +6169,7 @@ def main():
              + focus_checks + desktop_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
-             + sized_checks + fold_checks
+             + sized_checks + fold_checks + tri_checks
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
@@ -6094,6 +6186,7 @@ def main():
           f"{name_checks} on programs reached by typing their name, "
           f"{sized_checks} on a heading larger than the desktop's text, "
           f"{fold_checks} on a window asking for its own size, "
+          f"{tri_checks} on a triangle drawn through a command, "
           f"{bar_updates} on a detached program still drawing, "
           f"{stop_checks} on Control-C stopping it, "
           f"{wm_checks} on dragging a hung application's window, "

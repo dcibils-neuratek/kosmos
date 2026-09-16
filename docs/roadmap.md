@@ -683,7 +683,10 @@ the Pi", and the Pi is not here yet.
   is visibly stepped at 18 pixels. **Diego chose to add the command** (16
   September) rather than accept that or generate seven pictures: the primitive
   is already in C, and the restyle after Music wants triangles for menus,
-  sliders and disclosure arrows.
+  sliders and disclosure arrows. **Built the same day** (`testing.md` §18.83):
+  the command, the kit's `gc:triangle`, and a control that draws the bounding
+  box instead - which is the mistake worth guarding against, and which a check
+  asking only "did the ink appear" would have passed.
 
   **Step 3 needs four things the system does not have yet**, found by reading
   on 14 September, and proposed to Diego before any is built. **He answered on

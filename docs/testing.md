@@ -4750,3 +4750,40 @@ not a number for another.
 | C22: the compositor ignoring the drawn size, so a fitted picture is a crop of its corner again | `run_media.py`, 2 of 12: `the cover's first quarter covers 1024 of the 1024 pixels the picture was drawn into, where a quarter is about 256`, and `the cover drawn at half its size shows 1 of its four colours`. A crop of the corner fills the box exactly, which is why the count alone could not have caught it and the four colours could |
 
 And as written: the media suite 12 checks, one more than before.
+\n
+## 18.83 A triangle, drawn by a window that does not own its pixels
+
+**The primitive was there and out of reach**, which is the second time in one
+day: `gfx.c` has had `triangle` since it was written, and an application
+drawing through commands has `fill`, `text` and `image` and nothing else - the
+shape verbs are surface methods, reachable only by a window that draws its own
+pixels. Music is not one, so its play arrow would have been a staircase of
+thin fills, visibly stepped at the 18 pixels the design draws it at.
+
+**Diego chose the command** (16 September) over the two alternatives put to
+him - rectangles only, or seven generated pictures - because the restyle after
+Music wants the same shape for menus, sliders and disclosure arrows, and the
+primitive is already written.
+
+So `{ op = "triangle", x1, y1, x2, y2, x3, y3, color }`, clipped in the kit by
+the view's rectangle as every other verb is and clipped again by the
+compositor against the window. `gfx` has taken doubles for these since it was
+written, so a half pixel is expressible and an arrow's point lands where it
+was asked for.
+
+**The check** (`run_screenshot.py`, the `triangle` phase, 2 checks): a window
+fills a dark square and draws a triangle over its lower-left half. A point well
+inside the shape is the ink colour, **and the opposite corner - the one the
+hypotenuse cuts off - is not**. The second is the whole of it: a check that
+only asked whether the ink appeared would pass on a filled rectangle.
+
+| Control | What failed |
+|---|---|
+| C23: the compositor filling the triangle's bounding box, which is what a rectangle-only implementation would have had to settle for | the `triangle` phase, 1 of 117: `the corner beyond the triangle's long edge is (240, 144, 32) as well, so what was drawn is the bounding box and not a triangle` |
+
+**The control is deliberately not "remove the drawing".** Taking the command
+out would fail the first check and prove very little; drawing the bounding box
+is the mistake that would really have been made, and only the second check
+catches it.
+
+And as written: the display harness 117 checks, two more than before.

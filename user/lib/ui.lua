@@ -275,6 +275,38 @@ function gc:icon(x, y, name, size)
 end
 
 -- A one-pixel frame, which is what this kit uses instead of a bevel.
+--
+-- A filled triangle, in the view's own coordinates.
+--
+-- The three points are given rather than a box and a direction, because the
+-- shapes that want this are a play arrow, a disclosure arrow and a slider's
+-- notch, and each wants its own proportions. `gfx` has taken doubles for
+-- these since it was written, so a half pixel is expressible and the edges
+-- come out where they were asked for.
+--
+-- Clipped by the view's rectangle like everything else: what falls outside
+-- is not drawn, and the compositor clips again against the window.
+--
+function gc:triangle(x1, y1, x2, y2, x3, y3, color)
+  local ax, ay = self.ox, self.oy
+  local left = math.min(x1, x2, x3) + ax
+  local right = math.max(x1, x2, x3) + ax
+  local top = math.min(y1, y2, y3) + ay
+  local bottom = math.max(y1, y2, y3) + ay
+
+  if right <= self.cx or left >= self.cx + self.cw
+     or bottom <= self.cy or top >= self.cy + self.ch then
+    return
+  end
+
+  self.ops[#self.ops + 1] = {
+    op = "triangle", color = shade(color),
+    x1 = x1 + ax, y1 = y1 + ay,
+    x2 = x2 + ax, y2 = y2 + ay,
+    x3 = x3 + ax, y3 = y3 + ay,
+  }
+end
+
 function gc:frame(x, y, w, h, color)
   color = shade(color)
   self:fill(x, y, w, 1, color)
@@ -2844,6 +2876,9 @@ local function op_cost(o)
   -- not a licence to stop counting: this is what the send would raise on.
   if o.px then cost = cost + 16 end
   if o.dw then cost = cost + 32 end
+
+  -- Six coordinates and their names, which is the widest command here.
+  if o.x1 then cost = cost + 96 end
 
   return cost
 end

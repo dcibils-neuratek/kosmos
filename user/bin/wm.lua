@@ -1084,6 +1084,22 @@ local ops = {
     s:fill(o.x or 0, o.y or 0, o.w or 0, o.h or 0, o.color or 0xff000000)
   end,
 
+  --
+  -- **A triangle**, which is the one shape a rectangle cannot stand in for.
+  --
+  -- An application drawing through commands had `fill`, `text` and `image`,
+  -- and `triangle` was a surface method - reachable only by a window that
+  -- owns its own pixels. So Music's play arrow was a staircase of thin
+  -- fills, visibly stepped at 18 pixels, while the primitive sat in `gfx.c`
+  -- unreachable. Diego chose the command over generating seven pictures, and
+  -- the restyle after Music wants the same shape for menus, sliders and
+  -- disclosure arrows.
+  --
+  triangle = function(s, o)
+    s:triangle(o.x1 or 0, o.y1 or 0, o.x2 or 0, o.y2 or 0,
+               o.x3 or 0, o.y3 or 0, o.color or 0xffffffff)
+  end,
+
   text = function(s, o)
     -- `o.role` picks the face. Absent, `gfx` uses the interface font, which
     -- is what every application that does not care wants. `o.px` asks for
