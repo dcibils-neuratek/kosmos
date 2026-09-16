@@ -731,6 +731,29 @@ the Pi", and the Pi is not here yet.
 
 ### Smaller, and wanted
 
+- **NOT STARTED - an FTP client.** Diego's, 16 September. The natural next
+  program on the TCP stack after `telnet`, and a different shape of problem:
+  FTP is two connections rather than one - a control channel that carries
+  commands as lines, and a data channel opened per transfer - so it is the
+  first thing here that has to *accept* a connection or ask the server to
+  open one. `telnet` only ever connects out.
+
+  **What that costs, named before it is started**: passive mode (`PASV`) has
+  the client connect out twice, which the stack already does; active mode
+  (`PORT`) needs LISTEN, which `state.md` records as absent - "this end
+  connects out, which is telnet and SSH. Accepting needs..." - so passive
+  first, and active only if a server refuses it. Listing is its own format
+  and not a standard one; a transfer wants `/drives` and `/home` to write
+  into, which USB step 6 has now made real.
+
+  **`telnet` is already built** (`user/bin/telnet.lua`, 7 September) and is
+  deliberately not a terminal: it sends what you type and prints what comes
+  back, which is enough for SMTP, HTTP or a daemon's banner. Option
+  negotiation - window size, echo, line mode - is a protocol of its own and
+  belongs in a program that means to be a terminal. If Diego wants that
+  terminal, it is a separate item and a larger one.
+
+
 - `tools/mkusb.sh`'s closing message still calls the stick's loader unsigned
   GRUB, which it has not been since 13 September.
 - Doom's sound, behind a hook that already exists.
