@@ -26,13 +26,21 @@ startup once cost 18.4 seconds on a laptop with no network card, with the
 desktop looking hung because Tracker *is* the desktop. That comment is the
 reason the Drives group is built the way it is.
 
-**What stops here, and it is Diego's call.** The design puts a volume's
-filesystem beside its name. The pane is 150 pixels, a depth-one row leaves
-about 104, and only a short pair fits: `BACKUP FAT16` draws, while
-`KOSMOS HOME kfs`, `PHOTOS 2024 FAT32` and `Untitled 2 FAT32` suppress the
-type. So it works under QEMU, where there are no drives, and vanishes on the
-ThinkPad, where there are - which is why it is a question rather than a
-guess. The options are in `roadmap.md`.
+**The pane is 210, and the notes draw.** At 150 a depth-one row left about
+104 pixels and only a short pair fitted, so `KOSMOS HOME kfs` and
+`PHOTOS 2024 FAT32` suppressed the filesystem while `BACKUP FAT16` drew it -
+which would have worked under QEMU, where there are no drives, and vanished
+on the ThinkPad. Diego chose the wider pane out of four options on 16
+September.
+
+**Photographed rather than reasoned**, and the tooling was the hard part: the
+aarch64 board has no USB at all, and `run_x86.boot` gives a guest no screen -
+`wm: this process was not given the screen`. `pointer`'s own invocation in
+`run_x86.py` is the one that does: `-display none -vga none -device ramfb`, a
+monitor on a socket, `boot=wm`, and the serial line drained on a thread,
+because a guest whose line is not read stops inside `kputc`. With the mtools
+fixture on xHCI the sidebar shows `PHOTOS FAT32` and `BACKUP FAT16`, dim and
+to the right.
 
 **Still to build**: the fullness bars, the clickable trail (new drawing and
 new hit-testing, not a reformat of the `here` label), and shortcut places -

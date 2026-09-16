@@ -395,19 +395,17 @@ is the one that makes the machine Diego owns behave like a computer:
    `quiet` and `note` for it, and a fix so a node that *starts* open fetches
    its children at all.
 
-   **One thing waits on Diego, and it would have shipped invisibly.** The
-   design puts a volume's filesystem beside its name - `KOSMOS HOME` then
-   `kfs`, quieter and to the right. The Places pane is 150 pixels, which
-   leaves about 104 for a depth-one row, and measured against the real
-   geometry only a short pair fits: `BACKUP FAT16` draws, while
-   `KOSMOS HOME kfs`, `PHOTOS 2024 FAT32` and `Untitled 2 FAT32` all
-   suppress the type. So the feature works under QEMU, where there are no
-   drives, and vanishes on the ThinkPad, where there are. The choices are a
-   wider pane (150 to about 210), the type on a second line, an elided name,
-   or the type only in the Drives app - and which one is a look-and-feel
-   call on his own drawing. **Still to build either way**: the fullness bars
-   per volume, the clickable trail, and shortcut places, which must key on
-   unit and partition because a volume's name can renumber across a replug; **6d** the Open and Save window;
+   **The pane is 210 pixels, Diego's call on 16 September**, out of four
+   options. At 150 only a short name and type fitted together, so
+   `KOSMOS HOME kfs` and `PHOTOS 2024 FAT32` suppressed the filesystem while
+   `BACKUP FAT16` drew it - a feature that works under QEMU, where there are
+   no drives, and vanishes on the ThinkPad, where there are. Photographed on
+   x86 with the mtools fixture attached: `PHOTOS FAT32` and `BACKUP FAT16`,
+   dim and to the right. The file list loses 60 pixels and both display
+   harnesses are unchanged at 118 and 116. **Still to build**: the fullness
+   bars per volume, the clickable trail, and shortcut places, which must key
+   on unit and partition because a volume's name can renumber across a
+   replug; **6d** the Open and Save window;
    **6e** the Drives app; **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
