@@ -949,6 +949,121 @@ def stick_with_home(path, megabytes=16, unique=None):
     return home
 
 
+def usb_drives(image, check):
+    """**USB step 6b: another machine's FAT volume, at `/drives`.**
+
+    A stick mtools laid out - `tools/fatstick.py` - attached over xHCI, and
+    the drive server asked what is on it. **Somebody else's reading of the
+    format on both sides**: mtools wrote the volume and `user/servers/
+    fat_decode.c` walks it, so agreement is two readings meeting rather than
+    one reader agreeing with itself.
+
+    What each check is for, because several of them look alike and are not:
+
+      - **the name is `PHOTOS`**, which is the volume's label. `Untitled` is
+        what an unlabelled volume is called (Diego, 16 September), so a
+        reader that never found the label would pass a test whose volume had
+        none;
+      - **`hello.txt` reads back its exact bytes**, which is a file found by
+        a short name and read from its one cluster;
+      - **the long name appears in a listing**, gathered from its pieces with
+        the checksum that ties them to the short entry;
+      - **`Italy/roma.txt` resolves**, which is a path walked one directory
+        down rather than a root directory scanned;
+      - **3000 bytes come back**, and the volume is formatted with one sector
+        a cluster, so that file is a chain of six. A reader that returned the
+        first cluster and stopped gives 512 and passes everything above it.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import fatstick
+
+    if not fatstick.available():
+        print("SKIP: the /drives phase, because mtools is not installed.")
+        return
+
+    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-fat-stick.img")
+    fatstick.build(stick)
+
+    extra = ("-device", "qemu-xhci,id=usb0",
+             "-drive", "file=%s,format=raw,if=none,id=stick" % stick,
+             "-device", "usb-storage,bus=usb0.0,drive=stick")
+
+    # Written to a file and run, never typed at the prompt: `use` is a global
+    # inside a program the loader runs and not in the chunk the shell reads
+    # from stdin. And no Lua comments in it - `fs.write` puts the whole thing
+    # on one line, so a `--` would comment out everything after it.
+    program = (
+        'local names, err = fs.list("/drives") '
+        'print("drives" .. ": volumes " .. table.concat(names or {}, ",") '
+        '.. " err=" .. tostring(err)) '
+        'local top = fs.list("/drives/PHOTOS") '
+        'print("drives" .. ": top " .. table.concat(top or {}, "|")) '
+        'local hello = fs.read("/drives/PHOTOS/hello.txt") '
+        'print("drives" .. ": hello " .. tostring(hello)) '
+        'local roma = fs.read("/drives/PHOTOS/Italy/roma.txt") '
+        'print("drives" .. ": roma " .. tostring(roma)) '
+        'local big = fs.read("/drives/PHOTOS/A Long File Name.txt") '
+        'print("drives" .. ": big " .. tostring(big and #big or -1)) '
+        'print("drives" .. ": done")'
+    )
+
+    # **Not `its backup`, which every other USB phase waits for.** That line
+    # comes from a stick laid out with a GPT, and this one has an MBR - as a
+    # camera or a Windows box writes - so the driver prints "no GUID
+    # partition table's header ... and no backup" and the gate never opens.
+    # Nothing was typed, and seven checks failed against a program that was
+    # never sent. This is the driver's own last line, whatever the stick.
+    out = boot(image, None, 180.0,
+               typed=("fs.write('/ramfs/d.lua', %r)" % program,
+                      "/ramfs/d.lua"),
+               extra=extra, after="watching for devices")
+
+    if out is None:
+        check(False, "the machine would not boot with a FAT stick")
+        return
+
+    lines = [l.strip() for l in out.splitlines() if "drives:" in l]
+    shown = "\n    ".join(lines) or "(the drive server said nothing)"
+
+    def said(prefix):
+        return next((l for l in lines if l.startswith("drives: " + prefix)), "")
+
+    volumes = said("volumes")
+
+    check("PHOTOS" in volumes,
+          "/drives did not list the stick's volume under its label PHOTOS - "
+          "a volume with no label is Untitled, so this is the label being "
+          "read rather than a default:\n    " + shown)
+
+    top = said("top")
+
+    check("hello.txt" in top,
+          "a listing of the volume did not hold hello.txt:\n    " + shown)
+
+    check("A Long File Name.txt" in top,
+          "a listing did not hold the long name, gathered from its pieces:"
+          "\n    " + shown)
+
+    check("Italy" in top,
+          "a listing did not hold the Italy directory:\n    " + shown)
+
+    check("Kosmos reads a drive." in said("hello"),
+          "hello.txt did not read back the bytes mtools put in it:"
+          "\n    " + shown)
+
+    check("roma" in said("roma"),
+          "Italy/roma.txt did not resolve one directory down:\n    " + shown)
+
+    # The chain, which is the part nothing else here can show.
+    big = re.search(r"drives: big (-?\d+)", out)
+
+    check(big is not None and int(big.group(1)) == 3000,
+          "a 3000-byte file on a volume of one-sector clusters read back %s "
+          "bytes - 512 is a reader that returned the first cluster and never "
+          "followed the table:\n    %s"
+          % (big.group(1) if big else "nothing", shown))
+
+
 def usb_home(image, check):
     """**USB step 5e: `/home` on a stick's Kosmos partition, across a reboot.**
 
@@ -3152,6 +3267,7 @@ def main():
     usb_second_stick(image, check)
     usb_home_late(image, check)
     usb_home_named(image, check)
+    usb_drives(image, check)
     usb_flush_refused(image, check)
     cmdline_long(image, check)
     usb_hotplug(image, check)
@@ -3196,7 +3312,7 @@ def main():
           "as a ThinkPad, finds a USB stick and a keyboard on two xHCI "
           "controllers and asks the stick what it is through its bulk "
           "endpoints, moves the pointer and clicks with a USB mouse, reads "
-          "it through a plug on either controller, and "
+          "it through a plug on either controller, reads another machine's FAT32 volume at /drives - its label, its long names, a file one directory down and a chain of clusters - and "
           "opens a menu with a click through a PS/2 mouse whether or not "
           "the machine has a serial port)."
           % checks)

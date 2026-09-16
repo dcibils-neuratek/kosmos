@@ -612,6 +612,393 @@ static void answer_volumes(uint64_t sender, const struct drives_request *req)
     reply_with(sender, &rep);
 }
 
+/*
+ * Walking a directory, one sector at a time.
+ *
+ * **The region is one buffer, and that decides the shape of all of this.**
+ * Every `read_sectors` overwrites it, and following a cluster chain *is* a
+ * read - of the FAT - so the table lookup has to happen before the caller
+ * reads the next directory sector, never during. Anything that must outlive
+ * a step is copied out first; `fat_dirent_step` already copies a long name's
+ * pieces into `fat_names`, which is why a name spanning two sectors survives
+ * the FAT read between them.
+ *
+ * FAT16's root is not a chain at all - it is a fixed run of sectors after
+ * the tables - so it is walked as one, and `root16` is which of the two this
+ * is. FAT32 has no such area and its root is a chain like any other.
+ */
+struct dirwalk {
+    const struct volume *v;
+    bool     root16;
+    uint32_t cluster;           /* the chain's current cluster */
+    uint32_t in_cluster;        /* sectors already given out of it */
+    uint32_t sector;            /* root16: the next sector */
+    uint32_t left;              /* root16: how many are left */
+    bool     done;
+    bool     damaged;
+};
+
+/*
+ * A bound on how far a chain is followed.
+ *
+ * A cluster that points at itself is a directory that never ends, and a
+ * server that spins is worse than one that answers wrongly - it takes the
+ * process with it and every caller waits for ever. The volume cannot have
+ * more clusters than it says it has, so that is the bound, and reaching it
+ * means the chain is damaged rather than long.
+ */
+static bool chain_step(struct dirwalk *w)
+{
+    uint32_t sector, offset, next = 0;
+    enum fat_link link;
+
+    if (!fat_entry_place(&w->v->fat, w->cluster, &sector, &offset)) {
+        w->damaged = true;
+        return false;
+    }
+
+    /* The FAT read, deliberately before the caller's next directory read. */
+    if (!read_sectors(w->v->unit, w->v->first + sector, 1u)) {
+        w->damaged = true;
+        return false;
+    }
+
+    link = fat_link_at(&w->v->fat, region + offset, &next);
+
+    if (link == FAT_LINK_NEXT) {
+        w->cluster = next;
+        w->in_cluster = 0;
+        return true;
+    }
+
+    if (link != FAT_LINK_END) {
+        /* FREE, BAD or a number the volume does not have: all of them mean
+         * the chain does not lead anywhere, which is a damaged volume rather
+         * than the end of a directory. */
+        w->damaged = true;
+    }
+
+    w->done = true;
+    return false;
+}
+
+static void walk_start(struct dirwalk *w, const struct volume *v,
+                       uint32_t first_cluster, bool root)
+{
+    zero(w, sizeof(*w));
+    w->v = v;
+
+    if (root && v->fs == FS_KIND_FAT16) {
+        w->root16 = true;
+        w->sector = fat_root_sector(&v->fat);
+        w->left = v->fat.root_sectors;
+        return;
+    }
+
+    w->cluster = root ? v->fat.root_cluster : first_cluster;
+
+    /* A directory whose first cluster is 0 has nothing in it. `..` pointing
+     * at the root is written that way on purpose, and a file of no bytes is
+     * the same shape. */
+    if (w->cluster < 2u) {
+        w->done = true;
+    }
+}
+
+/* The next sector of the directory, read into the region. False at the end,
+ * and `w->damaged` says whether that end was an orderly one. */
+static bool walk_next(struct dirwalk *w, unsigned long *steps)
+{
+    const struct volume *v = w->v;
+
+    if (w->done || w->damaged) {
+        return false;
+    }
+
+    if (*steps > (unsigned long)v->fat.clusters + 2ul) {
+        w->damaged = true;
+        return false;
+    }
+
+    (*steps)++;
+
+    if (w->root16) {
+        if (w->left == 0u) {
+            w->done = true;
+            return false;
+        }
+
+        if (!read_sectors(v->unit, v->first + w->sector, 1u)) {
+            w->damaged = true;
+            return false;
+        }
+
+        w->sector++;
+        w->left--;
+        return true;
+    }
+
+    if (w->in_cluster >= v->fat.sectors_per_cluster) {
+        if (!chain_step(w)) {
+            return false;
+        }
+    }
+
+    if (!read_sectors(v->unit,
+                      v->first + fat_cluster_sector(&v->fat, w->cluster)
+                      + w->in_cluster, 1u)) {
+        w->damaged = true;
+        return false;
+    }
+
+    w->in_cluster++;
+    return true;
+}
+
+/*
+ * The entry called `name` in a directory, if it is there.
+ *
+ * Compared as FAT compares names - without regard to case - because that is
+ * how the volume's own filesystem finds them, and a path that worked on the
+ * machine that wrote it must work here.
+ */
+static bool dir_find(const struct volume *v, uint32_t cluster, bool root,
+                     const char *name, unsigned name_len,
+                     struct fat_dirent *out, bool *damaged)
+{
+    struct dirwalk w;
+    struct fat_names names;
+    unsigned long steps = 0;
+    char want[DRIVES_NAME_BYTES];
+    unsigned i;
+
+    if (name_len >= sizeof(want)) {
+        return false;           /* longer than any name a volume can hold */
+    }
+
+    for (i = 0; i < name_len; i++) {
+        want[i] = name[i];
+    }
+
+    want[name_len] = '\0';
+
+    fat_names_clear(&names);
+    walk_start(&w, v, cluster, root);
+
+    while (walk_next(&w, &steps)) {
+        unsigned at;
+
+        for (at = 0; at + FAT_DIRENT_BYTES <= SECTOR; at += FAT_DIRENT_BYTES) {
+            struct fat_dirent e;
+            enum fat_step step = fat_dirent_step(&v->fat, region + at,
+                                                 &names, &e);
+
+            if (step == FAT_STEP_END) {
+                *damaged = w.damaged;
+                return false;
+            }
+
+            if (step != FAT_STEP_ENTRY) {
+                continue;
+            }
+
+            if (fat_name_matches(want, e.name)
+                || fat_name_matches(want, e.short_name)) {
+                *out = e;       /* copied before the region is touched again */
+                *damaged = false;
+                return true;
+            }
+        }
+    }
+
+    *damaged = w.damaged;
+    return false;
+}
+
+/*
+ * What a path inside a volume names.
+ *
+ * `rest` is `Italy/2024/x.jpg` - the volume's name has already been taken
+ * off. Empty means the volume's own root, which has no directory entry of
+ * its own and is reported as one anyway.
+ */
+static bool resolve_in(const struct volume *v, const char *rest,
+                       struct fat_dirent *out, bool *is_root, uint32_t *code)
+{
+    uint32_t cluster = 0;
+    bool root = true;
+
+    *is_root = true;
+    *code = DRIVES_ERR_NO_PATH;
+
+    while (*rest != '\0') {
+        unsigned n = 0;
+        struct fat_dirent e;
+        bool damaged = false;
+
+        while (rest[n] != '\0' && rest[n] != '/') {
+            n++;
+        }
+
+        if (n == 0u) {
+            rest++;             /* a doubled slash names nothing */
+            continue;
+        }
+
+        if (!dir_find(v, cluster, root, rest, n, &e, &damaged)) {
+            *code = damaged ? DRIVES_ERR_DAMAGED : DRIVES_ERR_NO_PATH;
+            return false;
+        }
+
+        rest += n;
+
+        while (*rest == '/') {
+            rest++;
+        }
+
+        /* Something left to walk means this one has to be a directory. */
+        if (*rest != '\0' && !e.directory) {
+            *code = DRIVES_ERR_NOT_DIR;
+            return false;
+        }
+
+        cluster = e.first_cluster;
+        root = false;
+        *out = e;
+        *is_root = false;
+    }
+
+    return true;
+}
+
+/* A directory's entries, from `offset`, up to a page of them. */
+static void answer_list(uint64_t sender, const struct volume *v,
+                        uint32_t cluster, bool root, uint32_t offset)
+{
+    struct drives_reply rep;
+    struct dirwalk w;
+    struct fat_names names;
+    unsigned long steps = 0;
+    unsigned seen = 0, taken = 0;
+    bool ended = false;
+
+    zero(&rep, sizeof(rep));
+    rep.directory = 1u;
+
+    fat_names_clear(&names);
+    walk_start(&w, v, cluster, root);
+
+    while (!ended && walk_next(&w, &steps)) {
+        unsigned at;
+
+        for (at = 0; at + FAT_DIRENT_BYTES <= SECTOR; at += FAT_DIRENT_BYTES) {
+            struct fat_dirent e;
+            enum fat_step step = fat_dirent_step(&v->fat, region + at,
+                                                 &names, &e);
+            unsigned i;
+
+            if (step == FAT_STEP_END) {
+                ended = true;
+                break;
+            }
+
+            if (step != FAT_STEP_ENTRY) {
+                continue;
+            }
+
+            /* Skipped rather than stored: a page is asked for by number and
+             * the walk is the only way to reach it. */
+            if (seen++ < offset) {
+                continue;
+            }
+
+            if (taken >= DRIVES_ENTRIES_MAX) {
+                rep.more = 1u;
+                ended = true;
+                break;
+            }
+
+            for (i = 0; i + 1u < DRIVES_NAME_BYTES && e.name[i] != '\0'; i++) {
+                rep.u.entries[taken].name[i] = e.name[i];
+            }
+
+            rep.u.entries[taken].size = e.directory ? 0u : e.size;
+            rep.u.entries[taken].directory = e.directory ? 1u : 0u;
+            taken++;
+        }
+    }
+
+    if (w.damaged) {
+        fail(sender, DRIVES_ERR_DAMAGED);
+        return;
+    }
+
+    rep.count = taken;
+    reply_with(sender, &rep);
+}
+
+/* Bytes of a file, from `at`. */
+static void answer_read(uint64_t sender, const struct volume *v,
+                        const struct fat_dirent *e, uint64_t at,
+                        uint32_t want)
+{
+    struct drives_reply rep;
+    struct dirwalk w;
+    unsigned long steps = 0;
+    uint64_t skip_sectors, seen = 0;
+    uint32_t took = 0;
+
+    zero(&rep, sizeof(rep));
+    rep.size = e->size;
+
+    if (at >= e->size || want == 0u) {
+        reply_with(sender, &rep);       /* past the end is no bytes, not an error */
+        return;
+    }
+
+    if (want > DRIVES_DATA_MAX) {
+        want = DRIVES_DATA_MAX;
+    }
+
+    if ((uint64_t)want > e->size - at) {
+        want = (uint32_t)(e->size - at);
+    }
+
+    skip_sectors = at / SECTOR;
+
+    walk_start(&w, v, e->first_cluster, false);
+
+    while (took < want && walk_next(&w, &steps)) {
+        uint64_t from;
+        unsigned n;
+
+        if (seen++ < skip_sectors) {
+            continue;
+        }
+
+        /* Where in this sector the wanted bytes start: only the first one
+         * begins part way in. */
+        from = (took == 0u) ? (at % SECTOR) : 0u;
+        n = SECTOR - (unsigned)from;
+
+        if (n > want - took) {
+            n = want - took;
+        }
+
+        copy(rep.u.data + took, region + from, n);
+        took += n;
+    }
+
+    if (w.damaged) {
+        fail(sender, DRIVES_ERR_DAMAGED);
+        return;
+    }
+
+    rep.length = took;
+    rep.more = (at + took < e->size) ? 1u : 0u;
+    reply_with(sender, &rep);
+}
+
 static void answer(const struct message *msg, uint64_t sender)
 {
     struct drives_request req;
@@ -686,10 +1073,45 @@ static void answer(const struct message *msg, uint64_t sender)
         return;
     }
 
-    /* FAT directories and files: the next piece. Until it is here, a volume
-     * is named and its contents are not offered - which is a different thing
-     * from a volume that is not there, and says so. */
-    fail(sender, DRIVES_ERR_UNREADABLE);
+    {
+        struct fat_dirent e;
+        bool is_root = false;
+        uint32_t code = DRIVES_ERR_NO_PATH;
+
+        zero(&e, sizeof(e));
+
+        if (!resolve_in(v, rest, &e, &is_root, &code)) {
+            fail(sender, code);
+            return;
+        }
+
+        if (req.op == DRIVES_OP_GETATTR) {
+            zero(&rep, sizeof(rep));
+            rep.directory = (is_root || e.directory) ? 1u : 0u;
+            rep.size = (is_root || e.directory) ? 0u : e.size;
+            reply_with(sender, &rep);
+            return;
+        }
+
+        if (req.op == DRIVES_OP_LIST) {
+            if (!is_root && !e.directory) {
+                fail(sender, DRIVES_ERR_NOT_DIR);
+                return;
+            }
+
+            answer_list(sender, v, is_root ? 0u : e.first_cluster, is_root,
+                        req.offset);
+            return;
+        }
+
+        /* A read. A directory has no bytes to give. */
+        if (is_root || e.directory) {
+            fail(sender, DRIVES_ERR_NOT_DIR);
+            return;
+        }
+
+        answer_read(sender, v, &e, req.at, req.length);
+    }
 }
 
 void drives_server(long endpoint, long blocks_cap, long console_cap)

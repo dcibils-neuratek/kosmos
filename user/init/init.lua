@@ -640,7 +640,7 @@ local function new_namespace()
 
   local DRIVES_OPS = { volumes = 1, list = 2, read = 3, getattr = 4 }
   local DRIVES_PATH_MAX, DRIVES_DATA_MAX = 256, 1024
-  local DRIVES_ENTRIES_MAX, DRIVES_VOLUMES_MAX = 4, 8
+  local DRIVES_ENTRIES_MAX, DRIVES_VOLUMES_MAX = 12, 8
 
   local DRIVES_FS_NAMES = { [0] = "none", "FAT16", "FAT32", "kfs", "unknown" }
 
@@ -701,8 +701,22 @@ local function new_namespace()
 
     local reply, why = sys.call_raw(capability,
                                     string.pack(DRIVES_REQUEST, code,
-                                                tonumber(extra.offset) or 0,
-                                                tonumber(extra.at) or 0,
+                                                -- A listing's page, and a
+                                                -- read's byte. `ns.read`
+                                                -- pages with `offset`, so a
+                                                -- read takes its byte from
+                                                -- there; reading `at` left
+                                                -- every page after the first
+                                                -- starting at zero, and a
+                                                -- 3000-byte file came back
+                                                -- as nothing at all.
+                                                (code == DRIVES_OPS.list)
+                                                  and (tonumber(extra.offset) or 0)
+                                                  or 0,
+                                                (code == DRIVES_OPS.read)
+                                                  and (tonumber(extra.offset)
+                                                       or tonumber(extra.at) or 0)
+                                                  or 0,
                                                 want, 0,
                                                 drives_fixed(rest or "",
                                                      DRIVES_PATH_MAX)))
@@ -759,7 +773,14 @@ local function new_namespace()
                                                              or "file" }
     end
 
-    return { ok = true, value = names, entries = entries, more = more ~= 0 }
+    -- **`entries` is names, because that is what every other mount puts
+    -- there** and `ns.list` hands it straight back to the caller. This
+    -- returned the rich rows instead, and the first program to list a drive
+    -- died in `table.concat` on a table of tables - which Tracker would have
+    -- done too. The sizes and kinds keep their own key, for a column that
+    -- wants them without a second request per row.
+    return { ok = true, value = names, entries = names, rows = entries,
+             more = more ~= 0 }
   end
 
   local function dev_request(capability, op, rest)

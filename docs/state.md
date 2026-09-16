@@ -33,11 +33,29 @@ it on one line so `--` kills the rest; a capture sliced from the echoed
 command; and `procs`, which cannot answer at a bare prompt at all because it
 needs `/app/wm`. That last one is now a task of its own.
 
-**What 6b still owes**: the FAT directory walk and file read - a volume's
-contents answer `DRIVES_ERR_UNREADABLE` today; free space checked against a
-real FAT volume; and a permanent guest test with a control, since the host
-test covers the decoder and not the server. kfs volumes are listed and never
-opened, because kfs's reader is Lua.
+**The FAT walk is written**: a chain iterator for FAT16's fixed root and
+FAT32's cluster chain, path resolution by component, and `list`, `read` and
+`getattr` over them. The shared region is one buffer, which decides the
+shape of all of it - following the table is itself a read, so it happens
+*before* the caller reads the next directory sector, and anything that must
+survive a step is copied out first. A chain is bounded by the volume's own
+cluster count, so a cluster pointing at itself answers `DRIVES_ERR_DAMAGED`
+instead of spinning the server and taking every caller with it.
+
+**Where it can be tested at all was the day's most useful finding.** The
+aarch64 harness has no USB in it - not one mention of xHCI - and every
+`usb-storage` attachment in the tree is in `run_x86.py`. So the four probes
+spent against the ARM guest could never have seen a drive whatever the code
+did. The phase lives on the x86 board, with `tools/fatstick.py` making the
+fixture through mtools: FAT32 labelled `PHOTOS`, one sector a cluster, a
+short name, a 3000-byte long name (a chain of six clusters) and
+`Italy/roma.txt` one directory down. Our `fatls` and mtools' `mdir` read that
+image identically, which is what makes it a fixture rather than the reader
+agreeing with itself.
+
+**What 6b still owes**: the phase run green, a negative control watched
+failing, and free space checked against a volume this project did not make.
+kfs volumes are listed and never opened, because kfs's reader is Lua.
 
 ## Where the night of 15-16 September ended
 

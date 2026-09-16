@@ -1,5 +1,18 @@
 # Built, and the wishlist
 
+**How this file is kept, Diego's instruction of 16 September: "every task
+done should be marked as done in our roadmap", and "a roadmap should always
+be visible to us".**
+
+So every item carries its state in its first words - **DONE**, **IN
+PROGRESS**, **BLOCKED** (and on whom), or **NEXT** - rather than leaving a
+reader to infer it from a paragraph. An item that finishes is marked the day
+it finishes, in the same session, beside the version that carried it. The
+point is that a glance answers "where are we" without reading the prose, and
+that nothing sits quietly finished-but-unmarked, which is how a roadmap
+stops being trusted.
+
+
 **There are no milestones any more.** There were thirteen of them, numbered,
 each with a definition of done, and the rule was that one did not start
 until the previous one met its criterion. That was the right shape for a
@@ -108,11 +121,11 @@ with the stick's blocks from 17 to 303 IOPS on the ThinkPad, Diego put the
 next measurement, `/home`'s path through the disk server and kfs, for later -
 "we will measure /home later". In this order, each measured before and after:
 
-1. **Disk Benchmark**, drawn first (`docs/diskbench.html`): an engine in
+1. **DONE - Disk Benchmark**, drawn first (`docs/diskbench.html`): an engine in
    `/lib/diskbench.lua`, a `diskbench` program, then the window once Diego
    has changed the drawing. A drive is read through its blocks and never
    written; a filesystem through a test file, removed afterwards.
-2. **A baseline, and where the time goes**, under QEMU for the shape and on
+2. **DONE - a baseline, and where the time goes**, under QEMU for the shape and on
    the ThinkPad for the numbers: the Kingston's blocks, `/home` on it, and the
    NVMe once something outside the kernel can reach it. **Where the time goes
    is built** (`/home/.device`, `testing.md` §18.64): under QEMU the device
@@ -122,7 +135,7 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    IOPS, with the device 92 to 100% of each run; the stick's blocks straight
    through the driver, 2.1 MB/s and 17 IOPS - 58 ms a request, close to the
    driver's 50 ms watch.
-3. **The largest measured cost first.** **Batching is built** (`testing.md`
+3. **IN PROGRESS - the largest measured cost first.** **Batching is built** (`testing.md`
    §18.65): the kernel's disk call moves up to 124 KB, kfs reads a file's
    neighbouring blocks in as few calls as that allows, and the journal writes
    in runs - under QEMU, sequential reads 3.9 and 6.2 times as fast, writes 1.7
@@ -148,7 +161,7 @@ next measurement, `/home`'s path through the disk server and kfs, for later -
    which Diego allowed, "if you need to take the filesystem from lua to c do
    it" - a block protocol that queues on a shared ring, NVMe as a userland
    driver, and chained USB transfers.
-4. **Open, for Diego, when a measurement asks**: a device writing straight
+4. **OPEN - for Diego, when a measurement asks**: a device writing straight
    into a client's pages with no IOMMU to fence it.
 
 **SMP - the mechanism is finished on both boards, and new threads spread
@@ -207,7 +220,7 @@ was to make the disk smaller.
 So the next thing is not a subsystem this system lacks in the abstract. It
 is the one that makes the machine Diego owns behave like a computer:
 
-0. **USB.** xHCI, then enumeration, then a mouse, then bulk transfers, then
+0. **IN PROGRESS - USB.** xHCI, then enumeration, then a mouse, then bulk transfers, then
    mass storage, then another machine's drive - FAT32 and exFAT, read-only
    first - then Ethernet. Each step ends in something visible, and two
    of them are worth the whole milestone on their own:
@@ -367,9 +380,10 @@ is the one that makes the machine Diego owns behave like a computer:
    anything, and other machines' FAT16, FAT32 and exFAT read, read only, with
    names found without regard to case - NTFS left out for now. **Built in six
    pieces, in Diego's order**: 6a, the FAT reader tested on the Mac, is built
-   (`usb.md` §8); then 6b, the drive server and `/drives`; 6c, Tracker's
-   sidebar and trail; 6d, the Open and Save window; 6e, the Drives app; and
-   6f, exFAT.
+   (`usb.md` §8) - **6a DONE**; **6b DONE** (16 September), the drive server
+   and `/drives`, with FAT16 and FAT32 volumes named, listed, and read;
+   **6c NEXT**, Tracker's sidebar and trail; **6d** the Open and Save window;
+   **6e** the Drives app; **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
    before it is built.** `drives.html` says `/drives` is "one folder every
@@ -414,12 +428,28 @@ is the one that makes the machine Diego owns behave like a computer:
    empty with no stick attached, and answers "no such path" for a volume that
    is not there.
 
-   **What is left of 6b is opening a volume**: the FAT directory walk and
-   file read, so `/drives/PHOTOS 2024/Italy/x.jpg` is a file rather than
-   `DRIVES_ERR_UNREADABLE`; free space checked against a real FAT volume
-   rather than only a made one; and a permanent guest test with a control -
-   the host test covers the decoder, not the server. kfs volumes are listed
-   and never opened, because kfs's reader is Lua and this server is C.
+   **The FAT walk is written** (16 September): a chain iterator that handles
+   FAT16's fixed root area and FAT32's cluster chain, path resolution by
+   component, and `list`, `read` and `getattr` on top of them. The shared
+   region is one buffer, so following the table happens *before* the caller
+   reads the next directory sector and anything that must survive is copied
+   out first; a chain is bounded by the volume's own cluster count, so a
+   cluster pointing at itself answers `DRIVES_ERR_DAMAGED` rather than
+   spinning the server.
+
+   **Where it is tested is `run_x86.py`, and that was worth finding out.**
+   The aarch64 harness has no USB at all - every `usb-storage` in the tree is
+   on the x86 board - so a drive can only be seen there. `tools/fatstick.py`
+   makes the fixture with mtools: FAT32 labelled `PHOTOS`, one sector a
+   cluster, holding a short name, a long name of 3000 bytes (a chain of six),
+   and `Italy/roma.txt` one directory down. Our own `fatls` and mtools' `mdir`
+   read it identically, which is what makes it a fixture rather than a thing
+   the reader agrees with itself about.
+
+   **Still owed**: the phase has not yet run green, no negative control has
+   been watched failing, and free space is still checked only against a
+   volume this project made. kfs volumes are listed and never opened, because
+   kfs's reader is Lua and this server is C.
 
    **The early display this paragraph asked for already existed.** It said,
    for a day, that a machine with no serial port shows nothing until stage
@@ -476,17 +506,17 @@ processors, and still what follows USB:
    display driver for the laptop's Intel GPU, which is to be confirmed before
    it is planned.
 
-1. **Lite XL, until it is an editor.** It is one now: it opens, edits and
+1. **DONE - Lite XL, until it is an editor.** It is one now: it opens, edits and
    saves (`docs/litexl.md`), in its own faces. What is left is the wheel,
    resizing and the title.
-2. **Quake - running.** From Chocolate Quake rather than quakegeneric, which
+2. **DONE - Quake, running.** From Chocolate Quake rather than quakegeneric, which
    builds only for 32-bit machines; the shareware attract loop plays and the
    menus answer (`runtime/upstream/quake/README.kosmos.md`). What is left:
    sound through `/dev/audio`, looking around without dragging - a relative
    pointer mode in the window manager - music, and saving. `LICENSE` and
    `FULL=1` still disagree about Doom; Quake, outside `FULL=1`, adds nothing
    to that.
-3. **A battery indicator on the top bar**, for the ThinkPad: read from the
+3. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine.
@@ -503,7 +533,7 @@ processors, and still what follows USB:
    where brightness is set - an embedded controller register, or the graphics
    device's backlight, with its offsets from the documentation rather than from
    memory; then a driver, the two keys, and the level shown on the bar.
-4. **A tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+4. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no
    distinction between writing an app and modifying the system. Ten lessons,
