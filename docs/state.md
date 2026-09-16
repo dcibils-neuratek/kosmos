@@ -8,6 +8,24 @@ Last updated: 2026-09-16
 
 ## Where the night of 15-16 September ended
 
+**It is pushed. 0.10.71, `0b28356`, on the morning of 16 September**, on
+Diego's "Push the 17 commits when you wake up" - seventeen commits plus the
+revision a push takes and the picture `make prepush` produces, nineteen in
+all, and `origin/main` is level with `main`. The gate was green throughout:
+158/158 in the guest suite, 7 checks on Lite XL, the MEGA link, and
+`docs/screenshots/2026-09-16-0902-e7e8666.png` at 1920x1080.
+
+**The display harness reports 118 and then 116, and both are right.**
+`make screenshot` runs it twice - once on `$(TARGET)` and once on
+`$(X86_BUILD)/kosmos.elf`, the second inside an `@if` whose command line is
+never echoed, so the log looks like one invocation printing two summaries.
+The difference is the two power-button checks, which `main` runs only
+`if machine(args.image) == "aarch64"`: the PC's power button is an ACPI
+event rather than a GPIO line, as `check_power_button` says in its own
+docstring. Worth writing down because the shape of it - a phase contributing
+zero checks to a run that still prints PASS - is exactly the shape of a
+control that does not bite, and it cost a look to tell the two apart.
+
 **Music's window is built and its three reported faults are fixed**, each with
 a control watched fail. Both suites are green: the media suite at 16 checks,
 the display harness at 118.
