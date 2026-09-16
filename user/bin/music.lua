@@ -806,8 +806,15 @@ end
 -- settles the window before the code does, so the bar is gone and the look
 -- is switched from the keyboard until Diego says where it belongs.
 --
-function win:on_key(k)
-  if k == "v" or k == "V" then
+--
+-- **A key arrives as a code, not as a letter.** Every other application here
+-- compares `string.byte` or converts with `string.char`; this compared the
+-- argument to `"v"` and could therefore never match, so the light look was
+-- unreachable from the moment it was written - and the screenshot that showed
+-- a dark window was telling the truth.
+--
+function win:on_key(c)
+  if c == string.byte("v") or c == string.byte("V") then
     use_look(look == "dark" and "light" or "dark")
 
     return true

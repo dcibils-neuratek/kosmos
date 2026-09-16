@@ -263,6 +263,14 @@ window and folds it back, on the resize piece from the morning. And the resize
 finally has its evidence - a window that grows and fills the room it gains,
 with control C26 watched fail at 3562 grey places (`testing.md` §18.85).
 
+**The light look was committed before it worked**, which is worth keeping:
+`window.on_key` is given a key *code*, and this compared it to the string
+`"v"` - so the branch could never be taken and the look could not be switched
+at all. The screenshot that came back dark was telling the truth, and the
+first explanation reached for was that the key had not been delivered. Fixed
+by comparing `string.byte`, as every other application here does, and then
+photographed.
+
 **Shuffle, repeat and the light look are built**: the two controls show their
 state in the accent colour and decide what follows a finished track, and the
 palette is kept in `/home/.music`.
