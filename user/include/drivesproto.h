@@ -67,7 +67,16 @@
  */
 #define DRIVES_PATH_MAX      256u
 #define DRIVES_NAME_BYTES     64u
-#define DRIVES_ENTRIES_MAX     4u   /* names in one page of a listing */
+/*
+ * Twelve, because the union has room for them and a round trip does not.
+ *
+ * It was four - `ramproto.h`'s number, where an entry is a whole 256-byte
+ * path. Here an entry is a 64-byte name and a size, so twelve fit in the
+ * same 1024 bytes. At four, a directory of a thousand files is 250
+ * exchanges, each of which re-walks the directory from its first cluster to
+ * reach the page it was asked for.
+ */
+#define DRIVES_ENTRIES_MAX    12u   /* names in one page of a listing */
 #define DRIVES_DATA_MAX     1024u   /* bytes of a file in one message */
 #define DRIVES_VOLUMES_MAX     8u   /* volumes in one page of a listing */
 
