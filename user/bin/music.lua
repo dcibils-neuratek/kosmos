@@ -173,6 +173,7 @@ end
 
 local player, cover_name
 local folded = false
+local shuffled, repeating = false, false
 local status = trouble or "nothing loaded"
 
 local function unload()
@@ -224,6 +225,7 @@ end
 -- and the pacing is written where the tick loop is.
 --
 local pace
+local bar
 
 local function load(i)
   local t = tracks[i]
@@ -484,7 +486,7 @@ function transport:draw(g)
 
   g:fill(0, 0, self.w, self.h, P.ground)
 
-  draw_shuffle(g, slot(1) - s // 2, 14, s, P.faint)
+  draw_shuffle(g, slot(1) - s // 2, 14, s, shuffled and P.accent or P.faint)
   draw_skip(g, slot(2) - s // 2, 14, s, P.ink, true)
 
   if playing then
@@ -494,7 +496,7 @@ function transport:draw(g)
   end
 
   draw_skip(g, slot(5) - s // 2, 14, s, P.ink)
-  draw_repeat_(g, slot(6) - s // 2, 16, s, P.accent)
+  draw_repeat_(g, slot(6) - s // 2, 16, s, repeating and P.accent or P.faint)
   draw_queue(g, slot(7) - s // 2, 15, s, P.faint)
 
   g:fill(0, TRANS_H - 1, self.w, 1, P.line)
@@ -519,6 +521,10 @@ function transport:on_click(x, y)
     else
       load(chosen)
     end
+  elseif which == 1 then
+    shuffled = not shuffled
+  elseif which == 6 then
+    repeating = not repeating
   elseif which == 7 then
     --
     -- **The mini player**: the same window with its library folded away,
@@ -679,8 +685,33 @@ function ticker:tick()
   end
 
   if player:finished() then
+    --
+    -- **What follows a track**, which is what shuffle and repeat are for.
+    -- Repeat plays this one again; shuffle takes another at random; neither
+    -- one, and the library moves on until it runs out.
+    --
+    local next_one
+
+    if repeating then
+      next_one = chosen
+    elseif shuffled and #tracks > 1 then
+      next_one = 1 + (sys.ticks() % #tracks)
+
+      if next_one == chosen then
+        next_one = 1 + (next_one % #tracks)
+      end
+    elseif chosen < #tracks then
+      next_one = chosen + 1
+    end
+
     unload()
-    pace()
+
+    if next_one then
+      load(next_one)
+    else
+      pace()
+    end
+
     win:paint()
     return
   end
@@ -712,17 +743,26 @@ local function relayout(w, h)
   W, H = w, h
   folded = h <= MINI_H + 8
 
+  local top = (bar and not folded) and bar.h or 0
+
+  if bar then
+    bar.w = w
+    bar.h = folded and 0 or (bar.natural_h or bar.h)
+  end
+
+  now.y = top
   now.w = w
   transport.w = w
-  transport.y = folded and (MINI_H - TRANS_H) or TRANS_Y
+  transport.y = folded and (MINI_H - TRANS_H) or (TRANS_Y + top)
   sources.w = w
 
   -- Folded, the library and the sources are not there at all: a view with no
   -- height draws nothing, which is how the same window is two windows.
   sources.h = folded and 0 or (SRC_H + 28)
   list.w = w
-  list.y = folded and h or LIST_Y
-  list.h = folded and 0 or math.max(ROW_H, h - LIST_Y - FOOT_H)
+  sources.y = folded and h or (SRC_Y + top)
+  list.y = folded and h or (LIST_Y + top)
+  list.h = folded and 0 or math.max(ROW_H, h - LIST_Y - top - FOOT_H)
 
   foot.w = w
   foot.y = folded and h or (h - FOOT_H)
@@ -731,6 +771,47 @@ end
 
 function win:on_resize(w, h)
   relayout(w, h)
+end
+
+--
+-- **Dark and light, both**, which is the first thing Diego decided about this
+-- window (`docs/music.html`). The palette is this application's rather than
+-- the desktop's - that is what makes it a pilot - so the switch is here, in a
+-- menu of its own, and the choice is kept in `/home/.music`.
+--
+local function use_look(name)
+  look = LOOKS[name] and name or "dark"
+  P = LOOKS[look]
+
+  fs.write("/home/.music", { look = look })
+  win:paint()
+end
+
+do
+  local saved = fs.read("/home/.music")
+
+  if type(saved) == "table" and LOOKS[saved.look] then
+    look = saved.look
+    P = LOOKS[look]
+  end
+end
+
+--
+-- **No menu bar, because the design does not draw one.**
+--
+-- `docs/music.html` says "Dark and light, both: View switches", and I read
+-- that as a menubar - which added a bar at the top of the window, moved
+-- everything below it down, and broke three checks at once because the
+-- design's geometry is measured from the window's own edge. The drawing
+-- settles the window before the code does, so the bar is gone and the look
+-- is switched from the keyboard until Diego says where it belongs.
+--
+function win:on_key(k)
+  if k == "v" or k == "V" then
+    use_look(look == "dark" and "light" or "dark")
+
+    return true
+  end
 end
 
 win:add(now)

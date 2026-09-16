@@ -263,6 +263,17 @@ window and folds it back, on the resize piece from the morning. And the resize
 finally has its evidence - a window that grows and fills the room it gains,
 with control C26 watched fail at 3562 grey places (`testing.md` §18.85).
 
+**Shuffle, repeat and the light look are built**: the two controls show their
+state in the accent colour and decide what follows a finished track, and the
+palette is kept in `/home/.music`.
+
+**And one question for Diego rather than for me.** `docs/music.html` says
+"Dark and light, both: **View** switches", and I read that as a menu bar -
+which added a bar the drawing does not have, moved the whole window down by
+its height, and failed three checks at once. The design settles the window
+before the code does, so the bar came out and the look toggles with **V**
+until he says where that switch belongs.
+
 **What Music still owes the design**: the light look behind a View menu, and shuffle, repeat and queue,
 which are drawn and inert. **And one limitation worth a decision**: a title
 only comes out larger when the desktop's face is a scalable one, since a
