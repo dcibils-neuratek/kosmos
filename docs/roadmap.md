@@ -666,6 +666,15 @@ the Pi", and the Pi is not here yet.
   **Step 2, the tag reader, is built** (§18.67). Next, the window from
   `docs/music.html`.
 
+  **The icons, decided 15 September**: the vendored Haiku set has none of the
+  transport controls - it is applications, files, folders, devices and
+  preferences - so Music takes `App_MediaPlayer` for its window and Deskbar
+  button, `File_Audio` for a track with no cover and `Misc_Speaker` beside the
+  volume, and **draws** shuffle, previous, play, next, repeat, queue and the
+  mini player with `fill`, `triangle` and `disc`. Diego chose that over
+  vendoring more, which would be a licence and a pinned commit to keep in step
+  for shapes that are four lines of Lua each (`docs/music.html`).
+
   **Step 3 needs four things the system does not have yet**, found by reading
   on 14 September, and proposed to Diego before any is built. **He answered on
   15 September - "music first, yes to all"**: Music's window comes before USB

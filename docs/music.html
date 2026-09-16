@@ -335,13 +335,14 @@
   <h2>Left for later</h2>
   <p><b>FLAC</b>, and the Deskbar replicant, at Diego's word. <b>A video app</b>, on the same engine. <b>Radio</b> is drawn and greyed: internet radio is an MP3 stream over HTTP, which the network stack can carry and nothing reads yet. Crossfade, the equaliser - on the roadmap already, in the mixer - and gapless playback come after the player has been used for a while.</p>
 
-  <h2>Decided, 14 September</h2>
+  <h2>Decided</h2>
   <ol class="decide">
     <li><b>Dark and light, both.</b><span>Diego: "dark and light look". VOX's dark and orange, and a light look beside the desktop's own themes; View switches between them.</span></li>
     <li><b>No FLAC for now.</b><span>Diego: "dont do flac for now". WAV and MP3; FLAC stays on the roadmap.</span></li>
     <li><b>Tags read from the file by a reader, and not written onto it.</b><span>Diego: "cant we just gget the attributes from the mp3 file with a reader?" Yes - and that reader is needed either way, since attributes could only be written from what it reads.</span></li>
     <li><b>The Deskbar replicant after the player.</b><span>Diego: "after".</span></li>
     <li><b>One engine that a video app can share.</b><span>Diego, asked whether Music could play video too: "yes add the shared engine to the design". Two apps, one <code>/lib/media.lua</code>.</span></li>
+    <li><b>Haiku's icons where they fit, and the transport drawn.</b><span>15 September. Diego: "use the haiku icons" - and the 51 vendored ones are applications, files, folders, devices and preferences, with no play, pause, next, previous, shuffle, repeat or queue among them. So <code>App_MediaPlayer</code> for the window and the Deskbar button, <code>File_Audio</code> for a track whose file carries no cover, <code>Misc_Speaker</code> beside the volume; and the seven controls drawn with <code>fill</code>, <code>triangle</code> and <code>disc</code> - triangles, rectangles and two arrows - which stay sharp at 18 pixels and at 30 where a shrunken application icon would not.</span></li>
   </ol>
 </main>
 </body>
