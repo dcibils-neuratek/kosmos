@@ -689,7 +689,11 @@ the Pi", and the Pi is not here yet.
      a scaler in Lua would be the per-pixel loop `gfx.md` 19.2 forbids.
      **Built, 15 September** (`testing.md` §18.78): `dst:stretch(...)`,
      nearest neighbour, the step in 16.16 fixed point, only the destination
-     clipped - control C18 watched fail.
+     clipped - control C18 watched fail. **And a second half the same day**
+     (§18.82), found while planning the window: an application draws through
+     commands, and no command carried a size, so the primitive was there and
+     unreachable. The `image` command now carries `dw`/`dh` and the kit has
+     `ui.image{ fit = true }`.
   2. **Covers out of an MP3.** `ui.image` names a picture and the window
      manager decodes it, so a cover that is bytes inside a file has no name.
      **The `/ramfs` copy this line proposed cannot work**, found by reading on

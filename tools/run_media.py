@@ -79,8 +79,12 @@ def vbr_mp3(path, count=400):
         f.write(bytes(first) + audio)
 
 
-def png_of(width, height, rgb):
-    """A PNG of one colour, written here rather than taken from anywhere.
+def png_of(width, height, rgb, quarters=None):
+    """A PNG of one colour - or of four, a quarter each.
+
+    Four colours rather than one is what tells a *scaled* picture from a
+    *cropped* one: drawn at half its size, all four quarters are in the box;
+    cropped, only the first is.
 
     Three chunks and a CRC each, which is the same construction
     `run_screenshot.py` uses to save a screenshot - and a picture whose colour
@@ -89,9 +93,15 @@ def png_of(width, height, rgb):
     """
     raw = bytearray()
 
-    for _ in range(height):
+    for y in range(height):
         raw.append(0)                       # no filter on this row
-        raw += bytes(rgb) * width
+
+        if not quarters:
+            raw += bytes(rgb) * width
+        else:
+            top = y < height // 2
+            left, right = quarters[0 if top else 2], quarters[1 if top else 3]
+            raw += bytes(left) * (width // 2) + bytes(right) * (width - width // 2)
 
     def chunk(tag, body):
         return (struct.pack(">I", len(body)) + tag + body
@@ -112,7 +122,9 @@ def mp3_with_cover(path, rgb, count=40):
     PNG rather than the stand-in bytes the tag tests use, because this one has
     to decode and appear on a screen.
     """
-    picture = png_of(64, 64, rgb)
+    picture = png_of(64, 64, rgb,
+                     quarters=(rgb, (0xd0, 0x30, 0x40),
+                               (0xf0, 0xc0, 0x20), (0x80, 0x40, 0xc0)))
     apic = b"\0image/png\0\3front\0" + picture
 
     def syncsafe(n):
@@ -344,7 +356,7 @@ def main():
             "x = 700, y = 200 } "
             "if not w then return end "
             "local v = ui.view{ x = 0, y = 0, w = 200, h = 200 } "
-            "v:add(ui.image{ x = 20, y = 20, w = 64, h = 64, asset = name }) "
+            "v:add(ui.image{ x = 20, y = 20, w = 32, h = 32, asset = name, fit = true }) "
             "w:add(v) w:run()"
         )
 
@@ -372,17 +384,51 @@ def main():
             width, height, px = parse_ppm(guest.screendump())
             found_colour = 0
 
-            for y in range(wy + 20, min(wy + 84, height)):
-                for x in range(wx + 20, min(wx + 84, width)):
+            for y in range(wy + 20, min(wy + 52, height)):
+                for x in range(wx + 20, min(wx + 52, width)):
                     o = (y * width + x) * 3
 
                     if (px[o], px[o + 1], px[o + 2]) == COVER:
                         found_colour += 1
 
-            check(found_colour > 2000,
-                  "the cover's own colour covers %d of the 4096 pixels it was "
-                  "drawn into, so the picture inside the MP3 did not reach the "
-                  "screen. What the program said: %r" % (found_colour, said))
+            #
+            # **A 64-pixel cover drawn into a 32-pixel box**, which is what
+            # Music's window does at 78 and at 44. Before the image command
+            # carried a drawn size this was a crop, so the box held the
+            # picture's top-left quarter - the same colour, and no way to
+            # tell. The check is that the colour fills the box it was given:
+            # a crop of a one-colour picture fills it too, so the phase below
+            # takes the picture apart into quarters.
+            #
+            #
+            # A quarter of the box, because the picture is four quarters and
+            # this counts the first one's colour. The threshold was 900 while
+            # the picture was one colour, and stayed there when it became
+            # four - so the first run of the scaled version failed at exactly
+            # the 256 pixels that prove it right.
+            #
+            check(200 <= found_colour <= 330,
+                  "the cover's first quarter covers %d of the 1024 pixels the "
+                  "picture was drawn into, where a quarter is about 256: the "
+                  "picture inside the MP3 did not reach the screen at the size "
+                  "it was asked for. What the program said: %r"
+                  % (found_colour, said))
+
+            #
+            # **And that it is the whole picture, not a corner of it.** The
+            # cover is four quarters of four colours; drawn at half its size
+            # all four have to be in the box, where a crop shows one.
+            #
+            quarters = set()
+
+            for dy, dx in ((8, 8), (8, 24), (24, 8), (24, 24)):
+                o = ((wy + 20 + dy) * width + wx + 20 + dx) * 3
+                quarters.add((px[o], px[o + 1], px[o + 2]))
+
+            check(len(quarters) == 4,
+                  "the cover drawn at half its size shows %d of its four "
+                  "colours (%r), so the picture was cropped rather than "
+                  "scaled." % (len(quarters), sorted(quarters)))
     except Failure as e:
         fails.append(str(e))
     finally:

@@ -4708,3 +4708,45 @@ control has to fail for the reason the check exists**, or all it proves is
 that the code was disturbed.
 
 And as written: the display harness 115 checks, three more than before.
+
+## 18.82 A picture drawn at the size the command asks for
+
+**The primitive existed and nothing could reach it.** §18.78 put a scaler in
+`gfx` for Music's covers, and then Music could not use it: an application draws
+through commands, and the `image` command carried *which part of the picture*
+and never *how big to draw it*. A cover inside an MP3 is five hundred pixels
+and the design draws it at 78 and at 44, so what a window got was the corner of
+a sleeve, twice. Found while planning the window rather than while building it,
+which is the cheap moment to find it.
+
+**So the command carries a drawn size.** `dw` and `dh` beside the source
+rectangle; the compositor calls `stretch` when they are there and `blit` or
+`blend` when they are not, which keeps a photograph and an icon paying exactly
+what they did before. In the kit it is `ui.image{ fit = true }`: the whole
+picture at the widget's size, where the widget's own behaviour - pan a
+photograph that is bigger than its box - stays the default, because that is
+right for Photo and wrong for a sleeve.
+
+**The check** (`run_media.py`): the cover embedded in the test's MP3 is now
+**four quarters of four colours**, and it is drawn into a box half its size.
+Two things are then true only if the drawn size reached the scaler: the first
+quarter's colour covers about a quarter of the box, and **all four colours are
+in the box at once**. A crop shows one.
+
+**Both halves of that were needed, and the first version had neither.** The
+cover was one colour drawn into a box its own size, so the check passed whether
+or not anything scaled - the same fault as §18.79's first check, and caught
+here by asking what the control would have to break rather than by the control
+itself.
+
+**And then the threshold was stale.** With four quarters the first colour is
+256 of the 1024 pixels, exactly a quarter, and the check still demanded 900
+from when the picture was one colour - so the first run of the corrected test
+failed at the number that proves it right. A number written for one picture is
+not a number for another.
+
+| Control | What failed |
+|---|---|
+| C22: the compositor ignoring the drawn size, so a fitted picture is a crop of its corner again | `run_media.py`, 2 of 12: `the cover's first quarter covers 1024 of the 1024 pixels the picture was drawn into, where a quarter is about 256`, and `the cover drawn at half its size shows 1 of its four colours`. A crop of the corner fills the box exactly, which is why the count alone could not have caught it and the four colours could |
+
+And as written: the media suite 12 checks, one more than before.

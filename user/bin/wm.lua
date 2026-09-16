@@ -1151,7 +1151,23 @@ local ops = {
     -- than always blending is the difference between the two cases costing
     -- what they need and a full-screen photograph paying an icon's price.
     --
-    if o.alpha then
+    --
+    -- **And `dw`/`dh` mean draw it at that size**, which is what `stretch`
+    -- is for. Without them this is a crop: the command says which part of
+    -- the picture, and that part lands pixel for pixel. A cover inside an
+    -- MP3 is five hundred pixels and Music draws it at 78 and at 44, so a
+    -- crop would show the corner of a sleeve twice.
+    --
+    -- The primitive arrived first and nothing could reach it: an
+    -- application draws through commands, and no command carried a size.
+    --
+    local dw = tonumber(o.dw) or 0
+    local dh = tonumber(o.dh) or 0
+
+    if dw > 0 and dh > 0 then
+      s:stretch(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
+                o.x or 0, o.y or 0, dw, dh, o.alpha and 255 or nil)
+    elseif o.alpha then
       s:blend(picture, o.sx or 0, o.sy or 0, o.w or 0, o.h or 0,
               o.x or 0, o.y or 0)
     else

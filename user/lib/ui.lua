@@ -2402,6 +2402,29 @@ function ui.image(spec)
 
     if x1 <= x0 or y1 <= y0 then return end
 
+    --
+    -- **`fit` draws the whole picture at the widget's size**, through the
+    -- compositor's scaler, instead of showing as much of it as fits. A
+    -- cover is five hundred pixels and Music's design draws it at 78 and at
+    -- 44; panning is right for a photograph and wrong for a sleeve.
+    --
+    -- The clip is the same rectangle either way, and what changes is what
+    -- the source rectangle means: the whole picture, drawn into whatever
+    -- part of the widget is still on screen. Scaling it by the clipped
+    -- fraction would be the same mistake `stretch` refuses to make in C -
+    -- an edge cut by a border is not a whole pixel of the source.
+    --
+    if self.fit and iw > 0 and ih > 0 then
+      g.ops[#g.ops + 1] = {
+        op = "image", asset = self.asset,
+        sx = 0, sy = 0, w = iw, h = ih,
+        x = ax, y = ay, dw = self.w, dh = self.h,
+        alpha = self.alpha,
+      }
+
+      return
+    end
+
     g.ops[#g.ops + 1] = {
       op = "image", asset = self.asset,
       sx = self.ox + (x0 - ax), sy = self.oy + (y0 - ay),
@@ -2820,6 +2843,7 @@ local function op_cost(o)
   -- A size is one more key and its number, and the generous base above is
   -- not a licence to stop counting: this is what the send would raise on.
   if o.px then cost = cost + 16 end
+  if o.dw then cost = cost + 32 end
 
   return cost
 end

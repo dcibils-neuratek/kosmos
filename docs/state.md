@@ -231,6 +231,11 @@ in the userland had ever asked. The missing half arrived with a bug attached,
 since the `resize` event laid the tree out and left the window's own width and
 height at what it opened with.
 
+**A fifth piece was needed and is built** (`testing.md` §18.82): the scaler
+from piece 1 could not be reached from an application at all, because a
+drawing command said *which part* of a picture and never *how big*. A cover
+would have been the corner of a sleeve. The command carries a drawn size now.
+
 **So the window itself is next**, drawn in `docs/music.html`: the player at 380
 wide, the cover at 78 and at 44 through the scaler, the title through the size
 a command now carries, the cover out of the file through the picture request,
