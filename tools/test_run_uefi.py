@@ -106,6 +106,100 @@ def main():
         run_uefi.firmware, run_uefi.capture = real_firmware, real_capture
         os.unlink(image)
 
+    #
+    # **A stick that starts the desktop, judged on the boot screen.** Every
+    # stick handed over carries `USB_BOOT=wm`, so by the time the capture is
+    # taken the desktop has replaced the boot screen - and the three colour
+    # checks looked for the *kernel's* ground, the boot log's green and the
+    # wordmark. 0.10.70-stable failed all three on 16 September while its
+    # serial line showed Tracker, the Deskbar, Monitor, Log and Processes up
+    # at 1280x800: a build Diego had used on the ThinkPad and called stable,
+    # scored as "the picture is still the firmware's".
+    #
+    # So the rule is now "a desktop stick must show a desktop", counted in
+    # distinct colours rather than named in one constant - because the
+    # desktop's ground is a colour the user picks and `theme.lua` says so.
+    # The stick measured 2347 the day this was written.
+    #
+    blank = bytes([13, 17, 23]) * 4000
+    desk = bytes(bytearray(i % 251 for i in range(3 * 4000)))
+
+    check(run_uefi.drawn(blank) < run_uefi.DRAWN_ENOUGH,
+          "a flat screen counted as drawn: %d colours" % run_uefi.drawn(blank))
+    check(run_uefi.drawn(desk) >= run_uefi.DRAWN_ENOUGH,
+          "a many-coloured screen did not count as drawn: %d colours"
+          % run_uefi.drawn(desk))
+
+    #
+    # **The negative control, driven through the decision rather than stated
+    # beside it.** The first version of this check was
+    # `not (drawn(blank) >= DRAWN_ENOUGH)`, which is the line above it
+    # rewritten - it restated its premise and watched nothing fail. So this
+    # runs `main()` twice with a desktop stick: once showing a blank screen,
+    # which must be complained about, and once showing a drawn one, which
+    # must not. A branch that only ever says yes would pass a stick that
+    # never drew, which is this fault in the other direction.
+    #
+    #
+    # A file of its own, because the cases above delete theirs to reach the
+    # "no image" skip - and `main()` skips before it looks at a screen, so
+    # reusing that path made this control say nothing at all. It said so.
+    #
+    spare, standing = tempfile.mkstemp(prefix="kosmos-desktop-stick-",
+                                       suffix=".img")
+    os.close(spare)
+
+    real_boot_args = run_uefi.boot_args
+    wide = (1280, 800)
+
+    def framed(pixels):
+        def fake(iso, moments):
+            return [(wide[0], wide[1], pixels)] * len(moments), ""
+
+        return fake
+
+    try:
+        run_uefi.firmware = lambda: ("ovmf", None)
+        run_uefi.boot_args = lambda iso: "opt/kosmos/boot=wm\n"
+
+        run_uefi.capture = framed(bytes([13, 17, 23]) * (wide[0] * wide[1]))
+        _, dark_said, _ = run(["run_uefi.py", standing])
+
+        run_uefi.capture = framed(
+            bytes(bytearray(i % 251 for i in range(3 * wide[0] * wide[1]))))
+        _, lit_said, _ = run(["run_uefi.py", standing])
+    finally:
+        run_uefi.firmware, run_uefi.capture = real_firmware, real_capture
+        run_uefi.boot_args = real_boot_args
+        os.unlink(standing)
+
+    complaint = "colours are on the screen"
+
+    check(complaint in dark_said,
+          "a desktop stick showing a blank screen drew no complaint, so the "
+          "branch is a rubber stamp: " + dark_said[:160])
+    check(complaint not in lit_said,
+          "a desktop stick showing a drawn desktop was complained about "
+          "anyway: " + lit_said[:160])
+
+    #
+    # And the detection itself: a stick says what it tells the kernel, and a
+    # plain image says nothing. Only run where the images exist, because a
+    # clean tree has neither and a skip is honest where a lie is not.
+    #
+    for image, wants in (
+            ("build/x86_64/kosmos-usb-%s-development.img"
+             % open("VERSION").read().strip(), True),
+            ("build/x86_64/kosmos-uefi.img", False)):
+        if not os.path.exists(image):
+            continue
+
+        said = "opt/kosmos/boot=" in run_uefi.boot_args(image)
+
+        check(said == wants,
+              "%s %s said it starts the desktop"
+              % (image, "did not" if wants else "wrongly"))
+
     if fails:
         print("FAIL: %d of %d checks on run_uefi.py where it cannot boot:"
               % (len(fails), checks + len(fails)))

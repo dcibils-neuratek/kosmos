@@ -6,6 +6,42 @@ Last updated: 2026-09-16
 
 ---
 
+## The stick check condemned a good stick, 16 September
+
+**0.10.75 was built for Diego's ThinkPad and then refused by its own
+verification** - 4 of 31 checks under OVMF, headed "the picture is still the
+firmware's". Nothing was handed over, because that is the shape of the fault
+that has stopped two of his sticks after the loader.
+
+**It was the check.** `0.10.70-stable` - the build he used, played music
+through, and called stable - fails the identical four. Both sticks are sound:
+their serial lines show `wm`, the desktop, the Deskbar, Tracker, Monitor, Log
+and Processes up at 1280x800, and a colour census of the frame counts 2347
+distinct colours, 28% BeOS desktop blue. A firmware screen counts in dozens.
+
+**Every colour the check looks for belongs to the kernel's boot screen**, and
+every stick handed over carries `USB_BOOT=wm`, so the desktop replaces that
+screen before the capture at 30 seconds. The harness's own images pass no
+arguments and stop at the prompt, which is what it was written against; no
+MEGA stick had ever been through it. The day sticks began starting the
+desktop by themselves, the check began failing exactly the ones that worked.
+
+`run_uefi.py` now reads the stick's own command line out of the ESP - at
+34 x 512 = 17408 bytes - and a stick that says `opt/kosmos/boot=` is judged on
+whether a desktop is drawn, counted in distinct colours rather than named in
+one constant. **PASS, 29 checks.** `testing.md` 18.88 has the whole account,
+including the negative control, which took three attempts before it bit: the
+first restated its own premise, the second failed on a missing temporary
+file, and the third catches `DRAWN_ENOUGH = 0` and calls the branch a rubber
+stamp.
+
+**The stick itself**: `kosmos-usb-0.10.75-development.img`, 224 MB, sha256
+`aaad50849e39bde999ed711d171479b8b1d9a2a26f68efd4a61ffa0f596dce66`,
+`USB_HOME=partition` - the layout behind the stable build, and the one
+`boot.md`'s table shows booting on that machine four times. It has not been
+on the ThinkPad yet, so it has no row in that table: a row there is a boot
+that happened, not a build that was made.
+
 ## Where 6c stands, 16 September
 
 **Tracker's sidebar is three groups and they draw.** `Places` holds Home and

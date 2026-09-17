@@ -628,6 +628,50 @@ def home_boot(image, check):
           + shown)
 
 
+#
+# **A stick that starts the desktop by itself shows a desktop, not a boot
+# screen**, and the colour checks below were written before any stick did.
+# `mkusb_image.py` writes what the kernel is told into `\boot\kosmos.cmdline`
+# on the ESP, and the ESP begins at the GPT's first usable sector - 34, which
+# is 17408 bytes into the image - so this can read it out of the artifact
+# rather than being told out of band.
+#
+ESP_AT = 34 * 512
+DRAWN_ENOUGH = 200
+
+
+def boot_args(iso):
+    """What the stick tells the kernel, or "" when it tells it nothing."""
+    try:
+        got = subprocess.run(["mtype", "-i", "%s@@%d" % (iso, ESP_AT),
+                              "::/boot/kosmos.cmdline"],
+                             capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+    if got.returncode != 0:
+        return ""
+
+    return got.stdout.decode("utf-8", "replace")
+
+
+def drawn(pixels):
+    """How many distinct colours are on a frame.
+
+    A firmware screen is a logo on a flat ground and counts in the dozens; a
+    Kosmos desktop with its windows, text and icons counted 2347 the day this
+    was written. The gap is orders of magnitude, so this separates them
+    without naming a single colour - which matters, because the desktop's own
+    ground is a colour the user picks and `theme.lua` says so.
+    """
+    seen = set()
+
+    for i in range(0, len(pixels) - 2, 3):
+        seen.add(pixels[i:i + 3])
+
+    return len(seen)
+
+
 def main():
     iso = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos-uefi.img"
     refusal = sys.argv[2] if len(sys.argv) > 2 else None
@@ -790,19 +834,38 @@ def main():
     #    framebuffer was mapped this capture was TianoCore's logo and GRUB's
     #    `Booting 'Kosmos'` - 1.8% of the screen lit, and every pixel of it
     #    somebody else's.
-    ground = share(pixels, GROUND)
+    #
+    # **Which screen this stick was built to be showing.** Every stick handed
+    # over carries `USB_BOOT=wm`, so the desktop has replaced the boot screen
+    # long before this capture, and asking such a stick for the boot log's
+    # green fails on a machine that is working perfectly. It did:
+    # 0.10.70-stable - which booted on the ThinkPad and played music through
+    # it - failed these three while its serial line showed Tracker, the
+    # Deskbar, Monitor, Log and Processes all up at 1280x800.
+    #
+    desktop_stick = "opt/kosmos/boot=" in boot_args(iso)
 
-    check(ground > 0.5,
-          "only %.1f%% of the screen is Kosmos's ground colour; the picture "
-          "is still the firmware's" % (100.0 * ground))
+    if desktop_stick:
+        colours = drawn(pixels)
 
-    # 3. And it drew its own content into it: the boot log's headings and
-    #    the wordmark. A cleared screen and a drawn one are the same
-    #    fraction of ground.
-    check(share(pixels, GREEN) > 0.001,
-          "the boot log's green is not on the screen")
-    check(share(pixels, RED) > 0.0005,
-          "the wordmark is not on the screen")
+        check(colours >= DRAWN_ENOUGH,
+              "the stick starts the desktop and only %d colours are on the "
+              "screen; a firmware screen counts in the dozens and a drawn "
+              "desktop in the thousands" % colours)
+    else:
+        ground = share(pixels, GROUND)
+
+        check(ground > 0.5,
+              "only %.1f%% of the screen is Kosmos's ground colour; the "
+              "picture is still the firmware's" % (100.0 * ground))
+
+        # 3. And it drew its own content into it: the boot log's headings and
+        #    the wordmark. A cleared screen and a drawn one are the same
+        #    fraction of ground.
+        check(share(pixels, GREEN) > 0.001,
+              "the boot log's green is not on the screen")
+        check(share(pixels, RED) > 0.0005,
+              "the wordmark is not on the screen")
 
     # 4. **The deadlock, which is the one that cannot report itself.** An
     #    unmapped framebuffer faults inside a console write, and the fault
@@ -974,11 +1037,16 @@ def main():
             check(("%dx%d, 32-bit XRGB" % THINKPAD_MODE[:2]) in hserial,
                   "the kernel did not take the 1920x1080 screen at "
                   "0x4000000000")
-            check(late is not None
-                  and share(late, GREEN) > 0.001
-                  and share(late, RED) > 0.0005,
-                  "with the screen at 0x4000000000 the boot log and the "
-                  "wordmark are not on it at the prompt")
+            if desktop_stick:
+                check(late is not None and drawn(late) >= DRAWN_ENOUGH,
+                      "with the screen at 0x4000000000 the desktop is not "
+                      "drawn at the prompt")
+            else:
+                check(late is not None
+                      and share(late, GREEN) > 0.001
+                      and share(late, RED) > 0.0005,
+                      "with the screen at 0x4000000000 the boot log and the "
+                      "wordmark are not on it at the prompt")
 
     #
     # **A refusal, on the screen.** The ThinkPad's first boot through this

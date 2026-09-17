@@ -416,7 +416,17 @@ is the one that makes the machine Diego owns behave like a computer:
    against host time while the guest lags, and two presses 0.12 s apart
    measured 46 187 937 ticks - 0.74 s of counter time (`testing.md` §18.86).
    **NEXT**: shortcut places, which must key on unit and partition because a
-   volume's name can renumber across a replug. **The fullness bars are not
+   volume's name can renumber across a replug.
+
+   **DONE on 16 September, the check that verifies a stick before it is
+   handed over.** `run_uefi.py` failed 0.10.75 with "the picture is still the
+   firmware's" - and failed `0.10.70-stable`, the build Diego uses, in exactly
+   the same way. Its three colour checks name the *kernel's boot screen*,
+   while every stick handed over carries `USB_BOOT=wm` and has replaced that
+   screen with the desktop before the capture. It now reads the stick's own
+   command line out of the ESP and judges a desktop stick on whether a desktop
+   is drawn: **PASS, 29 checks**, with a negative control that calls the
+   branch a rubber stamp when it is broken on purpose (`testing.md` 18.88). **The fullness bars are not
    6c's** - read again on 16 September, every bar in `drives.html` sits
    inside a `drive-tile`, which is the Drives app, and the sidebar rows there
    carry a name and a type and nothing else. They move to 6e; **6d** the Open and Save window;

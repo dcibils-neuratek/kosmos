@@ -5032,3 +5032,77 @@ and `fatls` and `mdir` read it identically.
 that something is counted. A substring test passes on an empty string, so
 assert the set. And a control that does not say which binary it is, is not a
 control - it is a rebuild you are hoping happened.
+
+
+## 18.88 The check that condemned a working stick
+
+**A stick was built for Diego, booted under OVMF, and failed four checks -
+and the stick was fine.** `run_uefi.py` reported 4 of 31 on
+`kosmos-usb-0.10.75-development.img`: only 0.0% of the screen was Kosmos's
+ground colour, "the picture is still the firmware's", no boot-log green, no
+wordmark. That is the exact shape of the fault Diego has been handed twice
+before - a stick that stops after the loader - so nothing was handed over.
+
+**The control is what saved it.** `kosmos-usb-0.10.70-stable.img` - the build
+Diego used on the ThinkPad, played Basket Case through, and called stable -
+fails the identical four. A known-good artifact failing a check means the
+check is wrong, and that is the whole reason a control is run before a
+diagnosis rather than after one.
+
+**But a failing control only says the check is unsound; it does not say the
+stick is sound.** Those are different claims and the second is the one that
+decides whether somebody is handed a USB stick. So two positive measurements
+were taken:
+
+- **the serial line**, which the four screen checks cannot speak for: shell,
+  `wm`, the desktop, the Deskbar, and windows for Tracker, Monitor, Log and
+  Processes, all up at 1280x800, with `kfs, 8 of 32 MB free`. Identical on
+  0.10.75 and on the stable build;
+- **a colour census of the frame** rather than one guessed constant: 2347
+  distinct colours, 28.3% BeOS desktop blue, 19.3% panel grey. A firmware
+  screen is a logo on a flat ground and counts in the dozens.
+
+**The cause.** All three colour checks name the *kernel's boot screen* -
+`GROUND` is `0x0d1117`, `GREEN` the boot log's headings, `RED` the wordmark.
+Every stick handed over is built with `USB_BOOT ?= wm`, so the desktop starts
+by itself and paints over that screen long before the capture at 30 seconds.
+The harness's own images pass no arguments at all and sit at the prompt with
+the boot screen still displayed, which is what the checks were written
+against. **No MEGA stick had ever been through this harness**, so the day
+sticks began starting the desktop, the check silently inverted: it now failed
+precisely the sticks that worked.
+
+**The fix reads the artifact instead of being told.** `mkusb_image.py` writes
+the kernel's arguments to `\boot\kosmos.cmdline` on the ESP, and the ESP
+begins at the GPT's first usable sector - 34, which is 17408 bytes in - so
+`boot_args()` reads it back with mtools. A stick that says
+`opt/kosmos/boot=` is judged on whether a desktop is drawn, counted in
+distinct colours rather than named in one constant, because the desktop's
+ground is a colour the user picks and `theme.lua` says so - the running stick
+showed BeOS blue where the default is `dark`. With the fix: **PASS, 29
+checks.**
+
+**And the branch that already worked still does**, which is the half a fix
+like this usually forgets. `run_uefi.py` on the harness's own three images -
+`kosmos-uefi.img`, `kosmos-refusal.img` and `kosmos-uefi-home.img`, exactly
+as the Makefile invokes it - gives **PASS, 38 checks**, the refusal and the
+`/home` partition among them. Those images carry no `kosmos.cmdline` at all,
+so `boot_args()` returns "" and they take the old path unchanged: the fix
+adds a branch rather than moving the existing one.
+
+**The control, watched failing, and it took three tries to be worth
+anything.** The first version was `not (drawn(blank) >= DRAWN_ENOUGH)` -
+the line above it rewritten, restating its premise and watching nothing fail.
+The second failed for a reason that had nothing to do with the branch: it
+reused a temporary image the earlier cases delete, so `main()` answered
+`SKIP` before it looked at a screen. The third drives `main()` twice, with a
+desktop stick showing a blank screen and then a drawn one. Broken on purpose
+with `DRAWN_ENOUGH = 0`, the suite says: *a desktop stick showing a blank
+screen drew no complaint, so the branch is a rubber stamp*. Restored, 9 of 9.
+
+**And a measurement fault of my own worth recording**, because it is the same
+class as the `$`-anchored regex in 18.87. The first verification was run as
+`python3 tools/run_uefi.py ... | tail -25`, and the exit code of a pipeline is
+the *last* command's. `tail` succeeded, the harness had exited 1, and the run
+was reported as passing. A pipe discards the one signal a test exists to
+give.
