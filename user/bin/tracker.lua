@@ -371,8 +371,82 @@ local reversed = false
 -- a band of background painted straight across the middle of the places
 -- tree - and the path never widened. `view:resize` is what applies them.
 --
-local here   = ui.label{ x = 12, y = PATH_Y + BAR_H, w = W - 24, text = where,
-                         follow = { "left", "right", "top" } }
+--
+-- **The trail**, as `docs/drives.html` draws it:
+-- `Drives > Kingston DataTraveler > KOSMOS HOME`, each part clickable.
+--
+-- A view rather than a label, because a label has `measure` and `draw` and
+-- no `mouse` at all - and this needs to know *which* part was clicked. It
+-- keeps the `text` field a label had, so `here.text = path` in `show` and
+-- `chrome(here)` below are both unchanged: what differs is that the view
+-- splits its own text and remembers where each part landed.
+--
+-- Laid out with `gfx.measure` rather than a glyph count, for the reason that
+-- binding exists: the face is proportional, and a column computed from
+-- character widths lands in the wrong place (`testing.md` 18.85).
+--
+local SEPARATOR = " > "
+
+local here = ui.view{ x = 12, y = PATH_Y + BAR_H, w = W - 24, h = gfx.font.h,
+                      text = where, follow = { "left", "right", "top" } }
+
+--
+-- Each part of the path, with the path it stands for: `/home/Desktop` is
+-- `home` at `/home` and `Desktop` at `/home/Desktop`. The root is first and
+-- always, so `/` is somewhere you can get back to.
+--
+local function trail_parts(path)
+  local parts = { { text = "/", path = "/" } }
+  local at = ""
+
+  for name in tostring(path or "/"):gmatch("[^/]+") do
+    at = at .. "/" .. name
+    parts[#parts + 1] = { text = name, path = at }
+  end
+
+  return parts
+end
+
+function here:draw(g)
+  local parts = trail_parts(self.text)
+  local x = 0
+
+  self.spans = {}
+
+  for i, part in ipairs(parts) do
+    if i > 1 then
+      g:text(x, 0, SEPARATOR, theme.text_dim)
+      x = x + gfx.measure(SEPARATOR)
+    end
+
+    local width = gfx.measure(part.text)
+
+    -- The last part is where you are, and is not a place to go.
+    local last = (i == #parts)
+
+    g:text(x, 0, part.text, last and theme.text or theme.text_dim)
+
+    if not last then
+      self.spans[#self.spans + 1] = { from = x, to = x + width,
+                                      path = part.path }
+    end
+
+    x = x + width
+
+    -- A path longer than the bar stops at the edge rather than drawing over
+    -- what is beside it.
+    if x > self.w then break end
+  end
+end
+
+function here:on_click(x, _)
+  for _, span in ipairs(self.spans or {}) do
+    if x >= span.from and x < span.to then
+      visit(span.path)
+      return
+    end
+  end
+end
 
 -- The left of the status line carries what just happened; the right carries
 -- how many things there are, which is the one number always worth a place
