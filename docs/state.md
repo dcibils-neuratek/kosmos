@@ -42,9 +42,29 @@ because a guest whose line is not read stops inside `kputc`. With the mtools
 fixture on xHCI the sidebar shows `PHOTOS FAT32` and `BACKUP FAT16`, dim and
 to the right.
 
-**Still to build**: the clickable trail (new drawing and new hit-testing,
-not a reformat of the `here` label), and shortcut places - which must key on
-unit and partition, because a volume's name can renumber across a replug.
+**The trail is built and drawing**: `/ > home > Desktop`, ancestors dim,
+the current place in full text, each part its own click target. A view rather
+than a label, keeping the `text` field so `show()` and `chrome()` are
+unchanged. **Clicking is not yet proven** - two attempts landed on the right
+pixels (window y 62..78, the `/` glyph at x 12..20) and produced only
+`wm: button down` with no navigation, so either the hit test is not reaching
+the view or `on_click` is not firing. That is the next thing to find.
+
+**Still to build**: shortcut places - which must key on unit and partition,
+because a volume's name can renumber across a replug.
+
+**A harness failure that was not ours, and nearly was blamed on the trail.**
+The `compositor budget` phase demanded the Terminal's grid grow by 800
+pixels. The grid is measured from the window's own corner and the window is
+placed by `wm.lua`'s search, so the room it has to grow into is whatever that
+search leaves: the Terminal began at x=969 of 1920, 951 pixels existed to its
+right, and the check wanted 1421. The drag worked and the phase failed on
+arithmetic that could not have succeeded. One run without the trail passed
+and one with it failed, which looked like attribution and was coincidence -
+`chrome()` is `if not backdrop then win:add(widget) end` and the desktop runs
+Tracker with `backdrop = true`, so the trail is not on that screen at all.
+The check now asserts the grid reaches within 48 pixels of both edges, which
+is the property `testing.md` already claimed it checked.
 
 **The fullness bars are not 6c's, and nearly were.** Every bar in
 `drives.html` sits inside a `drive-tile` - `KOSMOS HOME  kfs  [bar]  12 of 32
