@@ -2699,8 +2699,11 @@ USB_IMG := $(X86_BUILD)/kosmos-usb-$(VERSION)-development.img
 # `USB_HOME=partition` puts the same disk in a second partition beside the ESP
 # rather than on it, and tells the kernel that partition's GUID: Kosmos opens
 # `/home` on the stick it started from through its own USB driver, and nothing
-# is loaded into memory. The ThinkPad has not booted this layout, so a stick
-# made with it is an experiment (`docs/boot.md`):
+# is loaded into memory. **The ThinkPad has booted this layout four times** -
+# `c70d9df`, `9af841c`, `895aa3f` and `b5ce4a4`, the last of which Diego used
+# and called stable - so it is no longer an experiment. This comment said it
+# had never booted for a day after it had, which is the kind of stale line
+# that decides what goes on a stick (`docs/boot.md`, whose table decides):
 #
 #     make MEGA=1 x86-usb-image USB_HOME=partition
 #
