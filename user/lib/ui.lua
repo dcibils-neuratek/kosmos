@@ -981,6 +981,27 @@ function ui.tree(spec)
     end
   end
 
+  --
+  -- **How long two presses may be apart and still be one gesture.**
+  --
+  -- Read from the machine rather than assumed: `sys.ticks` is CNTFRQ_EL0,
+  -- 62.5 MHz under QEMU's TCG and 24 MHz when the same machine runs on this
+  -- Mac's own cores under `hvf`. A constant here would be one interval in
+  -- one case and a different one in the other - which is the mistake
+  -- `tracker.lua` names where it reads the frequency for its own timer.
+  --
+  -- **A second, not half of one, and the difference was measured.** The
+  -- counter is the generic timer and QEMU advances it against the host's
+  -- clock, while the guest's execution lags behind under TCG - so two
+  -- presses 0.12 seconds apart on this Mac arrived 46,187,937 ticks apart,
+  -- which at 62.5 MHz is three quarters of a second as the machine counts
+  -- it. Against half a second the gesture could not be made at all. A whole
+  -- second is what a person manages on an emulated desktop and is still far
+  -- below two clicks meant as two.
+  --
+  local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+  local AGAIN = counter_hz
+
   function v:mouse(action, x, y)
     local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
                                   #(self.rows or {}), self.shown or 1,
@@ -1022,6 +1043,39 @@ function ui.tree(spec)
 
     -- A heading names a group, and a quiet row has nowhere to go.
     if r.node.heading or r.node.quiet then return true end
+
+    --
+    -- **Clicking a row again opens it**, anywhere in the row - Diego, 16
+    -- September: "I want double click to open the folders like home and
+    -- desktop, not only clicking on the little arrow on the left". The
+    -- marker is ten pixels wide and it was the only way in.
+    --
+    -- **This kit had no notion of a double click, deliberately.**
+    -- `tracker.lua` refused to add one: "adding it to serve a single caller
+    -- would be a widget change made for an application, which is the wrong
+    -- way round". That reasoning was right about its own case and does not
+    -- hold here - a tree is not one caller, and every sidebar built on this
+    -- widget gets the same fiddly target. So the gesture lives in the kit.
+    --
+    -- The first press still selects, which is what a single click has always
+    -- meant; the second adds opening to it rather than replacing it.
+    --
+    local now = sys.ticks()
+
+    if r.node == self.last_row and (now - (self.last_press or 0)) < AGAIN
+       and (r.node.children or r.node.kids) then
+      if r.node.open then
+        r.node.open = false
+      else
+        if not r.node.kids and r.node.children then
+          r.node.kids = r.node.children(r.node) or {}
+        end
+
+        r.node.open = true
+      end
+    end
+
+    self.last_row, self.last_press = r.node, now
 
     self.chosen = r.node
 

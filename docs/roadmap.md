@@ -402,8 +402,20 @@ is the one that makes the machine Diego owns behave like a computer:
    no drives, and vanishes on the ThinkPad, where there are. Photographed on
    x86 with the mtools fixture attached: `PHOTOS FAT32` and `BACKUP FAT16`,
    dim and to the right. The file list loses 60 pixels and both display
-   harnesses are unchanged at 118 and 116. **Still to build**: the clickable trail,
-   and shortcut places, which must key on unit and partition because a
+   harnesses are unchanged at 118 and 116. **DONE on 16 September, the clickable trail**: every
+   segment of the path is a target that navigates to it, the last one
+   excepted because that is where you already are. A segment's target runs
+   to the start of the next, so the ` > ` between two names belongs to the
+   name before it - measured, after a click three pixels inside a separator
+   did nothing and looked exactly like a broken handler.
+   **DONE on 16 September, a second click opens a sidebar row** (Diego:
+   "I want double click to open the folders like home and desktop and else,
+   not only clicking on the little arrow on the left"). The interval is one
+   second, read from `/dev/cpu`'s `counter_hz` rather than assumed: half a
+   second is right on a desk and wrong under TCG, where the counter runs
+   against host time while the guest lags, and two presses 0.12 s apart
+   measured 46 187 937 ticks - 0.74 s of counter time (`testing.md` §18.86).
+   **NEXT**: shortcut places, which must key on unit and partition because a
    volume's name can renumber across a replug. **The fullness bars are not
    6c's** - read again on 16 September, every bar in `drives.html` sits
    inside a `drive-tile`, which is the Drives app, and the sidebar rows there

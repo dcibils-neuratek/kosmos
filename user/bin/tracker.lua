@@ -426,9 +426,20 @@ function here:draw(g)
 
     g:text(x, 0, part.text, last and theme.text or theme.text_dim)
 
+    --
+    -- **A segment's target runs to the next one, separator included.**
+    --
+    -- Measured rather than assumed: a click at view x=30 on `/ > home` fell
+    -- in the gap between `/` (0..8) and `home` (32..64) and did nothing,
+    -- which looked exactly like a broken handler and was three dead pixels
+    -- of punctuation. The same fiddly-target problem as the tree's ten-pixel
+    -- arrow, and it gets the same answer: the gap belongs to the part before
+    -- it, so there is nowhere in the trail that is not a target.
+    --
     if not last then
-      self.spans[#self.spans + 1] = { from = x, to = x + width,
-                                      path = part.path }
+      local reach = x + width + gfx.measure(SEPARATOR)
+
+      self.spans[#self.spans + 1] = { from = x, to = reach, path = part.path }
     end
 
     x = x + width

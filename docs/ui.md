@@ -398,6 +398,76 @@ becomes a desktop setting in Appearance - which is the third option Diego was
 offered and deliberately did not take yet, because Music has to be lived with
 first (§16.8b).
 
+## 16.8c Clicking a row again opens it
+
+**The kit had no notion of a double click, and that was a deliberate
+refusal.** `tracker.lua` wrote it down where its file list wanted one: "A
+double click would be the BeOS answer and this kit has no notion of one;
+adding it to serve a single caller would be a widget change made for an
+application, which is the wrong way round." That is a good rule and it held
+for as long as one application wanted the gesture.
+
+**Reversed for trees, 16 September 2026**, at Diego's asking: "I want double
+click to open the folders like home and desktop, not only clicking on the
+little arrow on the left." The disclosure marker is ten pixels wide and it
+was the only way to expand a node - a target you have to aim at, in a sidebar
+whose whole job is being glanced at and hit.
+
+What changed is the *scope* rather than the principle. A tree is not one
+caller: `ui.tree` is the kit's widget, Tracker's sidebar is one user of it,
+and the Drives app and the Open and Save window will be others. A gesture
+every one of them needs belongs in the widget, which is the same test the
+original refusal applied and got the other answer to.
+
+**The first press still selects.** A single click means what it always did;
+the second adds opening rather than replacing it, so nothing that worked
+before works differently. A row with no children ignores the second press,
+since there is nothing to expand.
+
+**How long "again" is, is read from the machine.** `sys.ticks` is CNTFRQ_EL0
+- 62.5 MHz under QEMU's TCG and 24 MHz when the same machine runs on this
+Mac's own cores under `hvf` - so a constant would be one interval in one case
+and a quite different one in the other. The counter's own frequency is a
+second wherever it runs.
+
+**A second rather than half of one, and the difference was measured rather
+than guessed.** The counter is the generic timer and QEMU advances it against
+the *host's* clock while the guest's execution lags behind under TCG. Two
+presses 0.12 seconds apart on this Mac arrived 46,187,937 ticks apart, which
+at 62.5 MHz is three quarters of a second as the machine counts it - so
+against a half-second threshold the gesture could not be performed at all,
+and the widget looked broken when only the number was wrong. A whole second
+is what a person manages on an emulated desktop and is still nowhere near two
+clicks meant as two.
+
+## 16.8d A path is a row of targets, and the punctuation belongs to a name
+
+**Tracker's path line was a label and is now a trail**: each name in
+`/home/Desktop` is drawn separately and clicking one goes there. The last
+segment is deliberately not a target - it is where you already are, and a
+control that does nothing when pressed is worse than no control.
+
+**The rule worth keeping is about the gaps.** The segments are separated by
+` > `, and the first version gave each name a hit area exactly as wide as the
+name. That leaves three characters of punctuation between every pair of
+targets which respond to nothing, and the failure is invisible: a press that
+lands there behaves exactly like a handler that was never reached. It cost an
+afternoon of looking for a bug in dispatch that was not there, because the
+test clicked at x=30 and `home` began at x=32.
+
+So **a segment's target runs to the start of the next one**, separator
+included, and the trail has no dead pixels in it. This is the same answer
+§16.8c gave the tree's ten-pixel disclosure marker, arrived at from the other
+direction: there, a target too small to hit; here, a gap between targets that
+should not have existed. Both say the pointer should not have to be accurate
+about something the eye reads as one strip.
+
+**Widths come from `gfx.measure`, never from `#text * gfx.font.w`.** The
+faces here are proportional, so counting characters puts every span after the
+first in the wrong place - and wrongly by an amount that grows along the line,
+which looks like the last segment being broken rather than all of them being
+shifted.
+
 ## 16.9 Themes, and colours that are named rather than captured
 
 There are two palettes - `dark`, which is what Kosmos looked like first, and
