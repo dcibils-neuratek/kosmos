@@ -466,9 +466,12 @@ measurement.
 - **The disk on a stick is still refused over 32 MB** by `mkusb_image.py`,
   until the ThinkPad has booted a bigger one through this loader.
 - **`/home` in a partition of its own** (`USB_HOME=partition`) has booted on
-  the ThinkPad once, with its desktop 20 seconds late; it is not the default
-  yet, and its partition is held to the same 32 MB, though nothing reads it
-  into memory.
+  the ThinkPad four times - `c70d9df`, `9af841c`, `895aa3f` and `b5ce4a4`,
+  the last of which Diego used and called stable - so it is no longer an
+  experiment, and the table above is what says so. The first of those had its
+  desktop 20 seconds late; `895aa3f` measured where the time went. It is not
+  the default yet, and its partition is held to the same 32 MB, though
+  nothing reads it into memory.
 - **Secure Boot** is not supported; the loader is unsigned, as GRUB was.
 - **The screen is the firmware's current mode.** The loader does not choose
   one.

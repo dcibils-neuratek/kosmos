@@ -42,13 +42,35 @@ because a guest whose line is not read stops inside `kputc`. With the mtools
 fixture on xHCI the sidebar shows `PHOTOS FAT32` and `BACKUP FAT16`, dim and
 to the right.
 
-**The trail is built and drawing**: `/ > home > Desktop`, ancestors dim,
-the current place in full text, each part its own click target. A view rather
-than a label, keeping the `text` field so `show()` and `chrome()` are
-unchanged. **Clicking is not yet proven** - two attempts landed on the right
-pixels (window y 62..78, the `/` glyph at x 12..20) and produced only
-`wm: button down` with no navigation, so either the hit test is not reaching
-the view or `on_click` is not firing. That is the next thing to find.
+**The trail is built, drawing and proven**: `/ > home > Desktop`, ancestors
+dim, the current place in full text, each part its own click target. A view
+rather than a label, keeping the `text` field so `show()` and `chrome()` are
+unchanged. Photographed at `/home/Desktop`, clicked on `home`, and the line
+became `/ > home`.
+
+**It was working while I reported it broken, and the reason is worth keeping.**
+Two earlier attempts "landed on the right pixels" and produced only
+`wm: button down`. They did not: `on_click` receives *view-local* coordinates
+and the view begins at x=12, so a press at window x=42 arrives as x=30 - and
+`home` began at x=32, two pixels away, inside the ` > ` separator. The
+handler was reached every time and had nothing to match, which is
+indistinguishable from a handler that never runs. A sweep that wrote its
+received x to `/ramfs` showed `click x=3 spans=2` and settled it in one run.
+
+**The one real defect was the gaps**, and it is now a rule: a segment's hit
+area runs to the start of the next one, separator included, so the trail has
+no dead pixels. Same answer §16.8c gave the tree's ten-pixel disclosure
+marker, from the other direction - there a target too small to hit, here a
+gap between targets that should not have existed.
+
+**A second click on a sidebar row opens it** (Diego: "I want double click to
+open the folders like home and desktop and else, not only clicking on the
+little arrow on the left"), and the interval is one second read from
+`/dev/cpu`'s `counter_hz` rather than assumed. Half a second is right on a
+desk and wrong under TCG, where QEMU advances the counter against host time
+while the guest lags: two presses 0.12 s apart measured 46,187,937 ticks,
+which is 0.74 s as the machine counts it, so against a half-second threshold
+the gesture could not be performed at all.
 
 **Still to build**: shortcut places - which must key on unit and partition,
 because a volume's name can renumber across a replug.
