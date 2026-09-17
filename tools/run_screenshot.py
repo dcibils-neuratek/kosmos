@@ -3008,10 +3008,39 @@ def check_budget(guest):
     width, height, px = parse_ppm(guest.screendump())
     after = _terminal_grid(width, height, px, x, y)
 
-    if after is None or (after[2] - after[0]) < (before[2] - before[0]) + 800:
+    #
+    # **Filling the screen, not growing by a number.**
+    #
+    # This asked for 800 pixels of growth, and growth is the wrong thing to
+    # measure: the grid is read from the window's own corner and the window is
+    # placed by the cascade, so how much room it has to grow into is whatever
+    # the cascade left. On 16 September it began at x=969 of 1920 - 951 pixels
+    # to its right - and the check wanted 1421. The drag worked, the grid went
+    # from 621 wide to 936, which is every pixel available, and the phase
+    # failed on arithmetic that could not have succeeded.
+    #
+    # What the phase is for is in its own first line: the Terminal grows and
+    # nothing is refused. So it asserts the grid reaches the screen's edges,
+    # which is what filling the screen means wherever the window started.
+    #
+    # The drag ends 8 pixels from each edge and the grid sits inside the
+    # frame, so a filled Terminal stops a little short: 1905 of 1920 and 1061
+    # of 1080 on that run. 48 is clear of that, and nowhere near loose enough
+    # to pass an undragged window - the same run's grid ended at 1590, which
+    # is 330 short.
+    #
+    EDGE = 48
+
+    if (after is None or after[2] < width - EDGE or after[3] < height - EDGE
+            or (after[2] - after[0]) <= (before[2] - before[0])):
         raise Failure(
-            f"nothing was refused and the Terminal's grid did not grow to full "
-            f"size: {before} before the drag, {after} after."
+            f"nothing was refused and the Terminal's grid did not fill the "
+            f"screen: {before} before the drag, {after} after, on a "
+            f"{width}x{height} display. Its right edge should reach "
+            f"{width - EDGE} and its bottom {height - EDGE}. The window was "
+            f"placed at {x},{y} {w}x{h} - which is the first thing to look "
+            f"at, because where the cascade put it decides how much room it "
+            f"had to grow into."
         )
 
     stop = len(guest.seen)

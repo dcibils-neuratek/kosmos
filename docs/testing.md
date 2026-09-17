@@ -1388,9 +1388,21 @@ resizes, and a decode. Its allowance is derived from the framebuffer now
 The display harness's `compositor budget` phase is that afternoon in QEMU:
 the desktop, a Terminal, Log View and `photo:test-screen.jpg`, then the
 Terminal raised and dragged by its grip to the bottom-right corner. It passes
-when nothing is refused and the Terminal's grid grows by at least 800 pixels.
-**It checks the property rather than a number**, so it does not care how many
-pages that took.
+when nothing is refused and the Terminal's grid **reaches the screen's
+edges**. **It checks the property rather than a number**, so it does not care
+how many pages that took.
+
+**It asked for 800 pixels of growth until 16 September, and that was a number
+pretending to be a property.** The grid is measured from the window's own
+corner, and the window is placed by `wm.lua`'s search - free quarters first,
+the cascade when they are gone - so how much room it has to grow into is
+whatever that search left it. On a run that failed, the Terminal began at
+x=969 of 1920: 951 pixels existed to its right and the check wanted 1421. The
+drag worked perfectly, the grid went from 621 wide to 936 - every pixel
+available - and the phase failed on arithmetic that could not have succeeded
+from that position. Filling the screen is the property; growth by a constant
+was a proxy that held only while the cascade happened to place the Terminal
+on the left.
 
 **It took three attempts to make it able to fail.** The first pressed the
 grip while Processes was stacked over it, so nothing was resized and nothing
