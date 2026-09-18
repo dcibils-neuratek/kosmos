@@ -6,7 +6,16 @@ Last updated: 2026-09-18
 
 ---
 
-## The ThinkPad keys: stick 0.10.81 waiting on Diego, 18 September
+## The ThinkPad keys: the brightness works, 18 September
+
+**Stick 0.10.83 raised the ThinkPad's screen from a third to 80% at boot**
+- Diego: "it worked! the brightness worked!" The backlight driver reads the
+Intel display engine's two PWM controllers and writes controller 0's on-time
+(`29753d3`, `testing.md` 18.96). **Next is step 5**: F5 and F6, which arrive
+as embedded-controller queries 0x14 and 0x15 on GPE 0x6E rather than as
+keys (`thinkpad.md` 8b), then the Display bar.
+
+## Before that: stick 0.10.81, 18 September
 
 **`make test` takes 4:37 now, not forty minutes** (`testing.md` 18.97) -
 Diego: "i dont want 40 minutes tests any more, 5 to 10 minutes max from now

@@ -653,7 +653,7 @@ processors, and still what follows USB:
       what F5 and F6 send and how the T14 sets its backlight - and the next
       one tries the brightness keys and the Display bar. Diego, 18
       September: "when can i try the brightness bar?", "in the thinkpad".
-   4. **IN PROGRESS - a comfortable brightness set at boot**, which fixes
+   4. **DONE on 18 September, on the ThinkPad - a comfortable brightness set at boot**, which fixes
       "too dim" before any key works: the Intel display engine's backlight
       duty cycle, written once. **The offsets are not in any public Intel
       manual** - Tiger Lake's and Ice Lake's register volumes document only
@@ -665,7 +665,10 @@ processors, and still what follows USB:
       says what they hold - a controller on, with its on-time inside its
       period, confirms the offsets on the ThinkPad before anything is
       written. **4a is built** (`c0df73d`, `testing.md` 18.96) and on stick
-      0.10.81, waiting on the ThinkPad's reading. **4b** writes the on-time.
+      0.10.81, and the ThinkPad read controller 0 on at a third (period
+      19393, on-time 6464). **4b** writes that controller's on-time to 80%
+      and reads it back (`29753d3`); on stick 0.10.83 Diego: "it worked! the
+      brightness worked!".
    5. **IN PROGRESS - the brightness keys**, and **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the
