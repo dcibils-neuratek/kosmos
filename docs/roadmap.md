@@ -642,7 +642,8 @@ processors, and still what follows USB:
       macOS's Display panel, top right under the bar, and **smooth rather
       than notched** ("i like the bar with smooth instead of notches") - a
       key still moves it a step, and the ThinkPad's own levels sit behind it.
-      **The Sound half is DONE on 18 September**, in QEMU: the window manager
+      **The Sound half is DONE on 18 September**, and seen on the ThinkPad the
+      same day from stick 0.10.80 - "the bar showed up and faded". In QEMU: the window manager
       draws it at the moment of the key, at the level the audio server
       answers, and `run_media.py` holds it to that level, to every press
       being heard, and to its being gone after (`ui.md` 16.8g, `testing.md`

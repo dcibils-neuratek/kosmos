@@ -15,7 +15,7 @@ any window; and the audio server has a master mute of its own.
 
 **The Sound level bar is built** (`46dee5b`, `ui.md` 16.8g, `testing.md`
 18.94): `docs/levels.html` as approved, drawn by the window manager at the
-moment of the key. The Display half waits for the brightness.
+moment of the key - and on the ThinkPad it "showed up and faded". The Display half waits for the brightness.
 
 **Kosmos reads its own firmware's AML** (`2c8d4f2`, `testing.md` 18.95): the
 kernel keeps the DSDT and SSDTs during its ACPI walk, maps them after the
