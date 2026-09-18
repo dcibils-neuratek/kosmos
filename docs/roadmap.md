@@ -442,7 +442,7 @@ is the one that makes the machine Diego owns behave like a computer:
    branch a rubber stamp when it is broken on purpose (`testing.md` 18.88). **The fullness bars are not
    6c's** - read again on 16 September, every bar in `drives.html` sits
    inside a `drive-tile`, which is the Drives app, and the sidebar rows there
-   carry a name and a type and nothing else. They move to 6e; **6d IN PROGRESS** (18 September), the Open and Save window - **DONE, the window itself** (`b1e408a`): the same sidebar as Tracker from `/lib/sidebar.lua`, the trail, Name, Size and Kind, one click selecting and a second opening, and a filter, in every application that opens or saves (`ui.md` 16.8f). **BLOCKED on Diego: the Super Nintendo's File menu** - Open ROM... and Quit, asked for on 18 September. Its window draws its own pixels, and no such window can carry a kit menu today (`window:paint` returns at once for one), so Diego chooses: A, the compositor draws a menu bar above a direct window's pixels, which Doom and Quake could then use too - recommended; or B, the application draws its own. Open ROM from a stick already works by path, `wm snes:/drives/...`;
+   carry a name and a type and nothing else. They move to 6e; **6d IN PROGRESS** (18 September), the Open and Save window - **DONE, the window itself** (`b1e408a`): the same sidebar as Tracker from `/lib/sidebar.lua`, the trail, Name, Size and Kind, one click selecting and a second opening, and a filter, in every application that opens or saves (`ui.md` 16.8f). **NEXT: the Super Nintendo's File menu** - Open ROM... and Quit, asked for on 18 September. Its window draws its own pixels, and no such window could carry a kit menu (`window:paint` returns at once for one). **Diego chose A**: the compositor draws a menu bar above a direct window's pixels, so Doom and Quake can have one the same way (README's decision log). Open ROM from a stick already works by path, `wm snes:/drives/...`;
    **6e** the Drives app; **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
@@ -620,8 +620,11 @@ processors, and still what follows USB:
       brightness level", and "like a volume bar as well". A bar that
       appears over the desktop for a moment
       when a brightness or volume key is pressed, saying which and how far
-      along it is, the way every laptop's does. **Drawn as a mockup in
-      `docs/` first**, for Diego to change before any of it is written.
+      along it is, the way every laptop's does. **Drawn first and approved as
+      drawn on 18 September** (`docs/levels.html`, "all is good"): after
+      macOS's Display panel, top right under the bar, sixteen notches until
+      the ThinkPad says how many it has. The Sound half can be built now,
+      since the volume keys work.
 4. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
