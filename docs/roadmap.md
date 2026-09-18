@@ -609,9 +609,19 @@ processors, and still what follows USB:
       own, and muted is measured silent in what the machine played
       (`testing.md` 18.93). Whether the ThinkPad's keys send the same bytes is
       the stick's to say.
-   3. **The DSDT**, for where brightness is set - an embedded controller
-      register, or the graphics device's backlight - with its offsets from the
-      documentation rather than from memory. Shared with the battery below.
+   3. **NEXT - the DSDT, read by Kosmos itself**, for where brightness is set
+      - an embedded controller register, or the graphics device's backlight -
+      with its offsets from the documentation rather than from memory. Shared
+      with the battery below. No Linux boot to fetch it: `hal/pc/acpi.c`
+      already walks the table list for `APIC` and `MCFG`, and learns `FACP`
+      too, following the FADT to the DSDT; a `dsdt` command saves its bytes
+      to `/home`, and `make stick-log` brings them to the Mac, where `iasl`
+      decompiles them. Tested on QEMU's own DSDT: the signature, the length
+      its header states, and a checksum that sums to zero. **It goes on stick
+      0.10.80 with the volume bar**, so one session at the ThinkPad answers
+      what F5 and F6 send and how the T14 sets its backlight - and the next
+      one tries the brightness keys and the Display bar. Diego, 18
+      September: "when can i try the brightness bar?", "in the thinkpad".
    4. **A comfortable brightness set at boot**, which fixes "too dim" before
       any key works.
    5. **The brightness keys**, and **the level shown on the screen when a key
@@ -622,8 +632,9 @@ processors, and still what follows USB:
       when a brightness or volume key is pressed, saying which and how far
       along it is, the way every laptop's does. **Drawn first and approved as
       drawn on 18 September** (`docs/levels.html`, "all is good"): after
-      macOS's Display panel, top right under the bar, sixteen notches until
-      the ThinkPad says how many it has. The Sound half can be built now,
+      macOS's Display panel, top right under the bar, and **smooth rather
+      than notched** ("i like the bar with smooth instead of notches") - a
+      key still moves it a step, and the ThinkPad's own levels sit behind it. The Sound half can be built now,
       since the volume keys work.
 4. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we

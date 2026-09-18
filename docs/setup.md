@@ -84,6 +84,20 @@ sudo port install mtools     # MacPorts
 brew install mtools          # Homebrew
 ```
 
+### iasl, from ACPICA
+
+Intel's ACPI compiler and disassembler, and the reference for how every
+ACPI table is laid out. It turns a machine's DSDT - brought off a stick by
+`dsdt` and `make stick-log` - into something a person can read, and it is
+where this tree's table offsets come from rather than from memory:
+`iasl -T FACP`, compiled and disassembled with `iasl -d`, prints every field
+with its offset. Installed on 18 September for the ThinkPad's brightness,
+with Diego's yes. Nothing in `make test` needs it.
+
+```
+brew install acpica          # Homebrew; the binary is `iasl`
+```
+
 ### Verify
 
 ```
