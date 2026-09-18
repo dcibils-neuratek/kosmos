@@ -3199,6 +3199,21 @@ def core(image, check, fails):
           + next((l.strip() for l in out.splitlines() if "backlight" in l),
                  "nothing from it at all"))
 
+    # 2c. And what the FADT says about the machine's events, read and not
+    #     acted on (`hal/pc/ec.c`): q35's ICH9 puts its SCI on 9 and its SMI
+    #     command port at B2h, SeaBIOS leaves SCI_EN clear because switching
+    #     to ACPI mode is an OS's to do, and nothing answers at 66h, where a
+    #     laptop's embedded controller would be. The ThinkPad's answers to
+    #     the same three questions are what decide how F5 and F6 are heard.
+    said = "\n".join(l.strip() for l in out.splitlines() if "ec: " in l)
+
+    check("ec: the FADT: SCI 9, SMI command port 0xb2" in said
+          and "ec: SCI_EN is clear" in said
+          and "at 0x66 - nothing answers there" in said,
+          "the machine did not say what its FADT says about events, that "
+          "SCI_EN is clear, and that no embedded controller answers:\n"
+          + (said or "nothing from ec.c at all"))
+
     # 3. All twelve stages. The kernel prints one per subsystem it brings
     #    up, so a missing number is a subsystem that did not.
     for stage in range(1, 13):

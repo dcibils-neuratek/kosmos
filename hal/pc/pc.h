@@ -42,6 +42,17 @@ static inline uint8_t pc_in8(uint16_t port)
     return v;
 }
 
+/* Sixteen bits at once, for a register that is sixteen wide - ACPI's PM1
+ * control, whose width the specification gives rather than the chipset. */
+static inline uint16_t pc_in16(uint16_t port)
+{
+    uint16_t v;
+
+    __asm__ volatile ("inw %1, %0" : "=a"(v) : "Nd"(port));
+
+    return v;
+}
+
 /*
  * What a multiboot loader leaves behind, and where.
  *

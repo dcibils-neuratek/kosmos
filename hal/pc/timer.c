@@ -19,6 +19,7 @@
 #include "cpu.h"
 #include "hal.h"
 #include "apic.h"
+#include "ec.h"
 #include "pc.h"
 #include "percpu.h"
 
@@ -279,6 +280,12 @@ unsigned long hal_ticks_missed(void)
 void pc_timer_interrupt(void)
 {
     ticks[this_cpu()->index]++;
+
+    /* The embedded controller's watch, on one core only: two processors
+     * reading its status would each see the other's changes, twice. */
+    if (this_cpu()->index == 0) {
+        ec_watch_tick();
+    }
 }
 
 const char *hal_timer_describe(void)

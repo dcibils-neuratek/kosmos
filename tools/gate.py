@@ -21,11 +21,12 @@ sharing nothing; the Mac has ten cores and the gate used about one. So:
      in one machine for each board - run in parts, each part a machine of
      its own (`--parts`, `--phases`).
 
-A suite marked `alone` would run after the rest on a quiet machine, for a
-check about timing that cannot share. None needs it today: sound in real
-time, scheduling latency, the idle desktop and the compositor's budget all
-passed with six machines running, and a run where one does not is the
-evidence for marking it.
+A suite marked `alone` runs after the rest on a quiet machine, for a check
+about timing that cannot share. One does: x86's HDA sessions, whose ring
+underran once with five other machines running and passed alone. Sound on
+the ARM board, scheduling latency, the idle desktop and the compositor's
+budget have all passed shared; a run where one does not is the evidence for
+marking it.
 
 The first run of this took 18:28 with the display harness whole; the second,
 with the parts, 4:37 - the same 1,000-odd checks (`testing.md` 18.97).
@@ -132,10 +133,17 @@ SUITES = [
     # machine of its own, side by side (`--parts`).
     Suite("x86-core", ["python3", "tools/run_x86.py", X86, "--parts", "core"],
           x86=True),
-    Suite("x86-sound-storage", ["python3", "tools/run_x86.py", X86, "--parts",
-                                "sound,sound_slow_codec,sound_eapd,storage,"
-                                "memdisk,identity,firmware,machine_report"],
+    Suite("x86-storage", ["python3", "tools/run_x86.py", X86, "--parts",
+                          "storage,memdisk,identity,firmware,machine_report"],
           x86=True),
+
+    # **The HDA sessions on a quiet machine**: `audiolag` measures the ring
+    # against the wall, and on 18 September it underran with five other
+    # machines running - "worst write 33216 us" - and passed alone, twice.
+    # That run is the evidence the note above says to wait for.
+    Suite("x86-sound", ["python3", "tools/run_x86.py", X86, "--parts",
+                        "sound,sound_slow_codec,sound_eapd"],
+          alone=True, x86=True),
     Suite("x86-usb-1", ["python3", "tools/run_x86.py", X86, "--parts",
                         "usb,usb_blocks,usb_diskbench,usb_home,"
                         "usb_second_stick,usb_home_late"], x86=True),

@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "acpi.h"
+#include "ec.h"
 #include "hal.h"
 #include "mmu.h"
 #include "pc.h"
@@ -154,6 +155,50 @@ static bool     aml_ready;
  */
 #define FADT_DSDT       40u
 #define FADT_X_DSDT     140u
+
+/*
+ * And what `ec.c` watches with, from the same FADT, by the same method: an
+ * `iasl -T FACP` template compiled and disassembled, which prints each
+ * field as [offset length]. SCI interrupt 2Eh, SMI command port 30h, ACPI
+ * enable value 34h, PM1a control block 40h, GPE0 block 50h and its length
+ * 5Ch, flags 70h - whose bit 20 is "hardware reduced", the V5 field that
+ * decoding the template names.
+ *
+ * And the ECDT, by the same method with `iasl -T ECDT`: the control
+ * register's address at 28h and the data register's at 34h, each the
+ * address field of a generic address structure whose space ID, 24h and
+ * 30h, has to be 1 for system I/O; the GPE number at 40h.
+ */
+#define FADT_SCI_INT        46u
+#define FADT_SMI_CMD        48u
+#define FADT_ACPI_ENABLE    52u
+#define FADT_PM1A_CNT       64u
+#define FADT_GPE0_BLK       80u
+#define FADT_GPE0_LEN       92u
+#define FADT_FLAGS          112u
+#define FADT_HW_REDUCED     (1u << 20)
+
+#define ECDT_CONTROL_SPACE  36u
+#define ECDT_CONTROL_ADDR   40u
+#define ECDT_DATA_SPACE     48u
+#define ECDT_DATA_ADDR      52u
+#define ECDT_GPE            64u
+#define GAS_SYSTEM_IO       1u
+
+static struct acpi_ec_facts ec_facts;
+static bool                 ec_facts_found;
+
+/* A field of `length` bytes at `at`, when the table reaches it; else 0. */
+static uint64_t field(const struct sdt *t, unsigned at, unsigned length)
+{
+    uint64_t v = 0;
+
+    if (t->length >= at + length) {
+        memcpy(&v, (const uint8_t *)t + at, length);
+    }
+
+    return v;
+}
 
 /*
  * A table is what it says it is when its bytes sum to zero.
@@ -435,6 +480,38 @@ static void read_fadt(const struct sdt *table)
     }
 
     keep_aml(wide != 0 ? wide : narrow);
+
+    ec_facts.sci_int     = (unsigned)field(table, FADT_SCI_INT, 2);
+    ec_facts.smi_cmd     = (unsigned)field(table, FADT_SMI_CMD, 4);
+    ec_facts.acpi_enable = (unsigned)field(table, FADT_ACPI_ENABLE, 1);
+    ec_facts.pm1a_cnt    = (unsigned)field(table, FADT_PM1A_CNT, 4);
+    ec_facts.gpe0_blk    = (unsigned)field(table, FADT_GPE0_BLK, 4);
+    ec_facts.gpe0_len    = (unsigned)field(table, FADT_GPE0_LEN, 1);
+    ec_facts.hardware_reduced =
+        (field(table, FADT_FLAGS, 4) & FADT_HW_REDUCED) != 0;
+    ec_facts_found = true;
+}
+
+static void read_ecdt(const struct sdt *table)
+{
+    if (field(table, ECDT_CONTROL_SPACE, 1) != GAS_SYSTEM_IO
+        || field(table, ECDT_DATA_SPACE, 1) != GAS_SYSTEM_IO) {
+        return;
+    }
+
+    ec_facts.ec_cmd  = (unsigned)field(table, ECDT_CONTROL_ADDR, 8);
+    ec_facts.ec_data = (unsigned)field(table, ECDT_DATA_ADDR, 8);
+    ec_facts.ec_gpe  = (unsigned)field(table, ECDT_GPE, 1);
+}
+
+bool acpi_ec_facts(struct acpi_ec_facts *out)
+{
+    if (!ec_facts_found || out == NULL) {
+        return false;
+    }
+
+    *out = ec_facts;
+    return true;
 }
 
 /*
@@ -490,6 +567,8 @@ static void walk(uintptr_t address, bool wide)
             read_fadt(table);
         } else if (signature_is(table->signature, "SSDT", 4)) {
             keep_aml(where);
+        } else if (signature_is(table->signature, "ECDT", 4)) {
+            read_ecdt(table);
         }
     }
 }
@@ -614,6 +693,10 @@ unsigned hal_firmware_init(void)
 
     aml_count = kept;
     aml_ready = true;
+
+    /* And what the same tables say about the machine's events, while this
+     * is still the one processor running: `ec.c` watches from here on. */
+    ec_watch_init();
 
     return aml_count;
 }

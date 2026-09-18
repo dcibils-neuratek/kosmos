@@ -5529,3 +5529,29 @@ had stayed in the image until something else touched its table. The fonts
 and assets tables now depend on a stamp holding their list of files,
 rewritten when the list changes - the flags stamps' trick, for the same kind
 of question - and the real run passed on both boards.
+
+## 18.99 The embedded controller, watched before anything answers it
+
+**F5 and F6 on the ThinkPad are embedded-controller events** (`thinkpad.md`
+8b), and who hears them depends on something Kosmos has never touched: until
+an operating system switches the machine to ACPI mode, the firmware's SMM
+services the controller's events itself. So `hal/pc/ec.c` only reads - what
+the FADT says about events, whether SCI_EN is set, whether a controller
+answers at 66h - and on core 0's tick logs every change in the controller's
+status and in GPE0's status bits, the first sixty-four. Nothing is written
+to any port. The FADT and ECDT offsets come from `iasl -T` templates
+compiled and disassembled.
+
+**`run_x86.py`'s check 2c**: q35 says SCI 9, SMI command port B2h, SCI_EN
+clear - SeaBIOS leaves ACPI mode to the OS - and nothing answers at 66h.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the FADT's SMI command port read two bytes late | 2c: *ec: the FADT: SCI 9, SMI command port 0x00* |
+
+**And the gate learned something while it ran.** The x86 suites, run to
+check the timer tick the watcher sits on, failed once in x86's HDA sessions
+- *audiolag: UNDERRUNS 1, worst write 33216 us* - with five other machines
+running; alone they passed twice. So those three sessions are a suite of
+their own that runs on a quiet machine at the end (`x86-sound`, 9 seconds),
+which is the evidence `gate.py` said to wait for before marking one.

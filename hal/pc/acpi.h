@@ -79,4 +79,24 @@ unsigned acpi_overrides(struct acpi_override *out, unsigned max);
  */
 uint64_t acpi_ecam_base(void);
 
+/*
+ * What the FADT and the ECDT say about the machine's events, for `ec.c`,
+ * which only reads with them. Zero where a table did not say. False when
+ * there was no FADT at all.
+ */
+struct acpi_ec_facts {
+    unsigned sci_int;           /* the SCI's interrupt */
+    unsigned smi_cmd;           /* the SMI command port */
+    unsigned acpi_enable;       /* written there to switch to ACPI mode */
+    unsigned pm1a_cnt;          /* PM1a control, whose bit 0 is SCI_EN */
+    unsigned gpe0_blk;          /* GPE0: status half, then enable half */
+    unsigned gpe0_len;          /* its length in bytes, both halves */
+    bool     hardware_reduced;  /* no SCI_EN, no SMI command at all */
+    unsigned ec_cmd;            /* the ECDT's controller, when there is one */
+    unsigned ec_data;
+    unsigned ec_gpe;
+};
+
+bool acpi_ec_facts(struct acpi_ec_facts *out);
+
 #endif

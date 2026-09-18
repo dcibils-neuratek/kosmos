@@ -669,7 +669,11 @@ processors, and still what follows USB:
       19393, on-time 6464). **4b** writes that controller's on-time to 80%
       and reads it back (`29753d3`); on stick 0.10.83 Diego: "it worked! the
       brightness worked!".
-   5. **IN PROGRESS - the brightness keys**, and **the level shown on the screen when a key
+   5. **IN PROGRESS - the brightness keys**: 5a, **reading only, on stick
+      0.10.84** - `hal/pc/ec.c` watches the embedded controller and GPE0 and
+      says whether SCI_EN is set, so F5 and F6 on the ThinkPad show whether
+      the firmware or the system hears them (`testing.md` 18.99); 5b
+      answers them the way that says. And **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the
       brightness level", and "like a volume bar as well". A bar that

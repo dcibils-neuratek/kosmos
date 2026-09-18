@@ -2383,6 +2383,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/fwcfg_port.c \
              hal/pc/boot_option.c \
              hal/pc/acpi.c \
+             hal/pc/ec.c \
              hal/pc/smbios.c \
              hal/pc/smbios_decode.c \
              hal/pc/pci.c \
