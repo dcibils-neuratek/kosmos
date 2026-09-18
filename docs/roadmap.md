@@ -1117,6 +1117,12 @@ CPUID 80000008h's physical-address width on x86, `ID_AA64MMFR0_EL1.PARange`
 on AArch64. The x86 fault report now prints the reserved-bit flag and the
 entries it walked, which is what explained it.
 
+**Wanted - `make shot`'s picture without doubles.** Since the login set
+opens Tracker, Monitor, Processes and the log at startup, the gallery's
+picture has two of three of them (18 September, `2026-09-18-1841-eeccbc0.png`,
+and the push before it). `run_screenshot.py` empties the login set before
+its phases; `run_gallery.py` does not.
+
 ## Known and unexplained
 
 **Three to four audio underruns per 2.3 seconds.** Six structural changes
