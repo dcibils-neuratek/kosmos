@@ -5250,6 +5250,129 @@ def check_focus_shown(guest):
     return 3
 
 
+def check_panel(guest):
+    """The Open and Save window every application shares, in use: a filter
+    that hides, one click that only selects, and a second that hands the
+    application the whole path.
+
+    **Arranged so the path says which of three things happened.** The folder
+    holds a folder, `a.txt` and `b.sfc`, and the filter keeps `.sfc`. Folders
+    come first and then names, so the list's second row is `a.txt` without
+    the filter and `b.sfc` with it: the path the application is handed is
+    the filter's evidence. One click on that row must hand over nothing - the
+    window used to choose a file the moment it was clicked - and a second one
+    must hand over `/home/picktest/b.sfc`, whole.
+
+    Two seconds between the lone click and the pair, because a second click
+    is anything within a second of the counter, and under emulation the
+    counter runs ahead of the guest (`ui.md` 16.8c): too short a pause would
+    make the lone click and the pair's first one a double, and the check that
+    one click chooses nothing would pass without proving it.
+    """
+    guest.type('fs.write("/home/.appearance", { palette = "dark" })')
+    guest.type('fs.send("/home/picktest", { type = "mkdir" })')
+    guest.type('fs.send("/home/picktest/sub", { type = "mkdir" })')
+    guest.type('fs.write("/home/picktest/a.txt", "a")')
+    guest.type('fs.write("/home/picktest/b.sfc", "b")')
+
+    # No comments inside: fs.write puts it on one line. The marker is joined
+    # by Lua so it never appears in the echo of the line that writes it.
+    program = (
+        "local panel = use('/lib/panel.lua') "
+        "local w = panel.open{ title = 'Pick', start = '/home/picktest', "
+        "x = 300, y = 200, "
+        "filter = function(n) return n:match('%.sfc$') ~= nil end, "
+        "on_choose = function(p) print('pick' .. 'ed ' .. p) end } "
+        "if w then w:run() end"
+    )
+    guest.type("fs.write('/ramfs/pick.lua', %r)" % program)
+    time.sleep(1.0)
+
+    # A path alone: `wm` starts every comma-separated entry as a program, so
+    # `wm pick,/ramfs/pick.lua` would try `/bin/pick.lua` first and say it
+    # could not - which the triangle and resize phases do, harmlessly.
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/pick.lua")
+
+    placed, deadline = None, time.monotonic() + 40
+    while placed is None and time.monotonic() < deadline:
+        found = re.search(r"wm: window Pick at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen[mark:])
+        if found:
+            placed = tuple(int(v) for v in found.groups())
+        time.sleep(0.3)
+
+    if placed is None:
+        raise Failure("the Open window never opened:\n"
+                      + guest.seen[mark:][-900:])
+
+    wx, wy = placed[0], placed[1]
+    time.sleep(2.5)
+    width, height, _ = parse_ppm(guest.screendump())
+
+    # panel.lua: the list starts at x 12 + 190 + 6 and at y 34 plus a header
+    # a face high and four; its rows are a face high from 2 in. Row two.
+    row_x, row_y = 208 + 60, 34 + 20 + 2 + 16 + 8
+
+    def click():
+        guest.mouse_to(*_to_tablet(wx + row_x, wy + row_y, width, height))
+        time.sleep(0.05)
+        guest.mouse_button(True)
+        time.sleep(0.05)
+        guest.mouse_button(False)
+
+    click()
+    time.sleep(2.0)
+    guest._read_available()
+    after_one = "picked " in guest.seen[mark:]
+
+    click()
+    time.sleep(0.1)
+    click()
+    time.sleep(2.0)
+    guest._read_available()
+
+    chose = re.search(r"picked (\S+)", guest.seen[mark:])
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if PROMPT in guest.seen[back:]:
+            break
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after the "
+                      "panel phase.\n" + guest.seen[back:][-600:])
+
+    if after_one:
+        raise Failure(
+            "one click on a file in the Open window chose it - one click "
+            "selects, and a second click or Enter opens:\n"
+            + guest.seen[mark:][-600:])
+
+    if not chose:
+        raise Failure(
+            "a second click on a file in the Open window handed the "
+            "application nothing:\n" + guest.seen[mark:][-600:])
+
+    if chose.group(1) == "/home/picktest/a.txt":
+        raise Failure(
+            "the Open window's filter did not hide a.txt - the second row was "
+            "a.txt, which the filter keeps out: " + chose.group(0))
+
+    if chose.group(1) != "/home/picktest/b.sfc":
+        raise Failure(
+            "the Open window handed over the wrong path, wanted "
+            "/home/picktest/b.sfc: " + chose.group(0))
+
+    return 3
+
+
 def check_places(guest):
     """Tracker's shortcut places: made by a drop, opened by a click, and taken
     out by a right-click - the three paths no picture can show running.
@@ -6460,6 +6583,7 @@ def main():
         focus_checks = phase("deskbar focus", check_focus_shown)
         desktop_checks = phase("desktop", check_desktop)
         places_checks = phase("places", check_places)
+        panel_checks = phase("panel", check_panel)
         clip_checks = phase("clipboard", check_clipboard)
         cores_checks = phase("cores", check_cores)
         reaped_checks = phase("reaped", check_reaped)
@@ -6485,6 +6609,7 @@ def main():
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
              + focus_checks + desktop_checks + places_checks
+             + panel_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
              + sized_checks + fold_checks + tri_checks
@@ -6529,6 +6654,8 @@ def main():
           f"staying where it is dragged, "
           f"{places_checks} on a place made by a drop, opened by a click "
           f"and taken out by a right-click, "
+          f"{panel_checks} on the Open window's filter, its one click that "
+          f"only selects and its second that hands over the path, "
           f"{clip_checks} on copying text from one application into "
           f"another and on This Machine's report following its window, "
           f"{reaped_checks} on an application that dies saying why and "

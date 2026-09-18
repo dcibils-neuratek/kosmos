@@ -519,6 +519,42 @@ once per refresh, shared by the Drives group and any place on a drive -
 only a place on a drive asks at all, so a sidebar without one costs the
 first frame nothing.
 
+## 16.8f The Open and Save window, and the three things the kit took from it
+
+**Every application opens and saves through one window, `/lib/panel.lua`**,
+and since USB step 6d it is the one `drives.html` draws: the same sidebar as
+Tracker - Places, System, Drives - the path as a trail, and the folder as
+Name, Size and Kind. It runs inside the application that opened it, so it
+sees exactly what that application can and nothing more, and what it hands
+back is the file at its real place: an application never learns that
+MyPhotos exists. Its interface did not change, so Editor, Photo, Reader and
+the PDF viewer have the new window without a line changed.
+
+**One click selects; a second click, Enter or Open opens.** The old panel
+chose a file the moment it was clicked, which is the one place in the
+system a single click did something irreversible - Tracker and its sidebar
+select on one and open on the second (16.8c). A folder is entered, a file
+is chosen, and in the Save window a file's name is offered in the name box.
+
+**A caller may pass `filter`**, a function of a name, and files it answers
+false for are not shown. Folders always are, because a folder is how you
+reach the files.
+
+**Cancel calls `on_cancel`.** The old panel's header promised it and nothing
+ever called it.
+
+**Three things moved into the kit, each because it had a second user.**
+
+- **`ui.trail`**, Tracker's path line, with its two rules from 16.8d: a
+  segment's target runs to the next, and widths are measured, never counted.
+- **A list that draws its rows through `draw_item`** when they have fields.
+  Which row, the scrolling and the selection stay the list's; a caller paints
+  the row. A list without one draws its items as text, as before.
+- **A list that opens a row with `on_open`**, on a second click on the same
+  row or on Enter - timed by `ui_again()`, the tree's one second of the
+  counter, now shared by both so a second click means the same thing
+  everywhere. A list with no `on_open` behaves exactly as it did.
+
 ## 16.9 Themes, and colours that are named rather than captured
 
 There are two palettes - `dark`, which is what Kosmos looked like first, and

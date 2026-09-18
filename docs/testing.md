@@ -5201,3 +5201,46 @@ to the handler it was a global that does not exist, and the first drop on
 Places would have stopped Tracker with "attempt to call a nil value". Nothing
 parses that; only running it does. `focus_on` is forward-declared beside
 `show` and `visit`, which are there for the same reason.
+
+## 18.91 The Open window: a path that says which of three things happened
+
+**The display harness's `panel` phase, 3 checks, on both boards.** A small
+program opens the Open window on a folder holding a folder, `a.txt` and
+`b.sfc`, with a filter that keeps `.sfc`, and prints whatever it is handed.
+Folders come first and then names, so the list's second row is `a.txt`
+without the filter and `b.sfc` with it - and so **the path the application
+is handed is the filter's evidence**, not a picture of a list. One click on
+that row must hand over nothing, since the old panel chose a file the moment
+it was clicked; a second must hand over `/home/picktest/b.sfc`, whole.
+
+**Two seconds between the lone click and the pair**, and the reason is the
+one 16.8c measured: a second click is anything within a second of the
+counter, and under emulation the counter runs ahead of the guest. A shorter
+pause would make the lone click and the pair's first into a double, and the
+check that one click chooses nothing would pass without proving it.
+
+| Broken on purpose | What the phase said |
+| ----------------- | ------------------- |
+| the filter ignored, every file shown | *the Open window's filter did not hide a.txt*: `picked /home/picktest/a.txt` |
+| one click chooses, as the old panel did | *one click on a file in the Open window chose it - one click selects, and a second click or Enter opens* |
+| a second click does nothing | *a second click on a file in the Open window handed the application nothing* |
+
+The second was run twice, and the first run's reason was lost: three controls
+wrote into one file and only the last survived, so all that was known was
+that it had failed. A control is worth nothing until its reason is read, so it
+was run again alone and read.
+
+**Written against two mistakes already made today**, so neither was made
+again: the marker the program prints is joined by Lua, `'pick' .. 'ed '`, so
+the echo of the line that writes the program cannot be read as its answer
+(18.90); and the program is started as `wm /ramfs/pick.lua`, a path alone.
+`wm` starts every comma-separated entry as a program, so the form the
+triangle and resize phases use - `wm tri,/ramfs/tri.lua` - tries
+`/bin/tri.lua` first and says it could not, harmlessly, every run.
+
+**What was checked by eye, once, and is not a test**: the window photographed
+on a folder of seven entries, with folders first, sizes as `3.0 KB`, kinds as
+`jpg` and `folder`, and a long name cut to fit its column with `...` rather
+than running under the size - never in the middle of a UTF-8 character. And
+Tracker's trail, moved into the kit as `ui.trail`, clicked on `home` from
+`/home/Desktop`, went to `/home`.

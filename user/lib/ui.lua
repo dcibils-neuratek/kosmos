@@ -57,6 +57,22 @@ local function ui_tick_hz()
   return cached_tick_hz
 end
 
+--
+-- **How long "again" is**, for a second click: a second of the counter, read
+-- from the machine rather than assumed. The tree measured why it is a whole
+-- second and not half of one (its comment, and `ui.md` 16.8c); the list uses
+-- the same number, so a second click means the same thing in both.
+--
+local cached_again
+
+local function ui_again()
+  if not cached_again then
+    cached_again = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
+  end
+
+  return cached_again
+end
+
 local function ui_per_tick()
   if not cached_per_tick then
     local hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
@@ -1014,8 +1030,7 @@ function ui.tree(spec)
   -- second is what a person manages on an emulated desktop and is still far
   -- below two clicks meant as two.
   --
-  local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
-  local AGAIN = counter_hz
+  local AGAIN = ui_again()
 
   function v:mouse(action, x, y)
     local to = ui.scrollbar_mouse(self, action, x, y, self.w, self.h,
@@ -1690,6 +1705,81 @@ function ui.field(spec)
   return v
 end
 
+--
+-- **A path as a row of targets**: `/ > home > Desktop`, each name going there
+-- when pressed, and the last - where you already are - drawn full and going
+-- nowhere. Tracker's, moved here on 18 September when the Open and Save
+-- window became its second user.
+--
+-- `ui.md` 16.8d has the two rules, both measured rather than assumed: a
+-- segment's target runs to the start of the next one, separator included,
+-- because a press three pixels into ` > ` once did nothing and looked exactly
+-- like a broken handler; and widths come from `gfx.measure`, because the
+-- faces are proportional and counting characters misplaces every span after
+-- the first.
+--
+--   ui.trail{ x =, y =, w =, text = "/home", on_visit = function(path) end }
+--
+function ui.trail(spec)
+  local v = ui.view(spec)
+  local SEPARATOR = " > "
+
+  v.h = v.h > 0 and v.h or GH
+  v.text = v.text or "/"
+
+  local function parts_of(path)
+    local parts = { { text = "/", path = "/" } }
+    local at = ""
+
+    for name in tostring(path or "/"):gmatch("[^/]+") do
+      at = at .. "/" .. name
+      parts[#parts + 1] = { text = name, path = at }
+    end
+
+    return parts
+  end
+
+  function v:draw(g)
+    local parts = parts_of(self.text)
+    local x = 0
+
+    self.spans = {}
+
+    for i, part in ipairs(parts) do
+      if i > 1 then
+        g:text(x, 0, SEPARATOR, theme.text_dim)
+        x = x + gfx.measure(SEPARATOR)
+      end
+
+      local width = gfx.measure(part.text)
+      local last = (i == #parts)
+
+      g:text(x, 0, part.text, last and theme.text or theme.text_dim)
+
+      if not last then
+        local reach = x + width + gfx.measure(SEPARATOR)
+
+        self.spans[#self.spans + 1] = { from = x, to = reach, path = part.path }
+      end
+
+      x = x + width
+
+      if x > self.w then break end
+    end
+  end
+
+  function v:on_click(x, _)
+    for _, span in ipairs(self.spans or {}) do
+      if x >= span.from and x < span.to then
+        if self.on_visit then self.on_visit(span.path) end
+        return
+      end
+    end
+  end
+
+  return v
+end
+
 function ui.list(spec)
   local v = ui.view(spec)
   v.h = v.h > 0 and v.h or (GH * 6)
@@ -1786,7 +1876,16 @@ function ui.list(spec)
           tx = 4 + box + 6
         end
 
-        g:text(tx, y, tostring(item), on and theme.text_on or theme.text, bg)
+        --
+        -- **A row a caller draws**, when it has fields rather than a name:
+        -- the Open and Save window's Name, Size and Kind. Everything else a
+        -- list does - which row, scrolling, the selection - stays here.
+        --
+        if self.draw_item then
+          self:draw_item(g, item, tx, y, room - tx, on)
+        else
+          g:text(tx, y, tostring(item), on and theme.text_on or theme.text, bg)
+        end
       end
     end
   end
@@ -1821,6 +1920,11 @@ function ui.list(spec)
       if self.on_select then
         self.on_select(self, self.items[self.selected], self.selected)
       end
+
+      if self.on_open then
+        self.on_open(self, self.items[self.selected], self.selected)
+      end
+
       return true
     end
 
@@ -1875,6 +1979,22 @@ function ui.list(spec)
     elseif action == "release" and n == self.selected then
       if self.on_select then
         self.on_select(self, self.items[n], n)
+      end
+
+      --
+      -- **A second click on the same row opens it** - `on_open`, as Enter
+      -- does - the rule the tree has (`ui.md` 16.8c) and Tracker's list
+      -- has always had. A list with no `on_open` behaves exactly as before.
+      --
+      if self.on_open then
+        local now = sys.ticks()
+
+        if n == self.opened_row and (now - (self.opened_at or 0)) < ui_again() then
+          self.opened_row = nil
+          self.on_open(self, self.items[n], n)
+        else
+          self.opened_row, self.opened_at = n, now
+        end
       end
     end
 
