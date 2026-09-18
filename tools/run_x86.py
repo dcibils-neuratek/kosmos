@@ -2983,6 +2983,154 @@ def identity(image, check):
           "neofetch's Host on the ThinkPad's table is %r" % host)
 
 
+def test_ssdt():
+    """A table of AML made here, for QEMU to hand the machine with its own.
+
+    `Name (KOSM, 0x2026)`, a string, and a buffer of six thousand bytes, so
+    the table is longer than the page `sys.firmware` reads at a time and its
+    bytes have to cross a seam to come back whole. `iasl -d` reads it as
+    exactly that - checked once on the Mac rather than on every run, since
+    nothing in `make test` needs ACPICA.
+    """
+    def pkglength(after):
+        # AML's PkgLength counts its own bytes, so try each size in turn.
+        for size in (1, 2, 3, 4):
+            total = after + size
+
+            if size == 1 and total < 0x40:
+                return bytes([total])
+
+            if size > 1 and total < (1 << (4 + 8 * (size - 1))):
+                out, rest = [(size - 1) << 6 | (total & 0x0F)], total >> 4
+
+                for _ in range(size - 1):
+                    out.append(rest & 0xFF)
+                    rest >>= 8
+
+                return bytes(out)
+
+        raise ValueError(after)
+
+    fill = bytes((i * 7 + 3) & 0xFF for i in range(6000))
+    size = b"\x0b" + struct.pack("<H", len(fill))
+    body = (b"\x08KOSM\x0b" + struct.pack("<H", 0x2026)
+            + b"\x08KSTR\x0dKosmos reads its firmware\x00"
+            + b"\x08KBUF\x11" + pkglength(len(size) + len(fill)) + size + fill)
+    head = struct.pack("<4sIBB6s8sI4sI", b"SSDT", 36 + len(body), 2, 0,
+                       b"KOSMOS", b"KOSMOSTS", 1, b"KSMS", 1)
+    table = bytearray(head + body)
+    table[9] = (-sum(table)) & 0xFF
+    return bytes(table)
+
+
+def firmware(image, check):
+    """The firmware's AML, off the machine and onto this one, byte for byte.
+
+    **The ThinkPad's brightness is set somewhere its DSDT says**, and nobody
+    here has read it: `acpi save` puts the DSDT and the SSDTs in `/home/acpi`
+    for `make stick-log` to bring to the Mac. This is that path under QEMU,
+    with one table whose every byte is known: `-acpitable` hands the machine
+    an SSDT made by `test_ssdt`, beside QEMU's own DSDT and SSDTs, and the
+    same bytes have to come off the disk. The DSDT, which QEMU makes and this
+    does not know, has to be whole: its signature, the length it states and
+    the size of the file agreeing, and its bytes summing to zero.
+
+    So the kernel has to have followed the FADT to the DSDT - the one table
+    the XSDT does not list - kept the SSDTs from the walk, mapped them once
+    the MMU was on, and handed them up a page at a time; and `acpi` has to
+    have written them whole.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    lua = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(image))),
+                       "host", "lua")
+    work = tempfile.mkdtemp(prefix="kosmos-acpi-")
+    given = test_ssdt()
+    table = os.path.join(work, "kosmos.aml")
+    disk = os.path.join(work, "home.img")
+
+    with open(table, "wb") as handle:
+        handle.write(given)
+
+    made = subprocess.run([lua, os.path.join(here, "kfs.lua"), "create", disk,
+                           "16"], capture_output=True, text=True)
+
+    if made.returncode != 0:
+        check(False, "kfs.lua could not make the disk for the tables: "
+              + (made.stderr or made.stdout).strip())
+        return
+
+    extra = ("-drive", "file=%s,format=raw,if=none,id=nvme0" % disk,
+             "-device", "nvme,drive=nvme0,serial=kosmos",
+             "-acpitable", "file=" + table)
+
+    out = boot(image, None, 120.0, extra=extra, typed=("acpi", "acpi save"))
+
+    if out is None:
+        check(False, "the machine would not boot with a table of the test's")
+        return
+
+    fact = re.search(r"firmware tables: a DSDT of (\d+) bytes and (\d+) SSDTs?",
+                     out)
+
+    check(fact is not None,
+          "the boot log did not say it had a DSDT to hand up: "
+          + next((l.strip() for l in out.splitlines()
+                  if "firmware tables" in l), "no firmware line at all"))
+
+    listed = re.search(r"^DSDT +(\d+) bytes +\S+ +\S+ +sums to zero",
+                       out, re.MULTILINE)
+    ours = re.search(r"^(SSDT\d+) +(\d+) bytes +KOSMOS +KOSMOSTS +sums to "
+                     r"zero", out, re.MULTILINE)
+
+    check(listed is not None and fact is not None
+          and listed.group(1) == fact.group(1),
+          "`acpi` did not list a whole DSDT the size the boot log gave:\n"
+          + "\n".join(l for l in out.splitlines()
+                      if l.startswith(("DSDT", "SSDT", "acpi:"))))
+
+    check(ours is not None and int(ours.group(2)) == len(given),
+          "`acpi` did not list the test's own table, whole, at %d bytes:\n%s"
+          % (len(given), "\n".join(l for l in out.splitlines()
+                                   if l.startswith(("SSDT", "acpi:")))))
+
+    check(re.search(r"acpi: \d+ tables? saved to /home/acpi", out) is not None,
+          "`acpi save` did not say it saved the tables: "
+          + next((l.strip() for l in out.splitlines()
+                  if l.startswith("acpi:") and "saved" in l),
+                 "nothing about saving"))
+
+    # And off the disk, as `make stick-log FILE=/home/acpi/` takes them.
+    folder = os.path.join(work, "acpi")
+    os.makedirs(folder)
+    subprocess.run([lua, os.path.join(here, "kfs.lua"), "getdir", disk,
+                    "/home/acpi", folder], capture_output=True)
+
+    def read(name):
+        try:
+            with open(os.path.join(folder, name), "rb") as handle:
+                return handle.read()
+        except OSError:
+            return b""
+
+    dsdt = read("DSDT.aml")
+    stated = struct.unpack("<I", dsdt[4:8])[0] if len(dsdt) >= 8 else 0
+
+    check(dsdt[:4] == b"DSDT" and stated == len(dsdt) > 36
+          and sum(dsdt) & 0xFF == 0
+          and (fact is None or len(dsdt) == int(fact.group(1))),
+          "the DSDT off the disk is not whole: %d bytes, %r, stating %d, "
+          "summing to %d" % (len(dsdt), dsdt[:4], stated, sum(dsdt) & 0xFF))
+
+    back = read(ours.group(1) + ".aml") if ours else b""
+
+    check(back == given,
+          "the test's table off the disk is not the table QEMU was given: "
+          "%d bytes of %d, the first difference at %s"
+          % (len(back), len(given),
+             next((i for i, (a, b) in enumerate(zip(back, given)) if a != b),
+                  "the end of the shorter")))
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
     checks = 0
@@ -3336,6 +3484,12 @@ def main():
     #
     identity(image, check)
 
+    # And the firmware's AML, onto this Mac as the ThinkPad's will come -
+    # which is where its brightness is set. `firmware` says how it is known
+    # to be whole.
+    #
+    firmware(image, check)
+
     # And the machine's own report of what is on its bus, which on the
     # ThinkPad listed bus 0 and nothing driven. `machine_report` says why the
     # drive is behind a bridge.
@@ -3363,7 +3517,8 @@ def main():
           "controller hands back at the right pitch, keeps a file on an "
           "NVMe drive across a reboot, reads one off a disk the loader "
           "handed over in memory, names itself out of SMBIOS as QEMU and "
-          "as a ThinkPad, finds a USB stick and a keyboard on two xHCI "
+          "as a ThinkPad, saves the firmware's AML to a disk byte for byte, "
+          "finds a USB stick and a keyboard on two xHCI "
           "controllers and asks the stick what it is through its bulk "
           "endpoints, moves the pointer and clicks with a USB mouse, reads "
           "it through a plug on either controller, reads another machine's FAT32 volume at /drives - its label, its long names, a file one directory down and a chain of clusters - and "

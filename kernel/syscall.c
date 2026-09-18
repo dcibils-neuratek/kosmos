@@ -1391,6 +1391,49 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_FIRMWARE: {
+        /*
+         * The firmware's AML, a window of one table at a time.
+         *
+         * No permission check, for `SYS_LOG`'s reason: this is the firmware's
+         * description of the machine's own hardware, which every operating
+         * system that boots on it reads, and not a secret. The tables that
+         * could hold one - MSDM's licence key - are never kept
+         * (`hal_firmware_table`), and that is where the line is drawn rather
+         * than here.
+         *
+         * The index is bounded before it is narrowed, so a huge one is past
+         * the last table rather than wrapped round to the first.
+         */
+        struct hal_firmware_table t;
+        unsigned long index = (unsigned long)sc->arg[0];
+        unsigned long offset = (unsigned long)sc->arg[1];
+        size_t max = (size_t)sc->arg[3];
+
+        if (index >= 65536u || !hal_firmware_table((unsigned)index, &t)) {
+            result = SYS_ERR_NO_DEVICE;
+            break;
+        }
+
+        if (offset >= t.length || max == 0) {
+            result = 0;
+            break;
+        }
+
+        if (max > t.length - offset) {
+            max = t.length - offset;
+        }
+
+        if (!process_may_write(p, sc->arg[2], max)) {
+            result = SYS_ERR_FAULT;
+            break;
+        }
+
+        memcpy((void *)sc->arg[2], t.bytes + offset, max);
+        result = (long)max;
+        break;
+    }
+
     case SYS_MEM_CREATE: {
         /*
          * A region two processes can share, and a capability naming it.

@@ -5357,3 +5357,48 @@ master-mute check (18.93) read *'mute: muted true level 256 2'* - the line
 caught while QEMU was still printing it, since `wait_for` returns on the
 first words and the numbers after them may not have arrived. It waited for
 a phrase and then parsed a line; it now waits for the line.
+
+## 18.95 The firmware's AML, off the machine byte for byte
+
+**The ThinkPad's brightness is set where its DSDT says, and the DSDT is
+AML** - a bytecode Kosmos does not run. So the machine hands the bytes over
+and a person reads them: the kernel keeps where the DSDT and SSDTs are while
+it walks ACPI at boot, following the FADT to the DSDT, which is the one table
+the XSDT does not list; maps them once the MMU is on; and `SYS_FIRMWARE`
+copies them out a page at a time. `acpi save` writes one file a table to
+`/home/acpi`, and `make stick-log FILE=/home/acpi/` brings the folder to the
+Mac.
+
+**`run_x86.py`'s `firmware` session, 6 checks, with a table whose every byte
+is known.** `-acpitable` hands the machine an SSDT the test makes - `Name
+(KOSM, 0x2026)`, a string, and a buffer of six thousand bytes, 6088 in all,
+so it crosses a page between reads - beside QEMU's own DSDT. The boot log
+names the DSDT and its size; `acpi` lists both tables whole; `acpi save` says
+it saved them; and off the disk, through `kfs.lua getdir` as `make
+stick-log` takes them, the DSDT is whole - signature, the length it states,
+the file's size and the boot log's all agreeing, summing to zero - and the
+test's table is exactly the bytes QEMU was given.
+
+**Once by hand, not on every run: `iasl -d` on what came off the disk.**
+QEMU's DSDT, 8462 bytes, decompiled to 3203 lines of ASL - `Device (PCI0)`,
+`Device (RTC)` and the rest - which is the whole path the ThinkPad's will
+take. `make test` does not need ACPICA and does not use it; `iasl` also read
+the test's SSDT back as the three names it was built from.
+
+**`test_sticklog.py`, 7 checks**: a folder of two binary files, every byte
+value in them, comes off a stick's copy whole through `getdir`. **And
+`run_shell.py` on the ARM board**: `acpi` says there are no tables, since
+`virt` is a device tree rather than ACPI.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the FADT not followed | the session, 3 of 6: *firmware tables: no DSDT, and 1 SSDT*, no DSDT listed, and *the DSDT off the disk is not whole: 0 bytes* |
+| `SYS_FIRMWARE` copying from the start of the table whatever the offset | 4 of 6: both tables listed as *DOES NOT SUM TO ZERO*, the DSDT off the disk *summing to 247*, the test's table not listed whole |
+| `getdir` taking only the first file | `test_sticklog.py`, 1 of 7: *the folder taken from the copy is not the folder put on the stick: ['DSDT.aml'], of ['DSDT.aml', 'SSDT1.aml']* |
+| `acpi` on a board with none printing *acpi: nothing* | `run_shell.py`: *acpi on a board with no ACPI did not say there were no tables* |
+
+**The `getdir` control was run twice.** The first broke it by testing the
+loop's index, which the line inside the loop had already shadowed with
+something that is not a number - so `getdir` raised, took nothing, and the
+check failed for a reason that was not the one being tested. It failed; it
+did not bite. The second counts, takes exactly one file, and is the row above.

@@ -8,7 +8,9 @@
 #  among it - to `/home/diagnose.txt`, and this takes it off the stick into
 #  `build/stick-diagnose.txt`, as text somebody can search.
 #  `make stick-log FILE=/home/log.txt` takes what `log save` wrote instead, and
-#  any other file the same way.
+#  any other file the same way. **A name ending in `/` is a folder**, and
+#  every file in it comes back into `build/stick-<folder>/`: `acpi save`
+#  leaves one file a table in `/home/acpi/`.
 #
 #  **It reads the stick and never writes it.** Nothing is unmounted, nothing
 #  is ejected, and the one thing opened on the drive is `sticklog.py`'s read of
@@ -87,7 +89,12 @@ trap 'rm -f "$COPY"' EXIT
 printf 'Reading the Kosmos partition of /dev/%s - read only; sudo asks for your password.\n' "$CHOSEN"
 sudo "$PYTHON" "$HERE/sticklog.py" "/dev/r$CHOSEN" > "$COPY"
 
-mkdir -p "$(dirname "$OUT")"
-"$LUA" "$HERE/kfs.lua" get "$COPY" "$FILE" "$OUT"
-
-printf 'stick-log: %s is in %s, %s lines\n' "$FILE" "$OUT" "$(wc -l < "$OUT" | tr -d ' ')"
+if [ "${FILE%/}" != "$FILE" ]; then
+    mkdir -p "$OUT"
+    "$LUA" "$HERE/kfs.lua" getdir "$COPY" "${FILE%/}" "$OUT"
+    printf 'stick-log: %s is in %s/, %s files\n' "$FILE" "$OUT" "$(ls "$OUT" | wc -l | tr -d ' ')"
+else
+    mkdir -p "$(dirname "$OUT")"
+    "$LUA" "$HERE/kfs.lua" get "$COPY" "$FILE" "$OUT"
+    printf 'stick-log: %s is in %s, %s lines\n' "$FILE" "$OUT" "$(wc -l < "$OUT" | tr -d ' ')"
+fi

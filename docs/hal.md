@@ -444,6 +444,17 @@ bool     hal_pointer_move(int dx, int dy, uint32_t buttons);
 // runs on.
 bool     hal_machine_ident(struct hal_machine *out);
 
+// The firmware's AML - ACPI's DSDT and SSDTs - as bytes, for `acpi` to save
+// and `iasl` to read on the Mac: where a laptop sets its backlight and reads
+// its battery. Found by the walk that counts the processors, mapped once
+// the MMU is on, and never run - there is no AML interpreter here and this
+// is not the start of one. Only those two kinds of table, because others
+// can hold what is nobody's business (MSDM, a Windows licence key). The ARM
+// board has none: `virt` is a device tree. Arrived with the ThinkPad's
+// brightness keys, which cannot be written until its DSDT is read.
+unsigned hal_firmware_init(void);
+bool     hal_firmware_table(unsigned index, struct hal_firmware_table *out);
+
 // The half of irq_init and timer_init that belongs to *this* processor: its
 // GIC redistributor and CPU interface, its own generic timer. Both are
 // per-core by architecture, so no core can do them for another - and

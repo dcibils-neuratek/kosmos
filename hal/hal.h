@@ -334,6 +334,33 @@ struct hal_machine {
 bool hal_machine_ident(struct hal_machine *out);
 
 /*
+ * **The firmware's own account of the machine's hardware**: ACPI's DSDT and
+ * SSDTs, as bytes. They are AML - the code a firmware writes about its own
+ * devices, and where a laptop says how its backlight is set and where its
+ * battery is read. This kernel runs none of it (`hal/pc/acpi.h`: no AML); it
+ * hands the bytes up, so `acpi` can save them for `iasl` to read on another
+ * machine. The ThinkPad's brightness keys start there.
+ *
+ * `hal_firmware_init` maps them, once, at boot and after the MMU is on: they
+ * were found by the walk that counted the processors, in memory the firmware
+ * kept and nothing here allocates from. It answers how many there are - zero
+ * on a board with no ACPI, which is `virt`. `hal_firmware_table` gives the
+ * n-th from zero, `bytes` in the kernel's own mapping; false past the last.
+ *
+ * **Only AML, deliberately.** Other tables can carry what is nobody's
+ * business - MSDM holds a Windows licence key - and nothing needs them; the
+ * tables kept are the two kinds that describe hardware.
+ */
+struct hal_firmware_table {
+    char           signature[4];
+    uint32_t       length;
+    const uint8_t *bytes;
+};
+
+unsigned hal_firmware_init(void);
+bool     hal_firmware_table(unsigned index, struct hal_firmware_table *out);
+
+/*
  * Which interrupt controller this machine turned out to have.
  *
  * A board with one answer returns a constant; a PC has two and chooses at

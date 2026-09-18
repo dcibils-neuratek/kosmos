@@ -50,3 +50,19 @@ bool hal_machine_ident(struct hal_machine *out)
     *out = none;
     return false;
 }
+
+/*
+ * No firmware tables: `virt` is described by a device tree rather than by
+ * ACPI, and this board reads neither - every address here is compiled in.
+ */
+unsigned hal_firmware_init(void)
+{
+    return 0;
+}
+
+bool hal_firmware_table(unsigned index, struct hal_firmware_table *out)
+{
+    (void)index;
+    (void)out;
+    return false;
+}

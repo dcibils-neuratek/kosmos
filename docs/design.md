@@ -129,6 +129,17 @@ Responsibilities:
 
 It knows nothing about files, networking, graphics or Lua.
 
+**Nor about ACPI's AML, though it hands it up.** A PC's firmware describes
+the parts of the machine only it knows - how a laptop sets its backlight,
+where its battery is read - as AML, a bytecode with an interpreter of its
+own, and this kernel runs none of it (`hal/pc/acpi.h`). What it does is keep
+where the DSDT and the SSDTs are, during the walk of the tables it does read,
+and copy their bytes out through `SYS_FIRMWARE` - so a person reads them with
+ACPICA's `iasl`, and what they say comes into Kosmos as the few register
+writes it amounts to. `SYS_LOG`'s shape: bytes the kernel already has,
+handed over, and not understood. Only AML, since other tables can hold what
+is nobody's business - MSDM carries a Windows licence key.
+
 ### 4.1.1 One image, and what that costs
 
 **There is one userland binary, and a process is that binary with a

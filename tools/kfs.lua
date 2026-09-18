@@ -145,6 +145,28 @@ local function put(sb, host, guest)
   return #data
 end
 
+-- A file out of the image into one on this machine, a window at a time, so
+-- an image holding something large can be taken out of it on a machine that
+-- would rather not hold it all at once.
+local function take(sb, node, host)
+  local out = io.open(host, "wb")
+
+  if not out then die("cannot write " .. host) end
+
+  local at = 0
+
+  while at < node.size do
+    local piece = kfs.read_range(sb, node, at, 1024 * 1024)
+
+    if not piece or #piece == 0 then break end
+
+    out:write(piece)
+    at = at + #piece
+  end
+
+  out:close()
+end
+
 --------------------------------------------------------------------------
 -- The commands.
 --------------------------------------------------------------------------
@@ -264,26 +286,38 @@ elseif command == "get" then
 
   if not node then die(guest .. ": no such file") end
 
-  local out = io.open(host, "wb")
-
-  if not out then die("cannot write " .. host) end
-
-  -- A window at a time, so an image holding something large can be taken
-  -- out of it on a machine that would rather not hold it all at once.
-  local at = 0
-
-  while at < node.size do
-    local piece = kfs.read_range(sb, node, at, 1024 * 1024)
-
-    if not piece or #piece == 0 then break end
-
-    out:write(piece)
-    at = at + #piece
-  end
-
-  out:close()
+  take(sb, node, host)
   image:close()
   print(("%s -> %s, %d bytes"):format(guest, host, node.size))
+elseif command == "getdir" then
+  -- Every file in one folder, into a folder here that already exists: what
+  -- `acpi save` leaves on a stick is one file a table, and `make stick-log`
+  -- takes them all with one read of the stick rather than one each.
+  -- Folders inside it are not followed.
+  local img, guest, host = args[2], args[3], args[4]
+
+  if not host then
+    die("usage: getdir <image> <folder in image> <folder here>")
+  end
+
+  open(img, "r")
+
+  local sb = mounted()
+  local names, err = kfs.list(sb, guest)
+
+  if not names then die(guest .. ": " .. tostring(err)) end
+
+  for _, name in ipairs(names) do
+    local _, node = kfs.find(sb, guest .. "/" .. name)
+
+    if node and node.kind ~= kfs.KIND_DIR then
+      take(sb, node, host .. "/" .. name)
+      print(("%s/%s -> %s/%s, %d bytes"):format(guest, name, host, name,
+                                               node.size))
+    end
+  end
+
+  image:close()
 elseif command == "df" then
   local img = args[2]
 

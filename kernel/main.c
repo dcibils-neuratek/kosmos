@@ -973,6 +973,53 @@ void kmain(void)
     }
 
     /*
+     * The firmware's AML, mapped for reading now that the MMU is on: the
+     * DSDT and the SSDTs, where a laptop says how its backlight is set and
+     * where its battery is read. Nothing here runs them; `acpi` saves them
+     * for `iasl` on another machine (`hal.h`). Before the other processors
+     * start, which is what lets the board keep the list without a lock.
+     */
+    {
+        unsigned tables = hal_firmware_init();
+        struct hal_firmware_table t;
+        unsigned long dsdt = 0, total = 0;
+        unsigned i, ssdts = 0;
+
+        for (i = 0; i < tables && hal_firmware_table(i, &t); i++) {
+            total += t.length;
+
+            if (t.signature[0] == 'D') {
+                dsdt = t.length;
+            } else {
+                ssdts++;
+            }
+        }
+
+        boot_fact_begin();
+
+        if (tables == 0) {
+            kputs("no firmware tables to read: this machine has no ACPI");
+        } else {
+            kputs("firmware tables: ");
+
+            if (dsdt != 0) {
+                kputs("a DSDT of ");
+                kputu(dsdt);
+                kputs(" bytes and ");
+            } else {
+                kputs("no DSDT, and ");
+            }
+
+            kputu(ssdts);
+            kputs(ssdts == 1 ? " SSDT, " : " SSDTs, ");
+            kputu(total);
+            kputs(" bytes of AML for `acpi` to save");
+        }
+
+        boot_fact_end();
+    }
+
+    /*
      * Sound, and what a machine turned out to have is worth saying once, at
      * the start - which is why the board is asked to name the device rather
      * than this printing one. On `virt` there is one possible answer and on

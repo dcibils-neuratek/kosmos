@@ -21,6 +21,8 @@
 #include <stdint.h>
 
 #include "acpi.h"
+#include "hal.h"
+#include "mmu.h"
 #include "pc.h"
 #include "string.h"
 
@@ -112,6 +114,46 @@ static uint64_t ecam;
 
 static struct acpi_override overrides[OVERRIDE_MAX];
 static unsigned override_count;
+
+/*
+ * **The AML, kept for `hal_firmware_table`**: where each table is and how
+ * long, found by the walk below while firmware memory is still mapped, and
+ * mapped again by `hal_firmware_init` once the MMU is on.
+ *
+ * A laptop has a DSDT and a dozen or two SSDTs. Sixty-four is far past any
+ * of them, and a table past it is not kept rather than written over the edge.
+ */
+#define AML_TABLES_MAX 64
+
+struct aml_table {
+    char           signature[4];
+    uint32_t       length;
+    uint64_t       at;              /* physical */
+    const uint8_t *mapped;          /* the kernel's, after hal_firmware_init */
+};
+
+static struct aml_table aml[AML_TABLES_MAX];
+static unsigned aml_count;
+static bool     aml_ready;
+
+/*
+ * What `start.S` identity maps, and so the highest address the walk can
+ * read: `smbios.c` draws the same line for the same reason. A table above it
+ * cannot be summed here, and is not kept.
+ */
+#define BOOT_MAPPED 0x100000000ull
+
+/*
+ * The FADT - the specification's `FACP` - and the one thing wanted from it:
+ * where the DSDT is, the one table the XSDT does not list. The FADT names it
+ * twice: `DSDT` at 40, 32 bits, and `X_DSDT` at 140, 64 bits, there when the
+ * table is long enough to reach it - and the wider wins when it is set.
+ *
+ * Offsets from ACPICA's `iasl -T FACP`, compiled and disassembled, which
+ * prints every field with its offset (`setup.md`) - not from memory.
+ */
+#define FADT_DSDT       40u
+#define FADT_X_DSDT     140u
 
 /*
  * A table is what it says it is when its bytes sum to zero.
@@ -349,6 +391,53 @@ static void read_mcfg(const struct sdt *table)
 }
 
 /*
+ * A table of AML, kept if it is one: in reach, whole, and summing to zero.
+ * A DSDT that fails is dropped exactly as the walk drops any other table.
+ */
+static void keep_aml(uint64_t where)
+{
+    const struct sdt *t;
+
+    if (where == 0 || where >= BOOT_MAPPED || aml_count >= AML_TABLES_MAX) {
+        return;
+    }
+
+    t = (const struct sdt *)(uintptr_t)where;
+
+    if (t->length < sizeof(*t) || where + t->length > BOOT_MAPPED
+        || !sums_to_zero(t, t->length)) {
+        return;
+    }
+
+    if (!signature_is(t->signature, "DSDT", 4)
+        && !signature_is(t->signature, "SSDT", 4)) {
+        return;
+    }
+
+    memcpy(aml[aml_count].signature, t->signature, 4);
+    aml[aml_count].length = t->length;
+    aml[aml_count].at = where;
+    aml_count++;
+}
+
+static void read_fadt(const struct sdt *table)
+{
+    const uint8_t *bytes = (const uint8_t *)table;
+    uint32_t narrow = 0;
+    uint64_t wide = 0;
+
+    if (table->length >= FADT_DSDT + 4u) {
+        memcpy(&narrow, bytes + FADT_DSDT, sizeof(narrow));
+    }
+
+    if (table->length >= FADT_X_DSDT + 8u) {
+        memcpy(&wide, bytes + FADT_X_DSDT, sizeof(wide));
+    }
+
+    keep_aml(wide != 0 ? wide : narrow);
+}
+
+/*
  * The pointers in the XSDT are 64 bit and the array starts at an offset of
  * 36, which is four-byte aligned and not eight - so every one of them is
  * unaligned by construction. `memcpy` rather than a cast, because a cast
@@ -397,6 +486,10 @@ static void walk(uintptr_t address, bool wide)
             read_madt((const struct madt *)table);
         } else if (signature_is(table->signature, "MCFG", 4)) {
             read_mcfg(table);
+        } else if (signature_is(table->signature, "FACP", 4)) {
+            read_fadt(table);
+        } else if (signature_is(table->signature, "SSDT", 4)) {
+            keep_aml(where);
         }
     }
 }
@@ -486,4 +579,54 @@ unsigned acpi_overrides(struct acpi_override *out, unsigned max)
 uint64_t acpi_ecam_base(void)
 {
     return ecam;
+}
+
+/*
+ * The AML, mapped where the kernel can read it - once, at boot, before the
+ * other processors start, so nothing here needs a lock: after this the list
+ * is only read.
+ *
+ * `mmu_map_ram`, cached: these are the firmware's pages of ordinary memory,
+ * outside everything the allocator hands out, which is what that call is
+ * for. And each table is summed again through its new mapping - the walk
+ * checked the same bytes through the old one, so a table that no longer sums
+ * is one this kernel was wrong about, and it is dropped rather than passed on.
+ */
+unsigned hal_firmware_init(void)
+{
+    unsigned i, kept = 0;
+
+    if (aml_ready) {
+        return aml_count;
+    }
+
+    for (i = 0; i < aml_count; i++) {
+        uintptr_t va = mmu_map_ram((uintptr_t)aml[i].at, aml[i].length);
+
+        if (va == 0 || !sums_to_zero((const void *)va, aml[i].length)) {
+            continue;
+        }
+
+        aml[kept] = aml[i];
+        aml[kept].mapped = (const uint8_t *)va;
+        kept++;
+    }
+
+    aml_count = kept;
+    aml_ready = true;
+
+    return aml_count;
+}
+
+bool hal_firmware_table(unsigned index, struct hal_firmware_table *out)
+{
+    if (!aml_ready || index >= aml_count || out == NULL) {
+        return false;
+    }
+
+    memcpy(out->signature, aml[index].signature, 4);
+    out->length = aml[index].length;
+    out->bytes = aml[index].mapped;
+
+    return true;
 }

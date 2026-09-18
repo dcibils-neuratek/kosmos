@@ -393,7 +393,19 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
 /* Never a line's place; plus one, the second endpoint's caller. */
 #define IRQ_WAIT_CALLER  ((long)IRQ_WAIT_ANY_MAX)
 
-#define SYS_MAX         53
+/*
+ * **The firmware's AML, as bytes**: table `index` from zero, `max` bytes of
+ * it from `offset` into `buf`. The answer is how many were copied - zero at
+ * or past its end - or `SYS_ERR_NO_DEVICE` past the last table, which is
+ * every index on a board with no ACPI. `hal_firmware_table` says which tables
+ * these are, and why only AML.
+ *
+ * For `acpi`, which saves them so the ThinkPad's DSDT can be read on the Mac
+ * with `iasl` - where its brightness is set, and its battery read.
+ */
+#define SYS_FIRMWARE   53   /* (index, offset, buf, max) -> bytes or error */
+
+#define SYS_MAX         54
 
 /*
  * What a spawn may hand its child beyond capabilities.

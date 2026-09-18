@@ -2163,6 +2163,52 @@ static int l_pointer_speed(lua_State *L)
     return 1;
 }
 
+/*
+ * `sys.firmware(n)` - the n-th of the firmware's AML tables, from 1, as one
+ * string whose first four bytes say which it is: "DSDT" or "SSDT". nil past
+ * the last, which on a board with no ACPI is every n.
+ *
+ * A page at a time, so a table of more than one page is read across the
+ * seams between reads - which `run_x86.py`'s table is sized to cross.
+ */
+static int l_firmware(lua_State *L)
+{
+    lua_Integer n = luaL_checkinteger(L, 1);
+    unsigned long at = 0;
+    luaL_Buffer b;
+
+    if (n < 1) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    luaL_buffinit(L, &b);
+
+    for (;;) {
+        char *space = luaL_prepbuffsize(&b, 4096);
+        long got = kosmos_firmware((unsigned long)(n - 1), at, space, 4096);
+
+        if (got == SYS_ERR_NO_DEVICE) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        if (got < 0) {
+            return fail(L, got);
+        }
+
+        if (got == 0) {
+            break;
+        }
+
+        luaL_addsize(&b, (size_t)got);
+        at += (unsigned long)got;
+    }
+
+    luaL_pushresult(&b);
+    return 1;
+}
+
 static int l_log(lua_State *L)
 {
     luaL_Buffer b;
@@ -2623,6 +2669,7 @@ static const luaL_Reg sys_functions[] = {
     { "disk_write",  l_disk_write },
     { "boot",     l_boot_option },
     { "log",      l_log },
+    { "firmware", l_firmware },
     { "pointer_speed", l_pointer_speed },
     { "build",    l_build },
     { "wait_input", l_wait_input },

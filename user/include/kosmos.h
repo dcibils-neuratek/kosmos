@@ -515,6 +515,14 @@ static inline long kosmos_log(char *out, unsigned long max)
     return sys2(SYS_LOG, (long)(uintptr_t)out, (long)max);
 }
 
+/* Up to `max` bytes of the firmware's AML table `index`, from `offset`. */
+static inline long kosmos_firmware(unsigned long index, unsigned long offset,
+                                   char *out, unsigned long max)
+{
+    return sys4(SYS_FIRMWARE, (long)index, (long)offset,
+                (long)(uintptr_t)out, (long)max);
+}
+
 /*
  * Sleeps until input arrives or `ticks` scheduler ticks have passed.
  *

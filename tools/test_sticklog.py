@@ -79,8 +79,20 @@ def main():
         esp = os.path.join(work, "esp.img")
         stick = os.path.join(work, "stick.img")
 
+        # And a folder of binary files, as `acpi save` leaves one: every byte
+        # value, so a file taken as text rather than bytes would not survive.
+        tables = {"DSDT.aml": bytes(range(256)) * 40,
+                  "SSDT1.aml": bytes(reversed(range(256))) * 3}
+
+        for name, body in tables.items():
+            with open(os.path.join(work, name), "wb") as f:
+                f.write(body)
+
         made = kfs("create", home, "4").returncode == 0 \
-            and kfs("put", home, log, "/home/log.txt").returncode == 0
+            and kfs("put", home, log, "/home/log.txt").returncode == 0 \
+            and all(kfs("put", home, os.path.join(work, name),
+                        "/home/acpi/" + name).returncode == 0
+                    for name in tables)
 
         if not made:
             print("FAIL: kfs.lua could not make a disk with a log on it")
@@ -115,6 +127,21 @@ def main():
               "the log taken from the copy is not the log put on the stick: "
               "%s" % (taken.stderr.decode("utf-8", "replace").strip()
                       or "%d bytes of %d" % (len(back or ""), len(text))))
+
+        # ---- a folder, whole: `make stick-log FILE=/home/acpi/` ----
+        folder = os.path.join(work, "stick-acpi")
+        os.makedirs(folder)
+        taken = kfs("getdir", copy, "/home/acpi", folder)
+        came = {}
+
+        for name in os.listdir(folder):
+            with open(os.path.join(folder, name), "rb") as f:
+                came[name] = f.read()
+
+        check(taken.returncode == 0 and came == tables,
+              "the folder taken from the copy is not the folder put on the "
+              "stick: %s" % (taken.stderr.decode("utf-8", "replace").strip()
+                             or "%s, of %s" % (sorted(came), sorted(tables))))
 
         # ---- no GPT: a disk of zeros ----
         blank = os.path.join(work, "blank.img")
@@ -167,7 +194,8 @@ def main():
 
     print("PASS: %d checks on reading a file off a stick's Kosmos partition "
           "(copied whole, the stick untouched, the log back from the copy, "
-          "and no GPT, no Kosmos partition and a short source refused)."
+          "a folder of binary files back whole, and no GPT, no Kosmos "
+          "partition and a short source refused)."
           % checks)
     return 0
 

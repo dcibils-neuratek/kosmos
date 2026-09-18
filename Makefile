@@ -2731,7 +2731,8 @@ usb: x86-usb-image
 # A file from `/home` on a Kosmos stick, onto this Mac: `diagnose` on the
 # machine, then `make stick-log` here, which puts `/home/diagnose.txt` in
 # `build/stick-diagnose.txt` - `FILE=/home/log.txt` for what `log save` wrote,
-# or any other file. It reads the stick and never writes it; macOS asks for a
+# or any other file, and `FILE=/home/acpi/` for a whole folder, into
+# `build/stick-acpi/`. It reads the stick and never writes it; macOS asks for a
 # password, because only root may read a whole disk (`tools/sticklog.sh`).
 stick-log: $(HOSTDIR)/lua
 	@bash tools/sticklog.sh $(if $(FILE),$(FILE),/home/diagnose.txt) $(HOSTDIR)/lua

@@ -54,6 +54,7 @@ def main():
             "grep nothinghere notes/a.txt",
             "tree /ramfs",
             "du /ramfs",
+            "acpi",
         ])
 
         for marker, what in [
@@ -63,6 +64,10 @@ def main():
              "grep claimed a match that is not in the file"),
             ("1 directories, 2 entries",
              "tree did not walk into the directory"),
+            # The ARM board is described by a device tree, not by ACPI, so
+            # `acpi` has nothing to list - and says so, rather than nothing.
+            ("no firmware tables on this machine",
+             "acpi on a board with no ACPI did not say there were no tables"),
         ]:
             if marker not in out:
                 raise Failure(f"{what}.\nLooked for {marker!r} in:\n"
