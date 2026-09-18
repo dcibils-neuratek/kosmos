@@ -3062,6 +3062,118 @@ def check_budget(guest):
     return 2
 
 
+def check_faces(guest):
+    """Every outline face the image carries loads, measures and draws.
+
+    `gfx.fonts()` lists what `fonts_table` embeds, and nothing checked that
+    each of them actually works: a file stb_truetype cannot read would load
+    as nothing and draw as blank text, and the first anybody would know is a
+    choice in Appearance that shows no letters. Space Grotesk, five weights
+    added on 18 September at Diego's asking, is the reason this exists.
+
+    **A program, run once per eight faces.** A process holds eight outline
+    faces beside its four roles (`FACES_MAX` in `gfx.c`) and never lets one
+    go, so asking one process for all sixteen would fail at the ninth for a
+    reason that has nothing to do with the fonts. Each run is its own
+    process and starts with every slot free. It prints, for each face, the
+    width `gfx.measure` gives and how many pixels drawing it lit.
+    """
+    program = (
+        "local names = gfx.fonts() "
+        "local from, to = args:match('(%d+)%s+(%d+)') "
+        "from, to = tonumber(from), tonumber(to) "
+        "print('faces' .. ': ' .. (#names - 1) .. ' outline') "
+        "for i = from, math.min(to, #names) do "
+        "local n = names[i] "
+        "if n ~= 'spleen' then "
+        "local id, why = gfx.face(n, 24) "
+        "if not id then print('face' .. ': ' .. n .. ' refused ' .. tostring(why)) "
+        "else "
+        "local w = gfx.measure('Kosmos Space', id) "
+        "local s = gfx.surface{ w = 320, h = 48 } "
+        "s:fill(0, 0, 320, 48, 0xff000000) "
+        "s:text(4, 8, 'Kosmos Space', 0xffffffff, nil, id) "
+        "local lit = 0 "
+        "for y = 0, 47 do for x = 0, 319 do "
+        "if s:get(x, y) ~= 0xff000000 then lit = lit + 1 end end end "
+        "print('face' .. ': ' .. n .. ' width ' .. w .. ' lit ' .. lit) "
+        "end end end "
+        "print('faces' .. ': batch done')"
+    )
+    guest.type("fs.write('/ramfs/faces.lua', %r)" % program)
+    time.sleep(1.0)
+
+    drawn, refused, total = {}, {}, None
+    first = 2                       # 1 is spleen, the bitmap
+
+    while total is None or first <= total + 1:
+        mark = len(guest.seen)
+        guest.type("/ramfs/faces.lua %d %d" % (first, first + 7))
+
+        deadline = time.monotonic() + 40
+
+        while "faces: batch done" not in guest.seen[mark:] \
+                and time.monotonic() < deadline:
+            time.sleep(0.3)
+            guest._read_available()
+
+        said = guest.seen[mark:]
+
+        # **A broken font does not refuse; it kills.** stb_truetype believes
+        # the offsets inside the file, so forty kilobytes of noise named as a
+        # font sent the program reading an address nothing maps - the
+        # control that proved this phase (`testing.md` 18.98). So the death
+        # is named, with the last face that drew before it.
+        died = re.search(r'process "faces" died: ([^\n]*)', said)
+
+        if died:
+            before = re.findall(r"face: (\S+) width", said)
+            raise Failure("the faces program died loading a face after %s - "
+                          "%s. A face in assets/fonts is not a font stb_truetype "
+                          "can read:\n%s" % (before[-1] if before else
+                                             "none at all", died.group(1),
+                                             said[-800:]))
+
+        if "faces: batch done" not in said:
+            raise Failure("the faces program never finished its batch from "
+                          "%d:\n%s" % (first, said[-800:]))
+
+        counted = re.search(r"faces: (\d+) outline", said)
+
+        if counted:
+            total = int(counted.group(1))
+
+        for name, w, lit in re.findall(r"face: (\S+) width (\d+) lit (\d+)",
+                                       said):
+            drawn[name] = (int(w), int(lit))
+
+        for name, why in re.findall(r"face: (\S+) refused (.*)", said):
+            refused[name] = why.strip()
+
+        first += 8
+
+    if refused:
+        raise Failure("these faces would not load: %s"
+                      % ", ".join("%s (%s)" % kv for kv in refused.items()))
+
+    blank = [n for n, (w, lit) in drawn.items() if w <= 0 or lit < 50]
+
+    if total is None or len(drawn) != total or blank:
+        raise Failure("of %s outline faces, %d drew; these measured or drew "
+                      "nothing: %s" % (total, len(drawn), ", ".join(blank)
+                                       or "none"))
+
+    grotesk = {"spacegrotesk-light", "spacegrotesk", "spacegrotesk-medium",
+               "spacegrotesk-semibold", "spacegrotesk-bold"}
+
+    if not grotesk <= set(drawn):
+        raise Failure("Space Grotesk is not all there: %s of its five weights "
+                      "drew - %s" % (len(grotesk & set(drawn)),
+                                     ", ".join(sorted(grotesk - set(drawn)))))
+
+    return 2
+
+
 def check_snes_scale(guest):
     """`--scale` reaches the Super Nintendo, and never reaches a ROM's name.
 
@@ -6723,6 +6835,7 @@ def main():
                               if machine(args.image) == "x86_64" else 0)
         volume_key_checks = phase("volume keys", check_volume_keys)
         budget_checks = phase("compositor budget", check_budget)
+        face_checks = phase("faces", check_faces)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
@@ -6787,7 +6900,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + volume_key_checks
+             + unknown_key_checks + volume_key_checks + face_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -6857,6 +6970,8 @@ def main():
           f"manager rather than a window, "
           f"{budget_checks} on a full-screen picture and a maximised window fitting "
           f"in the compositor at 1920x1080, "
+          f"{face_checks} on every outline face loading and drawing, Space "
+          f"Grotesk's five weights among them, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

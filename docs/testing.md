@@ -5495,3 +5495,37 @@ of the others is the evidence for marking it.
 seconds a board, were not needed for this and remain; `x86-usb-2` is the
 longest part and can be split. Five minutes is not a floor, and a suite that
 pushes the whole past ten is the thing to fix before anything else lands.
+
+## 18.98 Every outline face loads and draws - Space Grotesk among them
+
+**Space Grotesk, five weights**, added on 18 September at Diego's asking:
+Light, Regular, Medium, SemiBold and Bold, the static files of the Google
+Fonts download byte for byte, under the SIL Open Font License beside them as
+`LICENSE.SpaceGrotesk`. The build embeds every `.ttf` in `assets/fonts/`, so
+nothing else had to change for Appearance to offer them - which is also why
+nothing had ever checked that a face it offers can be drawn.
+
+**The display harness's `faces` phase, 2 checks, on both boards**: a program
+lists `gfx.fonts()`, loads each outline face at 24 pixels, measures a word
+with it and draws it into a surface of its own; every face has to load,
+measure wider than nothing and light more than fifty pixels, and all five
+weights of Space Grotesk have to be among them. Nineteen faces. **Run once
+per eight**, because a process holds eight outline faces beside its four
+roles (`FACES_MAX` in `gfx.c`) and never lets one go - asking one process
+for all nineteen would fail at the ninth for a reason that is not a font's.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| forty kilobytes of noise in `assets/fonts/` as `Broken-Regular.ttf` | *the faces program died loading a face after atkinsonhyperlegible - data abort from a lower EL. A face in assets/fonts is not a font stb_truetype can read* |
+
+**The control found two things beyond the phase.** A broken font is not
+refused - stb_truetype believes the offsets inside the file, and the noise
+sent the program reading an address nothing maps, so the phase names a
+death as well as a refusal. **And removing the control's font did not
+remove it from the image**: make rebuilds a table when a file it depends on
+is newer, and a file that is gone is newer than nothing, so the next "real"
+run died on the same font. Every font or icon ever taken out of `assets/`
+had stayed in the image until something else touched its table. The fonts
+and assets tables now depend on a stamp holding their list of files,
+rewritten when the list changes - the flags stamps' trick, for the same kind
+of question - and the real run passed on both boards.

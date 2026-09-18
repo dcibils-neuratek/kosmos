@@ -1763,9 +1763,27 @@ ART_FILES := $(sort $(wildcard assets/*.txt))
 # project's own work, so there is no licence beside it and the generated
 # file says so, which is what that line of the report is for.
 
+#
+# **A file taken out rebuilds its table too.** Make rebuilds when a
+# prerequisite is newer, and a file that is gone is newer than nothing - so
+# a font or an icon removed from `assets/` stayed in the image, unnoticed,
+# until something else touched the table. The faces check found it on 18
+# September: a control's broken font, removed after the run, was still in
+# the "real" image and killed the next one. So each table also depends on
+# a stamp holding its list of files, rewritten only when the list changes,
+# which is the flags stamps' trick for the same kind of question.
+#
+ASSET_LIST := $(GEN)/assets.list
+$(shell mkdir -p $(GEN); [ "$$(cat $(ASSET_LIST) 2>/dev/null)" = '$(ICON_FILES) $(ART_FILES)' ] \
+        || printf '%s' '$(ICON_FILES) $(ART_FILES)' > $(ASSET_LIST))
+
+$(ASSET_LIST):
+	@mkdir -p $(dir $@)
+	@printf '%s' '$(ICON_FILES) $(ART_FILES)' > $@
+
 $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
                  assets/images/test-screen.jpg \
-                 $(ICON_FILES) $(ART_FILES) LICENSE \
+                 $(ICON_FILES) $(ART_FILES) $(ASSET_LIST) LICENSE \
                  docs/cheatsheet.html tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py assets_table $@ \
@@ -1784,7 +1802,15 @@ $(GEN)/assets.c: assets/images/test-pattern.png assets/images/test-quads.jpg \
 # more than it was.
 FONT_FILES := $(sort $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/*.otf))
 
-$(GEN)/fonts.c: $(FONT_FILES) tools/assets2c.py
+FONT_LIST := $(GEN)/fonts.list
+$(shell mkdir -p $(GEN); [ "$$(cat $(FONT_LIST) 2>/dev/null)" = '$(FONT_FILES)' ] \
+        || printf '%s' '$(FONT_FILES)' > $(FONT_LIST))
+
+$(FONT_LIST):
+	@mkdir -p $(dir $@)
+	@printf '%s' '$(FONT_FILES)' > $@
+
+$(GEN)/fonts.c: $(FONT_FILES) $(FONT_LIST) tools/assets2c.py
 	@mkdir -p $(dir $@)
 	python3 tools/assets2c.py fonts_table $@ $(FONT_FILES)
 

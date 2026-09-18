@@ -1117,6 +1117,10 @@ CPUID 80000008h's physical-address width on x86, `ID_AA64MMFR0_EL1.PARange`
 on AArch64. The x86 fault report now prints the reserved-bit flag and the
 entries it walked, which is what explained it.
 
+**DONE on 18 September - Space Grotesk**, five weights, at Diego's asking:
+"add the new font space grotesk" - in `assets/fonts/` with its licence, and
+offered by Appearance like every other face (`testing.md` 18.98).
+
 **Wanted - `make shot`'s picture without doubles.** Since the login set
 opens Tracker, Monitor, Processes and the log at startup, the gallery's
 picture has two of three of them (18 September, `2026-09-18-1841-eeccbc0.png`,
