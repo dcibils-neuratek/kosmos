@@ -15,6 +15,7 @@ Usage: test_run_uefi.py
 """
 
 import contextlib
+import glob
 import io
 import os
 import sys
@@ -187,10 +188,22 @@ def main():
     # plain image says nothing. Only run where the images exist, because a
     # clean tree has neither and a skip is honest where a lie is not.
     #
-    for image, wants in (
-            ("build/x86_64/kosmos-usb-%s-development.img"
-             % open("VERSION").read().strip(), True),
-            ("build/x86_64/kosmos-uefi.img", False)):
+    #
+    # **The stable stick, not this version's.** The first version of this
+    # looked for `kosmos-usb-<VERSION>-development.img`, and `VERSION` moves
+    # on every push while a stick is built only when one is handed over - so
+    # after 0.10.76's bump it found nothing, and this check skipped itself in
+    # silence: 9 checks became 8 in `make test` and nothing said why. There is
+    # exactly one stable stick at a time, its bytes are never rebuilt, and it
+    # carries `opt/kosmos/boot=wm`, read back on 16 September. Not every
+    # development stick does - 0.10.69's predates `USB_BOOT` - so a glob over
+    # all of them would assert something false about the older ones.
+    #
+    known = [(s, True) for s in sorted(glob.glob(
+        "build/x86_64/kosmos-usb-*-stable.img"))]
+    known.append(("build/x86_64/kosmos-uefi.img", False))
+
+    for image, wants in known:
         if not os.path.exists(image):
             continue
 
