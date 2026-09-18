@@ -499,9 +499,14 @@ name it now has. A volume with nothing to know it by, a filesystem with no
 serial on a drive with no GPT, is refused as a place rather than remembered
 by its name.
 
-**The rule is `/lib/places.lua` and the drawing is Tracker**, for
-`deskbarmenu.lua`'s reason: the decisions are worth testing where a test
-costs no boot. `tools/test_places.lua` is 17 checks, and the control that
+**The rule is `/lib/places.lua`, the rows are `/lib/sidebar.lua`, and what
+is done with a row is the caller's.** The rule for `deskbarmenu.lua`'s reason:
+the decisions are worth testing where a test costs no boot. The rows since
+USB step 6d, when the Open and Save window became the sidebar's second user
+and `drives.html` asked for "the same sidebar as Tracker" - so it is the same
+code, moved out of `tracker.lua` as it was, one `sidebar.new()` per window.
+Making and removing places stayed Tracker's; an Open window only gets
+around. `tools/test_places.lua` is 17 checks, and the control that
 matters keys `resolve` on the name: the replugged stick and the other stick
 called PHOTOS both then open `/drives/PHOTOS/Italy`, the wrong drive, and
 both checks fail.
