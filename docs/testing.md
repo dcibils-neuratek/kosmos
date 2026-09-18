@@ -5244,3 +5244,47 @@ on a folder of seven entries, with folders first, sizes as `3.0 KB`, kinds as
 than running under the size - never in the middle of a UTF-8 character. And
 Tracker's trail, moved into the kit as `ui.trail`, clicked on `home` from
 `/home/Desktop`, went to `/home`.
+
+## 18.92 A key the keyboard driver does not know, named once
+
+**`hal/pc/i8042.c` dropped every key behind an 0xe0 prefix that its table did
+not know, and said nothing.** That is where the ThinkPad's volume and
+brightness keys went, if they arrive as keys at all - and a key that vanished
+in silence cannot be told from one that never came. So each is named in the
+kernel's log the first time it goes down, with its byte, and never again,
+because a held key repeats and `diagnose` carries the log off the stick. It
+is still dropped; the loss is visible, and nothing above changes.
+
+**Measured through QEMU's PS/2 keyboard rather than recalled**, with the
+driver's own new line reporting what arrived:
+
+```
+e0 21   calculator      (pressed twice: named once)
+e0 20   mute
+e0 2e   volume down
+e0 30   volume up       (pressed twice: named once)
+```
+
+and Home, which the driver knows, named not at all. The volume keys' bytes
+are the standard ones; whether the ThinkPad's embedded controller sends the
+same is the stick's to say.
+
+**The display harness's `unknown keys` phase, 3 checks, x86 only** - the ARM
+board's keyboard is virtio. **The calculator key, because nothing will ever
+map it**: the volume keys are about to have entries, and a test built on them
+would stop testing this the day they did.
+
+| Broken on purpose | What the phase said |
+| ----------------- | ------------------- |
+| named on every press, the bitmap ignored | *the calculator key, pressed twice, was named 2 times* |
+| dropped in silence, as it always was | *a key the keyboard driver has no entry for was dropped in silence* |
+
+**The second control was run twice, and the first run proved nothing.** It
+removed the call to `unknown_extended`, which left that function unused, and
+`-Werror` refused to compile it - so `make` kept the kernel from the control
+before, and the phase tested *that*, reporting the first control's failure
+word for word. `build exit=2` was printed beside it and nearly read past.
+This is 6b's C33 again, the control that does not compile and silently tests
+the last binary that did. The control was rewritten to compile - the line
+removed, the bookkeeping kept - and the chain that runs controls now refuses
+to run a phase against a build that failed.

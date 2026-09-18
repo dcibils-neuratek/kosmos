@@ -594,10 +594,12 @@ processors, and still what follows USB:
    as keys - expected, and not yet seen on this one. In this order, the
    cheapest and most urgent first:
 
-   1. **A log line for every key the driver drops**, which QEMU can test and
-      one photograph on the ThinkPad can read. It says which of these keys
-      arrive as keys and which do not, and everything after it depends on
-      that answer.
+   1. **DONE on 18 September - a log line for every key the driver drops**,
+      once per key, with its byte: `i8042: a key this driver has no entry
+      for, e0 30`. QEMU measured the standard bytes - mute e0 20, volume down
+      e0 2e, volume up e0 30 - and the display harness's `unknown keys` phase
+      checks it on x86 with two controls (`testing.md` 18.92). What the
+      ThinkPad sends is one `diagnose` and one `make stick-log` away.
    2. **The volume keys**, if they arrive as keys, need no new audio work:
       `audioproto.h` already carries `gain` (0 to 256) and `muted`, which the
       Deskbar and Music use, so they are recognised and wired to what is there.
@@ -1061,6 +1063,16 @@ back on - and so a count of nought; and a first page alone holds 28 names
 (`BIN_CHUNK`), not one. The harness keeps only what arrived after the line
 it typed, so what the machine said before it is gone. Recorded as
 intermittent, with its one line of evidence, and nothing fixed.
+
+**And again on 18 September, on x86**, in the display harness run on the
+ThinkPad keys' first step: `bin-scanned 1`, the guest's own count, so a list
+of one name came back from `/bin` and the harness read it correctly. Not the
+change being checked, which was the keyboard driver naming a key it does not
+know - this phase runs long before any such key is pressed. The same tree's
+`make test` passed, and the harness run again on the unchanged tree passed both boards, 124 and 125. **Since then a failure
+in the display harness writes the guest's whole log to
+`build/harness-failure-<board>.txt`**, so the next one arrives with
+everything the machine said rather than its last two lines.
 
 **The window manager could not find a file written two seconds earlier,
 once.** 18 September, x86-64, in 0.10.77's gate: the registry phase writes

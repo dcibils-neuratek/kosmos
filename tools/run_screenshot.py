@@ -3141,6 +3141,57 @@ def check_snes_scale(guest):
     return 2
 
 
+def check_unknown_keys(guest):
+    """A key the keyboard driver has no entry for is named once, not dropped
+    in silence. x86 only: the ARM board's keyboard is virtio, and this is
+    the i8042's.
+
+    `hal/pc/i8042.c` dropped any key behind an 0xe0 prefix that its table
+    did not know, which is where the ThinkPad's volume and brightness keys
+    went - Diego, 18 September, "its too dim now and i cant control it". So
+    each is said in the kernel's log the first time it goes down, and never
+    again, because a held key repeats and `diagnose` carries that log off
+    the stick.
+
+    **The calculator key, because nothing will ever map it.** The volume
+    keys are about to have entries, and a test built on them would stop
+    testing this the day they did. QEMU sends it as e0 21. Pressed twice,
+    and Home once between: named once with its byte, and Home, which the
+    driver knows, never.
+    """
+    time.sleep(1.0)
+    mark = len(guest.seen)
+
+    for key in ("calculator", "home", "calculator"):
+        guest.sendkey(key)
+        time.sleep(0.6)
+
+    time.sleep(2.0)
+    guest._read_available()
+
+    said = [line.strip() for line in guest.seen[mark:].splitlines()
+            if "i8042: a key this driver has no entry for" in line]
+
+    if not said:
+        raise Failure(
+            "a key the keyboard driver has no entry for was dropped in "
+            "silence - the calculator key, pressed twice, was never named:\n"
+            + guest.seen[mark:][-600:])
+
+    if not all(" e0 21 " in line for line in said):
+        raise Failure(
+            "the keyboard driver named a key, and not the one pressed - "
+            "wanted e0 21, the calculator: " + " / ".join(said))
+
+    if len(said) != 1:
+        raise Failure(
+            "the calculator key, pressed twice, was named %d times - once is "
+            "the point, because a held key repeats: %s"
+            % (len(said), " / ".join(said)))
+
+    return 3
+
+
 def check_power_button(guest):
     """The power button reaches a driver that is not in the kernel.
 
@@ -6577,6 +6628,8 @@ def main():
         repaint_checks = phase("repaints", check_repaints)
         power_checks = (phase("power button", check_power_button)
                         if machine(args.image) == "aarch64" else 0)
+        unknown_key_checks = (phase("unknown keys", check_unknown_keys)
+                              if machine(args.image) == "x86_64" else 0)
         budget_checks = phase("compositor budget", check_budget)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
@@ -6598,6 +6651,30 @@ def main():
 
     except Failure as e:
         print(f"\nFAIL: {e}", file=sys.stderr)
+
+        #
+        # **The whole of what the guest said, kept.** A failure used to
+        # leave the last few lines and nothing before them, and three
+        # failures of one shape - a file server answering as though what is
+        # there were not: `/bin` listed as one name twice, a file written two
+        # seconds earlier "no such path" once - each left too little to
+        # explain (`roadmap.md`, Known and unexplained). `guest.seen` has
+        # always held all of it; now a failure writes it down.
+        #
+        if guest is not None:
+            where = "build/harness-failure-%s.txt" % machine(args.image)
+
+            try:
+                guest._read_available()
+
+                with open(where, "w") as kept:
+                    kept.write(guest.seen)
+
+                print(f"the guest's whole log is in {where}", file=sys.stderr)
+            except OSError as why:
+                print(f"the guest's log could not be kept: {why}",
+                      file=sys.stderr)
+
         return 1
     finally:
         if guest is not None:
@@ -6616,6 +6693,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
+             + unknown_key_checks
              + name_checks + file_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
@@ -6673,6 +6751,8 @@ def main():
           f"scrolled back), "
           f"{repaint_checks} on an idle window drawing nothing at all, "
           f"{power_checks} on the power button reaching a driver outside the kernel, "
+          f"{unknown_key_checks} on a key the keyboard driver has no entry for "
+          f"being named once rather than dropped in silence, "
           f"{budget_checks} on a full-screen picture and a maximised window fitting "
           f"in the compositor at 1920x1080, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "

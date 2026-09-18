@@ -458,6 +458,43 @@ static void aux_byte(uint8_t b)
  * The drain, which is where both devices are actually read.
  *----------------------------------------------------------------------*/
 
+/*
+ * **An extended key this driver has no entry for is said, once.**
+ *
+ * It used to be dropped without a trace - `extended_code` answers 0 and
+ * `kbd_byte` returned - which is where the ThinkPad's volume and brightness
+ * keys went, if they arrive as keys at all: Diego, 14 and 18 September, "how
+ * can i make the brightness buttons on the thinkpad actually work?" and "its
+ * too dim now and i cant control it". A key that vanished in silence cannot
+ * be told from a key that never came, and on a ThinkPad some of these are
+ * expected from the embedded controller as ACPI events rather than as keys -
+ * expected, and not yet seen on this one.
+ *
+ * So each one is named in the kernel's log the first time it goes down, with
+ * the byte that came after 0xe0 - and never again, because a key held down
+ * repeats, and a line per repeat would bury the log `diagnose` carries off
+ * the stick. It is still dropped: this makes the loss visible and changes
+ * nothing about what reaches anything above.
+ *
+ * One bit per byte, 0 to 127; the interrupt that calls this is the only
+ * writer.
+ */
+static void unknown_extended(uint8_t scan)
+{
+    static uint32_t said[4];
+    uint32_t bit = 1u << (scan & 31u);
+
+    if (said[scan >> 5] & bit) {
+        return;
+    }
+
+    said[scan >> 5] |= bit;
+
+    kputs("i8042: a key this driver has no entry for, e0 ");
+    kputx(scan, 2);
+    kputs(" - said once, and dropped\n");
+}
+
 static void kbd_byte(uint8_t b)
 {
     static bool escaped;
@@ -479,6 +516,10 @@ static void kbd_byte(uint8_t b)
         code = extended_code(b);
 
         if (code == 0) {
+            if (down) {
+                unknown_extended(b);
+            }
+
             return;
         }
     } else {
