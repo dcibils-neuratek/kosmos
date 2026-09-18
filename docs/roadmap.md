@@ -415,8 +415,16 @@ is the one that makes the machine Diego owns behave like a computer:
    second is right on a desk and wrong under TCG, where the counter runs
    against host time while the guest lags, and two presses 0.12 s apart
    measured 46 187 937 ticks - 0.74 s of counter time (`testing.md` §18.86).
-   **NEXT**: shortcut places, which must key on unit and partition because a
-   volume's name can renumber across a replug.
+   **IN PROGRESS since 18 September: shortcut places** - drag a drive or a
+   folder into Places and name it, `drives.html`'s MyPhotos. **They key on
+   the volume's own identity, read off the disk: FAT's volume serial number,
+   or the GPT partition's unique GUID.** This said "unit and partition", and
+   that cannot work: `xhci.c` hands a unit out with `units_named++`, "the
+   next never given out", so the same stick replugged into the same port
+   comes back with a new number - the very case a shortcut exists to survive.
+   A serial or a partition GUID travels with the volume across a replug, a
+   port and a machine, which is what Finder's Favorites and Windows' Quick
+   Access key on. `/drives` gains a field to carry it.
 
    **DONE on 16 September, the check that verifies a stick before it is
    handed over.** `run_uefi.py` failed 0.10.75 with "the picture is still the
@@ -429,7 +437,7 @@ is the one that makes the machine Diego owns behave like a computer:
    branch a rubber stamp when it is broken on purpose (`testing.md` 18.88). **The fullness bars are not
    6c's** - read again on 16 September, every bar in `drives.html` sits
    inside a `drive-tile`, which is the Drives app, and the sidebar rows there
-   carry a name and a type and nothing else. They move to 6e; **6d** the Open and Save window;
+   carry a name and a type and nothing else. They move to 6e; **6d** the Open and Save window, and its first caller: **a File menu for the Super Nintendo** - Open ROM... and Quit, which Diego asked for on 18 September. Open ROM goes through 6d's window rather than a dialog of its own, because `drives.html` settles one Open window for every app;
    **6e** the Drives app; **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
@@ -563,24 +571,41 @@ processors, and still what follows USB:
    pointer mode in the window manager - music, and saving. `LICENSE` and
    `FULL=1` still disagree about Doom; Quake, outside `FULL=1`, adds nothing
    to that.
-3. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
+3. **NEXT - the ThinkPad's brightness and volume keys**, moved ahead of the
+   battery on 18 September because the screen is a problem today and the
+   battery is not. Diego, 14 September: "how can i make the brightness buttons
+   on the thinkpad actually work?"; and on 18 September: "its too dim now and
+   i cant control it", "also the volume keys on the keyboard, as its the way
+   to control the volume".
+
+   **Nothing in Kosmos sets a brightness, so it stays wherever the firmware
+   left it**, and the keyboard driver drops any extended key it has no entry
+   for (`extended_code` in `hal/pc/i8042.c`), so the brightness and volume
+   keys vanish there if they arrive at all. On a ThinkPad some of them are
+   expected to come from the embedded controller as ACPI events rather than
+   as keys - expected, and not yet seen on this one. In this order, the
+   cheapest and most urgent first:
+
+   1. **A log line for every key the driver drops**, which QEMU can test and
+      one photograph on the ThinkPad can read. It says which of these keys
+      arrive as keys and which do not, and everything after it depends on
+      that answer.
+   2. **The volume keys**, if they arrive as keys, need no new audio work:
+      `audioproto.h` already carries `gain` (0 to 256) and `muted`, which the
+      Deskbar and Music use, so they are recognised and wired to what is there.
+   3. **The DSDT**, for where brightness is set - an embedded controller
+      register, or the graphics device's backlight - with its offsets from the
+      documentation rather than from memory. Shared with the battery below.
+   4. **A comfortable brightness set at boot**, which fixes "too dim" before
+      any key works.
+   5. **The brightness keys**, and both levels shown on the bar when a key
+      changes them.
+4. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
-   every `SYS_SYSINFO`. It starts with getting the DSDT off the machine.
-
-   **And the brightness keys beside it**, asked for by Diego on 14 September:
-   "how can i make the brightness buttons on the thinkpad actually work?".
-   Nothing in Kosmos sets a brightness, and the keyboard driver drops any
-   extended key it has no entry for (`extended_code` in `hal/pc/i8042.c`), so
-   Fn+F5 and Fn+F6 vanish there if they arrive at all. On a ThinkPad they are
-   expected to come from the embedded controller as ACPI events rather than as
-   keys - expected, and not yet seen on this one. So it starts where the
-   battery does: first a log line for every key the driver drops, which QEMU
-   can test and one photograph on the ThinkPad can read; then the DSDT, for
-   where brightness is set - an embedded controller register, or the graphics
-   device's backlight, with its offsets from the documentation rather than from
-   memory; then a driver, the two keys, and the level shown on the bar.
-4. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+   every `SYS_SYSINFO`. It starts with getting the DSDT off the machine,
+   which the keys above will already have done.
+5. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no
    distinction between writing an app and modifying the system. Ten lessons,
