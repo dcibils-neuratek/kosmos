@@ -442,7 +442,7 @@ is the one that makes the machine Diego owns behave like a computer:
    branch a rubber stamp when it is broken on purpose (`testing.md` 18.88). **The fullness bars are not
    6c's** - read again on 16 September, every bar in `drives.html` sits
    inside a `drive-tile`, which is the Drives app, and the sidebar rows there
-   carry a name and a type and nothing else. They move to 6e; **6d** the Open and Save window, and its first caller: **a File menu for the Super Nintendo** - Open ROM... and Quit, which Diego asked for on 18 September. Open ROM goes through 6d's window rather than a dialog of its own, because `drives.html` settles one Open window for every app;
+   carry a name and a type and nothing else. They move to 6e; **6d IN PROGRESS** (18 September), the Open and Save window - **DONE, the window itself** (`b1e408a`): the same sidebar as Tracker from `/lib/sidebar.lua`, the trail, Name, Size and Kind, one click selecting and a second opening, and a filter, in every application that opens or saves (`ui.md` 16.8f). **BLOCKED on Diego: the Super Nintendo's File menu** - Open ROM... and Quit, asked for on 18 September. Its window draws its own pixels, and no such window can carry a kit menu today (`window:paint` returns at once for one), so Diego chooses: A, the compositor draws a menu bar above a direct window's pixels, which Doom and Quake could then use too - recommended; or B, the application draws its own. Open ROM from a stick already works by path, `wm snes:/drives/...`;
    **6e** the Drives app; **6f** exFAT.
 
    **6b's shape, read out of the code on 16 September, for Diego to agree
@@ -576,9 +576,12 @@ processors, and still what follows USB:
    pointer mode in the window manager - music, and saving. `LICENSE` and
    `FULL=1` still disagree about Doom; Quake, outside `FULL=1`, adds nothing
    to that.
-3. **NEXT - the ThinkPad's brightness and volume keys**, moved ahead of the
-   battery on 18 September because the screen is a problem today and the
-   battery is not. Diego, 14 September: "how can i make the brightness buttons
+3. **IN PROGRESS since 18 September - the ThinkPad's brightness and volume
+   keys**, moved ahead of the battery that morning because the screen is a
+   problem today and the battery is not - **and that afternoon ahead of USB
+   6e as well**, Diego's choice: "yes lets do brightness and volume keys".
+   USB resumes at 6e after it, with the Super Nintendo's File menu waiting
+   on how a window that draws its own pixels gets a menu. Diego, 14 September: "how can i make the brightness buttons
    on the thinkpad actually work?"; and on 18 September: "its too dim now and
    i cant control it", "also the volume keys on the keyboard, as its the way
    to control the volume".
@@ -603,14 +606,44 @@ processors, and still what follows USB:
       documentation rather than from memory. Shared with the battery below.
    4. **A comfortable brightness set at boot**, which fixes "too dim" before
       any key works.
-   5. **The brightness keys**, and both levels shown on the bar when a key
-      changes them.
-4. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
+   5. **The brightness keys**, and **the level shown on the screen when a key
+      changes it** - Diego, 18 September: "make sure we have a way to show
+      brightness bar level in the screen to know where we are on the
+      brightness level", and "like a volume bar as well". A bar that
+      appears over the desktop for a moment
+      when a brightness or volume key is pressed, saying which and how far
+      along it is, the way every laptop's does. **Drawn as a mockup in
+      `docs/` first**, for Diego to change before any of it is written.
+4. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
+   the tabs in the windows like BEOS instead of the full windoe tab like we
+   have today", "can we have a appearance setting to switch between full tab
+   like windows or linux or beos", and "i would like to polish the entire
+   Kosmos UI in several ways. The screenshots you design look great but the
+   UI then lacks polish in certain areas, like color schemes, ui layouts,
+   spacing in widgets, fonts", "the fonts used in the screenhot look great".
+   Three parts:
+
+   1. **The title's shape, a setting in Appearance**: BeOS's tab, as wide as
+      the title, or a bar across the whole window as Windows and Linux draw
+      it. The code already calls it a tab (`TAB_H` in `wm.lua`) and draws it
+      full width. The tab by default, being the one Diego prefers.
+   2. **IBM Plex as the default faces.** The mockups are set in IBM Plex Sans
+      and Plex Mono, and both are already in `assets/fonts/` with their
+      licences - unused by default, because every default face is `spleen`,
+      the 8x16 bitmap (`theme.fonts`). Plex Sans Condensed, the mockups'
+      headings, is not in the tree and would be a download. What this costs is
+      real: the display harness finds rows by the 16-pixel default face, so it
+      pins its own look before the default can change.
+   3. **The polish, drawn first**: a style guide in `docs/` - colours, the
+      spacing scale, the type sizes, and every widget beside what it looks
+      like today - for Diego to change, and then applied one application at a
+      time, each photographed against its drawing.
+5. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine,
    which the keys above will already have done.
-5. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+6. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no
    distinction between writing an app and modifying the system. Ten lessons,

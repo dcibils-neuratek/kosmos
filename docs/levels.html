@@ -1,0 +1,510 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!--
+  The brightness and volume bar, drawn before it is written (CLAUDE.md, "An
+  app is drawn before it is written"). Diego, 18 September 2026: "make sure we
+  have a way to show brightness bar level in the screen to know where we are
+  on the brightness level", "like a volume bar as well", and then a picture of
+  macOS's Display panel: "we should have like a macos bar like this - that
+  shows up when we change brightness levels". Roadmap item 3, step 5.
+-->
+<title>Kosmos Level Bars</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --card: #ffffff;
+    --accent: #2a55c9;
+
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    /* Kosmos's own dark palette, from user/lib/theme.lua - the mock screen
+       is the machine, so it does not change with the page's theme. */
+    --k-desk: #1c2530;
+    --k-win: #161b22;
+    --k-raised: #21262d;
+    --k-line: #30363d;
+    --k-ink: #c9d1d9;
+    --k-dim: #8b949e;
+    --k-tab: #ffc700;
+    --k-tab-ink: #101010;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b;
+      --ink: #e3e8ef;
+      --muted: #9aa5b5;
+      --rule: #263041;
+      --card: #161d27;
+      --accent: #7ea0ff;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0f141b;
+    --ink: #e3e8ef;
+    --muted: #9aa5b5;
+    --rule: #263041;
+    --card: #161d27;
+    --accent: #7ea0ff;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding-block: 32px 64px;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(28px, 5vw, 38px);
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+
+  .lede { color: var(--muted); max-width: 66ch; margin: 0 0 22px; }
+
+  h2 {
+    font-family: var(--display);
+    font-size: 19px;
+    margin: 34px 0 8px;
+    text-wrap: balance;
+  }
+
+  p { max-width: 68ch; }
+  code { font-family: var(--mono); font-size: 0.9em; }
+
+  /* ------------------------------------------------------ the mock screen */
+  .screen {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    max-width: 100%;
+    background: var(--k-desk);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 0 var(--rule), 0 12px 32px rgba(0, 0, 0, 0.18);
+    user-select: none;
+    font-family: var(--body);
+  }
+
+  .bar {
+    position: absolute; left: 0; right: 0; top: 0;
+    height: 30px;
+    background: var(--k-win);
+    border-bottom: 1px solid var(--k-line);
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 12px;
+    color: var(--k-ink); font-size: 12.5px;
+  }
+  .bar .brand { font-weight: 600; }
+  .bar .gap { flex: 1; }
+  .bar .clock { font-family: var(--mono); color: var(--k-dim); font-size: 12px; }
+
+  .win {
+    position: absolute;
+    background: var(--k-win);
+    border: 1px solid var(--k-line);
+  }
+  .win .tab {
+    position: absolute; left: -1px; top: -21px;
+    height: 20px; padding: 0 12px;
+    background: var(--k-tab); color: var(--k-tab-ink);
+    font-size: 11.5px; font-weight: 600;
+    display: flex; align-items: center;
+  }
+  .win .rows { padding: 12px 14px; display: grid; gap: 9px; }
+  .win .rows span { display: block; height: 7px; border-radius: 2px; background: var(--k-raised); }
+
+  .dim {
+    position: absolute; inset: 0;
+    background: #000;
+    pointer-events: none;
+    transition: opacity 120ms linear;
+  }
+
+  /* ----------------------------------------------------------- the panel */
+  .hud {
+    position: absolute;
+    width: min(300px, 64%);
+    padding: 12px 16px 14px;
+    border-radius: 20px;
+    background: rgba(30, 30, 30, 0.9);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    color: #fff;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 180ms ease, transform 180ms ease;
+    pointer-events: none;
+  }
+  .hud.shown { opacity: 1; transform: none; pointer-events: auto; }
+  .hud.top { top: 40px; right: 14px; }
+  .hud.bottom { bottom: 12%; left: 50%; transform: translate(-50%, 4px); }
+  .hud.bottom.shown { transform: translate(-50%, 0); }
+
+  .hud .title { font-weight: 600; font-size: 15px; margin: 0 0 9px; letter-spacing: 0.005em; }
+
+  .hud .row { display: flex; align-items: center; gap: 10px; }
+  .hud svg { flex: none; }
+
+  .track {
+    position: relative; flex: 1; height: 22px;
+    cursor: pointer; touch-action: none;
+  }
+  .track .rail, .track .fill {
+    position: absolute; left: 0; top: 50%;
+    height: 7px; margin-top: -3.5px; border-radius: 4px;
+  }
+  .track .rail { right: 0; background: rgba(255, 255, 255, 0.18); }
+  .track .fill { background: #fff; }
+  .track .knob {
+    position: absolute; top: 50%;
+    width: 30px; height: 20px; margin: -10px 0 0 -15px;
+    border-radius: 10px;
+    background: #f2f2f2;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
+  .track .notches {
+    position: absolute; left: 0; right: 0; top: 50%; height: 7px; margin-top: -3.5px;
+    display: flex; justify-content: space-between; pointer-events: none;
+  }
+  .track .notches i { width: 1px; background: rgba(0, 0, 0, 0.35); }
+  .hud.muted .fill { background: rgba(255, 255, 255, 0.45); }
+  .hud.muted .knob { background: #bdbdbd; }
+
+  .close {
+    position: absolute; left: -9px; top: -9px;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    background: #e6e6e6; color: #333;
+    font: 600 14px/20px var(--body);
+    text-align: center; cursor: pointer;
+    opacity: 0; transition: opacity 120ms ease;
+    padding: 0;
+  }
+  .hud:hover .close, .close:focus-visible { opacity: 1; }
+
+  /* -------------------------------------------------- the keys and choices */
+  .keys {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 18px 0 6px;
+  }
+  .key {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 64px; padding: 7px 10px 6px;
+    border: 1px solid var(--rule); border-bottom-width: 3px;
+    border-radius: 7px;
+    background: var(--card); color: var(--ink);
+    font: 500 12px var(--body); cursor: pointer;
+  }
+  .key b { font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
+  .key:active { transform: translateY(1px); border-bottom-width: 2px; }
+  .key:focus-visible, .choice button:focus-visible, .close:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .keys .sep { width: 12px; }
+
+  .choices { display: flex; flex-wrap: wrap; gap: 14px 28px; margin-top: 14px; }
+  .choice { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--muted); }
+  .choice .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+  .choice button {
+    border: 0; background: var(--card); color: var(--ink);
+    font: 500 12.5px var(--body); padding: 6px 12px; cursor: pointer;
+  }
+  .choice button + button { border-left: 1px solid var(--rule); }
+  .choice button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  .readout {
+    margin-top: 12px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+
+  .notes { display: grid; gap: 12px; margin-top: 8px; }
+  .notes div { padding-left: 14px; border-left: 3px solid var(--rule); color: var(--muted); font-size: 14px; max-width: 70ch; }
+  .notes b { color: var(--ink); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hud, .dim, .close { transition: none; }
+  }
+
+  @media (max-width: 520px) {
+    .bar { font-size: 11px; gap: 10px; }
+    .hud { padding: 9px 12px 11px; border-radius: 16px; }
+    .hud .title { font-size: 13px; margin-bottom: 6px; }
+  }
+</style>
+
+<div class="wrap">
+  <h1>Kosmos Level Bars</h1>
+  <p class="lede">The panel that appears over the desktop when a brightness or volume key is
+    pressed, after macOS's Display and Sound panels. Press the ThinkPad's keys below - or drag
+    the knob - and it shows, follows, and fades.</p>
+
+  <div class="screen" id="screen" aria-label="A Kosmos desktop">
+    <div class="bar"><span class="brand">Kosmos</span><span>Tracker</span><span>Music</span><span class="gap"></span><span class="clock">14:32</span></div>
+
+    <div class="win" style="left:6%; top:22%; width:46%; height:52%">
+      <div class="tab">Tracker</div>
+      <div class="rows"><span style="width:62%"></span><span style="width:78%"></span><span style="width:54%"></span><span style="width:70%"></span><span style="width:40%"></span></div>
+    </div>
+    <div class="win" style="left:58%; top:44%; width:34%; height:36%">
+      <div class="tab">Music</div>
+      <div class="rows"><span style="width:70%"></span><span style="width:48%"></span><span style="width:58%"></span></div>
+    </div>
+
+    <div class="dim" id="dim"></div>
+
+    <div class="hud top" id="hud" role="dialog" aria-live="polite" aria-label="Display">
+      <button class="close" id="close" type="button" aria-label="Close">&times;</button>
+      <div class="title" id="hud-title">Display</div>
+      <div class="row">
+        <span id="icon-low"></span>
+        <div class="track" id="track" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="16" aria-valuenow="11" aria-label="Brightness">
+          <div class="rail"></div>
+          <div class="fill" id="fill"></div>
+          <div class="notches" id="notches"></div>
+          <div class="knob" id="knob"></div>
+        </div>
+        <span id="icon-high"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="keys" role="group" aria-label="The ThinkPad's keys">
+    <button class="key" data-act="bdown" type="button"><b>F5</b>brightness &minus;</button>
+    <button class="key" data-act="bup" type="button"><b>F6</b>brightness +</button>
+    <span class="sep"></span>
+    <button class="key" data-act="mute" type="button"><b>F1</b>mute</button>
+    <button class="key" data-act="vdown" type="button"><b>F2</b>volume &minus;</button>
+    <button class="key" data-act="vup" type="button"><b>F3</b>volume +</button>
+  </div>
+
+  <div class="choices">
+    <div class="choice">Where
+      <span class="seg" data-choice="position">
+        <button type="button" data-value="top" aria-pressed="true">top right</button>
+        <button type="button" data-value="bottom" aria-pressed="false">bottom centre</button>
+      </span>
+    </div>
+    <div class="choice">Steps
+      <span class="seg" data-choice="steps">
+        <button type="button" data-value="16" aria-pressed="true">16 notches</button>
+        <button type="button" data-value="0" aria-pressed="false">smooth</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="readout" id="readout"></div>
+
+  <h2>What it does</h2>
+  <div class="notes">
+    <div><b>It appears when a level changes, and only then.</b> A key, or dragging the knob. It
+      stays for two seconds after the last change and fades; the &times; that shows on hover
+      takes it away at once.</div>
+    <div><b>One panel for both, titled by what it controls</b> - Display with suns, Sound with
+      speakers. Muted, the speaker is struck through and the bar goes grey, keeping its level,
+      so unmuting comes back where it was.</div>
+    <div><b>Drawn by the window manager, over everything</b>, because the keys are the whole
+      system's and not any one application's - the same place the Super key is handled
+      today. Nothing about it waits on the thing it controls: the panel moves at the moment of
+      the key, from what it already knows.</div>
+    <div><b>The ThinkPad decides how many real steps brightness has</b>, and the DSDT will say
+      - its list of backlight levels. Sixteen here is a stand-in until it is read off the
+      machine.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var ICONS = {
+    sunSmall: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6" fill="#fff"/>' +
+      [0, 45, 90, 135, 180, 225, 270, 315].map(function (a) {
+        return '<rect x="7.4" y="1.6" width="1.2" height="2.2" rx="0.6" fill="#fff" transform="rotate(' + a + ' 8 8)"/>';
+      }).join("") + "</svg>",
+    sunLarge: '<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="4" fill="#fff"/>' +
+      [0, 45, 90, 135, 180, 225, 270, 315].map(function (a) {
+        return '<rect x="10.2" y="1" width="1.6" height="3.6" rx="0.8" fill="#fff" transform="rotate(' + a + ' 11 11)"/>';
+      }).join("") + "</svg>",
+    speaker: function (waves, struck) {
+      var s = '<svg width="22" height="20" viewBox="0 0 22 20" aria-hidden="true">' +
+        '<path d="M2 7h3.5L10 3v14l-4.5-4H2z" fill="#fff"/>';
+      if (!struck) {
+        if (waves > 0) s += '<path d="M12.5 7.2a3.6 3.6 0 0 1 0 5.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>';
+        if (waves > 1) s += '<path d="M14.8 5a6.6 6.6 0 0 1 0 10" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>';
+        if (waves > 2) s += '<path d="M17.2 2.8a9.6 9.6 0 0 1 0 14.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>';
+      } else {
+        s += '<path d="M13 6l6 8M19 6l-6 8" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>';
+      }
+      return s + "</svg>";
+    }
+  };
+
+  var state = {
+    brightness: 11 / 16,
+    volume: 9 / 16,
+    muted: false,
+    which: "display",
+    steps: 16,
+    position: "top"
+  };
+
+  var hud = document.getElementById("hud");
+  var title = document.getElementById("hud-title");
+  var low = document.getElementById("icon-low");
+  var high = document.getElementById("icon-high");
+  var track = document.getElementById("track");
+  var fill = document.getElementById("fill");
+  var knob = document.getElementById("knob");
+  var notches = document.getElementById("notches");
+  var dim = document.getElementById("dim");
+  var readout = document.getElementById("readout");
+  var hideTimer = null;
+  var dragging = false;
+
+  function level() { return state.which === "display" ? state.brightness : state.volume; }
+
+  function snap(v) {
+    v = Math.max(0, Math.min(1, v));
+    return state.steps ? Math.round(v * state.steps) / state.steps : v;
+  }
+
+  function setLevel(v) {
+    v = snap(v);
+    if (state.which === "display") state.brightness = v; else { state.volume = v; if (v > 0) state.muted = false; }
+  }
+
+  function describe() {
+    var b = Math.round(state.brightness * 100), v = Math.round(state.volume * 100);
+    readout.textContent = "brightness " + b + "%    volume " + v + "%" + (state.muted ? " (muted)" : "");
+  }
+
+  function draw() {
+    var v = level();
+    var shown = state.which === "sound" && state.muted ? v : v;
+    fill.style.width = (shown * 100) + "%";
+    knob.style.left = (shown * 100) + "%";
+    title.textContent = state.which === "display" ? "Display" : "Sound";
+    hud.setAttribute("aria-label", title.textContent);
+    track.setAttribute("aria-label", state.which === "display" ? "Brightness" : "Volume");
+    track.setAttribute("aria-valuemax", String(state.steps || 100));
+    track.setAttribute("aria-valuenow", String(Math.round(v * (state.steps || 100))));
+    hud.classList.toggle("muted", state.which === "sound" && state.muted);
+
+    if (state.which === "display") {
+      low.innerHTML = ICONS.sunSmall;
+      high.innerHTML = ICONS.sunLarge;
+    } else {
+      var waves = state.muted || state.volume === 0 ? 0 : (state.volume < 0.34 ? 1 : state.volume < 0.67 ? 2 : 3);
+      low.innerHTML = ICONS.speaker(0, state.muted);
+      high.innerHTML = ICONS.speaker(3, false);
+      if (state.muted) low.innerHTML = ICONS.speaker(0, true);
+      else low.innerHTML = ICONS.speaker(Math.min(waves, 1), false);
+    }
+
+    notches.innerHTML = "";
+    if (state.steps) {
+      for (var i = 0; i <= state.steps; i++) notches.appendChild(document.createElement("i"));
+    }
+
+    dim.style.opacity = String((1 - state.brightness) * 0.62);
+    describe();
+  }
+
+  function show(which) {
+    state.which = which;
+    draw();
+    hud.classList.add("shown");
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { if (!dragging) hud.classList.remove("shown"); }, 2000);
+  }
+
+  function place() {
+    hud.classList.remove("top", "bottom");
+    hud.classList.add(state.position);
+  }
+
+  document.querySelectorAll(".key").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var step = 1 / (state.steps || 16);
+      switch (b.getAttribute("data-act")) {
+        case "bdown": state.which = "display"; setLevel(state.brightness - step); show("display"); break;
+        case "bup":   state.which = "display"; setLevel(state.brightness + step); show("display"); break;
+        case "vdown": state.which = "sound"; setLevel(state.volume - step); show("sound"); break;
+        case "vup":   state.which = "sound"; setLevel(state.volume + step); show("sound"); break;
+        case "mute":  state.muted = !state.muted; show("sound"); break;
+      }
+    });
+  });
+
+  function fromPointer(e) {
+    var r = track.getBoundingClientRect();
+    setLevel((e.clientX - r.left) / r.width);
+    show(state.which);
+  }
+
+  track.addEventListener("pointerdown", function (e) {
+    dragging = true;
+    track.setPointerCapture(e.pointerId);
+    fromPointer(e);
+  });
+  track.addEventListener("pointermove", function (e) { if (dragging) fromPointer(e); });
+  track.addEventListener("pointerup", function () { dragging = false; show(state.which); });
+  track.addEventListener("keydown", function (e) {
+    var step = 1 / (state.steps || 16);
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") { setLevel(level() + step); show(state.which); e.preventDefault(); }
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") { setLevel(level() - step); show(state.which); e.preventDefault(); }
+  });
+
+  document.getElementById("close").addEventListener("click", function () {
+    clearTimeout(hideTimer);
+    hud.classList.remove("shown");
+  });
+
+  document.querySelectorAll(".seg").forEach(function (seg) {
+    seg.addEventListener("click", function (e) {
+      var btn = e.target.closest("button");
+      if (!btn) return;
+      seg.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === btn)); });
+      var which = seg.getAttribute("data-choice"), value = btn.getAttribute("data-value");
+      if (which === "position") { state.position = value; place(); }
+      if (which === "steps") {
+        state.steps = Number(value);
+        state.brightness = snap(state.brightness);
+        state.volume = snap(state.volume);
+      }
+      show(state.which);
+    });
+  });
+
+  // At rest the panel is showing and stays, so the first look - and any
+  // picture of the page - is the thing itself. It starts coming and going
+  // the moment a key or the knob is used.
+  place();
+  draw();
+  hud.classList.add("shown");
+})();
+</script>
