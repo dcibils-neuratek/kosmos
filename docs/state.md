@@ -2,33 +2,45 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-16
+Last updated: 2026-09-18
 
 ---
 
-## The ThinkPad keys, and a stick waiting on Diego, 18 September
+## The ThinkPad keys: stick 0.10.80 waiting on Diego, 18 September
 
-**The volume keys work in QEMU on both boards, and a stick carries them to
-the ThinkPad.** Step 1: the keyboard driver names every key it has no entry
-for, once, in the kernel's log - it used to drop them without a trace, which
-is where the ThinkPad's volume and brightness keys went. Step 2: e0 20, e0 2e
-and e0 30, measured through QEMU's PS/2 keyboard, are mute, volume down and
-up; the window manager takes them before any window; and the audio server
-has a master mute of its own, measured silent in what the machine played
-(`testing.md` 18.92, 18.93).
+**The volume keys work in QEMU on both boards** (`testing.md` 18.92, 18.93):
+the keyboard driver names every key it has no entry for, once; e0 20, e0 2e
+and e0 30 are mute, volume down and up; the window manager takes them before
+any window; and the audio server has a master mute of its own.
 
-**The stick**: `kosmos-usb-0.10.78-development.img`, 224 MB, sha256
-`fdf16d6a8c66ebf6eaf46f0c78adc76fe98ea77ca8c3df8ed08359a8a7c9f27f`,
-`USB_HOME=partition` with the desktop starting itself - 29 checks under OVMF.
-**Waiting on Diego**: write it, press F1, F2, F3, F5 and F6 once without Fn
-and once with it, run `diagnose`, and `make stick-log` on the Mac. That says
-whether the volume keys send the standard bytes on the real keyboard, and
-whether the brightness keys arrive as keys at all - if they do not, they are
-the embedded controller's, and the DSDT is next.
+**The Sound level bar is built** (`46dee5b`, `ui.md` 16.8g, `testing.md`
+18.94): `docs/levels.html` as approved, drawn by the window manager at the
+moment of the key. The Display half waits for the brightness.
 
-**Also waiting on Diego**: the level bar's mockup, `docs/levels.html`, after
-macOS's Display panel; and A or B for the Super Nintendo's File menu, because
-a window that draws its own pixels cannot carry a kit menu today.
+**Kosmos reads its own firmware's AML** (`2c8d4f2`, `testing.md` 18.95): the
+kernel keeps the DSDT and SSDTs during its ACPI walk, maps them after the
+MMU, and `SYS_FIRMWARE` hands the bytes up; `acpi save` writes them to
+`/home/acpi`, `make stick-log FILE=/home/acpi/` brings the folder to the Mac,
+and `iasl -e SSDT*.aml -d DSDT.aml` reads it. Tested with a table of the
+test's own through `-acpitable`, byte for byte.
+
+**The stick**: `kosmos-usb-0.10.80-development.img`, 234.9 MB, sha256
+`c68e05779a31430f0556c986b43bbd3cbb4d287ff9343ed96bf787c73f38fd52`,
+`USB_HOME=partition`, the desktop starting itself - 29 checks under OVMF.
+0.10.78 was never used and is superseded. **Waiting on Diego**: write it; try
+the volume keys and watch the bar; press F1, F2, F3, F5 and F6 once without
+Fn and once with it; run `acpi save` and `diagnose`; then on the Mac
+`make stick-log` and `make stick-log FILE=/home/acpi/`. That says whether
+the keys send the standard bytes on the real keyboard, whether the
+brightness keys arrive as keys at all, and - from the DSDT - how the T14 sets
+its backlight, which is steps 4 and 5.
+
+**Unpushed**: `3b934cf`, `46dee5b`, `2c8d4f2`, `1b4e29c` (0.10.80). A push
+needs Diego's yes and `make prepush`.
+
+**Also open**: the Super Nintendo's File menu (6d, option A chosen - the
+compositor draws a menu bar above a direct window), and roadmap item 4,
+Kosmos looking like its mockups.
 
 ## The stick check condemned a good stick, 16 September
 

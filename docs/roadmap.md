@@ -609,7 +609,7 @@ processors, and still what follows USB:
       own, and muted is measured silent in what the machine played
       (`testing.md` 18.93). Whether the ThinkPad's keys send the same bytes is
       the stick's to say.
-   3. **IN PROGRESS - the DSDT, read by Kosmos itself**, for where brightness is set
+   3. **DONE in QEMU on 18 September (`2c8d4f2`), waiting on the ThinkPad - the DSDT, read by Kosmos itself**, for where brightness is set
       - an embedded controller register, or the graphics device's backlight -
       with its offsets from the documentation rather than from memory. Shared
       with the battery below. No Linux boot to fetch it: `hal/pc/acpi.c`
@@ -620,8 +620,11 @@ processors, and still what follows USB:
       `/home/acpi`; `make stick-log FILE=/home/acpi/` brings the folder to
       the Mac, where `iasl -e SSDT*.aml -d DSDT.aml` decompiles it. Tested
       under QEMU with a table of the test's own, handed over by `-acpitable`
-      and wanted back byte for byte, beside QEMU's DSDT whole. **It goes on stick
-      0.10.80 with the volume bar**, so one session at the ThinkPad answers
+      and wanted back byte for byte, beside QEMU's DSDT whole
+      (`testing.md` 18.95); and QEMU's DSDT, saved by Kosmos, decompiles in
+      `iasl` to 3203 lines. **On stick 0.10.80**, built and checked under
+      OVMF the same day, with the volume keys and the Sound bar. **It goes on stick
+      0.10.80 with the volume bar** (built, 29 checks under OVMF), so one session at the ThinkPad answers
       what F5 and F6 send and how the T14 sets its backlight - and the next
       one tries the brightness keys and the Display bar. Diego, 18
       September: "when can i try the brightness bar?", "in the thinkpad".
