@@ -609,7 +609,7 @@ processors, and still what follows USB:
       own, and muted is measured silent in what the machine played
       (`testing.md` 18.93). **And on the ThinkPad, 18 September**, from stick
       0.10.80: "sound keys work!" - its keyboard sends the same bytes.
-   3. **DONE in QEMU on 18 September (`2c8d4f2`), waiting on the ThinkPad - the DSDT, read by Kosmos itself**, for where brightness is set
+   3. **DONE on 18 September, on the ThinkPad - the DSDT, read by Kosmos itself**, for where brightness is set
       - an embedded controller register, or the graphics device's backlight -
       with its offsets from the documentation rather than from memory. Shared
       with the battery below. No Linux boot to fetch it: `hal/pc/acpi.c`
@@ -622,15 +622,22 @@ processors, and still what follows USB:
       under QEMU with a table of the test's own, handed over by `-acpitable`
       and wanted back byte for byte, beside QEMU's DSDT whole
       (`testing.md` 18.95); and QEMU's DSDT, saved by Kosmos, decompiles in
-      `iasl` to 3203 lines. **On stick 0.10.80**, built and checked under
-      OVMF the same day, with the volume keys and the Sound bar. **It goes on stick
+      `iasl` to 3203 lines. **And from the ThinkPad the same evening**, stick
+      0.10.80: a DSDT of 218 508 bytes and 13 SSDTs, all whole. **What they
+      say** (`thinkpad.md` 8b): F5 and F6 are not keys - the embedded
+      controller raises queries 0x14 and 0x15 - and the backlight is the
+      Intel graphics device's PWM, which the firmware expects a graphics
+      driver to set. So steps 4 and 5 are that register, with offsets from
+      Intel's Tiger Lake PRM, and the EC's query protocol, which the battery
+      shares. **It goes on stick
       0.10.80 with the volume bar** (built, 29 checks under OVMF), so one session at the ThinkPad answers
       what F5 and F6 send and how the T14 sets its backlight - and the next
       one tries the brightness keys and the Display bar. Diego, 18
       September: "when can i try the brightness bar?", "in the thinkpad".
-   4. **BLOCKED on step 3 - a comfortable brightness set at boot**, which
-      fixes "too dim" before any key works, once the DSDT says where a
-      brightness is set.
+   4. **NEXT - a comfortable brightness set at boot**, which fixes "too dim"
+      before any key works: the Intel display engine's backlight duty cycle,
+      written once. Needs the register's offsets from Intel's Tiger Lake
+      graphics PRM.
    5. **IN PROGRESS - the brightness keys**, and **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the

@@ -1106,6 +1106,43 @@ sounds like.
 
 ---
 
+## 8b. The brightness, as its own firmware describes it
+
+**Read on 18 September, from the machine's own tables**: stick 0.10.80, `acpi
+save`, `make stick-log FILE=/home/acpi/`, and `iasl -d` on the Mac. A DSDT of
+218 508 bytes and 13 SSDTs, 340 016 bytes of AML in all, every table whole -
+its stated length its size, its bytes summing to zero. OEM `LENOVO`, the DSDT
+`ICL` and the SSDTs named for Tiger Lake (`TglU_Rvp`, `IgfxSsdt`), which is a
+T14 Gen 2i. `iasl -e` with every SSDT at once refuses (two of them define
+`\_SB.PC00.XHCI.RHUB.HS10.SADX`); each decompiles on its own.
+
+**The brightness keys are not keys.** F5 and F6 sent nothing through the
+keyboard controller - the only key the driver did not know all session was
+`e0 63`, probably Fn pressed on its own, which Linux knows on ThinkPads as the
+Wake key. They go to the embedded controller, which raises its query events
+`_Q14` (up) and `_Q15` (down) on GPE 0x6E. Those do two things: queue a
+hotkey event for Lenovo's driver (`HKEY.MHKQ`, 0x1010 and 0x1011), and
+`Notify (GFX0.DD1F, 0x86 / 0x87)` - telling the operating system's graphics
+driver the person asked for brighter or dimmer.
+
+**The embedded controller does not own the backlight; the Intel graphics
+device does.** `_BCL` in `IgfxSsdt` offers levels 0 to 100, and `_BCM` turns
+a level into `level * 255 / 100` and hands it to `GFX0.AINT (1, ...)` - which
+writes it into the graphics OpRegion and raises `ASLE`, an interrupt for the
+graphics driver to answer by programming the panel's PWM. Kosmos has no
+graphics driver and draws into the firmware's framebuffer, so nobody answers,
+and the brightness stays where the firmware left it. That is "too dim".
+
+**So brightness is two pieces, neither of them AML**:
+
+- **The level**: the Intel display engine's backlight PWM - a duty cycle
+  written to a register in the graphics device's BAR. Its offsets come from
+  Intel's Tiger Lake graphics PRM, not from memory.
+- **The keys**: the embedded controller's query protocol - on GPE 0x6E, ask
+  the EC which query it has, and 0x14 is brighter, 0x15 dimmer. The mapping
+  is what the DSDT just said; nothing needs to run it. The same protocol is
+  how the battery will be read.
+
 ## 9. What is still missing
 
 | | | rough size |
