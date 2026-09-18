@@ -49,4 +49,17 @@ struct backlight_reading {
 void backlight_decode(const struct backlight_controller *c,
                       struct backlight_reading *out);
 
+/*
+ * **The on-time to write at boot, and whether to write it at all.** True,
+ * with `*on_time` set, only for a controller that reads as on with numbers
+ * that hang together, and whose on-time is below `percent` of its period:
+ * this raises a screen the firmware left dim and never dims one it left
+ * brighter. `percent` above 100 is 100.
+ *
+ * The ThinkPad's reading is the test's first case (`testing.md` 18.99):
+ * controller 0 on, period 19393, on-time 6464 - a third.
+ */
+bool backlight_boot_on_time(const struct backlight_controller *c,
+                            unsigned percent, uint32_t *on_time);
+
 #endif

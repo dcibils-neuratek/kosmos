@@ -1,6 +1,6 @@
 /* Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. */
 /*
- * The backlight: read, and nothing written - yet.
+ * The backlight: read, and raised to a comfortable level at boot.
  *
  * The ThinkPad's screen is too dim and nothing in Kosmos sets a brightness.
  * Its own firmware says why (`docs/thinkpad.md` 8b): the level is the Intel
@@ -14,12 +14,20 @@
  * panel does not use. Two controllers, each a control, a period and an
  * on-time, and the video BIOS says which one the panel is wired to - so both
  * are read, and a controller that is on, with an on-time inside its period,
- * is what confirms the offsets on the machine itself. The next version
- * writes an on-time to that one.
+ * is what confirms the offsets on the machine itself.
+ *
+ * **And the ThinkPad confirmed them** on 18 September, stick 0.10.81:
+ * controller 0 on, period 19393, on-time 6464 - a third, which is "too dim"
+ * - and controller 1 off. So this writes now: the on-time of a controller
+ * that reads as on and consistent, raised to `BOOT_PERCENT` of its period,
+ * and read back. It never dims a screen the firmware left brighter, and it
+ * writes nothing to a controller that is off or reads wrong
+ * (`backlight_boot_on_time`, tested on the host with those numbers).
  *
  *   find     the board says where the backlight block is   SYS_DEV_FIND
  *   map      that one page, uncached                       SYS_DEV_MAP
  *   read     both controllers, and say what they hold
+ *   write    the on-time of the one that is on, if dim, and read it back
  *
  * **No address of its own**, as `powerbutton.c` has none: the graphics
  * device's base and the block's place in it are `hal/pc/devices.c`'s. The
@@ -42,6 +50,11 @@
 #define PWM_PERIOD          0x254u
 #define PWM_ON_TIME         0x258u
 #define CONTROLLERS         2u
+
+/* How bright at boot, as a share of the period: the ThinkPad's firmware
+ * leaves a third, and this is what "too dim" is fixed with before any key
+ * changes it. */
+#define BOOT_PERCENT        80u
 
 static void report(long console, unsigned which,
                    const struct backlight_controller *c)
@@ -118,18 +131,47 @@ void backlight_server(long console)
     say_hex(&line, (unsigned long)dev.base, 16);    /* all of it: ten digits
                                                      * once hid a top half
                                                      * that was not one */
-    say_text(&line, " - read only, nothing written");
     say_send(console, &line);
 
     for (i = 0; i < CONTROLLERS; i++) {
         struct backlight_controller c;
         uintptr_t at = base + i * CONTROLLER_STRIDE;
+        uint32_t on_time, back;
 
         c.control = mmio_read32(at + PWM_CONTROL);
         c.period  = mmio_read32(at + PWM_PERIOD);
         c.on_time = mmio_read32(at + PWM_ON_TIME);
 
         report(console, i, &c);
+
+        if (!backlight_boot_on_time(&c, BOOT_PERCENT, &on_time)) {
+            continue;
+        }
+
+        /*
+         * One register, the on-time. The period stays the firmware's and so
+         * does the control word: the controller is already running and
+         * already drives the panel, so there is nothing to enable - which
+         * is also why a wrong offset here could only have been found by the
+         * reading above, and was not.
+         */
+        mmio_write32(at + PWM_ON_TIME, on_time);
+        back = mmio_read32(at + PWM_ON_TIME);
+
+        say_begin(&line);
+        say_text(&line, "backlight: controller ");
+        say_dec(&line, i);
+        say_text(&line, back == on_time ? " raised to " : " NOT raised to ");
+        say_dec(&line, BOOT_PERCENT);
+        say_text(&line, "% at boot: on-time ");
+        say_dec(&line, on_time);
+        say_text(&line, " of ");
+        say_dec(&line, c.period);
+        say_text(&line, ", it was ");
+        say_dec(&line, c.on_time);
+        say_text(&line, ", and it reads back ");
+        say_dec(&line, back);
+        say_send(console, &line);
     }
 
     kosmos_exit(0);

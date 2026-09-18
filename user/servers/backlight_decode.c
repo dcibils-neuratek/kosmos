@@ -44,3 +44,29 @@ void backlight_decode(const struct backlight_controller *c,
      * hundred times the on-time need not fit in them. */
     out->duty_percent = (unsigned)(((uint64_t)c->on_time * 100u) / c->period);
 }
+
+bool backlight_boot_on_time(const struct backlight_controller *c,
+                            unsigned percent, uint32_t *on_time)
+{
+    struct backlight_reading r;
+    uint32_t want;
+
+    backlight_decode(c, &r);
+
+    if (r.state != BACKLIGHT_ON) {
+        return false;
+    }
+
+    if (percent > 100u) {
+        percent = 100u;
+    }
+
+    want = (uint32_t)(((uint64_t)c->period * percent) / 100u);
+
+    if (want <= c->on_time) {
+        return false;
+    }
+
+    *on_time = want;
+    return true;
+}

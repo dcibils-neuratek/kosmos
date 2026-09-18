@@ -2781,8 +2781,13 @@ def usb_mouse(image, check):
                                  r"epid (\d+)", text)
 
                 if found and int(found.group(2)) == dci:
+                    # QEMU writes no fraction at all on a whole second, and
+                    # one strptime format raised on it and took the session
+                    # down - rarely, since a kick has to land on the second.
+                    when = found.group(1)
                     stamp = datetime.datetime.strptime(
-                        found.group(1), "%Y-%m-%dT%H:%M:%S.%f")
+                        when, "%Y-%m-%dT%H:%M:%S.%f" if "." in when
+                        else "%Y-%m-%dT%H:%M:%S")
                     kicks.append(stamp.replace(
                         tzinfo=datetime.timezone.utc).timestamp())
     except OSError:

@@ -5366,8 +5366,9 @@ if role == ROLE_INIT then
   --
   -- **The backlight**, the same way: device authority and the console's
   -- endpoint, and nothing else. It reads the Intel display engine's two PWM
-  -- controllers, says what they hold, and exits; on a machine without Intel
-  -- graphics it says so and exits. Writing a brightness is its next step.
+  -- controllers, says what they hold, raises a dim one to a comfortable
+  -- level, and exits; on a machine without Intel graphics it says so and
+  -- exits.
   --
   do
     local _, err = sys.spawn(ROLE_BACKLIGHT, { CONSOLE_EP }, SPAWN_DEVICES)

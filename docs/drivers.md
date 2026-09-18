@@ -181,9 +181,11 @@ works here, written as each step lands.
 
 **The third is the backlight** (0.10.81): `user/servers/backlight.c` maps one
 page of the Intel graphics device - the block holding its two backlight PWM
-controllers - and reads them. Only reads, because those offsets are Linux's
-rather than a datasheet's (`thinkpad.md` 8b), and a driver that has not seen
-its registers on the machine does not get to write them. It is the first
+controllers - and reads them. It only read at first, because those offsets
+are Linux's rather than a datasheet's (`thinkpad.md` 8b), and a driver that
+has not seen its registers on the machine does not get to write them. The
+ThinkPad's reading confirmed them - controller 0 on at a third - and since
+0.10.83 it raises that to 80% at boot, and reads the value back. It is the first
 userland driver for a device the kernel also knows is there and has never
 touched: the firmware left the screen lit, and nothing since has had any
 reason to change that.

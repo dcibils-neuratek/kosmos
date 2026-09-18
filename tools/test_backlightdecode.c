@@ -108,6 +108,45 @@ int main(void)
     check(r.state == BACKLIGHT_ON && !r.active_low && r.duty_percent == 25,
           "bits other than 31 and 29 changed the reading");
 
+    /* The write at boot, starting from the ThinkPad's own reading on 18
+     * September: controller 0 on, period 19393, on-time 6464 - a third. */
+    {
+        struct backlight_controller t14 = { 0x80000000u, 19393u, 6464u };
+        struct backlight_controller c;
+        uint32_t on = 0;
+
+        check(backlight_boot_on_time(&t14, 80, &on) && on == 15514u,
+              "the ThinkPad's third was not raised to 15514 of 19393, 80%");
+
+        on = 0;
+        check(backlight_boot_on_time(&t14, 250, &on) && on == 19393u,
+              "a target past 100% was not held to the period");
+
+        c = t14;
+        c.on_time = 17000u;             /* already brighter than 80% */
+        check(!backlight_boot_on_time(&c, 80, &on),
+              "a screen already brighter than the target was dimmed");
+
+        c = t14;
+        c.on_time = 15514u;             /* exactly the target */
+        check(!backlight_boot_on_time(&c, 80, &on),
+              "a screen already at the target was written again");
+
+        c = t14;
+        c.control = 0;                  /* off */
+        check(!backlight_boot_on_time(&c, 80, &on),
+              "a controller that is off was written");
+
+        c = t14;
+        c.on_time = 20000u;             /* past its period */
+        check(!backlight_boot_on_time(&c, 80, &on),
+              "a controller whose numbers do not hang together was written");
+
+        c.control = c.period = c.on_time = 0xFFFFFFFFu;
+        check(!backlight_boot_on_time(&c, 80, &on),
+              "a device that does not answer was written");
+    }
+
     if (fails) {
         printf("FAIL: %d of %d checks on the backlight's registers\n",
                fails, fails + checks);
@@ -116,7 +155,9 @@ int main(void)
 
     printf("PASS: %d checks on the backlight's registers (a device that does "
            "not answer, off, on in either polarity from dark to full, "
-           "rounded down, numbers that cannot be right refused, and periods "
-           "near 2^32 without overflow).\n", checks);
+           "rounded down, numbers that cannot be right refused, periods "
+           "near 2^32 without overflow, and the write at boot: the "
+           "ThinkPad's third raised to 80%%, never a dimmer screen, never a "
+           "controller that is off or wrong).\n", checks);
     return 0;
 }
