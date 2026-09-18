@@ -22,6 +22,7 @@ interrupts masked halts for ever where AArch64's `wfi` wakes - and a boot
 test that only read the boot log would have called that a pass.
 """
 
+import argparse
 import datetime
 import os
 import re
@@ -1700,7 +1701,7 @@ def usb_hotplug(image, check):
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
     work = tempfile.mkdtemp(prefix="kosmos-x86-hotplug-")
     path = os.path.join(work, "monitor")
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
+    stick = os.path.join(work, "stick.img")     # `usb` may be running too
 
     with open(stick, "wb") as handle:
         handle.truncate(16 * 1024 * 1024)
@@ -3131,24 +3132,21 @@ def firmware(image, check):
                   "the end of the shorter")))
 
 
-def main():
-    image = sys.argv[1] if len(sys.argv) > 1 else "build/x86_64/kosmos.elf"
-    checks = 0
-    fails = []
+def core(image, check, fails):
+    """The machine itself: it boots through twelve stages, names its
+    processor, agrees with userland about the memory, takes what is typed,
+    runs a program, finds four processors and spreads work over them, and
+    takes either interrupt controller.
 
-    def check(ok, complaint):
-        nonlocal checks
-
-        if ok:
-            checks += 1
-        else:
-            fails.append(complaint)
-
+    What main() did inline before the parts; an early exit is a failed check
+    that stops the part, as it stopped the whole before.
+    """
     # 1. It boots, all the way, and takes what is typed at it.
     out = boot(image, None, 90.0, typed=("mem", "cpu"))
 
     if out is None:
-        return 1
+        check(False, "the machine would not boot")
+        return
 
     if "kosmos>" not in out:
         print("FAIL: x86-64 never reached a prompt.")
@@ -3159,24 +3157,25 @@ def main():
                 print("  the machine said: " + line.strip())
 
         print("  last of what it did say: " + repr(out[-400:]))
-        return 1
+        check(False, "x86-64 never reached a prompt")
+        return
 
-    checks += 1
+    check(True, "")
 
     if "PANIC" in out:
-        print("FAIL: it panicked: "
+        check(False, "it panicked: "
               + [l for l in out.splitlines() if "PANIC" in l][0].strip())
-        return 1
+        return
 
     # 2. Nothing refused to start on the way there. A prompt can appear with
     #    a server missing, and a shell talking to servers that are not there
     #    is not a working machine.
     for line in out.splitlines():
         if "could not start" in line:
-            print("FAIL: reached a prompt, but: " + line.strip())
-            return 1
+            check(False, "reached a prompt, but: " + line.strip())
+            return
 
-    checks += 1
+    check(True, "")
 
     # 2a. And the USB driver said nothing, because this machine has no USB
     #     controller: it asks, is told there is none, and exits.
@@ -3254,7 +3253,8 @@ def main():
     ran = boot(image, "hello", 90.0)
 
     if ran is None:
-        return 1
+        check(False, "the machine would not boot to run a program")
+        return
 
     check("Hello from a process of my own." in ran,
           "the fw_cfg boot option did not run a program")
@@ -3266,14 +3266,9 @@ def main():
 
     check("process died" not in ran, "the program faulted on its way out")
 
+    # Nothing below is worth booting for when the machine cannot do that.
     if fails:
-        print("FAIL: %d of %d checks on x86-64:"
-              % (len(fails), len(fails) + checks))
-
-        for f in fails:
-            print("  " + f)
-
-        return 1
+        return
 
     #
     # **The processor count comes out of the firmware's tables.**
@@ -3447,14 +3442,52 @@ def main():
           "the default boot did not take the APIC, so this machine only "
           "ever tests one of the two controllers")
 
+
+
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer']
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("image", nargs="?", default="build/x86_64/kosmos.elf")
+    parser.add_argument("--parts", default="",
+                        help="parts to run, by name, separated by commas: "
+                             + ", ".join(PARTS))
+    args = parser.parse_args()
+    image = args.image
+    wanted = [w for w in args.parts.split(",") if w] or PARTS
+
+    for w in wanted:
+        if w not in PARTS:
+            print("FAIL: no part called %s; there are %s"
+                  % (w, ", ".join(PARTS)))
+            return 1
+
+    checks = 0
+    fails = []
+
+    def check(ok, complaint):
+        nonlocal checks
+
+        if ok:
+            checks += 1
+        else:
+            fails.append(complaint)
+
+    if "core" in wanted:
+        core(image, check, fails)
+
     # And the sound, which is the one subsystem this board does not take
     # from virtio. `hal/pc/hda.c` says why an emulated Intel controller is
     # worth more here than an emulated virtio one: it is the same silicon
     # interface a ThinkPad has, so what passes here is what will run there.
     #
-    sound(image, check)
-    sound_slow_codec(image, check)
-    sound_eapd(image, check)
+    if 'sound' in wanted:
+        sound(image, check)
+    if 'sound_slow_codec' in wanted:
+        sound_slow_codec(image, check)
+    if 'sound_eapd' in wanted:
+        sound_eapd(image, check)
 
     # And the disk, which is the other thing this board does not take from
     # virtio. A ThinkPad's storage is NVMe or nothing - `docs/thinkpad.md`
@@ -3463,63 +3496,87 @@ def main():
     # neither is orphaned. The same argument as the sound controller above,
     # made a second time.
     #
-    storage(image, check)
+    if 'storage' in wanted:
+        storage(image, check)
 
     # And a disk that is no drive at all: the image GRUB loads from a USB
     # stick into memory, which is how a machine with nothing it can read
     # carries its own data. `memdisk` says why a drive is attached anyway.
     #
-    memdisk(image, check)
+    if 'memdisk' in wanted:
+        memdisk(image, check)
 
     # And USB: two controllers, one stick, and which of them it is on.
     #
-    usb(image, check)
-    usb_blocks(image, check)
-    usb_diskbench(image, check)
-    usb_home(image, check)
-    usb_second_stick(image, check)
-    usb_home_late(image, check)
-    usb_home_named(image, check)
-    usb_drives(image, check)
-    usb_flush_refused(image, check)
-    cmdline_long(image, check)
-    usb_hotplug(image, check)
+    if 'usb' in wanted:
+        usb(image, check)
+    if 'usb_blocks' in wanted:
+        usb_blocks(image, check)
+    if 'usb_diskbench' in wanted:
+        usb_diskbench(image, check)
+    if 'usb_home' in wanted:
+        usb_home(image, check)
+    if 'usb_second_stick' in wanted:
+        usb_second_stick(image, check)
+    if 'usb_home_late' in wanted:
+        usb_home_late(image, check)
+    if 'usb_home_named' in wanted:
+        usb_home_named(image, check)
+    if 'usb_drives' in wanted:
+        usb_drives(image, check)
+    if 'usb_flush_refused' in wanted:
+        usb_flush_refused(image, check)
+    if 'cmdline_long' in wanted:
+        cmdline_long(image, check)
+    if 'usb_hotplug' in wanted:
+        usb_hotplug(image, check)
 
     # And a USB mouse moving the pointer a TrackPoint moves. `usb_mouse` says
     # why it goes round its ring twice before it clicks.
     #
-    usb_mouse(image, check)
+    if 'usb_mouse' in wanted:
+        usb_mouse(image, check)
 
     # And what the machine says it is, which it used to read out of the
     # Makefile. `identity` says why QEMU can stand in for the ThinkPad here.
     #
-    identity(image, check)
+    if 'identity' in wanted:
+        identity(image, check)
 
     # And the firmware's AML, onto this Mac as the ThinkPad's will come -
     # which is where its brightness is set. `firmware` says how it is known
     # to be whole.
     #
-    firmware(image, check)
+    if 'firmware' in wanted:
+        firmware(image, check)
 
     # And the machine's own report of what is on its bus, which on the
     # ThinkPad listed bus 0 and nothing driven. `machine_report` says why the
     # drive is behind a bridge.
     #
-    machine_report(image, check)
+    if 'machine_report' in wanted:
+        machine_report(image, check)
 
     # And the pointer a laptop has, with and without the serial port it does
     # not have. `pointer` says why the second half is the one that matters.
     #
-    pointer(image, check)
+    if 'pointer' in wanted:
+        pointer(image, check)
+
+    partial = "" if wanted == PARTS else " (%s)" % ", ".join(wanted)
 
     if fails:
-        print("FAIL: %d of %d checks on x86-64:"
-              % (len(fails), len(fails) + checks))
+        print("FAIL: %d of %d checks on x86-64%s:"
+              % (len(fails), len(fails) + checks, partial))
 
         for f in fails:
             print("  " + f)
 
         return 1
+
+    if partial:
+        print("PASS: %d checks on x86-64%s." % (checks, partial))
+        return 0
 
     print("PASS: %d checks on x86-64 (it boots through twelve stages, names "
           "its processor out of CPUID, agrees with userland about the memory "

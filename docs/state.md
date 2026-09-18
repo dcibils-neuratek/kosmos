@@ -8,10 +8,11 @@ Last updated: 2026-09-18
 
 ## The ThinkPad keys: stick 0.10.81 waiting on Diego, 18 September
 
-**The tests take five to ten minutes from now on** (`CLAUDE.md`, Diego:
-"i dont want 40 minutes tests any more"). A gate was stopped at about
-twenty minutes for it; the roadmap's item 3 is making the same checks fit,
-and it is next. Until then a change is checked by the tests it touches.
+**`make test` takes 4:37 now, not forty minutes** (`testing.md` 18.97) -
+Diego: "i dont want 40 minutes tests any more, 5 to 10 minutes max from now
+on", a rule in `CLAUDE.md`. `tools/gate.py` builds every image first and
+runs every suite side by side, `run_x86.py` and the display harness in
+parts; the same checks, counted. `build/gate/` has a log per suite.
 
 **Stick 0.10.81**: `kosmos-usb-0.10.81-development.img`, 234.9 MB, sha256
 `c7bda441dac83040f0a46ef53b9512bc0908e8bb58fa697ad0df8b0815072bb0`, 29 checks

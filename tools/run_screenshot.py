@@ -6590,7 +6590,12 @@ def main():
     ap.add_argument("--png", help="also write the Lua-drawn screen here")
     ap.add_argument("--timeout", type=float, default=30.0,
                     help="seconds to wait for the guest (default: 30)")
+    ap.add_argument("--phases", default="",
+                    help="run only these phases, by name, separated by "
+                         "commas - how `tools/gate.py` runs the harness as "
+                         "several machines side by side")
     args = ap.parse_args()
+    only = [p for p in args.phases.split(",") if p]
 
     guest = None
 
@@ -6673,7 +6678,15 @@ def main():
         # takes twelve seconds of screendumps need different fixes.
         phase_times = []
 
+        # **A phase not asked for counts nothing and runs nothing** - the
+        # gate runs the harness as several machines, each with its share of
+        # the phases in their original order, and adds up what they say.
+        # The boot screen and the bars above run in every part: seconds,
+        # and a machine that did not draw them is not one to test further.
         def phase(name, fn):
+            if only and name not in only:
+                return 0
+
             began = time.monotonic()
             result = fn(guest)
             phase_times.append((time.monotonic() - began, name))
@@ -6741,7 +6754,9 @@ def main():
         # always held all of it; now a failure writes it down.
         #
         if guest is not None:
-            where = "build/harness-failure-%s.txt" % machine(args.image)
+            where = "build/harness-failure-%s%s.txt" % (
+                machine(args.image),
+                ("-" + only[0].replace(" ", "-")) if only else "")
 
             try:
                 guest._read_available()
@@ -6774,6 +6789,12 @@ def main():
              + repaint_checks + power_checks + budget_checks + snes_checks
              + unknown_key_checks + volume_key_checks
              + name_checks + file_checks)
+    missing = [n for n in only if n not in {name for _, name in phase_times}]
+
+    if missing:
+        print("FAIL: no phase ran by these names: " + ", ".join(missing))
+        return 1
+
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
         print(f"  {seconds:6.1f}s  {name}")

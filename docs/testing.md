@@ -5444,3 +5444,54 @@ walk met: `pte 0x800a0000fe0c801f`, a physical address the finder had built
 from the network card's *next* BAR, above what the processor can address.
 The real finder refuses that by the BAR's type. The kernel mapping it at all
 is on the roadmap.
+
+## 18.97 The tests in five minutes: every suite side by side
+
+**Diego, 18 September 2026**, after a gate that ran for forty minutes: "i
+dont want 40 minutes tests any more, 5 to 10 minutes max from now on so make
+sure the tests are built accordingly". **The same checks, in less time -
+never fewer to make the number** (`CLAUDE.md`).
+
+**Where the forty went was not the checks.** Every suite ran after the one
+before it, on one of the Mac's ten cores, although each is its own QEMU with
+its own disk, its own sockets and a random port - sharing nothing. `make
+test` is now `tools/gate.py`, and `make host-check` and `make gate-images`
+are its halves:
+
+1. every image the suites boot is built first, each variant with `-j`;
+2. every suite - the host checks included - runs side by side, six at once,
+   the longest first by what each took last time (`build/gate/times.json`),
+   each writing its own log in `build/gate/`;
+3. the two that were most of it run in parts: `run_x86.py`, some thirty
+   machines one after another, as four groups of its parts (`--parts`), and
+   the display harness, some forty phases in one machine a board, as four
+   parts a board, cut where the measured phase times come to about a
+   hundred seconds and in the harness's own order (`--phases`).
+
+| Run | Took | Slowest |
+| --- | ---- | ------- |
+| the old `make test` and `make screenshot`, one after another | about 40 minutes | - |
+| every suite side by side, the display harness whole | 18:28 | the two display harnesses, 403 s and 402 s, one after the other |
+| the same with the parts | **4:37** | `x86-usb-2` 121 s, the display parts 83 s to 120 s |
+
+**The same checks, counted rather than assumed.** `run_x86.py`'s four groups
+said 42, 39, 45 and 64 - its 190 whole. The display parts each check the boot
+screen and the bars again, thirty checks, so the ARM board's 65, 49, 51 and
+51 are 126 and x86's 65, 50, 51 and 51 are 127 - both the numbers they were.
+
+**None needed a quiet machine.** The first version ran sound and the display
+harness alone at the end, because they have checks about timing - sound in
+real time, scheduling latency, the idle desktop, the compositor's budget.
+All of them passed with six machines running, so they share like everything
+else; a suite marked `alone` still would not, and a run one fails in because
+of the others is the evidence for marking it.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| a phase asked for by a name no phase has | `run_screenshot.py`: *FAIL: no phase ran by these names: no such phase* - a typo in the gate's table cannot run nothing and pass |
+| a suite that fails, inside the gate | *FAIL: 1 of 2 suites in 22 s - x86-bin*, exit 1 |
+
+**What is still there to take.** The display harness's fixed sleeps, about 98
+seconds a board, were not needed for this and remain; `x86-usb-2` is the
+longest part and can be split. Five minutes is not a floor, and a suite that
+pushes the whole past ten is the thing to fix before anything else lands.

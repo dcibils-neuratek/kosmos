@@ -120,7 +120,7 @@ make FB=1280x800 qemu    # the same, at that display size
 make FULL=0 qemu         # without the browser and Doom, and quicker to link
 make MEGA=1 qemu         # everything: FULL, plus Lite XL and Quake
 make serial      # the same, serial only, no window
-make test        # run the suite under QEMU, exit code 0 or 1
+make test        # every suite, side by side, in about five minutes; 0 or 1
 make screenshot  # boot, screendump, and check the picture QEMU scans out
 make bench       # the benchmarks, under -icount
 make debug       # QEMU with a gdbserver on :1234
@@ -744,8 +744,9 @@ checks, in less time - parallel builds, suites run side by side, waits for
 the thing rather than for a number of seconds - and never fewer checks to
 make the number. A new test is written to fit inside the budget, and a
 suite that pushes the whole past ten minutes is the thing to fix, before
-anything else lands. While the gate is slower than that, a change is checked
-by the tests it touches and the full set runs before a push.
+anything else lands. `make test` is `tools/gate.py`: every suite side by side,
+4:37 on this Mac on 18 September, with each suite's time printed and the
+slowest named at the end - so the budget is watched rather than remembered.
 
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the

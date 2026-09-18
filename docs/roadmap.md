@@ -576,7 +576,7 @@ processors, and still what follows USB:
    pointer mode in the window manager - music, and saving. `LICENSE` and
    `FULL=1` still disagree about Doom; Quake, outside `FULL=1`, adds nothing
    to that.
-3. **NEXT, first - the tests in five to ten minutes.** Diego, 18 September,
+3. **DONE on 18 September - the tests in five to ten minutes: 4:37.** Diego, 18 September,
    after a gate of forty: "i dont want 40 minutes tests any more, 5 to 10
    minutes max from now on so make sure the tests are built accordingly".
    Asked once before, on 11 September ("can we make it 5?"), and paused.
@@ -589,7 +589,12 @@ processors, and still what follows USB:
    `-j` and a stamp per variant; a runner that starts the independent QEMU
    suites together, with a log per suite, and the display harness - which
    checks timing - alone at the end; then waits for the thing in place of
-   fixed sleeps.
+   fixed sleeps. **What it took** (`testing.md` 18.97): `make test` is
+   `tools/gate.py`, which builds every image first and runs every suite side
+   by side, six at once, longest first; `run_x86.py` runs as four groups of
+   its parts and the display harness as four parts per board. 18:28 with
+   the harness whole, then 4:37 - the same checks, counted. The sleeps were
+   not needed for it and are still there, as is the room they leave.
 4. **IN PROGRESS since 18 September - the ThinkPad's brightness and volume
    keys**, moved ahead of the battery that morning because the screen is a
    problem today and the battery is not - **and that afternoon ahead of USB

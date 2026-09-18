@@ -2782,7 +2782,9 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+# The host half of the tests: every check that boots nothing. Seconds, and
+# run by `tools/gate.py` beside the machines rather than before them.
+host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2877,120 +2879,35 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# And `run_uefi.py` where it cannot boot anything: no OVMF is a skip
 	@# that says so, and a boot that gives no picture fails. Nothing boots.
 	python3 tools/test_run_uefi.py
-	@$(MAKE) --no-print-directory TEST=1 build/test/kosmos.elf
-	python3 tools/run_tests.py build/test/kosmos.elf
-	@# And the same machine with nothing plugged into it. A second boot,
-	@# but of the ordinary image rather than the test one: what it checks
-	@# is init and the shell, which the test image replaces.
-	python3 tools/run_headless.py $(TARGET)
-	@# Files on and off the image from this computer, which is what a
-	@# filesystem that is not FAT32 has to answer for.
-	python3 tools/run_interchange.py $(TARGET)
-	@# Attributes and the queries over them. M7's definition of done was a
-	@# live query and nothing here ever checked one: `qbench` measures how
-	@# fast a query is and would not notice it returning the wrong paths,
-	@# which is what it did on the disk for as long as the disk could
-	@# answer.
-	python3 tools/run_queries.py $(TARGET)
-	@# And the prompt as a place to work rather than a place to look. The
-	@# verbs check each other rather than a constant written in the
-	@# harness: `wc` says five lines, so `head` and `tail` have to name
-	@# the first and last two of exactly those.
-	python3 tools/run_shell.py $(TARGET)
-	@# And Disk Benchmark, the instrument storage is being made fast with:
-	@# held to saying what it measured and what it could not, rather than to
-	@# a speed, since under QEMU the speed is QEMU's.
-	python3 tools/run_diskbench.py $(TARGET)
-	@# And the media engine under Music, held to what it sounds like: a tone
-	@# played, sought and finished, counted in the WAV QEMU wrote.
-	python3 tools/run_media.py $(TARGET)
-	@# A frame off the card and onto the wire, read back out of QEMU's own
-	@# capture - because nothing inside the guest can establish that one
-	@# left. And a second boot with no card, which is the branch every
-	@# device grant in init.lua carries a comment about getting wrong.
-	python3 tools/run_network.py $(TARGET)
-	@# And the second architecture, which until now proved nothing that
-	@# stayed proved: a staging kmain printed what it found and a person
-	@# read it. Skipped rather than failed where the cross compiler is not
-	@# installed - and said out loud, because a suite that quietly runs
-	@# fewer checks on one machine than another is worse than one that does
-	@# not run them at all.
-	@#
-	@# Five of them on the other board now, and the choice is about
-	@# *what is board-specific* rather than about coverage for its own
-	@# sake. `run_x86.py` boots it; `run_headless.py` asks whether a
-	@# machine with no display still reaches a prompt, which is the
-	@# branch every device grant carries a comment about; `run_disk.py`
-	@# and `run_network.py` are the two that go through a driver this
-	@# board finds over PCI rather than in a device-tree window.
-	@#
-	@# And `run_tests.py`, which is the one that was missing and is the
-	@# largest test asset here: 4,000 lines and the only thing that
-	@# exercises the kernel from inside it. It ran on one board for as
-	@# long as there were two, which the 0.9.0 review found and could
-	@# not fix in a line - the suite was written in AArch64 assembly in
-	@# thirty-five places, exited through ARM semihosting, and ran two
-	@# hand-written AArch64 blobs at EL0.
-	@#
-	@# 123 of it runs here against 127 there, and the four that do not
-	@# are about AArch64 itself rather than about the kernel: stepping
-	@# ELR past a faulting instruction, execution resuming after one,
-	@# SPSel, and the lazy-FP mechanism being disarmed until something
-	@# wants it. Nothing is skipped for being inconvenient.
-	@#
-	@# **`run_uefi.py` is the one that boots the way a machine will**, and
-	@# it is here because everything above it goes through QEMU's
-	@# `-kernel`, which is not a loader. It reads the multiboot header,
-	@# copies the image in and jumps - and it does not answer the video
-	@# request, so the path a laptop depends on entirely had never run
-	@# while fourteen host checks on the decision all passed. Three
-	@# faults were hiding behind that and none was a driver.
-	@#
-	@# It also checks the *screen* rather than the serial line, because a
-	@# machine whose framebuffer works stops talking to the serial line at
-	@# stage six. It boots a stick `mkusb_image.py` made with Kosmos's own
-	@# loader, which is the image `make usb` writes, with a 4 MB disk
-	@# `kfs.lua` made, so the loader's second look at a disk is checked as
-	@# well as its look at the kernel. And a second stick, whose kernel is
-	@# zeros, is booted to be refused: the loader's lines must be on the
-	@# screen while it waits for a key, drawn by the loader itself, because
-	@# the ThinkPad's firmware console showed nothing. And the first stick
-	@# once more, with its screen at 0x4000000000 where the ThinkPad's
-	@# firmware puts it: the boot log has to be on it by stage four, which
-	@# on that machine it was not for months. Skipped where OVMF is not
-	@# installed, out loud.
-	@#
-	@# `test_stickcheck.py` streams that stick, with faults put where mtools
-	@# says they are, into the check `mkusb.sh` runs on every stick it
-	@# writes: damage named where it is, and a mount's bookkeeping told
-	@# apart from it.
-	@#
-	@# `run_interchange.py` and `run_queries.py` are deliberately not
-	@# here, and this says so out loud rather than leaving a gap
-	@# somebody has to notice: their guest half is the same filesystem
-	@# `run_disk.py` has just exercised on this board, and their host
-	@# half does not boot anything. Adding them would double what this
-	@# costs to check the same code twice.
+
+# Every image the suites boot, built before any of them starts, each with
+# `-j`: the plain one, the test image, and on x86 the same two plus the
+# UEFI sticks `run_uefi.py` and `test_stickcheck.py` read. Building them up
+# front is what lets the suites run side by side without two of them
+# building the same thing at once.
+J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+
+gate-images: $(TARGET) $(HOSTDIR)/lua
+	@$(MAKE) --no-print-directory -j$(J) TEST=1 build/test/kosmos.elf
 	@if command -v x86_64-elf-gcc >/dev/null 2>&1; then \
-	    $(MAKE) --no-print-directory x86-build >/dev/null && \
-	    $(HOSTDIR)/test_efiboot build/x86_64/kosmos.bin && \
-	    python3 tools/run_x86.py build/x86_64/kosmos.elf && \
-	    python3 tools/run_headless.py build/x86_64/kosmos.elf && \
-	    python3 tools/run_disk.py build/x86_64/kosmos.elf && \
-	    python3 tools/run_network.py build/x86_64/kosmos.elf && \
+	    $(MAKE) --no-print-directory -j$(J) x86-build >/dev/null && \
+	    $(MAKE) --no-print-directory -j$(J) TEST=1 x86-build >/dev/null && \
 	    $(MAKE) --no-print-directory $(EFI_LOADER) >/dev/null && \
 	    $(HOSTDIR)/lua tools/kfs.lua create build/x86_64/uefi-disk.img 4 >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi.img --loader $(EFI_LOADER) --disk build/x86_64/uefi-disk.img >/dev/null && \
 	    python3 tools/mkusb_image.py build/x86_64/kosmos.bin build/x86_64/kosmos-uefi-home.img --loader $(EFI_LOADER) --home build/x86_64/uefi-disk.img >/dev/null && \
 	    head -c 65536 /dev/zero > build/x86_64/uefi-zeros.bin && \
-	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null && \
-	    python3 tools/run_uefi.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos-refusal.img build/x86_64/kosmos-uefi-home.img && \
-	    python3 tools/test_stickcheck.py build/x86_64/kosmos-uefi.img build/x86_64/kosmos.elf build/x86_64/kosmos-uefi-home.img && \
-	    $(MAKE) --no-print-directory TEST=1 x86-build >/dev/null && \
-	    python3 tools/run_tests.py build/x86_64-test/kosmos.elf --timeout 90; \
+	    python3 tools/mkusb_image.py build/x86_64/uefi-zeros.bin build/x86_64/kosmos-refusal.img --loader $(EFI_LOADER) >/dev/null; \
 	else \
-	    echo "SKIP: x86-64, because x86_64-elf-gcc is not installed."; \
+	    echo "SKIP: the x86-64 images, because x86_64-elf-gcc is not installed."; \
 	fi
+
+# **The tests, in five to ten minutes** - Diego, 18 September 2026: "i dont
+# want 40 minutes tests any more, 5 to 10 minutes max from now on". The same
+# checks as ever, run side by side by `tools/gate.py`, which says why each
+# suite is there and how long it took. `J=` sets how many at once.
+test:
+	@python3 tools/gate.py --jobs $(J)
 
 # Used for a while, then asked whether it gave everything back.
 #
@@ -3120,11 +3037,8 @@ mega:
 # each stage, where it is safe: one stage at a time, its compiles spread
 # across `J` jobs. `make J=4 prepush` for a quieter machine.
 #
-J ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
-
 prepush:
 	@$(MAKE) --no-print-directory -j$(J) test
-	@$(MAKE) --no-print-directory -j$(J) screenshot
 	@$(MAKE) --no-print-directory -j$(J) litexl-check
 	@$(MAKE) --no-print-directory -j$(J) mega
 	@$(MAKE) --no-print-directory -j$(J) shot
