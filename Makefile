@@ -2804,6 +2804,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	@# reads through is a table here, which is the whole reason the reading
 	@# lives in `/lib` and not inside the Deskbar.
 	$(HOSTDIR)/lua tools/test_deskbarmenu.lua
+	$(HOSTDIR)/lua tools/test_places.lua
 	@# And what a file *is*: the attribute first, the extension second.
 	$(HOSTDIR)/lua tools/test_filetypes.lua
 	@# And the audio ring's position arithmetic. It models the client, the

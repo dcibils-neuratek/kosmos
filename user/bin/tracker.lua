@@ -42,6 +42,7 @@ local ui    = use("/lib/ui.lua")
 local files = use("/lib/files.lua")
 local types = use("/lib/filetypes.lua")
 local layout = use("/lib/iconlayout.lua")
+local placelib = use("/lib/places.lua")
 local theme = ui.theme
 
 local W, H = 780, 520
@@ -217,6 +218,8 @@ local entries  = {}
 -- drag a rectangle over what you want.
 --
 local rename_field, rename_of   -- the box a new name is typed in
+local place_pending             -- what a place dropped on Places will be,
+                                -- while the same box asks for its name
 
 local selected = 0
 local marked   = {}
@@ -298,8 +301,8 @@ local select_all, select_none, do_rename
 local start_drag
 
 -- And the one that changes directory, because the places tree calls it and
--- is built above it.
-local show, visit
+-- is built above it - and `focus_on`, because the tree's drop handler does.
+local show, visit, focus_on
 local go_back, go_forward, go_up
 local sort_by  = "name"
 local scroll   = 1        -- the first row shown; the bar moves this
@@ -709,9 +712,24 @@ local SYSTEM_MOUNTS = {
 -- costs a `getattr` for each one; this returns the filesystem, the size and
 -- how much is free in a single call, which is what the rows want.
 --
+--
+-- **What `/drives` answered, once per refresh**, shared by the Drives group
+-- and by any place on a drive. Both are drawn in the same pass, and asking
+-- twice would be the same question twice on the way to a frame.
+--
+local volumes_seen = nil
+
+local function volumes_now()
+  if volumes_seen == nil then
+    volumes_seen = (fs.volumes and fs.volumes("/drives")) or {}
+  end
+
+  return volumes_seen
+end
+
 local function drive_rows()
   local out = {}
-  local volumes = fs.volumes and fs.volumes("/drives")
+  local volumes = volumes_now()
 
   for _, v in ipairs(volumes or {}) do
     --
@@ -749,11 +767,16 @@ end
 -- that was an earlier guess here, and it put `user` in the list and left
 -- `Desktop` out.
 --
--- Shortcuts - the drawing's `MyPhotos on PHOTOS 2024` - are not built yet.
--- They have to survive a drive being unplugged and plugged back in, and a
--- volume's *name* can renumber when that happens (Diego, 16 September), so
--- a shortcut has to key on the unit and partition rather than on the path.
--- That is a persistence question of its own and is on the roadmap.
+-- **And the shortcuts a person made**, the drawing's `MyPhotos on PHOTOS
+-- 2024`: files in `/home/Places`, each found again by what its volume *is*
+-- rather than by its name or its unit, both of which change on a replug
+-- (`/lib/places.lua` has the rule and `tools/test_places.lua` the proof).
+--
+-- A place whose drive is away stays in the list, dimmed and saying so -
+-- `drives.html`: "Unplug the drive and MyPhotos stays in Places, greyed
+-- out". `quiet` is the tree's word for a row with nowhere to go. Only a
+-- place on a drive asks `/drives` anything, so a sidebar without one costs
+-- the first frame nothing.
 --
 local function place_rows()
   local out = {
@@ -761,8 +784,24 @@ local function place_rows()
     { text = "Desktop", path = "/home/Desktop", children = subdirs },
   }
 
+  for _, p in ipairs(placelib.read(fs)) do
+    local volumes = p.attrs.volume and volumes_now() or {}
+    local path, called = placelib.resolve(p.attrs, volumes)
+
+    if path then
+      out[#out + 1] = { text = p.name, path = path, place = p,
+                        note = called and ("on " .. called) or nil,
+                        children = subdirs }
+    else
+      out[#out + 1] = { text = p.name, place = p, quiet = true,
+                        note = called or "unplugged" }
+    end
+  end
+
   return out
 end
+
+local groups = {}
 
 local function grouped_roots()
   local system, other = {}, {}
@@ -783,10 +822,20 @@ local function grouped_roots()
 
   for _, m in ipairs(other) do system[#system + 1] = m end
 
+  --
+  -- Places and Drives are fetched when drawn rather than now, so neither is
+  -- asked on the way to Tracker existing - and each is kept so a refresh can
+  -- clear just those two, leaving whatever else was opened open.
+  --
+  groups.places = { text = "Places", heading = true, open = true,
+                    children = place_rows }
+  groups.drives = { text = "Drives", heading = true, open = true,
+                    children = drive_rows }
+
   return {
-    { text = "Places", heading = true, open = true, kids = place_rows() },
+    groups.places,
     { text = "System", heading = true, kids = system },
-    { text = "Drives", heading = true, open = true, children = drive_rows },
+    groups.drives,
   }
 end
 
@@ -797,6 +846,95 @@ local places = ui.tree{
   roots = grouped_roots(),
   on_select = function(_, node) visit(node.path) end,
 }
+
+--
+-- **Places and Drives read again**: after a place is made or removed, and on
+-- Refresh. Only those two groups, so a folder somebody opened in System is
+-- still open afterwards.
+--
+local function refresh_places()
+  volumes_seen = nil
+
+  if groups.places then groups.places.kids = nil end
+  if groups.drives then groups.drives.kids = nil end
+end
+
+--
+-- **A drive or a folder dropped on the sidebar becomes a place**, once it
+-- has a name. Anywhere on the sidebar rather than only on the Places
+-- heading: the trail taught that the pixels between targets should not be
+-- dead, and there is nothing else a drop here could mean.
+--
+-- The name is asked in the same box Rename uses, offered as the folder's
+-- own and there to be typed over.
+--
+function places:drop(kind, payload, _, _)
+  if kind ~= "files" then return false end
+
+  local first = tostring(payload or ""):match("[^\n]+")
+
+  if not first then return true end
+
+  if tostring(payload):find("\n.") then
+    ui.dropped(win, false, 0, "one place at a time")
+    status.text = "one place at a time"
+    return true
+  end
+
+  volumes_seen = nil                    -- what is plugged in *now*
+
+  local attrs, why = placelib.from_path(first, volumes_now())
+
+  if not attrs then
+    ui.dropped(win, false, 0, why)
+    status.text = why
+    return true
+  end
+
+  place_pending = attrs
+  rename_of = nil
+  rename_field.text = placelib.suggest(first)
+  rename_field.caret = #rename_field.text + 1
+  rename_field.hidden = false
+  focus_on(rename_field)
+
+  ui.dropped(win, true, 0, nil)
+  status.text = "a name for this place, then Enter"
+  return true
+end
+
+--
+-- **A right-click on a place takes it out of Places**, into the Trash like
+-- every other delete in Tracker - so the wrong one is one drag back. It is
+-- the shortcut that goes, never what it points at. Home and Desktop are not
+-- files anybody made, and say so.
+--
+function places:on_context(_, y)
+  local node = self:node_at(y)
+
+  if not node then return true end
+
+  if not node.place then
+    if not node.heading then
+      status.text = node.text .. " is built in, not a place you made"
+    end
+
+    return true
+  end
+
+  local name, why = files.free_name(files.TRASH, node.place.name)
+  local ok = false
+
+  if name then
+    ok, why = files.move(node.place.file, files.join(files.TRASH, name))
+  end
+
+  status.text = ok and (node.place.name .. " is out of Places, and in the Trash")
+                or ("could not remove it: " .. tostring(why))
+
+  refresh_places()
+  return true
+end
 
 local split = ui.splitter{
   x = 12 + PLACES_W, y = CONTENT_Y + BAR_H, w = 6,
@@ -1999,7 +2137,7 @@ end
 -- what a click sets. There is no `win:focus(v)` in the kit, and adding one
 -- for a single caller would be a widget change made for an application.
 --
-local function focus_on(v)
+function focus_on(v)
   for i, w in ipairs(win.root:focusables()) do
     if w == v then win.focus = i return true end
   end
@@ -2262,7 +2400,7 @@ win:add(ui.menubar{
         { separator = true },
         { text = "Up",      on_choose = go_up },
         { text = "Home",    on_choose = function() visit("/home") end },
-        { text = "Refresh", on_choose = function() show(where) end },
+        { text = "Refresh", on_choose = function() refresh_places() show(where) end },
       } },
     { title = "View",
       items = {
@@ -2301,7 +2439,54 @@ end
 -- `fs.send` with a `rename` type, and if the filesystem has no such
 -- operation the message says so rather than this pretending it worked.
 --
+--
+-- **A place being named**, when a drop on the sidebar asked. Refused with a
+-- sentence for the same reasons a rename is, and for one of its own: a name
+-- already in Places.
+--
+local function name_place(field, text)
+  local attrs = place_pending
+
+  place_pending = nil
+  field.text = ""
+  field.hidden = true
+
+  text = (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+  if text == "" then
+    status.text = "no place made"
+    return
+  end
+
+  if text:find("/") then
+    status.text = "a name cannot contain a slash"
+    return
+  end
+
+  local file = files.join(placelib.DIR, text)
+
+  if fs.getattr(file) then
+    status.text = text .. " is already in Places"
+    return
+  end
+
+  if not fs.getattr(placelib.DIR) then
+    fs.send(placelib.DIR, { type = "mkdir" })
+  end
+
+  local ok, why = fs.write(file, "")
+
+  if ok then ok, why = fs.setattr(file, attrs) end
+
+  status.text = ok and (text .. " is in Places")
+                or ("could not make it: " .. tostring(why))
+
+  refresh_places()
+end
+
 function rename_field:on_enter(text)
+  if place_pending then return name_place(self, text) end
+
   local from = rename_of
 
   rename_of = nil
@@ -2349,6 +2534,15 @@ end
 --
 function win:on_dropped(ok, count, err)
   dragged = nil
+
+  --
+  -- **A drop on this window's own Places is not a move**, and the answer it
+  -- sends back says nothing moved - which is true, and arrived after the
+  -- drop handler asked for the place's name, so the prompt was replaced by
+  -- "nothing moved" at the moment somebody was reading it. Photographed on
+  -- 18 September. While a place is being named, the prompt stands.
+  --
+  if place_pending then return end
 
   if ok and count > 0 then
     show(where)

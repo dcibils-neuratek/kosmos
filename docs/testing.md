@@ -5145,3 +5145,59 @@ of volume records by a bare `104`, and this change moves the record to 120.
 It is `DRIVES_VOLUME_BYTES` now, asserted at load against the packed format,
 and `drivesproto.h` holds the C side with a `_Static_assert` - both facts were
 comments before. A stride that disagrees with its record is 18.87.
+
+## 18.90 A place: made by a drop, opened by a click, taken out by a right-click
+
+**Shortcut places are two halves and each has its own test.** The rule - what
+a place remembers and how it is found again - is `/lib/places.lua`, checked on
+the Mac with no machine booted. The wiring - a drop on the sidebar, the name
+box, a click, a right-click - is Tracker, and runs only in a guest.
+
+**`tools/test_places.lua`, 17 checks, in `make test`.** A folder on a drive
+remembers the volume's identity and the path inside it; a folder elsewhere its
+path; a volume with nothing to know it by is refused rather than remembered by
+its name. Then the part that is the whole point: after a replug under a new
+unit and a new name, `PHOTOS 2`, it finds its own volume - and while the real
+stick is away and a *different* stick called `PHOTOS` is plugged in, it says
+*unplugged*.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| `resolve` keyed on the volume's name rather than its identity | 2 of 17: the replugged stick and the other stick called PHOTOS both resolved to `/drives/PHOTOS/Italy` - somebody else's drive, opened without a word |
+
+**The display harness's `places` phase, 3 checks, on both boards.** Tracker is
+opened on a folder holding one folder; its row is dragged onto the sidebar,
+the offered name taken with Enter, the new place clicked and then
+right-clicked. **Checked on the files wherever a file can say it**: afterwards
+the place is in the Trash with `kind = "place"` and the path it pointed at,
+which proves the drop and the name box wrote it and the right-click moved
+rather than destroyed it - and it is no longer in `/home/Places`. The click is
+checked on the list, which held one row before and none after. The harness is
+diskless, so `/home` starts empty every boot and nothing can pass on a place an
+earlier run left.
+
+| Broken on purpose | What the phase said |
+| ----------------- | ------------------- |
+| the drop handler swallows every drop | *did not become a place - nothing in /home/Places and nothing in the Trash*: `placecheck false nil nil` |
+| the right-click says it worked and moves nothing | *a right-click on a place did not take it out of Places*: `placecheck true nil nil` |
+| a click on a sidebar row goes nowhere | *clicking the place did not open it*: 268 pixels of a row in the list's first row before the click, and 268 after |
+
+Each fails on its own sentence and no other, because the phase checks in the
+order the paths depend on each other: nothing made means nothing to click or
+remove, so that is said first and alone.
+
+**Two faults of my own in writing it, both the same class as 18.87's.** The
+first run failed a Tracker it had never heard from: `placecheck (\S+) ...`
+matched the *echo* of the command that asks, `placecheck " .. tostring(p`,
+before the answer was printed. `run_x86.py` prints `"drives" .. ": ids"` for
+exactly this reason, and the marker is now joined by Lua the same way. It is
+the `$`-anchored regex of three days earlier in another form: a check reading
+the wrong line and reporting it as the machine's answer.
+
+**And a fault the phase exists to catch next time, found this time by
+reading.** The drop handler sits near line 800 and called `focus_on`, which was
+`local function focus_on` near line 2000. Lua binds a name when it compiles, so
+to the handler it was a global that does not exist, and the first drop on
+Places would have stopped Tracker with "attempt to call a nil value". Nothing
+parses that; only running it does. `focus_on` is forward-declared beside
+`show` and `visit`, which are there for the same reason.

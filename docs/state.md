@@ -120,10 +120,25 @@ the reply the size it was. Three new checks, each watched failing - the FAT
 decoder 78, the partition decoder 53, and the guest's `/drives` phase 11,
 which answered exactly the serials mtools stamped (`testing.md` 18.89).
 
-**Part 2 is next: Places in Tracker.** Drag a drive or a folder onto Places
-and name it; kept as a file in `/home/Places` with `kind = "place"`, found
-again by its volume's identity, greyed and saying so while that drive is
-unplugged, and removed with a right-click.
+**Part 2 is done: Places in Tracker, and with it 6c.** Drag a drive or a
+folder onto the sidebar and the box Rename uses asks for a name; it is kept as
+a file in `/home/Places` with `kind = "place"`, found again by its volume's
+identity, dimmed and saying *unplugged* while that drive is away, opened with
+a click and taken out with a right-click, into the Trash. The rule is
+`/lib/places.lua`, 17 host checks; the wiring is the display harness's
+`places` phase, 3 checks on both boards - 121 and 119 display checks now, from
+118 and 116 - each watched failing by breaking the drop, the right-click and
+the click in turn (`testing.md` 18.90).
+
+**Found on the way, both before anybody met them.** The drop handler called
+`focus_on`, which was declared a thousand lines further down, so the first
+drop would have stopped Tracker - forward-declared beside `show` and `visit`
+now. And photographing the drop showed "nothing moved" where the prompt for a
+name should be: the drag's own answer arrives after the drop and overwrote
+it. While a place is being named, the prompt stands.
+
+**Next, 6d: the Open and Save window**, with the Super Nintendo's File menu -
+Open ROM and Quit - as its first caller.
 
 **A harness failure that was not ours, and nearly was blamed on the trail.**
 The `compositor budget` phase demanded the Terminal's grid grow by 800

@@ -5250,6 +5250,174 @@ def check_focus_shown(guest):
     return 3
 
 
+def check_places(guest):
+    """Tracker's shortcut places: made by a drop, opened by a click, and taken
+    out by a right-click - the three paths no picture can show running.
+
+    `tools/test_places.lua` proves the rule, and a photograph on x86 proved
+    the sidebar draws a place and finds its drive. Neither runs a drop, the
+    name box, or a right-click, and that is where a handler goes wrong in a
+    way nothing parses: the drop handler first called `focus_on`, declared
+    as a local a thousand lines further down, which Lua binds as a global -
+    and the first drop would have stopped Tracker. Caught by reading, which
+    is exactly the kind of catch a test is for next time.
+
+    **Checked on the files, not the pixels, wherever a file can say it**,
+    because the look can change and `/home/Places` cannot lie. The harness
+    is diskless, so `/home` starts empty every boot and nothing here can
+    pass on a place a previous run left behind.
+
+      - dropped and named, it is a place - found afterwards in the Trash with
+        `kind = "place"` and the path it points at, which proves the drop
+        and the name box wrote it and the right-click moved it rather than
+        destroying it;
+      - clicking it goes there: the list, which held one folder, is empty;
+      - right-clicked, it is no longer in Places.
+    """
+    NAME = "PlaceProbe"
+    ROW = 16                            # the default face; pinned below
+
+    guest.type('fs.write("/home/.appearance", { palette = "dark" })')
+    guest.type('fs.send("/home/placetest", { type = "mkdir" })')
+    guest.type('fs.send("/home/placetest/%s", { type = "mkdir" })' % NAME)
+    time.sleep(1.0)
+
+    mark = len(guest.seen)
+    guest.type("wm tracker:/home/placetest")
+
+    placed, deadline = None, time.monotonic() + 60
+    while placed is None and time.monotonic() < deadline:
+        found = re.search(r"wm: window Tracker at (\d+),(\d+) (\d+)x(\d+)",
+                          guest.seen[mark:])
+        if found:
+            placed = tuple(int(v) for v in found.groups())
+        time.sleep(0.3)
+
+    if placed is None:
+        raise Failure("Tracker never opened on /home/placetest:\n"
+                      + guest.seen[mark:][-900:])
+
+    wx, wy = placed[0], placed[1]
+    time.sleep(3.0)
+    width, height, _ = parse_ppm(guest.screendump())
+
+    def to(x, y):
+        guest.mouse_to(*_to_tablet(wx + x, wy + y, width, height))
+
+    # The one folder is the list's first row; the sidebar is x 12 to 222,
+    # its rows from y 88, one ROW each: Places, Home, Desktop, then places.
+    first_row_y = 115
+    place_row_y = 86 + 2 + 3 * ROW + ROW // 2
+
+    to(260, first_row_y)
+    time.sleep(0.4)
+    guest.mouse_button(True)
+    time.sleep(0.3)
+    to(272, first_row_y + 12)
+    time.sleep(0.4)
+    to(100, 300)                        # the sidebar's empty lower part
+    time.sleep(0.6)
+    guest.mouse_button(False)
+    time.sleep(1.5)
+
+    guest.sendkey("ret")                # the offered name, as it is
+    time.sleep(2.0)
+
+    def differing(px, x0, y0, w, h):
+        counts = {}
+
+        for y in range(wy + y0, wy + y0 + h):
+            for x in range(wx + x0, wx + x0 + w):
+                o = (y * width + x) * 3
+                c = (px[o], px[o + 1], px[o + 2])
+                counts[c] = counts.get(c, 0) + 1
+
+        return w * h - max(counts.values())
+
+    _, _, before = parse_ppm(guest.screendump())
+    held = differing(before, 236, first_row_y - 7, 180, 14)
+
+    to(60, place_row_y)                 # the new place: click it
+    time.sleep(0.3)
+    guest.mouse_button(True)
+    time.sleep(0.1)
+    guest.mouse_button(False)
+    time.sleep(2.0)
+
+    _, _, after = parse_ppm(guest.screendump())
+    emptied = differing(after, 236, first_row_y - 7, 180, 14)
+
+    to(60, place_row_y)                 # and take it out again
+    time.sleep(0.3)
+    guest.mouse_button(True, "right")
+    time.sleep(0.1)
+    guest.mouse_button(False, "right")
+    time.sleep(2.0)
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if PROMPT in guest.seen[back:]:
+            break
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after the "
+                      "places phase.\n" + guest.seen[back:][-600:])
+
+    #
+    # **The marker is joined by Lua, so it is not in what was typed.** The
+    # serial line echoes the command, and the first version of this matched
+    # its own echo - `placecheck " .. tostring(p` - and failed a Tracker it had
+    # not heard from. `run_x86.py` prints `"drives" .. ": ids"` for exactly
+    # this reason, and this is that.
+    #
+    asked = len(guest.seen)
+    guest.type('local p = fs.getattr("/home/Places/%s") '
+               'local t = fs.getattr("/home/Desktop/Trash/%s") or {} '
+               'print("place" .. "check " .. tostring(p ~= nil) .. " " '
+               '.. tostring(t.kind) .. " " .. tostring(t.path))'
+               % (NAME, NAME))
+    time.sleep(2.0)
+    guest._read_available()
+
+    said = re.search(r"placecheck (\S+) (\S+) (\S+)", guest.seen[asked:])
+
+    if not said:
+        raise Failure("the places phase could not read /home/Places back:\n"
+                      + guest.seen[asked:][-600:])
+
+    still_there, kind, path = said.groups()
+
+    if kind != "place" and still_there != "true":
+        raise Failure(
+            "a folder dropped on the sidebar and named did not become a "
+            "place - nothing in /home/Places and nothing in the Trash, so the "
+            "drop or the name box never wrote it: " + said.group(0))
+
+    if still_there == "true":
+        raise Failure(
+            "a right-click on a place did not take it out of Places - "
+            "/home/Places/%s is still there: %s" % (NAME, said.group(0)))
+
+    if kind != "place" or path != "/home/placetest/" + NAME:
+        raise Failure(
+            "the place in the Trash is not what was dropped - wanted a place "
+            "pointing at /home/placetest/%s: %s" % (NAME, said.group(0)))
+
+    if not (held > 15 and emptied < 5):
+        raise Failure(
+            "clicking the place did not open it - the list's first row had "
+            "%d pixels of a row before the click and %d after, where an "
+            "empty folder leaves none" % (held, emptied))
+
+    return 3
+
+
 def check_desktop(guest):
     """The desktop: below the strip, holding what it always holds, and an
     icon that stays where it is dragged.
@@ -6291,6 +6459,7 @@ def main():
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
         desktop_checks = phase("desktop", check_desktop)
+        places_checks = phase("places", check_places)
         clip_checks = phase("clipboard", check_clipboard)
         cores_checks = phase("cores", check_cores)
         reaped_checks = phase("reaped", check_reaped)
@@ -6315,7 +6484,7 @@ def main():
              + wm_latency_checks
              + widget_checks + script_checks + replicant_checks
              + graphical_checks + click_checks + deskbar_checks
-             + focus_checks + desktop_checks
+             + focus_checks + desktop_checks + places_checks
              + clip_checks + cores_checks + reaped_checks
              + idle_checks + terminal_checks + log_view_checks
              + sized_checks + fold_checks + tri_checks
@@ -6358,6 +6527,8 @@ def main():
           f"once, "
           f"{desktop_checks} on the desktop below the strip and an icon "
           f"staying where it is dragged, "
+          f"{places_checks} on a place made by a drop, opened by a click "
+          f"and taken out by a right-click, "
           f"{clip_checks} on copying text from one application into "
           f"another and on This Machine's report following its window, "
           f"{reaped_checks} on an application that dies saying why and "

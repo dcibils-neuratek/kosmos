@@ -386,7 +386,7 @@ is the one that makes the machine Diego owns behave like a computer:
    (`testing.md` §18.87). It was marked done once before it was: the first
    green run used a fixture with one volume and a substring check, which a
    stride bug in the listing reply also passed;
-   **6c IN PROGRESS** (16 September), Tracker's sidebar and trail - the
+   **6c DONE** (18 September), Tracker's sidebar and trail - the
    three groups are built and drawing: `Places` holding Home and Desktop as
    `drives.html` draws them, `System` folded away, and `Drives` fetching
    `fs.volumes()` lazily when it is opened, never on the way to a first
@@ -415,8 +415,13 @@ is the one that makes the machine Diego owns behave like a computer:
    second is right on a desk and wrong under TCG, where the counter runs
    against host time while the guest lags, and two presses 0.12 s apart
    measured 46 187 937 ticks - 0.74 s of counter time (`testing.md` §18.86).
-   **IN PROGRESS since 18 September: shortcut places** - drag a drive or a
-   folder into Places and name it, `drives.html`'s MyPhotos. **They key on
+   **DONE on 18 September: shortcut places** - drag a drive or a
+   folder onto the sidebar and name it, `drives.html`'s MyPhotos; click it
+   to go there; right-click to take it out, into the Trash. Photographed on
+   x86 with two sticks - MyPhotos "on PHOTOS" by its serial, Holidays dimmed
+   and "unplugged" - and checked on both boards by the display harness's
+   `places` phase, 3 checks with three controls, beside 17 host checks of the
+   rule (`testing.md` 18.89 and 18.90, `ui.md` 16.8e). **They key on
    the volume's own identity, read off the disk: FAT's volume serial number,
    or the GPT partition's unique GUID.** This said "unit and partition", and
    that cannot work: `xhci.c` hands a unit out with `units_named++`, "the

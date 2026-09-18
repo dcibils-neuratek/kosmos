@@ -468,6 +468,52 @@ first in the wrong place - and wrongly by an amount that grows along the line,
 which looks like the last segment being broken rather than all of them being
 shifted.
 
+## 16.8e Places you make: a shortcut, found by what its drive is
+
+**Tracker's Places holds Home, Desktop, and whatever a person adds**, which is
+`drives.html`'s MyPhotos: drag a drive or a folder onto the sidebar, and the
+box Rename uses asks what to call it - offering the folder's own name, there
+to be typed over. A right-click takes a place back out, into the Trash like
+every other delete in Tracker, so the wrong one is one drag away from
+returning. It is the shortcut that goes, never what it points at; Home and
+Desktop are built in and say so.
+
+**Anywhere on the sidebar is the target**, not only the Places heading. The
+trail taught that the pixels between targets should not be dead (16.8d), and
+there is nothing else a drop there could mean.
+
+**A place is a file in `/home/Places`**, named what the person called it, and
+its attributes say what it points at in words - `path = "/home/Music"`, or
+for one on a drive `volume = "fat:1A2B-3C4D"` and `within = "/Italy"`. A
+stored value has to read as itself, so nothing about it depends on knowing
+`drivesproto.h`.
+
+**A place on a drive is found by what the volume *is*, never by its name.**
+Names depend on the order drives arrived, and a unit number is handed out
+afresh on every replug (`usb.md` 6c). The case that separates the two is
+another stick that happens to be called PHOTOS while yours is away: found
+by name, MyPhotos would silently open somebody else's drive. Found by
+identity it says *unplugged* - dimmed, still in the list, as `drives.html`
+draws it - and opens again the moment the real one is back, under whatever
+name it now has. A volume with nothing to know it by, a filesystem with no
+serial on a drive with no GPT, is refused as a place rather than remembered
+by its name.
+
+**The rule is `/lib/places.lua` and the drawing is Tracker**, for
+`deskbarmenu.lua`'s reason: the decisions are worth testing where a test
+costs no boot. `tools/test_places.lua` is 17 checks, and the control that
+matters keys `resolve` on the name: the replugged stick and the other stick
+called PHOTOS both then open `/drives/PHOTOS/Italy`, the wrong drive, and
+both checks fail.
+
+**Two changes to the kit came with it, both small.** The tree has
+`node_at(y)`, which its own clicks now use too: a drop and a right-click
+need the row under the pointer, and a second copy of that arithmetic in an
+application would be a row height it does not own. And `/drives` is asked
+once per refresh, shared by the Drives group and any place on a drive -
+only a place on a drive asks at all, so a sidebar without one costs the
+first frame nothing.
+
 ## 16.9 Themes, and colours that are named rather than captured
 
 There are two palettes - `dark`, which is what Kosmos looked like first, and

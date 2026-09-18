@@ -881,6 +881,21 @@ function ui.tree(spec)
   v.top = 1
   v.chosen = nil
 
+  --
+  -- **Which row a height in the tree is**, and the node on it - or nil.
+  --
+  -- One formula for everything that asks: the tree's own clicks, and a
+  -- caller's drop or right-click (Tracker's Places). It lived inline in
+  -- `mouse` while that was the only asker; a copy in an application would be
+  -- the same arithmetic against a row height it does not own, and would
+  -- drift the first time the face changed.
+  --
+  function v:node_at(y)
+    local r = self.rows and self.rows[self.top + (y - 2) // GH]
+
+    return r and r.node, r
+  end
+
   function v:draw(g)
     g:sunken(0, 0, self.w, self.h, "sunken")
 
@@ -1015,7 +1030,7 @@ function ui.tree(spec)
 
     if action ~= "press" then return true end
 
-    local r = self.rows and self.rows[self.top + (y - 2) // GH]
+    local _, r = self:node_at(y)
 
     if not r then return true end
 
