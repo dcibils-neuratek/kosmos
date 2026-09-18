@@ -5323,3 +5323,37 @@ than across a pause somebody would have to time.
 
 Every control was built and its build's exit checked before the phase ran,
 since 18.92's second control tested a kernel that had not compiled.
+
+## 18.94 The level bar: at the level the keys set, every press heard, and gone
+
+**The Sound half of `docs/levels.html`, held to what the window manager says
+the level is** rather than merely found on the screen. `run_media.py`'s own
+session, because it needs a sound device to have a level at all: a window
+well away from the corner, the corner photographed, volume down three times,
+and the corner photographed again - then three and a half seconds later, a
+third time.
+
+**4 checks, 26 in all**:
+
+- the corner changed, and the window manager said what it set;
+- **all three presses were heard** - which is the bug this section exists
+  for: the first version called `gfx.surface(w, h)`, the kit takes a table,
+  and the error raised inside the key handler took the window manager's keys
+  down with it, so the bar never drew and only the first press arrived;
+- along the track's middle row the white of the fill runs from its start to
+  the knob, which sits where `wm.lua`'s arithmetic puts the level the key
+  said - within three pixels;
+- the corner is exactly as it was before the key, three and a half seconds
+  after the last one: faded, and nothing left behind.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the original: `gfx.surface(osd.W, osd.H)`, and no `pcall` around the drawing | 3 of 26 on the bar: *drew no level bar*, *the window manager said 1 of them ['240'] - drawing the level bar is losing keys*, and *the fill is 0 pixels of white* |
+| the fill drawn full whatever the level | 1 of 26: *the level bar's fill is 176 pixels of white, where 208 of 256 puts its knob at 151* |
+| two seconds' hold made ten | 1 of 26: *the level bar was still on the screen three and a half seconds after the last key* |
+
+**The first control found a fourth failure that was not the bar's.** The
+master-mute check (18.93) read *'mute: muted true level 256 2'* - the line
+caught while QEMU was still printing it, since `wait_for` returns on the
+first words and the numbers after them may not have arrived. It waited for
+a phrase and then parsed a line; it now waits for the line.

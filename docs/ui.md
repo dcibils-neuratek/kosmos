@@ -555,6 +555,44 @@ ever called it.
   counter, now shared by both so a second click means the same thing
   everywhere. A list with no `on_open` behaves exactly as it did.
 
+## 16.8g The level bar, drawn by the window manager
+
+**A key that changes a level shows the level**, over everything, for two
+seconds after the last press, and then fades in a fifth of a second. It is
+`docs/levels.html` as Diego approved it on 18 September - after macOS's
+Display and Sound panels, top right under the bar, and smooth rather than
+notched: a dark rounded panel titled by what it controls, a small and a large
+icon either side of a track with a knob. Muted keeps the level and greys the
+fill, with a cross by the small speaker. The Sound half is built; Display
+waits for the ThinkPad's brightness.
+
+**The window manager draws it, because the window manager took the key.**
+The volume keys are the system's and never reach a window (the ThinkPad keys,
+`roadmap.md`), so the panel is drawn at the moment of the press from the
+level the audio server has just answered, with no process between the key and
+the picture. It is drawn once, into a surface of its own, when the level
+changes; each frame only blends that surface over the windows with one alpha
+for the fade, before the pointer is drawn.
+
+**Shapes built so nothing is drawn twice.** `fill` replaces pixels and
+`disc` blends only its anti-aliased edge, so a rounded rectangle is four
+corner discs and then three rectangles over them: the rectangles replace what
+the discs left inside, and the corners keep their smooth edge. Everything in
+the panel is pre-mixed at the panel's own opacity, because a less opaque
+colour written in by replacement would be a hole.
+
+**Drawing it may not cost a key.** The first version called
+`gfx.surface(w, h)` - written from memory; the kit takes a table,
+`gfx.surface{ w =, h = }` - and the error it raised inside the key handler
+took the window manager's keys down with it: the bar never drew, and of three
+presses only the first was heard. The level had already changed by then. So
+`osd.show` runs under `pcall`, a failure to draw is said in the log, and the
+keys go on working; `run_media.py` counts every press (`testing.md` 18.94).
+
+**One table, `osd`, because `wm.lua`'s main chunk is at Lua's limit of two
+hundred locals.** The bar first went in as twenty of them and the file stopped
+loading.
+
 ## 16.9 Themes, and colours that are named rather than captured
 
 There are two palettes - `dark`, which is what Kosmos looked like first, and

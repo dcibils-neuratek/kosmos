@@ -609,22 +609,26 @@ processors, and still what follows USB:
       own, and muted is measured silent in what the machine played
       (`testing.md` 18.93). Whether the ThinkPad's keys send the same bytes is
       the stick's to say.
-   3. **NEXT - the DSDT, read by Kosmos itself**, for where brightness is set
+   3. **IN PROGRESS - the DSDT, read by Kosmos itself**, for where brightness is set
       - an embedded controller register, or the graphics device's backlight -
       with its offsets from the documentation rather than from memory. Shared
       with the battery below. No Linux boot to fetch it: `hal/pc/acpi.c`
       already walks the table list for `APIC` and `MCFG`, and learns `FACP`
-      too, following the FADT to the DSDT; a `dsdt` command saves its bytes
-      to `/home`, and `make stick-log` brings them to the Mac, where `iasl`
-      decompiles them. Tested on QEMU's own DSDT: the signature, the length
-      its header states, and a checksum that sums to zero. **It goes on stick
+      too, following the FADT to the DSDT, and keeps the SSDTs; the kernel
+      maps them once the MMU is on and `SYS_FIRMWARE` hands their bytes up.
+      `acpi` lists them and `acpi save` writes one file a table to
+      `/home/acpi`; `make stick-log FILE=/home/acpi/` brings the folder to
+      the Mac, where `iasl -e SSDT*.aml -d DSDT.aml` decompiles it. Tested
+      under QEMU with a table of the test's own, handed over by `-acpitable`
+      and wanted back byte for byte, beside QEMU's DSDT whole. **It goes on stick
       0.10.80 with the volume bar**, so one session at the ThinkPad answers
       what F5 and F6 send and how the T14 sets its backlight - and the next
       one tries the brightness keys and the Display bar. Diego, 18
       September: "when can i try the brightness bar?", "in the thinkpad".
-   4. **A comfortable brightness set at boot**, which fixes "too dim" before
-      any key works.
-   5. **The brightness keys**, and **the level shown on the screen when a key
+   4. **BLOCKED on step 3 - a comfortable brightness set at boot**, which
+      fixes "too dim" before any key works, once the DSDT says where a
+      brightness is set.
+   5. **IN PROGRESS - the brightness keys**, and **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the
       brightness level", and "like a volume bar as well". A bar that
@@ -634,8 +638,12 @@ processors, and still what follows USB:
       drawn on 18 September** (`docs/levels.html`, "all is good"): after
       macOS's Display panel, top right under the bar, and **smooth rather
       than notched** ("i like the bar with smooth instead of notches") - a
-      key still moves it a step, and the ThinkPad's own levels sit behind it. The Sound half can be built now,
-      since the volume keys work.
+      key still moves it a step, and the ThinkPad's own levels sit behind it.
+      **The Sound half is DONE on 18 September**, in QEMU: the window manager
+      draws it at the moment of the key, at the level the audio server
+      answers, and `run_media.py` holds it to that level, to every press
+      being heard, and to its being gone after (`ui.md` 16.8g, `testing.md`
+      18.94). The Display half and the brightness keys wait for step 3.
 4. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab

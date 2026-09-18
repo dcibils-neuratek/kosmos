@@ -186,6 +186,30 @@ def settled(path, seconds=1.5):
     return heard(path)
 
 
+def whole_line(guest, mark, pattern, seconds=60):
+    """The first line after `mark` matching `pattern`, once all of it has
+    arrived - the pattern ends in the newline for that reason. None if it
+    never does, which the check it feeds then says.
+
+    Waiting for a phrase and then parsing the line it starts is a race: the
+    master-mute check read 'mute: muted true level 256 2', the rest of the
+    number still on its way from QEMU, and failed a machine that was right
+    (`testing.md` 18.94).
+    """
+    deadline = time.monotonic() + seconds
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+        found = re.search(pattern, guest.seen[mark:])
+
+        if found:
+            return found
+
+        time.sleep(0.2)
+
+    return None
+
+
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
     work = tempfile.mkdtemp(prefix="kosmos-media-")
@@ -320,16 +344,14 @@ def main():
         time.sleep(1.0)
         mark = len(guest.seen)
         guest.type("/ramfs/mutea.lua")
-        guest.wait_for("mute: muted", "the muted second was played")
-        a = re.search(r"mute: muted (\w+) level (\d+) (\d+)", guest.seen[mark:])
+        a = whole_line(guest, mark, r"mute: muted (\w+) level (\d+) (\d+)\r?\n")
         during_mute, _ = settled(wav_out)
 
         guest.type('fs.write("/ramfs/muteb.lua", [[' + play_one(False, "unmuted") + ']])')
         time.sleep(1.0)
         mark = len(guest.seen)
         guest.type("/ramfs/muteb.lua")
-        guest.wait_for("mute: unmuted", "the unmuted second was played")
-        b = re.search(r"mute: unmuted (\w+) level (\d+) (\d+)", guest.seen[mark:])
+        b = whole_line(guest, mark, r"mute: unmuted (\w+) level (\d+) (\d+)\r?\n")
         after_mute, _ = settled(wav_out)
 
         check(a is not None and a.group(1) == "true" and a.group(2) == a.group(3),
@@ -767,13 +789,114 @@ def main():
     finally:
         guest.close()
 
+    #
+    # **The level bar, on the screen, at the level the keys set.** Drawn by
+    # the window manager over everything - `docs/levels.html`, as Diego
+    # approved it - and measured against what the window manager says the
+    # level is, not merely found to be there: the white of the track's fill,
+    # along its middle row, runs from its start to the knob, and the knob
+    # sits where the level puts it. Three presses of volume down from the
+    # top, so the bar is not simply full. Then, three and a half seconds
+    # later, the corner is as it was before the key - faded, and nothing
+    # left behind.
+    #
+    # Its own session, with the sound device the others use, because it
+    # needs one to have a level at all, and a window of its own well away
+    # from the corner.
+    #
+    level_prog = ("local ui = use('/lib/ui.lua') "
+                  "local w = ui.window{ title = 'Level', w = 240, h = 140, "
+                  "x = 200, y = 300 } "
+                  "if w then w:run() end")
+
+    guest = Guest(image, 600)
+
+    try:
+        guest.wait_for(PROMPT, "reached a shell")
+        guest.type('fs.write("/ramfs/level.lua", [[' + level_prog + ']])')
+        time.sleep(1.0)
+        guest.type("wm /ramfs/level.lua")
+        guest.wait_for("wm: window Level at", "the level bar's window opened")
+        time.sleep(2.5)
+
+        # wm.lua's osd: 300 by 74, fourteen from the right and ten below the
+        # bar - and there is no bar in this session.
+        OSD_W, OSD_H = 300, 74
+        width, height, before_px = parse_ppm(guest.screendump())
+        ox, oy = width - OSD_W - 14, 10
+
+        def corner(px):
+            return [bytes(px[((oy + y) * width + ox) * 3:
+                             ((oy + y) * width + ox + OSD_W) * 3])
+                    for y in range(OSD_H)]
+
+        base = corner(before_px)
+        pressed = len(guest.seen)
+
+        for _ in range(3):
+            guest.sendkey("volumedown")
+            time.sleep(0.3)
+
+        time.sleep(0.3)
+        _, _, shown_px = parse_ppm(guest.screendump())
+        guest._read_available()
+        levels = re.findall(r"wm: volume down, (\d+) of 256",
+                            guest.seen[pressed:])
+        shown = corner(shown_px)
+
+        row, run = shown[50], 0
+        for x in range(48, OSD_W):
+            if row[x * 3:x * 3 + 3] == b"\xff\xff\xff":
+                run += 1
+            elif run:
+                break
+
+        time.sleep(3.5)
+        _, _, gone_px = parse_ppm(guest.screendump())
+        gone = corner(gone_px)
+
+        level = int(levels[-1]) if levels else None
+
+        check(level is not None and shown != base,
+              "a volume key drew no level bar in the top right corner: "
+              "the key said %r" % (levels,))
+
+        # Every press heard. The first level bar raised an error inside the
+        # key handler, and the two presses after the first were never seen -
+        # the bar had taken the keys down with it.
+        check(len(levels) == 3,
+              "three presses of volume down, and the window manager said %d "
+              "of them %r - drawing the level bar is losing keys"
+              % (len(levels), levels))
+
+        if level is not None:
+            # wm.lua: the track is 202 wide from x 48, filled to the level,
+            # and the knob, 26 wide, centred on the fill's end - so the white
+            # runs from 48 to the knob.
+            tw = OSD_W - 48 - 50
+            fw = max(6, int(tw * level / 256 + 0.5))
+            kx = max(48, min(48 + tw - 26, 48 + fw - 13))
+
+            check(abs(run - (kx - 48)) <= 3,
+                  "the level bar's fill is %d pixels of white, where %d of "
+                  "256 puts its knob at %d - the bar is not drawing the "
+                  "level the key set" % (run, level, kx - 48))
+
+        check(gone == base,
+              "the level bar was still on the screen three and a half "
+              "seconds after the last key - it fades after two")
+    except Failure as e:
+        fails.append(str(e))
+    finally:
+        guest.close()
+
     if fails:
         print("FAIL: %d of %d checks on media.lua, heard:" % (len(fails), len(fails) + checks))
         for complaint in fails:
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
           "Music's Play and bar doing the same, Music saying why it could "
           "not list a folder, and the sound keeping real time on a device "
