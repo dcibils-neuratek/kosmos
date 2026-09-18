@@ -607,8 +607,8 @@ processors, and still what follows USB:
       `muted` per stream and none for the whole machine, and zeroing the level
       would have made it mean two things. So `master_muted` is a field of its
       own, and muted is measured silent in what the machine played
-      (`testing.md` 18.93). Whether the ThinkPad's keys send the same bytes is
-      the stick's to say.
+      (`testing.md` 18.93). **And on the ThinkPad, 18 September**, from stick
+      0.10.80: "sound keys work!" - its keyboard sends the same bytes.
    3. **DONE in QEMU on 18 September (`2c8d4f2`), waiting on the ThinkPad - the DSDT, read by Kosmos itself**, for where brightness is set
       - an embedded controller register, or the graphics device's backlight -
       with its offsets from the documentation rather than from memory. Shared

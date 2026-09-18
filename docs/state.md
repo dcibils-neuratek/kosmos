@@ -8,7 +8,7 @@ Last updated: 2026-09-18
 
 ## The ThinkPad keys: stick 0.10.80 waiting on Diego, 18 September
 
-**The volume keys work in QEMU on both boards** (`testing.md` 18.92, 18.93):
+**The volume keys work on the ThinkPad** - stick 0.10.80, 18 September, Diego: "sound keys work!" - **and in QEMU on both boards** (`testing.md` 18.92, 18.93):
 the keyboard driver names every key it has no entry for, once; e0 20, e0 2e
 and e0 30 are mute, volume down and up; the window manager takes them before
 any window; and the audio server has a master mute of its own.
