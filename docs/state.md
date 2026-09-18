@@ -6,6 +6,30 @@ Last updated: 2026-09-16
 
 ---
 
+## The ThinkPad keys, and a stick waiting on Diego, 18 September
+
+**The volume keys work in QEMU on both boards, and a stick carries them to
+the ThinkPad.** Step 1: the keyboard driver names every key it has no entry
+for, once, in the kernel's log - it used to drop them without a trace, which
+is where the ThinkPad's volume and brightness keys went. Step 2: e0 20, e0 2e
+and e0 30, measured through QEMU's PS/2 keyboard, are mute, volume down and
+up; the window manager takes them before any window; and the audio server
+has a master mute of its own, measured silent in what the machine played
+(`testing.md` 18.92, 18.93).
+
+**The stick**: `kosmos-usb-0.10.78-development.img`, 224 MB, sha256
+`fdf16d6a8c66ebf6eaf46f0c78adc76fe98ea77ca8c3df8ed08359a8a7c9f27f`,
+`USB_HOME=partition` with the desktop starting itself - 29 checks under OVMF.
+**Waiting on Diego**: write it, press F1, F2, F3, F5 and F6 once without Fn
+and once with it, run `diagnose`, and `make stick-log` on the Mac. That says
+whether the volume keys send the standard bytes on the real keyboard, and
+whether the brightness keys arrive as keys at all - if they do not, they are
+the embedded controller's, and the DSDT is next.
+
+**Also waiting on Diego**: the level bar's mockup, `docs/levels.html`, after
+macOS's Display panel; and A or B for the Super Nintendo's File menu, because
+a window that draws its own pixels cannot carry a kit menu today.
+
 ## The stick check condemned a good stick, 16 September
 
 **0.10.75 was built for Diego's ThinkPad and then refused by its own
