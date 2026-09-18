@@ -576,7 +576,21 @@ processors, and still what follows USB:
    pointer mode in the window manager - music, and saving. `LICENSE` and
    `FULL=1` still disagree about Doom; Quake, outside `FULL=1`, adds nothing
    to that.
-3. **IN PROGRESS since 18 September - the ThinkPad's brightness and volume
+3. **NEXT, first - the tests in five to ten minutes.** Diego, 18 September,
+   after a gate of forty: "i dont want 40 minutes tests any more, 5 to 10
+   minutes max from now on so make sure the tests are built accordingly".
+   Asked once before, on 11 September ("can we make it 5?"), and paused.
+   The same checks in less time, never fewer (`CLAUDE.md`). What was
+   measured then: no `-j` anywhere; one flags stamp shared by every build
+   variant, so each variant the gate builds recompiles everything, kernel
+   included; every suite run one after another, `run_x86` alone booting
+   about eleven times; and about 98 s of plain sleeps in each display
+   harness run. In order: a timed run, so the order of work is a number's;
+   `-j` and a stamp per variant; a runner that starts the independent QEMU
+   suites together, with a log per suite, and the display harness - which
+   checks timing - alone at the end; then waits for the thing in place of
+   fixed sleeps.
+4. **IN PROGRESS since 18 September - the ThinkPad's brightness and volume
    keys**, moved ahead of the battery that morning because the screen is a
    problem today and the battery is not - **and that afternoon ahead of USB
    6e as well**, Diego's choice: "yes lets do brightness and volume keys".
@@ -645,7 +659,8 @@ processors, and still what follows USB:
       driver at EL0, `user/servers/backlight.c`, reads both controllers and
       says what they hold - a controller on, with its on-time inside its
       period, confirms the offsets on the ThinkPad before anything is
-      written. **4b** writes the on-time.
+      written. **4a is built** (`c0df73d`, `testing.md` 18.96) and on stick
+      0.10.81, waiting on the ThinkPad's reading. **4b** writes the on-time.
    5. **IN PROGRESS - the brightness keys**, and **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the
@@ -663,7 +678,7 @@ processors, and still what follows USB:
       answers, and `run_media.py` holds it to that level, to every press
       being heard, and to its being gone after (`ui.md` 16.8g, `testing.md`
       18.94). The Display half and the brightness keys wait for step 3.
-4. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
+5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
    like windows or linux or beos", and "i would like to polish the entire
@@ -687,12 +702,12 @@ processors, and still what follows USB:
       spacing scale, the type sizes, and every widget beside what it looks
       like today - for Diego to change, and then applied one application at a
       time, each photographed against its drawing.
-5. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
+6. **NEXT - a battery indicator on the top bar**, for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,
    rather than through an AML interpreter, and cached rather than read on
    every `SYS_SYSINFO`. It starts with getting the DSDT off the machine,
    which the keys above will already have done.
-6. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
+7. **NOT STARTED - a tutorial: building Lua apps for Kosmos, in ten lessons.** Asked for by
    Diego on 14 September - "a simple tutorial on extending kosmos with lua
    which was always the idea", which is `design.md` §9.1: there is no
    distinction between writing an app and modifying the system. Ten lessons,

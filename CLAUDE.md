@@ -736,6 +736,17 @@ a window, as *app or program* above has it - starts as an HTML mockup of its
 windows in `docs/`, beside `drives.html`, shown to Diego and changed until he
 agrees; the code follows the page. A program at the prompt needs none.
 
+**The tests take five to ten minutes, never more.** Diego, 18 September
+2026, after a gate that ran for forty: "i dont want 40 minutes tests any
+more, 5 to 10 minutes max from now on so make sure the tests are built
+accordingly", and "i cant spend almost an hour on every test". The same
+checks, in less time - parallel builds, suites run side by side, waits for
+the thing rather than for a number of seconds - and never fewer checks to
+make the number. A new test is written to fit inside the budget, and a
+suite that pushes the whole past ten minutes is the thing to fix, before
+anything else lands. While the gate is slower than that, a change is checked
+by the tests it touches and the full set runs before a push.
+
 **One thing at a time.** `docs/state.md` is where the work is; `docs/roadmap.md`
 is what is built and what is wanted. Do not pull something forward off the
 wishlist because it looks cheap - that is the main way a project like this

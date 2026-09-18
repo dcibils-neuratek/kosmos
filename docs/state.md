@@ -6,7 +6,24 @@ Last updated: 2026-09-18
 
 ---
 
-## The ThinkPad keys: stick 0.10.80 waiting on Diego, 18 September
+## The ThinkPad keys: stick 0.10.81 waiting on Diego, 18 September
+
+**The tests take five to ten minutes from now on** (`CLAUDE.md`, Diego:
+"i dont want 40 minutes tests any more"). A gate was stopped at about
+twenty minutes for it; the roadmap's item 3 is making the same checks fit,
+and it is next. Until then a change is checked by the tests it touches.
+
+**Stick 0.10.81**: `kosmos-usb-0.10.81-development.img`, 234.9 MB, sha256
+`c7bda441dac83040f0a46ef53b9512bc0908e8bb58fa697ad0df8b0815072bb0`, 29 checks
+under OVMF. It carries the backlight driver (`c0df73d`, `testing.md` 18.96),
+which only reads. **Waiting on Diego**: boot it, run `diagnose`, and `make
+stick-log` on the Mac - the `backlight:` lines say which controller is on,
+its period and its on-time, which is what 4b writes.
+
+**The DSDT came back from the ThinkPad** on stick 0.10.80 and was read on
+the Mac (`thinkpad.md` 8b): F5 and F6 are embedded-controller queries 0x14
+and 0x15, and the backlight is the Intel graphics device's PWM, which the
+firmware leaves to a graphics driver.
 
 **The volume keys work on the ThinkPad** - stick 0.10.80, 18 September, Diego: "sound keys work!" - **and in QEMU on both boards** (`testing.md` 18.92, 18.93):
 the keyboard driver names every key it has no entry for, once; e0 20, e0 2e
@@ -39,7 +56,7 @@ its backlight, which is steps 4 and 5.
 needs Diego's yes and `make prepush`.
 
 **Also open**: the Super Nintendo's File menu (6d, option A chosen - the
-compositor draws a menu bar above a direct window), and roadmap item 4,
+compositor draws a menu bar above a direct window), and roadmap item 5,
 Kosmos looking like its mockups.
 
 ## The stick check condemned a good stick, 16 September
