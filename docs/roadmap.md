@@ -600,9 +600,15 @@ processors, and still what follows USB:
       e0 2e, volume up e0 30 - and the display harness's `unknown keys` phase
       checks it on x86 with two controls (`testing.md` 18.92). What the
       ThinkPad sends is one `diagnose` and one `make stick-log` away.
-   2. **The volume keys**, if they arrive as keys, need no new audio work:
-      `audioproto.h` already carries `gain` (0 to 256) and `muted`, which the
-      Deskbar and Music use, so they are recognised and wired to what is there.
+   2. **DONE on 18 September - the volume keys**, in QEMU on both boards:
+      the i8042 maps e0 20, e0 2e and e0 30, the window manager takes them
+      before any window, and up and down move the master by a sixteenth. This
+      said they would need no new audio work, and mute did: the server had
+      `muted` per stream and none for the whole machine, and zeroing the level
+      would have made it mean two things. So `master_muted` is a field of its
+      own, and muted is measured silent in what the machine played
+      (`testing.md` 18.93). Whether the ThinkPad's keys send the same bytes is
+      the stick's to say.
    3. **The DSDT**, for where brightness is set - an embedded controller
       register, or the graphics device's backlight - with its offsets from the
       documentation rather than from memory. Shared with the battery below.

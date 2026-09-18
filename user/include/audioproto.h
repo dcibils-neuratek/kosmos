@@ -62,6 +62,7 @@ struct audio_request {
     int32_t  balance;           /* -100 left .. +100 right; -101 leaves it */
     int32_t  muted;             /* 0 or 1; -1 leaves it */
     int32_t  master;            /* 0..256; -1 leaves it */
+    int32_t  master_muted;      /* 0 or 1; -1 leaves it */
     char     name[AUDIO_NAME_MAX];
 };
 
@@ -85,6 +86,7 @@ struct audio_reply {
 
     /* streams */
     uint32_t master;
+    uint32_t master_muted;      /* silent, with `master` kept for unmuting */
     uint32_t mixes;             /* periods mixed, ever */
     uint32_t starved;           /* device had room, every ring was empty */
     uint32_t late;              /* worst gap between turns, microseconds */

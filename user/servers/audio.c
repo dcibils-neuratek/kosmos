@@ -50,6 +50,14 @@ static struct stream streams[STREAM_MAX];
 static uint32_t      next_id = 1;
 static int32_t       master  = 256;
 
+/*
+ * **Muted is not a level.** The volume keys' mute silences everything and
+ * keeps `master` as it was, so unmuting comes back to it - and so everything
+ * that reads the level, the Mixer's master and the level bar, still reads
+ * the level rather than a zero that means two things.
+ */
+static bool          master_muted = false;
+
 static unsigned      period_bytes;
 static unsigned      period_frames;     /* that period, in the position's unit */
 static unsigned      device_depth;
@@ -129,7 +137,7 @@ static bool refill(void)
          * real pan holds the total power constant and needs a square root.
          * This is the simple one, and saying so beats implying the other.
          */
-        g = s->muted ? 0 : ((s->gain * master) / 256);
+        g = (s->muted || master_muted) ? 0 : ((s->gain * master) / 256);
         left = right = g;
 
         if (s->balance > 0) {
@@ -317,6 +325,10 @@ static void do_set(const struct audio_request *req, struct audio_reply *rep)
 
     /* Master first, and on its own: a request that only moves the master
      * names no stream and must not be refused for it. */
+    if (req->master_muted >= 0) {
+        master_muted = (req->master_muted != 0);
+    }
+
     if (req->master >= 0) {
         master = (req->master > 256) ? 256 : req->master;
     }
@@ -346,6 +358,7 @@ static void do_streams(struct audio_reply *rep)
 
     rep->error = AUDIO_OK;
     rep->master = (uint32_t)master;
+    rep->master_muted = master_muted ? 1u : 0u;
     rep->period = period_bytes;
     rep->periods = device_depth;
     rep->mixes = mixes;

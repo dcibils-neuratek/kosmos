@@ -286,6 +286,67 @@ def main():
               % loudest)
 
         #
+        # **Muted is silent, and keeps the level.** The ThinkPad's mute key
+        # sets the audio server's `master_muted`, and what that has to mean
+        # is measured here in what the machine actually played, not read
+        # back from a reply: a second of the tone while muted must add
+        # nothing to the recording, and a second after unmuting must be
+        # heard - with the level the same before, during and after, so
+        # unmuting comes back to where it was. The display harness proves
+        # the key reaches the window manager; this is whether the machine
+        # goes quiet.
+        #
+        # Two programs, so the recording is measured between them rather
+        # than across a pause somebody has to time.
+        #
+        def play_one(muted, marker):
+            return ('local media = use("/lib/media.lua") '
+                    'local audio = use("/lib/audio.lua") '
+                    'local hz = fs.read("/dev/cpu").counter_hz '
+                    'local was = audio.stats() '
+                    'audio.set{ master_muted = %s } '
+                    'local p = assert(media.open("/home/tone.wav")) '
+                    'local stop = sys.ticks() + hz '
+                    'p:play() while sys.ticks() < stop and not p:finished() do '
+                    'p:tick() sys.sleep(1) end p:close() '
+                    'local now = audio.stats() '
+                    'print("mute" .. ": %s " .. tostring(now.master_muted) '
+                    '.. " level " .. was.master .. " " .. now.master)'
+                    % ("true" if muted else "false", marker))
+
+        before_mute, _ = settled(wav_out)
+
+        guest.type('fs.write("/ramfs/mutea.lua", [[' + play_one(True, "muted") + ']])')
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        guest.type("/ramfs/mutea.lua")
+        guest.wait_for("mute: muted", "the muted second was played")
+        a = re.search(r"mute: muted (\w+) level (\d+) (\d+)", guest.seen[mark:])
+        during_mute, _ = settled(wav_out)
+
+        guest.type('fs.write("/ramfs/muteb.lua", [[' + play_one(False, "unmuted") + ']])')
+        time.sleep(1.0)
+        mark = len(guest.seen)
+        guest.type("/ramfs/muteb.lua")
+        guest.wait_for("mute: unmuted", "the unmuted second was played")
+        b = re.search(r"mute: unmuted (\w+) level (\d+) (\d+)", guest.seen[mark:])
+        after_mute, _ = settled(wav_out)
+
+        check(a is not None and a.group(1) == "true" and a.group(2) == a.group(3),
+              "muting did not say it was muted with the level kept: %r"
+              % (a.group(0) if a else None))
+        check(during_mute - before_mute < 0.05,
+              "a second of the tone while muted was heard for %.2f s - muted "
+              "has to be silent" % (during_mute - before_mute))
+        check(b is not None and b.group(1) == "false"
+              and a is not None and b.group(3) == a.group(2),
+              "unmuting did not come back to the level it was muted at: %r"
+              % (b.group(0) if b else None))
+        check(after_mute - during_mute >= 0.5,
+              "a second of the tone after unmuting was heard for only %.2f s"
+              % (after_mute - during_mute))
+
+        #
         # The window: Music on the same tone, Play, then the bar.
         #
         mark = len(guest.seen)
@@ -712,7 +773,7 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
           "Music's Play and bar doing the same, Music saying why it could "
           "not list a folder, and the sound keeping real time on a device "

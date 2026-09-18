@@ -5288,3 +5288,38 @@ This is 6b's C33 again, the control that does not compile and silently tests
 the last binary that did. The control was rewritten to compile - the line
 removed, the bookkeeping kept - and the chain that runs controls now refuses
 to run a phase against a build that failed.
+
+## 18.93 The volume keys, from the keyboard to the mix - and muted is silent
+
+**Three layers, and each is proved where it can be seen.** The keyboard driver
+maps e0 20, e0 2e and e0 30 - the bytes 18.92 measured - to evdev's mute,
+volume down and volume up, which travel as raw events and never as characters
+(`hal_key_char` answers -1 above the typing block). The window manager takes
+them before any window, as it takes Super: a key that changes the machine's
+volume is not a game's to swallow. And the audio server has a master mute of
+its own - a field on both sides of `audioproto.h` - because muting by setting
+the level to zero would make one stored value mean two things, and move the
+Mixer's master slider to nought while muted.
+
+**The display harness's `volume keys` phase, 2 checks, on both boards**: on
+x86 through the i8042's table, on the ARM board through virtio's own codes.
+Each of up, down and mute must reach the window manager - one pattern per
+key, because a shared one let the mute line stand in for a volume-up that
+never arrived - and on x86 none may still be a key the driver does not know.
+The harness has no sound device, so this is the key path and only that.
+
+**`run_media.py`, 4 more checks, 22 in all: whether the machine goes quiet**,
+measured in what it played rather than read from a reply. A second of the
+tone while muted adds nothing to the recording; a second after unmuting is
+heard; and the level is the same before, during and after, so unmuting comes
+back to it. Two programs, so the recording is measured between them rather
+than across a pause somebody would have to time.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the audio server ignores master mute | `run_media.py`, 1 of 22: *a second of the tone while muted was heard for 1.02 s - muted has to be silent* |
+| the window manager does not take the volume keys | the phase, on the ARM board: *the volume key 'up' never reached the window manager* |
+| the i8042's table without the volume entries | the phase, on x86: the same - the keys dropped again before the window manager could see them |
+
+Every control was built and its build's exit checked before the phase ran,
+since 18.92's second control tested a kernel that had not compiled.

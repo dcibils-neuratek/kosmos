@@ -273,18 +273,18 @@ end
 --------------------------------------------------------------------------
 
 -- struct audio_request: op, stream, gain, balance, muted, master, name[24]
-local REQUEST  = "<I4I4i4i4i4i4c24"
-local REQ_SIZE = 48
+local REQUEST  = "<I4I4i4i4i4i4i4c24"   -- ..., master, master_muted, name
+local REQ_SIZE = 52
 
 -- struct audio_stream_info: stream, gain, balance, muted, peak, queued, name
 local INFO      = "<I4I4i4I4I4I4c24"
 local INFO_SIZE = 48
 
 -- struct audio_reply, as far as the list
-local REPLY      = "<I4I4I4I4I4I4I4I4I4"
-local REPLY_HEAD = 36
+local REPLY      = "<I4I4I4I4I4I4I4I4I4I4"   -- ..., master, master_muted, ...
+local REPLY_HEAD = 40
 
-assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, "") == REQ_SIZE,
+assert(#string.pack(REQUEST, 0, 0, 0, 0, 0, 0, 0, "") == REQ_SIZE,
        "audio: the request layout does not match audioproto.h")
 assert(#string.pack(INFO, 0, 0, 0, 0, 0, 0, "") == INFO_SIZE,
        "audio: the stream layout does not match audioproto.h")
@@ -322,6 +322,7 @@ function request(op, fields, pass)
                             fields.balance or -101,
                             fields.muted or -1,
                             fields.master or -1,
+                            fields.master_muted or -1,
                             name)
 
   local reply, why = fs.raw("/dev/audio", bytes, pass)
@@ -332,15 +333,16 @@ function request(op, fields, pass)
     return nil, "the audio server sent a reply of the wrong size"
   end
 
-  local err, stream, period, periods, master, mixes, starved, late, count =
-      string.unpack(REPLY, reply)
+  local err, stream, period, periods, master, master_muted, mixes, starved,
+        late, count = string.unpack(REPLY, reply)
 
   if err ~= 0 then
     return nil, ERRORS[err] or ("audio error " .. tostring(err))
   end
 
   return { stream = stream, period = period, periods = periods,
-           master = master, mixes = mixes, starved = starved,
+           master = master, master_muted = master_muted ~= 0,
+           mixes = mixes, starved = starved,
            late = late, count = count, bytes = reply }
 end
 
@@ -394,7 +396,7 @@ function audio.stats()
   -- parsed. 0 to 256, which is the scale every gain here uses.
   --
   return { starved = r.starved, late = r.late, mixes = r.mixes,
-           master = r.master }
+           master = r.master, master_muted = r.master_muted }
 end
 
 --
@@ -412,6 +414,8 @@ function audio.set(what)
     balance = what.balance,
     muted = (what.muted ~= nil) and (what.muted and 1 or 0) or nil,
     master = what.master,
+    master_muted = (what.master_muted ~= nil)
+                   and (what.master_muted and 1 or 0) or nil,
   })
 
   if not r then return false, why end

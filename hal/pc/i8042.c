@@ -209,6 +209,16 @@ static unsigned extended_code(uint8_t scan)
     case 0x5b: return KEY_LEFTMETA;
     case 0x5c: return KEY_RIGHTMETA;
     case 0x1c: return 28;           /* the keypad's enter is still enter */
+    /*
+     * The volume keys, and their bytes were measured rather than recalled:
+     * QEMU's PS/2 keyboard sent e0 20, e0 2e and e0 30 for its mute, volume
+     * down and volume up, named by `unknown_extended` before they had entries
+     * here (`testing.md` 18.92). Whether the ThinkPad's controller sends the
+     * same is what `diagnose` on the stick answers.
+     */
+    case 0x20: return KEY_MUTE;
+    case 0x2e: return KEY_VOLUMEDOWN;
+    case 0x30: return KEY_VOLUMEUP;
     default:   return 0;
     }
 }

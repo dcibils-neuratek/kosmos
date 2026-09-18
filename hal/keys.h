@@ -57,6 +57,13 @@
 #define KEY_LEFTMETA    125
 #define KEY_RIGHTMETA   126
 
+/* The volume keys, evdev's numbers like every code here. Above the typing
+ * block, so `hal_key_char` answers -1 for them and they travel only as raw
+ * events, which is where the window manager takes them. */
+#define KEY_MUTE           113
+#define KEY_VOLUMEDOWN     114
+#define KEY_VOLUMEUP       115
+
 /* The escape sequence a terminal would have sent for a key that is not a
  * character, or NULL. */
 const char *hal_key_sequence(unsigned code);

@@ -3930,6 +3930,73 @@ local function raw_to_focused(code, down)
   post(focused_window(), { type = "rawkey", code = code, down = down })
 end
 
+--
+-- **The volume keys are the system's**, taken here before any window sees
+-- them, as Super is: a key that changes the whole machine's volume is not an
+-- application's to receive, and a game holding the focus must not swallow
+-- it. The keyboard driver maps them - e0 20, e0 2e and e0 30, measured
+-- through QEMU's PS/2 keyboard (`testing.md` 18.92) - and they arrive here as
+-- raw events only, never as characters.
+--
+-- Volume up and down move the master by a sixteenth, and unmute, as every
+-- laptop does; mute silences everything and keeps the level, so unmuting
+-- comes back to it (`audio.c`'s `master_muted`).
+--
+-- **A call from the key path, and why this one cannot deadlock.** Nothing
+-- may block in here: a synchronous call from the key handler to a window
+-- once waited on a window that was waiting on this loop, and the desktop
+-- stopped. `/dev/audio` is the audio server, which never sends to the
+-- window manager, so there is no cycle for this to close - and it answers
+-- a `set` without touching the device.
+--
+-- Said in the log, for now: the level bar that shows it on the screen is
+-- `docs/levels.html`, and is drawn for Diego before it is written.
+--
+local KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP = 113, 114, 115
+local VOLUME_STEP = 16                  -- a sixteenth of 256
+local have_audio, audio = pcall(use, "/lib/audio.lua")
+
+local function volume_key(code, down)
+  if code ~= KEY_MUTE and code ~= KEY_VOLUMEDOWN and code ~= KEY_VOLUMEUP then
+    return false
+  end
+
+  if not down then return true end      -- the release is the system's too
+
+  local which = (code == KEY_MUTE) and "mute"
+                or (code == KEY_VOLUMEUP) and "up" or "down"
+
+  local now = have_audio and audio.stats()
+
+  if not now then
+    print("wm: volume " .. which .. " - no sound device to answer")
+    return true
+  end
+
+  local ok, why
+
+  if code == KEY_MUTE then
+    ok, why = audio.set{ master_muted = not now.master_muted }
+  else
+    local step = (code == KEY_VOLUMEUP) and VOLUME_STEP or -VOLUME_STEP
+    local level = math.max(0, math.min(256, now.master + step))
+
+    ok, why = audio.set{ master = level, master_muted = false }
+  end
+
+  local after = ok and audio.stats() or now
+
+  if not ok then
+    print("wm: volume " .. which .. " - " .. tostring(why))
+  elseif after.master_muted then
+    print(("wm: volume muted, %d of 256 kept"):format(after.master))
+  else
+    print(("wm: volume %s, %d of 256"):format(which, after.master))
+  end
+
+  return true
+end
+
 --------------------------------------------------------------------------
 -- Input.
 --
@@ -5290,7 +5357,9 @@ while running do
 
   -- The same presses as transitions, for whoever wants them that way.
   for _, ev in ipairs(input.events or {}) do
-    raw_to_focused(ev.code, ev.down)
+    if not volume_key(ev.code, ev.down) then
+      raw_to_focused(ev.code, ev.down)
+    end
   end
 
   if measuring then t, heap = charge("keys", t, heap) end

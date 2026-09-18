@@ -3141,6 +3141,84 @@ def check_snes_scale(guest):
     return 2
 
 
+def check_volume_keys(guest):
+    """The volume keys reach the window manager, on both boards, and are no
+    longer keys the keyboard driver does not know.
+
+    On x86 they come through the i8042 as e0 20, e0 2e and e0 30 and the
+    driver's table maps them; on the ARM board the keyboard is virtio and
+    sends evdev's codes as they are. Either way the window manager takes
+    them before any window, and says what it did - which here, with no
+    sound device in this harness, is that there was nothing to answer: this
+    phase is the key path, and `run_media.py` is whether the machine goes
+    quiet.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local w = ui.window{ title = 'Keys', w = 200, h = 120, x = 400, y = 300 } "
+        "if w then w:run() end"
+    )
+    guest.type("fs.write('/ramfs/keys.lua', %r)" % program)
+    time.sleep(1.0)
+
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/keys.lua")
+
+    deadline = time.monotonic() + 40
+    while "wm: window Keys at" not in guest.seen[mark:] \
+            and time.monotonic() < deadline:
+        time.sleep(0.3)
+        guest._read_available()
+
+    if "wm: window Keys at" not in guest.seen[mark:]:
+        raise Failure("the window for the volume keys never opened:\n"
+                      + guest.seen[mark:][-600:])
+
+    time.sleep(1.5)
+    pressed = len(guest.seen)
+
+    for key in ("volumeup", "volumedown", "audiomute"):
+        guest.sendkey(key)
+        time.sleep(0.8)
+
+    time.sleep(1.5)
+    guest._read_available()
+    said = guest.seen[pressed:]
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    time.sleep(2.0)
+
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        guest._read_available()
+        if PROMPT in guest.seen[back:]:
+            break
+        time.sleep(0.3)
+    else:
+        raise Failure("Control-C did not get the screen back after the "
+                      "volume keys.\n" + guest.seen[back:][-600:])
+
+    # One pattern per key, and only mute's accepts "muted": a shared one let
+    # the mute line stand in for a volume-up that never arrived.
+    wanted = {"up": r"wm: volume up\b", "down": r"wm: volume down\b",
+              "mute": r"wm: volume (mute\b|muted)"}
+
+    for which, pattern in wanted.items():
+        if not re.search(pattern, said):
+            raise Failure(
+                "the volume key '%s' never reached the window manager:\n%s"
+                % (which, said[-600:]))
+
+    if "has no entry for, e0" in said:
+        raise Failure(
+            "a volume key was still a key the keyboard driver does not know:"
+            "\n" + said[-600:])
+
+    return 2
+
+
 def check_unknown_keys(guest):
     """A key the keyboard driver has no entry for is named once, not dropped
     in silence. x86 only: the ARM board's keyboard is virtio, and this is
@@ -6630,6 +6708,7 @@ def main():
                         if machine(args.image) == "aarch64" else 0)
         unknown_key_checks = (phase("unknown keys", check_unknown_keys)
                               if machine(args.image) == "x86_64" else 0)
+        volume_key_checks = phase("volume keys", check_volume_keys)
         budget_checks = phase("compositor budget", check_budget)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
@@ -6693,7 +6772,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks
+             + unknown_key_checks + volume_key_checks
              + name_checks + file_checks)
     print("\nwhere the time went:")
     for seconds, name in sorted(phase_times, reverse=True):
@@ -6753,6 +6832,8 @@ def main():
           f"{power_checks} on the power button reaching a driver outside the kernel, "
           f"{unknown_key_checks} on a key the keyboard driver has no entry for "
           f"being named once rather than dropped in silence, "
+          f"{volume_key_checks} on the volume keys reaching the window "
+          f"manager rather than a window, "
           f"{budget_checks} on a full-screen picture and a maximised window fitting "
           f"in the compositor at 1920x1080, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
