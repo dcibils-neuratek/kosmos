@@ -1029,6 +1029,31 @@ back on - and so a count of nought; and a first page alone holds 28 names
 it typed, so what the machine said before it is gone. Recorded as
 intermittent, with its one line of evidence, and nothing fixed.
 
+**The window manager could not find a file written two seconds earlier,
+once.** 18 September, x86-64, in 0.10.77's gate: the registry phase writes
+`/ramfs/viarun.lua`, waits two seconds, and types `wm /ramfs/viarun.lua`, and
+the guest answered
+
+```
+process 27 (viarun) ended, code 0
+wm: could not start /ramfs/viarun.lua: no such path
+```
+
+and nothing else - neither the probe's answer nor the line `viarun.lua`
+prints when its own `run` fails. The same code passed this phase on both
+boards an hour before, in shortcut places' check; the gate run again on the unchanged tree passed both boards, 121 and 119, and was pushed. Two things do
+not fit together: something named for the file ran and ended cleanly, and the
+window manager was then told the path did not exist.
+
+**It is the second lookup in the display harness to fail once and pass on
+the same tree**, after the `/bin` walk above. Both are a file server
+answering as though something that is there were not, both under a guest
+busy enough to be a display harness, and neither left more than a line or
+two, because the harness keeps only what arrived after the line it typed.
+Two of the same shape is a pattern rather than two accidents, and the next
+one should be caught with the guest's whole log rather than its tail.
+Recorded as intermittent, with its lines, and nothing fixed.
+
 **A tick charged by every interrupt, fixed without a test that catches it.**
 Both trap handlers called `thread_tick` on every hardware interrupt, on the
 grounds that the timer was the only source - and both said in a comment that
