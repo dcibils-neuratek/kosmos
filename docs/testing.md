@@ -5402,3 +5402,45 @@ loop's index, which the line inside the loop had already shadowed with
 something that is not a number - so `getdir` raised, took nothing, and the
 check failed for a reason that was not the one being tested. It failed; it
 did not bite. The second counts, takes exactly one file, and is the row above.
+
+## 18.96 The backlight, read before anything writes it
+
+**The ThinkPad's brightness is the Intel display engine's backlight PWM**
+(`thinkpad.md` 8b), and the offsets of its registers are in no public Intel
+manual - they come from Linux. So the first driver for it only reads: the
+board finds Intel's graphics at 0/2/0, by vendor, class and a 64-bit BAR,
+and says where the backlight block is; `user/servers/backlight.c` maps that
+one page and reports both controllers - on or off, the share of each period
+the output is driven, and the raw control, period and on-time. A controller
+on, with its on-time inside its period, is what confirms the offsets on the
+machine, and only then does anything write.
+
+**`test_backlightdecode`, 13 host checks**, because QEMU has no Intel
+graphics and the ThinkPad gives one reading: a device that does not answer,
+off, on in either polarity from dark to full, rounded down, a period of
+nought and an on-time past its period refused, and periods near 2^32 with
+the arithmetic in 64 bits.
+
+**`run_x86.py`, 1 more check, 2b**: q35 has an Intel network card,
+8086:10d3, at 00:02.0 - exactly where Intel's graphics would be - and the
+driver has to say there is nothing to read rather than take it for one.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| all ones believed | the host test, 1 of 13: *all ones was not read as a device that does not answer* |
+| the percentage in 32 bits | 2 of 13: *a period near 2^32 overflowed the arithmetic*, and the all-ones period not read as full |
+| the finder checking vendor only, not class or BAR type | 2b: *backlight: Intel graphics at 00:02.0 ... process 12 (backlight) ended, code -1* |
+| `init` never starting the driver | 2b: *nothing from the backlight driver at all* |
+
+**Two of those taught something.** The 32-bit control was run twice: the
+first time it printed the *all-ones* complaint, because Apple's `make` keeps
+times to the second and the restore, the next edit and the last build fell
+in one - so it tested the previous control's binary. It failed; it did not
+bite. Forced, it failed on the overflow. **And the fooled finder's driver
+died** reading the page it had mapped, with a report that said "not
+present" of a mapped page. The report ignored bit 3 of the error code, and
+now prints it - *a reserved bit set in an entry* - with the four entries the
+walk met: `pte 0x800a0000fe0c801f`, a physical address the finder had built
+from the network card's *next* BAR, above what the processor can address.
+The real finder refuses that by the BAR's type. The kernel mapping it at all
+is on the roadmap.

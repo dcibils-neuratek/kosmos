@@ -1101,6 +1101,14 @@ void syscall_dispatch(struct syscall_frame *sc);
  */
 #define DEV_XHCI             2u
 
+/*
+ * The Intel display engine's backlight: `base` is the page holding its two
+ * PWM controllers' registers, inside the graphics device's first BAR, and
+ * `where` is that device on PCI. Arrived with the ThinkPad's brightness,
+ * which the firmware leaves to a graphics driver (`docs/thinkpad.md` 8b).
+ */
+#define DEV_INTEL_BACKLIGHT  3u
+
 struct dev_info {
     uint32_t kind;
     uint32_t intid;         /* for SYS_IRQ_CLAIM */

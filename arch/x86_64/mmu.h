@@ -411,6 +411,14 @@ void as_switch(struct addrspace *as);
 uint64_t *as_page_entry(struct addrspace *as, uintptr_t va);
 
 /*
+ * The entries a walk of `va` meets, PML4 down, as they stand - into
+ * `entries`, and how many were read: it stops at one that is not present or
+ * is a large page. For a page fault's report, which says what the processor
+ * found rather than what the mapping code meant to write.
+ */
+unsigned as_walk(struct addrspace *as, uintptr_t va, uint64_t entries[4]);
+
+/*
  * The two questions `kernel/` actually asks about a mapping.
  *
  * It used to read the descriptor itself - `*entry & DESC_VALID` for the

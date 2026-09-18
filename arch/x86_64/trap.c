@@ -25,6 +25,7 @@
 #include "sched.h"
 #include "thread.h"
 #include "hal.h"
+#include "mmu.h"
 #include "percpu.h"
 #include "trap.h"
 
@@ -480,7 +481,33 @@ void trap_handle(struct trapframe *f)
         say((f->error & 2) ? "write" : "read");
         say(", ");
         say((f->error & 4) ? "user" : "kernel");
+
+        /*
+         * **Bit 3: a reserved bit set in an entry the walk met.** The
+         * report ignored it and said "not present" of a page that was
+         * mapped - the backlight driver's first read, on a machine where it
+         * had been fooled into mapping a network card's window - and the
+         * entries below are what settle a fault like that, rather than a
+         * reading of the code that wrote them.
+         */
+        if (f->error & 8) {
+            say(", a reserved bit set in an entry");
+        }
+
         say("\n");
+
+        if ((f->cs & 3) != 0 && process_current() != NULL) {
+            static const char *const names[4] = {
+                "pml4e  ", "pdpte  ", "pde    ", "pte    "
+            };
+            uint64_t entries[4];
+            unsigned n = as_walk(process_current()->space, (uintptr_t)cr2,
+                                 entries), i;
+
+            for (i = 0; i < n; i++) {
+                line(names[i], entries[i]);
+            }
+        }
     }
 
     /*

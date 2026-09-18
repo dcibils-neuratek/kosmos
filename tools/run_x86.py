@@ -3184,6 +3184,17 @@ def main():
           "a machine with no xHCI controller heard from the USB driver: "
           + next((l.strip() for l in out.splitlines() if "xhci:" in l), ""))
 
+    # 2b. And the backlight driver said there was nothing to read - q35 has
+    #     an Intel network card at 00:02.0, 8086:10d3, where Intel's graphics
+    #     would be, and its class and its 32-bit BAR must each tell the two
+    #     apart. Found as graphics, the driver would have read a network
+    #     card's registers.
+    check("backlight: no Intel graphics on this machine" in out,
+          "the backlight driver did not say this machine has no Intel "
+          "graphics: "
+          + next((l.strip() for l in out.splitlines() if "backlight" in l),
+                 "nothing from it at all"))
+
     # 3. All twelve stages. The kernel prints one per subsystem it brings
     #    up, so a missing number is a subsystem that did not.
     for stage in range(1, 13):

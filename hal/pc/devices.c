@@ -20,6 +20,31 @@
  *
  * A PC's power button is an ACPI event rather than a GPIO line, so that kind
  * is still none here.
+ *
+ * **And the Intel display engine's backlight**, for a driver that reads it -
+ * and, next, sets it. Device 0/2/0 is Intel's integrated graphics by the
+ * chip's own convention: the Tiger Lake PRM names its registers by that
+ * address (Vol 2c, `GTTMMADR_0_2_0_PCI`), and its vendor, its class and its
+ * BAR's type are all checked before anything is believed: q35 puts an Intel
+ * network card at that slot, 8086:10d3, and two of the three tell them apart
+ * - class 02h rather than 03h, and a 32-bit BAR where GTTMMADR is 64. So
+ * either alone would do, and a control has to take away both. GTTMMADR is
+ * BAR0, 64 bits at configuration offset 10h with memory type 10b in bits
+ * 2:1, 16 MB of which the first 2 MB are the MMIO registers; the base is
+ * bits 63:24.
+ *
+ * The block's page, C8000h, holds the south display's two PWM controllers.
+ * **That offset is Linux's, not Intel's**: no public manual for Tiger Lake
+ * or Ice Lake documents the south display's backlight - they document the
+ * utility pin's, which a laptop panel does not use (Vol 12: `L_BKLTCTL`,
+ * "South display backlight PWM output") - and `intel_backlight_regs.h` puts
+ * `_BXT_BLC_PWM_CTL1` at C8250h and uses it from Cannon Point on. So the
+ * driver reads before anything writes, and the ThinkPad's reading is what
+ * confirms it.
+ *
+ * **Neither sized nor enabled.** This device is scanning out the screen, its
+ * memory decoding is on because the firmware turned it on, and turning that
+ * off to size a BAR whose size the manual gives would be a risk for nothing.
  */
 
 #include <stdbool.h>
@@ -37,6 +62,16 @@
 
 /* As many controllers as are kept; a machine with more is told about four. */
 #define XHCI_KEPT           4u
+
+#define CLASS_DISPLAY       0x03u
+#define INTEL               0x8086u
+#define IGD_SLOT            2u
+#define IGD_BAR0_LOW        0x10u
+#define IGD_BAR0_HIGH       0x14u
+#define IGD_BAR0_64BIT      0x4u        /* bits 2:1 = 10b */
+#define IGD_BASE_MASK       0xFF000000u /* GTTMMADR 63:24, low half */
+#define BACKLIGHT_BLOCK     0xC8000u
+#define BACKLIGHT_BYTES     0x1000u
 
 static struct spinlock devices_lock = SPINLOCK("devices");
 static struct hal_device xhci_kept[XHCI_KEPT];
@@ -64,10 +99,46 @@ static bool nth_xhci(unsigned index, struct pci_device *out)
     return false;
 }
 
+/*
+ * Asked afresh each time, and nothing kept: three configuration reads, and
+ * nothing is enabled or sized that a second answer could spend twice.
+ */
+static bool intel_backlight(struct hal_device *out)
+{
+    uint32_t id = pci_config_read(0, IGD_SLOT, 0, 0x00);
+    uint32_t class_word = pci_config_read(0, IGD_SLOT, 0, PCI_CLASS_WORD);
+    uint32_t low = pci_config_read(0, IGD_SLOT, 0, IGD_BAR0_LOW);
+    uint64_t base;
+
+    if ((id & 0xFFFFu) != INTEL || (class_word >> 24) != CLASS_DISPLAY
+        || (low & 0x7u) != IGD_BAR0_64BIT) {
+        return false;
+    }
+
+    base = ((uint64_t)pci_config_read(0, IGD_SLOT, 0, IGD_BAR0_HIGH) << 32)
+         | (low & IGD_BASE_MASK);
+
+    if (base == 0) {
+        return false;
+    }
+
+    out->base  = (unsigned long)(base + BACKLIGHT_BLOCK);
+    out->size  = BACKLIGHT_BYTES;
+    out->intid = 0;
+    out->line  = 0;
+    out->where = IGD_SLOT << 3;
+
+    return true;
+}
+
 bool hal_device_find(unsigned kind, unsigned index, struct hal_device *out)
 {
     unsigned long flags;
     bool found = false;
+
+    if (out != NULL && kind == HAL_DEV_INTEL_BACKLIGHT) {
+        return index == 0 && intel_backlight(out);
+    }
 
     if (out == NULL || kind != HAL_DEV_XHCI || index >= XHCI_KEPT) {
         return false;

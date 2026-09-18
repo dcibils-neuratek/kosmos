@@ -179,6 +179,15 @@ each device a slot and an address and reads what it is, and since 0.10.55 it
 stays and does the same for a device plugged in later. `usb.md` is how USB
 works here, written as each step lands.
 
+**The third is the backlight** (0.10.81): `user/servers/backlight.c` maps one
+page of the Intel graphics device - the block holding its two backlight PWM
+controllers - and reads them. Only reads, because those offsets are Linux's
+rather than a datasheet's (`thinkpad.md` 8b), and a driver that has not seen
+its registers on the machine does not get to write them. It is the first
+userland driver for a device the kernel also knows is there and has never
+touched: the firmware left the screen lit, and nothing since has had any
+reason to change that.
+
 Estimated at 500-800 lines in the kernel, and the largest architectural
 addition since capabilities - because it turns "a driver is kernel code"
 into "a driver is a server you were handed a capability to".

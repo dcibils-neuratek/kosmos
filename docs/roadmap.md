@@ -634,10 +634,18 @@ processors, and still what follows USB:
       what F5 and F6 send and how the T14 sets its backlight - and the next
       one tries the brightness keys and the Display bar. Diego, 18
       September: "when can i try the brightness bar?", "in the thinkpad".
-   4. **NEXT - a comfortable brightness set at boot**, which fixes "too dim"
-      before any key works: the Intel display engine's backlight duty cycle,
-      written once. Needs the register's offsets from Intel's Tiger Lake
-      graphics PRM.
+   4. **IN PROGRESS - a comfortable brightness set at boot**, which fixes
+      "too dim" before any key works: the Intel display engine's backlight
+      duty cycle, written once. **The offsets are not in any public Intel
+      manual** - Tiger Lake's and Ice Lake's register volumes document only
+      the utility pin's backlight, which a laptop panel does not use - so
+      they come from Linux's i915 (two controllers, control, period and
+      on-time at C8250h/C8254h/C8258h and C8350h on), and the base from
+      Intel's own (`GTTMMADR`, BAR0 of 0/2/0). **4a, reading only**: a
+      driver at EL0, `user/servers/backlight.c`, reads both controllers and
+      says what they hold - a controller on, with its on-time inside its
+      period, confirms the offsets on the ThinkPad before anything is
+      written. **4b** writes the on-time.
    5. **IN PROGRESS - the brightness keys**, and **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the
@@ -1078,6 +1086,16 @@ the Pi", and the Pi is not here yet.
   different speeds, and both want a curve (`hal/pc/pointer.c`).
 
 ---
+
+**Wanted - `dev_range_ok` refuses an address the processor cannot reach.**
+Found on 18 September by the backlight driver's control, fooled into taking
+a network card for graphics: it built a 64-bit address from the card's next
+BAR, the kernel mapped it, and the first read faulted on reserved bits in
+the entry - `pte 0x800a0000fe0c801f`, bits above the machine's physical
+width. A process should be refused that mapping rather than killed by it:
+CPUID 80000008h's physical-address width on x86, `ID_AA64MMFR0_EL1.PARange`
+on AArch64. The x86 fault report now prints the reserved-bit flag and the
+entries it walked, which is what explained it.
 
 ## Known and unexplained
 

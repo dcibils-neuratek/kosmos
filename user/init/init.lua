@@ -38,6 +38,7 @@ local ROLE_NET       = 17 -- serves /net: the one process that holds the card
 local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
 local ROLE_DRIVES     = 20 -- serves /drives: every volume on every drive, read only
+local ROLE_BACKLIGHT  = 21 -- reads Intel's backlight PWMs, where there are any
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -5359,6 +5360,20 @@ if role == ROLE_INIT then
 
     if err then
       line("init: no power button driver: " .. tostring(err))
+    end
+  end
+
+  --
+  -- **The backlight**, the same way: device authority and the console's
+  -- endpoint, and nothing else. It reads the Intel display engine's two PWM
+  -- controllers, says what they hold, and exits; on a machine without Intel
+  -- graphics it says so and exits. Writing a brightness is its next step.
+  --
+  do
+    local _, err = sys.spawn(ROLE_BACKLIGHT, { CONSOLE_EP }, SPAWN_DEVICES)
+
+    if err then
+      line("init: no backlight driver: " .. tostring(err))
     end
   end
 

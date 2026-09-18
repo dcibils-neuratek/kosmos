@@ -1235,6 +1235,26 @@ uint64_t *as_page_entry(struct addrspace *as, uintptr_t va)
     return page_entry(as->pml4, va);
 }
 
+unsigned as_walk(struct addrspace *as, uintptr_t va, uint64_t entries[4])
+{
+    static const unsigned shift[4] = { 39, 30, 21, 12 };
+    uint64_t *table = as->pml4;
+    unsigned level;
+
+    for (level = 0; level < 4; level++) {
+        entries[level] = table[(va >> shift[level]) & 0x1ffu];
+
+        if ((entries[level] & PTE_P) == 0
+            || (level > 0 && level < 3 && (entries[level] & PTE_PS) != 0)) {
+            return level + 1;
+        }
+
+        table = (uint64_t *)(uintptr_t)(entries[level] & PTE_ADDR_MASK);
+    }
+
+    return 4;
+}
+
 uintptr_t as_page_phys(struct addrspace *as, uintptr_t va)
 {
     uint64_t *entry = page_entry(as->pml4, va);

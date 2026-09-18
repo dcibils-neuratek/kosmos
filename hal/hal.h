@@ -291,6 +291,7 @@ void hal_irq_set_masked(unsigned intid, bool masked);
  */
 #define HAL_DEV_PL061_POWER_KEY  1u
 #define HAL_DEV_XHCI             2u     /* a USB host controller, on PCI */
+#define HAL_DEV_INTEL_BACKLIGHT  3u     /* the page of Intel's backlight PWMs */
 
 struct hal_device {
     unsigned long base;

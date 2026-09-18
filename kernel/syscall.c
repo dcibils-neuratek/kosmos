@@ -119,6 +119,8 @@ _Static_assert(DEV_PL061_POWER_KEY == HAL_DEV_PL061_POWER_KEY,
                "a device kind must mean the same thing on both sides");
 _Static_assert(DEV_XHCI == HAL_DEV_XHCI,
                "a device kind must mean the same thing on both sides");
+_Static_assert(DEV_INTEL_BACKLIGHT == HAL_DEV_INTEL_BACKLIGHT,
+               "a device kind must mean the same thing on both sides");
 
 bool dev_range_ok(uintptr_t phys, size_t pages)
 {

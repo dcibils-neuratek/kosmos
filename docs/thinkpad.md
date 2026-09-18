@@ -1143,6 +1143,17 @@ and the brightness stays where the firmware left it. That is "too dim".
   is what the DSDT just said; nothing needs to run it. The same protocol is
   how the battery will be read.
 
+**Where the level lives, and where that came from.** The graphics device is
+0/2/0 and its registers are in `GTTMMADR`, BAR0, 64 bits, 16 MB of which the
+first 2 MB are MMIO - Intel's Tiger Lake PRM, Vol 2c. The backlight is not:
+the PRM documents the *utility pin's* PWM (`BLC_PWM_CTL`, 48250h), which Vol
+12 says a panel's backlight is not driven from, and points at "South Display
+Engine Registers" that no volume contains - Tiger Lake's or Ice Lake's.
+Linux's i915 drives the south display's two controllers, from Cannon Point
+on, at C8250h/C8254h/C8258h (control, period, on-time) and C8350h on; enable
+is bit 31 and polarity bit 29. So `backlight.c` reads both before anything is
+written (`testing.md` 18.96), and the ThinkPad's reading is the evidence.
+
 ## 9. What is still missing
 
 | | | rough size |

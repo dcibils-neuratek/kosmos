@@ -750,6 +750,8 @@ USER_SRCS := user/init/start-$(ARCH).S \
              user/servers/ramfs.c \
              user/servers/net.c \
              user/servers/powerbutton.c \
+             user/servers/backlight.c \
+             user/servers/backlight_decode.c \
              user/servers/xhci.c \
              user/servers/usb_decode.c \
              user/servers/storage_decode.c \
@@ -1575,6 +1577,16 @@ $(HOSTDIR)/test_smbiosdecode: tools/test_smbiosdecode.c hal/pc/smbios_decode.c h
 # QEMU's mouse sends one well-formed configuration and nothing else, and a
 # device's lengths are the device's to get wrong. `usb_decode.h` has more.
 #
+#
+# And an Intel backlight PWM's three registers, for that reason again and
+# more so: QEMU has no Intel graphics at all, so the driver's only reading
+# under QEMU is none, and the ThinkPad gives one. `backlight_decode.h` has more.
+#
+$(HOSTDIR)/test_backlightdecode: tools/test_backlightdecode.c user/servers/backlight_decode.c user/servers/backlight_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_backlightdecode.c user/servers/backlight_decode.c
+
 $(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/servers/usb_decode.c user/servers/usb_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
@@ -2770,7 +2782,7 @@ serial: $(TARGET) $(DISK)
 # Recursive so the test image gets its own BUILD and its own flags. The
 # runner lives on the host and owns the QEMU line for tests, because it needs
 # semihosting and a timeout.
-test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2826,6 +2838,7 @@ test: $(TARGET) $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring 
 	$(HOSTDIR)/test_snesblit
 	$(HOSTDIR)/test_smbiosdecode
 	$(HOSTDIR)/test_usbdecode
+	$(HOSTDIR)/test_backlightdecode
 	$(HOSTDIR)/test_storagedecode
 	@# And FAT, the drives' filesystem, read from bytes the specification
 	@# describes and then from volumes mtools made.
