@@ -111,6 +111,7 @@ static void volumes(void)
     const char *why = NULL;
 
     fat16_boot(s);
+    put32(s + 39, 0x1A2B3C4Du);
     check(fat_volume_from(s, sizeof(s), &v, &why) && v.kind == FAT_16,
           "a 128 MB volume of 32731 clusters is read as FAT16");
     check(v.root_sectors == 32 && v.first_data_sector == 289
@@ -120,14 +121,28 @@ static void volumes(void)
     check(fat_cluster_sector(&v, 2) == 289 && fat_cluster_sector(&v, 3) == 297,
           "FAT16: cluster 2 at sector 289, cluster 3 eight sectors on");
     check(strcmp(v.label, "KOSMOS DATA") == 0, "FAT16's label is KOSMOS DATA");
+    check(v.has_serial && v.serial == 0x1A2B3C4Du,
+          "FAT16's serial is BS_VolID, at byte 39, beside its label");
 
     fat32_boot(s);
+    put32(s + 67, 0x0BADCAFEu);
     check(fat_volume_from(s, sizeof(s), &v, &why) && v.kind == FAT_32,
           "a 512 MB volume of 130812 clusters is read as FAT32");
     check(v.root_sectors == 0 && v.first_data_sector == 2080
           && v.clusters == 130812 && v.root_cluster == 2,
           "FAT32: no fixed root, FirstDataSector 2080, the root at cluster 2");
     check(v.label[0] == '\0', "a label of NO NAME is no label");
+    check(v.has_serial && v.serial == 0x0BADCAFEu,
+          "FAT32's serial is BS_VolID, at byte 67 - not FAT16's 39");
+
+    /* Without BS_BootSig 0x29 the four bytes at 39 are not a serial, and a
+     * volume must not be remembered by whatever happens to be there. */
+    fat16_boot(s);
+    put32(s + 39, 0x1A2B3C4Du);
+    s[38] = 0;
+    check(fat_volume_from(s, sizeof(s), &v, &why) && v.kind == FAT_16
+          && !v.has_serial,
+          "no BS_BootSig 0x29, no serial - whatever is at byte 39");
 
     /* The two boundaries, a cluster either side of each. */
     boot(s, 512, 1, 1, 1, 16, 4102, 16, 0, "LABEL      ");

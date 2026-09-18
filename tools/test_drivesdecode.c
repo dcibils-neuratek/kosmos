@@ -88,6 +88,8 @@ static void test_mbr(void)
     check(n == 2, "two MBR partitions are found");
     check(n == 2 && parts[0].first == 2048u && parts[0].sectors == 100000u,
           "the first partition's place is read");
+    check(n == 2 && !parts[0].has_guid && !parts[1].has_guid,
+          "an MBR partition has no GUID to be remembered by");
     check(n == 2 && parts[0].type == MBR_TYPE_FAT32_LBA && !parts[0].gpt,
           "its type byte is kept and it is not marked GPT");
     check(n == 2 && parts[1].first == 200000u,
@@ -138,6 +140,11 @@ static void test_mbr(void)
           "an empty table is not protective either");
 }
 
+static const unsigned char unique_guid[16] = {
+    0x95, 0x1D, 0x23, 0xBA, 0x76, 0x95, 0x49, 0x43,
+    0xA3, 0x59, 0x1D, 0x3F, 0xD2, 0xB0, 0x45, 0xD8,
+};
+
 static void test_gpt(void)
 {
     unsigned char header[512];
@@ -172,8 +179,11 @@ static void test_gpt(void)
 
     memset(entries, 0, sizeof(entries));
 
-    /* Entry 0: used, sectors 2048 to 4095 inclusive. */
+    /* Entry 0: used, sectors 2048 to 4095 inclusive, and a unique GUID of
+     * sixteen different bytes, so one read from the wrong offset cannot
+     * match it by coincidence. */
     entries[0] = 0xA2u;                 /* a non-zero type GUID */
+    memcpy(entries + 16, unique_guid, sizeof(unique_guid));
     put64(entries + 32, 2048u);
     put64(entries + 40, 4095u);
 
@@ -201,6 +211,9 @@ static void test_gpt(void)
           "a GPT partition is marked as one and carries no MBR type");
     check(n == 2 && parts[1].first == 7000u && parts[1].sectors == 1u,
           "a partition of one sector is one sector long");
+    check(n == 2 && parts[0].has_guid
+          && memcmp(parts[0].guid, unique_guid, 16) == 0,
+          "a GPT partition carries its UniquePartitionGUID, bytes 16 to 31");
 
     /* The header may claim more entries than the bytes really given. */
     n = gpt_partitions(entries, 256u, 128u, 4u, parts, DRIVES_PARTS_MAX);

@@ -190,6 +190,9 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
         /* BS_BootSig 0x29 says BS_VolLab is there. */
         if (s[38] == 0x29u) {
             trimmed(s + 43, 11u, out->label);
+            /* BS_VolID, just before the label: the volume's own serial. */
+            out->serial = le32(s + 39);
+            out->has_serial = true;
         }
     } else {
         /* "For FAT32 volumes, this field must be" 0: BPB_RootEntCnt, BPB_TotSec16, BPB_FATSz16. */
@@ -219,6 +222,9 @@ bool fat_volume_from(const uint8_t *s, unsigned size, struct fat_volume *out,
 
         if (s[66] == 0x29u) {
             trimmed(s + 71, 11u, out->label);
+            /* BS_VolID, just before the label: the volume's own serial. */
+            out->serial = le32(s + 67);
+            out->has_serial = true;
         }
     }
 

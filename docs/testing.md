@@ -3751,7 +3751,7 @@ the machine uses either yet. `usb.md` §8 has how.
 
 | check | what it establishes |
 | ----- | ------------------- |
-| `tools/test_fatdecode.c`, 75 checks | bytes built from the specification. A FAT16 and a FAT32 volume's geometry: RootDirSectors, FirstDataSector, the root and a cluster's sector, and the label, with `NO NAME` as none. 4,084 clusters is FAT12 and refused, 4,085 and 65,524 are FAT16, 65,525 is FAT32. Each field a boot sector is held to, refused one at a time. Where a cluster's entry is, and what it says: the end of a chain, a bad cluster, free, a cluster past the last, and FAT32's top four bits ignored. Short names: `DIR_NTRes`'s two case bits, 0x05, 0xE5, 0x00, a byte above 0x7F, dot and dotdot, the label, and an entry both a directory and a label. Long names: two pieces, another name's checksum, a piece that fills exactly, UTF-8 from UTF-16 and a surrogate pair, a lone surrogate, pieces out of order, a free entry inside a set, an `LDIR_Type` not zero, and 21 pieces. A name found without regard to case, and an accented one compared exactly |
+| `tools/test_fatdecode.c`, 78 checks | bytes built from the specification. A FAT16 and a FAT32 volume's geometry: RootDirSectors, FirstDataSector, the root and a cluster's sector, and the label, with `NO NAME` as none. 4,084 clusters is FAT12 and refused, 4,085 and 65,524 are FAT16, 65,525 is FAT32. Each field a boot sector is held to, refused one at a time. Where a cluster's entry is, and what it says: the end of a chain, a bad cluster, free, a cluster past the last, and FAT32's top four bits ignored. Short names: `DIR_NTRes`'s two case bits, 0x05, 0xE5, 0x00, a byte above 0x7F, dot and dotdot, the label, and an entry both a directory and a label. Long names: two pieces, another name's checksum, a piece that fills exactly, UTF-8 from UTF-16 and a surrogate pair, a lone surrogate, pieces out of order, a free entry inside a set, an `LDIR_Type` not zero, and 21 pieces. A name found without regard to case, and an accented one compared exactly |
 | `tools/test_fat.py`, 24 checks | four volumes mtools made in a 64 MB image - FAT16 at 4 sectors a cluster and FAT32 at 1, each with no partition table and in an MBR partition at sector 2048 - read by `fatls`: the kind and the label; every directory, three deep; every file's name, size and bytes, among them a long name, a name with an accent, an empty file and files one byte either side of a cluster; a file in two runs of clusters; and `photos 2024/ITALY/img_2213.jpg` finding `/Photos 2024/Italy/IMG_2213.JPG` |
 
 **Controls**, each a copy of `fat_decode.c` changed in the scratchpad and
@@ -5106,3 +5106,42 @@ class as the `$`-anchored regex in 18.87. The first verification was run as
 the *last* command's. `tail` succeeded, the harness had exited 1, and the run
 was reported as passing. A pipe discards the one signal a test exists to
 give.
+
+
+## 18.89 A volume remembered by what it is
+
+**Tracker's shortcut places have to find a volume again after its drive has
+been unplugged**, and the plan was to key them on the unit and the partition.
+Reading `xhci.c` before building on that found `units_named++` - "the next
+never given out" - so the same stick in the same port comes back as a new
+unit. The plan would have broken on the first replug, which is the one case
+it existed for. `drivesproto.h` had called the pair "the stable handle".
+
+So `/drives` now reports each volume's own identity (`usb.md` 6c): a FAT
+volume's serial, `BS_VolID`, or a GPT partition's unique GUID, as text that
+says which - `fat:1A2B-3C4D`, `gpt:BA231D95-...`.
+
+**Three checks, one at each layer, and each watched failing for the reason it
+exists:**
+
+| Layer | The check | Broken on purpose | What it said |
+| ----- | --------- | ----------------- | ------------ |
+| the FAT decoder | `test_fatdecode`, 78 (3 new): the serial at 39 on FAT16 and 67 on FAT32, and none without `BS_BootSig` 0x29 | the serial read from byte 40 | 1 of 78: *FAT16's serial is BS_VolID, at byte 39* |
+| the partition decoder | `test_drivesdecode`, 53 (2 new): a GPT entry's GUID from bytes 16 to 31, sixteen distinct bytes so a shifted read cannot match; an MBR partition has none | the GUID read from byte 17 | 1 of 53: *a GPT partition carries its UniquePartitionGUID* |
+| the server, the protocol and the namespace | `run_x86.py`'s `/drives` phase, 11 (1 new): every volume's id, as the whole set | the server's reply without `id_kind` | 1 of 11: *got {'PHOTOS': 'nil', 'BACKUP': 'nil'}* - and the other ten still passed, so the check is the plumbing and nothing else |
+
+**The host checks alone would not have been enough, and `usb.md` already
+said why**: a test that builds its own boot sector "cannot catch a field read
+at the wrong offset, since the test would write it at the same wrong offset".
+Mine writes the serial at 39 and reads it at 39. What makes 39 *right* is
+mtools, somebody else's reading of the format: `fatstick.py` now stamps
+`-N 1A2B3C4D` and `-N 0BADCAFE`, a serial nobody chose would only ever be
+checkable for being *some* serial, and the guest answered exactly those.
+`fatstick.IDS` is the one place both the stamp's expectation and the check
+read from.
+
+**The stride became a name on the way.** The namespace stepped through a page
+of volume records by a bare `104`, and this change moves the record to 120.
+It is `DRIVES_VOLUME_BYTES` now, asserted at load against the packed format,
+and `drivesproto.h` holds the C side with a `_Static_assert` - both facts were
+comments before. A stride that disagrees with its record is 18.87.

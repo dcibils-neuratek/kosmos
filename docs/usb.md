@@ -1770,6 +1770,42 @@ test sets the hint back to cluster 2, which is where the specification says a
 driver with no hint begins, so a file really does land in two runs. A reader
 never needs the hint; a writer will.
 
+### 6c: a volume remembered by its own identity
+
+**A shortcut in Tracker's Places has to find its volume again after the
+drive has been unplugged**, and nothing `/drives` said could do that. A
+volume's *name* depends on the order drives arrived - `PHOTOS` can come back
+as `PHOTOS 2` - and a *unit* is worse: `xhci.c` hands one out with
+`units_named++`, "the next never given out", so the very same stick replugged
+into the very same port is a new unit. The roadmap had said shortcuts would key
+on unit and partition, and `drivesproto.h` called those "the stable handle";
+both were written before anybody read how a unit is numbered.
+
+**So each volume now carries an identity read off the volume itself**, in a
+field of `struct drives_volume` that the four bytes of `reserved` and sixteen
+new ones make room for - 120 bytes where it was 104. Eight of them still fit in
+the reply's 1024 bytes of data, so the reply is the size it was, and a
+`_Static_assert` now holds both facts rather than a comment.
+
+- **A FAT volume's serial number, `BS_VolID`**, at byte 39 on FAT16 and byte 67
+  on FAT32, beside the label and under the same `BS_BootSig` 0x29 that says
+  the label is there. Without that signature the four bytes are not a serial,
+  and a volume is not remembered by whatever happens to be in them. It wins
+  over anything else, because it belongs to the filesystem.
+- **A GPT partition's unique GUID**, bytes 16 to 31 of its entry, for anything
+  with no serial of its own - a kfs volume on a stick. It is the same GUID the
+  stick's command line already names `/home`'s partition by.
+- **Nothing**, for a volume on an MBR drive whose filesystem carries no serial.
+
+The namespace hands it to Lua as text that says what it is -
+`fat:1A2B-3C4D`, the serial as Windows' `vol` prints it, or `gpt:` and the
+GUID in its usual form - because a shortcut stores it, and a stored value has
+to read as itself without the reader knowing `drivesproto.h`. A GUID's first
+three fields are little-endian on disk and its last two are not.
+
+**This is what Finder's Favorites and Windows' Quick Access key on**, and why
+neither is a mount: the drive itself never changes.
+
 ### What is not done yet
 
 - **6b is built, as far as naming volumes goes** (16 September). A drive
@@ -1791,8 +1827,9 @@ never needs the hint; a writer will.
 
 ### How it is tested
 
-`tools/test_fatdecode.c` builds its bytes from the specification: 75 checks
-on each field a boot sector is held to, both type boundaries a cluster either
+`tools/test_fatdecode.c` builds its bytes from the specification: 78 checks
+on each field a boot sector is held to, a volume's serial at the offset
+each kind keeps it, both type boundaries a cluster either
 side, the table entries of both kinds, and long names in order, out of order,
 orphaned and in UTF-16 surrogates. That cannot catch a field read at the wrong
 offset, since the test would write it at the same wrong offset - so

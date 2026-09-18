@@ -1008,6 +1008,10 @@ def usb_drives(image, check):
         'print("drives" .. ": second " .. table.concat(second or {}, "|")) '
         'local notes = fs.read("/drives/BACKUP/notes.txt") '
         'print("drives" .. ": notes " .. tostring(notes)) '
+        'local ids = {} '
+        'for _, v in ipairs(fs.volumes("/drives") or {}) do '
+        'ids[#ids + 1] = v.name .. "=" .. tostring(v.id) end '
+        'print("drives" .. ": ids " .. table.concat(ids, ",")) '
         'print("drives" .. ": done")'
     )
 
@@ -1057,6 +1061,18 @@ def usb_drives(image, check):
 
     check("roma" in said("roma"),
           "Italy/roma.txt did not resolve one directory down:\n    " + shown)
+
+    # **Each volume's own identity, as the whole set.** A shortcut in Places
+    # is remembered by this, because a unit number is handed out afresh on
+    # every replug (`drivesproto.h`). Compared as a dictionary against the
+    # serials `fatstick.py` stamped, not by substring: a stride error or an
+    # empty id is invisible to `in`, which is what 18.87 was about.
+    ids = said("ids")[len("drives: ids "):]
+    got = dict(p.split("=", 1) for p in ids.split(",") if "=" in p)
+
+    check(got == fatstick.IDS,
+          "/drives did not report each volume's own serial - wanted %r, "
+          "got %r:\n    %s" % (fatstick.IDS, got, shown))
 
     # The chain, which is the part nothing else here can show.
     big = re.search(r"drives: big (-?\d+)", out)

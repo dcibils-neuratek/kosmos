@@ -64,6 +64,8 @@ struct fat_volume {
     uint32_t first_data_sector;         /* FirstDataSector */
     uint32_t clusters;                  /* CountofClusters */
     char     label[12];                 /* BS_VolLab, spaces trimmed; "" for NO NAME */
+    uint32_t serial;                    /* BS_VolID, when `has_serial` */
+    bool     has_serial;                /* BS_BootSig 0x29 said it is there */
 };
 
 /*

@@ -115,6 +115,11 @@ unsigned mbr_partitions(const uint8_t *sector, unsigned size,
         out[found].sectors = sectors;
         out[found].type = e[4];
         out[found].gpt = false;
+        out[found].has_guid = false;
+
+        for (unsigned b = 0; b < 16u; b++) {
+            out[found].guid[b] = 0u;
+        }
         found++;
     }
 
@@ -220,6 +225,13 @@ unsigned gpt_partitions(const uint8_t *entries, unsigned bytes,
         out[found].sectors = last - first + 1u;
         out[found].type = 0u;
         out[found].gpt = true;
+
+        /* UniquePartitionGUID at 16, beside the type GUID (UEFI 5.3.3). */
+        for (unsigned b = 0; b < 16u; b++) {
+            out[found].guid[b] = e[16 + b];
+        }
+
+        out[found].has_guid = true;
         found++;
     }
 

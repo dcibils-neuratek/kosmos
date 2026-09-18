@@ -613,14 +613,16 @@ local function new_namespace()
 
   local DRIVES_REQUEST = "<I4I4I8I4I4c256"    -- op, offset, at, length, _, path
   local DRIVES_REPLY   = "<I4I4I4I4I8I4I4c1024"
-  local DRIVES_VOLUME  = "<c64I4I4I8I8I4I4I4I4"
+  local DRIVES_VOLUME  = "<c64I4I4I8I8I4I4I4I4c16"   -- ..., readable, id_kind, id
+  local DRIVES_VOLUME_BYTES = 120
   local DRIVES_ENTRY   = "<c64I8I4I4"
 
   assert(#string.pack(DRIVES_REQUEST, 0, 0, 0, 0, 0, "") == 280,
          "namespace: the /drives request layout does not match drivesproto.h")
   assert(#string.pack(DRIVES_REPLY, 0, 0, 0, 0, 0, 0, 0, "") == 1056,
          "namespace: the /drives reply layout does not match drivesproto.h")
-  assert(#string.pack(DRIVES_VOLUME, "", 0, 0, 0, 0, 0, 0, 0, 0) == 104,
+  assert(#string.pack(DRIVES_VOLUME, "", 0, 0, 0, 0, 0, 0, 0, 0, "")
+         == DRIVES_VOLUME_BYTES,
          "namespace: the /drives volume layout does not match drivesproto.h")
   assert(#string.pack(DRIVES_ENTRY, "", 0, 0, 0) == 80,
          "namespace: the /drives entry layout does not match drivesproto.h")
@@ -670,6 +672,35 @@ local function new_namespace()
   }
 
   local function trim(s) return (s:gsub("%z.*$", "")) end
+
+  --
+  -- **A volume's identity, as text that says what it is.** Sixteen bytes
+  -- and a kind arrive; what a shortcut stores has to read as itself without
+  -- the reader knowing `drivesproto.h`, so the kind is written into it:
+  -- `fat:1A2B-3C4D`, the serial as Windows' `vol` prints it, or
+  -- `gpt:BA231D95-9576-4349-A359-1D3FD2B045D8`, the same form a stick's own
+  -- command line already names its `/home` partition by. A GUID's first
+  -- three fields are little-endian on disk and its last two are not.
+  --
+  local function hex(bytes)
+    return (bytes:gsub(".", function(c) return ("%02X"):format(c:byte()) end))
+  end
+
+  local function drives_id(kind, raw)
+    if kind == 1 then
+      local serial = string.unpack("<I4", raw)
+
+      return ("fat:%04X-%04X"):format(serial >> 16, serial & 0xffff)
+    elseif kind == 2 then
+      local a, b, c = string.unpack("<I4I2I2", raw)
+
+      return ("gpt:%08X-%04X-%04X-%s-%s"):format(a, b, c,
+                                                 hex(raw:sub(9, 10)),
+                                                 hex(raw:sub(11, 16)))
+    end
+
+    return nil
+  end
 
   --
   -- A request to the drive server, and its answer.
@@ -746,13 +777,19 @@ local function new_namespace()
       local out = {}
 
       for i = 1, math.min(count, DRIVES_VOLUMES_MAX) do
-        local at = (i - 1) * 104 + 1
-        local name, fs, exact, bytes, free, unit, part, readable =
+        --
+        -- **By the record's size, named and asserted, never a literal.** This
+        -- was `(i - 1) * 104 + 1`, and a bare stride that disagrees with the
+        -- record is what `testing.md` 18.87 is about.
+        --
+        local at = (i - 1) * DRIVES_VOLUME_BYTES + 1
+        local name, fs, exact, bytes, free, unit, part, readable, id_kind, raw =
             string.unpack(DRIVES_VOLUME, blob, at)
 
         out[i] = { name = trim(name), filesystem = DRIVES_FS_NAMES[fs] or "unknown",
                    bytes = bytes, free = free, free_exact = exact ~= 0,
-                   unit = unit, partition = part, readable = readable ~= 0 }
+                   unit = unit, partition = part, readable = readable ~= 0,
+                   id = drives_id(id_kind, raw) }
       end
 
       return { ok = true, volumes = out, more = more ~= 0 }

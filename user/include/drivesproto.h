@@ -101,11 +101,24 @@
  * used when it is there and `free_exact` says which was given. FAT16's table
  * is small enough to count outright.
  *
- * `unit` and `partition` are the stable handle. A *name* depends on the order
- * drives arrived - Diego took that cost deliberately on 16 September - so
- * anything that must still mean the same volume after a replug uses these
- * two rather than the path.
+ * **`id` is the stable handle, and `unit` and `partition` are not.** This
+ * comment used to say they were. A *name* depends on the order drives
+ * arrived - Diego took that cost deliberately on 16 September - and so does
+ * a unit: `xhci.c` hands one out with `units_named++`, "the next never given
+ * out", so the same stick replugged into the same port comes back with a new
+ * number. Anything that must still mean the same volume after a replug - a
+ * shortcut in Tracker's Places - keys on `id`, which is read off the volume
+ * itself and travels with it across a replug, a port and a machine.
+ *
+ * `id_kind` says what the sixteen bytes are. A FAT volume's own serial
+ * number wins, because it belongs to the filesystem; a GPT partition's
+ * unique GUID is used for anything without one, such as kfs; and a volume on
+ * an MBR drive whose filesystem carries no serial has `DRIVES_ID_NONE`.
  */
+#define DRIVES_ID_NONE   0u
+#define DRIVES_ID_FAT    1u     /* id[0..3]: BS_VolID, little-endian */
+#define DRIVES_ID_GPT    2u     /* id[0..15]: UniquePartitionGUID, as on disk */
+
 struct drives_volume {
     char     name[DRIVES_NAME_BYTES];   /* `PHOTOS 2024`, `Untitled 2` */
     uint32_t fs;                        /* DRIVES_FS_* */
@@ -116,7 +129,8 @@ struct drives_volume {
                                          * numbers them */
     uint32_t partition;                 /* which partition on it, from 0 */
     uint32_t readable;                  /* whether this server can open it */
-    uint32_t reserved;                  /* keeps the struct a multiple of 8 */
+    uint32_t id_kind;                   /* DRIVES_ID_*: what `id` holds */
+    uint8_t  id[16];                    /* the volume's own identity */
 };
 
 /*
@@ -172,6 +186,18 @@ struct drives_reply {
  * are what somebody raises without thinking, and the failure would be a reply
  * silently truncated rather than a build that stops.
  */
+/*
+ * The volume record's own size, because the namespace steps through a page of
+ * them by it (`DRIVES_VOLUME_BYTES` in `init.lua`). That stride was a bare
+ * `104` until `id` arrived, and a stride that disagrees with the record is
+ * the fault `testing.md` 18.87 is about. And the union stays the size of its
+ * data, so eight larger volume records still do not grow the reply.
+ */
+_Static_assert(sizeof(struct drives_volume) == 120,
+               "drives_volume is 120 bytes, and init.lua steps by it");
+_Static_assert(sizeof(((struct drives_reply *)0)->u) == DRIVES_DATA_MAX,
+               "a page of volumes has to fit inside the reply's data");
+
 _Static_assert(sizeof(struct drives_request) <= 2048,
                "a /drives request must fit in one message");
 _Static_assert(sizeof(struct drives_reply) <= 2048,

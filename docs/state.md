@@ -108,8 +108,22 @@ while the guest lags: two presses 0.12 s apart measured 46,187,937 ticks,
 which is 0.74 s as the machine counts it, so against a half-second threshold
 the gesture could not be performed at all.
 
-**Still to build**: shortcut places - which must key on unit and partition,
-because a volume's name can renumber across a replug.
+**Shortcut places are being built (18 September), in two parts.**
+
+**Part 1 is done: every volume now says what it is.** The plan said shortcuts
+would key on unit and partition, and that cannot work - `xhci.c` numbers a
+unit with `units_named++`, "the next never given out", so the same stick
+replugged comes back as a new unit. `/drives` now reports each volume's own
+identity instead: a FAT serial (`BS_VolID`) or a GPT partition's GUID, as
+`fat:1A2B-3C4D` or `gpt:...` (`usb.md` 6c). `drives_volume` is 120 bytes and
+the reply the size it was. Three new checks, each watched failing - the FAT
+decoder 78, the partition decoder 53, and the guest's `/drives` phase 11,
+which answered exactly the serials mtools stamped (`testing.md` 18.89).
+
+**Part 2 is next: Places in Tracker.** Drag a drive or a folder onto Places
+and name it; kept as a file in `/home/Places` with `kind = "place"`, found
+again by its volume's identity, greyed and saying so while that drive is
+unplugged, and removed with a right-click.
 
 **A harness failure that was not ours, and nearly was blamed on the trail.**
 The `compositor budget` phase demanded the Terminal's grid grow by 800

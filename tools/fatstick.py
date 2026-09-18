@@ -44,9 +44,20 @@ SECTOR = 512
 # sector anyway - a type byte is one byte somebody may have written by hand,
 # and the boot sector is what decides.
 VOLUMES = [
-    ("PHOTOS", ["-F", "-c", "1"], 2048, 98304, 0x0C),
-    ("BACKUP", ["-c", "4"], 100352, 24576, 0x0E),
+    ("PHOTOS", ["-F", "-c", "1", "-N", "1A2B3C4D"], 2048, 98304, 0x0C),
+    ("BACKUP", ["-c", "4", "-N", "0BADCAFE"], 100352, 24576, 0x0E),
 ]
+
+# **Each volume's identity, stamped rather than left to chance.** `mformat`
+# picks a serial from the clock unless `-N` names one, and a serial nobody
+# chose can only be checked for being *some* serial - which a decoder reading
+# the wrong four bytes also passes. Named here once, and read by the guest's
+# check, so the stamp and the expectation cannot drift apart. The form is
+# what `/drives` answers: `fat:` and the serial as Windows' `vol` prints it.
+IDS = {
+    "PHOTOS": "fat:1A2B-3C4D",
+    "BACKUP": "fat:0BAD-CAFE",
+}
 
 SECTORS = 131072                # 64 MB: both partitions and room to spare
 

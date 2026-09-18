@@ -95,6 +95,8 @@ struct drives_part {
     uint64_t sectors;           /* how many it says it has */
     uint8_t  type;              /* MBR's type byte; 0 for a GPT partition */
     bool     gpt;               /* which table it came out of */
+    bool     has_guid;          /* only a GPT partition has one */
+    uint8_t  guid[16];          /* UniquePartitionGUID, as on disk */
 };
 
 /*

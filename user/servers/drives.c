@@ -87,6 +87,8 @@ struct volume {
     bool     free_exact;
     bool     readable;          /* whether this server can open it */
     struct fat_volume fat;      /* when `fs` is FAT16 or FAT32 */
+    uint32_t id_kind;           /* DRIVES_ID_*, `drivesproto.h` says why */
+    uint8_t  id[16];
 };
 
 static long blocks = -1;        /* the USB driver's read endpoint */
@@ -388,6 +390,22 @@ static bool identify(struct volume *v)
             v->fat = fat;
             v->fs = (fat.kind == FAT_16) ? FS_KIND_FAT16 : FS_KIND_FAT32;
             v->readable = true;
+
+            if (fat.has_serial) {
+                unsigned b;
+
+                v->id_kind = DRIVES_ID_FAT;
+
+                for (b = 0; b < 16u; b++) {
+                    v->id[b] = 0u;
+                }
+
+                v->id[0] = (uint8_t)(fat.serial);
+                v->id[1] = (uint8_t)(fat.serial >> 8);
+                v->id[2] = (uint8_t)(fat.serial >> 16);
+                v->id[3] = (uint8_t)(fat.serial >> 24);
+            }
+
             drives_label_name(v->name, sizeof(v->name), fat.label);
             return true;
         }
@@ -458,6 +476,7 @@ static void scan(void)
             parts[0].sectors = info.blocks;
             parts[0].type = 0u;
             parts[0].gpt = false;
+            parts[0].has_guid = false;
             n = 1u;
         }
 
@@ -472,6 +491,16 @@ static void scan(void)
             v->first = parts[i].first;
             v->sectors = parts[i].sectors;
             v->bytes = parts[i].sectors * SECTOR;
+
+            /* The partition's GUID first; a FAT serial replaces it in
+             * `identify`, because that one belongs to the filesystem. */
+            if (parts[i].has_guid) {
+                v->id_kind = DRIVES_ID_GPT;
+
+                for (k = 0; k < 16u; k++) {
+                    v->id[k] = parts[i].guid[k];
+                }
+            }
 
             if (!identify(v)) {
                 continue;
@@ -603,6 +632,11 @@ static void answer_volumes(uint64_t sender, const struct drives_request *req)
         out->unit = v->unit;
         out->partition = v->partition;
         out->readable = v->readable ? 1u : 0u;
+        out->id_kind = v->id_kind;
+
+        for (unsigned b = 0; b < 16u; b++) {
+            out->id[b] = v->id[b];
+        }
     }
 
     rep.count = i;
