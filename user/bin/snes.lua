@@ -140,10 +140,35 @@ end
 local size = attrs.size or 0
 
 --
--- The ROM, in a region, a window at a time through a scratch region - for
+-- A file into a region, a window at a time through a scratch region - for
 -- the reason `doom.lua` gives: `fs.read_into` has no offset into the region
--- it fills.
+-- it fills. The ROM comes in this way, and so do the saves below.
 --
+local WINDOW = 256 * 1024
+local scratch = sys.memory(WINDOW // 4096)
+
+if not scratch then
+  print("snes: no room for a staging window")
+  return
+end
+
+local function read_file(file, bytes, region)
+  local done = 0
+
+  while done < bytes do
+    local got = fs.read_into(file, scratch, done, math.min(WINDOW, bytes - done))
+
+    if not got or got == 0 then
+      return nil, ("%s stopped after %d of %d bytes"):format(file, done, bytes)
+    end
+
+    sys.region_write(region, done, sys.region_read(scratch, 0, got))
+    done = done + got
+  end
+
+  return true
+end
+
 local rom = sys.memory((size + 4095) // 4096)
 
 if not rom then
@@ -159,26 +184,11 @@ if not at then
 end
 
 do
-  local WINDOW = 256 * 1024
-  local scratch = sys.memory(WINDOW // 4096)
+  local ok, oops = read_file(path, size, rom)
 
-  if not scratch then
-    print("snes: no room for a staging window")
+  if not ok then
+    print("snes: " .. oops)
     return
-  end
-
-  local done = 0
-
-  while done < size do
-    local got = fs.read_into(path, scratch, done, math.min(WINDOW, size - done))
-
-    if not got or got == 0 then
-      print(("snes: %s stopped after %d of %d bytes"):format(path, done, size))
-      return
-    end
-
-    sys.region_write(rom, done, sys.region_read(scratch, 0, got))
-    done = done + got
   end
 end
 
@@ -211,6 +221,111 @@ local W, H = snes.width * scale, snes.height * scale
 local title = path:match("([^/]+)$"):gsub("%.%w+$", "")
 
 --
+-- **Kept when it closes, and continued when it opens** - Diego's "Yes" on 19
+-- September to continuing a game after quitting (`roadmap.md` 4g).
+--
+-- Beside the ROM, where most emulators keep them. `Name.srm` is the
+-- cartridge's own save, its battery-backed RAM, which is where a game writes
+-- its save slots; `Name.state` is the whole machine at the moment it was
+-- closed. The state is what continues a game where it was. The cartridge's
+-- save is read first, so a state that will not load - from another version
+-- of the core, or of the cartridge - still leaves the game's own saves.
+--
+-- Written when the console stops rather than on a timer: Quit, the close
+-- box, `Super + Q`, and before Open ROM or View starts another Super
+-- Nintendo - which is what lets Double Size keep your place, because the
+-- new one reads what this one has just written. A console killed from
+-- Processes is not kept; it never got the chance.
+--
+-- Through one region, as big as a state, held for the whole run: a region
+-- here is not given back until the process ends, so one is made and used
+-- for every read and write.
+--
+local base = path:gsub("%.%w+$", "")
+local SRM, STATE = base .. ".srm", base .. ".state"
+local state_bytes = snes.size("state")
+local keep = sys.memory((state_bytes + 4095) // 4096)
+local keep_at = keep and sys.memory_map(keep)
+local kept_at                           -- the frame last kept, or read
+
+-- "loaded" and its size, "refused" and why, or nil when there is none.
+local function read_kept(file, kind)
+  local attrs = fs.getattr(file)
+
+  if not attrs or (attrs.size or 0) == 0 then return nil end
+
+  if attrs.size > state_bytes then
+    return "refused", "larger than anything this cartridge keeps"
+  end
+
+  local ok, oops = read_file(file, attrs.size, keep)
+
+  if not ok then return "refused", oops end
+
+  if not snes.load(kind, keep_at, attrs.size) then
+    return "refused", "the emulator would not take it: from another "
+                      .. "cartridge, or another version of the emulator"
+  end
+
+  return "loaded", attrs.size
+end
+
+if not keep_at then
+  print("snes: no room to keep this game, so it will not be kept")
+else
+  local had, why = read_kept(SRM, "battery")
+
+  if had == "refused" then
+    print("snes: the cartridge's save in " .. SRM .. " was not read: " .. why)
+  end
+
+  local got, detail = read_kept(STATE, "state")
+
+  if got == "loaded" then
+    kept_at = snes.frames()
+    print(("snes: continuing %s from frame %d, a state of %d KB")
+          :format(title, kept_at, detail // 1024))
+  else
+    if got == "refused" then
+      print("snes: " .. STATE .. " was not continued: " .. detail)
+    end
+
+    print(("snes: starting %s fresh%s"):format(title, had == "loaded"
+          and ", with the cartridge's own save" or ""))
+  end
+end
+
+-- The game into its two files. Nothing when no frame has run since the
+-- last time, which is every second call on the way out of a relaunch.
+local function keep_game()
+  if not keep_at or snes.frames() == kept_at then return end
+
+  local frame = snes.frames()
+  local cart = ""
+
+  if snes.size("battery") > 0 then
+    local n, why = snes.save("battery", keep_at, state_bytes)
+    local ok, oops = n and fs.write_from(SRM, keep, n)
+
+    cart = ok and (", and the cartridge's own save of %d KB"):format(n // 1024)
+           or ("; the cartridge's save was not written: "
+               .. tostring(oops or why))
+  end
+
+  local n, why = snes.save("state", keep_at, state_bytes)
+  local ok, oops = n and fs.write_from(STATE, keep, n)
+
+  if ok then
+    kept_at = frame
+    print(("snes: kept %s at frame %d, a state of %d KB%s")
+          :format(title, frame, n // 1024, cart))
+  else
+    print(("snes: %s was not kept: %s%s"):format(title,
+          tostring(oops or why), cart))
+  end
+end
+
+--
 -- **A File menu**, Diego's on 18 September: "we should add a menu to that
 -- app as well to open roms and exit the app". The window draws its own
 -- pixels, so the window manager draws the menu bar above them and the kit
@@ -232,7 +347,10 @@ local title = path:match("([^/]+)$"):gsub("%.%w+$", "")
 --
 -- **Game pauses and resumes** - "so I can pause a game and restart it later
 -- on" - as does P. A paused console runs no frames, so its sound stops with
--- them, and "Paused" is drawn over the last picture.
+-- them, and "Paused" is drawn over the last picture. **Reset** is the
+-- console's button: the game starts again from its title, with its own
+-- saves where they were - which is how to start again, now that closing
+-- keeps your place.
 --
 local win
 local paused = false
@@ -240,6 +358,10 @@ local ran = 0                           -- frames run, for the log and the test
 
 local function relaunch(at_scale, rom)
   local words = (at_scale > 1 and ("--scale " .. at_scale .. " ") or "") .. rom
+
+  -- Kept before the other one starts, because it reads what this writes.
+  keep_game()
+
   local reply, why = fs.send("/app/wm", { type = "launch",
                                           program = "snes", args = words })
 
@@ -321,6 +443,15 @@ end
 
 pause_item.on_choose = function() set_paused(not paused) end
 
+local reset_item = {
+  text = "Reset",
+  on_choose = function()
+    print(("snes: reset at frame %d"):format(snes.frames()))
+    snes.reset()
+    if paused then set_paused(false) end
+  end,
+}
+
 local err
 
 win, err = ui.window{ title = title, w = W, h = H, x = 60, y = 60,
@@ -332,7 +463,7 @@ win, err = ui.window{ title = title, w = W, h = H, x = 60, y = 60,
                           { text = "Quit", on_choose = function() win:close() end },
                         } },
                         { title = "View", items = { size_item } },
-                        { title = "Game", items = { pause_item } },
+                        { title = "Game", items = { pause_item, reset_item } },
                       } }
 
 if not win then
@@ -450,6 +581,7 @@ end
 local REPORT = counter_hz * 10
 local report_at = sys.ticks()
 local frames, busy, lost = 0, 0, 0
+local broken = false                    -- the core failed: nothing to keep
 
 while win.running do
   local now = sys.ticks()
@@ -462,6 +594,7 @@ while win.running do
 
     if not fine then
       print("snes: " .. tostring(dropped))
+      broken = true
       break
     end
 
@@ -540,5 +673,9 @@ while win.running do
 end
 
 if out then out:close() end
+
+-- However it stopped - Quit, the close box, Super + Q - unless the core
+-- itself failed, when the machine is not worth continuing from.
+if not broken then keep_game() end
 
 win:close()

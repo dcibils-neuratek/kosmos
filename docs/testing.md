@@ -5914,3 +5914,33 @@ socket inside it, and macOS refuses a socket path over 104 bytes. A
   a name rather than a disk that fills a month later.
 - Control, watched: with the removal switched off, the three endings fail,
   each naming the directory it left.
+
+## 18.110 The Super Nintendo keeps your game
+
+**Roadmap 4g, Diego's "Yes" on 19 September.** Closing the Super Nintendo -
+Quit, the close box, `Super + Q`, or Open ROM and View starting another -
+writes two files beside the ROM: `Name.srm`, the cartridge's own
+battery-backed RAM, where a game writes its save slots, and `Name.state`,
+the whole machine at that instant in LakeSnes's own format. Opening it again
+reads the cartridge's save, then continues from the state. Game gained
+**Reset**, the console's button, which is how to start again now that
+closing keeps your place. Both pass through one region the size of a state,
+with `fs.write_from` and `fs.read_into`, so a quarter of a megabyte never
+becomes a Lua string.
+
+- **The test cartridge got a battery**: two instructions more, `SEP #$20`
+  and `STA $700000` of 4Bh into its RAM, and a header saying ROM, RAM and a
+  battery, 2 KB of it.
+- **The media suite's Super Nintendo phase, 6 checks more**: the first start
+  on a disk with no saves says it is starting fresh; Double Size keeps the
+  1x console at a frame and the 2x one continues from the same frame, with
+  the cartridge's 2 KB kept; Game, then Reset, then Normal Size, and the
+  game is kept at a frame lower than the one it was reset at, and continued
+  from it; and, read off the disk on the Mac after the machine is gone,
+  `kosmos-test.srm` is 2048 bytes with 4Bh first, and `kosmos-test.state`
+  starts "LSSF" and holds its own length at byte 8.
+- Measured on the ARM board: kept at frame 703 and continued at 703; reset
+  at frame 1006 and kept at 265; a state of 260 KB.
+- Control, watched: with the state never read, both continuing checks
+  fail - "kept kosmos-test at frame 689 ... then None" - and nothing else
+  does.

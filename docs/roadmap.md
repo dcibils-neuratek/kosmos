@@ -833,7 +833,8 @@ processors, and still what follows USB:
    before it is built: `docs/gamekit.md` - the API, one small program in it,
    and what each call costs - for Diego to change. Then the 2D half with a
    first game to prove it, then sound, then 3D.
-4g. **AGREED on 19 September - the Super Nintendo keeps your game.** Diego:
+4g. **DONE on 19 September - the Super Nintendo keeps your game** (`testing.md`
+   18.110). Diego:
    "Yes" to continuing a game after quitting. Two kinds of keeping, and the
    port has neither today:
    - **The cartridge's own save** - the battery-backed RAM a game like Zelda
@@ -884,6 +885,26 @@ processors, and still what follows USB:
    each checkable on its own as SMP's were: a second thread on the same
    core; on another core; exit and kill across cores with memory being
    unmapped under them; the libc; the kit; Lua. Every step a test.
+
+   **Where threads go, Diego's question the same evening** - "I want to
+   follow the beos idea which is as really great", "Can we have threads
+   where makes sense? In c? What about Lua apps?":
+   - **In C, wherever there is a heavy loop**: a kit's decoder, mixer or
+     rasteriser, Music decoding ahead, the window manager composing on one
+     core while another answers input. The caller does not change - the
+     same `use("/kits/...")`, finishing sooner.
+   - **In Lua, a thread is an interpreter of its own**, running its own file
+     on its own core, and threads talk through channels - a value sent, a
+     value received - never shared tables, so the races a lock exists for
+     cannot be written in Lua. **Each has its own collector**, so a worker's
+     pause never reaches the thread that draws.
+   - **BeOS's idea, kept; its mechanism, not.** What BeOS promised was that
+     a window never waits on work, and it bought that with two threads per
+     window in C++ with locks - which is also why it was hard to program.
+     Here the window's thread draws and answers input and nothing else,
+     work goes to workers, and a worker's answer arrives in the window's
+     event loop as an event, like a click. Coroutines stay for waiting on
+     many things at once.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab

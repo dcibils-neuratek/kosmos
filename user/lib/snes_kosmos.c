@@ -331,6 +331,135 @@ static int l_button(lua_State *L)
     return 0;
 }
 
+/*--------------------------------------------------------------------------
+ * Keeping a game.
+ *
+ * Two kinds, and LakeSnes has both. **The cartridge's own save** is the
+ * battery-backed RAM a game writes its save slots to, which on the console
+ * outlives the power; `snes_saveBattery`. **A save state** is the whole
+ * machine at one instant - every register, both processors' memory, the
+ * picture's and the sound's - so a game continues from wherever it was
+ * rather than from its last save point; `snes_saveState`, whose header
+ * names the core's format and the cartridge's shape, and which refuses to
+ * load when either differs.
+ *
+ * Both move through a region the Lua side holds, by address, as the ROM
+ * does: a state is a quarter of a megabyte, and it is written to a file
+ * with `fs.write_from` without ever becoming a Lua string.
+ *------------------------------------------------------------------------*/
+
+static const char *const kinds[] = { "state", "battery", NULL };
+
+/* How many bytes a kind takes for this cartridge: 0 for a battery the
+ * cartridge does not have. The same for the whole of a run. */
+static int kept_size(int kind)
+{
+    return kind == 0 ? snes_saveState(machine, NULL)
+                     : snes_saveBattery(machine, NULL);
+}
+
+/* snes.size(kind) - bytes a "state" or a "battery" save takes. */
+static int l_size(lua_State *L)
+{
+    int kind = luaL_checkoption(L, 1, NULL, kinds);
+
+    if (!loaded) {
+        return luaL_error(L, "no ROM has been started");
+    }
+
+    lua_pushinteger(L, kept_size(kind));
+    return 1;
+}
+
+/*
+ * snes.save(kind, at, max) - the machine, or the cartridge's RAM, into the
+ * region at `at`. Returns the bytes written, or nil and why.
+ *
+ * The size is asked first and held to `max`, because the core copies
+ * without a limit of its own: it "assumes data is correct size".
+ */
+static int l_save(lua_State *L)
+{
+    int kind = luaL_checkoption(L, 1, NULL, kinds);
+    uint8_t *at = (uint8_t *)(uintptr_t)luaL_checkinteger(L, 2);
+    lua_Integer max = luaL_checkinteger(L, 3);
+    int bytes;
+
+    if (!loaded) {
+        return luaL_error(L, "no ROM has been started");
+    }
+
+    bytes = kept_size(kind);
+
+    if (bytes <= 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, "this cartridge has no battery");
+        return 2;
+    }
+
+    if ((lua_Integer)bytes > max) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "%d bytes, and the room is %d", bytes, (int)max);
+        return 2;
+    }
+
+    if (kind == 0) {
+        snes_saveState(machine, at);
+    } else {
+        snes_saveBattery(machine, at);
+    }
+
+    lua_pushinteger(L, bytes);
+    return 1;
+}
+
+/*
+ * snes.load(kind, at, bytes) - back into the machine. True, or false when
+ * the core refuses: a state from another cartridge or another version of
+ * the core, or a cartridge save of the wrong size. A refused state has
+ * changed nothing - its header is checked before a byte is taken.
+ */
+static int l_load(lua_State *L)
+{
+    int kind = luaL_checkoption(L, 1, NULL, kinds);
+    uint8_t *at = (uint8_t *)(uintptr_t)luaL_checkinteger(L, 2);
+    lua_Integer bytes = luaL_checkinteger(L, 3);
+
+    if (!loaded) {
+        return luaL_error(L, "no ROM has been started");
+    }
+
+    if (bytes <= 0 || bytes > (lua_Integer)ROM_MAX) {
+        return luaL_argerror(L, 3, "not the size of anything kept");
+    }
+
+    lua_pushboolean(L, kind == 0 ? snes_loadState(machine, at, (int)bytes)
+                                 : snes_loadBattery(machine, at, (int)bytes));
+    return 1;
+}
+
+/* snes.frames() - the console's own count of frames, which a state keeps. */
+static int l_frames(lua_State *L)
+{
+    lua_pushinteger(L, loaded ? (lua_Integer)machine->frames : 0);
+    return 1;
+}
+
+/*
+ * snes.reset() - the console's Reset button: the game starts again from
+ * its title, with the cartridge's own save where it was. A soft reset, as
+ * the button is; the power switch would clear the console's RAM as well.
+ */
+static int l_reset(lua_State *L)
+{
+    if (!loaded) {
+        return luaL_error(L, "no ROM has been started");
+    }
+
+    snes_reset(machine, false);
+    return 0;
+}
+
 /* snes.log() - whatever the core printed since the last call, or nil. */
 static int l_log(lua_State *L)
 {
@@ -350,6 +479,11 @@ static const luaL_Reg snes_lib[] = {
     { "sound",  l_sound },
     { "frame",  l_frame },
     { "button", l_button },
+    { "size",   l_size },
+    { "save",   l_save },
+    { "load",   l_load },
+    { "frames", l_frames },
+    { "reset",  l_reset },
     { "log",    l_log },
     { NULL, NULL },
 };

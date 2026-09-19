@@ -18,6 +18,43 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## The evening of 19 September
+
+**Pushed as 0.10.91** (`7b93d8b`), `make prepush` green: 29 suites in 5:13,
+the screenshot with eleven applications.
+
+**The first prepush died of a full disk**, and the disk was full because
+the suites had left 1,515 directories in the temporary directory - 19 GB,
+595 MB a run from the 512 MB `/home` test alone - and 1,970 unnamed files
+beside them. Diego had both removed. Fixed as a class (`testing.md`
+18.109): `tools/scratch.py` is the one way a tool makes a temporary file,
+`test_scratch.py` refuses any other, and `gate.py` fails a run that leaves
+anything.
+
+**Decided with Diego** (README's log, `roadmap.md`):
+- **The Game Kit** (4f) instead of vendoring LÖVE: ours, LÖVE's best ideas,
+  for new programs - games, an audio editor and composer, planet
+  simulations. Software rendering now, **GPU rendering** later (4h) behind
+  one renderer interface.
+- **Kosmos is a media OS** (`CLAUDE.md`): **low-latency audio** (4i),
+  measured on the ThinkPad before anything changes.
+- **Threads in a process** (4j): `design.md` 4.5 refused them on a
+  one-core argument, corrected. C threads for kits' loops; Lua threads each
+  an interpreter of its own, with channels; the window's thread only draws
+  and answers input. `docs/threads.md` first.
+- The video player's decoders are **FFmpeg's**: 9.0.2 downloaded to
+  `build/downloads/`, matched against the git tag (no gpg here).
+- Diego: downloads for agreed work need no question - say what was fetched.
+
+**Done: the Super Nintendo keeps your game** (4g, `testing.md` 18.110) -
+`Name.srm` and `Name.state` beside the ROM, written when it closes and
+continued when it opens; Game has Reset.
+
+**Next, unless Diego reorders**: `docs/threads.md`, then `docs/gamekit.md`,
+then the video player. Still waiting on him: tonight's test of stick
+0.10.90, and the questions at the end of `video.html`, `playground.html`
+and `styleguide.html`.
+
 ## Stick 0.10.90 for tonight - 19 September
 
 `build/x86_64/kosmos-usb-0.10.90-development.img`, 738 MB, `/home` 512 MB from

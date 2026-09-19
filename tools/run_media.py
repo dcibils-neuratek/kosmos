@@ -161,25 +161,36 @@ def mp3_with_cover(path, rgb, count=40):
     return picture
 
 
-def snes_rom(path):
-    """A Super Nintendo cartridge of our own: 32 KB that does nothing.
+SAVED_BYTE = 0x4B                       # what the test cartridge saves
 
-    **Not game data**, which never goes in the repository or near it: five
+
+def snes_rom(path):
+    """A Super Nintendo cartridge of our own: 32 KB that does almost nothing.
+
+    **Not game data**, which never goes in the repository or near it: seven
     instructions and a header, made here. `SEI`, `CLC`, `XCE` into native
-    mode, and `BRA` to itself for ever; the screen stays black because
-    nothing turns it on. LakeSnes takes 32 KB as its smallest cartridge and
-    finds the header at 7FC0h, a LoROM's place (`snes_other.c`), where the
-    title, the map mode, the size - 2^5 KB - and the checksum pair go, and
-    the reset vector at 7FFCh points at the code, which a LoROM maps at
-    8000h. A cartridge the core refuses would fail this phase at its first
-    line, which is what it is for.
+    mode; `SEP #$20` for an 8-bit accumulator; `LDA #$4B` and `STA
+    $700000`, one byte into the cartridge's own RAM, which a LoROM maps at
+    bank 70h - so its save has something in it to find; and `BRA` to itself
+    for ever. The screen stays black because nothing turns it on. LakeSnes
+    takes 32 KB as its smallest cartridge and finds the header at 7FC0h, a
+    LoROM's place (`snes_other.c`), where the title, the map mode, the
+    chips - ROM, RAM and a battery - the size, 2^5 KB, the RAM's, 2^1 KB,
+    and the checksum pair go, and the reset vector at 7FFCh points at the
+    code, which a LoROM maps at 8000h. A cartridge the core refuses would
+    fail this phase at its first line, which is what it is for.
     """
     rom = bytearray(0x8000)
-    rom[0:5] = bytes([0x78, 0x18, 0xFB, 0x80, 0xFE])
+    rom[0:13] = bytes([0x78, 0x18, 0xFB,             # sei; clc; xce
+                       0xE2, 0x20,                   # sep #$20
+                       0xA9, SAVED_BYTE,             # lda #$4b
+                       0x8F, 0x00, 0x00, 0x70,       # sta $700000
+                       0x80, 0xFE])                  # bra self
     rom[0x7FC0:0x7FD5] = b"KOSMOS TEST CARTRIDGE"[:21].ljust(21, b" ")
     rom[0x7FD5] = 0x20                  # LoROM
-    rom[0x7FD6] = 0x00                  # ROM only
+    rom[0x7FD6] = 0x02                  # ROM, RAM and a battery
     rom[0x7FD7] = 0x05                  # 2^5 KB
+    rom[0x7FD8] = 0x01                  # 2^1 KB of RAM
     rom[0x7FD9] = 0x01                  # North America
     rom[0x7FDC:0x7FE0] = bytes([0xFF, 0xFF, 0x00, 0x00])
     rom[0x7FFC:0x7FFE] = bytes([0x00, 0x80])
@@ -532,6 +543,11 @@ def main():
 
         wx, wy, wh = placed
         strip = wh - 480
+
+        check(re.search(r"snes: starting kosmos-test fresh\r?\n",
+                        guest.seen[mark:]) is not None,
+              "the Super Nintendo's first start on a disk with no saves did "
+              "not say it was starting fresh:\n" + guest.seen[mark:][-600:])
         time.sleep(3.0)
         width, height, _ = parse_ppm(guest.screendump())
 
@@ -543,7 +559,9 @@ def main():
             guest.mouse_button(False)
             time.sleep(0.6)
 
-        def choose(title, offset, marker):
+        # A menu's rows are the face's height and six (`menu_metrics` in
+        # `ui.lua`): 22 with the default face, the first from 2.
+        def choose(title, offset, marker, item=1):
             before = len(guest.seen)
             click(wx + offset + 10, wy + strip // 2)
             opened = line_after(before, r"wm: menu bar (\w+) of kosmos-test "
@@ -556,7 +574,8 @@ def main():
                                  "nothing", guest.seen[before:][-600:]))
 
             time.sleep(1.0)
-            click(int(opened.group(2)) + 20, int(opened.group(3)) + 2 + 11)
+            click(int(opened.group(2)) + 20,
+                  int(opened.group(3)) + 2 + (item - 1) * 22 + 11)
             said = line_after(before, marker)
 
             if said is None:
@@ -628,18 +647,94 @@ def main():
               "the Super Nintendo at 1x did not end when the one at 2x "
               "started - there are two consoles")
 
+        #
+        # **And the 2x one carried on from where the 1x one was** (roadmap
+        # 4g): the one closing keeps the machine and the cartridge's RAM
+        # beside the ROM before the other starts, and the other continues
+        # from the frame it was kept at - a fresh console would say frame 0,
+        # or "fresh".
+        #
+        kept = line_after(before, r"snes: kept kosmos-test at frame (\d+), "
+                                  r"a state of (\d+) KB, and the cartridge's "
+                                  r"own save of (\d+) KB")
+        went_on = line_after(before, r"snes: continuing kosmos-test from "
+                                     r"frame (\d+)")
+
+        check(kept is not None and went_on is not None
+              and int(kept.group(1)) > 0
+              and kept.group(1) == went_on.group(1),
+              "Double Size did not continue the game where it was: %r, then %r"
+              % (kept and kept.group(0), went_on and went_on.group(0)))
+        check(kept is not None and kept.group(3) == "2",
+              "the test cartridge's 2 KB of RAM was not kept: %r"
+              % (kept and kept.group(0)))
+
         if doubled is not None:
             wx, wy, wh = doubled
             time.sleep(3.0)
+
+            # Game, then Reset: the console's button - frames start again.
+            reset = choose("Game", 100, r"snes: reset at frame (\d+)", item=2)
+            time.sleep(2.0)
+
             before = len(guest.seen)
             choose("View", 52, r"snes: restarting at 1x, 512 by 480")
             check(window_of(before, 512) is not None,
                   "View, then Normal Size, on the 2x Super Nintendo did not "
                   "open a 512-wide one")
+
+            again = line_after(before, r"snes: kept kosmos-test at frame (\d+)")
+            back = line_after(before, r"snes: continuing kosmos-test from "
+                                      r"frame (\d+)")
+
+            check(again is not None and back is not None
+                  and again.group(1) == back.group(1),
+                  "Normal Size did not continue the game where it was: %r, "
+                  "then %r" % (again and again.group(0), back and back.group(0)))
+            print("snes: kept at frame %s and continued at %s; reset at frame "
+                  "%s and kept at %s; a state of %s KB"
+                  % (kept and kept.group(1), went_on and went_on.group(1),
+                     reset.group(1), again and again.group(1),
+                     kept and kept.group(2)), flush=True)
+            check(again is not None
+                  and int(again.group(1)) < int(reset.group(1)),
+                  "Reset at frame %s, and the game was kept at frame %s "
+                  "seconds later - the console did not start again"
+                  % (reset.group(1), again and again.group(1)))
     except Failure as e:
         fails.append(str(e))
     finally:
         guest.close()
+
+    #
+    # **The two files, as this Mac reads them off the disk**: the cartridge's
+    # RAM, 2 KB with the byte its code stored first; and the state, LakeSnes's
+    # own format - "LSSF", its version, then its own length, which must be the
+    # file's.
+    #
+    def from_disk(name):
+        out = scratch.path(name)
+        got = subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "get", disk,
+                              "/home/" + name, out], capture_output=True,
+                             cwd=os.path.dirname(HERE))
+
+        if got.returncode != 0:
+            return None
+
+        with open(out, "rb") as f:
+            return f.read()
+
+    srm = from_disk("kosmos-test.srm")
+    state = from_disk("kosmos-test.state")
+
+    check(srm is not None and len(srm) == 2048 and srm[0] == SAVED_BYTE,
+          "/home/kosmos-test.srm is not the cartridge's 2 KB with %02Xh "
+          "first: %r" % (SAVED_BYTE, srm[:4] if srm else srm))
+    check(state is not None and len(state) > 64 * 1024
+          and state[0:4] == b"LSSF"
+          and struct.unpack("<I", state[8:12])[0] == len(state),
+          "/home/kosmos-test.state is not a LakeSnes state of its own "
+          "length: %d bytes, %r" % (len(state or b""), (state or b"")[:12]))
 
     #
     # **A cover inside an MP3, on the screen.**
@@ -1100,7 +1195,7 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (the Super Nintendo paused, resumed and switched between 1x and 2x from its menus and the P key, Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (the Super Nintendo paused, resumed and switched between 1x and 2x from its menus and the P key, continuing the game where it was each time and starting it again from Reset, with its cartridge save and its state on the disk, Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
           "Music's Play and bar doing the same, Music saying why it could "
           "not list a folder, and the sound keeping real time on a device "
