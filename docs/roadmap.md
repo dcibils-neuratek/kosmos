@@ -669,7 +669,8 @@ processors, and still what follows USB:
       19393, on-time 6464). **4b** writes that controller's on-time to 80%
       and reads it back (`29753d3`); on stick 0.10.83 Diego: "it worked! the
       brightness worked!".
-   5. **IN PROGRESS - the brightness keys**: 5a, **reading only, on stick
+   5. **DONE on 19 September, on the ThinkPad - the brightness keys**
+      (stick 0.10.88: "brightness keys work!"): 5a, **reading only, on stick
       0.10.84** - `hal/pc/ec.c` watches the embedded controller and GPE0 and
       says whether SCI_EN is set, so F5 and F6 on the ThinkPad show whether
       the firmware or the system hears them (`testing.md` 18.99). **Stick
@@ -715,7 +716,9 @@ processors, and still what follows USB:
      whole console (`snes_saveState`, `snes_loadState`), so a game could be
      saved to `/home` and continued after quitting, and Double Size could
      keep the player's place instead of starting over.
-4c. **AGREED on 19 September, not started - game controllers over USB.**
+4c. **IN PROGRESS - game controllers over USB. The Xbox 360 part is DONE on
+   19 September, on the ThinkPad** (stick 0.10.88, Diego's SN30 Pro: "snes
+   controller works!"); Xbox One and Series next.
    Diego: "How hard would It be to use a usb game pad controller in kosmos
    with snes emulator and other apps?", then "let's add Xbox 360 and Xbox one
    controllers support which are the most common", and "I do have a 8bit
@@ -742,7 +745,7 @@ processors, and still what follows USB:
       `com.apple.gamecontroller.driver.XboxGamepad` holds the pad's gamepad
       interface, so QEMU takes it only when run as root - as anyone else the
       pad refuses SET_CONFIGURATION, which is what the first try found.
-4d. **AGREED on 19 September, next after stick 0.10.87 - a `/home` of 512 MB
+4d. **DONE on 19 September, booted on the ThinkPad in stick 0.10.88 - a `/home` of 512 MB
    or more on the stick, with Diego's own files in it.** Diego: "from now on
    we need to make the drive image at least 512mb as we are adding more
    content to it", "and i will be adding more images, videos, etc to test in
@@ -779,8 +782,8 @@ processors, and still what follows USB:
       spacing scale, the type sizes, and every widget beside what it looks
       like today - for Diego to change, and then applied one application at a
       time, each photographed against its drawing.
-6. **BUILT on 19 September, waiting on the ThinkPad - a battery indicator on
-   the top bar** (`thinkpad.md` 8d, `testing.md` 18.104). Diego that morning:
+6. **DONE on 19 September, on the ThinkPad - a battery indicator on
+   the top bar**, stick 0.10.88: "battery works!" (`thinkpad.md` 8d, `testing.md` 18.104). Diego that morning:
    "The battery indicator is a must", "As I now don't know what battery is
    left". As planned: for the ThinkPad: read from the
    embedded controller with the register map the T14's own DSDT describes,

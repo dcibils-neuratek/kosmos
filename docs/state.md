@@ -18,6 +18,15 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## Stick 0.10.88 booted on the ThinkPad - 19 September
+
+`kosmos-usb-0.10.88-development.img` (commit `90ec487`), 738 MB, `/home`
+512 MB from `~/Kosmos/home`. Diego: "battery works!", "brightness keys
+work!", "snes controller works!". **Not yet reported**: the 8253 line at
+boot, the Super Nintendo's Pause and Double Size, the power button and Shut
+Down turning the machine off, and `make stick-log`. Stable is still 0.10.70
+until Diego says otherwise.
+
 ## Stick 0.10.87 crawled; 0.10.88 is the fix, with a 512 MB /home - 19 September
 
 0.10.87 on the ThinkPad: ACPI mode on, battery 24% read, then ~3 min in
