@@ -23,7 +23,7 @@
 
 local ui = use("/lib/ui.lua")
 
-local W, H = 380, 510
+local W, H = 380, 580
 
 local win, err = ui.window{ title = "Appearance", w = W, h = H,
                             x = 200, y = 140 }
@@ -169,6 +169,10 @@ local status = ui.label{ x = 12, y = H - 34, w = W - 24, text = "" }
 -- The picture behind everything, or nil for none.
 local chosen_wallpaper = nil
 
+-- The title's shape: "beos", a tab as wide as the title, or "full", a bar
+-- across the whole window - the window manager's `tabs`.
+local chosen_tabs = "beos"
+
 local function send()
   -- Both return values. `fs.send` answers `nil, reason` when the server
   -- said no, so a caller that looks only at the first one reports "no
@@ -179,7 +183,8 @@ local function send()
   local reply, why = fs.send("/app/wm", { type = "theme",
                                           palette = theme.palettes[chosen_palette],
                                           desktop = chosen_desktop,
-                                          fonts = chosen })
+                                          fonts = chosen,
+                                          tabs = chosen_tabs })
 
   if not reply then
     status.text = "refused: " .. tostring(why)
@@ -191,7 +196,8 @@ local function send()
   local ok, werr = fs.write(SETTINGS, { palette = chosen_palette,
                                         desktop = chosen_desktop,
                                         wallpaper = chosen_wallpaper,
-                                        fonts = chosen })
+                                        fonts = chosen,
+                                        tabs = chosen_tabs })
 
   status.text = ok and ("saved: " .. chosen_palette .. ", "
                         .. role() .. " = " .. chosen[role()].font .. " "
@@ -361,6 +367,7 @@ if type(saved) == "table" then
   chosen_palette = saved.palette or chosen_palette
   chosen_desktop = saved.desktop
   chosen_wallpaper = saved.wallpaper
+  chosen_tabs = (saved.tabs == "full") and "full" or "beos"
   if type(saved.fonts) == "table" then
     for _, r in ipairs(ROLES) do
       local c = saved.fonts[r.key]
@@ -480,5 +487,34 @@ for i, n in ipairs(wall_list.items) do
 end
 
 win:add(wall_list)
+
+--
+-- **Window titles: BeOS's tab, or a bar across the whole window.** Diego,
+-- 18 September: "can we have a appearance setting to switch between full
+-- tab like windows or linux or beos". The tab is the default, being the
+-- one he prefers; the window manager draws either (`tabs` in `wm.lua`).
+--
+local TITLES_Y = WALL_Y + LH + 74 + GAP
+local TITLES = {
+  { key = "beos", text = "A tab as wide as the title, as BeOS drew it" },
+  { key = "full", text = "A bar across the whole window" },
+}
+
+win:add(ui.label{ x = 12, y = TITLES_Y, w = W - 24, text = "Window titles" })
+
+local titles_list = ui.list{
+  x = 12, y = TITLES_Y + LH, w = W - 24, h = 44,
+  items = { TITLES[1].text, TITLES[2].text },
+  on_select = function(_, item)
+    for _, t in ipairs(TITLES) do
+      if t.text == item then chosen_tabs = t.key end
+    end
+
+    send()
+  end,
+}
+
+titles_list.selected = (chosen_tabs == "full") and 2 or 1
+win:add(titles_list)
 
 win:run()

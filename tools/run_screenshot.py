@@ -3422,6 +3422,173 @@ def check_direct_menu(guest):
     return 3
 
 
+def check_tabs(guest):
+    """The title's shape: a BeOS tab by default, a bar across on request.
+
+    Diego, 18 September: "i love the tabs in the windows like BEOS", and a
+    setting "to switch between full tab like windows or linux or beos". Two
+    windows of one program, Behind (blue) and Front (green) on top of it,
+    placed so the row of Front's tab lies across Behind's body:
+
+      with the tab, the point beside Front's tab shows Behind - blue;
+      Front's body clicked, the program asks for the bar across - the same
+      point is Front's tab, not blue;
+      clicked again, the tab - blue again;
+      and that point clicked reaches Behind, which says so: beside a tab is
+      what is behind it, for the pointer as for the eye.
+
+    Front is only a third over Behind: more than half and the window
+    manager would open it somewhere it is not buried.
+
+    Clicks rather than timers step it, so a loaded machine cannot race it.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local wmproto = use('/lib/wmproto.lua') "
+        "local back = ui.window{ title = 'Behind', w = 700, h = 400, x = 300, "
+        "y = 250, direct = true } "
+        "local front = ui.window{ title = 'Front', w = 500, h = 150, x = 350, "
+        "y = 600, direct = true } "
+        "for _ = 1, 2 do back:surface():fill(0, 0, 700, 400, 0xff3060c0) "
+        "back:commit{ x = 0, y = 0, w = 700, h = 400 } "
+        "front:surface():fill(0, 0, 500, 150, 0xff30a040) "
+        "front:commit{ x = 0, y = 0, w = 500, h = 150 } end "
+        "print('tabs' .. ': ready') "
+        "local step = 0 "
+        "while back.running and front.running do "
+        "local r = wmproto.poll(front.handle, 1) if not r then break end "
+        "for _, ev in ipairs(r.events or {}) do "
+        "if ev.type == 'mouse' and ev.action == 'press' then step = step + 1 "
+        "local style = (step == 1) and 'full' or 'beos' "
+        "fs.send('/app/wm', { type = 'theme', tabs = style }) "
+        "print('tabs' .. ': ' .. style .. ' ' .. step) end end "
+        "r = wmproto.poll(back.handle, 0) if not r then break end "
+        "for _, ev in ipairs(r.events or {}) do "
+        "if ev.type == 'mouse' and ev.action == 'press' then "
+        "print('tabs' .. ': behind pressed') back:close() front:close() end end "
+        "end print('tabs' .. ': gone')"
+    )
+    # In pieces: a line typed at the prompt is cut at about a kilobyte, and
+    # this program is twice that. Joined at the prompt, then written.
+    guest.type("TABS_SRC = ''")
+
+    for at in range(0, len(program), 600):
+        guest.type("TABS_SRC = TABS_SRC .. %r" % program[at:at + 600])
+        time.sleep(0.3)
+
+    guest.type("fs.write('/ramfs/tabs.lua', TABS_SRC) print('tabs' .. '-written')")
+    time.sleep(1.0)
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/tabs.lua")
+
+    def said(text, seconds=25):
+        deadline = time.monotonic() + seconds
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if text in guest.seen[mark:]:
+                return True
+
+            time.sleep(0.3)
+
+        return False
+
+    if not said("tabs: ready") or not said("wm: window Front at"):
+        raise Failure("the two windows for the tab never opened:\n"
+                      + guest.seen[mark:][-800:])
+
+    front = re.search(r"wm: window Front at (\d+),(\d+) (\d+)x(\d+), a tab "
+                      r"(\d+) wide", guest.seen[mark:])
+    behind = re.search(r"wm: window Behind at (\d+),(\d+) (\d+)x(\d+)",
+                       guest.seen[mark:])
+
+    if not front or not behind:
+        raise Failure("the window manager did not say where Front and its "
+                      "tab are:\n" + guest.seen[mark:][-800:])
+
+    fx, fy, fw, fh, tab = (int(v) for v in front.groups())
+    bx, by, bw, bh = (int(v) for v in behind.groups())
+    blue = (0x30, 0x60, 0xc0)
+
+    # Beside Front's tab, in its row, and inside Behind's body.
+    px, py = fx - 2 + tab + (fw + 4 - tab) // 2, fy - 13
+
+    if tab >= fw + 4 or not (bx <= px < bx + bw and by <= py < by + bh):
+        raise Failure("Front's tab is %d of a %d-pixel frame, so there is no "
+                      "point beside it over Behind to look at" % (tab, fw + 4))
+
+    width, height, _ = parse_ppm(guest.screendump())
+
+    def at_point():
+        _, _, px_ = parse_ppm(guest.screendump())
+        o = (py * width + px) * 3
+        return tuple(px_[o:o + 3])
+
+    def click(cx, cy):
+        guest.mouse_to(*_to_tablet(cx, cy, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+        time.sleep(0.6)
+
+    time.sleep(1.5)
+    beside = at_point()
+
+    if beside != blue:
+        raise Failure("beside a BeOS tab is %r, not the window behind it "
+                      "(%r) - the tab was drawn across the frame, or the "
+                      "window behind was not drawn there" % (beside, blue))
+
+    click(fx + fw // 2, fy + fh // 2)
+
+    if not said("tabs: full 1"):
+        raise Failure("a press on Front did not reach the program")
+
+    time.sleep(1.5)
+    across = at_point()
+
+    if across == blue:
+        raise Failure("asked for a bar across the window, the point beside "
+                      "where the tab was is still the window behind")
+
+    click(fx + fw // 2, fy + fh // 2)
+
+    if not said("tabs: beos 2"):
+        raise Failure("the second press on Front did not reach the program")
+
+    time.sleep(1.5)
+    back_again = at_point()
+
+    if back_again != blue:
+        raise Failure("the tab asked for again, beside it is %r and not the "
+                      "window behind" % (back_again,))
+
+    click(px, py)
+
+    if not said("tabs: behind pressed"):
+        raise Failure("a press beside Front's tab did not reach Behind - the "
+                      "pointer still takes the whole row as Front's:\n"
+                      + guest.seen[mark:][-600:])
+
+    said("tabs: gone", 10)
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[back:]:
+            break
+
+        time.sleep(0.3)
+
+    return 4
+
+
 def check_snes_scale(guest):
     """`--scale` reaches the Super Nintendo, and never reaches a ROM's name.
 
@@ -5515,14 +5682,15 @@ def check_focus_shown(guest):
     # Where each window landed, and the order they opened in: the bar sorts
     # its buttons by handle, and handles are given out in that order.
     #
-    placed, order = {}, []
+    placed, order, tab_wide = {}, [], {}
     deadline = time.monotonic() + 40
 
     while time.monotonic() < deadline:
-        for m in re.finditer(r"wm: window (.+?) at (\d+),(\d+) (\d+)x(\d+)",
-                             guest.seen[mark:]):
+        for m in re.finditer(r"wm: window (.+?) at (\d+),(\d+) (\d+)x(\d+)"
+                             r"(?:, a tab (\d+) wide)?", guest.seen[mark:]):
             if m.group(1) not in placed:
-                placed[m.group(1)] = tuple(int(v) for v in m.groups()[1:])
+                placed[m.group(1)] = tuple(int(v) for v in m.groups()[1:5])
+                tab_wide[m.group(1)] = int(m.group(6) or 0)
                 order.append(m.group(1))
 
         if {"Deskbar", "clock", "Calculator"} <= set(placed):
@@ -5545,7 +5713,9 @@ def check_focus_shown(guest):
     width, height, _ = parse_ppm(guest.screendump())
 
     # wm.lua: BORDER is 2 and TAB_H is 26, and the minimise box is the first
-    # of the pair `boxes_x` puts 44 pixels in from the frame's right edge.
+    # of the pair `boxes_x` puts 44 pixels in from the *tab's* right edge -
+    # the whole frame's with a bar across it, the title's end with a BeOS
+    # tab, whose width the window manager says as it places the window.
     def frame(title):
         x, y, w, h = placed[title]
         return x - 2, y - 26, w + 4, h + 28
@@ -5707,7 +5877,7 @@ def check_focus_shown(guest):
     #
     since = len(guest.seen)
     fx, fy, fw, _ = frame(current)
-    click(fx + fw - 44 + 9, fy + 13)
+    click(fx + (tab_wide.get(current) or fw) - 44 + 9, fy + 13)
 
     limit = time.monotonic() + 6
 
@@ -7086,6 +7256,7 @@ def main():
         face_checks = phase("faces", check_faces)
         wallpaper_checks = phase("wallpapers", check_wallpapers)
         direct_menu_checks = phase("direct menu", check_direct_menu)
+        tab_checks = phase("tabs", check_tabs)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
@@ -7151,6 +7322,7 @@ def main():
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
              + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
+             + tab_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -7226,6 +7398,9 @@ def main():
           f"image and one reaching the screen pixel for pixel, "
           f"{direct_menu_checks} on a menu bar above a window that draws its "
           f"own pixels, and its menu reaching the program, "
+          f"{tab_checks} on the title's shape - beside a BeOS tab the "
+          f"window behind, for the eye and the pointer, and a bar across "
+          f"when asked, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

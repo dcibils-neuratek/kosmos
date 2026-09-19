@@ -5830,3 +5830,32 @@ stick's `\boot\kosmos.cmdline`.
 | ----------------- | ------------ |
 | macOS's litter not filtered | *`/home` holds .DS_Store*, and *macOS's ._ file went in* |
 
+## 18.107 BeOS's tab, and a bar across by choice
+
+**A window's title is a tab as wide as what is on it, by default**, and a
+bar across the whole window when Appearance says so (`ui.md` 16.8b). A
+window is a tab on a body (`tabs.shape`): the compositor cuts that shape
+out of what is behind, `window_at` finds what is under the pointer by it,
+and the tab's paint, title and boxes stay inside it. The window manager
+says each tab's width as it places a window - *wm: window Front at
+350,600 500x150, a tab 124 wide* - which is how a harness finds the
+minimise box at the tab's end.
+
+**The display harness's `tabs` phase, 4 checks, both boards**: two windows
+of one program, Front a third over Behind so its tab's row lies across
+Behind's body. Beside the tab is Behind's blue; asked for the bar across -
+by the same theme message Appearance sends - that point is Front's; asked
+for the tab again, blue again; and a press there reaches Behind. Stepped by
+clicks on Front, not by timers.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the pointer takes the whole row as the window's | *a press beside Front's tab did not reach Behind - the pointer still takes the whole row as Front's* |
+
+**And the harness learned two things.** A line typed at the prompt is cut
+at about a kilobyte, so a longer program goes in in pieces joined at the
+prompt. And the window manager moves a new window that would be more than
+half buried, so a test that wants two windows overlapping has to overlap
+them by less. The `deskbar focus` phase pressed the minimise box 44 pixels
+in from the frame's right edge; it reads the tab's width now.
+

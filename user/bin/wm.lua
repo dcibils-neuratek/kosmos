@@ -185,6 +185,52 @@ local function stamp_colour()    return theme.stamp end
 --------------------------------------------------------------------------
 local SETTINGS = "/home/.appearance"
 
+--
+-- **The title's shape: a BeOS tab, or a bar across the whole window.**
+--
+-- Diego, 18 September: "i love the tabs in the windows like BEOS instead of
+-- the full windoe tab like we have today", and "can we have a appearance
+-- setting to switch between full tab like windows or linux or beos". So it
+-- is a setting, `tabs` in `/home/.appearance`, and **the tab by default**,
+-- the one he prefers.
+--
+-- A tab is as wide as what is on it - the close box, the title in the title
+-- font, the two boxes at its end - and no wider than the window. Beside it,
+-- above the window, is whatever is behind: the window is a tab on a body,
+-- not a rectangle, and `tabs.shape` is that shape for the three things that
+-- need it - the compositor cutting it out of what is behind, the pointer
+-- finding what is under it, and the paint staying inside it. `frame_of`
+-- stays the rectangle round both, which is right for damage and outlines.
+--
+-- One table, because the main chunk is at Lua's limit of locals.
+--
+local tabs = { style = "beos", GAP = 12, MIN = 64 }
+
+function tabs.width(win)
+  local frame = win.w + BORDER * 2
+
+  if tabs.style ~= "beos" then return frame end
+
+  local controls = win.pinned and 0 or (CLOSE_W + BOX_W + BOX)
+  local want = MARGIN + controls + gfx.measure(win.title or "", "title")
+               + tabs.GAP + MARGIN
+
+  return math.min(frame, math.max(tabs.MIN, want))
+end
+
+-- The tab and the body, as rectangles, for a decorated window.
+function tabs.shape(win)
+  local fx, fy = win.x - BORDER, win.y - TAB_H
+  local fw = win.w + BORDER * 2
+
+  return { fx, fy, tabs.width(win), TAB_H },
+         { fx, win.y, fw, win.h + BORDER }
+end
+
+function tabs.choose(style)
+  tabs.style = (style == "full") and "full" or "beos"
+end
+
 -- What `load_appearance` found, for the startup below to apply.
 local saved_wallpaper = nil
 
@@ -290,6 +336,7 @@ local function load_appearance()
   if saved.desktop then theme.override { desktop = saved.desktop } end
 
   apply_fonts(saved.fonts)
+  tabs.choose(saved.tabs)
 
   -- Kept, not applied: this runs before the framebuffer is taken, and a
   -- picture cannot be centred until something knows how big the screen is.
@@ -1072,13 +1119,13 @@ local function top_limit()
 end
 
 local function boxes_x(win)
-  local fx, _, fw = frame_of(win)
+  local fx = frame_of(win)
 
   -- The pair spans from here to `BOX_W + BOX` further on: the first box
   -- starts the slot, the second starts one slot in and is `BOX` wide. Put
   -- the far edge `MARGIN` from the frame and the right side matches the
   -- left, which it did not - close sat four pixels in and these sat twelve.
-  return fx + fw - MARGIN - (BOX_W + BOX)
+  return fx + tabs.width(win) - MARGIN - (BOX_W + BOX)
 end
 
 --------------------------------------------------------------------------
@@ -1816,23 +1863,17 @@ local function draw_window(i, r)
       --
       local bare = win.backdrop or win.strip
 
-      -- The whole decoration in one colour: the bar across the top and the
-      -- border all the way round, yellow when this window has the focus and
-      -- grey when it does not.
+      -- The whole decoration in one colour: the tab and the border all the
+      -- way round, yellow when this window has the focus and grey when it
+      -- does not.
       --
-      -- **This is where Kosmos stops copying BeOS**, and the departure is
-      -- deliberate. A BeOS tab is as wide as its title so that several
-      -- stacked windows show their titles at once - the most recognisable
-      -- decision in that whole look, and a functional one. Kosmos does not
-      -- stack windows, so the narrow tab bought nothing here and cost the
-      -- one thing a border can do for free: say which window is listening,
-      -- from the corner of your eye, without reading anything.
-      --
-      -- It also makes the picture agree with the behaviour. Dragging has
-      -- always been the full width of the frame - the hit test below is
-      -- `ny < fy + TAB_H` and knows nothing about the title's length - so
-      -- the narrow tab was drawing a handle smaller than the one you could
-      -- actually grab.
+      -- **The tab is BeOS's again, by default**, and wide across the frame
+      -- when Appearance says so (`tabs`). This comment used to record the
+      -- full bar as a deliberate departure from BeOS - a tab as wide as its
+      -- title bought nothing on a desktop that does not stack windows, and
+      -- a narrow tab drew a handle smaller than the one the pointer took.
+      -- Diego chose the tab on 18 September, and the second objection went
+      -- with it: the pointer takes the tab's own shape now (`window_at`).
       --
       -- Clipped to the damage rectangle, which the contents below have
       -- always been and this had never been.
@@ -1872,10 +1913,14 @@ local function draw_window(i, r)
         --
         local band = math.max(dy0, math.min(dy1, fy + TAB_H))
 
-        if dy0 < band then
+        -- Across the tab, which is the whole frame only in the full style:
+        -- beside a BeOS tab is what is behind, and nothing is painted there.
+        local tx1 = math.min(dx1, fx + tabs.width(win))
+
+        if dy0 < band and tx1 > dx0 then
           local top, bottom = theme.chrome(tab)
 
-          theme.vgradient(back, dx0, dy0, dx1 - dx0, band - dy0,
+          theme.vgradient(back, dx0, dy0, tx1 - dx0, band - dy0,
                           top, bottom, fy, TAB_H)
         end
 
@@ -2288,48 +2333,67 @@ local function compose_rect(r)
     local win = windows[i]
 
     if not win.hidden then
-      local fx, fy, fw, fh = frame_of(win)
-      local mine, keep = nil, {}
+      --
+      -- A decorated window is its tab and its body (`tabs.shape`), each cut
+      -- out of what is behind in turn; everything else is its rectangle.
+      -- With the tab across the whole frame the two meet exactly, and the
+      -- cut is the rectangle it always was.
+      --
+      local shape
 
-      for _, piece in ipairs(remaining) do
-        local x0 = (fx > piece.x) and fx or piece.x
-        local y0 = (fy > piece.y) and fy or piece.y
-        local x1 = math.min(fx + fw, piece.x + piece.w)
-        local y1 = math.min(fy + fh, piece.y + piece.h)
+      if win.kind == "menu" or win.backdrop or win.strip then
+        shape = { { frame_of(win) } }
+      else
+        shape = { tabs.shape(win) }
+      end
 
-        if x1 > x0 and y1 > y0 then
-          if mine then
-            if x0 < mine.x0 then mine.x0 = x0 end
-            if y0 < mine.y0 then mine.y0 = y0 end
-            if x1 > mine.x1 then mine.x1 = x1 end
-            if y1 > mine.y1 then mine.y1 = y1 end
+      local mine = nil
+
+      for _, part in ipairs(shape) do
+        local fx, fy, fw, fh = part[1], part[2], part[3], part[4]
+        local keep = {}
+
+        for _, piece in ipairs(remaining) do
+          local x0 = (fx > piece.x) and fx or piece.x
+          local y0 = (fy > piece.y) and fy or piece.y
+          local x1 = math.min(fx + fw, piece.x + piece.w)
+          local y1 = math.min(fy + fh, piece.y + piece.h)
+
+          if x1 > x0 and y1 > y0 then
+            if mine then
+              if x0 < mine.x0 then mine.x0 = x0 end
+              if y0 < mine.y0 then mine.y0 = y0 end
+              if x1 > mine.x1 then mine.x1 = x1 end
+              if y1 > mine.y1 then mine.y1 = y1 end
+            else
+              mine = { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
+            end
+
+            --
+            -- **The backdrop hides nothing.** It is transparent wherever it
+            -- has not drawn an icon, so what the compositor paints under it -
+            -- the wallpaper, or the flat colour, and the stamp - still has to
+            -- be painted. Every other window is opaque and cuts away what is
+            -- behind it, which is what this pass is for.
+            --
+            -- Without this the desktop was not merely covering the wallpaper:
+            -- a window that covers a rectangle makes `draw_desktop` skip it
+            -- altogether, so the picture was never drawn at all.
+            --
+            if win.backdrop then
+              keep[#keep + 1] = piece
+            else
+              subtract_into(keep, piece, x0, y0, x1, y1)
+            end
           else
-            mine = { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
-          end
-
-          --
-          -- **The backdrop hides nothing.** It is transparent wherever it
-          -- has not drawn an icon, so what the compositor paints under it -
-          -- the wallpaper, or the flat colour, and the stamp - still has to
-          -- be painted. Every other window is opaque and cuts away what is
-          -- behind it, which is what this pass is for.
-          --
-          -- Without this the desktop was not merely covering the wallpaper:
-          -- a window that covers a rectangle makes `draw_desktop` skip it
-          -- altogether, so the picture was never drawn at all.
-          --
-          if win.backdrop then
             keep[#keep + 1] = piece
-          else
-            subtract_into(keep, piece, x0, y0, x1, y1)
           end
-        else
-          keep[#keep + 1] = piece
         end
+
+        remaining = keep
       end
 
       visible[i] = mine
-      remaining  = keep
     end
   end
 
@@ -3126,9 +3190,15 @@ handlers.open = function(req, who, cap)
 
     print(("wm: menu of %s at %d,%d %dx%d"):format(
           tostring(owner and owner.title), win.x, win.y, win.w, win.h))
-  else
+  elseif win.backdrop or win.strip then
     print(("wm: window %s at %d,%d %dx%d"):format(
           tostring(win.title), win.x, win.y, win.w, win.h))
+  else
+    -- And how wide its tab is, which the title's font decides (`tabs`): a
+    -- harness pressing the minimise box at the tab's end is told where
+    -- that is rather than working out a font's metrics.
+    print(("wm: window %s at %d,%d %dx%d, a tab %d wide"):format(
+          tostring(win.title), win.x, win.y, win.w, win.h, tabs.width(win)))
   end
 
   -- Whoever was launched most recently, if this is their first window.
@@ -4148,6 +4218,9 @@ handlers.theme = function(req)
   -- forwarded, so a window drawing its own pixels changes too.
   local font_why = apply_fonts(req.fonts)
 
+  -- The title's shape, when Appearance says which (`tabs`).
+  if req.tabs then tabs.choose(req.tabs) end
+
   --
   -- The whole palette, not its name.
   --
@@ -4706,7 +4779,9 @@ local function window_at(x, y)
     local fx, fy, fw, fh = frame_of(win)
 
     if not win.hidden
-       and x >= fx and x < fx + fw and y >= fy and y < fy + fh then
+       and x >= fx and x < fx + fw and y >= fy and y < fy + fh
+       and not (y < fy + TAB_H and win.kind ~= "menu" and not win.backdrop
+                and not win.strip and x >= fx + tabs.width(win)) then
       return win, fx, fy
     end
   end

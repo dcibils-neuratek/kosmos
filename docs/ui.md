@@ -370,12 +370,18 @@ stands and the flat look is one application's.
 That rule was always right. What changed is the answer it gives about
 shading: the answer is dimensional, not flat.
 
-**One departure from BeOS that stays**, because it was about behaviour and
-not shading: BeOS made a tab only as wide as its title so several stacked
-windows keep their titles readable. Kosmos does not stack windows, so it
-bought nothing and cost what a full-width border gives for free. It also
-made the picture disagree with the behaviour, since dragging was always the
-full width of the frame.
+**The tab is BeOS's again, by default, and a setting** (19 September). This
+paragraph recorded the full-width bar as one departure from BeOS that
+stays: a tab as wide as its title keeps stacked windows' titles readable,
+Kosmos does not stack windows, so it bought nothing - and it drew a handle
+narrower than the full row the pointer took. Diego, 18 September: "i love
+the tabs in the windows like BEOS instead of the full windoe tab like we
+have today", and "can we have a appearance setting to switch between full
+tab like windows or linux or beos". So Appearance has **Window titles** - a
+tab as wide as the title, the default, or a bar across the whole window -
+and the second objection is gone: beside a tab is what is behind it for the
+pointer as for the eye (`tabs` in `wm.lua`, the display harness's `tabs`
+phase).
 
 **The measurement that keeps this honest.** A bevel is more pixels per
 widget than a flat rectangle, and `make frames` exists now. Composing is

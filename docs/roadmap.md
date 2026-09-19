@@ -792,7 +792,8 @@ processors, and still what follows USB:
    spacing in widgets, fonts", "the fonts used in the screenhot look great".
    Three parts:
 
-   1. **The title's shape, a setting in Appearance**: BeOS's tab, as wide as
+   1. **DONE on 19 September - the title's shape, a setting in
+      Appearance** (`testing.md` 18.107): BeOS's tab, as wide as
       the title, or a bar across the whole window as Windows and Linux draw
       it. The code already calls it a tab (`TAB_H` in `wm.lua`) and draws it
       full width. The tab by default, being the one Diego prefers.
