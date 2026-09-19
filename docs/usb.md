@@ -1905,7 +1905,9 @@ The Super Nintendo, Doom and Quake map the codes in their key tables.
 - The kernel suite, both boards: a driver's keys come out of
   `hal_key_event` in order, a full queue refuses, and `hal_key_release_all`
   lets go of what is still down.
-- The real pad, under QEMU on the Mac through `tools/usbhost.sh`.
+- The real pad, under QEMU on the Mac through `tools/usbhost.sh`, run as
+  root: on 19 September Diego's SN30 Pro gave every button, down and up, as
+  the key its place names.
 
 ## Sources
 

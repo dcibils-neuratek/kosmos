@@ -25,10 +25,9 @@ pad (FFh/5Dh/01h) on the mouse's path; `pad_decode.c` turns its report into
 presses; `SYS_KEY_PUSH` 54 / `hal_key_push` queue them beside the keyboard's
 (`hal/keys.c`, both boards), released by the kernel if the driver dies; the
 Super Nintendo, Doom and Quake map evdev's BTN codes. Diego's SN30 Pro is
-045E:028E on this Mac. **Waiting on Diego**: `sudo sh tools/usbhost.sh
-045e:028e 60`, pressing buttons - macOS's own Xbox driver holds the pad, so
-only root can pass it to QEMU; the log is `build/usbhost.log`. Not on a
-stick yet. Xbox One after the stick.
+045E:028E on this Mac, and **under QEMU on the Mac every button arrived**
+(`sudo sh tools/usbhost.sh 045e:028e 60`; macOS's own Xbox driver holds the
+pad, so only root can pass it to QEMU). Xbox One after the stick.
 
 ## The battery on the top bar - 19 September
 

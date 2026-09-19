@@ -5787,6 +5787,11 @@ evdev's gamepad codes.
 **The real pad under QEMU on the Mac**, through `tools/usbhost.sh`: the
 driver found it - *port 5: 045e:028e, USB 2.0, class 255, "Controller"* -
 took it for a pad, configured its endpoint, and its SET_CONFIGURATION
-stalled, because macOS's own Xbox 360 driver holds the interface. Run as
-root the tool can take it; that run is Diego's, with his password.
+stalled, because macOS's own Xbox 360 driver holds the interface. **Run as
+root, by Diego, it worked**: *an Xbox 360 controller, read from endpoint 1,
+up to 32 bytes; its buttons are keys*, a first report with nothing held,
+and then every button he pressed, down and up - south, east, west, north,
+L, R, both triggers, Select, Start, and the D-pad's four directions. The
+driver says thirty-two changes and stops, so the sticks, pressed after, are
+not in the log.
 
