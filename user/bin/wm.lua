@@ -367,11 +367,33 @@ local function decoder_for(name)
   return suffix and DECODERS[suffix], suffix
 end
 
-local function picture_from_file(path)
+--
+-- **A picture by name, from wherever the name says**: a path beginning `/`
+-- is a file, read into pages as above; any other name is carried in the
+-- image and handed over by `sys.asset` - the icons, the test pictures, and
+-- in a `FULL=1` image the desktop's own wallpapers, `wallpaper/<file>`. One
+-- function for both, because the two had drifted once already, and because
+-- this file is at Lua's two hundred locals and a second would not load.
+--
+local function picture_from(path)
   local decode, suffix = decoder_for(path)
 
   if not decode then
     return nil, "this opens PNG and JPEG, and that is neither"
+  end
+
+  if path:sub(1, 1) ~= "/" then
+    local bytes, why = sys.asset(path)
+
+    if not bytes then return nil, why end
+
+    local ok, made = pcall(decode, bytes)
+
+    if not ok or not made then
+      return nil, tostring(made or ("that " .. suffix .. " would not decode"))
+    end
+
+    return made
   end
 
   local size = (fs.getattr(path) or {}).size
@@ -424,7 +446,7 @@ local function wallpaper_load(path)
     return true
   end
 
-  local made, why = picture_from_file(path)
+  local made, why = picture_from(path)
 
   if not made then return nil, why end
 
@@ -866,22 +888,15 @@ local function picture_named(name)
 
   picture = false
 
-  if name:sub(1, 1) == "/" then
-    local made = picture_from_file(name)
+  local made = picture_from(name)
 
-    if made then
-      picture = made
-      remember_picture(name, made)
-    end
-  else
-    local bytes = sys.asset(name)
-    local decode = decoder_for(name)
+  if made then
+    picture = made
 
-    if bytes and decode then
-      local ok, decoded = pcall(decode, bytes)
-
-      if ok then picture = decoded end
-    end
+    -- Only a file goes on `remember_picture`'s list, which keeps a bounded
+    -- number of them and frees the oldest; the image's own pictures are
+    -- kept in the cache as they always were.
+    if name:sub(1, 1) == "/" then remember_picture(name, made) end
   end
 
   image_cache[name] = picture
@@ -3430,7 +3445,7 @@ end
 --
 -- So the application reads those bytes into a region and hands the region over
 -- with a name. `gfx.png` and `gfx.jpeg` already take an address and a length,
--- and `picture_from_file` already maps and decodes - the only new part is
+-- and `picture_from` already maps and decodes - the only new part is
 -- taking the caller's pages instead of opening a file. **Control by message,
 -- data by shared memory**, which is the system's rule rather than an exception
 -- here, and it keeps working where a copy through a file would not: `/home` is

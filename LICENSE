@@ -75,6 +75,11 @@ Vendored third-party code keeps its own licence, which travels beside it:
       assets/icons/, under the LICENSE beside them. The Haiku logo and
       leaf are Haiku, Inc.'s trademarks, and neither is among them
 
+  The wallpapers, photographs from Unsplash, under the Unsplash License
+      assets/wallpapers/, under the LICENSE beside them, each credited to
+      its photographer in the README there. Scaled to 1920x1080 by
+      tools/wallpapers.sh. In `FULL=1` images only
+
 None of those are modified in place. Changes to them are build steps, so
 what is in this tree is what their authors released.
 

@@ -1666,7 +1666,6 @@ static bool test_processes_have_separate_address_spaces(void)
     uint64_t *ea;
     uint64_t *eb;
     bool ok;
-    unsigned i;
 
     /*
      * Interrupts off for the inspection.
@@ -1750,8 +1749,24 @@ static bool test_processes_have_separate_address_spaces(void)
 
     cpu_irq_enable();
 
-    for (i = 0; i < 200 && (!a->exited || !b->exited); i++) {
-        thread_yield();
+    /*
+     * **Waited for by the clock, not by a count of yields.** This was two
+     * hundred yields, and a yield on a core with nothing else to run
+     * returns at once - so the bound was a few microseconds, while the two
+     * processes run on other cores (placement spreads them) and have to be
+     * scheduled there first. It passed for as long as that happened fast
+     * enough. Moving the heap and the stack up sixteen megabytes, 18
+     * September 2026, made process start-up just slow enough that it never
+     * did on x86: every check above was true, and the processes exited two
+     * yields after the test had stopped looking. The same trick as the
+     * trace test above: a generous cap that a passing run never reaches.
+     */
+    {
+        unsigned long guard = hal_ticks() + 1250;   /* five seconds, a cap */
+
+        while ((!a->exited || !b->exited) && hal_ticks() < guard) {
+            thread_yield();
+        }
     }
 
     ok = ok && a->exited && b->exited;

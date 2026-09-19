@@ -75,7 +75,16 @@ struct thread;
  * machine. What is true on both is the distance between the regions.
  */
 #define USER_TEXT_VA     USER_VA_BASE                       /* base         */
-#define USER_HEAP_VA     (USER_VA_BASE + 0x01000000UL)      /* base + 16 MB */
+/*
+ * **The image may be 32 MB, and was 16.** A `FULL=1` image carries the
+ * desktop's wallpapers - nine megabytes of photographs, 18 September 2026 -
+ * and with them it ran past the heap's old start at the link. What moved is
+ * only where the heap and the stack begin; the heap's size and the gaps
+ * between the regions are what they were, and the screen and the mappings
+ * still start at 48 and 64 MB. The image's read-only half is shared by every process, so the room
+ * costs address space and not memory.
+ */
+#define USER_HEAP_VA     (USER_VA_BASE + 0x02000000UL)      /* base + 32 MB */
 /*
  * Two megabytes, and overridable at build time.
  *
@@ -93,7 +102,14 @@ struct thread;
 #ifndef USER_HEAP_PAGES
 #define USER_HEAP_PAGES  512                                /* 2 MB       */
 #endif
-#define USER_STACK_TOP   (USER_VA_BASE + 0x02000000UL)      /* base + 32 MB */
+/*
+ * Forty-six megabytes, and not forty-eight: the screen lands at 48
+ * (`USER_SCREEN_VA`, below), and a stack whose top touched it would have
+ * the framebuffer as its guard page. The first move of this layout put it
+ * exactly there, and the kernel suite's "the page above the stack has no
+ * translation" failed on x86 - which is the check doing its job.
+ */
+#define USER_STACK_TOP   (USER_VA_BASE + 0x02E00000UL)      /* base + 46 MB */
 /*
  * A process's stack. **Sixty-four pages, and it was sixteen.**
  *
@@ -124,7 +140,7 @@ struct thread;
 /*
  * Where the framebuffer lands in a process that holds the screen.
  *
- * Above the stack and nowhere near it. Three megabytes of it, mapped from
+ * Above the stack, two megabytes clear of its top. Three megabytes of it, mapped from
  * the same physical pages the board is scanning out - not a copy, because a
  * copy would need somewhere to put three megabytes and would then need
  * flushing, and the whole point of a linear framebuffer is that there is

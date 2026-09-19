@@ -3174,6 +3174,110 @@ def check_faces(guest):
     return 2
 
 
+def check_wallpapers(guest):
+    """The desktop's wallpapers are in the image, and one reaches the screen.
+
+    Twenty-four photographs from Unsplash, added on 18 September at Diego's
+    asking, carried in a `FULL=1` image as `wallpaper/<file>`
+    (`assets/wallpapers/README.md`) - the image this harness boots. A program
+    at the prompt counts them, decodes the first and says three of its
+    pixels, and names it the wallpaper in `/home/.appearance`, which is where
+    Appearance saves a choice. Then the desktop starts, and the screen at
+    those three points has to be exactly the decoded pixels: the window
+    manager draws a picture the size of the screen one to one, with the same
+    decoder, so any difference is a fault rather than a rounding. The points
+    are clear of the desktop's icons, the stamp, and the middle of the screen,
+    where the pointer starts - the first choice put one there, and read the
+    pointer's outline.
+
+    It took the userland image past sixteen megabytes, where the heap began,
+    and the link said so; the heap and the stack moved up sixteen
+    (`kernel/process.h`). So this is also the check that a process still
+    starts with its image at thirty-two.
+    """
+    probe = (
+        "local names = {} "
+        "for _, n in ipairs(sys.asset()) do "
+        "if n:match('^wallpaper/') then names[#names + 1] = n end end "
+        "table.sort(names) "
+        "print('walls' .. ': ' .. #names .. ' ' .. tostring(names[1])) "
+        "if names[1] then "
+        "local p = gfx.jpeg(sys.asset(names[1])) "
+        "local w, h = p:size() "
+        "print('walls' .. ': size ' .. w .. 'x' .. h) "
+        "for _, xy in ipairs{ {300, 600}, {1400, 300}, {700, 850} } do "
+        "print(string.format('walls' .. ': at %d %d %08x', xy[1], xy[2], "
+        "p:get(xy[1], xy[2]))) end "
+        "fs.write('/home/.appearance', { palette = 'dark', wallpaper = names[1] }) "
+        "end "
+        "print('walls' .. ': done')"
+    )
+    guest.type("fs.write('/ramfs/walls.lua', %r)" % probe)
+    time.sleep(1.0)
+    mark = len(guest.seen)
+    guest.type("/ramfs/walls.lua")
+
+    deadline = time.monotonic() + 40
+
+    while "walls: done" not in guest.seen[mark:] and time.monotonic() < deadline:
+        time.sleep(0.3)
+        guest._read_available()
+
+    said = guest.seen[mark:]
+    counted = re.search(r"walls: (\d+) (\S+)", said)
+
+    if not counted or int(counted.group(1)) != 24:
+        raise Failure("the image does not carry the desktop's 24 wallpapers:\n"
+                      + said[-800:])
+
+    if "walls: size 1920x1080" not in said:
+        raise Failure("the first wallpaper did not decode at 1920x1080:\n"
+                      + said[-800:])
+
+    points = [(int(x), int(y), int(v, 16)) for x, y, v in
+              re.findall(r"walls: at (\d+) (\d+) ([0-9a-f]{8})", said)]
+
+    if len(points) != 3:
+        raise Failure("the program did not say three pixels of the picture:\n"
+                      + said[-800:])
+
+    def shown(w, h, px):
+        for x, y, v in points:
+            at = (y * w + x) * 3
+
+            if tuple(px[at:at + 3]) != ((v >> 16) & 255, (v >> 8) & 255,
+                                         v & 255):
+                return None
+
+        return True
+
+    guest.type("wm desktop")
+
+    try:
+        settle(guest, shown,
+               "the desktop started and the screen never showed %s at the "
+               "three points its decode gave" % counted.group(2), seconds=30)
+    finally:
+        back = len(guest.seen)
+        guest.proc.stdin.write(STOP_DESKTOP)
+        guest.proc.stdin.flush()
+        deadline = time.monotonic() + 15
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if PROMPT in guest.seen[back:]:
+                break
+
+            time.sleep(0.3)
+
+        guest.type('fs.write("/home/.appearance", { palette = "dark" }) '
+                   'print("walls" .. "-reset")')
+        guest.wait_for("walls-reset", "put the flat desktop back")
+
+    return 3
+
+
 def check_snes_scale(guest):
     """`--scale` reaches the Super Nintendo, and never reaches a ROM's name.
 
@@ -6836,6 +6940,7 @@ def main():
         volume_key_checks = phase("volume keys", check_volume_keys)
         budget_checks = phase("compositor budget", check_budget)
         face_checks = phase("faces", check_faces)
+        wallpaper_checks = phase("wallpapers", check_wallpapers)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
@@ -6900,7 +7005,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + volume_key_checks + face_checks
+             + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -6972,6 +7077,8 @@ def main():
           f"in the compositor at 1920x1080, "
           f"{face_checks} on every outline face loading and drawing, Space "
           f"Grotesk's five weights among them, "
+          f"{wallpaper_checks} on the desktop's wallpapers carried in the "
+          f"image and one reaching the screen pixel for pixel, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

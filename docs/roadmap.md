@@ -1128,6 +1128,11 @@ entries it walked, which is what explained it.
 "add the new font space grotesk" - in `assets/fonts/` with its licence, and
 offered by Appearance like every other face (`testing.md` 18.98).
 
+**DONE on 18 September - the desktop's wallpapers**, 24 photographs from
+Unsplash in `FULL=1` images, chosen in Appearance by photographer; the
+Lenovo ones from the same folder stay out of the public repository and can
+go on a stick's `/home` (`testing.md` 18.100).
+
 **Wanted - `make shot`'s picture without doubles.** Since the login set
 opens Tracker, Monitor, Processes and the log at startup, the gallery's
 picture has two of three of them (18 September, `2026-09-18-1841-eeccbc0.png`,

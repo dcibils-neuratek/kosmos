@@ -1641,6 +1641,13 @@ struct kosmos_asset {
 };
 
 extern const struct kosmos_asset assets_table[];
+extern const struct kosmos_asset wallpapers_table[];
+
+/* Both tables, in the order they are asked: the small files, then the
+ * desktop's pictures, which are empty in an image without them. */
+static const struct kosmos_asset *const asset_tables[] = {
+    assets_table, wallpapers_table,
+};
 
 extern const char kosmos_name[];
 extern const char kernel_name[];
@@ -1661,30 +1668,38 @@ extern const char libraries_lua[];
  * `mmu_init` when a megabyte of JPEG-sized PNG showed up and pushed the
  * stack guards out of the page-mapped region.
  *
- * What is left is the test pattern, fifteen hundred bytes, so the decoder
- * has something to decode before there is a filesystem to read from.
+ * That was before the image was mapped where it lies and shared read-only
+ * by every process; since then it has carried the icons, the fonts and, in
+ * a `FULL=1` image, the desktop's wallpapers - `wallpaper/<file>`, nine
+ * megabytes of JPEG in a table of their own - and a picture here costs the
+ * image its size and nothing per process.
  */
 static int l_asset(lua_State *L)
 {
     const char *want = luaL_optstring(L, 1, NULL);
-    int i;
+    size_t t;
+    int i, n = 0;
 
     if (want == NULL) {
         lua_newtable(L);
 
-        for (i = 0; assets_table[i].name != NULL; i++) {
-            lua_pushstring(L, assets_table[i].name);
-            lua_rawseti(L, -2, i + 1);
+        for (t = 0; t < sizeof(asset_tables) / sizeof(asset_tables[0]); t++) {
+            for (i = 0; asset_tables[t][i].name != NULL; i++) {
+                lua_pushstring(L, asset_tables[t][i].name);
+                lua_rawseti(L, -2, ++n);
+            }
         }
 
         return 1;
     }
 
-    for (i = 0; assets_table[i].name != NULL; i++) {
-        if (strcmp(assets_table[i].name, want) == 0) {
-            lua_pushlstring(L, (const char *)assets_table[i].bytes,
-                            assets_table[i].length);
-            return 1;
+    for (t = 0; t < sizeof(asset_tables) / sizeof(asset_tables[0]); t++) {
+        for (i = 0; asset_tables[t][i].name != NULL; i++) {
+            if (strcmp(asset_tables[t][i].name, want) == 0) {
+                lua_pushlstring(L, (const char *)asset_tables[t][i].bytes,
+                                asset_tables[t][i].length);
+                return 1;
+            }
         }
     }
 

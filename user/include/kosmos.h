@@ -625,7 +625,7 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 #endif
 
 #define USER_TEXT       ((unsigned long)KOSMOS_USER_BASE)
-#define USER_HEAP       (USER_TEXT + 0x01000000UL)
+#define USER_HEAP       (USER_TEXT + 0x02000000UL)   /* kernel/process.h */
 /*
  * The heap's size, and it must be the same number the *kernel* used.
  *
@@ -656,6 +656,6 @@ static inline long kosmos_reply(uint64_t sender, const struct message *msg)
 #endif
 
 #define USER_HEAP_SIZE  ((unsigned long)USER_HEAP_PAGES * 4096UL)
-#define USER_STACK_END  (USER_TEXT + 0x02000000UL)
+#define USER_STACK_END  (USER_TEXT + 0x02E00000UL)   /* kernel/process.h */
 
 #endif /* KOSMOS_H */

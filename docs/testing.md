@@ -5555,3 +5555,50 @@ check the timer tick the watcher sits on, failed once in x86's HDA sessions
 running; alone they passed twice. So those three sessions are a suite of
 their own that runs on a quiet machine at the end (`x86-sound`, 9 seconds),
 which is the evidence `gate.py` said to wait for before marking one.
+
+## 18.100 The desktop's wallpapers, carried in the image and on the screen
+
+**Twenty-four photographs from Unsplash**, at Diego's asking on 18
+September: "can we also add /Users/diego/Downloads/kosmos-wallpapers to
+kosmos", "convert them to jpg at 1920x1080 as much as possible so they save
+space before adding them to the image". Scaled to cover 1920x1080 and saved
+at quality 80 by `tools/wallpapers.sh` - 9.2 MB, where the downloads were
+65 - in `assets/wallpapers/` with the Unsplash License and a README crediting
+each photographer (`README.md` there has why they are committed made rather
+than made by the build, which is a departure from how vendored data is kept).
+In `FULL=1` images only, in a table of their own named `wallpaper/<file>`;
+`sys.asset` looks in both, Appearance lists them by photographer after the
+pictures in `/home`, and the window manager's `picture_from` takes either a
+path or a name in the image.
+
+**The image ran into the heap.** With them a `FULL=1` userland image passed
+sixteen megabytes, where the heap began, and the link refused it - the
+linker script's own assert. The heap and the stack moved up: the image may
+be 32 MB, the heap starts there and the stack's top is at 46, below the
+screen at 48 and the mappings at 64 (`kernel/process.h`,
+`user/include/kosmos.h`, `user/user.ld`, the three places that must agree).
+Its read-only half is shared, so the room is address space, not memory.
+
+**The first move put the stack's top at 48, which is where the screen is
+mapped** - `USER_SCREEN_VA`, missed because the search for the old numbers
+looked for sixteen and thirty-two - and the x86 kernel suite failed "el0:
+code shared, writable not" every time. Not for that, it turned out: every
+page-table claim in the test was true, and its two processes exited two
+yields after it stopped waiting. It waited two hundred yields, which on an
+idle core are microseconds, for processes that run on other cores; the new
+layout made start-up just slow enough to lose that race on x86 every time.
+It waits by the clock now, five seconds as a cap, the way the trace test
+above it does. The stack came down to 46 all the same, because a stack
+whose guard page is the framebuffer is its own bug.
+
+**The display harness's `wallpapers` phase, 3 checks, on both boards**: 24
+wallpapers carried; the first decodes at 1920x1080; and named in
+`/home/.appearance`, the desktop starts with it, and the screen at three
+points is exactly the decoded pixels. The first run chose the middle of the
+screen as a point and read the pointer's outline there, which is where it
+starts - the picture showed the photograph under the desktop's icons and a
+black arrow.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the window manager's branch that takes a picture from the image | *the desktop started and the screen never showed wallpaper/alexander-slattery-LI748t0BK8w.jpg at the three points its decode gave* |

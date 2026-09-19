@@ -11,7 +11,11 @@ Not all of them are pictures and not all of them are vendored - the ASCII
 banner is the project's own text - so a file with no licence beside it is
 reported and not refused. See `licence_for`.
 
-Usage: assets2c.py <symbol> <out.c> <file>...
+Usage: assets2c.py <symbol> <out.c> [--prefix=<text>] <file>...
+
+`--prefix` goes in front of every name in the table: the wallpapers are
+`wallpaper/<file>`, so a caller that lists what the image carries can tell a
+picture meant for the desktop from a test pattern without a second list.
 """
 
 import os
@@ -73,6 +77,11 @@ def main():
         raise SystemExit(__doc__.strip().splitlines()[-1])
 
     symbol, out_path, files = sys.argv[1], sys.argv[2], sys.argv[3:]
+    prefix = ""
+
+    if files and files[0].startswith("--prefix="):
+        prefix, files = files[0][len("--prefix="):], files[1:]
+
     files = sorted(files)
 
     # Who wrote each of these and under what terms, repeated here because
@@ -131,7 +140,7 @@ def main():
     lines.append(f"const struct kosmos_asset {symbol}[] = {{")
 
     for n, path in enumerate(files):
-        name = os.path.basename(path)
+        name = prefix + os.path.basename(path)
         lines.append(f'    {{ "{name}", asset_{n}, sizeof(asset_{n}) }},')
 
     lines.append("    { NULL, NULL, 0 },")

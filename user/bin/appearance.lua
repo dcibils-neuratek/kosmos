@@ -381,8 +381,9 @@ end
 --------------------------------------------------------------------------
 -- The wallpaper.
 --
--- Whatever pictures are in `/home`, by name, and "none" to go back to the
--- flat colour above.
+-- Whatever pictures are in `/home`, by name, then the ones the image carries
+-- (`assets/wallpapers/`, in a `FULL=1` image), by the photographer who took
+-- each - and "none" to go back to the flat colour above.
 --
 -- **Centred, never stretched**, which the window manager does and this only
 -- names: an image the size of the screen lands exactly, a smaller one sits
@@ -404,6 +405,30 @@ local WALL_Y = FY + 124 + GAP
 
 win:add(ui.label{ x = 12, y = WALL_Y, w = W - 24, text = "Wallpaper" })
 
+-- What each line of the list stands for: a label, and the name the window
+-- manager is sent - a path in `/home`, or `wallpaper/<file>` in the image.
+local wall_path = { none = false }
+
+-- `alexander-slattery-LI748t0BK8w.jpg` is Alexander Slattery: the words
+-- before Unsplash's eleven-character photo id, each capitalised unless it
+-- has a digit in it, which is how a username like `v2osk` is written.
+local UNSPLASH_ID = string.rep("[%w_%-]", 11)
+
+local function photographer(name)
+  local who = name:match("^wallpaper/(.+)%-" .. UNSPLASH_ID .. "%.jpg$")
+
+  if not who then return nil end
+
+  local words = {}
+
+  for word in who:gmatch("[^%-]+") do
+    words[#words + 1] = word:find("%d") and word
+                        or (word:sub(1, 1):upper() .. word:sub(2))
+  end
+
+  return table.concat(words, " ")
+end
+
 local function wallpapers()
   local out = { "none" }
 
@@ -412,6 +437,16 @@ local function wallpapers()
 
     if suffix == "png" or suffix == "jpg" or suffix == "jpeg" then
       out[#out + 1] = name
+      wall_path[name] = "/home/" .. name
+    end
+  end
+
+  for _, name in ipairs(sys.asset() or {}) do
+    local who = photographer(name)
+
+    if who and not wall_path[who] then
+      out[#out + 1] = who
+      wall_path[who] = name
     end
   end
 
@@ -422,7 +457,7 @@ local wall_list = ui.list{
   x = 12, y = WALL_Y + LH, w = W - 24, h = 74,
   items = wallpapers(),
   on_select = function(_, item)
-    chosen_wallpaper = (item ~= "none") and ("/home/" .. item) or nil
+    chosen_wallpaper = wall_path[item] or nil
 
     local reply, why = fs.send("/app/wm", { type = "wallpaper",
                                             path = chosen_wallpaper })
@@ -439,7 +474,9 @@ local wall_list = ui.list{
 }
 
 for i, n in ipairs(wall_list.items) do
-  if chosen_wallpaper == "/home/" .. n then wall_list.selected = i end
+  if chosen_wallpaper and chosen_wallpaper == wall_path[n] then
+    wall_list.selected = i
+  end
 end
 
 win:add(wall_list)

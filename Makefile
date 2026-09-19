@@ -85,6 +85,7 @@ ifndef BENCH
 DOOM := 1
 WEB  := 1
 SNES := 1
+WALLPAPERS := 1
 FB   ?= 1920x1080
 endif
 endif
@@ -781,6 +782,7 @@ USER_SRCS := user/init/start-$(ARCH).S \
              $(GEN)/programs.c \
              $(GEN)/version.c \
              $(GEN)/assets.c \
+             $(GEN)/wallpapers.c \
              $(GEN)/fonts.c \
              runtime/upstream/stb/stb_impl.c \
              $(GEN)/libraries.c \
@@ -1809,6 +1811,28 @@ $(shell mkdir -p $(GEN); [ "$$(cat $(FONT_LIST) 2>/dev/null)" = '$(FONT_FILES)' 
 $(FONT_LIST):
 	@mkdir -p $(dir $@)
 	@printf '%s' '$(FONT_FILES)' > $@
+
+#
+# **The desktop's pictures**, in `FULL=1` images only - nine megabytes of
+# photographs are the desktop's, and the test, bench and lean images have no
+# use for them (`assets/wallpapers/README.md`). A table of their own, so an
+# image without them carries an empty one rather than a different
+# `sys.asset`, and named `wallpaper/<file>` so a list of what the image
+# carries says which pictures are meant for the desktop.
+#
+WALLPAPER_FILES := $(if $(WALLPAPERS),$(sort $(wildcard assets/wallpapers/*.jpg)))
+
+WALLPAPER_LIST := $(GEN)/wallpapers.list
+$(shell mkdir -p $(GEN); [ "$$(cat $(WALLPAPER_LIST) 2>/dev/null)" = '$(WALLPAPER_FILES)' ] \
+        || printf '%s' '$(WALLPAPER_FILES)' > $(WALLPAPER_LIST))
+
+$(WALLPAPER_LIST):
+	@mkdir -p $(dir $@)
+	@printf '%s' '$(WALLPAPER_FILES)' > $@
+
+$(GEN)/wallpapers.c: $(WALLPAPER_FILES) $(WALLPAPER_LIST) tools/assets2c.py
+	@mkdir -p $(dir $@)
+	python3 tools/assets2c.py wallpapers_table $@ --prefix=wallpaper/ $(WALLPAPER_FILES)
 
 $(GEN)/fonts.c: $(FONT_FILES) $(FONT_LIST) tools/assets2c.py
 	@mkdir -p $(dir $@)
