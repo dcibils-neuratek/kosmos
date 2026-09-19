@@ -1191,7 +1191,8 @@ always halted with the last frame on the screen, and nobody had pressed it
 there. The DSDT says `Name (_S5, Package (0x04) { 0x07, 0x07, 0, 0 })`, so
 `s5_decode.c` reads that Name's bytes, with no interpreter, and
 `hal_power_off` writes 7 to PM1a control as ACPICA does - the type, then the
-type with SLP_EN.
+type with SLP_EN. **And it turns the ThinkPad off** - stick 0.10.88, 19
+September: "shutdown menu works perfectly".
 
 **The keys reach a driver that answers.** `backlight.c` stays after boot and
 serves `/dev/backlight`: a level, 0 to 256, on the controller the firmware

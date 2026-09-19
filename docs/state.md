@@ -23,9 +23,13 @@ Last updated: 2026-09-19
 `kosmos-usb-0.10.88-development.img` (commit `90ec487`), 738 MB, `/home`
 512 MB from `~/Kosmos/home`. Diego: "battery works!", "brightness keys
 work!", "snes controller works!". **Not yet reported**: the 8253 line at
-boot, the Super Nintendo's Pause and Double Size, the power button and Shut
-Down turning the machine off, and `make stick-log`. Stable is still 0.10.70
-until Diego says otherwise.
+boot, the Super Nintendo's Pause and Double Size, the power button, and Shut
+Down turning the machine off, and `make stick-log`. **Diego: "10.88 is the
+new stable"** - `build/x86_64/kosmos-usb-0.10.88-stable.img`, the same bytes
+(sha256 `fdef22b8...`); 0.10.70's stable image is in the Trash. A stick that
+misbehaves is written back with it. **And "shutdown menu works perfectly"**:
+S5 from the DSDT's `\_S5` turns the ThinkPad off, where Shut Down used to
+halt with the last frame on the screen.
 
 ## Stick 0.10.87 crawled; 0.10.88 is the fix, with a 512 MB /home - 19 September
 
