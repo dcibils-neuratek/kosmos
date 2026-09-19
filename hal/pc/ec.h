@@ -2,15 +2,21 @@
 #ifndef KOSMOS_HAL_PC_EC_H
 #define KOSMOS_HAL_PC_EC_H
 
+#include <stdbool.h>
+
 /*
- * The embedded controller, watched and not touched - `ec.c` says why.
+ * ACPI mode, the power button and the embedded controller's events - `ec.c`
+ * says why and how.
  *
- * `ec_watch_init` once at boot, after the ACPI walk: says what the FADT says
- * about events, whether SCI_EN is set, and whether a controller answers.
- * `ec_watch_tick` on core 0's timer interrupt: a line for each change in the
- * controller's status or a GPE status bit, the first sixty-four.
+ * `ec_init` once at boot, after the ACPI walk and before the other
+ * processors start: switches to ACPI mode and finds the controller.
+ * `ec_tick` on core 0's timer interrupt: the power button and the
+ * controller's queries, as keys. `ec_key_event` and `ec_input_pending` are
+ * the board's second source of keys, after the keyboard.
  */
-void ec_watch_init(void);
-void ec_watch_tick(void);
+void ec_init(void);
+void ec_tick(void);
+bool ec_key_event(unsigned *code, bool *down);
+bool ec_input_pending(void);
 
 #endif

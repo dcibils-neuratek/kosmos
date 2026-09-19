@@ -4351,6 +4351,85 @@ local function volume_key(code, down)
   return true
 end
 
+--
+-- **The keys the firmware reports rather than the keyboard**: the
+-- brightness keys and the power button, which `hal/pc/ec.c` hears as ACPI
+-- events once the machine is in ACPI mode and hands on as key codes - F5
+-- and F6 on the ThinkPad, and its power button.
+--
+-- Brightness is `volume_key`'s arithmetic on the backlight driver: sixteen
+-- steps of 0 to 256, snapped to the nearest step first so a level set some
+-- other way comes back onto the grid, and the Display bar shown with what
+-- the driver says it now holds. `/dev/backlight` is a driver that never
+-- sends to this process, so the call cannot close a cycle - the rule
+-- `volume_key` states for `/dev/audio`.
+--
+-- **The power button shuts down**, exactly as the Deskbar's Shut Down does:
+-- every window told, then the machine off. Holding it for four seconds
+-- still forces the machine off, because that is the chipset's.
+--
+-- One table, for the reason `osd` is one.
+--
+local machine_keys = {
+  POWER = 116, BRIGHTNESSDOWN = 224, BRIGHTNESSUP = 225,
+  STEP = 16,
+}
+
+machine_keys.have_backlight, machine_keys.backlight =
+  pcall(use, "/lib/backlight.lua")
+
+function machine_keys.brightness(up)
+  local which = up and "up" or "down"
+  local b = machine_keys.have_backlight and machine_keys.backlight
+  local now, why
+
+  if b then now, why = b.get() else why = "no backlight driver" end
+
+  if not now then
+    print("wm: brightness " .. which .. " - " .. tostring(why))
+    return
+  end
+
+  local step = machine_keys.STEP
+  local at = (now + step // 2) // step + (up and 1 or -1)
+  local after
+
+  after, why = b.set(math.max(0, math.min(256, at * step)))
+
+  if not after then
+    print("wm: brightness " .. which .. " - " .. tostring(why))
+    return
+  end
+
+  print(("wm: brightness %s, %d of 256"):format(which, after))
+
+  local drawn, oops = pcall(osd.show, "display", after / 256, false)
+
+  if not drawn then
+    print("wm: the level bar could not be drawn: " .. tostring(oops))
+  end
+end
+
+function machine_keys.take(code, down)
+  if code == machine_keys.POWER then
+    if down then
+      print("wm: the power button - shutting down")
+      handlers.power({ action = "off" })
+    end
+
+    return true
+  end
+
+  if code ~= machine_keys.BRIGHTNESSUP
+     and code ~= machine_keys.BRIGHTNESSDOWN then
+    return false
+  end
+
+  if down then machine_keys.brightness(code == machine_keys.BRIGHTNESSUP) end
+
+  return true
+end
+
 --------------------------------------------------------------------------
 -- Input.
 --
@@ -5715,7 +5794,8 @@ while running do
 
   -- The same presses as transitions, for whoever wants them that way.
   for _, ev in ipairs(input.events or {}) do
-    if not volume_key(ev.code, ev.down) then
+    if not volume_key(ev.code, ev.down)
+       and not machine_keys.take(ev.code, ev.down) then
       raw_to_focused(ev.code, ev.down)
     end
   end

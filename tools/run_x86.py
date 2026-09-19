@@ -2398,6 +2398,102 @@ def pointer(image, check):
         proc.wait()
 
 
+def power_button(image, check):
+    """The power button, pressed: a key, the desktop shut down, and S5.
+
+    QEMU's `system_powerdown` is the button - it sets PWRBTN_STS in the
+    ICH9's PM1 status, which it does only once the enable is set, as
+    `ec.c` sets it after switching to ACPI mode. From there it is the path
+    the ThinkPad's button takes: `ec_tick` hears it and queues `KEY_POWER`,
+    the window manager takes that key and shuts down as the Deskbar's menu
+    does, and `hal_power_off` writes the DSDT's sleep type to the FADT's
+    PM1a control - which QEMU answers by exiting. A machine that is still
+    running afterwards failed somewhere along that line, and the log says
+    where.
+
+    **And no press before the press.** The status is cleared at boot, so a
+    button the firmware saw before Kosmos did is not a shutdown the moment
+    the desktop comes up; the log is read for one first.
+    """
+    binary = os.path.join(os.path.dirname(image), "kosmos.bin")
+    work = tempfile.mkdtemp(prefix="kosmos-x86-power-")
+    path = os.path.join(work, "monitor")
+    cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
+           "-display", "none", "-vga", "none", "-device", "ramfb",
+           "-monitor", "unix:%s,server,nowait" % path,
+           "-serial", "stdio",
+           "-fw_cfg", "name=opt/kosmos/boot,string=wm",
+           "-kernel", binary]
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL)
+    heard = bytearray()
+
+    def drain():
+        while True:
+            chunk = os.read(proc.stdout.fileno(), 65536)
+
+            if not chunk:
+                return
+
+            heard.extend(chunk)
+
+    threading.Thread(target=drain, daemon=True).start()
+    monitor = Monitor(path)
+
+    def said():
+        return heard.decode("utf-8", "replace")
+
+    try:
+        until = time.time() + 120.0
+
+        while time.time() < until and "wm: window Deskbar at" not in said():
+            time.sleep(0.25)
+
+        check("wm: window Deskbar at" in said(),
+              "booted into the desktop, the Deskbar never opened a window")
+
+        if "wm: window Deskbar at" not in said():
+            return
+
+        check("acpi: switched to ACPI mode" in said(),
+              "the machine never switched to ACPI mode, so its power button "
+              "is the firmware's")
+
+        # The rest of the desktop settled, and a moment for a stale press to
+        # show itself if the status was not cleared.
+        time.sleep(4.0)
+
+        check("acpi: the power button\n" not in said().replace("\r", ""),
+              "the power button was heard before anybody pressed it")
+
+        monitor.ask("system_powerdown")
+
+        try:
+            proc.wait(timeout=30.0)
+        except subprocess.TimeoutExpired:
+            pass
+
+        time.sleep(0.3)
+        text = said().replace("\r", "")
+
+        check("acpi: the power button\n" in text,
+              "QEMU pressed the power button and the kernel never heard it")
+        check("wm: the power button - shutting down" in text,
+              "the kernel heard the power button and the window manager "
+              "never took the key")
+        check(proc.poll() is not None,
+              "the machine is still running after the power button - S5 "
+              "was not entered:\n"
+              + "\n".join(l for l in text.splitlines()
+                          if "acpi:" in l or "power" in l)[-800:])
+    finally:
+        monitor.close()
+        proc.kill()
+        proc.wait()
+
+
 # A ring's requests before its Link back to the first: `RING_TRBS - 1` in
 # `user/servers/xhci.c`.
 RING_REQUESTS = 255
@@ -3199,20 +3295,27 @@ def core(image, check, fails):
           + next((l.strip() for l in out.splitlines() if "backlight" in l),
                  "nothing from it at all"))
 
-    # 2c. And what the FADT says about the machine's events, read and not
-    #     acted on (`hal/pc/ec.c`): q35's ICH9 puts its SCI on 9 and its SMI
-    #     command port at B2h, SeaBIOS leaves SCI_EN clear because switching
-    #     to ACPI mode is an OS's to do, and nothing answers at 66h, where a
-    #     laptop's embedded controller would be. The ThinkPad's answers to
-    #     the same three questions are what decide how F5 and F6 are heard.
-    said = "\n".join(l.strip() for l in out.splitlines() if "ec: " in l)
+    # 2c. And ACPI mode (`hal/pc/ec.c`): q35's ICH9 puts its SCI on 9 and
+    #     its SMI command port at B2h, SeaBIOS leaves SCI_EN clear because
+    #     switching is an OS's to do, and writing the FADT's 02h to B2h is
+    #     the switch - QEMU sets SCI_EN at once, as the ICH9 does. Then the
+    #     power button is a key, nothing answers at 66h, where a laptop's
+    #     embedded controller would be, and S5 is the DSDT's `\_S5`, sleep
+    #     type 0 at PM1a control 604h - the two numbers `power.c` wrote as
+    #     constants before it read them.
+    said = "\n".join(l.strip() for l in out.splitlines()
+                     if l.startswith(("ec: ", "acpi: ")))
 
-    check("ec: the FADT: SCI 9, SMI command port 0xb2" in said
-          and "ec: SCI_EN is clear" in said
-          and "at 0x66 - nothing answers there" in said,
-          "the machine did not say what its FADT says about events, that "
-          "SCI_EN is clear, and that no embedded controller answers:\n"
-          + (said or "nothing from ec.c at all"))
+    check("acpi: the FADT: SCI 9, SMI command port 0xb2 (0x02 enables ACPI)"
+          in said
+          and "acpi: switched to ACPI mode - 0x02 to port 0xb2" in said
+          and "acpi: the power button is a key now" in said
+          and "at 0x66 - nothing answers there" in said
+          and "acpi: S5 is sleep type 0, from the DSDT's \\_S5, written to "
+              "PM1a control at 0x0604" in said,
+          "the machine did not switch to ACPI mode, take the power button, "
+          "look for an embedded controller and find S5, all as q35 has "
+          "them:\n" + (said or "nothing from acpi.c or ec.c at all"))
 
     # 3. All twelve stages. The kernel prints one per subsystem it brings
     #    up, so a missing number is a subsystem that did not.
@@ -3464,7 +3567,7 @@ def core(image, check, fails):
 
 
 
-PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer']
+PARTS = ["core"] + ['sound', 'sound_slow_codec', 'sound_eapd', 'storage', 'memdisk', 'usb', 'usb_blocks', 'usb_diskbench', 'usb_home', 'usb_second_stick', 'usb_home_late', 'usb_home_named', 'usb_drives', 'usb_flush_refused', 'cmdline_long', 'usb_hotplug', 'usb_mouse', 'identity', 'firmware', 'machine_report', 'pointer', 'power_button']
 
 
 def main():
@@ -3582,6 +3685,10 @@ def main():
     #
     if 'pointer' in wanted:
         pointer(image, check)
+
+    # And the power button, which ACPI mode makes the system's to answer.
+    if 'power_button' in wanted:
+        power_button(image, check)
 
     partial = "" if wanted == PARTS else " (%s)" % ", ".join(wanted)
 

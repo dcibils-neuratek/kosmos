@@ -89,6 +89,8 @@ struct acpi_ec_facts {
     unsigned smi_cmd;           /* the SMI command port */
     unsigned acpi_enable;       /* written there to switch to ACPI mode */
     unsigned pm1a_cnt;          /* PM1a control, whose bit 0 is SCI_EN */
+    unsigned pm1a_evt;          /* PM1a event: status half, then enable half */
+    unsigned pm1_evt_len;       /* its length in bytes, both halves */
     unsigned gpe0_blk;          /* GPE0: status half, then enable half */
     unsigned gpe0_len;          /* its length in bytes, both halves */
     bool     hardware_reduced;  /* no SCI_EN, no SMI command at all */
@@ -98,5 +100,11 @@ struct acpi_ec_facts {
 };
 
 bool acpi_ec_facts(struct acpi_ec_facts *out);
+
+/*
+ * How to enter S5: the FADT's PM1a control block, and the sleep type the
+ * DSDT's `\_S5` gives for it (`s5_decode.h`). False when either is missing.
+ */
+bool acpi_s5(unsigned *pm1a_cnt, unsigned *slp_typ);
 
 #endif

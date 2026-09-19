@@ -70,7 +70,7 @@ void net_server(long endpoint);
 /* Not a server anyone asks, and handed the console's endpoint rather than an
  * endpoint of its own: it is a driver, and it reports as a client. */
 void powerbutton_server(long console);
-void backlight_server(long console);
+void backlight_server(long console, long endpoint);
 void xhci_server(long console, long blocks, long writes);
 
 /* Its own endpoint, the USB driver's *read* endpoint, and the console's.
@@ -184,7 +184,7 @@ int main(unsigned long arg)
 
     if (arg == ROLE_BACKLIGHT) {
         named("backlight");
-        backlight_server(0);
+        backlight_server(0, 1);
     }
 
     if (arg == ROLE_XHCI) {

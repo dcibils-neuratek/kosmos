@@ -21,10 +21,12 @@
 #include <stdint.h>
 
 #include "acpi.h"
+#include "console.h"
 #include "ec.h"
 #include "hal.h"
 #include "mmu.h"
 #include "pc.h"
+#include "s5_decode.h"
 #include "string.h"
 
 /*
@@ -137,6 +139,10 @@ static struct aml_table aml[AML_TABLES_MAX];
 static unsigned aml_count;
 static bool     aml_ready;
 
+/* `\_S5`'s sleep type, read out of the DSDT once it is mapped. */
+static unsigned s5_slp_typ;
+static bool     s5_found;
+
 /*
  * What `start.S` identity maps, and so the highest address the walk can
  * read: `smbios.c` draws the same line for the same reason. A table above it
@@ -160,9 +166,9 @@ static bool     aml_ready;
  * And what `ec.c` watches with, from the same FADT, by the same method: an
  * `iasl -T FACP` template compiled and disassembled, which prints each
  * field as [offset length]. SCI interrupt 2Eh, SMI command port 30h, ACPI
- * enable value 34h, PM1a control block 40h, GPE0 block 50h and its length
- * 5Ch, flags 70h - whose bit 20 is "hardware reduced", the V5 field that
- * decoding the template names.
+ * enable value 34h, PM1a event block 38h and its length 58h, PM1a control
+ * block 40h, GPE0 block 50h and its length 5Ch, flags 70h - whose bit 20 is
+ * "hardware reduced", the V5 field that decoding the template names.
  *
  * And the ECDT, by the same method with `iasl -T ECDT`: the control
  * register's address at 28h and the data register's at 34h, each the
@@ -172,7 +178,9 @@ static bool     aml_ready;
 #define FADT_SCI_INT        46u
 #define FADT_SMI_CMD        48u
 #define FADT_ACPI_ENABLE    52u
+#define FADT_PM1A_EVT       56u
 #define FADT_PM1A_CNT       64u
+#define FADT_PM1_EVT_LEN    88u
 #define FADT_GPE0_BLK       80u
 #define FADT_GPE0_LEN       92u
 #define FADT_FLAGS          112u
@@ -485,6 +493,8 @@ static void read_fadt(const struct sdt *table)
     ec_facts.smi_cmd     = (unsigned)field(table, FADT_SMI_CMD, 4);
     ec_facts.acpi_enable = (unsigned)field(table, FADT_ACPI_ENABLE, 1);
     ec_facts.pm1a_cnt    = (unsigned)field(table, FADT_PM1A_CNT, 4);
+    ec_facts.pm1a_evt    = (unsigned)field(table, FADT_PM1A_EVT, 4);
+    ec_facts.pm1_evt_len = (unsigned)field(table, FADT_PM1_EVT_LEN, 1);
     ec_facts.gpe0_blk    = (unsigned)field(table, FADT_GPE0_BLK, 4);
     ec_facts.gpe0_len    = (unsigned)field(table, FADT_GPE0_LEN, 1);
     ec_facts.hardware_reduced =
@@ -502,6 +512,17 @@ static void read_ecdt(const struct sdt *table)
     ec_facts.ec_cmd  = (unsigned)field(table, ECDT_CONTROL_ADDR, 8);
     ec_facts.ec_data = (unsigned)field(table, ECDT_DATA_ADDR, 8);
     ec_facts.ec_gpe  = (unsigned)field(table, ECDT_GPE, 1);
+}
+
+bool acpi_s5(unsigned *pm1a_cnt, unsigned *slp_typ)
+{
+    if (!s5_found || !ec_facts_found || ec_facts.pm1a_cnt == 0) {
+        return false;
+    }
+
+    *pm1a_cnt = ec_facts.pm1a_cnt;
+    *slp_typ = s5_slp_typ;
+    return true;
 }
 
 bool acpi_ec_facts(struct acpi_ec_facts *out)
@@ -694,9 +715,29 @@ unsigned hal_firmware_init(void)
     aml_count = kept;
     aml_ready = true;
 
+    /* The one number `power.c` needs from the AML, found while this is the
+     * only processor and read by it later without a lock. */
+    for (i = 0; i < aml_count && !s5_found; i++) {
+        if (signature_is(aml[i].signature, "DSDT", 4)) {
+            s5_found = s5_decode(aml[i].mapped, aml[i].length, &s5_slp_typ);
+        }
+    }
+
+    if (s5_found) {
+        kputs("acpi: S5 is sleep type ");
+        kputu(s5_slp_typ);
+        kputs(", from the DSDT's \\_S5, written to PM1a control at 0x");
+        kputx(ec_facts.pm1a_cnt, 4);
+        kputs(" to power off\n");
+    } else {
+        kputs("acpi: no \\_S5 of a plain shape in the DSDT - powering off "
+              "is QEMU's register, and on anything else a halt\n");
+    }
+
     /* And what the same tables say about the machine's events, while this
-     * is still the one processor running: `ec.c` watches from here on. */
-    ec_watch_init();
+     * is still the one processor running: `ec.c` switches to ACPI mode and
+     * turns them into keys from here on. */
+    ec_init();
 
     return aml_count;
 }

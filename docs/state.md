@@ -2,9 +2,36 @@
 
 **Update at the end of every session.** This file is what keeps you from starting over each time.
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
 ---
+
+## ACPI mode, F5 and F6, and the power button - 19 September
+
+**Diego: "yes switch to acpi mode"**, after 0.10.85's probe showed F5 and F6
+invisible (SCI_EN clear, SMM answering them). Built and tested in QEMU:
+
+- **`hal/pc/ec.c`**: ACPI enable written to the SMI command port at boot,
+  SCI_EN waited for; on core 0's tick the power button's PM1 status and the
+  controller's SCI_EVT, QR_EC asked, 14h/15h queued as brightness keys, the
+  power button as `KEY_POWER`. SCI masked, events polled. `hal_key_event`
+  takes the keyboard's keys first, then these.
+- **`hal/pc/s5_decode.c`, `power.c`**: power-off writes the DSDT's `\_S5`
+  (T14: 7) to the FADT's PM1a control. It wrote QEMU's 0, so on the T14 Shut
+  Down only ever halted.
+- **`/dev/backlight`**: `backlight.c` stays and serves get/set, levels 0-256,
+  floor 16 (`backlightproto.h`, `user/lib/backlight.lua`); init hands its
+  endpoint at position 12 (`backlight = 12`), after `drives`.
+- **`wm.lua` `machine_keys`**: F5/F6 step by 16 and show the Display bar;
+  the power button runs `handlers.power{ action = "off" }`.
+- Tests: `run_x86.py` 2c and the `power_button` part, `test_s5decode`,
+  `test_backlightdecode` levels (`testing.md` 18.102). QEMU has no embedded
+  controller, so F5/F6 themselves are proved on the ThinkPad only.
+
+**Next**: gate, commit, `make bump`, stick 0.10.86 with numbered steps for
+Diego - F5/F6 (Display bar, `wm: brightness` lines), the power button (the
+machine turns off), Deskbar's Shut Down (the machine turns off), `diagnose`,
+`make stick-log`.
 
 ## Stick 0.10.85 waiting on Diego, 18 September (late)
 

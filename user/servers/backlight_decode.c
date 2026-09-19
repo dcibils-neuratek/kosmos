@@ -70,3 +70,40 @@ bool backlight_boot_on_time(const struct backlight_controller *c,
     *on_time = want;
     return true;
 }
+
+unsigned backlight_level(const struct backlight_controller *c)
+{
+    struct backlight_reading r;
+
+    backlight_decode(c, &r);
+
+    if (r.state != BACKLIGHT_ON) {
+        return 0;
+    }
+
+    return (unsigned)(((uint64_t)c->on_time * 256u + c->period / 2u)
+                      / c->period);
+}
+
+bool backlight_on_time_for(const struct backlight_controller *c,
+                           unsigned level, unsigned floor, uint32_t *on_time)
+{
+    struct backlight_reading r;
+
+    backlight_decode(c, &r);
+
+    if (r.state != BACKLIGHT_ON) {
+        return false;
+    }
+
+    if (level < floor) {
+        level = floor;
+    }
+
+    if (level > 256u) {
+        level = 256u;
+    }
+
+    *on_time = (uint32_t)(((uint64_t)c->period * level + 128u) / 256u);
+    return true;
+}

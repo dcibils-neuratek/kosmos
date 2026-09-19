@@ -62,4 +62,25 @@ void backlight_decode(const struct backlight_controller *c,
 bool backlight_boot_on_time(const struct backlight_controller *c,
                             unsigned percent, uint32_t *on_time);
 
+/*
+ * **Levels, 0 to 256, for the brightness keys** (`backlightproto.h`).
+ *
+ * `backlight_level` is how bright a controller that is on reads, rounded to
+ * the nearest level; 0 for any other. `backlight_on_time_for` is the
+ * on-time for `level`, raised to `floor` and held at 256, rounded to the
+ * nearest - false for a controller that is not on with numbers that hang
+ * together, which is never written.
+ *
+ * **Rounded both ways so that a level survives the trip.** A period is
+ * wider than 256 on anything real - the T14's is 19393 - so the on-time for
+ * a level is within half a count of exact, and reading it back is within
+ * half a level: the level that was set is the level that is read. Rounded
+ * down instead, 204 went in and 203 came out, and each key press drifted
+ * one further.
+ */
+unsigned backlight_level(const struct backlight_controller *c);
+
+bool backlight_on_time_for(const struct backlight_controller *c,
+                           unsigned level, unsigned floor, uint32_t *on_time);
+
 #endif

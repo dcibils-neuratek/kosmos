@@ -281,10 +281,11 @@ void pc_timer_interrupt(void)
 {
     ticks[this_cpu()->index]++;
 
-    /* The embedded controller's watch, on one core only: two processors
-     * reading its status would each see the other's changes, twice. */
+    /* The power button and the embedded controller, on one core only: two
+     * processors asking the controller at once would interleave their
+     * commands on its one pair of ports. */
     if (this_cpu()->index == 0) {
-        ec_watch_tick();
+        ec_tick();
     }
 }
 

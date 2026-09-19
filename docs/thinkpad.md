@@ -1154,6 +1154,50 @@ on, at C8250h/C8254h/C8258h (control, period, on-time) and C8350h on; enable
 is bit 31 and polarity bit 29. So `backlight.c` reads both before anything is
 written (`testing.md` 18.96), and the ThinkPad's reading is the evidence.
 
+## 8c. ACPI mode, and the keys the firmware reports
+
+**Stick 0.10.85 watched and saw nothing** (`testing.md` 18.99): SCI_EN
+clear, the controller at 66h where the ECDT says with status 08h, and not one
+change in its status or in any GPE status bit while F5 and F6 were pressed.
+With SCI_EN clear the chipset sends the controller's events to the
+firmware's SMM as SMIs, and SMM answered them before a four-millisecond watch
+could look. **The events are the system's to collect only in ACPI mode**,
+and Diego agreed on 19 September to switch.
+
+**What the switch costs, said before it was made**: the power button and the
+lid report to the system rather than the firmware. The power button is now a
+key, `KEY_POWER`, and the window manager shuts down on it; holding it four
+seconds still forces the machine off, because that is the chipset's. The lid
+does nothing, as it did. The fans and the temperature stay the controller's.
+
+**How it is done** (`hal/pc/ec.c`), from the FADT the T14 gave:
+
+- **At boot**, once: write ACPI enable (F0h) to the SMI command port (B2h)
+  and wait for SCI_EN in PM1a control (1804h); clear PWRBTN_STS and set
+  PWRBTN_EN in PM1a's event block.
+- **On core 0's tick**: PWRBTN_STS set is a press - cleared by writing it
+  back, and queued as `KEY_POWER`. The controller's SCI_EVT set is an event
+  - QR_EC (84h) to 66h, the answer from 62h, 14h queued as
+  `KEY_BRIGHTNESSUP` and 15h as `KEY_BRIGHTNESSDOWN`, any other said once.
+  Every wait on the controller is bounded; a silent one is left for the next
+  tick.
+- **The SCI is never unmasked.** Nothing here would clear a GPE's status in
+  time to stop a level-triggered line firing again, and a tick is soon
+  enough for a key.
+
+**Turning the machine off needed the DSDT as well.** `hal_power_off` wrote
+QEMU's sleep type, 0, which on the T14 is S0: the Deskbar's Shut Down had
+always halted with the last frame on the screen, and nobody had pressed it
+there. The DSDT says `Name (_S5, Package (0x04) { 0x07, 0x07, 0, 0 })`, so
+`s5_decode.c` reads that Name's bytes, with no interpreter, and
+`hal_power_off` writes 7 to PM1a control as ACPICA does - the type, then the
+type with SLP_EN.
+
+**The keys reach a driver that answers.** `backlight.c` stays after boot and
+serves `/dev/backlight`: a level, 0 to 256, on the controller the firmware
+lit, never below a sixteenth. The window manager steps it by sixteen and
+shows the Display bar `docs/levels.html` drew.
+
 ## 9. What is still missing
 
 | | | rough size |

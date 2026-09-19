@@ -147,6 +147,52 @@ int main(void)
               "a device that does not answer was written");
     }
 
+    /* The keys' levels, 0 to 256, on the ThinkPad's period. */
+    {
+        struct backlight_controller c = { 0x80000000u, 19393u, 15514u };
+        uint32_t on = 0;
+        unsigned level;
+        int drifted = 0;
+
+        check(backlight_level(&c) == 205u,
+              "the T14 at 80% (15514 of 19393) did not read as level 205");
+
+        /* Every level from the floor up survives being written and read:
+         * rounded down, 204 went in and 203 came out. */
+        for (level = 16; level <= 256; level++) {
+            c.on_time = 0;
+            if (!backlight_on_time_for(&c, level, 16, &on)) {
+                drifted++;
+                continue;
+            }
+            c.on_time = on;
+            if (backlight_level(&c) != level) {
+                drifted++;
+            }
+        }
+        check(drifted == 0, "a level did not read back as the level set");
+
+        c.on_time = 15514u;
+        check(backlight_on_time_for(&c, 0, 16, &on)
+              && on == (19393u * 16u + 128u) / 256u,
+              "a level of 0 was not raised to the floor - the panel would "
+              "have gone black");
+
+        check(backlight_on_time_for(&c, 999, 16, &on) && on == 19393u,
+              "a level past 256 was not held to the whole period");
+
+        c.control = 0;
+        check(!backlight_on_time_for(&c, 128, 16, &on)
+              && backlight_level(&c) == 0,
+              "a controller that is off was given a level or an on-time");
+
+        c.control = 0x80000000u;
+        c.on_time = 20000u;
+        check(!backlight_on_time_for(&c, 128, 16, &on),
+              "a controller whose numbers do not hang together was given "
+              "an on-time");
+    }
+
     if (fails) {
         printf("FAIL: %d of %d checks on the backlight's registers\n",
                fails, fails + checks);
@@ -158,6 +204,7 @@ int main(void)
            "rounded down, numbers that cannot be right refused, periods "
            "near 2^32 without overflow, and the write at boot: the "
            "ThinkPad's third raised to 80%%, never a dimmer screen, never a "
-           "controller that is off or wrong).\n", checks);
+           "controller that is off or wrong; and the keys' levels, each read "
+           "back as it was set, never below the floor).\n", checks);
     return 0;
 }

@@ -28,18 +28,34 @@
  *   map      that one page, uncached                       SYS_DEV_MAP
  *   read     both controllers, and say what they hold
  *   write    the on-time of the one that is on, if dim, and read it back
+ *   serve    `/dev/backlight`: get and set a level, 0 to 256
+ *
+ * **And then it stays, answering** (`backlightproto.h`), because F5 and F6
+ * arrived on 19 September - `hal/pc/ec.c` turns them into keys, and the
+ * window manager asks here. One controller is served: the first that reads
+ * as on, which the firmware lit because the panel is wired to it. Every
+ * `set` is written and read back, and the reply carries what the register
+ * holds rather than what was asked for.
+ *
+ * **It answers on a machine with no backlight too**, with
+ * `BACKLIGHT_ERR_NO_DEVICE`, rather than exiting. The endpoint is init's,
+ * so a driver that left would leave `/dev/backlight` a name whose calls
+ * wait for a receiver that is never coming - and the caller that matters
+ * is the window manager's key path, where nothing may wait.
  *
  * **No address of its own**, as `powerbutton.c` has none: the graphics
  * device's base and the block's place in it are `hal/pc/devices.c`'s. The
- * offsets here are within the block. On a machine with no Intel graphics -
- * QEMU, either board - it says so once and exits.
+ * offsets here are within the block.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "kosmos.h"
 #include "backlight_decode.h"
+#include "backlightproto.h"
 #include "mmio.h"
 #include "say.h"
 
@@ -98,7 +114,22 @@ static void report(long console, unsigned which,
     say_send(console, &line);
 }
 
-void backlight_server(long console)
+/* The controller `/dev/backlight` serves: where its registers are, or 0. */
+static uintptr_t lit;
+
+static void read_controller(uintptr_t at, struct backlight_controller *c)
+{
+    c->control = mmio_read32(at + PWM_CONTROL);
+    c->period  = mmio_read32(at + PWM_PERIOD);
+    c->on_time = mmio_read32(at + PWM_ON_TIME);
+}
+
+/*
+ * Found, mapped, read, and raised if dim - what this driver did before it
+ * served anything, unchanged except that it remembers which controller is
+ * lit. False when there is nothing to serve.
+ */
+static bool bring_up(long console)
 {
     struct dev_info dev;
     struct say_line line;
@@ -109,7 +140,7 @@ void backlight_server(long console)
     if (kosmos_dev_find(DEV_INTEL_BACKLIGHT, 0, &dev) != 0) {
         say(console, "backlight: no Intel graphics on this machine - "
                      "nothing to read\n");
-        kosmos_exit(0);
+        return false;
     }
 
     mapped = kosmos_dev_map((unsigned long)dev.base, 1);
@@ -117,7 +148,7 @@ void backlight_server(long console)
     if (mapped < 0) {
         say(console, "backlight: the backlight registers could not be "
                      "mapped\n");
-        kosmos_exit(1);
+        return false;
     }
 
     base = (uintptr_t)mapped;
@@ -135,14 +166,18 @@ void backlight_server(long console)
 
     for (i = 0; i < CONTROLLERS; i++) {
         struct backlight_controller c;
+        struct backlight_reading r;
         uintptr_t at = base + i * CONTROLLER_STRIDE;
         uint32_t on_time, back;
 
-        c.control = mmio_read32(at + PWM_CONTROL);
-        c.period  = mmio_read32(at + PWM_PERIOD);
-        c.on_time = mmio_read32(at + PWM_ON_TIME);
-
+        read_controller(at, &c);
         report(console, i, &c);
+
+        backlight_decode(&c, &r);
+
+        if (r.state == BACKLIGHT_ON && lit == 0) {
+            lit = at;
+        }
 
         if (!backlight_boot_on_time(&c, BOOT_PERCENT, &on_time)) {
             continue;
@@ -174,5 +209,78 @@ void backlight_server(long console)
         say_send(console, &line);
     }
 
-    kosmos_exit(0);
+    if (lit == 0) {
+        say(console, "backlight: no controller is on - nothing to serve\n");
+        return false;
+    }
+
+    say_begin(&line);
+    say_text(&line, "backlight: serving /dev/backlight, controller ");
+    say_dec(&line, (unsigned)((lit - base) / CONTROLLER_STRIDE));
+    say_send(console, &line);
+    return true;
+}
+
+static void answer(const struct message *in, uint64_t sender)
+{
+    struct message out;
+    struct backlight_reply *rep = (struct backlight_reply *)(void *)out.data;
+    const struct backlight_request *req =
+        (const struct backlight_request *)(const void *)in->data;
+    struct backlight_controller c;
+    uint32_t on_time;
+
+    memset(&out, 0, sizeof(out));
+    out.tag = in->tag;
+    out.length = (uint32_t)sizeof(*rep);
+
+    if (in->length < sizeof(*req)
+        || (req->op != BACKLIGHT_OP_GET && req->op != BACKLIGHT_OP_SET)) {
+        rep->error = BACKLIGHT_ERR_BAD_OP;
+        (void)kosmos_reply(sender, &out);
+        return;
+    }
+
+    if (lit == 0) {
+        rep->error = BACKLIGHT_ERR_NO_DEVICE;
+        (void)kosmos_reply(sender, &out);
+        return;
+    }
+
+    read_controller(lit, &c);
+
+    /* A set on a controller that has since stopped reading as on - turned
+     * off by the firmware, say - writes nothing, and says so. */
+    if (req->op == BACKLIGHT_OP_SET) {
+        if (!backlight_on_time_for(&c, req->level, BACKLIGHT_LEVEL_FLOOR,
+                                   &on_time)) {
+            rep->error = BACKLIGHT_ERR_NO_DEVICE;
+            (void)kosmos_reply(sender, &out);
+            return;
+        }
+
+        mmio_write32(lit + PWM_ON_TIME, on_time);
+        read_controller(lit, &c);
+
+        if (c.on_time != on_time) {
+            rep->error = BACKLIGHT_ERR_UNCHANGED;
+        }
+    }
+
+    rep->level = backlight_level(&c);
+    (void)kosmos_reply(sender, &out);
+}
+
+void backlight_server(long console, long endpoint)
+{
+    (void)bring_up(console);
+
+    for (;;) {
+        struct message msg;
+        uint64_t sender = 0;
+
+        if (kosmos_receive(endpoint, &msg, &sender, 0, 0) == 0) {
+            answer(&msg, sender);
+        }
+    }
 }

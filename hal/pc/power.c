@@ -8,25 +8,33 @@
  * parsing tables to learn which port to write and what value - real work,
  * for one write.
  *
- * So this takes the shortcut QEMU offers and says so: on the q35 machine
- * the ACPI PM1a control block is at 0x604, and writing SLP_TYP=0 with
- * SLP_EN set enters S5. That is a *machine-specific constant* standing in
- * for a table lookup, which is exactly the kind of thing `hal/` exists to
- * quarantine - it is wrong on a real PC and this file is the only place
- * that has to change.
+ * So this took the shortcut QEMU offers: on the q35 machine the ACPI PM1a
+ * control block is at 0x604, and writing SLP_TYP=0 with SLP_EN set enters
+ * S5. On the ThinkPad the same write is sleep type 0 - S0, where it already
+ * was - and the machine halted with its last frame on the screen, which
+ * nobody noticed until the power button became a key that shuts down.
+ *
+ * **Now it reads both from the firmware** (`acpi_s5`): the control block
+ * from the FADT, and the sleep type from the DSDT's `\_S5` - 0 on q35 and 7
+ * on the T14 - found by `s5_decode.c` without interpreting any AML. The two
+ * writes are the order ACPICA uses: the type first, then the type with
+ * SLP_EN, each keeping the bits around it (SCI_EN among them). QEMU's
+ * constant stays as what is written when the firmware said nothing.
  *
  * Restart is different and is genuinely general: pulse the 8042 keyboard
  * controller's reset line, which is how a PC has been restarted since 1984
  * and works whether or not there is a keyboard attached.
  */
 
+#include "acpi.h"
 #include "hal.h"
 #include "pc.h"
 
 /* q35's ACPI PM1a control block. See above: this is QEMU's, not a PC's. */
 #define QEMU_ACPI_PM1A  0x604
 #define SLP_EN          (1u << 13)
-#define SLP_TYP_S5      (0u << 10)
+#define SLP_TYP_SHIFT   10
+#define SLP_TYP_MASK    (7u << SLP_TYP_SHIFT)
 
 #define PS2_COMMAND     0x64
 #define PS2_STATUS      0x64
@@ -39,7 +47,18 @@ static void out16(uint16_t port, uint16_t value)
 
 void hal_power_off(void)
 {
-    out16(QEMU_ACPI_PM1A, SLP_TYP_S5 | SLP_EN);
+    unsigned control, type;
+
+    if (acpi_s5(&control, &type)) {
+        uint16_t value = pc_in16((uint16_t)control);
+
+        value = (uint16_t)((value & ~(SLP_TYP_MASK | SLP_EN))
+                           | (type << SLP_TYP_SHIFT));
+        out16((uint16_t)control, value);
+        out16((uint16_t)control, (uint16_t)(value | SLP_EN));
+    } else {
+        out16(QEMU_ACPI_PM1A, SLP_EN);
+    }
 
     /* If that did nothing - a real machine, or ACPI disabled - stop rather
      * than return. A caller of this has already decided the machine is

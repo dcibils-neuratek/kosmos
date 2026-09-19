@@ -23,6 +23,7 @@
 
 #include <stdbool.h>
 
+#include "ec.h"
 #include "hal.h"
 #include "i8042.h"
 #include "input.h"
@@ -32,9 +33,15 @@ bool hal_keyboard_init(void)   { return i8042_keyboard_init(); }
 int  keyboard_getchar(void)    { return i8042_getchar(); }
 bool keyboard_present(void)    { return i8042_present(); }
 
+/*
+ * **The keyboard first, then the firmware's keys** - the power button and a
+ * laptop's brightness keys, which `ec.c` turns from ACPI events into key
+ * codes. A key is a key wherever it came from, the same sentence
+ * `hal_getchar` says of characters.
+ */
 bool hal_key_event(unsigned *code, bool *down)
 {
-    return i8042_key_event(code, down);
+    return i8042_key_event(code, down) || ec_key_event(code, down);
 }
 
 bool hal_key_held(unsigned code) { return i8042_key_held(code); }
@@ -118,13 +125,13 @@ bool hal_pointer_move(int dx, int dy, uint32_t buttons)
 bool hal_input_pending(void)
 {
     return i8042_input_pending() || pc_pointer_moved()
-        || virtio_input_pending();
+        || virtio_input_pending() || ec_input_pending();
 }
 
 bool hal_input_pending_peek(void)
 {
     return i8042_input_pending_peek() || pc_pointer_moved()
-        || virtio_input_pending_peek();
+        || virtio_input_pending_peek() || ec_input_pending();
 }
 
 /*

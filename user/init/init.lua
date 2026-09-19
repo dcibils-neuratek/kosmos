@@ -38,7 +38,7 @@ local ROLE_NET       = 17 -- serves /net: the one process that holds the card
 local ROLE_POWERBUTTON = 18 -- drives the power key, where there is one
 local ROLE_XHCI       = 19 -- drives the USB host controllers, where there are any
 local ROLE_DRIVES     = 20 -- serves /drives: every volume on every drive, read only
-local ROLE_BACKLIGHT  = 21 -- reads Intel's backlight PWMs, where there are any
+local ROLE_BACKLIGHT  = 21 -- Intel's backlight PWMs: /dev/backlight
 
 -- Whether this process can pass the screen on to a child.
 --
@@ -410,6 +410,11 @@ local function new_namespace()
   --
   -- `root` is which part of the server appears here. Left out, the whole
   -- of it does, which is what every mount did before subtrees existed.
+  --
+  -- `proto` is which protocol the server speaks, and **a server in C always
+  -- has one**: left out means a server that takes tables, and the namespace
+  -- will send it tables. `request` refuses a table to any protocol it does
+  -- not route.
   --
   function ns.mount(prefix, capability, root, proto)
     --
@@ -1653,6 +1658,26 @@ local function new_namespace()
       return app_request(capability, op,
                          (rest or ""):match("([^/]+)$") or "",
                          extra and extra.pass)
+    end
+
+    --
+    -- **Every other protocol is a declared shape, and a table is not one.**
+    --
+    -- A mount with no protocol is a server that takes tables - the disk, an
+    -- application's `/app` name. A mount that names one is a C server with a
+    -- struct of its own, reached through its kit (`fs.raw`, the network
+    -- kit), and a table sent to it is answered as though it were that
+    -- struct. That is what happened on 19 September: `find` asks every
+    -- mount, `/dev/backlight` answered its table with BACKLIGHT_ERR_BAD_OP,
+    -- and the reply's first byte, 2, unpacked as the Lua value `true` - so
+    -- init indexed a boolean. `/dev/audio` and `/dev/blocks` had been sent
+    -- the same tables for months and survived only because their BAD_OP
+    -- numbers unpack as `false` and as a string, which read as a failure. Refused here, with a sentence,
+    -- which is what `ns.send` already does for the same reason.
+    --
+    if proto then
+      return nil, path .. " speaks a fixed protocol; there is no `"
+                  .. tostring(op) .. "` on it"
     end
 
 
@@ -3886,7 +3911,7 @@ local RUNNER_ROLE = ROLE_RUNNER
 
 local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
                           lib_cap, app_cap, disk_cap, audio_cap, net_cap,
-                          blocks_cap, drives_cap)
+                          blocks_cap, drives_cap, backlight_cap)
   local ns = new_namespace()
   ns.mount("/dev/console", console_cap, nil, "console")
   ns.mount("/ramfs", ramfs_cap, nil, "ram")
@@ -3917,7 +3942,7 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- ask to make a noise and the answer is a stream with a volume on it
   -- rather than a refusal.
   --
-  if audio_cap then ns.mount("/dev/audio", audio_cap) end
+  if audio_cap then ns.mount("/dev/audio", audio_cap, nil, "audio") end
 
   --
   -- `/dev/blocks`: the USB sticks' blocks, served by the USB driver (USB step
@@ -3925,7 +3950,17 @@ local function shell_main(console_cap, ramfs_cap, devices_cap, bin_cap,
   -- for every program, as `/dev/audio` is; writing will be given to one
   -- process, the disk server, and not mounted like this.
   --
-  if blocks_cap then ns.mount("/dev/blocks", blocks_cap) end
+  if blocks_cap then ns.mount("/dev/blocks", blocks_cap, nil, "blocks") end
+
+  --
+  -- `/dev/backlight`: the screen's brightness, from the backlight driver.
+  -- Mounted for everybody, as `/dev/audio` is and for its reason - a level a
+  -- program may change - and the driver keeps a floor no caller can go
+  -- under (`backlightproto.h`).
+  --
+  if backlight_cap then
+    ns.mount("/dev/backlight", backlight_cap, nil, "backlight")
+  end
 
   --
   -- `/net`, not `/dev/net`, and the distinction is the one the window
@@ -4645,7 +4680,8 @@ query. `find` and `watch` are built on exactly these two calls.
     local id = sys.spawn(RUNNER_ROLE, { ep, console_cap, ramfs_cap,
                                         bin_cap, devices_cap, lib_cap,
                                         app_cap, disk_cap, audio_cap,
-                                        net_cap, blocks_cap, drives_cap },
+                                        net_cap, blocks_cap, drives_cap,
+                                        backlight_cap },
                          flags)
 
     if not id then
@@ -4658,6 +4694,7 @@ query. `find` and `watch` are built on exactly these two calls.
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
+      backlight = 12,
       home_in_memory = home_in_memory or nil,
     })
 
@@ -5252,6 +5289,7 @@ if role == ROLE_INIT then
   local BLOCKS_EP = sys.endpoint()
   local BLOCKS_WRITE_EP = sys.endpoint()
   local DRIVES_EP = sys.endpoint()
+  local BACKLIGHT_EP = sys.endpoint()
 
   if not LIBFS_EP or not APPFS_EP then
     line("init: no endpoint for the library store or the app registry")
@@ -5364,14 +5402,17 @@ if role == ROLE_INIT then
   end
 
   --
-  -- **The backlight**, the same way: device authority and the console's
-  -- endpoint, and nothing else. It reads the Intel display engine's two PWM
-  -- controllers, says what they hold, raises a dim one to a comfortable
-  -- level, and exits; on a machine without Intel graphics it says so and
-  -- exits.
+  -- **The backlight**, the same way: device authority, the console's
+  -- endpoint, and the one it serves `/dev/backlight` on. It reads the Intel
+  -- display engine's two PWM controllers, says what they hold, raises a dim
+  -- one to a comfortable level, and then answers for the brightness keys; on
+  -- a machine without Intel graphics it says so and answers "no backlight",
+  -- because a driver that exited would leave its endpoint with nobody on the
+  -- other end and every caller waiting.
   --
   do
-    local _, err = sys.spawn(ROLE_BACKLIGHT, { CONSOLE_EP }, SPAWN_DEVICES)
+    local _, err = sys.spawn(ROLE_BACKLIGHT, { CONSOLE_EP, BACKLIGHT_EP },
+                             SPAWN_DEVICES)
 
     if err then
       line("init: no backlight driver: " .. tostring(err))
@@ -5496,7 +5537,7 @@ if role == ROLE_INIT then
                       -- runner names them by number further down.
                       { CONSOLE_EP, RAMFS_EP, DEVICES_EP, BINFS_EP, LIBFS_EP,
                         APPFS_EP, DISKFS_EP, AUDIO_EP, NET_EP, BLOCKS_EP,
-                        DRIVES_EP },
+                        DRIVES_EP, BACKLIGHT_EP },
                       -- The screen, and authority over processes.
                       --
                       -- The shell needs the second in order to *pass it
@@ -5568,7 +5609,7 @@ end
 if role == ROLE_SHELL then
   sys.name("shell")
   -- The capabilities init granted, in the order it granted them.
-  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+  shell_main(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
   return
 end
 
@@ -5722,10 +5763,13 @@ if role == ROLE_RUNNER then
 
   -- After `/dev`, because longest prefix wins and this is a different
   -- server from the one that answers the rest of it.
-  if req.audio   then ns.mount("/dev/audio",   req.audio)   end
+  if req.audio   then ns.mount("/dev/audio",   req.audio, nil, "audio") end
   if req.net     then ns.mount("/net",         req.net, nil, "net") end
-  if req.blocks  then ns.mount("/dev/blocks",  req.blocks) end
+  if req.blocks  then ns.mount("/dev/blocks",  req.blocks, nil, "blocks") end
   if req.drives  then ns.mount("/drives",      req.drives, nil, "drives") end
+  if req.backlight then
+    ns.mount("/dev/backlight", req.backlight, nil, "backlight")
+  end
 
   -- Whatever the parent shared, at the indices it said, and *after* the
   -- defaults so that a parent can replace one. A program that was started
@@ -5785,13 +5829,13 @@ if role == ROLE_RUNNER then
     -- without it `/dev/audio` is a path that does not exist. The Mixer said
     -- "nothing is playing" while two tones were running, because they were
     -- not able to reach the server to say otherwise.
-    -- `req.drives` last, matching `drives = 11` in the request below and
-    -- the order init hands them to the shell. Every entry here is named by
+    -- `req.backlight` last, matching `backlight = 12` in the request below
+    -- and the order init hands them to the shell. Every entry here is named by
     -- number on the other side, so a new one goes on the end or every index
     -- after it means something different.
     local caps = { ep, req.console, req.data, req.bin, req.devices,
                    req.lib, req.app, req.disk, req.audio, req.net,
-                   req.blocks, req.drives }
+                   req.blocks, req.drives, req.backlight }
     local mounts = {}
 
     --
@@ -5878,6 +5922,7 @@ if role == ROLE_RUNNER then
       detach = detach and true or false,
       console = 1, data = 2, bin = 3, devices = 4, lib = 5, app = 6,
       disk = 7, audio = 8, net = 9, blocks = 10, drives = 11,
+      backlight = 12,
       mounts = (#mounts > 0) and mounts or nil,
 
       -- Inherited rather than decided again. This is a program starting a

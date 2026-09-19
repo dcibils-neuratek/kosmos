@@ -672,8 +672,15 @@ processors, and still what follows USB:
    5. **IN PROGRESS - the brightness keys**: 5a, **reading only, on stick
       0.10.84** - `hal/pc/ec.c` watches the embedded controller and GPE0 and
       says whether SCI_EN is set, so F5 and F6 on the ThinkPad show whether
-      the firmware or the system hears them (`testing.md` 18.99); 5b
-      answers them the way that says. And **the level shown on the screen when a key
+      the firmware or the system hears them (`testing.md` 18.99). **Stick
+      0.10.85 saw nothing**: SCI_EN clear, so the firmware's SMM took every
+      event. **5b, built on 19 September, waits on the ThinkPad**: with
+      Diego's yes, the machine is switched to ACPI mode at boot, the power
+      button becomes a key that shuts down, queries 14h and 15h become
+      brightness keys, the backlight driver serves `/dev/backlight`, the
+      window manager steps it and shows the Display bar, and powering off
+      writes the DSDT's `\_S5` so it turns the T14 off rather than halting
+      (`thinkpad.md` 8c, `testing.md` 18.102). And **the level shown on the screen when a key
       changes it** - Diego, 18 September: "make sure we have a way to show
       brightness bar level in the screen to know where we are on the
       brightness level", and "like a volume bar as well". A bar that
@@ -1138,6 +1145,15 @@ opens Tracker, Monitor, Processes and the log at startup, the gallery's
 picture has two of three of them (18 September, `2026-09-18-1841-eeccbc0.png`,
 and the push before it). `run_screenshot.py` empties the login set before
 its phases; `run_gallery.py` does not.
+
+**DONE on 19 September - the gate refuses an x86 part that no suite runs.**
+`run_x86.py` gained `power_button` and `gate.py` names its parts by hand, so
+the new part ran only when asked for by name - found by reading the suites,
+not by anything failing. `gate.py` now holds the parts its suites name to
+`run_x86.PARTS` before it starts (`testing.md` 18.102). **Still wanted**: the
+display harness's phases held to `DISPLAY_PARTS` the same way - its phase
+list lives inside `run_screenshot.py`'s `main`, so it needs a list at the
+module's top first.
 
 ## Known and unexplained
 

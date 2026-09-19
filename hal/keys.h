@@ -64,6 +64,14 @@
 #define KEY_VOLUMEDOWN     114
 #define KEY_VOLUMEUP       115
 
+/* And the keys a laptop's firmware reports rather than its keyboard: the
+ * power button, a fixed ACPI event, and brightness down and up, which the
+ * ThinkPad's embedded controller raises as queries 15h and 14h
+ * (`hal/pc/ec.c`). Evdev's numbers again, and raw events only. */
+#define KEY_POWER          116
+#define KEY_BRIGHTNESSDOWN 224
+#define KEY_BRIGHTNESSUP   225
+
 /* The escape sequence a terminal would have sent for a key that is not a
  * character, or NULL. */
 const char *hal_key_sequence(unsigned code);

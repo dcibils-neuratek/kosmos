@@ -131,8 +131,8 @@ SUITES = [
     # `run_x86.py` is some thirty machines, one after another - three and a
     # quarter minutes alone - so it runs as four groups of its parts, each a
     # machine of its own, side by side (`--parts`).
-    Suite("x86-core", ["python3", "tools/run_x86.py", X86, "--parts", "core"],
-          x86=True),
+    Suite("x86-core", ["python3", "tools/run_x86.py", X86, "--parts",
+                       "core,power_button"], x86=True),
     Suite("x86-storage", ["python3", "tools/run_x86.py", X86, "--parts",
                           "storage,memdisk,identity,firmware,machine_report"],
           x86=True),
@@ -270,6 +270,32 @@ def summary_of(suite):
     return said[-1][:150] if said else ""
 
 
+def uncovered_x86_parts():
+    """`run_x86.py`'s parts that no suite here names.
+
+    **The suites name their parts by hand**, so a part added to `run_x86.py`
+    runs only when somebody asks for it by name. `power_button` was that part
+    on 19 September, found by reading this file rather than by anything
+    failing - and a test that never runs passes for ever. So the parts are
+    held to `run_x86.PARTS`, read from the file itself.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "run_x86", os.path.join(ROOT, "tools", "run_x86.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    named = set()
+
+    for suite in SUITES:
+        if "tools/run_x86.py" in suite.cmd and "--parts" in suite.cmd:
+            at = suite.cmd.index("--parts") + 1
+            named.update(p for p in suite.cmd[at].split(",") if p)
+
+    return [p for p in module.PARTS if p not in named]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4,
@@ -279,6 +305,14 @@ def main():
     parser.add_argument("--only", default="",
                         help="suites to run, by name, separated by commas")
     args = parser.parse_args()
+
+    missing = uncovered_x86_parts()
+
+    if missing:
+        print("FAIL: run_x86.py has parts no suite runs: %s - name each in "
+              "one of the x86 suites in tools/gate.py" % ", ".join(missing),
+              flush=True)
+        return 1
 
     os.makedirs(LOGS, exist_ok=True)
     started = time.monotonic()

@@ -1589,6 +1589,17 @@ $(HOSTDIR)/test_backlightdecode: tools/test_backlightdecode.c user/servers/backl
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
 	        tools/test_backlightdecode.c user/servers/backlight_decode.c
 
+#
+# And `\_S5`'s sleep type, for the same reason in its plainest form: QEMU's
+# is 0, which is also what the board wrote before it read one, so under QEMU
+# a decoder that finds nothing powers off exactly like one that works. The
+# ThinkPad's is 7. `s5_decode.h` has more.
+#
+$(HOSTDIR)/test_s5decode: tools/test_s5decode.c hal/pc/s5_decode.c hal/pc/s5_decode.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
+	        tools/test_s5decode.c hal/pc/s5_decode.c
+
 $(HOSTDIR)/test_usbdecode: tools/test_usbdecode.c user/servers/usb_decode.c user/servers/usb_decode.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O1 -o $@ \
@@ -2396,6 +2407,7 @@ X86_SRCS  := boot/x86_64/start.S \
              hal/pc/timer.c \
              hal/pc/rtc.c \
              hal/pc/power.c \
+             hal/pc/s5_decode.c \
              hal/pc/cpus.c \
              hal/pc/cpu_on.c \
              hal/pc/cpu_here.c \
@@ -2835,7 +2847,7 @@ serial: $(TARGET) $(DISK)
 # semihosting and a timeout.
 # The host half of the tests: every check that boots nothing. Seconds, and
 # run by `tools/gate.py` beside the machines rather than before them.
-host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
+host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HOSTDIR)/test_loaderfb $(HOSTDIR)/test_efiboot $(HOSTDIR)/test_pmmplace $(HOSTDIR)/test_apicdecode $(HOSTDIR)/test_smbiosdecode $(HOSTDIR)/test_usbdecode $(HOSTDIR)/test_backlightdecode $(HOSTDIR)/test_s5decode $(HOSTDIR)/test_storagedecode $(HOSTDIR)/test_fatdecode $(HOSTDIR)/fatls $(HOSTDIR)/test_drivesdecode $(HOSTDIR)/test_scan $(HOSTDIR)/test_imagesum $(HOSTDIR)/test_snesblit
 	@# No C outside `kosmos_lua_open` puts a name into every Lua state.
 	@# Doom's, Quake's and the Super Nintendo's kits did, and a global with
 	@# a program's name hides the program from the prompt: `snes --scale 3`
@@ -2892,6 +2904,7 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	$(HOSTDIR)/test_smbiosdecode
 	$(HOSTDIR)/test_usbdecode
 	$(HOSTDIR)/test_backlightdecode
+	$(HOSTDIR)/test_s5decode
 	$(HOSTDIR)/test_storagedecode
 	@# And FAT, the drives' filesystem, read from bytes the specification
 	@# describes and then from volumes mtools made.

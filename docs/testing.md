@@ -5633,3 +5633,62 @@ composing code that calls `strips.compose` is earlier in `wm.lua` than the
 table was, so there it read a global that does not exist - which would
 have failed the first time such a window was drawn. `tools/luaglobals.py`
 refused the build, and the table moved above its first user.
+
+## 18.102 ACPI mode, the power button, and S5
+
+**The machine is switched to ACPI mode at boot and its events become keys**
+(`thinkpad.md` 8c): the power button as `KEY_POWER`, and the ThinkPad's
+F5 and F6 - embedded-controller queries 14h and 15h - as brightness keys the
+window manager answers through `/dev/backlight`. Powering off writes the
+DSDT's `\_S5` sleep type to the FADT's PM1a control, where it wrote QEMU's.
+
+**`run_x86.py`'s check 2c** now holds q35 to the whole of it: the FADT
+facts, *switched to ACPI mode - 0x02 to port 0xb2*, the power button taken,
+nothing at 66h, and *S5 is sleep type 0 ... at 0x0604*.
+
+**`run_x86.py`'s `power_button` part, 6 checks, in `x86-core`**: the desktop
+boots, no press is heard before one is made, then QEMU's `system_powerdown`
+sets PWRBTN_STS - which QEMU does only with PWRBTN_EN set, as `ec.c` sets it
+- and the kernel must hear it, the window manager must say *the power button
+- shutting down*, and QEMU must exit, because S5 was entered.
+
+**`test_s5decode`, 13 checks on the host**: the T14's shape (BytePrefix 7)
+and q35's (ZeroOp), a root-named `\_S5_`, a two-byte PkgLength, a
+WordPrefix, a string and an `_S4_` that are not it; and refused - Ones, 8, a
+name reference, an empty package, one cut off by the table's end, none.
+**Why on the host**: QEMU's sleep type is 0, which is what the board wrote
+before it read one, so under QEMU a decoder that found nothing powers off
+exactly like one that works.
+
+**`test_backlightdecode`, 26 checks now**: the keys' levels on the T14's
+period - 80% reads as 205, every level from 16 to 256 reads back as it was
+set, 0 is raised to the floor, past 256 is the whole period, and a
+controller that is off or inconsistent gets no on-time.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| `KEY_POWER` never queued | power_button: *the kernel heard the power button and the window manager never took the key*, and *the machine is still running after the power button* |
+
+**The gate found a crash the new mount caused, in four suites at once.**
+`df`, `find` and `diagnose` ask every mount, and a mount with no protocol
+named is sent tables - so `/dev/backlight` was sent a `query` table, answered
+BACKLIGHT_ERR_BAD_OP, and the reply's first byte, 2, unpacked as `true`:
+*init:1715: attempt to index a boolean value (local 'reply')*, in
+`arm-shell`, `arm-interchange`, `x86-usb-1` and `x86-disk`. `/dev/audio`
+and `/dev/blocks` had been sent the same tables for months and survived only
+because their BAD_OP numbers unpack as `false` (1) and a string (5), which
+a caller reads as a failure. **Fixed as a class**: a C
+server's mount names its protocol (`audio`, `blocks`, `backlight`), and the
+namespace's `request` refuses a table to any protocol it does not route,
+with a sentence - what `ns.send` already did.
+
+**And the gate now refuses to start with an x86 part no suite runs**:
+`power_button` was in `run_x86.PARTS` and in no suite until it was read for.
+`uncovered_x86_parts` holds the suites to the list; with `power_button`
+taken out of `x86-core` it names it.
+
+**What QEMU cannot show**: the embedded controller. q35 has none, so the
+query path and the brightness keys are proved on the ThinkPad or not at
+all, which is why `ec.c` logs every query it gets, and the window manager
+every level it sets.
+

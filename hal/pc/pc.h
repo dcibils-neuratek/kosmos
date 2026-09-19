@@ -42,8 +42,14 @@ static inline uint8_t pc_in8(uint16_t port)
     return v;
 }
 
+static inline void pc_out16(uint16_t port, uint16_t value)
+{
+    __asm__ volatile ("outw %0, %1" :: "a"(value), "Nd"(port));
+}
+
 /* Sixteen bits at once, for a register that is sixteen wide - ACPI's PM1
- * control, whose width the specification gives rather than the chipset. */
+ * control and event registers, whose width the specification gives rather
+ * than the chipset. */
 static inline uint16_t pc_in16(uint16_t port)
 {
     uint16_t v;
