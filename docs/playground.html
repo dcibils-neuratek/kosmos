@@ -1,0 +1,250 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  How Kosmos's device playground should look, before any of it is built.
+  Diego, 19 September 2026: "it would be a system devices showcase app which
+  you will be able to interact with hardware, query it, see it in action
+  (like moving a controller pad or stick and seeing it moving on the
+  screen), or playing a sound and moving the balance or volume meter and
+  seeing how it changes the sound, and all other devices". The readings are
+  the ThinkPad's where they are known - its battery at 24% is stick
+  0.10.88's - and examples where they are not.
+-->
+<title>Kosmos Devices</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7; --ink: #1b2330; --muted: #5b6677; --rule: #dde2ea;
+    --accent: #2a55c9; --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --k-desk: #3d63b8; --k-tab: #f2c230; --k-tab-ink: #3a2e00;
+    --w-face: #d9d9d6; --w-light: #f4f4f2; --w-dark: #8a8a86; --w-ink: #1e1e1e;
+    --w-sunken: #ffffff; --w-accent: #2f5fb8; --w-good: #2e8b3e; --w-warn: #c9492f;
+    --w-code: #20242b; --w-code-ink: #d7dde6; --w-code-key: #f2c230; --w-code-str: #8fd18f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4; --rule: #283241; --accent: #85a8ff; --card: #171e28; }
+  }
+  :root[data-theme="dark"] { --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4; --rule: #283241; --accent: #85a8ff; --card: #171e28; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 980px; margin: 0 auto; padding: 44px 22px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  .desk { background: var(--k-desk); border-radius: 10px; padding: 26px 22px 30px; overflow-x: auto; margin-top: 20px; }
+  .tab { display: inline-flex; align-items: center; gap: 8px; background: var(--k-tab); color: var(--k-tab-ink); font: 500 13px/1.35 var(--mono); padding: 4px 12px 3px 8px; border: 1px solid #b08a10; border-bottom: 0; }
+  .tab .box { width: 12px; height: 12px; border: 1px solid #7a6008; background: #f7dc7a; }
+
+  .win { width: 900px; background: var(--w-face); color: var(--w-ink); border: 2px solid var(--k-tab); font: 13px/1.4 var(--mono); display: grid; grid-template-columns: 190px 1fr; min-height: 470px; }
+  .side { background: var(--w-sunken); border-right: 1px solid var(--w-dark); padding: 8px 0; }
+  .side div { padding: 4px 12px; display: flex; justify-content: space-between; gap: 8px; }
+  .side div small { color: #777; }
+  .side .on { background: var(--w-accent); color: #fff; }
+  .side .on small { color: #dfe7f7; }
+  .side .gone { color: #999; }
+  .page { padding: 14px 18px; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; }
+  .page h3 { font: 600 15px var(--mono); margin: 0; }
+  .page .says { color: #555; font-size: 12px; }
+  .live { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: center; }
+  .readings div { display: flex; justify-content: space-between; border-bottom: 1px solid #c8c8c4; padding: 3px 0; font-variant-numeric: tabular-nums; }
+  .readings b { font-weight: 500; }
+  .code { background: var(--w-code); color: var(--w-code-ink); padding: 10px 12px; font: 12px/1.5 var(--mono); white-space: pre; overflow-x: auto; border: 1px solid #000; }
+  .code .k { color: var(--w-code-key); } .code .s { color: var(--w-code-str); } .code .c { color: #7f8897; }
+
+  /* the battery */
+  .cell { width: 220px; height: 90px; border: 3px solid var(--w-ink); border-radius: 8px; position: relative; padding: 5px; margin: 8px auto; }
+  .cell:after { content: ""; position: absolute; right: -13px; top: 28px; width: 8px; height: 28px; background: var(--w-ink); border-radius: 0 3px 3px 0; }
+  .cell i { display: block; height: 100%; width: 24%; background: var(--w-warn); border-radius: 3px; }
+  .big { text-align: center; font: 600 28px var(--mono); }
+
+  /* the pad */
+  .pad { width: 300px; height: 150px; margin: 6px auto; background: #c9c9cc; border-radius: 70px; position: relative; border: 2px solid #8a8a8e; }
+  .dpad { position: absolute; left: 44px; top: 42px; width: 66px; height: 66px; }
+  .dpad i { position: absolute; background: #2a2a2e; }
+  .dpad .h { left: 0; top: 22px; width: 66px; height: 22px; } .dpad .v { left: 22px; top: 0; width: 22px; height: 66px; }
+  .dpad .lit { background: var(--k-tab); }
+  .face { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: #5a3d8a; color: #fff; font: 11px var(--mono); display: grid; place-items: center; }
+  .face.lit { background: var(--k-tab); color: #3a2e00; box-shadow: 0 0 0 3px rgba(242,194,48,.4); }
+  .stick { position: absolute; left: 132px; top: 88px; width: 40px; height: 40px; border-radius: 50%; border: 2px dashed #777; }
+  .stick b { position: absolute; left: 20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--w-accent); }
+
+  /* the sound */
+  .meters { display: flex; gap: 10px; align-items: flex-end; height: 110px; justify-content: center; }
+  .meters div { width: 26px; background: #fff; border: 1px solid var(--w-dark); height: 100%; position: relative; }
+  .meters div i { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--w-good), #9bd14c 70%, var(--k-tab)); }
+  .slider { display: grid; grid-template-columns: 70px 1fr 48px; align-items: center; gap: 8px; margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .slider .rail { height: 6px; background: #fff; border: 1px solid var(--w-dark); position: relative; }
+  .slider .rail b { position: absolute; top: -6px; width: 12px; height: 16px; background: var(--w-face); border: 1px solid var(--w-dark); box-shadow: inset 1px 1px 0 var(--w-light); }
+  .btnrow { display: flex; gap: 8px; margin-top: 8px; }
+  .btn { padding: 3px 12px; background: var(--w-face); border: 1px solid var(--w-dark); box-shadow: inset 1px 1px 0 var(--w-light); }
+  .btn.on { background: var(--w-accent); color: #fff; }
+
+  .pages { display: grid; gap: 26px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 600 13px var(--body); color: var(--muted); }
+  td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+  .wrap { overflow-x: auto; }
+  ol.ask { padding-left: 22px; } ol.ask li { margin-bottom: 10px; max-width: 70ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Devices</h1>
+  <p class="lede">One window with a page for every device this machine has: what it says right now, something to do with it, and the few lines of Lua that reach it. The page is the demonstration and the code is the lesson.</p>
+  <p class="note">A drawing, not a program. Diego's idea, 19 September: "a device playground app to interact with recognized hardware". Only devices the machine really has are listed - on QEMU there is no battery page, and a pad appears when one is plugged in.</p>
+
+  <h2>Three of its pages</h2>
+  <div class="pages">
+
+  <div class="desk">
+    <div class="tab"><span class="box"></span>Devices</div>
+    <div class="win">
+      <div class="side">
+        <div class="on">Battery <small>24%</small></div>
+        <div>Game pad <small>SN30 Pro</small></div>
+        <div>Sound <small>HDA</small></div>
+        <div>Brightness <small>80%</small></div>
+        <div>Keyboard <small>i8042</small></div>
+        <div>Pointer <small>TrackPoint</small></div>
+        <div>Screen <small>1920x1080</small></div>
+        <div>Processors <small>8</small></div>
+        <div>Memory <small>767 MB</small></div>
+        <div>Disks <small>NVMe, USB</small></div>
+        <div>Network <small>no driver</small></div>
+      </div>
+      <div class="page">
+        <div><h3>Battery</h3><div class="says">The ThinkPad's embedded controller, read by the kernel every thirty seconds</div></div>
+        <div class="live">
+          <div><div class="cell"><i></i></div><div class="big">24%</div></div>
+          <div class="readings">
+            <div><span>state</span><b>discharging</b></div>
+            <div><span>on the charger</span><b>no</b></div>
+            <div><span>critical</span><b>no</b></div>
+            <div><span>read</span><b>12 s ago</b></div>
+            <div><span>from</span><b>EC 38h, A0h, A2h</b></div>
+          </div>
+        </div>
+<div class="code"><span class="k">local</span> b = fs.read(<span class="s">"/dev/battery"</span>)
+print(b.percent .. <span class="s">"%"</span>, b.state, b.on_ac == 1 <span class="k">and</span> <span class="s">"plugged in"</span> <span class="k">or</span> <span class="s">""</span>)
+<span class="c">-- 24%  discharging</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="desk">
+    <div class="tab"><span class="box"></span>Devices</div>
+    <div class="win">
+      <div class="side">
+        <div>Battery <small>24%</small></div>
+        <div class="on">Game pad <small>SN30 Pro</small></div>
+        <div>Sound <small>HDA</small></div>
+        <div>Brightness <small>80%</small></div>
+        <div>Keyboard <small>i8042</small></div>
+        <div>Pointer <small>TrackPoint</small></div>
+        <div>Screen <small>1920x1080</small></div>
+        <div>Processors <small>8</small></div>
+      </div>
+      <div class="page">
+        <div><h3>Game pad</h3><div class="says">045e:028e, an Xbox 360 pad in X-input mode - press anything, it lights</div></div>
+        <div class="live">
+          <div class="pad">
+            <div class="dpad"><i class="h"></i><i class="v lit"></i></div>
+            <span class="face" style="left:218px;top:30px">X</span>
+            <span class="face" style="left:190px;top:58px">Y</span>
+            <span class="face lit" style="left:246px;top:58px">A</span>
+            <span class="face" style="left:218px;top:86px">B</span>
+            <div class="stick"><b></b></div>
+          </div>
+          <div class="readings">
+            <div><span>held</span><b>up, east</b></div>
+            <div><span>left stick</span><b>0, +21 504</b></div>
+            <div><span>triggers</span><b>0, 0</b></div>
+            <div><span>last</span><b>BTN_EAST down</b></div>
+            <div><span>reports</span><b>1 214</b></div>
+          </div>
+        </div>
+<div class="code"><span class="k">for</span> _, ev <span class="k">in</span> ipairs(reply.events) <span class="k">do</span>
+  <span class="k">if</span> ev.type == <span class="s">"rawkey"</span> <span class="k">and</span> ev.code >= 0x130 <span class="k">then</span>
+    print(PAD[ev.code], ev.down <span class="k">and</span> <span class="s">"down"</span> <span class="k">or</span> <span class="s">"up"</span>)
+  <span class="k">end</span>
+<span class="k">end</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="desk">
+    <div class="tab"><span class="box"></span>Devices</div>
+    <div class="win">
+      <div class="side">
+        <div>Battery <small>24%</small></div>
+        <div>Game pad <small>SN30 Pro</small></div>
+        <div class="on">Sound <small>HDA</small></div>
+        <div>Brightness <small>80%</small></div>
+        <div>Keyboard <small>i8042</small></div>
+        <div>Pointer <small>TrackPoint</small></div>
+      </div>
+      <div class="page">
+        <div><h3>Sound</h3><div class="says">Intel HDA, Realtek ALC257 - 44100 Hz stereo, 5 ms periods</div></div>
+        <div class="live">
+          <div class="meters"><div><i style="height:62%"></i></div><div><i style="height:38%"></i></div></div>
+          <div>
+            <div class="slider"><span>tone</span><div class="rail"><b style="left:42%"></b></div><span>440 Hz</span></div>
+            <div class="slider"><span>volume</span><div class="rail"><b style="left:70%"></b></div><span>70%</span></div>
+            <div class="slider"><span>balance</span><div class="rail"><b style="left:35%"></b></div><span>L 30</span></div>
+            <div class="btnrow"><span class="btn on">Playing</span><span class="btn">Sine</span><span class="btn">Square</span><span class="btn">Noise</span></div>
+          </div>
+        </div>
+<div class="code"><span class="k">local</span> audio = use(<span class="s">"/lib/audio.lua"</span>)
+<span class="k">local</span> s = audio.open(<span class="s">"Devices"</span>)
+audio.set{ stream = s.stream, gain = 180, balance = -30 }
+s:play(tone(440))  <span class="c">-- the meters are the server's own peaks</span></div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+  <p class="note">The left meter moves further than the right because the balance is to the left: the page shows the change it makes, which is the point Diego named - "moving the balance or volume meter and seeing how it changes the sound".</p>
+
+  <h2>Every page</h2>
+  <div class="wrap">
+  <table>
+    <tr><th>Page</th><th>What it shows</th><th>What you do</th></tr>
+    <tr><td>Battery</td><td>charge, state, the charger</td><td>plug and unplug, and watch it change</td></tr>
+    <tr><td>Game pad</td><td>the pad drawn, each button lit as it is pressed, the sticks where they are</td><td>press and push</td></tr>
+    <tr><td>Sound</td><td>the level meters, the device's format</td><td>a tone, its pitch, the volume and the balance</td></tr>
+    <tr><td>Brightness</td><td>the backlight's level, the controller's own numbers</td><td>a slider, and F5 and F6</td></tr>
+    <tr><td>Keyboard</td><td>each key's code as it goes down and up</td><td>type</td></tr>
+    <tr><td>Pointer</td><td>where it is, the buttons, how fast</td><td>move and click; set the speed</td></tr>
+    <tr><td>Screen</td><td>size, pitch, where the pixels come from</td><td>a test pattern, full screen</td></tr>
+    <tr><td>Processors</td><td>each core's load, the counter</td><td>a busy loop on one core, to watch it climb</td></tr>
+    <tr><td>Memory</td><td>pages in use, the kernel's pools</td><td>allocate and give back</td></tr>
+    <tr><td>Disks</td><td>the NVMe and the sticks, their blocks</td><td>a read speed test, as Disk Benchmark does</td></tr>
+    <tr><td>Network</td><td>the card, its address, a ping</td><td>ping a host</td></tr>
+  </table>
+  </div>
+
+  <h2>For Diego</h2>
+  <ol class="ask">
+    <li><b>One window with a page each</b>, as drawn - or a small app per device, each opened from a folder?</li>
+    <li><b>The code under each page</b>: always shown, as drawn, or behind a "Show the code" button?</li>
+    <li><b>Which pages first</b>? Proposed: battery, game pad and sound, since those are the three you named.</li>
+    <li><b>Its name</b>: Devices, Hardware, or Playground?</li>
+  </ol>
+</main>
+</body>
+</html>

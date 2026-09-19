@@ -1,0 +1,172 @@
+<!-- Kosmos. Copyright (c) 2026 Diego Cibils. MIT; see LICENSE. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  How Kosmos's video player should look, before any of it is built: asked
+  for by Diego on 19 September 2026 - "add a video player with mp4 support
+  ... using the current mp4 video in the home folder for testing" - and
+  drawn from Music (docs/music.html), whose engine and whose look it shares.
+  The film on it is his test clip, magicword-clip.mp4, and every fact about
+  it below is what mp4.lua read from the file.
+-->
+<title>Kosmos Video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f3f4f7;
+    --ink: #1b2330;
+    --muted: #5b6677;
+    --rule: #dde2ea;
+    --accent: #2a55c9;
+    --card: #ffffff;
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+    --k-desk: #3d63b8;
+    --k-tab: #f2c230;
+    --k-tab-ink: #3a2e00;
+
+    --p-ground: #1c1c1e;
+    --p-panel: #2a2a2d;
+    --p-raised: #38383c;
+    --p-line: #3f3f44;
+    --p-ink: #ececec;
+    --p-dim: #9a9aa0;
+    --p-faint: #6d6d73;
+    --p-accent: #f28a2e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+      --rule: #283241; --accent: #85a8ff; --card: #171e28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f141b; --ink: #e6edf3; --muted: #97a3b4;
+    --rule: #283241; --accent: #85a8ff; --card: #171e28;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body); }
+  main { max-width: 940px; margin: 0 auto; padding: 44px 22px 72px; }
+  h1 { font: 600 clamp(30px, 5vw, 42px)/1.1 var(--display); margin: 0 0 12px; text-wrap: balance; }
+  h2 { font: 600 24px/1.2 var(--display); margin: 52px 0 10px; text-wrap: balance; }
+  p { margin: 0 0 12px; max-width: 66ch; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 62ch; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 72ch; }
+  code { font: 0.88em var(--mono); background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 4px; }
+
+  .desk { background: var(--k-desk); border-radius: 10px; padding: 26px 22px 30px; overflow-x: auto; margin-top: 20px; }
+  .tab { display: inline-flex; align-items: center; gap: 8px; background: var(--k-tab); color: var(--k-tab-ink); font: 500 13px/1.35 var(--mono); padding: 4px 12px 3px 8px; border: 1px solid #b08a10; border-bottom: 0; }
+  .tab .box { width: 12px; height: 12px; border: 1px solid #7a6008; background: #f7dc7a; }
+
+  .player { width: 660px; background: var(--p-ground); color: var(--p-ink); border: 1px solid #111; box-shadow: 3px 3px 0 rgba(0,0,0,.3); font: 13px/1.35 var(--body); }
+  .menubar { display: flex; gap: 18px; padding: 4px 10px; background: linear-gradient(#e9e9e6, #cfcfcb); color: #1e1e1e; font: 13px var(--mono); border-bottom: 1px solid #888; }
+  .screen { position: relative; width: 640px; height: 360px; margin: 10px; background:
+      radial-gradient(ellipse at 30% 40%, #3a5f8a 0%, transparent 55%),
+      radial-gradient(ellipse at 72% 62%, #8a4a2a 0%, transparent 50%),
+      linear-gradient(160deg, #10151d, #1d2633 60%, #0c1016); overflow: hidden; }
+  .screen .ghost { position: absolute; inset: auto 16px 14px auto; font: 12px var(--mono); color: rgba(255,255,255,.55); }
+  .screen .big { position: absolute; inset: 0; display: grid; place-items: center; }
+  .screen .big span { width: 76px; height: 76px; border-radius: 50%; background: rgba(0,0,0,.45); display: grid; place-items: center; }
+  .tri { width: 0; height: 0; border-left: 24px solid #fff; border-top: 15px solid transparent; border-bottom: 15px solid transparent; margin-left: 6px; }
+  .transport { display: flex; align-items: center; gap: 14px; padding: 4px 16px 14px; }
+  .btn { width: 30px; height: 30px; display: grid; place-items: center; color: var(--p-ink); }
+  .pause { display: flex; gap: 5px; } .pause i { width: 5px; height: 16px; background: var(--p-ink); display: block; }
+  .scrub { flex: 1; display: flex; align-items: center; gap: 10px; font: 12px var(--mono); color: var(--p-dim); font-variant-numeric: tabular-nums; }
+  .rail { flex: 1; height: 4px; background: var(--p-line); border-radius: 2px; position: relative; }
+  .rail .done { position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: var(--p-accent); border-radius: 2px; }
+  .rail .knob { position: absolute; left: 34%; top: -5px; width: 14px; height: 14px; margin-left: -7px; background: #f2f2f2; border-radius: 50%; }
+  .vol { display: flex; align-items: center; gap: 6px; color: var(--p-dim); font: 12px var(--mono); }
+  .vol .rail { width: 70px; flex: none; } .vol .rail .done { width: 70%; background: var(--p-ink); }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 8px 16px 12px; border-top: 1px solid var(--p-line); color: var(--p-dim); font: 12px var(--mono); }
+  .facts b { color: var(--p-ink); font-weight: 500; }
+
+  .states { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 18px; }
+  .state { background: var(--p-ground); color: var(--p-ink); border: 1px solid #111; padding: 0 0 12px; font: 13px/1.4 var(--body); }
+  .state .mini { height: 140px; margin: 10px; display: grid; place-items: center; text-align: center; padding: 12px; font: 12px/1.5 var(--mono); color: var(--p-dim); background: #0e1116; }
+  .state .cap { padding: 0 12px; font-size: 12px; color: var(--p-dim); }
+  .state .cap b { color: var(--p-ink); }
+  .bar { width: 70%; height: 4px; background: var(--p-line); margin: 10px auto 0; position: relative; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 45%; background: var(--p-accent); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 600 13px var(--body); color: var(--muted); }
+  td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+  .wrap { overflow-x: auto; }
+  ol.ask { padding-left: 22px; } ol.ask li { margin-bottom: 10px; max-width: 70ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Video</h1>
+  <p class="lede">A window that plays an MP4: H.264 pictures and AAC sound, from a file in <code>/home</code> or on a stick. Music's sibling - the same dark player, the same engine underneath, the same keys.</p>
+  <p class="note">A drawing, not a program: nothing here is built yet except the part that reads the file's index, <code>mp4.lua</code>, which read the facts below from Diego's clip. The pictures come from a decoder not chosen yet - FFmpeg's H.264 and AAC decoders are proposed (<code>roadmap.md</code> 4e).</p>
+
+  <h2>Playing</h2>
+  <div class="desk">
+    <div class="tab"><span class="box"></span>magicword-clip</div>
+    <div class="player">
+      <div class="menubar"><span>File</span><span>View</span><span>Play</span></div>
+      <div class="screen"><span class="ghost">frame 247 of 727</span></div>
+      <div class="transport">
+        <span class="btn" title="Back ten seconds">&#8634;</span>
+        <span class="btn pause" title="Pause"><i></i><i></i></span>
+        <span class="btn" title="On ten seconds">&#8635;</span>
+        <div class="scrub"><span>0:08</span><div class="rail"><div class="done"></div><div class="knob"></div></div><span>0:24</span></div>
+        <div class="vol">vol <div class="rail"><div class="done"></div></div></div>
+      </div>
+      <div class="facts">
+        <span><b>H.264</b> Main 3.0</span><span><b>640 x 360</b> at 29.97</span><span><b>AAC-LC</b> 44.1 kHz stereo</span><span>727 frames, 5 of them keyframes</span>
+      </div>
+    </div>
+  </div>
+  <p class="note">The picture at its own size, 640 by 360, with the controls under it rather than over it - the film is never covered. The menu bar is the window manager's, drawn above a window that draws its own pixels, as the Super Nintendo's is. The window's tab says the film's name.</p>
+
+  <h2>Its states</h2>
+  <div class="states">
+    <div class="state"><div class="mini"><div>Opening magicword-clip.mp4<div class="bar"><i></i></div></div></div><div class="cap"><b>Opening</b> - the index read, the first keyframe decoding. For a film this size, a moment.</div></div>
+    <div class="state"><div class="mini"><span class="big" style="position:static"><span><div class="tri"></div></span></span></div><div class="cap"><b>Paused</b> - the frame stays, a play mark over it. Space, or the button, or a click on the picture.</div></div>
+    <div class="state"><div class="mini">This film's pictures are H.265.<br>Kosmos plays H.264 and AAC.<br><br>its sound plays alone</div><div class="cap"><b>Cannot play</b> - said in the window, with what it is and what would play. Never a black rectangle with nothing to say.</div></div>
+    <div class="state"><div class="mini">nothing open<br><br>File &gt; Open, or drop a film<br>on the window</div><div class="cap"><b>Empty</b> - opened with no film, as the Super Nintendo's Open ROM... is reached.</div></div>
+  </div>
+
+  <h2>The menus and the keys</h2>
+  <div class="wrap">
+  <table>
+    <tr><th>Where</th><th>What</th><th>Key</th></tr>
+    <tr><td>File</td><td>Open... - the Open window, filtered to films; Quit</td><td>Super+O, Super+Q</td></tr>
+    <tr><td>View</td><td>Actual Size; Double Size; Fit to the Screen</td><td>1, 2, F</td></tr>
+    <tr><td>Play</td><td>Play or Pause; Back 10 s; On 10 s; Louder; Quieter; Mute</td><td>Space, Left, Right, Up, Down, M</td></tr>
+    <tr><td>A game pad</td><td>the bottom button plays or pauses; the D-pad seeks and sets the volume</td><td>as the keys</td></tr>
+  </table>
+  </div>
+
+  <h2>What it is made of</h2>
+  <div class="wrap">
+  <table>
+    <tr><th>Piece</th><th>What it does</th><th>Where it stands</th></tr>
+    <tr><td>mp4.lua</td><td>Reads the index: tracks, the H.264 and AAC set-up, where every frame is and when it is shown</td><td>built, 26 checks on the host, Diego's clip among them</td></tr>
+    <tr><td>the decoders</td><td>H.264 pictures and AAC sound, in C, over regions - no frame ever a Lua string</td><td>proposed: FFmpeg's, H.264 and AAC only, LGPL, in the FULL image</td></tr>
+    <tr><td>the clock</td><td>The sound device keeps time and pictures follow it, as the Super Nintendo does</td><td>Music's engine, shared</td></tr>
+    <tr><td>the window</td><td>This drawing</td><td>after Diego changes it</td></tr>
+  </table>
+  </div>
+
+  <h2>For Diego</h2>
+  <ol class="ask">
+    <li><b>Controls under the picture, or over it and fading?</b> Under is drawn: the film is never covered, and nothing has to fade.</li>
+    <li><b>Double Size</b> like the Super Nintendo's - or <b>Fit to the Screen</b> as well, which scales smoothly rather than by whole pixels?</li>
+    <li><b>Where it starts</b>: opened from Tracker by double-clicking a film, from the Deskbar with an Open window first, or both?</li>
+    <li><b>The decoders</b>: FFmpeg's, as proposed - or something smaller that plays only simpler films? Diego's clip needs H.264 Main, which rules out the small ones.</li>
+  </ol>
+</main>
+</body>
+</html>
