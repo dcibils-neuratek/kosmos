@@ -758,6 +758,31 @@ processors, and still what follows USB:
    first boot on the ThinkPad is the proof - with 0.10.87 to fall back to.
    Diego's images and videos come from a folder on the Mac that the image
    build copies into `/home`, and never from the repository.
+4e. **ASKED FOR on 19 September - a video player that plays MP4.** Diego:
+   "add a video player with mp4 support for todays roadmap using the current
+   mp4 video in the home folder for testing". The clip, `magicword-clip.mp4`,
+   is **H.264 Main profile** (level 3.0, with B-frames), 640x360, 24 s, and
+   **AAC-LC** stereo at 44.1 kHz - so the small Baseline-only decoders
+   (h264bsd, OpenH264's) cannot play it, nor most phone video. Three pieces:
+   - **The container**, ours: an MP4 reader - `moov`, the sample tables,
+     `avcC` and `esds` - host-tested on the clip. **Started today.**
+   - **The decoders**: proposed, **FFmpeg's `libavcodec`, H.264 and AAC
+     only**, ported as Doom, Quake and LakeSnes were - LGPL-2.1+, so in the
+     FULL image (a GPLv2 work already) and out of the MIT one. Diego's
+     answer awaited.
+   - **The app**, drawn first as every app is: `docs/video.html`.
+   Several days, not one.
+4f. **ASKED FOR on 19 September - LÖVE.** Diego: "vendor in love2d
+   https://github.com/love2d/love as we will be doing some apps that require
+   love2d lua framework for graphics, audio and else". **LÖVE itself cannot
+   be vendored to run here**: it is C++ over SDL2, OpenGL, OpenAL and LuaJIT
+   (Lua 5.1), and Kosmos has none of them, not even a C++ runtime. Proposed
+   instead, **a LÖVE-compatible kit**: `love.graphics`, `love.audio`,
+   `love.keyboard`, `love.mouse`, `love.timer` and the callbacks -
+   `love.load`, `love.update`, `love.draw`, `love.keypressed` - over
+   Kosmos's own surfaces and audio server, so a game's `main.lua` runs as it
+   is. LÖVE is zlib-licensed, so its documentation and tests can be used to
+   hold the kit to the real API. Diego's answer awaited.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
