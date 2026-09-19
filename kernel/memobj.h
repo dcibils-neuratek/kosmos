@@ -85,25 +85,27 @@
  */
 
 /*
- * The largest region, in pages: 32 MB.
+ * **The largest region, which is the machine's answer rather than a number.**
  *
  * It was 16 MB, "a double-buffered full screen", and the first thing bigger
- * than a screen that had to be one region was a game's data. Quake's
+ * than a screen that had to be one region was a game's data: Quake's
  * shareware `pak0.pak` is 18.3 MB, read into a region because it cannot be a
- * Lua value, and at 4563 pages it was refused as "no room".
+ * Lua value, and at 4563 pages it was refused as "no room". Then 32 MB, which
+ * is where the sixteen index pointers a descriptor carried ran out.
  *
- * What bounds a process is `USER_MAP_PAGES_MAX` - 48 MB of mappings in all,
- * and more for the one holding the screen - so a region's cap only has to sit
- * under that. Doubling it costs every
- * descriptor eight more index pointers, 16 KB of .bss across the pool, and no
- * pages at all until a region that large exists.
+ * Now a descriptor carries **one directory page**, itself a page of pointers
+ * to index pages, so the pages a region can hold is 512 index pages of 512
+ * pages each: a gigabyte. `memobj_pages_max` is that, or half the machine's
+ * memory if that is less - a region larger than half of RAM is a request no
+ * machine can serve and a number no caller should have to know.
+ *
+ * A descriptor is smaller for it: one pointer where there were sixteen.
  */
-#define MEMOBJ_PAGES_MAX  8192
+size_t memobj_pages_max(void);
 
-/* A page of pointers, and how many such pages the largest region needs. */
+/* A page of pointers: index pages hold this many pages, and the directory
+ * holds this many index pages. */
 #define MEMOBJ_PER_INDEX  (PAGE_SIZE / sizeof(void *))
-#define MEMOBJ_INDEXES    ((MEMOBJ_PAGES_MAX + MEMOBJ_PER_INDEX - 1) \
-                           / MEMOBJ_PER_INDEX)
 
 struct memobj {
     bool     in_use;
@@ -111,13 +113,14 @@ struct memobj {
     unsigned refs;                  /* how many capability slots hold it */
 
     /*
-     * The pages, indexed rather than contiguous. `index[k]` is a page from
-     * the allocator holding up to 512 page pointers; page `i` of the region
-     * is `index[i / 512][i % 512]`. Use `memobj_page` rather than reaching
-     * in, so the arithmetic lives in one place.
+     * The pages, indexed rather than contiguous, through a directory:
+     * `dir` is a page from the allocator holding up to 512 pointers to index
+     * pages, each of which holds up to 512 page pointers - so page `i` of the
+     * region is `dir[i / 512][i % 512]`. Use `memobj_page` rather than
+     * reaching in, so the arithmetic lives in one place.
      */
-    void   **index[MEMOBJ_INDEXES];
-    size_t   indexes;               /* how many of the above are in use */
+    void  ***dir;
+    size_t   indexes;               /* index pages in use, under `dir` */
     size_t   pages;
 
     /*

@@ -257,3 +257,50 @@ size_t pmm_total_pages(void)
 {
     return total;
 }
+
+/*
+ * **The reserve: memory a program may not take.**
+ *
+ * Every per-process cap on memory has gone (`threads.md` step 1b): a program
+ * may map as much as the machine has, because a number chosen in advance is
+ * wrong on every machine but the one it was chosen for. What stops the last
+ * page going to a runaway is this instead - a slice at the bottom that only
+ * the kernel's own allocations may reach: a thread's stacks, page tables, a
+ * pool's slab, and a process being started, which is how somebody opens
+ * Processes to end the runaway.
+ *
+ * A thirty-second of memory, between 8 MB and 256 MB: 16 MB on this 512 MB
+ * board, which is five processes' worth, and 256 MB on a 16 GB machine.
+ */
+size_t pmm_reserve_pages(void)
+{
+    size_t pages = total / 32u;
+    size_t least = (8u * 1024u * 1024u) / PAGE_SIZE;
+    size_t most = (256u * 1024u * 1024u) / PAGE_SIZE;
+
+    if (pages < least) {
+        pages = least;
+    }
+
+    if (pages > most) {
+        pages = most;
+    }
+
+    return pages;
+}
+
+/*
+ * Whether `pages` can be given to a program without eating the reserve.
+ *
+ * Asked before the allocation rather than enforced inside it, so that a
+ * refusal is one clean answer at the syscall instead of a request half
+ * served. Two callers at once can both be told yes and both allocate, which
+ * takes the reserve a little below where it was meant to be; the slack is
+ * megabytes and the alternative is a lock around every page.
+ */
+bool pmm_room_for_user(size_t pages)
+{
+    size_t reserve = pmm_reserve_pages();
+
+    return freecount > reserve && freecount - reserve >= pages;
+}

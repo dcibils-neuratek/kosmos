@@ -2,6 +2,7 @@
 #ifndef KERNEL_PMM_H
 #define KERNEL_PMM_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -47,6 +48,12 @@ void pmm_free_page(void *page);
  * bitmap itself. */
 size_t pmm_free_pages(void);
 size_t pmm_total_pages(void);
+
+/* The pages at the bottom that only the kernel's own allocations may reach,
+ * and whether a program may be given this many without eating them. See
+ * `pmm.c`: this is what replaced every per-process cap on memory. */
+size_t pmm_reserve_pages(void);
+bool   pmm_room_for_user(size_t pages);
 
 /* Where the memory this allocator owns begins. On a PC that is wherever
  * the firmware left the largest usable block, not a constant. */

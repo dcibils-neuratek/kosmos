@@ -3934,7 +3934,48 @@ static bool test_memobj_holds_a_pak(void)
 
     return reached
         && pmm_free_pages() == before
-        && memobj_create(MEMOBJ_PAGES_MAX + 1, false) == NULL;
+        && memobj_create(memobj_pages_max() + 1, false) == NULL;
+}
+
+/*
+ * **A region past the 32 MB a descriptor's sixteen index pointers allowed**
+ * (`threads.md` step 1b), and the two refusals that still hold.
+ *
+ * 40 MB - ten thousand pages, more than the old cap and more than Quake's
+ * pak - made, reached at its last page, and given back whole. Then the
+ * ceiling, which is a gigabyte or half of memory: one page over is refused.
+ * Then the reserve: everything the machine has is refused as well, because a
+ * program may not take the pages the kernel needs to start the process that
+ * would end it.
+ */
+static bool test_a_region_larger_than_the_old_cap(void)
+{
+    enum { BIG_PAGES = 10240 };         /* 40 MB */
+    size_t before = pmm_free_pages();
+    struct memobj *m;
+    bool reached;
+
+    if (!pmm_room_for_user(BIG_PAGES + 32)) {
+        return true;                    /* this machine is too small to say */
+    }
+
+    m = memobj_create(BIG_PAGES, false);
+
+    if (m == NULL) {
+        return false;
+    }
+
+    reached = memobj_page(m, BIG_PAGES - 1) != NULL
+           && memobj_page(m, BIG_PAGES) == NULL;
+
+    memobj_unref(m);
+
+    return reached
+        && pmm_free_pages() == before
+        && memobj_pages_max() > 8192
+        && memobj_create(memobj_pages_max() + 1, false) == NULL
+        && memobj_create(pmm_free_pages(), false) == NULL
+        && pmm_reserve_pages() >= (8u * 1024u * 1024u) / PAGE_SIZE;
 }
 
 /*
@@ -8003,6 +8044,7 @@ static const struct test tests[] = {
     { "app: a dead holder's name is taken back", test_registry_takes_back_dead_names },
     { "con: a write carries no capability",    test_console_write_carries_no_capability },
     { "mem: a shared region is freed once",     test_shared_memory_is_freed_once },
+    { "mem: a region larger than the old cap",  test_a_region_larger_than_the_old_cap },
     { "mem: a region's count holds on every core", test_a_regions_count_holds_on_every_core },
     { "mem: a reference is taken only for the region it names", test_a_reference_is_taken_only_for_the_region_it_names },
     { "proc: a refused image gives its slot back", test_a_refused_image_gives_its_slot_back },

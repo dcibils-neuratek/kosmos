@@ -6105,3 +6105,31 @@ most".
   `__aarch64_ldadd4_acq_rel`. A plain load with acquire and a store with
   release, which `pool.c` uses, are single instructions; anything that reads,
   changes and writes back is not, here, and takes a lock or a flag apiece.
+
+## 18.116 A region as large as the machine allows, and the reserve
+
+**`threads.md` step 1b, the sizes rather than the counts.**
+
+**A region was 32 MB** because a descriptor carried sixteen index pointers,
+each naming a page of 512 page pointers. It carries **one directory page**
+now - 512 index pages, 512 pages each - so a region may be a gigabyte, or
+half of memory when that is less (`memobj_pages_max`). The descriptor is
+smaller for it: one pointer where there were sixteen.
+
+**A process could map 48 MB**, plus twelve screens' worth for whoever held
+the screen. Both numbers are gone. What bounds a mapping is the window's own
+size and **the reserve**: `pmm_room_for_user` refuses to give a program the
+last thirty-second of memory - between 8 MB and 256 MB, so 16 MB on the 512
+MB board - which is what the kernel needs for a thread's stacks, a pool's
+slab, page tables, and starting the process that would end a runaway.
+
+- **`mem: a region larger than the old cap`**, both boards: a 40 MB region
+  made, reached at its last page and given back whole; a region one page
+  over the ceiling refused; everything the machine has left refused, because
+  of the reserve. Controls, watched: with the ceiling back at 32 MB it
+  fails, and with the reserve switched off it fails.
+- **A Lua check that had stopped meaning anything**: `gfx.surface{4096,
+  4096}` - 64 MB - was expected to fail, and it failed because of the 48 MB
+  cap. With the cap gone, 64 MB is an ordinary surface on a 512 MB board.
+  It asks for 65536 square, 16 GB, which no machine here can serve; the
+  check was always that a refusal is clean rather than a fault.

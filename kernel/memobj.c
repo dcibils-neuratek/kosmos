@@ -25,6 +25,19 @@
 
 static struct pool objects;
 
+/*
+ * The largest region this machine will make: a gigabyte, which is what a
+ * directory page of index pages can hold, or half of memory when that is
+ * less. `memobj.h` is the argument.
+ */
+size_t memobj_pages_max(void)
+{
+    size_t addressable = MEMOBJ_PER_INDEX * MEMOBJ_PER_INDEX;
+    size_t half = pmm_total_pages() / 2;
+
+    return half < addressable ? half : addressable;
+}
+
 static struct memobj *object_at(unsigned i)
 {
     return pool_at(&objects, i);
@@ -52,7 +65,7 @@ void *memobj_page(const struct memobj *m, size_t i)
         return NULL;
     }
 
-    return m->index[i / MEMOBJ_PER_INDEX][i % MEMOBJ_PER_INDEX];
+    return m->dir[i / MEMOBJ_PER_INDEX][i % MEMOBJ_PER_INDEX];
 }
 
 /*
@@ -69,8 +82,13 @@ static void unwind(struct memobj *m, size_t built)
     }
 
     for (i = 0; i < m->indexes; i++) {
-        pmm_free_page(m->index[i]);
-        m->index[i] = NULL;
+        pmm_free_page(m->dir[i]);
+        m->dir[i] = NULL;
+    }
+
+    if (m->dir != NULL) {
+        pmm_free_page(m->dir);
+        m->dir = NULL;
     }
 
     m->indexes = 0;
@@ -109,7 +127,13 @@ struct memobj *memobj_create(size_t pages, bool contiguous)
 {
     unsigned i;
 
-    if (pages == 0 || pages > MEMOBJ_PAGES_MAX) {
+    if (pages == 0 || pages > memobj_pages_max()) {
+        return NULL;
+    }
+
+    /* The pages themselves and the index pages above them, against the
+     * reserve the kernel keeps for its own allocations (`pmm.c`). */
+    if (!pmm_room_for_user(pages + pages / MEMOBJ_PER_INDEX + 2)) {
         return NULL;
     }
 
@@ -145,11 +169,19 @@ again:
         m->pages = pages;
         m->indexes = 0;
         m->contiguous = false;
+        m->dir = pmm_alloc_page();      /* the page of index pages */
+
+        if (m->dir == NULL) {
+            unwind(m, 0);
+            return NULL;
+        }
+
+        memset(m->dir, 0, PAGE_SIZE);
 
         for (k = 0; k < indexes; k++) {
-            m->index[k] = pmm_alloc_page();
+            m->dir[k] = pmm_alloc_page();
 
-            if (m->index[k] == NULL) {
+            if (m->dir[k] == NULL) {
                 unwind(m, 0);
                 return NULL;
             }
@@ -190,7 +222,7 @@ again:
             memset(run, 0, pages * PAGE_SIZE);
 
             for (n = 0; n < pages; n++) {
-                m->index[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] =
+                m->dir[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] =
                     run + n * PAGE_SIZE;
             }
 
@@ -220,7 +252,7 @@ again:
             }
 
             memset(page, 0, PAGE_SIZE);
-            m->index[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] = page;
+            m->dir[n / MEMOBJ_PER_INDEX][n % MEMOBJ_PER_INDEX] = page;
         }
 
         m->refs = 1;
@@ -360,10 +392,12 @@ void memobj_unref(struct memobj *m)
         size_t k;
 
         for (k = 0; k < m->indexes; k++) {
-            pmm_free_page(m->index[k]);
-            m->index[k] = NULL;
+            pmm_free_page(m->dir[k]);
+            m->dir[k] = NULL;
         }
 
+        pmm_free_page(m->dir);
+        m->dir = NULL;
         m->indexes = 0;
     }
 

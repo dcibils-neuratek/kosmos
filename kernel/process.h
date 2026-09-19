@@ -175,58 +175,23 @@ struct thread;
 #define USER_MAP_VA      (USER_VA_BASE + 0x04000000UL)      /* 0x84000000 */
 
 /*
- * How much a process may map this way, in pages.
+ * **How many pages a process may have mapped at once: as many as it has
+ * addresses for, and as much memory as the machine will spare.**
  *
- * 48 MB, and it was 16 MB until a maximised window at 1920x1080 hit it.
+ * There were two numbers here and both are gone (`threads.md` step 1b,
+ * 19 September 2026). `USER_MAP_PAGES_MAX` was 48 MB for every process -
+ * 16 MB until a maximised window at 1920x1080 went one per cent over it -
+ * and `SCREEN_OWNER_SCREENS` gave whoever held the screen twelve screens
+ * more, because seven full screens' worth is what a compositor holds before
+ * any ordinary window and every one of them scales with the display.
  *
- * The old number said "enough for a double-buffered full-screen surface
- * with room over", and that was true of the screen it was written for. A
- * full screen at 1024x768 is 3 MB; at 1920x1080 it is 8.3 MB, so the
- * compositor's backbuffer plus one maximised window is 4009 pages against a
- * 4096 cap - over by less than one per cent, which is the worst way for a
- * limit to be wrong because it works everywhere except the case you built
- * the system for.
- *
- * The reasoning that came with the old number does not survive either. It
- * was that thirty-two processes at 16 MB is 512 MB, which is all the RAM -
- * so the cap was set where every process could take all of it at once. That
- * is sizing for a case that never happens, and it is not what stops memory
- * being exhausted: `pmm_alloc_page` returning NULL is. This is a guard
- * against one process running away, and the number to pick is a generous
- * multiple of what the largest legitimate one needs - a compositor wanting
- * four full screens at 1080p.
+ * The second number is the argument against the first: a constant cannot be
+ * right, because whatever it is sized for, a larger screen breaks it the way
+ * 1080p broke the one before. So what bounds a mapping now is the window's
+ * own size - addresses run out at `USER_MAP_END` - and `pmm_room_for_user`,
+ * which lets a process take what the machine has except the reserve the
+ * kernel keeps to start the process that would end a runaway.
  */
-#define USER_MAP_PAGES_MAX  12288
-
-/*
- * **And the process holding the screen gets the screen's worth on top.**
- *
- * The number above has now been wrong three times, always the same way. 4096
- * was right at 1024x768 and wrong at 1920x1080. 12288 was "four full screens
- * at 1080p", and on the ThinkPad the compositor needed more than that. The
- * log said `no room for a 1916x1016 surface` on every step of a Terminal
- * being dragged to full size, and a JPEG wallpaper would not load.
- *
- * What it holds at once, counted in full screens rather than guessed at:
- * its backbuffer; the desktop's backdrop; the wallpaper; a maximised window;
- * a *second* surface for that window while it resizes, because `swap_surface`
- * keeps the old one until the new one exists so a refusal leaves the window
- * as it was; and a JPEG decode, which is a buffer on the heap plus the
- * surface it is copied into. Seven, before any ordinary window.
- *
- * **Every one of those scales with the screen**, which is why a constant
- * cannot be right: whatever it is sized for, a larger display breaks it the
- * way 1080p broke the last one. So the allowance is derived from the
- * framebuffer the process was handed, and a 4K screen gets four times as much
- * without anybody having to remember to change a number.
- *
- * Twelve screens is the seven above with room for the windows people actually
- * open. It is still a guard against running away rather than a reservation -
- * `pmm_alloc_page` returning NULL is what stops memory running out, as the
- * paragraph above says - and every other process keeps the flat 48 MB,
- * because nothing else is asked to hold the screen.
- */
-#define SCREEN_OWNER_SCREENS  12u
 
 /*
  * Where a shared region lands, and deliberately not in the window above.

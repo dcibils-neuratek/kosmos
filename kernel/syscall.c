@@ -162,22 +162,21 @@ bool dev_range_ok(uintptr_t phys, size_t pages)
  */
 static size_t map_budget(const struct process *p)
 {
-    struct fb fb;
-    size_t row, screen_pages;
+    (void)p;
 
-    if (!p->owns_screen || !screen_get(&fb)) {
-        return USER_MAP_PAGES_MAX;
-    }
-
-    row = (size_t)fb.pitch;
-
-    if (row < (size_t)fb.width * 4u) {
-        row = (size_t)fb.width * 4u;
-    }
-
-    screen_pages = (row * (size_t)fb.height + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    return USER_MAP_PAGES_MAX + SCREEN_OWNER_SCREENS * screen_pages;
+    /*
+     * **The machine's memory, and not a number a process may have.**
+     *
+     * It was 48 MB for everybody and the screen's worth on top for whoever
+     * held the screen - "a guard against one process running away", raised
+     * once already when a maximised window at 1920x1080 went one per cent
+     * over it. A number chosen in advance is wrong on every machine but the
+     * one it was chosen for (`threads.md` step 1b), so what is left is the
+     * window's own size - addresses run out where `USER_MAP_END` says - and
+     * `pmm_room_for_user`, which keeps a runaway out of the reserve the
+     * kernel needs to start the process that ends it.
+     */
+    return (USER_MAP_END - USER_MAP_VA) / PAGE_SIZE;
 }
 
 static long sys_write(struct process *p, uintptr_t ptr, size_t len,
@@ -821,6 +820,12 @@ static long sys_map(struct process *p, size_t pages)
     /* The addresses are never reused, so this is what stops a process that
      * maps and unmaps for long enough from walking into the next window. */
     if (p->next_map + pages * PAGE_SIZE > USER_MAP_END) {
+        return SYS_ERR_NO_ROOM;
+    }
+
+    /* Against the kernel's reserve, once for the whole request rather than
+     * page by page: a refusal is one answer, not a half-served map. */
+    if (!pmm_room_for_user(pages)) {
         return SYS_ERR_NO_ROOM;
     }
 

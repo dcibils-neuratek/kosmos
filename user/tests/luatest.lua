@@ -623,9 +623,16 @@ if role == R_GFX then
   check(pcall(function() return f:get(0, 0) end) == false,
         "a freed surface was still usable")
 
-  -- A surface bigger than the process heap fails cleanly.
-  check(pcall(gfx.surface, { w = 4096, h = 4096 }) == false,
-        "a surface larger than the heap was allocated")
+  -- A surface bigger than any machine fails cleanly.
+  --
+  -- It was 4096 by 4096 - 64 MB - which the 48 MB a process could map
+  -- refused. That cap is gone (`threads.md` step 1b): a process may map what
+  -- the machine has, less the reserve the kernel keeps, so 64 MB is an
+  -- ordinary request on a 512 MB board and this asked for something that
+  -- would succeed. 65536 square is 16 GB, which no machine here can serve,
+  -- and the check is what it always was: a refusal rather than a fault.
+  check(pcall(gfx.surface, { w = 65536, h = 65536 }) == false,
+        "a surface larger than the machine was allocated")
   check(pcall(gfx.surface, { w = 0, h = 4 }) == false,
         "a zero-width surface was allowed")
 
