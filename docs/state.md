@@ -18,6 +18,14 @@ Last updated: 2026-09-19
    the battery - one trip to the ThinkPad for all of it.
 4. After the stick: Xbox One and Series controllers.
 
+## Stick 0.10.90 for tonight - 19 September
+
+`build/x86_64/kosmos-usb-0.10.90-development.img`, 738 MB, `/home` 512 MB from
+`~/Kosmos/home`; `run_uefi.py` 29 checks, the OVMF desktop check, "487 of
+512 MB free". On top of stable 0.10.88: Xbox One pads, BeOS tabs and the
+Appearance setting, the Drives app, the gallery change. Handed to Diego with
+a checklist of everything to try.
+
 ## The afternoon of 19 September, while Diego was away
 
 Built, tested and committed after the 0.10.89 push:
