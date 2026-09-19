@@ -356,6 +356,9 @@ uint64_t *mmu_page_entry(uintptr_t va);
 unsigned as_count(void);
 unsigned as_total(void);
 
+/* The pool's ceiling and first slabs, from the kernel's process pool. */
+void as_pool_init(unsigned ceiling, unsigned boot);
+
 /*
  * Where a process's own address space begins, and it is 1 GB here against
  * AArch64's 2 GB.

@@ -1115,8 +1115,10 @@ void kmain(void)
     boot_why("An address space and a thread at user level; the kernel is mapped, not reachable.");
 
     boot_fact_begin();
-    kputu(PROCESS_MAX);
-    kputs(" slots; each gets its own page tables, heap and stack");
+    kputu(PROCESS_BOOT_SLOTS);
+    kputs(" slots, growing to ");
+    kputu(process_ceiling());
+    kputs("; each gets its own page tables, heap and stack");
     boot_fact_end();
 
     hal_irq_init();

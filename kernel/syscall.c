@@ -672,7 +672,7 @@ static long sys_sysinfo(struct process *p, uintptr_t out_ptr)
     info.threads_total    = thread_ceiling();   /* what the pool may grow to */
     info.processes_used   = process_count();
     info.processes_held   = process_slots_used();
-    info.processes_total  = PROCESS_MAX;
+    info.processes_total  = process_ceiling();  /* what the pool may grow to */
     info.regions_used     = memobj_in_use();
     info.regions_total    = memobj_total();
     info.endpoints_used   = ipc_endpoints_in_use();
@@ -935,10 +935,15 @@ static long sys_setname(struct process *p, uintptr_t ptr, size_t len)
     return 0;
 }
 
+/*
+ * Every process, into the caller's buffer of `max`. The caller sizes it -
+ * the pool grows, so no number here could be right - and one that fills it
+ * asks again with a larger one (`sys_user.c`).
+ */
 static long sys_proctable(struct process *p, uintptr_t out_ptr, size_t max)
 {
-    if (max == 0 || max > PROCESS_MAX) {
-        max = PROCESS_MAX;
+    if (max == 0 || max > process_ceiling()) {
+        max = process_ceiling();
     }
 
     if (!process_may_write(p, out_ptr, max * sizeof(struct proc_info))) {

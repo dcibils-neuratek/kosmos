@@ -6051,3 +6051,35 @@ slab, so the pool is as large as the most threads ever alive at once.
   to the most threads ever alive rather than to a compiled-in number, and
   fine at hundreds; a queue of sleepers kept in order of when they wake is
   the answer when it is not.
+
+## 18.114 One pool that grows, and processes in it
+
+**`kernel/pool.c`, written once**: slabs of at least sixteen objects, pages
+from `pmm`, a directory made at boot, never given back, to a ceiling from
+the machine's memory; the slot count published with release. The thread
+pool of 18.113 moved onto it unchanged, and processes and address spaces
+followed.
+
+**Processes**: thirty-two at boot, a slot for every megabyte of memory -
+512 on either board - so at 2.3 MB a process the memory runs out before
+the slots do. **Address spaces** grow with them, to the same ceiling and
+eight over: the kernel sizes that pool when it makes its own
+(`as_pool_init`), so the two numbers that once disagreed - sixteen spaces
+for thirty-two processes, and a spawn refused at eleven - are decided in one
+place. **The process list programs read** was a buffer of thirty-two in
+`sys_user.c`; it doubles until the list fits, so Processes cannot stop
+listing at the old pool's size without a word.
+
+**And an abandoned child's capabilities are released.** `sys_spawn` grants
+a child its capabilities before it starts and abandons it when a later
+grant fails; the region among them kept its reference, and was never freed.
+`process_abandon` releases the process's table now, and gives its slot back
+under the pool's lock.
+
+- **`proc: the pool grows, and gives everything back`**, both boards: forty
+  processes at once, each with an address space and a shared region, then
+  all abandoned; twice, and the second round ends with exactly the free
+  memory the first did. Controls, watched: without releasing the table on
+  abandon, it fails; with the process pool not growing, it fails.
+- The boot screen: "32 slots, growing to 512; each gets its own page
+  tables, heap and stack".

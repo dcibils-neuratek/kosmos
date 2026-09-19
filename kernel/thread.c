@@ -18,48 +18,37 @@
 #include "ipc.h"
 #include "mmu.h"
 #include "sched.h"
+#include "pool.h"
 
 /*
- * **The pool, which grows** (`CLAUDE.md`, `threads.md` step 1b).
+ * **The pool, which grows** (`kernel/pool.h`, `threads.md` step 1b).
  *
  * It was forty-eight slots in `.bss`, statically declared and never grown -
  * one a process and sixteen over, which threads in a process would have used
  * up at once. Diego, 19 September 2026: "We should be able to grow as needed
- * on processes and threads just like beos or Linux".
+ * on processes and threads just like beos or Linux". Slabs of sixteen now,
+ * never given back, so a thread pointer is still valid for as long as the
+ * kernel is.
  *
- * So slots come in **slabs** of `THREAD_SLAB`, pages from `pmm`, and a slab is
- * made when every slot is taken and never given back. That keeps what the
- * static array bought: a slab never moves, so a thread pointer is still valid
- * for as long as the kernel is; nothing is freed, so nothing fragments; and a
- * claim is a scan or one slab, which is bounded. Running out is still a
- * refusal - at the ceiling, which is derived from the machine's memory as
- * Linux derives `threads-max`, rather than compiled in.
- *
- * The directory - one pointer a slab, as many as the ceiling needs - is made
- * at boot, and is a few kilobytes on a machine with gigabytes.
- *
- * `thread_slots` is how many slots exist, and it is the one word read without
- * the lock: stored with release after the slab's pointer, and loaded with
- * acquire before any slot under it, so a reader on another core that sees a
- * slot count sees the slab behind it. A reader with a stale count simply does
- * not look at the newest slab, all of whose slots are unused.
+ * The ceiling is a thread for every `THREAD_RAM_EACH` of memory. A live
+ * thread is about 44 KB - its 4.2 KB slot and two 16 KB stacks, each with its
+ * guard page (`thread.h`) - so at the ceiling threads hold about a sixth of
+ * the machine: 2,048 of them in 512 MB, 65,536 in 16 GB. Sixty-four are made
+ * at boot, a desktop's worth, so an ordinary session never grows at all.
  */
-#define THREAD_SLAB       16u
-#define THREAD_BOOT_SLABS 4u            /* 64 slots: a desktop's worth */
+#define THREAD_BOOT_SLOTS 64u
 #define THREAD_RAM_EACH   (256u * 1024u)
 
-static struct thread **thread_slab;
-static unsigned        thread_slabs_max;
-static unsigned        thread_slots;
+static struct pool threads;
 
 static unsigned slots_made(void)
 {
-    return __atomic_load_n(&thread_slots, __ATOMIC_ACQUIRE);
+    return pool_slots(&threads);
 }
 
 static struct thread *slot(unsigned i)
 {
-    return &thread_slab[i / THREAD_SLAB][i % THREAD_SLAB];
+    return pool_at(&threads, i);
 }
 
 unsigned thread_slots_made(void)
@@ -69,7 +58,7 @@ unsigned thread_slots_made(void)
 
 unsigned thread_ceiling(void)
 {
-    return thread_slabs_max * THREAD_SLAB;
+    return pool_ceiling(&threads);
 }
 
 /*
@@ -545,56 +534,6 @@ static bool still_leaving(const struct thread *t)
 }
 
 /*
- * One more slab, made outside the lock - it is seventeen pages to allocate
- * and zero, and a lock that masks interrupts is not held across that - and
- * published under it. Two cores that both found the pool full both add a
- * slab; neither is wasted, since slabs are never given back and the next
- * claim uses them. False at the ceiling, or when the pages are not there.
- */
-static bool grow(void)
-{
-    size_t bytes = THREAD_SLAB * sizeof(struct thread);
-    size_t pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
-    struct thread *slab;
-    unsigned long flags;
-    unsigned made;
-    bool added = false;
-
-    if (slots_made() >= thread_ceiling()) {
-        return false;
-    }
-
-    slab = pmm_alloc_contiguous(pages);
-
-    if (slab == NULL) {
-        return false;
-    }
-
-    memset(slab, 0, pages * PAGE_SIZE);     /* every slot THREAD_UNUSED */
-
-    flags = spin_lock(&threads_lock);
-    made = slots_made();
-
-    if (made < thread_ceiling()) {
-        thread_slab[made / THREAD_SLAB] = slab;
-        __atomic_store_n(&thread_slots, made + THREAD_SLAB, __ATOMIC_RELEASE);
-        added = true;
-    }
-
-    spin_unlock(&threads_lock, flags);
-
-    if (!added) {                       /* the ceiling, reached meanwhile */
-        size_t k;
-
-        for (k = 0; k < pages; k++) {
-            pmm_free_page((char *)slab + k * PAGE_SIZE);
-        }
-    }
-
-    return added;
-}
-
-/*
  * A slot: one never used, then one whose thread has died and left - and only
  * when there is neither, a new slab. Reuse before growth, so the pool is as
  * large as the most threads that were ever alive at once and no larger.
@@ -624,7 +563,7 @@ static struct thread *alloc_thread(void)
 
         spin_unlock(&threads_lock, flags);
 
-        if (!grow()) {
+        if (!pool_grow(&threads)) {
             return NULL;
         }
     }
@@ -678,44 +617,6 @@ static void *alloc_stack(void **base_out)
     return stack_top_of(base);
 }
 
-/*
- * The directory and the first slabs, before the boot thread can be adopted
- * into slot zero. The ceiling is a thread for every `THREAD_RAM_EACH` of
- * memory. A live thread is about 44 KB - its 4.2 KB slot and two 16 KB
- * stacks, each with its guard page (`thread.h`) - so at the ceiling threads
- * hold about a sixth of the machine: 2,048 of them in 512 MB, 65,536 in
- * 16 GB. Never fewer than the slabs made at boot.
- */
-static void make_pool(void)
-{
-    size_t ram = pmm_total_pages() * (size_t)PAGE_SIZE;
-    unsigned ceiling = (unsigned)(ram / THREAD_RAM_EACH);
-    size_t dir_pages;
-    unsigned k;
-
-    thread_slabs_max = (ceiling + THREAD_SLAB - 1) / THREAD_SLAB;
-
-    if (thread_slabs_max < THREAD_BOOT_SLABS) {
-        thread_slabs_max = THREAD_BOOT_SLABS;
-    }
-
-    dir_pages = (thread_slabs_max * sizeof(struct thread *) + PAGE_SIZE - 1)
-                / PAGE_SIZE;
-    thread_slab = pmm_alloc_contiguous(dir_pages);
-
-    if (thread_slab == NULL) {
-        panic("threads: no pages for the pool's directory");
-    }
-
-    memset(thread_slab, 0, dir_pages * PAGE_SIZE);
-
-    for (k = 0; k < THREAD_BOOT_SLABS; k++) {
-        if (!grow()) {
-            panic("threads: no pages for the first slabs");
-        }
-    }
-}
-
 void thread_init(void)
 {
     struct thread *t;
@@ -727,7 +628,10 @@ void thread_init(void)
         runq_lock[c].name   = "runqueue";
     }
 
-    make_pool();
+    /* The first slabs, before the boot thread can be adopted into slot zero. */
+    pool_init(&threads, "threads", sizeof(struct thread),
+              pool_ceiling_for(THREAD_RAM_EACH, THREAD_BOOT_SLOTS),
+              THREAD_BOOT_SLOTS, NULL);
     t = slot(0);
 
     /* Round robin unless a test or a boot option already chose otherwise. */

@@ -1581,11 +1581,32 @@ static int l_setname(lua_State *L)
  */
 static int l_processes(lua_State *L)
 {
-    struct proc_info table[32];
-    long n = kosmos_proctable(table, 32);
-    long i;
+    /*
+     * **Into a buffer that grows until the list fits.** It was thirty-two
+     * entries on this stack, which was the kernel's pool; the pool grows now
+     * (`threads.md` step 1b), and a buffer that stayed at thirty-two would
+     * have stopped listing processes past it without a word. So: sixty-four,
+     * and twice as many whenever the kernel fills it, since a full buffer is
+     * the one answer that might be short.
+     */
+    struct proc_info *table;
+    unsigned long room = 64;
+    long n, i;
+
+    for (;;) {
+        table = lua_newuserdatauv(L, room * sizeof *table, 0);
+        n = kosmos_proctable(table, room);
+
+        if (n < 0 || (unsigned long)n < room || room >= 65536) {
+            break;
+        }
+
+        lua_pop(L, 1);
+        room *= 2;
+    }
 
     if (n < 0) {
+        lua_pop(L, 1);
         lua_pushnil(L);
         lua_pushstring(L, "the kernel would not say");
         return 2;
@@ -1629,6 +1650,7 @@ static int l_processes(lua_State *L)
         lua_rawseti(L, -2, (lua_Integer)(i + 1));
     }
 
+    lua_remove(L, -2);                  /* the buffer, under the list */
     return 1;
 }
 

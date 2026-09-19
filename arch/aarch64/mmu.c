@@ -9,6 +9,7 @@
 #include "spinlock.h"
 #include "panic.h"
 #include "hal.h"
+#include "pool.h"
 
 /* Section boundaries from the linker script, all page aligned. */
 extern char __text_start[], __text_end[];
@@ -381,22 +382,22 @@ bool mmu_is_enabled(void)
 /* ------------------------------------------------------------------ */
 
 /*
- * How many address spaces there can be, which is how many processes there
- * can be - each gets exactly one.
+ * How many address spaces there can be, which is at least how many processes
+ * there can be - each gets exactly one.
  *
- * **This has to be at least PROCESS_MAX, and it is not checked here.** It
- * cannot be: `arch/` is "which CPU are you" and must not include a kernel
- * header, so this file cannot see that constant. The two are tied together
- * by a test instead - `as: PROCESS_MAX spaces can exist` creates that many
- * and fails if any is refused.
+ * **Told by the kernel, not worked out here.** The kernel calls
+ * `as_pool_init` with the processes' ceiling and a few over when it makes its
+ * own pool (`process_init`), so the one number that must agree with another
+ * is decided in one place rather than kept in step in two. Before that,
+ * nothing makes a space.
  *
- * That test exists because of what happened without it. This was 16 while
- * PROCESS_MAX went to 32, and the effect was a spawn that failed at eleven
- * processes with "could not spawn" while every pool the system could report
- * showed plenty free: 16 of 32 processes, 17 of 48 threads, 469 MB. A limit
- * nothing counts is a limit nobody can find.
+ * It was a constant that had to be kept at least `PROCESS_MAX` by hand and by
+ * a test. The time it was not - 16 while processes went to 32 - a spawn
+ * failed at eleven processes with "could not spawn" while every pool the
+ * system could report showed plenty free: 16 of 32 processes, 17 of 48
+ * threads, 469 MB. A limit nothing counts is a limit nobody can find, and a
+ * limit the kernel hands over is one nobody has to keep in step.
  */
-#define ADDRSPACE_MAX   32
 
 struct addrspace {
     uint64_t *root;
@@ -405,16 +406,38 @@ struct addrspace {
 
 /* A fixed pool, like everything else in the kernel. Running out is a NULL
  * from as_create rather than a table that grows. */
-static struct addrspace spaces[ADDRSPACE_MAX];
+static struct pool spaces;
+
+static struct addrspace *space(unsigned i)
+{
+    return pool_at(&spaces, i);
+}
+
+void as_pool_init(unsigned ceiling, unsigned boot)
+{
+    pool_init(&spaces, "address spaces", sizeof(struct addrspace),
+              ceiling, boot, NULL);
+}
+
+/* Refused loudly rather than quietly: a space asked for before the kernel
+ * said how many there may be is a boot order that changed. */
+static void spaces_made(void)
+{
+    if (spaces.slab == NULL) {
+        panic("as: an address space before as_pool_init sized the pool");
+    }
+}
 
 /* How many are in use, and how many there are. Reported through SYS_SYSINFO
- * for one reason: see the comment on ADDRSPACE_MAX. */
+ * for one reason: see the comment on `as_pool_init`. */
 unsigned as_count(void)
 {
     unsigned i, n = 0;
 
-    for (i = 0; i < ADDRSPACE_MAX; i++) {
-        if (spaces[i].in_use) {
+    spaces_made();
+
+    for (i = 0; i < pool_slots(&spaces); i++) {
+        if (space(i)->in_use) {
             n++;
         }
     }
@@ -424,7 +447,8 @@ unsigned as_count(void)
 
 unsigned as_total(void)
 {
-    return ADDRSPACE_MAX;
+    spaces_made();
+    return pool_ceiling(&spaces);
 }
 
 /*
@@ -444,11 +468,16 @@ static struct spinlock spaces_lock = SPINLOCK("address spaces");
 
 struct addrspace *as_create(void)
 {
-    unsigned long flags = spin_lock(&spaces_lock);
+    unsigned long flags;
     unsigned i;
 
-    for (i = 0; i < ADDRSPACE_MAX; i++) {
-        if (spaces[i].in_use) {
+    spaces_made();
+
+again:
+    flags = spin_lock(&spaces_lock);
+
+    for (i = 0; i < pool_slots(&spaces); i++) {
+        if (space(i)->in_use) {
             continue;
         }
 
@@ -458,16 +487,16 @@ struct addrspace *as_create(void)
          * another core for the whole of that allocation, and both would take
          * it - the same window `alloc_thread` had.
          */
-        spaces[i].in_use = true;
-        spaces[i].root = NULL;
+        space(i)->in_use = true;
+        space(i)->root = NULL;
         spin_unlock(&spaces_lock, flags);
 
-        spaces[i].root = pmm_alloc_page();
+        space(i)->root = pmm_alloc_page();
 
-        if (spaces[i].root == NULL) {
+        if (space(i)->root == NULL) {
             unsigned long back = spin_lock(&spaces_lock);
 
-            spaces[i].in_use = false;
+            space(i)->in_use = false;
             spin_unlock(&spaces_lock, back);
             return NULL;
         }
@@ -485,13 +514,19 @@ struct addrspace *as_create(void)
          * nothing to exclude.
          */
         for (unsigned e = 0; e < ENTRIES_PER_TABLE; e++) {
-            spaces[i].root[e] = kernel_l1[e];
+            space(i)->root[e] = kernel_l1[e];
         }
 
-        return &spaces[i];
+        return space(i);
     }
 
     spin_unlock(&spaces_lock, flags);
+
+    /* Every space taken: one more slab and look again, or refuse. */
+    if (pool_grow(&spaces)) {
+        goto again;
+    }
+
     return NULL;
 }
 

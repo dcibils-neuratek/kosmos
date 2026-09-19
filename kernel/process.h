@@ -43,7 +43,7 @@ struct thread;
  * looked at. Thirty-two leaves room to run out of something more interesting
  * than slots.
  *
- * The cost is not the slot, which is 128 bytes of .bss. It is what a process
+ * The cost is not the slot, which is 1.4 KB in a slab. It is what a process
  * is made of, and that is charged only when one exists:
  *
  *   image     a private copy, so it can be mapped read-only and executable
@@ -53,12 +53,18 @@ struct thread;
  *             decides whether the system stutters.
  *   stack     64 KB.
  *
- * So roughly 2.3 MB a process, and thirty-two of them would be 74 MB of the
- * 512 this machine has. That is a real number rather than a comfortable one,
- * and it is the heap that dominates - which is the same 2 MB that stops a
- * full-screen surface fitting in one. Both get solved by the same change.
+ * So roughly 2.3 MB a process, and it is the heap that dominates - which is
+ * the same 2 MB that stops a full-screen surface fitting in one.
+ *
+ * **There is no number of processes any more** (`threads.md` step 1b): the
+ * pool grows, a slot for every `PROCESS_RAM_EACH` of memory, and at 2.3 MB a
+ * process the memory runs out before the slots - it is the machine that says
+ * no. Address spaces grow with it (`mmu.c`), to the same ceiling and a few
+ * over, since there must never be fewer spaces than processes.
  */
-#define PROCESS_MAX         32
+#define PROCESS_RAM_EACH    (1024u * 1024u)
+#define PROCESS_BOOT_SLOTS  32u
+#define ADDRSPACE_SPARE     8u      /* spaces beyond processes: the tests' */
 #define PROCESS_NAME_MAX    16
 
 /*
@@ -552,6 +558,9 @@ void process_start(struct process *p);
 
 /* The process the current thread belongs to, or NULL in a kernel thread. */
 struct process *process_current(void);
+
+/* The most processes there can ever be: the pool's ceiling. */
+unsigned process_ceiling(void);
 
 /*
  * Ends the *calling* process: unmaps and frees everything it owned, and ends

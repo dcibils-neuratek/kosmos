@@ -5173,7 +5173,7 @@ static bool test_a_refused_image_gives_its_slot_back(void)
     unsigned before = process_count();
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX + 4; i++) {
+    for (i = 0; i < PROCESS_BOOT_SLOTS + 4; i++) {
         if (process_create("t-refused", refused, sizeof refused, 0) != NULL) {
             return false;       /* a page of zeroes was taken for a program */
         }
@@ -5495,8 +5495,13 @@ static bool test_the_padding_is_real(void)
 static bool test_enough_address_spaces_for_every_process(void)
 {
     /*
-     * ADDRSPACE_MAX lives in arch/aarch64/mmu.c and PROCESS_MAX in
-     * kernel/process.h, and nothing checks the two against each other at
+     * **Both pools grow now, and the kernel sizes one from the other**
+     * (`as_pool_init`, 19 September 2026), so the two cannot disagree by
+     * construction - and this is the check on the construction. What
+     * follows is how it was when they were two constants in two files.
+     *
+     * ADDRSPACE_MAX lived in arch/aarch64/mmu.c and PROCESS_MAX in
+     * kernel/process.h, and nothing checked the two against each other at
      * compile time.
      *
      * The reason given here used to be that `arch/` "must not include a
@@ -5543,10 +5548,12 @@ static bool test_enough_address_spaces_for_every_process(void)
      *
      * `as_total` is the pool's size and `as_count` is how much of it is
      * spoken for; both already exist and are exported for exactly this.
-     * Comparing the first against PROCESS_MAX is the assertion the comment
-     * above describes, and it cannot be perturbed by anything else running.
+     * Comparing the first against the processes' ceiling is the assertion
+     * the comment above describes, and it cannot be perturbed by anything
+     * else running. Both pools grow now, and the kernel sizes this one from
+     * that one (`as_pool_init`), so this is what holds them together.
      */
-    if (as_total() < PROCESS_MAX) {
+    if (as_total() < process_ceiling()) {
         return false;
     }
 
@@ -5559,14 +5566,20 @@ static bool test_enough_address_spaces_for_every_process(void)
      * everything that is *free* is the same question without the hidden
      * assumption: on an idle machine it is still all thirty-two.
      */
+    /*
+     * More than the slabs made at boot, so the pool has to grow to hand them
+     * out - not all the free ones, which in a pool that grows to hundreds is
+     * a test of the page allocator rather than of this.
+     */
+    enum { WANT_MAX = PROCESS_BOOT_SLOTS + ADDRSPACE_SPARE + 8 };
     unsigned baseline = as_count();
     unsigned want = as_total() - baseline;
-    struct addrspace *made[PROCESS_MAX];
+    struct addrspace *made[WANT_MAX];
     unsigned i;
     bool ok = true;
 
-    if (want > PROCESS_MAX) {
-        want = PROCESS_MAX;
+    if (want > WANT_MAX) {
+        want = WANT_MAX;
     }
 
     for (i = 0; i < want; i++) {
@@ -7564,6 +7577,72 @@ static bool test_the_thread_pool_grows(void)
     return ran == GROWN_THREADS && thread_count() == before;
 }
 
+/*
+ * **The process pool grows, and taking processes apart gives everything
+ * back** (`threads.md` step 1b).
+ *
+ * Thirty-two process slots were compiled in, and address spaces with them.
+ * Now there are thirty-two at boot and more as they are wanted. So: forty
+ * processes at once, more than the boot slots, each with its address space,
+ * each holding a shared region as a spawned child is granted one - then all
+ * abandoned, as `sys_spawn` abandons a child it cannot finish. Twice: the
+ * first round grows the pools, whose slabs are never given back; the second
+ * must end with exactly the memory the first ended with, or something a
+ * process holds was not released - which is what an abandoned child's
+ * capabilities were, until this.
+ */
+#define GROWN_PROCESSES (PROCESS_BOOT_SLOTS + 8u)
+
+static bool grow_processes_once(size_t *free_after)
+{
+    const size_t len = (size_t)(user_hello_end - user_hello_start);
+    struct process *made[GROWN_PROCESSES];
+    unsigned before = process_count();
+    unsigned n, k;
+    bool ok = true;
+
+    for (n = 0; n < GROWN_PROCESSES; n++) {
+        struct memobj *region;
+
+        made[n] = process_create("t-grown", user_hello_start, len, 0);
+
+        if (made[n] == NULL) {
+            ok = false;
+            break;
+        }
+
+        region = memobj_create(4, false);
+
+        if (region == NULL || ipc_install_memory(made[n]->thread, region) < 0) {
+            ok = false;
+        }
+
+        memobj_unref(region);           /* the child's is the only one */
+    }
+
+    if (ok && process_count() != before + GROWN_PROCESSES) {
+        ok = false;
+    }
+
+    for (k = 0; k < n; k++) {
+        process_abandon(made[k]);
+    }
+
+    *free_after = pmm_free_pages();
+    return ok && process_count() == before;
+}
+
+static bool test_the_process_pool_grows(void)
+{
+    size_t first = 0, second = 0;
+
+    if (!grow_processes_once(&first) || !grow_processes_once(&second)) {
+        return false;
+    }
+
+    return second == first && process_ceiling() > PROCESS_BOOT_SLOTS;
+}
+
 static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
 {
     unsigned cores = smp_online();
@@ -7724,6 +7803,7 @@ static const struct test tests[] = {
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },
     { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
     { "thread: the pool grows", test_the_thread_pool_grows },
+    { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: a caller ends a watched sleep",    test_a_caller_ends_a_watched_sleep },

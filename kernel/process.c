@@ -18,19 +18,45 @@
 #include "panic.h"
 #include "console.h"
 #include "hal.h"
+#include "pool.h"
 
 
-static struct process processes[PROCESS_MAX];
+/*
+ * **The pool, which grows** (`kernel/pool.h`, `threads.md` step 1b).
+ *
+ * Thirty-two slots until 19 September 2026, and spawning once failed at
+ * twenty-six. A slot for every megabyte of memory now, thirty-two made at
+ * boot: a process costs about 2.3 MB when it exists (`process.h`), so memory
+ * runs out long before slots do, and it is the machine that says no.
+ */
+static struct pool processes;
 static unsigned next_id = 1;
 
+static struct process *proc(unsigned i)
+{
+    return pool_at(&processes, i);
+}
+
+static unsigned procs_made(void)
+{
+    return pool_slots(&processes);
+}
+
+unsigned process_ceiling(void)
+{
+    return pool_ceiling(&processes);
+}
 
 void process_init(void)
 {
-    unsigned i;
+    /* A zeroed slot is `in_use == false`: nothing to prepare. */
+    pool_init(&processes, "processes", sizeof(struct process),
+              pool_ceiling_for(PROCESS_RAM_EACH, PROCESS_BOOT_SLOTS),
+              PROCESS_BOOT_SLOTS, NULL);
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        processes[i].in_use = false;
-    }
+    /* Never fewer spaces than processes: see `as_pool_init`. */
+    as_pool_init(pool_ceiling(&processes) + ADDRSPACE_SPARE,
+                 PROCESS_BOOT_SLOTS + ADDRSPACE_SPARE);
 }
 
 struct process *process_current(void)
@@ -48,8 +74,8 @@ unsigned process_count(void)
     unsigned n = 0;
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        if (processes[i].in_use && !processes[i].exited) {
+    for (i = 0; i < procs_made(); i++) {
+        if (proc(i)->in_use && !proc(i)->exited) {
             n++;
         }
     }
@@ -82,8 +108,8 @@ unsigned process_table(struct proc_info *out, unsigned max)
 {
     unsigned i, n = 0;
 
-    for (i = 0; i < PROCESS_MAX && n < max; i++) {
-        struct process *p = &processes[i];
+    for (i = 0; i < procs_made() && n < max; i++) {
+        struct process *p = proc(i);
 
         if (!p->in_use) {
             continue;
@@ -177,8 +203,8 @@ unsigned process_slots_used(void)
     unsigned n = 0;
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        if (processes[i].in_use) {
+    for (i = 0; i < procs_made(); i++) {
+        if (proc(i)->in_use) {
             n++;
         }
     }
@@ -205,11 +231,14 @@ static struct spinlock processes_lock = SPINLOCK("processes");
 
 static struct process *alloc_process(void)
 {
-    unsigned long flags = spin_lock(&processes_lock);
+    unsigned long flags;
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        if (!processes[i].in_use) {
+again:
+    flags = spin_lock(&processes_lock);
+
+    for (i = 0; i < procs_made(); i++) {
+        if (!proc(i)->in_use) {
             /*
              * Zeroed here, inside the lock, and that is not tidiness.
              *
@@ -225,14 +254,21 @@ static struct process *alloc_process(void)
              * argument for locking the pools before anything contends for
              * them rather than after.
              */
-            memset(&processes[i], 0, sizeof(processes[i]));
-            processes[i].in_use = true;
+            memset(proc(i), 0, sizeof(struct process));
+            proc(i)->in_use = true;
             spin_unlock(&processes_lock, flags);
-            return &processes[i];
+            return proc(i);
         }
     }
 
     spin_unlock(&processes_lock, flags);
+
+    /* Every slot taken: one more slab, then look again - or, at the ceiling
+     * or with no pages to spare, the refusal it always was. */
+    if (pool_grow(&processes)) {
+        goto again;
+    }
+
     return NULL;
 }
 
@@ -523,8 +559,8 @@ int process_wait(struct process *parent, unsigned *id, bool nonblocking)
 
         parent->waiter = NULL;
 
-        for (i = 0; i < PROCESS_MAX; i++) {
-            struct process *c = &processes[i];
+        for (i = 0; i < procs_made(); i++) {
+            struct process *c = proc(i);
 
             if (!c->in_use || c->parent != parent) {
                 continue;
@@ -782,8 +818,8 @@ void process_wake_audio(void)
 {
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        struct process *p = &processes[i];
+    for (i = 0; i < procs_made(); i++) {
+        struct process *p = proc(i);
 
         if (p->in_use && p->owns_audio && p->thread != NULL
             && p->thread->state == THREAD_BLOCKED
@@ -887,8 +923,8 @@ void process_wake_net(void)
 {
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        struct process *p = &processes[i];
+    for (i = 0; i < procs_made(); i++) {
+        struct process *p = proc(i);
 
         if (p->in_use && p->owns_net && p->thread != NULL
             && p->thread->state == THREAD_BLOCKED
@@ -1010,8 +1046,8 @@ int process_kill_any(unsigned id)
 {
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        struct process *c = &processes[i];
+    for (i = 0; i < procs_made(); i++) {
+        struct process *c = proc(i);
 
         if (!c->in_use || c->id != id) {
             continue;
@@ -1035,8 +1071,8 @@ int process_kill(struct process *parent, unsigned id)
 {
     unsigned i;
 
-    for (i = 0; i < PROCESS_MAX; i++) {
-        struct process *c = &processes[i];
+    for (i = 0; i < procs_made(); i++) {
+        struct process *c = proc(i);
 
         if (!c->in_use || c->parent != parent || c->id != id) {
             continue;
@@ -1140,6 +1176,18 @@ static void release_memory(struct process *p)
     p->stack_pages = NULL;
 }
 
+/*
+ * A process that was made and never started, taken apart.
+ *
+ * **Its capabilities are released**, and they were not until 19 September
+ * (`threads.md` step 1b): `sys_spawn` grants a child its capabilities before
+ * it starts, and abandons it if a later grant fails - so a child abandoned
+ * holding a region kept that region's reference, and the region was never
+ * freed. The table was its thread's then and nothing looked at it; it is the
+ * process's now, and taking a process apart includes it.
+ *
+ * And the slot goes back under the lock that claims them (`give_back`).
+ */
 void process_abandon(struct process *p)
 {
     if (p == NULL || !p->in_use) {
@@ -1151,8 +1199,9 @@ void process_abandon(struct process *p)
         p->thread = NULL;
     }
 
+    ipc_caps_release(&p->caps);
     release_memory(p);
-    p->in_use = false;
+    (void)give_back(p);
 }
 
 void process_exit(struct process *p, int code)

@@ -255,6 +255,7 @@ SRCS := boot/start.S \
         kernel/panic.c \
         kernel/pmm.c \
         kernel/pmm_place.c \
+        kernel/pool.c \
         kernel/thread.c \
         kernel/sched_rr.c \
         kernel/sched_prio.c \
@@ -2470,6 +2471,7 @@ X86_SRCS  := boot/x86_64/start.S \
              kernel/panic.c \
              kernel/pmm.c \
              kernel/pmm_place.c \
+             kernel/pool.c \
              kernel/thread.c \
              kernel/sched_rr.c \
              kernel/sched_prio.c \

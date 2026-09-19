@@ -204,6 +204,9 @@ uint64_t *mmu_page_entry(uintptr_t va);
 unsigned as_count(void);
 unsigned as_total(void);
 
+/* The pool's ceiling and first slabs, from the kernel's process pool. */
+void as_pool_init(unsigned ceiling, unsigned boot);
+
 #define USER_VA_BASE    0x80000000UL
 #define USER_VA_END     (512UL * 1024 * 1024 * 1024)    /* a 39-bit VA */
 
