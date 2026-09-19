@@ -55,7 +55,7 @@
     .long MB_CHECKSUM
     .long __multiboot_header          /* where this header is */
     .long __load_start                /* where the image begins */
-    .long 0                           /* 0: load to the end of the file */
+    .long __load_end                  /* and ends: see the linker script */
     .long __image_end                 /* reserve up to here */
     .long _start                      /* and begin here */
 
@@ -116,7 +116,7 @@ __multiboot2_header:
     .long 24
     .long __multiboot2_header         /* where this header is */
     .long __load_start                /* where the image begins */
-    .long 0                           /* 0: load to the end of the file */
+    .long __load_end                  /* and ends: see the linker script */
     .long __image_end                 /* reserve up to here */
 
     /* Where to begin, which the address tag does not say. */

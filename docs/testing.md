@@ -6133,3 +6133,29 @@ slab, page tables, and starting the process that would end a runaway.
   cap. With the cap gone, 64 MB is an ordinary surface on a 512 MB board.
   It asks for 65536 square, 16 GB, which no machine here can serve; the
   check was always that a refusal is clean rather than a fault.
+
+## 18.117 A capability table that grows, and the x86 image that had run out of room
+
+**`threads.md` step 1b, the last of the limits.** A table held thirty-two
+capabilities - sixteen until a PDF viewer ran out mid-page. Thirty-two still
+live in the table itself, so an ordinary process allocates nothing; past them
+it takes a page of capabilities at a time through a page of chunk pointers,
+up to 52,224 on a 4 KB page. The pages go back when the process ends - and
+when a *kernel thread* ends, since its table is its own; a process's threads
+point at the process's, which `process_exit` releases.
+
+- **`cap: a table holds more than it has room for`**, both boards: two
+  hundred regions held at once by one thread, every one resolving, the count
+  past two hundred, and the free memory afterwards exactly what it was.
+  Controls, watched: with the table not growing it fails, and with a dying
+  kernel thread not releasing its own table it fails.
+
+**And the x86 image had four kilobytes of room left.** `x86-kernel` stopped
+booting - "the boot banner never appeared" - and QEMU's own words were
+"invalid bss_end_addr address". The multiboot header said `load_end_addr`
+was zero, which means "to the end of the file", and the file a loader is
+handed here is the **ELF**, whose debug information is most of a megabyte:
+the kernel's size came out larger than the memory the header reserves. The
+margin had been shrinking for months and this day's work spent the last of
+it. Both headers say `__load_end` now, so the size comes from addresses and
+not from however large a build's debug information happens to be.

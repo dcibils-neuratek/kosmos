@@ -6,6 +6,7 @@
 
 #include "ipc.h"
 #include "pool.h"
+#include "pmm.h"
 #include "irq.h"
 #include "spinlock.h"
 #include "hal.h"
@@ -460,10 +461,127 @@ unsigned ipc_endpoints_in_use(void)
  */
 void captable_init(struct captable *c)
 {
-    memset(c->slot, 0, sizeof c->slot);
+    memset(c->first, 0, sizeof c->first);
+    c->chunk = NULL;
+    c->chunks = 0;
     c->lock.locked = 0;
     c->lock.holder = SPIN_NOBODY;
     c->lock.name = "caps";
+}
+
+unsigned captable_limit(void)
+{
+    return (unsigned)(CAPS_INLINE + CAPS_CHUNKS_MAX * CAPS_PER_CHUNK);
+}
+
+/* Slots this table has now: the ones in it, and its chunks. */
+static unsigned table_slots(const struct captable *c)
+{
+    return (unsigned)(CAPS_INLINE + c->chunks * CAPS_PER_CHUNK);
+}
+
+/*
+ * Slot `index`, or NULL when this table has no such slot - which is the whole
+ * of the bounds check, since a table's size is no longer a constant anybody
+ * can compare against. The lock is held by the caller.
+ */
+static struct cap *cap_slot(struct captable *c, cap_t index)
+{
+    unsigned n;
+
+    if (index < 0) {
+        return NULL;
+    }
+
+    if ((unsigned)index < CAPS_INLINE) {
+        return &c->first[index];
+    }
+
+    n = (unsigned)index - (unsigned)CAPS_INLINE;
+
+    if (n / CAPS_PER_CHUNK >= c->chunks) {
+        return NULL;
+    }
+
+    return &c->chunk[n / CAPS_PER_CHUNK][n % CAPS_PER_CHUNK];
+}
+
+/*
+ * One more chunk of slots: the page of chunk pointers as well, if this is the
+ * first. The pages are allocated outside the lock, as a pool's slab is, and
+ * attached under it; a chunk two cores both made has one of them given back.
+ *
+ * Against the reserve like any other page a program is given: a process that
+ * leaks capabilities meets the machine's wall rather than a number's.
+ */
+static bool captable_grow(struct captable *c)
+{
+    struct cap **dir = NULL;
+    struct cap *chunk = NULL;
+    unsigned long flags;
+    bool want_dir;
+    bool added = false;
+
+    flags = spin_lock(&c->lock);
+    want_dir = (c->chunk == NULL);
+
+    if (c->chunks >= CAPS_CHUNKS_MAX) {
+        spin_unlock(&c->lock, flags);
+        return false;
+    }
+
+    spin_unlock(&c->lock, flags);
+
+    if (!pmm_room_for_user(want_dir ? 2 : 1)) {
+        return false;
+    }
+
+    if (want_dir) {
+        dir = pmm_alloc_page();
+
+        if (dir == NULL) {
+            return false;
+        }
+
+        memset(dir, 0, PAGE_SIZE);
+    }
+
+    chunk = pmm_alloc_page();
+
+    if (chunk == NULL) {
+        if (dir != NULL) {
+            pmm_free_page(dir);
+        }
+
+        return false;
+    }
+
+    memset(chunk, 0, PAGE_SIZE);
+    flags = spin_lock(&c->lock);
+
+    if (c->chunk == NULL && dir != NULL) {
+        c->chunk = dir;
+        dir = NULL;
+    }
+
+    if (c->chunk != NULL && c->chunks < CAPS_CHUNKS_MAX) {
+        c->chunk[c->chunks] = chunk;
+        c->chunks++;
+        chunk = NULL;
+        added = true;
+    }
+
+    spin_unlock(&c->lock, flags);
+
+    if (dir != NULL) {
+        pmm_free_page(dir);
+    }
+
+    if (chunk != NULL) {
+        pmm_free_page(chunk);
+    }
+
+    return added;
 }
 
 unsigned captable_count(struct captable *c)
@@ -471,8 +589,8 @@ unsigned captable_count(struct captable *c)
     unsigned long flags = spin_lock(&c->lock);
     unsigned i, n = 0;
 
-    for (i = 0; i < CAPS_PER_TABLE; i++) {
-        if (c->slot[i].kind != CAP_NONE) {
+    for (i = 0; i < table_slots(c); i++) {
+        if (cap_slot(c, (cap_t)i)->kind != CAP_NONE) {
             n++;
         }
     }
@@ -493,24 +611,22 @@ static struct endpoint *resolve_as(struct thread *t, cap_t index,
 {
     struct captable *c = t->caps;
     struct endpoint *ep = NULL;
+    struct cap *slot;
     unsigned long flags;
 
-    if (index < 0 || index >= CAPS_PER_TABLE) {
-        return NULL;
-    }
-
     flags = spin_lock(&c->lock);
+    slot = cap_slot(c, index);
 
     /* Empty, or a region of memory, or an interrupt line: not an endpoint. */
-    if (c->slot[index].kind == CAP_ENDPOINT) {
-        struct endpoint *e = c->slot[index].endpoint;
+    if (slot != NULL && slot->kind == CAP_ENDPOINT) {
+        struct endpoint *e = slot->endpoint;
 
         /* Destroyed and the slot reused since, if the generations differ. */
-        if (e != NULL && e->in_use && c->slot[index].generation == e->generation) {
+        if (e != NULL && e->in_use && slot->generation == e->generation) {
             ep = e;
 
             if (generation != NULL) {
-                *generation = c->slot[index].generation;
+                *generation = slot->generation;
             }
         }
     }
@@ -528,7 +644,8 @@ static struct endpoint *resolve(struct thread *t, cap_t index)
 static unsigned slot_generation(struct thread *t, cap_t index)
 {
     unsigned long flags = spin_lock(&t->caps->lock);
-    unsigned g = t->caps->slot[index].generation;
+    struct cap *slot = cap_slot(t->caps, index);
+    unsigned g = (slot != NULL) ? slot->generation : 0;
 
     spin_unlock(&t->caps->lock, flags);
     return g;
@@ -549,22 +666,33 @@ static unsigned slot_generation(struct thread *t, cap_t index)
 static cap_t install(struct thread *t, struct endpoint *ep, unsigned generation)
 {
     struct captable *c = t->caps;
-    unsigned long flags = spin_lock(&c->lock);
+    unsigned long flags;
     cap_t i;
 
-    for (i = 0; i < CAPS_PER_TABLE; i++) {
-        if (c->slot[i].kind == CAP_NONE) {
-            c->slot[i].kind = CAP_ENDPOINT;
-            c->slot[i].endpoint = ep;
-            c->slot[i].memory = NULL;
-            c->slot[i].irq = NULL;
-            c->slot[i].generation = generation;
+again:
+    flags = spin_lock(&c->lock);
+
+    for (i = 0; (unsigned)i < table_slots(c); i++) {
+        struct cap *slot = cap_slot(c, i);
+
+        if (slot->kind == CAP_NONE) {
+            slot->kind = CAP_ENDPOINT;
+            slot->endpoint = ep;
+            slot->memory = NULL;
+            slot->irq = NULL;
+            slot->generation = generation;
             spin_unlock(&c->lock, flags);
             return i;
         }
     }
 
     spin_unlock(&c->lock, flags);
+
+    /* Every slot taken: one more chunk and look again, or refuse. */
+    if (captable_grow(c)) {
+        goto again;
+    }
+
     return IPC_ERR_NO_SPACE;
 }
 
@@ -581,23 +709,21 @@ static struct memobj *resolve_memory_as(struct thread *t, cap_t index,
 {
     struct captable *c = t->caps;
     struct memobj *m = NULL;
+    struct cap *slot;
     unsigned long flags;
 
-    if (index < 0 || index >= CAPS_PER_TABLE) {
-        return NULL;
-    }
-
     flags = spin_lock(&c->lock);
+    slot = cap_slot(c, index);
 
-    if (c->slot[index].kind == CAP_MEMORY) {
-        struct memobj *r = c->slot[index].memory;
+    if (slot != NULL && slot->kind == CAP_MEMORY) {
+        struct memobj *r = slot->memory;
 
         /* Freed and the slot reused since, if the generations differ. */
-        if (r != NULL && r->in_use && c->slot[index].generation == r->generation) {
+        if (r != NULL && r->in_use && slot->generation == r->generation) {
             m = r;
 
             if (generation != NULL) {
-                *generation = c->slot[index].generation;
+                *generation = slot->generation;
             }
         }
     }
@@ -630,19 +756,17 @@ struct irq_line *ipc_resolve_irq(struct thread *t, cap_t index)
 {
     struct captable *c = t->caps;
     struct irq_line *line = NULL;
+    struct cap *slot;
     unsigned long flags;
 
-    if (index < 0 || index >= CAPS_PER_TABLE) {
-        return NULL;
-    }
-
     flags = spin_lock(&c->lock);
+    slot = cap_slot(c, index);
 
-    if (c->slot[index].kind == CAP_IRQ) {
-        struct irq_line *l = c->slot[index].irq;
+    if (slot != NULL && slot->kind == CAP_IRQ) {
+        struct irq_line *l = slot->irq;
 
         /* Released and the slot reused since, if the generations differ. */
-        if (l != NULL && l->in_use && c->slot[index].generation == l->generation) {
+        if (l != NULL && l->in_use && slot->generation == l->generation) {
             line = l;
         }
     }
@@ -662,21 +786,30 @@ cap_t ipc_install_irq(struct thread *t, struct irq_line *line)
     }
 
     c = t->caps;
+
+again:
     flags = spin_lock(&c->lock);
 
-    for (i = 0; i < CAPS_PER_TABLE; i++) {
-        if (c->slot[i].kind == CAP_NONE) {
-            c->slot[i].kind = CAP_IRQ;
-            c->slot[i].endpoint = NULL;
-            c->slot[i].memory = NULL;
-            c->slot[i].irq = line;
-            c->slot[i].generation = line->generation;
+    for (i = 0; (unsigned)i < table_slots(c); i++) {
+        struct cap *slot = cap_slot(c, i);
+
+        if (slot->kind == CAP_NONE) {
+            slot->kind = CAP_IRQ;
+            slot->endpoint = NULL;
+            slot->memory = NULL;
+            slot->irq = line;
+            slot->generation = line->generation;
             spin_unlock(&c->lock, flags);
             return i;
         }
     }
 
     spin_unlock(&c->lock, flags);
+
+    if (captable_grow(c)) {
+        goto again;
+    }
+
     return -1;
 }
 
@@ -711,29 +844,45 @@ static cap_t install_memory(struct thread *t, struct memobj *m,
                             unsigned generation)
 {
     struct captable *c = t->caps;
-    unsigned long flags = spin_lock(&c->lock);
+    unsigned long flags;
+    bool gone = false;
     cap_t i;
 
-    for (i = 0; i < CAPS_PER_TABLE; i++) {
-        if (c->slot[i].kind == CAP_NONE) {
+again:
+    flags = spin_lock(&c->lock);
+
+    for (i = 0; (unsigned)i < table_slots(c); i++) {
+        struct cap *slot = cap_slot(c, i);
+
+        if (slot->kind == CAP_NONE) {
             /* The region pool's lock inside this one: the order is table,
              * then regions, and nothing takes them the other way round. */
             if (!memobj_ref_as(m, generation)) {
-                break;          /* freed on the way here: nothing to name */
+                gone = true;    /* freed on the way here: nothing to name */
+                break;
             }
 
-            c->slot[i].kind = CAP_MEMORY;
-            c->slot[i].endpoint = NULL;
-            c->slot[i].memory = m;
-            c->slot[i].irq = NULL;
-            c->slot[i].generation = generation;
+            slot->kind = CAP_MEMORY;
+            slot->endpoint = NULL;
+            slot->memory = m;
+            slot->irq = NULL;
+            slot->generation = generation;
             spin_unlock(&c->lock, flags);
             return i;
         }
     }
 
     spin_unlock(&c->lock, flags);
-    return (i < CAPS_PER_TABLE) ? IPC_ERR_BAD_CAP : IPC_ERR_NO_SPACE;
+
+    if (gone) {
+        return IPC_ERR_BAD_CAP;
+    }
+
+    if (captable_grow(c)) {
+        goto again;
+    }
+
+    return IPC_ERR_NO_SPACE;
 }
 
 cap_t ipc_install_memory(struct thread *t, struct memobj *m)
@@ -796,19 +945,22 @@ int ipc_cap_drop(struct thread *t, cap_t index)
     struct memobj *m;
     unsigned long flags;
 
-    if (t == NULL || index < 0 || index >= CAPS_PER_TABLE) {
+    struct cap *slot;
+
+    if (t == NULL) {
         return IPC_ERR_BAD_CAP;
     }
 
     c = t->caps;
     flags = spin_lock(&c->lock);
+    slot = cap_slot(c, index);
 
-    if (c->slot[index].kind == CAP_NONE) {
+    if (slot == NULL || slot->kind == CAP_NONE) {
         spin_unlock(&c->lock, flags);
         return IPC_ERR_BAD_CAP;
     }
 
-    m = empty_slot(&c->slot[index]);
+    m = empty_slot(slot);
     spin_unlock(&c->lock, flags);
 
     memobj_unref(m);
@@ -824,22 +976,46 @@ int ipc_cap_drop(struct thread *t, cap_t index)
  * dropping its own leaks them for the life of the machine.
  *
  * Emptied under the lock and let go of after it, a slot's worth at a time,
- * for the reason `empty_slot` gives.
+ * for the reason `empty_slot` gives. **And the chunks go back**: a table that
+ * grew past the slots inside it holds pages, and a process that ends gives
+ * every page back.
  */
 void ipc_caps_release(struct captable *c)
 {
-    cap_t i;
+    unsigned long flags;
+    struct cap **chunk;
+    unsigned chunks, i;
 
     if (c == NULL) {
         return;
     }
 
-    for (i = 0; i < CAPS_PER_TABLE; i++) {
-        unsigned long flags = spin_lock(&c->lock);
-        struct memobj *m = empty_slot(&c->slot[i]);
+    flags = spin_lock(&c->lock);
+    chunks = table_slots(c);
+    spin_unlock(&c->lock, flags);
 
+    for (i = 0; i < chunks; i++) {
+        struct memobj *m;
+
+        flags = spin_lock(&c->lock);
+        m = empty_slot(cap_slot(c, (cap_t)i));
         spin_unlock(&c->lock, flags);
         memobj_unref(m);
+    }
+
+    flags = spin_lock(&c->lock);
+    chunk = c->chunk;
+    chunks = c->chunks;
+    c->chunk = NULL;
+    c->chunks = 0;
+    spin_unlock(&c->lock, flags);
+
+    for (i = 0; i < chunks; i++) {
+        pmm_free_page(chunk[i]);
+    }
+
+    if (chunk != NULL) {
+        pmm_free_page(chunk);
     }
 }
 
@@ -1012,9 +1188,9 @@ int ipc_endpoint_destroy(cap_t index)
      */
     {
         unsigned long cflags = spin_lock(&self->caps->lock);
-        struct cap *slot = &self->caps->slot[index];
+        struct cap *slot = cap_slot(self->caps, index);
 
-        if (slot->kind == CAP_ENDPOINT && slot->endpoint == ep
+        if (slot != NULL && slot->kind == CAP_ENDPOINT && slot->endpoint == ep
             && slot->generation == held) {
             (void)empty_slot(slot);
         }

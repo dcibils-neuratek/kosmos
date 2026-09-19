@@ -1918,6 +1918,10 @@ void thread_abandon(struct thread *t)
     /* Dead rather than unused, so the slot is recycled with its stacks
      * still allocated and their guard pages still unmapped, which is what
      * alloc_thread expects to find. */
+    if (t->caps == &t->own_caps) {
+        ipc_caps_release(&t->own_caps);
+    }
+
     fp_forget(t);
     t->state = THREAD_DEAD;
 }
@@ -1925,6 +1929,20 @@ void thread_abandon(struct thread *t)
 void thread_exit(void)
 {
     struct thread *next;
+
+    /*
+     * **A kernel thread's own capabilities, and the pages its table grew**,
+     * before anything else and with interrupts still on, because releasing
+     * them takes locks and hands pages back.
+     *
+     * Only its own: a process's threads point at the process's table, which
+     * `process_exit` releases when the process ends - releasing it here would
+     * take capabilities out from under its siblings. A table that never grew
+     * gives nothing back and costs a scan.
+     */
+    if (current->caps == &current->own_caps) {
+        ipc_caps_release(&current->own_caps);
+    }
 
     /*
      * Masked from here to the switch, and never put back: nothing this thread

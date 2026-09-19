@@ -56,6 +56,19 @@ SECTIONS
 
     .data   : ALIGN(4096) { *(.data .data.*) }
 
+    /*
+     * The last address with anything in the file behind it, for the
+     * multiboot header's `load_end_addr`. Said rather than left as zero,
+     * which means "to the end of the file" and makes the kernel's size the
+     * size of the *file* a loader is handed - and this build hands QEMU the
+     * ELF, whose debug information is most of a megabyte. The image had
+     * about four kilobytes of slack left on 19 September and that day's work
+     * used it up: QEMU refused with "invalid bss_end_addr address", which
+     * is its way of saying the file ends past the memory the header
+     * reserves.
+     */
+    __load_end = .;
+
     . = ALIGN(4096);
     __bss_start = .;
     .bss : {

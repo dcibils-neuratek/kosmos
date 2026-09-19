@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "spinlock.h"
+#include "page.h"
 
 struct thread;
 struct memobj;
@@ -138,21 +139,24 @@ static inline cap_t message_get_cap(const struct message *m)
  * reads as "out of memory" and sent two rounds of debugging at the
  * allocator. There were 117,000 free pages at the time.
  *
- * Thirty-two, because the shape of what runs here changed: the userland this
- * number was chosen for was a shell and three servers.
+ * Then thirty-two, and it was still a number chosen in advance - "a process
+ * that leaks capabilities should hit a wall rather than grow without bound",
+ * which is the argument every pool in this kernel used to make
+ * (`threads.md` step 1b).
  *
- * Sixty-four was tried first and panicked the benchmark image with a data
- * abort, because `.bss` growth then pushed the thread stacks' guard pages out
- * of the first 2 MB of RAM, the only part mapped a page at a time. **That
- * wall is gone** - `mmu_init` maps a page at a time as far as the image
- * reaches, "and grows by itself the next time the image does" - so the
- * number is the limit it says it is and not a layout accident.
+ * **Thirty-two inline, and pages beyond them.** The first `CAPS_INLINE` live
+ * in the table itself, so an ordinary process - which holds a handful -
+ * allocates nothing at all; past them the table takes a page of chunk
+ * pointers and a page of capabilities at a time, up to `captable_limit`,
+ * which is 52,224 on a 4 KB page. The pages go back when the process ends.
  *
- * It is still a *limit*, and deliberately: a process that leaks capabilities
- * should hit a wall rather than grow without bound. `SYS_CAP_DROP` is how a
- * program stays under it.
+ * The wall is still there. It is the machine's now rather than a number: a
+ * chunk is a page like any other, and `pmm_room_for_user` refuses one to a
+ * program eating the reserve.
  */
-#define CAPS_PER_TABLE      32
+#define CAPS_INLINE       32u
+#define CAPS_PER_CHUNK    (PAGE_SIZE / sizeof(struct cap))
+#define CAPS_CHUNKS_MAX   (PAGE_SIZE / sizeof(struct cap *))
 
 struct endpoint;
 struct memobj;
@@ -205,8 +209,16 @@ struct cap {
 
 struct captable {
     struct spinlock lock;
-    struct cap      slot[CAPS_PER_TABLE];
+
+    /* The first, in the table; then chunks of `CAPS_PER_CHUNK`, reached
+     * through a page of pointers made when the first chunk is. */
+    struct cap      first[CAPS_INLINE];
+    struct cap    **chunk;
+    unsigned        chunks;
 };
+
+/* The most capabilities one table can hold: inline and every chunk. */
+unsigned captable_limit(void);
 
 /* An empty table with its lock ready: for a process, or a kernel thread. */
 void captable_init(struct captable *c);

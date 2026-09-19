@@ -259,8 +259,8 @@ it, and the steps that cannot fail loudly come before the one that can.
    thread pool DONE on 19 September** (`testing.md` 18.113), **processes
    and address spaces the same evening, on one pool written once**
    (`kernel/pool.c`, 18.114); **endpoints and regions** (18.115); **a
-   region's size, what a process may map, and the reserve** (18.116); a
-   process's capability table to come. Every pool
+   region's size, what a process may map, and the reserve** (18.116); **a
+   process's capability table** (18.117). **Step 1b is done.** Every pool
    the kernel keeps - processes, threads, endpoints, regions - grows by a
    slab of slots when it is full and never gives a slab back, up to a
    ceiling derived from RAM; and the limits that were numbers become the

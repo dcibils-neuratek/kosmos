@@ -1108,8 +1108,9 @@ void kmain(void)
     kputs(" endpoints and ");
     kputu(memobj_total());
     kputs(" regions at most, ");
-    kputu(CAPS_PER_TABLE);
-    kputs(" capabilities a process, generation-numbered against reuse");
+    kputu(CAPS_INLINE);
+    kputs(" capabilities a process and pages of them after, ");
+    kputs("generation-numbered against reuse");
     boot_fact_end();
 
     process_init();

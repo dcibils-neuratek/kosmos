@@ -2930,8 +2930,8 @@ static bool test_a_stale_capability_fails(void)
         bool stale_rejected;
         cap_t i;
 
-        for (i = 0; i < CAPS_PER_TABLE; i++) {
-            if (self->caps->slot[i].kind == CAP_NONE) {
+        for (i = 0; i < (cap_t)CAPS_INLINE; i++) {
+            if (self->caps->first[i].kind == CAP_NONE) {
                 spare = i;
                 break;
             }
@@ -2950,14 +2950,14 @@ static bool test_a_stale_capability_fails(void)
          * slot stayed empty, so the call was refused for being empty and the
          * generation was never looked at - a check that could not fail.
          */
-        self->caps->slot[spare].kind = CAP_ENDPOINT;
-        self->caps->slot[spare].endpoint = self->caps->slot[second].endpoint;
-        self->caps->slot[spare].generation = self->caps->slot[second].generation - 1;
+        self->caps->first[spare].kind = CAP_ENDPOINT;
+        self->caps->first[spare].endpoint = self->caps->first[second].endpoint;
+        self->caps->first[spare].generation = self->caps->first[second].generation - 1;
 
         stale_rejected = ipc_call(spare, &msg, &reply) == IPC_ERR_BAD_CAP;
 
-        self->caps->slot[spare].kind = CAP_NONE;
-        self->caps->slot[spare].endpoint = NULL;
+        self->caps->first[spare].kind = CAP_NONE;
+        self->caps->first[spare].endpoint = NULL;
 
         return stale_rejected && ipc_endpoint_destroy(second) == IPC_OK;
     }
@@ -2969,7 +2969,7 @@ static bool test_a_capability_index_out_of_range_fails(void)
     struct message reply = { 0 };
 
     return ipc_call(-1, &msg, &reply) == IPC_ERR_BAD_CAP
-        && ipc_call(CAPS_PER_TABLE, &msg, &reply) == IPC_ERR_BAD_CAP
+        && ipc_call((cap_t)captable_limit(), &msg, &reply) == IPC_ERR_BAD_CAP
         && ipc_call(0, &msg, &reply) == IPC_ERR_BAD_CAP;   /* nothing installed */
 }
 
@@ -3070,7 +3070,7 @@ static bool test_a_receive_with_a_deadline_gives_up(void)
      * The helper needs its *own* index for this endpoint.
      *
      * A kernel thread's capabilities are its own - `resolve` reads
-     * `t->caps->slot[index]`, and a kernel thread's `caps` is its own table - so
+     * `t->caps`'s slot `index`, and a kernel thread's `caps` is its own table - so
      * handing a created thread the creator's number gets `IPC_ERR_BAD_CAP`
      * and a test that fails for a reason that has nothing to do with what
      * it is testing. Which is how the first version of this failed.
@@ -5044,7 +5044,7 @@ static void make_endpoints(unsigned me)
         cap_t c = ipc_endpoint_create();
 
         made_cap[me][i] = c;
-        made[me][i] = (c >= 0) ? self->caps->slot[c].endpoint : NULL;
+        made[me][i] = (c >= 0) ? ipc_endpoint_peek(self, c) : NULL;
     }
 }
 
@@ -7806,6 +7806,94 @@ static bool test_endpoints_and_regions_grow(void)
     return ok;
 }
 
+/*
+ * **A table holds more capabilities than fit in it** (`threads.md` step 1b).
+ *
+ * Thirty-two was the whole of a table, and a PDF viewer had already run out
+ * of sixteen. Thirty-two still live in the table itself - an ordinary process
+ * holds a handful and allocates nothing - and past them it takes a page of
+ * capabilities at a time. So: two hundred regions held at once by one thread,
+ * every one resolving to the region it names, and every page back afterwards.
+ *
+ * In a thread of its own because the table it grows is that thread's own, and
+ * its pages go back when the thread ends - which is the other half of what
+ * this checks: the free memory afterwards is what it was before.
+ */
+#define HELD_CAPS 200u
+
+static volatile bool held_done, held_ok;
+
+static void holds_many_caps(void *arg)
+{
+    struct thread *self = thread_current();
+    cap_t mine[HELD_CAPS];
+    unsigned i, held = 0, resolved = 0;
+
+    (void)arg;
+
+    for (i = 0; i < HELD_CAPS; i++) {
+        struct memobj *m = memobj_create(1, false);
+
+        mine[i] = (m != NULL) ? ipc_install_memory(self, m) : -1;
+
+        if (m != NULL) {
+            memobj_unref(m);        /* the capability's is the only one */
+        }
+
+        held += (mine[i] >= 0);
+    }
+
+    for (i = 0; i < HELD_CAPS; i++) {
+        if (mine[i] >= 0 && ipc_resolve_memory(self, mine[i]) != NULL) {
+            resolved++;
+        }
+    }
+
+    held_ok = held == HELD_CAPS
+              && resolved == HELD_CAPS
+              && captable_count(self->caps) >= HELD_CAPS;
+
+    /* Dropped by hand rather than left to the thread's end, so that what the
+     * end gives back is the table's pages and nothing else. */
+    for (i = 0; i < HELD_CAPS; i++) {
+        if (mine[i] >= 0) {
+            (void)ipc_cap_drop(self, mine[i]);
+        }
+    }
+
+    held_done = true;
+}
+
+static bool test_a_table_holds_more_than_it_has_room_for(void)
+{
+    size_t before = pmm_free_pages();
+    unsigned long start;
+
+    held_done = held_ok = false;
+
+    if (thread_create("holds", holds_many_caps, NULL) == NULL) {
+        return false;
+    }
+
+    start = hal_ticks();
+
+    while (!held_done && hal_ticks() - start < 10UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    /* The thread's slot is recycled with its stacks, so the pages that must
+     * come back are the table's chunks and the regions'. */
+    start = hal_ticks();
+
+    while (pmm_free_pages() < before && hal_ticks() - start < 5UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    return held_done && held_ok
+        && captable_limit() > CAPS_INLINE
+        && pmm_free_pages() == before;
+}
+
 static bool test_a_slot_is_reused_only_once_its_thread_has_left(void)
 {
     unsigned cores = smp_online();
@@ -7968,6 +8056,7 @@ static const struct test tests[] = {
     { "thread: the pool grows", test_the_thread_pool_grows },
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
+    { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
     { "smp: a parent waits for children on other cores", test_a_parent_waits_for_children_on_other_processors },
     { "ipc: call and reply",                   test_ipc_call_and_reply },
     { "ipc: a caller ends a watched sleep",    test_a_caller_ends_a_watched_sleep },

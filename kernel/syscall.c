@@ -335,7 +335,7 @@ static long sys_spawn(struct process *p, unsigned long arg, uintptr_t caps_ptr,
     struct process *child;
     size_t i;
 
-    if (ncaps > CAPS_PER_TABLE) {
+    if (ncaps > captable_limit()) {
         return SYS_ERR_NO_ROOM;
     }
 
