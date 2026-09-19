@@ -17,7 +17,7 @@ Usage: run_diskbench.py IMAGE
 import os
 import re
 import sys
-import tempfile
+import scratch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -40,19 +40,17 @@ def main():
         else:
             fails.append(complaint)
 
-    disk = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
-    disk.truncate(64 * 1024 * 1024)
-    disk.close()
+    disk = scratch.disk("diskbench.img", 64 * 1024 * 1024)
 
     try:
-        out = run_disk.boot(image, disk.name,
+        out = run_disk.boot(image, disk,
                             ["diskbench",
                              "diskbench /home 1 1",
                              "ls /home/benchmarks",
                              "ls /home/.diskbench"],
                             boot_timeout=120, each=180)
     finally:
-        os.unlink(disk.name)
+        os.unlink(disk)
 
     if out is None:
         print("FAIL: the machine did not reach a prompt with a disk")

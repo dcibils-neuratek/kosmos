@@ -25,7 +25,7 @@ import shutil
 import struct
 import subprocess
 import sys
-import tempfile
+import scratch
 
 SECTOR = 512
 IMAGE_SECTORS = 131072                   # 64 MB
@@ -150,7 +150,7 @@ def main():
     for what, mformat, kind, spc in KINDS:
         for where, first in LAYOUTS:
             name = "%s, %s" % (what, where)
-            work = tempfile.mkdtemp(prefix="kosmos-fat-")
+            work = scratch.directory("fat")
 
             try:
                 image = os.path.join(work, "drive.img")

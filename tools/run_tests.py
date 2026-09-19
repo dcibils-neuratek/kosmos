@@ -27,7 +27,7 @@ import re
 import select
 import os
 import subprocess
-import tempfile
+import scratch
 import sys
 import time
 
@@ -187,9 +187,7 @@ def run_qemu(image, timeout):
     halts after printing its dump, so without this every panic costs the full
     wait and the output arrives long after it was useful.
     """
-    disk = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
-    disk.truncate(DISK_SECTORS * 512)
-    disk.close()
+    disk = scratch.disk("tests.img", DISK_SECTORS * 512)
 
     x86 = machine(image) == "x86_64"
     binary = X86_QEMU if x86 else QEMU
@@ -197,14 +195,14 @@ def run_qemu(image, timeout):
 
     try:
         proc = subprocess.Popen(
-            [binary, *args, *disk_args(image, disk.name), "-kernel", image],
+            [binary, *args, *disk_args(image, disk), "-kernel", image],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
         )
     except FileNotFoundError:
-        os.unlink(disk.name)
+        os.unlink(disk)
         raise Failure(f"{binary} not found. See docs/setup.md.")
 
     lines = []
@@ -263,7 +261,7 @@ def run_qemu(image, timeout):
             proc.kill()
             proc.wait()
 
-        os.unlink(disk.name)
+        os.unlink(disk)
 
     output = "".join(lines)
 

@@ -2957,6 +2957,9 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	python3 tools/test_sticklog.py $(HOSTDIR)/lua
 	@# And the stick's /home, made from a folder on this Mac.
 	python3 tools/test_homeimage.py
+	@# And the tools' temporary files: made only through scratch.py, and gone
+	@# when the tool is (19 GB were left behind before, and filled the disk).
+	python3 tools/test_scratch.py
 	@# And the userland image's canary, over a blob the real script
 	@# generated during this build - because its two halves are Python and
 	@# C and nothing at run time can notice them disagreeing.

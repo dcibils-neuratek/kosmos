@@ -111,12 +111,13 @@ import json
 import re
 import os
 import select
+import shutil
 import socket
 import struct
 import subprocess
 import sys
 import threading
-import tempfile
+import scratch
 import time
 import zlib
 
@@ -382,9 +383,9 @@ class Guest:
 
     def __init__(self, image, timeout):
         self.timeout = timeout
-        self.dir = tempfile.TemporaryDirectory()
-        self.sockpath = os.path.join(self.dir.name, "monitor")
-        self.qmppath = os.path.join(self.dir.name, "qmp")
+        self.dir = scratch.directory("g")
+        self.sockpath = os.path.join(self.dir, "monitor")
+        self.qmppath = os.path.join(self.dir, "qmp")
         self.seen = ""
         self._lock = threading.Lock()
 
@@ -606,7 +607,7 @@ class Guest:
     def screendump(self):
         self._connect_monitor()
         self._drain_monitor()
-        path = os.path.join(self.dir.name, f"shot{time.monotonic_ns()}.ppm")
+        path = os.path.join(self.dir, f"shot{time.monotonic_ns()}.ppm")
 
         self.monitor.sendall(f"screendump {path}\n".encode())
 
@@ -633,7 +634,7 @@ class Guest:
             self.proc.wait(timeout=5)
         except Exception:
             self.proc.kill()
-        self.dir.cleanup()
+        shutil.rmtree(self.dir, ignore_errors=True)
 
 
 def parse_ppm(data):

@@ -23,7 +23,7 @@ mount. Speed is `bench/`'s job and is measured elsewhere.
 
 import os
 import sys
-import tempfile
+import scratch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,7 +39,7 @@ def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
     checks = 0
 
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     disk = os.path.join(work, "queries.img")
 
     try:

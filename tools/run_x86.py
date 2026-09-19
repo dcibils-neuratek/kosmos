@@ -30,7 +30,7 @@ import socket
 import struct
 import subprocess
 import sys
-import tempfile
+import scratch
 import threading
 import time
 
@@ -205,7 +205,7 @@ def storage(image, check):
     `run_disk.py` does on the other board, and the journal is supposed to
     survive exactly that.
     """
-    disk = os.path.join(tempfile.gettempdir(), "kosmos-x86-nvme.img")
+    disk = scratch.path("x86-nvme.img")
 
     with open(disk, "wb") as handle:
         handle.truncate(64 * 1024 * 1024)
@@ -215,7 +215,7 @@ def storage(image, check):
 
     # QEMU's own record of each time the controller is started and stopped,
     # in a file of its own, for the check after this boot.
-    started = os.path.join(tempfile.mkdtemp(prefix="kosmos-nvme-trace-"),
+    started = os.path.join(scratch.directory("nvme-trace"),
                            "starts")
 
     first = boot(image, None, 90.0,
@@ -304,7 +304,7 @@ def qemu_usb(extra):
     itself, and the controller puts USB 3 ports first, so the keyboard QEMU
     calls port 1 is the controller's port 5.
     """
-    work = tempfile.mkdtemp(prefix="kosmos-infousb-")
+    work = scratch.directory("infousb")
     path = os.path.join(work, "monitor")
     cmd = [QEMU, "-M", "q35", "-m", "512M", "-S", "-no-reboot",
            "-display", "none", "-serial", "none",
@@ -342,7 +342,7 @@ def qemu_pci(extra):
     was told the drive did not exist. SeaBIOS numbers the buses within a
     second, and then looks for something to boot, of which there is none.
     """
-    work = tempfile.mkdtemp(prefix="kosmos-infopci-")
+    work = scratch.directory("infopci")
     path = os.path.join(work, "monitor")
     cmd = [QEMU] + ARGS + ["-S", "-serial", "none",
                            "-monitor", "unix:%s,server,nowait" % path] \
@@ -467,7 +467,7 @@ def usb(image, check):
     Reset Recovery and send INQUIRY again - and everything after that, the
     size and the partition table, comes from a stick that was recovered.
     """
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-stick.img")
+    stick = scratch.path("x86-usb-stick.img")
     stick_blocks = stick_with_gpt(stick)
 
     extra = ("-device", "qemu-xhci,id=usb0",
@@ -478,7 +478,7 @@ def usb(image, check):
 
     # QEMU's trace of what the controllers were written, in a file of its
     # own: on the serial line its lines would land inside the driver's.
-    traced = os.path.join(tempfile.mkdtemp(prefix="kosmos-xhci-trace-"),
+    traced = os.path.join(scratch.directory("xhci-trace"),
                           "writes")
 
     # The closing line, whatever it counts: "devices named" is never printed
@@ -730,7 +730,7 @@ def usb_blocks(image, check):
     is the disk server's alone. A write that got through would land on this
     check's own stick, which is thrown away.
     """
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-blocks.img")
+    stick = scratch.path("x86-usb-blocks.img")
     blocks = stick_with_gpt(stick)
 
     extra = ("-device", "qemu-xhci,id=usb0",
@@ -803,7 +803,7 @@ def usb_diskbench(image, check):
     """
     import hashlib
 
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-diskbench.img")
+    stick = scratch.path("x86-usb-diskbench.img")
     stick_with_gpt(stick)
 
     with open(stick, "rb") as f:
@@ -982,7 +982,7 @@ def usb_drives(image, check):
         print("SKIP: the /drives phase, because mtools is not installed.")
         return
 
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-fat-stick.img")
+    stick = scratch.path("x86-fat-stick.img")
     fatstick.build(stick)
 
     extra = ("-device", "qemu-xhci,id=usb0",
@@ -1158,7 +1158,7 @@ def usb_home(image, check):
     under QEMU, whose stick writes straight to a file, so what is checked is
     the driver's line for a stick's first flush that it kept.
     """
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-home.img")
+    stick = scratch.path("x86-usb-home.img")
     first, last = stick_with_home(stick)
 
     extra = ("-device", "qemu-xhci,id=usb0",
@@ -1304,7 +1304,7 @@ def usb_flush_refused(image, check):
     that the stick failed it; the saves have to land; and `diskinfo` has to
     say the cache is not written out, and why.
     """
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-no-flush.img")
+    stick = scratch.path("x86-usb-no-flush.img")
     rules = stick + ".blkdebug"
     stick_with_home(stick)
 
@@ -1362,7 +1362,7 @@ class PluggedMachine:
 
     def __init__(self, image, extra):
         binary = os.path.join(os.path.dirname(image), "kosmos.bin")
-        work = tempfile.mkdtemp(prefix="kosmos-x86-plugged-")
+        work = scratch.directory("x86-plugged")
         path = os.path.join(work, "monitor")
         cmd = ([QEMU] + ARGS + ["-monitor", "unix:%s,server,nowait" % path]
                + list(extra) + ["-kernel", binary])
@@ -1442,8 +1442,8 @@ def usb_second_stick(image, check):
     `/home` beside the first; and `sticks` has to show `/home`'s stick still
     unit 0 and the new one unit 1, the next number.
     """
-    home = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-home-first.img")
-    other = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-second.img")
+    home = scratch.path("x86-usb-home-first.img")
+    other = scratch.path("x86-usb-second.img")
 
     stick_with_home(home)
     stick_with_gpt(other)
@@ -1534,7 +1534,7 @@ def usb_home_late(image, check):
     stick's partition - `diskinfo` says so, and a file saved there has extents
     on a disk - rather than memory, where `diskinfo` finds no `/home/.super`.
     """
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-home-late.img")
+    stick = scratch.path("x86-usb-home-late.img")
     first, last = stick_with_home(stick)
 
     machine = PluggedMachine(image, (
@@ -1620,8 +1620,8 @@ def usb_home_named(image, check):
     """
     import uuid
 
-    other = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-named-a.img")
-    stick = os.path.join(tempfile.gettempdir(), "kosmos-x86-usb-named-b.img")
+    other = scratch.path("x86-usb-named-a.img")
+    stick = scratch.path("x86-usb-named-b.img")
     named = str(uuid.uuid4()).upper()
 
     stick_with_home(other)
@@ -1695,7 +1695,7 @@ def usb_home_large(image, check):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import mkusb_image
 
-    work = tempfile.mkdtemp(prefix="kosmos-x86-home512-")
+    work = scratch.directory("x86-home512")
     folder = os.path.join(work, "home")
     home = os.path.join(work, "home.img")
     esp = os.path.join(work, "esp.img")
@@ -1827,7 +1827,7 @@ def usb_hotplug(image, check):
     out before the last.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
-    work = tempfile.mkdtemp(prefix="kosmos-x86-hotplug-")
+    work = scratch.directory("x86-hotplug")
     path = os.path.join(work, "monitor")
     stick = os.path.join(work, "stick.img")     # `usb` may be running too
 
@@ -1964,7 +1964,7 @@ def memdisk(image, check):
     here = os.path.dirname(os.path.abspath(__file__))
     lua = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(image))),
                        "host", "lua")
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     marker = os.path.join(work, "marker.txt")
     disk = os.path.join(work, "loader-disk.img")
     drive = os.path.join(work, "empty-nvme.img")
@@ -2093,7 +2093,7 @@ def sound_slow_codec(image, check):
 
 def sound(image, check):
     """Boots with a real HDA controller, plays a tone, and listens."""
-    wav = os.path.join(tempfile.gettempdir(), "kosmos-x86-hda.wav")
+    wav = scratch.path("x86-hda.wav")
 
     if os.path.exists(wav):
         os.remove(wav)
@@ -2362,7 +2362,7 @@ def click(monitor, x, y, width, height):
 def pointer(image, check):
     """Clicks the Deskbar's button through a PS/2 mouse, with and without COM1."""
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
-    work = tempfile.mkdtemp(prefix="kosmos-x86-pointer-")
+    work = scratch.directory("x86-pointer")
 
     def start(serial):
         path = os.path.join(work, "monitor-" + serial)
@@ -2544,7 +2544,7 @@ def power_button(image, check):
     the desktop comes up; the log is read for one first.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
-    work = tempfile.mkdtemp(prefix="kosmos-x86-power-")
+    work = scratch.directory("x86-power")
     path = os.path.join(work, "monitor")
     cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
            "-display", "none", "-vga", "none", "-device", "ramfb",
@@ -2671,7 +2671,7 @@ def battery(image, check):
                   if l.startswith("BATTERY")), "nothing"))
 
     def desktop(value, label):
-        work = tempfile.mkdtemp(prefix="kosmos-x86-battery-")
+        work = scratch.directory("x86-battery")
         path = os.path.join(work, "monitor")
         cmd = [QEMU, "-M", "q35,vmport=off", "-m", "512M", "-no-reboot",
                "-display", "none", "-vga", "none", "-device", "ramfb",
@@ -2815,7 +2815,7 @@ def usb_mouse(image, check):
     whose interval is milliseconds rather than a power of two.
     """
     binary = os.path.join(os.path.dirname(image), "kosmos.bin")
-    work = tempfile.mkdtemp(prefix="kosmos-x86-usbmouse-")
+    work = scratch.directory("x86-usbmouse")
     path = os.path.join(work, "monitor")
     traced = os.path.join(work, "trace")
     plugs = []
@@ -3179,7 +3179,7 @@ def machine_report(image, check):
     log, and neither of the two things the report said that were never true
     of a ThinkPad.
     """
-    disk = os.path.join(tempfile.gettempdir(), "kosmos-x86-machine-nvme.img")
+    disk = scratch.path("x86-machine-nvme.img")
 
     with open(disk, "wb") as handle:
         handle.truncate(16 * 1024 * 1024)
@@ -3393,7 +3393,7 @@ def firmware(image, check):
     here = os.path.dirname(os.path.abspath(__file__))
     lua = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(image))),
                        "host", "lua")
-    work = tempfile.mkdtemp(prefix="kosmos-acpi-")
+    work = scratch.directory("acpi")
     given = test_ssdt()
     table = os.path.join(work, "kosmos.aml")
     disk = os.path.join(work, "home.img")

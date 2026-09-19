@@ -43,7 +43,7 @@ import socket
 import struct
 import subprocess
 import sys
-import tempfile
+import scratch
 import threading
 import time
 import uuid
@@ -106,7 +106,7 @@ def damaged_copy(iso):
     The filesystem's first sector is read out of the GPT: the first entry's
     starting LBA, at byte 32 of the entry array that begins at LBA 2.
     """
-    work = tempfile.mkdtemp(prefix="kosmos-damaged-")
+    work = scratch.directory("damaged")
     copy = os.path.join(work, "damaged.img")
     kernel = os.path.join(work, "kosmos.bin")
 
@@ -149,7 +149,7 @@ def capture(iso, moments):
         return None, why
 
     code, varsfd = fw
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     mon = os.path.join(work, "mon")
     writable = os.path.join(work, "vars.fd")
 
@@ -388,7 +388,7 @@ def thinkpad_screen(image, elf):
         return None, "no _start or pmm_init in %s" % elf, None, None
 
     code, varsfd = fw
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     mon = os.path.join(work, "mon")
     writable = os.path.join(work, "vars.fd")
     width, height, pitch = THINKPAD_MODE
@@ -541,7 +541,7 @@ def home_boot(image, check):
         return
 
     code, varsfd = fw
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     writable = os.path.join(work, "vars.fd")
     shutil.copy(varsfd, writable)
 

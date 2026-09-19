@@ -33,7 +33,7 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
+import scratch
 import time
 
 QEMU = "qemu-system-aarch64"
@@ -153,10 +153,7 @@ VERIFY = (
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
 
-    handle = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
-    handle.truncate(64 * 1024 * 1024)
-    handle.close()
-    disk = handle.name
+    disk = scratch.disk("power.img", 64 * 1024 * 1024)
 
     checks = 0
     replays = 0

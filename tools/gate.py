@@ -48,6 +48,8 @@ import sys
 import threading
 import time
 
+import scratch
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGS = os.path.join(ROOT, "build", "gate")
 
@@ -317,6 +319,9 @@ def main():
 
     os.makedirs(LOGS, exist_ok=True)
     started = time.monotonic()
+    # What is in the temporary directory before any suite runs, so that what
+    # is there after is what this run left (`scratch.py`).
+    before = scratch.leftovers()
     have_x86 = shutil.which("x86_64-elf-gcc") is not None
 
     chosen = [s for s in SUITES if not args.only
@@ -380,6 +385,7 @@ def main():
 
     total = time.monotonic() - started
     failed = [s for s in chosen if s.code != 0]
+    left = sorted(scratch.leftovers() - before)
 
     last.update({s.name: round(s.took, 1) for s in chosen
                  if s.took is not None})
@@ -400,10 +406,28 @@ def main():
 
     print()
 
-    if failed:
-        print("FAIL: %d of %d suites in %.0f s - %s"
+    #
+    # **A run leaves nothing in the temporary directory.** Nineteen gigabytes
+    # of it filled this Mac's disk on 19 September, a few hundred megabytes a
+    # run, and the first sign was a suite dying of a full disk in a place
+    # that had nothing to do with it. Checked here, after every suite, rather
+    # than trusted to each: a tool that makes a temporary file any way but
+    # `scratch.py` is refused by `test_scratch.py`, and one that is killed
+    # before it can tidy up is named here, by what made it.
+    #
+    for name in left:
+        print("LEFT BEHIND: %s, by %s"
+              % (name, scratch.made_by(name) or "nothing that says"))
+
+    if left:
+        print()
+
+    if failed or left:
+        print("FAIL: %d of %d suites in %.0f s - %s%s"
               % (len(failed), len(chosen), total,
-                 ", ".join(s.name for s in failed)))
+                 ", ".join(s.name for s in failed) or "every suite passed",
+                 ("; and %d left in the temporary directory" % len(left))
+                 if left else ""))
         return 1
 
     print("PASS: %d suites in %.0f s (%d:%02d)" % (len(chosen), total,

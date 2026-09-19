@@ -21,7 +21,7 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+import scratch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,7 +33,7 @@ SECTOR = mkusb_image.SECTOR
 
 def main():
     lua = sys.argv[1] if len(sys.argv) > 1 else "build/host/lua"
-    work = tempfile.mkdtemp(prefix="kosmos-sticklog-")
+    work = scratch.directory("sticklog")
     checks = 0
     fails = []
 

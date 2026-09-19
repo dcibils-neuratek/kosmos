@@ -25,7 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
+import scratch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -55,7 +55,7 @@ def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
     checks = 0
 
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     disk = os.path.join(work, "interchange.img")
     put_me = os.path.join(work, "from-the-mac.txt")
     got_back = os.path.join(work, "from-the-machine.txt")

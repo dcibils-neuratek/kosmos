@@ -8,7 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+import scratch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -20,7 +20,7 @@ CHECKS = 10
 
 
 def main():
-    work = tempfile.mkdtemp(prefix="kosmos-homeimage-")
+    work = scratch.directory("homeimage")
     folder = os.path.join(work, "home")
     image = os.path.join(work, "home.img")
     fails = []

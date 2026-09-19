@@ -36,7 +36,7 @@ import socket
 import struct
 import subprocess
 import sys
-import tempfile
+import scratch
 import threading
 import time
 
@@ -278,7 +278,7 @@ def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
     checks = 0
 
-    work = tempfile.mkdtemp()
+    work = scratch.directory()
     pcap = os.path.join(work, "frames.pcap")
 
     try:

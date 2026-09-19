@@ -19,7 +19,7 @@ import glob
 import io
 import os
 import sys
-import tempfile
+import scratch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -58,8 +58,7 @@ def main():
             fails.append(complaint)
 
     real_firmware, real_capture = run_uefi.firmware, run_uefi.capture
-    handle, image = tempfile.mkstemp(prefix="kosmos-uefi-skip-", suffix=".img")
-    os.close(handle)
+    image = scratch.disk("uefi-skip.img", 0)
 
     try:
         #
@@ -146,9 +145,7 @@ def main():
     # "no image" skip - and `main()` skips before it looks at a screen, so
     # reusing that path made this control say nothing at all. It said so.
     #
-    spare, standing = tempfile.mkstemp(prefix="kosmos-desktop-stick-",
-                                       suffix=".img")
-    os.close(spare)
+    standing = scratch.disk("desktop-stick.img", 0)
 
     real_boot_args = run_uefi.boot_args
     wide = (1280, 800)

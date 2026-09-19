@@ -33,7 +33,7 @@ import os
 import shutil
 import struct
 import subprocess
-import tempfile
+import scratch
 
 SECTOR = 512
 
@@ -101,7 +101,7 @@ def build(path):
         run(["mformat", "-i", at] + args
             + ["-v", label, "-T", str(sectors), "::"])
 
-        work = tempfile.mkdtemp(prefix="kosmos-fatstick-")
+        work = scratch.directory("fatstick")
         made = set()
 
         for name, data in FILES.get(label, []):

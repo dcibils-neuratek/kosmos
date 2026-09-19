@@ -29,7 +29,7 @@ import re
 import struct
 import subprocess
 import sys
-import tempfile
+import scratch
 import time
 import wave
 import zlib
@@ -242,7 +242,7 @@ def whole_line(guest, mark, pattern, seconds=60):
 
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
-    work = tempfile.mkdtemp(prefix="kosmos-media-")
+    work = scratch.directory("media")
     wav_in = os.path.join(work, "tone.wav")
     disk = os.path.join(work, "disk.img")
     wav_out = os.path.join(work, "heard.wav")

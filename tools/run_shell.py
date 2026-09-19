@@ -25,6 +25,7 @@ import sys
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 
 import run_disk                                        # noqa: E402
+import scratch                                         # noqa: E402
 
 
 class Failure(Exception):
@@ -37,13 +38,10 @@ def main():
 
     # No disk: `boot` takes one and never formats it, so nothing here can
     # reach a filesystem it did not make itself.
-    import tempfile
-    handle = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
-    handle.truncate(4 * 1024 * 1024)
-    handle.close()
+    disk = scratch.disk("shell.img", 4 * 1024 * 1024)
 
     try:
-        out = run_disk.boot(image, handle.name, [
+        out = run_disk.boot(image, disk, [
             "cd /ramfs",
             "mkdir notes",
             'fs.write("/ramfs/notes/a.txt", "one\\ntwo\\nthree\\nfour\\nfive")',
@@ -118,7 +116,7 @@ def main():
         # type for months. Both working spellings are checked here so that
         # the page cannot quietly stop being reachable.
         #
-        sheet = run_disk.boot(image, handle.name, [
+        sheet = run_disk.boot(image, disk, [
             "/help shell",
             'help "fs"',
         ])
@@ -158,7 +156,7 @@ def main():
         # keyboard's own arrow to the same three bytes, so this covers the
         # graphical console too.
         #
-        history = run_disk.boot(image, handle.name, [
+        history = run_disk.boot(image, disk, [
             "cd /ramfs",
             "touch one.txt",
             "touch two.txt",
@@ -189,7 +187,7 @@ def main():
         # not there says so, rather than being handed to Lua as a field of a
         # table nobody made.
         #
-        programs = run_disk.boot(image, handle.name, [
+        programs = run_disk.boot(image, disk, [
             "cd /ramfs",
             'fs.write("/ramfs/hi.lua", "print(\\"hi-\\" .. args)")',
             "./hi.lua one",
@@ -227,7 +225,7 @@ def main():
         # than a number written here: process ids depend on what started,
         # and a check that hardcoded one would be testing the boot order.
         #
-        tools = run_disk.boot(image, handle.name, [
+        tools = run_disk.boot(image, disk, [
             "which grep",
             "which nosuchthing",
             "cd /ramfs",

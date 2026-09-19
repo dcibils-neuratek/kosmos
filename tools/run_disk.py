@@ -21,7 +21,7 @@ import re
 import select
 import subprocess
 import sys
-import tempfile
+import scratch
 import time
 
 PROMPT = "kosmos>"
@@ -156,10 +156,7 @@ def boot(image, disk, commands, boot_timeout=90, each=25, trace=None):
 def main():
     image = sys.argv[1] if len(sys.argv) > 1 else "build/kosmos.elf"
 
-    handle = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
-    handle.truncate(64 * 1024 * 1024)
-    handle.close()
-    disk = handle.name
+    disk = scratch.disk("disk.img", 64 * 1024 * 1024)
 
     checks = 0
 
