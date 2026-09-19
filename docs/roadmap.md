@@ -1246,11 +1246,14 @@ Unsplash in `FULL=1` images, chosen in Appearance by photographer; the
 Lenovo ones from the same folder stay out of the public repository and can
 go on a stick's `/home` (`testing.md` 18.100).
 
-**Wanted - `make shot`'s picture without doubles.** Since the login set
-opens Tracker, Monitor, Processes and the log at startup, the gallery's
-picture has two of three of them (18 September, `2026-09-18-1841-eeccbc0.png`,
-and the push before it). `run_screenshot.py` empties the login set before
-its phases; `run_gallery.py` does not.
+**DONE on 19 September - `make shot`'s picture without doubles, and more
+of the system in it.** The login set opened Tracker, Monitor and Processes
+beside the gallery's own, so two of three were in the picture twice;
+`run_gallery.py` empties it first now, as `run_screenshot.py` does. And
+Diego: "We need to start showing other apps in the screenshots as well" -
+Music, Appearance, a Terminal, the Calculator, the gears and This Machine
+join Tracker, the widgets, Processes, Monitor and the cube: eleven, none
+twice.
 
 **DONE on 19 September - the gate refuses an x86 part that no suite runs.**
 `run_x86.py` gained `power_button` and `gate.py` names its parts by hand, so

@@ -61,7 +61,17 @@ ABS = 32767
 # protocol, by handle. A screenshot tool that had to know about z-order
 # stopped needing to know anything at all.
 #
-OPEN = ["tracker", "gallery", "procs", "sysmon", "cube3d", "tile"]
+#
+# **More of the system than the same five.** Diego, 19 September: "We need
+# to start showing other apps in the screenshots as well". The picture had
+# Tracker, the widgets, Processes, Monitor and the cube since the start -
+# and two of three of them twice, because the Deskbar also opens its login
+# set, which is emptied first now. Music, Appearance, a Terminal, the
+# Calculator, the gears and This Machine join them: each draws something of
+# its own with nothing on a disk, which is what a diskless guest has.
+#
+OPEN = ["tracker", "gallery", "music", "appearance", "terminal", "calc",
+        "glgears", "machine", "procs", "sysmon", "cube3d", "tile"]
 
 TAB_H = 20          # has to agree with wm.lua
 BORDER = 2
@@ -113,6 +123,12 @@ def main():
 
         names = ",".join(OPEN)
 
+        # The Deskbar opens its login set as well, and that is what put
+        # Tracker, Monitor and Processes in the picture twice: emptied here,
+        # as the display harness empties it.
+        guest.type('fs.write("/home/.startup", { items = {} }) '
+                   'print("gallery" .. "-ready")')
+        guest.wait_for("gallery-ready", "emptied the login set")
         guest.type("wm deskbar," + names)
 
         #
