@@ -563,12 +563,16 @@ processors, and still what follows USB:
    - user address space reused, since a 4 GB window that is never reused
      holds about 120 full 4K surfaces in a session;
    - the x86 RAM ceiling of about 768 MB lifted, with a higher-half kernel;
-   - the kernel's pools growing as they are needed, to a ceiling derived
-     from RAM - the principle about kernel objects kept and its compiled-in
-     numbers dropped; decided 19 September and planned as `threads.md` step
-     1b;
-   - the flat per-process cap replaced by growth, a reserve for what the
-     desktop cannot lose, and reclaiming from the largest offender.
+   - **DONE on 19 September** - the kernel's pools grow as they are needed,
+     to a ceiling derived from RAM (`kernel/pool.c`, `testing.md`
+     18.113-18.117): threads, processes, address spaces, endpoints and
+     regions, with a region's size and a capability table growing too;
+   - **DONE the same night** - the flat per-process cap is gone and the
+     reserve took its place: a program may map what the machine has except
+     the last thirty-second, which the kernel keeps for a thread's stacks, a
+     pool's slab, page tables and starting the process that ends a runaway.
+     **Reclaiming from the largest offender** is not built and may never need
+     to be: the reserve is what the desktop cannot lose.
 
    Driving an *external* monitor is a separate job: it very likely needs a
    display driver for the laptop's Intel GPU, which is to be confirmed before

@@ -415,7 +415,23 @@ bool dev_range_ok(uintptr_t phys, size_t pages);
  */
 #define SYS_KEY_PUSH   54   /* (code, down)           -> 0 or error         */
 
-#define SYS_MAX         55
+/*
+ * **Where this thread's own data is**, which the hardware then hands back at
+ * `%fs:0` on x86 and in `TPIDR_EL0` on AArch64 (`threads.md` step 2).
+ *
+ * The first thing in it is `errno`, which was one static int in a process
+ * "because there is one thread". The kernel neither reads the block nor
+ * knows what is in it: it keeps the number with the thread and puts it in
+ * the register on every switch, which is the whole of what a thread pointer
+ * is. A process that never asks keeps zero, and so does every kernel thread.
+ *
+ * The address is not checked, and deliberately: a process can only hurt
+ * itself with it, exactly as it can with a bad pointer in its own code, and
+ * the kernel never follows it.
+ */
+#define SYS_SET_TLS    55   /* (address)              -> 0                  */
+
+#define SYS_MAX         56
 
 /*
  * What a spawn may hand its child beyond capabilities.

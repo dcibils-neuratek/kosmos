@@ -6189,3 +6189,62 @@ reader sees a slot finished or empty (`design.md` 4.3).
 benchmarks**, and `make prepush` does not either. The baselines carry the
 measurement and the reasoning now, so the next regression is visible again;
 finding where the fortnight's went is `roadmap.md`.
+
+## 18.119 A thread's own pointer
+
+**`threads.md` step 2.** `TPIDR_EL0` on AArch64 and the FS base on x86 now
+belong to the thread: `SYS_SET_TLS` says where a thread's own block is, the
+kernel keeps the number with the thread and loads it on every switch, and
+`errno` moved into that block - it was one static int a process, "because
+there is one thread".
+
+**The two boards differ, and the hardware decides it.** AArch64's register is
+writable at EL0, so a switch saves it as well as restoring it; x86's FS base
+cannot be written from user mode unless the kernel sets `CR4.FSGSBASE`, which
+it does not, so the kernel's record is the only writer and a switch only
+restores. **Neither writes anything when it does not have to**: the processor
+remembers what it has loaded, so two kernel threads - whose pointer is zero -
+switch without touching a register.
+
+**Reading it is one instruction**, which is what makes `errno` free: `mrs
+TPIDR_EL0` on ARM, and on x86 the first word at `%fs:0`, since a process
+cannot read the base itself - which is why a block begins with its own
+address.
+
+- **`thread: its own pointer survives a switch`**, both boards: two threads
+  set different values and yield to each other a thousand times; each still
+  reads its own. Control, watched: with the switch not restoring it, both
+  boards fail.
+- **`make bench` after it, because the switch now touches a register**, and
+  it cost more than it had to. Saving and restoring every time: +3.6% of a
+  context switch. Saving only when the processor held a user pointer: +4.1%,
+  because the branch and the per-CPU lookup are dearer than the register
+  read. **One comparison of the two threads' records, writing the register
+  only when they differ: +2.1%**, and that is what is kept - two loads and a
+  not-taken branch, counted at full price under `-icount` and close to free
+  on a processor that predicts.
+- **The kernel does not save the register**, and that is the rule that makes
+  the cheap version correct: a thread says what belongs in it with
+  `SYS_SET_TLS`, and what a switch loads is that record. AArch64 lets a
+  program write `TPIDR_EL0` itself and x86 does not let it near the FS base,
+  so a program relying on writing it would work on one board and not the
+  other; what it gets instead is a value that lasts until its next switch.
+
+## 18.120 A test that sampled a steady state
+
+**`cpu: every processor idles as a thread` failed three times out of three**
+after step 2 added two instructions to the context switch - and passed three
+times out of three without them, on a kernel that was otherwise identical.
+The property it checks is a steady state: a core with nothing to do runs its
+idle thread. It read that one instant after the tests before it had been
+making threads, so a secondary still finishing one failed it.
+
+Attributed rather than guessed at: the same suite was built at the previous
+commit and run three times (clean), then with the step's kernel half removed
+(clean), then with it back (three failures). **The change was timing, not the
+property.** The test waits up to a second for each core to reach idle now; a
+core that never does fails exactly as it did before.
+
+The same evening's other flake, the wallpaper check in `arm-display-3`, did
+not reproduce and is left alone - a failure that repeats is a bug and one
+that does not is a note.

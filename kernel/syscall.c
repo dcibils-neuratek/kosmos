@@ -1238,6 +1238,15 @@ void syscall_dispatch(struct syscall_frame *sc)
         break;
     }
 
+    case SYS_SET_TLS:
+        /*
+         * Kept with the thread and loaded now, so the caller can use it on
+         * the instruction after this one rather than after its next switch.
+         */
+        thread_set_tls(sc->arg[0]);
+        result = 0;
+        break;
+
     case SYS_KEY_PUSH:
         /*
          * A driver's key - `syscall.h` has why. Device authority, as the

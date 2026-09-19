@@ -225,6 +225,38 @@ static inline uint64_t cpu_cycles(void)
 }
 
 /*
+ * **The thread's own pointer, which user code reads and the kernel keeps.**
+ *
+ * The FS base, which a process reaches as `%fs:0` and cannot *write*: the
+ * instructions for that (`wrfsbase`) fault unless the kernel sets
+ * `CR4.FSGSBASE`, and this kernel does not. So the kernel's record is the
+ * only writer and a switch restores without having to save - where AArch64,
+ * whose `TPIDR_EL0` is writable at EL0, must do both. The asymmetry is the
+ * hardware's (`threads.md` step 2).
+ *
+ * The write is `wrmsr`, which takes the value in two halves like every MSR.
+ */
+#define MSR_FS_BASE 0xC0000100u
+
+static inline void cpu_set_thread_pointer(unsigned long value)
+{
+    __asm__ volatile("wrmsr"
+                     :: "c"(MSR_FS_BASE),
+                        "a"((uint32_t)value),
+                        "d"((uint32_t)(value >> 32)));
+}
+
+static inline unsigned long cpu_thread_pointer(void)
+{
+    uint32_t lo, hi;
+
+    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(MSR_FS_BASE));
+    return ((unsigned long)hi << 32) | lo;
+}
+
+#define CPU_THREAD_POINTER_IS_USERS 0
+
+/*
  * Which privilege level this is running at.
  *
  * AArch64 has a register that says so. x86 does not: the answer is the low

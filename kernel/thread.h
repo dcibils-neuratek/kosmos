@@ -295,6 +295,17 @@ struct thread {
     struct captable  own_caps;
 
     /*
+     * **The thread's own pointer**, `TPIDR_EL0` on AArch64 and the FS base
+     * on x86: where a thread's own data lives, and the first thing in it is
+     * `errno` (`threads.md` step 2). Zero until `SYS_SET_TLS` says
+     * otherwise, which is what a kernel thread stays at.
+     *
+     * The kernel restores it on every switch, and saves it as well on a
+     * board where user code can write it (`CPU_THREAD_POINTER_IS_USERS`).
+     */
+    unsigned long tls;
+
+    /*
      * The process this thread is running, or NULL in a kernel thread.
      *
      * Per thread and not a global, which was found the hard way. With one
@@ -517,6 +528,9 @@ void thread_place_across(unsigned cores);
 void thread_load_cpu(unsigned index, unsigned long *idle, unsigned long *busy);
 
 /* Slots in the pool now, and the most it may grow to (`thread.c`). */
+/* This thread's own pointer, kept and loaded (`SYS_SET_TLS`). */
+void thread_set_tls(unsigned long address);
+
 unsigned thread_slots_made(void);
 unsigned thread_ceiling(void);
 

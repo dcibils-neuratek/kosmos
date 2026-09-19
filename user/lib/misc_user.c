@@ -17,17 +17,37 @@
 #include <time.h>
 
 #include "kosmos.h"
+#include <tls.h>
 
 /*
- * One per process, which is what `design.md` §17.3 asks for. Here it is
- * literally true rather than aspirational: this is a different address
- * space, so there is no other errno for it to be confused with.
+ * **One per thread, in the thread's own block** (`threads.md` step 2).
+ *
+ * It was one per process, which `design.md` §17.3 asked for and which was
+ * literally true here rather than aspirational - a different address space,
+ * so no other errno to be confused with. A process with two threads makes it
+ * wrong again in the old way: whichever thread ran last would own the
+ * number.
+ *
+ * So the block the thread pointer names holds it. `kosmos_tls()` is one
+ * instruction - the register on AArch64, the first word at `%fs:0` on x86,
+ * which is why the block begins with its own address - and before
+ * `tls_setup` has run, or in a process that never calls it, the fallback is
+ * what one thread always had.
  */
-static int errno_storage;
+static struct tls_block main_tls;
+static int errno_before_tls;
+
+void tls_setup(void)
+{
+    main_tls.self = &main_tls;
+    (void)kosmos_set_tls(&main_tls);
+}
 
 int *__errno(void)
 {
-    return &errno_storage;
+    struct tls_block *t = kosmos_tls();
+
+    return (t != NULL) ? &t->errno_value : &errno_before_tls;
 }
 
 static char decimal_point[] = ".";

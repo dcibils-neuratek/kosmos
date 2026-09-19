@@ -320,6 +320,34 @@ static inline long kosmos_setname(const char *name, unsigned long len)
     return sys2(SYS_SETNAME, (long)(uintptr_t)name, (long)len);
 }
 
+/*
+ * **Where this thread's own data is**, which the hardware hands back at
+ * `%fs:0` on x86 and in `TPIDR_EL0` on AArch64 (`threads.md` step 2). The
+ * libc calls this once as a process starts, and every thread will call it as
+ * it starts; the first thing in the block is `errno`.
+ */
+static inline long kosmos_set_tls(void *block)
+{
+    return sys1(SYS_SET_TLS, (long)(uintptr_t)block);
+}
+
+/*
+ * And back, read from the register rather than from the kernel: one
+ * instruction, which is what makes `errno` cost nothing.
+ */
+static inline void *kosmos_tls(void)
+{
+    unsigned long value;
+
+#if defined(__aarch64__)
+    __asm__ volatile("mrs %0, tpidr_el0" : "=r"(value));
+#else
+    __asm__ volatile("movq %%fs:0, %0" : "=r"(value));
+#endif
+
+    return (void *)(uintptr_t)value;
+}
+
 /* Every process, into `out`. Returns how many were written. */
 static inline long kosmos_proctable(struct proc_info *out, unsigned long max)
 {

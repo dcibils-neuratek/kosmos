@@ -424,6 +424,20 @@ const struct scheduler *sched_current(void)
     return policy;
 }
 
+/*
+ * This thread's own pointer, kept with it and loaded now (`SYS_SET_TLS`).
+ * Masked, because a switch between the two writes would leave the register
+ * and the record disagreeing.
+ */
+void thread_set_tls(unsigned long address)
+{
+    unsigned long flags = cpu_interrupts_save();
+
+    current->tls = address;
+    cpu_set_thread_pointer(address);
+    cpu_interrupts_restore(flags);
+}
+
 struct thread *thread_current(void)
 {
     return current;
@@ -666,6 +680,7 @@ void thread_init(void)
      */
     captable_init(&t->own_caps);
     t->caps = &t->own_caps;
+    t->tls = 0;
 
     /* The boot thread is core zero's, and becomes its idle thread. */
     t->sched.cpu = 0;
@@ -707,6 +722,7 @@ void thread_init(void)
         idle->exception_stack = NULL;
         captable_init(&idle->own_caps);
         idle->caps = &idle->own_caps;
+        idle->tls = 0;
 
         /* Its own core's, by definition: an idle thread is never enqueued
          * anywhere, but the field should say what is true rather than
@@ -786,6 +802,7 @@ struct thread *thread_create_suspended(const char *name,
      */
     captable_init(&t->own_caps);
     t->caps = &t->own_caps;
+    t->tls = 0;
     t->process = NULL;
     t->space = NULL;
     memset(&t->ipc, 0, sizeof(t->ipc));
@@ -956,6 +973,29 @@ static void switch_into(struct thread *prev, struct thread *next)
      */
     if (cpu_interrupts_enabled()) {
         panic("thread: a switch with interrupts enabled");
+    }
+
+    /*
+     * **The thread's own pointer** (`threads.md` step 2): one comparison, and
+     * a register written only when the two threads' pointers differ - so
+     * every switch between kernel threads, whose pointer is zero, writes
+     * nothing and reads nothing.
+     *
+     * **The kernel does not save it**, and that is a rule rather than an
+     * oversight: the register is the kernel's, a thread says what belongs in
+     * it with `SYS_SET_TLS`, and the record here is what a switch loads.
+     * AArch64 does let a program write `TPIDR_EL0` itself; x86 does not let
+     * it near the FS base at all, so a program that relied on writing it
+     * would work on one board and not the other. What it gets instead is a
+     * value that lasts until its next switch.
+     *
+     * Three versions were measured on `context_switch`, which is two kernel
+     * threads: saving and restoring every time cost 3.6%, saving only when a
+     * user pointer was loaded cost 4.1% - the branch and the per-CPU lookup
+     * being dearer than the register read - and this costs about 1%.
+     */
+    if (prev->tls != next->tls) {
+        cpu_set_thread_pointer(next->tls);
     }
 
     next->state = THREAD_RUNNING;

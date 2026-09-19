@@ -288,8 +288,11 @@ it, and the steps that cannot fail loudly come before the one that can.
    index pages a `struct memobj` holds; a directory page above them makes a
    gigabyte. And each process's capability table grows by pages that go
    back when the process ends.
-2. **The thread's own register** saved and restored, and `errno` moved into
-   the block it points at. One thread still.
+2. **DONE on 19 September - the thread's own register** saved and restored,
+   and `errno` moved into the block it points at (`testing.md` 18.119). One
+   thread still. `SYS_SET_TLS` is how a thread says where its block is; the
+   two boards differ in whether the kernel must also save the register, and
+   the hardware decides that rather than taste.
 3. **A second thread, on the same core.** `SYS_THREAD_CREATE`, `EXIT` and
    `WAIT`; two threads counting into the same memory; a thread ending and
    being waited for. On one core, so a failure is deterministic.

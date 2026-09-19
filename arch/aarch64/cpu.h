@@ -374,6 +374,32 @@ static inline void cpu_lock_release(volatile unsigned *word)
  * A pair, always. A release with no matching acquire orders one side of a
  * conversation, which is worth nothing.
  */
+/*
+ * **The thread's own pointer, which user code reads and the kernel keeps.**
+ *
+ * `TPIDR_EL0` is the register AArch64 sets aside for it, readable *and
+ * writable* at EL0 - so a program may change its own, and the kernel saves
+ * it on the way out of a thread as well as restoring it on the way in.
+ * x86's answer, the FS base, cannot be written from user mode unless the
+ * kernel allows it, so that board only restores; the asymmetry is the
+ * hardware's, which is what `arch/` is for (`threads.md` step 2).
+ */
+static inline unsigned long cpu_thread_pointer(void)
+{
+    unsigned long value;
+
+    __asm__ volatile("mrs %0, tpidr_el0" : "=r"(value));
+    return value;
+}
+
+static inline void cpu_set_thread_pointer(unsigned long value)
+{
+    __asm__ volatile("msr tpidr_el0, %0" :: "r"(value));
+}
+
+/* Whether user code can write it, and so whether a switch must save it. */
+#define CPU_THREAD_POINTER_IS_USERS 1
+
 static inline void cpu_publish(void)
 {
     __asm__ volatile("dmb ishst" ::: "memory");

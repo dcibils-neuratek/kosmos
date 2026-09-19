@@ -6599,9 +6599,27 @@ static bool test_every_processor_idles_as_a_thread(void)
 
     for (i = 1; i < online && i < NR_CPUS; i++) {
         const struct percpu *c = percpu_at(i);
+        unsigned long waited;
 
         if (c == NULL || c->idle_thread == NULL) {
             return false;
+        }
+
+        /*
+         * **Waited for rather than sampled**, because "idles when it has
+         * nothing to do" is a steady state and this test used to read it one
+         * instant after the tests before it had been making threads. It
+         * passed for months and then failed three times out of three when a
+         * change added two instructions to the switch - which is the timing
+         * shifting, not the property breaking. A core with something left to
+         * run reaches idle in microseconds; a core that never does fails
+         * here as it always did.
+         */
+        waited = hal_ticks();
+
+        while (c->current != c->idle_thread
+               && hal_ticks() - waited < TICK_HZ) {
+            cpu_relax();
         }
 
         if (c->current != c->idle_thread) {
@@ -7619,6 +7637,79 @@ static bool test_the_thread_pool_grows(void)
 }
 
 /*
+ * **A thread's own pointer survives every switch** (`threads.md` step 2).
+ *
+ * `TPIDR_EL0` on AArch64 and the FS base on x86: where a thread's own data
+ * is, and the first thing in it is `errno`, which was one static int a
+ * process while a process had one thread. Two threads set different values
+ * and yield to each other a thousand times; each must still read its own,
+ * and this one must still read what it set.
+ *
+ * A board where user code can write the register saves it as well as
+ * restoring it, and the check is the same either way: what a thread set is
+ * what it sees.
+ */
+#define TLS_ROUNDS 1000u
+
+static volatile bool tls_done, tls_kept;
+
+static void keeps_its_pointer(void *arg)
+{
+    unsigned long mine = (unsigned long)(uintptr_t)arg;
+    unsigned i;
+    bool ok = true;
+
+    thread_set_tls(mine);
+
+    for (i = 0; i < TLS_ROUNDS; i++) {
+        thread_yield();
+
+        if (cpu_thread_pointer() != mine) {
+            ok = false;
+        }
+    }
+
+    tls_kept = ok;
+    tls_done = true;
+}
+
+static bool test_a_threads_pointer_survives_a_switch(void)
+{
+    unsigned long mine = 0xA11CE000UL;
+    unsigned long start;
+    unsigned i;
+    bool ok = true;
+
+    tls_done = tls_kept = false;
+    thread_set_tls(mine);
+
+    if (thread_create("keeps", keeps_its_pointer,
+                      (void *)(uintptr_t)0xB0B0B000UL) == NULL) {
+        return false;
+    }
+
+    for (i = 0; i < TLS_ROUNDS && !tls_done; i++) {
+        thread_yield();
+
+        if (cpu_thread_pointer() != mine) {
+            ok = false;
+        }
+    }
+
+    start = hal_ticks();
+
+    while (!tls_done && hal_ticks() - start < 10UL * TICK_HZ) {
+        thread_yield();
+    }
+
+    /* Back to nothing, as a kernel thread's is, so the rest of the suite
+     * runs as it did. */
+    thread_set_tls(0);
+
+    return ok && tls_done && tls_kept && cpu_thread_pointer() == 0;
+}
+
+/*
  * **The process pool grows, and taking processes apart gives everything
  * back** (`threads.md` step 1b).
  *
@@ -8054,6 +8145,7 @@ static const struct test tests[] = {
     { "smp: a reply reaches a caller on another core", test_a_reply_reaches_a_caller_on_another_processor },
     { "smp: a slot is reused only once its thread has left", test_a_slot_is_reused_only_once_its_thread_has_left },
     { "thread: the pool grows", test_the_thread_pool_grows },
+    { "thread: its own pointer survives a switch", test_a_threads_pointer_survives_a_switch },
     { "proc: the pool grows, and gives everything back", test_the_process_pool_grows },
     { "ipc: endpoints and regions grow past their old pools", test_endpoints_and_regions_grow },
     { "cap: a table holds more than it has room for", test_a_table_holds_more_than_it_has_room_for },
