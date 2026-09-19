@@ -2905,6 +2905,8 @@ host-check: $(HOSTDIR)/lua $(HOSTDIR)/test_litexl $(HOSTDIR)/test_audioring $(HO
 	@# INFO - read through the same tags.lua Music uses, on this machine.
 	$(HOSTDIR)/lua tools/test_tags.lua
 	$(HOSTDIR)/lua tools/test_procshare.lua
+	@# And an MP4's index, for the video player (roadmap 4e).
+	$(HOSTDIR)/lua tools/test_mp4.lua
 	@# The WAV header walker, likewise: pure Lua over a reader, so the
 	@# awkward headers can be built by hand rather than found in the wild.
 	$(HOSTDIR)/lua tools/test_wav.lua
