@@ -27,6 +27,7 @@
 --   make image FILES="game.sfc:/home/roms/snes/game.sfc"
 
 local ui = use("/lib/ui.lua")
+local panel = use("/lib/panel.lua")
 local wmproto = use("/lib/wmproto.lua")
 local audio = use("/lib/audio.lua")
 
@@ -209,8 +210,52 @@ end
 local W, H = snes.width * scale, snes.height * scale
 local title = path:match("([^/]+)$"):gsub("%.%w+$", "")
 
-local win, err = ui.window{ title = title, w = W, h = H, x = 60, y = 60,
-                            direct = true }
+--
+-- **A File menu**, Diego's on 18 September: "we should add a menu to that
+-- app as well to open roms and exit the app". The window draws its own
+-- pixels, so the window manager draws the menu bar above them and the kit
+-- opens the menus (`window:direct_event`, `strips` in `wm.lua`).
+--
+-- **Open ROM... starts another Super Nintendo** on the chosen file, at the
+-- same scale, and closes this one, rather than putting a second ROM into a
+-- console that is running the first: the core is started once per process,
+-- and a fresh one is the reset a cartridge swap is anyway. The game pauses
+-- while the Open window is up, because it is a window this loop waits on.
+--
+local win
+
+local function open_rom()
+  local chooser = panel.open{
+    start = ROMS, title = "Open ROM",
+    filter = is_rom,
+    on_choose = function(chosen)
+      local words = (scale > 1 and ("--scale " .. scale .. " ") or "") .. chosen
+      local reply, why = fs.send("/app/wm", { type = "launch",
+                                              program = "snes", args = words })
+
+      if reply and reply.ok then
+        win:close()
+      else
+        print("snes: could not start " .. chosen .. ": "
+              .. tostring(reply and reply.error or why))
+      end
+    end,
+  }
+
+  if chooser then chooser:run() end
+end
+
+local err
+
+win, err = ui.window{ title = title, w = W, h = H, x = 60, y = 60,
+                      direct = true,
+                      menubar = {
+                        { title = "File", items = {
+                          { text = "Open ROM...", on_choose = open_rom },
+                          { separator = true },
+                          { text = "Quit", on_choose = function() win:close() end },
+                        } },
+                      } }
 
 if not win then
   print("snes: " .. tostring(err))
@@ -375,7 +420,9 @@ while win.running do
   if not reply then break end
 
   for _, ev in ipairs(reply.events or {}) do
-    if ev.type == "close" then
+    if win:direct_event(ev) then
+      -- The menu bar's, or a menu's.
+    elseif ev.type == "close" then
       win:close()
     elseif ev.type == "rawkey" then
       local b = KEYS[ev.code]

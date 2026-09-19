@@ -3278,6 +3278,150 @@ def check_wallpapers(guest):
     return 3
 
 
+def check_direct_menu(guest):
+    """A window that draws its own pixels has a menu bar, drawn above them.
+
+    Diego's choice on 18 September, for the Super Nintendo's File menu: the
+    window manager draws the strip over a direct window, as the kit draws
+    `ui.menubar`, and the application's buffer is the area below it; a
+    press on a title is a `menubar` event, and the application opens an
+    ordinary kit menu (`strips` in `wm.lua`, `window:direct_event`).
+
+    Not the Super Nintendo itself, which needs a ROM and this harness has
+    none - game data is never in the repository. A program of its own opens
+    a direct window with a File menu, Say hello and Quit, and fills its
+    pixels blue. Then:
+
+      the strip is drawn at the top and the blue starts under it, so the
+      window grew by the strip rather than the strip covering the buffer;
+      File, then Say hello, reaches the program's `on_choose`;
+      File, then Quit, closes it - the program says so, and ends.
+    """
+    program = (
+        "local ui = use('/lib/ui.lua') "
+        "local wmproto = use('/lib/wmproto.lua') "
+        "local win "
+        "win = ui.window{ title = 'Strip', w = 240, h = 120, x = 400, y = 300, "
+        "direct = true, menubar = { { title = 'File', items = { "
+        "{ text = 'Say hello', on_choose = function() print('strip' .. ': said hello') end }, "
+        "{ separator = true }, "
+        "{ text = 'Quit', on_choose = function() print('strip' .. ': quit') win:close() end } "
+        "} } } } "
+        "for _ = 1, 2 do win:surface():fill(0, 0, 240, 120, 0xff3060c0) "
+        "win:commit{ x = 0, y = 0, w = 240, h = 120 } end "
+        "while win.running do "
+        "local reply = wmproto.poll(win.handle, 10) "
+        "if not reply then break end "
+        "for _, ev in ipairs(reply.events or {}) do "
+        "if ev.type == 'menubar' then "
+        "print('strip' .. ': menubar ' .. ev.title .. ' at ' .. ev.x .. ' ' .. ev.y) end "
+        "if not win:direct_event(ev) and ev.type == 'close' then win:close() end "
+        "end end "
+        "print('strip' .. ': gone')"
+    )
+    guest.type("fs.write('/ramfs/strip.lua', %r)" % program)
+    time.sleep(1.0)
+    mark = len(guest.seen)
+    guest.type("wm /ramfs/strip.lua")
+
+    def said(text, seconds=20):
+        deadline = time.monotonic() + seconds
+
+        while time.monotonic() < deadline:
+            guest._read_available()
+
+            if text in guest.seen[mark:]:
+                return True
+
+            time.sleep(0.3)
+
+        return False
+
+    if not said("wm: window Strip at"):
+        raise Failure("the direct window with a menu bar never opened:\n"
+                      + guest.seen[mark:][-800:])
+
+    placed = re.search(r"wm: window Strip at (\d+),(\d+) (\d+)x(\d+)",
+                       guest.seen[mark:])
+    x, y, w, h = (int(v) for v in placed.groups())
+    strip = h - 120
+    blue = (0x30, 0x60, 0xc0)
+    width, height, _ = parse_ppm(guest.screendump())
+
+    def at(px, xx, yy):
+        o = (yy * width + xx) * 3
+        return tuple(px[o:o + 3])
+
+    def drawn(w_, h_, px):
+        below = at(px, x + w - 20, y + strip + 4)
+        above = at(px, x + w - 20, y + strip - 6)
+
+        return px if (below == blue and above != blue) else None
+
+    if not 16 <= strip <= 48:
+        raise Failure("the window is %d tall for a 120-row buffer, so no menu "
+                      "bar was added above it" % h)
+
+    settle(guest, drawn, "the menu bar is not drawn above the window's own "
+           "pixels: the blue does not start %d rows down, under a strip that "
+           "is not blue" % strip)
+
+    def click(cx, cy):
+        guest.mouse_to(*_to_tablet(cx, cy, width, height))
+        time.sleep(0.3)
+        guest.mouse_button(True)
+        time.sleep(0.2)
+        guest.mouse_button(False)
+        time.sleep(0.6)
+
+    def choose(row, marker):
+        before = len(guest.seen)
+        click(x + 4 + 10, y + strip // 2)
+
+        if not said("strip: menubar File at", 15) \
+                or "strip: menubar File at" not in guest.seen[before:]:
+            raise Failure("a press on File in the strip did not reach the "
+                          "program as a menubar event:\n"
+                          + guest.seen[before:][-600:])
+
+        where = re.findall(r"strip: menubar File at (\d+) (\d+)",
+                           guest.seen[before:])[-1]
+        mx, my = int(where[0]), int(where[1])
+        time.sleep(1.0)
+
+        # The kit's rows are a glyph and six (`menu_metrics`), after a
+        # two-row border; `row` counts from one, as `menu_mouse` does.
+        click(mx + 20, my + 2 + (row - 1) * 22 + 11)
+
+        deadline = time.monotonic() + 15
+
+        while marker not in guest.seen[before:] and time.monotonic() < deadline:
+            time.sleep(0.3)
+            guest._read_available()
+
+        if marker not in guest.seen[before:]:
+            raise Failure("File, then row %d, did not reach the program's "
+                          "on_choose:\n%s" % (row, guest.seen[before:][-600:]))
+
+    choose(1, "strip: said hello")
+    choose(3, "strip: gone")
+
+    back = len(guest.seen)
+    guest.proc.stdin.write(STOP_DESKTOP)
+    guest.proc.stdin.flush()
+    deadline = time.monotonic() + 15
+
+    while time.monotonic() < deadline:
+        guest._read_available()
+
+        if PROMPT in guest.seen[back:]:
+            break
+
+        time.sleep(0.3)
+
+    return 3
+
+
 def check_snes_scale(guest):
     """`--scale` reaches the Super Nintendo, and never reaches a ROM's name.
 
@@ -6941,6 +7085,7 @@ def main():
         budget_checks = phase("compositor budget", check_budget)
         face_checks = phase("faces", check_faces)
         wallpaper_checks = phase("wallpapers", check_wallpapers)
+        direct_menu_checks = phase("direct menu", check_direct_menu)
         snes_checks = phase("Super Nintendo --scale", check_snes_scale)
         deskbar_checks = phase("deskbar", check_deskbar)
         focus_checks = phase("deskbar focus", check_focus_shown)
@@ -7005,7 +7150,7 @@ def main():
              + direct_checks
              + three_d_checks + registry_checks + context_checks
              + repaint_checks + power_checks + budget_checks + snes_checks
-             + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks
+             + unknown_key_checks + volume_key_checks + face_checks + wallpaper_checks + direct_menu_checks
              + name_checks + file_checks)
     missing = [n for n in only if n not in {name for _, name in phase_times}]
 
@@ -7079,6 +7224,8 @@ def main():
           f"Grotesk's five weights among them, "
           f"{wallpaper_checks} on the desktop's wallpapers carried in the "
           f"image and one reaching the screen pixel for pixel, "
+          f"{direct_menu_checks} on a menu bar above a window that draws its "
+          f"own pixels, and its menu reaching the program, "
           f"{snes_checks} on the Super Nintendo's --scale reaching the window "
           f"and not the ROM's name, "
           f"{direct_checks} on an application drawing its own pixels, "

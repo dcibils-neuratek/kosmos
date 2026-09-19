@@ -5602,3 +5602,34 @@ black arrow.
 | Broken on purpose | What it said |
 | ----------------- | ------------ |
 | the window manager's branch that takes a picture from the image | *the desktop started and the screen never showed wallpaper/alexander-slattery-LI748t0BK8w.jpg at the three points its decode gave* |
+
+## 18.101 A menu bar above a window that draws its own pixels
+
+**The Super Nintendo has a File menu - Open ROM... and Quit** - which Diego
+asked for on 14 September and chose the shape of on the 18th: the window
+manager draws the strip above a direct window's pixels, as the kit draws
+`ui.menubar` - the same gradient, groove and title spacing - and the
+application's buffer is the area below it (`strips` in `wm.lua`). A press
+on a title is a `menubar` event with where the menu should open; the kit
+opens an ordinary menu window owned by the window, so the menu is the same
+as every other one (`window:direct_event`). The pointer and a commit's
+damage stay in the buffer's own coordinates. Open ROM... is the Open
+window at `/home/roms/snes`, showing `.sfc` and `.smc`, and starts a fresh
+Super Nintendo on the choice at the same scale.
+
+**The display harness's `direct menu` phase, 3 checks, on both boards**, with
+a program of its own because the harness has no ROM and never will: a
+direct window with File (Say hello, Quit) and blue pixels. The window is
+120 rows and a strip taller, the blue starts under a strip that is not blue,
+File then Say hello reaches the program's `on_choose`, and File then Quit
+ends it.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the press on the strip not handled | *a press on File in the strip did not reach the program as a menubar event* |
+
+**And the build's own checker found the first placement wrong**: the
+composing code that calls `strips.compose` is earlier in `wm.lua` than the
+table was, so there it read a global that does not exist - which would
+have failed the first time such a window was drawn. `tools/luaglobals.py`
+refused the build, and the table moved above its first user.

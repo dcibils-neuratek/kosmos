@@ -3347,6 +3347,21 @@ function ui.window(spec)
     -- the drop is a promise the window does not keep.
     drops = spec.drops or nil,
 
+    --
+    -- **A menu bar, for a window that draws its own pixels.** The kit cannot
+    -- draw one into memory the application owns, so the window manager
+    -- draws the strip above it and says when a title is pressed; the menus
+    -- themselves are this kit's, opened by `direct_event`. Only the titles
+    -- go: the items stay here, where their `on_choose` can run.
+    --
+    menubar = (spec.direct and spec.menubar) and (function()
+      local titles = {}
+
+      for i, m in ipairs(spec.menubar) do titles[i] = tostring(m.title) end
+
+      return titles
+    end)() or nil,
+
     -- Always, and it is the kit saying "I understand `button`" rather than
     -- the application asking for anything.
     --
@@ -3377,6 +3392,9 @@ function ui.window(spec)
 
     -- Menus this window has open, innermost last. See `push_menu`.
     menus = {},
+
+    -- A direct window's menu bar - titles and items - for `direct_event`.
+    direct_menus = spec.direct and spec.menubar or nil,
 
     -- Where this window's content begins on the screen. The window manager
     -- says so in the reply because it clamps what it was asked for, and
@@ -3893,6 +3911,33 @@ function window:push_menu(x, y, items)
   self:paint_menu(m)
 
   return m
+end
+
+--
+-- **A direct window's menu events**, for an application that runs its own
+-- loop rather than `window:run` - the Super Nintendo does, because it paces
+-- itself by frames. Hand every event here first; true means it was the
+-- menu bar's or a menu's, and taken.
+--
+-- `menubar` is the window manager saying a title in the strip it draws was
+-- pressed, and where under it the menu goes; a mouse event tagged `menu` is
+-- a menu this window has open, handled exactly as a kit window handles it.
+--
+function window:direct_event(ev)
+  if ev.type == "menubar" then
+    local m = self.direct_menus and self.direct_menus[ev.index]
+
+    if m then self:open_menu(ev.x, ev.y, m.items or {}) end
+
+    return true
+  end
+
+  if ev.type == "mouse" and ev.menu then
+    self:menu_mouse(ev)
+    return true
+  end
+
+  return false
 end
 
 -- Everything from `from` upward, closed. `close_menus()` closes the lot.

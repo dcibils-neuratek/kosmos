@@ -593,6 +593,28 @@ keys go on working; `run_media.py` counts every press (`testing.md` 18.94).
 hundred locals.** The bar first went in as twenty of them and the file stopped
 loading.
 
+## 16.8h A menu bar above a window that draws its own pixels
+
+**A direct window can carry a menu bar**, and the window manager draws it.
+`ui.window{ direct = true, menubar = { { title = "File", items = {...} } } }`
+sends the titles; the window manager puts a strip of them above the
+application's buffer, drawn as `ui.menubar` draws - `theme.chrome` over
+`theme.raised`, a groove under it, the same title spans - and the window
+is the buffer and a strip tall. A press on a title is a `menubar` event
+saying where the menu goes; `window:direct_event(ev)` opens the items as
+an ordinary kit menu, and takes the menu's own events after, so an
+application with its own loop hands it every event first. Everything the
+application is told about the pointer, and every commit's damage, is in the
+buffer's coordinates.
+
+**Why the window manager and not the application.** A direct window's
+pixels are the application's memory, so the kit cannot paint a bar into
+them, and each game painting an imitation of one would be a menu bar in
+three styles by the third game. Diego chose this on 18 September for the
+Super Nintendo's File menu, and Doom and Quake can have one the same way.
+The menus themselves stay the kit's, because a menu is already a window a
+window owns.
+
 ## 16.9 Themes, and colours that are named rather than captured
 
 There are two palettes - `dark`, which is what Kosmos looked like first, and

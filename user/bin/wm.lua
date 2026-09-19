@@ -1643,6 +1643,129 @@ local function draw_desktop(r)
 
 end
 
+--------------------------------------------------------------------------
+-- A menu bar above a window that draws its own pixels.
+--
+-- Diego chose this on 18 September for the Super Nintendo's File menu (the
+-- README's decision log): a direct window's contents are the application's
+-- own memory, so the kit cannot draw a menu bar into them - `window:paint`
+-- returns at once for one - and the alternative was each application
+-- painting an imitation of one into its game. So the window manager draws
+-- the strip, as the kit draws `ui.menubar`: the same gradient and groove,
+-- the same titles in the same places. The application's buffer is the area
+-- below it, and everything it is told about the pointer is in the buffer's
+-- own coordinates.
+--
+-- **Only the strip is here.** A press on a title is posted as a `menubar`
+-- event with where the menu should open, and the application opens an
+-- ordinary kit menu - a window, `kind = "menu"`, owned by its window - so
+-- the menus themselves look and behave exactly like every other one, and
+-- Doom and Quake can have them the same way.
+--
+-- One table, because this file's main chunk is near Lua's two hundred
+-- locals (the level bar found the limit).
+--
+local strips = {}
+
+-- A glyph and eight pixels of air: `ui.menubar`'s height.
+function strips.height()
+  return gfx.height("ui") + 8
+end
+
+-- Where each title starts and ends: `ui.menubar`'s `spans`, the same sums.
+function strips.spans(titles)
+  local out, x = {}, 4
+
+  for i, t in ipairs(titles) do
+    local w = gfx.measure(t) + 16
+
+    out[i] = { x = x, w = w }
+    x = x + w
+  end
+
+  return out
+end
+
+function strips.paint(win)
+  local mb = win.menubar
+  local s, w, h = mb.surface, win.w, mb.h
+  local top, bottom = theme.chrome(theme.raised)
+
+  theme.vgradient(s, 0, 0, w, h - 2, top, bottom, 0, h - 2)
+  s:fill(0, h - 2, w, 1, theme.edge_dark)
+  s:fill(0, h - 1, w, 1, theme.edge_light)
+
+  for i, sp in ipairs(strips.spans(mb.titles)) do
+    s:text(sp.x + 8, (h - 2 - gfx.height("ui")) // 2, mb.titles[i],
+           theme.text)
+  end
+
+  add_damage(win.x, win.y, w, h)
+end
+
+--
+-- Asked for, and checked: a list of at most eight titles, each a string of
+-- at most thirty-two characters, on a window that draws its own pixels. A
+-- window manager is a server, and a server takes what it expects.
+--
+function strips.accept(win, titles)
+  if not win.shared or type(titles) ~= "table" then return end
+
+  local kept = {}
+
+  for i = 1, math.min(#titles, 8) do
+    if type(titles[i]) == "string" then
+      kept[#kept + 1] = titles[i]:sub(1, 32)
+    end
+  end
+
+  if #kept == 0 then return end
+
+  local h = strips.height()
+
+  win.menubar = { titles = kept, h = h,
+                  surface = gfx.surface{ w = win.w, h = h } }
+  win.h = win.h + h
+  strips.paint(win)
+end
+
+-- How far below the window's top the application's own pixels begin.
+function strips.below(win)
+  return win.menubar and win.menubar.h or 0
+end
+
+-- A press on the strip: a title opens its menu under it; between titles,
+-- nothing.
+function strips.press(win, nx)
+  local mb = win.menubar
+
+  for i, sp in ipairs(strips.spans(mb.titles)) do
+    if nx >= win.x + sp.x and nx < win.x + sp.x + sp.w then
+      post(win, { type = "menubar", index = i, title = mb.titles[i],
+                  x = win.x + sp.x, y = win.y + mb.h })
+      return
+    end
+  end
+end
+
+-- The strip from its own surface, and the application's pixels below it.
+function strips.compose(win, from, x0, y0, x1, y1)
+  local split = win.y + win.menubar.h
+
+  if y0 < split then
+    local yb = math.min(y1, split)
+
+    back:blit(win.menubar.surface, x0 - win.x, y0 - win.y,
+              x1 - x0, yb - y0, x0, y0)
+  end
+
+  if y1 > split then
+    local ya = math.max(y0, split)
+
+    back:blit(from, x0 - win.x, ya - split, x1 - x0, y1 - ya, x0, ya)
+  end
+end
+
 --
 -- One window, clipped to `r`.
 --
@@ -1872,6 +1995,8 @@ local function draw_window(i, r)
         if win.backdrop then
           back:blend(from, x0 - win.x, y0 - win.y,
                      x1 - x0, y1 - y0, x0, y0)
+        elseif win.menubar then
+          strips.compose(win, from, x0, y0, x1, y1)
         else
           back:blit(from, x0 - win.x, y0 - win.y,
                     x1 - x0, y1 - y0, x0, y0)
@@ -2690,6 +2815,9 @@ handlers.open = function(req, who, cap)
     end
   end
 
+  -- And a menu bar above it, when one was asked for (`strips`).
+  strips.accept(win, req.menubar)
+
   --
   -- Cascaded, if something is already there.
   --
@@ -3412,13 +3540,17 @@ handlers.commit = function(req)
 
   win.shared.live = (win.shared.live == 1) and 2 or 1
 
+  -- In the buffer's own coordinates, which start below a menu bar when
+  -- the window has one (`strips`): the damage moves down with it, and is
+  -- held to the buffer rather than to the window around it.
+  local below = strips.below(win)
   local x = math.max(0, math.floor(tonumber(req.x) or 0))
   local y = math.max(0, math.floor(tonumber(req.y) or 0))
   local w_ = math.min(win.w - x, math.floor(tonumber(req.w) or win.w))
-  local h_ = math.min(win.h - y, math.floor(tonumber(req.h) or win.h))
+  local h_ = math.min(win.h - below - y, math.floor(tonumber(req.h) or win.h))
 
   if w_ > 0 and h_ > 0 then
-    add_damage(win.x + x, win.y + y, w_, h_)
+    add_damage(win.x + x, win.y + below + y, w_, h_)
   end
 
   -- The buffer the application should draw into next: the one this process
@@ -4028,6 +4160,11 @@ handlers.theme = function(req)
                 fonts = theme.fonts })
   end
 
+  -- The menu bars this process draws above direct windows wear it too.
+  for _, win in ipairs(windows) do
+    if win.menubar then strips.paint(win) end
+  end
+
   -- Menus wear the theme too, and they are not in `windows`.
   for _, m in ipairs(menus) do
     post(by_handle[m.owner], { type = "theme", palette = now,
@@ -4633,6 +4770,8 @@ local function pointer_pass(p)
         else
           dragging = { win = win, dx = nx - win.x, dy = ny - win.y }
         end
+      elseif win.menubar and ny < win.y + win.menubar.h then
+        strips.press(win, nx)
       elseif resizable(win)
              and nx >= win.x + win.w - GRIP and nx < win.x + win.w
              and ny >= win.y + win.h - GRIP and ny < win.y + win.h then
@@ -4651,7 +4790,7 @@ local function pointer_pass(p)
       else
         grabbed = win
         post(win, { type = "mouse", action = "press",
-                    x = nx - win.x, y = ny - win.y })
+                    x = nx - win.x, y = ny - win.y - strips.below(win) })
       end
     end
   elseif not is_down and was_down then
@@ -4662,7 +4801,8 @@ local function pointer_pass(p)
                x = nx - grabbed.x, y = ny - grabbed.y })
       else
         post(grabbed, { type = "mouse", action = "release",
-                        x = nx - grabbed.x, y = ny - grabbed.y })
+                        x = nx - grabbed.x,
+                        y = ny - grabbed.y - strips.below(grabbed) })
       end
 
       grabbed = nil
@@ -4826,7 +4966,8 @@ local function pointer_pass(p)
            x = nx - grabbed.x, y = ny - grabbed.y })
   elseif grabbed and is_down and moved_this_pass then
     post(grabbed, { type = "mouse", action = "move",
-                    x = nx - grabbed.x, y = ny - grabbed.y })
+                    x = nx - grabbed.x,
+                    y = ny - grabbed.y - strips.below(grabbed) })
   end
 
   --------------------------------------------------------------------------
