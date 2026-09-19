@@ -161,6 +161,36 @@ def mp3_with_cover(path, rgb, count=40):
     return picture
 
 
+def snes_rom(path):
+    """A Super Nintendo cartridge of our own: 32 KB that does nothing.
+
+    **Not game data**, which never goes in the repository or near it: five
+    instructions and a header, made here. `SEI`, `CLC`, `XCE` into native
+    mode, and `BRA` to itself for ever; the screen stays black because
+    nothing turns it on. LakeSnes takes 32 KB as its smallest cartridge and
+    finds the header at 7FC0h, a LoROM's place (`snes_other.c`), where the
+    title, the map mode, the size - 2^5 KB - and the checksum pair go, and
+    the reset vector at 7FFCh points at the code, which a LoROM maps at
+    8000h. A cartridge the core refuses would fail this phase at its first
+    line, which is what it is for.
+    """
+    rom = bytearray(0x8000)
+    rom[0:5] = bytes([0x78, 0x18, 0xFB, 0x80, 0xFE])
+    rom[0x7FC0:0x7FD5] = b"KOSMOS TEST CARTRIDGE"[:21].ljust(21, b" ")
+    rom[0x7FD5] = 0x20                  # LoROM
+    rom[0x7FD6] = 0x00                  # ROM only
+    rom[0x7FD7] = 0x05                  # 2^5 KB
+    rom[0x7FD9] = 0x01                  # North America
+    rom[0x7FDC:0x7FE0] = bytes([0xFF, 0xFF, 0x00, 0x00])
+    rom[0x7FFC:0x7FFE] = bytes([0x00, 0x80])
+    total = sum(rom) & 0xFFFF
+    rom[0x7FDC:0x7FDE] = struct.pack("<H", total ^ 0xFFFF)
+    rom[0x7FDE:0x7FE0] = struct.pack("<H", total)
+
+    with open(path, "wb") as out:
+        out.write(rom)
+
+
 def heard(path):
     """(seconds not silent, loudest sample) in what QEMU has written so far."""
     if not os.path.exists(path):
@@ -218,6 +248,7 @@ def main():
     wav_out = os.path.join(work, "heard.wav")
     vbr_in = os.path.join(work, "vbr.mp3")
     cover_in = os.path.join(work, "cover.mp3")
+    rom_in = os.path.join(work, "kosmos-test.sfc")
     COVER = (0x20, 0xc0, 0x40)
     checks, fails = 0, []
 
@@ -231,9 +262,11 @@ def main():
     tone(wav_in)
     vbr_mp3(vbr_in)
     mp3_with_cover(cover_in, COVER)
+    snes_rom(rom_in)
     subprocess.run([LUA, os.path.join(HERE, "kfs.lua"), "create", disk, "64",
                     wav_in + ":/home/tone.wav", vbr_in + ":/home/vbr.mp3",
-                    cover_in + ":/home/cover.mp3"], check=True,
+                    cover_in + ":/home/cover.mp3",
+                    rom_in + ":/home/kosmos-test.sfc"], check=True,
                    capture_output=True, cwd=os.path.dirname(HERE))
 
     # Both read by run_screenshot when it is imported, so they are set first.
@@ -432,6 +465,177 @@ def main():
                   if l.strip().startswith("music:")]
 
         check(not errors, "Music said something went wrong: %r" % errors)
+    except Failure as e:
+        fails.append(str(e))
+    finally:
+        guest.close()
+
+    #
+    # **The Super Nintendo's View and Game menus**, Diego's on 19 September:
+    # "Do the 2x option in snes emulator app menu and it will restart the
+    # app", and "the emulator needs a pause / play mode". On the cartridge
+    # above, which is ours, with the desktop's default face - so the menu
+    # bar's titles are where 8-pixel glyphs put them: File at 4, View at 52,
+    # Game at 100, each a glyph's width times its letters and sixteen
+    # (`strips.spans`). The window manager says which title a press opened,
+    # so a title missed by a face that changed is named rather than guessed.
+    #
+    # Game, then Pause: no frames while paused - the frame it paused at and
+    # the frame it resumed at are the same after two seconds - and "Paused"
+    # drawn, a box of 303030h over a picture that is otherwise black. Then P,
+    # twice, the same from the keyboard, and frames having run in between.
+    # View, then Double Size: a fresh Super Nintendo, 1024 by 960, and this
+    # one gone; and from there Normal Size, back to 512 by 480.
+    #
+    guest = Guest(image, 600)
+
+    try:
+        guest.wait_for(PROMPT, "reached a shell")
+        mark = len(guest.seen)
+        guest.type("wm snes:/home/kosmos-test.sfc")
+
+        def window_of(since, size, seconds=60):
+            deadline = time.monotonic() + seconds
+            pattern = (r"wm: window kosmos-test at (\d+),(\d+) %dx(\d+)"
+                       % size)
+
+            while time.monotonic() < deadline:
+                guest._read_available()
+                found = re.search(pattern, guest.seen[since:])
+
+                if found:
+                    return tuple(int(v) for v in found.groups())
+
+                time.sleep(0.3)
+
+            return None
+
+        def line_after(since, pattern, seconds=20):
+            deadline = time.monotonic() + seconds
+
+            while time.monotonic() < deadline:
+                guest._read_available()
+                found = re.search(pattern, guest.seen[since:])
+
+                if found:
+                    return found
+
+                time.sleep(0.3)
+
+            return None
+
+        placed = window_of(mark, 512)
+
+        if placed is None:
+            raise Failure("the Super Nintendo never opened a 512-wide window "
+                          "on the test cartridge:\n" + guest.seen[mark:][-1200:])
+
+        wx, wy, wh = placed
+        strip = wh - 480
+        time.sleep(3.0)
+        width, height, _ = parse_ppm(guest.screendump())
+
+        def click(cx, cy):
+            guest.mouse_to(*_to_tablet(cx, cy, width, height))
+            time.sleep(0.3)
+            guest.mouse_button(True)
+            time.sleep(0.2)
+            guest.mouse_button(False)
+            time.sleep(0.6)
+
+        def choose(title, offset, marker):
+            before = len(guest.seen)
+            click(wx + offset + 10, wy + strip // 2)
+            opened = line_after(before, r"wm: menu bar (\w+) of kosmos-test "
+                                        r"at (\d+),(\d+)")
+
+            if opened is None or opened.group(1) != title:
+                raise Failure("a press where %s should be in the Super "
+                              "Nintendo's menu bar opened %s:\n%s"
+                              % (title, opened.group(1) if opened else
+                                 "nothing", guest.seen[before:][-600:]))
+
+            time.sleep(1.0)
+            click(int(opened.group(2)) + 20, int(opened.group(3)) + 2 + 11)
+            said = line_after(before, marker)
+
+            if said is None:
+                raise Failure("%s, then its item, did not reach the Super "
+                              "Nintendo:\n%s" % (title, guest.seen[before:][-600:]))
+
+            return said
+
+        def boxed():
+            _, _, px = parse_ppm(guest.screendump())
+            count = 0
+
+            for y in range(wy + strip, min(wy + wh, height)):
+                row = y * width * 3
+
+                for x in range(wx, min(wx + 512, width)):
+                    o = row + x * 3
+
+                    if px[o] == 0x30 and px[o + 1] == 0x30 and px[o + 2] == 0x30:
+                        count += 1
+
+            return count
+
+        paused = choose("Game", 100, r"snes: paused at frame (\d+)")
+        time.sleep(1.0)
+        box = boxed()
+        time.sleep(2.0)
+        resumed = choose("Game", 100, r"snes: resumed at frame (\d+)")
+
+        check(int(paused.group(1)) > 0,
+              "the Super Nintendo paused at frame 0 - it had not run the "
+              "cartridge at all before the pause")
+        check(resumed.group(1) == paused.group(1),
+              "paused at frame %s and resumed at frame %s, two seconds later: "
+              "a paused console went on running"
+              % (paused.group(1), resumed.group(1)))
+        check(box >= 1000,
+              "%d pixels of the Paused box on the screen while paused, over "
+              "a black picture - the pause was not drawn" % box)
+
+        time.sleep(2.0)
+        check(boxed() == 0,
+              "the Paused box was still on the screen two seconds after "
+              "Resume - the frames did not start again over it")
+
+        before = len(guest.seen)
+        guest.sendkey("p")
+        by_key = line_after(before, r"snes: paused at frame (\d+)")
+        time.sleep(1.0)
+        guest.sendkey("p")
+        again = line_after(before, r"snes: resumed at frame (\d+)")
+
+        check(by_key is not None and again is not None
+              and int(by_key.group(1)) > int(resumed.group(1))
+              and again.group(1) == by_key.group(1),
+              "P did not pause and resume the Super Nintendo with frames run "
+              "in between: resumed at %s, then %r and %r"
+              % (resumed.group(1), by_key and by_key.group(0),
+                 again and again.group(0)))
+
+        before = len(guest.seen)
+        choose("View", 52, r"snes: restarting at 2x, 1024 by 960")
+        doubled = window_of(before, 1024)
+
+        check(doubled is not None and doubled[2] - strip == 960,
+              "View, then Double Size, did not open a 1024 by 960 Super "
+              "Nintendo: %r" % (doubled,))
+        check(re.search(r"\(snes\) ended", guest.seen[before:]) is not None,
+              "the Super Nintendo at 1x did not end when the one at 2x "
+              "started - there are two consoles")
+
+        if doubled is not None:
+            wx, wy, wh = doubled
+            time.sleep(3.0)
+            before = len(guest.seen)
+            choose("View", 52, r"snes: restarting at 1x, 512 by 480")
+            check(window_of(before, 512) is not None,
+                  "View, then Normal Size, on the 2x Super Nintendo did not "
+                  "open a 512-wide one")
     except Failure as e:
         fails.append(str(e))
     finally:
@@ -896,7 +1100,7 @@ def main():
             print("  " + complaint)
         return 1
 
-    print("PASS: %d checks on media.lua, heard (Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
+    print("PASS: %d checks on media.lua, heard (the Super Nintendo paused, resumed and switched between 1x and 2x from its menus and the P key, Music's window with its cover, its larger title and a drawn play arrow, a cover read out of an MP3 and drawn, a variable-bitrate MP3's length and bitrate from its Xing header, the master muted to silence and back with its level kept, the level bar drawn at the level the keys set and gone after, a tone played, sought and "
           "finished at the prompt with the position following the sound, "
           "Music's Play and bar doing the same, Music saying why it could "
           "not list a folder, and the sound keeping real time on a device "

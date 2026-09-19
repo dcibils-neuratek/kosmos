@@ -6,6 +6,16 @@ Last updated: 2026-09-19
 
 ---
 
+## The Super Nintendo's View and Game menus - 19 September
+
+Diego: "Do the 2x option in snes emulator app menu and it will restart the
+app", and a pause. Built and tested (`testing.md` 18.103): View -> Double
+Size / Normal Size relaunches on the same ROM; Game -> Pause / Resume and
+P. Not on a stick yet - 0.10.86 predates it. Proposed to Diego, not agreed:
+save states (LakeSnes has `snes_saveState`), which would let a game continue
+after quitting and a size change keep its place. Asked about, not agreed: a
+USB gamepad - he is to say which controller he has.
+
 ## ACPI mode, F5 and F6, and the power button - 19 September
 
 **Diego: "yes switch to acpi mode"**, after 0.10.85's probe showed F5 and F6

@@ -5692,3 +5692,34 @@ query path and the brightness keys are proved on the ThinkPad or not at
 all, which is why `ec.c` logs every query it gets, and the window manager
 every level it sets.
 
+## 18.103 The Super Nintendo's View and Game menus
+
+**Double Size, Normal Size, Pause and Resume** (`roadmap.md` 4b). Diego, 19
+September: "Do the 2x option in snes emulator app menu and it will restart
+the app", and "the emulator needs a pause / play mode". View has one item,
+naming the size it goes to, and starts a fresh Super Nintendo on the same ROM
+at that size - a window that draws its own pixels cannot be resized, so the
+game starts again. Game has Pause or Resume, whichever applies, and so does
+P: a paused console runs no frames and draws "Paused" over its last picture.
+
+**`run_media.py`'s Super Nintendo phase, 8 checks, in `arm-media`**, on a
+cartridge the test makes: 32 KB, five instructions that loop for ever and a
+LoROM header - ours, not game data, which the display harness has never
+had. The harness is diskless and `/ramfs` holds 16 KB a value, so the phase
+lives where there is a disk. Game, then Pause: the frame it paused at is
+the frame it resumed at two seconds later, over a thousand pixels of the
+box are on the screen, and none two seconds after Resume. P twice does the
+same with frames run in between. View, then Double Size, opens a 1024 by 960
+Super Nintendo and the first one ends; its View, then Normal Size, opens a
+512-wide one. The window manager now says which menu bar title was pressed -
+*wm: menu bar Game of kosmos-test at 164,106* - so a title missed because
+the face changed is named rather than guessed.
+
+| Broken on purpose | What it said |
+| ----------------- | ------------ |
+| the loop runs frames while paused | *paused at frame 368 and resumed at frame 426, two seconds later: a paused console went on running*; and *0 pixels of the Paused box*, drawn over by the frames |
+| Double Size relaunches at the same scale | *View, then Double Size, did not open a 1024 by 960 Super Nintendo: None* |
+
+`arm-media` is 1:41 with it, from 1:09 - under the slowest suite, so the
+gate's whole is unchanged.
+

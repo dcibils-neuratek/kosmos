@@ -697,6 +697,24 @@ processors, and still what follows USB:
       answers, and `run_media.py` holds it to that level, to every press
       being heard, and to its being gone after (`ui.md` 16.8g, `testing.md`
       18.94). The Display half and the brightness keys wait for step 3.
+4b. **DONE on 19 September - the Super Nintendo's size and a pause**
+   (`testing.md` 18.103). Diego, 19 September: "I realized the snes emulator i cant seem to
+   switch to 2x scale" - it could only be started that way, with `--scale 2`
+   - then "Do the 2x option in snes emulator app menu and it will restart the
+   app", "It's better than nothing", and "Also emulator needs a pause / play
+   mode so I can pause a game and restart it later on". So:
+   - **View**: Double Size (1024 x 960) at 1x, Normal Size (512 x 480) at 2x.
+     It starts a fresh Super Nintendo on the same ROM at the other size and
+     closes this one - Diego's choice over resizing a window that draws its
+     own pixels in place, which the window manager refuses today and which
+     would have kept the game running. The game starts again from its
+     beginning.
+   - **Game**: Pause and Resume, one item that says which, and the P key. A
+     paused game runs no frames and shows "Paused" over its picture.
+   - **Proposed, not agreed - save states.** LakeSnes can save and restore a
+     whole console (`snes_saveState`, `snes_loadState`), so a game could be
+     saved to `/home` and continued after quitting, and Double Size could
+     keep the player's place instead of starting over.
 5. **NEXT - Kosmos looking like its mockups.** Diego, 18 September: "i love
    the tabs in the windows like BEOS instead of the full windoe tab like we
    have today", "can we have a appearance setting to switch between full tab
@@ -1154,6 +1172,20 @@ not by anything failing. `gate.py` now holds the parts its suites name to
 display harness's phases held to `DISPLAY_PARTS` the same way - its phase
 list lives inside `run_screenshot.py`'s `main`, so it needs a list at the
 module's top first.
+
+**Wanted - a window that draws its own pixels is never shrunk behind its
+back, and its region is measured.** Found on 19 September while giving the
+Super Nintendo a Double Size: `handlers.open` clamps every window to the
+screen less its decoration, and for a direct window that is a disagreement -
+the kit wrapped its two buffers at the size it asked for, the window manager
+wraps them at the clamped size, so the second buffer starts in a different
+place on each side. At 1920x1080 a 1024 by 960 window fits and nothing shows;
+on a 1280x800 screen Double Size would draw garbage. And nothing checks that
+the region is as large as two buffers of the size asked for:
+`sys.memory_size` exists, and a window manager that maps a small region and
+reads a large one takes the desktop down with it. A direct window's size is
+its buffers' size - kept, placed so its tab is on the screen, and refused
+when the region cannot hold it.
 
 **Wanted - a stick's layout that cannot be built wrong.** On 19 September
 0.10.86 was first built with `make MEGA=1 x86-usb-image`, as `CLAUDE.md`

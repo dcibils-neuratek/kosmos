@@ -222,28 +222,104 @@ local title = path:match("([^/]+)$"):gsub("%.%w+$", "")
 -- and a fresh one is the reset a cartridge swap is anyway. The game pauses
 -- while the Open window is up, because it is a window this loop waits on.
 --
+-- **View changes the size the same way**, Diego's choice on 19 September:
+-- "Do the 2x option in snes emulator app menu and it will restart the app".
+-- A window that draws its own pixels cannot be resized - its buffers are
+-- this process's region, sized when it opened - so the other size is a
+-- fresh Super Nintendo on the same ROM, and the game starts again. One item,
+-- naming the size it goes to, because a menu here has no check marks to say
+-- which size this is.
+--
+-- **Game pauses and resumes** - "so I can pause a game and restart it later
+-- on" - as does P. A paused console runs no frames, so its sound stops with
+-- them, and "Paused" is drawn over the last picture.
+--
 local win
+local paused = false
+local ran = 0                           -- frames run, for the log and the test
+
+local function relaunch(at_scale, rom)
+  local words = (at_scale > 1 and ("--scale " .. at_scale .. " ") or "") .. rom
+  local reply, why = fs.send("/app/wm", { type = "launch",
+                                          program = "snes", args = words })
+
+  if reply and reply.ok then
+    win:close()
+    return true
+  end
+
+  print("snes: could not start " .. rom .. ": "
+        .. tostring(reply and reply.error or why))
+  return false
+end
 
 local function open_rom()
   local chooser = panel.open{
     start = ROMS, title = "Open ROM",
     filter = is_rom,
-    on_choose = function(chosen)
-      local words = (scale > 1 and ("--scale " .. scale .. " ") or "") .. chosen
-      local reply, why = fs.send("/app/wm", { type = "launch",
-                                              program = "snes", args = words })
-
-      if reply and reply.ok then
-        win:close()
-      else
-        print("snes: could not start " .. chosen .. ": "
-              .. tostring(reply and reply.error or why))
-      end
-    end,
+    on_choose = function(chosen) relaunch(scale, chosen) end,
   }
 
   if chooser then chooser:run() end
 end
+
+local other = (scale == 1) and 2 or 1
+local size_item = {
+  text = ((other == 2) and "Double Size (%d x %d)" or "Normal Size (%d x %d)")
+         :format(snes.width * other, snes.height * other),
+  on_choose = function()
+    print(("snes: restarting at %dx, %d by %d"):format(other,
+          snes.width * other, snes.height * other))
+    relaunch(other, path)
+  end,
+}
+
+--
+-- "Paused", over the picture that was showing.
+--
+-- The buffer this draws into is the one *not* on the screen, which holds the
+-- frame before last - so the frame on the screen is copied into it first,
+-- and the box goes over that. Committed whole, because the copy changed
+-- every pixel of the buffer even where it changed nothing a person can see.
+--
+local function show_paused()
+  local s = win:surface()
+  local region = win.region
+
+  if not s or not region then return end
+
+  local shown = region[(region.draw_into == 1) and 2 or 1]
+
+  if shown then s:blit(shown, 0, 0, W, H, 0, 0) end
+
+  local label = "Paused"
+  local bw, bh = gfx.measure(label) + 48, gfx.height("ui") + 20
+  local bx, by = (W - bw) // 2, (H - bh) // 2
+
+  s:fill(bx, by, bw, bh, 0xff000000)
+  s:fill(bx + 1, by + 1, bw - 2, bh - 2, 0xff303030)
+  s:text(bx + 24, by + 10, label, 0xffffffff)
+
+  win:commit{ x = 0, y = 0, w = W, h = H }
+end
+
+local pause_item = { text = "Pause" }
+local due                               -- the clock's next frame, set below
+
+local function set_paused(on)
+  paused = on
+  pause_item.text = on and "Resume" or "Pause"
+
+  if on then
+    print(("snes: paused at frame %d"):format(ran))
+    show_paused()
+  else
+    print(("snes: resumed at frame %d"):format(ran))
+    due = sys.ticks()                   -- no frames owed for the pause
+  end
+end
+
+pause_item.on_choose = function() set_paused(not paused) end
 
 local err
 
@@ -255,6 +331,8 @@ win, err = ui.window{ title = title, w = W, h = H, x = 60, y = 60,
                           { separator = true },
                           { text = "Quit", on_choose = function() win:close() end },
                         } },
+                        { title = "View", items = { size_item } },
+                        { title = "Game", items = { pause_item } },
                       } }
 
 if not win then
@@ -329,9 +407,12 @@ local KEYS = {
   [32]  = B.l,      [46]  = B.r,                         -- d c
 }
 
+-- P, and the key marked Pause, as the Game menu's item.
+local PAUSE_KEYS = { [25] = true, [119] = true }
+
 local counter_hz = (fs.read("/dev/cpu") or {}).counter_hz or 62500000
 local period = counter_hz / fps
-local due = sys.ticks()
+due = sys.ticks()
 
 -- Whether the console owes the device, or the clock, a frame.
 local function wanted(now)
@@ -359,7 +440,7 @@ local frames, busy, lost = 0, 0, 0
 while win.running do
   local now = sys.ticks()
 
-  if wanted(now) then
+  if not paused and wanted(now) then
     local fine, dropped = pcall(snes.frame, win:surface(), scale)
     local after = sys.ticks()
 
@@ -375,6 +456,7 @@ while win.running do
     end
 
     frames = frames + 1
+    ran = ran + 1
     busy = busy + (after - now)
     lost = lost + dropped
 
@@ -415,7 +497,9 @@ while win.running do
     idle = due - sys.ticks() > period / 2
   end
 
-  local reply = wmproto.poll(win.handle, idle and 1 or 0)
+  -- Paused, the loop has nothing to do until somebody presses something,
+  -- so it waits for that rather than for a frame; an event ends the wait.
+  local reply = wmproto.poll(win.handle, paused and 25 or (idle and 1 or 0))
 
   if not reply then break end
 
@@ -427,11 +511,16 @@ while win.running do
     elseif ev.type == "rawkey" then
       local b = KEYS[ev.code]
 
-      if b then snes.button(b, ev.down) end
+      if PAUSE_KEYS[ev.code] then
+        if ev.down then set_paused(not paused) end
+      elseif b then
+        snes.button(b, ev.down)
+      end
     end
   end
 
-  if not out and due - sys.ticks() > 0 and due - sys.ticks() <= period / 2 then
+  if not paused and not out and due - sys.ticks() > 0
+     and due - sys.ticks() <= period / 2 then
     sys.yield()
   end
 end

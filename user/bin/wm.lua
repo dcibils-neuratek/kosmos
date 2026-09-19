@@ -1735,12 +1735,15 @@ function strips.below(win)
 end
 
 -- A press on the strip: a title opens its menu under it; between titles,
--- nothing.
+-- nothing. Said, as a window's placing is, so the log shows which menu of
+-- which window was opened and where - a harness finds the menu by it.
 function strips.press(win, nx)
   local mb = win.menubar
 
   for i, sp in ipairs(strips.spans(mb.titles)) do
     if nx >= win.x + sp.x and nx < win.x + sp.x + sp.w then
+      print(("wm: menu bar %s of %s at %d,%d"):format(mb.titles[i],
+            win.title, win.x + sp.x, win.y + mb.h))
       post(win, { type = "menubar", index = i, title = mb.titles[i],
                   x = win.x + sp.x, y = win.y + mb.h })
       return
